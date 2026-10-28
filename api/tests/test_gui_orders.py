@@ -388,3 +388,18 @@ def test_unmarked_order_of_an_earlier_day_is_red_with_its_day(client, db, tenant
     assert re.search(rf'class="card order overdue"\s+data-id="{order_id}"', html)
     # Red by the day, not by a missed "Passt": the tablet rings no alarm for it.
     assert "data-overdue" not in html
+
+
+def test_a_card_taken_after_midnight_names_its_business_day(client, db, tenant_id):
+    """00:30 belongs to the business day before (05:00), as in the daily push."""
+    order_id = _order(db, tenant_id)
+    client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX)
+    db.execute(
+        update(Order)
+        .where(Order.id == order_id)
+        .values(created_at=NOW.replace(hour=0, minute=30))
+    )
+    db.commit()
+
+    html = client.get("/gui/fragments/bestellungen").text
+    assert "Vom 14.09., nicht als in der Kasse markiert" in html

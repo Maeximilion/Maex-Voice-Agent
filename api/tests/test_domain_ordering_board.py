@@ -258,7 +258,10 @@ def test_wartende_bestellung_bleibt_ueber_den_tageswechsel(session, tenant_id, c
     _mode(session, tenant_id, "overflow")
     wartet = _order(session, tenant_id, call_id, now=NOW - timedelta(days=7))
     _mode(session, tenant_id, "primary")
-    hat_bon = _order(session, tenant_id, call_id, now=NOW - timedelta(days=7))
+    # A minute later: the column sorts by time, the ids would decide a tie.
+    hat_bon = _order(
+        session, tenant_id, call_id, now=NOW - timedelta(days=7, minutes=-1)
+    )
 
     # Ohne Freigabe hat die Kueche nichts: sie steht noch da. The one with a
     # slip too since T-11.6: nobody marked it as typed into the register.

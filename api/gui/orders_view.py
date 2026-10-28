@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 
 from api.core.errors import InvalidInput
-from api.core.time import to_local
+from api.core.time import business_day, to_local
 from api.domain.ordering.board import MARKABLE, BoardOrder
 from api.domain.ordering.correction import (
     MAX_QUANTITY,
@@ -97,7 +97,8 @@ def _register(order: BoardOrder, tz_name: str) -> dict:
     if order.register_entered_at is not None:
         return {"register": None, "can_mark": False, "register_late": False}
     if order.register_late:
-        day = to_local(order.created_at, tz_name).strftime("%d.%m.")
+        # The business day, as in the daily push: 00:30 belongs to the day before.
+        day = business_day(order.created_at, tz_name).strftime("%d.%m.")
         register = ("danger", f"Vom {day}, nicht als in der Kasse markiert")
     else:
         register = ("warn", "Noch nicht in der Kasse eingegeben")

@@ -183,7 +183,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
 - `retention.py` — deletion job after docs/03 "Löschkonzept" (T-11.2): `purge(session, now)` strips the personal fields whose period is over and logs one line per pass; `cold_path.py` runs it in a thread of its own every `RETENTION_INTERVAL_SECONDS`, `python -m api.jobs.retention` runs one pass by hand
 - `menu_diff.py` — Abgleich Kasse gegen Agent-DB
-- `daily_report.py` — daily report as an outbox event `daily.report`. Built with T-11.6: from `REGISTER_REPORT_HOUR` local time, once per business day, how many orders of earlier days nobody marked „In Kasse eingegeben“ (L18), none when all are marked; `cold_path.py` runs it in a thread of its own every five minutes. The day's key figures follow with T-8.3
+- `daily_report.py` — daily report as an outbox event `daily.report`. Built with T-11.6: from `REGISTER_REPORT_HOUR` local time, once per business day, how many orders of earlier days nobody marked „In Kasse eingegeben“ (L18), none when all are marked, and again an hour after one the dispatcher gave up on; `cold_path.py` runs it in a thread of its own every five minutes. The day's key figures follow with T-8.3
 - `holidays.py` — Feiertage Baden-Württemberg jährlich in `special_days` vorschlagen
 
 ### `gui/`

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.domain.ordering.board import approve_order, mark_entered
 from api.events.types import DAILY_REPORT
+from api.jobs import daily_report
 from api.jobs.daily_report import REGISTER_UNMARKED, report
 from api.models import Order, OutboxEvent, Tenant
 from api.tests.test_domain_confirm_order import _mode
@@ -113,3 +114,64 @@ def test_a_broken_tenant_does_not_stop_the_others(session, tenant_id, call_id, c
     [event] = _reports(session)
     assert event.tenant_id == tenant_id
     assert "Daily report failed for a tenant" in caplog.text
+
+
+def _fail_reports(session, created_at) -> None:
+    session.execute(
+        update(OutboxEvent)
+        .where(OutboxEvent.event_type == DAILY_REPORT)
+        .values(status="failed", created_at=created_at)
+    )
+    session.commit()
+
+
+def test_a_report_the_dispatcher_gave_up_on_is_queued_again_after_an_hour(
+    session, tenant_id, call_id
+):
+    """n8n down through all attempts: the day's push is not lost, and a long
+    outage adds one row an hour, not one every pass."""
+    _order(session, tenant_id, call_id, now=NOW - 2 * DAY)
+    assert report(session, NOW) == 1
+
+    _fail_reports(session, NOW - timedelta(minutes=10))
+    assert report(session, NOW) == 0
+
+    _fail_reports(session, NOW - timedelta(hours=2))
+    assert report(session, NOW) == 1
+    assert [e.status for e in _reports(session)] == ["failed", "pending"]
+
+
+def test_the_hour_is_local_time_not_utc(session, tenant_id, call_id):
+    """10:30 in Berlin is 08:30 UTC: a gate on the UTC hour would wait two
+    hours longer (one in winter)."""
+    _order(session, tenant_id, call_id, now=NOW - 2 * DAY)
+    assert report(session, NOW.replace(hour=10, minute=30)) == 1
+
+
+def test_a_write_that_fails_in_one_tenant_leaves_the_others(
+    session, tenant_id, call_id, monkeypatch
+):
+    """The savepoint holds the failure at its flush: the broken tenant's row
+    is rolled back, the other tenant's report is committed and counted."""
+    broken = _tenant(session, "Kaputt")
+    _mode(session, broken, "primary")
+    _order(session, broken, _call(session, broken), now=NOW - 2 * DAY)
+    _order(session, tenant_id, call_id, now=NOW - 2 * DAY)
+    real = daily_report._register_report
+
+    def register_report(session, tenant, now):
+        if tenant.id == broken:
+            # Refused by the table's CHECK at the savepoint's flush.
+            session.add(
+                OutboxEvent(tenant_id=broken, event_type="no.such.type", payload={})
+            )
+            return 1
+        return real(session, tenant, now)
+
+    monkeypatch.setattr(daily_report, "_register_report", register_report)
+
+    assert report(session, NOW) == 1
+    [event] = _reports(session)
+    assert event.tenant_id == tenant_id
+    refused = select(OutboxEvent).where(OutboxEvent.event_type == "no.such.type")
+    assert session.scalars(refused).all() == []

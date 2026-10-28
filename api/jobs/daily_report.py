@@ -10,14 +10,16 @@ The dispatcher process (`api/jobs/cold_path.py`) runs a pass every
 INTERVAL_SECONDS. A pass sends one event per tenant and business day, from
 REGISTER_REPORT_HOUR local time on, and none when every order is marked. A
 day the process was down is not sent late: the next day's report counts every
-older unmarked order anyway. The payload holds counts and dates, no guest
-details, so the deletion job has nothing to strip.
+older unmarked order anyway. A report the dispatcher gave up on (`failed`, n8n
+down through all its attempts, api/events/outbox.py) is queued again after
+RETRY_FAILED_AFTER, so an outage around the hour does not cost the day's push.
+The payload holds counts and dates, no guest details.
 """
 
 import logging
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
@@ -33,6 +35,9 @@ logger = get_logger("api.jobs.daily_report")
 REGISTER_UNMARKED = "register_unmarked"
 # How often the dispatcher process asks. A report goes out at most this late.
 INTERVAL_SECONDS = 300.0
+# A failed report is queued again this long after the last one: a long n8n
+# outage adds one row an hour, not one every pass.
+RETRY_FAILED_AFTER = timedelta(hours=1)
 
 
 def report(session: Session, now: datetime) -> int:
@@ -45,7 +50,9 @@ def report(session: Session, now: datetime) -> int:
     for tenant in session.scalars(select(Tenant).order_by(Tenant.id)).all():
         try:
             with session.begin_nested():
-                queued += _register_report(session, tenant, now)
+                count = _register_report(session, tenant, now)
+            # Counted once the savepoint holds: its flush can still fail.
+            queued += count
         except Exception as exc:  # noqa: BLE001 - one tenant must not stop the rest
             log(
                 logger,
@@ -62,7 +69,7 @@ def _register_report(session: Session, tenant: Tenant, now: datetime) -> int:
     if to_local(now, tenant.timezone).time() < time(settings.register_report_hour):
         return 0
     day = business_day(now, tenant.timezone)
-    if _sent(session, tenant, day.isoformat()):
+    if _sent(session, tenant, day.isoformat(), now):
         return 0
     start, _ = business_day_bounds_utc(day, tenant.timezone)
     orders = unmarked_before(session, tenant.id, start)
@@ -91,10 +98,13 @@ def _register_report(session: Session, tenant: Tenant, now: datetime) -> int:
     return 1
 
 
-def _sent(session: Session, tenant: Tenant, day: str) -> bool:
-    """Whether this business day's report is already in the outbox, whatever
-    its status: a failed delivery is the dispatcher's to retry, not a reason
-    for a second event."""
+def _sent(session: Session, tenant: Tenant, day: str, now: datetime) -> bool:
+    """Whether this business day's report is in the outbox: pending or sent,
+    or failed less than RETRY_FAILED_AFTER ago.
+
+    The deletion job thins a sent payload only after RETENTION_OUTBOX_SENT_DAYS
+    (at least one day), so today's row still names its report and day.
+    """
     return (
         session.scalar(
             select(OutboxEvent.id)
@@ -103,6 +113,10 @@ def _sent(session: Session, tenant: Tenant, day: str) -> bool:
                 OutboxEvent.event_type == DAILY_REPORT,
                 OutboxEvent.payload["report"].astext == REGISTER_UNMARKED,
                 OutboxEvent.payload["business_day"].astext == day,
+                or_(
+                    OutboxEvent.status != "failed",
+                    OutboxEvent.created_at > now - RETRY_FAILED_AFTER,
+                ),
             )
             .limit(1)
         )

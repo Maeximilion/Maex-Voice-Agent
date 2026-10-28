@@ -1,10 +1,12 @@
 """The mark "In Kasse eingegeben" and the cards it ends (T-11.6, docs/09 §1 L18)."""
 
+import threading
+import time
 import uuid
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
@@ -18,6 +20,7 @@ from api.domain.ordering.board import (
     unmarked_before,
 )
 from api.domain.ordering.correction import RowEdit
+from api.domain.ordering.labels import ACTION_CORRECTED
 from api.models import AuditLog, Order
 from api.tests.test_domain_confirm_order import _mode
 from api.tests.test_domain_draft_order import NOW, _call, _tenant
@@ -210,3 +213,66 @@ def test_change_token_follows_the_mark_and_the_day(session, tenant_id, call_id):
 
     mark_entered(session, tenant_id, order_id, 0, now=NOW)
     assert new_orders_change_token(session, tenant_id, TZ, NOW) != before
+
+
+def test_a_mark_waiting_on_a_correction_sees_it_and_is_refused(
+    session, tenant_id, call_id, migrated_db_url
+):
+    """The revision check holds only because the mark reads the count after it
+    has the order's row lock: a correction that commits while the mark waits
+    must be seen (READ COMMITTED), or a stale card marks the new state."""
+    order_id = _order(session, tenant_id, call_id)
+    approve_order(session, tenant_id, order_id)
+    engine = create_engine(migrated_db_url)
+    outcome: list[BaseException | None] = []
+
+    def tap() -> None:
+        with Session(engine) as tablet:
+            try:
+                mark_entered(tablet, tenant_id, order_id, 0, now=NOW)
+                outcome.append(None)
+            except BaseException as exc:  # noqa: BLE001 - handed to the test
+                outcome.append(exc)
+
+    try:
+        with Session(engine) as correction:
+            correction.execute(
+                select(Order).where(Order.id == order_id).with_for_update()
+            )
+            thread = threading.Thread(target=tap)
+            thread.start()
+            _wait_for_a_lock(session)
+            correction.add(
+                AuditLog(
+                    tenant_id=tenant_id,
+                    actor="gui:tablet",
+                    action=ACTION_CORRECTED,
+                    entity="order",
+                    entity_id=order_id,
+                    payload={"call_id": str(call_id), "reason": "wrong_quantity"},
+                )
+            )
+            correction.commit()
+        thread.join(timeout=10)
+    finally:
+        engine.dispose()
+
+    [exc] = outcome
+    assert isinstance(exc, Conflict) and exc.say == CORRECTED_SINCE
+    assert _fresh(session, order_id).register_entered_at is None
+
+
+def _wait_for_a_lock(session) -> None:
+    """Until another connection waits on a row lock, at most five seconds."""
+    for _ in range(100):
+        waiting = session.scalar(
+            text(
+                "SELECT count(*) FROM pg_stat_activity "
+                "WHERE wait_event_type = 'Lock' AND datname = current_database()"
+            )
+        )
+        session.rollback()
+        if waiting:
+            return
+        time.sleep(0.05)
+    raise AssertionError("the mark never waited on the order's lock")
