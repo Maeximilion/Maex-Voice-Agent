@@ -6,6 +6,9 @@ Zweck : Jeder Pull Request bekommt den Repo-Eigentuemer als Assignee und ein
         fix -> bug, ...). Das deckt auch alte Pull Requests und solche von Bots ab.
         Gesetzt wird nur, was fehlt; vorhandene Labels bleiben, ein zweiter Lauf
         aendert nichts.
+        Every open issue without an assignee gets the owner too (Maxi,
+        2026-10-28); its labels (type, stufe-N) are set at creation and not
+        derived here.
 Aufruf: python scripts/pr_metadata.py [--dry-run]
 Umgeb.: GITHUB_TOKEN       Token mit Schreibrecht auf Issues und Pull Requests;
                            in der Action der eingebaute
@@ -62,6 +65,11 @@ def missing(pull: dict, owner: str) -> dict[str, list[str]]:
     return change
 
 
+def missing_on_issue(issue: dict, owner: str) -> dict[str, list[str]]:
+    """What an open issue lacks: only the assignee."""
+    return {} if issue.get("assignees") else {"assignees": [owner]}
+
+
 def rest(method: str, path: str, token: str, payload: dict | None = None):
     request = urllib.request.Request(
         f"{API_URL}{path}",
@@ -84,17 +92,25 @@ def rest(method: str, path: str, token: str, payload: dict | None = None):
     return json.loads(raw) if raw else {}
 
 
-def all_pulls(repo: str, token: str) -> list[dict]:
-    pulls: list[dict] = []
+def pages(path: str, token: str) -> list[dict]:
+    items: list[dict] = []
     page = 1
     while True:
-        batch = rest(
-            "GET", f"/repos/{repo}/pulls?state=all&per_page=100&page={page}", token
-        )
-        pulls.extend(batch)
+        batch = rest("GET", f"{path}&per_page=100&page={page}", token)
+        items.extend(batch)
         if len(batch) < 100:
-            return pulls
+            return items
         page += 1
+
+
+def all_pulls(repo: str, token: str) -> list[dict]:
+    return pages(f"/repos/{repo}/pulls?state=all", token)
+
+
+def open_issues(repo: str, token: str) -> list[dict]:
+    # The issue list also returns pull requests; those are handled above.
+    items = pages(f"/repos/{repo}/issues?state=open", token)
+    return [i for i in items if "pull_request" not in i]
 
 
 def main() -> int:
@@ -118,6 +134,10 @@ def main() -> int:
             (pull, change)
             for pull in all_pulls(repo, token)
             if (change := missing(pull, owner))
+        ] + [
+            (issue, change)
+            for issue in open_issues(repo, token)
+            if (change := missing_on_issue(issue, owner))
         ]
         for pull, change in changes:
             summary = ", ".join(
@@ -142,7 +162,7 @@ def main() -> int:
         return 1
 
     verb = "wuerden ergaenzt" if args.dry_run else "ergaenzt"
-    print(f"{len(changes)} Pull Requests {verb}.")
+    print(f"{len(changes)} Pull Requests und Issues {verb}.")
     return 0
 
 
