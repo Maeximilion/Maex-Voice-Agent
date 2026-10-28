@@ -489,12 +489,13 @@ def ignore_locally(repos, name: str, text: str) -> Path:
     return local
 
 
-def track_on_origin(repos, name: str) -> None:
+def track_on_origin(repos, *names: str) -> None:
     upstream = repos.tmp_path / "upstream"
     repos.git(upstream, "pull", "-q", "origin", "main")
-    (upstream / name).write_text("from origin\n", encoding="utf-8")
-    repos.git(upstream, "add", name)
-    repos.git(upstream, "commit", "-q", "-m", f"{name} tracked")
+    for name in names:
+        (upstream / name).write_text("from origin\n", encoding="utf-8")
+    repos.git(upstream, "add", *names)
+    repos.git(upstream, "commit", "-q", "-m", "tracked")
     repos.git(upstream, "push", "-q", "origin", "main")
 
 
@@ -558,6 +559,19 @@ def test_an_ignored_file_that_origin_starts_tracking_is_not_overwritten(repos):
     assert "would overwrite the ignored files .env" in output
     assert "local secret" not in output
     assert repos.commits_behind() == 1
+
+
+def test_an_ignored_file_is_kept_when_origin_also_adds_a_new_file_after_it(repos):
+    # Codex PR #411: the scan's status was that of its last path, so a new file sorted
+    # after .env made it fail and the warning was skipped.
+    local = ignore_locally(repos, ".env", "local secret\n")
+    track_on_origin(repos, ".env", "znew.txt")
+
+    output = repos.run_hook()
+
+    assert local.read_text(encoding="utf-8") == "local secret\n"
+    assert "would overwrite the ignored files .env" in output
+    assert "znew.txt" not in output
 
 
 def test_the_switch_back_to_main_does_not_overwrite_an_ignored_file(repos):

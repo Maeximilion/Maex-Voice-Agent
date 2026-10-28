@@ -87,6 +87,8 @@ clobbered() {
     | while IFS= read -r -d '' f; do
         { [ -e "$1/$f" ] || [ -L "$1/$f" ]; } && printf '%s; ' "$f"
       done
+  # The loop's status is its last path's, not whether the scan worked (Codex PR #411).
+  return 0
 }
 
 # The main folder left on a finished branch goes back to main, or its files stay at the
