@@ -835,9 +835,10 @@ class ConversationLoop:
         if table:
             summary += f" {SUMMARY_OPEN_TABLE} {table}."
         # Room for what `_handoff_summary` adds for a booking made earlier,
-        # and for the line's first sentence on a team leg nobody answered.
+        # and for the line's first sentence on a team leg nobody answered:
+        # both stand on that card (#207).
         booked = len(_BOOKED + state.booking_say) if state.booking_say else 0
-        reserve = max(booked, len(SUMMARY_MISSED) + 1)
+        reserve = booked + len(SUMMARY_MISSED) + 1
         handed = self._handoff(
             state,
             SAY_ESCALATION,
@@ -979,10 +980,13 @@ class ConversationLoop:
         transfer = self._dispatch(state, "transfer_to_team", {"reason": reason})
         apply_tool_result(state, "transfer_to_team", transfer)
         if transfer.ok and transfer.data.get("available"):
-            # A card of its own goes with the call: the phone line writes it
-            # if nobody answers the team leg (Codex PR #369). The others keep
-            # the line's card of the reason, as before.
-            state.handoff_summary = summary
+            # The card goes with the call: the phone line writes it if nobody
+            # answers the team leg (Codex PR #369). The same card as for a
+            # callback, with a booking made earlier in the call, or the team
+            # books it again (#207).
+            state.handoff_summary = _handoff_summary(
+                reason, detail, state.booking_say, base=summary
+            )
             return TurnResult(
                 state=state, say=[transfer.say or fallback_say], ended=True
             )

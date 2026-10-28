@@ -104,8 +104,9 @@ def team_missed(
     may be closed already. `phone` is a number the guest named in the call,
     which only the line's process still knows; else the caller id, else the
     number of an open card of the call. `summary` is the card the core wrote
-    for the handover, which only that process knows too (an allergen question
-    beyond the database, L17); else the card says the reason. The call's
+    for the handover, which only that process knows too (its reason, a
+    booking made earlier in the call, an allergen question beyond the
+    database, L17); else the card says the reason. The call's
     outcome becomes "callback",
     also when its log is still being written (`end_call` keeps it); an "error"
     stays, logged before or after."""
