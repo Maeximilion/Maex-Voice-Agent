@@ -10,6 +10,7 @@ from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
+from api.domain.ordering import board
 from api.domain.ordering.board import (
     ACTION_REGISTER_ENTERED,
     CORRECTED_SINCE,
@@ -276,3 +277,45 @@ def _wait_for_a_lock(session) -> None:
             return
         time.sleep(0.05)
     raise AssertionError("the mark never waited on the order's lock")
+
+
+def test_a_card_torn_by_a_correction_carries_the_old_revision(
+    session, tenant_id, call_id, migrated_db_url, monkeypatch
+):
+    """A correction that commits while the column is read, after the order's
+    lines: the card shows the old lines, so its mark must be refused
+    (ultrareview #423). The count is read first, so it is the old one."""
+    order_id = _order(session, tenant_id, call_id)
+    approve_order(session, tenant_id, order_id)
+    real = board.current_labels_many
+    engine = create_engine(migrated_db_url)
+
+    def correction_commits_now(*args, **kwargs):
+        with Session(engine) as tablet:
+            tablet.add(
+                AuditLog(
+                    tenant_id=tenant_id,
+                    actor="gui:tablet",
+                    action=ACTION_CORRECTED,
+                    entity="order",
+                    entity_id=order_id,
+                    payload={
+                        "call_id": str(call_id),
+                        "reason": "wrong_quantity",
+                        "labels": [["23", "Frühlingsrollen"]],
+                    },
+                )
+            )
+            tablet.commit()
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(board, "current_labels_many", correction_commits_now)
+    try:
+        [card] = list_new(session, tenant_id, TZ, NOW)
+    finally:
+        engine.dispose()
+    session.rollback()
+
+    assert card.revision == 0
+    with pytest.raises(Conflict):
+        mark_entered(session, tenant_id, order_id, card.revision, now=NOW)

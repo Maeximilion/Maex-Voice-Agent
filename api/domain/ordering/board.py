@@ -137,6 +137,7 @@ def list_new(
     now: datetime | None = None,
 ) -> list[BoardOrder]:
     start, _ = _window(tz_name, now)
+    revisions = _revisions(session, tenant_id)
     failed_first = case((Order.handover_state == FAILED, 0), else_=1)
     orders = session.scalars(
         select(Order)
@@ -176,7 +177,7 @@ def list_new(
         items[row.order_id].append(row)
 
     labels = current_labels_many(session, ids)
-    corrected, revisions = _corrections(session, tenant_id, ids)
+    corrected = _last_correction_reasons(session, tenant_id, ids)
     for oid in ids:
         labels[oid] = labels_for_rows(session, oid, items[oid], labels.get(oid))
     return [
@@ -268,13 +269,33 @@ def _overdue(
     return {order_id for order_id, since in waiting.items() if since <= late}
 
 
-def _corrections(
+def _revisions(session: Session, tenant_id: uuid.UUID) -> dict[uuid.UUID, int]:
+    """How often each order of the column was corrected: `ticket.revision` for
+    all of them in one statement.
+
+    Read before the orders and their lines (READ COMMITTED, api/db.py): a
+    correction that commits in between leaves a card with the new lines and
+    the old count, whose mark is refused, never the old lines with the new
+    count, whose mark would pass (ultrareview #423).
+    """
+    rows = session.execute(
+        select(Order.id, func.count(AuditLog.id))
+        .join(AuditLog, AuditLog.entity_id == Order.id)
+        .where(
+            *_filters(tenant_id),
+            AuditLog.tenant_id == tenant_id,
+            AuditLog.entity == "order",
+            AuditLog.action == ACTION_CORRECTED,
+        )
+        .group_by(Order.id)
+    )
+    return {row[0]: row[1] for row in rows}
+
+
+def _last_correction_reasons(
     session: Session, tenant_id: uuid.UUID, order_ids: list[uuid.UUID]
-) -> tuple[dict[uuid.UUID, str], dict[uuid.UUID, int]]:
-    """Per order the reason of its newest correction and how many it had, the
-    count `ticket.revision` gives one order at a time."""
+) -> dict[uuid.UUID, str]:
     reasons: dict[uuid.UUID, str] = {}
-    counts: dict[uuid.UUID, int] = {}
     for entity_id, payload in session.execute(
         select(AuditLog.entity_id, AuditLog.payload)
         .where(
@@ -286,8 +307,7 @@ def _corrections(
         .order_by(AuditLog.id)
     ):
         reasons[entity_id] = payload["reason"]
-        counts[entity_id] = counts.get(entity_id, 0) + 1
-    return reasons, counts
+    return reasons
 
 
 def new_orders_change_token(
