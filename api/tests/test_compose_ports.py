@@ -32,6 +32,10 @@ PROD = REPO_ROOT / "deploy" / "docker-compose.prod.yml"
 # Loaded by a bare `docker compose up` only, never by the production command.
 DEV = REPO_ROOT / "docker-compose.override.yml"
 DEPLOYMENT_DOC = REPO_ROOT / "docs" / "13_DEPLOYMENT.md"
+# The AI telephone's tunnel to the pilot's router (test phase): the line file
+# with the probe, and the overlay that puts it on top of the product's stack.
+LINE = REPO_ROOT / "deploy" / "asterisk" / "docker-compose.line.yml"
+TUNNEL = REPO_ROOT / "deploy" / "asterisk" / "docker-compose.tunnel.yml"
 PRODUCTION_FILES = "-f docker-compose.yml -f deploy/docker-compose.prod.yml"
 # The reverse proxy. Every other service is reached through it or not at all.
 PUBLISHERS = {"caddy"}
@@ -186,6 +190,16 @@ def test_the_proxy_is_what_production_publishes():
 
 def test_no_production_service_sits_on_the_host_network():
     assert not _on_host_network(_production())
+
+
+def test_the_routers_tunnel_publishes_no_port():
+    """The router reaches Asterisk through the tunnel's network (T-10.2), never
+    through a port on the host: not in the overlay, not in the line file."""
+    tunnel = _services(_load(TUNNEL))
+    assert tunnel["asterisk"]["network_mode"] == "service:wireguard"
+    merged = _merged_ports([_load(BASE), _load(DEV), _load(TUNNEL)])
+    assert not merged["asterisk"] and not merged["wireguard"]
+    assert not any(_merged_ports([_load(LINE)]).values())
 
 
 def test_documented_production_command_names_the_files_checked_here():

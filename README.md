@@ -46,7 +46,7 @@ There is no hosted voice platform: Asterisk, our own exchange, takes the call fr
 | Version | 0.0.1 |
 | Stage | 0, Foundation |
 | Next Gate | G0: Budget · Rights · Telephony path · Vendor chosen · Stage order |
-| As of | 2026-10-26 |
+| As of | 2026-10-28 |
 <!-- /readme:status -->
 
 <p align="center">
@@ -161,7 +161,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | `VOICE_MEDIA_TOKEN`, `VOICE_NUMBER`, `VOICE_EAR`, `VOICE_MOUTH` | The service `voice` of the own voice layer (Compose profile `voice`): the token Asterisk presents, the number the AI telephone answers, and the speech engines (`whisper`, `piper`; `VOICE_EAR_DEVICE`, `VOICE_MOUTH_VOICE`, model files in `deploy/speech/run/models`). It does not start with one missing, with an engine it cannot load, or with the team on its own number (`docs/20_VOICE_LAYER.md` §7) |
 | `ACCESS_HOST`, `ACCESS_USER`, `ACCESS_PASSWORD` | Where the AI telephone registers: the pilot's router in the test phase, a SIP trunk in operation. Asterisk takes SIP only from the IPv4 addresses of the servers its `_sip._udp` SRV records name, or of `ACCESS_HOST` itself without such records, looked up when it starts; a lookup that fails stops the start until DNS answers. Read by Asterisk only |
 | `ACCESS_ALSO` | More names or IPv4 addresses Asterisk takes SIP from, comma-separated, looked up once at the start: the pilot's router calls from its public address, also through its VPN. Read by Asterisk only |
-| `ACCESS_WIREGUARD_CONF` | Workbench only: path of the router's WireGuard file for the AI telephone's own tunnel (`deploy/asterisk/docker-compose.line.yml`) |
+| `ACCESS_WIREGUARD_CONF` | Test phase only: path of the router's WireGuard file for the AI telephone's own tunnel (`deploy/asterisk/docker-compose.line.yml` with the probe, `deploy/asterisk/docker-compose.tunnel.yml` on top of the product's stack) |
 | `TRANSFER_TARGETS` | Optional, comma-separated: the numbers besides `TEAM_PHONE` a transfer may go to. The dialplan dials no other number; one the AI names that is not listed rings `TEAM_PHONE`, and a listed one nobody takes is followed by `TEAM_PHONE`; a mailbox that answers takes the call (`docs/20_VOICE_LAYER.md` §5). Read by Asterisk only |
 | `MAX_CALL_SECONDS` | Maximum call duration a new tenant is seeded with. A call is ended by the tenant's own value (`service_config.max_call_seconds`) |
 | `PRIVACY_NOTICE_ADDRESS` | Where the privacy notice is, as a caller should hear it; a new tenant is seeded with it, and the phone greeting names the tenant's own value (`service_config.privacy_notice_address`). Empty: the greeting leaves the sentence out. Set before the first real call |

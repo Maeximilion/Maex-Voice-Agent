@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 29.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.34
+> Status: 29.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.35
 
 ---
 
 ## Summary
+
+**The outage spike on the wire is ready to run (T-10.2, 29.10.2026, prepared, not run).** `deploy/asterisk/docker-compose.tunnel.yml` puts the WireGuard container of T-10.1 step 2 next to the product's `voice`: on the workbench the product's Asterisk registered at the pilot's router through it, with `voice` healthy behind it (a throwaway stack with the drill engines, no call). Asterisk now logs `call <id>: arrived`, so every row's time can be read from its log; forwarding is off in the tunnel's network, so the router's side reaches Asterisk and none of the containers behind it; blanks in `ACCESS_ALSO` no longer stop the start, and the probe of the line file runs hardened (notes 2 and 4 of the audit of 29.10.2026). The outage drills pass 27 of 27 on the changed dialplan. Next: the run with Maxi at the telephones, row by row (docs/20 §10, handover T-10.2); the dev database has to be at the newest migration first, on 29.10.2026 it was behind and `voice` stopped at its first query. After the merge the audit of T-10.1 is due again, scoped to `render.sh`, `extensions.conf` and the two Compose files of the tunnel.
 
 **The AI telephone answers calls at the pilot's router (T-10.1 step 2, 28.10.2026): go except two calls at once.** The product's Asterisk registered at the router as an IP telephone on the test number and the probe of step 1 stood where `voice` stands (`deploy/asterisk/docker-compose.line.yml`). The first calls ended at the router with 408: it sends a call to the registered Contact, and the address translation of Docker Desktop, WSL and Windows let only answers through. So the AI telephone got a WireGuard device of its own at the router, held by a container whose network Asterisk shares (`deploy/asterisk/wireguard/up.sh`: only the networks behind the router, never its DNS or a default route). The router then called from its public address, which the ACL refused until `ACCESS_ALSO` put it on the list (`render.sh`), and the answer went past the tunnel until it was routed through it. Maxi called twice from his mobile: answered, caller number, audio both ways with frames every 20 ms, keys 1 and 2. Not tested: two calls at once, because no second telephone was at hand; step 1 had three at once on our side. The probe's loudness count (3.6 s of 28 s for quiet speech) is a rough level, not speaking time; the ear's thresholds follow in T-10.7. The security audit of the files changed since `b7c8c36` (29.10.2026, on `a7df8f4`) found no P1 and no P2; of its five notes, the tunnel that is looked up once, blanks in `ACCESS_ALSO` and the hardening of the line file go to T-10.2 (docs/09 §5, #252). Numbers in docs/20 §11, handover in §10.
 
@@ -632,6 +634,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.35 · 29.10.2026:** T-10.2 prepared: the tunnel next to the product's voice, arrival log, audit notes 2 and 4
 - **v2.11.34 · 29.10.2026:** Security audit of T-10.1 step 2 on a7df8f4: no P1, no P2, five notes (docs/09 §5, #252)
 - **v2.11.33 · 28.10.2026:** T-10.1 step 2 at the pilot's router: go except two calls at once
 - **v2.11.32 · 28.10.2026:** T-11.6: the register mark on the tablet and a daily push for orders nobody typed into the register (migration 012)
