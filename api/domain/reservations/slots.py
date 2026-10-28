@@ -131,6 +131,17 @@ def check_slot(
         ]
 
     service = open_window_at(hours, local, DINEIN, zone)
+    if (
+        service is not None
+        and startable(local, service)
+        and _window_for(windows, local) is None
+    ):
+        # Open, but no capacity is kept for this time: a special opening on
+        # the day off, special hours beyond the windows. Not "full" from an
+        # empty restaurant; the team decides (repo audit 27.10.2026).
+        return SlotCheck(
+            available=False, team_callback=True, say=_say_team_decides_time(local)
+        )
     if service is not None and fits(local, service):
         # Free by the numbers. Whether the agent books it itself is the
         # restaurant's rule (#252): above the limit, and on the same day above
@@ -241,6 +252,9 @@ def _unavailable(chosen: list[datetime], say: str) -> SlotCheck:
 
 
 def _say_too_far_ahead(max_days: int) -> str:
+    if max_days == 0:
+        # 0 is today only (migration 007).
+        return "Tische reserviere ich nur für heute. Passt es Ihnen heute?"
     span = "einen Tag" if max_days == 1 else f"{max_days} Tage"
     return (
         f"So weit im Voraus kann ich noch keinen Tisch reservieren, höchstens {span} "
@@ -255,6 +269,14 @@ def _say_team_decides(party_size: int, today_only: bool) -> str:
     return (
         f"Für {spoken_party_size(party_size)}{today} kann ich den Tisch nicht selbst "
         "zusagen, das bespricht das Team persönlich mit Ihnen."
+    )
+
+
+def _say_team_decides_time(wish: datetime) -> str:
+    """As `_say_team_decides`, for a time without capacity."""
+    return (
+        f"Um {spoken_time(wish)} kann ich den Tisch nicht selbst zusagen, das "
+        "bespricht das Team persönlich mit Ihnen."
     )
 
 

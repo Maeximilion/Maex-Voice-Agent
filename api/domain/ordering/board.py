@@ -32,7 +32,7 @@ from api.domain.ordering.labels import (
     current_labels_many,
     labels_for_rows,
 )
-from api.domain.ordering.ticket import send_ticket
+from api.domain.ordering.ticket import last_reason, send_ticket
 from api.domain.status.config import ACTOR_TABLET
 from api.models import AuditLog, Order, OrderItem, ServiceConfig
 
@@ -362,7 +362,7 @@ def resend_order(
         # Anderes Tablet war schneller oder die Seite ist alt: nichts zu tun.
         session.commit()
         return order
-    send_ticket(session, order)
+    send_ticket(session, order, correction_reason=last_reason(session, order))
     order.handover_state = "pending"
     session.add(
         AuditLog(

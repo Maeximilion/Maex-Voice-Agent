@@ -38,9 +38,9 @@ Exception in the label set: `status: blocked` mirrors the blocked state that `do
 
 ## Labels and assignee at creation
 
-Issues: exactly one type label (`feature`, `chore`, `docs`, `test`, `refactor`, `bug`), one `stufe-N`, and `priority: *` when it is not medium. Set them once, at creation. Relabeling mid-task is board churn by another name.
+Issues: assignee `@me`, exactly one type label (`feature`, `chore`, `docs`, `test`, `refactor`, `bug`), one `stufe-N`, and `priority: *` when it is not medium. Set them once, at creation. Relabeling mid-task is board churn by another name.
 
-Pull requests: always `gh pr create --assignee @me --label feature`, where `feature` is replaced by the type label matching the Conventional Commit prefix of the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). The daily run fills in what is still missing, but a pull request should be complete from the start.
+Pull requests: always `gh pr create --assignee @me --label feature`, where `feature` is replaced by the type label matching the Conventional Commit prefix of the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). The workflow `pr-metadata` fills in what is still missing when the pull request opens, and the daily run catches the rest, but a pull request should be complete from the start.
 
 ## Maintenance runs daily, never per commit
 
