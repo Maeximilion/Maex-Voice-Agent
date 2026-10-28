@@ -144,6 +144,12 @@ class Settings(BaseSettings):
     # due, so a restart or a missed pass is caught up by the next one.
     retention_interval_seconds: float = Field(default=3600.0, gt=0, le=86400)
 
+    # Local hour from which the daily push about orders nobody marked as typed
+    # into the register goes out, once per business day (T-11.6, L18). From 5:
+    # a business day starts at 05:00 (core/time.py), an earlier hour would
+    # belong to the day before.
+    register_report_hour: int = Field(default=10, ge=5, le=23)
+
     @model_validator(mode="after")
     def _outbox_rows_outlive_their_payloads(self) -> Self:
         """The row delete of api/jobs/retention.py goes by age, whatever the

@@ -252,6 +252,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | idempotency_key | TEXT UNIQUE | |
 | pickup_code | TEXT NULL | Abholcode („A17"), ab `confirm` gesetzt (docs/04 confirm, docs/06 §3) |
 | handover_state | TEXT NULL | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse; leer, solange Entwurf, und leer nach `confirm` außerhalb von `primary`, bis das Team freigibt. `sent` setzt die Rückmeldung der Druckbrücke, `failed` heißt „Küche hat den Bon nicht" (Druckfehler oder 60 s unabgeholt) und wird wieder `sent`, sobald der Bon doch gedruckt ist (T-4.6, docs/04 §Küchenbon) |
+| register_entered_at | TIMESTAMPTZ NULL | when the team tapped „In Kasse eingegeben“ on the tablet (T-11.6, docs/09 §1 L18): the order is typed into the register, the only booking system with a TSE. Only after „Passt“ (`approved`); a correction clears it, because the register holds the state that was typed in. Empty on every order before migration 012. An order the guest said yes to without it stays on the tablet, red from the next business day on, and is counted in the daily push (`daily.report`) |
 
 **Datenbank prüft mit:** `total_cents = items_total_cents + delivery_fee_cents`, Beträge ≥ 0, Menge > 0. Ein Rechenfehler im Code scheitert an der Tabelle, nicht auf dem Bon.
 
@@ -383,5 +384,6 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 009 | `service_config.privacy_notice_address`: where the privacy notice is, named in the phone greeting (T-11.5, docs/09 L4); empty on existing rows, a text of white space only refused; the downgrade drops the column |
 | 010 | `consent_log`: one row per answer to a consent question of the agent (T-11.1, L13); the downgrade drops the table with every logged answer |
 | 011 | `service_config.max_concurrent_calls` (1) and `call_limit_windows`: the limit of concurrent AI calls (D16, T-10.9); the downgrade drops both with every limit set since |
+| 012 | `orders.register_entered_at`: the mark that the team typed an order into the register (T-11.6, L18); no backfill, so every older order counts as not typed in; the downgrade drops the column with every mark |
 | planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
 | planned, next free number | `eval_cases`, `eval_runs` |

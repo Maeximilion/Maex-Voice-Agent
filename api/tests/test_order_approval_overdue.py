@@ -247,7 +247,13 @@ def test_the_card_of_an_overdue_order_is_red_and_says_since_when(
 def test_the_card_of_an_order_that_just_came_in_stays_yellow(
     client, session, tenant_id
 ):
-    _order(session, tenant_id, yes=utcnow())
+    order_id = _order(session, tenant_id, yes=utcnow())
+    # Created today too: an order of an earlier business day nobody typed into
+    # the register is red for that alone (T-11.6).
+    session.execute(
+        update(Order).where(Order.id == order_id).values(created_at=utcnow())
+    )
+    session.commit()
 
     body = client.get("/gui/fragments/bestellungen").text
 

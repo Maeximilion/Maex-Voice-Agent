@@ -3,7 +3,7 @@
 import json
 import re
 import uuid
-from datetime import UTC
+from datetime import UTC, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,12 +12,14 @@ from sqlalchemy.orm import Session
 
 from api.db import get_db
 from api.domain.ordering import draft_order
+from api.domain.ordering.correction import RowEdit
 from api.events.types import ORDER_CONFIRMED
 from api.main import app
 from api.models import ItemOption, Order, OrderItem, OutboxEvent
 from api.tests.conftest import p95_ms
 from api.tests.test_domain_confirm_order import _confirm, _mode
 from api.tests.test_domain_draft_order import NOW, _call, _tenant, item, request
+from api.tests.test_domain_ordering_correction import _fix, _rows
 
 HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
 
@@ -77,6 +79,13 @@ def _state(html: str) -> str:
     return match.group(1).replace("&#34;", '"').replace("&quot;", '"')
 
 
+def _mark_url(html: str, order_id) -> str:
+    """The "In Kasse eingegeben" target of the card, with the state it shows."""
+    match = re.search(rf"/gui/bestellungen/{order_id}/in-kasse/[0-9a-f]{{32}}", html)
+    assert match, html
+    return match.group(0)
+
+
 def _fresh(db, order_id) -> Order:
     order = db.get(Order, order_id)
     db.refresh(order)
@@ -104,13 +113,16 @@ def test_leere_spalte(client, tenant_id):
     assert "Noch keine Bestellungen heute." in html
 
 
-def test_passt_gibt_frei_und_nimmt_die_karte_weg(client, db, tenant_id):
+def test_passt_gibt_frei_und_die_karte_wartet_auf_die_kasse(client, db, tenant_id):
     order_id = _order(db, tenant_id)
     assert client.post(f"/gui/bestellungen/{order_id}/passt").status_code == 403
 
     response = client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX)
     assert response.status_code == 200
-    assert f'data-id="{order_id}"' not in response.text
+    # Approved, not yet typed into the register (T-11.6): the card stays, its
+    # button is the mark now.
+    assert f'data-id="{order_id}"' in response.text
+    assert f"/gui/bestellungen/{order_id}/passt" not in response.text
     assert _fresh(db, order_id).status == "approved"
     events = db.scalars(
         select(OutboxEvent).where(OutboxEvent.event_type == ORDER_CONFIRMED)
@@ -329,3 +341,72 @@ def test_stand_ohne_zeilen_meldet_statt_500(client, db, tenant_id):
     )
     assert response.status_code == 409
     assert "durcheinander" in response.text
+
+
+# --- In Kasse eingegeben (T-11.6) -------------------------------------------------
+
+
+def test_after_passt_the_card_asks_for_the_register_mark(client, db, tenant_id):
+    order_id = _order(db, tenant_id)
+    html = client.get("/gui/fragments/bestellungen").text
+    # Waiting for "Passt": nothing to type in yet, so no mark button.
+    assert "In Kasse eingegeben</button>" not in html
+
+    html = client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX).text
+    assert f'data-id="{order_id}"' in html
+    assert "Noch nicht in der Kasse eingegeben" in html
+    url = _mark_url(html, order_id)
+
+    assert client.post(url).status_code == 403
+    response = client.post(url, headers=HX)
+    assert response.status_code == 200
+    assert f'data-id="{order_id}"' not in response.text
+    assert _fresh(db, order_id).register_entered_at is not None
+    # A second tablet with the old page: no error, the fresh column.
+    again = client.post(url, headers=HX)
+    assert again.status_code == 200 and "Das hat nicht geklappt" not in again.text
+
+
+def test_mark_with_the_card_from_before_a_correction_says_so(client, db, tenant_id):
+    order_id = _order(db, tenant_id)
+    html = client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX).text
+    stale = _mark_url(html, order_id)
+    [row] = _rows(db, order_id)
+    _fix(db, tenant_id, order_id, rows=(RowEdit(row.id, 3),))
+
+    html = client.post(stale, headers=HX).text
+    assert "inzwischen korrigiert" in html
+    assert _mark_url(html, order_id) != stale
+    assert _fresh(db, order_id).register_entered_at is None
+
+
+def test_unmarked_order_of_an_earlier_day_is_red_with_its_day(client, db, tenant_id):
+    order_id = _order(db, tenant_id)
+    client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX)
+    db.execute(
+        update(Order)
+        .where(Order.id == order_id)
+        .values(created_at=NOW - timedelta(days=2))
+    )
+    db.commit()
+
+    html = client.get("/gui/fragments/bestellungen").text
+    assert "Vom 13.09., nicht als in der Kasse markiert" in html
+    assert re.search(rf'class="card order overdue"\s+data-id="{order_id}"', html)
+    # Red by the day, not by a missed "Passt": the tablet rings no alarm for it.
+    assert "data-overdue" not in html
+
+
+def test_a_card_taken_after_midnight_names_its_business_day(client, db, tenant_id):
+    """00:30 belongs to the business day before (05:00), as in the daily push."""
+    order_id = _order(db, tenant_id)
+    client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX)
+    db.execute(
+        update(Order)
+        .where(Order.id == order_id)
+        .values(created_at=NOW.replace(hour=0, minute=30))
+    )
+    db.commit()
+
+    html = client.get("/gui/fragments/bestellungen").text
+    assert "Vom 14.09., nicht als in der Kasse markiert" in html

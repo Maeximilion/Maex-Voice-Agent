@@ -158,6 +158,30 @@
               },
               "renameOutput": true,
               "outputKey": "order.handover_failed"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "e582d7cc-79de-5cf1-9876-a814bb385cbe",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "daily.report",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "daily.report"
             }
           ]
         },
@@ -284,6 +308,42 @@
     },
     {
       "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "98223d67-f3c8-5dc1-b758-5e110c0e00ca",
+              "name": "title",
+              "value": "Kasse prüfen",
+              "type": "string"
+            },
+            {
+              "id": "44d80641-572a-5d62-9c2e-89954ad88153",
+              "name": "text",
+              "value": "={{ $json.payload.count }} {{ $json.payload.count === 1 ? 'Bestellung' : 'Bestellungen' }} ohne Haken „In Kasse eingegeben“, die älteste vom {{ DateTime.fromISO($json.payload.oldest_day).toFormat('dd.MM.') }}. Bitte am Tablet prüfen.",
+              "type": "string"
+            },
+            {
+              "id": "f11065a1-02d4-5158-9dd2-8684728b54a3",
+              "name": "priority",
+              "value": "normal",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "57c3f56b-ee20-55ec-87dc-d8bbc794d8f2",
+      "name": "Message: daily report",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        720
+      ]
+    },
+    {
+      "parameters": {
         "respondWith": "json",
         "responseBody": "={{ { \"status\": \"unknown_event_type\", \"event_type\": $json.event_type ?? null } }}",
         "options": {
@@ -296,7 +356,7 @@
       "typeVersion": 1.4,
       "position": [
         900,
-        760
+        880
       ]
     },
     {
@@ -436,6 +496,13 @@
         ],
         [
           {
+            "node": "Message: daily report",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Respond: unknown event type",
             "type": "main",
             "index": 0
@@ -492,6 +559,17 @@
         [
           {
             "node": "Respond: delivered",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message: daily report": {
+      "main": [
+        [
+          {
+            "node": "Send push to team",
             "type": "main",
             "index": 0
           }

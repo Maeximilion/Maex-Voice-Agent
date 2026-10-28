@@ -19,8 +19,9 @@ Event from dispatcher (webhook, POST /webhook/maex, basic auth)
 | `reservation.confirmed` | "Neue Reservierung": party size, date and time | `party_size`, `reserved_for` |
 | `callback.created` | "Rückruf offen": the reason in words, priority `high` for a complaint | `reason` |
 | `order.handover_failed` | "Bestellung nicht angekommen": pickup code and reason (first 120 characters), priority `high` | `pickup_code`, `reason` |
+| `daily.report` | "Kasse prüfen": how many orders of earlier business days nobody marked "In Kasse eingegeben" on the tablet, and the day of the oldest (T-11.6, docs/09 §1 L18); one a day from `REGISTER_REPORT_HOUR`, none when all are marked, queued again an hour after a failed one | `count`, `oldest_day` |
 
-`order.confirmed` never arrives here: the print bridge collects it (`api/events/types.py`, `KITCHEN`). `daily.report` has no branch because nothing produces it yet. `api/tests/test_n8n_workflow.py` fails as soon as an event type reaches n8n without a branch.
+`order.confirmed` never arrives here: the print bridge collects it (`api/events/types.py`, `KITCHEN`). `api/tests/test_n8n_workflow.py` fails as soon as an event type reaches n8n without a branch.
 
 The message texts are German because the team reads them. The time is shown in `Europe/Berlin`, pinned in the workflow settings so it does not depend on the environment of the n8n instance.
 

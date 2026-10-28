@@ -28,8 +28,9 @@ PRODUCER_DIRS = ("api", "scripts", "sim")
 
 # Listed in `types.ALL`, but no code enqueues it yet, so there is no payload to
 # build a message from. The moment a producer appears, the test below fails
-# until the workflow has a branch for it.
-WITHOUT_PRODUCER = {types.DAILY_REPORT}
+# until the workflow has a branch for it. Empty since T-11.6 produces
+# `daily.report` (api/jobs/daily_report.py).
+WITHOUT_PRODUCER: set[str] = set()
 
 PLACEHOLDER_PREFIX = "REPLACE ME"
 SECRET_NAME_RE = re.compile(
