@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.27
+> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.28
 
 ---
 
@@ -628,6 +628,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.28 · 28.10.2026:** T-3.7: the operations view goes on the tablet's home screen (manifest, icons); the check behind Caddy waits for the server
 - **v2.11.27 · 28.10.2026:** T-11.8 part 1: the manual procedure for requests of data subjects in docs/09 section 2; decisions of 28.10.2026 on #234, #252, #344, #319, #331, T-3.7 and T-11.8
 - **v2.11.26 · 28.10.2026:** Eval comparison counts only cases with identical files; the all-branches fetch prunes deleted branches (#207)
 - **v2.11.25 · 28.10.2026:** Stacked PRs: the merge gate passes a head that lacks only main's merge of the PR below it; Claude merges xhigh PRs once clean (Maxi, 28.10.2026)
