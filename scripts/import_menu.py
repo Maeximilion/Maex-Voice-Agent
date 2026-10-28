@@ -8,6 +8,8 @@ Aufruf:
 Erwartet im Ordner menu_items.csv und optional item_options.csv,
 item_allergens.csv, item_aliases.csv (UTF-8, Semikolon, Dezimalkomma). Der
 Ordner imports/ ist im .gitignore: echte Kartendaten kommen nicht ins Repo.
+A missing item_options.csv or item_aliases.csv leaves those as they are; a
+file with only its header row removes them for the dishes in the file.
 
 Exit code: 0 imported (or a dry run without errors), 1 check errors in the
 files, a database error before the commit (no connection, or a row the

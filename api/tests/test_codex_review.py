@@ -72,6 +72,27 @@ def test_a_review_running_for_more_than_15_minutes_is_stalled():
     assert codex_review.state(HEAD, body, [], NOW) == "stalled"
 
 
+def test_a_review_request_restarts_the_stall_clock():
+    """PR #381, 09a6cab: running since 22:55, `@codex review` at 23:17:30, the
+    clean review at 23:18:28. The old start must not name it stalled."""
+    body = _summary(HEAD, "running", since=NOW - timedelta(minutes=22))
+    asked = NOW - timedelta(minutes=1)
+    assert codex_review.state(HEAD, body, [], NOW, asked) == "running"
+    # Ten minutes after the request it is stalled again.
+    later = NOW + timedelta(minutes=10)
+    assert codex_review.state(HEAD, body, [], later, asked) == "stalled"
+    # A request older than the run changes nothing.
+    early = NOW - timedelta(minutes=30)
+    assert codex_review.state(HEAD, body, [], NOW, early) == "stalled"
+
+
+def test_look_times_a_running_review_from_the_newest_request():
+    now = datetime(2026, 10, 26, 10, 5, tzinfo=UTC)
+    body = _summary(HEAD, "running", since=now - timedelta(minutes=30))
+    head, current, _ = codex_review.look(371, gh=_gh(body, []), gq=_no_threads, now=now)
+    assert (head, current) == (HEAD, "running")  # asked at 10:01:14, 4 minutes ago
+
+
 def test_a_review_by_someone_else_on_the_head_is_no_codex_result():
     body = _summary(HEAD, "running")
     reviews = [_review(HEAD, login="Maeximilion")]

@@ -173,6 +173,91 @@ def test_letzter_fehlversuch_ist_endgueltig(session, tenant_id, order_id):
     assert _order(session, order_id).handover_state == "failed"
 
 
+# --- KORREKTUR when the bridge may hold a slip (repo audit 27.10.2026, finding 3) --
+
+
+def test_correction_after_a_lost_ack_says_korrektur(session, tenant_id, order_id):
+    """The bridge prints, then the network drops before its ack; the watchdog
+    turns the card red. The slip is on paper, so the corrected one replaces
+    it: without "KORREKTUR" the order would be typed into the register twice."""
+    claim_tickets(session, tenant_id, _now())
+    assert sweep(session, _now(LEASE_SECONDS + PICKUP_TIMEOUT_SECONDS + 2)) == 1
+    assert _order(session, order_id).handover_state == "failed"
+
+    _fix_quantity(session, tenant_id, order_id)
+
+    _old, new = _events(session, order_id)
+    assert new.payload["correction_reason"] == "wrong_quantity"
+
+
+def test_correction_after_a_reported_print_error_is_a_first_slip(
+    session, tenant_id, order_id
+):
+    [ticket] = claim_tickets(session, tenant_id, _now())
+    ack_ticket(
+        session, tenant_id, uuid.UUID(ticket["id"]), False, _now(), "Papier leer"
+    )
+
+    _fix_quantity(session, tenant_id, order_id)
+
+    _old, new = _events(session, order_id)
+    assert new.payload["correction_reason"] is None
+
+
+def test_correction_after_an_older_printed_slip_says_korrektur(
+    session, tenant_id, order_id
+):
+    """The first slip printed, the corrected one failed with a print error:
+    the card is red, but the first slip is still at the register."""
+    [first] = claim_tickets(session, tenant_id, _now())
+    ack_ticket(session, tenant_id, uuid.UUID(first["id"]), True, _now())
+    _fix_quantity(session, tenant_id, order_id)
+    [second] = claim_tickets(session, tenant_id, _now())
+    ack_ticket(
+        session, tenant_id, uuid.UUID(second["id"]), False, _now(), "Papier leer"
+    )
+    assert _order(session, order_id).handover_state == "failed"
+
+    _fix_quantity(session, tenant_id, order_id)
+
+    *_, newest = _events(session, order_id)
+    assert newest.payload["revision"] == 2
+    assert newest.payload["correction_reason"] == "wrong_quantity"
+
+
+def test_resending_a_corrected_slip_keeps_korrektur(session, tenant_id, order_id):
+    """ "Nochmal senden" on the red card of a corrected order: the first slip
+    is at the register, so the resent one still replaces it."""
+    [first] = claim_tickets(session, tenant_id, _now())
+    ack_ticket(session, tenant_id, uuid.UUID(first["id"]), True, _now())
+    _fix_quantity(session, tenant_id, order_id)
+    [second] = claim_tickets(session, tenant_id, _now())
+    ack_ticket(
+        session, tenant_id, uuid.UUID(second["id"]), False, _now(), "Papier leer"
+    )
+
+    resend_order(session, tenant_id, order_id)
+
+    *_, resent = _events(session, order_id)
+    assert resent.id != uuid.UUID(second["id"])
+    assert resent.payload["revision"] == 1
+    assert resent.payload["correction_reason"] == "wrong_quantity"
+
+
+def test_a_pickup_clears_the_error_of_the_attempt_before(session, tenant_id, order_id):
+    """`last_error` is the answer to the latest pickup: none yet means the
+    bridge may have printed it."""
+    [ticket] = claim_tickets(session, tenant_id, _now())
+    ack_ticket(
+        session, tenant_id, uuid.UUID(ticket["id"]), False, _now(), "Papier leer"
+    )
+
+    claim_tickets(session, tenant_id, _now(6))
+
+    [event] = _events(session, order_id)
+    assert (event.attempts, event.last_error) == (2, None)
+
+
 # --- Revision: nie ein ueberholter Stand ----------------------------------------
 
 

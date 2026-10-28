@@ -564,6 +564,54 @@ def test_sondertag_verschiebt_beginn_und_letzten_termin(session, tenant_id):
     assert not _is_free(session, tenant_id, berlin(DIENSTAG, 20, 0))
 
 
+def _special_opening(session, tenant_id, day: date, opens: time, closes: time):
+    session.add(
+        SpecialDay(
+            tenant_id=tenant_id,
+            date=day,
+            closed=False,
+            opens_at=opens,
+            closes_at=closes,
+        )
+    )
+    session.commit()
+
+
+TEAM_DECIDES_AT_SEVEN = (
+    "Um sieben Uhr kann ich den Tisch nicht selbst zusagen, das bespricht das "
+    "Team persönlich mit Ihnen."
+)
+
+
+def test_a_special_opening_on_the_day_off_goes_to_the_team(session, tenant_id):
+    """Repo audit of 27.10.2026, finding 4: open by a special day, but no
+    capacity is kept for the day off. The team decides, the guest never hears
+    "nichts frei" from an empty restaurant."""
+    _special_opening(session, tenant_id, date(2026, 9, 21), time(12), time(22))
+
+    result = check_slot(session, tenant_id, berlin(date(2026, 9, 21), 19), 2, now=NOW)
+
+    assert (result.available, result.team_callback) == (False, True)
+    assert result.alternatives == []
+    assert result.say == TEAM_DECIDES_AT_SEVEN
+
+
+@pytest.mark.parametrize("hh", [10, 15])
+def test_special_hours_beyond_the_capacity_go_to_the_team(session, tenant_id, hh):
+    # Capacity 11:30-14:00 and 17:00-22:00; the special day opens 09:00-22:00.
+    _special_opening(session, tenant_id, DIENSTAG, time(9), time(22))
+
+    result = check_slot(session, tenant_id, berlin(DIENSTAG, hh), 2, now=NOW)
+
+    assert (result.available, result.team_callback) == (False, True)
+
+
+def test_a_special_opening_inside_the_capacity_is_booked(session, tenant_id):
+    _special_opening(session, tenant_id, DIENSTAG, time(9), time(22))
+
+    assert _is_free(session, tenant_id, berlin(DIENSTAG, 19))
+
+
 def test_alternativen_liegen_nie_in_der_vergangenheit(session, tenant_id):
     spaeter = berlin(DIENSTAG, 21, 35)
     result = check_slot(session, tenant_id, berlin(DIENSTAG, 21, 45), 2, now=spaeter)
@@ -751,6 +799,18 @@ def test_the_horizon_counts_days_of_the_restaurant_not_hours(session, tenant_id)
     assert check_slot(session, tenant_id, berlin(SAMSTAG, 21), 2, now=late).available
     fifth = check_slot(session, tenant_id, berlin(date(2026, 9, 20), 12), 2, now=late)
     assert fifth.available is False and "höchstens 4 Tage" in fifth.say
+
+
+def test_a_horizon_of_zero_days_takes_only_today(session, tenant_id):
+    """Repo audit of 27.10.2026, finding 9: 0 means today only (migration
+    007), not "höchstens 0 Tage im Voraus"."""
+    _set_config(session, tenant_id, reservation_max_days_ahead=0)
+
+    assert check_slot(session, tenant_id, berlin(DIENSTAG, 19), 2, now=NOW).available
+    tomorrow = check_slot(session, tenant_id, berlin(date(2026, 9, 16), 19), 2, now=NOW)
+
+    assert tomorrow.available is False
+    assert tomorrow.say == "Tische reserviere ich nur für heute. Passt es Ihnen heute?"
 
 
 def test_beyond_the_horizon_a_large_party_is_not_taken_either(session, tenant_id):

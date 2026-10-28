@@ -478,7 +478,9 @@ def test_korrektur_nach_fehlgeschlagener_uebergabe_ist_erster_bon(
     session.execute(
         update(OutboxEvent)
         .where(OutboxEvent.payload["order_id"].astext == str(order_id))
-        .values(status="failed", attempts=4)
+        # Every pickup answered with a print error: nothing is on paper. A
+        # pickup without an answer may be (test_domain_ordering_handover.py).
+        .values(status="failed", attempts=4, last_error="Papier leer")
     )
     session.execute(
         update(Order).where(Order.id == order_id).values(handover_state="failed")
