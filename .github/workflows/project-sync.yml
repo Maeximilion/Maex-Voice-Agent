@@ -28,6 +28,12 @@ concurrency:
 
 jobs:
   sync:
+    # No secret in a run for a fork pull request (AGENTS.md, Codex on d09ede7):
+    # those are closed by outside-prs.yml, and the daily run catches the board.
+    # Dependabot's branches live in this repository and still run.
+    if: >-
+      github.event_name == 'issues' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
