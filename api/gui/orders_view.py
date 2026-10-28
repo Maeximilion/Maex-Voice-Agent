@@ -233,10 +233,16 @@ def apply_op(
             line = _line(plan, parts[1], int(parts[2]))
             group = line.groups[int(parts[3])]
             option = group.options[int(parts[4])]
-            chosen = [c for c in target.get("o") or [] if c[0] != group.group]
-            already = [group.group, option.name] in (target.get("o") or [])
-            if not already or group.required:
-                chosen.append([group.group, option.name])
+            picked = [group.group, option.name]
+            current = target.get("o") or []
+            if group.required:
+                # One choice: the tap replaces it.
+                chosen = [c for c in current if c[0] != group.group] + [picked]
+            elif picked in current:
+                chosen = [c for c in current if c != picked]
+            else:
+                # Any number of extras, as the agent may take them (audit 27.10.2026).
+                chosen = [*current, picked]
             target["o"] = chosen
             return None
     except (IndexError, ValueError, KeyError) as exc:

@@ -14,7 +14,7 @@ from api.db import get_db
 from api.domain.ordering import draft_order
 from api.events.types import ORDER_CONFIRMED
 from api.main import app
-from api.models import Order, OrderItem, OutboxEvent
+from api.models import ItemOption, Order, OrderItem, OutboxEvent
 from api.tests.conftest import p95_ms
 from api.tests.test_domain_confirm_order import _confirm, _mode
 from api.tests.test_domain_draft_order import NOW, _call, _tenant, item, request
@@ -201,6 +201,45 @@ def test_korrektur_pflichtauswahl_per_tap(client, db, tenant_id):
     assert "Gewählt: Huhn" in html
     assert "Fehlt noch" not in html
     assert json.loads(_state(html))["a"][0]["o"] == [["Fleisch", "Huhn"]]
+
+
+def test_korrektur_two_extras_of_one_optional_group_per_tap(client, db, tenant_id):
+    """Repo audit of 27.10.2026, finding 8: a tap on an optional choice adds
+    or removes that one choice; only a required group keeps one."""
+    db.add(
+        ItemOption(
+            menu_item_id=item(db, tenant_id, "47"),
+            group_name="Sauce",
+            option_name="Chili",
+            price_delta_cents=30,
+        )
+    )
+    db.commit()
+    order_id = _order(db, tenant_id)
+    base = f"/gui/bestellungen/{order_id}/korrigieren"
+
+    def tap(html: str, op: str) -> str:
+        return client.post(
+            f"{base}/vorschau", data={"state": _state(html), "op": op}, headers=HX
+        ).text
+
+    html = client.get(base).text
+    html = client.post(
+        f"{base}/vorschau",
+        data={"state": _state(html), "op": "number", "number": "47"},
+        headers=HX,
+    ).text
+    # Group 0 is Fleisch (Ente, Huhn), group 1 is Sauce with both choices.
+    for op in ("opt:a:0:0:0", "opt:a:0:1:0", "opt:a:0:1:1"):
+        html = tap(html, op)
+    chosen = {tuple(c) for c in json.loads(_state(html))["a"][0]["o"]}
+    assert chosen == {("Fleisch", "Ente"), ("Sauce", "Erdnuss"), ("Sauce", "Chili")}
+
+    html = tap(html, "opt:a:0:1:0")  # the first sauce off again, the other stays
+
+    after = [tuple(c) for c in json.loads(_state(html))["a"][0]["o"]]
+    assert ("Fleisch", "Ente") in after
+    assert len([c for c in after if c[0] == "Sauce"]) == 1
 
 
 def test_card_shows_the_note_of_the_whole_order(client, db, tenant_id):

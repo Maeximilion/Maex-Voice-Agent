@@ -543,9 +543,12 @@ def _new_line(
 def _options(
     item: MenuItem, offered: list[OptionGroup], choices: tuple[Choice, ...]
 ) -> list[dict]:
-    """Gewaehlte Optionen in der Form von order_items.options, je Gruppe hoechstens eine."""
+    """The chosen options in the form of order_items.options: one in a
+    required group, each choice of an optional group at most once - the rule
+    of draft_order (validation.py). Overwriting a second extra of the same
+    group dropped a paid one in silence (repo audit 27.10.2026)."""
     by_group = {option_key(g.group): g for g in offered}
-    picked: dict[str, dict] = {}
+    picked: dict[str, list[dict]] = {}
     for choice in choices:
         group = by_group.get(option_key(choice.group))
         opt = (
@@ -564,12 +567,21 @@ def _options(
             raise InvalidInput(
                 f"Option {choice.group}/{choice.name} gibt es an {item.number} nicht"
             )
-        picked[option_key(group.group)] = {
-            "group": group.group,
-            "option": opt.name,
-            "price_delta_cents": opt.price_delta_cents,
-        }
-    options = [picked[k] for k in by_group if k in picked]
+        chosen = picked.setdefault(option_key(group.group), [])
+        if any(c["option"] == opt.name for c in chosen):
+            continue
+        if group.required and chosen:
+            raise InvalidInput(
+                f"Pflichtgruppe {group.group} an {item.number} mehrfach gewaehlt"
+            )
+        chosen.append(
+            {
+                "group": group.group,
+                "option": opt.name,
+                "price_delta_cents": opt.price_delta_cents,
+            }
+        )
+    options = [o for k in by_group for o in picked.get(k, [])]
     if row_cents(item.price_cents, options) < 0:
         raise InvalidInput(f"Preis von {item.number} mit Optionen negativ")
     return options
