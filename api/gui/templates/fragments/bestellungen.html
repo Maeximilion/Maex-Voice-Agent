@@ -53,9 +53,9 @@
               hx-target="#bestellungen-liste" hx-swap="innerHTML">{{ "Passt, Zettel an die Kasse" if o.awaiting else "Passt" }}</button>
       {% endif %}
       {% if o.can_mark %}
-      {# The revision the card shows: a correction on another tablet in the
+      {# The state the card shows: a correction on another tablet in the
          meantime is refused, the register holds what was typed (T-11.6). #}
-      <button class="primary" hx-post="/gui/bestellungen/{{ o.id }}/in-kasse/{{ o.revision }}"
+      <button class="primary" hx-post="/gui/bestellungen/{{ o.id }}/in-kasse/{{ o.version }}"
               hx-target="#bestellungen-liste" hx-swap="innerHTML">In Kasse eingegeben</button>
       {% endif %}
       <button hx-get="/gui/bestellungen/{{ o.id }}/korrigieren"

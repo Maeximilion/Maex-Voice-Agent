@@ -14,6 +14,7 @@ from api.domain.ordering.board import (
     mark_entered,
     new_orders_change_token,
     resend_order,
+    version_of,
 )
 from api.events.types import ORDER_CONFIRMED
 from api.models import AuditLog, Order, OutboxEvent
@@ -71,10 +72,15 @@ def _set(session, order_id, **values) -> None:
     session.commit()
 
 
+def _seen(session, order_id) -> str:
+    """The state a tablet showing the order now would send with its mark."""
+    return version_of(session, session.get(Order, order_id))
+
+
 def _typed_in(session, tenant_id, order_id) -> None:
     """ "Passt", then "In Kasse eingegeben": nothing left to do (T-11.6)."""
     approve_order(session, tenant_id, order_id)
-    mark_entered(session, tenant_id, order_id, 0)
+    mark_entered(session, tenant_id, order_id, _seen(session, order_id))
 
 
 def _ids(session, tenant_id, now=NOW) -> list[uuid.UUID]:
@@ -245,7 +251,7 @@ def test_token_aendert_sich_bei_neu_passt_und_rot(session, tenant_id, call_id):
 
     approve_order(session, tenant_id, order_id)
     assert new_orders_change_token(session, tenant_id, TZ, NOW) != neu
-    mark_entered(session, tenant_id, order_id, 0)
+    mark_entered(session, tenant_id, order_id, _seen(session, order_id))
     abgehakt = new_orders_change_token(session, tenant_id, TZ, NOW)
     assert abgehakt == leer
 
@@ -268,6 +274,6 @@ def test_wartende_bestellung_bleibt_ueber_den_tageswechsel(session, tenant_id, c
     assert _ids(session, tenant_id) == [wartet, hat_bon]
     approve_order(session, tenant_id, wartet)
     assert _ids(session, tenant_id) == [wartet, hat_bon]
-    mark_entered(session, tenant_id, wartet, 0)
+    mark_entered(session, tenant_id, wartet, _seen(session, wartet))
     _typed_in(session, tenant_id, hat_bon)
     assert _ids(session, tenant_id) == []

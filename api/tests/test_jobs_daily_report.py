@@ -15,7 +15,7 @@ from api.jobs.daily_report import REGISTER_UNMARKED, report
 from api.models import Order, OutboxEvent, Tenant
 from api.tests.test_domain_confirm_order import _mode
 from api.tests.test_domain_draft_order import NOW, _call, _tenant
-from api.tests.test_domain_ordering_board import _order
+from api.tests.test_domain_ordering_board import _order, _seen
 
 DAY = timedelta(days=1)
 
@@ -89,7 +89,9 @@ def test_no_report_before_the_hour(session, tenant_id, call_id, local):
 def test_no_report_when_every_order_is_marked(session, tenant_id, call_id):
     order_id = _order(session, tenant_id, call_id, now=NOW - 2 * DAY)
     approve_order(session, tenant_id, order_id)
-    mark_entered(session, tenant_id, order_id, 0, now=NOW - 2 * DAY)
+    mark_entered(
+        session, tenant_id, order_id, _seen(session, order_id), now=NOW - 2 * DAY
+    )
     cancelled = _order(session, tenant_id, call_id, now=NOW - 2 * DAY)
     session.execute(
         update(Order).where(Order.id == cancelled).values(status="cancelled")

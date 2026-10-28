@@ -480,7 +480,7 @@ def resend_order_tap(
 
 
 @router.post(
-    "/bestellungen/{order_id}/in-kasse/{revision}",
+    "/bestellungen/{order_id}/in-kasse/{version}",
     response_class=HTMLResponse,
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
@@ -488,14 +488,14 @@ def resend_order_tap(
 def register_mark_tap(
     request: Request,
     order_id: uuid.UUID,
-    revision: int,
+    version: str,
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """ "In Kasse eingegeben" (T-11.6). No question back, like "Passt"."""
     return _order_tap(
         request,
         session,
-        lambda t: order_board.mark_entered(session, t, order_id, revision),
+        lambda t: order_board.mark_entered(session, t, order_id, version),
     )
 
 

@@ -6,7 +6,7 @@ import uuid
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import create_engine, select, text, update
+from sqlalchemy import create_engine, delete, select, text, update
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
@@ -22,10 +22,10 @@ from api.domain.ordering.board import (
 )
 from api.domain.ordering.correction import RowEdit
 from api.domain.ordering.labels import ACTION_CORRECTED
-from api.models import AuditLog, Order
+from api.models import AuditLog, Order, OrderItem
 from api.tests.test_domain_confirm_order import _mode
 from api.tests.test_domain_draft_order import NOW, _call, _tenant
-from api.tests.test_domain_ordering_board import TZ, _ids, _order
+from api.tests.test_domain_ordering_board import TZ, _ids, _order, _seen
 from api.tests.test_domain_ordering_correction import _fix, _rows
 from api.tests.test_gui_orders import _fresh
 
@@ -71,19 +71,22 @@ def test_card_stays_after_passt_until_marked(session, tenant_id, call_id):
     assert card.order_id == order_id and card.status == "approved"
     assert card.register_entered_at is None and not card.register_late
 
-    mark_entered(session, tenant_id, order_id, 0, now=NOW)
+    mark_entered(session, tenant_id, order_id, _seen(session, order_id), now=NOW)
     assert _ids(session, tenant_id) == []
     assert _fresh(session, order_id).register_entered_at == NOW
     [audit] = _marks(session, order_id)
     assert audit.actor == "gui:tablet"
-    assert audit.payload == {"call_id": str(call_id), "revision": 0}
+    assert audit.payload == {
+        "call_id": str(call_id),
+        "version": _seen(session, order_id),
+    }
 
 
 def test_mark_twice_or_on_two_tablets_is_one_mark(session, tenant_id, call_id):
     order_id = _order(session, tenant_id, call_id)
     approve_order(session, tenant_id, order_id)
-    mark_entered(session, tenant_id, order_id, 0, now=NOW)
-    mark_entered(session, tenant_id, order_id, 0, now=NOW + DAY)
+    mark_entered(session, tenant_id, order_id, _seen(session, order_id), now=NOW)
+    mark_entered(session, tenant_id, order_id, _seen(session, order_id), now=NOW + DAY)
 
     assert _fresh(session, order_id).register_entered_at == NOW
     assert len(_marks(session, order_id)) == 1
@@ -98,7 +101,7 @@ def test_mark_before_passt_or_on_a_cancelled_order_is_refused(
     session.commit()
 
     with pytest.raises(Conflict):
-        mark_entered(session, tenant_id, order_id, 0, now=NOW)
+        mark_entered(session, tenant_id, order_id, _seen(session, order_id), now=NOW)
     session.rollback()
     assert _fresh(session, order_id).register_entered_at is None
     assert _marks(session, order_id) == []
@@ -110,7 +113,7 @@ def test_mark_of_another_tenant_is_not_found(session, tenant_id, call_id):
     other = _tenant(session, "Anderer Betrieb")
 
     with pytest.raises(NotFound):
-        mark_entered(session, other, order_id, 0, now=NOW)
+        mark_entered(session, other, order_id, _seen(session, order_id), now=NOW)
     session.rollback()
     assert _fresh(session, order_id).register_entered_at is None
 
@@ -120,7 +123,7 @@ def test_correction_clears_the_mark_and_brings_the_card_back(
 ):
     order_id = _order(session, tenant_id, call_id)
     approve_order(session, tenant_id, order_id)
-    mark_entered(session, tenant_id, order_id, 0, now=NOW)
+    mark_entered(session, tenant_id, order_id, _seen(session, order_id), now=NOW)
     [row] = _rows(session, order_id)
 
     _fix(session, tenant_id, order_id, rows=(RowEdit(row.id, 3),))
@@ -128,7 +131,7 @@ def test_correction_clears_the_mark_and_brings_the_card_back(
     assert _fresh(session, order_id).register_entered_at is None
     [card] = list_new(session, tenant_id, TZ, NOW)
     assert card.order_id == order_id
-    assert card.revision == 1 and card.corrected == "wrong_quantity"
+    assert card.corrected == "wrong_quantity"
 
 
 def test_tablet_with_the_card_from_before_a_correction_cannot_mark(
@@ -136,17 +139,40 @@ def test_tablet_with_the_card_from_before_a_correction_cannot_mark(
 ):
     order_id = _order(session, tenant_id, call_id)
     approve_order(session, tenant_id, order_id)
+    [card] = list_new(session, tenant_id, TZ, NOW)
     [row] = _rows(session, order_id)
     _fix(session, tenant_id, order_id, rows=(RowEdit(row.id, 3),))
 
     with pytest.raises(Conflict) as stale:
-        mark_entered(session, tenant_id, order_id, 0, now=NOW)
+        mark_entered(session, tenant_id, order_id, card.version, now=NOW)
     assert stale.value.say == CORRECTED_SINCE
     session.rollback()
     assert _fresh(session, order_id).register_entered_at is None
 
-    mark_entered(session, tenant_id, order_id, 1, now=NOW)
+    [fresh] = list_new(session, tenant_id, TZ, NOW)
+    assert fresh.version != card.version
+    mark_entered(session, tenant_id, order_id, fresh.version, now=NOW)
     assert _fresh(session, order_id).register_entered_at == NOW
+
+
+def test_a_stale_card_stays_refused_after_the_audit_log_expires(
+    session, tenant_id, call_id
+):
+    """The deletion job removes audit entries after RETENTION_AUDIT_LOG_DAYS
+    (one day at the least): a count of corrections would fall back to the
+    stale card's, the lines themselves do not (Codex #423)."""
+    order_id = _order(session, tenant_id, call_id)
+    approve_order(session, tenant_id, order_id)
+    [card] = list_new(session, tenant_id, TZ, NOW)
+    [row] = _rows(session, order_id)
+    _fix(session, tenant_id, order_id, rows=(RowEdit(row.id, 3),))
+    session.execute(delete(AuditLog).where(AuditLog.action == ACTION_CORRECTED))
+    session.commit()
+
+    with pytest.raises(Conflict):
+        mark_entered(session, tenant_id, order_id, card.version, now=NOW)
+    session.rollback()
+    assert _fresh(session, order_id).register_entered_at is None
 
 
 def test_unmarked_order_of_an_earlier_day_stays_red_and_first(
@@ -159,7 +185,7 @@ def test_unmarked_order_of_an_earlier_day_stays_red_and_first(
     unapproved = _order(session, tenant_id, call_id, now=NOW - 2 * DAY)
     marked = _order(session, tenant_id, call_id, now=NOW - 3 * DAY)
     approve_order(session, tenant_id, marked)
-    mark_entered(session, tenant_id, marked, 0, now=NOW - 3 * DAY)
+    mark_entered(session, tenant_id, marked, _seen(session, marked), now=NOW - 3 * DAY)
 
     cards = list_new(session, tenant_id, TZ, NOW)
     assert [c.order_id for c in cards] == [old, unapproved, today]
@@ -169,7 +195,7 @@ def test_unmarked_order_of_an_earlier_day_stays_red_and_first(
 def test_failed_slip_stays_after_the_mark(session, tenant_id, call_id):
     order_id = _order(session, tenant_id, call_id)
     approve_order(session, tenant_id, order_id)
-    mark_entered(session, tenant_id, order_id, 0, now=NOW)
+    mark_entered(session, tenant_id, order_id, _seen(session, order_id), now=NOW)
     session.execute(
         update(Order).where(Order.id == order_id).values(handover_state="failed")
     )
@@ -188,7 +214,7 @@ def test_unmarked_before_counts_only_earlier_unmarked_orders(
     approve_order(session, tenant_id, second)
     marked = _order(session, tenant_id, call_id, now=NOW - 2 * DAY)
     approve_order(session, tenant_id, marked)
-    mark_entered(session, tenant_id, marked, 0, now=NOW)
+    mark_entered(session, tenant_id, marked, _seen(session, marked), now=NOW)
     cancelled = _order(session, tenant_id, call_id, now=NOW - 3 * DAY)
     deleted = _order(session, tenant_id, call_id, now=NOW - 3 * DAY)
     session.execute(
@@ -212,25 +238,27 @@ def test_change_token_follows_the_mark_and_the_day(session, tenant_id, call_id):
     # The next business day turns the card red without any row changing.
     assert new_orders_change_token(session, tenant_id, TZ, NOW + DAY) != before
 
-    mark_entered(session, tenant_id, order_id, 0, now=NOW)
+    mark_entered(session, tenant_id, order_id, _seen(session, order_id), now=NOW)
     assert new_orders_change_token(session, tenant_id, TZ, NOW) != before
 
 
 def test_a_mark_waiting_on_a_correction_sees_it_and_is_refused(
     session, tenant_id, call_id, migrated_db_url
 ):
-    """The revision check holds only because the mark reads the count after it
-    has the order's row lock: a correction that commits while the mark waits
-    must be seen (READ COMMITTED), or a stale card marks the new state."""
+    """The check holds only because the mark reads the lines after it has the
+    order's row lock: a correction that commits while the mark waits must be
+    seen (READ COMMITTED), or a stale card marks the new state."""
     order_id = _order(session, tenant_id, call_id)
     approve_order(session, tenant_id, order_id)
+    seen = _seen(session, order_id)
+    [row] = _rows(session, order_id)
     engine = create_engine(migrated_db_url)
     outcome: list[BaseException | None] = []
 
     def tap() -> None:
         with Session(engine) as tablet:
             try:
-                mark_entered(tablet, tenant_id, order_id, 0, now=NOW)
+                mark_entered(tablet, tenant_id, order_id, seen, now=NOW)
                 outcome.append(None)
             except BaseException as exc:  # noqa: BLE001 - handed to the test
                 outcome.append(exc)
@@ -243,15 +271,9 @@ def test_a_mark_waiting_on_a_correction_sees_it_and_is_refused(
             thread = threading.Thread(target=tap)
             thread.start()
             _wait_for_a_lock(session)
-            correction.add(
-                AuditLog(
-                    tenant_id=tenant_id,
-                    actor="gui:tablet",
-                    action=ACTION_CORRECTED,
-                    entity="order",
-                    entity_id=order_id,
-                    payload={"call_id": str(call_id), "reason": "wrong_quantity"},
-                )
+            # What apply_correction changes under the same lock: the lines.
+            correction.execute(
+                update(OrderItem).where(OrderItem.id == row.id).values(quantity=3)
             )
             correction.commit()
         thread.join(timeout=10)
@@ -279,32 +301,22 @@ def _wait_for_a_lock(session) -> None:
     raise AssertionError("the mark never waited on the order's lock")
 
 
-def test_a_card_torn_by_a_correction_carries_the_old_revision(
+def test_a_card_torn_by_a_correction_names_the_lines_it_shows(
     session, tenant_id, call_id, migrated_db_url, monkeypatch
 ):
     """A correction that commits while the column is read, after the order's
     lines: the card shows the old lines, so its mark must be refused
-    (ultrareview #423). The count is read first, so it is the old one."""
+    (ultrareview #423). The fingerprint comes from the very rows on the card."""
     order_id = _order(session, tenant_id, call_id)
     approve_order(session, tenant_id, order_id)
+    [row] = _rows(session, order_id)
     real = board.current_labels_many
     engine = create_engine(migrated_db_url)
 
     def correction_commits_now(*args, **kwargs):
         with Session(engine) as tablet:
-            tablet.add(
-                AuditLog(
-                    tenant_id=tenant_id,
-                    actor="gui:tablet",
-                    action=ACTION_CORRECTED,
-                    entity="order",
-                    entity_id=order_id,
-                    payload={
-                        "call_id": str(call_id),
-                        "reason": "wrong_quantity",
-                        "labels": [["23", "Frühlingsrollen"]],
-                    },
-                )
+            tablet.execute(
+                update(OrderItem).where(OrderItem.id == row.id).values(quantity=3)
             )
             tablet.commit()
         return real(*args, **kwargs)
@@ -316,6 +328,6 @@ def test_a_card_torn_by_a_correction_carries_the_old_revision(
         engine.dispose()
     session.rollback()
 
-    assert card.revision == 0
+    assert [line.quantity for line in card.lines] == [2]
     with pytest.raises(Conflict):
-        mark_entered(session, tenant_id, order_id, card.revision, now=NOW)
+        mark_entered(session, tenant_id, order_id, card.version, now=NOW)

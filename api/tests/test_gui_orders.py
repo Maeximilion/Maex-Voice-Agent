@@ -79,6 +79,13 @@ def _state(html: str) -> str:
     return match.group(1).replace("&#34;", '"').replace("&quot;", '"')
 
 
+def _mark_url(html: str, order_id) -> str:
+    """The "In Kasse eingegeben" target of the card, with the state it shows."""
+    match = re.search(rf"/gui/bestellungen/{order_id}/in-kasse/[0-9a-f]{{32}}", html)
+    assert match, html
+    return match.group(0)
+
+
 def _fresh(db, order_id) -> Order:
     order = db.get(Order, order_id)
     db.refresh(order)
@@ -348,9 +355,8 @@ def test_after_passt_the_card_asks_for_the_register_mark(client, db, tenant_id):
     html = client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX).text
     assert f'data-id="{order_id}"' in html
     assert "Noch nicht in der Kasse eingegeben" in html
-    assert f"/gui/bestellungen/{order_id}/in-kasse/0" in html
+    url = _mark_url(html, order_id)
 
-    url = f"/gui/bestellungen/{order_id}/in-kasse/0"
     assert client.post(url).status_code == 403
     response = client.post(url, headers=HX)
     assert response.status_code == 200
@@ -363,13 +369,14 @@ def test_after_passt_the_card_asks_for_the_register_mark(client, db, tenant_id):
 
 def test_mark_with_the_card_from_before_a_correction_says_so(client, db, tenant_id):
     order_id = _order(db, tenant_id)
-    client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX)
+    html = client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX).text
+    stale = _mark_url(html, order_id)
     [row] = _rows(db, order_id)
     _fix(db, tenant_id, order_id, rows=(RowEdit(row.id, 3),))
 
-    html = client.post(f"/gui/bestellungen/{order_id}/in-kasse/0", headers=HX).text
+    html = client.post(stale, headers=HX).text
     assert "inzwischen korrigiert" in html
-    assert f"/gui/bestellungen/{order_id}/in-kasse/1" in html
+    assert _mark_url(html, order_id) != stale
     assert _fresh(db, order_id).register_entered_at is None
 
 

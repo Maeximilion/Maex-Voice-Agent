@@ -106,7 +106,7 @@ def _register(order: BoardOrder, tz_name: str) -> dict:
         "register": register,
         "can_mark": order.status in MARKABLE,
         "register_late": order.register_late,
-        "revision": order.revision,
+        "version": order.version,
     }
 
 

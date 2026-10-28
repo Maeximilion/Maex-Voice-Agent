@@ -30,12 +30,13 @@ from sqlalchemy.orm import Session
 from api.core.errors import Conflict, NotFound
 from api.core.time import business_day, business_day_bounds_utc, utcnow
 from api.domain.ordering.confirm import ACTION_CONFIRMED, ALREADY_CONFIRMED
+from api.domain.ordering.correction import order_version
 from api.domain.ordering.labels import (
     ACTION_CORRECTED,
     current_labels_many,
     labels_for_rows,
 )
-from api.domain.ordering.ticket import last_reason, revision, send_ticket
+from api.domain.ordering.ticket import last_reason, send_ticket
 from api.domain.status.config import ACTOR_TABLET
 from api.models import AuditLog, Order, OrderItem, ServiceConfig
 
@@ -95,9 +96,11 @@ class BoardOrder:
     register_entered_at: datetime | None = None
     # Not marked, and from an earlier business day: the register may lack it.
     register_late: bool = False
-    # How often the team corrected it. The mark names the revision it was typed
-    # from, so a tablet showing an older one cannot mark the newer one.
-    revision: int = 0
+    # Fingerprint of the lines on the card (`correction.order_version`). The
+    # mark names the state the team typed, so a card older than a correction
+    # cannot mark the newer one. Taken from the very rows the card shows, not
+    # from a count of audit entries, which the deletion job removes.
+    version: str = ""
 
 
 def _window(tz_name: str, now: datetime | None) -> tuple[datetime, datetime]:
@@ -137,7 +140,6 @@ def list_new(
     now: datetime | None = None,
 ) -> list[BoardOrder]:
     start, _ = _window(tz_name, now)
-    revisions = _revisions(session, tenant_id)
     failed_first = case((Order.handover_state == FAILED, 0), else_=1)
     orders = session.scalars(
         select(Order)
@@ -208,7 +210,7 @@ def list_new(
             overdue=o.id in overdue,
             register_entered_at=o.register_entered_at,
             register_late=o.id in late,
-            revision=revisions.get(o.id, 0),
+            version=order_version(items[o.id]),
         )
         for o in orders
     ]
@@ -267,29 +269,6 @@ def _overdue(
         return set()
     late = (now or utcnow()) - timedelta(minutes=minutes)
     return {order_id for order_id, since in waiting.items() if since <= late}
-
-
-def _revisions(session: Session, tenant_id: uuid.UUID) -> dict[uuid.UUID, int]:
-    """How often each order of the column was corrected: `ticket.revision` for
-    all of them in one statement.
-
-    Read before the orders and their lines (READ COMMITTED, api/db.py): a
-    correction that commits in between leaves a card with the new lines and
-    the old count, whose mark is refused, never the old lines with the new
-    count, whose mark would pass (ultrareview #423).
-    """
-    rows = session.execute(
-        select(Order.id, func.count(AuditLog.id))
-        .join(AuditLog, AuditLog.entity_id == Order.id)
-        .where(
-            *_filters(tenant_id),
-            AuditLog.tenant_id == tenant_id,
-            AuditLog.entity == "order",
-            AuditLog.action == ACTION_CORRECTED,
-        )
-        .group_by(Order.id)
-    )
-    return {row[0]: row[1] for row in rows}
 
 
 def _last_correction_reasons(
@@ -441,16 +420,18 @@ def mark_entered(
     session: Session,
     tenant_id: uuid.UUID,
     order_id: uuid.UUID,
-    seen_revision: int,
+    seen_version: str,
     actor: str = ACTOR_TABLET,
     now: datetime | None = None,
 ) -> Order:
     """ "In Kasse eingegeben" (T-11.6, docs/09 §1 L18). Twice tapped or on two
     tablets: one mark.
 
-    `seen_revision` is the revision the tablet showed: the team typed that one.
-    A correction in between (`ticket.revision` grew) is refused, so a tablet
-    with an old card never marks a state the register does not hold.
+    `seen_version` is the fingerprint of the lines the tablet showed: the team
+    typed that state. Lines that differ now, by a correction made since, are
+    refused, so a tablet with an old card never marks a state the register
+    does not hold. Read under the order's row lock, which a correction takes
+    too: a correction that commits while the mark waits is seen.
     """
     order = _locked(session, tenant_id, order_id)
     if order.register_entered_at is not None:
@@ -458,10 +439,10 @@ def mark_entered(
         return order
     if order.status not in MARKABLE:
         raise Conflict(f"Bestellung {order.id} ist {order.status}")
-    current = revision(session, order)
-    if current != seen_revision:
+    current = version_of(session, order)
+    if current != seen_version:
         raise Conflict(
-            f"Bestellung {order.id}: Revision {seen_revision} gesehen, {current} aktuell",
+            f"Bestellung {order.id}: Stand {seen_version} gesehen, {current} aktuell",
             say=CORRECTED_SINCE,
         )
     order.register_entered_at = now or utcnow()
@@ -472,11 +453,22 @@ def mark_entered(
             action=ACTION_REGISTER_ENTERED,
             entity="order",
             entity_id=order.id,
-            payload={"call_id": str(order.call_id), "revision": current},
+            payload={"call_id": str(order.call_id), "version": current},
         )
     )
     session.commit()
     return order
+
+
+def version_of(session: Session, order: Order) -> str:
+    """The fingerprint of the order's lines now, in the order the card shows them."""
+    rows = session.scalars(
+        select(OrderItem)
+        .where(OrderItem.tenant_id == order.tenant_id, OrderItem.order_id == order.id)
+        .order_by(OrderItem.created_at, OrderItem.id)
+        .execution_options(populate_existing=True)
+    ).all()
+    return order_version(list(rows))
 
 
 def unmarked_before(
