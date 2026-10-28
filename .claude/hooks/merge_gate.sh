@@ -10,7 +10,8 @@
 # --match-head-commit makes gh refuse the merge once the head moves after this check.
 # Then, on that head commit of a PR into main:
 #   1. every check has finished and passed (success, skipped or neutral),
-#   2. the branch contains origin/main, so no merge from main is missing,
+#   2. the branch contains origin/main, or merging origin/main into it changes no file: a PR
+#      stacked on one that merged since lacks only that merge commit (CLAUDE.md §6),
 #   3. the status version is higher than main's; exempt only chore/readme-weekly-* whose
 #      changes are all generated (README.md, .github/assets/*.svg, png-sources.json),
 #   4. a review is clean: the Codex state comment names this head without open findings,
@@ -68,7 +69,11 @@ checks=$(jq -r 'def result: if (.conclusion // "") != "" then .conclusion else (
 
 main=refs/merge-gate/main
 if git fetch -q "$repo" "+refs/heads/main:$main" "refs/pull/$n/head" 2>/dev/null && git cat-file -e "$head^{commit}" 2>/dev/null; then
-  git merge-base --is-ancestor "$main" "$head" ||
+  # A stacked PR whose predecessor merged lacks only main's merge commit, and its tree is
+  # what GitHub's merge gives: the same tree CI and the review saw. merge-tree needs git
+  # 2.38; an older git prints nothing, and the branch counts as behind.
+  { git merge-base --is-ancestor "$main" "$head" ||
+    [ "$(git merge-tree --write-tree "$main" "$head" 2>/dev/null)" = "$(git rev-parse "$head^{tree}")" ]; } ||
     fail+="- the branch is behind main: merge origin/main into it, then get CI and the review on the new head"$'\n'
   generated='^(README\.md|\.github/assets/[^/]+\.svg|\.github/assets/png-sources\.json)$'
   if [[ $branch != chore/readme-weekly-* ]] || git diff --name-only "$main...$head" | grep -Evq "$generated"; then
