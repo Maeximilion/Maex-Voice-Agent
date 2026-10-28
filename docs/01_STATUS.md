@@ -624,6 +624,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.13 · 28.10.2026:** A table at a time without capacity goes to the team instead of 'nichts frei'; a horizon of 0 days says today only (repo audit findings 4 and 9)
 - **v2.11.12 · 28.10.2026:** A corrected slip says KORREKTUR whenever the print bridge may hold an earlier one, also after a lost ack and on a resend (repo audit finding 3)
 - **v2.11.10 · 28.10.2026:** T-10.2 clock: the 30 s count from the call meeting the outage
 - **v2.11.7 · 27.10.2026:** Repo audit findings 12 to 14: dead code and duplicates removed (pytest-asyncio, new_id, menu_index, agent package re-exports, all_services, HoursData re-export, the outage sentence, WEEKDAYS, _clock, ACTION_CONFIRMED, ACTOR_TABLET); behaviour unchanged
