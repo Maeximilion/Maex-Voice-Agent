@@ -76,6 +76,9 @@ services:
     # Writes into its volume, its socket and lock file into /var/run/postgresql.
     read_only: true
     tmpfs: [/var/run/postgresql, /tmp]
+    # No DETAIL in the server's log: a constraint error writes the failing
+    # row there, guest name and phone included (repo audit of 27.10.2026).
+    command: ["postgres", "-c", "log_error_verbosity=terse"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

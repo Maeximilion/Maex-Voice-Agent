@@ -138,6 +138,20 @@ class Settings(BaseSettings):
     retention_interval_seconds: float = Field(default=3600.0, gt=0, le=86400)
 
     @model_validator(mode="after")
+    def _outbox_rows_outlive_their_payloads(self) -> Self:
+        """The row delete of api/jobs/retention.py goes by age, whatever the
+        status: a row period below the unsent one would drop a kitchen slip
+        still pending (repo audit of 27.10.2026, finding 10)."""
+        if self.retention_outbox_row_days < max(
+            self.retention_outbox_sent_days, self.retention_outbox_unsent_days
+        ):
+            raise ValueError(
+                "RETENTION_OUTBOX_ROW_DAYS must be at least "
+                "RETENTION_OUTBOX_SENT_DAYS and RETENTION_OUTBOX_UNSENT_DAYS"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _production_needs_real_tokens(self) -> Self:
         """Refuse to start outside dev and test on a token anyone can know.
 

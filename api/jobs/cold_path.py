@@ -20,7 +20,7 @@ from typing import Protocol
 from sqlalchemy.orm import Session
 
 from api.config import settings
-from api.core.logging import configure_logging, get_logger, log
+from api.core.logging import configure_logging, error_text, get_logger, log
 from api.db import SessionLocal
 from api.domain.ordering.handover import sweep
 from api.events.dispatcher import run_forever, send_to_n8n
@@ -51,7 +51,7 @@ def watch_forever(
             job(session, clock())
         except Exception as exc:  # noqa: BLE001 - the watchdog must never die
             session.rollback()
-            log(logger, logging.ERROR, f"{label} pass aborted", error=str(exc))
+            log(logger, logging.ERROR, f"{label} pass aborted", error=error_text(exc))
         finally:
             session.close()
         stop.wait(interval)

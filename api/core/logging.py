@@ -10,6 +10,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 
 from fastapi import Request, Response
+from sqlalchemy.exc import DBAPIError
 
 request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 call_id_var: ContextVar[str | None] = ContextVar("call_id", default=None)
@@ -38,8 +39,38 @@ class JsonFormatter(logging.Formatter):
         if isinstance(extra, dict):
             line.update(extra)
         if record.exc_info:
-            line["exc"] = self.formatException(record.exc_info)
+            exc = record.exc_info[1]
+            if exc is None or _database_error(exc) is None:
+                line["exc"] = self.formatException(record.exc_info)
+            else:
+                line["exc"] = error_text(exc)
         return json.dumps(line, ensure_ascii=False)
+
+
+def error_text(exc: BaseException) -> str:
+    """What a log line may say about an error: its text, except for a database
+    error. Postgres writes the failing row into its message ("DETAIL: Failing
+    row contains (name, phone, note)"), past hide_parameters, so only the types
+    and the constraint go out (repo audit of 27.10.2026, finding 11)."""
+    db = _database_error(exc)
+    if db is None:
+        return str(exc)
+    text = f"{type(db).__name__} ({type(db.orig).__name__})"
+    if db is not exc:
+        text = f"{type(exc).__name__} from {text}"
+    constraint = getattr(getattr(db.orig, "diag", None), "constraint_name", None)
+    return f"{text} on {constraint}" if constraint else text
+
+
+def _database_error(exc: BaseException | None) -> DBAPIError | None:
+    """The database error in an exception's chain, the way a traceback prints it."""
+    seen: set[int] = set()
+    while exc is not None and id(exc) not in seen:
+        if isinstance(exc, DBAPIError):
+            return exc
+        seen.add(id(exc))
+        exc = exc.__cause__ or exc.__context__
+    return None
 
 
 def configure_logging(level: str = "INFO") -> None:
