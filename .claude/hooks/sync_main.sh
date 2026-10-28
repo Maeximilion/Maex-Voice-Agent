@@ -78,6 +78,16 @@ in_main() {
     --json headRefOid --jq '.[].headRefOid' 2>/dev/null)" || return 2
   printf '%s\n' "$heads" | grep -qx "$tip"
 }
+# The files that moving the clean folder $1 from HEAD to $2 would add where an ignored
+# file already sits. Git takes ignored files as expendable and overwrites them without a
+# word (audit of 15.10.2026: a local .env once origin tracks one). Names only, never content.
+clobbered() {
+  local f
+  git -C "$1" diff --name-only -z --no-renames --diff-filter=A HEAD "$2" 2>/dev/null \
+    | while IFS= read -r -d '' f; do
+        { [ -e "$1/$f" ] || [ -L "$1/$f" ]; } && printf '%s; ' "$f"
+      done
+}
 
 # The main folder left on a finished branch goes back to main, or its files stay at the
 # old state while every ref is current (12.10.2026: a kit merged that day was "not
@@ -94,10 +104,16 @@ if [ -n "$branch" ] && [ "$branch" != main ] \
       if [ -n "$main_dir" ]; then
         # Git checks a branch out in one folder only; which of the two gives way is not the hook's call.
         warn "the main folder is on the finished branch $branch and main is checked out in $main_dir, not switched"
+      # The GitHub call above can take seconds: a branch started or a file edited in
+      # that time is not ours to leave (audit of 15.10.2026).
+      elif [ "$(git -C "$primary" branch --show-current 2>/dev/null)" != "$branch" ] \
+        || [ -n "$(git -C "$primary" status --porcelain 2>/dev/null)" ]; then
+        :
+      elif kept="$(clobbered "$primary" main)" && [ -n "$kept" ]; then
+        warn "the main folder is on the finished branch $branch, not switched: main would overwrite the ignored files ${kept%; }"
       else
         git -C "$primary" switch --quiet main 2>/dev/null \
           || warn "the main folder is on the finished branch $branch and could not be switched to main"
-        worktrees
       fi ;;
     # Not the same as "not merged": without the answer the folder may sit on an obsolete branch.
     2) warn "the main folder is on $branch, whose remote branch is gone, and GitHub could not be asked whether it was merged (gh missing, signed out or too slow), left on it" ;;
@@ -105,6 +121,12 @@ if [ -n "$branch" ] && [ "$branch" != main ] \
 fi
 
 # main is checked out in at most one worktree, often not the one this session runs in.
+# Read again here, after the switch and any GitHub call, so the folder merged into below
+# is the one that has main now (audit of 15.10.2026: a branch started in between was
+# fast-forwarded). shortcut: milliseconds between this list and the merge stay open, git
+# has no fast-forward that names the branch and updates its folder; take a lock in every
+# writer if that ever bites.
+worktrees
 if [ -z "$main_dir" ]; then
   # Checked out nowhere: move the branch itself, so the next task starts from today's main.
   git -C "$root" fetch --quiet origin main:main 2>/dev/null \
@@ -112,7 +134,10 @@ if [ -z "$main_dir" ]; then
   exit 0
 fi
 blocking="$(git -C "$main_dir" status --porcelain 2>/dev/null)"
-if [ -z "$blocking" ]; then
+if [ -z "$blocking" ] && kept="$(clobbered "$main_dir" origin/main)" && [ -n "$kept" ]; then
+  behind="$(git -C "$main_dir" rev-list --count main..origin/main 2>/dev/null)"
+  warn "main in $main_dir is $behind commits behind origin/main, not fast-forwarded: it would overwrite the ignored files ${kept%; }"
+elif [ -z "$blocking" ]; then
   # Fetched above, so no second fetch: a failed merge is about the folder, not the network.
   failed="$(git -C "$main_dir" merge --ff-only --quiet origin/main 2>&1 >/dev/null)"
   # Another session may have moved it in the meantime (14.10.2026: a warning for a folder
