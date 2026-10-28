@@ -30,6 +30,7 @@ from api.agent.loop import (
     ConversationLoop,
 )
 from api.agent.state import ConversationState
+from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.importer import ALLERGENS_FILE, apply, parse
 from api.models import Call, Callback, Order, OrderItem
@@ -738,3 +739,63 @@ def test_the_lookup_flag_is_read_as_the_tool_reads_it(session, known_tenant, fla
     )
 
     assert not result.ended
+
+
+BOOKED = "Ihre Bestellung ist aufgegeben, Abholcode 42."
+
+
+def test_a_live_handover_keeps_the_booking_for_the_line(session, known_tenant):
+    """#207: on a live handover the core kept only the allergen card for the
+    line; a team leg nobody answered became a card without "Bereits gebucht",
+    and the team might take the order again."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    state.booking_say = BOOKED
+
+    run(
+        session,
+        state,
+        "Ist in der Pho Bo Sellerie?",
+        details(session, known_tenant, "13"),
+    )
+
+    assert state.stage == "transferred"
+    assert state.handoff_summary is not None
+    assert state.handoff_summary.startswith(SUMMARY_ALLERGENS)
+    assert state.handoff_summary.endswith(f"Bereits gebucht: {BOOKED}")
+
+
+def test_any_live_handover_keeps_the_booking_for_the_line(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+    state.booking_say = BOOKED
+
+    run(session, state, "Ich möchte bitte mit einem Menschen sprechen.")
+
+    assert state.stage == "transferred"
+    assert state.handoff_summary is not None
+    assert state.handoff_summary.endswith(f"Bereits gebucht: {BOOKED}")
+
+
+def test_the_card_of_a_missed_team_leg_fits_with_a_large_open_order(
+    session, known_tenant
+):
+    """The open order is cut so the line's first sentence and the booking
+    still fit a callback card (1000 characters, #207)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    state.booking_say = BOOKED
+    dish = str(item(session, known_tenant, "13"))
+    state.seen_items[dish] = {"number": "13", "name": "Pho Bo"}
+    state.cart = [
+        {"menu_item_id": dish, "quantity": n + 1, "note": f"Wunsch {n} " + "x" * 60}
+        for n in range(30)
+    ]
+
+    run(
+        session,
+        state,
+        "Ist in der Pho Bo Sellerie?",
+        details(session, known_tenant, "13"),
+    )
+
+    assert state.handoff_summary is not None
+    assert len(f"{SUMMARY_MISSED} {state.handoff_summary}") <= 1000
+    assert state.handoff_summary.endswith(f"Bereits gebucht: {BOOKED}")

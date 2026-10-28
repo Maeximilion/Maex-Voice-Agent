@@ -106,6 +106,8 @@ class ConversationState(BaseModel):
     # keeps nothing between turns, and without it a dish found in one turn is
     # gone in the next.
     cart: list[dict[str, Any]] = Field(default_factory=list)
+    # The lines of the order `confirm` booked last (`replace_cart`). Never sent.
+    booked_cart: list[dict[str, Any]] = Field(default_factory=list)
     # What search_menu said about a dish: id to number, name and mandatory
     # option groups. Never sent as it is. The labels of the `cart` lines in the
     # prompt come from here, never from the model (CLAUDE.md §2 rule 1).
@@ -409,6 +411,21 @@ def replace_cart(state: ConversationState, lines: list[dict[str, Any]]) -> None:
     if same_order(lines, state.cart):
         # The state keeps the sequence that was read out (Codex PR #237, P2).
         return
+    if (
+        state.stage == "confirmed"
+        and not state.cart
+        and same_order(lines, state.booked_cart)
+    ):
+        # The order just booked, sent again by a model that keeps nothing
+        # between turns: no open order, or a later handover tells the guest
+        # it is not placed (#207, Codex PR #347). Only while no new order is
+        # being put together: one corrected back to the booked lines is taken
+        # (Codex PR #415).
+        # shortcut: an identical second order right after the booking reads
+        # as the repeat; a draft sent with it as `cart` in the same answer is
+        # refused (`guards._drafts_the_cart`), one without a `cart` goes
+        # through. Track a started order if that shows in calls.
+        return
     order_corrected(state)
     state.cart = lines
 
@@ -526,8 +543,10 @@ def apply_tool_result(
             state.service = flags
     elif name == "confirm":
         if state.order_id is not None:
-            # Booked: no longer an order that is being put together.
-            state.cart = []
+            # Booked: no longer an order that is being put together. The
+            # lines stay known, so the same cart sent again is no new order
+            # (`replace_cart`, #207).
+            state.booked_cart, state.cart = state.cart, []
         state.stage = "confirmed"
         # Booked: nothing waits to be read out. Left in place, the sentence
         # would go back to the model with the next turn, as if it still had to
