@@ -1614,6 +1614,8 @@ PRICED = Usage(model="m", requests=1, prompt_tokens=10_000, completion_tokens=0)
         (0, 0, 90, SpeechUsage(60.0, 2000), True, None),
         (0, 0, None, SpeechUsage(60.0, 2000), True, None),
         (0, 0, 90, SpeechUsage(60.0, 2000), False, 3),
+        # 0.1 s at 36,000 cents an hour is exactly one cent, not two.
+        (36000, 0, 0, SpeechUsage(0.1, 0), False, 4),
     ],
 )
 def test_the_cost_of_a_phone_call(
@@ -1627,6 +1629,39 @@ def test_the_cost_of_a_phone_call(
     monkeypatch.setattr(settings, "voice_outbound_cents_per_hour", outbound)
 
     assert call_cost_cents(PRICED, speech, transferred=transferred) == cents
+
+
+@pytest.mark.parametrize(
+    ("state", "outcome", "cents"),
+    [
+        ({"transferred": False, "stage": "collecting"}, None, 3),
+        # The outage path hands the call to the team without the tool's flag.
+        ({"transferred": False, "stage": "collecting"}, "error", None),
+        ({"transferred": False, "stage": "transferred"}, None, None),
+    ],
+)
+def test_a_team_leg_of_any_kind_is_priced(monkeypatch, state, outcome, cents):
+    """Review of T-10.6: the outage transfer is a team leg too."""
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 0)
+    monkeypatch.setattr(settings, "voice_ear_cents_per_hour", 0)
+    monkeypatch.setattr(settings, "voice_mouth_cents_per_mchar", 0)
+    monkeypatch.setattr(settings, "voice_outbound_cents_per_hour", 90)
+    live = SimpleNamespace(state=SimpleNamespace(**state))
+
+    assert handler_module._cost(live, PRICED, SpeechUsage(), outcome) == cents
+
+
+def test_a_cost_that_cannot_be_computed_leaves_it_unknown(monkeypatch):
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 0)
+    monkeypatch.setattr(settings, "voice_ear_cents_per_hour", 36)
+    monkeypatch.setattr(settings, "voice_mouth_cents_per_mchar", 0)
+    live = SimpleNamespace(state=SimpleNamespace(transferred=False, stage="done"))
+
+    assert (
+        handler_module._cost(live, PRICED, SpeechUsage(float("nan"), 0), None) is None
+    )
 
 
 def test_a_phone_call_on_the_stand_in_logs_no_model(session, tenant, caplog):

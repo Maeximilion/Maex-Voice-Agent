@@ -458,8 +458,12 @@ prices came with T-10.6 (28.10.2026): `VOICE_EAR_CENTS_PER_HOUR` (audio fed to t
 `VOICE_MOUTH_CENTS_PER_MCHAR` (characters given to the mouth) and `VOICE_OUTBOUND_CENTS_PER_HOUR`
 (a transfer leg), whole cents; the session measures the first two and reports them with the end
 of the call, the handler adds them to the model's cost (`telephony.handler.call_cost_cents`,
-rounded up). A price missing, no measurement, or a priced transfer leg, whose length the line does
-not report yet (T-10.12), leaves `calls.cost_cents` empty: unknown is never 0.
+rounded up). A price missing (the outbound one only for a call with a team leg: a transfer by the
+tool or the outage path), no measurement, or a priced team leg, whose length the line does not
+report yet (T-10.12), leaves `calls.cost_cents` empty: unknown is never 0. Not part of any call's
+cost: the sentences the mouth renders at the start of `voice` (the warm-up and the recorded
+sentences for the dialplan), and a call whose transfer the line refused (its log is closed before
+the session reports what it used).
 
 Built with T-1.11 part 2: the engines' packages are in the target `voice` of `api/Dockerfile`
 (`api/requirements-voice.txt`, hashed, about 3 GB more than the API's image, most of it CUDA);

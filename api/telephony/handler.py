@@ -521,9 +521,7 @@ class CallHandler:
                     tenant_id=live.tenant_id,
                     outcome=outcome or derived,
                     intent=intent,
-                    cost_cents=call_cost_cents(
-                        usage, speech, transferred=live.state.transferred
-                    ),
+                    cost_cents=_cost(live, usage, speech, outcome),
                     model=usage.model,
                 ),
                 now=self._now or utcnow(),
@@ -616,6 +614,20 @@ def greeting(routing: CallRouting) -> str:
     return GREETING.format(name=routing.tenant_name, privacy=privacy)
 
 
+def _cost(
+    live: _LiveCall, usage: Usage, speech: SpeechUsage | None, outcome: str | None
+) -> int | None:
+    """The call's cost for its log; never stops the log from being written.
+    A team leg is any handover: the tool's, or the outage path's (`_fail`,
+    outcome "error"), which the dialplan also takes for a failed session."""
+    leg = live.state.transferred or live.state.stage == "transferred"
+    try:
+        return call_cost_cents(usage, speech, transferred=leg or outcome == "error")
+    except Exception:
+        logger.exception("the cost of the call could not be computed")
+        return None
+
+
 def call_cost_cents(
     usage: Usage, speech: SpeechUsage | None, *, transferred: bool
 ) -> int | None:
@@ -634,7 +646,9 @@ def call_cost_cents(
         return None
     if transferred and outbound != 0:
         return None
-    voice = Fraction(speech.heard_seconds) * ear / 3600
+    # The seconds come from whole frames: a float like 0.1 must not round a
+    # whole cent up (`limit_denominator`).
+    voice = Fraction(speech.heard_seconds).limit_denominator(1_000_000) * ear / 3600
     voice += Fraction(speech.spoken_characters * mouth, 1_000_000)
     return model + ceil(voice)
 
