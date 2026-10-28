@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.18
+> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.19
 
 ---
 
@@ -248,6 +248,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
     - Left in #252 for later: `USER` in the Dockerfile (PR #359 left it: the dev container writes into the mounted checkout); the installer and the Ollama archive are checked by SHA-256 since PR #360; with T-1.11 the lock per call and the call limit for a silent caller; with #64 the deletion of outbox payloads and caller numbers; audit findings 4 (T-10.9), 6 (#320, Maxi decides) and the off-site part of 10 (#321, at the server order).
     - The handover's steps by hand (13.10.2026): the ruleset on `main` is applied, four required checks next to the pull request rule (docs/13 §6; its name on GitHub is still `t-4.6-probebo`, because a disabled ruleset called `Main` blocks the name of the file). Dependabot works on the compiled lock file: its pull request #261 changes `api/requirements.in` and the hashed `api/requirements.txt`, checks green; no run had to be triggered. Not found: what "confirm the repository origin in the app" referred to.
 14. **T-11.1 done 27.10.2026** (#368, #369 on main). Real-model run on main 18a725f (qwen3.6-35b-a3b): cases 33/56, targets 2/29. It showed the model looking up allergens when the guest only named an allergy, which ended the order with the team in 11 of 15 allergy cases; fixed on `fix/l17-stated-allergy` (the core refuses that lookup), confirmed on the real model (0 false handovers in the allergy cases). Still open on the real model: the allergy cases fail where the model loses the name or the order of questions, and `allergie_0002` (a question about celery in the Pho Bo) is a missed handover: the model searched "Pho Bo Sellerie", found nothing and never looked up the allergens. Card numbers like S12 and 45g fail on the real model as before
+15. **Open issues, oldest first (handover 28.10.2026), in a session started in Ubuntu (WSL):** first a read-only triage of the 64 open issues into done but still open (close with evidence), small and needing no input from Maxi, needing Maxi's decision, and blocked; then the small ones one PR at a time, routed per CLAUDE.md §6, never two open PRs that touch the same files. Questions to Maxi in one batch
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
 
@@ -502,6 +503,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 28.10.2026 | **Handover: PR checkboxes ticked, issue sweep next.** 111 open boxes in 43 merged PRs (#90 to #338) ticked on GitHub: each was "not applicable" (no schema change, no hot-path tool) or `make lint` / `make test`, proven by the green CI job `test` (ruff and pytest) on that PR's head commit, noted in the box. Left unticked on purpose: the 9 boxes of the three PRs closed without merge (#191, #226, #272), their work never landed. Issues are not made from PR boxes; next session works through the 64 open issues in Ubuntu (WSL) |
 | 26.10.2026 | **T-11.1 redesign on #368** (summary above): `agent/allergies.py` reads the caller's allergy from their sentence into structured state and writes it onto the line, the order or the table; the core asks "Wogegen?" and the consent itself while it holds the draft; a cart or draft whose note names an allergy is refused; `with_consent`, `unread_allergy`, `keep_restrictions`, `order_note` and `table_note` removed; the answer reader and the order check of the stand-in moved into `domain/menu/wishes.py`; "Sesam vertrage ich auch nicht" is read (#361); the open P1 4378523387 and the three Codex P1s on d1ad1e0 (a second sentence's intolerance dropped, two owners in one note, a replaced draft still confirmable) and the two on f3e997f (an answer to "Wogegen?" with a correction goes to the model; the same allergy said for two dishes goes onto both) and the one on 2844b82 (every sentence of an answer to "Wogegen?" keeps its own owner) and the one on 94f1fa8 (a sentence without an allergy word carries the answer's list on) and the one on 3ac0383 (an allergy said after the read-back drops the draft read out) and the one on 6f94f73 (the same answer for two dishes keeps both) and the one on 3c4cc6a (the order of the searches never decides whose allergy a dish gets: the same allergen for the caller and another adult stays on the whole order) are tests. Suite green, evals equal to `main` case by case |
 | 26.10.2026 | **Handover: T-11.1 taken over, redesign decided.** #368 and #369 merged with main (consent log migration 010, consent_log period in the deletion job), four Codex rounds of P1 fixes; Maxi chose a redesign before merge: allergies never travel in free text (design in the #368 comment) |
 | 26.10.2026 | **T-11.5: the privacy pointer and the question for a human (docs/09 L1, L4).** Migration 009 adds `service_config.privacy_notice_address`; the phone greeting names it and leaves the sentence out while it is empty. "Sind Sie ein Mensch?" gets the core's truthful answer and the offer of the team before any model call; a yes hands over. Evals `eskalation_0017` and `eskalation_0018`, judged by the new `expected.said`. Also: the weekly README routine names `python3.12`, and `test_check_reports_a_stale_asset` renders into a copy of the README instead of rewriting the checkout's "As of" |
@@ -624,6 +626,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.19 · 28.10.2026:** Handover: ticked the 111 open task boxes of 43 merged PRs on GitHub (not applicable, or green CI on the head commit); the issue sweep moves to a WSL session
 - **v2.11.18 · 28.10.2026:** Audit findings 7, 10 and 11: labelled dumps follow the backup retention, a deadline for restore copies, outbox row period checked, database errors logged without row values
 - **v2.11.17 · 28.10.2026:** A correction keeps every extra of an optional group and refuses a second choice in a required one, as draft_order does (repo audit finding 8)
 - **v2.11.16 · 28.10.2026:** A dish name from the menu no longer counts as an allergen claim of the model; the empty open key left the model's state (repo audit findings 6 and 13)
