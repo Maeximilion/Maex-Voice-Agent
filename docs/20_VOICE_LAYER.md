@@ -454,7 +454,16 @@ telephone's own number; `VOICE_EAR` and `VOICE_MOUTH` (`whisper` and `piper`, th
 pair, refused outside dev and test); `VOICE_EAR_DEVICE` (`cuda` or `cpu`); `VOICE_MOUTH_VOICE`
 (the voice's file, D4; empty for the adapter's own, `thorsten` medium); `VOICE_SILENCE_SECONDS` (8, an assumption). `voice` does not
 start without any of them, without a model (`LLM_*`), or with the team on its own number. The
-prices come with T-10.6.
+prices came with T-10.6 (28.10.2026): `VOICE_EAR_CENTS_PER_HOUR` (audio fed to the ear),
+`VOICE_MOUTH_CENTS_PER_MCHAR` (characters given to the mouth) and `VOICE_OUTBOUND_CENTS_PER_HOUR`
+(a transfer leg), whole cents; the session measures the first two and reports them with the end
+of the call, the handler adds them to the model's cost (`telephony.handler.call_cost_cents`,
+rounded up). A price missing (the outbound one only for a call with a team leg: a transfer by the
+tool or the outage path), no measurement, or a priced team leg, whose length the line does not
+report yet (T-10.12), leaves `calls.cost_cents` empty: unknown is never 0. Not part of any call's
+cost: the sentences the mouth renders at the start of `voice` (the warm-up and the recorded
+sentences for the dialplan), and a call whose transfer the line refused (its log is closed before
+the session reports what it used).
 
 Built with T-1.11 part 2: the engines' packages are in the target `voice` of `api/Dockerfile`
 (`api/requirements-voice.txt`, hashed, about 3 GB more than the API's image, most of it CUDA);
@@ -506,9 +515,13 @@ print every dialplan step with its values, the token included (seen in the drill
 ## 8. Concurrency (D16)
 
 `domain/calls/routing.py` decides whether the AI answers from the mode and from the number of open
-calls against a limit; a call above the limit rings the team through the silent transfer that
-exists for `paused`. The limit and its weekly windows are a database value (migration, T-10.9).
-Test phase: limit 1, because the router path allows 2 and the team needs its lines.
+calls against a limit (`takes_call`); a call above the limit rings the team through the silent
+transfer that exists for `paused`. Built with T-10.9 (28.10.2026, migration 011): the limit is
+`service_config.max_concurrent_calls`, or the lowest of the `call_limit_windows` that hold the
+restaurant's local time; both are read at the start of every call. The phone line counts the calls
+it took in memory and takes the place in the same step as the decision, so two calls that start at
+once cannot both get the last one; a place is free when the leg has ended, not when the agent asked
+for the hangup. Test phase: limit 1, because the router path allows 2 and the team needs its lines.
 
 ---
 

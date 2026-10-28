@@ -31,14 +31,16 @@ import time
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
+from fractions import Fraction
+from math import ceil
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from api.agent.guards import names_dish, note_said
-from api.agent.llm import LLMClient, cost_cents
+from api.agent.llm import LLMClient, Usage, cost_cents
 from api.agent.loop import SAY_HUMAN_ANSWER, ConversationLoop
 from api.agent.outcome import CLOSING_STAGES, call_outcome, call_usage, log_usage
 from api.agent.prompt import build_system_prompt
@@ -48,10 +50,17 @@ from api.core.logging import bind_call_id, get_logger
 from api.core.time import utcnow
 from api.domain.callbacks import team_missed
 from api.domain.callbacks.create import SAY_NOTED
-from api.domain.calls import CallRouting, call_routing, end_call, start_call
+from api.domain.calls import (
+    CallRouting,
+    call_routing,
+    end_call,
+    start_call,
+    takes_call,
+)
 from api.domain.menu.items import active_count
 from api.schemas.calls import EndCallRequest, Outcome, StartCallRequest
 from api.telephony.port import TelephonyPort
+from api.telephony.speech import SpeechUsage
 from api.telephony.speech_spike import spoken_name
 
 # docs/05 §6. Drafts until the legal check in docs/09; the greeting carries no
@@ -180,6 +189,10 @@ class CallHandler:
         # Calls whose leg ended while they were still being opened; they are
         # closed as soon as the opening is done.
         self._ended_while_starting: set[str] = set()
+        # The calls the agent took and whose leg has not ended: the count for
+        # the limit of concurrent AI calls (D16, T-10.9). In memory: a call row
+        # a crash left open in the database must not keep the agent off.
+        self._ai_calls: set[str] = set()
         self._closed: OrderedDict[str, None] = OrderedDict()
         # What a card for a team leg nobody answers needs and only this
         # process knows: a number the guest named, the card the core wrote.
@@ -198,7 +211,7 @@ class CallHandler:
         session: Session | None = None
         try:
             session = self._session_factory()
-            routing = call_routing(session, self._tenant_id)
+            routing = call_routing(session, self._tenant_id, self._now)
             caller_id = self._port.caller_id(session_id)
             call_id = start_call(
                 session,
@@ -246,11 +259,25 @@ class CallHandler:
             self._starting.discard(session_id)
             hung_up = session_id in self._ended_while_starting
             self._ended_while_starting.discard(session_id)
+            takes = False
             if hung_up:
                 self._remember_closed(session_id)
                 self._claim(live)
             else:
                 self._live[session_id] = live
+                # The decision and the place in one step: two calls that start
+                # at once cannot both take the last one (T-10.9).
+                takes = takes_call(routing, len(self._ai_calls))
+                if takes:
+                    self._ai_calls.add(session_id)
+        if routing.ai_answers and not takes and not hung_up:
+            logger.info(
+                "call limit reached, the team takes the call",
+                extra={
+                    "extra": {"session_id": session_id, "limit": routing.call_limit}
+                },
+            )
+        routing = replace(routing, ai_answers=takes)
         if hung_up:
             # The end of the leg came while the call row was written (#207):
             # no greeting into a dead line, and the log is closed now.
@@ -289,8 +316,9 @@ class CallHandler:
             )
             self._fail(session_id, live)
 
-    def on_call_ended(self, session_id: str) -> None:
+    def on_call_ended(self, session_id: str, speech: SpeechUsage | None = None) -> None:
         with self._lock:
+            self._ai_calls.discard(session_id)  # the leg is gone, its place is free
             if session_id in self._starting:
                 self._ended_while_starting.add(session_id)
                 return  # `on_call_started` closes it once the call is open
@@ -300,7 +328,7 @@ class CallHandler:
             if live is None or not self._claim(live):
                 return  # closed already, or never known
             self._remember_closed(session_id)
-        self._finish(live, outcome)
+        self._finish(live, outcome, speech=speech)
 
     def on_team_missed(self, session_id: str) -> bool:
         with self._lock:
@@ -473,8 +501,12 @@ class CallHandler:
                 extra={"extra": {"session_id": session_id}},
             )
             # No end of the leg will be reported for a transfer that never began.
+            # The agent's place is free: the AI leg is unusable, and the
+            # dialplan rings the team. Otherwise the place stays taken until
+            # the end of the leg, after the outage sentence (T-10.9).
             with self._lock:
                 self._ending.pop(session_id, None)
+                self._ai_calls.discard(session_id)
                 claimed = live is not None and self._claim(live)
             if live is not None and claimed:
                 self._finish(live, outcome="error", caller_waits=True)
@@ -486,6 +518,7 @@ class CallHandler:
         outcome: Outcome | None = None,
         *,
         caller_waits: bool = False,
+        speech: SpeechUsage | None = None,
     ) -> None:
         """Write the call log and release the session. Never raises: the call has
         already gone to the team or ended, and a failure here must not send it
@@ -517,7 +550,7 @@ class CallHandler:
                     tenant_id=live.tenant_id,
                     outcome=outcome or derived,
                     intent=intent,
-                    cost_cents=cost_cents(usage),
+                    cost_cents=_cost(live, usage, speech, outcome),
                     model=usage.model,
                 ),
                 now=self._now or utcnow(),
@@ -608,6 +641,45 @@ def greeting(routing: CallRouting) -> str:
     address = (routing.privacy_notice_address or "").strip()
     privacy = PRIVACY_POINTER.format(address=address) if address else ""
     return GREETING.format(name=routing.tenant_name, privacy=privacy)
+
+
+def _cost(
+    live: _LiveCall, usage: Usage, speech: SpeechUsage | None, outcome: str | None
+) -> int | None:
+    """The call's cost for its log; never stops the log from being written.
+    A team leg is any handover: the tool's, or the outage path's (`_fail`,
+    outcome "error"), which the dialplan also takes for a failed session."""
+    leg = live.state.transferred or live.state.stage == "transferred"
+    try:
+        return call_cost_cents(usage, speech, transferred=leg or outcome == "error")
+    except Exception:
+        logger.exception("the cost of the call could not be computed")
+        return None
+
+
+def call_cost_cents(
+    usage: Usage, speech: SpeechUsage | None, *, transferred: bool
+) -> int | None:
+    """The cost of a phone call in whole cents (T-10.6): the model's
+    (`cost_cents`) and the voice layer's, ear and mouth by their prices, each
+    rounded up. None when any part is unknown: a model cost unknown, no
+    measurement, a price missing, or a transfer leg with a price above 0,
+    whose length the line does not report yet. Unknown is never 0.
+    shortcut: the transfer leg is unpriced until the trunk (T-10.12) reports
+    its length; the router of the test phase costs nothing."""
+    model = cost_cents(usage)
+    ear = settings.voice_ear_cents_per_hour
+    mouth = settings.voice_mouth_cents_per_mchar
+    outbound = settings.voice_outbound_cents_per_hour
+    if model is None or speech is None or ear is None or mouth is None:
+        return None
+    if transferred and outbound != 0:
+        return None
+    # The seconds come from whole frames: a float like 0.1 must not round a
+    # whole cent up (`limit_denominator`).
+    voice = Fraction(speech.heard_seconds).limit_denominator(1_000_000) * ear / 3600
+    voice += Fraction(speech.spoken_characters * mouth, 1_000_000)
+    return model + ceil(voice)
 
 
 def _close_quietly(session: Session | None) -> None:

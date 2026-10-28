@@ -198,7 +198,7 @@ the team (rule 5, no call is lost). The limit and its weekly windows are a datab
 3. T-2.4 part 4: first eval run on `qwen3:14b` locally, then the same suite once on `mistral-small` (same family as the operation favourite); prompt work on what they show.
 4. T-5.3: hosted comparison of the shortlist with API test accounts and invented data only; report per §3; recommendation to Maxi.
 5. T-10.10: the chain against an audio-in model and a speech-to-speech model on the same cases, attached to T-5.3 (`docs/20_VOICE_LAYER.md` §6).
-6. T-10.9: `max_concurrent_calls` with schedule as a database value (§7); D16 needs the SIP trunk entry (T-10.12), the test phase runs with one AI call.
+6. ~~T-10.9~~ **built 28.10.2026 (migration 011):** `max_concurrent_calls` with weekly windows as database values (§7); D16's three need the SIP trunk entry (T-10.12), the test phase runs with one AI call.
 
 Sources (prices, 06.10.2026): Anthropic model table (cached 25.09.2026);
 [Mistral pricing overview](https://developer.puter.com/tutorials/mistral-api-pricing/),

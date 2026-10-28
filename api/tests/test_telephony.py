@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime
+from datetime import time as clock_time
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -33,7 +34,14 @@ from api.domain.callbacks.create import SAY_NOTED
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.menu.importer import apply
 from api.domain.menu.items import active_count
-from api.models import Call, Callback, MenuItem, Reservation, ServiceConfig
+from api.models import (
+    Call,
+    Callback,
+    CallLimitWindow,
+    MenuItem,
+    Reservation,
+    ServiceConfig,
+)
 from api.telephony import handler as handler_module
 from api.telephony.adapters.fake import FakeTelephony, load_call
 from api.telephony.handler import (
@@ -42,8 +50,10 @@ from api.telephony.handler import (
     SAY_OUTAGE_FIRST,
     STILL_THERE,
     CallHandler,
+    call_cost_cents,
     key_terms,
 )
+from api.telephony.speech import SpeechUsage
 from evals.runner import menu_plan
 from scripts.seed import seed
 from sim.scripted_llm import QUESTIONS, ScriptedLLM
@@ -279,6 +289,70 @@ def test_ai_switched_off_sends_the_call_straight_to_the_team(session, tenant, mo
     assert the_call(session, sid).outcome == "transferred"
 
 
+def test_a_call_above_the_limit_rings_the_team_until_a_place_is_free(session, tenant):
+    """D16, T-10.9: with a limit of one, a second call while the first is open
+    goes to the team at once and silently; once the first leg has ended, the
+    agent takes the next call again."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+
+    port.open("s-2", caller_id="+497215551234")
+    handler.on_call_started("s-2")
+    assert port.transfers("s-2") == [TEAM_PHONE] and port.says("s-2") == []
+    assert port.says("s-1") and port.transfers("s-1") == []
+
+    handler.on_call_ended("s-1")
+    handler.on_call_ended("s-2")
+    port.open("s-3", caller_id="+497215551234")
+    handler.on_call_started("s-3")
+    assert port.says("s-3") and port.transfers("s-3") == []
+
+
+def test_a_failed_call_keeps_its_place_until_its_leg_has_ended(session, tenant):
+    """Review of T-10.9: the outage sentence still plays on the AI leg after a
+    failure, so the place is free only once the line reports the end."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_voice_failure("s-1")
+    assert port.transfers("s-1") == [TEAM_PHONE]
+
+    port.open("s-2", caller_id="+497215551234")
+    handler.on_call_started("s-2")
+    assert port.transfers("s-2") == [TEAM_PHONE] and port.says("s-2") == []
+
+    handler.on_call_ended("s-1")
+    handler.on_call_ended("s-2")
+    port.open("s-3", caller_id="+497215551234")
+    handler.on_call_started("s-3")
+    assert port.says("s-3") and port.transfers("s-3") == []
+
+
+def test_the_handler_reads_the_windows_at_its_own_time(session, tenant):
+    """A window of two around the handler's fixed time (Tuesday 18:00) lets a
+    second call reach the agent (review of T-10.9: the wall clock was read)."""
+    session.add(
+        CallLimitWindow(
+            tenant_id=tenant.id,
+            weekday=NOW.weekday(),
+            starts_at=clock_time(17, 0),
+            ends_at=clock_time(22, 0),
+            max_calls=2,
+        )
+    )
+    session.commit()
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    for sid in ("s-1", "s-2"):
+        port.open(sid, caller_id="+497215551234")
+        handler.on_call_started(sid)
+
+    assert port.says("s-2") and port.transfers("s-2") == []
+
+
 def test_switching_the_ai_off_takes_effect_on_the_next_call(session, tenant):
     """The emergency stop in the tablet header changes `call_mode` in another
     session; the next call must read it fresh, not from a cached row."""
@@ -414,7 +488,11 @@ def test_a_changed_address_is_said_from_the_next_call(session, tenant):
         other.execute(
             update(ServiceConfig)
             .where(ServiceConfig.tenant_id == tenant.id)
-            .values(privacy_notice_address="neu.example/datenschutz")
+            # Two calls at once: the limit of one would send the second to
+            # the team (T-10.9).
+            .values(
+                privacy_notice_address="neu.example/datenschutz", max_concurrent_calls=2
+            )
         )
         other.commit()
 
@@ -582,7 +660,7 @@ def test_fake_stops_feeding_turns_once_the_line_is_gone():
         def on_dtmf(self, session_id, digits):
             self.events.append(("dtmf", digits))
 
-        def on_call_ended(self, session_id):
+        def on_call_ended(self, session_id, speech=None):
             self.events.append(("end", session_id))
 
     port = FakeTelephony()
@@ -1568,6 +1646,9 @@ def test_a_phone_call_logs_its_model_cost(session, tenant, monkeypatch, caplog):
     the exact tokens in the line "model usage" (#207)."""
     monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
     monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 1500)
+    # The local engines of the workbench cost nothing (T-10.6).
+    monkeypatch.setattr(settings, "voice_ear_cents_per_hour", 0)
+    monkeypatch.setattr(settings, "voice_mouth_cents_per_mchar", 0)
     usage = Usage(
         model="test-model", requests=2, prompt_tokens=18000, completion_tokens=800
     )
@@ -1589,6 +1670,74 @@ def test_a_phone_call_logs_its_model_cost(session, tenant, monkeypatch, caplog):
     assert call.cost_cents == 7
     lines = [r.extra for r in caplog.records if r.getMessage() == "model usage"]
     assert lines == [{"call_id": str(call.id), **asdict(usage), "cost_cents": 7}]
+
+
+PRICED = Usage(model="m", requests=1, prompt_tokens=10_000, completion_tokens=0)
+
+
+@pytest.mark.parametrize(
+    ("ear", "mouth", "outbound", "speech", "transferred", "cents"),
+    [
+        # 3 cents of model, 60 s of audio at 36 cents an hour (0.6), 2,000
+        # characters at 1,600 cents a million (3.2): 3 + ceil(3.8) = 7.
+        (36, 1600, 0, SpeechUsage(60.0, 2000), False, 7),
+        (0, 0, 0, SpeechUsage(60.0, 2000), True, 3),
+        # Unknown is never 0: a price or the measurement missing, or a priced
+        # transfer leg whose length the line does not report.
+        (None, 0, 0, SpeechUsage(60.0, 2000), False, None),
+        (0, None, 0, SpeechUsage(60.0, 2000), False, None),
+        (0, 0, 0, None, False, None),
+        (0, 0, 90, SpeechUsage(60.0, 2000), True, None),
+        (0, 0, None, SpeechUsage(60.0, 2000), True, None),
+        (0, 0, 90, SpeechUsage(60.0, 2000), False, 3),
+        # 0.1 s at 36,000 cents an hour is exactly one cent, not two.
+        (36000, 0, 0, SpeechUsage(0.1, 0), False, 4),
+    ],
+)
+def test_the_cost_of_a_phone_call(
+    monkeypatch, ear, mouth, outbound, speech, transferred, cents
+):
+    """T-10.6: model, ear and mouth on the call log, in integer cents."""
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 0)
+    monkeypatch.setattr(settings, "voice_ear_cents_per_hour", ear)
+    monkeypatch.setattr(settings, "voice_mouth_cents_per_mchar", mouth)
+    monkeypatch.setattr(settings, "voice_outbound_cents_per_hour", outbound)
+
+    assert call_cost_cents(PRICED, speech, transferred=transferred) == cents
+
+
+@pytest.mark.parametrize(
+    ("state", "outcome", "cents"),
+    [
+        ({"transferred": False, "stage": "collecting"}, None, 3),
+        # The outage path hands the call to the team without the tool's flag.
+        ({"transferred": False, "stage": "collecting"}, "error", None),
+        ({"transferred": False, "stage": "transferred"}, None, None),
+    ],
+)
+def test_a_team_leg_of_any_kind_is_priced(monkeypatch, state, outcome, cents):
+    """Review of T-10.6: the outage transfer is a team leg too."""
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 0)
+    monkeypatch.setattr(settings, "voice_ear_cents_per_hour", 0)
+    monkeypatch.setattr(settings, "voice_mouth_cents_per_mchar", 0)
+    monkeypatch.setattr(settings, "voice_outbound_cents_per_hour", 90)
+    live = SimpleNamespace(state=SimpleNamespace(**state))
+
+    assert handler_module._cost(live, PRICED, SpeechUsage(), outcome) == cents
+
+
+def test_a_cost_that_cannot_be_computed_leaves_it_unknown(monkeypatch):
+    monkeypatch.setattr(settings, "llm_input_cents_per_mtok", 300)
+    monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 0)
+    monkeypatch.setattr(settings, "voice_ear_cents_per_hour", 36)
+    monkeypatch.setattr(settings, "voice_mouth_cents_per_mchar", 0)
+    live = SimpleNamespace(state=SimpleNamespace(transferred=False, stage="done"))
+
+    assert (
+        handler_module._cost(live, PRICED, SpeechUsage(float("nan"), 0), None) is None
+    )
 
 
 def test_a_phone_call_on_the_stand_in_logs_no_model(session, tenant, caplog):
@@ -1616,9 +1765,9 @@ def test_a_failure_in_the_gap_before_the_log_is_written_leaves_nothing_behind(
     handler.on_user_turn("s-1", WISH)
     finish = handler._finish
 
-    def failure_in_the_gap(live, outcome=None):
+    def failure_in_the_gap(live, outcome=None, **kwargs):
         handler._fail("s-1", live)  # the other thread
-        finish(live, outcome)
+        finish(live, outcome, **kwargs)
 
     monkeypatch.setattr(handler, "_finish", failure_in_the_gap)
     handler.on_call_ended("s-1")

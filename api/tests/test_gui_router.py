@@ -172,6 +172,22 @@ def test_eigene_dateien_werden_ausgeliefert(client):
     assert htmx.status_code == 200 and len(htmx.content) > 10_000
 
 
+def test_the_view_can_go_on_the_home_screen(client):
+    """T-3.7: the manifest and its icons are served, and every page links the
+    manifest with credentials, which Caddy's Basic-Auth needs."""
+    manifest = client.get("/gui/static/manifest.json").json()
+
+    assert manifest["start_url"] == "/gui/" and manifest["display"] == "fullscreen"
+    for icon in manifest["icons"]:
+        image = client.get(icon["src"])
+        assert image.status_code == 200 and image.content.startswith(b"\x89PNG")
+    page = client.get("/gui/").text
+    assert (
+        '<link rel="manifest" href="/gui/static/manifest.json" '
+        'crossorigin="use-credentials">' in page
+    )
+
+
 @pytest.mark.latency
 def test_fragment_bleibt_schnell(client, engine, tenant_id):
     for i in range(20):

@@ -15,6 +15,8 @@ dialplan gives them, the same value that `calls.external_session_id` stores.
 
 from typing import Protocol
 
+from api.telephony.speech import SpeechUsage
+
 
 class TelephonyPort(Protocol):
     def caller_id(self, session_id: str) -> str | None:
@@ -86,10 +88,11 @@ class CallEvents(Protocol):
         the call to the team (docs/20 §4, CLAUDE.md §2 rule 5)."""
         ...
 
-    def on_call_ended(self, session_id: str) -> None:
+    def on_call_ended(self, session_id: str, speech: SpeechUsage | None = None) -> None:
         """The line is gone: the caller hung up, or the line closed it after
         our hangup or transfer. Reported once for every call, also after a
-        failure; the core closes its call log on it."""
+        failure; the core closes its call log on it, with what the call cost
+        the ear and the mouth (`speech`, None where not measured)."""
         ...
 
     def on_team_missed(self, session_id: str) -> bool:

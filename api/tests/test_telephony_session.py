@@ -13,11 +13,11 @@ from types import SimpleNamespace
 import pytest
 
 from api.telephony.adapters.fake_speech import FakeEar, FakeLine, FakeMouth
-from api.telephony.session import KEYPAD_MAX_DIGITS, CallSession, Lines
+from api.telephony.session import KEYPAD_MAX_DIGITS, SAMPLE_RATE, CallSession, Lines
 from api.telephony.session import PLAYED_GRACE_SECONDS as GRACE
 from api.telephony.session import UTTERANCE_LIMIT_SECONDS as UTTERANCE_LIMIT
 from api.telephony.session import UTTERANCE_SECONDS as UTTERANCE
-from api.telephony.speech import Heard
+from api.telephony.speech import Heard, SpeechUsage
 
 SILENCE = 6.0
 GAP = 3.0
@@ -73,8 +73,9 @@ class Core:
         self.calls.append(("voice_failure",))
         self._do(session_id, self.on_failure)
 
-    def on_call_ended(self, session_id: str) -> None:
+    def on_call_ended(self, session_id: str, speech=None) -> None:
         self.calls.append(("ended",))
+        self.speech = speech
 
     def turns(self) -> list[str]:
         return [call[1] for call in self.calls if call[0] == "turn"]
@@ -204,6 +205,25 @@ def test_audio_goes_to_the_ear_with_its_arrival_time(call):
     call.s.audio(b"\x03\x04")
     call.s.drain()
     assert call.ear.frames == [(b"\x01\x02", 100.0), (b"\x03\x04", 100.02)]
+
+
+def test_the_end_reports_what_the_ear_and_the_mouth_cost(call):
+    """T-10.6: seconds of audio fed to the ear (16 bit at the line's rate) and
+    the characters given to the mouth go to the core with the end of the call."""
+    call.core.replies["Tschüss"] = [("say", "Auf Wiedersehen."), ("hangup",)]
+    call.start(GREETING)
+    call.played()
+    call.s.audio(b"\x00" * 2 * SAMPLE_RATE)  # one second of audio
+    call.s.drain()
+    call.said("Tschüss", after=1.0)
+    call.played(after=1.0)
+    call.s.closed()
+    call.s.drain()
+
+    assert call.core.speech == SpeechUsage(
+        heard_seconds=1.0,
+        spoken_characters=len("Guten Tag.") + len("Auf Wiedersehen."),
+    )
 
 
 # --- Draining -------------------------------------------------------------------------
