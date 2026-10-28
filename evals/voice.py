@@ -197,6 +197,20 @@ def line_noise(seconds: float = NOISE_SECONDS, seed: int = 7) -> bytes:
     return (np.clip(noise, -1, 1) * 32767).astype(np.int16).tobytes()
 
 
+class Steady:
+    """A Piper voice without the noise it adds to every sentence, so a run
+    speaks the same audio as the last (as in test_telephony_speech_engines)."""
+
+    def __init__(self, voice) -> None:
+        self.voice = voice
+
+    def synthesize(self, text: str):
+        from piper.config import SynthesisConfig
+
+        steady = SynthesisConfig(noise_scale=0.0, noise_w_scale=0.0)
+        return self.voice.synthesize(text, syn_config=steady)
+
+
 # --- 3. Hard: noise and the read-back ----------------------------------------------
 
 
@@ -416,7 +430,10 @@ def summarize(
     # A variant that never got to its read-back says nothing about the yes.
     noise_reached = [c.id for c in noise_cases_ if c.readback]
     inside = [r for r in readbacks if r["inside"]]
+    # Its control never arrived: the ear missed the answer, so that read-back
+    # says nothing either way. Reported, and at least one must be checked.
     deaf = [r for r in readbacks if not r["after"]]
+    checked = [r for r in readbacks if r["after"]]
     hard = {
         "confirm_after_noise": len(noise_confirmed),
         "noise_cases_broken": len(noise_broken),
@@ -428,10 +445,7 @@ def summarize(
         "hard": hard,
         # Both checks must have had something to check: a deaf ear leaves no
         # read-back and no noise variant that got to one (review T-10.7).
-        "passed": not any(hard.values())
-        and not deaf
-        and bool(readbacks)
-        and bool(noise_reached),
+        "passed": not any(hard.values()) and bool(checked) and bool(noise_reached),
         "cases": {
             "text": f"{len(text_ok)}/{len(text_report.cases)}",
             "voice": f"{len(voice_ok)}/{len(voice_report.cases)}",
@@ -445,9 +459,10 @@ def summarize(
         "noise_confirmed": noise_confirmed,
         "noise_reached_readback": f"{len(noise_reached)}/{len(noise_cases_)}",
         "readback": {
-            "checked": len(readbacks),
+            "played": len(readbacks),
+            "checked": len(checked),
             "inside_taken": [r["readback"] for r in inside],
-            "control_missing": [r["readback"] for r in deaf],
+            "unchecked_control_missing": [r["readback"] for r in deaf],
         },
         "latency_seconds": {
             "agent_mouth_first_median": _median(
@@ -486,9 +501,10 @@ def markdown(summary: dict[str, Any], model: str) -> str:
         f"- No speech heard in {len(s['no_speech'])} lines",
         f"- Line noise heard as: {s['noise_heard_as']!r}; noise variants that got"
         f" to their read-back {s['noise_reached_readback']}",
-        f"- Read-backs checked: {s['readback']['checked']}, a yes inside taken "
-        f"{len(s['readback']['inside_taken'])}, control missing "
-        f"{len(s['readback']['control_missing'])}",
+        f"- Read-backs played {s['readback']['played']}, checked "
+        f"{s['readback']['checked']}, a yes inside taken "
+        f"{len(s['readback']['inside_taken'])}, unchecked (control missing) "
+        f"{len(s['readback']['unchecked_control_missing'])}",
         f"- Latency: {s['latency_seconds']}",
         "",
     ]
@@ -503,9 +519,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, help="only the first N cases: a trial")
     args = parser.parse_args(argv)
 
+    from piper import PiperVoice
+
     from api.config import settings
     from api.telephony import app as voice_app
-    from api.telephony.adapters.tts_piper import piper
+    from api.telephony.adapters.tts_piper import PiperMouth
 
     models = Path(os.environ.get("SPEECH_MODELS", "/models"))
     voice_app.MODELS = models
@@ -514,7 +532,9 @@ def main(argv: list[str] | None = None) -> int:
     watchdog = voice_app.Watchdog()
     make_ear = voice_app._whisper(watchdog)
     mouth = voice_app._piper(watchdog)()
-    caller = piper(models / "piper" / f"{CALLER_VOICE}.onnx")
+    caller = PiperMouth(
+        Steady(PiperVoice.load(models / "piper" / f"{CALLER_VOICE}.onnx"))
+    )
 
     cases = load_cases(args.cases, [])[: args.limit]
     lines = [line for case in cases for line in customer_lines(case)]

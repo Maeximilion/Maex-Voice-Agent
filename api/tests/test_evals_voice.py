@@ -137,6 +137,28 @@ def test_a_deaf_ear_never_passes(migrated_db_url, tmp_path):
     assert not summary["passed"]
 
 
+def test_a_read_back_without_its_control_is_unchecked_not_passed(
+    migrated_db_url, tmp_path
+):
+    """One read-back whose control the ear missed: reported as unchecked; the
+    run passes on the one that was checked."""
+    report = run(
+        cases=noise_cases([_case()]),
+        db_url=migrated_db_url,
+        report_dir=tmp_path,
+        hear=hear_with_noise(lambda line: line, None),
+    )
+    rows = [
+        {"readback": "A", "inside": [], "after": ["Ja"], "mouth_first_seconds": 0.1},
+        {"readback": "B", "inside": [], "after": [], "mouth_first_seconds": 0.1},
+    ]
+    summary = voice.summarize({}, report, report, report, None, rows, None)
+    assert summary["readback"]["unchecked_control_missing"] == ["B"]
+    assert summary["passed"]
+    rows[0]["after"] = []
+    assert not voice.summarize({}, report, report, report, None, rows, None)["passed"]
+
+
 def test_only_the_confirming_yes_becomes_noise():
     """An earlier yes (a consent) stays, or the call never gets to the
     read-back whose answer the noise stands for."""
