@@ -324,10 +324,10 @@ async def app(scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
                 key = "text" if isinstance(frame, str) else "bytes"
                 await send({"type": "websocket.send", key: frame})
     finally:
+        _live -= 1
         # In a thread: the analysis would stall the frames of every other call.
         # Shielded: when this task is cancelled (the server shuts down, a test
         # client leaves), a plain wait would cancel the job while it is still
         # queued, and the log would never get its closing record.
-        _live -= 1
         closing = asyncio.get_running_loop().run_in_executor(None, call.close)
         await asyncio.shield(closing)
