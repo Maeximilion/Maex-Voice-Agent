@@ -57,9 +57,14 @@ done
 # device in its tunnel, and that address is the tunnel's endpoint: answers to
 # it go through the tunnel, the tunnel's own packets (marked) around it, as
 # wg-quick does it (28.10.2026, 200 OK sent past the router 68 times).
-endpoint=$(wg show wg0 endpoints | cut -f2 | sed 's/:[0-9]*$//')
+peer=$(wg show wg0 endpoints | head -n1)
+endpoint=$(echo "$peer" | cut -f2 | sed 's/:[0-9]*$//')
 case "$endpoint" in
     *.*.*.*)
+        # WireGuard takes from a peer only what its AllowedIPs name: a file that
+        # sends only the router's network through the tunnel would drop the calls.
+        allowed=$(wg show wg0 allowed-ips | head -n1 | cut -f2 | tr ' ' ',')
+        wg set wg0 peer "$(echo "$peer" | cut -f1)" allowed-ips "$allowed,$endpoint/32"
         wg set wg0 fwmark 51820
         ip route replace "$endpoint/32" dev wg0 table 51820
         ip rule add not fwmark 51820 table 51820

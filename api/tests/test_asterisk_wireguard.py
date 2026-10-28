@@ -15,7 +15,8 @@ UP = Path(__file__).resolve().parents[2] / "deploy" / "asterisk" / "wireguard" /
 STUB = """#!/bin/sh
 echo "$(basename "$0") $*" >> "$CALLS"
 if [ "$(basename "$0")" = wg ] && [ "$1" = setconf ]; then cp "$3" "$CALLS.wg"; fi
-if [ "$(basename "$0")" = wg ] && [ "$1" = show ]; then printf 'key\t%s\n' "${ENDPOINT-203.0.113.7:51820}"; fi
+if [ "$(basename "$0")" = wg ] && [ "$3" = endpoints ]; then printf 'key\t%s\n' "${ENDPOINT-203.0.113.7:51820}"; fi
+if [ "$(basename "$0")" = wg ] && [ "$3" = allowed-ips ]; then printf 'key\t%s\n' "${ALLOWED-192.168.178.0/24}"; fi
 """
 # As the router hands it out for a WireGuard device: the PC's own address, the
 # router's DNS, everything through the tunnel. Invented keys and names.
@@ -43,7 +44,9 @@ def up(tmp_path):
     calls = tmp_path / "calls"
 
     def run(
-        text: str, endpoint: str = "203.0.113.7:51820"
+        text: str,
+        endpoint: str = "203.0.113.7:51820",
+        allowed: str = "192.168.178.0/24 0.0.0.0/0",
     ) -> tuple[subprocess.CompletedProcess[str], list[str], str]:
         conf = tmp_path / "access.conf"
         conf.write_text(text)
@@ -57,6 +60,7 @@ def up(tmp_path):
                 "ACCESS_WG_CONF": str(conf),
                 "WG_WORK": str(work),
                 "ENDPOINT": endpoint,
+                "ALLOWED": allowed,
             },
             capture_output=True,
             text=True,
@@ -82,6 +86,8 @@ def test_the_routers_file_becomes_a_tunnel_to_the_router_only(up):
         "ip link set wg0 up",
         "ip route replace 192.168.178.0/24 dev wg0",
         "wg show wg0 endpoints",
+        "wg show wg0 allowed-ips",
+        "wg set wg0 peer key allowed-ips 192.168.178.0/24,0.0.0.0/0,203.0.113.7/32",
         # The router's public address through the tunnel, the tunnel around it.
         "wg set wg0 fwmark 51820",
         "ip route replace 203.0.113.7/32 dev wg0 table 51820",
@@ -92,6 +98,17 @@ def test_the_routers_file_becomes_a_tunnel_to_the_router_only(up):
     assert "Address" not in given and "DNS" not in given and "\r" not in given
     assert given.count("PersistentKeepalive = 25") == 1
     assert "PrivateKey = " in given and "Endpoint = " in given
+
+
+def test_a_file_for_the_routers_network_only_takes_its_public_address_too(up):
+    # Without it WireGuard drops the calls that come from the router's public address.
+    text = ROUTER_FILE.replace(
+        "192.168.178.0/24,0.0.0.0/0,fd00::/64,::/0", "192.168.178.0/24"
+    )
+    done, calls, _ = up(text, allowed="192.168.178.0/24")
+
+    assert done.returncode == 0, done.stderr
+    assert "wg set wg0 peer key allowed-ips 192.168.178.0/24,203.0.113.7/32" in calls
 
 
 def test_an_address_without_a_prefix_is_one_host(up):
