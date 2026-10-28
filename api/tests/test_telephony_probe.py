@@ -215,6 +215,21 @@ def test_a_line_call_hangs_up_once_after_its_time(out, monkeypatch):
     assert log_of(out)[-1]["voice_in_seconds"] == 0.0
 
 
+def test_a_line_call_on_hold_is_hung_up_without_audio(out, monkeypatch):
+    monkeypatch.setattr(probe, "LINE_SECONDS", 0.3)
+    with connect_line() as ws:
+        ws.send_text(LINE_START)
+        ws.receive_text()
+        read_tone(ws)
+        # Not a frame from the caller: the deadline alone ends the call.
+        assert json.loads(ws.receive_text()) == {"command": "HANGUP"}
+        ws.send_bytes(bytes(FRAME))
+        ws.send_text('{"event": "QUEUE_DRAINED", "channel_id": "pbx-1.1"}')
+
+    sent = [r.get("text") for r in log_of(out) if r["dir"] == "out" and "text" in r]
+    assert sent.count('{"command": "HANGUP"}') == 1
+
+
 def test_a_line_call_without_a_caller_is_answered_and_says_so(out):
     start = json.dumps({**json.loads(LINE_START), "channel_variables": {}})
     with connect_line() as ws:

@@ -174,11 +174,23 @@ class ProbeCall:
         if not self._answered or self._hung_up:
             return []
         if now >= LINE_SECONDS:
-            self._hung_up = True
-            return self._sent([command("HANGUP")])
+            return self.on_deadline()
         # Queued behind the tone, so the caller hears themselves about a second late.
         self._echoed += len(data)
         return [data]
+
+    def seconds_left(self) -> float | None:
+        """Until a line call is hung up; None while no deadline runs. Also without
+        audio: a caller who puts the call on hold sends none."""
+        if not self._answered or self._hung_up:
+            return None
+        return max(0.0, LINE_SECONDS - self._elapsed())
+
+    def on_deadline(self) -> list[str | bytes]:
+        if not self._answered or self._hung_up:
+            return []
+        self._hung_up = True
+        return self._sent([command("HANGUP")])
 
     def close(self) -> None:
         """Analyse what was heard and end the log. Slow: not for the event loop."""
@@ -313,13 +325,17 @@ async def app(scope: MutableMapping[str, Any], receive: Any, send: Any) -> None:
     )
     try:
         while True:
-            message = await receive()
-            if message["type"] != "websocket.receive":
-                break
-            if message.get("text") is not None:
-                frames = call.on_text(message["text"])
+            try:
+                message = await asyncio.wait_for(receive(), call.seconds_left())
+            except TimeoutError:
+                frames = call.on_deadline()
             else:
-                frames = call.on_audio(message.get("bytes") or b"")
+                if message["type"] != "websocket.receive":
+                    break
+                if message.get("text") is not None:
+                    frames = call.on_text(message["text"])
+                else:
+                    frames = call.on_audio(message.get("bytes") or b"")
             for frame in frames:
                 key = "text" if isinstance(frame, str) else "bytes"
                 await send({"type": "websocket.send", key: frame})
