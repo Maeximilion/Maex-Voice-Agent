@@ -673,6 +673,7 @@ def pr(number: int, *, erstellt: str, geschlossen: str | None = None, felder=Non
     item.kind = "PullRequest"
     item.fields = dict(felder or {})
     item.created_at = datetime.fromisoformat(erstellt)
+    item.work_started = item.created_at
     item.closed_at = datetime.fromisoformat(geschlossen) if geschlossen else None
     return item
 
@@ -700,7 +701,7 @@ def test_gemergter_pr_bekommt_alle_vier_felder() -> None:
         erstellt="2026-09-24T10:00:00+00:00",
         geschlossen="2026-09-24T12:00:00+00:00",
     )
-    felder = project_report.derive_pr_fields(item)
+    felder = project_report.derive_fields(item)
     assert felder["Start date"] == "2026-09-24"
     assert felder["Target date"] == "2026-09-24"
     assert felder["Iteration"] == "2026-09-24"
@@ -708,9 +709,7 @@ def test_gemergter_pr_bekommt_alle_vier_felder() -> None:
 
 
 def test_offener_pr_hat_noch_kein_zieldatum() -> None:
-    felder = project_report.derive_pr_fields(
-        pr(140, erstellt="2026-09-24T10:00:00+00:00")
-    )
+    felder = project_report.derive_fields(pr(140, erstellt="2026-09-24T10:00:00+00:00"))
     assert "Target date" not in felder
     assert felder["Start date"] == "2026-09-24"
 
@@ -723,7 +722,7 @@ def test_gesetzte_felder_werden_nie_ueberschrieben() -> None:
         geschlossen="2026-09-24T09:00:00+00:00",
         felder={"Status": "Done", "Iteration": "Iteration 1", "Quarter": "Quarter 1"},
     )
-    felder = project_report.derive_pr_fields(item)
+    felder = project_report.derive_fields(item)
     assert "Iteration" not in felder
     assert "Quarter" not in felder
     assert set(felder) == {"Start date", "Target date"}
@@ -732,15 +731,15 @@ def test_gesetzte_felder_werden_nie_ueberschrieben() -> None:
 def test_datum_nach_berliner_zeit() -> None:
     """23:30 UTC am 23.09. ist in Berlin schon der 24.09. - das Board zeigt Berliner Tage."""
     item = pr(141, erstellt="2026-09-23T23:30:00+00:00")
-    assert project_report.derive_pr_fields(item)["Start date"] == "2026-09-24"
+    assert project_report.derive_fields(item)["Start date"] == "2026-09-24"
 
 
-def test_issues_bekommen_keine_abgeleiteten_felder() -> None:
-    """Bei Issues ist die Iteration Planung, keine Tatsache."""
+def test_an_issue_nobody_works_on_gets_no_fields() -> None:
+    """Without a pull request that closes it, an issue's dates would be a guess."""
     issue = eintrag(49, iteration=None)
     issue.kind = "Issue"
     issue.created_at = datetime.fromisoformat("2026-09-16T08:00:00+00:00")
-    assert project_report.derive_pr_fields(issue) == {}
+    assert project_report.derive_fields(issue) == {}
 
 
 def test_nachgetragene_felder_frischen_den_zeitstempel_auf(monkeypatch) -> None:
@@ -774,8 +773,127 @@ def test_nachgetragene_felder_frischen_den_zeitstempel_auf(monkeypatch) -> None:
         felder={"Status": "Done"},
     )
     item.updated_at = datetime(2026, 8, 2, tzinfo=UTC)
-    project_report.fill_pr_fields("owner", 2, "PROJ", [item], "token")
+    project_report.fill_fields("owner", 2, "PROJ", [item], "token")
 
     assert (
         project_report.find_issues([item], datetime.now(UTC))[ARCHIV_SCHLUESSEL] == []
     )
+
+
+def test_an_issue_takes_its_dates_from_the_first_closing_pull_request() -> None:
+    """Maxi, 2026-10-28: an issue starts when the first PR that closes it opens."""
+    node = {
+        "id": "PVTI_81",
+        "updatedAt": "2026-10-28T10:00:00Z",
+        "fieldValues": {"nodes": []},
+        "content": {
+            "__typename": "Issue",
+            "number": 81,
+            "title": "T-8.6",
+            "state": "CLOSED",
+            "url": "u",
+            "createdAt": "2026-09-16T08:00:00Z",
+            "closedAt": "2026-10-30T09:00:00Z",
+            "labels": {"nodes": []},
+            "closedByPullRequestsReferences": {
+                "nodes": [
+                    {"state": "MERGED", "createdAt": "2026-10-29T08:00:00Z"},
+                    {"state": "OPEN", "createdAt": "2026-10-28T23:30:00Z"},
+                    # A PR closed without merge is no work on the issue.
+                    {"state": "CLOSED", "createdAt": "2026-10-01T08:00:00Z"},
+                ]
+            },
+        },
+    }
+    issue = project_report.parse_item(node)
+    assert issue is not None
+    assert issue.has_open_pr
+    felder = project_report.derive_fields(issue)
+    # 23:30 UTC is the next day in Berlin.
+    assert felder == {
+        "Start date": "2026-10-29",
+        "Iteration": "2026-10-29",
+        "Quarter": "2026-10-29",
+        "Target date": "2026-10-30",
+    }
+
+
+def test_open_pull_requests_and_issues_with_one_go_to_in_progress() -> None:
+    offener_pr = eintrag(1, status="Todo")
+    offener_pr.kind = "PullRequest"
+    issue_mit_pr = eintrag(2, status="Todo")
+    issue_mit_pr.kind = "Issue"
+    issue_mit_pr.has_open_pr = True
+    backlog = eintrag(3, status="Todo")
+    backlog.kind = "Issue"
+    schon = eintrag(4, status="In progress")
+    schon.kind = "PullRequest"
+    # Open but on Done is drift for a human, not for this run.
+    drift = eintrag(5, status="Done")
+    drift.kind = "PullRequest"
+    gemergt = eintrag(6, status="Done", state="MERGED")
+    gemergt.kind = "PullRequest"
+    ohne_status = eintrag(7, status=None)
+    ohne_status.kind = "PullRequest"
+    alle = [offener_pr, issue_mit_pr, backlog, schon, drift, gemergt, ohne_status]
+    assert project_report.items_to_mark_in_progress(alle) == [
+        offener_pr,
+        issue_mit_pr,
+        ohne_status,
+    ]
+
+
+def test_set_status_finds_in_progress_in_any_spelling(monkeypatch) -> None:
+    calls = []
+
+    def falsches_graphql(query: str, variables: dict, token: str) -> dict:
+        if "field(name" in query:
+            options = [
+                {"id": "O1", "name": "Todo"},
+                {"id": "O2", "name": "In Progress"},
+            ]
+            return {"user": {"projectV2": {"field": {"id": "F", "options": options}}}}
+        calls.append(variables["optionId"])
+        return {}
+
+    monkeypatch.setattr(project_report, "graphql", falsches_graphql)
+    item = eintrag(1, status="Todo")
+    assert project_report.set_status("o", 2, "P", [item], "t", "In progress") == [
+        item.label
+    ]
+    assert calls == ["O2"]
+    assert item.is_in_progress
+
+
+@pytest.mark.parametrize(
+    ("heute", "erwartet"),
+    [
+        # Iteration 3 ended on 2026-10-27 with nothing after it.
+        ("2026-10-28", ["Iteration 4", "Iteration 5", "Iteration 6"]),
+        # Already covered 28 days ahead: nothing to add.
+        ("2026-09-20", []),
+    ],
+)
+def test_next_iterations_continue_the_last_one(heute: str, erwartet: list) -> None:
+    from datetime import date
+
+    known = [
+        {"id": "a", "title": "Iteration 2", "startDate": "2026-09-30", "duration": 14},
+        {"id": "b", "title": "Iteration 3", "startDate": "2026-10-14", "duration": 14},
+    ]
+    new = project_report.next_iterations(known, date.fromisoformat(heute))
+    assert [it["title"] for it in new] == erwartet
+    if new:
+        assert new[0] == {
+            "startDate": "2026-10-28",
+            "duration": 14,
+            "title": "Iteration 4",
+        }
+        # The last one added covers today plus the look-ahead.
+        assert new[-1]["startDate"] <= "2026-11-25" < "2026-12-09"
+
+
+def test_next_iterations_without_any_adds_nothing() -> None:
+    from datetime import date
+
+    assert project_report.next_iterations([], date(2026, 10, 28)) == []
