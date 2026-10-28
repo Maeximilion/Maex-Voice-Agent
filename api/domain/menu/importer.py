@@ -11,7 +11,8 @@ Two steps, so each can be tested on its own:
   `CommitInterruptedError`).
 
 The file is the truth for every dish it names: options are brought in line,
-and so are aliases from an earlier import. Aliases from calls or added by hand
+and so are aliases from an earlier import. A missing options or aliases file
+leaves that part as it is; one with only its header row clears it. Aliases from calls or added by hand
 stay; they are knowledge that has grown. Dishes that are in the database but
 not in the file are left untouched - ordered dishes cannot be deleted, and a
 forgotten dish should not vanish silently. The report names them. With
@@ -161,6 +162,10 @@ class Plan:
     options: dict[str, list[OptionRow]] = field(default_factory=dict)
     allergens: dict[str, AllergenRow] = field(default_factory=dict)
     aliases: dict[str, set[str]] = field(default_factory=dict)
+    # A file that is missing leaves its part as it is; one with only the
+    # header row clears it (repo audit 27.10.2026, like `pos_code`, docs/14).
+    options_given: bool = False
+    aliases_given: bool = False
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
@@ -394,6 +399,8 @@ def parse(files: Mapping[str, str | None]) -> Plan:
             pos_code=pos_code,
         )
 
+    plan.options_given = files.get(OPTIONS_FILE) is not None
+    plan.aliases_given = files.get(ALIASES_FILE) is not None
     _parse_options(plan, files.get(OPTIONS_FILE), spelled)
     _parse_allergens(plan, files.get(ALLERGENS_FILE), spelled)
     _parse_aliases(plan, files.get(ALIASES_FILE), spelled)
@@ -694,10 +701,12 @@ def apply(
     session.flush()
 
     for number, item in items.items():
-        _sync_options(session, item, plan.options.get(number, []), report)
+        if plan.options_given:
+            _sync_options(session, item, plan.options.get(number, []), report)
         if number in plan.allergens:
             _sync_allergens(session, item, plan.allergens[number], now, report)
-        _sync_aliases(session, item, plan.aliases.get(number, set()), report)
+        if plan.aliases_given:
+            _sync_aliases(session, item, plan.aliases.get(number, set()), report)
 
     if not dry_run and report.changed:
         session.add(

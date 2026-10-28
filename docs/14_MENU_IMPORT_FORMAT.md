@@ -45,6 +45,7 @@
 
 ## Prüfregeln des Importers (`--dry-run` zeigt sie)
 
+- A missing `item_options.csv` or `item_aliases.csv` leaves the options or the imported aliases of every dish as they are; a file with only its header row removes them for the dishes in `menu_items.csv` (repo audit 27.10.2026). Before, a folder without `item_options.csv` removed every size and extra of the dishes it named, and the register import, which writes no aliases file, removed the aliases from the chat. `item_allergens.csv` already worked this way per dish.
 - Doppelte `number` → Fehler
 - Preis nicht parsebar → Fehler
 - NUL character in a field → error with file and line (Postgres text cannot store it; a register export may pad with it)
