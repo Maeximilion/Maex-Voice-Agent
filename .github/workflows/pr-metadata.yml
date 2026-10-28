@@ -1,0 +1,38 @@
+name: pr-metadata
+
+# Assignee and type label as soon as a pull request opens, whoever opened it, and
+# the assignee of a new issue (Maxi, 2026-10-28):
+# `gh pr create` without the flags of /done step 7 (#390, 27.10.2026), Dependabot,
+# Codex. Before, only the daily project-maintenance run did this, at 03:00. The
+# script sets only what is missing and comes from the default branch:
+# pull_request_target checks out the base, nothing of the pull request is run,
+# and its title is only read by the script, never put into the shell.
+# pull_request_target also gives Dependabot's pull requests a token that may write.
+on:
+  pull_request_target:
+    types: [opened, reopened]
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  issues: write
+  # Assignee and label go through the issue interface, but GitHub additionally
+  # requires this permission for pull requests.
+  pull-requests: write
+
+concurrency:
+  group: pr-metadata
+  cancel-in-progress: false
+
+jobs:
+  fill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Fill in assignee and label
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/pr_metadata.py

@@ -2,8 +2,10 @@
 """Open security alerts and the open pull requests into main that fix them.
 
 /start step 5a (CLAUDE.md section 6 "Security alerts"), one line per open alert:
-a critical or high alert names the pull request that fixes it or blocks task
-work; a lower one is listed with what to do with it. No output: no open alert.
+every Dependabot alert and every critical or high code-scanning alert names the
+pull request that fixes it or blocks task work; a lower code-scanning alert is a
+suggestion next to the tasks. A blocking Dependabot alert whose advisory has no
+patched version yet says so: no pin can fix it, so Maxi decides. No output: no open alert.
 
     python3 scripts/alert_fixes.py
 
@@ -47,6 +49,11 @@ class GhError(Exception):
     pass
 
 
+def _blocks(alert: dict) -> bool:
+    # Every Dependabot alert blocks, whatever its severity (Maxi, 2026-10-27).
+    return alert["source"] == "dependabot" or alert["severity"] in BLOCKING
+
+
 def gh_api(path: str) -> list:
     """Every item of a REST list, all pages."""
     res = subprocess.run(
@@ -75,6 +82,8 @@ def _alerts(gh: Gh, errors: list[str]) -> list[dict]:
                     "name": a["dependency"]["package"]["name"],
                     "path": a["dependency"]["manifest_path"],
                     "ghsa": a["security_advisory"]["ghsa_id"],
+                    "patched": a["security_vulnerability"]["first_patched_version"]
+                    is not None,
                 }
             )
     except GhError as exc:
@@ -148,7 +157,7 @@ def report(gh: Gh = gh_api) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     alerts = _alerts(gh, errors)
     prs: list[dict] = []
-    if any(a["severity"] in BLOCKING for a in alerts):
+    if any(_blocks(a) for a in alerts):
         try:
             prs = gh(f"{REPO}/pulls?state=open&base=main&per_page=100")
         except GhError as exc:
@@ -167,22 +176,19 @@ def report(gh: Gh = gh_api) -> tuple[list[str], list[str]]:
         return found
 
     lines = []
-    alerts.sort(key=lambda a: (a["severity"] not in BLOCKING, a["source"], a["number"]))
+    alerts.sort(key=lambda a: (not _blocks(a), a["source"], a["number"]))
     for a in alerts:
         head = f"{a['source']} #{a['number']} {a['severity']} {a['name']} {a['path']}"
-        if a["severity"] not in BLOCKING:
-            what = (
-                "below high: the pin rides in the next feature PR"
-                if a["source"] == "dependabot"
-                else "below high: a suggestion next to the tasks"
-            )
-            lines.append(f"{head}: {what}")
+        if not _blocks(a):
+            lines.append(f"{head}: below high: a suggestion next to the tasks")
             continue
         fixed = which(_fixes, a)
         if fixed:
             lines.append(f"{head}: fixed by {', '.join(fixed)}")
             continue
         line = f"{head}: BLOCKS TASKS, no open PR into main fixes it"
+        if not a.get("patched", True):  # code-scanning alerts carry no version
+            line += "; no patched version exists: Maxi decides (dismiss or wait)"
         near = which(_candidate, a)
         if near:
             line += f"; candidates, not confirmed as the fix: {', '.join(near)}"

@@ -15,6 +15,7 @@ from api.agent.guards import (
     HINT_CONFIRM,
     HINT_GUEST_PHONE,
     HINT_NO_DRAFT,
+    allergen_claim,
     begin_turn,
     false_booking,
     note_said,
@@ -955,3 +956,65 @@ def test_the_pending_readback_may_be_read_word_for_word():
 
     assert false_booking(state, readback) is None
     assert false_booking(state, f"{readback} Das ist gebucht.") is not None
+
+
+# --- A dish name is no allergen claim (repo audit 27.10.2026, finding 6) ------
+
+
+def _found(name: str, number: str = "45"):
+    state = new_state()
+    state.seen_items[ENTE] = {"number": number, "name": name}
+    return state
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Gern, Nummer 45 Nudeln (glutenfrei). Noch etwas?",
+        "Einmal nudeln (GLUTENFREI), gern.",
+    ],
+)
+def test_a_dish_name_the_search_found_is_no_claim(say):
+    """The model repeats a name from the menu; the guest asked nothing about
+    allergens. Before, the order went to the team."""
+    assert allergen_claim(_found("Nudeln (glutenfrei)"), say) is False
+
+
+def test_an_offered_candidate_name_is_no_claim_either():
+    state = new_state()
+    state.offered_items[ENTE] = ("46", "Latte laktosefrei")
+
+    assert allergen_claim(state, "Meinen Sie Nummer 46 Latte laktosefrei?") is False
+
+
+def test_a_claim_next_to_the_dish_name_still_counts():
+    state = _found("Nudeln (glutenfrei)")
+
+    assert allergen_claim(state, "Die Nudeln (glutenfrei) sind auch eifrei.") is True
+    assert allergen_claim(state, "Das Pho Bo ist glutenfrei.") is True
+
+
+@pytest.mark.parametrize(
+    ("name", "say"),
+    [
+        # Codex on PR #388 (P1): a substring of a name removed part of a claim.
+        ("Milch", "Das Pho Bo ist milchfrei."),
+        ("Ei", "Das Pho Bo ist glutenfrei."),
+    ],
+)
+def test_a_short_dish_name_never_hides_a_claim(name, say):
+    state = _found(name)
+    state.allergy_talk = True
+
+    assert allergen_claim(state, say) is True
+
+
+def test_a_safety_promise_about_a_frei_dish_still_counts():
+    """Codex on PR #388 (P1): the name was the only allergen word, so taking
+    it out let a promise of separate preparation through."""
+    state = _found("Nudeln (glutenfrei)")
+
+    assert (
+        allergen_claim(state, "Die Nudeln (glutenfrei) werden getrennt zubereitet.")
+        is True
+    )

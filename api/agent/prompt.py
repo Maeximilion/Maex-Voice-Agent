@@ -1,8 +1,7 @@
-"""System-Prompt aus `prompts/system_vN.md` plus Menü-Index bauen (docs/05 §1, §5).
+"""System-Prompt aus `prompts/system_vN.md` bauen (docs/05 §1, §5).
 
-Version 2 kennt die Menü-Tools und die Abholung. Der Menü-Index (Nummer und Name,
-nie die ganze Karte, CLAUDE.md §2 Regel 6) wird angehängt, sobald ein Aufrufer ihn
-mitgibt.
+Version 2 kennt die Menü-Tools und die Abholung. The model finds dishes through
+the menu tools; the full menu is never in the prompt (CLAUDE.md §2 rule 6).
 
 `tools=True` adds the tool reference from `prompts/tools_vN.md`: the own core
 does not use the function calling of a platform, so a real model learns the
@@ -20,18 +19,11 @@ PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 CORE_TOKEN_BUDGET = 2600
 
 
-def build_system_prompt(
-    menu_index: str | None = None,
-    *,
-    version: str = PROMPT_VERSION,
-    tools: bool = False,
-) -> str:
+def build_system_prompt(*, version: str = PROMPT_VERSION, tools: bool = False) -> str:
     prompt = (PROMPTS_DIR / f"system_{version}.md").read_text(encoding="utf-8").strip()
     if tools:
         prompt = f"{prompt}\n\n# Tools\n{tool_reference(version)}"
-    if not menu_index:
-        return prompt
-    return f"{prompt}\n\n# Menü\n{menu_index}"
+    return prompt
 
 
 def tool_reference(version: str = PROMPT_VERSION) -> str:

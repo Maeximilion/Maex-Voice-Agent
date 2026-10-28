@@ -4,7 +4,8 @@
 #   bash scripts/backup.sh [--label NAME] [--no-encrypt]
 #
 #   --label NAME   goes into the file name (before_menu_import); a labelled dump is
-#                  never removed by the retention
+#                  removed by the retention like any other, it holds the same
+#                  customer data (docs/03 "Loeschkonzept")
 #   --no-encrypt   plain dump, only for a database without customer data
 #
 # Configuration from the environment or .env: DATABASE_URL, BACKUP_PASSPHRASE_FILE,
@@ -86,10 +87,14 @@ if ! ln "$partial" "$final" 2>/dev/null; then
 fi
 echo "written: $final ($(wc -c <"$final" | tr -d ' ') bytes, $tables tables)"
 
-# Only after a good run, and only scheduled dumps of this database: the time stamp
-# is directly followed by the suffix, a label sits in between.
+# Only after a good run, and only dumps of this database, labelled ones included.
+# A label is lower case; another database whose name starts with this one and a
+# stamp (shop_20260101T000000Z next to shop) has its own stamp, with upper-case
+# T and Z, behind the part that matches here, so an upper-case letter after the
+# stamp means the dump is not ours (Codex PR #386).
 if [ "$keep_days" -gt 0 ]; then
     find "$backup_dir" -maxdepth 1 -type f \
-        -name "maex_${PGDATABASE}_????????T??????Z.dump*" -mtime "+$keep_days" \
+        -name "maex_${PGDATABASE}_????????T??????Z*.dump*" \
+        ! -name "maex_${PGDATABASE}_????????T??????Z?*[[:upper:]]*" -mtime "+$keep_days" \
         -print -delete | sed "s/^/removed, older than $keep_days days: /"
 fi

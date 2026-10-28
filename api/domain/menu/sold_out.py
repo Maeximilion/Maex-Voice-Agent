@@ -30,9 +30,9 @@ from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.items import is_sold_out
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import CARD_PARTS, canonical_card
+from api.domain.status.config import ACTOR_TABLET
 from api.models import AuditLog, MenuItem
 
-ACTOR_TABLET = "gui:tablet"
 ACTION_SOLD_OUT = "menu_item.sold_out_changed"
 # Nobody remembers more than two suggestions on the phone (as with check_slot).
 MAX_ALTERNATIVES = 2

@@ -120,3 +120,31 @@ def test_development_keeps_short_kitchen_and_n8n_values():
         n8n_basic_auth_password="change_me",
     )
     assert values.kitchen_bridge_token == "bridge"
+
+
+@pytest.mark.parametrize(("sent", "unsent"), [(7, 21), (21, 20)])
+def test_outbox_rows_never_go_before_their_payload_period(sent, unsent):
+    """Repo audit 27.10.2026, finding 10: the row delete ignores the status, so
+    a row period below the unsent one would drop a kitchen slip still pending."""
+    with pytest.raises(ValidationError, match="RETENTION_OUTBOX_ROW_DAYS"):
+        _settings(
+            retention_outbox_row_days=20,
+            retention_outbox_sent_days=sent,
+            retention_outbox_unsent_days=unsent,
+        )
+
+
+def test_an_outbox_row_period_equal_to_the_payload_periods_passes():
+    values = _settings(
+        retention_outbox_row_days=21,
+        retention_outbox_sent_days=21,
+        retention_outbox_unsent_days=21,
+    )
+    assert values.retention_outbox_row_days == 21
+
+
+def test_the_default_outbox_periods_pass():
+    values = _settings()
+    assert values.retention_outbox_row_days == 90
+    assert values.retention_outbox_unsent_days == 30
+    assert values.retention_outbox_sent_days == 7

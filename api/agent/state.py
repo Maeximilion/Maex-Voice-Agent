@@ -80,7 +80,6 @@ class ConversationState(BaseModel):
     intent: str | None = None
     stage: Stage = "start"
     slots: dict[str, Any] = Field(default_factory=dict)
-    open_questions: list[str] = Field(default_factory=list)
     reservation_id: uuid.UUID | None = None
     order_id: uuid.UUID | None = None
     # The sentence of the draft that waits for its yes, as the draft tool
@@ -183,7 +182,7 @@ class ConversationState(BaseModel):
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""
-        data: dict[str, Any] = {"stage": self.stage, "open": self.open_questions}
+        data: dict[str, Any] = {"stage": self.stage}
         if self.greeted:
             data["greeted"] = True
         if self.last_say:

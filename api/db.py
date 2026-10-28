@@ -22,9 +22,14 @@ logger = get_logger("api.db")
 # Postgres hat diesen Wert als Default; hier steht er ausdruecklich, damit eine
 # andere Servereinstellung die Fachlogik nicht still aushebelt.
 #
-# hide_parameters: a failed statement is logged with its SQL, never with its
-# values. Those are guest names, phone numbers and notes, and a log line is
-# outside every deletion period of docs/03.
+# hide_parameters: the error SQLAlchemy raises carries the statement's SQL,
+# never its bound values. Those are guest names, phone numbers and notes, and a
+# log line is outside every deletion period of docs/03. It does not reach the
+# server's own message: a constraint error says "DETAIL: Failing row contains
+# (...)" with the row's values. So the log formatter and `error_text`
+# (api/core/logging.py) write only the type and the constraint of a database
+# error, and Postgres runs with log_error_verbosity=terse (docker-compose.yml)
+# for its own log.
 _ENGINE_ARGS = {
     "pool_pre_ping": True,
     "isolation_level": "READ COMMITTED",

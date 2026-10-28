@@ -248,8 +248,10 @@ Sofort und ohne Diskussion:
 ```json
 { "intent": "delivery", "customer": "bekannt, Rheinstraße 54",
   "items": [{ "id": "…", "n": 2, "opt": "Erdnuss" }],
-  "open": ["Rufnummer bestätigen"], "stage": "readback_pending" }
+  "stage": "readback_pending" }
 ```
+
+A list of open questions at the top level was planned here and never filled; the key went with the repo audit of 27.10.2026 (finding 13). `open` on a cart line, the mandatory groups still without a choice, stays.
 
 Nur ein vorgelesener Entwurf ist bestätigbar. Korrigiert der Gast nach dem Vorlesen
 und scheitert die Korrektur (`draft_order` oder `create_reservation` mit Fehler) oder
@@ -350,7 +352,7 @@ system message, so the long part before it stays the same for a provider's promp
 **The order in the compact state (T-2.4)** — a model keeps nothing between turns, so the
 order it has understood so far has to stand in the state it gets back:
 ```json
-{ "stage": "start", "open": [], "slots": { "phone": "+4972215551234" },
+{ "stage": "start", "slots": { "phone": "+4972215551234" },
   "cart": [{ "menu_item_id": "…", "quantity": 2, "number": "47", "name": "Ente knusprig",
              "open": [{ "group": "Fleisch", "options": ["Ente", "Huhn"] }] }] }
 ```

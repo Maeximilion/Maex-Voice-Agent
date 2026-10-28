@@ -23,11 +23,13 @@ There is exactly one project. A missing perspective is a **view**, never a secon
 
 ## Status
 
-Status lives in the project's Status field and nowhere else - never additionally as a label. It moves only through GitHub's built-in workflows:
+Status lives in the project's Status field and nowhere else - never additionally as a label. It moves through GitHub's built-in workflows and the `project-sync` workflow on every pull request and issue event (`docs/16_GITHUB_PROJECT.md` section 4):
 
 | Event | Status |
 |---|---|
-| Issue or pull request opened | Todo |
+| Issue opened | Todo |
+| Pull request opened | In progress |
+| Pull request with `Closes #N` opened | Issue #N In progress |
 | Pull request merged | Done |
 | Issue closed | Done |
 | Item reopened | In Progress |
@@ -38,13 +40,13 @@ Exception in the label set: `status: blocked` mirrors the blocked state that `do
 
 ## Labels and assignee at creation
 
-Issues: exactly one type label (`feature`, `chore`, `docs`, `test`, `refactor`, `bug`), one `stufe-N`, and `priority: *` when it is not medium. Set them once, at creation. Relabeling mid-task is board churn by another name.
+Issues: assignee `@me`, exactly one type label (`feature`, `chore`, `docs`, `test`, `refactor`, `bug`), one `stufe-N`, and `priority: *` when it is not medium. Set them once, at creation. Relabeling mid-task is board churn by another name.
 
-Pull requests: always `gh pr create --assignee @me --label feature`, where `feature` is replaced by the type label matching the Conventional Commit prefix of the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). The daily run fills in what is still missing, but a pull request should be complete from the start.
+Pull requests: always `gh pr create --assignee @me --label feature`, where `feature` is replaced by the type label matching the Conventional Commit prefix of the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). The workflow `pr-metadata` fills in what is still missing when the pull request opens, and the daily run catches the rest, but a pull request should be complete from the start.
 
-## Maintenance runs daily, never per commit
+## Maintenance runs on events and daily, never from a session
 
-`.github/workflows/project-maintenance.yml` runs `scripts/project_report.py --fix` once a day. It sets items that are finished (issue `CLOSED`, PR `MERGED` - a PR closed without merge is not finished) but not on `Done` to `Done` - the gap the built-in workflows leave, since they never act retroactively - and reports everything else in the job summary. Archiving never runs automatically; finished work stays visible in the roadmap. What it cannot decide lands in one issue labelled `projektpflege` (`scripts/decision_issue.py`, written with the built-in `GITHUB_TOKEN` so the mention actually notifies). Mention only on new points; the issue closes itself when nothing is left. Read that issue at the start of `/project` - it is the to-do list.
+`.github/workflows/project-sync.yml` runs `scripts/project_report.py --fix` on every pull request and issue event, `.github/workflows/project-maintenance.yml` once a day. Besides status it fills start date, target date, iteration and quarter from facts and appends iterations before the last one ends. The daily run It sets items that are finished (issue `CLOSED`, PR `MERGED` - a PR closed without merge is not finished) but not on `Done` to `Done` - the gap the built-in workflows leave, since they never act retroactively - and reports everything else in the job summary. Archiving never runs automatically; finished work stays visible in the roadmap. What it cannot decide lands in one issue labelled `projektpflege` (`scripts/decision_issue.py`, written with the built-in `GITHUB_TOKEN` so the mention actually notifies). Mention only on new points; the issue closes itself when nothing is left. Read that issue at the start of `/project` - it is the to-do list.
 
 Needs `PROJECT_TOKEN` as a secret and `PROJECT_NUMBER` (= 2) as a repo variable, both set up 2026-09-24 - the `GITHUB_TOKEN` cannot read account-owned projects.
 
