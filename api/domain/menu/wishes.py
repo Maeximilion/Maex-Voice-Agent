@@ -220,7 +220,9 @@ def _left_unread(text: str, pieces: list[str]) -> bool:
       "gegen Erdnuesse allergisch und gegen Sesam", "Erdnussallergie,
       ausserdem gegen Sesam", "Erdnussallergie und Sesam",
       "Erdnussallergie, leider". A bare word counts only behind a word that
-      names an allergen: "mit Allergie und Fruehlingsrollen" names a dish."""
+      names an allergen: "mit Allergie und Fruehlingsrollen" names a dish.
+    - A filler behind the joiner of a list, before more: "Erdnussallergie
+      und dann noch Sesam", "gegen Erdnuesse, dazu auch Sesam"."""
     tokens, words = _tokens(text)
     if any(
         _allergy_word(word)
@@ -252,6 +254,18 @@ def _left_unread(text: str, pieces: list[str]) -> bool:
             return True
         if words[i] == "aber" and words[i + 1] in _LIST_MODIFIERS:
             k = _skip(words, i + 1, _LIST_MODIFIERS)
+            k += k < len(words) and words[k] in _PREPOSITIONS
+            if unread(k) and in_sentence(i, k):
+                return True
+        # "Erdnussallergie und dann noch Sesam", "gegen Erdnuesse, dazu auch
+        # Sesam": a filler behind the joiner of a list goes on with the list,
+        # not with the call (#207).
+        if (
+            words[i] in _LIST_JOINERS
+            and words[i + 1] in _LIST_FILLERS
+            and (words[i - 1] in read or _allergy_word(words[i - 1]))
+        ):
+            k = _skip(words, i + 1, _LIST_FILLERS | _LIST_MODIFIERS)
             k += k < len(words) and words[k] in _PREPOSITIONS
             if unread(k) and in_sentence(i, k):
                 return True
@@ -486,6 +500,10 @@ def _stems_before(head: str) -> list[tuple[int, str]]:
 # "und auch Sesam", "und noch Sesam": das Beiwort beendet die Liste nicht, wenn
 # eine Zutat folgt (Codex PR #139, P1).
 _LIST_MODIFIERS = frozenset({"auch", "noch", "zudem", "ausserdem", "zusaetzlich"})
+# Words that end a list or go on with the call, but may also stand between a
+# joiner and the next allergen: "und dann noch Sesam", "und dazu Sesam", "und
+# vielleicht auch Sesam" (`_left_unread`, #207).
+_LIST_FILLERS = frozenset({"dann", "dazu", "vielleicht", "sicher"})
 
 
 def _ends_list(word: str | None) -> bool:
@@ -1523,6 +1541,17 @@ _NOT_AN_INGREDIENT = frozenset(
     | {"um", "uhr", "heute", "morgen", "uebermorgen", "abend", "mittag", "erst"}
     | {"montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag"}
     | {"sonntag", "personen", "leute", "tisch", "statt", "lieber", "spaeter"}
+    # Unsure, or no single ingredient: "Schwer zu sagen.", "Gute Frage.",
+    # "Mal sehen.", "Das kommt drauf an.", "Gegen vieles." (#207).
+    | {"schwer", "schwierig", "sagen", "sage", "frage", "sehen", "schauen"}
+    | {"gucken", "kommt", "drauf", "darauf", "vieles", "verschiedenes"}
+    | {"moegliche", "alles", "einiges", "sowas", "irgendwie"}
+)
+# Hesitation in front of an answer to "Wogegen?" ("Äh, Erdnüsse", "Hm."): left
+# out of the ingredient, and an answer of nothing else names none (#207).
+_HESITATION = re.compile(
+    r"^(?:(?:äh|ähm|aeh|aehm|öh|oeh|hm+|tja|also|naja|na|puh)\b[\s,.!?]*)+",
+    re.IGNORECASE,
 )
 # An additive or vitamin code ("E 621", "B12") is an ingredient with digits;
 # any other digit in an answer is a time, a date or a quantity.
@@ -1575,10 +1604,10 @@ def which_answer(text: str) -> tuple[Wish | Literal["withdrawn"] | None, list[st
         # "Keine Erdnuesse" would otherwise give "Keine Keine Erdnuesse". A
         # removal said with it is no ingredient ("Ohne Zwiebeln und gegen
         # Erdnuesse"), nor is the "gegen" in front of one (#252).
-        bare, removal = _ingredient_answer(text)
+        bare, removal = _ingredient_answer(_HESITATION.sub("", text))
         said += [removal, wish.note]
         wish = classify_wish(f"allergisch gegen {bare}", [])
-        if _not_an_ingredient(bare):
+        if not bare or _not_an_ingredient(bare):
             # A bare answer is read up to its end: "Moment, da muss ich kurz
             # ueberlegen" would be an allergy against all of it (T-11.1), and
             # "Erdnüsse, um 20:00" one against the time (Codex PR #368).

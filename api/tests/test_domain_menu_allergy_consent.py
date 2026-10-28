@@ -167,6 +167,10 @@ def test_only_denies(said, denies):
         ("Erdnüsse, aber ohne Zwiebeln.", "Erdnüsse", ["ohne Zwiebeln"]),
         ("Ohne Zwiebeln und gegen Erdnuesse", "Erdnuesse", ["Ohne Zwiebeln"]),
         ("Gegen E 621.", "E 621", []),
+        # A hesitation in front is no part of the ingredient (#207).
+        ("Äh, Erdnüsse.", "Erdnüsse", []),
+        ("Hmm, Sesam und Senf.", "Sesam und Senf", []),
+        ("Also, gegen Erdnüsse.", "Erdnüsse", []),
     ],
 )
 def test_the_answer_to_wogegen_gives_its_ingredient(answer, ingredient, removals):
@@ -195,6 +199,17 @@ def test_an_answer_that_names_nothing_withdraws_the_allergy(answer):
         # against all of it (T-11.1).
         "Moment, da muss ich kurz überlegen.",
         "Erdnüsse, glaube ich.",
+        # Issue #207, P1: an unsure answer was the ingredient on the note.
+        "Schwer zu sagen.",
+        "Puh, gute Frage.",
+        "Das ist schwer zu sagen.",
+        "Mal sehen.",
+        "Das kommt drauf an.",
+        "Gegen vieles.",
+        "Alles Mögliche.",
+        "Hm.",
+        "Äh.",
+        "Tja.",
     ],
 )
 def test_an_answer_without_an_ingredient_leaves_the_question_open(answer):
