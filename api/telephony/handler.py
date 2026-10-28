@@ -211,7 +211,7 @@ class CallHandler:
         session: Session | None = None
         try:
             session = self._session_factory()
-            routing = call_routing(session, self._tenant_id)
+            routing = call_routing(session, self._tenant_id, self._now)
             caller_id = self._port.caller_id(session_id)
             call_id = start_call(
                 session,
@@ -472,7 +472,6 @@ class CallHandler:
             self._live.pop(session_id, None)
             self._ending.pop(session_id, None)
             self._starting.discard(session_id)
-            self._ai_calls.discard(session_id)
             self._ended_while_starting.discard(session_id)
             self._remember_closed(session_id)
             # Not for a call whose end was handled already: an adapter on
@@ -502,8 +501,12 @@ class CallHandler:
                 extra={"extra": {"session_id": session_id}},
             )
             # No end of the leg will be reported for a transfer that never began.
+            # The agent's place is free: the AI leg is unusable, and the
+            # dialplan rings the team. Otherwise the place stays taken until
+            # the end of the leg, after the outage sentence (T-10.9).
             with self._lock:
                 self._ending.pop(session_id, None)
+                self._ai_calls.discard(session_id)
                 claimed = live is not None and self._claim(live)
             if live is not None and claimed:
                 self._finish(live, outcome="error", caller_waits=True)

@@ -15,6 +15,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime
+from datetime import time as clock_time
 from pathlib import Path
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -33,7 +34,14 @@ from api.domain.callbacks.create import SAY_NOTED
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.menu.importer import apply
 from api.domain.menu.items import active_count
-from api.models import Call, Callback, MenuItem, Reservation, ServiceConfig
+from api.models import (
+    Call,
+    Callback,
+    CallLimitWindow,
+    MenuItem,
+    Reservation,
+    ServiceConfig,
+)
 from api.telephony import handler as handler_module
 from api.telephony.adapters.fake import FakeTelephony, load_call
 from api.telephony.handler import (
@@ -300,6 +308,49 @@ def test_a_call_above_the_limit_rings_the_team_until_a_place_is_free(session, te
     port.open("s-3", caller_id="+497215551234")
     handler.on_call_started("s-3")
     assert port.says("s-3") and port.transfers("s-3") == []
+
+
+def test_a_failed_call_keeps_its_place_until_its_leg_has_ended(session, tenant):
+    """Review of T-10.9: the outage sentence still plays on the AI leg after a
+    failure, so the place is free only once the line reports the end."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_voice_failure("s-1")
+    assert port.transfers("s-1") == [TEAM_PHONE]
+
+    port.open("s-2", caller_id="+497215551234")
+    handler.on_call_started("s-2")
+    assert port.transfers("s-2") == [TEAM_PHONE] and port.says("s-2") == []
+
+    handler.on_call_ended("s-1")
+    handler.on_call_ended("s-2")
+    port.open("s-3", caller_id="+497215551234")
+    handler.on_call_started("s-3")
+    assert port.says("s-3") and port.transfers("s-3") == []
+
+
+def test_the_handler_reads_the_windows_at_its_own_time(session, tenant):
+    """A window of two around the handler's fixed time (Tuesday 18:00) lets a
+    second call reach the agent (review of T-10.9: the wall clock was read)."""
+    session.add(
+        CallLimitWindow(
+            tenant_id=tenant.id,
+            weekday=NOW.weekday(),
+            starts_at=clock_time(17, 0),
+            ends_at=clock_time(22, 0),
+            max_calls=2,
+        )
+    )
+    session.commit()
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    for sid in ("s-1", "s-2"):
+        port.open(sid, caller_id="+497215551234")
+        handler.on_call_started(sid)
+
+    assert port.says("s-2") and port.transfers("s-2") == []
 
 
 def test_switching_the_ai_off_takes_effect_on_the_next_call(session, tenant):

@@ -60,9 +60,16 @@ def call_routing(
     config = session.get(ServiceConfig, tenant_id, populate_existing=True)
     if tenant is None or config is None:
         raise NotFound("Tenant unknown or without service_config")
+    ai_answers = config.call_mode in AI_ANSWERS
     return CallRouting(
-        ai_answers=config.call_mode in AI_ANSWERS,
-        call_limit=_call_limit(session, tenant, config, now or utcnow()),
+        ai_answers=ai_answers,
+        # The windows only matter when the agent answers; a mode that sends
+        # every call to the team needs no read that could fail on the way.
+        call_limit=(
+            _call_limit(session, tenant, config, now or utcnow())
+            if ai_answers
+            else config.max_concurrent_calls
+        ),
         team_phone=config.team_phone,
         tenant_name=tenant.name,
         max_call_seconds=config.max_call_seconds,

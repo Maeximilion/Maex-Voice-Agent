@@ -97,6 +97,13 @@ def test_routing_carries_where_the_privacy_notice_is(session, tenant):
 FRIDAY_EVENING = datetime(2026, 10, 30, 18, 0, tzinfo=ZoneInfo("Europe/Berlin"))
 
 
+@pytest.fixture
+def answering(session, tenant):
+    """The agent answers: only then are the windows read."""
+    set_config(session, tenant.id, call_mode="primary")
+    return tenant
+
+
 def add_window(session, tenant_id, weekday, starts, ends, max_calls) -> None:
     session.add(
         CallLimitWindow(
@@ -110,11 +117,13 @@ def add_window(session, tenant_id, weekday, starts, ends, max_calls) -> None:
     session.commit()
 
 
-def test_the_limit_is_one_without_a_window(session, tenant):
+def test_the_limit_is_one_without_a_window(session, answering):
+    tenant = answering
     assert call_routing(session, tenant.id, FRIDAY_EVENING).call_limit == 1
 
 
-def test_a_window_sets_the_limit_in_the_restaurants_clock(session, tenant):
+def test_a_window_sets_the_limit_in_the_restaurants_clock(session, answering):
+    tenant = answering
     add_window(session, tenant.id, 4, "17:00", "22:00", 3)
 
     assert call_routing(session, tenant.id, FRIDAY_EVENING).call_limit == 3
@@ -128,15 +137,24 @@ def test_a_window_sets_the_limit_in_the_restaurants_clock(session, tenant):
     assert call_routing(session, tenant.id, end).call_limit == 1
 
 
-def test_overlapping_windows_take_the_lowest_limit(session, tenant):
+def test_overlapping_windows_take_the_lowest_limit(session, answering):
+    tenant = answering
     add_window(session, tenant.id, 4, "17:00", "22:00", 3)
     add_window(session, tenant.id, 4, "18:00", "19:00", 2)
 
     assert call_routing(session, tenant.id, FRIDAY_EVENING).call_limit == 2
 
 
-def test_a_changed_default_is_read_at_the_next_call(session, tenant):
+def test_a_changed_default_is_read_at_the_next_call(session, answering):
+    tenant = answering
     set_config(session, tenant.id, max_concurrent_calls=2)
+
+    assert call_routing(session, tenant.id, FRIDAY_EVENING).call_limit == 2
+
+
+def test_a_mode_without_the_agent_reads_no_window(session, tenant):
+    set_config(session, tenant.id, call_mode="paused", max_concurrent_calls=2)
+    add_window(session, tenant.id, 4, "17:00", "22:00", 3)
 
     assert call_routing(session, tenant.id, FRIDAY_EVENING).call_limit == 2
 
