@@ -224,3 +224,18 @@ Derselbe Satz laeuft in CI ueber `api/tests/test_evals_nummern.py`, damit ein
 Fall an genau einer Stelle gepflegt wird. Fuer neue Faelle gilt die Regel aus
 Abschnitt 5: jeder Satz vom Telefon, der falsch aufgeloest wurde, kommt mit der
 richtigen Erwartung hinein - der Satz ist dann rot, bis der Code stimmt.
+
+---
+
+## 8. Audio evals (T-10.7)
+
+`make eval-voice` (`evals/voice.py`) plays the cases of `evals/cases/` as speech instead of text, with the same runner and the same judge (§3). It runs in the image of the service `voice`, with the engines of the service and the model files of the speech kit, on the graphics card of the workbench; `MODEL=<name>` picks the model as for `make eval`, `LIMIT=<n>` takes the first n cases as a trial. The report goes to `evals/reports/voice/` (`voice.md`, `voice.json`, and the runner's reports of each play in subfolders), never next to the text suite's reports, so a voice run is never the baseline of CI.
+
+- **Heard:** every caller line is spoken by a Piper voice that is not the agent's (`de_DE-kerstin-low`), sent through the modelled telephone line (`speech_bench.telephone`: band and codec, no noise) and heard by the service's ear (Whisper behind the segmenting ear, `adapters/stt_whisper.py`), without key terms: the handler hands them per turn from what the agent just said, which a line spoken outside its call does not have, so what is heard here is the floor. A line the ear found no speech in is no turn, as on the phone.
+- **The cases played with what was heard,** next to the same cases as text, case by case: which cases the ear loses and which it wins. Numbers and dish names of each line are judged as in the spike (`evals/heard.py`): a line with one card number by the number rule (`right`, `wrong` = a dish the guest did not say, taken without a question, `asked`), each dish name of the eval menu in a line by its letters. A line of several positions counts only through its case (shortcut in `voice.recognition`).
+- **Hard, both 0, or the run fails (exit 1):**
+  - *A confirm after noise only:* every case that ends confirmed is played again with each yes of the caller replaced by what the ear made of line noise (hiss and two clicks); none of them may end confirmed. An ear that hears no speech in the noise leaves the yes out, and the order stays a draft.
+  - *A yes inside the read-back:* the read-back the agent said in each case is spoken by the agent's mouth into a real call session (`telephony/session.py`), and the caller's "Ja, passt so." ends 0.4 s before its end; the session must not hand it to the core. The same answer 0.3 s after the end is the control and must arrive, or the check proves nothing. Not a bare "Ja": in the caller's voice it lasts 0.2 s, under the ear's 256 ms of speech, and is no utterance at all.
+  - The hard metrics of §2 for the play as heard.
+- **Latency by stage:** the mouth to its first audio and the ear after the end of the audio (median and maximum per line), the core per turn (mean). The silence that ends a turn is the ear's own 704 ms and is not measured again. Voice to voice for G1 is measured with the operation engines on the server (docs/20 §6).
+- In CI (`api/tests/test_evals_voice.py`) the hook into the runner, the noise rule and the read-back check run with a stand-in ear that segments by energy and a stand-in mouth; the engines only on the workbench.

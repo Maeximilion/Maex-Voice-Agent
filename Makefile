@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate seed test lint fmt eval eval-targets eval-nummern eval-record readme-assets backup lock
+.PHONY: up down logs migrate seed test lint fmt eval eval-targets eval-nummern eval-voice eval-record readme-assets backup lock
 
 up:       ## Container starten
 	docker compose up -d --build
@@ -46,6 +46,14 @@ eval-targets: ## Target cases, level 3-5 and delivery, not in CI, red allowed (d
 
 eval-nummern: ## Nummernerkennung, ohne DB und ohne Modell
 	python -m evals.number_eval
+
+# The service voice's image with its engines and model files, on the graphics
+# card, against the stack's database (`make up` first); the report goes to
+# evals/reports/voice. As the host user, so it can write there.
+eval-voice: ## Audio evals: the cases spoken and heard (T-10.7, docs/08 §8), optional MODEL=, LIMIT=
+	docker compose --profile voice run --rm --no-deps --user "$$(id -u):$$(id -g)" -e HOME=/tmp \
+		-v "$(CURDIR):/app" -w /app voice python -m evals.voice --run-dir evals/reports/voice \
+		$(if $(MODEL),--model $(MODEL),) $(if $(LIMIT),--limit $(LIMIT),)
 
 eval-record: ## Record an eval report by hand and redraw (SUITE=targets, REPORT=<file>); make eval does it on its own
 	$(PYTHON) scripts/readme_assets.py add $(REPORT) $(if $(SUITE),--suite $(SUITE),)
