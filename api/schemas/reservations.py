@@ -45,13 +45,17 @@ class SlotCheck(BaseModel):
     say: str | None = Field(default=None, exclude=True)
 
 
+# The longest note of a table, the guest's allergies included (`agent/allergies.py`).
+RESERVATION_NOTE_MAX = 500
+
+
 class CreateReservationRequest(ToolRequest):
     idempotency_key: str = Field(min_length=1, max_length=128)
     guest_name: str = Field(min_length=1, max_length=200)
     phone: str = Field(min_length=3, max_length=40)
     party_size: int = Field(ge=1)
     reserved_for: ReservedFor
-    note: str | None = Field(default=None, max_length=500)
+    note: str | None = Field(default=None, max_length=RESERVATION_NOTE_MAX)
 
 
 ReservationStatus = Literal["draft", "confirmed", "cancelled"]

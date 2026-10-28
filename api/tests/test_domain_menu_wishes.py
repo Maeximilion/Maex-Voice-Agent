@@ -1628,6 +1628,24 @@ def test_a_clause_that_names_something_stays_in_the_note(said, kept):
         # A "gegen" no list holds, also after a full stop.
         "Ich habe eine Erdnussallergie. Und gegen Sesam",
         "Ich habe eine Erdnussallergie und meine Frau gegen Sesam",
+        # Issue #207, P1: a filler behind the joiner hid the next allergen.
+        "Ich habe eine Erdnussallergie und dann noch Sesam",
+        "Ich habe eine Erdnussallergie und dann auch Sesam",
+        "Ich habe eine Erdnussallergie und dann Sesam",
+        "Ich bin allergisch gegen Erdnüsse und dann noch Sesam",
+        "Ich bin allergisch gegen Erdnüsse, dann auch Sesam",
+        "Ich habe eine Erdnussallergie und dazu noch Sesam",
+        "Ich habe eine Erdnussallergie und vielleicht auch Sesam",
+        "Ich habe eine Erdnussallergie und dann noch gegen Sesam",
+        # The same behind a comma, a negation, a hesitation or "alle".
+        "Ich habe eine Erdnussallergie, und dann noch Sesam",
+        "Ich habe eine Laktoseintoleranz, und dann noch Gluten",
+        "Ich vertrage keine Erdnüsse und dann auch kein Sesam",
+        "Ich vertrage kein Gluten, und dann auch keine Laktose",
+        "Ich habe eine Erdnussallergie und noch dazu Sesam",
+        "Ich habe eine Erdnussallergie und, ähm, Sesam",
+        "Ich habe eine Erdnussallergie und alle anderen Nüsse",
+        "Ich habe eine Erdnussallergie, ja, und dann Sesam",
     ],
 )
 def test_more_than_the_parser_reads_is_asked_about(said):
@@ -1665,6 +1683,17 @@ def test_more_than_the_parser_reads_is_asked_about(said):
         ("ich bin stark allergisch gegen Erdnüsse", "Erdnüsse"),
         # A generic word followed by a dish: "Wogegen?", never the dish.
         ("Ich habe eine Allergie und Frühlingsrollen", None),
+        # A filler before what goes on with the call (#207).
+        ("Ich bin allergisch gegen Erdnüsse und dann noch eine Cola", "Erdnüsse"),
+        ("Ich habe eine Erdnussallergie und dann noch die 13", "Erdnuss"),
+        ("Ich habe eine Erdnussallergie und dann noch zwei Cola", "Erdnuss"),
+        ("Ich habe eine Erdnussallergie und dann möchte ich bestellen", "Erdnuss"),
+        ("Ich habe eine Erdnussallergie und dann hole ich es ab", "Erdnuss"),
+        ("Ich habe eine Erdnussallergie, ja, und dann die 13", "Erdnuss"),
+        ("Ich habe eine Erdnussallergie und alle anderen sind gesund", "Erdnuss"),
+        # A word for many things is no ingredient (#207).
+        ("Ich bin gegen vieles allergisch", None),
+        ("Ich bin allergisch gegen alles Mögliche", None),
     ],
 )
 def test_what_goes_on_with_the_call_reads_as_on_main(said, ingredient):

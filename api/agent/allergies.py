@@ -19,6 +19,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from api.agent import escalation
 from api.agent.consent import ALLERGY_QUESTION
 from api.agent.llm import ToolCall
 from api.agent.state import Allergy, ConversationState
@@ -40,6 +41,7 @@ from api.domain.menu.wishes import (
 )
 from api.schemas.menu import Wish
 from api.schemas.orders import NOTE_MAX
+from api.schemas.reservations import RESERVATION_NOTE_MAX
 
 # The calls that store a note: on an order line, on the whole order, on a table.
 NOTED = frozenset({"draft_order", "create_reservation"})
@@ -59,6 +61,7 @@ def note_allergies(session: Session, state: ConversationState, text: str) -> Non
     A sentence that only denies an allergy takes none back: a restriction
     too many is the safe side."""
     asked = _ASKED_WHICH.search(state.last_say or "")
+    before = _open(state)
     if asked is not None:
         # The first sentence answers the question; a later sentence with an
         # allergy word of its own is read as any other, with its own owner
@@ -74,8 +77,29 @@ def note_allergies(session: Session, state: ConversationState, text: str) -> Non
         _answer(session, state, said[0], asked.group("dish"))
         for sentence in said[1:]:
             _note(state, sentence)
-        return
-    _note(state, text)
+    else:
+        _note(state, text)
+    if before - _open(state):
+        # An open allergy was answered or taken back: the next one starts
+        # with its own answers (#207).
+        state.which_asks = 0
+    elif asked is not None and before and not _asks_back(text):
+        state.which_asks += 1
+
+
+def _asks_back(text: str) -> bool:
+    """A question of the guest's own ("Wie bitte?", "Sind Sie ein Roboter")
+    answers no "Wogegen?" and costs no answer (Codex PR #414)."""
+    return (
+        text.rstrip().endswith("?")
+        or escalation.without_human_question(text) is not None
+    )
+
+
+def _open(state: ConversationState) -> set[int]:
+    """The allergies still waiting for "Wogegen?", by identity: an answer
+    replaces the one it fills (`_answer`)."""
+    return {id(allergy) for allergy in state.allergies if allergy.ingredient is None}
 
 
 def _note(state: ConversationState, text: str) -> None:
@@ -241,6 +265,44 @@ def question(state: ConversationState) -> str | None:
     return None
 
 
+# How many answers to "Wogegen?" may leave the allergy open before the team
+# takes the call (#207): one the core cannot read ("Weiß ich nicht") held every
+# draft behind the same question until the call ran out of time. A sentence
+# put in between (the line's "Sind Sie noch da?", the answer to "Sind Sie ein
+# Roboter?") is no answer and costs nothing.
+WHICH_ASKS = 2
+
+
+def asked_out(state: ConversationState, question: str) -> bool:
+    """Is `question` "Wogegen?" once more after `WHICH_ASKS` answers that left
+    the allergy open? Then the team takes the call instead."""
+    return asked_which(question) and state.which_asks >= WHICH_ASKS
+
+
+def fits(call: ToolCall, written: ToolCall) -> bool:
+    """Do the notes the core wrote onto `written`, the draft as the model sent
+    it, fit their fields? Too many allergies for one note (#207) would fail
+    validation on every draft, and the call would go round until its time ran
+    out; the team takes it instead. A note the core left as the model wrote
+    it is the model's to shorten, after the validation in dispatch."""
+    if call.name not in NOTED:
+        return True
+    limit = RESERVATION_NOTE_MAX if call.name == "create_reservation" else NOTE_MAX
+    return all(
+        not isinstance(note, str) or len(note) <= limit or note == before
+        for note, before in zip(_notes(call), _notes(written), strict=False)
+    )
+
+
+def _notes(call: ToolCall) -> list[Any]:
+    """The note of the draft, then the note of each line."""
+    items = call.args.get("items")
+    lines = items if isinstance(items, list) else []
+    return [call.args.get("note")] + [
+        line.get("note") if isinstance(line, dict) else None for line in lines
+    ]
+
+
 def noted_call(state: ConversationState, call: ToolCall) -> ToolCall:
     """The draft with the guest's allergies written onto it: onto the line of
     the dish each was said with, any other onto the note of the whole order,
@@ -251,7 +313,7 @@ def noted_call(state: ConversationState, call: ToolCall) -> ToolCall:
         return call
     args = dict(call.args)
     if call.name == "create_reservation":
-        _set_note(args, _noted(state, args.get("note"), read, limit=None))
+        _set_note(args, _noted(state, args.get("note"), read, RESERVATION_NOTE_MAX))
         return ToolCall(call.name, args)
     items = args.get("items")
     if not isinstance(items, list):
@@ -283,13 +345,15 @@ def _noted(
     state: ConversationState,
     note: Any,
     allergies: list[Allergy],
-    limit: int | None = NOTE_MAX,
+    limit: int = NOTE_MAX,
 ) -> Any:
     """`note` with `allergies` in front, as the kitchen reads them (E14): "WICHTIG:
     Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln" with the caller's "ja",
     "ohne Erdnuss, ohne Zwiebeln" without it. One too long for its field keeps
     the allergies alone: the model's part is the one to lose, as in
-    `wishes.kitchen_note`."""
+    `wishes.kitchen_note`. Still too long, the allergies share one notice
+    ("WICHTIG: Keine Erdnuss, Sesam und Senf. Grund: Allergie", #207); one
+    that does not fit even so is left for `fits`."""
     if not allergies or (note is not None and not isinstance(note, str)):
         return note
     consented = state.allergy_consent == "yes"
@@ -310,6 +374,22 @@ def _noted(
         return ", ".join(parts)
 
     full = joined(parts)
-    if limit is not None and len(full) > limit and said:
-        return joined(list(dict.fromkeys(notices)))
-    return full
+    if len(full) <= limit:
+        return full
+    alone = joined(list(dict.fromkeys(notices)))
+    if len(alone) <= limit:
+        return alone
+    reasons = [a.ingredient for a in allergies if a.own and consented]
+    plain = [a.ingredient for a in allergies if not (a.own and consented)]
+    shared = [ALLERGY_NOTE.format(ingredient=_listed(reasons))] if reasons else []
+    shared += [f"ohne {_listed(plain)}"] if plain else []
+    with_said = joined(shared + ([said] if said else []))
+    return with_said if len(with_said) <= limit else joined(shared)
+
+
+def _listed(ingredients: list[str | None]) -> str:
+    """'Erdnuss, Sesam und Senf'."""
+    said = list(dict.fromkeys(i for i in ingredients if i))
+    if len(said) < 2:
+        return "".join(said)
+    return f"{', '.join(said[:-1])} und {said[-1]}"
