@@ -411,10 +411,20 @@ def replace_cart(state: ConversationState, lines: list[dict[str, Any]]) -> None:
     if same_order(lines, state.cart):
         # The state keeps the sequence that was read out (Codex PR #237, P2).
         return
-    if state.stage == "confirmed" and same_order(lines, state.booked_cart):
+    if (
+        state.stage == "confirmed"
+        and not state.cart
+        and same_order(lines, state.booked_cart)
+    ):
         # The order just booked, sent again by a model that keeps nothing
         # between turns: no open order, or a later handover tells the guest
-        # it is not placed (#207, Codex PR #347).
+        # it is not placed (#207, Codex PR #347). Only while no new order is
+        # being put together: one corrected back to the booked lines is taken
+        # (Codex PR #415).
+        # shortcut: an identical second order right after the booking reads
+        # as the repeat; a draft sent with it as `cart` in the same answer is
+        # refused (`guards._drafts_the_cart`), one without a `cart` goes
+        # through. Track a started order if that shows in calls.
         return
     order_corrected(state)
     state.cart = lines

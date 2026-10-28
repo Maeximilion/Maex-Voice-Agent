@@ -372,6 +372,22 @@ def test_a_new_order_after_the_booked_one_is_taken():
     assert state.cart == [line(ENTE, 3)]
 
 
+def test_a_new_order_corrected_to_the_booked_one_is_taken():
+    """Codex PR #415: a new order after the booked one, corrected back to the
+    booked lines, was ignored and kept its old quantity."""
+    state = new_state()
+    searched(state, ENTE)
+    order_read_back(state, line(ENTE, 2))
+    apply_tool_result(
+        state, "confirm", ToolResult(ok=True, data={"status": "confirmed"})
+    )
+    take_cart(state, [line(ENTE, 3)])
+
+    take_cart(state, [line(ENTE, 2)])
+
+    assert state.cart == [line(ENTE, 2)]
+
+
 def test_same_option_in_another_spelling_keeps_the_draft():
     """draft_order compares group and option without case and repeated
     spaces (`option_key`); the cart has to agree, or "huhn" for "Huhn" next
