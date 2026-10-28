@@ -120,6 +120,12 @@ SUMMARY_ALLERGENS = (
     "Frage zu Allergenen über die hinterlegten Angaben hinaus, vor einer "
     "Bestellung zu klären."
 )
+# The card when the guest's allergy could not be noted: "Wogegen?" stayed
+# unanswered, or too many for one note (#207). It never names the allergy (L13).
+SUMMARY_KITCHEN_NOTE = (
+    "Hinweis für die Küche nicht vollständig aufgenommen, vor einer Bestellung "
+    "zu klären."
+)
 # How a card names a booking made earlier in the call (`_handoff_summary`).
 _BOOKED = " Bereits gebucht: "
 SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
@@ -285,6 +291,13 @@ class ConversationLoop:
             if question is not None and bare_answer(
                 user_text if rest is None else rest
             ):
+                if allergies.asked_out(state, question):
+                    handed = self._allergens_to_team(
+                        state, lead=None, card=SUMMARY_KITCHEN_NOTE
+                    )
+                    if asks:
+                        handed.say.insert(0, SAY_NOT_A_PERSON)
+                    return handed
                 guards.note_said(state, question)
                 say = [question]
                 if asks:
@@ -488,6 +501,10 @@ class ConversationLoop:
                 else None
             )
             if refused is None and question is not None:
+                if allergies.asked_out(state, question):
+                    return self._allergens_to_team(
+                        state, lead=None, card=SUMMARY_KITCHEN_NOTE
+                    )
                 # The core asks what the allergy note still lacks before
                 # anything is stored, and the draft waits for the answer
                 # (`_held_answered`).
@@ -514,6 +531,10 @@ class ConversationLoop:
                 call = _card_without_allergy(
                     state, allergies.noted_call(state, turn.tool_call)
                 )
+                if not allergies.fits(state, call):
+                    return self._allergens_to_team(
+                        state, lead=None, card=SUMMARY_KITCHEN_NOTE
+                    )
                 result = self._dispatch(state, call.name, call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
             if (
@@ -800,16 +821,18 @@ class ConversationLoop:
         self,
         state: ConversationState,
         dish: str | None = None,
-        lead: str = SAY_ALLERGENS_UNKNOWN,
+        lead: str | None = SAY_ALLERGENS_UNKNOWN,
         table: str | None = None,
+        card: str = SUMMARY_ALLERGENS,
     ) -> TurnResult:
         """The guest asked about allergens beyond what the database holds
         (legal check L17, D24): the call goes to a team member, or a callback
         when nobody answers, and the call ends before any `confirm`. An order
         that stands unplaced goes onto the card and the guest hears that it is
         not placed. The card names the question and the dish, never the
-        guest's allergy (L13)."""
-        summary = SUMMARY_ALLERGENS + (f" Gericht: {dish}." if dish else "")
+        guest's allergy (L13). `card` is another reason the team has to
+        clear before an order (`SUMMARY_KITCHEN_NOTE`, #207)."""
+        summary = card + (f" Gericht: {dish}." if dish else "")
         table = table or self._open_table(state)
         if table:
             summary += f" {SUMMARY_OPEN_TABLE} {table}."
