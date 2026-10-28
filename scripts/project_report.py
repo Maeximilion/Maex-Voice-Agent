@@ -6,8 +6,10 @@ Zweck : Das Board ist eine Ableitung. Waehrend der Arbeit fasst es niemand an;
         docs/07_WORKPACKAGES.md passt, und meldet die Abweichungen.
 Aufruf: python scripts/project_report.py [--fix] [--archive]
         Ohne Schalter wird nur gelesen und berichtet (Trockenlauf).
-        --fix      setzt Abgeschlossenes auf Done und traegt bei Pull Requests leere
-                   Felder nach (Start, Ziel, Iteration, Quarter) - der taegliche Lauf
+        --fix      setzt Abgeschlossenes auf Done, Offenes in Arbeit auf In progress,
+                   traegt leere Felder nach (Start, Ziel, Iteration, Quarter) und
+                   haengt Iterationen an, bevor die letzte endet - taeglich und bei
+                   jedem Ereignis an einem Pull Request oder Issue (project-sync.yml)
         --archive  archiviert Done-Eintraege nach 14 Tagen, nur von Hand
         --findings-json DATEI  schreibt die offenen Befunde als JSON, fuer das
                    Entscheidungs-Issue (scripts/decision_issue.py)
@@ -71,7 +73,13 @@ query($owner: String!, $number: Int!, $cursor: String) {
           }
           content {
             __typename
-            ... on Issue { number title state url labels(first: 20) { nodes { name } } }
+            ... on Issue {
+              number title state url createdAt closedAt
+              labels(first: 20) { nodes { name } }
+              closedByPullRequestsReferences(first: 10, includeClosedPrs: true) {
+                nodes { state createdAt }
+              }
+            }
             ... on PullRequest {
               number title state url createdAt mergedAt closedAt
               labels(first: 20) { nodes { name } }
@@ -130,8 +138,8 @@ query($owner: String!, $number: Int!) {
           ... on ProjectV2IterationField {
             id name
             configuration {
-              iterations { id startDate duration }
-              completedIterations { id startDate duration }
+              iterations { id title startDate duration }
+              completedIterations { id title startDate duration }
             }
           }
         }
@@ -155,6 +163,14 @@ mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!, $iterationId: String!) {
     projectId: $projectId, itemId: $itemId, fieldId: $fieldId,
     value: {iterationId: $iterationId}
   }) { projectV2Item { id } }
+}
+"""
+
+SET_ITERATIONS_MUTATION = """
+mutation($fieldId: ID!, $config: ProjectV2IterationFieldConfigurationInput!) {
+  updateProjectV2Field(input: {fieldId: $fieldId, iterationConfiguration: $config}) {
+    projectV2Field { ... on ProjectV2IterationField { id } }
+  }
 }
 """
 
@@ -183,8 +199,9 @@ MAINTENANCE_LABEL = "projektpflege"
 # ein Pull Request von 23:30 UTC gehoert in Berlin schon zum naechsten Tag.
 BERLIN = ZoneInfo("Europe/Berlin")
 
-# Welche Board-Felder bei Pull Requests aus Fakten folgen. Bei Issues keines davon:
-# dort ist die Iteration eine Planungsentscheidung, keine Tatsache.
+# Board fields that follow from facts: a pull request starts when it opens, an
+# issue when the first pull request that closes it opens (Maxi, 2026-10-28). An
+# issue nobody works on yet gets none: its dates would be a guess.
 DATE_FIELDS = ("Start date", "Target date")
 ITERATION_FIELDS = ("Iteration", "Quarter")
 
@@ -216,6 +233,11 @@ class Item:
     created_at: datetime | None = None
     # Bei Pull Requests der Merge, sonst das Schliessen. None, solange offen.
     closed_at: datetime | None = None
+    # When work on it began: a pull request's opening, for an issue the earliest
+    # pull request that closes it (open or merged). None while nobody works on it.
+    work_started: datetime | None = None
+    # An issue with an open pull request that closes it is in progress.
+    has_open_pr: bool = False
 
     @property
     def status(self) -> str | None:
@@ -307,12 +329,27 @@ def parse_item(node: dict) -> Item | None:
         )
 
     content = node.get("content") or {}
+    kind = content.get("__typename")
+    closing = [
+        ref
+        for ref in (content.get("closedByPullRequestsReferences") or {}).get(
+            "nodes", []
+        )
+        if ref.get("state") in ("OPEN", "MERGED")
+    ]
+    if kind == "PullRequest":
+        work_started = _timestamp(content.get("createdAt"))
+    else:
+        opened = [t for ref in closing if (t := _timestamp(ref.get("createdAt")))]
+        work_started = min(opened, default=None)
     return Item(
         node_id=node["id"],
         title=content.get("title", "(ohne Titel)"),
         updated_at=datetime.fromisoformat(node["updatedAt"].replace("Z", "+00:00")),
         number=content.get("number"),
-        kind=content.get("__typename"),
+        kind=kind,
+        work_started=work_started,
+        has_open_pr=any(ref["state"] == "OPEN" for ref in closing),
         created_at=_timestamp(content.get("createdAt")),
         closed_at=_timestamp(content.get("mergedAt") or content.get("closedAt")),
         labels=frozenset(
@@ -564,26 +601,62 @@ def items_to_mark_done(items: list[Item]) -> list[Item]:
     ]
 
 
+def items_to_mark_in_progress(items: list[Item]) -> list[Item]:
+    """Open work that the board still shows as Todo (or without status): an open
+    pull request, or an open issue that an open pull request closes. Never an item
+    on Done: an open item on Done is drift for a human, not for this run."""
+    return [
+        item
+        for item in items
+        if not item.is_archived
+        and not item.is_maintenance
+        and item.state == "OPEN"
+        and not item.is_in_progress
+        and not item.is_done
+        and (item.kind == "PullRequest" or item.has_open_pr)
+    ]
+
+
+def pick_option(options: list[dict], names: frozenset[str], wanted: str) -> str:
+    """The status option for `wanted`, whatever its spelling on the board."""
+    for option in options:
+        if _normalized(option.get("name")) in names:
+            return option["id"]
+    present = ", ".join(option.get("name", "?") for option in options) or "keine"
+    raise ProjectError(
+        f"Status-Feld hat keine Option fuer {wanted} (vorhanden: {present})"
+    )
+
+
 def pick_done_option(options: list[dict]) -> str:
     """Die Done-Option des Status-Felds finden, gleich welche Schreibweise sie hat."""
-    for option in options:
-        if _normalized(option.get("name")) in DONE_NAMES:
-            return option["id"]
-    names = ", ".join(option.get("name", "?") for option in options) or "keine"
-    raise ProjectError(f"Status-Feld hat keine Option fuer Done (vorhanden: {names})")
+    return pick_option(options, DONE_NAMES, "Done")
 
 
 def mark_done(
     owner: str, number: int, project_id: str, items: list[Item], token: str
 ) -> list[str]:
     """Abgeschlossene Eintraege auf Done setzen. Idempotent: ein zweiter Lauf findet nichts."""
+    return set_status(owner, number, project_id, items, token, "Done")
+
+
+def set_status(
+    owner: str,
+    number: int,
+    project_id: str,
+    items: list[Item],
+    token: str,
+    wanted: str,
+) -> list[str]:
+    """Set `wanted` ("Done" or "In progress") on the items. Idempotent."""
     if not items:
         return []
     data = graphql(STATUS_FIELD_QUERY, {"owner": owner, "number": number}, token)
     status_field = ((data.get("user") or {}).get("projectV2") or {}).get("field")
     if not status_field or "options" not in status_field:
         raise ProjectError("Das Project hat kein Single-Select-Feld namens Status.")
-    option_id = pick_done_option(status_field["options"])
+    names = DONE_NAMES if wanted == "Done" else IN_PROGRESS_NAMES
+    option_id = pick_option(status_field["options"], names, wanted)
 
     fixed = []
     for item in items:
@@ -598,7 +671,7 @@ def mark_done(
             token,
         )
         # Lokal nachziehen, damit der Bericht den Stand nach der Korrektur zeigt.
-        item.fields["Status"] = "Done"
+        item.fields["Status"] = wanted
         # GitHub setzt updatedAt bei jeder Feldaenderung neu. Ohne das hier galte ein
         # eben korrigierter Eintrag im selben Lauf als 14 Tage alt und wuerde mit
         # --archive sofort wieder verschwinden, statt erst sichtbar Done zu sein.
@@ -617,30 +690,31 @@ def pick_iteration(iterations: list[dict], day: date) -> str | None:
     return None
 
 
-def derive_pr_fields(item: Item) -> dict[str, str]:
-    """Welche leeren Board-Felder eines Pull Requests aus Fakten folgen, als Berliner
-    Tag (ISO). Bei Iteration und Quarter ist es der Tag, nach dem sie gewaehlt werden.
+def derive_fields(item: Item) -> dict[str, str]:
+    """Welche leeren Board-Felder aus Fakten folgen, als Berliner Tag (ISO). Bei
+    Iteration und Quarter ist es der Tag, nach dem sie gewaehlt werden.
 
-    Nur Pull Requests, nur leere Felder: was von Hand gesetzt ist, bleibt stehen.
+    Only items someone works on (see work_started), only empty fields: what was set
+    by hand stays.
     """
-    if item.kind != "PullRequest" or item.created_at is None:
+    if item.work_started is None:
         return {}
-    started = item.created_at.astimezone(BERLIN).date().isoformat()
+    started = item.work_started.astimezone(BERLIN).date().isoformat()
     derived = dict.fromkeys(("Start date", *ITERATION_FIELDS), started)
     if item.closed_at is not None:
         derived["Target date"] = item.closed_at.astimezone(BERLIN).date().isoformat()
     return {name: value for name, value in derived.items() if not item.fields.get(name)}
 
 
-def fill_pr_fields(
+def fill_fields(
     owner: str, number: int, project_id: str, items: list[Item], token: str
 ) -> list[str]:
-    """Leere Board-Felder von Pull Requests nachtragen. Idempotent: gefuellte Felder
-    werden nie ueberschrieben, ein zweiter Lauf findet nichts mehr."""
+    """Leere Board-Felder nachtragen. Idempotent: gefuellte Felder werden nie
+    ueberschrieben, ein zweiter Lauf findet nichts mehr."""
     todo = [
         (item, derived)
         for item in items
-        if not item.is_archived and (derived := derive_pr_fields(item))
+        if not item.is_archived and (derived := derive_fields(item))
     ]
     if not todo:
         return []
@@ -685,6 +759,74 @@ def fill_pr_fields(
             item.updated_at = datetime.now(UTC)
             filled.append(f"{item.label}: {', '.join(done)}")
     return filled
+
+
+# Iterations are added this far ahead, so a pull request opened today always finds
+# one. GitHub does not roll iteration fields on by itself (Iteration 3 ended on
+# 2026-10-27 with none after it).
+ITERATIONS_AHEAD_DAYS = 28
+
+
+def next_iterations(known: list[dict], today: date) -> list[dict]:
+    """Iterations to append so that one covers `today + ITERATIONS_AHEAD_DAYS`.
+
+    Each new one continues the last: same duration, the next number in the title
+    ("Iteration 3" -> "Iteration 4"). Nothing when the field already reaches far
+    enough, or has no iteration to continue from."""
+    if not known:
+        return []
+    last = max(known, key=lambda it: it["startDate"])
+    duration = last["duration"]
+    start = date.fromisoformat(last["startDate"]) + timedelta(days=duration)
+    prefix, _, count = last.get("title", "").rpartition(" ")
+    number = int(count) if count.isdigit() else len(known)
+    prefix = prefix or "Iteration"
+    new = []
+    while start <= today + timedelta(days=ITERATIONS_AHEAD_DAYS):
+        number += 1
+        new.append(
+            {
+                "startDate": start.isoformat(),
+                "duration": duration,
+                "title": f"{prefix} {number}",
+            }
+        )
+        start += timedelta(days=duration)
+    return new
+
+
+def extend_iterations(owner: str, number: int, token: str) -> list[str]:
+    """Append the iterations next_iterations asks for. Existing ones are sent back
+    with their ids, so values already on items stay (checked on 2026-10-28)."""
+    data = graphql(FIELDS_QUERY, {"owner": owner, "number": number}, token)
+    nodes = ((data.get("user") or {}).get("projectV2") or {}).get("fields", {})
+    added = []
+    for node in nodes.get("nodes", []):
+        if node.get("name") not in ITERATION_FIELDS or "configuration" not in node:
+            continue
+        config = node["configuration"]
+        known = config.get("completedIterations", []) + config.get("iterations", [])
+        new = next_iterations(known, datetime.now(BERLIN).date())
+        if not new:
+            continue
+        iterations = [
+            {key: it[key] for key in ("id", "title", "startDate", "duration")}
+            for it in known
+        ] + new
+        graphql(
+            SET_ITERATIONS_MUTATION,
+            {
+                "fieldId": node["id"],
+                "config": {
+                    "startDate": min(it["startDate"] for it in known),
+                    "duration": new[0]["duration"],
+                    "iterations": iterations,
+                },
+            },
+            token,
+        )
+        added += [f"{node['name']}: {it['title']} ab {it['startDate']}" for it in new]
+    return added
 
 
 def archive_stale_done(
@@ -756,9 +898,22 @@ def main() -> int:
             if args.fix
             else []
         )
-
+        started = (
+            set_status(
+                owner,
+                number,
+                project_id,
+                items_to_mark_in_progress(items),
+                token,
+                "In progress",
+            )
+            if args.fix
+            else []
+        )
+        # Before the fields: a pull request opened today needs an iteration to land in.
+        extended = extend_iterations(owner, number, token) if args.fix else []
         filled = (
-            fill_pr_fields(owner, number, project_id, items, token) if args.fix else []
+            fill_fields(owner, number, project_id, items, token) if args.fix else []
         )
 
         open_in_repo = fetch_open_in_repo(repo, token) if repo else None
@@ -776,6 +931,12 @@ def main() -> int:
         if fixed:
             report += f"\n\n## Auf Done gesetzt ({len(fixed)})\n\n"
             report += "\n".join(f"- {label}" for label in fixed)
+        if started:
+            report += f"\n\n## Auf In progress gesetzt ({len(started)})\n\n"
+            report += "\n".join(f"- {label}" for label in started)
+        if extended:
+            report += f"\n\n## Iterationen angehaengt ({len(extended)})\n\n"
+            report += "\n".join(f"- {line}" for line in extended)
         if filled:
             report += f"\n\n## Felder nachgetragen ({len(filled)})\n\n"
             report += "\n".join(f"- {line}" for line in filled)

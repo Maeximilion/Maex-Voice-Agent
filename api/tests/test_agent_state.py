@@ -29,7 +29,8 @@ def make_state(**overrides) -> ConversationState:
 def test_frischer_zustand_ist_im_start():
     state = make_state()
     assert state.stage == "start"
-    assert state.to_prompt_json() == {"stage": "start", "open": []}
+    # No "open" key: no code ever filled it (repo audit 27.10.2026, finding 13).
+    assert state.to_prompt_json() == {"stage": "start"}
 
 
 def test_prompt_json_traegt_nur_belegte_felder():

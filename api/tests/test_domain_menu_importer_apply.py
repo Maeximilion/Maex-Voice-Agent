@@ -249,6 +249,48 @@ def test_optionen_werden_angeglichen(session, tenant_id):
     assert count(session, ItemOption) == 2
 
 
+def test_without_an_options_file_the_options_stay(session, tenant_id):
+    """Repo audit of 27.10.2026, finding 5: item_options.csv is optional. A
+    folder without it removed every option (size, extras, surcharges) of the
+    dishes in the file; a missing file now leaves them as they are."""
+    run(session, tenant_id)
+    before = count(session, ItemOption)
+    assert before > 0
+
+    report = run(session, tenant_id, files={OPTIONS_FILE: None})
+
+    assert (report.options_added, report.options_changed, report.options_removed) == (
+        0,
+        0,
+        0,
+    )
+    assert count(session, ItemOption) == before
+
+
+def test_an_options_file_with_only_its_header_removes_them(session, tenant_id):
+    run(session, tenant_id)
+    header = "number;group_name;option_name;price_delta_eur;is_default;required\n"
+
+    report = run(session, tenant_id, files={OPTIONS_FILE: header})
+
+    assert report.options_removed > 0
+    assert count(session, ItemOption) == 0
+
+
+def test_without_an_aliases_file_the_imported_aliases_stay(session, tenant_id):
+    """The same for aliases: the register converter writes no item_aliases.csv,
+    and its import removed every alias an earlier import from the chat
+    brought."""
+    run(session, tenant_id)
+    before = count(session, ItemAlias)
+    assert before > 0
+
+    report = run(session, tenant_id, files={ALIASES_FILE: None})
+
+    assert (report.aliases_added, report.aliases_removed) == (0, 0)
+    assert count(session, ItemAlias) == before
+
+
 def test_allergene_leere_zeile_loescht_bestaetigte_werte(session, tenant_id):
     """Leer heisst "keine Auskunft": der alte Wert darf nicht weiter vorgelesen werden."""
     run(session, tenant_id)

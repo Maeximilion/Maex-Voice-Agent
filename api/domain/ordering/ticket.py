@@ -40,6 +40,22 @@ def revision(session: Session, order: Order) -> int:
     ).scalar_one()
 
 
+def last_reason(session: Session, order: Order) -> str | None:
+    """The correction reason of the newest ticket. "Nochmal senden" sends the
+    same state again: a slip that replaces an earlier one still says so (repo
+    audit 27.10.2026)."""
+    return session.scalar(
+        select(OutboxEvent.payload["correction_reason"].astext)
+        .where(
+            OutboxEvent.tenant_id == order.tenant_id,
+            OutboxEvent.event_type == ORDER_CONFIRMED,
+            OutboxEvent.payload["order_id"].astext == str(order.id),
+        )
+        .order_by(OutboxEvent.created_at.desc())
+        .limit(1)
+    )
+
+
 def send_ticket(
     session: Session, order: Order, correction_reason: str | None = None
 ) -> OutboxEvent:
