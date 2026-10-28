@@ -1,0 +1,54 @@
+name: project-sync
+
+# The board follows each event, not only the daily run (Maxi, 2026-10-28): a pull
+# request goes to In progress when it opens and to Done when it is merged, an issue
+# to In progress when a pull request that closes it opens. Start date, target date,
+# iteration and quarter follow from the same facts (scripts/project_report.py,
+# docs/16_GITHUB_PROJECT.md). The daily project-maintenance run catches what an
+# event missed and keeps the decision issue.
+#
+# pull_request_target: the checkout is the default branch, nothing of the pull
+# request is run, and no text of it reaches the shell. It also hands Dependabot's
+# pull requests the PROJECT_TOKEN secret, which pull_request would withhold.
+on:
+  pull_request_target:
+    types: [opened, reopened, closed, edited, ready_for_review]
+  issues:
+    types: [opened, reopened, closed]
+
+permissions:
+  contents: read
+
+# Shared with project-maintenance: two runs writing the board at once could both
+# set the same field. GitHub keeps at most one waiting run per group, which is
+# enough, since every run syncs the whole board.
+concurrency:
+  group: projektpflege
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    # No secret in a run for a fork pull request (AGENTS.md, Codex on d09ede7):
+    # those are closed by outside-prs.yml, and the daily run catches the board.
+    # Dependabot's branches live in this repository and still run.
+    if: >-
+      github.event_name == 'issues' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Sync status, dates and iterations
+        shell: bash
+        env:
+          PROJECT_TOKEN: ${{ secrets.PROJECT_TOKEN }}
+          PROJECT_OWNER: ${{ github.repository_owner }}
+          PROJECT_NUMBER: ${{ vars.PROJECT_NUMBER }}
+        run: |
+          # shortcut: GitHub's auto-add puts a new item on the board shortly after
+          # the event; 30 seconds covered every run seen so far. An item it missed
+          # is caught by the next event or the daily run.
+          sleep 30
+          python3 scripts/project_report.py --fix | tee "$GITHUB_STEP_SUMMARY"

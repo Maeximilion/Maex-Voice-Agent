@@ -62,6 +62,14 @@ Switched on once in the project settings under "Workflows", after that without f
 | Issue closed | Status `Done` |
 | Entry reopened | Status `In Progress` |
 
+On top of them, `.github/workflows/project-sync.yml` runs `scripts/project_report.py --fix` on every pull request event (opened, reopened, closed, edited, ready for review) and every issue opened, reopened or closed (Maxi, 2026-10-28):
+
+| Event | Result |
+|---|---|
+| Pull request opened | Status `In progress`, start date and iteration set |
+| Pull request with `Closes #12` opened | Issue #12 also `In progress`, its start date and iteration from that pull request |
+| Pull request merged, issue closed | Status `Done`, target date set |
+
 So that the merge takes the linked issue along, **every** pull request description carries a keyword: `Closes #12`. Without it the merge closes only the pull request and the issue stays open.
 
 `Done` arises exclusively here. Not earlier, not by hand, not through Claude Code.
@@ -74,15 +82,19 @@ So that the merge takes the linked issue along, **every** pull request descripti
 
 **Corrected:** what is done (issue `CLOSED`, pull request `MERGED`) but the board does not show as `Done`. A pull request that was closed without a merge also has the state `CLOSED` but is not done - it is never set to `Done` automatically. This is the gap the built-in workflows leave, because they act only on new events and never retroactively. The correction is idempotent and only pulls the board toward the truth, never away from it.
 
-**Filled in**, for pull requests and only into empty fields:
+**Set to `In progress`:** an open pull request, and an open issue that an open pull request closes (`Closes #N`), while the board shows `Todo` or nothing. An open item on `Done` is reported, not moved.
+
+**Filled in**, only into empty fields, for pull requests and for issues someone works on:
 
 | Field | Value |
 |---|---|
-| Start date | Day the pull request was opened |
-| Target date | Day of the merge; for one closed without a merge, the day it was closed |
-| Iteration, Quarter | The period in which the pull request was opened - none if the day falls before or between the periods |
+| Start date | Day the pull request was opened; for an issue, the day the first pull request that closes it was opened |
+| Target date | Day of the merge (a pull request closed without a merge: the day it was closed); for an issue, the day it was closed |
+| Iteration, Quarter | The period that contains the start date - none if the day falls before or between the periods |
 
-Days are counted in Berlin time. What was set by hand stays. Issues get none of this: for them the iteration is planning, not fact.
+Days are counted in Berlin time. What was set by hand stays. An issue without a pull request that closes it gets none of this: its dates would be a guess. That is why every pull request for a task issue says `Closes #N` (`/done` step 7).
+
+**Iterations roll on:** GitHub does not add iterations by itself (Iteration 3 ended on 2026-10-27 with none after it, 2026-10-28). The run appends iterations of the same length until one covers the day 28 days ahead; existing ones keep their ids, so the values on items stay.
 
 In addition, `scripts/pr_metadata.py` sets the repo owner as assignee on every pull request without one, and on every pull request without a label the type label from the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). Without a recognizable type the label stays empty - better none than a guessed one. Every open issue without an assignee gets the owner as well; its labels are set at creation, not derived. It runs when a pull request or an issue opens or reopens (`.github/workflows/pr-metadata.yml`), so a pull request opened without the flags of `/done` step 7 is complete within a minute, and again in the daily run for whatever slipped past.
 
