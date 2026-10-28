@@ -19,6 +19,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from api.agent import escalation
 from api.agent.consent import ALLERGY_QUESTION
 from api.agent.llm import ToolCall
 from api.agent.state import Allergy, ConversationState
@@ -82,8 +83,17 @@ def note_allergies(session: Session, state: ConversationState, text: str) -> Non
         # An open allergy was answered or taken back: the next one starts
         # with its own answers (#207).
         state.which_asks = 0
-    elif asked is not None and before:
+    elif asked is not None and before and not _asks_back(text):
         state.which_asks += 1
+
+
+def _asks_back(text: str) -> bool:
+    """A question of the guest's own ("Wie bitte?", "Sind Sie ein Roboter")
+    answers no "Wogegen?" and costs no answer (Codex PR #414)."""
+    return (
+        text.rstrip().endswith("?")
+        or escalation.without_human_question(text) is not None
+    )
 
 
 def _open(state: ConversationState) -> set[int]:
