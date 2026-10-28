@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.24
+> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.25
 
 ---
 
@@ -627,6 +627,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.25 · 28.10.2026:** Stacked PRs: the merge gate passes a head that lacks only main's merge of the PR below it; Claude merges xhigh PRs once clean (Maxi, 28.10.2026)
 - **v2.11.24 · 28.10.2026:** Booking (#207 P2s): a missed team leg keeps the booking on its card, a confirmed order sent again stays booked
 - **v2.11.23 · 28.10.2026:** Allergy core (#207 P2s): many allergies share one notice, two unanswered Wogegen or a note that fits no field go to the team
 - **v2.11.22 · 28.10.2026:** Allergy parser (#207 P1s): a filler behind an allergy list hides no allergen, an unsure answer to Wogegen is no ingredient
