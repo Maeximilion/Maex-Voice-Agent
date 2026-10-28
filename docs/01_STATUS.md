@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.19
+> Status: 28.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.20
 
 ---
 
@@ -248,7 +248,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
     - Left in #252 for later: `USER` in the Dockerfile (PR #359 left it: the dev container writes into the mounted checkout); the installer and the Ollama archive are checked by SHA-256 since PR #360; with T-1.11 the lock per call and the call limit for a silent caller; with #64 the deletion of outbox payloads and caller numbers; audit findings 4 (T-10.9), 6 (#320, Maxi decides) and the off-site part of 10 (#321, at the server order).
     - The handover's steps by hand (13.10.2026): the ruleset on `main` is applied, four required checks next to the pull request rule (docs/13 §6; its name on GitHub is still `t-4.6-probebo`, because a disabled ruleset called `Main` blocks the name of the file). Dependabot works on the compiled lock file: its pull request #261 changes `api/requirements.in` and the hashed `api/requirements.txt`, checks green; no run had to be triggered. Not found: what "confirm the repository origin in the app" referred to.
 14. **T-11.1 done 27.10.2026** (#368, #369 on main). Real-model run on main 18a725f (qwen3.6-35b-a3b): cases 33/56, targets 2/29. It showed the model looking up allergens when the guest only named an allergy, which ended the order with the team in 11 of 15 allergy cases; fixed on `fix/l17-stated-allergy` (the core refuses that lookup), confirmed on the real model (0 false handovers in the allergy cases). Still open on the real model: the allergy cases fail where the model loses the name or the order of questions, and `allergie_0002` (a question about celery in the Pho Bo) is a missed handover: the model searched "Pho Bo Sellerie", found nothing and never looked up the allergens. Card numbers like S12 and 45g fail on the real model as before
-15. **Open issues, oldest first (handover 28.10.2026), in a session started in Ubuntu (WSL):** first a read-only triage of the 64 open issues into done but still open (close with evidence), small and needing no input from Maxi, needing Maxi's decision, and blocked; then the small ones one PR at a time, routed per CLAUDE.md §6, never two open PRs that touch the same files. Questions to Maxi in one batch
+15. **Open issues, triaged 28.10.2026 (64 open, oldest first):** done but still open: #320 closed (option B built in 66caa7b, networks are T-9.8 #410); ticked as done: #344 point 1 and the deletion item of #252 (both in `api/jobs/retention.py`). Small, no input, all from #207: the stale migration number in docs/09 L13 and the Asterisk log comment (fixed in the PR that adds this line); the two P1 findings in `domain/menu/wishes.py` ("und dann Sesam" hides an allergen, an uncertain answer becomes the ingredient) and the P2 findings in `agent/allergies.py`, `agent/loop.py` and `agent/state.py`, each `xhigh` and merged by Maxi, one PR per behaviour. Needs Maxi: #234 (the `SAY_NOBODY_REACHABLE` wording, the ruleset name, the `t51-db` container, the forwarding question), `USER` in the Dockerfile (#252), #344 point 4, #331, #407 (T-11.8), #408 (T-3.7), #319 (D4). Blocked: real-model runs on the GPU (#37, #56, #402, #331), people (#44), the POS provider (#50), stage 3 (#57 to #65), stage 4 (#66 to #70), the server order (#72 to #74, #81, #187, #321), the router (#318, #396, #397), Maxi's listening (#398), D19 (#403), deferred (#404, #410). Block issues stay open with their sub-issues; #136 belongs to `/project`
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
 
@@ -626,6 +626,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.20 · 28.10.2026:** Issue triage: 64 open issues sorted into done, small, Maxi's decision and blocked; #320 closed; docs/09 L13 names migration 010, the Asterisk log comment names journald (#207)
 - **v2.11.19 · 28.10.2026:** Handover: ticked the 111 open task boxes of 43 merged PRs on GitHub (not applicable, or green CI on the head commit); the issue sweep moves to a WSL session
 - **v2.11.18 · 28.10.2026:** Audit findings 7, 10 and 11: labelled dumps follow the backup retention, a deadline for restore copies, outbox row period checked, database errors logged without row values
 - **v2.11.17 · 28.10.2026:** A correction keeps every extra of an optional group and refuses a second choice in a required one, as draft_order does (repo audit finding 8)
