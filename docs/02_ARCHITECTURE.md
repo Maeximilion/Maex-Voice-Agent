@@ -114,7 +114,7 @@ Der Modus steht in `service_config.call_mode` und ist in der GUI umschaltbar.
 
 Whatever the mode (#252, Maxi 12.10.2026): an order above `service_config.order_approval_above_cents` (150 euros unless the restaurant sets another amount) waits for the approval in the GUI before a slip prints, in `primary` as well. The guest's yes confirms it all the same (`domain/ordering/confirm.py`, docs/04 §confirm).
 
-A call that reaches the agent in `shadow` or `paused` anyway is transferred to the team extension at once, without a word from the AI (`telephony/handler.py`, T-1.13). The mode is read at the start of every call, so the emergency stop holds from the next call on, whatever the routing in front of the voice layer says.
+A call that reaches the agent in `shadow` or `paused` anyway is transferred to the team extension at once, without a word from the AI (`telephony/handler.py`, T-1.13). The mode is read at the start of every call, so the emergency stop holds from the next call on, whatever the routing in front of the voice layer says. A call above the limit of concurrent AI calls goes to the team the same way, silently (D16, T-10.9, `docs/20_VOICE_LAYER.md` §8).
 
 ---
 

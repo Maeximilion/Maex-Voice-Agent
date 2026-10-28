@@ -104,7 +104,7 @@ von `callbacks/`, weil es kein Eskalationspfad ist, sondern der Rahmen um jeden
 Anruf, ganz gleich wie er ausgeht.
 - `start.py` — `calls`-Zeile anlegen, Rufnummer normalisieren, Löschfrist setzen; Zustands-Idempotenz über `external_session_id`
 - `end.py` — Dauer und Ergebnis schreiben, Zustands-Idempotenz wie `domain/confirm.py`
-- `routing.py` — whether the agent answers a call (only in `overflow` and `primary`), the team extension and the tenant name for the greeting; the mode is read fresh, so the emergency stop holds for the next call (T-1.13); `tenant_named`, the one tenant of a name, which the service `voice` serves (T-1.11)
+- `routing.py` — whether the agent answers a call (only in `overflow` and `primary`), the team extension and the tenant name for the greeting; the mode is read fresh, so the emergency stop holds for the next call (T-1.13); `tenant_named`, the one tenant of a name, which the service `voice` serves (T-1.11); `call_limit`, the limit of concurrent AI calls at the restaurant's local time (the lowest window of `call_limit_windows`, else `max_concurrent_calls`), and `takes_call`, whether the agent takes a call with that many of its own open (T-10.9)
 - `consent.py` — `record_consent`: one `consent_log` row per answer to a consent question of the agent (call, time, question, answer), committed before anything is stored on the strength of it (T-11.1, L13)
 
 Die Zeile pro einzelnem Tool-Aufruf (`calls.tool_calls`, docs/04 §Gemeinsame

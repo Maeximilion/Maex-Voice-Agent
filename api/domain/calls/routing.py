@@ -9,12 +9,14 @@ reach the team, not the switched-off agent.
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
-from api.models import ServiceConfig, Tenant
+from api.core.time import to_local, utcnow
+from api.models import CallLimitWindow, ServiceConfig, Tenant
 
 # `shadow`: the team takes every call, the agent only listens later (stage 4).
 # `paused`: the agent is off. Only in these two modes does it pick up.
@@ -23,7 +25,11 @@ AI_ANSWERS = frozenset({"overflow", "primary"})
 
 @dataclass(frozen=True)
 class CallRouting:
+    # The mode lets the agent answer; whether it takes this call also depends
+    # on the calls it has open (`takes_call`).
     ai_answers: bool
+    # How many calls the agent takes at once right now (D16, T-10.9).
+    call_limit: int
     team_phone: str
     tenant_name: str
     # The longest a call with the agent may last before it goes to the team.
@@ -47,16 +53,49 @@ def tenant_named(session: Session, name: str) -> uuid.UUID:
     return found[0]
 
 
-def call_routing(session: Session, tenant_id: uuid.UUID) -> CallRouting:
+def call_routing(
+    session: Session, tenant_id: uuid.UUID, now: datetime | None = None
+) -> CallRouting:
     tenant = session.get(Tenant, tenant_id)
     config = session.get(ServiceConfig, tenant_id, populate_existing=True)
     if tenant is None or config is None:
         raise NotFound("Tenant unknown or without service_config")
+    ai_answers = config.call_mode in AI_ANSWERS
     return CallRouting(
-        ai_answers=config.call_mode in AI_ANSWERS,
+        ai_answers=ai_answers,
+        # The windows only matter when the agent answers; a mode that sends
+        # every call to the team needs no read that could fail on the way.
+        call_limit=(
+            _call_limit(session, tenant, config, now or utcnow())
+            if ai_answers
+            else config.max_concurrent_calls
+        ),
         team_phone=config.team_phone,
         tenant_name=tenant.name,
         max_call_seconds=config.max_call_seconds,
         turn_deadline_seconds=config.turn_deadline_seconds,
         privacy_notice_address=config.privacy_notice_address,
     )
+
+
+def _call_limit(
+    session: Session, tenant: Tenant, config: ServiceConfig, now: datetime
+) -> int:
+    """The limit at `now` in the restaurant's clock: the lowest of the windows
+    that hold it, else `max_concurrent_calls`."""
+    local = to_local(now, tenant.timezone)
+    limits = session.scalars(
+        select(CallLimitWindow.max_calls).where(
+            CallLimitWindow.tenant_id == tenant.id,
+            CallLimitWindow.weekday == local.weekday(),
+            CallLimitWindow.starts_at <= local.time(),
+            CallLimitWindow.ends_at > local.time(),
+        )
+    ).all()
+    return min(limits, default=config.max_concurrent_calls)
+
+
+def takes_call(routing: CallRouting, open_calls: int) -> bool:
+    """Does the agent take a call while `open_calls` of its own are open? A
+    call above the limit rings the team (D16, CLAUDE.md §2 rule 5)."""
+    return routing.ai_answers and open_calls < routing.call_limit

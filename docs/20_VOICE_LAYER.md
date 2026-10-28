@@ -515,9 +515,13 @@ print every dialplan step with its values, the token included (seen in the drill
 ## 8. Concurrency (D16)
 
 `domain/calls/routing.py` decides whether the AI answers from the mode and from the number of open
-calls against a limit; a call above the limit rings the team through the silent transfer that
-exists for `paused`. The limit and its weekly windows are a database value (migration, T-10.9).
-Test phase: limit 1, because the router path allows 2 and the team needs its lines.
+calls against a limit (`takes_call`); a call above the limit rings the team through the silent
+transfer that exists for `paused`. Built with T-10.9 (28.10.2026, migration 011): the limit is
+`service_config.max_concurrent_calls`, or the lowest of the `call_limit_windows` that hold the
+restaurant's local time; both are read at the start of every call. The phone line counts the calls
+it took in memory and takes the place in the same step as the decision, so two calls that start at
+once cannot both get the last one; a place is free when the leg has ended, not when the agent asked
+for the hangup. Test phase: limit 1, because the router path allows 2 and the team needs its lines.
 
 ---
 
