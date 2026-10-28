@@ -258,6 +258,12 @@ def test_a_sentence_without_an_allergy_notes_none(session, state, said):
         # A sentence of its own, not a list of ingredients.
         ("Moment, da muss ich kurz überlegen.", [(None, True)]),
         ("Erdnüsse, glaube ich.", [(None, True)]),
+        # Issue #207: a hesitation is no part of the ingredient, and alone or
+        # unsure it neither fills nor withdraws the allergy.
+        ("Ähm, Erdnüsse.", [("Erdnüsse", True)]),
+        ("Hm.", [(None, True)]),
+        ("Schwer zu sagen.", [(None, True)]),
+        ("Wie bitte?", [(None, True)]),
     ],
 )
 def test_the_answer_to_wogegen_fills_the_open_allergy(session, state, answer, noted):

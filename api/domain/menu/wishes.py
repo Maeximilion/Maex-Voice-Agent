@@ -192,7 +192,7 @@ def _ingredient(text: str) -> str | None:
             found.extend(_stems_before(text[:start]))
     pieces: list[str] = []
     for _, piece in sorted(found):
-        if not piece or _NO_INGREDIENT & set(_words(piece)):
+        if not piece or _NOT_A_PIECE & set(_words(piece)):
             return None
         piece = piece[0].upper() + piece[1:]
         if piece not in pieces:
@@ -222,7 +222,8 @@ def _left_unread(text: str, pieces: list[str]) -> bool:
       "Erdnussallergie, leider". A bare word counts only behind a word that
       names an allergen: "mit Allergie und Fruehlingsrollen" names a dish.
     - A filler behind the joiner of a list, before more: "Erdnussallergie
-      und dann noch Sesam", "gegen Erdnuesse, dazu auch Sesam"."""
+      und dann noch Sesam", "gegen Erdnuesse, und dazu auch Sesam", "vertrage
+      keine Erdnuesse und dann auch kein Sesam", "und, aeh, Sesam"."""
     tokens, words = _tokens(text)
     if any(
         _allergy_word(word)
@@ -257,18 +258,16 @@ def _left_unread(text: str, pieces: list[str]) -> bool:
             k += k < len(words) and words[k] in _PREPOSITIONS
             if unread(k) and in_sentence(i, k):
                 return True
-        # "Erdnussallergie und dann noch Sesam", "gegen Erdnuesse, dazu auch
-        # Sesam": a filler behind the joiner of a list goes on with the list,
-        # not with the call (#207).
-        if (
-            words[i] in _LIST_JOINERS
-            and words[i + 1] in _LIST_FILLERS
-            and (words[i - 1] in read or _allergy_word(words[i - 1]))
-        ):
-            k = _skip(words, i + 1, _LIST_FILLERS | _LIST_MODIFIERS)
-            k += k < len(words) and words[k] in _PREPOSITIONS
-            if unread(k) and in_sentence(i, k):
-                return True
+        # A filler behind the joiner of a list goes on with the list, not
+        # with the call (#207). `i - 2` exists: a comma at `i - 1` is never
+        # the allergy word at `first`.
+        before = words[i - 1 - (words[i - 1] == ",")]
+        if words[i] in _LIST_JOINERS and (before in read or _allergy_word(before)):
+            k = _skip(words, i + 1, _LIST_FILLERS | _LIST_MODIFIERS | _LIST_JOINERS)
+            if _LIST_FILLERS.intersection(words[i + 1 : k]):
+                k += k < len(words) and words[k] in _PREPOSITIONS | _KEIN
+                if unread(k) and in_sentence(i, k):
+                    return True
     last = -1
     for n, word in enumerate(words):
         if not _allergy_word(word):
@@ -501,9 +500,21 @@ def _stems_before(head: str) -> list[tuple[int, str]]:
 # eine Zutat folgt (Codex PR #139, P1).
 _LIST_MODIFIERS = frozenset({"auch", "noch", "zudem", "ausserdem", "zusaetzlich"})
 # Words that end a list or go on with the call, but may also stand between a
-# joiner and the next allergen: "und dann noch Sesam", "und dazu Sesam", "und
-# vielleicht auch Sesam" (`_left_unread`, #207).
-_LIST_FILLERS = frozenset({"dann", "dazu", "vielleicht", "sicher"})
+# joiner and the next allergen: "und dann noch Sesam", "und noch dazu Sesam",
+# "und vielleicht auch Sesam", "und, aeh, Sesam", "und alle anderen Nuesse"
+# (`_left_unread`, #207).
+_LIST_FILLERS = frozenset(
+    {"dann", "dazu", "vielleicht", "sicher", "ja", "alle", "andere", "anderen"}
+    | {"aeh", "aehm", "oeh", "oehm", "eh", "ehm", "hm", "hmm"}
+)
+# A word for many things, no ingredient of its own: "gegen vieles", "gegen
+# alles Moegliche" (#207). The ingredient stays open and the agent asks.
+_NO_SINGLE = frozenset(
+    {"vieles", "alles", "verschiedenes", "einiges", "mehreres", "manches"}
+    | {"moegliche", "moeglichen", "verschiedene", "unterschiedliches"}
+    | {"diverses", "allerlei", "viel", "zeug"}
+)
+_NOT_A_PIECE = _NO_INGREDIENT | _NO_SINGLE
 
 
 def _ends_list(word: str | None) -> bool:
@@ -1468,7 +1479,7 @@ def answers_only(text: str) -> bool:
     read = set(_words(answer.ingredient or "")) if isinstance(answer, Wish) else set()
     return all(
         word in read or word in _ANSWER_WORDS or _is_allergy(word)
-        for word in _words(text)
+        for word in _words(_HESITATION.sub("", text))
     )
 
 
@@ -1490,7 +1501,7 @@ def read_in_full(text: str, ingredient: str) -> bool:
     read = set(_words(ingredient))
     return all(
         word in read or word in _ANSWER_WORDS or word in _SPEAKERS or _is_allergy(word)
-        for word in _words(text)
+        for word in _words(_HESITATION.sub("", text))
     )
 
 
@@ -1541,16 +1552,17 @@ _NOT_AN_INGREDIENT = frozenset(
     | {"um", "uhr", "heute", "morgen", "uebermorgen", "abend", "mittag", "erst"}
     | {"montag", "dienstag", "mittwoch", "donnerstag", "freitag", "samstag"}
     | {"sonntag", "personen", "leute", "tisch", "statt", "lieber", "spaeter"}
-    # Unsure, or no single ingredient: "Schwer zu sagen.", "Gute Frage.",
-    # "Mal sehen.", "Das kommt drauf an.", "Gegen vieles." (#207).
+    # Unsure, or no ingredient at all: "Schwer zu sagen.", "Gute Frage.",
+    # "Mal sehen.", "Das kommt drauf an.", "Nee.", "Nix." (#207).
     | {"schwer", "schwierig", "sagen", "sage", "frage", "sehen", "schauen"}
-    | {"gucken", "kommt", "drauf", "darauf", "vieles", "verschiedenes"}
-    | {"moegliche", "alles", "einiges", "sowas", "irgendwie"}
+    | {"gucken", "kommt", "drauf", "darauf", "sowas", "irgendwie", "kompliziert"}
+    | {"nee", "noe", "nix", "ne", "nope", "jo", "joa", "wie", "nochmal"}
 )
-# Hesitation in front of an answer to "Wogegen?" ("Äh, Erdnüsse", "Hm."): left
-# out of the ingredient, and an answer of nothing else names none (#207).
+# Hesitation in front of an answer to "Wogegen?" ("Äh, Erdnüsse", "Ehm.",
+# "Mhm."): left out of the ingredient, and an answer of nothing else names
+# none (#207). The alternatives share no prefix that repeats.
 _HESITATION = re.compile(
-    r"^(?:(?:äh|ähm|aeh|aehm|öh|oeh|hm+|tja|also|naja|na|puh)\b[\s,.!?]*)+",
+    r"^\s*(?:(?:[aäeöou]*h+m*|m+h+m*|tja|also|naja|na|puh|ach(?: so)?)\b[\s,.!?]*)+",
     re.IGNORECASE,
 )
 # An additive or vitamin code ("E 621", "B12") is an ingredient with digits;
@@ -1584,6 +1596,11 @@ def which_answer(text: str) -> tuple[Wish | Literal["withdrawn"] | None, list[st
 
     Whether the answer orders something instead ("Eine Cola bitte") is for
     the caller to judge first: what a card number is depends on the menu."""
+    text = _HESITATION.sub("", text)
+    if not _words(text) or text.rstrip().endswith("?"):
+        # "Hm.", "Wie bitte?", "Was?": nothing said yet, or a question back;
+        # never a withdrawal (#207).
+        return None, []
     wish = classify_wish(text, [])
     # "Keine, aber ohne Zwiebeln": nothing, and a removal (Codex PR #330).
     but = _BUT.search(text)
@@ -1604,7 +1621,8 @@ def which_answer(text: str) -> tuple[Wish | Literal["withdrawn"] | None, list[st
         # "Keine Erdnuesse" would otherwise give "Keine Keine Erdnuesse". A
         # removal said with it is no ingredient ("Ohne Zwiebeln und gegen
         # Erdnuesse"), nor is the "gegen" in front of one (#252).
-        bare, removal = _ingredient_answer(_HESITATION.sub("", text))
+        bare, removal = _ingredient_answer(text)
+        bare = _HESITATION.sub("", bare)  # "Gegen, äh, Erdnüsse"
         said += [removal, wish.note]
         wish = classify_wish(f"allergisch gegen {bare}", [])
         if not bare or _not_an_ingredient(bare):

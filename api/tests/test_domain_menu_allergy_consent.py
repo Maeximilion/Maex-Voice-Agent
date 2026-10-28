@@ -171,6 +171,9 @@ def test_only_denies(said, denies):
         ("Äh, Erdnüsse.", "Erdnüsse", []),
         ("Hmm, Sesam und Senf.", "Sesam und Senf", []),
         ("Also, gegen Erdnüsse.", "Erdnüsse", []),
+        ("Ähm Erdnuss", "Erdnuss", []),
+        ("Gegen, äh, Erdnüsse.", "Erdnüsse", []),
+        ("Äh, ohne Zwiebeln, gegen Erdnüsse", "Erdnüsse", ["ohne Zwiebeln"]),
     ],
 )
 def test_the_answer_to_wogegen_gives_its_ingredient(answer, ingredient, removals):
@@ -210,6 +213,16 @@ def test_an_answer_that_names_nothing_withdraws_the_allergy(answer):
         "Hm.",
         "Äh.",
         "Tja.",
+        "Ehm.",
+        "Mhm.",
+        "Mmh.",
+        # A question back, or no ingredient at all.
+        "Wie bitte?",
+        "Was?",
+        "Erdnüsse?",
+        "Nee.",
+        "Nix.",
+        "Unterschiedliches.",
     ],
 )
 def test_an_answer_without_an_ingredient_leaves_the_question_open(answer):
@@ -249,6 +262,9 @@ def test_an_order_is_no_answer_to_wogegen(answer, order):
         ("Gegen E 621.", True),
         ("Erdnüsse, aber ohne Zwiebeln.", False),
         ("Weiß ich nicht.", False),
+        # A hesitation says nothing more (#207).
+        ("Ähm, Erdnüsse.", True),
+        ("Hm.", False),
     ],
 )
 def test_an_answer_says_only_its_ingredient(answer, only):
