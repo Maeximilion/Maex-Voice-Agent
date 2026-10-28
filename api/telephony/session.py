@@ -51,7 +51,7 @@ from typing import Any, Literal
 
 from api.core.logging import get_logger
 from api.telephony.port import CallEvents
-from api.telephony.speech import Ear, Heard, Line, Mouth
+from api.telephony.speech import Ear, Heard, Line, Mouth, SpeechUsage
 
 # A partial of this many words stops a sentence that may be interrupted. One
 # word is a cough or a "hm" as often as it is an answer.
@@ -117,6 +117,9 @@ class CallSession:
         self._keypad_gap_seconds = keypad_gap_seconds
         self._speak_seconds = speak_seconds
         self._sample_rate = sample_rate
+        # What the call cost the ear and the mouth (`speech.SpeechUsage`).
+        self._fed_bytes = 0
+        self._spoken_characters = 0
         self._clock = clock
         self._inbox: queue.SimpleQueue[tuple[str, float, Any]] = queue.SimpleQueue()
         # The time of an event and its place in the queue are taken together.
@@ -278,6 +281,7 @@ class CallSession:
         if not self._listening():
             return
         try:
+            self._fed_bytes += len(frame)
             self._ear.feed(frame, at)
         except Exception:
             logger.exception("the ear failed")
@@ -490,6 +494,8 @@ class CallSession:
         (`speech.Line`)."""
         done: queue.SimpleQueue[tuple[bytes, Exception | None]] = queue.SimpleQueue()
 
+        self._spoken_characters += len(text)
+
         def work() -> None:
             try:
                 done.put((b"".join(self._mouth.speak(text)), None))
@@ -625,7 +631,13 @@ class CallSession:
         # log now, after the last sentence was played and the line has our
         # hangup or transfer, not when it asked for them.
         try:
-            self._events.on_call_ended(self.session_id)
+            self._events.on_call_ended(
+                self.session_id,
+                SpeechUsage(
+                    heard_seconds=self._fed_bytes / (2 * self._sample_rate),
+                    spoken_characters=self._spoken_characters,
+                ),
+            )
         except Exception:
             logger.exception("the core could not be told that the call ended")
 

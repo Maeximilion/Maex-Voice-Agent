@@ -105,7 +105,7 @@ class Core:
     def on_voice_failure(self, session_id: str) -> None:
         self.seen.append(("failure",))
 
-    def on_call_ended(self, session_id: str) -> None:
+    def on_call_ended(self, session_id: str, speech=None) -> None:
         self.seen.append(("ended",))
 
     def on_team_missed(self, session_id: str) -> bool:

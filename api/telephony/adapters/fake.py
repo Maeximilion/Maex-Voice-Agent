@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from api.telephony.port import CallEvents
+from api.telephony.speech import SpeechUsage
 
 CUSTOMER = "customer"
 
@@ -80,7 +81,8 @@ class FakeTelephony:
             else:
                 events.on_user_turn(session_id, entry["text"])
         self._open.discard(session_id)
-        events.on_call_ended(session_id)
+        # Text only: no ear and no mouth to pay for.
+        events.on_call_ended(session_id, SpeechUsage())
         return session_id
 
     # -- TelephonyPort -------------------------------------------------------------
