@@ -20,7 +20,9 @@ services:
     command: ["uvicorn", "api.telephony.probe:app", "--host", "0.0.0.0", "--port", "8001"]
     environment:
       PROBE_OUT: /out
-    tmpfs: [/out]
+    # Owned by the probe's user: a tmpfs is root's otherwise, and the first
+    # call failed on its log (28.10.2026).
+    tmpfs: ["/out:uid=10001,gid=10001,mode=0700"]
     volumes:
       - ../../api:/app/api:ro
     healthcheck:

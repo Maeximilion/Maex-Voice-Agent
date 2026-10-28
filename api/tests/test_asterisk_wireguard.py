@@ -15,6 +15,7 @@ UP = Path(__file__).resolve().parents[2] / "deploy" / "asterisk" / "wireguard" /
 STUB = """#!/bin/sh
 echo "$(basename "$0") $*" >> "$CALLS"
 if [ "$(basename "$0")" = wg ] && [ "$1" = setconf ]; then cp "$3" "$CALLS.wg"; fi
+if [ "$(basename "$0")" = wg ] && [ "$1" = show ]; then printf 'key\t%s\n' "${ENDPOINT-203.0.113.7:51820}"; fi
 """
 # As the router hands it out for a WireGuard device: the PC's own address, the
 # router's DNS, everything through the tunnel. Invented keys and names.
@@ -41,7 +42,9 @@ def up(tmp_path):
         (bin_dir / name).chmod(0o755)
     calls = tmp_path / "calls"
 
-    def run(text: str) -> tuple[subprocess.CompletedProcess[str], list[str], str]:
+    def run(
+        text: str, endpoint: str = "203.0.113.7:51820"
+    ) -> tuple[subprocess.CompletedProcess[str], list[str], str]:
         conf = tmp_path / "access.conf"
         conf.write_text(text)
         work = tmp_path / "work"
@@ -53,6 +56,7 @@ def up(tmp_path):
                 "CALLS": str(calls),
                 "ACCESS_WG_CONF": str(conf),
                 "WG_WORK": str(work),
+                "ENDPOINT": endpoint,
             },
             capture_output=True,
             text=True,
@@ -77,6 +81,11 @@ def test_the_routers_file_becomes_a_tunnel_to_the_router_only(up):
         "ip address add 192.168.178.201/24 dev wg0",
         "ip link set wg0 up",
         "ip route replace 192.168.178.0/24 dev wg0",
+        "wg show wg0 endpoints",
+        # The router's public address through the tunnel, the tunnel around it.
+        "wg set wg0 fwmark 51820",
+        "ip route replace 203.0.113.7/32 dev wg0 table 51820",
+        "ip rule add not fwmark 51820 table 51820",
         "sleep infinity",
     ]
     # Only what `wg` understands, our keepalive once, no CR, nothing of DNS.
@@ -111,3 +120,11 @@ def test_a_file_that_only_routes_everything_starts_nothing(up):
     assert done.returncode == 1
     assert "no IPv4 network behind the router" in done.stderr
     assert calls == []
+
+
+def test_an_endpoint_without_an_ipv4_address_leaves_the_public_route_out(up):
+    done, calls, _ = up(ROUTER_FILE, endpoint="[2001:db8::7]:51820")
+
+    assert done.returncode == 0, done.stderr
+    assert not [c for c in calls if "fwmark" in c or "table" in c]
+    assert "stays outside the tunnel" in done.stderr

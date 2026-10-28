@@ -9,7 +9,8 @@
 # mounted read-only) and takes from it what the kernel needs: the keys, the
 # endpoint, the device's IPv4 address and the networks behind the router. Never
 # its DNS, which would take Docker's name lookup and with it `voice`, and never
-# a default route: only the networks behind the router go through the tunnel.
+# a default route: only the networks behind the router and the router's public
+# address go through the tunnel.
 
 set -eu
 
@@ -52,5 +53,18 @@ ip link set wg0 up
 for network in $networks; do
     ip route replace "$network" dev wg0
 done
+# The router names its public address in Via and Contact of a call, also to a
+# device in its tunnel, and that address is the tunnel's endpoint: answers to
+# it go through the tunnel, the tunnel's own packets (marked) around it, as
+# wg-quick does it (28.10.2026, 200 OK sent past the router 68 times).
+endpoint=$(wg show wg0 endpoints | cut -f2 | sed 's/:[0-9]*$//')
+case "$endpoint" in
+    *.*.*.*)
+        wg set wg0 fwmark 51820
+        ip route replace "$endpoint/32" dev wg0 table 51820
+        ip rule add not fwmark 51820 table 51820
+        ;;
+    *) echo "wireguard: no IPv4 endpoint, the router's public address stays outside the tunnel" >&2 ;;
+esac
 echo "wireguard: tunnel up, $(echo "$networks" | wc -l) network(s) behind the router"
 exec sleep infinity
