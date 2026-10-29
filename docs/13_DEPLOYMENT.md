@@ -219,10 +219,14 @@ bash scripts/restore.sh <file> --replace <database> # the real restore
 ## 5. Monitoring (Minimum)
 
 - `/health` alle 60 s von außen prüfen (kostenloser Uptime-Dienst Annahme), bei Ausfall SMS an Maxi
-- Heartbeat of the voice layer (`voice` and Asterisk), planned with docs/20 §5
-- Outbox: Ereignisse mit Status `failed` → Alarm
-- Kosten je Tag über Schwelle → Alarm
+- Heartbeat of the voice layer (`voice` and Asterisk), planned with docs/20 §5 (T-8.3 part 2)
+- Outbox: Ereignisse mit Status `failed` → Alarm (built, T-8.3)
+- Kosten je Tag über Schwelle → Alarm (built, T-8.3: `ALARM_COST_PER_DAY_CENTS`, 300 unless set)
+- Calls ending with an error, from `ALARM_ERROR_CALLS_PER_HOUR` (3) within an hour → alarm (built, T-8.3)
+- Day report on the previous business day from `MONITOR_REPORT_HOUR` (8): calls by outcome, cost, orders, reservations; also on a day without a call (built, T-8.3)
 - Log-Rotation, 14 Tage lokal
+
+The built alarms come from `api/jobs/monitor.py` in the dispatcher and go straight to the push server, topic `ops`, which only the operator reads; the user `monitor` writes it with `MONITOR_PUSH_TOKEN` (setup: `n8n/README.md`, "Setting up the push server"). They do not go through n8n, so n8n down is reported (Maxi, 29.10.2026). The dispatcher runs on the same machine, so the API or the server down still needs the check from outside (T-9.4).
 
 ---
 

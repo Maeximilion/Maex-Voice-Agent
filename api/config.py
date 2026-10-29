@@ -150,6 +150,19 @@ class Settings(BaseSettings):
     # belong to the day before.
     register_report_hour: int = Field(default=10, ge=5, le=23)
 
+    # Alarms and the day report for the operator (T-8.3, api/jobs/monitor.py),
+    # posted straight to the push server, topic `ops`: n8n down is one of the
+    # outages they report. Without the token the push is only logged.
+    monitor_push_url: str = "http://push/"
+    monitor_push_token: str = ""
+    # Model cost of one business day above which the operator gets a push (D17:
+    # at most 100 euros a month for all the technology).
+    alarm_cost_per_day_cents: int = Field(default=300, ge=0)
+    # Calls that ended with an error within an hour from which a push goes out.
+    alarm_error_calls_per_hour: int = Field(default=3, ge=1)
+    # Local hour from which the day report on the previous business day goes out.
+    monitor_report_hour: int = Field(default=8, ge=5, le=23)
+
     @model_validator(mode="after")
     def _outbox_rows_outlive_their_payloads(self) -> Self:
         """The row delete of api/jobs/retention.py goes by age, whatever the

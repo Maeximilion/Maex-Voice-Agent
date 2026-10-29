@@ -136,13 +136,15 @@ A call that reaches the agent in `shadow` or `paused` anyway is transferred to t
 | Failure during a call on our side (database, model, adapter) | `telephony/handler.py` says the outage sentence (docs/05 §6) and transfers to the team extension, the call log gets `error`; without a database the number from `TEAM_PHONE` in `.env`; if the transfer fails, the dialplan dials the team number (docs/20 §5, target, not yet measured) | error log |
 | The model keeps the guest waiting | On the phone line one guest turn, all its model calls and tools together, has `service_config.turn_deadline_seconds` (10 unless the restaurant sets another value, #252). Each model call is cut off after what is left of it; an answer that still arrives too late is neither spoken nor carried out. The guest hears the outage sentence and the call goes to the team, by transfer or, where nobody answers, by a callback (`agent/loop.py`). The text phone and the evals have no deadline | error log |
 | Voice layer down | `voice` down: the Asterisk dialplan dials `TEAM_PHONE` (`deploy/asterisk/conf/extensions.conf`, extension `unreached` in context `ai`; drilled on the workbench, docs/20 §5). Asterisk or the whole machine down: no dialplan runs, the router rings the team telephones (test phase) or the trunk's forwarding rules apply (operation); docs/20 §5, target, not yet measured | Alarm über Heartbeat |
-| n8n down | `confirm` gelingt trotzdem, Ereignis landet in der Warteschlange und wird nachgeliefert; GUI zeigt die Bestellung sofort | Alarm |
+| n8n down | `confirm` gelingt trotzdem, Ereignis landet in der Warteschlange und wird nachgeliefert; GUI zeigt die Bestellung sofort | Alarm: events that failed in the last hour, pushed to the operator's topic `ops` without n8n (`jobs/monitor.py`, T-8.3) |
 | Internet weg | Telefon klingelt beim Team (test phase: the router; operation: the trunk's forwarding rules; docs/20 §5, target, not yet measured) | offline sichtbar |
 | Bondrucker aus, Papier leer | Brücke meldet den Fehler, Karte sofort rot, Bon wird mit Backoff wiederholt, „Nochmal senden" | Alarm, Team am Tablet |
 | Druckbrücke oder Internet im Lokal weg | Bon wartet in der Outbox; nach 60 s ohne Abholung Karte rot und `order.handover_failed` an n8n | Alarm, Team am Tablet |
 | Kassenanbindung defekt | Bestellung bleibt `confirmed`, Übergabe wird wiederholt, GUI markiert sie rot; die Druckbrücke druckt den Eingabezettel auf den Haupt-Bondrucker (§2a) | Team am Tablet und an der Kasse |
 
 **Grundsatz:** Jeder Ausfall endet beim Menschen, nie beim Kunden im Nichts.
+
+**Alarms, as built (T-8.3 part 1, 29.10.2026):** `api/jobs/monitor.py` in the dispatcher pushes to the operator, topic `ops` on the push server, straight and not through n8n: the day's model cost above a limit, error calls in the last hour from a limit on, events to n8n that failed in the last hour (not kitchen slips), and a day report every morning (docs/13 §5). Not built yet: the heartbeats of `voice`, Asterisk and the print bridge, and the backup alarm (T-8.3 part 2); the API or the whole server down needs the check from outside (T-9.4), because the dispatcher runs on the same machine.
 
 ---
 
