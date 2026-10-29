@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 29.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.36
+> Status: 29.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.37
 
 ---
 
@@ -509,6 +509,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 29.10.2026 | **#207 P2 closed: no copy in the outbox outlives its row** (`api/config.py`, docs/03 Löschkonzept). Order, reservation and callback payloads copy name, phone, notes and summary, and a payload lives up to the unsent period plus the sent one (a slip claimed on its last day). The settings now refuse `RETENTION_GUEST_DETAILS_DAYS` or `RETENTION_CALLBACK_DAYS` below that sum (30 + 7 by default, both at 90). The finding named only the guest details against the unsent period; the callback copy and the late send had the same gap |
 | 29.10.2026 | **The ear's miss after a read-back corrected: an artifact of the line model** (docs/20 §12). Maxi chose to reset the speech detector after silence (option A); two attempts made it worse (a fresh state is heard less often than one with a second of history) and were reverted. Measured instead: after digital silence or full-band hiss the answer had 0 windows of speech, after band-limited line noise 27 and 21 of 40. The line model of the audio evals and the engine tests now carries that noise (`speech_bench.on_the_line`); the detector stays. Engine tests 9/9, `make eval-voice` (scripted) passes, lines without speech 7 to 2. Open: a recording of real line audio to confirm the level |
 | 29.10.2026 | **T-10.7 (#400): audio evals, `make eval-voice`** (docs/08 §8, `evals/voice.py`). The cases of `evals/cases/` spoken by a caller voice through the modelled line, heard by the service's ear, played by the same runner and judge next to the text; hard: no confirm after line noise in place of the confirming yes, no yes inside a read-back taken by a real call session (with a control after it), and a run that checked nothing fails. Run on the workbench's graphics card 00:00 to 02:00 (Maxi's window): hard 0 with the scripted model and qwen3.6-35b-a3b, every read-back checked; cases as heard 10/56 and 14/56 (text 56/56 and 29/56); single-number lines 8 right, 1 silently wrong ("S 12" as "S2"), 7 asked of 16 (docs/20 §11). Found on the way: the ear misses a short answer after the silence of a read-back (docs/20 §12, open for Maxi). Review in two lenses with skeptics (8 agents): 2 P1 and 4 P2 in the harness, all fixed |
 | 28.10.2026 | **T-11.6 (#406): the register mark and its daily report** (docs/09 L18). Migration 012 `orders.register_entered_at`; after "Passt" the card keeps "In Kasse eingegeben" (`mark_entered` in `domain/ordering/board.py`, refused for a card older than a correction: the button carries a fingerprint of the lines it shows); every confirmed order stays in the column until marked, red from the next business day; a correction clears the mark; `api/jobs/daily_report.py` queues one `daily.report` per business day from `REGISTER_REPORT_HOUR`, n8n sends it as "Kasse prüfen" (D13). 26 new tests (a mark racing a correction on two connections, a failed push queued again, the hour in local time, one tenant's failed write rolled back alone), suite 6205 green. A review in three lenses with a skeptic per finding (15 agents) left 8 P2s, 7 fixed, one for Maxi (no cancel button, assumptions above). Ultrareview found one nit (a card torn by a correction read mid-column) and Codex one P2 (a count of correction entries falls back once the deletion job removes them); both fixed by taking the fingerprint from the very lines on the card |
@@ -635,6 +636,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.37 · 29.10.2026:** #207: guest details and callbacks keep no copy in the outbox beyond their own deletion period
 - **v2.11.36 · 29.10.2026:** The ear's miss after a read-back was digital silence in the line model; the line now carries its noise, the detector stays
 - **v2.11.35 · 29.10.2026:** T-10.7: audio evals, the cases spoken and heard, hard 0 on the scripted model and qwen3.6
 - **v2.11.34 · 29.10.2026:** Security audit of T-10.1 step 2 on a7df8f4: no P1, no P2, five notes (docs/09 §5, #252)

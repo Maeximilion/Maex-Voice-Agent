@@ -143,6 +143,23 @@ def test_an_outbox_row_period_equal_to_the_payload_periods_passes():
     assert values.retention_outbox_row_days == 21
 
 
+@pytest.mark.parametrize(
+    "name", ["retention_guest_details_days", "retention_callback_days"]
+)
+@pytest.mark.parametrize("days", [14, 36])
+def test_a_copy_in_an_outbox_payload_never_outlives_its_row(name, days):
+    """#207: guest details at 14 days stayed 30 in a payload never sent (the
+    default unsent period), and a slip claimed on that last day keeps its
+    payload the 7 days of a sent one on top."""
+    with pytest.raises(ValidationError, match=name.upper()):
+        _settings(**{name: days})
+
+
+def test_a_row_period_as_long_as_the_longest_payload_passes():
+    values = _settings(retention_guest_details_days=37, retention_callback_days=37)
+    assert values.retention_guest_details_days == 37
+
+
 def test_the_default_outbox_periods_pass():
     values = _settings()
     assert values.retention_outbox_row_days == 90
