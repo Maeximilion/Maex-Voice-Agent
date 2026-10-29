@@ -167,6 +167,7 @@ server's time per request from its log (prompt and answer, no HTTP).
 | `qwen3.6-35b-a3b` (`UD-IQ4_XS`) | **29** | 1 | 0 / 0 | **1** | **13 %** | 1.68 s / 3.89 s | 72 tok/s, median 92 tokens | 15.9 GB, spills |
 | Gemma 4 12B QAT | 17 | 1 | 0 / 0 | 2 | 42 % | 1.49 s / 4.03 s | 62 tok/s, median 67 tokens | 9.7 GB |
 | Qwen3.5-9B | 12 | 0 | 0 / 0 | 3 | 24 % | **0.86 s / 1.97 s** | 77 tok/s, median 57 tokens | 9.0 GB |
+| `qwen3.6-35b-a3b` (`UD-IQ3_XXS`, lane 4) | **30** | **4** | 0 / 0 | 2 | 22 % | 0.90 s / 2.16 s | 136 tok/s, median 98 tokens | 13.5 GB, fully on GPU |
 
 - **Neither challenger replaces `qwen3.6-35b-a3b`.** Both miss escalations it gets right
   (`eskalation_0016`, both; `reservierung_0034` and `_0035`, Qwen3.5-9B), which is rule 5.
@@ -178,9 +179,20 @@ server's time per request from its log (prompt and answer, no HTTP).
 - Reports: `evals/reports/eval_20261029_*.json` on the workbench, rows in
   `docs/metrics/eval_history.csv`.
 
-Next, same method: `qwen3.6-35b-a3b` as `UD-IQ3_XXS` (13.2 GB), which fits the GPU next to a
-small desktop share, against the `UD-IQ4_XS` above. Same model, template and settings, only
-the file changes, so the lane shows what the spill costs and what 3 bits cost in accuracy.
+**Lane 4, the same model as `UD-IQ3_XXS` (13.2 GB, `-ngl 99 --fit off`):** only the file
+changed. Without the spill the answer speed nearly doubles (136 against 72 tok/s) and the turn
+p50 halves (0.90 against 1.68 s); the smoke sentence warm took 0.56 s. Accuracy holds on the
+cases (30 against 29; 9 cases gained, 8 lost, about the spread of two runs of one model) and
+rises on the targets (4 against 1), but it misses `eskalation_0016` (only noise on the line)
+as the two challengers do, so 2 missed escalations against 1, and hands over more often (22
+against 13 %). It fits only while the Windows desktop holds less than about 2.5 GB of the GPU
+(0.6 to 0.7 GB at the race, up to 3.9 GB seen the same day).
+
+- **Recommendation:** `UD-IQ3_XXS` is the faster workbench model once `eskalation_0016` passes
+  on it: repeat the case to tell noise from a real loss, then fix it in the prompt or the core
+  (rule 5 never rests on one model's luck). Until then the workbench keeps `UD-IQ4_XS`.
+- Still above budget at p95 (2.16 s): answers of about 98 tokens. Shorter answers are the next
+  speed step on any model.
 
 ### Handover for a Claude Code session in Maxi's Ubuntu terminal
 
