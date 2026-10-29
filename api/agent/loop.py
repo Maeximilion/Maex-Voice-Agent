@@ -98,22 +98,20 @@ SAY_NOBODY_REACHABLE = (
 # answered a line with nothing but noise with a question every turn and never
 # reported a failed answer, so the call reached nobody (`eskalation_0016`,
 # finding on #37). The model's own status lookup is no understanding.
-_HEARD = frozenset(
-    {
-        "intent",
-        "stage",
-        "slots",
-        "reservation_id",
-        "order_id",
-        "readback",
-        "cart",
-        "known_item_ids",
-        "seen_items",
-        "allergies",
-        "allergy_consent",
-        "held_call",
-    }
-)
+_HEARD = {
+    "intent",
+    "stage",
+    "slots",
+    "reservation_id",
+    "order_id",
+    "readback",
+    "cart",
+    "known_item_ids",
+    "seen_items",
+    "allergies",
+    "allergy_consent",
+    "held_call",
+}
 # Turns in a row without any of it before the call goes to the team: the
 # ladder's budget for one piece of information (docs/05 §2).
 UNHEARD_TURNS = FAILURES_BEFORE_LEVEL_UP * LEVEL_UPS_BEFORE_END
