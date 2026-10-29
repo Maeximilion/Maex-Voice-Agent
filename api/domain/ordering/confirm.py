@@ -127,14 +127,18 @@ def _waits_for(order: Order, mode: str, config: ServiceConfig) -> str | None:
     """Why the kitchen ticket waits for "Passt" on the tablet, or None: it goes now.
 
     Two reasons. The mode: outside the direct one no order of the agent reaches
-    the kitchen unseen (docs/02). And the amount, whatever the mode (#252, Maxi
-    12.10.2026): an order above the restaurant's limit is one the team looks at
-    before anyone cooks it. The limit is `service_config.order_approval_above_cents`,
+    the kitchen unseen (docs/02), unless the restaurant switched the approval
+    step of `overflow` off after G5 (`overflow_needs_approval`, T-8.2). And the
+    amount, whatever the mode (#252, Maxi 12.10.2026): an order above the
+    restaurant's limit is one the team looks at before anyone cooks it. The limit is `service_config.order_approval_above_cents`,
     never a number here (CLAUDE.md §2 rule 1); what counts is the total the
     guest was read, items and delivery fee. Above the limit, not from it; a
     limit of zero holds every order.
     """
-    if mode != DIRECT_MODE:
+    unseen = mode == DIRECT_MODE or (
+        mode == "overflow" and not config.overflow_needs_approval
+    )
+    if not unseen:
         return "mode"
     limit = config.order_approval_above_cents
     # Zero is the setting "the team sees every order", so it also holds the one

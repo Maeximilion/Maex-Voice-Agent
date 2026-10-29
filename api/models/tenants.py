@@ -142,6 +142,12 @@ class ServiceConfig(Timestamps, Base):
     order_approval_overdue_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="5"
     )
+    # Whether an order of the agent in `overflow` waits for "Passt" before a slip
+    # prints (T-8.2, migration 014). The restaurant switches it off after G5;
+    # the amount above still holds an order in every mode.
+    overflow_needs_approval: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
     # Where the restaurant's privacy notice is, as the caller should hear it;
     # the phone greeting names it (docs/09 L4, T-11.5, migration 009). Empty
     # until the notice is online: the greeting then leaves the sentence out.

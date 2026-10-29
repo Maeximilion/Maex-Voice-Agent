@@ -117,7 +117,7 @@ Who rings first in `overflow` is not decided here: our voice layer answers every
 | Modus | Verhalten | Stufe |
 |---|---|---|
 | `shadow` | KI nimmt keine Anrufe an. Team telefoniert wie bisher, Aufnahmen laufen für das Einlernen. | 1–4 |
-| `overflow` | Team klingelt zuerst. Nimmt nach X Sekunden niemand ab, übernimmt die KI. Jede KI-Bestellung braucht Freigabe in der GUI. | 5 |
+| `overflow` | Team klingelt zuerst. Nimmt nach X Sekunden niemand ab, übernimmt die KI. Jede KI-Bestellung braucht Freigabe in der GUI, until the restaurant switches that step off after G5 (`service_config.overflow_needs_approval`, T-8.2); the amount limit below still holds. | 5 |
 | `primary` | KI nimmt zuerst an, Team bleibt über die Durchwahl erreichbar. | 6 |
 | `paused` | KI ist aus, alle Anrufe gehen direkt ans Team. Der Not-Aus-Knopf der GUI. | jederzeit |
 
