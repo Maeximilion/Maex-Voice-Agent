@@ -174,6 +174,24 @@ def test_a_failed_outbox_event_alarms(session, tenant_id):
     assert run(session).sent == []
 
 
+def test_an_event_the_deletion_job_expires_stays_quiet(session, tenant_id):
+    """api/jobs/retention.py marks an unsent row of 30 days `failed` and so
+    touches its updated_at: that is no n8n outage."""
+    session.add(
+        OutboxEvent(
+            tenant_id=tenant_id,
+            event_type="order.confirmed",
+            payload={},
+            status="failed",
+            created_at=NOW - timedelta(days=31),
+            updated_at=NOW - timedelta(minutes=5),
+        )
+    )
+    session.commit()
+
+    assert run(session).sent == []
+
+
 def test_an_old_failed_event_stays_quiet(session, tenant_id):
     failed_event(session, tenant_id, NOW - timedelta(hours=3))
 

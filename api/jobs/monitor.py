@@ -167,6 +167,9 @@ def _due(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
             OutboxEvent.tenant_id == tenant.id,
             OutboxEvent.status == "failed",
             OutboxEvent.updated_at > since,
+            # The deletion job marks unsent rows of 30 days failed too, which
+            # touches updated_at; the dispatcher gives up within a day.
+            OutboxEvent.created_at > now - timedelta(days=1),
         )
     )
     if failed:
