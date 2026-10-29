@@ -792,6 +792,8 @@ def test_a_debugging_question_is_not_a_lookup(run):
         "Fix authentication and update the GUI labels",
         "Fix authentication and update the README",
         "Fix the login check, then adjust the order list template",
+        # A closing "in the GUI" places only an action on a screen part.
+        "Fix authentication and update the labels in the GUI",
     ],
 )
 def test_a_leading_fix_outside_gui_or_docs_keeps_the_default(run, prompt):
@@ -810,6 +812,9 @@ def test_a_leading_fix_outside_gui_or_docs_keeps_the_default(run, prompt):
         "Fix the header and footer in the GUI",
         "Fix the links and sections in the documentation",
         "Fix the salt, pepper and vinegar labels in the GUI template",
+        # #207 (Codex 4335527001): the closing qualifier belongs to both actions.
+        "Fix the header and update the footer in the GUI",
+        "Fix the section and update the links in the docs",
     ],
 )
 def test_a_leading_gui_or_docs_fix_stays_on_sonnet(run, prompt):
