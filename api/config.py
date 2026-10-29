@@ -165,6 +165,21 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _payload_copies_go_before_their_rows(self) -> Self:
+        """Order, reservation and callback payloads copy name, phone, notes and
+        summary. A payload lives up to the unsent period, then the sent one when
+        the bridge claims the slip on that last day: a shorter row period would
+        keep the copy after the row lost it (#207)."""
+        payload = self.retention_outbox_unsent_days + self.retention_outbox_sent_days
+        for name in ("retention_guest_details_days", "retention_callback_days"):
+            if getattr(self, name) < payload:
+                raise ValueError(
+                    f"{name.upper()} must be at least RETENTION_OUTBOX_UNSENT_DAYS "
+                    "plus RETENTION_OUTBOX_SENT_DAYS"
+                )
+        return self
+
+    @model_validator(mode="after")
     def _production_needs_real_tokens(self) -> Self:
         """Refuse to start outside dev and test on a token anyone can know.
 
