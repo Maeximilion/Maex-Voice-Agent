@@ -241,15 +241,17 @@ def test_every_setting_reaches_a_service():
 
 def test_each_secret_reaches_only_the_services_that_read_it():
     """The access password is Asterisk's, the proxy secret the API's and
-    Caddy's, the webhook password the dispatcher's, the media token voice's
-    (#252 findings 6 and 7). The agent token goes to all three: the start check
-    of api/config.py asks it of every process outside dev and test."""
+    Caddy's, the webhook password and the alarm token the dispatcher's, the
+    media token voice's (#252 findings 6 and 7). The agent token goes to all
+    three: the start check of api/config.py asks it of every process outside
+    dev and test."""
     readers = {
         "DATABASE_URL": set(OWN_CODE),
         "AGENT_API_TOKEN": set(OWN_CODE),
         "GUI_PROXY_SECRET": {"api"},
         "KITCHEN_BRIDGE_TOKEN": {"api"},
         "N8N_BASIC_AUTH_PASSWORD": {"dispatcher"},
+        "MONITOR_PUSH_TOKEN": {"dispatcher"},
         "VOICE_MEDIA_TOKEN": {"voice"},
         "LLM_API_KEY": {"voice"},
     }

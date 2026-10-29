@@ -87,6 +87,16 @@ The server is closed by default: without users nobody can publish or read. Two u
 
 5. On each device of the team: subscribe to the topic `team` on that address with the user `team` and its password, in the app of the push server or in its web page.
 
+The operator's alarms (T-8.3, `api/jobs/monitor.py`) use a topic of their own, `ops`, and do not pass through n8n. Two more users, both or neither: the start command opens `ops` only when both exist, so a stack without them starts as before. `monitor` may only write to `ops` (the dispatcher, with its token), `ops` may only read it (the operator's device):
+
+```text
+NTFY_AUTH_USERS='team:<hash>:user,n8n:<hash>:user,ops:<hash>:user,monitor:<hash>:user'
+NTFY_AUTH_TOKENS='n8n:<token>:n8n workflow,monitor:<token>:monitor'
+MONITOR_PUSH_TOKEN=<the token of monitor>
+```
+
+Then `docker compose up -d push dispatcher`, and subscribe to `ops` with the user `ops`. Checked 29.10.2026 against the push server 2.31.1 in a throwaway container: `monitor` publishes to `ops` (200) and not to `team` (403), `n8n` not to `ops` (403), `ops` reads `ops` and `team` does not (403); a push from `monitor.push` arrives with title, text and priority.
+
 Locally the server listens on `http://localhost:8090`, loopback only. Android devices keep their own connection to our server. iPhones and iPads get a message at once only through a relay of the app's maker; that is not configured, and Maxi decided on 19.10.2026 to leave it so: the team's devices are Android devices or the web page on the tablet (D14, option A, in `docs/01_STATUS.md`).
 
 ## What the dispatcher gets back

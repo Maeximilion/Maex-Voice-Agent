@@ -1,6 +1,6 @@
 """Cold-path process: the dispatcher towards n8n, the watchdog for the kitchen slip,
-the deletion job (api/jobs/retention.py) and the daily report
-(api/jobs/daily_report.py).
+the deletion job (api/jobs/retention.py), the daily report
+(api/jobs/daily_report.py) and the operator's alarms (api/jobs/monitor.py).
 
 `python -m api.jobs.cold_path` (docker-compose, service `dispatcher`). The watchdog
 belongs to the domain logic (domain/ordering/handover.py), the dispatcher to events/;
@@ -9,8 +9,8 @@ both are wired together here so that events/ does not have to know the domain lo
 The watchdog runs in its own thread with its own cadence. If n8n hangs, one pass of
 the dispatcher takes up to 20 x 10 s of timeout - on the same cadence the card would
 have stayed green for minutes during exactly a second outage (Codex PR #143).
-The deletion job and the daily report have a thread of their own each for the
-same reason.
+The deletion job, the daily report and the alarms have a thread of their own
+each for the same reason.
 """
 
 import logging
@@ -26,7 +26,7 @@ from api.core.logging import configure_logging, error_text, get_logger, log
 from api.db import SessionLocal
 from api.domain.ordering.handover import sweep
 from api.events.dispatcher import run_forever, send_to_n8n
-from api.jobs import daily_report
+from api.jobs import daily_report, monitor
 from api.jobs.retention import purge
 
 logger = get_logger("api.jobs.cold_path")
@@ -80,6 +80,13 @@ if __name__ == "__main__":
         args=(threading.Event(), daily_report.INTERVAL_SECONDS),
         kwargs={"job": daily_report.report, "label": "Daily report"},
         name="daily-report",
+        daemon=True,
+    ).start()
+    threading.Thread(
+        target=watch_forever,
+        args=(threading.Event(), monitor.INTERVAL_SECONDS),
+        kwargs={"job": monitor.check, "label": "Monitor"},
+        name="monitor",
         daemon=True,
     ).start()
     run_forever(send_to_n8n)
