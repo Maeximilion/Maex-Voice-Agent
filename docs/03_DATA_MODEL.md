@@ -176,7 +176,7 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | payload | JSONB | vollständiger Vorgang, damit n8n nicht zurückfragen muss |
 | status | TEXT | `pending` / `sent` / `failed` |
 | attempts | INT | |
-| next_attempt_at | TIMESTAMPTZ | Backoff: 5 s, 30 s, 2 min, 10 min, dann `failed` + Alarm |
+| next_attempt_at | TIMESTAMPTZ | Backoff: 5 s, 30 s, 2 min, 10 min, dann `failed` + Alarm. On a `failed` row it holds the moment of the final failure (`mark_attempt_failed`, T-8.3); the operator's alarm reads it, nothing claims a failed row |
 | last_error | TEXT NULL | |
 | sent_at | TIMESTAMPTZ NULL | |
 

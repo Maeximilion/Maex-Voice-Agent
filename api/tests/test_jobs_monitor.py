@@ -191,8 +191,8 @@ def test_a_failed_outbox_event_alarms(session, tenant_id):
 
 
 def test_a_row_the_dispatcher_gives_up_on_alarms(session, tenant_id):
-    """Through events/outbox.py itself: the final failure keeps next_attempt_at
-    at the attempt that just ran, which is what the alarm reads."""
+    """Through events/outbox.py itself: the final failure stamps next_attempt_at,
+    which is what the alarm reads."""
     event = OutboxEvent(
         tenant_id=tenant_id,
         event_type="callback.created",
@@ -207,6 +207,28 @@ def test_a_row_the_dispatcher_gives_up_on_alarms(session, tenant_id):
     assert mark_attempt_failed(event, "ConnectError: n8n down", NOW)
     session.commit()
 
+    assert run(session).titles() == ["Events not delivered"]
+
+
+def test_an_overdue_last_attempt_that_fails_now_alarms(session, tenant_id):
+    """The dispatcher was stopped after scheduling the last attempt and runs it
+    two hours late: the failure is now, not at the scheduled time (Codex PR
+    #435, P2). events/outbox.py stamps the moment of the final failure."""
+    event = OutboxEvent(
+        tenant_id=tenant_id,
+        event_type="callback.created",
+        payload={},
+        attempts=MAX_ATTEMPTS - 1,
+        next_attempt_at=NOW - timedelta(hours=2),
+        created_at=NOW - timedelta(hours=3),
+    )
+    session.add(event)
+    session.commit()
+
+    assert mark_attempt_failed(event, "ConnectError: n8n down", NOW)
+    session.commit()
+
+    assert event.next_attempt_at == NOW
     assert run(session).titles() == ["Events not delivered"]
 
 

@@ -56,6 +56,9 @@ def mark_attempt_failed(
     event.last_error = error[:LAST_ERROR_MAX]
     if event.attempts >= MAX_ATTEMPTS:
         event.status = "failed"
+        # For a failed row the field holds when it failed: nothing claims a
+        # failed row, and the operator's alarm reads it (jobs/monitor.py, T-8.3).
+        event.next_attempt_at = now
         return True
     event.next_attempt_at = now + timedelta(seconds=BACKOFF_SECONDS[event.attempts - 1])
     return False

@@ -167,10 +167,9 @@ def _due(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
         .where(
             OutboxEvent.tenant_id == tenant.id,
             OutboxEvent.status == "failed",
-            # When it failed: a row's last attempt ran at next_attempt_at, and
-            # the final failure leaves it there (events/outbox.py). Not
-            # updated_at: the deletion job rewrites failed rows (allergy notes,
-            # expiry) and moves it without any delivery failing.
+            # When it failed: the final failure stamps next_attempt_at
+            # (events/outbox.py). Not updated_at: the deletion job rewrites
+            # failed rows (allergy notes, expiry) without any delivery failing.
             OutboxEvent.next_attempt_at > since,
         )
     )
