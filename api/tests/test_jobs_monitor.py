@@ -91,9 +91,21 @@ def test_cost_above_the_daily_limit_alarms_once(session, tenant_id):
     first = run(session)
     again = run(session)
 
-    assert first.titles() == ["Kosten über der Tagesgrenze"]
-    assert "3,50" in first.sent[0][1]
+    assert first.titles() == ["Cost above the daily limit"]
+    assert "3.50 EUR" in first.sent[0][1]
     assert again.sent == []
+
+
+def test_calls_without_a_cost_are_named_not_counted_as_zero(session, tenant_id):
+    """No price in .env or an unmeasured transfer leaves cost_cents empty (Codex
+    PR #435, P1): the push says how many, it never reads as a cost of zero."""
+    call(session, tenant_id, NOW - timedelta(hours=2), cost=400)
+    call(session, tenant_id, NOW - timedelta(hours=1), cost=None)
+    call(session, tenant_id, NOW - timedelta(minutes=30), cost=None)
+
+    [(_, text, _)] = run(session).sent
+
+    assert text.startswith("Today 4.00 EUR plus 2 calls of unknown cost")
 
 
 def test_cost_at_the_limit_stays_quiet(session, tenant_id):
@@ -107,7 +119,7 @@ def test_cost_of_the_day_before_does_not_count(session, tenant_id):
     call(session, tenant_id, NOW.replace(hour=4, minute=30), cost=500)
     call(session, tenant_id, NOW - timedelta(hours=1), cost=100)
 
-    assert "Kosten über der Tagesgrenze" not in run(session).titles()
+    assert "Cost above the daily limit" not in run(session).titles()
 
 
 # --- Errors ------------------------------------------------------------------
@@ -119,7 +131,7 @@ def test_error_calls_in_the_last_hour_alarm(session, tenant_id):
 
     pushes = run(session)
 
-    assert pushes.titles() == ["Anrufe mit Fehler"]
+    assert pushes.titles() == ["Calls with errors"]
     assert pushes.sent[0][2] == "high"
 
 
@@ -140,7 +152,7 @@ def test_errors_alarm_again_in_the_next_hour(session, tenant_id):
     for minutes in (5, 15, 25):
         call(session, tenant_id, later - timedelta(minutes=minutes), outcome="error")
 
-    assert run(session, now=later).titles() == ["Anrufe mit Fehler"]
+    assert run(session, now=later).titles() == ["Calls with errors"]
 
 
 # --- Outbox ------------------------------------------------------------------
@@ -169,7 +181,7 @@ def test_a_failed_outbox_event_alarms(session, tenant_id):
 
     pushes = run(session)
 
-    assert pushes.titles() == ["Ereignisse nicht zugestellt"]
+    assert pushes.titles() == ["Events not delivered"]
     assert "2" in pushes.sent[0][1]
     assert run(session).sent == []
 
@@ -190,6 +202,24 @@ def test_an_event_the_deletion_job_expires_stays_quiet(session, tenant_id):
     session.commit()
 
     assert run(session).sent == []
+
+
+def test_a_backlog_older_than_a_day_that_fails_now_alarms(session, tenant_id):
+    """A dispatcher stopped for two days resumes its backlog; events that fail
+    now alarm, whatever their age below the unsent period (Codex PR #435, P2)."""
+    session.add(
+        OutboxEvent(
+            tenant_id=tenant_id,
+            event_type="callback.created",
+            payload={},
+            status="failed",
+            created_at=NOW - timedelta(days=2),
+            updated_at=NOW - timedelta(minutes=5),
+        )
+    )
+    session.commit()
+
+    assert run(session).titles() == ["Events not delivered"]
 
 
 def test_an_old_failed_event_stays_quiet(session, tenant_id):
@@ -213,10 +243,10 @@ def test_the_day_report_names_yesterday_once(session, tenant_id, monkeypatch):
     again = run(session)
 
     [(title, text, priority)] = first.sent
-    assert title == "Tagesbericht 28.10.2026"
-    assert "3 Anrufe" in text
-    assert "1 Fehler" in text
-    assert "0,50" in text
+    assert title == "Day report 2026-10-28"
+    assert "3 calls" in text
+    assert "1 error" in text
+    assert "0.50 EUR plus 1 calls of unknown cost" in text
     assert priority == "normal"
     assert again.sent == []
 
@@ -231,7 +261,7 @@ def test_no_day_report_before_its_hour(session, tenant_id, monkeypatch):
 def test_a_day_without_calls_still_reports(session, tenant_id, monkeypatch):
     """Silence is news too: no call at all can mean the line is down."""
     monkeypatch.setattr(settings, "monitor_report_hour", 8)
-    assert run(session).titles() == ["Tagesbericht 28.10.2026"]
+    assert run(session).titles() == ["Day report 2026-10-28"]
 
 
 # --- Delivery ----------------------------------------------------------------
@@ -245,7 +275,7 @@ def test_a_push_that_fails_is_sent_on_the_next_pass(session, tenant_id):
     assert (
         session.scalars(select(AuditLog).where(AuditLog.actor == "monitor")).all() == []
     )
-    assert "Kosten über der Tagesgrenze" in run(session).titles()
+    assert "Cost above the daily limit" in run(session).titles()
 
 
 def test_without_a_token_nothing_is_posted(monkeypatch):

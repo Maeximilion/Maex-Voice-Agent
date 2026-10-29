@@ -42,11 +42,11 @@ ACTION = "monitor.alarm"
 PRIORITIES = {"normal": 3, "high": 4}
 # Outcomes in the day report, in this order; an unknown one is left out.
 OUTCOME_WORDS = {
-    "completed": "erledigt",
-    "transferred": "ans Team",
-    "callback": "Rückruf",
-    "abandoned": "abgebrochen",
-    "error": "Fehler",
+    "completed": "completed",
+    "transferred": "to the team",
+    "callback": "callback",
+    "abandoned": "abandoned",
+    "error": "error",
 }
 ORDERS_TAKEN = ("confirmed", "approved", "handed_over")
 
@@ -127,14 +127,14 @@ def _due(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
 
     day = business_day(now, tenant.timezone)
     start, end = business_day_bounds_utc(day, tenant.timezone)
-    cost = _cost(session, tenant, start, end)
+    cost, unknown = _cost(session, tenant, start, end)
     if cost > settings.alarm_cost_per_day_cents:
         due.append(
             (
                 "cost",
                 day.isoformat(),
-                "Kosten über der Tagesgrenze",
-                f"Heute {_euro(cost)}, Grenze "
+                "Cost above the daily limit",
+                f"Today {_cost_text(cost, unknown)}, limit "
                 f"{_euro(settings.alarm_cost_per_day_cents)}.",
                 "high",
             )
@@ -154,8 +154,8 @@ def _due(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
             (
                 "errors",
                 hour,
-                "Anrufe mit Fehler",
-                f"{errors} Anrufe endeten in der letzten Stunde mit einem Fehler.",
+                "Calls with errors",
+                f"{errors} calls ended with an error in the last hour.",
                 "high",
             )
         )
@@ -167,9 +167,11 @@ def _due(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
             OutboxEvent.tenant_id == tenant.id,
             OutboxEvent.status == "failed",
             OutboxEvent.updated_at > since,
-            # The deletion job marks unsent rows of 30 days failed too, which
-            # touches updated_at; the dispatcher gives up within a day.
-            OutboxEvent.created_at > now - timedelta(days=1),
+            # The deletion job marks a row failed only once it is older than
+            # the unsent period, and touches updated_at doing so: such a row is
+            # no delivery failure. Any younger one failed in the dispatcher.
+            OutboxEvent.created_at
+            > now - timedelta(days=settings.retention_outbox_unsent_days),
         )
     )
     if failed:
@@ -177,9 +179,9 @@ def _due(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
             (
                 "outbox_failed",
                 hour,
-                "Ereignisse nicht zugestellt",
-                f"{failed} Ereignisse an n8n sind in der letzten Stunde "
-                "endgültig gescheitert. Läuft n8n?",
+                "Events not delivered",
+                f"{failed} events to n8n failed for good in the last hour. "
+                "Is n8n running?",
                 "high",
             )
         )
@@ -226,28 +228,43 @@ def _day_report(session: Session, tenant: Tenant, day: date) -> Alarm:
     parts = [
         f"{outcomes[o]} {word}" for o, word in OUTCOME_WORDS.items() if o in outcomes
     ]
-    text = f"{calls} Anrufe" + (f" ({', '.join(parts)})" if parts else "")
+    text = f"{calls} calls" + (f" ({', '.join(parts)})" if parts else "")
     text += (
-        f", Kosten {_euro(_cost(session, tenant, start, end))}, "
-        f"{orders} Bestellungen, {reservations} Reservierungen."
+        f", cost {_cost_text(*_cost(session, tenant, start, end))}, "
+        f"{orders} orders, {reservations} reservations."
     )
     return (
         "day_report",
         day.isoformat(),
-        f"Tagesbericht {day.strftime('%d.%m.%Y')}",
+        f"Day report {day.isoformat()}",
         text,
         "normal",
     )
 
 
-def _cost(session: Session, tenant: Tenant, start: datetime, end: datetime) -> int:
-    return session.scalar(
-        select(func.coalesce(func.sum(Call.cost_cents), 0)).where(
+def _cost(
+    session: Session, tenant: Tenant, start: datetime, end: datetime
+) -> tuple[int, int]:
+    """The known cost of the calls in the window, and how many calls have none:
+    a price not set in .env or a transfer not measured leaves `cost_cents` empty,
+    which is not a cost of zero."""
+    known, unknown = session.execute(
+        select(
+            func.coalesce(func.sum(Call.cost_cents), 0),
+            func.count().filter(Call.cost_cents.is_(None)),
+        ).where(
             Call.tenant_id == tenant.id,
             Call.started_at >= start,
             Call.started_at < end,
         )
-    )
+    ).one()
+    return known or 0, unknown
+
+
+def _cost_text(known: int, unknown: int) -> str:
+    if not unknown:
+        return _euro(known)
+    return f"{_euro(known)} plus {unknown} calls of unknown cost"
 
 
 def _sent(session: Session, tenant: Tenant, kind: str, key: str) -> bool:
@@ -267,4 +284,4 @@ def _sent(session: Session, tenant: Tenant, kind: str, key: str) -> bool:
 
 
 def _euro(cents: int) -> str:
-    return f"{cents // 100},{cents % 100:02d} Euro"
+    return f"{cents // 100}.{cents % 100:02d} EUR"
