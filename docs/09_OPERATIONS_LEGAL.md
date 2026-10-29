@@ -51,7 +51,13 @@ Not compared with a second model; Maxi decides each when it is due.
 ## 2. Runbook
 
 ### Not-Aus
-**GUI → Kopfzeile → KI PAUSIEREN.** Ein Tap. Alle Anrufe gehen sofort ans Team. Das ist der erste Griff bei jeder Störung, vor jeder Diagnose.
+**GUI → Kopfzeile → KI PAUSIEREN.** Ein Tap. Alle Anrufe gehen sofort ans Team. Das ist der erste Griff bei jeder Störung, vor jeder Diagnose. Wieder einschalten fragt einmal nach ("KI einschalten"). The one page for the team, to read through once and hang next to the tablet: `docs/vorlagen/team_einweisung.md` (T-8.5).
+
+### Modus (T-8.1)
+The header's three buttons switch between `shadow` ("KI hört mit"), `overflow` ("KI springt ein") and `primary` ("KI nimmt an"); a step towards more AI asks once, a step back is one tap. Weekly windows (`call_mode_windows`, written by SQL until an admin page exists) hold a mode of their own and the header says "nach Plan bis …"; a tap holds against a window that began before it, until the next window begins (docs/02 §4). The emergency stop beats every window and is never a plan.
+
+### Alarme für Maxi (T-8.3, Thema `ops` am Push-Server)
+Cost of the day above `ALARM_COST_PER_DAY_CENTS`; `ALARM_ERROR_CALLS_PER_HOUR` or more calls ending in an error within an hour; events to n8n that failed for good (n8n down); the day report from `MONITOR_REPORT_HOUR` on the previous day. They reach Maxi's device without n8n and never the team. Setup: `n8n/README.md`; without `MONITOR_PUSH_TOKEN` they are only logged. Not built yet (T-8.3 part 2): heartbeats of `voice`, Asterisk and the print bridge, and an alarm for a failed backup.
 
 ### Störungen
 
@@ -60,7 +66,9 @@ Not compared with a second model; Maxi decides each when it is due.
 | Kunden beschweren sich über den Agenten | KI pausieren | Anruf-Log ansehen, Fall als Eval-Fall anlegen |
 | Bestellungen kommen nicht in der Küche an | `handover_state` in der GUI prüfen, „Nochmal senden"; liegt der Eingabezettel am Haupt-Bondrucker, wurde die Bestellung in die Kasse getippt? (D2: Küchenbon druckt nur die Kasse) | Drucker an, Papier, Deckel zu; läuft die Druckbrücke (`printbridge/README.md`, Probebon mit `--test`); Log „Alarm: Küchenbon" im Dienst `dispatcher`; Kassenverbindung |
 | Agent versteht auffällig schlecht | KI pausieren | Ist das Menü aktuell? Neue Gerichte ohne Alias? Voice layer or a speech engine failing (docs/20 §5)? |
-| Kosten laufen hoch | Kosten-Alarm prüfen | Anrufdauer, Schleifen, Spam-Nummern sperren |
+| Kosten laufen hoch | Push "Cost above the daily limit" on `ops`, or the day report; if unsure, KI pausieren | Anrufdauer, Schleifen, Spam-Nummern sperren; calls named "of unknown cost" have no price set in `.env` |
+| Push "Events not delivered" | check n8n (`docker compose ps`, its logs); the team's pushes and the outbox events wait as `failed` | restart n8n; failed events are not sent again by themselves, read their `last_error` in `outbox` |
+| Push "Calls with errors" | KI pausieren if guests are affected | Anruf-Log, `error` calls, the log of `voice` |
 | Agent antwortet nicht | Rufumleitung greift automatisch | `/health`, Container-Logs, Status of `voice` and Asterisk (docs/20 §5, target, not yet measured) |
 | Datenbank weg | KI pausieren | letztes Backup prüfen, `scripts/restore.sh` |
 
@@ -122,7 +130,7 @@ Jede Umschaltung braucht einen Rückweg, der ohne Nachdenken funktioniert.
 | Schritt vorwärts | Rückweg |
 |---|---|
 | `shadow` → `overflow` | Modus zurückstellen, ein Tap |
-| Freigabeknopf abschalten | in der Konfiguration wieder einschalten |
+| Approval step of `overflow` off (after G5, T-8.2) | `UPDATE service_config SET overflow_needs_approval = true`; orders confirmed meanwhile have already gone to the kitchen, new ones wait for "Passt" again. The amount limit holds in every mode either way |
 | `overflow` → `primary` | Modus zurückstellen |
 | Neue Prompt-Version | vorherige Version aus `prompts/`, Neustart |
 | Migration | `alembic downgrade -1`, vorher Backup |
