@@ -194,7 +194,7 @@ Spec: `docs/09_OPERATIONS_LEGAL.md` §1, the row named in each task. Maxi's pape
 
 | ID | Issue | Aufgabe | Spec | Hängt ab von | Status |
 |---|---|---|---|---|---|
-| T-8.1 | #76 | Modus-Umschaltung `shadow`/`overflow`/`primary`/`paused` inkl. Zeitfenster | 02 §4 | T-3.2 | in progress |
+| T-8.1 | #76 | Modus-Umschaltung `shadow`/`overflow`/`primary`/`paused` inkl. Zeitfenster | 02 §4 | T-3.2 | done 29.10.2026 (migration 013, the switch in the header, `domain/status/mode.py`; windows written by SQL until the admin area has an editor, no row yet) |
 | T-8.2 | #77 | Freigabe-Fluss im Überlauf: Status `approved`, Freigabeknopf, abschaltbar | 03, 06 | T-4.7, T-8.1 | offen |
 | T-8.3 | #78 | Monitoring: Heartbeat, Kosten-Alarm, Fehler-Alarm, Tagesbericht | 02 §5 | T-1.9 | offen |
 | T-8.4 | #79 | Kennzahlen: Leiste mit 4 Werten in jedem Admin-Bereich, Verlauf im Bereich „Kennzahlen" | 06 §4 | T-8.3 | offen |
