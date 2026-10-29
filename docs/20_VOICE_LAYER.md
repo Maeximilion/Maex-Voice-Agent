@@ -658,14 +658,19 @@ What step 2 does not answer yet: two calls at once over the router (no second te
 by its own limit, §3), transfer from the IP telephone and what a second and third caller hear
 (T-10.2).
 
-### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, not run yet)
+### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, run set for 30.10.2026 10:00)
 
 | | |
 |---|---|
 | Start folder | the repository folder in the Ubuntu home directory, Ubuntu terminal: its stack holds the dev database, and the tablet view shows the callback cards |
 | The one command | `docker compose -f docker-compose.yml -f docker-compose.override.yml -f deploy/asterisk/docker-compose.tunnel.yml --profile voice up -d --build` (the first start of `voice` loads its engines, up to 2 minutes); `... --profile voice rm -sf voice asterisk wireguard` takes the AI telephone off again and leaves the rest of the stack running |
-| Maxi has to have ready | Everything of the handover of T-10.1 step 2, with that stack down: both register as the same IP telephone with the same WireGuard key. In `.env`: `VOICE_EAR=whisper`, `VOICE_MOUTH=piper`, `VOICE_EAR_DEVICE` (`cuda` or `cpu`), the model of `LLM_BASE_URL` running (the run takes the graphics card; name a start time), and `TEAM_PHONE` the number the router rings the team telephone at. The dev database at the newest migration (`bash scripts/backup.sh --label before_migration`, then `bash scripts/migrate.sh`); on 29.10.2026 it was behind and `voice` stopped at its first query. A second and a third telephone for the rows with more than one caller |
+| Maxi has to have ready | Everything of the handover of T-10.1 step 2, with that stack down: both register as the same IP telephone with the same WireGuard key. In `.env`: `VOICE_EAR=whisper`, `VOICE_MOUTH=piper`, `VOICE_EAR_DEVICE` (`cuda` or `cpu`), the model of `LLM_BASE_URL` running (the run takes the graphics card; name a start time), and `TEAM_PHONE` the number the router rings the team telephone at. The dev database at the newest migration: migrated on 29.10.2026 from 006 to 012, after an encrypted backup (`backups/maex_maex_agent_20261029T143644Z_before_migration_012.dump.gpg`, passphrase file `~/.config/maex-voice-agent/backup.passphrase`). A second and a third telephone for the rows with more than one caller |
 | What the result looks like | per row below: the team telephone rings, by Maxi's clock within 30 s of placing the call or of the crash (the go of T-10.2). Our share is in Asterisk's own log, by call id and without a number: `docker compose ... logs asterisk \| grep -E 'call [0-9.]+: '` shows `arrived`, then `to the team` and `team leg ...` with their times |
+
+Before the first row Claude sets `service_config.call_mode` to `primary`: the seed leaves `shadow`, in
+which the AI answers no call and every call goes to the team. The tablet has no switch from `shadow`
+(only pause and resume), so it is set in the database, with a row in `audit_log`, and set back to
+`shadow` after the run.
 
 The rows, each on the test number, each with the line back up before the next (`... --profile voice
 up -d`):
