@@ -1832,10 +1832,16 @@ def test_a_callback_wish_before_the_question_for_the_number_counts_nothing(
     session, tenant_id, call_id
 ):
     """Only an answer to the question for the number can fail: a model that
-    never asks for it does not run the ladder down (Codex PR #347)."""
+    never asks for it does not run the ladder down (Codex PR #347). Each turn
+    gives the core a slot, so turns without understanding end nothing here."""
     state = numberless(tenant_id, call_id)
     turns = [
-        t for _ in range(8) for t in (wants_a_callback(), LLMTurn(say="Wie bitte?"))
+        t
+        for size in range(2, 10)
+        for t in (
+            wants_a_callback(),
+            LLMTurn(say="Wie bitte?", state_patch={"party_size": size}),
+        )
     ]
     loop = ConversationLoop(
         session, FakeLLM(turns), "system", now=NOW, clock=clock_from([0])
@@ -1860,3 +1866,61 @@ def test_a_callback_reason_that_is_no_string_does_not_crash_the_turn(
 
     assert result.ended is True
     assert state.stage == "transferred"
+
+
+# The guest's sentences of `eskalation_0016`.
+NOISE = [
+    "Hallo? ... krrr ... hoeren Sie?",
+    "... chhh ... also ...",
+    "... krrr ...",
+    "... hallo ...",
+    "... chhh ...",
+    "... krrr ... ja ...",
+    "... hallo? ...",
+]
+SAY_PARDON = "Entschuldigung, ich verstehe Sie schlecht. Wie kann ich helfen?"
+
+
+def test_a_line_with_only_noise_goes_to_the_team_whatever_the_model_says(
+    session, tenant_id, call_id
+):
+    """`eskalation_0016` on a real model: it answered every noise turn with a
+    question and never reported a failed answer, so the ladder never moved
+    and the call reached nobody (finding on #37, 29.10.2026)."""
+    state = numberless(tenant_id, call_id)
+    llm = FakeLLM(
+        [LLMTurn(tool_call=ToolCall(name="get_service_status"))]
+        + [LLMTurn(say=SAY_PARDON) for _ in NOISE]
+    )
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    results = []
+    for sentence in NOISE:
+        results.append(loop.run_turn(state, sentence))
+        if results[-1].ended:
+            break
+
+    assert results[-1].ended is True
+    assert state.stage == "transferred"
+    # The ladder's budget: three steps of two failed answers each (docs/05 §2).
+    assert len(results) == 6
+
+
+def test_a_turn_the_core_takes_something_from_counts_noise_from_the_start(
+    session, tenant_id, call_id
+):
+    """Only turns in a row that leave the call where it was count: a slot the
+    core takes is understanding, and the noise around it ends nothing."""
+    state = numberless(tenant_id, call_id)
+    turns = [LLMTurn(say=SAY_PARDON) for _ in range(5)]
+    turns.append(LLMTurn(say="Für wann?", state_patch={"party_size": 4}))
+    turns += [LLMTurn(say=SAY_PARDON) for _ in range(5)]
+    loop = ConversationLoop(
+        session, FakeLLM(turns), "system", now=OPEN_NOW, clock=clock_from([0])
+    )
+
+    sentences = [*NOISE[:5], "Wir sind vier Personen.", *NOISE[:5]]
+    results = [loop.run_turn(state, sentence) for sentence in sentences]
+
+    assert not any(result.ended for result in results)
+    assert state.slots["party_size"] == 4

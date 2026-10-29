@@ -28,7 +28,11 @@ from api.agent import allergies, escalation, guards
 from api.agent.consent import ALLERGY_QUESTION, bare_answer, consent_answer, is_yes
 from api.agent.dispatch import ToolResult, dispatch, in_local_time, log_refused
 from api.agent.guest_details import name_said
-from api.agent.ladder import UnderstandingLadder
+from api.agent.ladder import (
+    FAILURES_BEFORE_LEVEL_UP,
+    LEVEL_UPS_BEFORE_END,
+    UnderstandingLadder,
+)
 from api.agent.llm import LLMClient, LLMError, LLMTurn, ToolCall
 from api.agent.state import (
     ConversationState,
@@ -88,6 +92,31 @@ SAY_NOBODY_REACHABLE = (
     "Ich kann Ihnen gerade leider nicht weiterhelfen und erreiche im Restaurant "
     "niemanden. Bitte rufen Sie später noch einmal an."
 )
+
+# What the core took from the guest in a call. A guest turn that leaves all of
+# it as it was understood nothing, whatever the model said: a real model
+# answered a line with nothing but noise with a question every turn and never
+# reported a failed answer, so the call reached nobody (`eskalation_0016`,
+# finding on #37). The model's own status lookup is no understanding.
+_HEARD = frozenset(
+    {
+        "intent",
+        "stage",
+        "slots",
+        "reservation_id",
+        "order_id",
+        "readback",
+        "cart",
+        "known_item_ids",
+        "seen_items",
+        "allergies",
+        "allergy_consent",
+        "held_call",
+    }
+)
+# Turns in a row without any of it before the call goes to the team: the
+# ladder's budget for one piece of information (docs/05 §2).
+UNHEARD_TURNS = FAILURES_BEFORE_LEVEL_UP * LEVEL_UPS_BEFORE_END
 
 ENDED_STAGES = frozenset({"transferred", "ended"})
 # Name under which a refused order of the model (`LLMTurn.cart`) goes back to
@@ -193,6 +222,7 @@ class ConversationLoop:
         self._clock = clock
         self._started = clock()
         self._ladder = UnderstandingLadder()
+        self._unheard = 0
         # Timezone of the call's tenant, read once (`_local_now`).
         self._zone: str | None = None
 
@@ -205,6 +235,7 @@ class ConversationLoop:
             # The answer to the question for the callback number (L17),
             # before the model and before any `confirm`.
             return self._callback_answered(state, user_text)
+        heard = state.model_dump(include=_HEARD)
         note_guest_details(state, user_text)
         # The same for an allergy: the core writes it onto the draft from what
         # the guest said, never from a model's note (T-11.1).
@@ -307,6 +338,13 @@ class ConversationLoop:
                 return TurnResult(state=state, say=say)
             state.held_call = None
         result = self._converse(state, user_text, turn_started, held)
+        if not result.ended:
+            unchanged = state.model_dump(include=_HEARD) == heard
+            self._unheard = self._unheard + 1 if unchanged else 0
+            if self._unheard >= UNHEARD_TURNS:
+                result = self._handoff(
+                    state, SAY_NOT_UNDERSTOOD, reason="not_understood", detail=user_text
+                )
         if asks:
             # A request next to the question ("Sind Sie ein Roboter? Ich
             # möchte einen Tisch ..."): the truthful sentence first, then the
