@@ -21,11 +21,13 @@ from sqlalchemy.orm import Session
 
 from api.core import time as clock
 from api.models import CallModeWindow, ServiceConfig, Tenant
+from api.models.tenants import WINDOW_MODES
 
 PAUSED = "paused"
-# From the mode in which the agent does the least to the one in which it does
-# the most; the modes of the switch and of a window (`WINDOW_MODES`).
-CAUTION = ("shadow", "overflow", "primary")
+# The modes of the switch and of a window, from the one in which the agent does
+# the least to the one in which it does the most: one list, so a mode a window
+# may hold always has a place in this order.
+CAUTION = WINDOW_MODES
 
 
 @dataclass(frozen=True)

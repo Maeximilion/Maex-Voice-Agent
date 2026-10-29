@@ -20,7 +20,9 @@ from api.models.base import Base, TenantScoped, Timestamps, UUIDPrimaryKey
 
 CALL_MODES = ("shadow", "overflow", "primary", "paused")
 # What a window of `call_mode_windows` may hold: the emergency stop is a button
-# with its own way back, never a plan (T-8.1).
+# with its own way back, never a plan (T-8.1). The order matters: from the mode
+# in which the agent does the least to the one in which it does the most, which
+# `domain/status/mode.py` reads as the caution order of overlapping windows.
 WINDOW_MODES = ("shadow", "overflow", "primary")
 SERVICES = ("dinein", "pickup", "delivery")
 
