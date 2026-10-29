@@ -64,7 +64,7 @@ def _draft(session, tenant_id, call_id, now=NOW, note=None) -> uuid.UUID:
     ).order_id
 
 
-def _confirm(session, tenant_id, call_id, order_id, key=None):
+def _confirm(session, tenant_id, call_id, order_id, key=None, now=None):
     req = ConfirmRequest(
         call_id=call_id,
         tenant_id=tenant_id,
@@ -72,7 +72,7 @@ def _confirm(session, tenant_id, call_id, order_id, key=None):
         entity_id=order_id,
         idempotency_key=key or uuid.uuid4().hex,
     )
-    return confirm(session, req)
+    return confirm(session, req, now)
 
 
 def _events(session) -> list[OutboxEvent]:
@@ -231,6 +231,30 @@ def test_a_primary_window_sends_the_order_to_the_kitchen(session, tenant_id, cal
 
     assert result.handover == "queued"
     assert len(_events(session)) == 1
+
+
+def test_the_window_is_read_at_the_time_confirm_is_given(session, tenant_id, call_id):
+    """An eval, a sim or a drill pinned to a primary window: the order goes to
+    the kitchen as the routing of the same call decided, whatever the server's
+    clock says (PR #433 review)."""
+    _mode(session, tenant_id, "overflow")
+    # Three days from the real date, so the server's clock never falls in it.
+    at = datetime.now(BERLIN).replace(hour=12, minute=0) + timedelta(days=3)
+    session.add(
+        CallModeWindow(
+            tenant_id=tenant_id,
+            weekday=at.weekday(),
+            starts_at=time(0),
+            ends_at=time.max,
+            call_mode="primary",
+        )
+    )
+    session.commit()
+    order_id = _draft(session, tenant_id, call_id)
+
+    result = _confirm(session, tenant_id, call_id, order_id, now=at)
+
+    assert result.handover == "queued"
 
 
 # --- Idempotenz --------------------------------------------------------------------

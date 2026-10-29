@@ -16,6 +16,8 @@ Since #252 the amount holds a ticket back as well: an order above
 the direct one included (`_waits_for`). The guest's yes still confirms it.
 """
 
+from datetime import datetime
+
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
@@ -42,7 +44,9 @@ SAY_CANCELLED = (
 ALREADY_CONFIRMED = ("confirmed", "approved", "handed_over")
 
 
-def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
+def confirm_order(
+    session: Session, req: ConfirmRequest, now: datetime | None = None
+) -> Confirmation:
     # Zeilensperre bis zum Ende der Transaktion: zwei gleichzeitige Aufrufe auf
     # dieselbe Bestellung vergeben keinen zweiten Code und kein zweites Ereignis.
     order = session.execute(
@@ -85,7 +89,7 @@ def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
         raise NotFound("Mandant ohne service_config", say=SAY_ON_FAILURE)
 
     # The mode that holds now, a window of `call_mode_windows` included (T-8.1).
-    mode = mode_at(session, tenant, config).mode
+    mode = mode_at(session, tenant, config, now).mode
     waits_for = _waits_for(order, mode, config)
     direct = waits_for is None
     order.status = "confirmed"

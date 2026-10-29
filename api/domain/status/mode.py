@@ -56,6 +56,8 @@ def mode_at(
             CallModeWindow.ends_at > local.time(),
         )
     ).all()
+    # shortcut: a window across midnight is two rows, and the 00:00 row ends a tap
+    # made in the first; join the rows when the tablet gets a window editor.
     chosen = config.call_mode_chosen_at
     planned = [
         w
@@ -64,7 +66,7 @@ def mode_at(
     ]
     if not planned:
         return ModeNow(config.call_mode, None)
-    window = min(planned, key=lambda w: CAUTION.index(w.call_mode))
-    return ModeNow(
-        window.call_mode, datetime.combine(local.date(), window.ends_at, zone)
-    )
+    mode = min((w.call_mode for w in planned), key=CAUTION.index)
+    # Of overlapping windows of that mode the latest end, whatever the row order.
+    until = max(w.ends_at for w in planned if w.call_mode == mode)
+    return ModeNow(mode, datetime.combine(local.date(), until, zone))

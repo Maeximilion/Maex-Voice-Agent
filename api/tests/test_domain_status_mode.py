@@ -170,6 +170,26 @@ def test_overlapping_windows_take_the_most_cautious_mode(session, tenant_id):
     assert now.planned_until == datetime(2026, 10, 30, 20, 0, tzinfo=BERLIN)
 
 
+@pytest.mark.parametrize(
+    "ends",
+    [(time(19), time(22)), (time(22), time(19))],
+    ids=["short_first", "long_first"],
+)
+def test_overlapping_windows_of_one_mode_hold_until_the_latest_end(
+    session, tenant_id, ends
+):
+    """The header names the later end, whichever row the database returns
+    first (PR #433 review)."""
+    configure(session, tenant_id, call_mode="shadow")
+    window(session, tenant_id, "primary", time(17), ends[0])
+    window(session, tenant_id, "primary", time(17, 30), ends[1])
+
+    now = now_mode(session, tenant_id)
+
+    assert now.mode == "primary"
+    assert now.planned_until == datetime(2026, 10, 30, 22, 0, tzinfo=BERLIN)
+
+
 def test_a_window_of_another_tenant_does_not_count(session, tenant_id):
     configure(session, tenant_id, call_mode="shadow")
     other = uuid.UUID(
