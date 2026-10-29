@@ -16,10 +16,11 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
 from api.core.time import to_local, utcnow
+from api.domain.status.mode import mode_at
 from api.models import CallLimitWindow, ServiceConfig, Tenant
 
 # `shadow`: the team takes every call, the agent only listens later (stage 4).
-# `paused`: the agent is off. Only in these two modes does it pick up.
+# `paused`: the agent is off. Only in the two modes below does it pick up.
 AI_ANSWERS = frozenset({"overflow", "primary"})
 
 
@@ -60,13 +61,15 @@ def call_routing(
     config = session.get(ServiceConfig, tenant_id, populate_existing=True)
     if tenant is None or config is None:
         raise NotFound("Tenant unknown or without service_config")
-    ai_answers = config.call_mode in AI_ANSWERS
+    now = now or utcnow()
+    # The mode that holds now, a window of `call_mode_windows` included (T-8.1).
+    ai_answers = mode_at(session, tenant, config, now).mode in AI_ANSWERS
     return CallRouting(
         ai_answers=ai_answers,
-        # The windows only matter when the agent answers; a mode that sends
-        # every call to the team needs no read that could fail on the way.
+        # The limit windows only matter when the agent answers; a mode that
+        # sends every call to the team needs no read that could fail on the way.
         call_limit=(
-            _call_limit(session, tenant, config, now or utcnow())
+            _call_limit(session, tenant, config, now)
             if ai_answers
             else config.max_concurrent_calls
         ),

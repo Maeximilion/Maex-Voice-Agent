@@ -47,7 +47,7 @@ def confirm(
 
     if req.entity == "reservation":
         return _confirm_reservation(session, req, tenant, now or utcnow())
-    return confirm_order(session, req)
+    return confirm_order(session, req, now)
 
 
 def _confirm_reservation(

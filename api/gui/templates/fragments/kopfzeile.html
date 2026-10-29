@@ -8,6 +8,8 @@
     <div class="mode">
       <span class="dot {{ mode_tone }}"></span>
       <b>{{ mode_label|default("KI ist aus") }}</b>
+      {# A window of the plan holds the mode (T-8.1): until when, in words. #}
+      {% if mode_until %}<span>nach Plan bis {{ mode_until }}</span>{% endif %}
     </div>
     {% if config %}
     <div class="mode">
@@ -39,6 +41,21 @@
     {# Kachel "Gericht aus" (docs/06 §3): die Zahl nennt, wie viele heute aus sind. #}
     <button hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
   </div>
+  {% if mode_choices and config.call_mode != "paused" %}
+  {# The mode switch (T-8.1, docs/06 §3). The mode that holds is pressed. A
+     step that lets the agent take more calls asks first, a step back is one
+     tap (docs/09 §4). During the emergency stop only "KI einschalten" is
+     offered. #}
+  <div class="top actions" role="group" aria-label="Modus der KI">
+    {% for mode, label, pressed, up in mode_choices %}
+    <button hx-post="/gui/kopfzeile/modus/{{ mode }}"
+            hx-target="#kopfzeile" hx-swap="outerHTML"
+            class="{{ 'primary' if pressed }}"
+            aria-pressed="{{ 'true' if pressed else 'false' }}"
+            {% if up %}hx-confirm="Auf „{{ label }}“ umschalten? Danach nimmt die KI mehr Anrufe an."{% endif %}>{{ label }}</button>
+    {% endfor %}
+  </div>
+  {% endif %}
   {# Wartezeit je Service, senkbar und erhöhbar (T-3.6, docs/06 §3). Immer mit
      "Wartezeit" und dem Service daneben; an der Grenze ist der Knopf aus, statt
      einen Tap ohne Wirkung zu schlucken. #}

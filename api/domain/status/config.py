@@ -10,19 +10,21 @@ Jede Funktion sperrt die Zeile (`FOR UPDATE`). Zwei Tablets, die gleichzeitig
 """
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.core import time as clock
 from api.core.errors import InvalidInput, NotFound
-from api.models import AuditLog, ServiceConfig
+from api.domain.status.mode import CAUTION, PAUSED, mode_at
+from api.models import AuditLog, ServiceConfig, Tenant
 
 ACTOR_TABLET = "gui:tablet"
 ACTION_MODE = "service_config.mode_changed"
 ACTION_DELIVERY = "service_config.delivery_changed"
 ACTION_WAIT = "service_config.wait_changed"
 
-PAUSED = "paused"
 # Wohin "KI einschalten" zurückkehrt, wenn nicht nachlesbar ist, was vor der
 # Pause galt: der Modus, in dem die KI nie selbst abnimmt (docs/03 Default).
 RESUME_FALLBACK = "shadow"
@@ -118,6 +120,36 @@ def resume_ai(
     return config
 
 
+def set_mode(
+    session: Session,
+    tenant_id: uuid.UUID,
+    mode: str,
+    actor: str = ACTOR_TABLET,
+    now: datetime | None = None,
+) -> ServiceConfig:
+    """The mode switch of the header (T-8.1). Holds from the next call on, also
+    against a window that began before the tap, until the next window begins
+    (`mode.py`). A tap on the mode that holds changes nothing. Never into the
+    emergency stop and never out of it: both have a button of their own, and
+    switching the agent back on asks first (docs/06 §3)."""
+    if mode not in CAUTION:
+        raise InvalidInput(f"No mode {mode!r} on the switch")
+    config = _locked(session, tenant_id)
+    if config.call_mode == PAUSED:
+        raise InvalidInput("The agent is paused; only switching it on ends that")
+    tenant = session.get(Tenant, tenant_id)
+    if tenant is None:
+        raise NotFound(f"Tenant {tenant_id} unknown")
+    now = now or clock.utcnow()
+    holding = mode_at(session, tenant, config, now).mode
+    if holding != mode:
+        _audit(session, config, ACTION_MODE, actor, {"from": holding, "to": mode})
+        config.call_mode = mode
+        config.call_mode_chosen_at = now
+    session.commit()
+    return config
+
+
 def set_delivery(
     session: Session, tenant_id: uuid.UUID, enabled: bool, actor: str = ACTOR_TABLET
 ) -> ServiceConfig:
@@ -175,24 +207,26 @@ def change_wait(
     return config
 
 
-def config_change_token(session: Session, tenant_id: uuid.UUID) -> str:
+def config_change_token(
+    session: Session, tenant_id: uuid.UUID, now: datetime | None = None
+) -> str:
     """Fingerabdruck der Kopfzeile für den Ereignisstrom (gui/sse.py).
 
     Die angezeigten Werte selbst, nicht nur updated_at: das setzt allein das ORM
     (onupdate), ein rohes UPDATE in der Datenbank laesst es stehen und die Tablets
     blieben auf dem alten Stand. updated_at bleibt dabei, damit auch eine
     Aenderung hin und wieder zurueck innerhalb eines Takts ein Signal gibt.
+    The mode is the one that holds at `now`: a window that begins or ends
+    writes nothing to the database, and the header still has to show it (T-8.1).
     """
-    row = session.execute(
-        select(
-            ServiceConfig.call_mode,
-            ServiceConfig.delivery_enabled,
-            ServiceConfig.pickup_wait_minutes,
-            ServiceConfig.delivery_wait_minutes,
-            ServiceConfig.updated_at,
-        ).where(ServiceConfig.tenant_id == tenant_id)
-    ).first()
-    if row is None:
+    config = session.get(ServiceConfig, tenant_id, populate_existing=True)
+    tenant = session.get(Tenant, tenant_id)
+    if config is None or tenant is None:
         return "-"
-    mode, delivery, pickup, delivery_wait, updated = row
-    return f"{mode}:{int(delivery)}:{pickup}:{delivery_wait}:{updated.isoformat()}"
+    holding = mode_at(session, tenant, config, now)
+    until = holding.planned_until.isoformat() if holding.planned_until else ""
+    return (
+        f"{holding.mode}:{until}:{int(config.delivery_enabled)}:"
+        f"{config.pickup_wait_minutes}:{config.delivery_wait_minutes}:"
+        f"{config.updated_at.isoformat()}"
+    )

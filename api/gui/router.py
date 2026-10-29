@@ -24,6 +24,7 @@ from api.config import LOCAL_ENVS, settings
 from api.core.auth import require_gui_proxy
 from api.core.errors import AppError
 from api.core.logging import get_logger
+from api.core.time import to_local
 from api.db import SessionLocal, get_db
 from api.domain.callbacks import list_open, mark_done
 from api.domain.callbacks.board import NUMBER_OTHER, NUMBER_WITHHELD
@@ -32,6 +33,7 @@ from api.domain.ordering import board as order_board
 from api.domain.ordering import correction
 from api.domain.reservations import list_today
 from api.domain.status import config as switches
+from api.domain.status.mode import CAUTION, mode_at
 from api.gui import orders_view
 from api.gui.sse import today_event_stream
 from api.models import ServiceConfig, Tenant
@@ -61,6 +63,11 @@ MODE_LABELS = {
     "paused": ("danger", "KI ist aus"),
     "shadow": ("warn", "KI hört mit"),
 }
+# The switch of the header (T-8.1), from the mode in which the agent does the
+# least to the one in which it does the most (`domain/status/mode.py`). A step
+# up asks first, a step down is one tap: the way back needs no thinking
+# (docs/09 §4).
+MODE_CHOICES = CAUTION
 
 
 def _tenant(session: Session) -> Tenant | None:
@@ -155,11 +162,22 @@ def _header(session: Session, tenant: Tenant) -> dict:
             "mode_label": "KI ist aus",
             "config": None,
         }
-    tone, label = MODE_LABELS.get(config.call_mode, ("danger", "KI ist aus"))
+    holding = mode_at(session, tenant, config)
+    tone, label = MODE_LABELS.get(holding.mode, ("danger", "KI ist aus"))
+    rank = MODE_CHOICES.index(holding.mode) if holding.mode in MODE_CHOICES else -1
     return {
         **base,
         "mode_tone": tone,
         "mode_label": label,
+        "mode_until": (
+            to_local(holding.planned_until, tenant.timezone).strftime("%H:%M")
+            if holding.planned_until
+            else None
+        ),
+        "mode_choices": [
+            (mode, MODE_LABELS[mode][1], mode == holding.mode, index > rank)
+            for index, mode in enumerate(MODE_CHOICES)
+        ],
         "config": config,
         "sold_out_count": dishes.sold_out_count(session, tenant.id),
     }
@@ -305,6 +323,21 @@ def ki_einschalten(
 ) -> HTMLResponse:
     """Rueckfrage stellt der Knopf selbst (hx-confirm), hier wird nur geschaltet."""
     return _switch(request, session, lambda t: switches.resume_ai(session, t))
+
+
+@router.post(
+    "/kopfzeile/modus/{mode}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def modus(
+    request: Request, mode: str, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """The mode switch (T-8.1). A step up asks on the button (hx-confirm)."""
+    if mode not in MODE_CHOICES:
+        raise HTTPException(status_code=404)
+    return _switch(request, session, lambda t: switches.set_mode(session, t, mode))
 
 
 @router.post(

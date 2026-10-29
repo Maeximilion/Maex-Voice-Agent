@@ -23,8 +23,8 @@ STUFE_2_TABELLEN = {
     "order_items",
 }
 # Tables of later migrations: 010 the consent log (T-11.1), 011 the call limit
-# windows (T-10.9).
-LATER_TABLES = {"consent_log", "call_limit_windows"}
+# windows (T-10.9), 013 the call mode windows (T-8.1).
+LATER_TABLES = {"consent_log", "call_limit_windows", "call_mode_windows"}
 
 
 def _table_names(url: str) -> set[str]:

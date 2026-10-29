@@ -13,7 +13,7 @@ from api.core.errors import Conflict, NotFound
 from api.domain.confirm import confirm
 from api.domain.ordering import draft_order
 from api.events.types import ORDER_CONFIRMED
-from api.models import AuditLog, Order, OutboxEvent, ServiceConfig
+from api.models import AuditLog, CallModeWindow, Order, OutboxEvent, ServiceConfig
 from api.schemas.confirm import ConfirmRequest
 from api.tests.test_domain_draft_order import (
     BERLIN,
@@ -64,7 +64,7 @@ def _draft(session, tenant_id, call_id, now=NOW, note=None) -> uuid.UUID:
     ).order_id
 
 
-def _confirm(session, tenant_id, call_id, order_id, key=None):
+def _confirm(session, tenant_id, call_id, order_id, key=None, now=None):
     req = ConfirmRequest(
         call_id=call_id,
         tenant_id=tenant_id,
@@ -72,7 +72,7 @@ def _confirm(session, tenant_id, call_id, order_id, key=None):
         entity_id=order_id,
         idempotency_key=key or uuid.uuid4().hex,
     )
-    return confirm(session, req)
+    return confirm(session, req, now)
 
 
 def _events(session) -> list[OutboxEvent]:
@@ -189,6 +189,72 @@ def test_ohne_primaerbetrieb_wartet_die_bestellung_auf_freigabe(
     session.refresh(order)
     assert order.handover_state is None
     assert _events(session) == []
+
+
+def _all_day_window(session, tenant_id, mode: str) -> None:
+    """A window of `mode` that holds whenever the test runs."""
+    for weekday in range(7):
+        session.add(
+            CallModeWindow(
+                tenant_id=tenant_id,
+                weekday=weekday,
+                starts_at=time(0),
+                ends_at=time.max,
+                call_mode=mode,
+            )
+        )
+    session.commit()
+
+
+def test_an_overflow_window_holds_the_order_for_approval(session, tenant_id, call_id):
+    """The restaurant runs primary, but a window says overflow right now: the
+    order waits for "Passt" as in overflow (T-8.1, docs/02 §4)."""
+    _all_day_window(session, tenant_id, "overflow")
+    order_id = _draft(session, tenant_id, call_id)
+
+    result = _confirm(session, tenant_id, call_id, order_id)
+
+    assert result.handover == "awaiting_approval"
+    assert _events(session) == []
+    [entry] = session.scalars(
+        select(AuditLog.payload).where(AuditLog.action == "order.confirmed")
+    ).all()
+    assert entry["call_mode"] == "overflow"
+
+
+def test_a_primary_window_sends_the_order_to_the_kitchen(session, tenant_id, call_id):
+    _mode(session, tenant_id, "overflow")
+    _all_day_window(session, tenant_id, "primary")
+    order_id = _draft(session, tenant_id, call_id)
+
+    result = _confirm(session, tenant_id, call_id, order_id)
+
+    assert result.handover == "queued"
+    assert len(_events(session)) == 1
+
+
+def test_the_window_is_read_at_the_time_confirm_is_given(session, tenant_id, call_id):
+    """An eval, a sim or a drill pinned to a primary window: the order goes to
+    the kitchen as the routing of the same call decided, whatever the server's
+    clock says (PR #433 review)."""
+    _mode(session, tenant_id, "overflow")
+    # Three days from the real date, so the server's clock never falls in it.
+    at = datetime.now(BERLIN).replace(hour=12, minute=0) + timedelta(days=3)
+    session.add(
+        CallModeWindow(
+            tenant_id=tenant_id,
+            weekday=at.weekday(),
+            starts_at=time(0),
+            ends_at=time.max,
+            call_mode="primary",
+        )
+    )
+    session.commit()
+    order_id = _draft(session, tenant_id, call_id)
+
+    result = _confirm(session, tenant_id, call_id, order_id, now=at)
+
+    assert result.handover == "queued"
 
 
 # --- Idempotenz --------------------------------------------------------------------
