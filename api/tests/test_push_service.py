@@ -7,9 +7,11 @@ running server answers was tried by hand, see `n8n/README.md`.
 """
 
 import re
+import subprocess
 from urllib.parse import urlparse
 
 from api.config import Settings
+from api.jobs import monitor
 from api.tests.test_commands import REPO_ROOT
 from api.tests.test_compose_ports import _load
 from api.tests.test_n8n_workflow import _channel
@@ -24,7 +26,6 @@ DEV = REPO_ROOT / "docker-compose.override.yml"
 SERVICE = "push"
 PUBLISHER = "n8n"
 SUBSCRIBER = "team"
-ACCESS_RE = re.compile(r'NTFY_AUTH_ACCESS="([^"]+)"')
 TOPIC_RE = re.compile(r"topic:\s*'([^']+)'")
 TOKEN_RE = re.compile(r"tk_[a-z0-9]{29}")
 HASH_RE = re.compile(r"\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}")
@@ -45,11 +46,22 @@ def _environment(path=COMPOSE) -> dict[str, str | None]:
     return env
 
 
-def _access() -> set[tuple[str, str, str]]:
-    """The access rules the start command sets: (user, topic, permission)."""
+def _access(users: str) -> set[tuple[str, ...]]:
+    """The access rules the start command sets for this NTFY_AUTH_USERS:
+    (user, topic, permission). Runs the command itself, with `ntfy serve`
+    replaced by printing the rules."""
     (script,) = _service()["command"]
-    (rules,) = ACCESS_RE.findall(script)
-    return {tuple(rule.split(":")) for rule in rules.split(",")}
+    script = script.replace("$$", "$").replace(
+        "exec ntfy serve", 'printf %s "$NTFY_AUTH_ACCESS"'
+    )
+    rules = subprocess.run(
+        ["sh", "-c", script],
+        env={"NTFY_AUTH_USERS": users},
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    return {tuple(rule.split(":")) for rule in rules.split(",") if rule}
 
 
 def _topic() -> str:
@@ -81,9 +93,38 @@ def test_users_and_tokens_come_from_the_environment() -> None:
         assert not HASH_RE.search(text), path.name
 
 
+TEAM_USERS = "team:<hash>:user,n8n:<hash>:user"
+
+
 def test_publisher_may_only_write_and_the_team_only_read() -> None:
     topic = _topic()
-    assert _access() == {(PUBLISHER, topic, "wo"), (SUBSCRIBER, topic, "ro")}
+    assert _access(TEAM_USERS) == {
+        (PUBLISHER, topic, "wo"),
+        (SUBSCRIBER, topic, "ro"),
+    }
+
+
+def test_the_operator_topic_opens_only_with_both_of_its_users() -> None:
+    """The server refuses rules for a user it does not know (T-8.3)."""
+    team = _access(TEAM_USERS)
+    ops = {("monitor", monitor.TOPIC, "wo"), ("ops", monitor.TOPIC, "ro")}
+    assert _access(f"{TEAM_USERS},ops:<hash>:user,monitor:<hash>:user") == team | ops
+    assert _access(f"{TEAM_USERS},monitor:<hash>:user") == team
+    assert _access(f"{TEAM_USERS},ops:<hash>:user") == team
+    # A user whose name only ends in "monitor" is not the dispatcher.
+    assert _access(f"{TEAM_USERS},ops:<hash>:user,xmonitor:<hash>:user") == team
+    assert _access("") == set()
+
+
+def test_the_alarms_go_to_the_service_in_the_stack() -> None:
+    url = urlparse(Settings.model_fields["monitor_push_url"].default)
+    assert (url.scheme, url.hostname, url.port, url.path) == (
+        "http",
+        SERVICE,
+        None,
+        "/",
+    )
+    assert _topic() != monitor.TOPIC
 
 
 def test_rules_are_only_set_when_users_exist() -> None:

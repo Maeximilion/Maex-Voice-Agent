@@ -68,6 +68,10 @@ x-settings: &settings
   RETENTION_CONSENT_LOG_YEARS:
   RETENTION_INTERVAL_SECONDS:
   REGISTER_REPORT_HOUR:
+  MONITOR_PUSH_URL:
+  ALARM_COST_PER_DAY_CENTS:
+  ALARM_ERROR_CALLS_PER_HOUR:
+  MONITOR_REPORT_HOUR:
 
 services:
   db:
@@ -177,6 +181,8 @@ services:
       <<: *settings
       # The credential of the webhook node it sends (n8n/README.md).
       N8N_BASIC_AUTH_PASSWORD:
+      # Its own token at the push server for the operator's alarms (T-8.3).
+      MONITOR_PUSH_TOKEN:
     command: python -m api.jobs.cold_path
     depends_on:
       db:
@@ -342,12 +348,19 @@ services:
     # The server refuses to start with an empty user list, and with access
     # rules for users it does not know. So the rules are set only when users
     # exist; without users it starts closed for everyone instead of not at all.
-    # n8n may only write to the topic, the team may only read it.
+    # n8n may only write to the topic, the team may only read it. The topic
+    # `ops` of the operator's alarms (T-8.3) is opened only when both of its
+    # users exist, so a stack without them still starts.
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         if [ -n "$$NTFY_AUTH_USERS" ]; then
           export NTFY_AUTH_ACCESS="n8n:team:wo,team:team:ro"
+          case ",$$NTFY_AUTH_USERS" in *,monitor:*)
+            case ",$$NTFY_AUTH_USERS" in *,ops:*)
+              export NTFY_AUTH_ACCESS="$$NTFY_AUTH_ACCESS,monitor:ops:wo,ops:ops:ro";;
+            esac;;
+          esac
         else
           unset NTFY_AUTH_USERS NTFY_AUTH_TOKENS
         fi

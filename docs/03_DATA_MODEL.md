@@ -186,7 +186,7 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | id | BIGSERIAL PK | |
 | tenant_id | UUID | |
 | at | TIMESTAMPTZ | |
-| actor | TEXT | `agent` / `gui:<user>` / `system` |
+| actor | TEXT | `agent` / `gui:<user>` / `system` / `monitor` (the operator's alarms, action `monitor.alarm` with `kind` and `key`, T-8.3) |
 | action | TEXT | `order.confirm`, `config.update`, … |
 | entity / entity_id | TEXT / UUID | |
 | payload | JSONB | vorher/nachher bei Änderungen |
