@@ -198,6 +198,7 @@ make backup      # encrypted dump of the database of DATABASE_URL into backups/,
 make eval        # 41 regular cases (level 1-2) on a throwaway DB, optional TAGS=menu,noise; exit 1 on a hard metric, a crash or a case that was green in the last passing run
 make eval-targets  # 27 target cases (level 3-5, delivery, known gaps), not in CI, red allowed until T-2.4 and T-6.5
 make eval-record  # record the newest real-model run in docs/metrics/; after make eval-targets: make eval-record SUITE=targets
+make eval-voice   # the cases spoken and heard by the service's ear on the graphics card (docs/08 §8), optional MODEL=, LIMIT=, VOICE=; needs make up and the speech kit's model files
 make readme-assets  # redraw the README images from docs/metrics/, the task list and the status
 
 python -m sim.cli                                   # conversation in the terminal

@@ -61,6 +61,9 @@ class CaseResult:
     # Ziel, das der heutige Stand noch nicht kann. Er zaehlt in der Genauigkeit
     # mit, CI verlangt aber, dass er rot ist, bis die Aufgabe ihn gruen macht.
     pending: str | None = None
+    # What the agent said in the last turn with a successful draft
+    # (`judge.heard_readback`), for the read-back check of `evals/voice.py`.
+    readback: str | None = None
 
 
 @dataclass

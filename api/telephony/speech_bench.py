@@ -65,6 +65,26 @@ def telephone(pcm: bytes, rate: int) -> np.ndarray:
     return (heard / 32768).astype(np.float32)
 
 
+# The noise a line carries while nobody speaks, before its band: a standard
+# deviation of 60 of 32768, about -55 dBFS. Digital silence, which no line
+# carries, made the detector miss an answer after a few seconds of it, and
+# full-band hiss as well; noise in the band of the line did not (docs/20 §12).
+LINE_NOISE = 60.0
+
+
+def on_the_line(
+    pcm: bytes, rate: int, before: float = 0.0, after: float = 0.0, seed: int = 0
+) -> np.ndarray:
+    """The caller's leg as the ear gets it: `before` seconds of quiet, the
+    sentence and `after` seconds of quiet, all under the noise of a line,
+    through `telephone`. The same `seed` makes the same noise."""
+    speech = np.frombuffer(pcm, dtype=np.int16).astype(np.float32)
+    quiet = [np.zeros(int(rate * s), dtype=np.float32) for s in (before, after)]
+    samples = np.concatenate([quiet[0], speech, quiet[1]])
+    samples += np.random.default_rng(seed).normal(0, LINE_NOISE, len(samples))
+    return telephone(samples.clip(-32768, 32767).astype(np.int16).tobytes(), rate)
+
+
 def _band(rate: int) -> np.ndarray:
     """Windowed-sinc band pass for BAND_HZ at the given sample rate."""
     n = np.arange(_TAPS) - _TAPS // 2

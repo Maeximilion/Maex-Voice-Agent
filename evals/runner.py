@@ -198,7 +198,9 @@ def _count_usage(result: CaseResult, llm: RecordingLLM | None) -> None:
     result.unmetered = counted.unmetered
 
 
-def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResult:
+def run_case(
+    session: Session, case: dict[str, Any], make_llm, plan, hear=None
+) -> CaseResult:
     now = datetime.fromisoformat(case["now"]) if case.get("now") else DEFAULT_NOW
     expected = case["expected"]
     result = CaseResult(
@@ -215,7 +217,8 @@ def run_case(session: Session, case: dict[str, Any], make_llm, plan) -> CaseResu
         inner = make_llm(now, lambda: menu_numbers(session, tenant.id))
         llm = RecordingLLM(inner)
         _sell_out(session, tenant.id, case.get("sold_out", []), now)
-        call, turns = replay(session, case, tenant, now=now, llm=llm)
+        call, turns = replay(session, case, tenant, now=now, llm=llm, hear=hear)
+        result.readback = heard_readback(turns)
         repeated = _repeat_confirm(session, case, call, tenant, llm, now)
         call.finish()
         seen = observe(session, call.call_id, llm.recording.confirms)
@@ -288,14 +291,19 @@ def run(
     db_url: str | None = None,
     keep_db: bool = False,
     stamp: datetime | None = None,
+    cases: list[dict[str, Any]] | None = None,
+    hear=None,
 ) -> RunReport:
-    """Ein ganzer Lauf. `db_url` setzt eine migrierte Datenbank von aussen (Tests)."""
+    """Ein ganzer Lauf. `db_url` setzt eine migrierte Datenbank von aussen (Tests).
+    `cases` plays these instead of the folder's, `hear` the lines as an ear heard
+    them (`evals/voice.py`, `sim.replay.replay`)."""
     tags = sorted(tags or [])
     # Without an explicit folder every case folder gets its own report folder: a
     # run over targets/ must never become the baseline of the CI suite.
     report_dir = report_dir or default_report_dir(cases_dir)
     make_llm = model_factory(model)
-    cases = load_cases(cases_dir, tags)
+    if cases is None:
+        cases = load_cases(cases_dir, tags)
     if not cases:
         raise CaseError(f"kein Fall mit den Tags {tags} in {cases_dir}")
     stamp = stamp or datetime.now(UTC)
@@ -309,7 +317,7 @@ def run(
         with Session(engine) as session:
             # Kaputte Karte bricht den Lauf ab, statt jeden Fall rot zu zeigen.
             plan = menu_plan()
-            results = [run_case(session, c, make_llm, plan) for c in cases]
+            results = [run_case(session, c, make_llm, plan, hear) for c in cases]
     finally:
         engine.dispose()
         if own_db and not keep_db:
