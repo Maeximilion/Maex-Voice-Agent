@@ -758,11 +758,26 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 | 20.10.2026 | T-10.8 | `python3 -m scripts.voice_drill` on the workbench, with the router stand-in's team telephone busy (`TEAM_AWAY=busy`) or ringing past the 30 s (`ring`), the opening hours open around the clock for the drill (a special day) | **26 of 26 points.** Busy team after the core handed the call over (keys, model down): the team rang after 4.3 s, `voice` answered the report `noted`, one card under the caller's number, the call's outcome `callback`, the caller heard `missed_noted` (`PLAYBACKSTATUS` SUCCESS); the busy answer came while our leg's log could still be written. Paused line: a card, nothing played, the caller's leg never answered (BUSY). `voice` stopped while the team rang: no answer to the report, no card, the caller heard `missed_later` from the file, the call over 33.2 s after it was placed (36.7 s on the run after the review fixes, also 26 of 26). The files Asterisk plays hold the code's two sentences. The 20 points from before all green again; six new (team missed 3, paused 1, `voice` down 1, the sentences 1) |
 | 21.10.2026 | #252 finding 12 | `python3 -m scripts.voice_drill` on the workbench, the stranger sending a second INVITE from an invented caller's number | **27 of 27 points.** Both INVITEs refused with `403` by the ACL; Asterisk logged `SIP ACL: Rejecting` and `did not pass ACL test` with the sender's address and port, no From URI; the caller's number in no container's output. The 26 points from before green again, the team rang within 0.3 to 8.0 s |
 | 28.10.2026 | T-10.1 step 2 | `deploy/asterisk/docker-compose.line.yml` on the workbench: the product's Asterisk 22 registered at the pilot's router (FRITZ!Box 6591 Cable) as an IP telephone on the test number, through a WireGuard tunnel of its own; the probe in place of `voice`. Maxi called from his mobile, twice | **Go for step 2 except two calls at once, which is open.** Before the tunnel: registered, but every call ended at the router with 408 (the INVITE went to the address translation of Docker and WSL and stopped there), the caller heard "not reachable". With the tunnel: registered in 6 to 8 s, Contact the tunnel address, 300 s. The router sent calls from its public address: refused by the ACL (403) until `ACCESS_ALSO`, the answer sent past the tunnel until it was routed through it. Then both calls were answered with the tone, Maxi heard his echo. Call 1: 27.9 s of audio in, frames every 20.0 ms on average, longest gap 42 ms, caller number arrived (national form). Call 2: 21.2 s, longest gap 129 ms, keys 1 and 2 arrived as `DTMF_END`. Above the probe's floor 3.7 s and 3.6 s (quiet speech, §10). Not measured: two calls at once, delay from mouth to ear, transfer |
+| 29.10.2026 | T-10.7 | `python -m evals.voice` in the speech image on the workbench's graphics card: the 56 cases of `evals/cases/` spoken by `kerstin-low` (steady) through the modelled line, heard by the service's ear (Whisper large-v3-turbo behind the segmenting ear), no key terms | **Hard 0 with both models, every read-back checked.** Scripted: cases as text 56/56, as heard 10/56; qwen3.6-35b-a3b: 29/56 and 14/56. Numbers of single-number lines right 8, silently wrong 1 ("Zweimal die S 12" heard as "S2" and taken), asked 7 of 16; dish names 1 of 4 by letters. No speech in 7 lines ("Ja.", "Sesam.", "Keine.", "Nein, danke.", "... hallo ..."). Line noise heard as no speech; noise variants that got to their read-back 3/39 (scripted) and 5/39. Medians: agent's mouth to the first audio of a read-back 0.06 s, ear after the last frame 0.15 s (max 2.8 s), core per turn with setup 2.5 s on qwen. The ear's miss after silence, §12 |
 
 ---
 
 ## 12. Open questions
 
+- **A short answer after the silence of a read-back is not heard (T-10.7, 29.10.2026,
+  Maxi's call):** the service's ear (segmenting ear, Silero with its state carried from window
+  to window) took the same "Ja, passt." in the voice `kerstin-low` for speech after 1 s of
+  silence and for no speech (`speech=False`) after 4 s and 12 s; with hiss instead of digital
+  silence it heard nothing at all. After 10 s of silence it found no speech in any of three
+  answers of the voice `thorsten-high`, up to 2 s long, and in two of three of `karlsson-low`;
+  only "Ja, das passt so, vielen Dank." in `kerstin-low` came through. A read-back is
+  several seconds in which the caller is silent, so a guest's short yes after it may become
+  no turn, and the agent asks "Sind Sie noch da?". Rule 3 holds (nothing is taken as a yes),
+  the cost is turns and callers who give up. Measured with synthetic voices through the
+  modelled line only; real line audio carries noise of its own. To look at: whether the
+  detector's state should be reset after a stretch of silence, its threshold, or the 256 ms of
+  speech. The audio evals (`make eval-voice`, docs/08 §8) count read-backs whose answer the
+  ear missed as unchecked.
 - **A caller's leg left open after the team hung up (seen once, 14.10.2026):** in the drill
   "voice frozen" of the first of two runs on the branch of T-1.11 part 2, the team leg rang and
   hung up, and the caller's leg stayed up on the stand-in router for the 60 s the kit waits; the
