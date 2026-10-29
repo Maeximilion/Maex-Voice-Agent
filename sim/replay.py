@@ -58,10 +58,13 @@ def replay(
     on_turn: Callable[[Turn], None] | None = None,
     llm: LLMClient | None = None,
     model: str = SCRIPTED,
+    hear: Callable[[str], str | None] | None = None,
 ) -> tuple[SimCall, list[Turn]]:
     """`llm` ersetzt das Skript-Modell; der Eval-Runner schaltet hier seinen
     Beobachter dazwischen (evals/recorder.py). Without `llm`, `model` picks the
-    stand-in or a model by name (`sim.session.make_llm`)."""
+    stand-in or a model by name (`sim.session.make_llm`). `hear` turns a line
+    into what an ear heard of it (`evals/voice.py`); None is no speech, and no
+    turn begins, as on the phone."""
     rng = rng or random.Random()
     call = SimCall(
         session,
@@ -75,7 +78,10 @@ def replay(
     )
     turns = []
     for line in customer_lines(case):
-        turn = call.say(noisy_text(line, noise, rng))
+        heard = hear(line) if hear else line
+        if heard is None:
+            continue
+        turn = call.say(noisy_text(heard, noise, rng))
         turns.append(turn)
         if on_turn:
             on_turn(turn)

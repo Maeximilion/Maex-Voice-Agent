@@ -207,6 +207,7 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 ### `evals/`
 - `runner.py` (Lauf, Wegwerf-Datenbank, CLI), `judge.py` (Abgleich mit dem Datenbankzustand), `recorder.py` (Beobachter am Modell für geratene Positionen und `confirm` ohne Ja), `report.py` (JSON, Markdown, Vergleich mit dem letzten Lauf), `scratch_db.py` (Wegwerf-Datenbanken, auch für die Tests) — siehe 08
 - `heard.py` - judges what a speech-to-text engine heard against what was said: a number sentence by the rule that resolves it on the phone (`number_eval.resolve`) as right, asked or silently wrong, a dish name letter by letter. Knows no engine; written for the spike T-10.3, the audio evals of T-10.7 judge the same way
+- `voice.py` — the audio evals (T-10.7, docs/08 §8): the cases spoken and heard by the service's engines, played by the same runner (its `hear` hook into `sim/replay.py`), the hard checks for a confirm after noise and a yes inside the read-back on a real call session
 - `menu/` — Evalkarte im Importformat (docs/14), Testdaten
 - `cases/<bereich>_<nr>_<name>.json` — optional `now`, `caller_id`, `sold_out`, `repeat_confirm`, `pending` (bekannte Lücke mit Aufgabe, docs/08 §3)
 
