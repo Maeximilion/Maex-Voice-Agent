@@ -6,8 +6,8 @@ looks at each tenant and pushes to the operator, never to the team:
 - the model cost of the business day above ALARM_COST_PER_DAY_CENTS, once a day;
 - at least ALARM_ERROR_CALLS_PER_HOUR calls with outcome `error` in the last
   hour, at most once a clock hour;
-- outbox events whose last attempt failed in the last hour, at most once a
-  clock hour.
+- events to n8n that failed in the last hour, at most once a clock hour
+  (kitchen slips go to the print bridge, not to n8n, and are left out).
   n8n down shows up here first, so this push does not go through n8n;
 - from MONITOR_REPORT_HOUR local time, the previous business day in one line:
   calls by outcome, cost, orders, reservations. A day without a call is
@@ -32,6 +32,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core.logging import error_text, get_logger, log
 from api.core.time import business_day, business_day_bounds_utc, to_local
+from api.events.types import KITCHEN
 from api.models import AuditLog, Call, Order, OutboxEvent, Reservation, Tenant
 
 logger = get_logger("api.jobs.monitor")
@@ -167,6 +168,9 @@ def _due(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
         .where(
             OutboxEvent.tenant_id == tenant.id,
             OutboxEvent.status == "failed",
+            # Kitchen slips go to the print bridge, not to n8n; the tablet
+            # shows a failed one red (domain/ordering/handover.py).
+            OutboxEvent.event_type.not_in(KITCHEN),
             # When it failed: the final failure stamps next_attempt_at
             # (events/outbox.py). Not updated_at: the deletion job rewrites
             # failed rows (allergy notes, expiry) without any delivery failing.

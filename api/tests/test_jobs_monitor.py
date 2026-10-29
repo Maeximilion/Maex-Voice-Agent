@@ -232,6 +232,23 @@ def test_an_overdue_last_attempt_that_fails_now_alarms(session, tenant_id):
     assert run(session).titles() == ["Events not delivered"]
 
 
+def test_a_kitchen_slip_the_bridge_gives_up_on_is_no_n8n_alarm(session, tenant_id):
+    """Kitchen slips go to the print bridge, never to n8n (events/types.py
+    KITCHEN); the tablet shows a failed one red (Codex PR #435, P2)."""
+    session.add(
+        OutboxEvent(
+            tenant_id=tenant_id,
+            event_type="order.confirmed",
+            payload={},
+            status="failed",
+            next_attempt_at=NOW - timedelta(minutes=5),
+        )
+    )
+    session.commit()
+
+    assert run(session).sent == []
+
+
 def test_an_old_failed_event_stays_quiet(session, tenant_id):
     failed_event(session, tenant_id, NOW - timedelta(hours=3))
 
