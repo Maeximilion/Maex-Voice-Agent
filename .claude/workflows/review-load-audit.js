@@ -37,8 +37,10 @@ const ROWS = {
     aggregates: { type: 'string' },
     finding_quality: { type: 'string' },
     p2_outside_scope: { type: 'string', description: 'P2 findings Codex posted outside api/, printbridge/, deploy/, or more than three in one review' },
+    complete: { type: 'boolean', description: 'true only if every requested PR was fetched without an error' },
+    missing: { type: 'string', description: 'the PRs or calls that failed, empty when complete' },
   },
-  required: ['prs', 'aggregates', 'finding_quality', 'p2_outside_scope'],
+  required: ['prs', 'aggregates', 'finding_quality', 'p2_outside_scope', 'complete', 'missing'],
 }
 
 phase('Measure')
@@ -47,10 +49,12 @@ Take the PRs merged after #${SINCE}, newest first, at most ${MAX}, plus every op
 commits, merges from main among them, Codex review rounds (a round is one review by the bot account chatgpt-codex-connector[bot] exactly, with findings or a "no major issues" receipt; never count another login that merely looks similar, nor the owner's thread replies), inline findings of that account by severity badge (P0, P1, P2), changed lines without tests and Markdown, the area (process tooling, docs, product code by folder) and the route from a "Route:" commit trailer if one exists.
 Then read about 15 findings in full with their replies and sort each into: independent in-scope defect, caused by an earlier fix, speculative or out of scope, cosmetic or repeat.
 List every P2 Codex posted for files outside api/, printbridge/ and deploy/, and every review with more than three P2s: the new AGENTS.md says neither should happen. For each PR also record the order of pushes, Codex reviews and merges from main (timestamps), so that "one push per review round" and "no main merges during fix rounds" can be judged; where the order is not clear, say "unmeasured" for that rule. For every PR merged with an unfixed P2, check that its "Merge gate:" comment lists it; name each one that does not, and say "unmeasured" where you did not check.
-Use gh api with --paginate only where a list is long. Report medians and totals in aggregates.`, { label: 'measure', phase: 'Measure', schema: ROWS })
+Use gh api with --paginate only where a list is long. Report medians and totals in aggregates. Set complete to false and name what failed in missing if any PR or call could not be fetched.`, { label: 'measure', phase: 'Measure', schema: ROWS })
 
 // No measurement means no verdict: a comparison against nothing would still sound sure.
 if (!measured) return 'Measurement failed (the agent returned no result, for example gh not signed in or rate-limited). Nothing was compared; run the workflow again.'
+// A table with PRs missing would bias every median, so it is not compared either.
+if (!measured.complete) return `Measurement incomplete, nothing was compared: ${measured.missing || 'the agent named no failed PR'}. Run the workflow again.`
 if (!measured.prs.length) return `No PRs merged after #${SINCE} yet: nothing to compare.`
 
 phase('Check')
@@ -58,6 +62,8 @@ const check = await agent(`Recount three PRs from this table independently with 
 
 TABLE:
 ${JSON.stringify(measured.prs)}`, { label: 'recount', phase: 'Check', model: 'sonnet' })
+// The recount is the check on the table: without it the comparison would rest on unchecked numbers.
+if (!check) return 'Recount failed (the agent returned no result), so the measurement is unchecked and nothing was compared: incomplete. Run the workflow again.'
 
 phase('Compare')
 return await agent(`Compare the review load now with the baseline and write a short report in German for Maxi.
@@ -70,4 +76,4 @@ MEASURED:
 ${JSON.stringify(measured)}
 
 RECOUNT:
-${check || 'not run'}`, { label: 'compare', phase: 'Compare' })
+${check}`, { label: 'compare', phase: 'Compare' })
