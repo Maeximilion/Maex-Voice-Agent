@@ -72,19 +72,13 @@ INSIDE, AFTER = 0.4, 1.0
 NO_SPEECH_WAIT = 2.0
 NOISE_SECONDS = 3.0
 
-
-def answer_line(heard: dict[str, dict[str, Any]]) -> str | None:
-    """The caller's answer to the read-back: the longest yes of the cases that
-    the ear heard as a yes on its own (part 1). So the check depends on the
-    session, not on whether the ear understands one fixed sentence: a bare
-    "Ja" lasts 0.2 s in the caller's voice, under the ear's 256 ms of speech,
-    and is no utterance at all (`adapters/stt_whisper.py`, 29.10.2026)."""
-    yeses = [
-        said
-        for said, row in heard.items()
-        if is_yes(said) and is_yes(row["heard"] or "")
-    ]
-    return max(yeses, key=len, default=None)
+# The caller's answer to the read-back. Long on purpose: after the seconds of
+# silence a read-back leaves, the ear's detector takes a short answer for no
+# speech ("Ja, passt." in this voice after 4 s, every answer of the voice
+# thorsten-high after 10 s; measured 29.10.2026, open point in docs/20 §12),
+# and a bare "Ja" lasts 0.2 s, under the ear's 256 ms of speech. This one is
+# heard after 10 s, so the check depends on the session, not on the ear.
+ANSWER = "Ja, das passt so, vielen Dank."
 
 
 # What a caller line turns into on the phone: the text the ear heard, or None
@@ -584,12 +578,9 @@ def main(argv: list[str] | None = None) -> int:
         else None
     )
     print("a yes inside the read-back", flush=True)
-    answer = answer_line(heard)
+    yes, _ = pcm(caller, ANSWER)
     readbacks = [c.readback for c in voice_report.cases if c.readback]
-    checks = []
-    if answer is not None:
-        yes, _ = pcm(caller, answer)
-        checks = readback_checks(readbacks, telephone_line(yes), make_ear, mouth)
+    checks = readback_checks(readbacks, telephone_line(yes), make_ear, mouth)
 
     summary = summarize(
         heard, text_report, voice_report, noise_report, noise, checks, core_seconds
@@ -598,7 +589,7 @@ def main(argv: list[str] | None = None) -> int:
     out = {
         "model": args.model,
         "voice": args.voice,
-        "answer": answer,
+        "answer": ANSWER,
         "summary": summary,
         "heard": heard,
         "readbacks": checks,
