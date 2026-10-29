@@ -126,6 +126,15 @@ def test_the_routers_public_address_is_taken_too(render, dns):
     assert "SIP only from 127.0.0.1,203.0.113.7\n" in done.stdout
 
 
+def test_blanks_around_an_also_entry_are_dropped(render, dns):
+    """`a, b` as people write a list: the image's getent fails on " b" and
+    would stop the start (audit of 29.10.2026, note 2)."""
+    dns["a"] = "router.example.com 203.0.113.7\n"
+    done = render(ACCESS_ALSO=" router.example.com,\t127.0.0.1 ")
+    assert reached_the_templates(done), done.stderr
+    assert "SIP only from 127.0.0.1,203.0.113.7\n" in done.stdout
+
+
 @pytest.mark.parametrize("also", ["", ",", ",127.0.0.1,"])
 def test_an_empty_also_or_stray_commas_change_nothing(render, also):
     done = render(ACCESS_ALSO=also)

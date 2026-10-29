@@ -154,12 +154,13 @@ fi
 # may be empty. A router reached through its own WireGuard tunnel names its
 # public address in a call, not the one we register at (T-10.1 step 2,
 # 28.10.2026). Looked up once here like ACCESS_HOST; one without an IPv4
-# address stops the start.
+# address stops the start. Blanks are dropped, as in TRANSFER_TARGETS: the
+# image's getent fails on " name" (audit of 29.10.2026, note 2).
 if [ -n "${ACCESS_ALSO:-}" ]; then
     set -f
     old_ifs=$IFS
     IFS=,
-    for also in $ACCESS_ALSO; do
+    for also in $(printf '%s' "$ACCESS_ALSO" | tr -d ' \t'); do
         [ -n "$also" ] || continue
         found=$(ipv4 "$also")
         if [ -z "$found" ]; then
