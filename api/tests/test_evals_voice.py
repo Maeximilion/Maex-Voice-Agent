@@ -67,13 +67,26 @@ class EnergyEar:
 YES = b"\x00\x10" * int(SAMPLE_RATE * 0.5)
 
 
+def quiet_line(audio: bytes, before: float, after: float) -> bytes:
+    """A line without noise, which the stand-in ear needs to find silence."""
+    return (
+        bytes(int(2 * SAMPLE_RATE * before))
+        + audio
+        + bytes(int(2 * SAMPLE_RATE * after))
+    )
+
+
 def test_a_yes_inside_the_read_back_never_reaches_the_core():
-    assert answer_to_readback(READBACK, YES, -0.4, EnergyEar(), LoudMouth()) == []
+    turns = answer_to_readback(
+        READBACK, YES, -0.4, EnergyEar(), LoudMouth(), quiet_line
+    )
+    assert turns == []
 
 
 def test_the_same_yes_after_the_read_back_is_the_callers_answer():
     """The control: without it the check above would pass on a deaf session."""
-    assert answer_to_readback(READBACK, YES, 1.0, EnergyEar(), LoudMouth()) == ["Ja"]
+    turns = answer_to_readback(READBACK, YES, 1.0, EnergyEar(), LoudMouth(), quiet_line)
+    assert turns == ["Ja"]
 
 
 def test_the_case_is_played_as_the_ear_heard_it(migrated_db_url, tmp_path):
