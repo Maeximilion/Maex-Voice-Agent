@@ -6,7 +6,8 @@ looks at each tenant and pushes to the operator, never to the team:
 - the model cost of the business day above ALARM_COST_PER_DAY_CENTS, once a day;
 - at least ALARM_ERROR_CALLS_PER_HOUR calls with outcome `error` in the last
   hour, at most once a clock hour;
-- outbox events that ended `failed` in the last hour, at most once a clock hour.
+- outbox events whose last attempt failed in the last hour, at most once a
+  clock hour.
   n8n down shows up here first, so this push does not go through n8n;
 - from MONITOR_REPORT_HOUR local time, the previous business day in one line:
   calls by outcome, cost, orders, reservations. A day without a call is
@@ -166,12 +167,11 @@ def _due(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
         .where(
             OutboxEvent.tenant_id == tenant.id,
             OutboxEvent.status == "failed",
-            OutboxEvent.updated_at > since,
-            # The deletion job marks a row failed only once it is older than
-            # the unsent period, and touches updated_at doing so: such a row is
-            # no delivery failure. Any younger one failed in the dispatcher.
-            OutboxEvent.created_at
-            > now - timedelta(days=settings.retention_outbox_unsent_days),
+            # When it failed: a row's last attempt ran at next_attempt_at, and
+            # the final failure leaves it there (events/outbox.py). Not
+            # updated_at: the deletion job rewrites failed rows (allergy notes,
+            # expiry) and moves it without any delivery failing.
+            OutboxEvent.next_attempt_at > since,
         )
     )
     if failed:

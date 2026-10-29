@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
+from api.events.outbox import MAX_ATTEMPTS, mark_attempt_failed
 from api.jobs import monitor
 from api.models import AuditLog, Call, OutboxEvent
 from scripts.seed import seed
@@ -158,17 +159,20 @@ def test_errors_alarm_again_in_the_next_hour(session, tenant_id):
 # --- Outbox ------------------------------------------------------------------
 
 
-def failed_event(session, tenant_id, at) -> None:
+def failed_event(session, tenant_id, last_attempt, created=None, touched=None):
+    """A row the dispatcher gave up on: its last attempt ran at `next_attempt_at`.
+    `touched` is a later write to the row, as by the deletion job."""
     session.add(
         OutboxEvent(
             tenant_id=tenant_id,
             event_type="callback.created",
             payload={},
             status="failed",
-            attempts=20,
+            attempts=5,
             last_error="n8n down",
-            created_at=at,
-            updated_at=at,
+            next_attempt_at=last_attempt,
+            created_at=created or last_attempt - timedelta(minutes=13),
+            updated_at=touched or last_attempt,
         )
     )
     session.commit()
@@ -186,37 +190,21 @@ def test_a_failed_outbox_event_alarms(session, tenant_id):
     assert run(session).sent == []
 
 
-def test_an_event_the_deletion_job_expires_stays_quiet(session, tenant_id):
-    """api/jobs/retention.py marks an unsent row of 30 days `failed` and so
-    touches its updated_at: that is no n8n outage."""
-    session.add(
-        OutboxEvent(
-            tenant_id=tenant_id,
-            event_type="order.confirmed",
-            payload={},
-            status="failed",
-            created_at=NOW - timedelta(days=31),
-            updated_at=NOW - timedelta(minutes=5),
-        )
+def test_a_row_the_dispatcher_gives_up_on_alarms(session, tenant_id):
+    """Through events/outbox.py itself: the final failure keeps next_attempt_at
+    at the attempt that just ran, which is what the alarm reads."""
+    event = OutboxEvent(
+        tenant_id=tenant_id,
+        event_type="callback.created",
+        payload={},
+        attempts=MAX_ATTEMPTS - 1,
+        next_attempt_at=NOW - timedelta(minutes=2),
+        created_at=NOW - timedelta(days=3),
     )
+    session.add(event)
     session.commit()
 
-    assert run(session).sent == []
-
-
-def test_a_backlog_older_than_a_day_that_fails_now_alarms(session, tenant_id):
-    """A dispatcher stopped for two days resumes its backlog; events that fail
-    now alarm, whatever their age below the unsent period (Codex PR #435, P2)."""
-    session.add(
-        OutboxEvent(
-            tenant_id=tenant_id,
-            event_type="callback.created",
-            payload={},
-            status="failed",
-            created_at=NOW - timedelta(days=2),
-            updated_at=NOW - timedelta(minutes=5),
-        )
-    )
+    assert mark_attempt_failed(event, "ConnectError: n8n down", NOW)
     session.commit()
 
     assert run(session).titles() == ["Events not delivered"]
@@ -226,6 +214,44 @@ def test_an_old_failed_event_stays_quiet(session, tenant_id):
     failed_event(session, tenant_id, NOW - timedelta(hours=3))
 
     assert run(session).sent == []
+
+
+def test_a_failed_row_the_deletion_job_rewrites_stays_quiet(session, tenant_id):
+    """The deletion job rewrites the payload of a failed row (allergy notes,
+    expiry), which moves updated_at but not the time of its last attempt
+    (Codex PR #435, P2)."""
+    failed_event(
+        session,
+        tenant_id,
+        NOW - timedelta(days=1),
+        touched=NOW - timedelta(minutes=5),
+    )
+
+    assert run(session).sent == []
+
+
+def test_an_event_the_deletion_job_expires_stays_quiet(session, tenant_id):
+    """api/jobs/retention.py marks an unsent row of 30 days `failed`; it was due
+    when it was written and never tried, so it never failed in the last hour."""
+    failed_event(
+        session,
+        tenant_id,
+        NOW - timedelta(days=31),
+        created=NOW - timedelta(days=31),
+        touched=NOW - timedelta(minutes=5),
+    )
+
+    assert run(session).sent == []
+
+
+def test_a_backlog_older_than_a_day_that_fails_now_alarms(session, tenant_id):
+    """A dispatcher stopped for two days resumes its backlog; events that fail
+    now alarm, whatever their age (Codex PR #435, P2)."""
+    failed_event(
+        session, tenant_id, NOW - timedelta(minutes=5), created=NOW - timedelta(days=2)
+    )
+
+    assert run(session).titles() == ["Events not delivered"]
 
 
 # --- Day report --------------------------------------------------------------
