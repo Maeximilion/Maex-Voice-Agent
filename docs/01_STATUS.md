@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 29.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.40
+> Status: 29.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.41
 
 ---
 
@@ -513,6 +513,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Date | What |
 |---|---|
 | 29.10.2026 | **T-8.1 (#76): the mode switch on the tablet and weekly mode windows** (docs/02 §4, docs/06 §3). The header switches between „KI hört mit", „KI springt ein" and „KI nimmt an"; a step up asks first, a step down is one tap. Migration 013: `call_mode_windows` (weekday, from, to, mode) and `service_config.call_mode_chosen_at`. `domain/status/mode.py` decides which mode holds: the emergency stop beats every window, a window that began after the team's last tap holds, the tap holds against one that began before, overlapping windows take the most cautious mode. The routing at the start of a call, `confirm` (an `overflow` window holds the order for "Passt"), the status tool and the header read it there; the header says „nach Plan bis 22:00" while a window holds. Open: an editor for the windows (admin area) and who rings first in `overflow` with the trunk (T-10.12); assumptions under Made Assumptions |
+| 29.10.2026 | **#207 P2s closed in the saved workflows and the routing hook** (`.claude/workflows/`, `.claude/hooks/route_advice.sh`). `/gate-review` matches the skeptic's verdicts to every P0 and P1 by id and marks each one it left out unverified; `/review-load-audit` stops as incomplete when a PR could not be fetched (a completeness field in the measurement) or the recount returned nothing, instead of comparing against "not run". The hook carries a closing "in the GUI" or "in the docs" back to an earlier action on a screen or text part, so "Fix the header and update the footer in the GUI" stays on Sonnet, while "Fix authentication and update the labels in the GUI" keeps Opus. Two items of #207 found already done on `main` were ticked (docs/08 §4, the pruned fetch) |
 | 29.10.2026 | **#207 P2 closed: no copy in the outbox outlives its row** (`api/config.py`, docs/03 Löschkonzept). Order, reservation and callback payloads copy name, phone, notes and summary, and a payload lives up to the unsent period plus the sent one (a slip claimed on its last day). The settings now refuse `RETENTION_GUEST_DETAILS_DAYS` or `RETENTION_CALLBACK_DAYS` below that sum (30 + 7 by default, both at 90). The finding named only the guest details against the unsent period; the callback copy and the late send had the same gap |
 | 29.10.2026 | **The ear's miss after a read-back corrected: an artifact of the line model** (docs/20 §12). Maxi chose to reset the speech detector after silence (option A); two attempts made it worse (a fresh state is heard less often than one with a second of history) and were reverted. Measured instead: after digital silence or full-band hiss the answer had 0 windows of speech, after band-limited line noise 27 and 21 of 40. The line model of the audio evals and the engine tests now carries that noise (`speech_bench.on_the_line`); the detector stays. Engine tests 9/9, `make eval-voice` (scripted) passes, lines without speech 7 to 2. Open: a recording of real line audio to confirm the level |
 | 29.10.2026 | **T-10.7 (#400): audio evals, `make eval-voice`** (docs/08 §8, `evals/voice.py`). The cases of `evals/cases/` spoken by a caller voice through the modelled line, heard by the service's ear, played by the same runner and judge next to the text; hard: no confirm after line noise in place of the confirming yes, no yes inside a read-back taken by a real call session (with a control after it), and a run that checked nothing fails. Run on the workbench's graphics card 00:00 to 02:00 (Maxi's window): hard 0 with the scripted model and qwen3.6-35b-a3b, every read-back checked; cases as heard 10/56 and 14/56 (text 56/56 and 29/56); single-number lines 8 right, 1 silently wrong ("S 12" as "S2"), 7 asked of 16 (docs/20 §11). Found on the way: the ear misses a short answer after the silence of a read-back (docs/20 §12, open for Maxi). Review in two lenses with skeptics (8 agents): 2 P1 and 4 P2 in the harness, all fixed |
@@ -640,7 +641,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.11.40 · 29.10.2026:** T-8.1: the mode switch on the tablet and weekly mode windows (migration 013)
+- **v2.11.41 · 29.10.2026:** T-8.1: the mode switch on the tablet and weekly mode windows (migration 013)
+- **v2.11.40 · 29.10.2026:** #207: gate-review and review-load-audit fail closed on a partial agent; the router keeps a closing GUI or docs qualifier
 - **v2.11.39 · 29.10.2026:** Audit of the tunnel on 9d5e281: no P1, no P2; dev DB migrated to 012; wire run set for 30.10.2026 10:00
 - **v2.11.38 · 29.10.2026:** #207: guest details and callbacks keep no copy in the outbox beyond their own deletion period
 - **v2.11.37 · 29.10.2026:** T-10.2 prepared: the tunnel next to the product's voice, arrival log, audit notes 2 and 4

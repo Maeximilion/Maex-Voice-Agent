@@ -2,6 +2,8 @@
 
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -34,3 +36,19 @@ def test_meta_is_first_literal_and_names_every_phase(path):
         re.findall(r"phase: '([^']+)'", text)
     )
     assert used <= titles, f"phases missing in meta: {used - titles}"
+
+
+def test_a_partly_failed_agent_ends_incomplete():
+    # #207: a skeptic that skips a P0/P1, a failed PR fetch or recount never reach a verdict.
+    node = shutil.which("node")
+    if not DIR.is_dir() or not node:
+        if os.environ.get("CI"):
+            pytest.fail("the workflow stubs need node and .claude/workflows")
+        pytest.skip("the workflow stubs need node and .claude/workflows")
+    out = subprocess.run(
+        [node, str(Path(__file__).with_name("workflow_stubs.mjs")), str(DIR)],
+        capture_output=True,
+        text=True,
+    )
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "ok"
