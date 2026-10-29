@@ -72,13 +72,13 @@ INSIDE, AFTER = 0.4, 1.0
 NO_SPEECH_WAIT = 2.0
 NOISE_SECONDS = 3.0
 
-# The caller's answer to the read-back. Long on purpose: after the seconds of
-# silence a read-back leaves, the ear's detector takes a short answer for no
-# speech ("Ja, passt." in this voice after 4 s, every answer of the voice
-# thorsten-high after 10 s; measured 29.10.2026, open point in docs/20 §12),
-# and a bare "Ja" lasts 0.2 s, under the ear's 256 ms of speech. This one is
-# heard after 10 s, so the check depends on the session, not on the ear.
-ANSWER = "Ja, das passt so, vielen Dank."
+# The caller's answer to the read-back. Not a bare "Ja": in the caller's voice
+# it lasts 0.2 s, under the ear's 256 ms of speech, and is no utterance at all.
+ANSWER = "Ja, passt so."
+
+# The caller's leg: a sentence's raw audio, seconds of quiet before and after,
+# to what the ear gets (`telephone_line`; a stand-in in the tests).
+OnLine = Callable[[bytes, float, float], bytes]
 
 
 # What a caller line turns into on the phone: the text the ear heard, or None
@@ -98,11 +98,9 @@ def pcm(mouth: Mouth, text: str) -> tuple[bytes, float]:
     return first + b"".join(pieces), to_first
 
 
-def hear_audio(ear: Ear, audio: bytes) -> tuple[Heard | None, float]:
-    """Feed `audio`, padded with silence, as 20 ms frames on audio time and wait
-    for the final. The final and the seconds the ear took after the last frame."""
-    padded = bytes(int(2 * SAMPLE_RATE * PAD_BEFORE)) + audio
-    padded += bytes(int(2 * SAMPLE_RATE * PAD_AFTER))
+def hear_audio(ear: Ear, padded: bytes) -> tuple[Heard | None, float]:
+    """Feed the caller's leg as 20 ms frames on audio time and wait for the
+    final. The final and the seconds the ear took after the last frame."""
     heard: list[Heard] = []
     ear.open(heard.append)
     try:
@@ -159,7 +157,9 @@ def hear_lines(
     out: dict[str, dict[str, Any]] = {}
     for said in dict.fromkeys(lines):
         audio, mouth_first = pcm(caller, said)
-        final, ear_seconds = hear_audio(make_ear(), telephone_line(audio))
+        final, ear_seconds = hear_audio(
+            make_ear(), telephone_line(audio, PAD_BEFORE, PAD_AFTER)
+        )
         text = _text(final)
         out[said] = {
             "heard": text,
@@ -179,13 +179,16 @@ def _text(final: Heard | None) -> str | None:
     return final.text.strip() or None
 
 
-def telephone_line(audio: bytes) -> bytes:
-    """The band of a telephone line (`speech_bench.telephone`), back to 16 bit."""
+def telephone_line(audio: bytes, before: float = 0.0, after: float = 0.0) -> bytes:
+    """The caller's leg (`speech_bench.on_the_line`): quiet before and after,
+    the noise of a line under all of it, its band and codec; back to 16 bit.
+    Never digital silence: no line carries it, and the detector missed an
+    answer after seconds of it (docs/20 §12)."""
     import numpy as np
 
-    from api.telephony.speech_bench import telephone
+    from api.telephony.speech_bench import on_the_line
 
-    line = telephone(audio, SAMPLE_RATE)
+    line = on_the_line(audio, SAMPLE_RATE, before, after)
     return (np.clip(line, -1, 1) * 32767).astype(np.int16).tobytes()
 
 
@@ -336,11 +339,17 @@ class _Finals:
 
 
 def answer_to_readback(
-    readback: str, yes: bytes, offset: float, ear: Ear, mouth: Mouth
+    readback: str,
+    yes: bytes,
+    offset: float,
+    ear: Ear,
+    mouth: Mouth,
+    on_line: OnLine = telephone_line,
 ) -> list[str]:
-    """Play `readback` into a call session and let the caller say `yes` so that
-    it ends `offset` seconds after the read-back ends (negative: inside it).
-    The turns the session handed to the core."""
+    """Play `readback` into a call session and let the caller say `yes` (its
+    raw audio) so that it ends `offset` seconds after the read-back ends
+    (negative: inside it), on the line. The turns the session handed to the
+    core."""
     clock, line, lines = _Clock(), _Line(), Lines()
     core = _Core(lines, readback)
     ear = _Finals(ear)
@@ -361,8 +370,7 @@ def answer_to_readback(
     mark, length = line.queued[-1]
     yes_seconds = len(yes) / 2 / SAMPLE_RATE
     starts = max(0.0, length + offset - yes_seconds)
-    audio = bytes(int(2 * SAMPLE_RATE * starts)) + yes
-    audio += bytes(int(2 * SAMPLE_RATE * (PAD_AFTER + max(0.0, -offset))))
+    audio = on_line(yes, starts, PAD_AFTER + max(0.0, -offset))
     reported = False
     for start in range(0, len(audio), FRAME):
         clock.now += FRAME / 2 / SAMPLE_RATE
@@ -549,7 +557,9 @@ def main(argv: list[str] | None = None) -> int:
         f"hearing {len(dict.fromkeys(lines))} lines of {len(cases)} cases", flush=True
     )
     heard = hear_lines(lines, caller, make_ear)
-    noise_final, _ = hear_audio(make_ear(), telephone_line(line_noise()))
+    noise_final, _ = hear_audio(
+        make_ear(), telephone_line(line_noise(), PAD_BEFORE, PAD_AFTER)
+    )
     noise = _text(noise_final)
 
     def hear(line: str) -> str | None:
@@ -580,7 +590,7 @@ def main(argv: list[str] | None = None) -> int:
     print("a yes inside the read-back", flush=True)
     yes, _ = pcm(caller, ANSWER)
     readbacks = [c.readback for c in voice_report.cases if c.readback]
-    checks = readback_checks(readbacks, telephone_line(yes), make_ear, mouth)
+    checks = readback_checks(readbacks, yes, make_ear, mouth)
 
     summary = summarize(
         heard, text_report, voice_report, noise_report, noise, checks, core_seconds

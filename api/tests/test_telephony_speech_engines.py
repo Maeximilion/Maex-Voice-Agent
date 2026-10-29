@@ -40,7 +40,7 @@ from piper.config import SynthesisConfig
 from api.telephony.adapters.stt_whisper import SAMPLE_RATE, WINDOW, Whisper
 from api.telephony.adapters.tts_piper import PiperMouth
 from api.telephony.speech import Heard
-from api.telephony.speech_bench import telephone
+from api.telephony.speech_bench import on_the_line, telephone
 
 MODELS = Path(os.environ["SPEECH_MODELS"])
 DEVICE = os.environ.get("SPEECH_DEVICE", "cuda")
@@ -139,6 +139,37 @@ def test_the_key_terms_reach_whisper(mouth, whisper):
 def test_a_silent_line_reports_nothing(whisper):
     heard, _ = hear(whisper.ear(), bytes(2 * SAMPLE_RATE * 3))
     assert heard == []
+
+
+def on_line(pcm: bytes, before: float, after: float) -> bytes:
+    line = on_the_line(pcm, SAMPLE_RATE, before, after)
+    return (np.clip(line, -1, 1) * 32767).astype(np.int16).tobytes()
+
+
+@pytest.mark.parametrize("voice", ["de_DE-thorsten-medium", "de_DE-thorsten-high"])
+@pytest.mark.parametrize("silent", [4, 10])
+def test_a_short_answer_after_the_silence_of_a_read_back_is_heard(
+    whisper, voice, silent
+):
+    """While the agent reads back, the caller is silent for seconds. On a line
+    that carries its noise the answer after that is heard; after digital
+    silence, which no line carries, the detector missed it (docs/20 §12)."""
+    voice_file = MODELS / "piper" / f"{voice}.onnx"
+    speaker = PiperMouth(Steady(PiperVoice.load(str(voice_file))))
+    answer = b"".join(speaker.speak("Ja, das passt so."))
+    heard, _ = hear(whisper.ear(), on_line(answer, silent, 1.0))
+
+    finals = [h for h in heard if h.final]
+    print(f"\n{voice} after {silent} s:", finals)
+    assert len(finals) == 1 and finals[0].speech
+    assert "passt" in finals[0].text
+
+
+def test_a_quiet_line_is_no_speech(whisper):
+    """The noise of the line alone, for longer than a read-back: no
+    utterance, or one without speech, never words."""
+    heard, _ = hear(whisper.ear(), on_line(b"", 12.0, 0.0))
+    assert all(not h.final or not h.speech for h in heard), heard
 
 
 def test_a_call_on_the_engines_of_the_service(mouth, monkeypatch):

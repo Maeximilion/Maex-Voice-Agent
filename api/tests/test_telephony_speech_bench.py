@@ -10,7 +10,12 @@ import pytest
 np = pytest.importorskip("numpy")
 
 from api.telephony.audio import level, tone  # noqa: E402
-from api.telephony.speech_bench import EAR_RATE, speak, telephone  # noqa: E402
+from api.telephony.speech_bench import (  # noqa: E402
+    EAR_RATE,
+    on_the_line,
+    speak,
+    telephone,
+)
 
 VOICE_RATE = 22050
 
@@ -140,3 +145,20 @@ def test_an_ear_is_told_the_language_only_if_its_model_takes_one(
     )
     assert hear(b"", ["Pho Bo"]) == "ja" and fit(["Pho Bo"]) == []
     assert calls == [{"sample_rate": EAR_RATE, **options}]
+
+
+def test_the_line_carries_quiet_noise_around_the_sentence():
+    """Quiet before and after, noise under all of it, no digital zeros: a
+    detector that sees seconds of zeros misses the answer after them."""
+    sentence = tone(1000, 0.5, EAR_RATE)
+    heard = on_the_line(sentence, EAR_RATE, before=1.0, after=2.0)
+    assert len(heard) == int(EAR_RATE * 3.5)
+
+    def rms(samples) -> float:
+        return float(np.sqrt(np.mean(samples**2)))
+
+    quiet = heard[: EAR_RATE // 2]
+    assert 0 < rms(quiet) < rms(heard[EAR_RATE + 1000 : EAR_RATE + 7000]) / 10
+    assert np.count_nonzero(quiet == 0) < len(quiet) / 100
+    # The same seed, the same line: a run hears the same audio as the last.
+    assert np.array_equal(heard, on_the_line(sentence, EAR_RATE, 1.0, 2.0))
