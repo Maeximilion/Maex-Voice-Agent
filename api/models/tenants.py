@@ -1,12 +1,13 @@
 """Mandant, Live-Schalter, Öffnungszeiten, Sondertage, Kapazität (docs/03 Stufe 1)."""
 
 import uuid
-from datetime import date, time
+from datetime import date, datetime, time
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
     Date,
+    DateTime,
     ForeignKey,
     Integer,
     SmallInteger,
@@ -18,6 +19,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from api.models.base import Base, TenantScoped, Timestamps, UUIDPrimaryKey
 
 CALL_MODES = ("shadow", "overflow", "primary", "paused")
+# What a window of `call_mode_windows` may hold: the emergency stop is a button
+# with its own way back, never a plan (T-8.1).
+WINDOW_MODES = ("shadow", "overflow", "primary")
 SERVICES = ("dinein", "pickup", "delivery")
 
 
@@ -147,6 +151,12 @@ class ServiceConfig(Timestamps, Base):
     max_concurrent_calls: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="1"
     )
+    # When the team last chose a mode on the tablet's switch (T-8.1, migration
+    # 013). A window of `call_mode_windows` that began after it holds; the tap
+    # holds against one that began before. Pause and resume leave it as it is.
+    call_mode_chosen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
 
 class CallLimitWindow(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
@@ -168,6 +178,25 @@ class CallLimitWindow(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     starts_at: Mapped[time] = mapped_column(Time, nullable=False)
     ends_at: Mapped[time] = mapped_column(Time, nullable=False)
     max_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class CallModeWindow(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
+    """A weekly window with a call mode of its own, say the agent answers on
+    Friday evenings and only listens in by day (T-8.1, docs/02 §4). Where
+    windows overlap, the most cautious mode counts. A window ends before
+    midnight; one across it is two rows (as `CallLimitWindow`)."""
+
+    __tablename__ = "call_mode_windows"
+    __table_args__ = (
+        CheckConstraint("weekday BETWEEN 0 AND 6", name="ck_call_mode_windows_weekday"),
+        CheckConstraint("starts_at < ends_at", name="ck_call_mode_windows_order"),
+        _in("call_mode", WINDOW_MODES, "ck_call_mode_windows_call_mode"),
+    )
+
+    weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    starts_at: Mapped[time] = mapped_column(Time, nullable=False)
+    ends_at: Mapped[time] = mapped_column(Time, nullable=False)
+    call_mode: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class OpeningHours(UUIDPrimaryKey, TenantScoped, Timestamps, Base):

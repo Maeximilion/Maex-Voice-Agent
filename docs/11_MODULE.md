@@ -53,6 +53,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 Öffnungszeiten, Sondertage, Wartezeiten, Modus. Beantwortet: *Geht gerade etwas, und was?*
 - `hours.py` — ist offen? nächste Öffnung? je Service
 - `config.py` — `service_config` lesen und schreiben, mit `audit_log`
+- `mode.py` — which call mode holds now: the team's choice, weekly windows, the emergency stop (T-8.1)
 - Tests: Mitternacht, Sondertag schlägt Wochentag, Sommerzeit-Umstellung
 
 ### `domain/menu/`

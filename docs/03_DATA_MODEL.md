@@ -31,7 +31,8 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | Feld | Typ | Bemerkung |
 |---|---|---|
 | tenant_id | UUID PK FK | |
-| call_mode | TEXT | `shadow` / `overflow` / `primary` / `paused` |
+| call_mode | TEXT | `shadow` / `overflow` / `primary` / `paused`: the mode the team chose last. What holds at a given moment also depends on `call_mode_windows` and `call_mode_chosen_at` (`domain/status/mode.py`, T-8.1); `paused` beats every window |
+| call_mode_chosen_at | TIMESTAMPTZ NULL | when the team last chose a mode on the tablet's switch (T-8.1, migration 013). A window that began after it holds, the tap holds against one that began before. Pause and resume leave it; NULL until the first tap, so every window holds |
 | delivery_enabled | BOOL | Schalter „Lieferung pausieren" |
 | pickup_wait_minutes | INT | aktuelle Wartezeit Abholung |
 | delivery_wait_minutes | INT | aktuelle Wartezeit Lieferung |
@@ -58,6 +59,17 @@ A weekly window with a limit of its own for concurrent AI calls (D16: weekdays 1
 | weekday | SMALLINT 0 to 6 | Monday is 0, in the restaurant's clock |
 | starts_at, ends_at | TIME, starts_at < ends_at | the window; the end is not in it, and one across midnight is two rows |
 | max_calls | INT ≥ 1 | the limit while the window holds; where windows overlap, the lowest counts |
+
+### `call_mode_windows`
+
+A weekly window with a call mode of its own, say the agent answers on Friday evenings and only listens in by day (T-8.1, docs/02 §4). Migration 013; no row is written there, and no editor on the tablet exists yet: a window is a row written by SQL, as for `call_limit_windows`.
+
+| Field | Type | Note |
+|---|---|---|
+| tenant_id | UUID FK | |
+| weekday | SMALLINT 0 to 6 | Monday is 0, in the restaurant's clock |
+| starts_at, ends_at | TIME, starts_at < ends_at | the window; the end is not in it, and one across midnight is two rows |
+| call_mode | TEXT | `shadow`, `overflow` or `primary`; never `paused`, the emergency stop is a button. Where windows overlap, the most cautious mode counts (`shadow` before `overflow` before `primary`) |
 
 ### `opening_hours`
 | Feld | Typ | Bemerkung |
@@ -385,5 +397,6 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 010 | `consent_log`: one row per answer to a consent question of the agent (T-11.1, L13); the downgrade drops the table with every logged answer |
 | 011 | `service_config.max_concurrent_calls` (1) and `call_limit_windows`: the limit of concurrent AI calls (D16, T-10.9); the downgrade drops both with every limit set since |
 | 012 | `orders.register_entered_at`: the mark that the team typed an order into the register (T-11.6, L18); no backfill, so every older order counts as not typed in; the downgrade drops the column with every mark |
+| 013 | `service_config.call_mode_chosen_at` and `call_mode_windows`: the mode by weekly windows and the time of the team's last tap (T-8.1); no window and no tap backfilled; the downgrade drops both with every window set since, `call_mode` stays |
 | planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
 | planned, next free number | `eval_cases`, `eval_runs` |

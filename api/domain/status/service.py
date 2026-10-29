@@ -10,6 +10,7 @@ from api.core.errors import NotFound
 from api.core.time import utcnow
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.hours import load_hours, next_opening, open_window_at
+from api.domain.status.mode import mode_at
 from api.models import ServiceConfig, Tenant
 from api.models.tenants import SERVICES
 from api.schemas.status import ServiceStatus
@@ -54,7 +55,7 @@ def get_service_status(
         delivery_enabled=delivery_open and config.delivery_enabled,
         pickup_wait_minutes=config.pickup_wait_minutes,
         delivery_wait_minutes=config.delivery_wait_minutes,
-        call_mode=config.call_mode,
+        call_mode=mode_at(session, tenant, config, now).mode,
         say=say,
     )
 

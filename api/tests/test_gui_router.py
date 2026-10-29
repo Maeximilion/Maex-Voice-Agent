@@ -18,7 +18,7 @@ from api.db import get_db
 from api.domain.status import config as switches
 from api.gui.router import _page_response
 from api.main import app
-from api.models import Call, Reservation, ServiceConfig
+from api.models import Call, CallModeWindow, Reservation, ServiceConfig
 from api.tests.conftest import p95_ms
 from scripts.seed import seed
 
@@ -276,6 +276,80 @@ def test_lieferung_aus_und_an(client, engine, tenant_id):
 
     client.post("/gui/kopfzeile/lieferung/an", headers=HX)
     assert config_von(engine, tenant_id).delivery_enabled is True
+
+
+def mode_button(body: str, mode: str) -> str:
+    """The opening tag of the switch's button for `mode`."""
+    return body.split(f'hx-post="/gui/kopfzeile/modus/{mode}"')[1].split(">")[0]
+
+
+def test_the_header_offers_the_three_modes(client, tenant_id):
+    """T-8.1: the mode is switched on the tablet (docs/02 §4, docs/06 §3); the
+    one that holds is marked, in words and for the screen reader."""
+    body = client.get("/gui/fragments/kopfzeile").text
+
+    for mode in ("shadow", "overflow", "primary"):
+        assert f'hx-post="/gui/kopfzeile/modus/{mode}"' in body
+    assert 'aria-pressed="true"' in mode_button(body, "shadow")
+    assert 'aria-pressed="false"' in mode_button(body, "primary")
+
+
+def test_more_ai_asks_first_and_less_ai_is_one_tap(client, engine, tenant_id):
+    """The way back is one tap without thinking (docs/09 §4); a step that lets
+    the agent take more calls asks first, as switching it on after a pause."""
+    with Session(engine) as s:
+        s.get_one(ServiceConfig, tenant_id).call_mode = "overflow"
+        s.commit()
+
+    body = client.get("/gui/fragments/kopfzeile").text
+
+    assert "hx-confirm" in mode_button(body, "primary")
+    assert "hx-confirm" not in mode_button(body, "shadow")
+
+
+def test_a_tap_switches_the_mode(client, engine, tenant_id):
+    response = client.post("/gui/kopfzeile/modus/overflow", headers=HX)
+
+    assert response.status_code == 200
+    assert config_von(engine, tenant_id).call_mode == "overflow"
+    assert "KI springt ein" in response.text
+    assert 'aria-pressed="true"' in mode_button(response.text, "overflow")
+
+
+@pytest.mark.parametrize("mode", ["paused", "an", "einspringen"])
+def test_the_mode_switch_takes_only_the_three_modes(client, engine, tenant_id, mode):
+    assert client.post(f"/gui/kopfzeile/modus/{mode}", headers=HX).status_code == 404
+
+    assert config_von(engine, tenant_id).call_mode == "shadow"
+
+
+def test_a_paused_header_offers_no_mode(client, engine, tenant_id):
+    """Only "KI einschalten", which asks first, ends the emergency stop."""
+    client.post("/gui/kopfzeile/ki-pausieren", headers=HX)
+
+    body = client.get("/gui/fragments/kopfzeile").text
+
+    assert "/gui/kopfzeile/modus/" not in body
+
+
+def test_the_header_names_the_window_that_holds(client, engine, tenant_id):
+    with Session(engine) as s:
+        for weekday in range(7):
+            s.add(
+                CallModeWindow(
+                    tenant_id=tenant_id,
+                    weekday=weekday,
+                    starts_at=time(0),
+                    ends_at=time(23, 30),
+                    call_mode="primary",
+                )
+            )
+        s.commit()
+
+    body = client.get("/gui/fragments/kopfzeile").text
+
+    assert "KI nimmt an" in body and "nach Plan bis 23:30" in body
+    assert 'aria-pressed="true"' in mode_button(body, "primary")
 
 
 def test_wartezeit_lieferung_plus_15_laesst_abholung_stehen(client, engine, tenant_id):

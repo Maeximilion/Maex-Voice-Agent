@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import SAY_ON_FAILURE, Conflict, NotFound
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.ordering.draft import draft_labels
+from api.domain.status.mode import mode_at
 from api.events import enqueue
 from api.events.types import ORDER_CONFIRMED
 from api.models import AuditLog, Order, OrderItem, ServiceConfig, Tenant
@@ -83,7 +84,9 @@ def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
     if config is None or tenant is None:
         raise NotFound("Mandant ohne service_config", say=SAY_ON_FAILURE)
 
-    waits_for = _waits_for(order, config)
+    # The mode that holds now, a window of `call_mode_windows` included (T-8.1).
+    mode = mode_at(session, tenant, config).mode
+    waits_for = _waits_for(order, mode, config)
     direct = waits_for is None
     order.status = "confirmed"
     order.pickup_code = _next_pickup_code(session, order, tenant.timezone)
@@ -100,7 +103,7 @@ def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
                 "call_id": str(req.call_id),
                 "idempotency_key": req.idempotency_key,
                 "pickup_code": order.pickup_code,
-                "call_mode": config.call_mode,
+                "call_mode": mode,
                 "waits_for": waits_for,
             },
         )
@@ -116,7 +119,7 @@ def confirm_order(session: Session, req: ConfirmRequest) -> Confirmation:
     return _answer(order)
 
 
-def _waits_for(order: Order, config: ServiceConfig) -> str | None:
+def _waits_for(order: Order, mode: str, config: ServiceConfig) -> str | None:
     """Why the kitchen ticket waits for "Passt" on the tablet, or None: it goes now.
 
     Two reasons. The mode: outside the direct one no order of the agent reaches
@@ -127,7 +130,7 @@ def _waits_for(order: Order, config: ServiceConfig) -> str | None:
     guest was read, items and delivery fee. Above the limit, not from it; a
     limit of zero holds every order.
     """
-    if config.call_mode != DIRECT_MODE:
+    if mode != DIRECT_MODE:
         return "mode"
     limit = config.order_approval_above_cents
     # Zero is the setting "the team sees every order", so it also holds the one

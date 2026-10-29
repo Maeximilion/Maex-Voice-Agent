@@ -105,6 +105,15 @@ Ein Bon der Brücke ist ein Eingabezettel für das Team, kein Küchenbon und kei
 
 Der Modus steht in `service_config.call_mode` und ist in der GUI umschaltbar.
 
+Since T-8.1 the tablet's header switches between `shadow`, `overflow` and `primary`; a step that lets the agent take more calls asks first, a step back is one tap (docs/09 §4). Weekly windows (`call_mode_windows`, docs/03) hold a mode of their own, say `primary` on Friday evenings and `shadow` by day. Which mode holds is decided in one place, `domain/status/mode.py`, and read by the routing at the start of every call, by `confirm` and by the header:
+
+- `paused` beats every window: the emergency stop and "KI einschalten" stay the only way into and out of it.
+- A window that began after the team's last tap holds. The tap holds against a window that began before it, also after that window ends, until the next window begins. A tap on the mode that holds changes nothing.
+- Where windows overlap, the most cautious mode counts (`shadow` before `overflow` before `primary`), as the lowest limit of overlapping call limit windows (T-10.9).
+- The header names a window that holds: "nach Plan bis 22:00".
+
+Who rings first in `overflow` is not decided here: our voice layer answers every call that reaches it in `overflow` as in `primary`. In the test phase the router decides whether the team's telephones ring first; with the SIP trunk (T-10.12) the dialplan has to ring the team first in `overflow`. Until then the two modes differ only in the approval of orders.
+
 | Modus | Verhalten | Stufe |
 |---|---|---|
 | `shadow` | KI nimmt keine Anrufe an. Team telefoniert wie bisher, Aufnahmen laufen für das Einlernen. | 1–4 |

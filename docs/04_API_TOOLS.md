@@ -61,6 +61,7 @@ Immer der erste Aufruf. Klärt, ob überhaupt etwas geht.
 }
 ```
 Geschlossen → `is_open: false` plus `say` mit den nächsten Öffnungszeiten.
+`call_mode` is the mode that holds at the moment of the request, a window of `call_mode_windows` included (T-8.1, docs/02 §4).
 
 ---
 

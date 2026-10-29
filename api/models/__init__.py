@@ -9,6 +9,7 @@ from api.models.outbox import OutboxEvent
 from api.models.reservations import Reservation
 from api.models.tenants import (
     CallLimitWindow,
+    CallModeWindow,
     Capacity,
     OpeningHours,
     ServiceConfig,
@@ -21,6 +22,7 @@ __all__ = [
     "Base",
     "Call",
     "CallLimitWindow",
+    "CallModeWindow",
     "Callback",
     "Capacity",
     "ConsentLog",

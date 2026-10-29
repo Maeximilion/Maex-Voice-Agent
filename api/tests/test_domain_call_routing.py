@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
 from api.domain.calls import call_routing, takes_call
-from api.models import CallLimitWindow, ServiceConfig
+from api.models import CallLimitWindow, CallModeWindow, ServiceConfig
 from scripts.seed import seed
 from sim.session import resolve_tenant
 
@@ -178,3 +178,48 @@ def test_a_call_above_the_limit_goes_to_the_team(
         takes_call(call_routing(session, tenant.id, FRIDAY_EVENING), open_calls)
         is takes
     )
+
+
+# --- Mode windows (T-8.1) ----------------------------------------------------------
+
+
+def add_mode_window(session, tenant_id, starts, ends, mode) -> None:
+    session.add(
+        CallModeWindow(
+            tenant_id=tenant_id,
+            weekday=4,
+            starts_at=time.fromisoformat(starts),
+            ends_at=time.fromisoformat(ends),
+            call_mode=mode,
+        )
+    )
+    session.commit()
+
+
+def test_a_mode_window_lets_the_agent_answer(session, tenant):
+    """The restaurant listens in by day and lets the agent answer on Friday
+    evenings: the call at 18:00 is the agent's, its limit windows count."""
+    set_config(session, tenant.id, call_mode="shadow", max_concurrent_calls=2)
+    add_mode_window(session, tenant.id, "17:00", "22:00", "primary")
+    add_window(session, tenant.id, 4, "17:00", "22:00", 3)
+
+    routing = call_routing(session, tenant.id, FRIDAY_EVENING)
+
+    assert routing.ai_answers is True
+    assert routing.call_limit == 3
+    before = FRIDAY_EVENING.replace(hour=16, minute=59)
+    assert call_routing(session, tenant.id, before).ai_answers is False
+
+
+def test_a_mode_window_keeps_the_agent_off(session, tenant):
+    set_config(session, tenant.id, call_mode="primary")
+    add_mode_window(session, tenant.id, "17:00", "22:00", "shadow")
+
+    assert call_routing(session, tenant.id, FRIDAY_EVENING).ai_answers is False
+
+
+def test_the_emergency_stop_beats_a_mode_window(session, tenant):
+    set_config(session, tenant.id, call_mode="paused")
+    add_mode_window(session, tenant.id, "17:00", "22:00", "primary")
+
+    assert call_routing(session, tenant.id, FRIDAY_EVENING).ai_answers is False
