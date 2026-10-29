@@ -99,8 +99,11 @@ route. The router names its public address in Via and Contact of a call, also to
 its tunnel, and the call comes from there: that address is on the ACL through `ACCESS_ALSO` (the
 router's MyFRITZ name), and answers to it go through the tunnel, the tunnel's own packets around
 it. Both are looked up once at the start, so a new public address of the router needs a restart.
-The PC's own WireGuard connection plays no part. The tunnel container exists only in the
-workbench's file `deploy/asterisk/docker-compose.line.yml` for now (§12).
+The PC's own WireGuard connection plays no part. The tunnel container is defined in
+`deploy/asterisk/docker-compose.line.yml` (with the probe), and
+`deploy/asterisk/docker-compose.tunnel.yml` puts it next to the product's `voice` (T-10.2, §10). In
+its network forwarding is off, so the router's side reaches Asterisk and none of the containers
+behind it.
 
 ---
 
@@ -655,6 +658,33 @@ What step 2 does not answer yet: two calls at once over the router (no second te
 by its own limit, §3), transfer from the IP telephone and what a second and third caller hear
 (T-10.2).
 
+### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, not run yet)
+
+| | |
+|---|---|
+| Start folder | the repository folder in the Ubuntu home directory, Ubuntu terminal: its stack holds the dev database, and the tablet view shows the callback cards |
+| The one command | `docker compose -f docker-compose.yml -f docker-compose.override.yml -f deploy/asterisk/docker-compose.tunnel.yml --profile voice up -d --build` (the first start of `voice` loads its engines, up to 2 minutes); `... --profile voice rm -sf voice asterisk wireguard` takes the AI telephone off again and leaves the rest of the stack running |
+| Maxi has to have ready | Everything of the handover of T-10.1 step 2, with that stack down: both register as the same IP telephone with the same WireGuard key. In `.env`: `VOICE_EAR=whisper`, `VOICE_MOUTH=piper`, `VOICE_EAR_DEVICE` (`cuda` or `cpu`), the model of `LLM_BASE_URL` running (the run takes the graphics card; name a start time), and `TEAM_PHONE` the number the router rings the team telephone at. The dev database at the newest migration (`bash scripts/backup.sh --label before_migration`, then `bash scripts/migrate.sh`); on 29.10.2026 it was behind and `voice` stopped at its first query. A second and a third telephone for the rows with more than one caller |
+| What the result looks like | per row below: the team telephone rings, by Maxi's clock within 30 s of placing the call or of the crash (the go of T-10.2). Our share is in Asterisk's own log, by call id and without a number: `docker compose ... logs asterisk \| grep -E 'call [0-9.]+: '` shows `arrived`, then `to the team` and `team leg ...` with their times |
+
+The rows, each on the test number, each with the line back up before the next (`... --profile voice
+up -d`):
+
+| Row of §5 | What Claude does in the session | What Maxi does and notes |
+|---|---|---|
+| `voice` is down | `stop voice` | calls; the time until the team telephone rings |
+| A crash in the middle of a call | `kill voice` after the greeting, with `date +%T` before it | calls, speaks; the time from the kill until the team telephone rings |
+| The model is down | stops nothing in the stack; Maxi stops the model server | calls, says something; hears the outage sentence, the team telephone rings |
+| A live call handed to the team | nothing, the model up | asks for a person ("Kann ich bitte mit jemandem sprechen?"), answers the team telephone and talks to the caller: what the team sees as the caller's number (§12) |
+| The team does not pick up | nothing | as the row before, the team telephone not answered for 30 s: the caller hears that the restaurant calls back, the card is on the tablet view |
+| Asterisk is down | `stop asterisk`, and once `kill asterisk`; whether the router drops the registration at once or holds it up to its 300 s is what the row shows | calls; which telephones ring, and after how long |
+| A second and a third caller | nothing; the AI takes one call at a time (`max_concurrent_calls` 1) | while one call talks to the AI, a second caller calls (the core hands it to the team), then a third (the router's limit of 2 calls per IP telephone): what each hears |
+| Loop test | `stop asterisk` | calls the number `TEAM_PHONE` names: a team telephone rings, nothing ends at the test number |
+
+Not covered here: anything that needs the trunk (T-10.12). The tunnel and `ACCESS_ALSO` are looked
+up once, so a new public address of the router during the run shows as `asterisk` unhealthy (not
+registered) until `... up -d --force-recreate wireguard asterisk` (§12).
+
 ### Handover: T-1.11, outage drills of the AI telephone (run 14.10.2026)
 
 | | |
@@ -793,11 +823,13 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 - **Router path:** whether the router lets an IP telephone hand a call to a team telephone; what a
   second and third caller hear; whether two calls at once reach the AI telephone (T-10.1 step 2,
   open). A VPN peer may register as an IP telephone and gets calls (28.10.2026, §3).
-- **The tunnel to the router outside the workbench's file (T-10.2):** the WireGuard container
-  exists only in `deploy/asterisk/docker-compose.line.yml`. The outage spike against the router
-  needs it with the product's `voice` as well, and the server of the test phase reaches the router
-  the same way or not at all. Its endpoint and `ACCESS_ALSO` are looked up once, so a new public
-  address of the router breaks the line until a restart.
+- **The tunnel to the router (T-10.2):** `deploy/asterisk/docker-compose.tunnel.yml` puts the
+  WireGuard container next to the product's `voice`; on the workbench on 29.10.2026 the product's
+  Asterisk registered through it, with `voice` healthy behind it. Open: whether the server of the
+  test phase reaches the router the same way (the overlay on top of `deploy/docker-compose.prod.yml`
+  is untried), and that its endpoint and `ACCESS_ALSO` are looked up once, so a new public address
+  of the router breaks the line until both containers are recreated. Test phase only: in operation
+  the trunk takes the calls.
 - **Legal (D21, answered 20.10.2026, `docs/09_OPERATIONS_LEGAL.md` §1 L6):** live audio streamed
   to a speech service without storage is no recording in the sense of E11, when the service keeps
   audio and transcript only for the request, stores nothing afterwards and does not train on it.

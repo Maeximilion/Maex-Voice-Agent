@@ -1,0 +1,23 @@
+# The AI telephone at the pilot's router through its own WireGuard tunnel, for
+# the product's stack (T-10.2, docs/20 §3 and §10): the `wireguard` service of
+# docker-compose.line.yml next to the real `voice`, Asterisk in its network.
+# An overlay, so its paths are those of the repository folder:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.override.yml \
+#     -f deploy/asterisk/docker-compose.tunnel.yml --profile voice up -d --build
+#
+# ACCESS_WIREGUARD_CONF and ACCESS_ALSO in .env as for the line file. Test
+# phase only: in operation the trunk takes the calls (T-10.12).
+services:
+  wireguard:
+    extends:
+      file: deploy/asterisk/docker-compose.line.yml
+      service: wireguard
+    profiles: ["voice"]
+    restart: unless-stopped
+
+  asterisk:
+    network_mode: service:wireguard
+    depends_on:
+      wireguard:
+        condition: service_healthy

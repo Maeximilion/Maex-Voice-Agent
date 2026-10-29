@@ -17,6 +17,11 @@ services:
   voice:
     build: ../../api
     user: "10001:10001"
+    # As the base file's `*hardened`, with a read-only root: the probe writes
+    # into /out only (audit of 29.10.2026, note 4).
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
     command: ["uvicorn", "api.telephony.probe:app", "--host", "0.0.0.0", "--port", "8001"]
     environment:
       PROBE_OUT: /out
@@ -42,6 +47,10 @@ services:
     # NET_ADMIN for the link, DAC_OVERRIDE to read the owner's file as root.
     cap_add: [NET_ADMIN, DAC_OVERRIDE]
     security_opt: ["no-new-privileges:true"]
+    # Docker turns forwarding on in this network too: off, the router's side
+    # reaches Asterisk here and never the containers behind it (T-10.2).
+    sysctls:
+      net.ipv4.ip_forward: 0
     read_only: true
     tmpfs: [/tmp]
     volumes:
