@@ -11,12 +11,12 @@
 | Text | Meaning |
 |---|---|
 | "KI hört mit" | The AI listens only. Every call rings the team as before. |
-| "KI springt ein" | The team's telephones ring first. If nobody picks up, the AI answers. |
+| "KI springt ein" | Meant: the team's telephones ring first, the AI answers when nobody picks up. **Today the AI answers every call that reaches it exactly as in "KI nimmt an"; whether the team's telephones ring first is set at the router, not on the tablet.** The tablet switch alone only changes the orders: they wait for your "Passt". |
 | "KI nimmt an" | The AI answers first. The team is the fallback. |
 | "KI ist aus" | Emergency stop. Every call rings the team. |
 | "nach Plan bis 22:00" | A weekly plan holds this mode until that time. A tap on a mode button is respected until the next planned window begins. |
 
-The three mode buttons switch between the first three. A step towards more AI asks "Umschalten?" once, a step back is one tap. If you are unsure, step back.
+The three mode buttons switch between the first three. A step towards more AI asks "Umschalten?" once, a step back is one tap. To take calls yourself again, tap "KI hört mit" or "KI pausieren"; "KI springt ein" does not stop the AI from answering.
 
 ## 3. Orders and callbacks
 
