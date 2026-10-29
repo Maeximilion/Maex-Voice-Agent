@@ -139,6 +139,61 @@ test answer is valid.
 
   then run `wsl --shutdown` in PowerShell, open Ubuntu again and check with `free -g` (total about 47). The rest stays for Windows.
 
+### Local model race (29.10.2026)
+
+Question (Maxi): is there a free, open-weight model that answers faster than the workbench's
+`qwen3.6-35b-a3b` and makes no more mistakes? Three researchers searched the field of October
+2026 (Hugging Face, model cards, EuroEval, BFCL, tau2), a planner ranked it, two skeptics
+checked the two picks against the Hugging Face pages. Picked to fit the GPU completely, without
+thinking: Gemma 4 12B it QAT (`unsloth/gemma-4-12B-it-qat-GGUF`, `UD-Q4_K_XL`, 6.7 GB, dense)
+and Qwen3.5-9B (`unsloth/Qwen3.5-9B-GGUF`, `UD-Q5_K_XL`, 6.7 GB, dense hybrid), both Apache
+2.0. Runners-up: Ministral 3 14B Instruct (never thinks, slower), Nemotron 3.5 Bolt E4B (speed
+floor, own licence), Granite 4.2 8B.
+
+**DeepSeek does not fit this job:** the current V4.1 needs about 233 GB even as a 1-bit file;
+the small R1 distills always reason and have no documented switch to turn it off; the hosted
+API would send caller data outside the EU and puts a network hop and an outside dependency
+into every turn.
+
+How it ran: one model at a time, llama.cpp build 51ce9c1, the same flags (`-c 8192 --parallel
+1 -fa on`, KV cache `q8_0`, `--jinja --reasoning off`), the core's own request (temperature 0,
+`json_object`), `make eval` and `make eval-targets` on the same head. The two challengers ran
+with `-ngl 99 --fit off`, so nothing could spill; `qwen3.6-35b-a3b` (`UD-IQ4_XS`, 17.7 GB) does
+not fit and ran as on the workbench, with part of its experts in RAM. Turn time is the
+server's time per request from its log (prompt and answer, no HTTP).
+
+| Model | Cases (56) | Targets (29) | Guessed / unconfirmed | Missed escalations | False escalations | Turn p50 / p95 | Answer speed | VRAM |
+|---|---|---|---|---|---|---|---|---|
+| `qwen3.6-35b-a3b` (`UD-IQ4_XS`) | **29** | 1 | 0 / 0 | **1** | **13 %** | 1.68 s / 3.89 s | 72 tok/s, median 92 tokens | 15.9 GB, spills |
+| Gemma 4 12B QAT | 17 | 1 | 0 / 0 | 2 | 42 % | 1.49 s / 4.03 s | 62 tok/s, median 67 tokens | 9.7 GB |
+| Qwen3.5-9B | 12 | 0 | 0 / 0 | 3 | 24 % | **0.86 s / 1.97 s** | 77 tok/s, median 57 tokens | 9.0 GB |
+| `qwen3.6-35b-a3b` (`UD-IQ3_XXS`, lane 4) | **30** | **4** | 0 / 0 | 2 | 22 % | 0.90 s / 2.16 s | 136 tok/s, median 98 tokens | 13.5 GB, fully on GPU |
+
+- **Neither challenger replaces `qwen3.6-35b-a3b`.** Both miss escalations it gets right
+  (`eskalation_0016`, both; `reservierung_0034` and `_0035`, Qwen3.5-9B), which is rule 5.
+  Gemma wins 4 cases it fails, Qwen3.5-9B 2; it alone passes 15 that neither challenger does.
+- Qwen3.5-9B is the only one near the budget, and only at p50; p95 is still 2 s.
+- The large model is slow less for its spill than for its long answers: 92 tokens median
+  against 57 to 67, at about the same answer speed. Shorter answers (`say`, `slots`) save time
+  on every model.
+- Reports: `evals/reports/eval_20261029_*.json` on the workbench, rows in
+  `docs/metrics/eval_history.csv`.
+
+**Lane 4, the same model as `UD-IQ3_XXS` (13.2 GB, `-ngl 99 --fit off`):** only the file
+changed. Without the spill the answer speed nearly doubles (136 against 72 tok/s) and the turn
+p50 halves (0.90 against 1.68 s); the smoke sentence warm took 0.56 s. Accuracy holds on the
+cases (30 against 29; 9 cases gained, 8 lost, about the spread of two runs of one model) and
+rises on the targets (4 against 1), but it misses `eskalation_0016` (only noise on the line)
+as the two challengers do, so 2 missed escalations against 1, and hands over more often (22
+against 13 %). It fits only while the Windows desktop holds less than about 2.5 GB of the GPU
+(0.6 to 0.7 GB at the race, up to 3.9 GB seen the same day).
+
+- **Recommendation:** `UD-IQ3_XXS` is the faster workbench model once `eskalation_0016` passes
+  on it: repeat the case to tell noise from a real loss, then fix it in the prompt or the core
+  (rule 5 never rests on one model's luck). Until then the workbench keeps `UD-IQ4_XS`.
+- Still above budget at p95 (2.16 s): answers of about 98 tokens. Shorter answers are the next
+  speed step on any model.
+
 ### Handover for a Claude Code session in Maxi's Ubuntu terminal
 
 Start `claude` in the repository folder in Ubuntu (WSL) and paste:
