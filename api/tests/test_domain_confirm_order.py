@@ -191,6 +191,85 @@ def test_ohne_primaerbetrieb_wartet_die_bestellung_auf_freigabe(
     assert _events(session) == []
 
 
+def _overflow_approval(session, tenant_id, needed: bool) -> None:
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant_id)
+        .values(overflow_needs_approval=needed)
+    )
+    session.commit()
+
+
+def test_without_approval_in_overflow_the_order_goes_to_the_kitchen(
+    session, tenant_id, call_id
+):
+    """After G5 the restaurant can switch the approval step of overflow off
+    (T-8.2, docs/00 G5): the order goes to the kitchen as in primary."""
+    _mode(session, tenant_id, "overflow")
+    _overflow_approval(session, tenant_id, needed=False)
+    order_id = _draft(session, tenant_id, call_id)
+
+    result = _confirm(session, tenant_id, call_id, order_id)
+
+    assert result.handover == "queued"
+    assert len(_events(session)) == 1
+    [entry] = session.scalars(
+        select(AuditLog.payload).where(AuditLog.action == "order.confirmed")
+    ).all()
+    assert entry["call_mode"] == "overflow"
+    assert entry["waits_for"] is None
+
+
+def test_without_approval_in_overflow_the_amount_still_holds_the_order(
+    session, tenant_id, call_id
+):
+    """The switch is about the mode only: an order above the restaurant's limit
+    waits for "Passt" in every mode (#252)."""
+    _mode(session, tenant_id, "overflow")
+    _overflow_approval(session, tenant_id, needed=False)
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant_id)
+        .values(order_approval_above_cents=0)
+    )
+    session.commit()
+    order_id = _draft(session, tenant_id, call_id)
+
+    result = _confirm(session, tenant_id, call_id, order_id)
+
+    assert result.handover == "awaiting_approval"
+    assert _events(session) == []
+    [entry] = session.scalars(
+        select(AuditLog.payload).where(AuditLog.action == "order.confirmed")
+    ).all()
+    assert entry["waits_for"] == "amount"
+
+
+@pytest.mark.parametrize("mode", ["shadow", "paused"])
+def test_the_overflow_switch_leaves_the_other_modes_waiting(
+    session, tenant_id, call_id, mode
+):
+    _mode(session, tenant_id, mode)
+    _overflow_approval(session, tenant_id, needed=False)
+    order_id = _draft(session, tenant_id, call_id)
+
+    result = _confirm(session, tenant_id, call_id, order_id)
+
+    assert result.handover == "awaiting_approval"
+    assert _events(session) == []
+
+
+def test_without_approval_an_overflow_window_sends_the_order(
+    session, tenant_id, call_id
+):
+    """The mode that holds decides, a window of `call_mode_windows` included."""
+    _all_day_window(session, tenant_id, "overflow")
+    _overflow_approval(session, tenant_id, needed=False)
+    order_id = _draft(session, tenant_id, call_id)
+
+    assert _confirm(session, tenant_id, call_id, order_id).handover == "queued"
+
+
 def _all_day_window(session, tenant_id, mode: str) -> None:
     """A window of `mode` that holds whenever the test runs."""
     for weekday in range(7):
