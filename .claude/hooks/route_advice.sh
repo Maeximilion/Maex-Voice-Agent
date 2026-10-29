@@ -29,8 +29,15 @@ codepath='\.(py|sh|sql|js|ts|html|j2|json|ya?ml|toml)\b|\b(api|db|scripts|evals|
 # whichever action comes first ("Fix authentication and update the GUI labels"). A bare verb
 # ("fix and restyle the GUI"), a typo fix and a fix of the status or a test are not. A clause
 # starts only where a verb follows the conjunction or comma: "header and footer" is one object.
+# A closing "in the GUI" or "in the docs" also places an earlier clause whose object is a
+# screen or text part ("Fix the header and update the footer in the GUI"), never a bare
+# "Fix authentication": that one names no such part and stays code work.
+uipart='(^|[^a-z])(headers?|footers?|labels?|buttons?|pages?|views?|cards?|layouts?|banners?|forms?|tabs?|titles?|headings?|icons?|badges?|colou?rs?|fonts?|styles?|styling|text|wording|sections?|links?|tables?|columns?|lists?)([^a-z]|$)'
 code_clause() {
+  local tail
+  tail=$(grep -oE " (in|on|of) (the )?(gui|docs?|documentation|readme|templates?|[^ ]+\.md)[.!?]*$" <<<"$1")
   sed -E "s/( (and|then|plus|und)|[,;]) +(also )?($change)/\n\4/g" <<<"$1" \
+    | awk -v t="$tail" -v re="$uipart" '$0 ~ re { $0 = $0 t } { print }' \
     | grep -E '^(please )?(fix|implement|refactor|debug|migrate|deploy) ' \
     | grep -qviE "$sonnet|$docpath|\b(typos?|wording|spelling|grammar|formatting|status|tests?)\b"
 }

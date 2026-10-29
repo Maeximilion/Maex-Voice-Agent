@@ -30,8 +30,9 @@ const FINDINGS = {
 const VERDICTS = {
   type: 'object',
   properties: { verdicts: { type: 'array', items: { type: 'object', properties: {
+    id: { type: 'integer', description: 'the id of the finding this verdict answers' },
     title: { type: 'string' }, status: { type: 'string', enum: ['real', 'refuted', 'unverified'] }, reason: { type: 'string' },
-  }, required: ['title', 'status', 'reason'] } } },
+  }, required: ['id', 'title', 'status', 'reason'] } } },
   required: ['verdicts'],
 }
 
@@ -49,15 +50,16 @@ const criteria = () => agent(`List the criteria of gate ${GATE} from docs/00_PCF
 const lens = l => agent(`Gate ${GATE} review, lens "${l.key}". ${l.prompt} Report only findings with a concrete scenario. ${READ_ONLY}`, { label: `lens:${l.key}`, phase: 'Review', schema: FINDINGS, ...(l.model ? { model: l.model } : {}) })
   .then(r => {
     if (!r) return null
-    const serious = r.findings.filter(f => f.severity !== 'P2')
+    const serious = r.findings.filter(f => f.severity !== 'P2').map((f, id) => ({ id, ...f }))
     if (!serious.length) return { lens: l.key, ...r, verdicts: [] }
-    return agent(`Try to refute each of these gate ${GATE} findings against the code and docs on main. Mark a finding refuted only with evidence that its scenario cannot happen, real when you confirmed it, and unverified when you could not check it (a tool or source was unavailable). ${READ_ONLY}
+    return agent(`Try to refute each of these gate ${GATE} findings against the code and docs on main. Give exactly one verdict per finding, with its id. Mark a finding refuted only with evidence that its scenario cannot happen, real when you confirmed it, and unverified when you could not check it (a tool or source was unavailable). ${READ_ONLY}
 
 FINDINGS:
 ${JSON.stringify(serious)}`, { label: `verify:${l.key}`, phase: 'Verify', schema: VERDICTS })
-      // Without a skeptic's answer a serious finding stays a blocker, marked unverified.
-      .then(v => ({ lens: l.key, ...r, verdicts: v ? v.verdicts
-        : serious.map(f => ({ title: f.title, status: 'unverified', reason: 'the skeptic returned no result' })) }))
+      // A serious finding the skeptic left out, or every one when it returned nothing, stays a
+      // blocker marked unverified; matched by id, since a skeptic may reword a title.
+      .then(v => ({ lens: l.key, ...r, verdicts: serious.map(f => (v && v.verdicts.find(x => x.id === f.id))
+        || { id: f.id, title: f.title, status: 'unverified', reason: v ? 'the skeptic gave no verdict for it' : 'the skeptic returned no result' }) }))
   })
 
 const [crit, ...lenses] = await parallel([criteria, ...LENSES.map(l => () => lens(l))])
