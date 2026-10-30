@@ -196,7 +196,9 @@ def answer(
     actor: str = ACTOR_TABLET,
 ) -> SpecialDay:
     """The team's answer to a suggestion. Tapped twice or on two tablets: the
-    first answer holds and one entry is written. Commits."""
+    first answer holds and one entry is written. A date that got a `set` row
+    after the suggestion was written (by SQL, the drill) keeps that row, and
+    the suggestion is dismissed (one counting row per date, #441). Commits."""
     if choice not in ANSWERS:
         raise InvalidInput(f"Unknown answer {choice!r} to a holiday suggestion")
     day = session.scalars(
@@ -207,7 +209,14 @@ def answer(
     if day is None:
         raise NotFound(f"Special day {special_day_id} not found")
     if day.status == SUGGESTED:
-        if choice == OPEN:
+        already_set = session.scalar(
+            select(SpecialDay.id).where(
+                SpecialDay.tenant_id == tenant_id,
+                SpecialDay.date == day.date,
+                SpecialDay.status == SET,
+            )
+        )
+        if choice == OPEN or already_set is not None:
             day.status = DISMISSED
         else:
             day.status = SET
@@ -227,6 +236,8 @@ def answer(
                     "date": day.date.isoformat(),
                     "note": day.note,
                     "answer": choice,
+                    # `dismissed` after "like" or "closed": a set row held.
+                    "status": day.status,
                     "like_weekday": day.like_weekday,
                 },
             )

@@ -109,6 +109,8 @@ Feiertage, Urlaub, Sonderzeiten. Schlägt `opening_hours` für dieses Datum.
 
 One suggestion or dismissal per date (`uq_special_days_suggestion`, partial unique index on `status <> 'set'`): two passes of the job at once write one row.
 
+One counting row per date (`uq_special_days_set`, partial unique index on `status = 'set'`, migration 017, #441): with two, the hours would follow the row read last and the seats the row read first. A suggestion answered "like" or "closed" on a date that got a `set` row in the meantime (by SQL, the drill) is dismissed and that row holds.
+
 ### `capacity`
 Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
 
@@ -415,5 +417,6 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 014 | `service_config.overflow_needs_approval`: the approval step of `overflow` can be switched off (T-8.2); true for every existing row, so nothing changes until the restaurant sets it; the downgrade drops the column and brings the step back |
 | 015 | `special_days.status` and `like_weekday`, `uq_special_days_suggestion`, `service_config.holiday_region`: statutory holidays as suggestions the team answers (T-9.5); every existing special day becomes `set`, nothing changes; downgrade deletes suggestions and dismissals, a day "like a weekday" keeps its own weekday, the region goes |
 | 016 | `bridge_heartbeats`: the time of the print bridge's last poll (T-8.3); nothing backfilled, the downgrade drops the table and the next poll writes it again |
+| 017 | `uq_special_days_set`: one `set` row per tenant and date (#441); the upgrade first lists every date with two `set` rows and stops without a change, the team decides which row holds; the downgrade drops the key |
 | planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
 | planned, next free number | `eval_cases`, `eval_runs` |
