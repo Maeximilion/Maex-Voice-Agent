@@ -122,6 +122,29 @@ def test_a_bridge_set_up_but_never_seen_is_silent(session, tenant_id):
     assert silence(session, tenant_id).since is None
 
 
+def test_a_bridge_gets_the_same_minutes_after_opening(session, tenant_id):
+    """Last night's poll says nothing at 17:04: the register PC may come on
+    a few minutes after opening without an alarm every morning."""
+    claim_tickets(session, tenant_id, NOW - timedelta(hours=20))
+
+    assert silence(session, tenant_id, now=NOW.replace(hour=17, minute=4)) is None
+
+    late = NOW.replace(hour=17, minute=6)
+    assert silence(session, tenant_id, now=late) is not None
+
+
+def test_a_bridge_never_seen_gets_them_too(session, tenant_id):
+    assert silence(session, tenant_id, now=NOW.replace(hour=17, minute=4)) is None
+
+
+def test_the_earliest_open_service_starts_the_minutes(session, tenant_id):
+    """Pickup has been open since 17:00, so delivery opening at 18:00 gives the
+    bridge no new minutes."""
+    hours(session, tenant_id, "delivery", time(18), time(22))
+
+    assert silence(session, tenant_id, now=NOW.replace(minute=1)) is not None
+
+
 def test_a_closed_restaurant_expects_no_bridge(session, tenant_id):
     """The register PC is off at night: that is no outage."""
     claim_tickets(session, tenant_id, NOW - timedelta(hours=1))

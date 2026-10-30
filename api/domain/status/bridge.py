@@ -6,8 +6,8 @@ in the restaurant that fails while no order waits shows here, not with the
 first slip that waits 60 s.
 
 A bridge counts as silent after ALARM_BRIDGE_SILENT_MINUTES without a poll, and
-only while pickup or delivery is open: the register PC is off at night, and
-only orders print. A tenant other than KITCHEN_BRIDGE_TENANT_ID has no bridge.
+only while pickup or delivery has been open that long: the register PC is off
+at night, and only orders print. A tenant other than KITCHEN_BRIDGE_TENANT_ID has no bridge.
 A bridge set up that never polled is silent too. Read by the operator's alarm
 (jobs/monitor.py) and the tablet's header.
 """
@@ -65,6 +65,9 @@ def silence(
         return None
     zone = clock.tz(tenant.timezone)
     data = load_hours(session, tenant.id, now.astimezone(zone).date(), days=1)
-    if not any(open_window_at(data, now, s, zone) for s in ORDER_SERVICES):
+    windows = [w for s in ORDER_SERVICES if (w := open_window_at(data, now, s, zone))]
+    # Opening starts the clock too: last night's poll says nothing at 11:02, and
+    # the register PC may come on a few minutes late without an alarm each day.
+    if not windows or now - min(opens for opens, _ in windows) < limit:
         return None
     return Silence(seen)

@@ -229,7 +229,11 @@ def _due(
         due.extend(_voice_layer(hour, probe))
     quiet = bridge.silence(session, tenant, now)
     if quiet is not None:
-        last = "never" if quiet.since is None else quiet.since.isoformat()
+        last = (
+            to_local(quiet.since, tenant.timezone).strftime("%Y-%m-%d %H:%M")
+            if quiet.since
+            else "never"
+        )
         due.append(
             (
                 "bridge_silent",
