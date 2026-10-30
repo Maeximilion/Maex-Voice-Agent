@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 30.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.46
+> Status: 30.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.47
 
 ---
 
@@ -517,6 +517,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Date | What |
 |---|---|
 | 30.10.2026 | **The core ends a noise-only call with the team (finding on #37, `eskalation_0016`).** `agent/loop.py` `run_turn`: six guest turns in a row without anything the core takes from the guest hand the call over (`UNHEARD_TURNS`), independent of `understanding_failure`; the core's own question for a callback number counts as understanding, and with nobody to reach and no number known the core asks for one first; the callback keeps the reason `not_understood` (`ConversationState.callback_reason`; Codex PR #437, two P1). Four new tests, red before their fix; the callback-number test now moves a slot each turn. On `UD-IQ3_XXS` the case passed 5 of 5 (`main` 0 of 5); docs/05 §2 and docs/18 §5 synced |
+| 30.10.2026 | **T-8.3 part 2 (#78): heartbeats of the voice layer and the backup alarm** (docs/13 §4, §5, docs/02 §5, docs/09 §2). With `VOICE_URL` set the monitor asks `voice`; Asterisk, which takes no connection of its own, reports from its healthcheck while registered (`POST /asterisk/alive` with the media token), read back at `/asterisk/seen`. `scripts/backup.sh` writes `backup.done` after a good run and the monitor misses it after `ALARM_BACKUP_HOURS`. Run: the healthcheck line in the real Asterisk image against a stand-in `voice`, and the backup tests with real gpg and `pg_dump`. Open: the print bridge's heartbeat, a migration of its own |
 | 30.10.2026 | **T-8.5 (#80): team briefing and runbook** (docs/vorlagen/team_einweisung.md, docs/09 §2, §4). One page for the team: the emergency stop first, what the top bar says, orders and callbacks, the morning minute, what to do when something breaks; the tablet's labels quoted as they are. The runbook now names the mode switch and windows, the operator's alarms and the way back of the overflow approval setting. Left for Maxi: the briefing itself, with the sign-off line on the sheet |
 | 29.10.2026 | **T-8.3 part 1 (#78): alarms and the day report for the operator** (docs/02 §5, docs/13 §5, docs/11 §jobs, n8n/README). `api/jobs/monitor.py` in the dispatcher: the day's model cost above a limit, error calls in the last hour, outbox events that failed in the last hour, and a day report on the previous business day. Posted straight to the push server, topic `ops`, users `monitor` and `ops` (Maxi chose this path over n8n, so n8n down is reported); checked live against the push server 2.31.1. Part 2 open: heartbeats and the backup alarm |
 | 29.10.2026 | **T-8.2 (#77): the approval step of overflow can be switched off** (docs/02 §4, docs/03, docs/04 §confirm, docs/06 §3). Migration 014: `service_config.overflow_needs_approval`, true for every existing row. `confirm` sends an `overflow` order to the kitchen as in `primary` when the restaurant set it false after G5; the amount limit (#252) still holds in every mode, `shadow` and `paused` still hold every order. The status `approved` and „Passt" are those of T-4.7. Assumptions under Made Assumptions |
@@ -649,6 +650,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.47 · 30.10.2026:** T-8.3 part 2: heartbeats of voice and Asterisk, backup alarm
 - **v2.11.46 · 30.10.2026:** eskalation_0016: a call that carries only noise goes to the team, counted by the core
 - **v2.11.45 · 30.10.2026:** T-8.5: team briefing page and runbook
 - **v2.11.44 · 29.10.2026:** T-8.3 part 1: alarms and the day report for the operator, straight to the push server

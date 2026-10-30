@@ -57,7 +57,7 @@ Not compared with a second model; Maxi decides each when it is due.
 The header's three buttons switch between `shadow` ("KI hört mit"), `overflow` ("KI springt ein") and `primary` ("KI nimmt an"); a step towards more AI asks once, a step back is one tap. Until the SIP trunk (T-10.12) `overflow` and `primary` differ only in the approval of orders: who rings first is the router's job (docs/02 §4), so the way to take calls back is `shadow` or the emergency stop. Weekly windows (`call_mode_windows`, written by SQL until an admin page exists) hold a mode of their own and the header says "nach Plan bis …"; a tap holds against a window that began before it, until the next window begins (docs/02 §4). The emergency stop beats every window and is never a plan.
 
 ### Alarme für Maxi (T-8.3, Thema `ops` am Push-Server)
-Cost of the day above `ALARM_COST_PER_DAY_CENTS`; `ALARM_ERROR_CALLS_PER_HOUR` or more calls ending in an error within an hour; events to n8n that failed for good (n8n down); the day report from `MONITOR_REPORT_HOUR` on the previous day. They reach Maxi's device without n8n and never the team. Setup: `n8n/README.md`; without `MONITOR_PUSH_TOKEN` they are only logged. Not built yet (T-8.3 part 2): heartbeats of `voice`, Asterisk and the print bridge, and an alarm for a failed backup.
+Cost of the day above `ALARM_COST_PER_DAY_CENTS`; `ALARM_ERROR_CALLS_PER_HOUR` or more calls ending in an error within an hour; events to n8n that failed for good (n8n down); the day report from `MONITOR_REPORT_HOUR` on the previous day. They reach Maxi's device without n8n and never the team. Setup: `n8n/README.md`; without `MONITOR_PUSH_TOKEN` they are only logged. Also `voice` not answering, Asterisk not registered (with `VOICE_URL` set) and no good backup for `ALARM_BACKUP_HOURS`. Not built yet: the print bridge's heartbeat.
 
 ### Störungen
 
@@ -68,6 +68,8 @@ Cost of the day above `ALARM_COST_PER_DAY_CENTS`; `ALARM_ERROR_CALLS_PER_HOUR` o
 | Agent versteht auffällig schlecht | KI pausieren | Ist das Menü aktuell? Neue Gerichte ohne Alias? Voice layer or a speech engine failing (docs/20 §5)? |
 | Kosten laufen hoch | Push "Cost above the daily limit" on `ops`, or the day report; if unsure, KI pausieren | Anrufdauer, Schleifen, Spam-Nummern sperren; calls named "of unknown cost" have no price set in `.env` |
 | Push "Events not delivered" | check n8n (`docker compose ps`, its logs); the team's pushes and the outbox events wait as `failed` | restart n8n; failed events are not sent again by themselves, read their `last_error` in `outbox` |
+| Push "Voice layer not answering" or "Asterisk not registered" | calls ring the team by the dialplan or the router; nothing to do at once | `docker compose --profile voice ps`, logs of `voice` and `asterisk`, the access at the router (docs/20 §5) |
+| Push "Backup overdue" | `backups/backup.log` | run `bash scripts/backup.sh` by hand, check the cron line (docs/13 §4) |
 | Push "Calls with errors" | KI pausieren if guests are affected | Anruf-Log, `error` calls, the log of `voice` |
 | Agent antwortet nicht | Rufumleitung greift automatisch | `/health`, Container-Logs, Status of `voice` and Asterisk (docs/20 §5, target, not yet measured) |
 | Datenbank weg | KI pausieren | letztes Backup prüfen, `scripts/restore.sh` |

@@ -72,6 +72,8 @@ x-settings: &settings
   ALARM_COST_PER_DAY_CENTS:
   ALARM_ERROR_CALLS_PER_HOUR:
   MONITOR_REPORT_HOUR:
+  VOICE_URL:
+  ALARM_BACKUP_HOURS:
 
 services:
   db:
@@ -295,9 +297,11 @@ services:
       - announcements:/announcements:ro
     # Healthy only while registered at the access: booted but not registered,
     # no call reaches the AI telephone, and `docker compose ps` should say so
-    # (Codex on PR #297).
+    # (Codex on PR #297). While registered it tells `voice`, for the monitor
+    # (T-8.3): it takes no connection of its own to be asked on. A `voice` that
+    # is down does not make Asterisk unhealthy.
     healthcheck:
-      test: ["CMD-SHELL", "asterisk -rx 'pjsip show registrations' | grep -q ' Registered '"]
+      test: ["CMD-SHELL", "asterisk -rx 'pjsip show registrations' | grep -q ' Registered ' && { curl -fsS -m 2 -o /dev/null -X POST -u \"asterisk:$$VOICE_MEDIA_TOKEN\" http://voice:8001/asterisk/alive || true; }"]
       interval: 10s
       timeout: 5s
       retries: 6
