@@ -158,6 +158,12 @@ def suggest(session: Session, tenant_id: uuid.UUID, region: str, today: date) ->
     return len(written)
 
 
+def _like(row: SpecialDay) -> int:
+    """The weekday a suggestion proposes; Sunday where the row names none.
+    Monday is 0, so never `or`."""
+    return SUNDAY if row.like_weekday is None else row.like_weekday
+
+
 @dataclass(frozen=True)
 class Suggestion:
     id: uuid.UUID
@@ -179,10 +185,7 @@ def open_suggestions(
         )
         .order_by(SpecialDay.date)
     ).all()
-    return [
-        Suggestion(row.id, row.date, row.note or "", row.like_weekday or SUNDAY)
-        for row in rows
-    ]
+    return [Suggestion(row.id, row.date, row.note or "", _like(row)) for row in rows]
 
 
 def answer(
@@ -210,6 +213,9 @@ def answer(
             day.status = SET
             if choice == CLOSED:
                 day.closed, day.like_weekday = True, None
+            else:
+                # What the card offered, also for a row written without one.
+                day.like_weekday = _like(day)
         session.add(
             AuditLog(
                 tenant_id=tenant_id,

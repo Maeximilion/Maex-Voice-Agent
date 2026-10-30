@@ -228,6 +228,20 @@ def test_like_monday_closes_a_thursday(session, tenant_id):
     assert status.is_open is False
 
 
+def test_monday_stays_monday_and_no_weekday_means_sunday(session, tenant_id):
+    monday = _suggested(session, tenant_id, CORPUS_CHRISTI)
+    monday.like_weekday = 0
+    bare = _suggested(session, tenant_id, MONDAY)
+    bare.like_weekday = None
+    session.commit()
+    shown = days.open_suggestions(session, tenant_id, date(2026, 6, 1))
+    assert [s.like_weekday for s in shown] == [0, days.SUNDAY]
+    days.answer(session, tenant_id, bare.id, days.LIKE)
+    session.refresh(bare)
+    assert (bare.status, bare.like_weekday) == ("set", days.SUNDAY)
+    assert get_service_status(session, tenant_id, now=berlin(MONDAY, 12)).is_open
+
+
 def test_closed_closes_the_day(session, tenant_id):
     row = _suggested(session, tenant_id, CORPUS_CHRISTI)
     days.answer(session, tenant_id, row.id, days.CLOSED)

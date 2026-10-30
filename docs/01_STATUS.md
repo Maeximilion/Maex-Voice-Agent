@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 30.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.46
+> Status: 30.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.47
 
 ---
 
@@ -307,6 +307,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 ## Made Assumptions (subject to change)
 
+- **Holiday suggestions (T-9.5, 30.10.2026), Claude's choices, awaiting Maxi:** (a) a suggestion proposes Sunday's hours and seats (the mockup's "Wie Sonntag behandeln?"); the other answers are closed and the weekday's hours; (b) suggested 60 days ahead, a pass every six hours; (c) statewide statutory holidays only, as the law stands in 2026: days kept in parts of a state (Fronleichnam in parts of SN and TH, Mariä Himmelfahrt in BY, Augsburg) and the Sundays of BB are left out; (d) the card stands above "Heute" in the operations view, because the admin area "Zeiten" of the mockup does not exist yet; another tablet sees an answer on its next load, no live event; (e) `service_config.holiday_region` is empty by default and is set by SQL (`UPDATE service_config SET holiday_region = 'BW'`), as the windows of T-8.1, until the admin area has an editor
 - **The operator's alarms (T-8.3 part 1, 29.10.2026), Claude's choices; defaults confirmed by Maxi 29.10.2026:** (a) the limits are operator settings in `.env`, not restaurant data in `service_config`: `ALARM_COST_PER_DAY_CENTS` 300 (D17 allows 100 euros a month for all the technology, so 3 euros of model cost a day is the line), `ALARM_ERROR_CALLS_PER_HOUR` 3, `MONITOR_REPORT_HOUR` 8; (b) a cost alarm goes out once per business day, an error or outbox alarm at most once per clock hour; (c) the day report also goes out on a day without any call, because silence can mean the line is down; (d) the alarms reach only the operator (topic `ops`), never the team.
 - **The approval switch of overflow (T-8.2, 29.10.2026), Claude's choices; (a) confirmed by Maxi 29.10.2026:** (a) the switch is a setting of the restaurant, `service_config.overflow_needs_approval`, not a button on the tablet: docs/00 ties the end of the approval step to gate G5, so a team member must not switch it off by a tap during service; until an admin page exists it is set by SQL; (b) it changes only the mode's reason to wait: an order above `order_approval_above_cents` still waits in `overflow`, and `shadow` and `paused` hold every order whatever the switch says; (c) the status `approved` and the button „Passt" are those of T-4.7, nothing new on the tablet.
 - **The mode switch and its windows (T-8.1, 29.10.2026), Claude's choices, awaiting Maxi:** (a) a tap on the tablet holds against a window that already began, also after that window ends, until the next window begins, as a thermostat's manual setting does; the other reading, a window always beats the tap, would leave a tap without effect for hours and break "the way back is one tap" (docs/09 §4). (b) Pause and resume are no choice of a mode: after "KI einschalten" the window that holds counts again. (c) Overlapping windows take the most cautious mode, as overlapping call limit windows take the lowest limit (T-10.9). (d) A window holds `shadow`, `overflow` or `primary`, never `paused`. (e) A step up (`shadow` to `overflow` to `primary`) asks on the tablet, a step down does not. (f) Windows are rows written by SQL until the admin area of docs/06 §4 has an editor; no row exists. (g) Who rings first in `overflow` is the router's in the test phase and the dialplan's with the SIP trunk (T-10.12); until then `overflow` and `primary` differ only in the approval of orders (docs/02 §4)
@@ -652,6 +653,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.47 · 30.10.2026:** T-9.5: statutory holidays as suggestions the team answers on the tablet (migration 015)
 - **v2.11.46 · 30.10.2026:** eskalation_0016: a call that carries only noise goes to the team, counted by the core
 - **v2.11.45 · 30.10.2026:** T-8.5: team briefing page and runbook
 - **v2.11.44 · 29.10.2026:** T-8.3 part 1: alarms and the day report for the operator, straight to the push server
