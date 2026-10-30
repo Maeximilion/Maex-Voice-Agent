@@ -23,7 +23,11 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from api.agent.escalation import speaks_of_allergies
-from api.agent.guards import HINT_GUEST_NAME, HINT_GUEST_PHONE
+from api.agent.guards import (
+    HINT_GUEST_NAME,
+    HINT_GUEST_PHONE,
+    HINT_UNREAD_ALLERGY_QUESTION,
+)
 from api.agent.llm import LLMTurn, ToolCall
 from api.agent.loop import SAY_ALLERGENS_BEYOND
 from api.domain.menu.normalize import normalize_query
@@ -447,6 +451,10 @@ class ScriptedLLM:
         if hint == HINT_GUEST_NAME:
             question = SAY_NAME if self._pickup is not None else QUESTIONS["guest_name"]
             return LLMTurn(say=question, understanding_failure="guest_name")
+        if hint == HINT_UNREAD_ALLERGY_QUESTION:
+            # The stand-in reads no allergens: it says so again, and the core
+            # hands over (a real model can look the dish up here).
+            return LLMTurn(say=SAY_ALLERGENS_BEYOND)
         return None
 
     def _after_failure(self, name: str | None, say: str | None) -> LLMTurn:

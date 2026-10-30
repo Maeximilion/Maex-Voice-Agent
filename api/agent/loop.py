@@ -338,7 +338,7 @@ class ConversationLoop:
                     say.insert(0, SAY_NOT_A_PERSON)
                 return TurnResult(state=state, say=say)
             state.held_call = None
-        result = self._converse(state, user_text, turn_started, held)
+        result = self._converse(state, user_text, turn_started, held, open_table)
         if not result.ended:
             unchanged = state.model_dump(include=_HEARD) == heard
             self._unheard = self._unheard + 1 if unchanged else 0
@@ -370,6 +370,7 @@ class ConversationLoop:
         user_text: str,
         turn_started: float | None,
         held: ToolCall | None = None,
+        open_table: str | None = None,
     ) -> TurnResult:
         """The model's part of a guest turn: model calls and tools until a
         sentence for the guest, a handoff or a limit. `held` is the draft the
@@ -519,7 +520,24 @@ class ConversationLoop:
                         SAY,
                         guards.ALLERGEN_CLAIM,
                     )
-                    return self._allergens_to_team(state, lead=SAY_ALLERGENS_BEYOND)
+                    return self._allergens_to_team(
+                        state, lead=SAY_ALLERGENS_BEYOND, table=open_table
+                    )
+                refused = guards.unread_allergy_question(called, user_text)
+                if refused is not None:
+                    # Back to the model once, it may well find the dish. A
+                    # second sentence without a look at the menu goes to the
+                    # team: the guest's question must not stay unanswered.
+                    log_refused(
+                        self._session, state.call_id, state.tenant_id, SAY, refused
+                    )
+                    if SAY in called:
+                        return self._allergens_to_team(
+                            state, lead=SAY_ALLERGENS_BEYOND, table=open_table
+                        )
+                    called.append(SAY)
+                    pending_input = _tool_result_as_input(SAY, refused, zone)
+                    continue
                 refused = guards.false_booking(state, say)
                 if refused is not None:
                     # Rule 3 for what the guest hears: "Ihre Abholung ist
@@ -583,6 +601,20 @@ class ConversationLoop:
                 if not allergies.fits(call, turn.tool_call):
                     return self._note_to_team(state, turn.tool_call)
                 result = self._dispatch(state, call.name, call.args)
+            if (
+                turn.tool_call.name == "search_menu"
+                and _found_nothing(result)
+                and escalation.asks_about_allergies(user_text)
+            ):
+                # No dish to look the allergens up on, so nothing the model
+                # says can answer it (`allergie_0002`, L17), and nothing about
+                # what is stored holds for a dish nobody read. Before the
+                # result is applied: a failed search is no change of mind that
+                # takes the read-back and the intent back. The search words
+                # stay off the card, they can hold the guest's allergy (L13).
+                return self._allergens_to_team(
+                    state, lead=SAY_ALLERGENS_BEYOND, table=open_table
+                )
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
             if (
                 turn.tool_call.name == "get_item_details"
@@ -594,7 +626,7 @@ class ConversationLoop:
                 # asked again, as for a table the team decides on.
                 data = result.data
                 dish = f"{data.get('number') or ''} {data.get('name') or ''}".strip()
-                return self._allergens_to_team(state, dish or None)
+                return self._allergens_to_team(state, dish or None, table=open_table)
             if from_hold and result.ok and (said := guards.unheard_readback(state)):
                 # The draft the guest answered the question for: read out by
                 # the core, so the guest's next "Ja" is the yes to it. Unless
@@ -1182,6 +1214,14 @@ def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
     reason = str(call.args.get("reason"))
     card = _handoff_summary(reason, None, state.booking_say)
     return ToolCall(call.name, {**call.args, "summary": card})
+
+
+def _found_nothing(result: ToolResult) -> bool:
+    """A search without a hit. One that split into several positions is ok
+    itself, with the `not_found` in each part (`dispatch._search_menu`); a part
+    that found its dish leaves something to look up."""
+    parts = result.data.get("positions") or [{"error_code": result.error_code}]
+    return all(part.get("error_code") == "not_found" for part in parts)
 
 
 def _handoff_summary(

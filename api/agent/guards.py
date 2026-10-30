@@ -41,6 +41,7 @@ from pydantic import ValidationError
 from api.agent.allergies import NOTED
 from api.agent.consent import is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
+from api.agent.escalation import asks_about_allergies, is_question
 from api.agent.guest_details import (
     e164,
     name_said,
@@ -461,15 +462,13 @@ def _states_an_allergy(user_text: str, call: ToolCall) -> bool:
     core notes the allergy for the kitchen whatever the dish contains (Maxi,
     27.10.2026); the lookup would find nothing maintained for most dishes and
     end the order with the team (L17), though the guest asked no question
-    (real-model run of 27.10.2026).
-    ponytail: a question is read by its question mark, as the speech engine
-    writes it; read the words if the call log shows questions without one."""
+    (real-model run of 27.10.2026)."""
     try:
         # Read as the tool reads it (`state.apply_tool_result`).
         asked = _FLAG.validate_python(call.args.get("allergen_question"))
     except ValidationError:
         return False
-    return asked and mentions_allergy(user_text) and "?" not in user_text
+    return asked and mentions_allergy(user_text) and not is_question(user_text)
 
 
 def _guest_details(call: ToolCall) -> tuple[Any, Any]:
@@ -537,6 +536,27 @@ _DRAFT_DIFFERS = ToolResult(ok=False, error_code="conflict", hint=HINT_DRAFT_DIF
 _GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_NAME)
 _GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
 _NOT_BOOKED = ToolResult(ok=False, error_code="conflict", hint=HINT_NOT_BOOKED)
+HINT_UNREAD_ALLERGY_QUESTION = (
+    "Abgelehnt: der Gast fragt nach einer Allergie, und du hast die Karte nicht "
+    "gelesen. Such das Gericht mit search_menu, nur seinen Namen ohne das "
+    "Allergen, und lies die Allergene mit get_item_details."
+)
+_UNREAD_ALLERGY_QUESTION = ToolResult(
+    ok=False, error_code="invalid_input", hint=HINT_UNREAD_ALLERGY_QUESTION
+)
+_READS_THE_MENU = frozenset({"search_menu", "get_item_details"})
+
+
+def unread_allergy_question(called: list[str], user_text: str) -> ToolResult | None:
+    """The model answers an allergy question without having read the menu:
+    `allergie_0002` in a full run, where it asked for the number although the
+    guest named the dish. Whatever it says cannot come from the database
+    (CLAUDE.md §2 rule 1, L17)."""
+    if _READS_THE_MENU & set(called) or not asks_about_allergies(user_text):
+        return None
+    return _UNREAD_ALLERGY_QUESTION
+
+
 HINT_STATED_ALLERGY = (
     "Abgelehnt: der Gast hat nur seine Allergie genannt und nichts gefragt. "
     "Der Kern notiert sie für die Küche; prüf keine Allergene und mach mit der "

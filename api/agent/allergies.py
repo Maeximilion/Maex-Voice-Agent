@@ -48,7 +48,7 @@ NOTED = frozenset({"draft_order", "create_reservation"})
 # The question for the ingredient as the search, the stand-in or the core puts
 # it, at the end of what the guest heard last ("Gern, Nummer 13 Pho Bo.
 # Wogegen sind Sie allergisch?", "Wogegen sind Sie bei Pho Bo allergisch?").
-_SENTENCE = re.compile(r"(?<=[.;!?])\s+")
+_SENTENCE = escalation.SENTENCE
 _ASKED_WHICH = re.compile(r"Wogegen sind Sie(?: bei (?P<dish>.+?))? allergisch\?\s*$")
 
 

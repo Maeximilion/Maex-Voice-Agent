@@ -94,7 +94,7 @@ Pflicht: **Positionen mit menu_item_id · Name · Rufnummer**
 je Position → search_menu
    exact_number / alias / fuzzy_single → übernehmen
    ambiguous → nachfragen, max. 3 Optionen vorlesen
-   not_found → Verständnis-Leiter
+   not_found → Verständnis-Leiter (an allergy question goes to the team, §4)
    wish → note / option übernehmen, unknown nicht anbieten, allergy ohne Zusage
 → draft_order → readback vorlesen → Ja → confirm → Abholzeit und Code nennen
 ```
@@ -229,6 +229,7 @@ Sofort und ohne Diskussion:
 - Große oder ungewöhnliche Bestellung (Vorschlag: über 150 € oder über 20 Positionen)
 - Catering, Feier, Sonderwunsch außerhalb der Karte
 - Allergie ohne gepflegten DB-Wert, and any allergen question beyond the maintained values (traces, contact, a promise of safety): the core hands over before the model and before any `confirm` (T-11.1, L17)
+- An allergy question on a dish the search does not find (`allergie_0002`): no dish means no allergens to read, so the core hands over when `search_menu` finds nothing, also in every part of a sentence with several positions (`loop._found_nothing`), and the guest asks about an allergy. That is `escalation.asks_about_allergies`: a question, by its mark or by its word order (`escalation.is_question`), that speaks of allergies or names an allergen, next to an allergy that is not denied. The sentence says nothing about what is stored (`SAY_ALLERGENS_BEYOND`), the dish may well be maintained. A model that answers such a question without having read the menu gets its sentence back once with a hint, a second one goes to the team the same way (`guards.unread_allergy_question`): in a full run the model asked for the number without a search although the guest named the dish. A read-back table stays on the card, and the search words stay off it, they can hold the guest's allergy (L13). The cost is on the safe side: a guest who asks for an allergen-named dish we do not have, or whose number was misheard, goes to the team, so does a model that searched with the allergen in the query although the dish exists, and so does a guest who names no dish and whose question the model answers by asking which one.
 - Dritter gescheiterter Versuch auf derselben Verständnis-Stufe
 - Anrufdauer über `max_call_seconds` (on the phone line the tenant's value from `service_config`, read at the start of the call)
 - The guest waits longer than `turn_deadline_seconds` for the answer to one sentence (#252; the tenant's value, read with the same routing; phone line only). The guest hears the outage sentence of §6, not a new one. Once the voice layer can say "Bitte warten Sie einen Moment" while a turn runs (T-1.11), the value goes from 10 to 15 in the database (Maxi, 12.10.2026); the code does not change for that
