@@ -97,7 +97,9 @@ SAY_NOBODY_REACHABLE = (
 # it as it was understood nothing, whatever the model said: a real model
 # answered a line with nothing but noise with a question every turn and never
 # reported a failed answer, so the call reached nobody (`eskalation_0016`,
-# finding on #37). The model's own status lookup is no understanding.
+# finding on #37). The model's own status lookup is no understanding. A
+# question of the core for the callback number is: the guest asked something
+# only the team can answer (Codex PR #437, P1).
 _HEARD = {
     "intent",
     "stage",
@@ -111,6 +113,7 @@ _HEARD = {
     "allergies",
     "allergy_consent",
     "held_call",
+    "callback_waits",
 }
 # Turns in a row without any of it before the call goes to the team: the
 # ladder's budget for one piece of information (docs/05 §2).

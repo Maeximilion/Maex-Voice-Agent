@@ -799,3 +799,22 @@ def test_the_card_of_a_missed_team_leg_fits_with_a_large_open_order(
     assert state.handoff_summary is not None
     assert len(f"{SUMMARY_MISSED} {state.handoff_summary}") <= 1000
     assert state.handoff_summary.endswith(f"Bereits gebucht: {BOOKED}")
+
+
+def test_a_wait_for_the_number_is_no_turn_without_understanding(session, known_tenant):
+    """Codex PR #437, P1: five turns that left the state as it was, then a
+    lookup with nothing maintained while nobody is reachable. The count of
+    turns without understanding replaced the question for the callback number
+    with the last resort, and the callback was lost."""
+    state = state_for(session, known_tenant)
+    turns = [LLMTurn(say="Wie bitte?") for _ in range(5)]
+    turns.append(details(session, known_tenant, "13"))
+    loop = ConversationLoop(session, FakeLLM(turns), "system", now=CLOSED)
+    for _ in range(5):
+        assert not loop.run_turn(state, "... krrr ...").ended
+
+    result = loop.run_turn(state, "Ist in der Pho Bo Sellerie?")
+
+    assert not result.ended
+    assert result.say[-1] == SAY_CALLBACK_NUMBER
+    assert state.callback_waits is not None
