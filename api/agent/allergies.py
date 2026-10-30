@@ -91,7 +91,7 @@ def _asks_back(text: str) -> bool:
     """A question of the guest's own ("Wie bitte?", "Sind Sie ein Roboter")
     answers no "Wogegen?" and costs no answer (Codex PR #414)."""
     return (
-        text.rstrip().endswith("?")
+        escalation.is_question(text)
         or escalation.without_human_question(text) is not None
     )
 
@@ -179,7 +179,11 @@ def _answer(
     the dish the question named or else the first still open. An answer that
     names nothing ("Keine.") takes that allergy back; one the parser cannot
     read leaves it open. One that comes without an open allergy (the model
-    asked on its own) is noted all the same."""
+    asked on its own) is noted all the same. A question back fills nothing,
+    with its mark or without it ("Ist das wichtig"): the speech engine drops
+    the mark, and the sentence would stand on the kitchen's note."""
+    if escalation.is_question(text):
+        return
     rows = active_numbers(session, state.tenant_id)
     numbers = frozenset(canonical_card(number) for number, _ in rows)
     if names_an_order(text, CardFormat.from_items(rows), numbers):
