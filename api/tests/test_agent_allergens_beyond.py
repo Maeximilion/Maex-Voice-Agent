@@ -143,6 +143,113 @@ def run(session, state, said, *turns, now=NOW):
     return result, llm
 
 
+NOT_ON_THE_CARD = "Sellerie Spezial Quark"
+
+
+def searches_nothing() -> LLMTurn:
+    return LLMTurn(tool_call=ToolCall("search_menu", {"query": NOT_ON_THE_CARD}))
+
+
+def test_an_allergy_question_on_a_dish_not_found_goes_to_the_team(
+    session, known_tenant
+):
+    """`allergie_0002` on the real model: it searched the dish with the allergen
+    in the query, found nothing and asked for the number, and nobody answered
+    the question (L17). The model is not asked again."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session,
+        state,
+        "Hallo, ist in der Pho Bo Sellerie? Ich habe eine Allergie.",
+        searches_nothing(),
+    )
+
+    assert len(llm.calls) == 1
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+    assert state.stage == "transferred"
+    call = session.get(Call, state.call_id)
+    session.refresh(call)
+    assert call.transfer_reason == "out_of_scope"
+
+
+def test_the_card_of_that_question_does_not_repeat_what_was_searched(
+    session, known_tenant
+):
+    """The search words can hold the guest's allergy, and the card never does
+    (L13)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    run(
+        session,
+        state,
+        "Hallo, ist in der Pho Bo Sellerie? Ich habe eine Allergie.",
+        searches_nothing(),
+    )
+
+    assert state.handoff_summary.startswith(SUMMARY_ALLERGENS)
+    assert "Sellerie" not in state.handoff_summary
+
+
+def test_with_nobody_there_that_question_asks_for_a_number(session, known_tenant):
+    state = state_for(session, known_tenant)
+
+    result, _ = run(
+        session,
+        state,
+        "Hallo, ist in der Pho Bo Sellerie? Ich habe eine Allergie.",
+        searches_nothing(),
+        now=CLOSED,
+    )
+
+    assert not result.ended
+    assert SAY_CALLBACK_NUMBER in result.say
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # An allergy told, nothing asked: the core notes it for the kitchen.
+        "Die Sellerie Spezial bitte, ich habe eine Erdnussallergie.",
+        # A question, but no word of an allergy: a dish we do not have.
+        "Haben Sie Sellerie Spezial?",
+    ],
+)
+def test_other_sentences_with_a_dish_not_found_stay_with_the_model(
+    session, known_tenant, said
+):
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session,
+        state,
+        said,
+        searches_nothing(),
+        LLMTurn(say="Das haben wir leider nicht auf der Karte."),
+    )
+
+    assert len(llm.calls) == 2
+    assert not result.ended
+
+
+def test_a_dish_the_search_finds_goes_on_to_its_allergens(session, known_tenant):
+    """Only a search that found nothing ends here: the found dish has an
+    answer in the database, or its own way to the team."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session,
+        state,
+        "Hallo, ist in der Pho Bo Sellerie? Ich habe eine Allergie.",
+        LLMTurn(tool_call=ToolCall("search_menu", {"query": "Pho Bo"})),
+        LLMTurn(say="Ich schaue nach."),
+    )
+
+    assert len(llm.calls) == 2
+    assert not result.ended
+
+
 def test_an_unmaintained_allergen_value_goes_to_the_team_at_once(session, known_tenant):
     state = state_for(session, known_tenant, phone=CALLER)
 

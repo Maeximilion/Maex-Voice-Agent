@@ -89,6 +89,13 @@ def speaks_of_allergies(text: str) -> bool:
     return mentions_allergy(text) or "allergen" in text.lower()
 
 
+def asks_about_allergies(text: str) -> bool:
+    """A question in a sentence that speaks of allergies ("Ist da Sellerie
+    drin? Ich habe eine Allergie."). A question is read by its question mark,
+    as in `guards._states_an_allergy`."""
+    return "?" in text and speaks_of_allergies(text)
+
+
 def asks_beyond_the_allergens(text: str) -> bool:
     """Does the guest ask about allergens what no database value answers, in
     words that say nothing else: traces, contamination, the same oil, pan or

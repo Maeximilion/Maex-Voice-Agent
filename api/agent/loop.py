@@ -585,6 +585,15 @@ class ConversationLoop:
                 result = self._dispatch(state, call.name, call.args)
             apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
             if (
+                turn.tool_call.name == "search_menu"
+                and result.error_code == "not_found"
+                and escalation.asks_about_allergies(user_text)
+            ):
+                # No dish to look the allergens up on, so nothing the model
+                # says can answer it (`allergie_0002`, L17). The search words
+                # stay off the card: they can hold the guest's allergy (L13).
+                return self._allergens_to_team(state)
+            if (
                 turn.tool_call.name == "get_item_details"
                 and result.ok
                 and result.say == SAY_ALLERGENS_UNKNOWN
