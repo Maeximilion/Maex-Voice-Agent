@@ -37,6 +37,7 @@ Mode right? Waiting times right? Callbacks of yesterday done? Red cards open? Or
 |---|---|
 | Guests complain about the AI, or it sounds wrong | "KI pausieren", tell Maxi |
 | An order is not at the printer | red card: "Nochmal senden", check the printer |
+| Red bar "Druckbrücke meldet sich nicht" | slips are not printing: check that the register PC is on and the internet works, tell Maxi. Orders stay on the tablet |
 | The tablet shows nothing new | check the internet at the restaurant, reload the page, tell Maxi |
 | The AI does not answer at all | nothing to do: the telephones ring by themselves. Tell Maxi |
 | A dish is sold out | "Gericht aus" in the top bar |

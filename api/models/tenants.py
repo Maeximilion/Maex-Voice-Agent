@@ -182,6 +182,20 @@ class ServiceConfig(Timestamps, Base):
     holiday_region: Mapped[str | None] = mapped_column(Text)
 
 
+class BridgeHeartbeat(Base):
+    """When the print bridge last polled (T-8.3, domain/status/bridge.py). A
+    table of its own: the bridge polls every 2 s, and a write to `service_config`
+    would redraw every tablet, whose header token reads `updated_at`, and wait
+    on the lock `confirm` holds there."""
+
+    __tablename__ = "bridge_heartbeats"
+
+    tenant_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("tenants.id", ondelete="RESTRICT"), primary_key=True
+    )
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class CallLimitWindow(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     """A weekly window with a limit of its own for concurrent AI calls (D16:
     weekdays 1, Friday to Sunday evenings up to 3). Where windows overlap, the

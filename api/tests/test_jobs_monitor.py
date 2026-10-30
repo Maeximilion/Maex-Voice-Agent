@@ -3,7 +3,7 @@ docs/02 §5, docs/13 §5). The push itself is a fake; what the push server
 does with it is checked in test_push_service.py."""
 
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -12,9 +12,10 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
+from api.domain.status import bridge
 from api.events.outbox import MAX_ATTEMPTS, mark_attempt_failed
 from api.jobs import monitor
-from api.models import AuditLog, Call, OutboxEvent
+from api.models import AuditLog, Call, OpeningHours, OutboxEvent
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -44,6 +45,8 @@ def limits(monkeypatch):
     # Off here: each group of tests below switches its own on.
     monkeypatch.setattr(settings, "voice_url", "")
     monkeypatch.setattr(settings, "alarm_backup_hours", 0)
+    monkeypatch.setattr(settings, "kitchen_bridge_tenant_id", "")
+    monkeypatch.setattr(settings, "alarm_bridge_silent_minutes", 5)
     # Late, so the day report stays out of the alarm tests; its own tests set 8.
     monkeypatch.setattr(settings, "monitor_report_hour", 23)
 
@@ -461,6 +464,43 @@ def test_a_recent_backup_stays_quiet(session, tenant_id, backup_limit):
 
 def test_a_limit_of_zero_switches_the_backup_alarm_off(session, tenant_id, monkeypatch):
     monkeypatch.setattr(settings, "alarm_backup_hours", 0)
+
+    assert run(session).sent == []
+
+
+# --- Print bridge ------------------------------------------------------------
+
+
+@pytest.fixture
+def bridge_silent(tenant_id, session, monkeypatch):
+    """A bridge set up for this tenant that never polled, on a day open now."""
+    monkeypatch.setattr(settings, "kitchen_bridge_tenant_id", str(tenant_id))
+    session.add(
+        OpeningHours(
+            tenant_id=tenant_id,
+            weekday=NOW.weekday(),
+            opens_at=time(0),
+            closes_at=time(23, 59),
+            service="pickup",
+        )
+    )
+    session.commit()
+
+
+def test_a_silent_bridge_alarms_once_an_hour(session, tenant_id, bridge_silent):
+    first = run(session)
+    again = run(session)
+    later = run(session, now=NOW + timedelta(hours=1))
+
+    assert first.titles() == ["Print bridge silent"]
+    assert first.sent[0][2] == "high"
+    assert again.sent == []
+    assert later.titles() == ["Print bridge silent"]
+
+
+def test_a_bridge_that_polled_stays_quiet(session, tenant_id, bridge_silent):
+    bridge.note_poll(session, tenant_id, NOW - timedelta(minutes=1))
+    session.commit()
 
     assert run(session).sent == []
 
