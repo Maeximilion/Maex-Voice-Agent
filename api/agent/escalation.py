@@ -28,8 +28,8 @@ SENTENCE = re.compile(r"(?<=[.;!?])\s+")
 # Nussallergie, was empfehlen Sie?").
 # shortcut: a closed list, widen it only from what the call log shows.
 _OTHER_TOPIC = re.compile(
-    r"\b(?:tisch|platz|plätze|reservier|geöffnet|offen|frei\b|liefer|abhol"
-    r"|lange|wann|uhr\b|zahl|bezahl)|\bauf\?"
+    r"\b(?:tisch|platz|plätze|reservier|geöffnet|offen|liefer|abhol"
+    r"|lange|wann|uhr\b|zahl|bezahl)|\b(?:was|etwas|noch) frei\?|\bauf\?"
 )
 
 # Reihenfolge ist die Prüfreihenfolge: "storniert die Reklamation" träfe sowohl

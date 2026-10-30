@@ -1130,6 +1130,9 @@ CLAIM = "Die Nummer 13 hat keine Erdnüsse."
         # Behind a comma, naming nothing, and still about the allergy.
         "Ich habe eine Nussallergie, was empfehlen Sie?",
         "Ich habe eine Nussallergie, kann ich die Pho Bo essen?",
+        # "frei" of an allergen, not of a table (Codex on PR #447).
+        "Ich habe eine Nussallergie, ist die Pho Bo frei davon?",
+        "Ich habe eine Nussallergie, ist die Pho Bo frei?",
     ],
 )
 def test_these_ask_about_the_allergy(said):
@@ -1142,6 +1145,7 @@ def test_these_ask_about_the_allergy(said):
         # The allergy in passing, the question on something else.
         "Ich habe eine Nussallergie, haben Sie heute noch geöffnet?",
         "Ich habe eine Nussallergie, haben Sie heute noch auf?",
+        "Ich habe eine Nussallergie, ist um acht noch was frei?",
         "Ich möchte einen Tisch für vier, wir haben eine Nussallergie, haben Sie Platz?",
         "Ich habe eine Nussallergie, liefern Sie auch nach Musterstadt?",
         "Die 13 bitte, ich habe eine Erdnussallergie, wie lange dauert das?",
