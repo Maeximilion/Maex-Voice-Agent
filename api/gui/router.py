@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.config import LOCAL_ENVS, settings
+from api.core import time as clock
 from api.core.auth import require_gui_proxy
 from api.core.errors import AppError
 from api.core.logging import get_logger
@@ -33,6 +34,7 @@ from api.domain.ordering import board as order_board
 from api.domain.ordering import correction
 from api.domain.reservations import list_today
 from api.domain.reservations.spoken import WEEKDAYS
+from api.domain.status import bridge
 from api.domain.status import config as switches
 from api.domain.status import holidays as holiday_days
 from api.domain.status.mode import CAUTION, mode_at
@@ -70,6 +72,7 @@ MODE_LABELS = {
 # up asks first, a step down is one tap: the way back needs no thinking
 # (docs/09 §4).
 MODE_CHOICES = CAUTION
+BRIDGE_CHECK = "Zettel kommen nicht an: Kassen-PC und Internet prüfen."
 
 
 def _tenant(session: Session) -> Tenant | None:
@@ -196,7 +199,21 @@ def _header(session: Session, tenant: Tenant) -> dict:
         ],
         "config": config,
         "sold_out_count": dishes.sold_out_count(session, tenant.id),
+        "bridge_problem": _bridge_problem(session, tenant),
     }
+
+
+def _bridge_problem(session: Session, tenant: Tenant) -> str | None:
+    """The banner for a silent print bridge (T-8.3, docs/06 §3), or None."""
+    quiet = bridge.silence(session, tenant)
+    if quiet is None:
+        return None
+    if quiet.since is None:
+        return f"Druckbrücke hat sich noch nie gemeldet. {BRIDGE_CHECK}"
+    since = to_local(quiet.since, tenant.timezone)
+    today = to_local(clock.utcnow(), tenant.timezone).date()
+    shown = since.strftime("%H:%M" if since.date() == today else "%d.%m. %H:%M")
+    return f"Druckbrücke meldet sich nicht seit {shown}. {BRIDGE_CHECK}"
 
 
 def _page_response(

@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from api.core import time as clock
 from api.core.errors import InvalidInput, NotFound
+from api.domain.status.bridge import silence
 from api.domain.status.mode import CAUTION, PAUSED, mode_at
 from api.models import AuditLog, ServiceConfig, Tenant
 
@@ -218,6 +219,7 @@ def config_change_token(
     Aenderung hin und wieder zurueck innerhalb eines Takts ein Signal gibt.
     The mode is the one that holds at `now`: a window that begins or ends
     writes nothing to the database, and the header still has to show it (T-8.1).
+    The same goes for a print bridge that falls silent (T-8.3).
     """
     config = session.get(ServiceConfig, tenant_id, populate_existing=True)
     tenant = session.get(Tenant, tenant_id)
@@ -225,8 +227,9 @@ def config_change_token(
         return "-"
     holding = mode_at(session, tenant, config, now)
     until = holding.planned_until.isoformat() if holding.planned_until else ""
+    quiet = silence(session, tenant, now)
     return (
-        f"{holding.mode}:{until}:{int(config.delivery_enabled)}:"
+        f"{holding.mode}:{until}:{quiet}:{int(config.delivery_enabled)}:"
         f"{config.pickup_wait_minutes}:{config.delivery_wait_minutes}:"
         f"{config.updated_at.isoformat()}"
     )

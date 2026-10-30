@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
 from api.core.logging import get_logger, log
+from api.domain.status.bridge import note_poll
 from api.events import enqueue
 from api.events.outbox import MAX_ATTEMPTS, mark_attempt_failed, mark_sent
 from api.events.types import KITCHEN, ORDER_HANDOVER_FAILED
@@ -262,6 +263,8 @@ def claim_tickets(
                 "print_time": print_time,
             }
         )
+    # Every poll, also one with nothing to fetch: the bridge's sign of life.
+    note_poll(session, tenant_id, now)
     session.commit()
     return tickets
 

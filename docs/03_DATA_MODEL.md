@@ -73,6 +73,14 @@ A weekly window with a call mode of its own, say the agent answers on Friday eve
 | starts_at, ends_at | TIME, starts_at < ends_at | the window; the end is not in it, and one across midnight is two rows. The second row begins a window of its own at 00:00, so a tap made during the first holds only until midnight |
 | call_mode | TEXT | `shadow`, `overflow` or `primary`; never `paused`, the emergency stop is a button. Where windows overlap, the most cautious mode counts (`shadow` before `overflow` before `primary`) |
 
+### `bridge_heartbeats`
+When the print bridge last polled, one row per tenant (T-8.3, migration 016, `domain/status/bridge.py`). A table of its own: the poll comes every 2 s, written at most every 30 s, and a write to `service_config` would move the `updated_at` the header's token reads. No personal data, nothing to delete.
+
+| Field | Type | Note |
+|---|---|---|
+| tenant_id | UUID PK FK | |
+| seen_at | TIMESTAMPTZ | the last poll, written with the claim |
+
 ### `opening_hours`
 | Feld | Typ | Bemerkung |
 |---|---|---|
@@ -406,5 +414,6 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 013 | `service_config.call_mode_chosen_at` and `call_mode_windows`: the mode by weekly windows and the time of the team's last tap (T-8.1); no window and no tap backfilled; the downgrade drops both with every window set since, `call_mode` stays |
 | 014 | `service_config.overflow_needs_approval`: the approval step of `overflow` can be switched off (T-8.2); true for every existing row, so nothing changes until the restaurant sets it; the downgrade drops the column and brings the step back |
 | 015 | `special_days.status` and `like_weekday`, `uq_special_days_suggestion`, `service_config.holiday_region`: statutory holidays as suggestions the team answers (T-9.5); every existing special day becomes `set`, nothing changes; downgrade deletes suggestions and dismissals, a day "like a weekday" keeps its own weekday, the region goes |
+| 016 | `bridge_heartbeats`: the time of the print bridge's last poll (T-8.3); nothing backfilled, the downgrade drops the table and the next poll writes it again |
 | planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
 | planned, next free number | `eval_cases`, `eval_runs` |
