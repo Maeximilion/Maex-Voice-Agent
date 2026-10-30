@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="t d">
 <title id="t">Eval trend</title>
-<desc id="d">Pass rate of model qwen3.6-35b-a3b-iq3 from 2026-10-29 to 2026-10-30. regular cases latest 34 of 56; target cases latest 2 of 29</desc>
+<desc id="d">Pass rate of model qwen3.6-35b-a3b-iq3 from 2026-10-29 to 2026-10-30. regular cases latest 32 of 56; target cases latest 3 of 29</desc>
 <style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}</style>
 <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
 <rect width="1200" height="440" rx="24" fill="#0D0819"/>
@@ -83,14 +83,16 @@
 <line x1="120" y1="106.3" x2="900" y2="106.3" stroke="#E8FF2E" stroke-dasharray="6 6" opacity="0.6"/>
 <text x="912" y="111.3" font-size="14" fill="#E8FF2E">target 99 %</text>
 <text x="120" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">29 Oct</text>
-<text x="900" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">30 Oct</text>
-<path d="M120 208.9 L900 192.8" fill="none" stroke="#E8FF2E" stroke-width="2" stroke-linejoin="round"/>
+<text x="705" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">30 Oct</text>
+<path d="M120 208.9 L510 192.8 L900 200.9" fill="none" stroke="#E8FF2E" stroke-width="2" stroke-linejoin="round"/>
 <circle cx="120" cy="208.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-29: 30/56</title></circle>
-<circle cx="900" cy="192.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-30: 34/56</title></circle>
-<text x="912" y="182.8" font-size="15" fill="#E8FF2E" font-weight="700">regular cases 34/56</text>
-<path d="M120 298.8 L900 314.4" fill="none" stroke="#9D7BFF" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="510" cy="192.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-30: 34/56</title></circle>
+<circle cx="900" cy="200.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-30: 32/56</title></circle>
+<text x="912" y="190.9" font-size="15" fill="#E8FF2E" font-weight="700">regular cases 32/56</text>
+<path d="M120 298.8 L510 314.4 L900 306.6" fill="none" stroke="#9D7BFF" stroke-width="2" stroke-linejoin="round"/>
 <circle cx="120" cy="298.8" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-29: 4/29</title></circle>
-<circle cx="900" cy="314.4" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-30: 2/29</title></circle>
-<text x="912" y="304.4" font-size="15" fill="#9D7BFF" font-weight="700">target cases 2/29</text>
+<circle cx="510" cy="314.4" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-30: 2/29</title></circle>
+<circle cx="900" cy="306.6" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-30: 3/29</title></circle>
+<text x="912" y="296.6" font-size="15" fill="#9D7BFF" font-weight="700">target cases 3/29</text>
 <text x="1136" y="73" font-size="14" fill="#A89CCB" text-anchor="end">Scripted stand-in model: 41/41 regular cases.</text>
 </svg>

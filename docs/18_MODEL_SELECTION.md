@@ -196,6 +196,7 @@ against 13 %). It fits only while the Windows desktop holds less than about 2.5 
   §2). On `UD-IQ3_XXS` fully on the GPU the case passed 5 of 5 on the fix and failed 5 of 5 on
   `main`; the full suites with part of the experts in RAM gave cases 34 against 32 and targets
   2 against 3 on `main`, missed escalations 1 (`allergie_0002`, as on `main`) against 2.
+  **Baseline of `main` at `8d63d6f` (30.10.2026), `UD-IQ3_XXS` with 11.9 GB free, so a small spill:** cases 32/56, targets 3/29, 0 guessed, 0 unconfirmed, 1 missed escalation (`allergie_0002`), false escalations 24 %; 8.2 min for the cases, 3.2 min for the targets. On the fix of that case (docs/05) it passed 5 of 5 on the same server.
 - Still above budget at p95 (2.16 s): answers of about 98 tokens. Shorter answers are the next
   speed step on any model.
 
