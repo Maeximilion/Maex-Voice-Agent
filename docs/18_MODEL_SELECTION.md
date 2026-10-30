@@ -191,6 +191,11 @@ against 13 %). It fits only while the Windows desktop holds less than about 2.5 
 - **Recommendation:** `UD-IQ3_XXS` is the faster workbench model once `eskalation_0016` passes
   on it: repeat the case to tell noise from a real loss, then fix it in the prompt or the core
   (rule 5 never rests on one model's luck). Until then the workbench keeps `UD-IQ4_XS`.
+  **Fixed in the core (30.10.2026):** six guest turns in a row that leave what the core took
+  from the guest as it was now end the call with the team, whatever the model says (docs/05
+  §2). On `UD-IQ3_XXS` fully on the GPU the case passed 5 of 5 on the fix and failed 5 of 5 on
+  `main`; the full suites with part of the experts in RAM gave cases 34 against 32 and targets
+  2 against 3 on `main`, missed escalations 1 (`allergie_0002`, as on `main`) against 2.
 - Still above budget at p95 (2.16 s): answers of about 98 tokens. Shorter answers are the next
   speed step on any model.
 

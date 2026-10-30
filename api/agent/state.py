@@ -184,6 +184,9 @@ class ConversationState(BaseModel):
     callback_waits: str | None = None
     # How often the core put that question again (`loop._callback_answered`).
     callback_asks: int = 0
+    # The reason the callback is made with: a question beyond the database,
+    # or a line the core understood nothing on (Codex PR #437). Never sent.
+    callback_reason: str = "out_of_scope"
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""
