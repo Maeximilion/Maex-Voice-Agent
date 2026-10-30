@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 30.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.52
+> Status: 30.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.53
 
 ---
 
@@ -660,6 +660,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.53 · 30.10.2026:** Security audit of T-10.1 and T-10.2 on e43208b: no P1, no P2
 - **v2.11.52 · 30.10.2026:** #441: one counting row per date in special_days (migration 017)
 - **v2.11.51 · 30.10.2026:** Handover: #437 and T-9.5 merged, #441 next on its branch, migration 015 not yet on the workbench
 - **v2.11.50 · 30.10.2026:** Rules: the tablet's text is German, Maxi confirmed the bridge banner for the team
