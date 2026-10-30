@@ -1428,6 +1428,11 @@ def _ingredient_answer(text: str) -> tuple[str, str | None]:
 
 # The parts of a sentence, with what joins them kept.
 _PARTS = re.compile(r"(,|\bund\b)", re.IGNORECASE)
+# A denial that goes on with what the guest is allergic to: "keine Allergie
+# gegen Erdnüsse, aber gegen Sesam".
+_BUT_AGAINST = re.compile(
+    r"\b(?:aber|sondern|nur)\s+(?:nur\s+|auch\s+)?gegen\b", re.IGNORECASE
+)
 
 
 def only_denies(text: str) -> bool:
@@ -1438,6 +1443,8 @@ def only_denies(text: str) -> bool:
     "und", "keine Allergien und Unvertraeglichkeiten gegen Laktose" would
     leave a part that reads as an intolerance (Codex PR #330, #338). As the
     stand-in model judges it (`sim/scripted_llm.py`)."""
+    if _BUT_AGAINST.search(text):
+        return False
     clauses = wish_candidates(text)
     if clauses and denies_allergy(clauses[-1][1]):
         return True

@@ -387,6 +387,8 @@ class ConversationLoop:
         # The tools the model called in this guest turn, refused ones and a
         # refused `cart` included.
         called: list[str] = []
+        # Of those, the ones that worked: what the model can have read.
+        read: set[str] = set()
         zone = self._local_now(state).tzinfo
         assert zone is not None  # `to_local` gives an aware time
         for _ in range(MAX_TOOL_HOPS):
@@ -523,7 +525,7 @@ class ConversationLoop:
                     return self._allergens_to_team(
                         state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                     )
-                refused = guards.unread_allergy_question(called, user_text)
+                refused = guards.unread_allergy_question(read, say, user_text)
                 if refused is not None:
                     # Back to the model once, it may well find the dish. A
                     # second sentence without a look at the menu goes to the
@@ -700,6 +702,8 @@ class ConversationLoop:
                     state=state, say=[result.say or SAY_ESCALATION], ended=True
                 )
             called.append(turn.tool_call.name)
+            if result.ok:
+                read.add(turn.tool_call.name)
             pending_input = _tool_result_as_input(turn.tool_call.name, result, zone)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
@@ -912,7 +916,7 @@ class ConversationLoop:
         guest's allergy (L13). `card` is another reason the team has to
         clear before an order (`SUMMARY_KITCHEN_NOTE`, #207)."""
         summary = card + (f" Gericht: {dish}." if dish else "")
-        table = table or self._open_table(state)
+        table = self._open_table(state) or table
         if table:
             summary += f" {SUMMARY_OPEN_TABLE} {table}."
         # Room for what `_handoff_summary` adds for a booking made earlier,

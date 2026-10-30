@@ -29,10 +29,11 @@ from api.agent.loop import (
     SUMMARY_ALLERGENS,
     ConversationLoop,
 )
-from api.agent.state import ConversationState
+from api.agent.state import Allergy, ConversationState
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.importer import ALLERGENS_FILE, apply, parse
+from api.domain.menu.wishes import only_denies
 from api.models import Call, Callback, Order, OrderItem
 from api.tests.test_domain_draft_order import KARTE, NOW, _call, _tenant, item
 
@@ -362,7 +363,11 @@ def test_other_searches_stay_with_the_model(session, known_tenant, said, query):
     state = state_for(session, known_tenant, phone=CALLER)
 
     result, llm = run(
-        session, state, said, searches(query), LLMTurn(say="Einen Moment.")
+        session,
+        state,
+        said,
+        searches(query),
+        LLMTurn(say="Meinen Sie die 13 oder die 14?"),
     )
 
     assert len(llm.calls) == 2
@@ -1111,3 +1116,257 @@ def test_a_wait_for_the_number_is_no_turn_without_understanding(session, known_t
     assert not result.ended
     assert result.say[-1] == SAY_CALLBACK_NUMBER
     assert state.callback_waits is not None
+
+
+# The audit of 30.10.2026 on `7768182` (#252): a sentence about allergens
+# rests on `get_item_details`, and an allergy said on the phone is never lost.
+CLAIM = "Die Nummer 13 hat keine Erdnüsse."
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ja. Ist da Erdnuss drin. Ich habe eine Erdnussallergie.",
+        # Behind a comma, naming nothing, and still about the allergy.
+        "Ich habe eine Nussallergie, was empfehlen Sie?",
+        "Ich habe eine Nussallergie, kann ich die Pho Bo essen?",
+        # Without its mark: the word order asks, the allergy stands beside it
+        # (Codex on PR #447).
+        "Ist das für mich geeignet, ich habe eine Nussallergie",
+        "Ist in der Pho Bo was davon drin, ich habe eine Nussallergie",
+        "Ist die 13 okay, ich habe eine Nussallergie",
+        # "frei" of an allergen, not of a table (Codex on PR #447).
+        "Ich habe eine Nussallergie, ist die Pho Bo frei davon?",
+        "Ich habe eine Nussallergie, ist die Pho Bo frei?",
+    ],
+)
+def test_these_ask_about_the_allergy(said):
+    assert asks_about_allergies(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # The allergy in passing, the question on something else.
+        "Ich habe eine Nussallergie, haben Sie heute noch geöffnet?",
+        "Ich habe eine Nussallergie, haben Sie heute noch auf?",
+        "Ich habe eine Nussallergie, ist um acht noch was frei?",
+        # The same without the mark.
+        "Haben Sie heute noch geöffnet, ich habe eine Nussallergie",
+        "Haben Sie heute noch auf, ich habe eine Nussallergie",
+        "Ich möchte einen Tisch für vier, wir haben eine Nussallergie, haben Sie Platz?",
+        "Ich habe eine Nussallergie, liefern Sie auch nach Musterstadt?",
+        "Die 13 bitte, ich habe eine Erdnussallergie, wie lange dauert das?",
+        # An assent, not a question. "Ist zwölf" is how every speech engine
+        # writes the card number "S zwölf" (docs/04).
+        "Ist gut, ich habe eine Erdnussallergie.",
+        "Ist okay, die 13, ich habe eine Erdnussallergie.",
+        "Ist zwölf, ich habe eine Erdnussallergie.",
+        "Ich habe eine Nussallergie, aber sonst alles okay.",
+    ],
+)
+def test_these_do_not(said):
+    assert not asks_about_allergies(said)
+
+
+def test_a_refused_lookup_is_no_read_of_the_menu(session, known_tenant):
+    """The question is read as one wherever it stands, so the lookup goes
+    through and the guest's question is answered from the database."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Ja. Ist in der Pho Bo Erdnuss. Ich habe eine Erdnussallergie.",
+        details(session, known_tenant, "13"),
+    )
+
+    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+
+
+def test_a_lookup_that_failed_is_no_read_of_the_menu(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+    wrong_id = "00000000-0000-0000-0000-000000000000"
+
+    result, llm = run(
+        session,
+        state,
+        ASKED,
+        LLMTurn(tool_call=ToolCall("get_item_details", {"item_id": wrong_id})),
+        LLMTurn(say=CLAIM),
+        LLMTurn(say=CLAIM),
+    )
+
+    assert len(llm.calls) == 3
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Nein, da ist kein Sellerie.",
+        "Ja, die Pho Bo enthält Sellerie.",
+        # Names nothing, says the same.
+        "Da ist nichts davon drin.",
+        # A question behind it does not make the first sentence a question.
+        "Nein, da ist nichts drin. Möchten Sie die Pho Bo?",
+    ],
+)
+def test_a_search_alone_answers_no_allergy_question(session, known_tenant, answer):
+    """A hit carries no allergens (`MenuHit`)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session,
+        state,
+        ASKED,
+        searches("Pho Bo"),
+        LLMTurn(say=answer),
+        LLMTurn(say=answer),
+    )
+
+    assert len(llm.calls) == 3
+    assert answer not in result.say
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_an_unmarked_question_is_not_answered_without_a_lookup(session, known_tenant):
+    """Neither by the model, nor is the lookup refused as an allergy only told
+    (Codex on PR #447)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    said = "Ist das für mich geeignet, ich habe eine Nussallergie"
+    answer = "Ja, das können Sie essen."
+
+    result, llm = run(session, state, said, LLMTurn(say=answer), LLMTurn(say=answer))
+
+    assert len(llm.calls) == 2
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+    state = state_for(session, known_tenant, phone=CALLER)
+    result, _ = run(session, state, said, details(session, known_tenant, "13"))
+
+    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+
+
+def test_after_a_search_the_model_may_ask_which_dish(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session,
+        state,
+        ASKED,
+        searches("Pho Bo"),
+        LLMTurn(say="Meinen Sie die 13 oder die 14?"),
+    )
+
+    assert len(llm.calls) == 2
+    assert result.say == ["Meinen Sie die 13 oder die 14?"]
+
+
+def test_an_allergy_in_passing_leaves_the_table_with_the_model(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+    question = "Für wann möchten Sie reservieren?"
+
+    result, llm = run(
+        session,
+        state,
+        "Ich möchte einen Tisch für vier, wir haben eine Nussallergie, haben Sie Platz?",
+        LLMTurn(say=question),
+    )
+
+    assert len(llm.calls) == 1
+    assert result.say == [question]
+    assert not result.ended
+
+
+def test_the_card_names_the_table_the_guest_moved_to(session, known_tenant):
+    """The guest moves a table that was read back and asks about an allergen
+    in one turn: the team calls about the 20:00, not the 19:00."""
+    state = table_read_back(session, known_tenant)
+    moved = ToolCall(
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": CALLER,
+            "party_size": 4,
+            "reserved_for": "2026-09-16T20:00:00+02:00",
+        },
+    )
+
+    result, _ = run(
+        session,
+        state,
+        "Lieber um 20 Uhr. Welche Allergene hat die Pho Bo?",
+        LLMTurn(tool_call=moved),
+        details(session, known_tenant, "13"),
+        now=CLOSED,
+    )
+
+    assert SAY_TABLE_NOT_BOOKED in result.say
+    summary = session.scalars(select(Callback)).one().summary
+    assert "20:00" in summary
+    assert "19:00" not in summary
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich habe keine Allergie gegen Erdnüsse, aber gegen Sesam.",
+        "Ich bin nicht allergisch gegen Nüsse, aber gegen Sellerie.",
+        "Ich bin nicht gegen Nüsse allergisch, sondern gegen Sellerie.",
+        "Keine Allergie gegen Nüsse, nur gegen Sesam.",
+    ],
+)
+def test_a_mixed_negation_keeps_the_allergy(session, known_tenant, said):
+    """What the second half names is not read, so "Wogegen?" asks for it."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    run(session, state, said, LLMTurn(say="Gern."))
+
+    assert not only_denies(said)
+    assert state.allergies == [Allergy(ingredient=None)]
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich habe keine Allergie, aber bitte ohne Koriander.",
+        "Ich bin nicht allergisch.",
+    ],
+)
+def test_a_plain_denial_stays_one(said):
+    assert only_denies(said)
+
+
+@pytest.mark.parametrize(
+    "said", ["Ist das wichtig", "Ist das wirklich nötig", "Stimmt das", "Ist gut"]
+)
+def test_a_question_back_without_its_mark_is_no_ingredient(session, known_tenant, said):
+    state = state_for(session, known_tenant, phone=CALLER)
+    state.allergies = [Allergy(ingredient=None)]
+    state.last_say = "Wogegen sind Sie allergisch?"
+
+    run(session, state, said, LLMTurn(say="Gern."))
+
+    assert state.allergies == [Allergy(ingredient=None)]
+    assert state.which_asks == 0
+
+
+@pytest.mark.parametrize(
+    "said, ingredient",
+    [
+        ("Erdnüsse", "Erdnüsse"),
+        ("Gegen Erdnüsse", "Erdnüsse"),
+        ("Ich bin gegen Erdnüsse allergisch", "Erdnüsse"),
+    ],
+)
+def test_an_answer_to_wogegen_is_still_read(session, known_tenant, said, ingredient):
+    state = state_for(session, known_tenant, phone=CALLER)
+    state.allergies = [Allergy(ingredient=None)]
+    state.last_say = "Wogegen sind Sie allergisch?"
+
+    run(session, state, said, LLMTurn(say="Gern."))
+
+    assert [allergy.ingredient for allergy in state.allergies] == [ingredient]

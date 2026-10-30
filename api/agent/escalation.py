@@ -14,7 +14,7 @@ Also checked here: the question whether a person is on the line
 import re
 from typing import Literal
 
-from api.agent.consent import asks
+from api.agent.consent import asks, asks_on_its_own
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import denies_allergy, mentions_allergy, only_denies
 
@@ -22,6 +22,15 @@ EscalationReason = Literal["complaint", "human_requested", "cancellation"]
 
 # Where a sentence of the guest ends.
 SENTENCE = re.compile(r"(?<=[.;!?])\s+")
+# What a question behind a comma asks when it has nothing to do with a dish: a
+# table, the hours, delivery, time, payment. Any other question next to an
+# allergy stays an allergy question, the safe side ("Ich habe eine
+# Nussallergie, was empfehlen Sie?").
+# shortcut: a closed list, widen it only from what the call log shows.
+_OTHER_TOPIC = re.compile(
+    r"\b(?:tisch|platz|plätze|reservier|geöffnet|offen|liefer|abhol"
+    r"|lange|wann|uhr\b|zahl|bezahl)|\b(?:was|etwas|noch) frei(?:\?|$)|\bauf(?:\?|$)"
+)
 
 # Reihenfolge ist die Prüfreihenfolge: "storniert die Reklamation" träfe sowohl
 # complaint- als auch cancellation-Wörter, complaint zuerst geprüft ist die
@@ -100,11 +109,31 @@ def is_question(text: str) -> bool:
     return "?" in text or asks(text.lower())
 
 
+def _names_one(text: str) -> bool:
+    return speaks_of_allergies(text) or names_an_allergen(text)
+
+
+def _asks_about_one(sentence: str) -> bool:
+    """Does the sentence ask about an allergy? A clause that asks and names
+    one, or, next to a clause that names one, a question that may mean it
+    without naming it, unless it asks about something else ("..., haben Sie
+    Platz?"). Such a question needs its mark or `asks_on_its_own`: "Ist gut,
+    ich habe eine Erdnussallergie" and "Ist zwölf" (the card number S12,
+    docs/04) ask nothing."""
+    clauses = [clause.strip().lower() for clause in sentence.split(",")]
+    if any(is_question(clause) and _names_one(clause) for clause in clauses):
+        return True
+    return _names_one(sentence) and any(
+        ("?" in clause or asks_on_its_own(clause)) and not _OTHER_TOPIC.search(clause)
+        for clause in clauses
+    )
+
+
 def asks_about_allergies(text: str) -> bool:
-    """Does a guest with an allergy ask about one? A question that speaks of
-    allergies or names an allergen, next to an allergy that is not denied:
-    "Ist da Sellerie drin? Ich habe eine Allergie.", never "Haben Sie Pizza?
-    Ich habe keine Allergie." or "Sind Sie ein Roboter? Die 99, ich habe eine
+    """Does a guest with an allergy ask about one? A question about an
+    allergy (`_asks_about_one`) next to an allergy that is not denied: "Ist da
+    Sellerie drin? Ich habe eine Allergie.", never "Haben Sie Pizza? Ich habe
+    keine Allergie." or "Sind Sie ein Roboter? Die 99, ich habe eine
     Nussallergie."."""
     said = [
         sentence
@@ -112,9 +141,7 @@ def asks_about_allergies(text: str) -> bool:
         if not (denies_allergy(sentence) or only_denies(sentence))
     ]
     return any(speaks_of_allergies(sentence) for sentence in said) and any(
-        is_question(sentence)
-        and (speaks_of_allergies(sentence) or names_an_allergen(sentence))
-        for sentence in said
+        _asks_about_one(sentence) for sentence in said
     )
 
 
