@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.domain.menu.importer import MENU_FILE, OPTIONS_FILE, apply, parse
-from api.models import Callback, MenuItem, Order, OrderItem
+from api.models import Call, Callback, MenuItem, Order, OrderItem
 from api.tests.test_domain_menu_search import KARTE
 from scripts.seed import seed
 from sim.replay import replay
@@ -1933,8 +1933,6 @@ def test_allergy_in_the_opening_sentence_is_an_order(session, tenant):
 @pytest.mark.parametrize(
     "opening",
     [
-        # The question about allergens goes to the team, pickup or not.
-        "Ist die Pho Bo allergenfrei? Ich moechte sie zum Abholen.",
         "Ich moechte bestellen, koennen Sie das auch liefern?",
         # "Karte" next to the pickup stays what it was before the order.
         "Koennen Sie mir die Speisekarte vorlesen? Ich moechte bestellen.",
@@ -1959,11 +1957,6 @@ def test_out_of_scope_in_the_opening_sentence_stays_a_callback(
         # The dish is not on the menu.
         ("Ich moechte Schnitzel mit Erdnussallergie zum Abholen.",),
         ("Guten Tag.", "Schnitzel mit Erdnussallergie zum Abholen."),
-        # A question about the dish, worded with the guest's allergy (Codex PR #178).
-        (
-            "Ist in der Pho etwas, gegen das ich allergisch sein koennte? "
-            "Ich moechte sie zum Abholen.",
-        ),
     ],
 )
 def test_allergy_that_reaches_no_position_goes_to_the_team(session, tenant, lines):
@@ -1973,6 +1966,27 @@ def test_allergy_that_reaches_no_position_goes_to_the_team(session, tenant, line
     replay(session, case(*lines, "0721 5551234"), tenant, now=NOW)
     session.expire_all()
     assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
+    assert orders(session) == []
+
+
+@pytest.mark.parametrize(
+    "opening",
+    [
+        "Ist die Pho Bo allergenfrei? Ich moechte sie zum Abholen.",
+        # Worded with the guest's allergy (Codex PR #178).
+        "Ist in der Pho etwas, gegen das ich allergisch sein koennte? "
+        "Ich moechte sie zum Abholen.",
+    ],
+)
+def test_an_allergy_question_the_model_talks_past_goes_to_the_team(
+    session, tenant, opening
+):
+    """The stand-in answers it without a look at the menu, as a real model did
+    in a full run (PR #445): the core takes it to the team, no order."""
+    replay(session, case(opening), tenant, now=NOW)
+    session.expire_all()
+    call = session.scalars(select(Call)).one()
+    assert call.transfer_reason == "out_of_scope"
     assert orders(session) == []
 
 
