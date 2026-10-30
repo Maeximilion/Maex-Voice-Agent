@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 30.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.50
+> Status: 30.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.52
 
 ---
 
@@ -262,6 +262,8 @@ Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order
 
 Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: nine group issues per block (#5 through #13), 68 work packages as sub-issues, labels per stage. Status maintained here in docs, mirror follows.
 
+16. **Next, handover 30.10.2026 (`docs/00_PCF.md` §13):** #441 is built on `fix/441-special-days-one-set-row` (migration 017, `uq_special_days_set`) and goes through review to its merge. Then on the workbench, when no other session uses its stack: backup, migrations 013 to 017 (017 stops and lists the dates if two `set` rows share one), rebuild `api` and `dispatcher`, and with Maxi's word `holiday_region = 'BW'`. Open for Maxi: the T-9.5 assumptions under Made Assumptions
+
 ### In Chat (Maxi)
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
   - **Legal check answered 20.10.2026 (docs/09 §1). Maxi's paper duties, all before the first real call unless noted:** privacy notice on example.com, which also names the call log (L4, L15); record of processing (L9); DSFA v0.1 finished with this result and the officer's advice (L10, D9), with the balancing for caller recognition (L12); publish the officer's contact and report it to the authority (Art. 37(7)); a DPA per processor before its first key on real data, with zero retention and the transfer basis (L5, L6, L7, U8); information sheet for the team, with the written statement that recordings and the audit log do not rate staff (L11); before mode `shadow` with recording, the written consent of every team member who answers the phone, because the recordings of `shadow` are the team's own calls (L11); procedure documentation for the phone channel and the tax adviser's word on keeping agent order rows (L18); the team types every input slip into the register (L18, D2); the allergen list on the website (L17)
@@ -519,6 +521,8 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 30.10.2026 | **#441: one counting row per date in `special_days` (migration 017).** `uq_special_days_set`, a partial unique index on `status = 'set'`; the upgrade first lists every date with two `set` rows and stops without a change. `domain/status/holidays.py` `answer`: "like" or "closed" on a date that got a `set` row after the suggestion was written dismisses the suggestion and keeps that row; the audit entry carries the resulting status. Red first: `test_a_second_set_row_for_a_date_is_refused`, `test_an_answer_next_to_a_set_row_keeps_that_row`, `test_migration_017.py`. The drill's open-all-day row (`telephony/drill.py`) now stops with the key's name on a day that already has a `set` row instead of making a second one |
+| 30.10.2026 | **Handover: #437 and T-9.5 (#439) merged, #441 next.** Ultrareview of #439 found no defect; its one real point, two counting rows for one date in `special_days`, is #441, the next task on `fix/441-special-days-one-set-row`. Migration 015 is not applied to the workbench database (at 012); steps in `docs/00_PCF.md` §13 |
 | 30.10.2026 | **T-9.5 holiday suggestions (migration 015).** `domain/status/holidays.py`, `jobs/holidays.py`, `special_days.status` and `like_weekday`, `service_config.holiday_region`, the card in "Heute" with three answers; a suggestion changes no hours or seats until the team answers |
 | 30.10.2026 | **The core ends a noise-only call with the team (finding on #37, `eskalation_0016`).** `agent/loop.py` `run_turn`: six guest turns in a row without anything the core takes from the guest hand the call over (`UNHEARD_TURNS`), independent of `understanding_failure`; the core's own question for a callback number counts as understanding, and with nobody to reach and no number known the core asks for one first; the callback keeps the reason `not_understood` (`ConversationState.callback_reason`; Codex PR #437, two P1). Four new tests, red before their fix; the callback-number test now moves a slot each turn. On `UD-IQ3_XXS` the case passed 5 of 5 (`main` 0 of 5); docs/05 §2 and docs/18 §5 synced |
 | 30.10.2026 | **German tablet text is an exception of the language rule** (Maxi, CLAUDE.md §8, AGENTS.md): the tablet was German throughout, the rule did not say so, and Codex flagged the bridge banner of #440 for it |
@@ -656,6 +660,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.52 · 30.10.2026:** #441: one counting row per date in special_days (migration 017)
+- **v2.11.51 · 30.10.2026:** Handover: #437 and T-9.5 merged, #441 next on its branch, migration 015 not yet on the workbench
 - **v2.11.50 · 30.10.2026:** Rules: the tablet's text is German, Maxi confirmed the bridge banner for the team
 - **v2.11.49 · 30.10.2026:** T-8.3 done: the print bridge's heartbeat, banner and alarm (migration 016)
 - **v2.11.48 · 30.10.2026:** T-9.5: statutory holidays as suggestions the team answers on the tablet (migration 015)

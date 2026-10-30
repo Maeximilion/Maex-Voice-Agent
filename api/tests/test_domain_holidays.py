@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, NotFound
@@ -272,6 +273,51 @@ def test_an_answer_for_another_tenant_or_unknown_choice_is_refused(session, tena
         days.answer(session, tenant_id, row.id, "maybe")
     session.refresh(row)
     assert row.status == "suggested"
+
+
+def test_a_second_set_row_for_a_date_is_refused(session, tenant_id):
+    """One counting row per date (#441): with two, the hours would follow the
+    row read last and the seats the row read first."""
+    session.add(SpecialDay(tenant_id=tenant_id, date=ALL_SAINTS, closed=True))
+    session.commit()
+    session.add(
+        SpecialDay(tenant_id=tenant_id, date=ALL_SAINTS, like_weekday=days.SUNDAY)
+    )
+    with pytest.raises(IntegrityError):
+        session.commit()
+
+
+@pytest.mark.parametrize("choice", [days.LIKE, days.CLOSED])
+def test_an_answer_next_to_a_set_row_keeps_that_row(session, tenant_id, choice):
+    """A row set for the date after the suggestion was written (by SQL, the
+    drill) holds; the suggestion only stops asking (#441)."""
+    session.add(
+        SpecialDay(
+            tenant_id=tenant_id,
+            date=CORPUS_CHRISTI,
+            opens_at=time(18),
+            closes_at=time(20),
+        )
+    )
+    row = _suggested(session, tenant_id, CORPUS_CHRISTI)
+    days.answer(session, tenant_id, row.id, choice)
+    session.refresh(row)
+    assert row.status == "dismissed"
+    assert [
+        (r.closed, r.opens_at, r.like_weekday)
+        for r in _rows(session, tenant_id)
+        if r.status == "set"
+    ] == [(False, time(18), None)]
+    assert not get_service_status(
+        session, tenant_id, now=berlin(CORPUS_CHRISTI, 12)
+    ).is_open
+    assert get_service_status(
+        session, tenant_id, now=berlin(CORPUS_CHRISTI, 19)
+    ).is_open
+    entry = session.scalars(
+        select(AuditLog).where(AuditLog.action == days.ACTION_ANSWERED)
+    ).one()
+    assert (entry.payload["answer"], entry.payload["status"]) == (choice, "dismissed")
 
 
 # --- seats ----------------------------------------------------------------------

@@ -87,7 +87,7 @@
 - Jede Korrektur steht als `order.corrected` im `audit_log` mit Grund und vorher/nachher (ohne Name, Telefon, Hinweistext) - Rohstoff für die Genauigkeit (T-8.4).
 
 **Spalte 2 – Heute**
-- **Holiday suggestions (T-9.5, 30.10.2026)** above the reservations, only while one is open: one card per statutory holiday of the next 60 days (`service_config.holiday_region`), with date, name, "Vorschlag" and the line that the normal hours hold until an answer. Three buttons: „Wie Sonntag“ (the day takes Sunday's hours and seats), „Geschlossen“, „Normal geöffnet“ (the weekday's hours, never suggested again). No confirmation question (§1 rule 6); the answer is in `audit_log` (`special_day.answered`), another tablet sees it on its next load. The admin area „Zeiten“ (§4) takes the suggestions over once it exists
+- **Holiday suggestions (T-9.5, 30.10.2026)** above the reservations, only while one is open: one card per statutory holiday of the next 60 days (`service_config.holiday_region`), with date, name, "Vorschlag" and the line that the normal hours hold until an answer. Three buttons: „Wie Sonntag“ (the day takes Sunday's hours and seats), „Geschlossen“, „Normal geöffnet“ (the weekday's hours, never suggested again). No confirmation question (§1 rule 6); the answer is in `audit_log` (`special_day.answered`), another tablet sees it on its next load. A date that got a special day of its own after the suggestion was written keeps it: „Wie Sonntag“ and „Geschlossen“ then only remove the card (#441). The admin area „Zeiten“ (§4) takes the suggestions over once it exists
 - Reservierungen des Tages nach Uhrzeit, mit Personenzahl und Notiz
 - Laufende Bestellungen mit Zeitbalken
 - Überfällige Positionen wandern nach oben und werden orange

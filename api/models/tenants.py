@@ -272,6 +272,15 @@ class SpecialDay(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
             unique=True,
             postgresql_where=text("status <> 'set'"),
         ),
+        # One counting row per date: with two, the hours and the seats would
+        # follow row order (#441).
+        Index(
+            "uq_special_days_set",
+            "tenant_id",
+            "date",
+            unique=True,
+            postgresql_where=text("status = 'set'"),
+        ),
     )
 
     date: Mapped[date] = mapped_column(Date, nullable=False)

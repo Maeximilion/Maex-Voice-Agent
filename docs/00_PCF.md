@@ -482,6 +482,50 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 30.10.2026 - #437, T-9.5, #441 next
+Status: merged today #437 (a call that carries only noise goes to the team,
+        18701bb) and #439 (T-9.5, holiday suggestions, migration 015,
+        aa6b1fd). Both with green CI, a clean Codex review and the evals on
+        the exact head (cases 56/56, targets 1/29 as on main, number eval
+        249/249). Ultrareview of #439: no defect; its one real point, two
+        counting rows for one date in special_days, is issue #441. Not run:
+        the holiday card on a real tablet (route tests only), migration 015
+        on any database that holds data.
+Artifacts: api/domain/status/holidays.py, api/jobs/holidays.py,
+        db/migrations/versions/015_holiday_suggestions.py, the card
+        fragments/feiertage.html; branch fix/441-special-days-one-set-row
+        carries this handover and nothing else yet.
+Decisions: T-9.5 choices (a) to (e) under Made Assumptions in
+        docs/01_STATUS.md, awaiting Maxi: Sunday's hours as the proposal,
+        60 days ahead, statewide days only, the card above "Heute", the
+        state set by SQL until the admin area exists. Migration 015 was not
+        applied to the workbench database: another session (T-8.3, #440 with
+        migration 016) was working at the same time, and the database there
+        is at 012, so it takes 013 to 015 plus a rebuild of api and
+        dispatcher in one go.
+Gate: G0 open, unchanged by this session.
+Open: 1. #441 on this branch (Opus 5.5 at xhigh, migration 016 or 017,
+        whichever #440 leaves free): a partial unique index on special_days
+        (tenant_id, date) WHERE status = 'set' that first reports duplicates
+        and stops; answer() turns a suggestion into dismissed when a set row
+        for the date exists; tests and migration up and down.
+      2. Workbench, when no other session uses the stack in ~/Maex-Voice-Agent:
+        backup (bash scripts/backup.sh --label before_migration_015), then
+        alembic upgrade head, docker compose up -d --build api dispatcher,
+        and with Maxi's word UPDATE service_config SET holiday_region = 'BW'
+        (the state the module doc named before T-9.5); the dispatcher writes
+        the suggestions within six hours, python -m api.jobs.holidays at once.
+      3. Maxi: the T-9.5 assumptions; whether the card should also live in
+        the admin area "Zeiten" once it exists.
+Lessons: like_weekday 0 is Monday, so never `x or SUNDAY` on it (fixed
+        before the merge, test added). Docker Desktop was closed at the
+        session start: start it from WSL with powershell.exe, the engine
+        answers after about a minute. A root-owned evals/reports folder left
+        by an earlier session blocked `git worktree remove`; a throwaway
+        alpine container removed it.
+```
+
+```text
 ## Handover 26.10.2026 - T-11.1 redesign built on #368
 Status: the redesign decided by Maxi is built on #368 and pushed. The core
         reads the caller's allergy from the guest's sentence every turn into
