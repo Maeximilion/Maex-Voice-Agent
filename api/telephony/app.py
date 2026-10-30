@@ -281,6 +281,14 @@ class Voice:
         self._silence_seconds = silence_seconds
         self._lock = threading.Lock()
         self._endings: OrderedDict[str, str] = OrderedDict()
+        self._asterisk_at: float | None = None
+
+    def asterisk_alive(self) -> None:
+        self._asterisk_at = time.monotonic()
+
+    def asterisk_seen(self) -> float | None:
+        at = self._asterisk_at
+        return None if at is None else time.monotonic() - at
 
     def authorized(self, header: str | None) -> bool:
         """Basic credentials whose password is the media token

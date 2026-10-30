@@ -12,7 +12,10 @@
   callback card is written; "noted" once it is, "none" otherwise, and the
   dialplan tells the caller which (docs/20 §5, T-10.8).
 
-All three want the media token as the password of Basic credentials. A call is named
+- `/asterisk/alive`: Asterisk's healthcheck, while it is registered, and
+  `/asterisk/seen`, how long ago, for the monitor (T-8.3, api/jobs/monitor.py).
+
+All but `/asterisk/seen` and `/health` want the media token as the password of Basic credentials. A call is named
 by the id of the caller's channel (`${UNIQUEID}`): the dialplan hands it to the
 media channel as an inherited variable, which `MEDIA_START` reports
 (`adapters.asterisk.call_of`), and asks by it.
@@ -51,6 +54,23 @@ router = APIRouter()
 @router.get("/health", response_class=PlainTextResponse)
 def health() -> str:
     return "ok"
+
+
+@router.post("/asterisk/alive", response_class=PlainTextResponse)
+def asterisk_alive(request: Request) -> str:
+    """Asterisk's healthcheck, while it is registered (T-8.3): it takes no
+    connection of its own, so the monitor cannot ask it directly."""
+    voice = _voice(request.app)
+    if not voice.authorized(request.headers.get("authorization")):
+        raise HTTPException(status_code=401)
+    voice.asterisk_alive()
+    return "ok"
+
+
+@router.get("/asterisk/seen")
+def asterisk_seen(request: Request) -> dict[str, float | None]:
+    """Seconds since then, for the monitor; a number, so open like /health."""
+    return {"seconds": _voice(request.app).asterisk_seen()}
 
 
 @router.get("/calls/{call_id}/ending", response_class=PlainTextResponse)
