@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="t d">
 <title id="t">MÆX banner</title>
-<desc id="d">MÆX, Maex Voice Agent, an AI phone agent for restaurants. Version 0.0.1, Stage 0 (Foundation), about 3300 tests, latest real-model eval 32 of 56 on 2026-10-30.</desc>
+<desc id="d">MÆX, Maex Voice Agent, an AI phone agent for restaurants. Version 0.0.1, Stage 0 (Foundation), about 3300 tests, latest real-model eval 33 of 56 on 2026-10-30.</desc>
 <style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}.wave{stroke-dasharray:14 10;animation:flow 3s linear infinite}@keyframes flow{to{stroke-dashoffset:-48}}@media (prefers-reduced-motion:reduce){.wave{animation:none}}</style>
 <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
 <rect width="1200" height="440" rx="24" fill="#0D0819"/>
@@ -38,7 +38,7 @@
 <text x="1116" y="102" font-size="14" fill="#A89CCB" text-anchor="end">2026-10-30</text>
 <line x1="804" y1="118" x2="1116" y2="118" stroke="#2B2148" stroke-dasharray="4 6"/>
 <text x="804" y="156" font-size="16" fill="#A89CCB">eval, real model</text>
-<text x="1116" y="156" font-size="22" fill="#E8FF2E" text-anchor="end" font-weight="700">32/56</text>
+<text x="1116" y="156" font-size="22" fill="#E8FF2E" text-anchor="end" font-weight="700">33/56</text>
 <text x="804" y="196" font-size="16" fill="#A89CCB">version</text>
 <text x="1116" y="196" font-size="17" fill="#F1ECFF" text-anchor="end" font-weight="700">0.0.1</text>
 <text x="804" y="236" font-size="16" fill="#A89CCB">stage</text>
