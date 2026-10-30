@@ -9,10 +9,12 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     SmallInteger,
     Text,
     Time,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -25,6 +27,15 @@ CALL_MODES = ("shadow", "overflow", "primary", "paused")
 # `domain/status/mode.py` reads as the caution order of overlapping windows.
 WINDOW_MODES = ("shadow", "overflow", "primary")
 SERVICES = ("dinein", "pickup", "delivery")
+# A row of `special_days` counts only when `set`. The holiday job writes
+# `suggested`; the team's answer on the tablet turns it into `set`, or into
+# `dismissed`, which keeps the job from suggesting that date again (T-9.5).
+SPECIAL_DAY_STATUSES = ("set", "suggested", "dismissed")
+# German states by their ISO 3166-2 code without "DE-" (T-9.5, migration 015).
+HOLIDAY_REGIONS = (
+    *("BB", "BE", "BW", "BY", "HB", "HE", "HH", "MV"),
+    *("NI", "NW", "RP", "SH", "SL", "SN", "ST", "TH"),
+)
 
 
 def _in(column: str, values: tuple[str, ...], name: str) -> CheckConstraint:
@@ -85,6 +96,7 @@ class ServiceConfig(Timestamps, Base):
             r"privacy_notice_address ~ '\S'",
             name="ck_service_config_privacy_notice_address",
         ),
+        _in("holiday_region", HOLIDAY_REGIONS, "ck_service_config_holiday_region"),
     )
 
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -165,6 +177,9 @@ class ServiceConfig(Timestamps, Base):
     call_mode_chosen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True)
     )
+    # The state whose statutory holidays the job suggests (T-9.5, migration
+    # 015); none until the restaurant names it, and then nothing is suggested.
+    holiday_region: Mapped[str | None] = mapped_column(Text)
 
 
 class CallLimitWindow(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
@@ -222,6 +237,28 @@ class OpeningHours(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
 
 class SpecialDay(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     __tablename__ = "special_days"
+    __table_args__ = (
+        _in("status", SPECIAL_DAY_STATUSES, "ck_special_days_status"),
+        CheckConstraint(
+            "like_weekday BETWEEN 0 AND 6", name="ck_special_days_like_weekday"
+        ),
+        # A day like another weekday is neither closed nor open at hours of
+        # its own: one meaning per row.
+        CheckConstraint(
+            "like_weekday IS NULL OR "
+            "(NOT closed AND opens_at IS NULL AND closes_at IS NULL)",
+            name="ck_special_days_like_weekday_alone",
+        ),
+        # One suggestion or dismissal per date: two passes of the holiday job
+        # at once write one row (`domain/status/holidays.py`).
+        Index(
+            "uq_special_days_suggestion",
+            "tenant_id",
+            "date",
+            unique=True,
+            postgresql_where=text("status <> 'set'"),
+        ),
+    )
 
     date: Mapped[date] = mapped_column(Date, nullable=False)
     closed: Mapped[bool] = mapped_column(
@@ -230,6 +267,10 @@ class SpecialDay(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     opens_at: Mapped[time | None] = mapped_column(Time)
     closes_at: Mapped[time | None] = mapped_column(Time)
     note: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="set")
+    # The hours and seats of this weekday hold on the date ("wie Sonntag"),
+    # Monday is 0 (T-9.5, migration 015).
+    like_weekday: Mapped[int | None] = mapped_column(SmallInteger)
 
 
 class Capacity(UUIDPrimaryKey, TenantScoped, Timestamps, Base):

@@ -54,6 +54,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 - `hours.py` — ist offen? nächste Öffnung? je Service
 - `config.py` — `service_config` lesen und schreiben, mit `audit_log`
 - `mode.py` — which call mode holds now: the team's choice, weekly windows, the emergency stop (T-8.1)
+- `holidays.py` — the statewide statutory holidays of the 16 states (Easter by the Gregorian formula), suggested in `special_days` and answered by the team: like Sunday, closed, or the weekday's hours (T-9.5). A suggestion counts for nothing until then
 - Tests: Mitternacht, Sondertag schlägt Wochentag, Sommerzeit-Umstellung
 
 ### `domain/menu/`
@@ -186,7 +187,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `menu_diff.py` — Abgleich Kasse gegen Agent-DB
 - `daily_report.py` — daily report as an outbox event `daily.report`. Built with T-11.6: from `REGISTER_REPORT_HOUR` local time, once per business day, how many orders of earlier days nobody marked „In Kasse eingegeben“ (L18), none when all are marked, and again an hour after one the dispatcher gave up on; `cold_path.py` runs it in a thread of its own every five minutes. The day's key figures follow with T-8.3
 - `monitor.py` — alarms and the day report for the operator (T-8.3, docs/13 §5): every 5 minutes in `cold_path.py`, per tenant, the model cost of the business day above `ALARM_COST_PER_DAY_CENTS`, at least `ALARM_ERROR_CALLS_PER_HOUR` error calls in the last hour, events to n8n that failed in the last hour (kitchen slips go to the print bridge and are left out), and from `MONITOR_REPORT_HOUR` the previous business day in one line. Posted straight to the push server, topic `ops`, not through n8n (n8n down is one of the outages it reports); the audit log (`monitor.alarm`) remembers what was sent, a failed post goes out on the next pass
-- `holidays.py` — Feiertage Baden-Württemberg jährlich in `special_days` vorschlagen
+- `holidays.py` — holiday suggestions (T-9.5): every `INTERVAL_SECONDS` in `cold_path.py`, per tenant with `service_config.holiday_region`, the holidays of the next 60 days without a row in `special_days` as `suggested` (`domain/status/holidays.py`); `python -m api.jobs.holidays` runs one pass by hand
 
 ### `gui/`
 - `router.py` — Seiten und HTMX-Fragmente

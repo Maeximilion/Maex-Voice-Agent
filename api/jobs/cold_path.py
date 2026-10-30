@@ -1,6 +1,7 @@
 """Cold-path process: the dispatcher towards n8n, the watchdog for the kitchen slip,
 the deletion job (api/jobs/retention.py), the daily report
-(api/jobs/daily_report.py) and the operator's alarms (api/jobs/monitor.py).
+(api/jobs/daily_report.py), the operator's alarms (api/jobs/monitor.py) and the
+holiday suggestions (api/jobs/holidays.py).
 
 `python -m api.jobs.cold_path` (docker-compose, service `dispatcher`). The watchdog
 belongs to the domain logic (domain/ordering/handover.py), the dispatcher to events/;
@@ -26,7 +27,7 @@ from api.core.logging import configure_logging, error_text, get_logger, log
 from api.db import SessionLocal
 from api.domain.ordering.handover import sweep
 from api.events.dispatcher import run_forever, send_to_n8n
-from api.jobs import daily_report, monitor
+from api.jobs import daily_report, holidays, monitor
 from api.jobs.retention import purge
 
 logger = get_logger("api.jobs.cold_path")
@@ -87,6 +88,13 @@ if __name__ == "__main__":
         args=(threading.Event(), monitor.INTERVAL_SECONDS),
         kwargs={"job": monitor.check, "label": "Monitor"},
         name="monitor",
+        daemon=True,
+    ).start()
+    threading.Thread(
+        target=watch_forever,
+        args=(threading.Event(), holidays.INTERVAL_SECONDS),
+        kwargs={"job": holidays.suggest_all, "label": "Holidays"},
+        name="holidays",
         daemon=True,
     ).start()
     run_forever(send_to_n8n)
