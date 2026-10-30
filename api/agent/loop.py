@@ -523,6 +523,21 @@ class ConversationLoop:
                     return self._allergens_to_team(
                         state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                     )
+                refused = guards.unread_allergy_question(called, user_text)
+                if refused is not None:
+                    # Back to the model once, it may well find the dish. A
+                    # second sentence without a look at the menu goes to the
+                    # team: the guest's question must not stay unanswered.
+                    log_refused(
+                        self._session, state.call_id, state.tenant_id, SAY, refused
+                    )
+                    if SAY in called:
+                        return self._allergens_to_team(
+                            state, lead=SAY_ALLERGENS_BEYOND, table=open_table
+                        )
+                    called.append(SAY)
+                    pending_input = _tool_result_as_input(SAY, refused, zone)
+                    continue
                 refused = guards.false_booking(state, say)
                 if refused is not None:
                     # Rule 3 for what the guest hears: "Ihre Abholung ist

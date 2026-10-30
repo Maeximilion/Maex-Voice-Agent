@@ -235,6 +235,71 @@ def test_a_lookup_on_a_question_without_a_mark_goes_through(session, known_tenan
     assert result.say[0] == SAY_ALLERGENS_UNKNOWN
 
 
+def test_a_model_that_talks_past_the_question_is_sent_to_the_menu(
+    session, known_tenant
+):
+    """`allergie_0002` in a full run: the model asked for the number without
+    any search, although the guest named the dish. Its sentence goes back once
+    (PR #445, the trace of 30.10.2026)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session, state, ASKED, LLMTurn(say="Welche Nummer hat das Gericht?"), searches()
+    )
+
+    assert len(llm.calls) == 2
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_a_model_that_looks_up_after_that_answers_from_the_menu(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session,
+        state,
+        ASKED,
+        LLMTurn(say="Welche Nummer hat das Gericht?"),
+        searches("Pho Bo"),
+        details(session, known_tenant, "13"),
+    )
+
+    assert len(llm.calls) == 3
+    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+
+
+def test_a_model_that_talks_past_it_twice_hands_over(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session,
+        state,
+        ASKED,
+        LLMTurn(say="Welche Nummer hat das Gericht?"),
+        LLMTurn(say="Nennen Sie mir bitte die Nummer."),
+    )
+
+    assert len(llm.calls) == 2
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_a_model_may_talk_on_a_sentence_that_asks_no_allergy_question(
+    session, known_tenant
+):
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session,
+        state,
+        "Haben Sie heute noch auf? Ich habe eine Erdnussallergie.",
+        LLMTurn(say="Ja, bis 22 Uhr."),
+    )
+
+    assert len(llm.calls) == 1
+    assert result.say == ["Ja, bis 22 Uhr."]
+
+
 def test_the_card_of_that_question_leaves_out_what_was_searched(session, known_tenant):
     """The search words can hold the guest's allergy, and the card never does
     (L13)."""
