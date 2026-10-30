@@ -12,11 +12,11 @@ it. No personal data. Nothing is backfilled: until its first poll a bridge that
 is set up counts as never seen.
 
 On a database that holds a restaurant's data: backup first, with
-`bash scripts/backup.sh --label before_migration_015` (CLAUDE.md §8, docs/13
+`bash scripts/backup.sh --label before_migration_016` (CLAUDE.md §8, docs/13
 §4). The downgrade drops the table; the next poll writes the row again.
 
-Revision: 015
-Revises: 014
+Revision: 016
+Revises: 015
 Created: 2026-10-30
 """
 
@@ -25,8 +25,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "015"
-down_revision: str | None = "014"
+revision: str = "016"
+down_revision: str | None = "015"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

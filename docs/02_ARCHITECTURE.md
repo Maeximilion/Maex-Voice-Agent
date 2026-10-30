@@ -139,12 +139,12 @@ A call that reaches the agent in `shadow` or `paused` anyway is transferred to t
 | n8n down | `confirm` gelingt trotzdem, Ereignis landet in der Warteschlange und wird nachgeliefert; GUI zeigt die Bestellung sofort | Alarm: events that failed in the last hour, pushed to the operator's topic `ops` without n8n (`jobs/monitor.py`, T-8.3) |
 | Internet weg | Telefon klingelt beim Team (test phase: the router; operation: the trunk's forwarding rules; docs/20 §5, target, not yet measured) | offline sichtbar |
 | Bondrucker aus, Papier leer | Brücke meldet den Fehler, Karte sofort rot, Bon wird mit Backoff wiederholt, „Nochmal senden" | Alarm, Team am Tablet |
-| Druckbrücke oder Internet im Lokal weg | Bon wartet in der Outbox; nach 60 s ohne Abholung Karte rot und `order.handover_failed` an n8n | Alarm, Team am Tablet |
+| Druckbrücke oder Internet im Lokal weg | Bon wartet in der Outbox; nach 60 s ohne Abholung Karte rot und `order.handover_failed` an n8n. Also without an order: its poll is the heartbeat, after `ALARM_BRIDGE_SILENT_MINUTES` while pickup or delivery is open a red banner in the header and a push (`domain/status/bridge.py`, T-8.3) | Alarm, Team am Tablet |
 | Kassenanbindung defekt | Bestellung bleibt `confirmed`, Übergabe wird wiederholt, GUI markiert sie rot; die Druckbrücke druckt den Eingabezettel auf den Haupt-Bondrucker (§2a) | Team am Tablet und an der Kasse |
 
 **Grundsatz:** Jeder Ausfall endet beim Menschen, nie beim Kunden im Nichts.
 
-**Alarms, as built (T-8.3 part 1, 29.10.2026):** `api/jobs/monitor.py` in the dispatcher pushes to the operator, topic `ops` on the push server, straight and not through n8n: the day's model cost above a limit, error calls in the last hour from a limit on, events to n8n that failed in the last hour (not kitchen slips), and a day report every morning (docs/13 §5). Since part 2 (30.10.2026) also `voice` not answering, Asterisk not registered and a backup overdue. Not built yet: the print bridge's heartbeat (T-8.3, it needs a migration); the API or the whole server down needs the check from outside (T-9.4), because the dispatcher runs on the same machine.
+**Alarms, as built (T-8.3 part 1, 29.10.2026):** `api/jobs/monitor.py` in the dispatcher pushes to the operator, topic `ops` on the push server, straight and not through n8n: the day's model cost above a limit, error calls in the last hour from a limit on, events to n8n that failed in the last hour (not kitchen slips), and a day report every morning (docs/13 §5). Since part 2 (30.10.2026) also `voice` not answering, Asterisk not registered and a backup overdue. The print bridge's silence also pushes while pickup or delivery is open. The API or the whole server down needs the check from outside (T-9.4), because the dispatcher runs on the same machine.
 
 ---
 

@@ -25,7 +25,7 @@ from api.core import time as clock
 from api.core.auth import require_gui_proxy
 from api.core.errors import AppError
 from api.core.logging import get_logger
-from api.core.time import to_local
+from api.core.time import business_day, to_local
 from api.db import SessionLocal, get_db
 from api.domain.callbacks import list_open, mark_done
 from api.domain.callbacks.board import NUMBER_OTHER, NUMBER_WITHHELD
@@ -33,8 +33,10 @@ from api.domain.menu import sold_out as dishes
 from api.domain.ordering import board as order_board
 from api.domain.ordering import correction
 from api.domain.reservations import list_today
+from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status import bridge
 from api.domain.status import config as switches
+from api.domain.status import holidays as holiday_days
 from api.domain.status.mode import CAUTION, mode_at
 from api.gui import orders_view
 from api.gui.sse import today_event_stream
@@ -140,6 +142,20 @@ def _callback_rows(session: Session, tenant: Tenant) -> list[dict]:
             }
         )
     return rows
+
+
+def _holiday_rows(session: Session, tenant: Tenant) -> list[dict]:
+    """Holidays the team has not answered yet (T-9.5), by date."""
+    today = business_day(tz_name=tenant.timezone)
+    return [
+        {
+            "id": str(s.id),
+            "date": f"{WEEKDAYS[s.date.weekday()]}, {s.date:%d.%m.%Y}",
+            "name": s.name,
+            "like": WEEKDAYS[s.like_weekday],
+        }
+        for s in holiday_days.open_suggestions(session, tenant.id, today)
+    ]
 
 
 def _order_rows(session: Session, tenant: Tenant) -> list[dict]:
@@ -279,6 +295,7 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
             "today": _today_rows(session, tenant),
             "callbacks": _callback_rows(session, tenant),
             "orders": _order_rows(session, tenant),
+            "holidays": _holiday_rows(session, tenant),
             **_header(session, tenant),
         }
     return _page_response(
@@ -440,6 +457,49 @@ def rueckruf_erledigt(
         request,
         "fragments/rueckrufe.html",
         {"callbacks": _callback_rows(session, tenant)},
+    )
+
+
+# --- Holiday suggestions (T-9.5) -----------------------------------------------------
+
+# The buttons of a suggestion -> the answer in domain/status/holidays.py.
+HOLIDAY_ANSWERS = {
+    "wie": holiday_days.LIKE,
+    "geschlossen": holiday_days.CLOSED,
+    "normal": holiday_days.OPEN,
+}
+
+
+@router.post(
+    "/feiertage/{special_day_id}/{choice}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def feiertag(
+    request: Request,
+    special_day_id: uuid.UUID,
+    choice: str,
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The team's answer: the card goes, the list comes back fresh. A
+    suggestion another tablet answered first is no error for the team."""
+    if choice not in HOLIDAY_ANSWERS:
+        raise HTTPException(status_code=404)
+    tenant = _tenant(session)
+    if tenant is None:
+        return templates.TemplateResponse(
+            request, "fragments/feiertage.html", {"holiday_problem": NO_TENANT}, 503
+        )
+    try:
+        holiday_days.answer(session, tenant.id, special_day_id, HOLIDAY_ANSWERS[choice])
+    except AppError as exc:
+        session.rollback()
+        logger.info("Holiday suggestion not answered: %s", exc.message)
+    return templates.TemplateResponse(
+        request,
+        "fragments/feiertage.html",
+        {"holidays": _holiday_rows(session, tenant)},
     )
 
 

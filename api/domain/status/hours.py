@@ -37,6 +37,8 @@ def load_hours(
     special_rows = session.scalars(
         select(SpecialDay).where(
             SpecialDay.tenant_id == tenant_id,
+            # A suggested holiday counts once the team said so (T-9.5).
+            SpecialDay.status == "set",
             SpecialDay.date >= start - timedelta(days=1),
             SpecialDay.date <= start + timedelta(days=days),
         )
@@ -53,17 +55,23 @@ def _window(day: date, opens: time, closes: time, zone: ZoneInfo) -> Window:
 def windows_for_day(
     data: HoursData, day: date, service: str, zone: ZoneInfo
 ) -> list[Window]:
-    """Sondertag schlägt Wochentag: geschlossen heißt keine Fenster, Sonderzeiten gelten für alle Services."""
+    """Sondertag schlägt Wochentag: geschlossen heißt keine Fenster, Sonderzeiten gelten für alle Services.
+
+    A special day like another weekday ("wie Sonntag", T-9.5) takes that
+    weekday's windows of the service, on its own date."""
     special = data.special.get(day)
+    weekday = day.weekday()
     if special is not None:
         if special.closed:
             return []
         if special.opens_at is not None and special.closes_at is not None:
             return [_window(day, special.opens_at, special.closes_at, zone)]
+        if special.like_weekday is not None:
+            weekday = special.like_weekday
     return sorted(
         _window(day, row.opens_at, row.closes_at, zone)
         for row in data.regular
-        if row.service == service and row.weekday == day.weekday()
+        if row.service == service and row.weekday == weekday
     )
 
 

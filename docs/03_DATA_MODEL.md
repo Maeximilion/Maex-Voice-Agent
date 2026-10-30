@@ -49,6 +49,7 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | overflow_needs_approval | BOOL, default true | whether an order of the agent in `overflow` waits for "Passt" on the tablet before a slip prints (T-8.2, migration 014). The approval step of stage 5; the restaurant sets it false once G5 is passed (docs/00), by SQL until an admin page exists. False sends an overflow order to the kitchen as in `primary`; `order_approval_above_cents` still holds an order in every mode, and `shadow` and `paused` hold every order. Read by `confirm` |
 | privacy_notice_address | TEXT NULL, not white space only | where the restaurant's privacy notice is, written the way a caller should hear it (`example.com/datenschutz` is only the repository placeholder); T-11.5, migration 009, docs/09 §1 L4. The phone greeting names it (`telephony/handler.py` `greeting`), read with the routing at the start of every call (`domain/calls/routing.py`); a change applies from the next call. Empty on every existing row: without it the greeting leaves the sentence out, and the duty of L4 stays open. The seed writes `PRIVACY_NOTICE_ADDRESS` into a new tenant; an existing one gets it by `UPDATE service_config SET privacy_notice_address = '…'` |
 | max_concurrent_calls | INT ≥ 1 | how many calls the agent takes at once outside a window of `call_limit_windows`; default 1, the test phase runs with one (D16, T-10.9, migration 011). A call above the limit rings the team; the phone line counts its own open calls in memory, so a call row a crash left open never keeps the agent off |
+| holiday_region | TEXT NULL, one of the 16 state codes (`BW`, `BY`, …, ISO 3166-2 without `DE-`) | the state whose statewide statutory holidays the job suggests on the tablet (T-9.5, migration 015, `domain/status/holidays.py`); none until the restaurant names it, by SQL until the admin page exists, and then nothing is suggested |
 
 ### `call_limit_windows`
 
@@ -71,6 +72,14 @@ A weekly window with a call mode of its own, say the agent answers on Friday eve
 | weekday | SMALLINT 0 to 6 | Monday is 0, in the restaurant's clock |
 | starts_at, ends_at | TIME, starts_at < ends_at | the window; the end is not in it, and one across midnight is two rows. The second row begins a window of its own at 00:00, so a tap made during the first holds only until midnight |
 | call_mode | TEXT | `shadow`, `overflow` or `primary`; never `paused`, the emergency stop is a button. Where windows overlap, the most cautious mode counts (`shadow` before `overflow` before `primary`) |
+
+### `bridge_heartbeats`
+When the print bridge last polled, one row per tenant (T-8.3, migration 016, `domain/status/bridge.py`). A table of its own: the poll comes every 2 s, written at most every 30 s, and a write to `service_config` would move the `updated_at` the header's token reads. No personal data, nothing to delete.
+
+| Field | Type | Note |
+|---|---|---|
+| tenant_id | UUID PK FK | |
+| seen_at | TIMESTAMPTZ | the last poll, written with the claim |
 
 ### `opening_hours`
 | Feld | Typ | Bemerkung |
@@ -95,6 +104,10 @@ Feiertage, Urlaub, Sonderzeiten. Schlägt `opening_hours` für dieses Datum.
 | closed | BOOL | |
 | opens_at / closes_at | TIME NULL | nur wenn `closed = false` |
 | note | TEXT | erscheint in der GUI |
+| status | TEXT, default `set` | `set` counts; `suggested` is a statutory holiday the job wrote and counts for nothing until the team answers on the tablet; `dismissed` keeps the weekday's hours and stops the job from suggesting the date again (T-9.5, migration 015). `domain/status/hours.py` and the seats read `set` rows only |
+| like_weekday | SMALLINT 0 to 6 NULL | the hours and the seats of that weekday hold on the date ("wie Sonntag", Monday is 0); never together with `closed` or hours of its own. A suggestion proposes Sunday (6) |
+
+One suggestion or dismissal per date (`uq_special_days_suggestion`, partial unique index on `status <> 'set'`): two passes of the job at once write one row.
 
 ### `capacity`
 Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
@@ -400,5 +413,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 012 | `orders.register_entered_at`: the mark that the team typed an order into the register (T-11.6, L18); no backfill, so every older order counts as not typed in; the downgrade drops the column with every mark |
 | 013 | `service_config.call_mode_chosen_at` and `call_mode_windows`: the mode by weekly windows and the time of the team's last tap (T-8.1); no window and no tap backfilled; the downgrade drops both with every window set since, `call_mode` stays |
 | 014 | `service_config.overflow_needs_approval`: the approval step of `overflow` can be switched off (T-8.2); true for every existing row, so nothing changes until the restaurant sets it; the downgrade drops the column and brings the step back |
+| 015 | `special_days.status` and `like_weekday`, `uq_special_days_suggestion`, `service_config.holiday_region`: statutory holidays as suggestions the team answers (T-9.5); every existing special day becomes `set`, nothing changes; downgrade deletes suggestions and dismissals, a day "like a weekday" keeps its own weekday, the region goes |
+| 016 | `bridge_heartbeats`: the time of the print bridge's last poll (T-8.3); nothing backfilled, the downgrade drops the table and the next poll writes it again |
 | planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
 | planned, next free number | `eval_cases`, `eval_runs` |

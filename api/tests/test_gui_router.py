@@ -784,3 +784,76 @@ def test_the_header_names_the_day_of_a_silence_from_yesterday(
     assert f"seit {last.astimezone(BERLIN):%d.%m. %H:%M}" in (
         client.get("/gui/fragments/kopfzeile").text
     )
+
+
+# --- holiday suggestions (T-9.5) ----------------------------------------------
+
+
+def feiertag(engine, tenant_id, *, days_ahead=10, status="suggested"):
+    from api.models import SpecialDay
+
+    day = business_day(tz_name="Europe/Berlin") + timedelta(days=days_ahead)
+    with Session(engine) as s:
+        row = SpecialDay(
+            tenant_id=tenant_id,
+            date=day,
+            note="Allerheiligen",
+            status=status,
+            like_weekday=6,
+        )
+        s.add(row)
+        s.commit()
+        return row.id, day
+
+
+def test_ein_feiertagsvorschlag_steht_mit_drei_antworten_auf_der_seite(
+    client, engine, tenant_id
+):
+    sid, _ = feiertag(engine, tenant_id)
+    feiertag(engine, tenant_id, days_ahead=-1)  # past: no card
+
+    body = client.get("/gui").text
+
+    assert body.count("Allerheiligen") == 1
+    assert "Wie Sonntag behandeln?" in body
+    for choice in ("wie", "geschlossen", "normal"):
+        assert f"/gui/feiertage/{sid}/{choice}" in body
+
+
+def test_ohne_vorschlag_bleibt_der_kasten_leer(client, tenant_id):
+    assert "Feiertage" not in client.get("/gui").text
+
+
+def test_wie_sonntag_nimmt_die_karte_weg_und_gilt(client, engine, tenant_id):
+    from api.models import SpecialDay
+
+    sid, _ = feiertag(engine, tenant_id)
+
+    response = client.post(f"/gui/feiertage/{sid}/wie", headers=HX)
+
+    assert response.status_code == 200
+    assert "Allerheiligen" not in response.text
+    with Session(engine) as s:
+        row = s.get(SpecialDay, sid)
+        assert (row.status, row.like_weekday, row.closed) == ("set", 6, False)
+
+
+def test_eine_antwort_ohne_hx_request_ist_verboten(client, engine, tenant_id):
+    sid, _ = feiertag(engine, tenant_id)
+
+    assert client.post(f"/gui/feiertage/{sid}/geschlossen").status_code == 403
+    assert "Allerheiligen" in client.get("/gui").text
+
+
+def test_eine_unbekannte_antwort_ist_404_und_ein_alter_vorschlag_kein_fehler(
+    client, engine, tenant_id
+):
+    sid, _ = feiertag(engine, tenant_id)
+    assert (
+        client.post(f"/gui/feiertage/{sid}/vielleicht", headers=HX).status_code == 404
+    )
+
+    unknown = client.post(f"/gui/feiertage/{uuid.uuid4()}/normal", headers=HX)
+
+    assert unknown.status_code == 200
+    assert "Allerheiligen" in unknown.text
