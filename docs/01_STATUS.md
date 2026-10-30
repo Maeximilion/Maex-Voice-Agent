@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 30.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.48
+> Status: 30.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.49
 
 ---
 
@@ -262,6 +262,8 @@ Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order
 
 Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: nine group issues per block (#5 through #13), 68 work packages as sub-issues, labels per stage. Status maintained here in docs, mirror follows.
 
+16. **Next, handover 30.10.2026 (`docs/00_PCF.md` §13):** #441 on `fix/441-special-days-one-set-row` (Opus 5.5 at `xhigh`): one counting row per date in `special_days`, a partial unique index that reports duplicates first, and `answer` dismisses a suggestion next to an existing row. Then on the workbench, when no other session uses its stack: backup, migrations 013 to 015, rebuild `api` and `dispatcher`, and with Maxi's word `holiday_region = 'BW'`. Open for Maxi: the T-9.5 assumptions under Made Assumptions
+
 ### In Chat (Maxi)
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
   - **Legal check answered 20.10.2026 (docs/09 §1). Maxi's paper duties, all before the first real call unless noted:** privacy notice on example.com, which also names the call log (L4, L15); record of processing (L9); DSFA v0.1 finished with this result and the officer's advice (L10, D9), with the balancing for caller recognition (L12); publish the officer's contact and report it to the authority (Art. 37(7)); a DPA per processor before its first key on real data, with zero retention and the transfer basis (L5, L6, L7, U8); information sheet for the team, with the written statement that recordings and the audit log do not rate staff (L11); before mode `shadow` with recording, the written consent of every team member who answers the phone, because the recordings of `shadow` are the team's own calls (L11); procedure documentation for the phone channel and the tax adviser's word on keeping agent order rows (L18); the team types every input slip into the register (L18, D2); the allergen list on the website (L17)
@@ -519,6 +521,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 30.10.2026 | **Handover: #437 and T-9.5 (#439) merged, #441 next.** Ultrareview of #439 found no defect; its one real point, two counting rows for one date in `special_days`, is #441, the next task on `fix/441-special-days-one-set-row`. Migration 015 is not applied to the workbench database (at 012); steps in `docs/00_PCF.md` §13 |
 | 30.10.2026 | **T-9.5 holiday suggestions (migration 015).** `domain/status/holidays.py`, `jobs/holidays.py`, `special_days.status` and `like_weekday`, `service_config.holiday_region`, the card in "Heute" with three answers; a suggestion changes no hours or seats until the team answers |
 | 30.10.2026 | **The core ends a noise-only call with the team (finding on #37, `eskalation_0016`).** `agent/loop.py` `run_turn`: six guest turns in a row without anything the core takes from the guest hand the call over (`UNHEARD_TURNS`), independent of `understanding_failure`; the core's own question for a callback number counts as understanding, and with nobody to reach and no number known the core asks for one first; the callback keeps the reason `not_understood` (`ConversationState.callback_reason`; Codex PR #437, two P1). Four new tests, red before their fix; the callback-number test now moves a slot each turn. On `UD-IQ3_XXS` the case passed 5 of 5 (`main` 0 of 5); docs/05 §2 and docs/18 §5 synced |
 | 30.10.2026 | **T-8.3 part 2 (#78): heartbeats of the voice layer and the backup alarm** (docs/13 §4, §5, docs/02 §5, docs/09 §2). With `VOICE_URL` set the monitor asks `voice`; Asterisk, which takes no connection of its own, reports from its healthcheck while registered (`POST /asterisk/alive` with the media token), read back at `/asterisk/seen`. `scripts/backup.sh` writes `backup.done` after a good run and the monitor misses it after `ALARM_BACKUP_HOURS`. Run: the healthcheck line in the real Asterisk image against a stand-in `voice`, and the backup tests with real gpg and `pg_dump`. Open: the print bridge's heartbeat, a migration of its own |
@@ -654,6 +657,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.49 · 30.10.2026:** Handover: #437 and T-9.5 merged, #441 next on its branch, migration 015 not yet on the workbench
 - **v2.11.48 · 30.10.2026:** T-9.5: statutory holidays as suggestions the team answers on the tablet (migration 015)
 - **v2.11.47 · 30.10.2026:** T-8.3 part 2: heartbeats of voice and Asterisk, backup alarm
 - **v2.11.46 · 30.10.2026:** eskalation_0016: a call that carries only noise goes to the team, counted by the core
