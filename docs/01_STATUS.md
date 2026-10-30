@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 30.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.56
+> Status: 31.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.57
 
 ---
 
@@ -264,7 +264,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 16. **Next, handover 30.10.2026 (`docs/00_PCF.md` §13):** #441 is merged (migration 017, `uq_special_days_set`). On the workbench, when no other session uses its stack: backup, migrations 013 to 017 (017 stops and lists the dates if two `set` rows share one), rebuild `api` and `dispatcher`, and with Maxi's word `holiday_region = 'BW'`. Open for Maxi: the T-9.5 assumptions under Made Assumptions
 
-17. **Security audit of T-10.1 and T-10.2 on `7768182`, 30.10.2026:** no P1, so T-10.2 runs on 31.10.2026 as planned. Six P2 and three P3 in the allergen guards ([#252](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6533664709)): findings 1 to 7 fixed on `fix/audit-allergen-guards`; left, both P3 and listed on #252: the test of a table that reaches the card through `allergen_claim` (8) and a surname that reads as an allergen (9). The tightened guard wants a real-model run for its false escalations (GPU, Maxi names the start)
+17. **Security audit of T-10.1 and T-10.2 on `52bf88c`, 31.10.2026, the diff of #447:** no P1, so T-10.2 runs today as planned. Nine P2 and three P3 in the allergen path ([#252](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6535938572)), most of them regressions of #447, and the same function drew findings three rounds in a row, so the patching stopped under the review loop limits (CLAUDE.md §6). Proposal, Maxi decides: `asks_about_allergies` back to the sentence level, `_OTHER_TOPIC`, `_asks_about_one` and `asks_on_its_own` deleted, the false escalations of an allergy in passing on the cost list of docs/05 §4; `read` stays. These findings are closed before a real guest calls, and the allergen P2s count as P1 in that pull request. Findings 8 and 9 of the audit on `7768182` stay open on #252. The tightened guard still wants a real-model run for its false escalations (GPU, Maxi names the start)
 
 ### In Chat (Maxi)
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
@@ -664,6 +664,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.57 · 31.10.2026:** Security audit of the #447 diff on 52bf88c: no P1, nine P2, redesign proposed to Maxi
 - **v2.11.56 · 30.10.2026:** Audit findings 1 to 7 fixed: one reading of an allergy question, only a lookup that worked counts as read
 - **v2.11.55 · 30.10.2026:** Security audit of T-10.1 and T-10.2 on 7768182: no P1, six P2, T-10.2 moved to 31.10.2026
 - **v2.11.54 · 30.10.2026:** allergie_0002: an allergy question on a dish not found goes to the team
