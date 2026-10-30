@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import and_, or_, select, text
 from sqlalchemy.orm import Session
 
-from api.models import Call, Capacity, Reservation
+from api.models import Call, Capacity, Reservation, SpecialDay
 
 
 @dataclass(frozen=True)
@@ -46,9 +46,21 @@ class CapacityWindow:
 def capacity_windows(
     session: Session, tenant_id: uuid.UUID, day: date, zone: ZoneInfo
 ) -> list[CapacityWindow]:
+    """The seats of the day's weekday, or of the weekday a special day is
+    like ("wie Sonntag", T-9.5): the same weekday as its hours
+    (`status.hours.windows_for_day`)."""
+    like = session.scalar(
+        select(SpecialDay.like_weekday).where(
+            SpecialDay.tenant_id == tenant_id,
+            SpecialDay.date == day,
+            SpecialDay.status == "set",
+            SpecialDay.like_weekday.is_not(None),
+        )
+    )
+    weekday = day.weekday() if like is None else like
     rows = session.scalars(
         select(Capacity).where(
-            Capacity.tenant_id == tenant_id, Capacity.weekday == day.weekday()
+            Capacity.tenant_id == tenant_id, Capacity.weekday == weekday
         )
     ).all()
     windows = []

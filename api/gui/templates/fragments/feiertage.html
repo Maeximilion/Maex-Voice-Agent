@@ -1,0 +1,28 @@
+{# Holiday suggestions (T-9.5, docs/06 §3): a statutory holiday changes no hours
+   until the team answers here. Replaced as a whole after an answer; empty when
+   nothing is open, so the column shows only "Heute". #}
+{% if holiday_problem %}
+<p class="empty">{{ holiday_problem }}</p>
+{% elif holidays %}
+<h2>Feiertage <span class="count">{{ holidays|length }}</span></h2>
+<ul class="cards">
+  {% for h in holidays %}
+  <li class="card holiday" data-id="{{ h.id }}">
+    <div class="res-head">
+      <b>{{ h.date }}</b>
+      <span class="badge warn">Vorschlag</span>
+    </div>
+    <div class="name">{{ h.name }}</div>
+    <p class="muted">Gesetzlicher Feiertag. Bis zu einer Antwort gelten die normalen Zeiten. Wie {{ h.like }} behandeln?</p>
+    <div class="cb-actions">
+      <button class="primary" hx-post="/gui/feiertage/{{ h.id }}/wie"
+              hx-target="#feiertage-liste" hx-swap="innerHTML">Wie {{ h.like }}</button>
+      <button hx-post="/gui/feiertage/{{ h.id }}/geschlossen"
+              hx-target="#feiertage-liste" hx-swap="innerHTML">Geschlossen</button>
+      <button hx-post="/gui/feiertage/{{ h.id }}/normal"
+              hx-target="#feiertage-liste" hx-swap="innerHTML">Normal ge&ouml;ffnet</button>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
