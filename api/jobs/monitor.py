@@ -9,6 +9,13 @@ looks at each tenant and pushes to the operator, never to the team:
 - events to n8n that failed in the last hour, at most once a clock hour
   (kitchen slips go to the print bridge, not to n8n, and are left out).
   n8n down shows up here first, so this push does not go through n8n;
+- with VOICE_URL set, `voice` not answering, or Asterisk not registered: its
+  healthcheck says so to `voice` while it is, and Asterisk takes no connection
+  of its own (api/telephony/router.py). At most once a clock hour. A restart
+  of `voice` in the moment of a pass reads as down;
+- no `backup.done` from scripts/backup.sh for ALARM_BACKUP_HOURS, once a day.
+  The row is missed rather than a failure reported, so a cron line that never
+  ran counts too;
 - from MONITOR_REPORT_HOUR local time, the previous business day in one line:
   calls by outcome, cost, orders, reservations. A day without a call is
   reported too: no call at all can mean the line is down.
@@ -41,6 +48,10 @@ INTERVAL_SECONDS = 300.0
 TOPIC = "ops"
 ACTOR = "monitor"
 ACTION = "monitor.alarm"
+# Written by scripts/backup.sh after a good run.
+BACKUP_DONE = "backup.done"
+# Its healthcheck runs every 10 s: this long without one is not a hiccup.
+ASTERISK_SILENT_SECONDS = 120.0
 PRIORITIES = {"normal": 3, "high": 4}
 # Outcomes in the day report, in this order; an unknown one is left out.
 OUTCOME_WORDS = {
@@ -76,7 +87,22 @@ def push(title: str, text: str, priority: str) -> None:
     response.raise_for_status()
 
 
-def check(session: Session, now: datetime, send: Send = push) -> int:
+def asterisk_seen() -> float | None:
+    """Seconds since Asterisk last said it is registered, None if it never did.
+    Raises when `voice` does not answer."""
+    response = httpx.get(
+        f"{settings.voice_url}/asterisk/seen", timeout=settings.n8n_timeout_seconds
+    )
+    response.raise_for_status()
+    return response.json()["seconds"]
+
+
+def check(
+    session: Session,
+    now: datetime,
+    send: Send = push,
+    probe: Callable[[], float | None] = asterisk_seen,
+) -> int:
     """One pass over every tenant. Commits; returns how many pushes went out.
 
     Each tenant runs in a savepoint of its own, as in api/jobs/daily_report.py:
@@ -86,7 +112,9 @@ def check(session: Session, now: datetime, send: Send = push) -> int:
     for tenant in session.scalars(select(Tenant).order_by(Tenant.id)).all():
         try:
             with session.begin_nested():
-                for kind, key, title, text, priority in _due(session, tenant, now):
+                for kind, key, title, text, priority in _due(
+                    session, tenant, now, probe
+                ):
                     if _sent(session, tenant, kind, key):
                         continue
                     try:
@@ -122,7 +150,12 @@ def check(session: Session, now: datetime, send: Send = push) -> int:
     return sent
 
 
-def _due(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
+def _due(
+    session: Session,
+    tenant: Tenant,
+    now: datetime,
+    probe: Callable[[], float | None],
+) -> list[Alarm]:
     hour = now.astimezone(UTC).strftime("%Y-%m-%dT%H")
     since = now - timedelta(hours=1)
     due: list[Alarm] = []
@@ -189,9 +222,62 @@ def _due(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
             )
         )
 
+    if settings.voice_url:
+        due.extend(_voice_layer(hour, probe))
+    if _backup_overdue(session, tenant, now):
+        due.append(
+            (
+                "backup",
+                day.isoformat(),
+                "Backup overdue",
+                f"No good backup for {settings.alarm_backup_hours} hours. "
+                "See backups/backup.log.",
+                "high",
+            )
+        )
+
     if to_local(now, tenant.timezone).time() >= time(settings.monitor_report_hour):
         due.append(_day_report(session, tenant, day - timedelta(days=1)))
     return due
+
+
+def _voice_layer(hour: str, probe: Callable[[], float | None]) -> list[Alarm]:
+    try:
+        seen = probe()
+    except (httpx.HTTPError, ValueError, KeyError) as exc:
+        return [
+            (
+                "voice_down",
+                hour,
+                "Voice layer not answering",
+                f"voice does not answer ({error_text(exc)}). Calls ring the team "
+                "through the dialplan or the router.",
+                "high",
+            )
+        ]
+    if seen is None or seen > ASTERISK_SILENT_SECONDS:
+        return [
+            (
+                "asterisk_down",
+                hour,
+                "Asterisk not registered",
+                "Asterisk has not reported a registration for over "
+                f"{int(ASTERISK_SILENT_SECONDS)} seconds. No call reaches the AI.",
+                "high",
+            )
+        ]
+    return []
+
+
+def _backup_overdue(session: Session, tenant: Tenant, now: datetime) -> bool:
+    if not settings.alarm_backup_hours:
+        return False
+    last = session.scalar(
+        select(func.max(AuditLog.at)).where(
+            AuditLog.tenant_id == tenant.id, AuditLog.action == BACKUP_DONE
+        )
+    )
+    return last is None or last < now - timedelta(hours=settings.alarm_backup_hours)
 
 
 def _day_report(session: Session, tenant: Tenant, day: date) -> Alarm:

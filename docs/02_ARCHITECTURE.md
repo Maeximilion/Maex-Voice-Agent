@@ -144,7 +144,7 @@ A call that reaches the agent in `shadow` or `paused` anyway is transferred to t
 
 **Grundsatz:** Jeder Ausfall endet beim Menschen, nie beim Kunden im Nichts.
 
-**Alarms, as built (T-8.3 part 1, 29.10.2026):** `api/jobs/monitor.py` in the dispatcher pushes to the operator, topic `ops` on the push server, straight and not through n8n: the day's model cost above a limit, error calls in the last hour from a limit on, events to n8n that failed in the last hour (not kitchen slips), and a day report every morning (docs/13 §5). Not built yet: the heartbeats of `voice`, Asterisk and the print bridge, and the backup alarm (T-8.3 part 2); the API or the whole server down needs the check from outside (T-9.4), because the dispatcher runs on the same machine.
+**Alarms, as built (T-8.3 part 1, 29.10.2026):** `api/jobs/monitor.py` in the dispatcher pushes to the operator, topic `ops` on the push server, straight and not through n8n: the day's model cost above a limit, error calls in the last hour from a limit on, events to n8n that failed in the last hour (not kitchen slips), and a day report every morning (docs/13 §5). Since part 2 (30.10.2026) also `voice` not answering, Asterisk not registered and a backup overdue. Not built yet: the print bridge's heartbeat (T-8.3, it needs a migration); the API or the whole server down needs the check from outside (T-9.4), because the dispatcher runs on the same machine.
 
 ---
 

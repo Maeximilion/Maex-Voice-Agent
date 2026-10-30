@@ -41,6 +41,9 @@ def tenant_id(session) -> uuid.UUID:
 def limits(monkeypatch):
     monkeypatch.setattr(settings, "alarm_cost_per_day_cents", 300)
     monkeypatch.setattr(settings, "alarm_error_calls_per_hour", 3)
+    # Off here: each group of tests below switches its own on.
+    monkeypatch.setattr(settings, "voice_url", "")
+    monkeypatch.setattr(settings, "alarm_backup_hours", 0)
     # Late, so the day report stays out of the alarm tests; its own tests set 8.
     monkeypatch.setattr(settings, "monitor_report_hour", 23)
 
@@ -327,6 +330,139 @@ def test_a_day_without_calls_still_reports(session, tenant_id, monkeypatch):
     """Silence is news too: no call at all can mean the line is down."""
     monkeypatch.setattr(settings, "monitor_report_hour", 8)
     assert run(session).titles() == ["Day report 2026-10-28"]
+
+
+# --- Heartbeats -------------------------------------------------------------
+
+
+def run_voice(session, seen, now=NOW) -> Pushes:
+    """A pass on a stack with `voice`; `seen` is what it answers, or an error."""
+
+    def probe() -> float | None:
+        if isinstance(seen, Exception):
+            raise seen
+        return seen
+
+    pushes = Pushes()
+    monitor.check(session, now, send=pushes, probe=probe)
+    return pushes
+
+
+@pytest.fixture
+def with_voice(monkeypatch):
+    monkeypatch.setattr(settings, "voice_url", "http://voice:8001")
+
+
+def test_a_voice_that_does_not_answer_alarms_once_an_hour(
+    session, tenant_id, with_voice
+):
+    down = httpx.ConnectError("refused")
+
+    first = run_voice(session, down)
+    again = run_voice(session, down)
+    later = run_voice(session, down, now=NOW + timedelta(hours=1))
+
+    assert first.titles() == ["Voice layer not answering"]
+    assert first.sent[0][2] == "high"
+    assert again.sent == []
+    assert later.titles() == ["Voice layer not answering"]
+
+
+def test_asterisk_silent_for_too_long_alarms(session, tenant_id, with_voice):
+    pushes = run_voice(session, monitor.ASTERISK_SILENT_SECONDS + 1)
+
+    assert pushes.titles() == ["Asterisk not registered"]
+
+
+def test_asterisk_never_seen_alarms(session, tenant_id, with_voice):
+    assert run_voice(session, None).titles() == ["Asterisk not registered"]
+
+
+def test_a_healthy_voice_layer_stays_quiet(session, tenant_id, with_voice):
+    assert run_voice(session, 15.0).sent == []
+
+
+def test_a_stack_without_voice_is_not_probed(session, tenant_id, monkeypatch):
+    monkeypatch.setattr(settings, "voice_url", "")
+
+    def probe() -> float | None:
+        raise AssertionError("no voice to ask")
+
+    pushes = Pushes()
+    monitor.check(session, NOW, send=pushes, probe=probe)
+
+    assert pushes.sent == []
+
+
+def test_the_probe_reads_what_voice_answers(monkeypatch):
+    monkeypatch.setattr(settings, "voice_url", "http://voice:8001")
+    asked = []
+
+    class Response:
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self) -> dict:
+            return {"seconds": 12.5}
+
+    def fake_get(url, **kwargs):
+        asked.append(url)
+        return Response()
+
+    monkeypatch.setattr(monitor.httpx, "get", fake_get)
+
+    assert monitor.asterisk_seen() == 12.5
+    assert asked == ["http://voice:8001/asterisk/seen"]
+
+
+# --- Backup ------------------------------------------------------------------
+
+
+def backup_done(session, tenant_id, at) -> None:
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            at=at,
+            actor="backup",
+            action=monitor.BACKUP_DONE,
+            entity="database",
+        )
+    )
+    session.commit()
+
+
+@pytest.fixture
+def backup_limit(monkeypatch):
+    monkeypatch.setattr(settings, "alarm_backup_hours", 26)
+
+
+def test_a_stale_backup_alarms_once_a_day(session, tenant_id, backup_limit):
+    backup_done(session, tenant_id, NOW - timedelta(hours=27))
+
+    first = run(session)
+    again = run(session)
+
+    assert first.titles() == ["Backup overdue"]
+    assert first.sent[0][2] == "high"
+    assert again.sent == []
+    assert run(session, now=NOW + timedelta(days=1)).titles() == ["Backup overdue"]
+
+
+def test_no_backup_at_all_alarms(session, tenant_id, backup_limit):
+    """A cron line never installed reports nothing by itself."""
+    assert run(session).titles() == ["Backup overdue"]
+
+
+def test_a_recent_backup_stays_quiet(session, tenant_id, backup_limit):
+    backup_done(session, tenant_id, NOW - timedelta(hours=25))
+
+    assert run(session).sent == []
+
+
+def test_a_limit_of_zero_switches_the_backup_alarm_off(session, tenant_id, monkeypatch):
+    monkeypatch.setattr(settings, "alarm_backup_hours", 0)
+
+    assert run(session).sent == []
 
 
 # --- Delivery ----------------------------------------------------------------

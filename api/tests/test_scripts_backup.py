@@ -170,6 +170,34 @@ def test_backup_writes_one_encrypted_dump(db, backup_dir, passphrase_file):
     assert db not in said and f":{make_url(db).password}@" not in said
 
 
+def test_a_good_backup_leaves_its_mark_for_the_alarm(db, backup_dir, passphrase_file):
+    """api/jobs/monitor.py misses this row when backups stop (T-8.3)."""
+    _sql(db, "insert into tenants (name) values ('Backup')")
+
+    done = _run(
+        "backup.sh", db_url=db, backup_dir=backup_dir, passphrase_file=passphrase_file
+    )
+
+    assert done.returncode == 0, done.stderr
+    assert _sql(db, "select actor, action from audit_log") == [
+        ("backup", "backup.done")
+    ]
+
+
+def test_a_failed_backup_leaves_no_mark(db, backup_dir, passphrase_file, tmp_path):
+    _sql(db, "insert into tenants (name) values ('Backup')")
+
+    done = _run(
+        "backup.sh",
+        db_url=db,
+        backup_dir=backup_dir,
+        passphrase_file=tmp_path / "missing",
+    )
+
+    assert done.returncode != 0
+    assert _sql(db, "select count(*) from audit_log") == [(0,)]
+
+
 def test_restore_check_reads_the_dump_and_leaves_the_database_alone(
     db, backup_dir, passphrase_file
 ):

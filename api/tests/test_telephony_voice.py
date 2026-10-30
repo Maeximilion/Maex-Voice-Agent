@@ -438,6 +438,21 @@ def test_health_answers_without_a_token(phone):
     assert client.get("/health").text == "ok"
 
 
+def test_asterisk_says_it_is_alive_with_the_media_token(phone):
+    """Its healthcheck posts while it is registered (T-8.3); the monitor reads
+    how long ago, without a token, like /health."""
+    client, _ = phone
+    assert client.get("/asterisk/seen").json() == {"seconds": None}
+
+    assert client.post("/asterisk/alive").status_code == 401
+    assert client.post("/asterisk/alive", headers=basic("wrong")).status_code == 401
+    assert client.get("/asterisk/seen").json() == {"seconds": None}
+
+    assert client.post("/asterisk/alive", headers=basic(TOKEN)).status_code == 200
+    seconds = client.get("/asterisk/seen").json()["seconds"]
+    assert 0 <= seconds < 5
+
+
 # -- the team leg nobody answered (T-10.8) ---------------------------------------
 
 DIALPLAN = (
