@@ -343,9 +343,19 @@ class ConversationLoop:
             unchanged = state.model_dump(include=_HEARD) == heard
             self._unheard = self._unheard + 1 if unchanged else 0
             if self._unheard >= UNHEARD_TURNS:
+                # With nobody to reach and no number known, the core asks for
+                # one before it gives up, as for a question beyond the
+                # database (Codex PR #437, P1).
                 result = self._handoff(
-                    state, SAY_NOT_UNDERSTOOD, reason="not_understood", detail=user_text
+                    state,
+                    SAY_NOT_UNDERSTOOD,
+                    reason="not_understood",
+                    detail=user_text,
+                    summary=_HANDOFF_SUMMARIES["not_understood"],
+                    ask_number=True,
                 )
+                if not result.ended:
+                    guards.note_said(state, SAY_CALLBACK_NUMBER)
         if asks:
             # A request next to the question ("Sind Sie ein Roboter? Ich
             # möchte einen Tisch ..."): the truthful sentence first, then the
@@ -950,7 +960,7 @@ class ConversationLoop:
         else:
             summary, state.callback_waits = state.callback_waits, None
             result = self._handoff(
-                state, SAY_ESCALATION, "out_of_scope", summary=summary
+                state, SAY_ESCALATION, state.callback_reason, summary=summary
             )
         if escalation.without_human_question(user_text) is not None:
             # The truthful answer first, in every turn (docs/09 L1).
@@ -1055,7 +1065,7 @@ class ConversationLoop:
                 )
 
         if ask_number and not phone and summary is not None:
-            state.callback_waits = summary
+            state.callback_waits, state.callback_reason = summary, reason
             return TurnResult(state=state, say=[SAY_CALLBACK_NUMBER])
         state.stage = "ended"
         return TurnResult(state=state, say=[SAY_NOBODY_REACHABLE], ended=True)

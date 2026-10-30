@@ -27,6 +27,7 @@ from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
 from api.agent.loop import (
     MAX_TOOL_HOPS,
     SAY_BOOKED_GOODBYE,
+    SAY_CALLBACK_NUMBER,
     SAY_ESCALATION,
     SAY_NOBODY_REACHABLE,
     SAY_NOT_A_PERSON,
@@ -1904,6 +1905,28 @@ def test_a_line_with_only_noise_goes_to_the_team_whatever_the_model_says(
     assert state.stage == "transferred"
     # The ladder's budget: three steps of two failed answers each (docs/05 §2).
     assert len(results) == 6
+
+
+def test_noise_with_nobody_reachable_asks_for_a_number_to_call_back(
+    session, tenant_id, call_id
+):
+    """Codex PR #437, P1: with the team not reachable and no number known,
+    the count ended the call with nobody to call back, though nobody had
+    asked for a number. The core asks once, and the answer makes the
+    callback, marked as not understood."""
+    state = numberless(tenant_id, call_id)
+    llm = FakeLLM([LLMTurn(say=SAY_PARDON) for _ in NOISE])
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    results = [loop.run_turn(state, sentence) for sentence in NOISE[:6]]
+
+    assert not any(result.ended for result in results)
+    assert results[-1].say == [SAY_CALLBACK_NUMBER]
+    result = loop.run_turn(state, "0721 5551234")
+    assert result.ended is True
+    callback = session.scalars(select(Callback)).one()
+    assert callback.phone == "+497215551234"
+    assert callback.reason == "not_understood"
 
 
 def test_a_turn_the_core_takes_something_from_counts_noise_from_the_start(

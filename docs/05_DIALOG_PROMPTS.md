@@ -60,7 +60,7 @@ Die Antwort auf „schlechter Empfang". Der Agent steigt Stufe für Stufe, nie �
 
 **Regel:** Nach **zwei** gescheiterten Versuchen an derselben Information geht es eine Stufe tiefer. Nach **drei** Stufen ohne Erfolg endet der Anruf bei Stufe 6 oder 7.
 
-The core counts on its own as well, whatever the model reports: six guest turns in a row that leave what the core took from the guest as it was (intent, slots, cart, drafts, dishes found, allergies) end the call the same way (`agent/loop.py`, `UNHEARD_TURNS`). A real model answered a line with nothing but noise with a question on every turn and never reported a failed answer (`eskalation_0016`, finding on #37, 29.10.2026). The model's own status lookup is no understanding.
+The core counts on its own as well, whatever the model reports: six guest turns in a row that leave what the core took from the guest as it was (intent, slots, cart, drafts, dishes found, allergies) end the call the same way (`agent/loop.py`, `UNHEARD_TURNS`). A real model answered a line with nothing but noise with a question on every turn and never reported a failed answer (`eskalation_0016`, finding on #37, 29.10.2026). The model's own status lookup is no understanding. With nobody to reach and no number known, the core asks for one before it gives up, as for a question beyond the database, and the callback is marked as not understood (Codex PR #437).
 
 Die Tastatur-Stufe ist der Trick, den die meisten Systeme auslassen. Tastentöne sind vom Audiokanal unabhängig und funktionieren, wenn Spracherkennung längst aufgibt.
 
