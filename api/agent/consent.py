@@ -141,7 +141,7 @@ _LEAD_INS = frozenset(
 )
 
 
-def _asks(lowered: str) -> bool:
+def asks(lowered: str) -> bool:
     """The word order of a question, sentence by sentence and on the words
     alone: punctuation inside a sentence is not spoken, and speech recognition
     sets a comma where it likes ("Stimmt, das so"). The end of a sentence does
@@ -203,7 +203,7 @@ def is_yes(text: str) -> bool:
     lowered = text.lower()
     if any(char.isdigit() for char in lowered):
         return False
-    if "?" in lowered or _asks(lowered):
+    if "?" in lowered or asks(lowered):
         return False
     for phrase in _HARMLESS:
         lowered = lowered.replace(phrase, " ")

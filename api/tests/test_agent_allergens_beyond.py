@@ -159,6 +159,8 @@ def searches(query: str = NOT_ON_THE_CARD) -> LLMTurn:
         "Ist die 99 allergenfrei?",
         "Sind Sie ein Roboter? Ist in der 99 Sellerie? Ich habe eine Allergie.",
         "Ich habe eine Erdnussallergie, ist da Erdnuss drin?",
+        # The speech engine dropped the mark: the word order still asks.
+        "Ist in der Pho Bo Sellerie ich habe eine Allergie",
     ],
 )
 def test_a_question_about_an_allergy_is_read_as_one(said):
@@ -216,6 +218,21 @@ def test_that_handover_claims_nothing_about_a_dish_nobody_looked_up(
     result, _ = run(session, state, ASKED, searches("Pho Bo Sellerie"))
 
     assert SAY_ALLERGENS_UNKNOWN not in result.say
+
+
+def test_a_lookup_on_a_question_without_a_mark_goes_through(session, known_tenant):
+    """The speech engine drops the mark (T-10.3): the core must not take the
+    question for an allergy only told and refuse the lookup (PR #445 review)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Ist in der Pho Bo Sellerie ich habe eine Allergie",
+        details(session, known_tenant, "13"),
+    )
+
+    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
 
 
 def test_the_card_of_that_question_leaves_out_what_was_searched(session, known_tenant):

@@ -14,6 +14,7 @@ Also checked here: the question whether a person is on the line
 import re
 from typing import Literal
 
+from api.agent.consent import asks
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import denies_allergy, mentions_allergy, only_denies
 
@@ -93,22 +94,25 @@ def speaks_of_allergies(text: str) -> bool:
     return mentions_allergy(text) or "allergen" in text.lower()
 
 
+def is_question(text: str) -> bool:
+    """By its mark or by its word order: a speech engine with key terms drops
+    the mark on most sentences (T-10.3)."""
+    return "?" in text or asks(text.lower())
+
+
 def asks_about_allergies(text: str) -> bool:
     """Does a guest with an allergy ask about one? A question that speaks of
     allergies or names an allergen, next to an allergy that is not denied:
     "Ist da Sellerie drin? Ich habe eine Allergie.", never "Haben Sie Pizza?
     Ich habe keine Allergie." or "Sind Sie ein Roboter? Die 99, ich habe eine
-    Nussallergie.".
-    shortcut: a question is read by its question mark, as in
-    `guards._states_an_allergy`, and the speech engine can drop it; read the
-    words if the call log shows questions without one."""
+    Nussallergie."."""
     said = [
         sentence
         for sentence in SENTENCE.split(text)
         if not (denies_allergy(sentence) or only_denies(sentence))
     ]
     return any(speaks_of_allergies(sentence) for sentence in said) and any(
-        "?" in sentence
+        is_question(sentence)
         and (speaks_of_allergies(sentence) or names_an_allergen(sentence))
         for sentence in said
     )

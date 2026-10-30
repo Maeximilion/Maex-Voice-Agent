@@ -41,6 +41,7 @@ from pydantic import ValidationError
 from api.agent.allergies import NOTED
 from api.agent.consent import is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
+from api.agent.escalation import is_question
 from api.agent.guest_details import (
     e164,
     name_said,
@@ -461,15 +462,13 @@ def _states_an_allergy(user_text: str, call: ToolCall) -> bool:
     core notes the allergy for the kitchen whatever the dish contains (Maxi,
     27.10.2026); the lookup would find nothing maintained for most dishes and
     end the order with the team (L17), though the guest asked no question
-    (real-model run of 27.10.2026).
-    ponytail: a question is read by its question mark, as the speech engine
-    writes it; read the words if the call log shows questions without one."""
+    (real-model run of 27.10.2026)."""
     try:
         # Read as the tool reads it (`state.apply_tool_result`).
         asked = _FLAG.validate_python(call.args.get("allergen_question"))
     except ValidationError:
         return False
-    return asked and mentions_allergy(user_text) and "?" not in user_text
+    return asked and mentions_allergy(user_text) and not is_question(user_text)
 
 
 def _guest_details(call: ToolCall) -> tuple[Any, Any]:
