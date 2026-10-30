@@ -4,6 +4,7 @@
    dem Code. Farbe ist nie allein: der Text steht immer daneben (§1 Regel 4). #}
 <header id="kopfzeile" class="{{ 'aus' if config and config.call_mode == 'paused' }}">
   {% if header_problem %}<div class="banner danger">{{ header_problem }}</div>{% endif %}
+  {% if bridge_problem %}<div class="banner danger">{{ bridge_problem }}</div>{% endif %}
   <div class="top">
     <div class="mode">
       <span class="dot {{ mode_tone }}"></span>

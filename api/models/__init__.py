@@ -8,6 +8,7 @@ from api.models.orders import Order, OrderItem
 from api.models.outbox import OutboxEvent
 from api.models.reservations import Reservation
 from api.models.tenants import (
+    BridgeHeartbeat,
     CallLimitWindow,
     CallModeWindow,
     Capacity,
@@ -20,6 +21,7 @@ from api.models.tenants import (
 __all__ = [
     "AuditLog",
     "Base",
+    "BridgeHeartbeat",
     "Call",
     "CallLimitWindow",
     "CallModeWindow",

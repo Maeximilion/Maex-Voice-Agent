@@ -164,6 +164,9 @@ class Settings(BaseSettings):
     monitor_report_hour: int = Field(default=8, ge=5, le=23)
     # Where the monitor reaches `voice` (T-8.3); empty on a stack without it.
     voice_url: str = ""
+    # Minutes without a poll after which the print bridge counts as silent, while
+    # pickup or delivery is open (domain/status/bridge.py).
+    alarm_bridge_silent_minutes: int = Field(default=5, ge=1)
     # Hours without a good backup after which a push goes out; 0 switches it off.
     alarm_backup_hours: int = Field(default=26, ge=0)
 

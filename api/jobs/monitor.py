@@ -13,6 +13,8 @@ looks at each tenant and pushes to the operator, never to the team:
   healthcheck says so to `voice` while it is, and Asterisk takes no connection
   of its own (api/telephony/router.py). At most once a clock hour. A restart
   of `voice` in the moment of a pass reads as down;
+- the print bridge silent while pickup or delivery is open, at most once a
+  clock hour (domain/status/bridge.py; the tablet's header shows it too);
 - no `backup.done` from scripts/backup.sh for ALARM_BACKUP_HOURS, once a day.
   The row is missed rather than a failure reported, so a cron line that never
   ran counts too;
@@ -39,6 +41,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core.logging import error_text, get_logger, log
 from api.core.time import business_day, business_day_bounds_utc, to_local
+from api.domain.status import bridge
 from api.events.types import KITCHEN
 from api.models import AuditLog, Call, Order, OutboxEvent, Reservation, Tenant
 
@@ -224,6 +227,19 @@ def _due(
 
     if settings.voice_url:
         due.extend(_voice_layer(hour, probe))
+    quiet = bridge.silence(session, tenant, now)
+    if quiet is not None:
+        last = "never" if quiet.since is None else quiet.since.isoformat()
+        due.append(
+            (
+                "bridge_silent",
+                hour,
+                "Print bridge silent",
+                f"Last poll: {last}. Slips are not printing; the tablet shows it. "
+                "Check the register PC and the internet in the restaurant.",
+                "high",
+            )
+        )
     if _backup_overdue(session, tenant, now):
         due.append(
             (

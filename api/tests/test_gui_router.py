@@ -13,12 +13,14 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from api.config import settings
+from api.core import time as api_time
 from api.core.time import DAY_STARTS_AT, business_day
 from api.db import get_db
+from api.domain.status import bridge
 from api.domain.status import config as switches
 from api.gui.router import _page_response
 from api.main import app
-from api.models import Call, CallModeWindow, Reservation, ServiceConfig
+from api.models import Call, CallModeWindow, OpeningHours, Reservation, ServiceConfig
 from api.tests.conftest import p95_ms
 from scripts.seed import seed
 
@@ -713,3 +715,72 @@ def test_production_csrf_cookie_is_secure_behind_http_proxy(monkeypatch):
     )
     response = _page_response(request, "dev/console.html", {})
     assert "Secure" in response.headers["set-cookie"]
+
+
+def _bridge_set_up(engine, tenant_id, monkeypatch):
+    """Open now, and the bridge belongs to this tenant."""
+    monkeypatch.setattr(settings, "kitchen_bridge_tenant_id", str(tenant_id))
+    with Session(engine) as s:
+        for weekday in range(7):
+            s.add(
+                OpeningHours(
+                    tenant_id=tenant_id,
+                    weekday=weekday,
+                    opens_at=time(0),
+                    closes_at=time(23, 59),
+                    service="pickup",
+                )
+            )
+        s.commit()
+
+
+def test_the_header_shows_a_silent_bridge_with_its_time(
+    client, engine, tenant_id, monkeypatch
+):
+    """The team sees it before the first order fails (T-8.3, docs/06 §3)."""
+    _bridge_set_up(engine, tenant_id, monkeypatch)
+    noon = api_time.utcnow()
+    with Session(engine) as s:
+        bridge.note_poll(s, tenant_id, noon - timedelta(minutes=10))
+        s.commit()
+
+    text = client.get("/gui/fragments/kopfzeile").text
+
+    assert "Druckbrücke meldet sich nicht seit 11:50" in text
+    assert 'class="banner danger"' in text
+
+
+def test_the_header_names_a_bridge_that_never_reported(
+    client, engine, tenant_id, monkeypatch
+):
+    _bridge_set_up(engine, tenant_id, monkeypatch)
+
+    assert (
+        "Druckbrücke hat sich noch nie gemeldet"
+        in client.get("/gui/fragments/kopfzeile").text
+    )
+
+
+def test_the_header_is_quiet_with_a_bridge_that_polls(
+    client, engine, tenant_id, monkeypatch
+):
+    _bridge_set_up(engine, tenant_id, monkeypatch)
+    with Session(engine) as s:
+        bridge.note_poll(s, tenant_id, api_time.utcnow())
+        s.commit()
+
+    assert "Druckbrücke" not in client.get("/gui/fragments/kopfzeile").text
+
+
+def test_the_header_names_the_day_of_a_silence_from_yesterday(
+    client, engine, tenant_id, monkeypatch
+):
+    _bridge_set_up(engine, tenant_id, monkeypatch)
+    last = api_time.utcnow() - timedelta(days=1)
+    with Session(engine) as s:
+        bridge.note_poll(s, tenant_id, last)
+        s.commit()
+
+    assert f"seit {last.astimezone(BERLIN):%d.%m. %H:%M}" in (
+        client.get("/gui/fragments/kopfzeile").text
+    )
