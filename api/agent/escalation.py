@@ -14,7 +14,7 @@ Also checked here: the question whether a person is on the line
 import re
 from typing import Literal
 
-from api.agent.consent import asks
+from api.agent.consent import asks, asks_on_its_own
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import denies_allergy, mentions_allergy, only_denies
 
@@ -29,7 +29,7 @@ SENTENCE = re.compile(r"(?<=[.;!?])\s+")
 # shortcut: a closed list, widen it only from what the call log shows.
 _OTHER_TOPIC = re.compile(
     r"\b(?:tisch|platz|plätze|reservier|geöffnet|offen|liefer|abhol"
-    r"|lange|wann|uhr\b|zahl|bezahl)|\b(?:was|etwas|noch) frei\?|\bauf\?"
+    r"|lange|wann|uhr\b|zahl|bezahl)|\b(?:was|etwas|noch) frei(?:\?|$)|\bauf(?:\?|$)"
 )
 
 # Reihenfolge ist die Prüfreihenfolge: "storniert die Reklamation" träfe sowohl
@@ -115,17 +115,17 @@ def _names_one(text: str) -> bool:
 
 def _asks_about_one(sentence: str) -> bool:
     """Does the sentence ask about an allergy? A clause that asks and names
-    one. Word order counts only there: it is also "Ist gut, ich habe eine
-    Erdnussallergie" and "Ist zwölf" (the card number S12, docs/04). Behind a
-    comma, a marked question may mean the allergy it does not name, unless it
-    asks about something else ("..., haben Sie Platz?")."""
-    clauses = sentence.split(",")
+    one, or, next to a clause that names one, a question that may mean it
+    without naming it, unless it asks about something else ("..., haben Sie
+    Platz?"). Such a question needs its mark or `asks_on_its_own`: "Ist gut,
+    ich habe eine Erdnussallergie" and "Ist zwölf" (the card number S12,
+    docs/04) ask nothing."""
+    clauses = [clause.strip().lower() for clause in sentence.split(",")]
     if any(is_question(clause) and _names_one(clause) for clause in clauses):
         return True
-    return (
-        "?" in sentence
-        and _names_one(sentence)
-        and not _OTHER_TOPIC.search(clauses[-1].lower())
+    return _names_one(sentence) and any(
+        ("?" in clause or asks_on_its_own(clause)) and not _OTHER_TOPIC.search(clause)
+        for clause in clauses
     )
 
 

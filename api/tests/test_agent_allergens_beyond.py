@@ -1130,6 +1130,11 @@ CLAIM = "Die Nummer 13 hat keine Erdnüsse."
         # Behind a comma, naming nothing, and still about the allergy.
         "Ich habe eine Nussallergie, was empfehlen Sie?",
         "Ich habe eine Nussallergie, kann ich die Pho Bo essen?",
+        # Without its mark: the word order asks, the allergy stands beside it
+        # (Codex on PR #447).
+        "Ist das für mich geeignet, ich habe eine Nussallergie",
+        "Ist in der Pho Bo was davon drin, ich habe eine Nussallergie",
+        "Ist die 13 okay, ich habe eine Nussallergie",
         # "frei" of an allergen, not of a table (Codex on PR #447).
         "Ich habe eine Nussallergie, ist die Pho Bo frei davon?",
         "Ich habe eine Nussallergie, ist die Pho Bo frei?",
@@ -1146,6 +1151,9 @@ def test_these_ask_about_the_allergy(said):
         "Ich habe eine Nussallergie, haben Sie heute noch geöffnet?",
         "Ich habe eine Nussallergie, haben Sie heute noch auf?",
         "Ich habe eine Nussallergie, ist um acht noch was frei?",
+        # The same without the mark.
+        "Haben Sie heute noch geöffnet, ich habe eine Nussallergie",
+        "Haben Sie heute noch auf, ich habe eine Nussallergie",
         "Ich möchte einen Tisch für vier, wir haben eine Nussallergie, haben Sie Platz?",
         "Ich habe eine Nussallergie, liefern Sie auch nach Musterstadt?",
         "Die 13 bitte, ich habe eine Erdnussallergie, wie lange dauert das?",
@@ -1222,6 +1230,24 @@ def test_a_search_alone_answers_no_allergy_question(session, known_tenant, answe
     assert answer not in result.say
     assert result.ended
     assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_an_unmarked_question_is_not_answered_without_a_lookup(session, known_tenant):
+    """Neither by the model, nor is the lookup refused as an allergy only told
+    (Codex on PR #447)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    said = "Ist das für mich geeignet, ich habe eine Nussallergie"
+    answer = "Ja, das können Sie essen."
+
+    result, llm = run(session, state, said, LLMTurn(say=answer), LLMTurn(say=answer))
+
+    assert len(llm.calls) == 2
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+    state = state_for(session, known_tenant, phone=CALLER)
+    result, _ = run(session, state, said, details(session, known_tenant, "13"))
+
+    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
 
 
 def test_after_a_search_the_model_may_ask_which_dish(session, known_tenant):
