@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.agent.consent import ALLERGY_QUESTION
-from api.agent.escalation import asks_beyond_the_allergens
+from api.agent.escalation import asks_about_allergies, asks_beyond_the_allergens
 from api.agent.guards import note_said
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.agent.loop import (
@@ -144,10 +144,46 @@ def run(session, state, said, *turns, now=NOW):
 
 
 NOT_ON_THE_CARD = "Sellerie Spezial Quark"
+ASKED = "Hallo, ist in der Pho Bo Sellerie? Ich habe eine Allergie."
 
 
-def searches_nothing() -> LLMTurn:
-    return LLMTurn(tool_call=ToolCall("search_menu", {"query": NOT_ON_THE_CARD}))
+def searches(query: str = NOT_ON_THE_CARD) -> LLMTurn:
+    return LLMTurn(tool_call=ToolCall("search_menu", {"query": query}))
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        ASKED,
+        "Welche Allergene hat die 99?",
+        "Ist die 99 allergenfrei?",
+        "Sind Sie ein Roboter? Ist in der 99 Sellerie? Ich habe eine Allergie.",
+        "Ich habe eine Erdnussallergie, ist da Erdnuss drin?",
+    ],
+)
+def test_a_question_about_an_allergy_is_read_as_one(said):
+    assert asks_about_allergies(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # An allergy told, nothing asked: the core notes it for the kitchen.
+        "Die Sellerie Spezial bitte, ich habe eine Erdnussallergie.",
+        # A question, but no word of an allergy.
+        "Haben Sie Sellerie Spezial?",
+        # An allergy denied (PR #445 review).
+        "Haben Sie Pizza? Ich habe keine Allergie.",
+        "Ich bin nicht allergisch, haben Sie die 99?",
+        "Ich habe keine Allergie. Ist da Sellerie drin?",
+        # The question mark belongs to something else.
+        "Sind Sie ein Roboter? Die 99 bitte, ich habe eine Erdnussallergie.",
+        "Haben Sie heute noch auf? Die 99 bitte, ich habe eine Nussallergie.",
+        "Hallo? Ich möchte die 99, ich habe eine Nussallergie.",
+    ],
+)
+def test_other_sentences_are_no_allergy_question(said):
+    assert not asks_about_allergies(said)
 
 
 def test_an_allergy_question_on_a_dish_not_found_goes_to_the_team(
@@ -158,25 +194,31 @@ def test_an_allergy_question_on_a_dish_not_found_goes_to_the_team(
     the question (L17). The model is not asked again."""
     state = state_for(session, known_tenant, phone=CALLER)
 
-    result, llm = run(
-        session,
-        state,
-        "Hallo, ist in der Pho Bo Sellerie? Ich habe eine Allergie.",
-        searches_nothing(),
-    )
+    result, llm = run(session, state, ASKED, searches())
 
     assert len(llm.calls) == 1
     assert result.ended
-    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
     assert state.stage == "transferred"
     call = session.get(Call, state.call_id)
     session.refresh(call)
     assert call.transfer_reason == "out_of_scope"
 
 
-def test_the_card_of_that_question_does_not_repeat_what_was_searched(
+def test_that_handover_claims_nothing_about_a_dish_nobody_looked_up(
     session, known_tenant
 ):
+    """The dish may well be maintained: "Pho Bo Sellerie" finds nothing though
+    the Pho Bo stands on the card (PR #445 review). "Nichts hinterlegt" would
+    be a statement about the database that nobody read."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(session, state, ASKED, searches("Pho Bo Sellerie"))
+
+    assert SAY_ALLERGENS_UNKNOWN not in result.say
+
+
+def test_the_card_of_that_question_leaves_out_what_was_searched(session, known_tenant):
     """The search words can hold the guest's allergy, and the card never does
     (L13)."""
     state = state_for(session, known_tenant, phone=CALLER)
@@ -184,66 +226,61 @@ def test_the_card_of_that_question_does_not_repeat_what_was_searched(
     run(
         session,
         state,
-        "Hallo, ist in der Pho Bo Sellerie? Ich habe eine Allergie.",
-        searches_nothing(),
+        "Ist in der Sellerie Spezial Erdnuss? Ich habe eine Erdnussallergie.",
+        searches("Sellerie Spezial Erdnuss"),
     )
 
     assert state.handoff_summary.startswith(SUMMARY_ALLERGENS)
-    assert "Sellerie" not in state.handoff_summary
+    assert "Erdnuss" not in state.handoff_summary
 
 
 def test_with_nobody_there_that_question_asks_for_a_number(session, known_tenant):
     state = state_for(session, known_tenant)
 
-    result, _ = run(
-        session,
-        state,
-        "Hallo, ist in der Pho Bo Sellerie? Ich habe eine Allergie.",
-        searches_nothing(),
-        now=CLOSED,
-    )
+    result, _ = run(session, state, ASKED, searches(), now=CLOSED)
 
     assert not result.ended
     assert SAY_CALLBACK_NUMBER in result.say
 
 
-@pytest.mark.parametrize(
-    "said",
-    [
-        # An allergy told, nothing asked: the core notes it for the kitchen.
-        "Die Sellerie Spezial bitte, ich habe eine Erdnussallergie.",
-        # A question, but no word of an allergy: a dish we do not have.
-        "Haben Sie Sellerie Spezial?",
-    ],
-)
-def test_other_sentences_with_a_dish_not_found_stay_with_the_model(
-    session, known_tenant, said
+def test_a_question_on_several_dishes_none_found_goes_to_the_team(
+    session, known_tenant
 ):
+    """A sentence with several positions comes back ok, with the `not_found` in
+    each part (`dispatch._search_menu`, PR #445 review)."""
     state = state_for(session, known_tenant, phone=CALLER)
 
     result, llm = run(
         session,
         state,
-        said,
-        searches_nothing(),
-        LLMTurn(say="Das haben wir leider nicht auf der Karte."),
+        "Ist in der 98 und der 99 Sellerie? Ich habe eine Allergie.",
+        searches("die 98 und die 99"),
     )
 
-    assert len(llm.calls) == 2
-    assert not result.ended
+    assert len(llm.calls) == 1
+    assert result.ended
 
 
-def test_a_dish_the_search_finds_goes_on_to_its_allergens(session, known_tenant):
-    """Only a search that found nothing ends here: the found dish has an
-    answer in the database, or its own way to the team."""
+@pytest.mark.parametrize(
+    "said, query",
+    [
+        # Nothing of what these say is an allergy question.
+        ("Die Sellerie Spezial bitte, ich habe eine Erdnussallergie.", NOT_ON_THE_CARD),
+        ("Haben Sie Pizza? Ich habe keine Allergie.", "Pizza"),
+        # A dish was found: its allergens are there to look up.
+        (ASKED, "Pho Bo"),
+        # One part found: the model can look that one up.
+        (
+            "Ist in der 99 und der Pho Bo Sellerie? Ich habe eine Allergie.",
+            "die 99 und Pho Bo",
+        ),
+    ],
+)
+def test_other_searches_stay_with_the_model(session, known_tenant, said, query):
     state = state_for(session, known_tenant, phone=CALLER)
 
     result, llm = run(
-        session,
-        state,
-        "Hallo, ist in der Pho Bo Sellerie? Ich habe eine Allergie.",
-        LLMTurn(tool_call=ToolCall("search_menu", {"query": "Pho Bo"})),
-        LLMTurn(say="Ich schaue nach."),
+        session, state, said, searches(query), LLMTurn(say="Einen Moment.")
     )
 
     assert len(llm.calls) == 2
@@ -678,6 +715,73 @@ def test_a_table_read_back_is_named_unbooked_on_the_card(session, known_tenant):
         "Offene Reservierung, nicht bestätigt: 4 Personen, 16.09.2026 19:00 Uhr, Name Müller"
         in callback.summary
     )
+
+
+def table_read_back(session, tenant_id) -> ConversationState:
+    state = state_for(session, tenant_id, phone=CALLER)
+    table = ToolCall(
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": CALLER,
+            "party_size": 4,
+            "reserved_for": "2026-09-16T19:00:00+02:00",
+        },
+    )
+    run(
+        session,
+        state,
+        "Tisch für vier auf Müller.",
+        LLMTurn(tool_call=table),
+        LLMTurn(say="Passt das?"),
+    )
+    assert state.stage == "readback_pending"
+    return state
+
+
+@pytest.mark.parametrize(
+    "said, turns",
+    [
+        ("Moment, ist in der Sellerie Spezial Erdnuss? Ich habe eine Allergie.", 1),
+        ("Moment, welche Allergene hat die Pho Bo?", 2),
+    ],
+)
+def test_a_search_leaves_the_table_on_the_card(session, known_tenant, said, turns):
+    """A search takes the read-back back before the handover, and the table has
+    to reach the team all the same (PR #445 review): the guest heard it and may
+    take it for booked. Through a dish not found and through a dish without
+    maintained values."""
+    state = table_read_back(session, known_tenant)
+    model = (
+        [searches()]
+        if turns == 1
+        else [searches("Pho Bo"), details(session, known_tenant, "13")]
+    )
+
+    result, _ = run(session, state, said, *model, now=CLOSED)
+
+    assert SAY_TABLE_NOT_BOOKED in result.say
+    callback = session.scalars(select(Callback)).one()
+    assert "Offene Reservierung, nicht bestätigt: 4 Personen" in callback.summary
+
+
+def test_a_search_that_finds_nothing_leaves_the_call_a_table_call(
+    session, known_tenant
+):
+    """A failed search must not count as the guest changing their mind: the
+    read-back and the intent stay, the call row says reservation (PR #445
+    review)."""
+    state = table_read_back(session, known_tenant)
+
+    run(
+        session,
+        state,
+        "Welche Allergene hat die Sellerie Spezial?",
+        searches(),
+        now=CLOSED,
+    )
+
+    assert state.intent == "reservation"
 
 
 def test_a_wait_for_the_number_is_asked_once_more(session, known_tenant):

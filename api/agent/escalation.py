@@ -14,9 +14,13 @@ Also checked here: the question whether a person is on the line
 import re
 from typing import Literal
 
-from api.domain.menu.wishes import mentions_allergy
+from api.domain.menu.pos_convert import names_an_allergen
+from api.domain.menu.wishes import denies_allergy, mentions_allergy, only_denies
 
 EscalationReason = Literal["complaint", "human_requested", "cancellation"]
+
+# Where a sentence of the guest ends.
+SENTENCE = re.compile(r"(?<=[.;!?])\s+")
 
 # Reihenfolge ist die Prüfreihenfolge: "storniert die Reklamation" träfe sowohl
 # complaint- als auch cancellation-Wörter, complaint zuerst geprüft ist die
@@ -90,10 +94,24 @@ def speaks_of_allergies(text: str) -> bool:
 
 
 def asks_about_allergies(text: str) -> bool:
-    """A question in a sentence that speaks of allergies ("Ist da Sellerie
-    drin? Ich habe eine Allergie."). A question is read by its question mark,
-    as in `guards._states_an_allergy`."""
-    return "?" in text and speaks_of_allergies(text)
+    """Does a guest with an allergy ask about one? A question that speaks of
+    allergies or names an allergen, next to an allergy that is not denied:
+    "Ist da Sellerie drin? Ich habe eine Allergie.", never "Haben Sie Pizza?
+    Ich habe keine Allergie." or "Sind Sie ein Roboter? Die 99, ich habe eine
+    Nussallergie.".
+    shortcut: a question is read by its question mark, as in
+    `guards._states_an_allergy`, and the speech engine can drop it; read the
+    words if the call log shows questions without one."""
+    said = [
+        sentence
+        for sentence in SENTENCE.split(text)
+        if not (denies_allergy(sentence) or only_denies(sentence))
+    ]
+    return any(speaks_of_allergies(sentence) for sentence in said) and any(
+        "?" in sentence
+        and (speaks_of_allergies(sentence) or names_an_allergen(sentence))
+        for sentence in said
+    )
 
 
 def asks_beyond_the_allergens(text: str) -> bool:
