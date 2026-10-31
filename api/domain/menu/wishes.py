@@ -1429,10 +1429,34 @@ def _ingredient_answer(text: str) -> tuple[str, str | None]:
 # The parts of a sentence, with what joins them kept.
 _PARTS = re.compile(r"(,|\bund\b)", re.IGNORECASE)
 # A denial that goes on with what the guest is allergic to: "keine Allergie
-# gegen Erdnüsse, aber gegen Sesam".
-_BUT_AGAINST = re.compile(
-    r"\b(?:aber|sondern|nur)\s+(?:nur\s+|auch\s+)?gegen\b", re.IGNORECASE
+# gegen Erdnüsse, aber gegen Sesam", not "aber gegen 19 Uhr" (`_goes_on`).
+# A number alone is a time, one with more to it an ingredient ("5-Gewürze-Pulver").
+_CLOCK = re.compile(r"\s*\d{1,2}(?:[:.]\d{2})?(?![\w-])")
+_TIME_WORDS = frozenset(
+    {"halb", "viertel", "morgen", "vormittag", "mittag", "nachmittag", "abend"}
 )
+_BUT_AGAINST = re.compile(
+    r"\b(?:aber|sondern|nur|allerdings|jedoch|außer|ausser|dafür|dafuer)\b"
+    r"(?:\s+(?!(?:nicht|nie|niemals|weder|kein\w*)\b)\w+)?\s+gegen\b",
+    re.IGNORECASE,
+)
+
+
+def _goes_on(text: str) -> bool:
+    """Does anything but a time stand behind `_BUT_AGAINST`? The safe side:
+    "gegen 19 Uhr" and "gegen Abend" are none, all else is an allergy to ask
+    about."""
+    but = _BUT_AGAINST.search(text)
+    if but is None:
+        return False
+    rest = text[but.end() :]
+    after = _words(rest)[:2]
+    return (
+        bool(after)
+        and after[0] not in _TIME_WORDS
+        and "uhr" not in after
+        and _CLOCK.match(rest) is None
+    )
 
 
 def only_denies(text: str) -> bool:
@@ -1443,7 +1467,7 @@ def only_denies(text: str) -> bool:
     "und", "keine Allergien und Unvertraeglichkeiten gegen Laktose" would
     leave a part that reads as an intolerance (Codex PR #330, #338). As the
     stand-in model judges it (`sim/scripted_llm.py`)."""
-    if _BUT_AGAINST.search(text):
+    if _goes_on(text):
         return False
     clauses = wish_candidates(text)
     if clauses and denies_allergy(clauses[-1][1]):
@@ -1564,6 +1588,9 @@ _NOT_AN_INGREDIENT = frozenset(
     | {"schwer", "schwierig", "sagen", "sage", "frage", "sehen", "schauen"}
     | {"gucken", "kommt", "drauf", "darauf", "sowas", "irgendwie", "kompliziert"}
     | {"nee", "noe", "nix", "ne", "nope", "jo", "joa", "wie", "nochmal"}
+    # A sentence, not an ingredient: "Ist das wichtig", "Stimmt das", "Ist gut",
+    # the speech engine drops the mark of a question back (audit of 30.10.2026).
+    | {"ist", "stimmt", "passt"}
 )
 # Hesitation in front of an answer to "Wogegen?" ("Äh, Erdnüsse", "Ehm.",
 # "Mhm."): left out of the ingredient, and an answer of nothing else names

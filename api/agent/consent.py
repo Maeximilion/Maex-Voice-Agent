@@ -146,7 +146,9 @@ def asks(lowered: str) -> bool:
     alone: punctuation inside a sentence is not spoken, and speech recognition
     sets a comma where it likes ("Stimmt, das so"). The end of a sentence does
     count: in "Stimmt. Das passt." the second is a statement of its own."""
-    sentences = _sentences(lowered)
+    sentences = [
+        " ".join(_WORD.findall(sentence)) for sentence in _SENTENCE_END.split(lowered)
+    ]
     if any(_verb_first(sentence.split()) for sentence in sentences):
         return True
     # Two short forms leave out what would tell them apart. "Alles richtig" has
@@ -158,23 +160,6 @@ def asks(lowered: str) -> bool:
     return not words & _PLAIN_YES and any(
         _ELLIPTIC.search(sentence) or _opens_with_ist(sentence.split())
         for sentence in sentences
-    )
-
-
-def _sentences(lowered: str) -> list[str]:
-    return [
-        " ".join(_WORD.findall(sentence)) for sentence in _SENTENCE_END.split(lowered)
-    ]
-
-
-def asks_on_its_own(lowered: str) -> bool:
-    """Word order that asks whatever the clause says: the verb before its
-    subject, or "Ist" with more behind it than an assent ("Ist in der Pho Bo
-    was drin", "Ist die 13 okay", never "Ist gut" or "Ist zwölf"). The short
-    forms of `asks` veto a yes, and are too weak to make a question."""
-    return any(
-        _verb_first(words) or (_opens_with_ist(words) and len(words) > 2)
-        for words in map(str.split, _sentences(lowered))
     )
 
 

@@ -60,6 +60,7 @@ from api.agent.state import (
 )
 from api.domain.menu.items import option_key
 from api.domain.menu.pos_convert import names_an_allergen
+from api.domain.menu.search import SAY_WHICH_NUMBER
 from api.domain.menu.wishes import mentions_allergy
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
@@ -462,8 +463,10 @@ def _states_an_allergy(user_text: str, call: ToolCall) -> bool:
     core notes the allergy for the kitchen whatever the dish contains (Maxi,
     27.10.2026); the lookup would find nothing maintained for most dishes and
     end the order with the team (L17), though the guest asked no question
-    (real-model run of 27.10.2026). The one reading of a question that
-    `unread_allergy_question` uses too: refused here, it never applies there."""
+    (real-model run of 27.10.2026). Refused only where no reading finds a
+    question, clause by clause too: one may ask without naming the allergy
+    ("Ich habe eine Nussallergie, ist die 13 okay für mich"), and the lookup
+    is the safe side."""
     try:
         # Read as the tool reads it (`state.apply_tool_result`).
         asked = _FLAG.validate_python(call.args.get("allergen_question"))
@@ -472,7 +475,7 @@ def _states_an_allergy(user_text: str, call: ToolCall) -> bool:
     return (
         asked
         and mentions_allergy(user_text)
-        and "?" not in user_text
+        and not any(map(is_question, user_text.split(",")))
         and not asks_about_allergies(user_text)
     )
 
@@ -560,13 +563,29 @@ def unread_allergy_question(
     although the guest named the dish. Whatever it says cannot come from the
     database (CLAUDE.md §2 rule 1, L17). `read` holds the tools that worked in
     this turn: a hit carries no allergens, so after a search alone the model
-    may only ask which dish was meant, and a sentence that says anything else
-    goes back."""
+    may only ask which dish was meant, and a sentence that says or names
+    anything else goes back. An ambiguous number is no search that worked, and
+    the question for it is the core's own sentence."""
     if "get_item_details" in read or not asks_about_allergies(user_text):
         return None
-    if "search_menu" in read and all(map(is_question, SENTENCE.split(say))):
+    if say.strip() == SAY_WHICH_NUMBER:
+        return None
+    sentences = SENTENCE.split(say.replace("Nr.", "Nummer"))
+    if (
+        "search_menu" in read
+        and all(map(is_question, sentences))
+        and not names_an_allergen(say)
+    ):
         return None
     return _UNREAD_ALLERGY_QUESTION
+
+
+def flag_the_allergy_question(call: ToolCall, user_text: str) -> ToolCall:
+    """A lookup on the guest's allergy question is one, whatever flag the model
+    set: without it an unmaintained value would not go to the team (L17)."""
+    if call.name == "get_item_details" and asks_about_allergies(user_text):
+        return ToolCall(call.name, {**call.args, "allergen_question": True})
+    return call
 
 
 HINT_STATED_ALLERGY = (

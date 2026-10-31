@@ -600,6 +600,7 @@ class ConversationLoop:
                 call = _card_without_allergy(
                     state, allergies.noted_call(state, turn.tool_call)
                 )
+                call = guards.flag_the_allergy_question(call, user_text)
                 if not allergies.fits(call, turn.tool_call):
                     return self._note_to_team(state, turn.tool_call)
                 result = self._dispatch(state, call.name, call.args)
