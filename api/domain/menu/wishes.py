@@ -1429,10 +1429,21 @@ def _ingredient_answer(text: str) -> tuple[str, str | None]:
 # The parts of a sentence, with what joins them kept.
 _PARTS = re.compile(r"(,|\bund\b)", re.IGNORECASE)
 # A denial that goes on with what the guest is allergic to: "keine Allergie
-# gegen Erdnüsse, aber gegen Sesam".
+# gegen Erdnüsse, aber gegen Sesam", not "aber gegen 19 Uhr" (`_goes_on`).
 _BUT_AGAINST = re.compile(
-    r"\b(?:aber|sondern|nur)\s+(?:nur\s+|auch\s+)?gegen\b", re.IGNORECASE
+    r"\b(?:aber|sondern|nur|allerdings|jedoch|außer|ausser|dafür|dafuer)\b"
+    r"(?:\s+(?!nicht\b)\w+)?\s+gegen\b",
+    re.IGNORECASE,
 )
+
+
+def _goes_on(text: str) -> bool:
+    """Is what stands behind `_BUT_AGAINST` an ingredient, not a time? Two
+    words are enough for "19 Uhr" and "Abend hätte"."""
+    but = _BUT_AGAINST.search(text)
+    return but is not None and not _not_an_ingredient(
+        " ".join(text[but.end() :].split()[:2])
+    )
 
 
 def only_denies(text: str) -> bool:
@@ -1443,7 +1454,7 @@ def only_denies(text: str) -> bool:
     "und", "keine Allergien und Unvertraeglichkeiten gegen Laktose" would
     leave a part that reads as an intolerance (Codex PR #330, #338). As the
     stand-in model judges it (`sim/scripted_llm.py`)."""
-    if _BUT_AGAINST.search(text):
+    if _goes_on(text):
         return False
     clauses = wish_candidates(text)
     if clauses and denies_allergy(clauses[-1][1]):
@@ -1564,6 +1575,9 @@ _NOT_AN_INGREDIENT = frozenset(
     | {"schwer", "schwierig", "sagen", "sage", "frage", "sehen", "schauen"}
     | {"gucken", "kommt", "drauf", "darauf", "sowas", "irgendwie", "kompliziert"}
     | {"nee", "noe", "nix", "ne", "nope", "jo", "joa", "wie", "nochmal"}
+    # A sentence, not an ingredient: "Ist das wichtig", "Stimmt das", "Ist gut",
+    # the speech engine drops the mark of a question back (audit of 30.10.2026).
+    | {"ist", "stimmt", "passt"}
 )
 # Hesitation in front of an answer to "Wogegen?" ("Äh, Erdnüsse", "Ehm.",
 # "Mhm."): left out of the ingredient, and an answer of nothing else names
