@@ -1430,6 +1430,8 @@ def _ingredient_answer(text: str) -> tuple[str, str | None]:
 _PARTS = re.compile(r"(,|\bund\b)", re.IGNORECASE)
 # A denial that goes on with what the guest is allergic to: "keine Allergie
 # gegen Erdnüsse, aber gegen Sesam", not "aber gegen 19 Uhr" (`_goes_on`).
+# A number alone is a time, one with more to it an ingredient ("5-Gewürze-Pulver").
+_CLOCK = re.compile(r"\s*\d{1,2}(?:[:.]\d{2})?(?![\w-])")
 _BUT_AGAINST = re.compile(
     r"\b(?:aber|sondern|nur|allerdings|jedoch|außer|ausser|dafür|dafuer)\b"
     r"(?:\s+(?!(?:nicht|nie|niemals|weder|kein\w*)\b)\w+)?\s+gegen\b",
@@ -1444,12 +1446,13 @@ def _goes_on(text: str) -> bool:
     but = _BUT_AGAINST.search(text)
     if but is None:
         return False
-    after = _words(text[but.end() :])[:2]
+    rest = text[but.end() :]
+    after = _words(rest)[:2]
     return (
         bool(after)
         and after[0] not in _NOT_LISTED
-        and not after[0].isdigit()
         and "uhr" not in after
+        and _CLOCK.match(rest) is None
     )
 
 

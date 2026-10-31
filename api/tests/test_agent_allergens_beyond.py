@@ -1191,6 +1191,9 @@ def test_the_core_s_own_question_for_the_number_passes():
     [
         "Ich habe eine Nussallergie. Ist die 13 okay für mich",
         "Ist das für mich geeignet. Ich habe eine Nussallergie.",
+        # A number that is part of an ingredient keeps the question.
+        "Ist die 13 für mich geeignet, ich habe keine Allergie gegen Nüsse, "
+        "aber gegen 5-Gewürze-Pulver?",
         # Behind a comma, without its mark.
         "Ich habe eine Nussallergie, ist das für mich geeignet",
         "Ich habe eine Nussallergie, ist die 13 okay für mich",
@@ -1359,6 +1362,8 @@ def test_the_card_names_the_table_the_guest_moved_to(session, known_tenant):
         "Ich bin nicht allergisch gegen Nüsse, aber leider gegen Sellerie.",
         "Ich habe keine Allergie gegen Nüsse, allerdings gegen Sesam.",
         "Ich habe keine Allergie gegen Nüsse, jedoch gegen Kiwi.",
+        # A number that is part of an ingredient (Codex on PR #449).
+        "Ich habe keine Allergie gegen Nüsse, aber gegen 5-Gewürze-Pulver.",
         # Behind the ingredient, words that are no time.
         "Ich habe keine Nussallergie, nur gegen Sesam ist es schlimm.",
         "Ich habe keine Allergie, aber gegen Zwiebeln, mir wird schlecht.",
@@ -1382,6 +1387,8 @@ def test_a_mixed_negation_keeps_the_allergy(session, known_tenant, said):
         "Ich bin nicht allergisch.",
         # "gegen" as a time.
         "Wir haben keine Allergien, aber gegen 19 Uhr kommen wir.",
+        "Wir haben keine Allergien, aber gegen 19:30 kommen wir.",
+        "Wir haben keine Allergien, aber gegen 8, geht das?",
         "Keine Allergie, aber gegen Abend hätte ich gern einen Tisch.",
         "Ich habe keine Allergie, nur gegen acht Uhr wäre gut.",
         "Ich habe keine Allergie gegen Nüsse, aber auch nicht gegen Sesam.",
