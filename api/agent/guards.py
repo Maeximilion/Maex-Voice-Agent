@@ -463,9 +463,9 @@ def _states_an_allergy(user_text: str, call: ToolCall) -> bool:
     core notes the allergy for the kitchen whatever the dish contains (Maxi,
     27.10.2026); the lookup would find nothing maintained for most dishes and
     end the order with the team (L17), though the guest asked no question
-    (real-model run of 27.10.2026). Refused only where neither reading finds
-    a question: a sentence of its own may ask without naming the allergy
-    ("Ich habe eine Nussallergie. Ist die 13 okay für mich"), and the lookup
+    (real-model run of 27.10.2026). Refused only where no reading finds a
+    question, clause by clause too: one may ask without naming the allergy
+    ("Ich habe eine Nussallergie, ist die 13 okay für mich"), and the lookup
     is the safe side."""
     try:
         # Read as the tool reads it (`state.apply_tool_result`).
@@ -475,7 +475,7 @@ def _states_an_allergy(user_text: str, call: ToolCall) -> bool:
     return (
         asked
         and mentions_allergy(user_text)
-        and not is_question(user_text)
+        and not any(map(is_question, user_text.split(",")))
         and not asks_about_allergies(user_text)
     )
 
@@ -568,7 +568,7 @@ def unread_allergy_question(
     the question for it is the core's own sentence."""
     if "get_item_details" in read or not asks_about_allergies(user_text):
         return None
-    if SAY_WHICH_NUMBER in say:
+    if say.strip() == SAY_WHICH_NUMBER:
         return None
     sentences = SENTENCE.split(say.replace("Nr.", "Nummer"))
     if (
