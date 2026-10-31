@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 31.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.58
+> Status: 31.10.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.59
 
 ---
 
@@ -264,7 +264,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 16. **Next, handover 30.10.2026 (`docs/00_PCF.md` §13):** #441 is merged (migration 017, `uq_special_days_set`). On the workbench, when no other session uses its stack: backup, migrations 013 to 017 (017 stops and lists the dates if two `set` rows share one), rebuild `api` and `dispatcher`, and with Maxi's word `holiday_region = 'BW'`. Open for Maxi: the T-9.5 assumptions under Made Assumptions
 
-17. **Security audit of T-10.1 and T-10.2 on `52bf88c`, 31.10.2026, the diff of #447:** no P1, nine P2 and three P3 in the allergen path ([#252](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6535938572)). The redesign Maxi chose is on `fix/allergen-reading-sentence-level`: findings 1 to 12 are closed there. Findings 8 and 9 of the audit on `7768182` stay open on #252. The tightened guard still wants a real-model run for its false escalations, after T-10.2 (GPU, Maxi names the start)
+17. **Audits of the allergen path, 31.10.2026:** the audit on `52bf88c` found no P1, nine P2 and three P3 (#252), and #449 closed them by reading an allergy question by the sentence again. Maxi waived the audit of the #449 diff for the wire run of T-10.2 only (docs/09 §5), so `audit_due.sh` keeps naming T-10.1 as due: that audit runs before the first real guest call. Findings 8 and 9 of the audit on `7768182` stay open on #252. **Next: T-10.2 on the wire, then at once the real-model eval on `main`** (Maxi, 31.10.2026: no separate start time, the GPU is free after the wire run; about 25 minutes, an estimate). False escalations are the number to watch, the guard is tighter than on the baseline of 32/56 cases
 
 ### In Chat (Maxi)
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
@@ -665,6 +665,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.11.59 · 31.10.2026:** Audit of the #449 diff waived for the T-10.2 wire run, real-model eval right after it
 - **v2.11.58 · 31.10.2026:** Allergy question read by the sentence again, the rest of the audit on 52bf88c closed
 - **v2.11.57 · 31.10.2026:** Security audit of the #447 diff on 52bf88c: no P1, nine P2, redesign proposed to Maxi
 - **v2.11.56 · 30.10.2026:** Audit findings 1 to 7 fixed: one reading of an allergy question, only a lookup that worked counts as read
