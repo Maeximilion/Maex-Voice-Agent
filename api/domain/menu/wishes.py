@@ -1432,6 +1432,9 @@ _PARTS = re.compile(r"(,|\bund\b)", re.IGNORECASE)
 # gegen Erdnüsse, aber gegen Sesam", not "aber gegen 19 Uhr" (`_goes_on`).
 # A number alone is a time, one with more to it an ingredient ("5-Gewürze-Pulver").
 _CLOCK = re.compile(r"\s*\d{1,2}(?:[:.]\d{2})?(?![\w-])")
+_TIME_WORDS = frozenset(
+    {"halb", "viertel", "morgen", "vormittag", "mittag", "nachmittag", "abend"}
+)
 _BUT_AGAINST = re.compile(
     r"\b(?:aber|sondern|nur|allerdings|jedoch|außer|ausser|dafür|dafuer)\b"
     r"(?:\s+(?!(?:nicht|nie|niemals|weder|kein\w*)\b)\w+)?\s+gegen\b",
@@ -1450,7 +1453,7 @@ def _goes_on(text: str) -> bool:
     after = _words(rest)[:2]
     return (
         bool(after)
-        and after[0] not in _NOT_LISTED
+        and after[0] not in _TIME_WORDS
         and "uhr" not in after
         and _CLOCK.match(rest) is None
     )

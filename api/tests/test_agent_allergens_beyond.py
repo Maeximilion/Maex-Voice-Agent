@@ -1194,6 +1194,8 @@ def test_the_core_s_own_question_for_the_number_passes():
         # A number that is part of an ingredient keeps the question.
         "Ist die 13 für mich geeignet, ich habe keine Allergie gegen Nüsse, "
         "aber gegen 5-Gewürze-Pulver?",
+        "Ist die 13 geeignet, ich habe keine Allergie gegen Milch, "
+        "aber gegen alle Nüsse?",
         # Behind a comma, without its mark.
         "Ich habe eine Nussallergie, ist das für mich geeignet",
         "Ich habe eine Nussallergie, ist die 13 okay für mich",
@@ -1364,6 +1366,7 @@ def test_the_card_names_the_table_the_guest_moved_to(session, known_tenant):
         "Ich habe keine Allergie gegen Nüsse, jedoch gegen Kiwi.",
         # A number that is part of an ingredient (Codex on PR #449).
         "Ich habe keine Allergie gegen Nüsse, aber gegen 5-Gewürze-Pulver.",
+        "Ich habe keine Allergie gegen Milch, aber gegen alle Nüsse.",
         # Behind the ingredient, words that are no time.
         "Ich habe keine Nussallergie, nur gegen Sesam ist es schlimm.",
         "Ich habe keine Allergie, aber gegen Zwiebeln, mir wird schlecht.",
