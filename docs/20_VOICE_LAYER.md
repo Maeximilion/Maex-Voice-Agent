@@ -658,7 +658,7 @@ What step 2 does not answer yet: two calls at once over the router (no second te
 by its own limit, §3), transfer from the IP telephone and what a second and third caller hear
 (T-10.2).
 
-### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, run set for 31.10.2026)
+### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, run set for 01.11.2026)
 
 | | |
 |---|---|
