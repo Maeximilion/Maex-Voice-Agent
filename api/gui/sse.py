@@ -3,10 +3,12 @@
 Der Strom schickt keine Daten, nur ein Signal: "an der Spalte Heute hat sich etwas
 geändert" (`today`), "die Kopfzeile ist umgeschaltet" (`header`), "an den
 offenen Rückrufen hat sich etwas geändert" (`callbacks`), "an den neuen
-Bestellungen" (`orders`), "ein Gericht ist aus oder wieder da" (`dishes`,
-T-4.8) oder "an den Feiertagsvorschlägen" (`holidays`, #207). Die Seite
+Bestellungen" (`orders`) oder "ein Gericht ist aus oder wieder da" (`dishes`,
+T-4.8). Die Seite
 holt das Fragment danach selbst. Das hält die Nutzlast klein und die Darstellung
 an genau einer Stelle - im Jinja2-Template.
+
+`holidays` says that the open holiday suggestions moved (#207).
 
 Warum abfragen statt LISTEN/NOTIFY: Reservierungen entstehen nicht nur in diesem
 Prozess. sim/ schreibt aus dem Terminal, der Dispatcher läuft eigenständig, später
