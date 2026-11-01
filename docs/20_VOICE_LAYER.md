@@ -658,7 +658,7 @@ What step 2 does not answer yet: two calls at once over the router (no second te
 by its own limit, §3), transfer from the IP telephone and what a second and third caller hear
 (T-10.2).
 
-### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, run set for 01.11.2026)
+### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, run set for 02.11.2026)
 
 | | |
 |---|---|
@@ -666,6 +666,8 @@ by its own limit, §3), transfer from the IP telephone and what a second and thi
 | The one command | `docker compose -f docker-compose.yml -f docker-compose.override.yml -f deploy/asterisk/docker-compose.tunnel.yml --profile voice up -d --build` (the first start of `voice` loads its engines, up to 2 minutes); `... --profile voice rm -sf voice asterisk wireguard` takes the AI telephone off again and leaves the rest of the stack running |
 | Maxi has to have ready | Everything of the handover of T-10.1 step 2, with that stack down: both register as the same IP telephone with the same WireGuard key. In `.env`: `VOICE_EAR=whisper`, `VOICE_MOUTH=piper`, `VOICE_EAR_DEVICE` (`cuda` or `cpu`), the model of `LLM_BASE_URL` running (the run takes the graphics card; name a start time), and `TEAM_PHONE` the number the router rings the team telephone at. The dev database at the newest migration: 018 since 01.11.2026, after an encrypted backup (`backups/maex_maex_agent_20261101T214843Z_before_migration_018.dump.gpg`, passphrase file `~/.config/maex-voice-agent/backup.passphrase`). A second and a third telephone for the rows with more than one caller |
 | What the result looks like | per row below: the team telephone rings, by Maxi's clock within 30 s of placing the call or of the crash (the go of T-10.2). Our share is in Asterisk's own log, by call id and without a number: `docker compose ... logs asterisk \| grep -E 'call [0-9.]+: '` shows `arrived`, then `to the team` and `team leg ...` with their times |
+
+Tried on 01.11.2026 without a call: the stack came up healthy and registered in 20 s with `VOICE_EAR=whisper`, `VOICE_MOUTH=piper`, `VOICE_EAR_DEVICE=cpu`, `LLM_BASE_URL=http://host.docker.internal:8080/v1`, `LLM_MODEL=qwen3.6-35b-a3b` and `LLM_REASONING_EFFORT=none` set in the shell of the one command, so `.env` stays as it is; the ear runs on the CPU because the model fills the graphics card (`UD-IQ3_XXS`, 15.1 GB used with the desktop).
 
 Before the first row Claude sets `service_config.call_mode` to `primary`: the seed leaves `shadow`, in
 which the AI answers no call and every call goes to the team. The tablet has no switch from `shadow`
