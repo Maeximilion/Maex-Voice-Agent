@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 01.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.11.63
+> Status: 01.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.12.0
 
 ---
 
@@ -262,7 +262,7 @@ Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order
 
 Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: nine group issues per block (#5 through #13), 68 work packages as sub-issues, labels per stage. Status maintained here in docs, mirror follows.
 
-16. **Next, handover 30.10.2026 (`docs/00_PCF.md` §13):** #441 is merged (migration 017, `uq_special_days_set`). On the workbench, when no other session uses its stack: backup, migrations 013 to 018 (017 stops and lists the dates if two `set` rows share one), rebuild `api` and `dispatcher`, and with Maxi's word `holiday_region = 'BW'`. Open for Maxi: the T-9.5 assumptions under Made Assumptions
+16. **Handover 30.10.2026 (`docs/00_PCF.md` §13):** #441 is merged (migration 017, `uq_special_days_set`). The workbench is at migration 018 since 01.11.2026 (backup `before_migration_018`, `api` and `dispatcher` rebuilt, 173 dishes and 11 allergen rows unchanged); `holiday_region = 'BW'` waits for Maxi's word. Open for Maxi: the T-9.5 assumptions under Made Assumptions
 
 17. **Audits of the allergen path, 31.10.2026:** the audit on `52bf88c` found no P1, nine P2 and three P3 (#252), and #449 closed them by reading an allergy question by the sentence again. Maxi waived the audit of the #449 diff for the wire run of T-10.2 only (docs/09 §5), so `audit_due.sh` keeps naming T-10.1 as due: that audit runs before the first real guest call. Findings 8 and 9 of the audit on `7768182` are closed since 01.11.2026 (Done table). **Real-model eval on `a9eddab`, 31.10.2026, `UD-IQ3_XXS`:** cases 37/56, targets 1/29, 0 guessed, 0 unconfirmed, 0 missed escalations, false escalations 17.8 % (docs/18). **Next: T-10.2 on the wire, set for 01.11.2026**, it did not run on 31.10.2026
 
@@ -524,6 +524,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 01.11.2026 | **The team drills run on a day that has a row of its own (#207).** `team_away` added a second `set` row, which `uq_special_days_set` refuses since migration 017, so on a date with a special day or the row of a killed drill every such drill stopped with a `DrillError`. The day's own row now stands aside in `special_days_drill` for the drill and comes back with its id, and a killed drill's leftovers are cleared by the next run; a suggestion is left alone. Tests against a real database, and the outage drills pass 27 of 27 on this code. The workbench went to migration 018 the same day |
 | 01.11.2026 | **T-6.1 customers, addresses, delivery zones (migration 018).** `api/models/customers.py` with `Customer`, `Address`, `DeliveryZone`, and `RecognitionObjection` for the objection per number (L12), which outlives every customer behind that number. Several customers can share one phone, and `customers.last_contact_at` starts the 24-month period. `orders.customer_id` and the new `orders.address_id` get composite foreign keys that keep the tenant, so a customer deleted after its period clears only the links and the order stays as a tax row (L18); an address needs a delivery. The 90-day job clears `address_id` too, and docs/09 §2 names the new tables for access, erasure and objection. Nothing writes the tables yet: T-6.2 and T-6.5 do, T-6.7 deletes. Up and down tested |
 | 01.11.2026 | **Findings 8 and 9 of the audit on `7768182` (#252).** Finding 8: `loop.py` passes the table read at the start of a turn to the team's card on the model's claim and on a second unread sentence, and `guards.unread_allergy_question` lets any answer pass after a lookup that worked; nothing failed when these were removed. Tests in `test_agent_allergens_beyond.py`; all six mutations of the table sites and the lookup check now fail a test. `_READS_THE_MENU`, which the finding named, is gone since #447. Finding 9: a surname that reads like an allergen next to an allergy goes on the cost list of docs/05 §4, with a test that pins it. No code changed |
 | 01.11.2026 | **The four review threads left open on the merged PR #244, replayed on `828e6ee` and fixed (`fix/244-open-review-threads`).** A bare "Nummer" in the agent's sentence no longer arms the next answer: it armed it after the menu's "Können Sie mir die Nummer sagen?" and after every readback ("Einmal Nummer 13"), so digits the guest read out next stood in `slots.phone`; `guest_details.asks_for_a_phone_number` reads the agent's sentence, `guards.note_said` uses it (P1). A letter that hangs on a card number or an apostrophe is no word of a name ("Die 23 a, M E I E R" gave "A Meier"); the letters of a row stay, they may be initials, and so does a letter before a phone number. "0900 Uhr" and "09 00 Uhr" are read as an hour and no longer keep the number out. A number the core takes restarts the ladder for `phone`. Behind a question for the phone number, or a callback refused for lack of one, a bare "Nummer" goes on asking; only a card number ends it. Red first, unit tests and eval `abholung_0083`. Effect next to the fix: a sentence that only names a card number can now be interrupted on the phone line (`telephony/handler.py`, `counted_as_heard`); readbacks stay protected by their stage. Known limits, marked `shortcut:` in the code: a sentence that only mentions the line counts as asking ("Das Team ist nicht erreichbar"), a model's "Nennen Sie mir eine Nummer" does not |
@@ -669,6 +670,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.12.0 · 01.11.2026:** Workbench at migration 018, the team drills run on a day that has a row of its own (#207)
 - **v2.11.63 · 01.11.2026:** T-6.1 done: customers, addresses, delivery zones and the objection to recognition, migration 018
 - **v2.11.62 · 01.11.2026:** Findings 8 and 9 of the audit on 7768182 closed: tests for the table on the card and the lookup, a surname on the cost list
 - **v2.11.61 · 01.11.2026:** The four review threads left open on PR #244 fixed: a card number is no question for the phone number

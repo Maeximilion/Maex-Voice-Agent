@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460" role="img" aria-labelledby="t d">
 <title id="t">Latest eval run</title>
-<desc id="d">Latest real-model eval on 2026-10-31, model qwen3.6-35b-a3b. Regular cases 37 of 56. Target cases 1 of 29. False escalation 17.8 percent, limit 5 percent.</desc>
+<desc id="d">Latest real-model eval on 2026-10-31, model qwen3.6-35b-a3b-iq3. Regular cases 37 of 56. Target cases 1 of 29. False escalation 17.8 percent, limit 5 percent.</desc>
 <style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}</style>
 <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="460"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="460"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
 <rect width="1200" height="460" rx="24" fill="#0D0819"/>
@@ -70,7 +70,7 @@
 <text x="64" y="78" font-size="14" fill="#A89CCB" font-weight="700" letter-spacing="2.4">EVAL SLIP · REAL MODEL</text>
 <text x="1136" y="78" font-size="14" fill="#A89CCB" text-anchor="end">2026-10-31</text>
 <line x1="64" y1="94" x2="1136" y2="94" stroke="#2B2148" stroke-dasharray="4 6"/>
-<text x="64" y="124" font-size="20" fill="#F1ECFF" font-weight="700">qwen3.6-35b-a3b</text>
+<text x="64" y="124" font-size="20" fill="#F1ECFF" font-weight="700">qwen3.6-35b-a3b-iq3</text>
 <text x="1136" y="124" font-size="15" fill="#A89CCB" text-anchor="end">temperature 0, invented cases only</text>
 <text x="64" y="168" font-size="15" fill="#A89CCB">Regular cases</text>
 <text x="64" y="198" font-size="26" fill="#E8FF2E" font-weight="700">37/56</text>
