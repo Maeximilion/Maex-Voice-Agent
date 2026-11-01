@@ -164,6 +164,10 @@ def searches(query: str = NOT_ON_THE_CARD) -> LLMTurn:
         "Ich habe eine Erdnussallergie, ist da Erdnuss drin?",
         # The speech engine dropped the mark: the word order still asks.
         "Ist in der Pho Bo Sellerie ich habe eine Allergie",
+        # On the cost list of docs/05 §4: a surname reads like an allergen
+        # (audit of 7768182, finding 9).
+        "Kann ich einen Tisch auf den Namen Fischer bekommen? "
+        "Ich habe eine Nussallergie.",
     ],
 )
 def test_a_question_about_an_allergy_is_read_as_one(said):
@@ -937,6 +941,37 @@ def test_a_table_read_back_survives_a_new_allergy_in_the_same_turn(
     assert "Erdnuss" not in callback.summary
 
 
+@pytest.mark.parametrize(
+    "model",
+    [
+        # The claim goes to the team at once.
+        [LLMTurn(say="Ja, das ist sicher.")],
+        # A sentence without a lookup goes back once, the second to the team.
+        [LLMTurn(say="Gern."), LLMTurn(say="Gern.")],
+    ],
+    ids=["claim", "second unread sentence"],
+)
+def test_a_handover_on_the_models_answer_names_the_table_a_new_allergy_took_back(
+    session, known_tenant, model
+):
+    """Audit of 7768182, finding 8: the allergy takes the draft back before the
+    model answers, so only the table read at the start of the turn is left for
+    the card."""
+    state = table_read_back(session, known_tenant)
+
+    result, _ = run(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie. Ist in der Pho Bo Erdnuss drin?",
+        *model,
+        now=CLOSED,
+    )
+
+    assert result.say[:2] == [SAY_ALLERGENS_BEYOND, SAY_TABLE_NOT_BOOKED]
+    callback = session.scalars(select(Callback)).one()
+    assert "Offene Reservierung, nicht bestätigt: 4 Personen" in callback.summary
+
+
 def test_the_fixed_sentence_hands_over_in_any_call(session, known_tenant):
     """Codex PR #369: "Kommt das bei der Zubereitung mit anderen Speisen in
     Kontakt?" names no allergen; the model answers with the fixed sentence of
@@ -1156,6 +1191,16 @@ CLAIM = "Die Nummer 13 hat keine Erdnüsse."
 )
 def test_these_ask_about_the_allergy(said):
     assert asks_about_allergies(said)
+
+
+def test_a_lookup_that_worked_lets_any_answer_pass():
+    """Audit of 7768182, finding 8: the values are read, so the sentence may
+    name them, with or without a search before it."""
+    said = "Ja, in der Pho Bo ist Sellerie."
+
+    assert guards.unread_allergy_question({"get_item_details"}, said, ASKED) is None
+    read = {"search_menu", "get_item_details"}
+    assert guards.unread_allergy_question(read, said, ASKED) is None
 
 
 def test_after_a_search_a_question_with_a_claim_in_it_goes_back():
