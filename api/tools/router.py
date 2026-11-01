@@ -9,6 +9,7 @@ from api.tools import (
     create_callback,
     create_reservation,
     draft_order,
+    find_customer,
     get_item_details,
     search_menu,
     service_status,
@@ -25,3 +26,4 @@ router.include_router(transfer_to_team.router)
 router.include_router(search_menu.router)
 router.include_router(get_item_details.router)
 router.include_router(draft_order.router)
+router.include_router(find_customer.router)
