@@ -528,11 +528,25 @@ def drill_listed_busy(drill: Drill) -> list[Check]:
 
 # A special day open around the clock: the core hands a call to the team only
 # inside the opening hours (Maxi, 20.10.2026), and a drill must not depend on
-# the hour it runs at.
+# the hour it runs at. A date holds one counting row (migration 017), so the
+# day's own stands aside in a table of the drill, which a killed drill leaves
+# behind for the next run to set back.
 OPEN_ALL_DAY = (
+    "create table if not exists special_days_drill (like special_days); "
+    "with own as (delete from special_days s using tenants t "
+    "where s.tenant_id = t.id and s.status = 'set' "
+    "and s.note is distinct from 'drill' "
+    "and s.date = (now() at time zone t.timezone)::date returning s.*) "
+    "insert into special_days_drill select * from own; "
+    "delete from special_days where note = 'drill'; "
     "insert into special_days (tenant_id, date, closed, opens_at, closes_at, note) "
     "select id, (now() at time zone timezone)::date, false, '00:00', '00:00', "
     "'drill' from tenants"
+)
+SET_THE_DAY_BACK = (
+    "delete from special_days where note = 'drill'; "
+    "insert into special_days select * from special_days_drill; "
+    "delete from special_days_drill"
 )
 
 
@@ -549,7 +563,7 @@ def team_away(drill: Drill, how: str) -> Iterator[None]:
         try:
             drill.cli("router", "dialplan set global TEAM_AWAY answer")
         finally:
-            drill.sql("delete from special_days where note = 'drill'")
+            drill.sql(SET_THE_DAY_BACK)
 
 
 def missed_of(call: Call) -> tuple[str, str, str]:

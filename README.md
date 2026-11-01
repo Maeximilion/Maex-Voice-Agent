@@ -46,7 +46,7 @@ There is no hosted voice platform: Asterisk, our own exchange, takes the call fr
 | Version | 0.0.1 |
 | Stage | 0, Foundation |
 | Next Gate | G0: Budget · Rights · Telephony path · Vendor chosen · Stage order |
-| As of | 2026-10-30 |
+| As of | 2026-11-01 |
 <!-- /readme:status -->
 
 <p align="center">

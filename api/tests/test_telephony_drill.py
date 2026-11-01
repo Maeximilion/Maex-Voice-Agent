@@ -9,10 +9,14 @@ touched.
 import socket
 import stat
 import threading
+from datetime import time
 
 import pytest
+from alembic import command
+from sqlalchemy import create_engine, text
 
 from api.telephony import drill
+from api.tests.conftest import alembic_config
 
 
 class Stage(drill.Drill):
@@ -458,8 +462,95 @@ def test_the_team_drills_set_the_router_and_the_hours_back(tmp_path, monkeypatch
     clis = [c for c in stage.commands if "TEAM_AWAY" in " ".join(c)]
     assert "TEAM_AWAY answer" in " ".join(clis[-1])
     sqls = [c[1] for c in stage.commands if c[0] == "sql"]
-    assert "insert into special_days" in sqls[0]
-    assert sqls[-1].startswith("delete from special_days")
+    assert sqls[0] == drill.OPEN_ALL_DAY
+    assert sqls[-1] == drill.SET_THE_DAY_BACK
+
+
+@pytest.fixture
+def day_engine(scratch_db_url):
+    command.upgrade(alembic_config(scratch_db_url), "head")
+    engine = create_engine(scratch_db_url)
+    yield engine
+    engine.dispose()
+
+
+def _a_tenant(conn):
+    return conn.execute(
+        text(
+            "INSERT INTO tenants (name, timezone) VALUES ('One', 'Europe/Berlin') "
+            "RETURNING id"
+        )
+    ).scalar_one()
+
+
+def _a_day(conn, tenant, note, *, status="set"):
+    return conn.execute(
+        text(
+            "INSERT INTO special_days (tenant_id, date, closed, note, status) VALUES "
+            "(:t, (now() at time zone 'Europe/Berlin')::date, true, :n, :s) "
+            "RETURNING id"
+        ),
+        {"t": tenant, "n": note, "s": status},
+    ).scalar_one()
+
+
+def _days(conn):
+    return conn.execute(
+        text(
+            "SELECT note, closed, opens_at, status FROM special_days "
+            "ORDER BY status, note"
+        )
+    ).all()
+
+
+def test_a_day_with_a_row_of_its_own_stands_aside_and_comes_back(day_engine):
+    """#207: one counting row per date (migration 017), so the drill's row
+    aborted every team drill on a holiday the team had answered."""
+    with day_engine.begin() as conn:
+        tenant = _a_tenant(conn)
+        day = _a_day(conn, tenant, "Betriebsferien")
+
+        conn.exec_driver_sql(drill.OPEN_ALL_DAY)
+        assert _days(conn) == [("drill", False, time(0), "set")]
+
+        conn.exec_driver_sql(drill.SET_THE_DAY_BACK)
+        assert _days(conn) == [("Betriebsferien", True, None, "set")]
+        assert conn.execute(text("SELECT id FROM special_days")).scalar_one() == day
+
+
+def test_a_killed_drill_leaves_nothing_in_the_way(day_engine):
+    """Its row stayed, and so did the day it had set aside."""
+    with day_engine.begin() as conn:
+        tenant = _a_tenant(conn)
+        _a_day(conn, tenant, "Betriebsferien")
+        conn.exec_driver_sql(drill.OPEN_ALL_DAY)
+
+        conn.exec_driver_sql(drill.OPEN_ALL_DAY)
+        assert _days(conn) == [("drill", False, time(0), "set")]
+
+        conn.exec_driver_sql(drill.SET_THE_DAY_BACK)
+        assert _days(conn) == [("Betriebsferien", True, None, "set")]
+
+
+def test_a_day_without_a_row_gets_none_back(day_engine):
+    with day_engine.begin() as conn:
+        _a_tenant(conn)
+        conn.exec_driver_sql(drill.OPEN_ALL_DAY)
+        conn.exec_driver_sql(drill.SET_THE_DAY_BACK)
+
+        assert _days(conn) == []
+
+
+def test_a_suggestion_of_the_day_is_left_alone(day_engine):
+    """It counts for nothing and has a key of its own (migration 015)."""
+    with day_engine.begin() as conn:
+        tenant = _a_tenant(conn)
+        _a_day(conn, tenant, "Allerheiligen", status="suggested")
+
+        conn.exec_driver_sql(drill.OPEN_ALL_DAY)
+        conn.exec_driver_sql(drill.SET_THE_DAY_BACK)
+
+        assert _days(conn) == [("Allerheiligen", True, None, "suggested")]
 
 
 def test_a_call_the_ai_never_answered_gets_a_card_and_no_sentence(tmp_path):
