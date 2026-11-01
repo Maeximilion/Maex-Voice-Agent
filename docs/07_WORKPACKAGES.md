@@ -156,7 +156,7 @@ Spec: `docs/09_OPERATIONS_LEGAL.md` §1, the row named in each task. Maxi's pape
 | T-6.4 | #61 | Polygon-Variante mit `shapely`, GeoJSON-Import | 04 | T-6.3 | offen |
 | T-6.5 | #62 | `draft_order` um Lieferung erweitern: Pauschale, Mindestbestellwert, Lieferzeit | 04 | T-6.3, T-4.5 | offen |
 | T-6.6 | #63 | GUI Lieferaufträge plus Schalter „Lieferung pausieren" | 06 | T-4.7 | offen |
-| T-6.7 | #64 | Löschjob für personenbezogene Daten, täglich, mit Protokoll. Since 20.10.2026 the job itself is T-11.2 (the tables of today); left here: customers and their addresses, 24 months after the last contact (docs/03) | 03 | T-6.1, T-11.2 | offen |
+| T-6.7 | #64 | Löschjob für personenbezogene Daten, täglich, mit Protokoll. Since 20.10.2026 the job itself is T-11.2 (the tables of today); left here: customers and their addresses, 24 months after the last contact (docs/03) | 03 | T-6.1, T-11.2 | fertig 01.11.2026: `customers` in `api/jobs/retention.py`, `RETENTION_CUSTOMER_DAYS` (730) from `last_contact_at`; the addresses go with the customer, an order keeps only the cleared links, an objection stays |
 | T-6.8 | #65 | Eval-Suite v2 mit Adressfällen (buchstabieren, Tastatur, außerhalb der Zone) | 08 | T-5.2, T-6.5 | offen |
 
 **→ Gate G3**
