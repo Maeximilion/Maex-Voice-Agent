@@ -129,6 +129,8 @@ class Settings(BaseSettings):
     retention_guest_details_days: int = Field(default=90, ge=1, le=MAX_RETENTION_DAYS)
     # Phone and summary of a callback, counted from when it was done.
     retention_callback_days: int = Field(default=90, ge=1, le=MAX_RETENTION_DAYS)
+    # A customer and their addresses, from the last contact: 24 months.
+    retention_customer_days: int = Field(default=730, ge=1, le=MAX_RETENTION_DAYS)
     retention_outbox_sent_days: int = Field(default=7, ge=1, le=MAX_RETENTION_DAYS)
     retention_outbox_unsent_days: int = Field(default=30, ge=1, le=MAX_RETENTION_DAYS)
     retention_outbox_row_days: int = Field(default=90, ge=1, le=MAX_RETENTION_DAYS)
