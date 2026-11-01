@@ -3,6 +3,7 @@
 from api.models.audit import AuditLog
 from api.models.base import Base
 from api.models.calls import Call, Callback, ConsentLog
+from api.models.customers import Address, Customer, DeliveryZone, RecognitionObjection
 from api.models.menu import ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.orders import Order, OrderItem
 from api.models.outbox import OutboxEvent
@@ -19,6 +20,7 @@ from api.models.tenants import (
 )
 
 __all__ = [
+    "Address",
     "AuditLog",
     "Base",
     "BridgeHeartbeat",
@@ -28,6 +30,8 @@ __all__ = [
     "Callback",
     "Capacity",
     "ConsentLog",
+    "Customer",
+    "DeliveryZone",
     "ItemAlias",
     "ItemAllergen",
     "ItemOption",
@@ -36,6 +40,7 @@ __all__ = [
     "Order",
     "OrderItem",
     "OutboxEvent",
+    "RecognitionObjection",
     "Reservation",
     "ServiceConfig",
     "SpecialDay",
