@@ -332,7 +332,7 @@ services:
       N8N_LISTEN_ADDRESS: 0.0.0.0
       # An execution holds the event it carried, which can name a guest:
       # kept 168 hours, n8n's own default would be 336 (T-11.7,
-      # docs/03 "Löschkonzept"; names checked in n8n 2.44.3).
+      # docs/03 "Löschkonzept"; names checked in n8n 2.45.6).
       EXECUTIONS_DATA_PRUNE: "true"
       EXECUTIONS_DATA_MAX_AGE: "168"
     volumes:
