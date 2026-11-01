@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.12.5
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.12.6
 
 ---
 
@@ -264,7 +264,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 16. **Handover 30.10.2026 (`docs/00_PCF.md` §13):** #441 is merged (migration 017, `uq_special_days_set`). The workbench is at migration 018 since 01.11.2026 (backup `before_migration_018`, `api` and `dispatcher` rebuilt, 173 dishes and 11 allergen rows unchanged); `holiday_region = 'BW'` waits for Maxi's word. Open for Maxi: the T-9.5 assumptions under Made Assumptions
 
-17. **Audits of the allergen path, 31.10.2026:** the audit on `52bf88c` found no P1, nine P2 and three P3 (#252), and #449 closed them by reading an allergy question by the sentence again. Maxi waived the audit of the #449 diff for the wire run of T-10.2 only (docs/09 §5), so `audit_due.sh` keeps naming T-10.1 as due: that audit runs before the first real guest call. Findings 8 and 9 of the audit on `7768182` are closed since 01.11.2026 (Done table). **Real-model eval on `a9eddab`, 31.10.2026, `UD-IQ3_XXS`:** cases 37/56, targets 1/29, 0 guessed, 0 unconfirmed, 0 missed escalations, false escalations 17.8 % (docs/18). **Next: T-10.2 on the wire, set for 01.11.2026**, it did not run on 31.10.2026
+17. **Audits of the allergen path, 31.10.2026:** the audit on `52bf88c` found no P1, nine P2 and three P3 (#252), and #449 closed them by reading an allergy question by the sentence again. Maxi waived the audit of the #449 diff for the wire run of T-10.2 only (docs/09 §5), so `audit_due.sh` keeps naming T-10.1 as due: that audit runs before the first real guest call. Findings 8 and 9 of the audit on `7768182` are closed since 01.11.2026 (Done table). **Real-model eval on `a9eddab`, 31.10.2026, `UD-IQ3_XXS`:** cases 37/56, targets 1/29, 0 guessed, 0 unconfirmed, 0 missed escalations, false escalations 17.8 % (docs/18). **Next: T-10.2 on the wire, with Maxi at the telephones**, it did not run on 31.10. or 01.11.2026; the workbench is ready for it (migration 018, the drills pass 27 of 27), rebuild its images first
 
 ### In Chat (Maxi)
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
@@ -524,6 +524,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 02.11.2026 | **Handover:** #452 to #462 merged, the block is in `docs/00_PCF.md` §13; next T-10.2 with Maxi |
 | 02.11.2026 | **`python -m printbridge --once` reports a failed run with exit code 1** (open point of PR #143). A script around the installation check could not tell a failed run from a good one. The loop goes on as before; a slip that fails at the printer is reported to the server and is no failed run here, `--test` checks the printer |
 | 01.11.2026 | **T-6.2 part 1: `find_customer` as a tool, ids only.** `domain/customers/lookup.py` and `POST /v1/tools/find_customer`. L12 by construction: no name, address or order count leaves the tool, so the model cannot say what is stored, and the only sentence is the question "An dieselbe Adresse wie beim letzten Mal?". `docs/04` and `docs/05` had "Wieder an die Rheinstraße 54?", which L12 forbids; both are corrected. An objection, a blocked customer, a shared number without a telling name and a name that does not match give `found: false`. No change for a call: the core does not call it yet, the prompt still names it as not available. Part 2 waits for T-6.5, which writes the first customer, and for a run on the real model |
 | 01.11.2026 | **A holiday suggestion reaches a tablet left open (#207).** The list came only with a full page load, so on a tablet that stays open a suggestion of the holiday job stayed invisible, nobody answered it, and the holiday ran on normal hours with the agent booking them. The event stream has a `holidays` signal now (`holidays.suggestions_change_token`), and the page fetches `/gui/fragments/feiertage` on it, also when another tablet answered |
@@ -675,6 +676,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.12.6 · 02.11.2026:** Handover 02.11.2026: #452 to #462 merged, next T-10.2 with Maxi
 - **v2.12.5 · 02.11.2026:** python -m printbridge --once reports a failed run with exit code 1
 - **v2.12.4 · 01.11.2026:** T-6.2 part 1: find_customer as a tool, ids only, so no stored word reaches the model
 - **v2.12.3 · 01.11.2026:** A holiday suggestion reaches a tablet left open (#207)
