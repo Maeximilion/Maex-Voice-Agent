@@ -4,9 +4,8 @@ Beträge in Cent, von Code berechnet, nie vom Modell (CLAUDE.md §2 Regel 1). Di
 Datenbank hält zusätzlich fest, dass die Summe stimmt - ein Rechenfehler im
 Code soll an der Tabelle scheitern, nicht auf dem Bon landen.
 
-`customer_id` ist bis Migration 004 ein Feld ohne Fremdschlüssel: `customers`
-gibt es erst in Stufe 3. `address_id` kommt mit 004 (docs/03
-§Migrationsreihenfolge).
+`customer_id` and `address_id` keep the tenant of the order; a customer deleted
+after its period clears only the links (migration 018, docs/03).
 """
 
 import uuid
@@ -48,6 +47,22 @@ class Order(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
             "total_cents = items_total_cents + delivery_fee_cents",
             name="ck_orders_total",
         ),
+        CheckConstraint(
+            "address_id IS NULL OR type = 'delivery'",
+            name="ck_orders_address_on_delivery",
+        ),
+        ForeignKeyConstraint(
+            ["customer_id", "tenant_id"],
+            ["customers.id", "customers.tenant_id"],
+            ondelete="SET NULL (customer_id)",
+            name="fk_orders_customer_tenant",
+        ),
+        ForeignKeyConstraint(
+            ["address_id", "tenant_id"],
+            ["addresses.id", "addresses.tenant_id"],
+            ondelete="SET NULL (address_id)",
+            name="fk_orders_address_tenant",
+        ),
         # Spalte "Neue Bestellungen" und Tagesbericht lesen je Mandant nach Zeit.
         Index("ix_orders_tenant_created", "tenant_id", "created_at"),
         # Ziel des zusammengesetzten Fremdschluessels aus order_items.
@@ -60,6 +75,7 @@ class Order(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     type: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="draft")
     customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    address_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     phone: Mapped[str] = mapped_column(Text, nullable=False)
     customer_name: Mapped[str] = mapped_column(Text, nullable=False)
     items_total_cents: Mapped[int] = mapped_column(Integer, nullable=False)

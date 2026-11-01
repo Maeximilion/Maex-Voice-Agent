@@ -13,10 +13,12 @@ from sqlalchemy.orm import Session
 from api.config import Settings, settings
 from api.jobs.retention import purge
 from api.models import (
+    Address,
     AuditLog,
     Call,
     Callback,
     ConsentLog,
+    Customer,
     Order,
     OrderItem,
     OutboxEvent,
@@ -60,13 +62,20 @@ def _call(session, tenant_id, started_at=NOW, caller_id="+497215551234") -> Call
     return call
 
 
+def _customer(session, tenant_id):
+    customer = Customer(tenant_id=tenant_id, phone="+497215551234", name="Mueller")
+    session.add(customer)
+    session.flush()
+    return customer
+
+
 def _order(session, tenant_id, ready_at, note="ohne Zwiebeln", item_note=None):
     order = Order(
         tenant_id=tenant_id,
         call_id=_call(session, tenant_id).id,
         type="pickup",
         status="confirmed",
-        customer_id=uuid.uuid4(),
+        customer_id=_customer(session, tenant_id).id,
         customer_name="Mueller",
         phone="+497215551234",
         items_total_cents=1980,
@@ -171,6 +180,31 @@ def test_caller_number_goes_after_90_days_and_the_statistics_stay(session, tenan
 
 
 # --- orders and reservations: guest details 90 days after their date ---------------
+
+
+def test_a_delivery_loses_its_address_link_after_90_days(session, tenant_id):
+    """The row cannot be traced through the customer record (docs/03)."""
+    old = _order(session, tenant_id, NOW - 91 * DAY)
+    young = _order(session, tenant_id, NOW - 89 * DAY)
+    for order in (old, young):
+        address = Address(
+            tenant_id=tenant_id,
+            customer_id=order.customer_id,
+            street="Hauptstr.",
+            house_number="1",
+            postal_code="76530",
+            city="Ort",
+        )
+        session.add(address)
+        session.flush()
+        order.type = "delivery"
+        order.address_id = address.id
+    session.commit()
+
+    purge(session, NOW)
+
+    assert _fresh(session, old).address_id is None
+    assert _fresh(session, young).address_id is not None
 
 
 def test_order_loses_name_phone_notes_and_link_after_90_days(session, tenant_id):

@@ -23,12 +23,16 @@ STUFE_2_TABELLEN = {
     "order_items",
 }
 # Tables of later migrations: 010 the consent log (T-11.1), 011 the call limit
-# windows (T-10.9), 013 the call mode windows (T-8.1).
+# windows (T-10.9), 013 the call mode windows (T-8.1), 018 the customers (T-6.1).
 LATER_TABLES = {
     "consent_log",
     "call_limit_windows",
     "call_mode_windows",
     "bridge_heartbeats",
+    "customers",
+    "addresses",
+    "delivery_zones",
+    "recognition_objections",
 }
 
 

@@ -268,10 +268,10 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | tenant_id / call_id | UUID FK | |
 | type | TEXT | `pickup` / `delivery` |
 | status | TEXT | `draft` / `confirmed` / `approved` / `handed_over` / `cancelled` |
-| customer_id | UUID NULL FK | Fremdschlüssel erst mit 004 (`customers`), bis dahin nur das Feld |
+| customer_id | UUID NULL FK | keeps the tenant of the order; a deleted customer clears only the link (migration 018) |
 | phone | TEXT | |
 | customer_name | TEXT | |
-| address_id | UUID NULL FK | nur bei Lieferung |
+| address_id | UUID NULL FK | delivery only (`ck_orders_address_on_delivery`); keeps the tenant of the order, a deleted address clears only the link (migration 018) |
 | items_total_cents | INT | |
 | delivery_fee_cents | INT | |
 | total_cents | INT | |
@@ -309,24 +309,34 @@ Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, o
 |---|---|---|
 | id | UUID PK | |
 | tenant_id | UUID FK | |
-| phone | TEXT | E.164; not unique: a shared number can belong to several customers, and an objection to recognition is kept per number (legal check L12, T-6.1) |
+| phone | TEXT | E.164, checked by the table; not unique: a shared number can belong to several customers, and a name that does not match means a new record (legal check L12) |
 | name | TEXT | |
 | last_order_at | TIMESTAMPTZ | |
 | order_count | INT | |
+| last_contact_at | TIMESTAMPTZ | set on an order, a reservation, a callback and a complaint; the 24-month period of the Löschkonzept runs from it, so no stored deletion date next to it (Maxi, 28.10.2026, #344) |
 | blocked | BOOL | Spam- oder Scherzanrufer |
-| delete_after | DATE | Löschfrist |
+
+### `recognition_objections`
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| phone | TEXT | E.164, checked by the table: another spelling would switch nothing off. Unique per tenant |
+
+An objection under Art. 21 switches recognition off for the number (legal check L12, T-6.2). It hangs on the number, not on a customer, and outlives every customer behind it.
 
 ### `addresses`
 | Feld | Typ | Bemerkung |
 |---|---|---|
 | id | UUID PK | |
-| customer_id | UUID FK | |
+| tenant_id | UUID FK | the tenant of the customer |
+| customer_id | UUID FK | goes with the customer |
 | street / house_number | TEXT | getrennt, die Hausnummer kommt oft über die Tastatur |
 | postal_code / city | TEXT | |
 | floor_note | TEXT | „2. OG, Klingel Müller" |
-| zone_id | UUID NULL FK | beim Anlegen aufgelöst und gespeichert |
+| zone_id | UUID NULL FK | beim Anlegen aufgelöst und gespeichert; a deleted zone clears it |
 | lat / lon | DOUBLE NULL | nur bei Polygon-Zonen |
-| is_default | BOOL | |
+| is_default | BOOL | at most one per customer (`uq_addresses_one_default`) |
 
 ### `delivery_zones`
 | Feld | Typ | Bemerkung |
@@ -334,7 +344,7 @@ Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, o
 | id | UUID PK | |
 | tenant_id | UUID FK | |
 | name | TEXT | „Zone 1 <Ort>" |
-| match_type | TEXT | `postal_code` oder `polygon` |
+| match_type | TEXT | `postal_code` oder `polygon`; the table refuses a zone without what it matches on |
 | postal_codes | TEXT[] | bei `postal_code` |
 | polygon | JSONB | GeoJSON bei `polygon` |
 | fee_cents | INT | Lieferpauschale |
@@ -385,7 +395,8 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | A caller's allergy in `order_items.note`, `orders.note` or `reservations.note` | end of the business day of the order (the night after `ready_at`, 05:00 local time, `core/time.py`), collected or not; for a reservation the night after its date; `RETENTION_ALLERGY_NOTE_DAYS` business days later (0) | daily job empties the note text (L13), also its copies in the outbox payloads of the same orders and reservations (`note`, `items[].note`; Codex PR #371), so it does not wait for the payload period. A note counts as an allergy when it contains "Allergi…" (the kitchen wording "Grund: Allergie" included), "Unverträglich…" or "Intoleran…", the words the call log refuses too; the whole note goes. Any other note stays until the guest details go |
 | `consent_log` | end of the third calendar year after the year of the answer (Maxi, 26.10.2026), `RETENTION_CONSENT_LOG_YEARS` (3): the row holds no allergy and no number, but it shows that the caller named one of their own; it is the proof of the "ja" behind a stored allergy note (Art. 7(1)) for as long as a claim can arise (§§ 195, 199 BGB), the reasoning of the request log (U2). Not with the `calls` row: that one is never deleted | daily job deletes the row (T-11.1) |
 | `callbacks.phone` and `callbacks.summary` | 90 days after the callback is done (the window of orders and reservations; not named in the check, set with it), `RETENTION_CALLBACK_DAYS` | daily job strips both fields (T-11.2). A callback never marked done loses them 90 days after its creation (Maxi, 26.10.2026, after the ultrareview of PR #371): nobody calls back after three months. Its card stays open with its reason and says "Nummer nach der Löschfrist entfernt" instead of offering a call |
-| Customers and their addresses | 24 months after the last contact | daily job (T-6.7) |
+| Customers and their addresses | 24 months after the last contact (`customers.last_contact_at`) | daily job (T-6.7), hard delete; the addresses go with the customer, orders keep only the cleared links |
+| `recognition_objections` | **Assumption, awaiting Maxi (01.11.2026):** no period: the row is what keeps recognition off, so it stays until the guest withdraws the objection | removed by hand on a withdrawal, in the procedure of `docs/09_OPERATIONS_LEGAL.md` §2 |
 | Outbox payloads | 7 days after a successful dispatch (`RETENTION_OUTBOX_SENT_DAYS`); any event not sent at most 30 days after it was written (`RETENTION_OUTBOX_UNSENT_DAYS`) | daily job cuts the payload to its ids (`order_id`, `reservation_id`, `callback_id`, `call_id`, `revision`): the column is not nullable, and the kitchen finds every slip of an order by id and revision. An event still pending at 30 days becomes `failed` with it, so a slip without the guest is never printed or sent. The event row goes after 90 days (`RETENTION_OUTBOX_ROW_DAYS`). A payload copies the guest details and the callback's phone and summary and lives up to the unsent period plus the sent one (a slip claimed on its last day), so `RETENTION_GUEST_DETAILS_DAYS` and `RETENTION_CALLBACK_DAYS` are at least that sum and the row period at least either; the settings refuse anything else at start (`api/config.py`, #207) |
 | Container and Caddy logs | 14 days | in production every container logs to the host's journald (`deploy/docker-compose.prod.yml`), which `deploy/journald.conf` limits by age: a journal file goes once its first entry is older than 13 days, and the file in use rotates daily, so no entry is older than 14 days (T-11.7). Docker's own drivers limit size and file count only. Caddy writes no access log; its own messages are container output |
 | Asterisk call records | none | `deploy/asterisk/conf/cdr.conf` switches the call detail records off and `logger.conf` the queue log, both would hold caller numbers; Asterisk logs to the console only, so to the container log above (T-11.7) |
@@ -418,5 +429,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 015 | `special_days.status` and `like_weekday`, `uq_special_days_suggestion`, `service_config.holiday_region`: statutory holidays as suggestions the team answers (T-9.5); every existing special day becomes `set`, nothing changes; downgrade deletes suggestions and dismissals, a day "like a weekday" keeps its own weekday, the region goes |
 | 016 | `bridge_heartbeats`: the time of the print bridge's last poll (T-8.3); nothing backfilled, the downgrade drops the table and the next poll writes it again |
 | 017 | `uq_special_days_set`: one `set` row per tenant and date (#441); the upgrade first lists every date with two `set` rows and stops without a change, the team decides which row holds; the downgrade drops the key |
-| planned, next free number | `customers`, `addresses`, `delivery_zones`, `orders.address_id` (T-6.1) |
+| 018 | `delivery_zones`, `customers`, `addresses`, `recognition_objections`, `orders.address_id` and the foreign keys of `orders.customer_id` and `orders.address_id` (T-6.1, L12); nothing writes them yet, T-6.2 and T-6.5 do, T-6.7 deletes; the downgrade drops the four tables with every row and the links on the orders |
 | planned, next free number | `eval_cases`, `eval_runs` |

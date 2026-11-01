@@ -276,9 +276,12 @@ def _guest_details(session: Session, cutoff: datetime) -> dict[str, int]:
                 Order.phone != "",
                 Order.note.is_not(None),
                 Order.customer_id.is_not(None),
+                Order.address_id.is_not(None),
             ),
         )
-        .values(customer_name="", phone="", note=None, customer_id=None),
+        .values(
+            customer_name="", phone="", note=None, customer_id=None, address_id=None
+        ),
     )
     reservations = _run(
         session,
