@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 01.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.12.2
+> Status: 01.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.12.3
 
 ---
 
@@ -524,6 +524,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 01.11.2026 | **A holiday suggestion reaches a tablet left open (#207).** The list came only with a full page load, so on a tablet that stays open a suggestion of the holiday job stayed invisible, nobody answered it, and the holiday ran on normal hours with the agent booking them. The event stream has a `holidays` signal now (`holidays.suggestions_change_token`), and the page fetches `/gui/fragments/feiertage` on it, also when another tablet answered |
 | 01.11.2026 | **T-6.7 customers go after 24 months.** The deletion job removes a customer 730 days (`RETENTION_CUSTOMER_DAYS`) after `last_contact_at`, the addresses with it. An order keeps only the cleared links (L18), an objection to recognition stays (L12). In place before T-6.2 writes the first customer |
 | 01.11.2026 | **The four open Dependabot PRs in one (#422, #455, #456, #457).** FastAPI 0.162.0, Alembic 1.20.1, SQLAlchemy 2.1.6, pydantic-settings 2.16.1, ruff 0.17.2, `actions/setup-python` 7.1.0, n8n 2.45.6, ntfy 2.34.0; no security alert behind them. FastAPI's two breaking changes do not reach us: the code uses no boolean form fields and no parameter models. CI starts neither n8n nor ntfy, so both ran in a throwaway stack with the hardened settings of `docker-compose.yml`: n8n imports `team_events.json` and still reads the two execution settings of the deletion concept, ntfy keeps its rules (anonymous and team cannot publish, n8n cannot read, the team reads) and starts without users |
 | 01.11.2026 | **The team drills run on a day that has a row of its own (#207).** `team_away` added a second `set` row, which `uq_special_days_set` refuses since migration 017, so on a date with a special day or the row of a killed drill every such drill stopped with a `DrillError`. The day's own row now stands aside in `special_days_drill` for the drill and comes back with its id, and a killed drill's leftovers are cleared by the next run; a suggestion is left alone. Tests against a real database, and the outage drills pass 27 of 27 on this code. The workbench went to migration 018 the same day |
@@ -672,6 +673,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.12.3 · 01.11.2026:** A holiday suggestion reaches a tablet left open (#207)
 - **v2.12.2 · 01.11.2026:** T-6.7 done: the deletion job removes a customer 24 months after the last contact
 - **v2.12.1 · 01.11.2026:** The four open Dependabot PRs in one: FastAPI 0.162, SQLAlchemy 2.1.6, n8n 2.45.6, ntfy 2.34.0, setup-python 7.1.0
 - **v2.12.0 · 01.11.2026:** Workbench at migration 018, the team drills run on a day that has a row of its own (#207)

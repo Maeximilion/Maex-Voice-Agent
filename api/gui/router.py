@@ -462,6 +462,26 @@ def rueckruf_erledigt(
 
 # --- Holiday suggestions (T-9.5) -----------------------------------------------------
 
+
+@router.get(
+    "/fragments/feiertage", response_class=HTMLResponse, include_in_schema=False
+)
+def feiertage_fragment(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Only the holiday list: the page fetches it after each event (#207)."""
+    tenant = _tenant(session)
+    if tenant is None:
+        return templates.TemplateResponse(
+            request, "fragments/feiertage.html", {"holiday_problem": NO_TENANT}, 503
+        )
+    return templates.TemplateResponse(
+        request,
+        "fragments/feiertage.html",
+        {"holidays": _holiday_rows(session, tenant)},
+    )
+
+
 # The buttons of a suggestion -> the answer in domain/status/holidays.py.
 HOLIDAY_ANSWERS = {
     "wie": holiday_days.LIKE,

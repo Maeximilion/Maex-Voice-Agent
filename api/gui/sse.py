@@ -3,8 +3,8 @@
 Der Strom schickt keine Daten, nur ein Signal: "an der Spalte Heute hat sich etwas
 geändert" (`today`), "die Kopfzeile ist umgeschaltet" (`header`), "an den
 offenen Rückrufen hat sich etwas geändert" (`callbacks`), "an den neuen
-Bestellungen" (`orders`) oder "ein Gericht ist aus oder wieder da" (`dishes`,
-T-4.8). Die Seite
+Bestellungen" (`orders`), "ein Gericht ist aus oder wieder da" (`dishes`,
+T-4.8) oder "an den Feiertagsvorschlägen" (`holidays`, #207). Die Seite
 holt das Fragment danach selbst. Das hält die Nutzlast klein und die Darstellung
 an genau einer Stelle - im Jinja2-Template.
 
@@ -25,12 +25,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from api.core.logging import get_logger
+from api.core.time import business_day
 from api.db import SessionLocal
 from api.domain.callbacks import open_change_token
 from api.domain.menu.sold_out import sold_out_change_token
 from api.domain.ordering.board import new_orders_change_token
 from api.domain.reservations import today_change_token
 from api.domain.status.config import config_change_token
+from api.domain.status.holidays import suggestions_change_token
 
 logger = get_logger("api.gui.sse")
 
@@ -62,6 +64,10 @@ def _dishes_token(session: Session, tenant_id: uuid.UUID) -> str:
     return sold_out_change_token(session, tenant_id)
 
 
+def _holidays_token(session: Session, tenant_id: uuid.UUID, tz_name: str) -> str:
+    return suggestions_change_token(session, tenant_id, business_day(tz_name=tz_name))
+
+
 def _tokens(tenant_id: uuid.UUID, tz_name: str) -> dict[str, str]:
     """Ein Fingerabdruck je Bereich der Seite, in der Reihenfolge der Ereignisse.
 
@@ -79,6 +85,7 @@ def _tokens(tenant_id: uuid.UUID, tz_name: str) -> dict[str, str]:
             "callbacks": _callbacks_token(session, tenant_id),
             "orders": _orders_token(session, tenant_id, tz_name),
             "dishes": _dishes_token(session, tenant_id),
+            "holidays": _holidays_token(session, tenant_id, tz_name),
         }
     finally:
         session.close()
