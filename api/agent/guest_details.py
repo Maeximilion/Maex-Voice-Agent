@@ -84,6 +84,9 @@ _HEAD_DIGITS = 6
 # is a complete number already, are an hour or a count as likely as an
 # extension.
 _SHORT_TAIL = 2
+# Digits too many for a card number, or for a few of them, with whatever stands
+# between digits ("030 5551234", "01 71 23 45 678", "+49 171 2345678").
+_LONG_DIGITS = re.compile(r"\s*[+(]?(?:\d[\s\-/().,]*){6}")
 # A single letter right behind one of these belongs to the word before it.
 _APOSTROPHES = ("'", "\N{RIGHT SINGLE QUOTATION MARK}")
 # What may stand between two words of a name, and nowhere else in it. The
@@ -96,6 +99,9 @@ _DATE_LIKE = re.compile(r"\d{1,2}[./-]")
 # The same date written with blanks: day, month, year. Told from a number in
 # three groups by the day and the month being one.
 _SPACED_DATE = re.compile(r"(\d{1,2})\s+(\d{1,2})\s+(\d{2}|\d{4})")
+# An hour written without its colon. Only one that begins with a zero can be
+# taken for the head of a number (`_may_be_a_head`).
+_COMPACT_TIME = re.compile(r"(?<!\d)(0\d) ?([0-5]\d)(?=\s*uhr\b)", re.IGNORECASE)
 # Words that say the digits of a turn are a number to call, folded. "Nummer"
 # only as a word of its own or with what kind of line it is: the number of an
 # order, an invoice or a house is none. No word for calling as such: "ich
@@ -120,6 +126,18 @@ _PHONE_STEMS = (
     "rueckruf",
     "zurueckruf",
 )
+# A "Nummer" with a card number behind it ("Ihre Nummer 23 ist notiert"). Not
+# with a phone number behind it ("Ist Ihre Nummer 0171 2345678 noch aktuell?").
+_NAMED_CARD_NUMBER = re.compile(
+    rf"\bnummer(?!{_LONG_DIGITS.pattern})(?=\s*(?:[a-z]\s*)?\d)", re.IGNORECASE
+)
+# And what else stands on the card in the agent's sentence: every "Nummer" but
+# "Ihre Nummer" and "unter welcher Nummer".
+_CARD_NUMBER = re.compile(
+    rf"(?<!ihre )(?<!ihrer )(?<!unter welcher )\bnummer\b(?!{_LONG_DIGITS.pattern})"
+    rf"|{_NAMED_CARD_NUMBER.pattern}",
+    re.IGNORECASE,
+)
 
 
 def _nfc(text: str) -> str:
@@ -134,11 +152,13 @@ def words_said(sentence: str) -> Counter[str]:
     there, and what the guest spelled in it."""
     lowered = _nfc(sentence).lower()
     said = Counter(fold(word) for word in _WORD.findall(lowered))
-    said.update(_spelled(lowered))
-    return said
+    spelled, hanging = _spelled(lowered)
+    said.subtract(hanging)
+    said.update(spelled)
+    return +said
 
 
-def _spelled(sentence: str) -> set[str]:
+def _spelled(sentence: str) -> tuple[set[str], list[str]]:
     """What single letters spell that follow each other: "M E I E R", "M, A,
     I, E, R" or "M wie Martha, A wie Anton", where the word behind "wie" is
     passed over. Any other word ends a row, and so does anything between two
@@ -146,11 +166,16 @@ def _spelled(sentence: str) -> set[str]:
     to a card number or hangs on an apostrophe is none of a name: the a of
     "23a" and of "die 23 a, M E I E R", the s of "ich bin's" (Codex PR #244,
     P2 twice, and the reviews between them). One letter alone spells nothing.
+    Those letters come back as well: they are no word the guest said, or
+    "A Meier" would pass (Codex PR #244, P2). A letter of a row stays a word,
+    the row may be initials ("J. R. Müller"), and so does one before a phone
+    number ("Frau M 0171 2345678").
     ponytail: a single letter that is a word of its own right before the row
     is joined to it ("Menü B. M E I E R" spells "bmeier"), and a name that
     begins with a to g, spelled right behind digits, loses that letter. Both
     end in a question for the guest."""
     spelled: set[str] = set()
+    hanging: list[str] = []
     row: list[str] = []
     after_wie = False
     end = 0
@@ -181,8 +206,10 @@ def _spelled(sentence: str) -> set[str]:
             row.append(fold(word))
         else:
             row = _close(row, spelled)
+            if len(word) == 1 and not _LONG_DIGITS.match(sentence, stop):
+                hanging.append(fold(word))
     _close(row, spelled)
-    return spelled
+    return spelled, hanging
 
 
 def _close(row: list[str], spelled: set[str]) -> list[str]:
@@ -222,9 +249,7 @@ def names_a_phone_number(sentence: str) -> bool:
 
     Without that, digits that look like a phone number may be anything: in
     "zu meiner alten Bestellung 0171 2345678 habe ich eine Frage" they are
-    no number the team should call back (Codex PR #244, P1). The same check
-    reads the agent's own sentence: after a question for the number the
-    guest's answer needs no word for it (`state.note_guest_details`)."""
+    no number the team should call back (Codex PR #244, P1)."""
     lowered = _nfc(sentence).lower()
     words = {fold(word) for word in _WORD.findall(lowered)}
     if words & _PHONE_WORDS or any(word.startswith(_PHONE_STEMS) for word in words):
@@ -234,6 +259,23 @@ def names_a_phone_number(sentence: str) -> bool:
         return False
     before = lowered[: runs[-1].start()].rstrip(" \t:(")
     return before.endswith("unter") and not before[-6:-5].isalpha()
+
+
+def asks_for_a_phone_number(say: str, *, asked_before: bool = False) -> bool:
+    """Does the agent's sentence ask for the guest's number? Then the digits
+    of the answer need no word for what they are
+    (`state.note_guest_details`).
+
+    As `names_a_phone_number`, without the "Nummer" that stands on the card:
+    the menu's "Können Sie mir die Nummer sagen?" and every readback name it
+    (Codex PR #244, P1). Behind a question for the phone number the bare
+    word goes on with it ("Können Sie die Nummer wiederholen?"): only a card
+    number ends it.
+    shortcut: a sentence that only mentions the line counts ("Das Team ist
+    nicht erreichbar"), and a model's first "Nennen Sie mir eine Nummer" does
+    not; upgrade when a call log shows either."""
+    card = _NAMED_CARD_NUMBER if asked_before else _CARD_NUMBER
+    return names_a_phone_number(card.sub("-", " ".join(say.split())))
 
 
 def numbers_said(sentence: str) -> set[str]:
@@ -249,10 +291,11 @@ def numbers_said(sentence: str) -> set[str]:
     other digits of the turn may be its head (`_may_be_a_head`). A count, a
     date or a dish before the number does no harm: "für 4 am 16.09., meine
     Nummer ist 0171 2345678". A guest whose number stands next to other such
-    digits is asked again and says it alone."""
+    digits is asked again and says it alone. An hour without its colon is read
+    with one: "um 0900 Uhr, meine Nummer ist ..." (Codex PR #244, P2)."""
     groups = [
         piece.strip(_AROUND_A_NUMBER)
-        for run in _DIGIT_RUN.findall(sentence)
+        for run in _DIGIT_RUN.findall(_COMPACT_TIME.sub(r"\1:\2", sentence))
         for piece in _NUMBER_END.split(_without_trunk_zero(run))
         if _has_digit(piece)
     ]

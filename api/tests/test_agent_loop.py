@@ -362,6 +362,49 @@ def test_erfolg_loescht_den_ladder_stand_des_feldes(session, state):
     assert loop._ladder.level_for("party_size") == 1
 
 
+@pytest.mark.parametrize("known", [None, "+491712345678"])
+def test_a_number_the_core_took_restarts_the_ladder_for_phone(session, state, known):
+    """Codex PR #244, P2: the core writes the number itself and a model has no
+    reason to report it, so the old level-ups stayed and a later correction
+    went to the team after two failures. The same when the guest says the
+    number that stands already: the answer was understood."""
+    if known:
+        state.slots["phone"] = known
+    llm = FakeLLM(
+        [
+            *[LLMTurn(say="Wie bitte?", understanding_failure="phone")] * 4,
+            LLMTurn(say="Danke."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+    for _ in range(4):
+        loop.run_turn(state, "äh")
+    assert loop._ladder.level_for("phone") == 3
+
+    note_said(state, "Unter welcher Telefonnummer sind Sie erreichbar?")
+    loop.run_turn(state, "0171 2345678")
+
+    assert state.slots["phone"] == "+491712345678"
+    assert loop._ladder.level_for("phone") == 1
+
+
+def test_digits_the_core_did_not_take_keep_the_ladder_for_phone(session, state):
+    llm = FakeLLM(
+        [
+            *[LLMTurn(say="Wie bitte?", understanding_failure="phone")] * 4,
+            LLMTurn(say="Mit Vorwahl bitte."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+    for _ in range(4):
+        loop.run_turn(state, "äh")
+
+    note_said(state, "Unter welcher Telefonnummer sind Sie erreichbar?")
+    loop.run_turn(state, "555 1234")
+
+    assert loop._ladder.level_for("phone") == 3
+
+
 def test_understanding_failure_zaehlt_nur_einmal_pro_kundenzug(session, state):
     """Zwei Meldungen desselben Felds innerhalb eines Zugs (erst beim Tool-Hop,
     dann in der Antwort) sind ein Kundenversuch, keine zwei -- sonst könnte die
@@ -1827,6 +1870,63 @@ def test_a_number_that_never_comes_ends_the_call_on_the_ladder(
     assert results[-1].ended is True
     assert results[-1].say == [SAY_NOBODY_REACHABLE]
     assert len(results) < 10
+
+
+def test_a_bare_question_behind_a_refused_callback_counts_on_the_ladder(
+    session, tenant_id, call_id
+):
+    """Review of bb3601f: the model was told to ask for the number, so here
+    the bare word cannot be a number on the card."""
+    state = numberless(tenant_id, call_id)
+    asks = "Welche Nummer soll ich notieren?"
+    turns = [t for _ in range(3) for t in (wants_a_callback(), LLMTurn(say=asks))]
+    loop = ConversationLoop(
+        session, FakeLLM(turns), "system", now=NOW, clock=clock_from([0])
+    )
+
+    for _ in range(3):
+        loop.run_turn(state, "... chhh ...")
+
+    assert loop._ladder.level_for("phone") > 1
+
+
+def test_a_second_refused_callback_in_a_turn_counts_nothing(
+    session, tenant_id, call_id
+):
+    """Codex PR #452, P1: the model tried again before it asked, so the guest
+    has not heard a question they could have failed to answer."""
+    state = numberless(tenant_id, call_id)
+    llm = FakeLLM(
+        [
+            wants_a_callback(),
+            wants_a_callback(),
+            LLMTurn(say="Unter welcher Nummer?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Rufen Sie mich zurück")
+
+    assert "phone" not in loop._ladder._fields
+
+
+def test_digits_behind_a_bare_question_after_a_refused_callback_are_the_number(
+    session, tenant_id, call_id
+):
+    state = numberless(tenant_id, call_id)
+    llm = FakeLLM(
+        [
+            wants_a_callback(),
+            LLMTurn(say="Welche Nummer soll ich notieren?"),
+            LLMTurn(say="Danke."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Rufen Sie mich zurück")
+    loop.run_turn(state, "0171 2345678")
+
+    assert state.slots["phone"] == "+491712345678"
 
 
 def test_a_callback_wish_before_the_question_for_the_number_counts_nothing(

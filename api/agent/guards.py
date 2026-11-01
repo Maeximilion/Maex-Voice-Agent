@@ -43,9 +43,9 @@ from api.agent.consent import is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
 from api.agent.escalation import SENTENCE, asks_about_allergies, is_question
 from api.agent.guest_details import (
+    asks_for_a_phone_number,
     e164,
     name_said,
-    names_a_phone_number,
     number_known,
 )
 from api.agent.llm import ToolCall
@@ -198,7 +198,9 @@ def note_said(state: ConversationState, say: str) -> None:
     # with a first sentence said the call has begun: no second greeting.
     state.last_say = last_words(say)
     state.greeted = True
-    state.asked_for_phone = names_a_phone_number(say)
+    state.asked_for_phone = asks_for_a_phone_number(
+        say, asked_before=state.asked_for_phone
+    )
     heard = say.lower()
     named = {
         item_id
