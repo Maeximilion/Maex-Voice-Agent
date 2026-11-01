@@ -60,6 +60,12 @@
     });
   }
 
+  function feiertage() {
+    window.htmx.ajax("GET", "/gui/fragments/feiertage", {
+      target: "#feiertage-liste",
+    });
+  }
+
   // Ton bei neuen Rueckrufen (docs/06 §1 Regel 5), Beschwerden mit eigenem Ton
   // (§3). Erzeugt statt Audiodatei: nichts nachzuladen, laeuft ohne Internet.
   // Browser spielen erst nach dem ersten Tap auf die Seite Ton ab; am Tablet
@@ -262,6 +268,11 @@
     offline(false);
     kopfzeile();
     reloadDishes();
+  });
+  // The job wrote a suggestion, or another tablet answered one (#207).
+  strom.addEventListener("holidays", function () {
+    offline(false);
+    feiertage();
   });
   strom.addEventListener("today", function () {
     offline(false);
