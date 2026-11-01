@@ -913,6 +913,7 @@ def test_call_without_the_detail_is_left_to_the_validation(call):
         "Ihre Nummer 23 ist notiert.",
         "Ihre Nummer s12 ist notiert.",
         "Ihre Nummer S 12 ist notiert.",
+        "Nummer 13, 14 und 15 sind notiert.",
         "Soll das unter Nummer 13 stehen?",
     ],
 )
@@ -945,6 +946,10 @@ def test_a_menu_number_in_the_agents_sentence_asks_for_no_phone_number(say):
         "Bitte nennen Sie mir die Nummer mit Vorwahl.",
         # The agent reads a number out: the guest may answer with another.
         "Darf ich Sie unter 0721 5551234 notieren?",
+        # Codex PR #452, P2: digits like these stand on no card.
+        "Ist Ihre Nummer 0721 5551234 noch aktuell?",
+        "Ist die Nummer 030 5551234 richtig?",
+        "Ist die Nummer +49 721 5551234 richtig?",
     ],
 )
 def test_the_agents_question_for_the_number_arms_the_answer(say):

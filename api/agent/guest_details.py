@@ -84,9 +84,9 @@ _HEAD_DIGITS = 6
 # is a complete number already, are an hour or a count as likely as an
 # extension.
 _SHORT_TAIL = 2
-# Digits a letter stands before that are too many for a card number, with
-# whatever stands between digits ("030 5551234", "01 71 23 45 678").
-_LONG_DIGITS = re.compile(r"\s*(?:\d[\s\-/().,]*){4}")
+# Digits too many for a card number, or for a few of them, with whatever stands
+# between digits ("030 5551234", "01 71 23 45 678", "+49 171 2345678").
+_LONG_DIGITS = re.compile(r"\s*[+(]?(?:\d[\s\-/().,]*){6}")
 # A single letter right behind one of these belongs to the word before it.
 _APOSTROPHES = ("'", "\N{RIGHT SINGLE QUOTATION MARK}")
 # What may stand between two words of a name, and nowhere else in it. The
@@ -126,12 +126,15 @@ _PHONE_STEMS = (
     "rueckruf",
     "zurueckruf",
 )
-# A "Nummer" with a card number behind it ("Ihre Nummer 23 ist notiert").
-_NAMED_CARD_NUMBER = re.compile(r"\bnummer(?=\s*(?:[a-z]\s*)?\d)", re.IGNORECASE)
+# A "Nummer" with a card number behind it ("Ihre Nummer 23 ist notiert"). Not
+# with a phone number behind it ("Ist Ihre Nummer 0171 2345678 noch aktuell?").
+_NAMED_CARD_NUMBER = re.compile(
+    rf"\bnummer(?!{_LONG_DIGITS.pattern})(?=\s*(?:[a-z]\s*)?\d)", re.IGNORECASE
+)
 # And what else stands on the card in the agent's sentence: every "Nummer" but
 # "Ihre Nummer" and "unter welcher Nummer".
 _CARD_NUMBER = re.compile(
-    rf"(?<!ihre )(?<!ihrer )(?<!unter welcher )\bnummer\b"
+    rf"(?<!ihre )(?<!ihrer )(?<!unter welcher )\bnummer\b(?!{_LONG_DIGITS.pattern})"
     rf"|{_NAMED_CARD_NUMBER.pattern}",
     re.IGNORECASE,
 )
