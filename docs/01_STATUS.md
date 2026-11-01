@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 01.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.12.3
+> Status: 01.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.12.4
 
 ---
 
@@ -311,6 +311,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 ## Made Assumptions (subject to change)
 
+- **`find_customer` (T-6.2 part 1, 01.11.2026), Claude's choices, awaiting Maxi:** (a) the tool gives the model ids only, against the first draft of `docs/04`; (b) a shared number without a telling name counts as unknown, so such a guest is asked like a new one; (c) a name must match in full, apart from upper case and umlaut spelling, so "Herr Müller" is not "Müller", which costs a new record and never opens someone else's
 - **Customers and the objection to recognition (T-6.1, 01.11.2026), Claude's choices, awaiting Maxi:** (a) `recognition_objections` has no period: the row is what keeps recognition off, so it stays until the guest withdraws the objection; (b) `customers.delete_after` of the first draft is gone, the 24 months run from `last_contact_at`, so one contact cannot leave a stale date behind; (c) a phone number on `customers` and `recognition_objections` must be E.164 by a check of the table, and a customer has at most one default address
 - **The print bridge's heartbeat (T-8.3, 30.10.2026), Claude's choices; (d) confirmed by Maxi 30.10.2026:** (a) silent counts only once pickup or delivery has been open for those minutes, because the register PC is off at night, may come on a little after opening, and only orders print; (b) `ALARM_BRIDGE_SILENT_MINUTES` is 5, in `.env`; (c) a bridge that is set up (`KITCHEN_BRIDGE_TENANT_ID`) and never polled counts as silent; (d) the tablet shows it to the team as well, unlike the other operator alarms, because the team can check the register PC at once.
 - **Holiday suggestions (T-9.5, 30.10.2026), Claude's choices, awaiting Maxi:** (a) a suggestion proposes Sunday's hours and seats (the mockup's "Wie Sonntag behandeln?"); the other answers are closed and the weekday's hours; (b) suggested 60 days ahead, a pass every six hours; (c) statewide statutory holidays only, as the law stands in 2026: days kept in parts of a state (Fronleichnam in parts of SN and TH, Mariä Himmelfahrt in BY, Augsburg) and the Sundays of BB are left out; (d) the card stands above "Heute" in the operations view, because the admin area "Zeiten" of the mockup does not exist yet; another tablet sees an answer on its next load, no live event; (e) `service_config.holiday_region` is empty by default and is set by SQL (`UPDATE service_config SET holiday_region = 'BW'`), as the windows of T-8.1, until the admin area has an editor
@@ -524,6 +525,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 01.11.2026 | **T-6.2 part 1: `find_customer` as a tool, ids only.** `domain/customers/lookup.py` and `POST /v1/tools/find_customer`. L12 by construction: no name, address or order count leaves the tool, so the model cannot say what is stored, and the only sentence is the question "An dieselbe Adresse wie beim letzten Mal?". `docs/04` and `docs/05` had "Wieder an die Rheinstraße 54?", which L12 forbids; both are corrected. An objection, a blocked customer, a shared number without a telling name and a name that does not match give `found: false`. No change for a call: the core does not call it yet, the prompt still names it as not available. Part 2 waits for T-6.5, which writes the first customer, and for a run on the real model |
 | 01.11.2026 | **A holiday suggestion reaches a tablet left open (#207).** The list came only with a full page load, so on a tablet that stays open a suggestion of the holiday job stayed invisible, nobody answered it, and the holiday ran on normal hours with the agent booking them. The event stream has a `holidays` signal now (`holidays.suggestions_change_token`), and the page fetches `/gui/fragments/feiertage` on it, also when another tablet answered |
 | 01.11.2026 | **T-6.7 customers go after 24 months.** The deletion job removes a customer 730 days (`RETENTION_CUSTOMER_DAYS`) after `last_contact_at`, the addresses with it. An order keeps only the cleared links (L18), an objection to recognition stays (L12). In place before T-6.2 writes the first customer |
 | 01.11.2026 | **The four open Dependabot PRs in one (#422, #455, #456, #457).** FastAPI 0.162.0, Alembic 1.20.1, SQLAlchemy 2.1.6, pydantic-settings 2.16.1, ruff 0.17.2, `actions/setup-python` 7.1.0, n8n 2.45.6, ntfy 2.34.0; no security alert behind them. FastAPI's two breaking changes do not reach us: the code uses no boolean form fields and no parameter models. CI starts neither n8n nor ntfy, so both ran in a throwaway stack with the hardened settings of `docker-compose.yml`: n8n imports `team_events.json` and still reads the two execution settings of the deletion concept, ntfy keeps its rules (anonymous and team cannot publish, n8n cannot read, the team reads) and starts without users |
@@ -673,6 +675,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.12.4 · 01.11.2026:** T-6.2 part 1: find_customer as a tool, ids only, so no stored word reaches the model
 - **v2.12.3 · 01.11.2026:** A holiday suggestion reaches a tablet left open (#207)
 - **v2.12.2 · 01.11.2026:** T-6.7 done: the deletion job removes a customer 24 months after the last contact
 - **v2.12.1 · 01.11.2026:** The four open Dependabot PRs in one: FastAPI 0.162, SQLAlchemy 2.1.6, n8n 2.45.6, ntfy 2.34.0, setup-python 7.1.0
