@@ -746,14 +746,16 @@ class ConversationLoop:
                 state=state, say=[transfer.say or SAY_ESCALATION], ended=True
             )
         if state.asked_for_phone and "phone" not in reported_failures:
-            reported_failures.add("phone")
             self._ladder.record_failure("phone")
             if self._ladder.should_end_call("phone"):
                 return self._handoff(
                     state, SAY_NOT_UNDERSTOOD, reason="not_understood", detail=user_text
                 )
         # The model is told to ask for it: behind this a bare "Nummer" is the
-        # number to call back (`guest_details.asks_for_a_phone_number`).
+        # number to call back (`guest_details.asks_for_a_phone_number`). A
+        # second refused try in this turn is no failed answer: the guest has
+        # not heard the question yet (Codex PR #452, P1).
+        reported_failures.add("phone")
         state.asked_for_phone = True
         return None
 

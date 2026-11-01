@@ -84,8 +84,9 @@ _HEAD_DIGITS = 6
 # is a complete number already, are an hour or a count as likely as an
 # extension.
 _SHORT_TAIL = 2
-# Digits a letter stands before that are too many for a card number.
-_LONG_DIGITS = re.compile(r"\s*\d{4}")
+# Digits a letter stands before that are too many for a card number, with
+# whatever stands between digits ("030 5551234", "01 71 23 45 678").
+_LONG_DIGITS = re.compile(r"\s*(?:\d[\s\-/().,]*){4}")
 # A single letter right behind one of these belongs to the word before it.
 _APOSTROPHES = ("'", "\N{RIGHT SINGLE QUOTATION MARK}")
 # What may stand between two words of a name, and nowhere else in it. The

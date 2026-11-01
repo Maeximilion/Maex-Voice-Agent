@@ -1890,6 +1890,26 @@ def test_a_bare_question_behind_a_refused_callback_counts_on_the_ladder(
     assert loop._ladder.level_for("phone") > 1
 
 
+def test_a_second_refused_callback_in_a_turn_counts_nothing(
+    session, tenant_id, call_id
+):
+    """Codex PR #452, P1: the model tried again before it asked, so the guest
+    has not heard a question they could have failed to answer."""
+    state = numberless(tenant_id, call_id)
+    llm = FakeLLM(
+        [
+            wants_a_callback(),
+            wants_a_callback(),
+            LLMTurn(say="Unter welcher Nummer?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Rufen Sie mich zurück")
+
+    assert "phone" not in loop._ladder._fields
+
+
 def test_digits_behind_a_bare_question_after_a_refused_callback_are_the_number(
     session, tenant_id, call_id
 ):

@@ -1007,6 +1007,9 @@ def test_a_letter_that_hangs_on_something_else_is_no_word_of_a_name(sentence, ke
         ("Hier J. R. Müller", "J. R. Müller"),
         # Review of bb3601f: the digits behind the letter are no card number.
         ("Hier ist Frau M 0171 2345678", "Frau M"),
+        # Codex PR #452, P2: in shorter groups they are a number all the same.
+        ("Hier ist Frau M 030 5551234", "Frau M"),
+        ("Hier ist Frau M 01 71 23 45 678", "Frau M"),
     ],
 )
 def test_a_letter_the_guest_said_as_a_name_stays(sentence, name):
