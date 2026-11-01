@@ -325,7 +325,7 @@ def _said_by_the_guest(state: ConversationState, slot: str, value: Any) -> bool:
     return True
 
 
-def note_guest_details(state: ConversationState, guest_text: str) -> None:
+def note_guest_details(state: ConversationState, guest_text: str) -> bool:
     """Keeps the words and the number of a guest sentence, for every turn
     after it. Call it before the model is asked: what the guest names in a
     sentence is written by the model in the answer to that very sentence.
@@ -334,19 +334,25 @@ def note_guest_details(state: ConversationState, guest_text: str) -> None:
     turns is no "Müller Müller" (Codex PR #244, P2).
 
     Digits are a number to call only when the sentence says so or answers
-    the agent's question for one (`guest_details.names_a_phone_number`;
-    Codex PR #244, P1). Such a number goes into `slots` here, by the guest's
-    own words: a guest who names another number than the one they call from
-    is reached under that one (docs/05 §3), and a model that does not write
-    it down cannot book under the caller ID all the same, since a tool books
-    under the number in `slots` (`guards._phone_counts`; Codex PR #244, P2)."""
+    the agent's question for one (`guest_details.names_a_phone_number`,
+    `asks_for_a_phone_number`; Codex PR #244, P1). Such a number goes into
+    `slots` here, by the guest's own words: a guest who names another number
+    than the one they call from is reached under that one (docs/05 §3), and a
+    model that does not write it down cannot book under the caller ID all the
+    same, since a tool books under the number in `slots`
+    (`guards._phone_counts`; Codex PR #244, P2).
+
+    True when the sentence gave such a number."""
     for word, count in words_said(guest_text).items():
         state.said_words[word] = max(state.said_words.get(word, 0), count)
+    numbers: set[str] = set()
     if state.asked_for_phone or names_a_phone_number(guest_text):
-        for number in numbers_said(guest_text):
+        numbers = numbers_said(guest_text)
+        for number in numbers:
             state.said_numbers.add(number)
             _number_set(state, number)
             state.slots["phone"] = number
+    return bool(numbers)
 
 
 def note_intent(state: ConversationState, guest_text: str) -> None:

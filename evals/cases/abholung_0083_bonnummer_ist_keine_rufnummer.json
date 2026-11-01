@@ -1,0 +1,54 @@
+{
+  "id": "abholung_0083",
+  "name": "Digits of an old receipt after the menu asked for a dish number are no phone number: the order books under the number the guest gives when asked",
+  "tags": [
+    "abholung",
+    "rufnummer",
+    "nummer",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich haette gern das Zauberbrot zum Abholen."
+    },
+    {
+      "role": "customer",
+      "text": "Auf meinem alten Bon steht 0171 2345678."
+    },
+    {
+      "role": "customer",
+      "text": "Dann nehme ich einmal die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das war alles."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "0721 5551234"
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "items": [
+      {
+        "number": "13",
+        "quantity": 1
+      }
+    ],
+    "customer_name": "Mueller",
+    "confirmed": true,
+    "escalated": false,
+    "phone": "+497215551234"
+  }
+}

@@ -237,7 +237,10 @@ class ConversationLoop:
             # before the model and before any `confirm`.
             return self._callback_answered(state, user_text)
         heard = state.model_dump(include=_HEARD)
-        note_guest_details(state, user_text)
+        if note_guest_details(state, user_text):
+            # The core wrote the number itself, so a model has nothing to
+            # report as understood (Codex PR #244, P2).
+            self._ladder.record_success("phone")
         # The same for an allergy: the core writes it onto the draft from what
         # the guest said, never from a model's note (T-11.1).
         noted = list(state.allergies)
@@ -749,6 +752,9 @@ class ConversationLoop:
                 return self._handoff(
                     state, SAY_NOT_UNDERSTOOD, reason="not_understood", detail=user_text
                 )
+        # The model is told to ask for it: behind this a bare "Nummer" is the
+        # number to call back (`guest_details.asks_for_a_phone_number`).
+        state.asked_for_phone = True
         return None
 
     def _held_answered(

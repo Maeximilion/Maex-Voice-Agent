@@ -896,3 +896,147 @@ def test_call_without_the_detail_is_left_to_the_validation(call):
     state = heard("Auf Müller bitte")
 
     assert refused(state, call) is None
+
+
+# --- The open threads of PR #244, replayed on main 828e6ee ---
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        # The menu's own questions, word for word.
+        "Das habe ich auf der Karte nicht gefunden. Können Sie mir die Nummer sagen?",
+        "Die Nummer 23 habe ich nicht auf der Karte. Können Sie mir die Nummer sagen?",
+        "Welche Nummer meinen Sie? Bitte sagen Sie mir nur die eine Nummer.",
+        # Every readback names a card number.
+        "Einmal Nummer 13 Pho Bo. Macht 11 Euro 90. Passt das so?",
+        "Ihre Nummer 23 ist notiert.",
+        "Ihre Nummer s12 ist notiert.",
+        "Ihre Nummer S 12 ist notiert.",
+        "Soll das unter Nummer 13 stehen?",
+    ],
+)
+def test_a_menu_number_in_the_agents_sentence_asks_for_no_phone_number(say):
+    """Codex PR #244, P1: the bare word armed the answer, and a reference the
+    guest read out next stood in `slots` as the number to book under."""
+    state = initial_state(uuid.uuid4(), uuid.uuid4(), caller_id=CALLER)
+    note_said(state, say)
+    assert state.asked_for_phone is False
+
+    note_guest_details(
+        state, "Zu meiner alten Bestellung 0171 2345678 habe ich eine Frage"
+    )
+
+    assert state.slots["phone"] == CALLER
+    assert state.said_numbers == set()
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Unter welcher Telefonnummer sind Sie erreichbar?",
+        "Die Rufnummer brauche ich bitte mit Vorwahl. "
+        "Unter welcher Nummer sind Sie erreichbar?",
+        "Unter welcher Nummer?",
+        "Ihre  Nummer bitte.",
+        "Wie lautet Ihre Nummer?",
+        "Können Sie mir Ihre Nummer sagen?",
+        "Darf ich Ihre Handynummer notieren?",
+        "Bitte nennen Sie mir die Nummer mit Vorwahl.",
+        # The agent reads a number out: the guest may answer with another.
+        "Darf ich Sie unter 0721 5551234 notieren?",
+    ],
+)
+def test_the_agents_question_for_the_number_arms_the_answer(say):
+    state = initial_state(uuid.uuid4(), uuid.uuid4(), caller_id=CALLER)
+    note_said(state, say)
+    assert state.asked_for_phone is True
+
+    note_guest_details(state, "0171 2345678")
+
+    assert state.slots["phone"] == "+491712345678"
+
+
+@pytest.mark.parametrize(
+    "say",
+    ["Können Sie die Nummer bitte wiederholen?", "Wie war die Nummer noch mal?"],
+)
+def test_the_bare_word_goes_on_with_the_question_for_the_number(say):
+    """Review of bb3601f: the guest repeats the number the agent did not
+    catch, and alone a bare "Nummer" reads like one on the card."""
+    state = initial_state(uuid.uuid4(), uuid.uuid4())
+    note_said(state, "Unter welcher Telefonnummer sind Sie erreichbar?")
+    note_said(state, say)
+    assert state.asked_for_phone is True
+
+    note_guest_details(state, "0171 2345678")
+
+    assert state.slots["phone"] == "+491712345678"
+
+
+def test_a_card_number_ends_the_question_for_the_number():
+    state = initial_state(uuid.uuid4(), uuid.uuid4())
+    note_said(state, "Unter welcher Telefonnummer sind Sie erreichbar?")
+
+    note_said(state, "Einmal Nummer 13 Pho Bo. Passt das so?")
+
+    assert state.asked_for_phone is False
+
+
+@pytest.mark.parametrize(
+    ("sentence", "kept"),
+    [
+        # Codex PR #244, P2: the a belongs to the dish, not to the name.
+        ("Die 23 a, M E I E R", "A Meier"),
+        ("Die 23a, M E I E R", "A Meier"),
+        ("Die S 12, M E I E R", "S Meier"),
+        ("Ich bin's, Meier", "S Meier"),
+    ],
+)
+def test_a_letter_that_hangs_on_something_else_is_no_word_of_a_name(sentence, kept):
+    assert name_said("Meier", said(sentence)) is True
+    assert name_said(kept, said(sentence)) is False
+
+
+@pytest.mark.parametrize(
+    ("sentence", "name"),
+    [
+        # The letter was also said as a word of the name.
+        ("A Meier, die 23 a", "A Meier"),
+        # Initials are a row of letters, and a name.
+        ("Hier J. R. Müller", "J. R. Müller"),
+        # Review of bb3601f: the digits behind the letter are no card number.
+        ("Hier ist Frau M 0171 2345678", "Frau M"),
+    ],
+)
+def test_a_letter_the_guest_said_as_a_name_stays(sentence, name):
+    assert name_said(name, said(sentence)) is True
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # Codex PR #244, P2: an hour, in the form that has no separator.
+        "Um 0900 Uhr, meine Nummer ist 0171 2345678",
+        "um 0830 uhr, meine Nummer ist 0171 2345678",
+        "Um 09 00 Uhr, meine Nummer ist 0171 2345678",
+        "0000 Uhr passt, meine Nummer ist 0171 2345678",
+    ],
+)
+def test_a_compact_clock_time_is_no_head_of_the_number(sentence):
+    assert numbers_said(sentence) == {"+491712345678"}
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # Without "Uhr" the four digits may still be the head.
+        "0900, meine Nummer ist 0171 2345678",
+        # Behind the number the hour is what stands last.
+        "Meine Nummer ist 0171 2345678, um 0900 Uhr",
+        # Digits in front of it make it the tail of a number.
+        "0171 234 0900 Uhr",
+    ],
+)
+def test_four_digits_that_are_no_lone_clock_time_keep_the_number_out(sentence):
+    assert numbers_said(sentence) == set()
