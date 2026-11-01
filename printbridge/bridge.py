@@ -139,6 +139,9 @@ def main(argv: list[str] | None = None) -> int:
         except Exception as exc:  # noqa: BLE001 - die Bruecke darf nie sterben
             # Server weg: der Waechter auf dem Server macht die Karte rot.
             logger.error("Durchlauf abgebrochen: %s", exc)
+            # `--once` is the check after an installation: a script must see it.
+            if args.once:
+                return 1
         if args.once:
             return 0
         time.sleep(interval)
