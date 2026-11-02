@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="440" viewBox="0 0 1200 440" role="img" aria-labelledby="t d">
 <title id="t">Eval trend</title>
-<desc id="d">Pass rate of model qwen3.6-35b-a3b-iq3 from 2026-10-29 to 2026-10-31. regular cases latest 37 of 56; target cases latest 1 of 29</desc>
+<desc id="d">Pass rate of model qwen3.6-35b-a3b-iq3 from 2026-10-29 to 2026-11-02. regular cases latest 40 of 62; target cases latest 2 of 24</desc>
 <style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}</style>
 <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="440"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
 <rect width="1200" height="440" rx="24" fill="#0D0819"/>
@@ -83,21 +83,26 @@
 <line x1="120" y1="106.3" x2="900" y2="106.3" stroke="#E8FF2E" stroke-dasharray="6 6" opacity="0.6"/>
 <text x="912" y="111.3" font-size="14" fill="#E8FF2E">target 99 %</text>
 <text x="120" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">29 Oct</text>
-<text x="510" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">30 Oct</text>
-<text x="900" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">31 Oct</text>
-<path d="M120 208.9 L315 192.8 L510 200.9 L705 196.8 L900 180.7" fill="none" stroke="#E8FF2E" stroke-width="2" stroke-linejoin="round"/>
+<text x="380" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">30 Oct</text>
+<text x="640" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">31 Oct</text>
+<text x="835" y="358" font-size="14" fill="#A89CCB" text-anchor="middle">02 Nov</text>
+<path d="M120 208.9 L250 192.8 L380 200.9 L510 196.8 L640 180.7 L770 187.8 L900 184.2" fill="none" stroke="#E8FF2E" stroke-width="2" stroke-linejoin="round"/>
 <circle cx="120" cy="208.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-29: 30/56</title></circle>
-<circle cx="315" cy="192.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-30: 34/56</title></circle>
-<circle cx="510" cy="200.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-30: 32/56</title></circle>
-<circle cx="705" cy="196.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-30: 33/56</title></circle>
-<circle cx="900" cy="180.7" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-31: 37/56</title></circle>
-<text x="912" y="170.7" font-size="15" fill="#E8FF2E" font-weight="700">regular cases 37/56</text>
-<path d="M120 298.8 L315 314.4 L510 306.6 L705 314.4 L900 322.2" fill="none" stroke="#9D7BFF" stroke-width="2" stroke-linejoin="round"/>
+<circle cx="250" cy="192.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-30: 34/56</title></circle>
+<circle cx="380" cy="200.9" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-30: 32/56</title></circle>
+<circle cx="510" cy="196.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-30: 33/56</title></circle>
+<circle cx="640" cy="180.7" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-10-31: 37/56</title></circle>
+<circle cx="770" cy="187.8" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-11-02: 39/62</title></circle>
+<circle cx="900" cy="184.2" r="5" fill="#E8FF2E" stroke="#17102B" stroke-width="2"><title>regular cases 2026-11-02: 40/62</title></circle>
+<text x="912" y="174.2" font-size="15" fill="#E8FF2E" font-weight="700">regular cases 40/62</text>
+<path d="M120 298.8 L250 314.4 L380 306.6 L510 314.4 L640 322.2 L770 311.2 L900 311.2" fill="none" stroke="#9D7BFF" stroke-width="2" stroke-linejoin="round"/>
 <circle cx="120" cy="298.8" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-29: 4/29</title></circle>
-<circle cx="315" cy="314.4" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-30: 2/29</title></circle>
-<circle cx="510" cy="306.6" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-30: 3/29</title></circle>
-<circle cx="705" cy="314.4" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-30: 2/29</title></circle>
-<circle cx="900" cy="322.2" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-31: 1/29</title></circle>
-<text x="912" y="312.2" font-size="15" fill="#9D7BFF" font-weight="700">target cases 1/29</text>
+<circle cx="250" cy="314.4" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-30: 2/29</title></circle>
+<circle cx="380" cy="306.6" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-30: 3/29</title></circle>
+<circle cx="510" cy="314.4" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-30: 2/29</title></circle>
+<circle cx="640" cy="322.2" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-10-31: 1/29</title></circle>
+<circle cx="770" cy="311.2" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-11-02: 2/24</title></circle>
+<circle cx="900" cy="311.2" r="5" fill="#9D7BFF" stroke="#17102B" stroke-width="2"><title>target cases 2026-11-02: 2/24</title></circle>
+<text x="912" y="301.2" font-size="15" fill="#9D7BFF" font-weight="700">target cases 2/24</text>
 <text x="1136" y="73" font-size="14" fill="#A89CCB" text-anchor="end">Scripted stand-in model: 41/41 regular cases.</text>
 </svg>
