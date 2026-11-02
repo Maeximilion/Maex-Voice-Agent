@@ -190,7 +190,8 @@ def test_the_read_back_names_total_fee_address_and_time(session, tenant_id, call
     draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
 
     assert "Macht 16 Euro 30 inklusive 2 Euro 50 Liefergebühr" in draft.readback
-    assert f"Lieferung in etwa {ETA} Minuten" in draft.readback
+    # The default wait of 60 is longer than the zone's time.
+    assert "Lieferung in etwa 60 Minuten" in draft.readback
     assert "Lindenstraße 12, 12345 Musterdorf, 2. OG, Klingel Braun" in draft.readback
     assert draft.readback.endswith("auf den Namen Braun. Passt das so?")
 
