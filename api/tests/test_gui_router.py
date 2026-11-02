@@ -428,6 +428,9 @@ def test_the_stream_does_not_redraw_the_header_while_somebody_types():
     )
 
     assert "#kopfzeile details[open]" in js
+    # The fetch before the redraw, and the answer of one already on its way.
+    assert js.count("#kopfzeile details[open]") == 2
+    assert 'e.detail.requestConfig.verb === "get"' in js
 
 
 def test_wartezeit_abholung_minus_15_und_knopf_aus_an_der_grenze(
