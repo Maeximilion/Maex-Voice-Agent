@@ -818,29 +818,84 @@ def test_an_issue_takes_its_dates_from_the_first_closing_pull_request() -> None:
     }
 
 
-def test_open_pull_requests_and_issues_with_one_go_to_in_progress() -> None:
-    offener_pr = eintrag(1, status="Todo")
-    offener_pr.kind = "PullRequest"
-    issue_mit_pr = eintrag(2, status="Todo")
-    issue_mit_pr.kind = "Issue"
-    issue_mit_pr.has_open_pr = True
-    backlog = eintrag(3, status="Todo")
+def test_open_work_moves_to_the_column_its_facts_name() -> None:
+    open_pr = eintrag(1, status="Todo")
+    open_pr.kind = "PullRequest"
+    pr_in_progress = eintrag(2, status="In progress")
+    pr_in_progress.kind = "PullRequest"
+    issue_with_pr = eintrag(3, status="Todo")
+    issue_with_pr.kind = "Issue"
+    issue_with_pr.has_open_pr = True
+    backlog = eintrag(4, status="Todo")
     backlog.kind = "Issue"
-    schon = eintrag(4, status="In progress")
-    schon.kind = "PullRequest"
+    already_there = eintrag(5, status="In review")
+    already_there.kind = "PullRequest"
     # Open but on Done is drift for a human, not for this run.
-    drift = eintrag(5, status="Done")
+    drift = eintrag(6, status="Done")
     drift.kind = "PullRequest"
-    gemergt = eintrag(6, status="Done", state="MERGED")
-    gemergt.kind = "PullRequest"
-    ohne_status = eintrag(7, status=None)
-    ohne_status.kind = "PullRequest"
-    alle = [offener_pr, issue_mit_pr, backlog, schon, drift, gemergt, ohne_status]
-    assert project_report.items_to_mark_in_progress(alle) == [
-        offener_pr,
-        issue_mit_pr,
-        ohne_status,
+    merged = eintrag(7, status="Done", state="MERGED")
+    merged.kind = "PullRequest"
+    without_status = eintrag(8, status=None)
+    without_status.kind = "PullRequest"
+    by_hand = eintrag(9, status="In progress")
+    by_hand.kind = "Issue"
+    all_items = [
+        open_pr,
+        pr_in_progress,
+        issue_with_pr,
+        backlog,
+        already_there,
+        drift,
+        merged,
+        without_status,
+        by_hand,
     ]
+    assert project_report.status_moves(all_items) == {
+        "In review": [open_pr, pr_in_progress, without_status],
+        "In progress": [issue_with_pr],
+    }
+
+
+def test_the_blocked_label_wins_and_leaving_it_returns_the_item() -> None:
+    blocked = frozenset({"status: blocked"})
+    blocked_item = eintrag(1, status="Todo")
+    blocked_item.kind = "Issue"
+    blocked_item.labels = blocked
+    blocked_with_pr = eintrag(2, status="In progress")
+    blocked_with_pr.kind = "Issue"
+    blocked_with_pr.has_open_pr = True
+    blocked_with_pr.labels = blocked
+    already_there = eintrag(3, status="Blocked")
+    already_there.kind = "Issue"
+    already_there.labels = blocked
+    free = eintrag(4, status="Blocked")
+    free.kind = "Issue"
+    free_pr = eintrag(5, status="Blocked")
+    free_pr.kind = "PullRequest"
+    moves = project_report.status_moves(
+        [blocked_item, blocked_with_pr, already_there, free, free_pr]
+    )
+    assert moves == {
+        "Blocked": [blocked_item, blocked_with_pr],
+        "Todo": [free],
+        "In review": [free_pr],
+    }
+
+
+def test_a_closed_blocked_item_goes_to_done_not_back_to_blocked() -> None:
+    closed = eintrag(1, status="Blocked", state="CLOSED")
+    closed.kind = "Issue"
+    closed.labels = frozenset({"status: blocked"})
+    assert project_report.status_moves([closed]) == {}
+    assert project_report.items_to_mark_done([closed]) == [closed]
+
+
+def test_a_review_without_movement_is_reported_like_work_without_movement() -> None:
+    waiting = eintrag(1, status="In review", tage_alt=10, iteration=None)
+    waiting.kind = "PullRequest"
+    findings = project_report.find_issues([waiting], JETZT)
+    assert findings["In Arbeit, aber ohne Iteration"] == [waiting]
+    assert findings[LIEGT_SCHLUESSEL] == [waiting]
 
 
 def test_set_status_finds_in_progress_in_any_spelling(monkeypatch) -> None:
