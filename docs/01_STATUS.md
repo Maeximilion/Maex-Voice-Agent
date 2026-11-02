@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.13.1
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.13.2
 
 ---
 
@@ -526,6 +526,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 02.11.2026 | **T-3.7 checked behind Caddy.** Caddy run from `deploy/Caddyfile` in a throwaway container (plain HTTP on a local port, the API behind it): manifest and both icons answer 401 without Basic-Auth and 200 with it, the CSP and `nosniff` headers are set. The link with `crossorigin="use-credentials"` is covered by `test_the_view_can_go_on_the_home_screen`. Still open: the tap on the real tablet once the server exists. |
 | 02.11.2026 | **T-6.9 `scripts/seed_zones.py`.** The pilot's zone list as `imports/zones.csv` reaches `delivery_zones` whole or not at all: a postal code in two zones, a bad code, an empty amount or an empty file writes nothing; a zone the file no longer names goes inactive. Still needed: the real list from Maxi. |
 | 02.11.2026 | **T-6.3 `check_delivery`, postal code variant.** `domain/delivery/zones.py` and the HTTP tool; only active `postal_code` zones of the tenant count, spaces from speech are removed, anything else that is not five digits is asked again, two active zones for one code go to the team. p95 24 ms. D2 answered: no register interface, T-4.6 closed without variant C. Legal review of 02.11.2026 in docs/09 §1, T-11.9 added. |
 | 02.11.2026 | **T-6.6 delivery orders on the tablet.** A delivery card shows the address from `orders.address_id` (street, number, postal code, city, floor note) and the delivery fee; a delivery without an address shows "Adresse fehlt". The switch "Lieferung aus" was already complete (T-3.2, tested), untouched. D5 decided: postal code list. |
@@ -684,6 +685,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.13.2 · 02.11.2026:** T-3.7: the home-screen icon checked behind Caddy
 - **v2.13.1 · 02.11.2026:** T-6.9 seed_zones: zone list into delivery_zones, whole or not at all
 - **v2.13.0 · 02.11.2026:** T-6.3 check_delivery; no register interface, input slip for good; legal review
 - **v2.12.10 · 02.11.2026:** T-6.6 done: delivery cards show address and fee
