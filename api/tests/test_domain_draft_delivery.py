@@ -868,6 +868,20 @@ def test_a_closed_pickup_offers_no_delivery_that_is_switched_off(
     assert err.value.say == SAY_PICKUP_CLOSED
 
 
+def test_a_closed_pickup_offers_no_delivery_during_the_emergency_stop(
+    session, tenant_id, call_id
+):
+    """Codex #515: the offer would only meet the next refusal."""
+    status_config.set_pickup(session, tenant_id, False)
+    session.get(ServiceConfig, tenant_id).call_mode = "paused"
+    session.commit()
+
+    with pytest.raises(Closed) as err:
+        draft_order(session, request(session, tenant_id, call_id), now=NOW)
+
+    assert err.value.say == SAY_PICKUP_CLOSED
+
+
 def test_the_switch_leaves_a_pickup_alone(engine, session, tenant_id, call_id):
     draft = draft_order(session, request(session, tenant_id, call_id), now=NOW)
     with Session(engine) as tablet:

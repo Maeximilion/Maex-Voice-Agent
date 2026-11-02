@@ -1,5 +1,6 @@
 """How long before its time a table can be reserved, per weekday (T-3.13, #499)."""
 
+import threading
 import uuid
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -14,7 +15,14 @@ from api.domain.reservations import check_slot, create_reservation
 from api.domain.reservations import notice as notices
 from api.domain.reservations.slots import SAY_RESERVATIONS_OFF
 from api.domain.status import config as status_config
-from api.models import AuditLog, Call, Capacity, Reservation, SpecialDay
+from api.models import (
+    AuditLog,
+    Call,
+    Capacity,
+    Reservation,
+    ServiceConfig,
+    SpecialDay,
+)
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.reservations import CreateReservationRequest
 from scripts.seed import seed
@@ -400,3 +408,44 @@ def test_a_table_is_booked_again_with_the_switch_on(session, tenant_id):
     status_config.set_reservations(session, tenant_id, True)
 
     assert check_slot(session, tenant_id, berlin(20), 4, now=NOW).available
+
+
+def test_the_yes_waits_for_a_switch_that_is_being_set(
+    engine, session, tenant_id, call_id
+):
+    """Codex #515: a plain read does not wait for the tablet's open transaction, and
+    the table was booked after the tablet had switched reservations off."""
+    draft = create_reservation(session, _request(tenant_id, call_id), now=NOW)
+    session.commit()
+    outcome: list[str] = []
+
+    def yes() -> None:
+        with Session(engine) as call:
+            request = ConfirmRequest(
+                idempotency_key="yes",
+                call_id=call_id,
+                tenant_id=tenant_id,
+                entity="reservation",
+                entity_id=draft.reservation_id,
+            )
+            try:
+                confirm(call, request, NOW)
+                outcome.append("booked")
+            except Conflict:
+                outcome.append("refused")
+
+    with Session(engine) as tablet:
+        config = tablet.scalars(
+            select(ServiceConfig)
+            .where(ServiceConfig.tenant_id == tenant_id)
+            .with_for_update()
+        ).one()
+        config.reservations_enabled = False
+        tablet.flush()
+        thread = threading.Thread(target=yes)
+        thread.start()
+        thread.join(timeout=1)
+        tablet.commit()
+    thread.join(timeout=10)
+
+    assert outcome == ["refused"]

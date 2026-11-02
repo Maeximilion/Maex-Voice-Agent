@@ -76,9 +76,11 @@ def pickup_closed_say(
     now: datetime,
     zone: ZoneInfo,
 ) -> str:
-    """Delivery only where it is open and switched on."""
-    if config.delivery_enabled and service_open_at(
-        session, tenant_id, now, zone, DELIVERY
+    """Delivery only where `require_delivery_open` would take it."""
+    if (
+        config.delivery_enabled
+        and config.call_mode != PAUSED
+        and service_open_at(session, tenant_id, now, zone, DELIVERY)
     ):
         return f"{SAY_PICKUP_CLOSED} {SAY_OFFER_DELIVERY}"
     return SAY_PICKUP_CLOSED
