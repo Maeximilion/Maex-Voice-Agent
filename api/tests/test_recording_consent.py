@@ -10,6 +10,7 @@ German.
 """
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
@@ -433,6 +434,67 @@ def test_a_row_that_fails_costs_the_recording_not_the_call(
     assert port.says(SID)[1:] == [SAY_WHAT_CAN_I_DO]
 
 
+MB = 1024 * 1024
+
+
+def free_on_the_disk(monkeypatch, free: int) -> None:
+    """The disk of the recordings' folder, as `shutil.disk_usage` would see it."""
+    usage = SimpleNamespace(disk_usage=lambda _: SimpleNamespace(free=free))
+    monkeypatch.setattr(recordings, "shutil", usage)
+
+
+def test_a_nearly_full_disk_costs_the_recording_not_the_call(
+    session, tenant, switched_on, monkeypatch
+):
+    """The folder shares the disk with the database (#252, audit of 02.11.2026
+    no. 7): below the floor a yes records nothing, and the guest hears nothing
+    of a recording, not even how to stop it."""
+    monkeypatch.setattr(settings, "recording_min_free_mb", 2048)
+    free_on_the_disk(monkeypatch, 2048 * MB - 1)
+    port, handler = on_the_phone(session, tenant)
+
+    handler.on_user_turn(SID, "Ja.")
+
+    assert answers(session) == ["yes"]
+    assert the_recording(session) is None
+    assert not port.recordings(SID)
+    assert port.says(SID)[1:] == [SAY_WHAT_CAN_I_DO]
+    assert not port.transfers(SID)
+
+
+def test_a_disk_at_the_floor_still_records(session, tenant, switched_on, monkeypatch):
+    monkeypatch.setattr(settings, "recording_min_free_mb", 2048)
+    free_on_the_disk(monkeypatch, 2048 * MB)
+    port, handler = on_the_phone(session, tenant)
+
+    handler.on_user_turn(SID, "Ja.")
+
+    assert the_recording(session) is not None
+    assert [a.value for a in port.recordings(SID)] == [f"{SID}.wav"]
+
+
+def test_a_process_without_the_folder_does_not_measure_it(
+    session, tenant, switched_on, monkeypatch, tmp_path
+):
+    """`api` and the evals hold no folder: the row is written as before, the
+    file is the line's (`voice`, Asterisk), which measures on its own disk."""
+    monkeypatch.setattr(recordings, "FOLDER", tmp_path / "not-mounted")
+    monkeypatch.setattr(settings, "recording_min_free_mb", 2048)
+    _, handler = on_the_phone(session, tenant)
+
+    handler.on_user_turn(SID, "Ja.")
+
+    assert the_recording(session) is not None
+
+
+def test_the_floor_is_measured_on_the_folder_itself(switched_on, monkeypatch):
+    """A floor of 0 always leaves room; a floor above the disk never does."""
+    monkeypatch.setattr(settings, "recording_min_free_mb", 0)
+    assert recordings.room_for_a_recording()
+    monkeypatch.setattr(settings, "recording_min_free_mb", 2**40)
+    assert not recordings.room_for_a_recording()
+
+
 def test_a_failing_log_on_a_silent_line_costs_nothing(
     session, tenant, switched_on, monkeypatch
 ):
@@ -646,6 +708,23 @@ def test_shadow_a_yes_rings_the_team_with_a_recorded_leg(session, tenant, shadow
     assert port.says(SID)[1:] == [SAY_HOW_TO_STOP, SAY_TO_THE_TEAM]
     # What `voice` itself writes is the AI's side only: nothing here.
     assert not port.recordings(SID)
+
+
+def test_shadow_a_yes_on_a_nearly_full_disk_rings_the_team_without(
+    session, tenant, shadow, monkeypatch
+):
+    """The dialplan is not told to record, and nobody hears how to stop."""
+    monkeypatch.setattr(settings, "recording_min_free_mb", 2048)
+    free_on_the_disk(monkeypatch, 0)
+    port, handler = shadow_call(session, tenant)
+
+    handler.on_user_turn(SID, "Ja, gerne.")
+
+    assert answers(session) == ["yes"]
+    assert not port.team_leg_recorded(SID)
+    assert the_recording(session) is None
+    assert port.transfers(SID) == [TEAM_PHONE]
+    assert port.says(SID)[1:] == [SAY_TO_THE_TEAM]
 
 
 @pytest.mark.parametrize("said", ["Nein.", "Wie bitte?", A_TABLE])
