@@ -1,0 +1,64 @@
+{
+  "id": "lieferung_0025",
+  "name": "First part spelled, street word and number said",
+  "tags": [
+    "lieferung",
+    "adresse",
+    "buchstabiert",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "M U E H L E N Strasse 21."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Lorenz."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "13",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Lorenz",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Mühlenstraße",
+      "house_number": "21",
+      "postal_code": "12345",
+      "city": "Musterdorf"
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
+  }
+}

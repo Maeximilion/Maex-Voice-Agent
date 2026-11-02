@@ -1,6 +1,6 @@
 """Beobachter zwischen Gesprächskern und Modell: was hat das Modell wann getan (docs/08 §2).
 
-Zwei der drei harten Metriken lassen sich am Datenbankzustand allein nicht
+Zwei der harten Metriken lassen sich am Datenbankzustand allein nicht
 ablesen, weil `calls.tool_calls` nur Name, Dauer und Erfolg festhält:
 
 - **Geratene Position:** eine `menu_item_id` in `draft_order`, die keine Suche

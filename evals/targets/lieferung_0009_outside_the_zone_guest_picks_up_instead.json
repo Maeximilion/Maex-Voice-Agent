@@ -7,7 +7,7 @@
     "level-3"
   ],
   "source": "handcrafted",
-  "pending": "T-6.8: delivery is built (T-6.5), the scripted stand-in does not follow these sentences; waits for the real model",
+  "pending": "T-2.4: the stand-in searches 'Dann hol ich es ab. Die 34 mit Tofu' as one dish; going for pickup after out_of_zone is lieferung_0031",
   "caller_id": "+497215551234",
   "transcript": [
     {

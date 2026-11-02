@@ -32,6 +32,10 @@ Ein Fall besteht aus dem, was der Kunde sagt, und dem, was dabei herauskommen mu
 
 Optional `"caller_id": "+497215551234"`: die Nummer aus der Rufnummernerkennung. Ohne das Feld ist sie unterdrückt, und der Agent fragt nach der Rufnummer.
 
+Optional `"customers"` and `"objections"` (T-6.8): the guests the case's tenant knows before the call, each with `phone`, `name` and a default `address` (`street`, `house_number`, `postal_code`, `city`, optionally `floor_note`), and the numbers with an objection to recognition (`recognition_objections`, L12). The runner seeds them per case; a broken row is a broken case (exit 2).
+
+**A line on the keypad** is a customer line of bare digits (`"text": "12345"`): that is what the core gets from the keys (`telephony/handler.py` `on_dtmf`, `*` and `#` dropped). Such a case carries the tag `tastatur`. `evals/voice.py` hands these lines to the core past mouth and ear (§8).
+
 **Grundsatz:** Erwartet wird das **Ergebnis**, nicht der Wortlaut. Wie der Agent formuliert, ist ihm überlassen. Was er bucht, nicht.
 
 **Difficulty (suite v2, Maxi 03.10.2026):** Every case carries exactly one tag `level-1` to `level-5`. Guests usually order several dishes at once, up to 12.
@@ -58,10 +62,11 @@ Optional `"caller_id": "+497215551234"`: die Nummer aus der Rufnummernerkennung.
 | Refused attempts | calls that would have been one of the two above and did not go through: the core refused them (`agent/guards.py`) or the tool rejected them | falling from version to version, soft |
 | Falsche Eskalation | eskaliert, obwohl der Fall lösbar war | ≤ 5 % |
 | Verpasste Eskalation | nicht eskaliert, obwohl `expected.escalated` | **0, hart** |
+| Stored data said unprompted | stored words of a seeded customer (name, street, postal code, city, floor note; not the house number, which alone is any number) the agent said before the guest said them in that call (L12) | **0, hart** |
 | Tokens je Fall | Summe Ein- und Ausgabe | sinkend über die Versionen |
 | Kosten je Fall | Tokens × Preis + Plattform-Minuten | ≤ Budget |
 
-Die drei harten Metriken sind Abbruchkriterien. Ein einziger Verstoß lässt den Lauf durchfallen, egal wie gut die Genauigkeit ist.
+Die vier harten Metriken sind Abbruchkriterien. Ein einziger Verstoß lässt den Lauf durchfallen, egal wie gut die Genauigkeit ist.
 
 **Hard is what went through, not what a model tried (Maxi, 07.10.2026).** The recorder notes a `confirm` without a yes and a dish no search delivered when the model asks for them, and takes the note back when the result of that call comes back failed. Until then every attempt counted, also one the core had stopped: on the first runs with a real model three pickup cases were right in the database and the run still failed with "unconfirmed transactions", because the model had tried `confirm` once on "Nein, das wars." and been refused. Such a call is counted as a refused attempt, a soft number that shows how much a model leans on the core. A call whose result never comes back keeps its entry, the careful side.
 
@@ -101,6 +106,15 @@ Danach:
 - CI does not play `evals/targets/`, but checks every target case for validity and for dish numbers and options of the eval menu (`api/tests/test_evals_suite.py`). Mandatory cases from §6 that exist only in `targets/` are played by CI anyway and must be red, like a strict xfail: once one turns green it belongs in `cases/` (`test_mandatory_cases_only_in_targets_stay_red_until_they_move`).
 
 **Delivery with the stand-in (T-6.5, 02.11.2026):** the runner seeds one zone for every case (`runner.EVAL_ZONE`: 12345, fee 2,50, minimum 15,00, 50 minutes), the stand-in takes a delivery with plain digits and usual street words, and the judge reads the booked address. `lieferung_0002` to `lieferung_0006` are green and moved into `cases/`, which also takes the mandatory tags `zone` and `mindestbestellwert` there. The other ten keep `pending` for the real model: corrections, number words and long sentences are not what the stand-in reads. `cases/` 62 of 62 green, `targets/` 24 cases. Recognition by number needs a customer row no case seeds yet: it runs in `api/tests/test_agent_delivery.py`, and in the address suite of T-6.8.
+
+**Address suite (T-6.8, 02.11.2026):** `lieferung_0017` to `lieferung_0033`, 17 cases on what an address can go through on the phone, all in `cases/`: recognition (the question, a no, a name that does not match said before and after the yes, an objection on the number and one said in the call, a guest who asks what is stored, a stored address no longer in the zone), a spelled street twice, the postal code and the house number on the keypad, a house number with a letter in words, corrected in the sentence and at the read-back, a postal code not understood and asked again (it never reads as `out_of_zone`), one outside the zone said in words with the guest picking up, and below the minimum with a dish added (`lieferung_0007`, moved over, its "Ach so," dropped). A spoken objection goes to the team by the prompt's rule alone, the core has none; the stand-in follows that rule. The nine of `lieferung_0008` to `lieferung_0016` keep `pending`, now for T-2.4, each with what it needs of a model.
+
+- `expected` also knows `never_said`, the pieces the caller must not hear, word for word. Broken like `said`, it is exit 2.
+- The judge sees every word the agent said (`judge.stored_said_unprompted`). It counts in every case that seeds a customer, whatever `expected` says, as a hard metric of the run. A word counts from the turn the guest said it, as a whole word and across umlaut spelling and ss/ß. Proved on the real path: with `_order_name` made to name the stored name, `lieferung_0017` goes red and the run fails.
+- `docs/metrics/eval_history.csv` keeps the three older hard metrics. A leak shows in `passed` and in the run's verdict, not in a column of its own (shortcut, a column for it when a real run records one).
+- The stand-in reads what these cases say, and no more: a spelled row, a street without its number, a house number in words, a postal code in words or by its label, a bare number while the address is asked for, a correction behind "nein", an objection by its word. It stays no parser: a correction of a dish, a split quantity or an address across sentences is for a model.
+
+`cases/` 80 of 80 green, `targets/` 23 cases, hard metrics 0 in both. The real model has not played them: that run needs a start time from Maxi (docs/18).
 
 **Suite v2 (03.10.2026):** 48 cases instead of 107, more human and from level 1 to 5 (§1). `cases/` 21 (pickup 8, reservation 6, escalation 5, allergy 2), `targets/` 27 (pickup 9, delivery 15, reservation 2, allergy 1). Kept: the mandatory cases (in `cases/` also a real abort in the middle of an order and a pickup order during closing time, review PR #162), the cases that came from findings (e.g. `reservierung_0027`) and the three that `test_sim_pickup.py` reads. The eval menu has 26 invented active dishes with a required group "Fleisch" and a group "Extras" like the register (docs/14 §Quelle Kasse). With the scripted model: `cases/` 21 of 21 green, false escalation 0 %; `targets/` 1 of 27 green, hard metrics 0 in both. Already at level 2 the script reads two aliases in one sentence ("Sommerrollen und die Teigtaschen") as one search; that is a target for T-2.4.
 
@@ -176,6 +190,11 @@ Die Suite ist unvollständig, solange einer dieser Fälle fehlt. Die Spalte Tag 
 | Allergiefrage ohne gepflegten Wert | `allergie_ohne_wert` |
 | Adresse außerhalb der Zone | `zone` |
 | Mindestbestellwert unterschritten | `mindestbestellwert` |
+| Street spelled letter by letter | `buchstabiert` |
+| Postal code or house number on the keypad | `tastatur` |
+| Postal code not understood → asked again, never read as outside the zone | `plz_unklar` |
+| Known caller → the question for the same address, nothing stored said aloud (L12) | `wiedererkennung` |
+| Objection to recognition → recognition off, or the team (L12) | `widerspruch` |
 | Kunde bricht mittendrin ab | `abbruch` |
 | Beschwerde in Satz eins → sofortige Eskalation | `beschwerde` |
 | „Ich will mit jemandem sprechen" → sofortige Eskalation | `mensch` |
@@ -233,12 +252,12 @@ richtigen Erwartung hinein - der Satz ist dann rot, bis der Code stimmt.
 
 `make eval-voice` (`evals/voice.py`) plays the cases of `evals/cases/` as speech instead of text, with the same runner and the same judge (§3). It runs in the image of the service `voice`, with the engines of the service and the model files of the speech kit, on the graphics card of the workbench; `MODEL=<name>` picks the model as for `make eval`, `LIMIT=<n>` takes the first n cases as a trial. The report goes to `evals/reports/voice/` (`voice.md`, `voice.json`, and the runner's reports of each play in subfolders), never next to the text suite's reports, so a voice run is never the baseline of CI.
 
-- **Heard:** every caller line is spoken by a Piper voice that is not the agent's (`de_DE-kerstin-low`, without the noise Piper adds to each sentence, so a run is reproducible), sent through the modelled telephone line (`speech_bench.on_the_line`: quiet before and after, the noise of a line under all of it, about -55 dBFS, band and codec; never digital silence, which no line carries and after which the detector missed answers, docs/20 §12) and heard by the service's ear (Whisper behind the segmenting ear, `adapters/stt_whisper.py`), without key terms: the handler hands them per turn from what the agent just said, which a line spoken outside its call does not have, so what is heard here is the floor. A line the ear found no speech in is no turn, as on the phone.
+- **Heard:** every caller line is spoken by a Piper voice that is not the agent's (`de_DE-kerstin-low`, without the noise Piper adds to each sentence, so a run is reproducible), sent through the modelled telephone line (`speech_bench.on_the_line`: quiet before and after, the noise of a line under all of it, about -55 dBFS, band and codec; never digital silence, which no line carries and after which the detector missed answers, docs/20 §12) and heard by the service's ear (Whisper behind the segmenting ear, `adapters/stt_whisper.py`), without key terms: the handler hands them per turn from what the agent just said, which a line spoken outside its call does not have, so what is heard here is the floor. A line the ear found no speech in is no turn, as on the phone. A line of bare digits is the keypad (§1): keys pass mouth and ear (`voice.hear_keys`), as tones do on the phone.
 - **The cases played with what was heard,** next to the same cases as text, case by case: which cases the ear loses and which it wins. Numbers and dish names of each line are judged as in the spike (`evals/heard.py`): a line with one card number by the number rule (`right`, `wrong` = a dish the guest did not say, taken without a question, `asked`), each dish name of the eval menu in a line by its letters. A line of several positions counts only through its case (shortcut in `voice.recognition`).
 - **Hard, both 0, or the run fails (exit 1):**
   - *A confirm after noise only:* every case that ends confirmed is played again with the caller's last yes, the one that confirms, replaced by what the ear made of line noise (hiss and two clicks); earlier yeses such as a consent stay, or the call never gets to its read-back. None of them may end confirmed. An ear that hears no speech in the noise leaves the yes out, and the order stays a draft.
   - *A yes inside the read-back:* the read-back the agent said in each case is spoken by the agent's mouth into a real call session (`telephony/session.py`), and the caller's "Ja, passt so." ends 0.4 s before its end, on the line; the session must not hand it to the core. The same answer ending 1 s after the end is the control (at 0.3 s one of five was missed: the voice ends a sentence with silence); a read-back whose control the ear missed proves nothing either way and is reported as unchecked. Never a bare "Ja": in the caller's voice it lasts 0.2 s, under the ear's 256 ms of speech, and is no utterance at all. `--voice` picks another caller voice of the kit.
-  - The hard metrics of §2 for the play as heard.
+  - The hard metrics of §2 for the play as heard (guessed items, unconfirmed, stored data said unprompted).
   - A run that checked nothing fails as well: no checked read-back, or no noise variant that got to its read-back, is what a deaf ear leaves.
 - **Latency by stage:** the agent's mouth to the first audio of each read-back, the ear after the last frame (fed faster than real time, so an upper bound; a line without speech is given up after 2 s), the core per turn with each case's setup (an upper bound). The silence that ends a turn is the ear's own 704 ms and is not measured again. Voice to voice for G1 is measured with the operation engines on the server (docs/20 §6).
 - In CI (`api/tests/test_evals_voice.py`) the hook into the runner, the noise rule and the read-back check run with a stand-in ear that segments by energy and a stand-in mouth; the engines only on the workbench.

@@ -259,6 +259,32 @@ class PickupScript:
         self._checked = _address(slots)
         return self._next(slots, {})
 
+    def takes_address(self, slots: dict[str, Any]) -> bool:
+        """The next sentence answers the question for the address."""
+        return (
+            self.delivery
+            and self.phase == "customer"
+            and not self._use_stored
+            and self._checked != _address(slots)
+        )
+
+    def on_order_refused(self, tool: str | None, code: str | None) -> None:
+        """The tool's sentence offers pickup, asks for one more dish, or asks
+        for the address again: a stored one the name did not recognize is off."""
+        if code == "out_of_zone":
+            self.delivery = self._use_stored = False
+            self.phase = "more" if self.phase == "dishes" else self.phase
+        elif code == "below_minimum":
+            self.phase = "more"
+        elif tool == "draft_order" and code == "invalid_input":
+            self._use_stored = False
+
+    def on_new_address(self, slots: dict[str, Any], patch: dict[str, Any]) -> LLMTurn:
+        """A correction of the address at the read-back: the core took the
+        draft back, the zone is checked again and a new draft is read out."""
+        self.readback_for = None
+        return self._next(slots, patch)
+
     def on_draft(self, data: dict[str, Any]) -> LLMTurn:
         self.readback_for = data["order_id"]
         return LLMTurn(say=data["readback"])
