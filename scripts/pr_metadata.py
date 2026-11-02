@@ -8,7 +8,9 @@ Zweck : Jeder Pull Request bekommt den Repo-Eigentuemer als Assignee und ein
         aendert nichts.
         Every open issue without an assignee gets the owner too (Maxi,
         2026-10-28); its labels (type, stufe-N) are set at creation and not
-        derived here.
+        derived here. Every issue, open or closed, without a milestone gets the
+        gate of its stufe-N label (stufe-1 -> "G1 ..."), so the roadmap can group
+        by gate (Maxi, 2026-11-02). A milestone set by hand stays.
 Aufruf: python scripts/pr_metadata.py [--dry-run]
 Umgeb.: GITHUB_TOKEN       Token mit Schreibrecht auf Issues und Pull Requests;
                            in der Action der eingebaute
@@ -42,6 +44,7 @@ TYPE_LABELS = {
     "test": "test",
 }
 TYPE_PREFIX = re.compile(r"^(?P<type>[a-z]+)(\([^)]*\))?!?:")
+GATE_TITLE = re.compile(r"^G(?P<stage>\d+)\b")
 
 
 class MetadataError(RuntimeError):
@@ -68,6 +71,24 @@ def missing(pull: dict, owner: str) -> dict[str, list[str]]:
 def missing_on_issue(issue: dict, owner: str) -> dict[str, list[str]]:
     """What an open issue lacks: only the assignee."""
     return {} if issue.get("assignees") else {"assignees": [owner]}
+
+
+def gate_milestones(milestones: list[dict]) -> dict[str, dict]:
+    """The gate milestones by the stufe-N label they belong to."""
+    return {
+        f"stufe-{match['stage']}": milestone
+        for milestone in milestones
+        if (match := GATE_TITLE.match(milestone["title"]))
+    }
+
+
+def gate_of(issue: dict, gates: dict[str, dict]) -> dict | None:
+    """The milestone an issue lacks, None if it has one or carries no stufe-N label.
+    With two stufe labels the earlier gate wins: that is the one it holds up."""
+    if issue.get("milestone"):
+        return None
+    labels = sorted(label["name"] for label in issue.get("labels", []))
+    return next((gates[name] for name in labels if name in gates), None)
 
 
 def rest(method: str, path: str, token: str, payload: dict | None = None):
@@ -107,9 +128,9 @@ def all_pulls(repo: str, token: str) -> list[dict]:
     return pages(f"/repos/{repo}/pulls?state=all", token)
 
 
-def open_issues(repo: str, token: str) -> list[dict]:
+def all_issues(repo: str, token: str) -> list[dict]:
     # The issue list also returns pull requests; those are handled above.
-    items = pages(f"/repos/{repo}/issues?state=open", token)
+    items = pages(f"/repos/{repo}/issues?state=all", token)
     return [i for i in items if "pull_request" not in i]
 
 
@@ -130,14 +151,15 @@ def main() -> int:
     owner = repo.split("/")[0]
 
     try:
+        issues = all_issues(repo, token)
         changes = [
             (pull, change)
             for pull in all_pulls(repo, token)
             if (change := missing(pull, owner))
         ] + [
             (issue, change)
-            for issue in open_issues(repo, token)
-            if (change := missing_on_issue(issue, owner))
+            for issue in issues
+            if issue["state"] == "open" and (change := missing_on_issue(issue, owner))
         ]
         for pull, change in changes:
             summary = ", ".join(
@@ -157,12 +179,23 @@ def main() -> int:
                 )
             if "labels" in change:
                 rest("POST", f"{base}/labels", token, {"labels": change["labels"]})
+        gates = gate_milestones(pages(f"/repos/{repo}/milestones?state=all", token))
+        gated = [(i, gate) for i in issues if (gate := gate_of(i, gates))]
+        for issue, gate in gated:
+            print(f"#{issue['number']}: milestone={gate['title']}")
+            if not args.dry_run:
+                rest(
+                    "PATCH",
+                    f"/repos/{repo}/issues/{issue['number']}",
+                    token,
+                    {"milestone": gate["number"]},
+                )
     except MetadataError as exc:
         print(f"PR-Metadaten fehlgeschlagen: {exc}", file=sys.stderr)
         return 1
 
     verb = "wuerden ergaenzt" if args.dry_run else "ergaenzt"
-    print(f"{len(changes)} Pull Requests und Issues {verb}.")
+    print(f"{len(changes)} Pull Requests und Issues {verb}, {len(gated)} Milestones.")
     return 0
 
 

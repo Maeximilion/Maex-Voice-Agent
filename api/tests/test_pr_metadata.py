@@ -107,7 +107,7 @@ def test_an_issue_without_assignee_gets_the_owner_and_nothing_else() -> None:
     assert pr_metadata.missing_on_issue(done, EIGENTUEMER) == {}
 
 
-def test_open_issues_leave_out_pull_requests_over_every_page(monkeypatch) -> None:
+def test_all_issues_leave_out_pull_requests_over_every_page(monkeypatch) -> None:
     first: list[dict] = [{"number": n} for n in range(100)]
     first[0]["pull_request"] = {"url": "x"}
     calls = []
@@ -117,9 +117,43 @@ def test_open_issues_leave_out_pull_requests_over_every_page(monkeypatch) -> Non
         return first if path.endswith("page=1") else [{"number": 100}]
 
     monkeypatch.setattr(pr_metadata, "rest", rest)
-    issues = pr_metadata.open_issues("o/r", "t")
+    issues = pr_metadata.all_issues("o/r", "t")
     assert [i["number"] for i in issues] == list(range(1, 101))
     assert calls == [
-        "/repos/o/r/issues?state=open&per_page=100&page=1",
-        "/repos/o/r/issues?state=open&per_page=100&page=2",
+        "/repos/o/r/issues?state=all&per_page=100&page=1",
+        "/repos/o/r/issues?state=all&per_page=100&page=2",
     ]
+
+
+GATES = pr_metadata.gate_milestones(
+    [
+        {"number": 1, "title": "G0 Go/No-Go"},
+        {"number": 2, "title": "G1 Reservation through-cut"},
+        {"number": 9, "title": "Backlog ideas"},
+    ]
+)
+
+
+def issue(*labels: str, milestone=None) -> dict:
+    return {"labels": [{"name": n} for n in labels], "milestone": milestone}
+
+
+def test_gates_are_matched_by_their_title_only() -> None:
+    assert sorted(GATES) == ["stufe-0", "stufe-1"]
+
+
+def test_an_issue_gets_the_gate_of_its_stage_label() -> None:
+    assert pr_metadata.gate_of(issue("feature", "stufe-1"), GATES)["number"] == 2
+
+
+def test_a_milestone_set_by_hand_stays() -> None:
+    assert pr_metadata.gate_of(issue("stufe-1", milestone={"number": 1}), GATES) is None
+
+
+def test_no_stage_label_or_no_such_gate_means_no_guess() -> None:
+    assert pr_metadata.gate_of(issue("feature"), GATES) is None
+    assert pr_metadata.gate_of(issue("stufe-7"), GATES) is None
+
+
+def test_two_stage_labels_take_the_earlier_gate() -> None:
+    assert pr_metadata.gate_of(issue("stufe-1", "stufe-0"), GATES)["number"] == 1
