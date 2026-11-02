@@ -10,7 +10,9 @@ Call, from the stack's folder:
     python -m api.jobs.data_requests extend dsr_2026_001
 
 The verified person comes from `--name` with `--on` (repeatable) or with
-`--street`, `--house-number` and `--postal-code`, never from a number.
+`--street`, `--house-number` and `--postal-code`, never from a number. A detail
+that opens the name on two numbers is refused; `--phone` (repeatable), the
+number the guest called from, narrows it to one and opens nothing itself.
 
 stdout is what the operator keeps: the copy of `find` and the lines of the
 erasure ledger of `erase` and `object` (`date,table,row_id,action`), to be
@@ -67,6 +69,7 @@ def _person(session: Session, tenant: Tenant, args: argparse.Namespace) -> Perso
         street=args.street,
         house_number=args.house_number,
         postal_code=args.postal_code,
+        phones=tuple(args.phone),
     )
     return verify(
         session, tenant.id, details, tenant.timezone, utcnow(), claimed=args.claim
@@ -171,6 +174,7 @@ def _parser() -> argparse.ArgumentParser:
     person.add_argument("--street")
     person.add_argument("--house-number")
     person.add_argument("--postal-code")
+    person.add_argument("--phone", action="append", default=[])
     person.add_argument("--claim", action="append", default=[], type=uuid.UUID)
 
     commands = parser.add_subparsers(dest="command", required=True)
