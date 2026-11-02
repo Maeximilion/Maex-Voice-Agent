@@ -66,12 +66,12 @@ def test_fehlt_beides_wird_beides_gesetzt() -> None:
     assert aenderung == {"assignees": [EIGENTUEMER], "labels": ["feature"]}
 
 
-def test_vorhandenes_label_bleibt_unangetastet() -> None:
-    """Ein Dependabot-PR traegt schon 'dependencies' - kein zweites Label dazuerfinden."""
+def test_dependency_label_does_not_replace_the_type_label() -> None:
+    """Adding chore uses the additive labels endpoint, preserving dependencies."""
     aenderung = pr_metadata.missing(
         pull("chore(deps): bump x", labels=["dependencies"]), EIGENTUEMER
     )
-    assert aenderung == {"assignees": [EIGENTUEMER]}
+    assert aenderung == {"assignees": [EIGENTUEMER], "labels": ["chore"]}
 
 
 def test_vollstaendiger_pr_braucht_nichts() -> None:
@@ -99,12 +99,44 @@ def test_an_issue_without_assignee_gets_the_owner_and_nothing_else() -> None:
     assert pr_metadata.missing_on_issue(issue, EIGENTUEMER) == {
         "assignees": [EIGENTUEMER]
     }
-    # No label is derived for an issue, also when it has none.
+    # A recognizable title supplies a missing type on issues too.
     assert pr_metadata.missing_on_issue(pull("fix: x"), EIGENTUEMER) == {
-        "assignees": [EIGENTUEMER]
+        "assignees": [EIGENTUEMER],
+        "labels": ["bug"],
     }
     done = pull("Daily code review", assignees=[EIGENTUEMER])
     assert pr_metadata.missing_on_issue(done, EIGENTUEMER) == {}
+
+
+def test_owner_is_added_alongside_another_assignee() -> None:
+    item = pull("fix: example", labels=["bug"], assignees=["contributor"])
+    assert pr_metadata.missing(item, EIGENTUEMER) == {"assignees": [EIGENTUEMER]}
+    item["assignees"].append({"login": EIGENTUEMER.lower()})
+    assert pr_metadata.missing(item, EIGENTUEMER) == {}
+
+
+def test_existing_type_and_legacy_enhancement_are_preserved() -> None:
+    for label in ("feature", "enhancement"):
+        item = pull("fix: example", labels=[label], assignees=[EIGENTUEMER])
+        assert pr_metadata.missing(item, EIGENTUEMER) == {}
+
+
+def test_closed_issues_are_included_in_the_metadata_run(monkeypatch) -> None:
+    item = {**pull("fix: example"), "state": "closed", "milestone": None}
+    calls = []
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setattr(sys, "argv", ["pr_metadata.py"])
+    monkeypatch.setattr(pr_metadata, "all_issues", lambda *a: [item])
+    monkeypatch.setattr(pr_metadata, "all_pulls", lambda *a: [])
+    monkeypatch.setattr(pr_metadata, "pages", lambda *a: [])
+    monkeypatch.setattr(pr_metadata.time, "sleep", lambda *a: None)
+    monkeypatch.setattr(pr_metadata, "rest", lambda *a: calls.append(a))
+    assert pr_metadata.main() == 0
+    assert [c[1] for c in calls] == [
+        "/repos/owner/repo/issues/1/assignees",
+        "/repos/owner/repo/issues/1/labels",
+    ]
 
 
 def test_all_issues_leave_out_pull_requests_over_every_page(monkeypatch) -> None:

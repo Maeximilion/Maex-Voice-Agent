@@ -742,6 +742,142 @@ def test_an_issue_nobody_works_on_gets_no_fields() -> None:
     assert project_report.derive_fields(issue) == {}
 
 
+def test_closed_issue_without_a_pull_request_still_gets_completion_date() -> None:
+    item = eintrag(101, state="CLOSED", iteration=None)
+    item.kind = "Issue"
+    item.closed_at = datetime(2026, 9, 23, 23, 30, tzinfo=UTC)
+    assert project_report.derive_fields(item) == {"Target date": "2026-09-24"}
+
+
+def test_later_followup_cannot_create_start_after_completion() -> None:
+    item = eintrag(101, state="CLOSED", iteration=None)
+    item.kind = "Issue"
+    item.closed_at = datetime(2026, 9, 23, 10, tzinfo=UTC)
+    item.work_started = datetime(2026, 9, 24, 10, tzinfo=UTC)
+    assert project_report.derive_fields(item) == {"Target date": "2026-09-23"}
+    assert project_report.find_issues([item], JETZT)[
+        "Implementation starts after completion"
+    ] == [item]
+
+
+def test_date_conflicts_are_reported_without_overwriting_manual_values() -> None:
+    item = pr(
+        101,
+        erstellt="2026-09-20T12:00:00Z",
+        geschlossen="2026-09-22T12:00:00Z",
+        felder={"Start date": "2026-11-14", "Target date": "2026-11-14"},
+    )
+    findings = project_report.find_issues([item], JETZT)
+    assert findings["Start date after completion"] == [item]
+    assert findings["Target date differs from completion"] == [item]
+    assert "Start date" not in project_report.derive_fields(item)
+
+
+def test_closed_issue_with_a_new_open_link_is_still_done() -> None:
+    item = eintrag(101, state="CLOSED", status="In progress")
+    item.kind = "Issue"
+    item.has_open_pr = True
+    assert project_report.items_to_mark_done([item]) == [item]
+    assert project_report.status_moves([item]) == {}
+
+
+def test_earliest_explicit_partial_implementation_precedes_later_closing_pr() -> None:
+    issue = eintrag(101, state="CLOSED", iteration=None)
+    issue.kind = "Issue"
+    issue.url = "https://github.com/owner/repo/issues/101"
+    issue.closed_at = datetime(2026, 10, 28, tzinfo=UTC)
+    issue.work_started = datetime(2026, 11, 2, tzinfo=UTC)
+    first = pr(102, erstellt="2026-10-12T12:00:00Z", geschlossen="2026-10-13T12:00:00Z")
+    first.url = "https://github.com/owner/repo/pull/102"
+    first.body = "Part 1 implemented.\n\nRefs #101. Remaining work stays open."
+    unrelated = pr(103, erstellt="2026-09-01T12:00:00Z")
+    unrelated.url = "https://github.com/other/repo/pull/103"
+    unrelated.body = "Closes #101"
+    example = pr(104, erstellt="2026-09-01T12:00:00Z")
+    example.url = "https://github.com/owner/repo/pull/104"
+    example.body = "Example: `Refs #101`\n```text\nCloses #101\n```"
+    project_report.enrich_starts([issue], [first, unrelated, example])
+    assert project_report.derive_fields(issue)["Start date"] == "2026-10-12"
+    assert not issue.has_open_pr  # Partial references are not Development links.
+
+
+def test_history_includes_closed_issues_and_merged_prs_but_not_rejected_prs(
+    monkeypatch,
+) -> None:
+    queries = []
+
+    def graphql(query, variables, token):
+        queries.append(query)
+        kind = "Issue" if "issues(" in query else "PullRequest"
+        nodes = [
+            {
+                "id": "CONTENT",
+                "__typename": kind,
+                "number": 101,
+                "title": "Example",
+                "url": "url",
+                "state": "CLOSED" if kind == "Issue" else "MERGED",
+                "updatedAt": "2026-09-22T12:00:00Z",
+            }
+        ]
+        return {
+            "repository": {
+                "issues" if kind == "Issue" else "pullRequests": {
+                    "nodes": nodes,
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
+        }
+
+    monkeypatch.setattr(project_report, "graphql", graphql)
+    items = project_report.fetch_in_repo("owner/repo", "token", history=True)
+    assert [i.state for i in items] == ["CLOSED", "MERGED"]
+    assert "states: [OPEN, CLOSED]" in queries[0]
+    assert "states: [OPEN, MERGED]" in queries[1]
+
+
+def test_history_intake_checks_direct_membership_and_preserves_archives(
+    monkeypatch,
+) -> None:
+    item = eintrag(101, state="CLOSED")
+    item.kind = "Issue"
+    item.content_id = "CONTENT"
+    calls = []
+
+    def graphql(query, variables, token):
+        calls.append(query)
+        return {
+            "node": {
+                "projectItems": {
+                    "nodes": [
+                        {
+                            "id": "EXISTING",
+                            "project": {"id": "PROJECT"},
+                            "isArchived": True,
+                            "updatedAt": "2026-09-22T12:00:00Z",
+                            "content": {
+                                "__typename": "Issue",
+                                "number": 101,
+                                "state": "CLOSED",
+                                "url": item.url,
+                            },
+                        }
+                    ],
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                }
+            }
+        }
+
+    monkeypatch.setattr(project_report, "graphql", graphql)
+    board = []
+    assert (
+        project_report.reconcile_history("PROJECT", board, [item], "token", fix=True)
+        == []
+    )
+    assert board[0].is_archived
+    assert len(calls) == 1 and "mutation" not in calls[0]
+
+
 def test_nachgetragene_felder_frischen_den_zeitstempel_auf(monkeypatch) -> None:
     """Codex-Review PR #137: jedes Nachtragen setzt auf GitHub updatedAt neu. Ohne das
     lokal nachzuziehen, archivierte --fix --archive einen eben ergaenzten PR sofort."""

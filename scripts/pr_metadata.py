@@ -6,9 +6,10 @@ Zweck : Jeder Pull Request bekommt den Repo-Eigentuemer als Assignee und ein
         fix -> bug, ...). Das deckt auch alte Pull Requests und solche von Bots ab.
         Gesetzt wird nur, was fehlt; vorhandene Labels bleiben, ein zweiter Lauf
         aendert nichts.
-        Every open issue without an assignee gets the owner too (Maxi,
-        2026-10-28); its labels (type, stufe-N) are set at creation and not
-        derived here. Every issue, open or closed, without a milestone gets the
+        Every issue, open or closed, gets the owner alongside existing assignees.
+        A missing type is derived from a conventional title even when other
+        labels exist; existing types, including enhancement, stay. Ambiguous
+        types go to --findings-json. Every issue without a milestone gets the
         gate of its stufe-N label (stufe-1 -> "G1 ..."), so the roadmap can group
         by gate (Maxi, 2026-11-02). A milestone set by hand stays. A pull request
         takes the gate of the issue it closes, else of the task it names
@@ -48,6 +49,7 @@ TYPE_LABELS = {
     "test": "test",
 }
 TYPE_PREFIX = re.compile(r"^(?P<type>[a-z]+)(\([^)]*\))?!?:")
+KNOWN_TYPES = frozenset(TYPE_LABELS.values()) | {"enhancement"}
 GATE_TITLE = re.compile(r"^G(?P<stage>\d+)\b")
 
 WORKPACKAGES = Path(__file__).resolve().parent.parent / "docs/07_WORKPACKAGES.md"
@@ -77,16 +79,19 @@ def derive_label(title: str) -> str | None:
 def missing(pull: dict, owner: str) -> dict[str, list[str]]:
     """Was an einem Pull Request fehlt. Leer, wenn nichts zu tun ist."""
     change: dict[str, list[str]] = {}
-    if not pull.get("assignees"):
+    if owner.casefold() not in {
+        assignee["login"].casefold() for assignee in pull.get("assignees", [])
+    }:
         change["assignees"] = [owner]
-    if not pull.get("labels") and (label := derive_label(pull["title"])):
+    labels = {label["name"] for label in pull.get("labels", [])}
+    if not labels & KNOWN_TYPES and (label := derive_label(pull["title"])):
         change["labels"] = [label]
     return change
 
 
 def missing_on_issue(issue: dict, owner: str) -> dict[str, list[str]]:
-    """What an open issue lacks: only the assignee."""
-    return {} if issue.get("assignees") else {"assignees": [owner]}
+    """Fill only an absent owner or a type evidenced by a conventional title."""
+    return missing(issue, owner)
 
 
 def gate_milestones(milestones: list[dict]) -> dict[str, dict]:
@@ -197,6 +202,11 @@ def main() -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="Nur zeigen, was gesetzt wuerde."
     )
+    parser.add_argument(
+        "--findings-json",
+        type=Path,
+        help="Report types that cannot be inferred safely.",
+    )
     args = parser.parse_args()
 
     token = os.environ.get("GITHUB_TOKEN", "")
@@ -216,7 +226,7 @@ def main() -> int:
         ] + [
             (issue, change)
             for issue in issues
-            if issue["state"] == "open" and (change := missing_on_issue(issue, owner))
+            if (change := missing_on_issue(issue, owner))
         ]
         for pull, change in changes:
             summary = ", ".join(
@@ -234,8 +244,10 @@ def main() -> int:
                     token,
                     {"assignees": change["assignees"]},
                 )
+                time.sleep(WRITE_PAUSE_SECONDS)
             if "labels" in change:
                 rest("POST", f"{base}/labels", token, {"labels": change["labels"]})
+                time.sleep(WRITE_PAUSE_SECONDS)
         milestones = pages(f"/repos/{repo}/milestones?state=all", token)
         gates = gate_milestones(milestones)
         gated = [(i, gate) for i in issues if (gate := gate_of(i, gates))]
@@ -258,6 +270,25 @@ def main() -> int:
                     {"milestone": milestone["number"]},
                 )
                 time.sleep(WRITE_PAUSE_SECONDS)
+        if args.findings_json:
+            unresolved = [
+                {
+                    "id": str(item["number"]),
+                    "label": f"Type label needs a decision: #{item['number']} {item['title']}",
+                    "url": item.get("html_url"),
+                }
+                for item in [*issues, *pulls]
+                if not {label["name"] for label in item.get("labels", [])}
+                & (KNOWN_TYPES | {"projektpflege"})
+                and derive_label(item["title"]) is None
+            ]
+            args.findings_json.write_text(
+                json.dumps(
+                    {"Repository metadata": unresolved},
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
     except MetadataError as exc:
         print(f"PR-Metadaten fehlgeschlagen: {exc}", file=sys.stderr)
         return 1

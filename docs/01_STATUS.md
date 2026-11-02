@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.19
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.20
 
 ---
 
@@ -743,6 +743,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.20 · 02.11.2026:** Reconcile project history, completion dates and work-package relationships; restore completed status hourly (#511).
 - **v2.14.19 · 02.11.2026:** Recording safeguards: TrySystem on the stop key, an alarm for recordings not deleted, the folder owner fixed, a disk floor before a recording
 - **v2.14.18 · 02.11.2026:** T-3.9 done: the wait is typed by hand
 - **v2.14.17 · 02.11.2026:** Board columns and milestones follow from the facts
