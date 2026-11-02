@@ -1,5 +1,6 @@
 """Zeit-Helfer: UTC speichern, in der Mandanten-Zeitzone rechnen, Betriebstag statt Kalendertag."""
 
+import calendar
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -29,6 +30,14 @@ def to_utc(dt: datetime, tz_name: str | None = None) -> datetime:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=tz(tz_name))
     return dt.astimezone(UTC)
+
+
+def add_months(day: date, months: int) -> date:
+    """The same day `months` later, or the last day of a month without it (a
+    period in months under Regulation 1182/71, the deadline of Art. 12(3) GDPR)."""
+    months += day.month - 1
+    year, month = day.year + months // 12, months % 12 + 1
+    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
 
 
 def business_day(
