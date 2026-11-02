@@ -163,7 +163,9 @@ def _callback(session, tenant_id, call, phone=PHONE, status="done") -> Callback:
 
 
 def _customer(session, tenant_id, name="Müller", phone=PHONE) -> Customer:
-    customer = Customer(tenant_id=tenant_id, phone=phone, name=name)
+    """A customer with a confirmed delivery from their own line: only such a
+    row is recognized (`find_customer`)."""
+    customer = Customer(tenant_id=tenant_id, phone=phone, name=name, order_count=1)
     session.add(customer)
     session.flush()
     return customer

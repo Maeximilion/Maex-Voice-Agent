@@ -31,3 +31,14 @@ def normalize_phone(raw: str, country_code: str = DEFAULT_COUNTRY_CODE) -> str:
     if not E164.match(digits):
         raise InvalidInput(f"Rufnummer ungültig: {raw!r}", say=SAY_INVALID_PHONE)
     return digits
+
+
+def number_or_none(raw: str | None) -> str | None:
+    """E.164, or None: withheld, or no number. The message of a refused number
+    holds the number, so it goes nowhere."""
+    if not raw:
+        return None
+    try:
+        return normalize_phone(raw)
+    except InvalidInput:
+        return None

@@ -19,11 +19,11 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.core.errors import SAY_ON_FAILURE, InvalidInput, NotFound
+from api.core.errors import SAY_ON_FAILURE, NotFound
 from api.core.time import utcnow
 from api.domain.callbacks.create import create_callback
 from api.domain.customers.contact import note_contact
-from api.domain.customers.phone import normalize_phone
+from api.domain.customers.phone import number_or_none
 from api.domain.status.hours import load_hours, open_window_at
 from api.models import AuditLog, Call, Callback, ServiceConfig, Tenant
 from api.models.tenants import SERVICES
@@ -84,8 +84,8 @@ def transfer_to_team(
                 payload={"reason": req.reason},
             )
         )
-        if req.reason == "complaint" and (number := _number(call.caller_id)):
-            note_contact(session, req.tenant_id, number, now)
+        if req.reason == "complaint" and (number := number_or_none(call.caller_id)):
+            note_contact(session, req.tenant_id, call.id, number, now)
     session.commit()
     return TransferResult(transfer_to=config.team_phone, available=available)
 
@@ -132,8 +132,8 @@ def team_missed(
     number = (
         None
         if call is None
-        else _number(phone)
-        or _number(call.caller_id)
+        else number_or_none(phone)
+        or number_or_none(call.caller_id)
         or _open_card_phone(session, call)
     )
     if call is None or number is None:
@@ -183,17 +183,6 @@ def _open_card_phone(session: Session, call: Call) -> str | None:
         )
         .limit(1)
     ).first()
-
-
-def _number(raw: str | None) -> str | None:
-    """E.164, or None. The message of a refused number holds the number, so it
-    goes nowhere."""
-    if not raw:
-        return None
-    try:
-        return normalize_phone(raw)
-    except InvalidInput:
-        return None
 
 
 def _team_reachable(

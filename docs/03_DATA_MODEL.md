@@ -344,8 +344,8 @@ Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, o
 | phone | TEXT | E.164, checked by the table; not unique: a shared number can belong to several customers, and a name that does not match means a new record (legal check L12) |
 | name | TEXT | |
 | last_order_at | TIMESTAMPTZ | |
-| order_count | INT | |
-| last_contact_at | TIMESTAMPTZ | set on an order, a reservation, a callback and a complaint, never on a number with an objection, which must not extend the old record's period; the 24-month period of the Löschkonzept runs from it, so no stored deletion date next to it (Maxi, 28.10.2026, #344) |
+| order_count | INT | counts confirmed deliveries from the customer's own line; `find_customer` recognizes only a row with one (or a blocked row): a draft nobody said yes to and a booking under a number the guest only named write a row with none (security audit 02.11.2026) |
+| last_contact_at | TIMESTAMPTZ | set on an order, a reservation, a callback and a complaint, only when it was booked under the line the call came from and never on a number with an objection: a number the guest only names, or a withheld line, must not extend anyone's period (security audit 02.11.2026); the 24-month period of the Löschkonzept runs from it, so no stored deletion date next to it (Maxi, 28.10.2026, #344) |
 | blocked | BOOL | Spam- oder Scherzanrufer |
 
 ### `recognition_objections`

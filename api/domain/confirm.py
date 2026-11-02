@@ -102,7 +102,14 @@ def _confirm_reservation(
         raise Conflict("Plätze inzwischen vergeben", say=SAY_SEATS_GONE)
 
     reservation.status = "confirmed"
-    note_contact(session, req.tenant_id, reservation.phone, now, reservation.guest_name)
+    note_contact(
+        session,
+        req.tenant_id,
+        reservation.call_id,
+        reservation.phone,
+        now,
+        reservation.guest_name,
+    )
     session.add(
         AuditLog(
             tenant_id=req.tenant_id,
