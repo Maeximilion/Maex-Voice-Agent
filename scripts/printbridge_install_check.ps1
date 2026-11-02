@@ -85,8 +85,17 @@ Wait-Until { (Get-Bridge).Count -gt 0 } "a failed update starts the old bridge a
 # The install check accepts the Machine scope, so removing it clears that scope too. The
 # runner's account is an administrator; a plain user gets a warning instead.
 [Environment]::SetEnvironmentVariable("MAEX_KITCHEN_TOKEN", $token, "Machine")
-Assert-That ((Invoke-Installer @("-Uninstall")) -eq 0) "uninstall succeeds"
+# A removal that cannot delete the folder (a held file, as an antivirus scan holds one)
+# fails, but the token is gone already.
+$lock = [IO.File]::Open((Join-Path $folder "run.ps1"), "Open", "Read", "Read")
+try {
+    Assert-That ((Invoke-Installer @("-Uninstall")) -ne 0) "a removal that cannot delete the folder fails"
+} finally {
+    $lock.Dispose()
+}
+Assert-That (-not [Environment]::GetEnvironmentVariable("MAEX_KITCHEN_TOKEN", "User")) "a failed removal leaves no token"
 Assert-That (-not [Environment]::GetEnvironmentVariable("MAEX_KITCHEN_TOKEN", "Machine")) "the token is gone for all users"
+Assert-That ((Invoke-Installer @("-Uninstall")) -eq 0) "uninstall succeeds"
 Assert-That (-not (Get-ScheduledTask -TaskName "Maex Print Bridge" -ErrorAction SilentlyContinue)) "the task is gone"
 Assert-That (-not (Test-Path $folder)) "the folder is gone"
 Assert-That ((Get-Bridge).Count -eq 0) "the program is stopped"

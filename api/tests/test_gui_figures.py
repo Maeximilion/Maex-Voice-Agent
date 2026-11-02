@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from api.core.time import business_day
 from api.db import get_db
 from api.domain.calls.figures import Figures, span_figures
+from api.domain.ordering.board import CLOCK_MARGIN
 from api.domain.ordering.labels import ACTION_CORRECTED
 from api.main import app
 from api.models import AuditLog, Call, Order, Tenant
@@ -91,17 +92,23 @@ def _order(db, tenant, call, at, status="confirmed", corrected=False) -> Order:
     db.add(order)
     db.flush()
     if corrected:
-        db.add(
-            AuditLog(
-                tenant_id=tenant.id,
-                actor="gui:tablet",
-                action=ACTION_CORRECTED,
-                entity="order",
-                entity_id=order.id,
-                payload={},
-            )
-        )
+        _correction(db, tenant, order.id, at)
     return order
+
+
+def _correction(db, tenant, entity_id, at, entity="order") -> None:
+    """An `order.corrected` entry stamped at `at`, not by the database clock."""
+    db.add(
+        AuditLog(
+            tenant_id=tenant.id,
+            at=at,
+            actor="gui:tablet",
+            action=ACTION_CORRECTED,
+            entity=entity,
+            entity_id=entity_id,
+            payload={},
+        )
+    )
 
 
 def _week(db, tenant, now):
@@ -146,6 +153,34 @@ def test_a_cancelled_order_is_no_order_taken(db, now):
 
     figures = span_figures(db, tenant, day, day)
     assert (figures.orders, figures.corrected) == (before.orders, before.corrected)
+
+
+@pytest.mark.parametrize(
+    ("offset", "other_tenant", "entity", "counted"),
+    [
+        (timedelta(minutes=5), False, "order", True),
+        # Inside the clock margin: the database clock may run behind the app's.
+        (-CLOCK_MARGIN + timedelta(minutes=1), False, "order", True),
+        # An entry cannot predate its order; the lookup no longer reaches back.
+        (-CLOCK_MARGIN - timedelta(minutes=1), False, "order", False),
+        (timedelta(minutes=5), True, "order", False),
+        (timedelta(minutes=5), False, "reservation", False),
+    ],
+)
+def test_which_audit_entry_marks_an_order_corrected(
+    db, now, offset, other_tenant, entity, counted
+):
+    """The lookup is bounded like the board's (#252, P3 no. 14): only an entry of
+    the same tenant, about an order, from the order's creation on, counts."""
+    tenant = _tenant(db, "Eins")
+    other = _tenant(db, "Zwei")
+    order = _order(db, tenant, _call(db, tenant, now, "completed"), now)
+    _correction(db, other if other_tenant else tenant, order.id, now + offset, entity)
+    db.commit()
+
+    day = business_day(now, tenant.timezone)
+    figures = span_figures(db, tenant, day, day)
+    assert (figures.orders, figures.corrected) == (1, int(counted))
 
 
 def test_empty_day_has_no_ratios(db, now):
