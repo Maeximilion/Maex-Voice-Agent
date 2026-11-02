@@ -1,6 +1,7 @@
 ## What Changed
 
-<!-- Brief and factual, one to three points. -->
+<!-- Brief and factual, one to three points. Use task checkboxes when separate
+deliverables need tracking; explicitly distinguish delivered changes from remaining work. -->
 
 ## Why
 
@@ -9,6 +10,11 @@
 ## How Tested
 
 <!-- Tests, latency measurement, manual run. What actually ran, not what should run. -->
+
+<!-- Keep every checklist item below visible, including in custom PR bodies.
+Tick only verified completion. Leave unfinished or untested checks unchecked with
+the reason. For an inapplicable check, explicitly write "not applicable" and why.
+Update these states after changes and CI results; distinguish local results from CI. -->
 
 - [ ] `make lint` clean
 - [ ] `make test` green
