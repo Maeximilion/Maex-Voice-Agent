@@ -226,7 +226,7 @@ def _set_today(
     before = current_wait(config, service, now)
     if minutes == before:
         return
-    zone = session.get(Tenant, config.tenant_id).timezone
+    zone = session.get_one(Tenant, config.tenant_id).timezone
     until = clock.business_day_bounds_utc(clock.business_day(now, zone), zone)[1]
     _audit(
         session,
