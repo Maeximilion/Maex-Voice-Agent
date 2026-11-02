@@ -90,12 +90,14 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 
 ### `domain/delivery/`
 - `zones.py` — PLZ-Match, später Polygon (`shapely`), ein Interface für beides
-- `fees.py` — Pauschale, Mindestbestellwert, Lieferzeit je Zone
-- `address.py` — Straße, Hausnummer, PLZ normalisieren, Zone auflösen und an der Adresse speichern
+- `address.py` — wer, wohin, welche Zone (T-6.5): `place` liest nur und wirft, `keep` schreibt Kunde und Adresse; Zone auflösen und an der Adresse speichern. Mindestbestellwert und „Lieferung offen" stehen in `domain/ordering/validation.py`, neben den übrigen Prüfungen vor der Summe
 
 ### `domain/customers/`
 - `phone.py` — E.164-Normalisierung deutscher Nummern, inkl. unterdrückter Nummer
 - `lookup.py` — Kunde und Adressen zur Nummer, `blocked` beachten
+- `contact.py` — `last_contact_at`, Zähler und Standardadresse beim Ja
+- `personal.py` — what a row loses when its personal data goes, shared by the deletion job and an erasure, so a store added to one reaches the other
+- `requests.py` — requests of data subjects (T-11.8, docs/09 §2): the log with its deadline, `verify` (a name with a date or the address, never a number alone), the access copy, `erase` and the objection; commits nothing, the job writes the ledger first
 - `retention.py` — Löschfristen setzen und anwenden
 
 ### `domain/callbacks/`
@@ -187,6 +189,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 ### `jobs/`
 - `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
 - `retention.py` — deletion job after docs/03 "Löschkonzept" (T-11.2): `purge(session, now)` strips the personal fields whose period is over and logs one line per pass; `cold_path.py` runs it in a thread of its own every `RETENTION_INTERVAL_SECONDS`, `python -m api.jobs.retention` runs one pass by hand
+- `data_requests.py` — requests of data subjects by hand on the server (T-11.8, docs/09 §2): `python -m api.jobs.data_requests log|open|extend|find|erase|object|answer`; stdout is the copy or the lines of the erasure ledger, written before the commit
 - `menu_diff.py` — Abgleich Kasse gegen Agent-DB
 - `daily_report.py` — daily report as an outbox event `daily.report`. Built with T-11.6: from `REGISTER_REPORT_HOUR` local time, once per business day, how many orders of earlier days nobody marked „In Kasse eingegeben“ (L18), none when all are marked, and again an hour after one the dispatcher gave up on; `cold_path.py` runs it in a thread of its own every five minutes. The day's key figures follow with T-8.3
 - `monitor.py` — alarms and the day report for the operator (T-8.3, docs/13 §5): every 5 minutes in `cold_path.py`, per tenant, the model cost of the business day above `ALARM_COST_PER_DAY_CENTS`, at least `ALARM_ERROR_CALLS_PER_HOUR` error calls in the last hour, events to n8n that failed in the last hour (kitchen slips go to the print bridge and are left out), `voice` not answering and Asterisk not registered (with `VOICE_URL`), the print bridge silent, no `backup.done` for `ALARM_BACKUP_HOURS`, and from `MONITOR_REPORT_HOUR` the previous business day in one line. Posted straight to the push server, topic `ops`, not through n8n (n8n down is one of the outages it reports); the audit log (`monitor.alarm`) remembers what was sent, a failed post goes out on the next pass
@@ -204,7 +207,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `cli.py` — Gespräch im Terminal: du tippst den Kunden, der Agent antwortet, Tool-Aufrufe werden angezeigt
 - `replay.py` — spielt ein Transkript aus `evals/cases/` ab
 - `session.py` — die gemeinsame Mechanik beider Eingänge: Anruf-Zeile öffnen und schließen, Zustand halten, Tool-Protokoll und Ausgabe
-- `scripted_llm.py` — regelbasierter Modell-Ersatz bis T-2.4: erkennt Reservierung und Abholung aus `prompts/system_v2.md`, rät nie, meldet Unverstandenes an die Leiter
+- `scripted_llm.py` — regelbasierter Modell-Ersatz bis T-2.4: erkennt Reservierung, Abholung und Lieferung aus `prompts/system_v3.md`, rät nie, meldet Unverstandenes an die Leiter
 - `scripted_order.py` — der Abholfluss des Modell-Ersatzes: Gerichte, Pflichtoptionen, Name, `draft_order`, vorlesen, `confirm`; what a card number is on the open allergy question it takes from the active menu (`MenuNumbers`, handed in by `session.py`), not from the import grammar
 - `noise.py` — verrauscht Eingaben absichtlich (Buchstabendreher, abgeschnittene Wörter), um die Leiter zu testen
 

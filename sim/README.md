@@ -18,7 +18,7 @@ otherwise the first one is used.
 
 Until T-2.4 connects a real model, `scripted_llm.py` stands in for it: rule-based, German,
 scoped to the reservation flow and the pickup flow (`scripted_order.py`) from
-`prompts/system_v2.md`. It never guesses — what it does
+`prompts/system_v3.md`. It never guesses — what it does
 not recognize it reports as a failed attempt, and the understanding ladder (`api/agent/ladder.py`)
 decides what happens next.
 

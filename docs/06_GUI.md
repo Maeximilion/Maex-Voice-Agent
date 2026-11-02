@@ -118,6 +118,8 @@ Gebaut (T-4.8): Knopf „Gericht aus" in der Kopfzeile, daneben die Zahl der Ger
 
 **Immer sichtbar, in jedem Bereich:** vier Kennzahlen der letzten 7 Tage — Genauigkeit, Kosten je Bestellung, Anteil an das Team übergeben, verpasste Anrufe. Der Bereich „Kennzahlen" zeigt dann den Verlauf. Bereiche als Reiter, keine Seitenleiste.
 
+**Stand T-8.4 (02.11.2026):** gebaut ist die Seite `/gui/kennzahlen` (Knopf „Kennzahlen“ in der Kopfzeile der Betriebsansicht): oben die vier Werte der letzten 7 Tage, darunter der Verlauf je Betriebstag (14 Tage). Die Leiste in jedem Bereich folgt mit den übrigen Reitern; bis dahin gibt es nur diese Seite. Rechnung in `domain/calls/figures.py`: Genauigkeit = angenommene Bestellungen ohne Korrektur durch das Team, Kosten je Bestellung = Modellkosten der Anrufe durch angenommene Bestellungen, übergeben = Anrufe mit Ergebnis `transferred` oder `callback`, verpasst = `abandoned` oder `error`. Ein Strich heißt: nichts, wodurch geteilt werden könnte.
+
 | Bereich | Inhalt |
 |---|---|
 | **Menü** | Liste mit Suche nach Name oder Nummer, kein Kachel-Raster. Zeile = Nummer grau, Name, Preis, Warnbadges. Aufklappen zeigt Optionen, Allergene und **Aliase mit Trefferzahl**. Darunter **Vorschläge aus Anrufen**: Alias, Anzahl „nicht erkannt", Knopf „Annehmen" (aus der Schattenmessung, Stufe 4). Warnbadges in der Zeile: „Allergene fehlen" (gelb, KI gibt keine Auskunft) · „Kasse: 13,50 €" (rot, Preisabgleich hat eine Abweichung gefunden, Klick übernimmt oder verwirft). |
@@ -126,7 +128,7 @@ Gebaut (T-4.8): Knopf „Gericht aus" in der Kopfzeile, daneben die Zahl der Ger
 | **Anrufe** | Liste mit Filter: Datum, Ergebnis, Absicht. Je Anruf: Dauer, Tool-Aufrufe, Kosten, Ergebnis, Transkript (falls vorhanden). |
 | **Kennzahlen** | Genauigkeit, Eskalationsquote, Abbrüche, verpasste Anrufe, Kosten je Anruf und je Bestellung. Tag, Woche, Monat. |
 | **Evals** | letzter Lauf, Verlauf der Genauigkeit über die Prompt-Versionen, fehlgeschlagene Fälle im Detail |
-| **Daten** | Löschfristen, manuelles Löschen auf Kundenwunsch, Exporte |
+| **Daten** | Löschfristen, manuelles Löschen auf Kundenwunsch, Exporte. The mockup's search by number stays a mockup: the legal check forbids it (U2, a number is no person). The page asks for a name with a date or the address and calls `domain/customers/requests.py`, as `api/jobs/data_requests.py` does until it exists (T-11.8) |
 
 ---
 

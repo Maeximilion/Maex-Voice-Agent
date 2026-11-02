@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -19,6 +19,7 @@ from api.models import (
     Callback,
     ConsentLog,
     Customer,
+    DataSubjectRequest,
     Order,
     OrderItem,
     OutboxEvent,
@@ -186,6 +187,7 @@ def test_caller_number_goes_after_90_days_and_the_statistics_stay(session, tenan
 def _a_guest(session, tenant_id, last_contact_at):
     customer = _customer(session, tenant_id)
     customer.last_contact_at = last_contact_at
+    customer.order_count = 1
     session.add(
         Address(
             tenant_id=tenant_id,
@@ -218,6 +220,28 @@ def test_a_customer_goes_with_the_addresses_after_24_months(session, tenant_id):
     assert _customers(session) == {stays, at_the_limit}
     left = session.scalars(select(Address.customer_id)).all()
     assert sorted(left) == sorted([stays, at_the_limit])
+
+
+def test_a_customer_only_a_draft_made_goes_with_the_guest_details(session, tenant_id):
+    """T-6.5: the row of a delivery nobody said yes to does not stay 24 months."""
+    period = settings.retention_guest_details_days * DAY
+
+    def only_a_draft(at):
+        customer = session.get(Customer, _a_guest(session, tenant_id, at))
+        customer.order_count, customer.created_at = 0, at
+        return customer.id
+
+    only_a_draft(NOW - period - DAY)
+    young = only_a_draft(NOW - period + DAY)
+    # No order on the customer, and a contact after the row was written: a
+    # confirmed pickup or table (Codex PR #472).
+    contacted = _a_guest(session, tenant_id, NOW - period - DAY)
+    customer = session.get(Customer, contacted)
+    customer.order_count, customer.created_at = 0, NOW - period - 2 * DAY
+    session.commit()
+
+    assert purge(session, NOW)["customers"] == 1
+    assert _customers(session) == {young, contacted}
 
 
 def test_a_deleted_customer_leaves_the_order_and_the_objection(session, tenant_id):
@@ -683,6 +707,117 @@ def test_consent_years_are_bounded(years):
     Settings(retention_consent_log_years=10)
 
 
+# --- data_subject_requests: 3 months, then the third calendar year -----------------
+
+
+def _request(session, tenant_id, answered_at=None, delete_after=None, note="Name"):
+    received = (answered_at or NOW) - DAY
+    row = DataSubjectRequest(
+        tenant_id=tenant_id,
+        reference=f"dsr_2026_{uuid.uuid4().int % 10**6:06d}",
+        received_at=received,
+        deadline=received.date(),
+        kind="erasure",
+        channel="mail",
+        verification_note=note,
+        answered_at=answered_at,
+        outcome="done" if answered_at else None,
+        delete_after=delete_after,
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def test_request_details_go_three_months_after_the_answer(session, tenant_id):
+    old = _request(session, tenant_id, _berlin(2026, 7, 14, 12, 0), date(2029, 12, 31))
+    young = _request(
+        session, tenant_id, _berlin(2026, 7, 16, 12, 0), date(2029, 12, 31)
+    )
+    other = _request(
+        session,
+        _tenant(session, "Zwei"),
+        _berlin(2026, 8, 1, 12, 0),
+        date(2029, 12, 31),
+    )
+    session.commit()
+
+    assert purge(session, NOW)["request_details"] == 1
+
+    assert _fresh(session, old).verification_note is None
+    assert _fresh(session, young).verification_note == "Name"
+    assert _fresh(session, other).verification_note == "Name"
+    # The thin row is the proof of the deadline.
+    assert _fresh(session, old).reference
+    assert _fresh(session, old).outcome == "done"
+    assert _fresh(session, old).answered_at is not None
+
+
+def test_an_unanswered_request_keeps_its_details_whatever_its_age(session, tenant_id):
+    row = _request(session, tenant_id)
+    session.execute(update(DataSubjectRequest).values(received_at=NOW - 2000 * DAY))
+    session.commit()
+
+    counts = purge(session, NOW)
+
+    assert (counts["request_details"], counts["request_rows"]) == (0, 0)
+    assert _fresh(session, row).verification_note == "Name"
+
+
+def test_request_months_come_from_the_setting(session, tenant_id, monkeypatch):
+    row = _request(session, tenant_id, _berlin(2026, 9, 1, 12, 0), date(2029, 12, 31))
+    session.commit()
+    assert purge(session, NOW)["request_details"] == 0
+    monkeypatch.setattr(settings, "retention_request_details_months", 1)
+    assert purge(session, NOW)["request_details"] == 1
+    assert _fresh(session, row).verification_note is None
+
+
+def test_request_row_goes_the_day_after_delete_after(session, tenant_id):
+    kept = _request(session, tenant_id, NOW - 400 * DAY, date(2026, 10, 15))
+    gone = _request(session, tenant_id, NOW - 400 * DAY, date(2026, 10, 14)).id
+    session.commit()
+
+    assert purge(session, NOW)["request_rows"] == 1
+
+    assert _fresh(session, kept).reference
+    session.expire_all()
+    assert session.get(DataSubjectRequest, gone) is None
+
+
+def test_the_last_day_of_a_request_row_is_the_restaurants(session, tenant_id):
+    """Tokyo is already on the first of January, Berlin still on the 31st."""
+    new_year = datetime(2030, 12, 31, 16, 0, tzinfo=UTC)
+    tokyo = _tenant(session, "Tokio")
+    session.execute(
+        update(Tenant).where(Tenant.id == tokyo).values(timezone="Asia/Tokyo")
+    )
+    here = _request(session, tenant_id, NOW, date(2030, 12, 31))
+    there = _request(session, tokyo, NOW, date(2030, 12, 31)).id
+    session.commit()
+
+    assert purge(session, new_year)["request_rows"] == 1
+
+    assert _fresh(session, here).tenant_id == tenant_id
+    session.expire_all()
+    assert session.get(DataSubjectRequest, there) is None
+
+
+@pytest.mark.parametrize(
+    ("name", "bad"),
+    [
+        ("retention_request_details_months", 0),
+        ("retention_request_details_months", 13),
+        ("retention_request_log_years", 0),
+        ("retention_request_log_years", 11),
+    ],
+)
+def test_request_periods_are_bounded(name, bad):
+    """More than a year on the details would outlast the thin row of a year."""
+    with pytest.raises(ValidationError):
+        Settings(**{name: bad})
+
+
 # --- the run as a whole -------------------------------------------------------------
 
 
@@ -770,9 +905,10 @@ def test_one_failing_period_does_not_stop_the_others(session, tenant_id, caplog)
     assert "allergy_notes" not in counts
     assert counts["caller_ids"] == 1
     failed = [r for r in caplog.records if r.getMessage() == "Retention step failed"]
-    assert [r.extra["step"] for r in failed] == ["allergy_notes", "consent_answers"]
+    by_zone = ["allergy_notes", "consent_answers", "request_rows"]
+    assert [r.extra["step"] for r in failed] == by_zone
     passes = [r for r in caplog.records if r.getMessage() == "Retention pass"]
-    assert passes[-1].extra["failed"] == ["allergy_notes", "consent_answers"]
+    assert passes[-1].extra["failed"] == by_zone
 
 
 def test_cold_path_runs_the_job_in_its_own_loop(migrated_db_url, session, tenant_id):

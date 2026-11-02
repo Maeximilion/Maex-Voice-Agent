@@ -533,13 +533,19 @@ def test_the_service_status_of_this_call_stays_in_the_state(is_open, pickup):
         "get_service_status",
         ToolResult(
             ok=True,
-            data={"is_open": is_open, "pickup_enabled": pickup, "closes_at": None},
+            data={
+                "is_open": is_open,
+                "pickup_enabled": pickup,
+                "delivery_enabled": False,
+                "closes_at": None,
+            },
         ),
     )
 
     assert state.to_prompt_json()["service"] == {
         "is_open": is_open,
         "pickup_enabled": pickup,
+        "delivery_enabled": False,
     }
 
 

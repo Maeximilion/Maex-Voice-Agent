@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import (
     Text,
+    and_,
     case,
     cast,
     delete,
@@ -32,12 +33,19 @@ from api.config import settings
 from api.core.logging import configure_logging, error_text, get_logger, log
 from api.core.time import business_day, business_day_bounds_utc, to_local, tz, utcnow
 from api.db import SessionLocal
+from api.domain.customers.personal import (
+    CALLBACK_GONE,
+    ORDER_DAY,
+    ORDER_GONE,
+    thin_payload,
+)
 from api.models import (
     AuditLog,
     Call,
     Callback,
     ConsentLog,
     Customer,
+    DataSubjectRequest,
     Order,
     OrderItem,
     OutboxEvent,
@@ -54,12 +62,7 @@ logger = get_logger("api.jobs.retention")
 # on the locale of the database, hence both cases.
 ALLERGY = "allergi|unvertr(ä|Ä|ae)glich|intoleran"
 
-# What an outbox payload keeps once its period is over: the ids. The kitchen
-# finds every slip of an order by them (domain/ordering/handover.py).
-OUTBOX_KEEP = ("order_id", "reservation_id", "callback_id", "call_id", "revision")
 UNSENT_EXPIRED = "payload removed after {days} days unsent, never sent"
-# The date of an order: the promised time, or its creation for a draft.
-ORDER_DAY = func.coalesce(Order.ready_at, Order.created_at)
 _ALLERGY_RE = re.compile(ALLERGY, re.IGNORECASE)
 
 
@@ -96,15 +99,28 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
                 < now - timedelta(days=settings.retention_callback_days),
                 or_(Callback.phone != "", Callback.summary != ""),
             )
-            .values(phone="", summary=""),
+            .values(**CALLBACK_GONE),
         ),
         # For real: the addresses go with it, an order keeps only cleared
-        # links (migration 018), and an objection hangs on the number.
+        # links (migration 018), and an objection hangs on the number. A row
+        # only a draft made goes with the guest details of that draft instead
+        # of after 24 months: no order, and no contact since it was written.
+        # Both columns take `now()` of the same insert, and every confirmed
+        # contact moves `last_contact_at` (`domain/customers/contact.py`),
+        # also a pickup or a table, which count no order on the customer.
         "customers": lambda: _run(
             session,
             delete(Customer).where(
-                Customer.last_contact_at
-                < now - timedelta(days=settings.retention_customer_days)
+                or_(
+                    Customer.last_contact_at
+                    < now - timedelta(days=settings.retention_customer_days),
+                    and_(
+                        Customer.order_count == 0,
+                        Customer.last_contact_at == Customer.created_at,
+                        Customer.last_contact_at
+                        < now - timedelta(days=settings.retention_guest_details_days),
+                    ),
+                )
             ),
         ),
         "outbox_payloads": lambda: _outbox_payloads(session, now),
@@ -124,6 +140,18 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
         "consent_answers": lambda: _consent_answers(
             session, now, settings.retention_consent_log_years
         ),
+        "request_details": lambda: _run(
+            session,
+            update(DataSubjectRequest)
+            .where(
+                DataSubjectRequest.answered_at
+                + func.make_interval(0, settings.retention_request_details_months)
+                < now,
+                DataSubjectRequest.verification_note.is_not(None),
+            )
+            .values(verification_note=None),
+        ),
+        "request_rows": lambda: _request_rows(session, now),
     }
     counts: dict[str, int] = {}
     failed: list[str] = []
@@ -266,6 +294,20 @@ def _consent_answers(session: Session, now: datetime, years: int) -> int:
     return deleted
 
 
+def _request_rows(session: Session, now: datetime) -> int:
+    """`delete_after` is the last day of the row, on the restaurant's calendar."""
+    deleted = 0
+    for tenant_id, zone in session.execute(select(Tenant.id, Tenant.timezone)).all():
+        deleted += _run(
+            session,
+            delete(DataSubjectRequest).where(
+                DataSubjectRequest.tenant_id == tenant_id,
+                DataSubjectRequest.delete_after < to_local(now, zone).date(),
+            ),
+        )
+    return deleted
+
+
 def _guest_details(session: Session, cutoff: datetime) -> dict[str, int]:
     """Name, phone, notes and the customer link, so the row cannot be traced
     through the customer record (docs/03). `address_id` joins here with T-6.1."""
@@ -289,9 +331,7 @@ def _guest_details(session: Session, cutoff: datetime) -> dict[str, int]:
                 Order.address_id.is_not(None),
             ),
         )
-        .values(
-            customer_name="", phone="", note=None, customer_id=None, address_id=None
-        ),
+        .values(**ORDER_GONE),
     )
     reservations = _run(
         session,
@@ -317,15 +357,7 @@ def _outbox_payloads(session: Session, now: datetime) -> int:
     """A sent payload goes RETENTION_OUTBOX_SENT_DAYS after dispatch, any other
     at most RETENTION_OUTBOX_UNSENT_DAYS after it was written. An unsent one is
     marked failed with it: the bridge or n8n must never get a guest-less slip."""
-    thin = func.jsonb_strip_nulls(
-        func.jsonb_build_object(
-            *(
-                arg
-                for key in OUTBOX_KEEP
-                for arg in (cast(key, Text), OutboxEvent.payload[key])
-            )
-        )
-    )
+    thin = thin_payload()
     sent = _run(
         session,
         update(OutboxEvent)
