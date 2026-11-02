@@ -51,6 +51,9 @@ class DishSwitch:
 class DishGroup:
     category: str
     dishes: list[DishSwitch]
+    # The group of dishes that are out today, shown first; the tablet words its
+    # heading, `category` stays empty.
+    sold_out_group: bool = False
 
 
 # A number in the search field: a digit first, also after a prefix ("s1", T-4.12).
@@ -113,15 +116,22 @@ def list_switches(
     ]
 
 
-def group_switches(switches: list[DishSwitch]) -> list[DishGroup]:
+def group_switches(
+    switches: list[DishSwitch], sold_out_first: bool = False
+) -> list[DishGroup]:
     """Group the list by category. The groups come in menu order: a category
     stands where its first dish stands in card order, so the order comes from
     the data and no category name is known here. Takes the already filtered
-    list, so a search shows grouped results."""
+    list, so a search shows grouped results. With `sold_out_first` the dishes
+    that are out today form a first group and leave their category, so they are
+    found at once; categories left empty by that disappear."""
     groups: dict[str, list[DishSwitch]] = {}
+    out = [s for s in switches if sold_out_first and s.sold_out]
     for switch in switches:
-        groups.setdefault(switch.category, []).append(switch)
-    return [DishGroup(category, items) for category, items in groups.items()]
+        if not (sold_out_first and switch.sold_out):
+            groups.setdefault(switch.category, []).append(switch)
+    first = [DishGroup("", out, sold_out_group=True)] if out else []
+    return first + [DishGroup(category, items) for category, items in groups.items()]
 
 
 def sold_out_count(

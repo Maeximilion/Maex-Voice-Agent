@@ -12,6 +12,7 @@ import secrets
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -623,6 +624,7 @@ def _orders_fragment(
     session: Session,
     tenant: Tenant | None,
     problem: str | None = None,
+    notice: str | None = None,
 ) -> HTMLResponse:
     if tenant is None:
         return templates.TemplateResponse(
@@ -631,7 +633,11 @@ def _orders_fragment(
     return templates.TemplateResponse(
         request,
         "fragments/bestellungen.html",
-        {"orders": _order_rows(session, tenant), "order_problem": problem},
+        {
+            "orders": _order_rows(session, tenant),
+            "order_problem": problem,
+            "order_notice": notice,
+        },
     )
 
 
@@ -646,7 +652,10 @@ def orders_fragment(
 
 
 def _order_tap(
-    request: Request, session: Session, change: Callable[[uuid.UUID], object]
+    request: Request,
+    session: Session,
+    change: Callable[[uuid.UUID], object],
+    notice: Callable[[Any], str] | None = None,
 ) -> HTMLResponse:
     """Passt oder Nochmal senden: die Spalte kommt frisch zurueck.
 
@@ -657,15 +666,17 @@ def _order_tap(
     tenant = _tenant(session)
     if tenant is None:
         return _orders_fragment(request, session, None)
-    problem = None
+    problem = line = None
     try:
-        change(tenant.id)
+        result = change(tenant.id)
+        # The card leaves the column at once: say what happened, until the next refresh.
+        line = notice(result) if notice else None
     except AppError as exc:
         session.rollback()
         logger.info("Bestellung nicht umgestellt: %s", exc.message)
         if exc.code == "conflict":
             problem = exc.say or ORDER_FAILED
-    return _orders_fragment(request, session, tenant, problem)
+    return _orders_fragment(request, session, tenant, problem, line)
 
 
 @router.post(
@@ -734,6 +745,9 @@ def cancel_order_tap(
         request,
         session,
         lambda t: order_board.cancel_order(session, t, order_id, version),
+        lambda order: (
+            f"Bestellung {order.pickup_code or order.customer_name}: Storniert"
+        ),
     )
 
 
@@ -935,7 +949,8 @@ def _dish_list(
         template,
         {
             "groups": dishes.group_switches(
-                dishes.list_switches(session, tenant.id, query)
+                dishes.list_switches(session, tenant.id, query),
+                sold_out_first=not query.strip(),
             ),
             "query": query,
             "dish_problem": problem,
