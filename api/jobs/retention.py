@@ -107,9 +107,12 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
         # links (migration 018), and an objection hangs on the number. A row
         # only a draft made goes with the guest details of that draft instead
         # of after 24 months: no order, and no contact since it was written.
-        # Both columns take `now()` of the same insert, and every confirmed
-        # contact moves `last_contact_at` (`domain/customers/contact.py`),
-        # also a pickup or a table, which count no order on the customer.
+        # Both columns take `now()` of the same insert. A contact moves
+        # `last_contact_at` only on a row with an order counted or a block
+        # (`domain/customers/contact.py`, security re-audit 02.11.2026,
+        # evening), so a draft's row keeps this mark through its own line's
+        # pickups and callbacks, and through those of the number's owner when
+        # a booking from another line wrote it.
         "customers": lambda: _run(
             session,
             delete(Customer).where(
