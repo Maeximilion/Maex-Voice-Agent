@@ -14,6 +14,7 @@ is `team_callback`: the wish goes to the team, which calls back.
 """
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -52,6 +53,7 @@ MAX_ALTERNATIVES = 2
 # Weiter weg (morgens auf den Abend) nennt der Satz die Tageszeit.
 UNAMBIGUOUS = timedelta(hours=6)
 DINEIN = "dinein"
+Fit = Callable[[datetime, Window], bool]
 ASK_OTHER_TIME = "Zu welcher anderen Uhrzeit passt es Ihnen?"
 
 
@@ -129,15 +131,18 @@ def check_slot(
         notice = timedelta(minutes=window.notice_minutes)
         return at.astimezone(UTC) < now.astimezone(UTC) + notice
 
-    def fits(at: datetime, service: Window) -> bool:
-        return startable(at, service) and seats_free(at) and not inside_notice(at)
+    def seated(at: datetime, service: Window) -> bool:
+        return startable(at, service) and seats_free(at)
 
-    def free_slots(service: Window) -> list[datetime]:
+    def fits(at: datetime, service: Window) -> bool:
+        return seated(at, service) and not inside_notice(at)
+
+    def free_slots(service: Window, fit: Fit = fits) -> list[datetime]:
         return [
             slot
             for window in windows
             for slot in window.grid()
-            if slot != local and slot > now and fits(slot, service)
+            if slot != local and slot > now and fit(slot, service)
         ]
 
     service = open_window_at(hours, local, DINEIN, zone)
@@ -213,6 +218,13 @@ def check_slot(
                         chosen,
                     ),
                 )
+        # Seats are free, only the notice hides them: not "nichts mehr frei".
+        if any(free_slots(later, seated) for later in today_services):
+            return _unavailable(
+                [],
+                f"Um {spoken_time(local)} haben wir noch geschlossen, "
+                "und so kurzfristig kann ich keinen Tisch reservieren.",
+            )
         # Der ganze Tag ist voll: das soll der Gast hoeren, nicht nur "geschlossen"
         # und dann bei jeder genannten Uhrzeit "nichts frei" (Review PR #158).
         return _unavailable(
