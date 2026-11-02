@@ -132,6 +132,27 @@ sofort → transfer_to_team
 ```
 Kein Beschwichtigen, kein Ausfragen, keine Zusagen. Der Agent nimmt auf und gibt ab.
 
+**A complaint and the rule catalogue (D19, T-10.11).** With an empty catalogue, which is the state today, a complaint goes the way above and nothing else happens. A rule is a row of `complaint_rules` (docs/03): the words that select it, the remedy in cents, the two sentences the guest hears.
+```text
+a complaint: a word of §4 in the guest's sentence (before the model), or the
+             model's transfer_to_team or create_callback with reason complaint
+   → the core reads that one sentence against the tenant's active rules
+   exactly one rule, nothing else open in the call, no doubt
+      → offer_say of the row, no model call, nothing booked
+         explicit yes        → callback card and audit row in one transaction,
+                               granted_say of the row, the call ends
+         anything else       → the way above, with the offer on the card
+         the line ends       → the same card, nothing booked
+   anything else → the way above
+```
+The core decides, never the model: the model only says that a sentence is a complaint, its prompt rule stays as it is, and the core takes that call back when a rule answers it (`agent/loop.py`, `_offer_remedy`). The model never reads a rule, an amount or an offer: `offer_say`, `granted_say` and `remedy_cents` come from the row, none of them from a prompt (hard rule 1).
+
+The guest's yes is read as strictly as the yes to a read-back (`consent.is_yes`), and it counts only as the answer to the offer itself: after the phone line's "Sind Sie noch da?" a "Ja" answers that question, and the complaint goes to the team. The offer is played to the end like a read-back (`telephony/handler.py`). Only the yes writes anything, and it books what the guest heard, also if the row changed in the meantime. The booking is the card: reason `complaint`, the rule's name, the amount and the guest's sentence. The money moves when the team carries it out. A card that cannot be written books nothing, and the team takes the call.
+
+A rule matches only when all of this holds (`domain/callbacks/complaint_rules.py`, `escalation.only_a_complaint`): one of its phrases stands in the sentence as whole words, no second rule matches, and outside the phrase the sentence neither rules something out nor only supposes it ("nicht", "kein", "ohne", "wenn", "vielleicht" and the like). A phrase with such a word in it is read as it stands ("nicht warm"). The sentence holds no other trigger of §4, no question, no allergy or allergen, nothing about health, and no legal step. The call has nothing else open, because it ends with the remedy: no draft, no booking, no dish searched, no slot besides the number, no allergy, no earlier wish. And a number is known, or nobody could carry the remedy out. The wish `note_intent` hears in the complaint sentence itself is no earlier wish: "Die Lieferung war kalt" names what the complaint is about.
+
+The cost is on the safe side: a guest who says only "Ich möchte mich beschweren" goes to the team, nobody asks what it was about. A phrase is matched as written, so "kalt" does not cover "kalte" or "eiskalt".
+
 ### "Sind Sie ein Mensch?"
 ```text
 question for a human alone → fixed sentence of the core, no model call: "Ich bin ein KI-Assistent, kein Mensch. Möchten Sie lieber mit jemandem aus dem Team sprechen?"
@@ -228,7 +249,7 @@ The allergy and the consent are the core's, not the model's (`agent/allergies.py
 ## 4. Eskalation: die Auslöser
 
 Sofort und ohne Diskussion:
-- Kunde sagt Beschwerde, Reklamation, Ärger, „will jemanden sprechen"
+- Kunde sagt Beschwerde, Reklamation, Ärger, „will jemanden sprechen". A complaint meets the rule catalogue first (§3); with an empty catalogue, no match or any doubt it goes to the team as it always did
 - Änderung oder Storno einer laufenden Bestellung
 - Große oder ungewöhnliche Bestellung (Vorschlag: über 150 € oder über 20 Positionen)
 - Catering, Feier, Sonderwunsch außerhalb der Karte

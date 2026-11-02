@@ -167,7 +167,23 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | status | TEXT | `open` / `done` |
 | done_by / done_at | TEXT / TIMESTAMPTZ | |
 
-A callback the core writes on a handover quotes the guest's sentence in `summary`, except a sentence that names an allergy: that is health data the caller agreed to at most as a kitchen note (L13, T-11.1). A question about allergens beyond the maintained values gets the card "Frage zu Allergenen über die hinterlegten Angaben hinaus, vor einer Bestellung zu klären." with the dish and an unplaced order, reason `out_of_scope` (L17).
+A callback the core writes on a handover quotes the guest's sentence in `summary`, except a sentence that names an allergy: that is health data the caller agreed to at most as a kitchen note (L13, T-11.1). A question about allergens beyond the maintained values gets the card "Frage zu Allergenen über die hinterlegten Angaben hinaus, vor einer Bestellung zu klären." with the dish and an unplaced order, reason `out_of_scope` (L17). A remedy of `complaint_rules` the guest said yes to is booked as a card of reason `complaint` with the rule's name and amount (T-10.11).
+
+### `complaint_rules`
+The catalogue of fixed answers to a complaint, per tenant (D19, T-10.11, migration 021, docs/05 §3). Empty, and nothing seeds it: the catalogue is Maxi's, and with an empty one every complaint goes to the team. Read by the core, never by the model. No personal data.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| name | TEXT | what the team reads on the card; not blank, at most 100 characters so a card always fits |
+| phrases | TEXT[] | the words that select the rule, at least one; any of them matches, as whole words and as written (`kalt` does not cover `kalte`) |
+| remedy_cents | INTEGER | the remedy, above 0: every remedy is money (D19). The amount on the card and in `audit_log`; a sentence that names an amount has to name this one |
+| offer_say | TEXT | the offer in German, closing with the question the guest's yes answers; not blank |
+| granted_say | TEXT | what the guest hears after the yes, the last sentence of the call; not blank |
+| active | BOOLEAN | false on a new row: a remedy is money, so a rule is switched on by someone |
+
+The yes writes `complaint.remedy_booked` to `audit_log` (rule id, `call_id`, `remedy_cents`), in the transaction of the card.
 
 ### `consent_log`
 One row per answer to a consent question of the agent (legal check L13, T-11.1, migration 010). The proof a stored allergy note with "Grund: Allergie" rests on; the allergy itself is not in it.
@@ -448,4 +464,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 017 | `uq_special_days_set`: one `set` row per tenant and date (#441); the upgrade first lists every date with two `set` rows and stops without a change, the team decides which row holds; the downgrade drops the key |
 | 018 | `delivery_zones`, `customers`, `addresses`, `recognition_objections`, `orders.address_id` and the foreign keys of `orders.customer_id` and `orders.address_id` (T-6.1, L12); nothing writes them yet, T-6.2 and T-6.5 do, T-6.7 deletes; the downgrade drops the four tables with every row and the links on the orders |
 | 019 | `data_subject_requests`: the request log of data subjects (T-11.8, U2); nothing backfilled, the lines of the interim file are moved in by hand (docs/09 §2); the downgrade drops the table with every logged request |
+| 021 | `complaint_rules`: the catalogue of fixed answers to a complaint, empty (T-10.11, D19); nothing backfilled and nothing seeded; the downgrade drops the table with every rule, booked remedies stay on their cards and in `audit_log` |
 | planned, next free number | `eval_cases`, `eval_runs` |

@@ -74,6 +74,19 @@ class Allergy(BaseModel):
     item: str | None = None
 
 
+class RemedyOffer(BaseModel):
+    """A rule of the catalogue the core offered the guest (D19), as the guest
+    heard it: their yes books this, whatever the row says by then."""
+
+    rule_id: uuid.UUID
+    name: str
+    remedy_cents: int
+    offer_say: str
+    granted_say: str
+    # The guest's sentence: the card needs it, and it is on no transcript.
+    complaint: str
+
+
 class ConversationState(BaseModel):
     call_id: uuid.UUID
     tenant_id: uuid.UUID
@@ -191,6 +204,9 @@ class ConversationState(BaseModel):
     # The reason the callback is made with: a question beyond the database,
     # or a line the core understood nothing on (Codex PR #437). Never sent.
     callback_reason: str = "out_of_scope"
+    # The rule the core offered, while it waits for the guest's answer
+    # (`loop._offer_answered`). Never sent: the model decides no remedy.
+    remedy_offer: RemedyOffer | None = None
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""

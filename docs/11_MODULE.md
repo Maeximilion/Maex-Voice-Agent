@@ -103,6 +103,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 ### `domain/callbacks/`
 - `create.py` — Rückruf-Aufgabe mit Zusammenfassung
 - `transfer.py` — Durchwahl, Erreichbarkeit, Schleifenschutz (einmal je Anruf)
+- `complaint_rules.py` — which rule of the catalogue answers a complaint (D19, T-10.11): `matching_rule` reads the tenant's active rows against the guest's sentence, words only, one match or none; `note_remedy` writes the audit row of a yes. What follows a match stays in `agent/loop.py`
 
 ### `domain/calls/`
 Anruf-Log, nicht Gesprächsführung — das bleibt `agent/`. Eigenes Modul statt Teil
