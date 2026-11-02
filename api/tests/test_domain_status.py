@@ -44,7 +44,7 @@ def test_dienstag_abend_ist_offen(session, tenant_id):
     assert status.is_open is True
     assert status.closes_at == berlin(DIENSTAG, 22).astimezone(UTC)
     assert status.pickup_enabled is True and status.delivery_enabled is True
-    assert (status.pickup_wait_minutes, status.delivery_wait_minutes) == (20, 45)
+    assert (status.pickup_wait_minutes, status.delivery_wait_minutes) == (30, 60)
     assert status.call_mode == "shadow"
     assert status.sold_out == [] and status.say is None
 

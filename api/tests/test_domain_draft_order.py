@@ -153,11 +153,11 @@ def test_entwurf_mit_summe_readback_und_audit(session, tenant_id, call_id):
     assert draft.total_cents == 2880
     assert draft.status == "draft"
     assert draft.warnings == []
-    assert draft.ready_at == NOW + timedelta(minutes=20)
+    assert draft.ready_at == NOW + timedelta(minutes=30)
     assert draft.readback == (
         "Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln. "
         "Einmal Nummer 47 Ente knusprig mit Huhn und Erdnuss. "
-        "Macht 28 Euro 80, abholbereit in etwa 20 Minuten, auf den Namen Müller. "
+        "Macht 28 Euro 80, abholbereit in etwa 30 Minuten, auf den Namen Müller. "
         "Passt das so?"
     )
 
@@ -266,9 +266,9 @@ def test_wartezeit_wird_nie_kuerzer_angesagt(session, tenant_id, call_id, sekund
     """Codex PR #124: um 18:00:45 wurden aus 20 Minuten Wartezeit 19 angesagt."""
     now = NOW.replace(second=sekunde, microsecond=500)
     draft = draft_order(session, request(session, tenant_id, call_id), now=now)
-    assert draft.ready_at >= now + timedelta(minutes=20)
+    assert draft.ready_at >= now + timedelta(minutes=30)
     assert draft.ready_at.second == 0 and draft.ready_at.microsecond == 0
-    assert "abholbereit in etwa 20 Minuten" in draft.readback
+    assert "abholbereit in etwa 30 Minuten" in draft.readback
 
 
 def test_audit_haelt_keine_personendaten(session, tenant_id):

@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.15
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.16
 
 ---
 
 ## Summary
+
+**The default waits are 30 minutes for pickup and 60 for delivery (Maxi, 02.11.2026).** Migration 023 changes the defaults and moves a tenant still on the old 20 and 45; a wait changed on the tablet stays. The wait the agent names lives in `service_config` and survives a restart; nothing resets it, so there is one value and no separate standard. Typing it by hand is T-3.9 (#494). The notice a reservation needs before its time, per weekday, is T-3.13 (#499).
 
 **The operations view wears the README colours, and its columns really scroll (D27, 02.11.2026).** Midnight background, neon for done and the main action, violet for open or waiting, coral only for what went wrong, monospace for times and codes; one dark theme. A browser check over all visible text and every panel found that the columns of D26 did not scroll on their own, as docs/06 and this file had claimed, and that "Öffnen" was 57 px high; both fixed. Maxi's other wishes of the day are work packages: T-3.8 panels and "Gericht aus" by category (#493), T-3.9 a typed wait (#494), T-3.10 pickup and reservation switches (#495), T-3.11 floor plan (#496), T-3.12 manual table reservations (#497).
 
@@ -329,7 +331,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D25 | ~~Ring the team outside the opening hours?~~ **decided 20.10.2026 (Maxi, T-10.8):** no. Outside the opening hours a handover by the agent becomes a callback card at once and nobody's telephone rings at night; the outage paths (paused, shadow, `voice` down, a failure) ring `TEAM_PHONE` at any hour as before (rule 5), and now leave a card when nobody answers; inside them the call is handed to the team and the dial result decides: a leg nobody answers at `TEAM_PHONE` becomes a callback card (docs/20 §5). The text phone and the evals keep the opening hours alone |
 | D26 | ~~Replace the approved look of the operations view (docs/06 §7)?~~ **decided 02.11.2026 (Maxi, after a design critique and an accessibility review of the screens):** yes, with the direction of `gui/mockups/betrieb-tablet.html`: a two-row command bar that stays, columns that scroll on their own, one main action per card, holiday suggestions folded, design tokens in `app.css`. Same screens, functions and texts. The operating test (T-3.5, docs/06 §8) has not been run on any build, so no pass is lost; it must run on this look. |
 | D27 | ~~Which colours does the operations view wear?~~ **decided 02.11.2026 (Maxi):** the brand palette of the README (docs/15), with its meanings, kept clear and easy to use. One dark theme. |
-| D28 | Do tables replace seats as the capacity of a reservation? Today `check_slot` counts seats per window and the agent books no table. A floor plan alone (T-3.11) can stay a tool for the team; the agent booking real tables changes `check_slot` and the prompt. Recommended: first the plan and manual seating, the agent stays on seats until the plan is in use (Maxi, T-3.11, #496). |
+| D28 | ~~Do tables replace seats as the capacity of a reservation?~~ **decided 02.11.2026 (Maxi):** not yet. First the plan and manual seating (T-3.11, T-3.12); the agent stays on seats until the plan is in use. |
 
 ---
 
@@ -737,6 +739,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.16 · 02.11.2026:** Default waits 30 and 60 minutes (migration 023), D28 decided, T-3.13 added
 - **v2.14.15 · 02.11.2026:** Operations view in the README colours (D27), columns scroll, T-3.8 to T-3.12 added
 - **v2.14.14 · 02.11.2026:** Security audit fix: the data subject verification cannot be planted or merge two people
 - **v2.14.13 · 02.11.2026:** Wait time stays on its 15-minute grid
