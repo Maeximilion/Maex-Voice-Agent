@@ -92,8 +92,8 @@ Annahme: Domainnamen sind Vorschläge. The real names are set as `AGENT_DOMAIN`,
 | Network | In production | Who stands on it | What for |
 |---|---|---|---|
 | `public` | plain | Caddy | publishes 80 and 443, fetches the certificates |
-| `edge` | internal | Caddy, `api`, `n8n`, `push` | what Caddy passes on |
-| `backend` | internal | `db`, `api`, `dispatcher`, `n8n`, `push`, `voice` | the database; the dispatcher to n8n, the push server and `voice`; n8n to the push server |
+| `edge` | internal | Caddy, `api`, `n8n`, `push`, `dispatcher` | what Caddy passes on; the dispatcher to n8n and the push server; n8n to the push server |
+| `backend` | internal | `db`, `api`, `dispatcher`, `voice` | the database, which nothing else reaches; the dispatcher to `voice` |
 | `telephony` | plain | `asterisk`, `voice` | the media connection between the two; the way out for SIP, the model and the speech services |
 
 - **Asterisk reaches `voice` alone** of the containers, and neither the database nor the API, by name or by address. It takes SIP from the access and answers with RTP, so it is the service the network protects the others from. `voice` is the one service on both sides; its media token (docs/20 §2) is what stands between the two.
