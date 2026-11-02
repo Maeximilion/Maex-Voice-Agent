@@ -7,7 +7,6 @@
     "level-2"
   ],
   "source": "handcrafted",
-  "pending": "T-6.8: delivery is built (T-6.5), the scripted stand-in does not follow these sentences; waits for the real model",
   "caller_id": "+497215551234",
   "transcript": [
     {
@@ -32,7 +31,7 @@
     },
     {
       "role": "customer",
-      "text": "Ach so, dann noch die 31 mit Rind."
+      "text": "Dann noch die 31 mit Rind."
     },
     {
       "role": "customer",
