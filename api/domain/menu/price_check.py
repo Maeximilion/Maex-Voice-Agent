@@ -13,12 +13,14 @@ and a person answers on the tablet (docs/06 §3):
 
 A rejected price stays out of sight until the register says another one. A
 dish's own price only: the surcharge of an option stands in the report, not on
-the tablet, because one changed extra would be a card on every dish it fits.
+the tablet, because one changed extra would be a card on every dish it fits. A
+dish whose options differ as well gets no card at all: a size costs base plus
+surcharge (`pricing.row_cents`), so the base alone could make a price neither
+side has. The import takes both together.
 """
 
 import hashlib
 import uuid
-from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import cast
 
@@ -47,22 +49,28 @@ class Difference:
     register_cents: int
 
 
-def record(
-    session: Session,
-    tenant_id: uuid.UUID,
-    price_changes: Iterable[tuple[str, int, int]],
-) -> None:
-    """Keep what a comparison found (`Report.price_changes`) and change no price.
+def record(session: Session, tenant_id: uuid.UUID, report: Report) -> None:
+    """Keep what a comparison found and change no price.
 
-    The same register price as last time stays as it is, open or rejected. A
-    dish the comparison does not name has no difference any more: the register
-    agrees again, or no longer sells it."""
-    found = {canonical_card(number): new for number, _, new in price_changes}
+    The same register price as last time stays as it is, open or rejected, and
+    a dish in line with the register has no difference any more. A dish the
+    copy does not name keeps what it has: it may be an article the converter
+    could not read, so its absence proves nothing about its price."""
+    found = {canonical_card(n): new for n, _, new in report.price_changes}
+    unnamed = {canonical_card(n) for n in report.items_not_in_file}
+    tied = {canonical_card(n) for n in report.options_differ}
     differences = []
     for item in session.scalars(
         select(MenuItem).where(MenuItem.tenant_id == tenant_id).with_for_update()
     ):
-        new = found.get(canonical_card(item.number))
+        key = canonical_card(item.number)
+        if key in unnamed:
+            continue
+        new = found.get(key)
+        if new is not None and key in tied:
+            # No card: an open one goes, its take would now be wrong. A rejection
+            # stands, the team's answer was not about the options.
+            new = item.register_price_cents if item.register_price_rejected else None
         if new == item.register_price_cents:
             continue
         item.register_price_cents = new
@@ -204,8 +212,12 @@ def report_text(
         f"Price check: {total} difference(s)." if total else "No price difference."
     ]
     for number, old, new in report.price_changes:
-        gone = (canonical_card(number), new) in answered
-        state = ", rejected on the tablet" if gone else ""
+        if (canonical_card(number), new) in answered:
+            state = ", rejected on the tablet"
+        elif number in report.options_differ:
+            state = ", only with the import: its options differ too"
+        else:
+            state = ""
         name = plan.items[number].name
         lines.append(f"{number} {name}: {_amounts(old, new)}{state}")
     for number, group, option, old, new in report.option_price_changes:

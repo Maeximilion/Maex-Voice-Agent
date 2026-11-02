@@ -62,7 +62,7 @@ def difference(db, tenant_id, register="7,20") -> uuid.UUID:
     plan = parse({**KARTE, MENU_FILE: KARTE[MENU_FILE].replace("6,90", register)})
     assert plan.ok, plan.errors
     report = apply(db, tenant_id, plan, dry_run=True, now=NOW)
-    price_check.record(db, tenant_id, report.price_changes)
+    price_check.record(db, tenant_id, report)
     return item(db, tenant_id, "23")
 
 

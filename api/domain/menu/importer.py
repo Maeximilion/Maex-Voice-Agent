@@ -189,6 +189,9 @@ class Report:
     option_price_changes: list[tuple[str, str, str, int, int]] = field(
         default_factory=list
     )
+    # Dishes whose options differ from the file, in price or in number: a size
+    # costs base plus surcharge, so their price is not the dish's alone.
+    options_differ: list[str] = field(default_factory=list)
     price_changes_applied: bool = False
     # Hint at --deactivate-missing only for a register file without the switch.
     suggest_deactivate: bool = False
@@ -788,6 +791,7 @@ def _sync_options(
         )
     }
     desired = {(o.group_name, o.option_name): o for o in wanted}
+    differs = current.keys() != desired.keys()
     for key, stale in current.items():
         if key not in desired:
             session.delete(stale)
@@ -816,6 +820,7 @@ def _sync_options(
         )
         delta = row.price_delta_cents
         if option.price_delta_cents != delta:
+            differs = True
             report.option_price_changes.append(
                 (
                     item.number,
@@ -843,6 +848,8 @@ def _sync_options(
                 option.price_reason,
             ) = values
             report.options_changed += 1
+    if differs:
+        report.options_differ.append(item.number)
 
 
 def _sync_allergens(

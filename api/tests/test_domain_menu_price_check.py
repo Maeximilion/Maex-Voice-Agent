@@ -54,7 +54,7 @@ def check(session, tenant_id, over=None):
     plan = parse(files(**(over or {})))
     assert plan.ok, plan.errors
     report = apply(session, tenant_id, plan, dry_run=True, now=NOW)
-    price_check.record(session, tenant_id, report.price_changes)
+    price_check.record(session, tenant_id, report)
     return report
 
 
@@ -115,15 +115,106 @@ def test_a_register_back_in_line_ends_the_difference(session, tenant_id):
     assert item(session, tenant_id, "23").register_price_cents is None
 
 
-def test_a_dish_gone_from_the_copy_ends_its_difference(session, tenant_id):
-    """The register no longer sells it: its price there is no offer any more."""
-    check(session, tenant_id, PRICE_720)
+def check_a_copy_without_23(session, tenant_id):
+    """A copy that does not name 23: gone from the register, or unreadable."""
     plan = parse(nur("number;name;category;price_eur\n47;Ente knusprig;Haupt;15,50\n"))
     report = apply(session, tenant_id, plan, dry_run=True, now=NOW)
-    price_check.record(session, tenant_id, report.price_changes)
-
+    price_check.record(session, tenant_id, report)
     assert "23" in report.items_not_in_file
+
+
+def test_a_dish_the_copy_does_not_name_keeps_its_open_difference(session, tenant_id):
+    """Codex PR #476: a dish missing from the file proves nothing, it may be an
+    article the converter could not read."""
+    check(session, tenant_id, PRICE_720)
+
+    check_a_copy_without_23(session, tenant_id)
+
+    assert open_ones(session, tenant_id) == [("23", 690, 720)]
+
+
+def test_a_dish_the_copy_does_not_name_keeps_its_rejection(session, tenant_id):
+    """Codex PR #476: the team's answer survives a copy that says nothing."""
+    check(session, tenant_id, PRICE_720)
+    price_check.decide(
+        session, tenant_id, item(session, tenant_id, "23").id, 720, take=False
+    )
+
+    check_a_copy_without_23(session, tenant_id)
+    check(session, tenant_id, PRICE_720)
+
     assert open_ones(session, tenant_id) == []
+
+
+# Codex PR #476: a size costs base plus surcharge (`pricing.row_cents`), so a card
+# that takes only the base can make a price neither side has.
+DUCK_1600 = {MENU_FILE: files()[MENU_FILE].replace("15,50", "16,00")}
+DUCK_OPTION_MOVED = {OPTIONS_FILE: files()[OPTIONS_FILE].replace("2,50", "2,00")}
+DUCK_SIZE_DROPPED = {
+    OPTIONS_FILE: files()[OPTIONS_FILE].replace("47;Größe;klein;-1,00;nein;nein\n", "")
+}
+
+
+def test_a_price_whose_surcharge_moved_too_gets_no_card(session, tenant_id):
+    report = check(session, tenant_id, {**DUCK_1600, **DUCK_OPTION_MOVED})
+
+    assert report.price_changes == [("47", 1550, 1600)]
+    assert open_ones(session, tenant_id) == []
+    assert entries(session, price_check.ACTION_CHECKED) == []
+
+
+def test_a_price_whose_dish_lost_an_option_gets_no_card(session, tenant_id):
+    """No delta differs here, yet the old size would stay on the new base."""
+    report = check(session, tenant_id, {**DUCK_1600, **DUCK_SIZE_DROPPED})
+
+    assert report.price_changes == [("47", 1550, 1600)]
+    assert report.option_price_changes == []
+    assert open_ones(session, tenant_id) == []
+
+
+def test_a_newer_copy_that_moves_the_surcharge_withdraws_the_card(session, tenant_id):
+    check(session, tenant_id, DUCK_1600)
+    assert open_ones(session, tenant_id) == [("47", 1550, 1600)]
+    dish = item(session, tenant_id, "47").id
+
+    check(session, tenant_id, {**DUCK_1600, **DUCK_OPTION_MOVED})
+
+    assert open_ones(session, tenant_id) == []
+    with pytest.raises(NotFound):
+        price_check.decide(session, tenant_id, dish, 1600, take=True)
+    session.rollback()
+    assert item(session, tenant_id, "47").price_cents == 1550
+
+
+def test_a_rejection_stands_while_the_surcharge_moved_too(session, tenant_id):
+    check(session, tenant_id, DUCK_1600)
+    price_check.decide(
+        session, tenant_id, item(session, tenant_id, "47").id, 1600, take=False
+    )
+
+    check(session, tenant_id, {**DUCK_1600, **DUCK_OPTION_MOVED})
+    check(session, tenant_id, DUCK_1600)
+
+    assert open_ones(session, tenant_id) == []
+
+
+def test_a_rejection_ends_in_line_even_while_the_surcharge_moved(session, tenant_id):
+    """The price agrees again, so nothing is left to reject."""
+    check(session, tenant_id, DUCK_1600)
+    price_check.decide(
+        session, tenant_id, item(session, tenant_id, "47").id, 1600, take=False
+    )
+
+    check(session, tenant_id, DUCK_OPTION_MOVED)
+    check(session, tenant_id, DUCK_1600)
+
+    assert open_ones(session, tenant_id) == [("47", 1550, 1600)]
+
+
+def test_a_moved_surcharge_leaves_other_dishes_their_card(session, tenant_id):
+    check(session, tenant_id, {**PRICE_720, **DUCK_OPTION_MOVED})
+
+    assert open_ones(session, tenant_id) == [("23", 690, 720)]
 
 
 def test_an_inactive_dish_shows_nothing_and_cannot_be_taken(session, tenant_id):
@@ -364,15 +455,19 @@ def on_the_card(session, tenant_id, price_cents=650, delta=450):
     )
     session.add(soup)
     session.flush()
-    for name, is_default, cents in (("klein", True, 0), ("groß", False, delta)):
+    for group, name, is_default, cents, required in (
+        ("Größe", "klein", True, 0, True),
+        ("Größe", "groß", False, delta, True),
+        ("Extras", "Extra Garnelen", False, 120, False),
+    ):
         session.add(
             ItemOption(
                 menu_item_id=soup.id,
-                group_name="Größe",
+                group_name=group,
                 option_name=name,
                 price_delta_cents=cents,
                 is_default=is_default,
-                required=True,
+                required=required,
             )
         )
     session.commit()
@@ -423,6 +518,40 @@ def test_script_dry_run_reports_and_stores_nothing(
     assert "600 -> 650 cents" in out and "Dry run" in out
     assert open_ones(session, tenant_id) == []
     assert entries(session, price_check.ACTION_CHECKED) == []
+
+
+def test_script_sends_a_price_tied_to_its_surcharge_to_the_import(
+    copy_folder, session, tenant_id, run_script, capsys
+):
+    """The case of Codex PR #476: small 600, large 1100 becomes small 650, large
+    1100. Taken alone the base would make large 1150."""
+    on_the_card(session, tenant_id, price_cents=600, delta=500)
+    _kasse(copy_folder, [SUPPE])
+
+    assert run_script(copy_folder) == 0
+
+    out = capsys.readouterr().out
+    assert "600 -> 650 cents (6,00 € -> 6,50 €), only with the import" in out
+    assert "open on the tablet" not in out
+    assert open_ones(session, tenant_id) == []
+
+
+def test_script_keeps_the_card_of_an_article_it_could_not_read(
+    copy_folder, session, tenant_id, run_script, capsys
+):
+    """The case of Codex PR #476: an unreadable price says nothing about the
+    dish, and another dish converting must not clear its card."""
+    on_the_card(session, tenant_id, price_cents=600)
+    other = {**SUPPE, "ARTNR": "2", "BEZEICH": "Pho"}
+    _kasse(copy_folder, [SUPPE, other])
+    assert run_script(copy_folder) == 0
+    capsys.readouterr()
+
+    _kasse(copy_folder, [{**SUPPE, "VK1_PREIS": "x"}, other])
+    assert run_script(copy_folder) == 0
+
+    assert "Artikel 1" in capsys.readouterr().out
+    assert open_ones(session, tenant_id) == [("1", 600, 650)]
 
 
 def test_script_says_when_the_prices_agree(
