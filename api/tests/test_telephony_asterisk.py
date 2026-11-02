@@ -356,6 +356,16 @@ def test_hangup_is_decided_before_it_goes_out():
     assert wire.commands() == [{"command": "HANGUP"}]
 
 
+def test_a_recorded_team_leg_is_a_word_of_the_ending():
+    """The dialplan records only on this word; for anything else, an older
+    `voice` or none at all, it rings the team without (T-11.3)."""
+    endings: list[str] = []
+    line = MediaLine(lambda _: None, ended=endings.append)
+    line.record_team_leg()
+    line.transfer("+4972215550900")
+    assert endings == ["record +4972215550900"]
+
+
 def test_a_transfer_is_a_decision_for_the_dialplan_and_ends_our_leg():
     wire = Wire().started()
     wire.line.transfer("+4972215550900")

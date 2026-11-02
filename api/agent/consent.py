@@ -295,22 +295,30 @@ _NOTE_IT = frozenset(
     {"notieren", "aufschreiben", "weitergeben", "sie", "unbedingt", "auf"}
     | {"jeden", "fall", "duerfen", "dürfen"}
 )
-_NO = frozenset({"nein", "nee", "nö", "noe"})
+_NO = frozenset({"nein", "nee", "ne", "nö", "noe"})
 # "Lieber nicht", "Nein, bitte nicht", "Nicht nötig". "doch" is no part of a
 # no: "Nein, doch" takes it back.
 _NO_FILLER = (_FILLER - {"doch"}) | {"lieber", "besser", "nicht", "nötig", "noetig"}
 
 
-def consent_answer(text: str) -> Answer:
-    """The answer to `ALLERGY_QUESTION`. A yes as strict as for a booking
-    (`is_yes`), with the words that say "note it" besides: anything more, as
-    in "Ja, und noch eine Cola", is no explicit consent. A no is a sentence of
-    a no word or "nicht" and filler ("Nein, nicht notieren"). Anything else is
-    unclear, and unclear is no consent (L13: only an explicit "ja" stores the
-    reason)."""
+def consent_answer(
+    text: str, about: frozenset[str] = _NOTE_IT, refuse: frozenset[str] = frozenset()
+) -> Answer:
+    """The answer to `ALLERGY_QUESTION`, or with `about` to another consent
+    question. A yes as strict as for a booking (`is_yes`), with the words that
+    say "note it" besides: anything more, as in "Ja, und noch eine Cola", is no
+    explicit consent. A no is a sentence of a no word or "nicht" and filler
+    ("Nein, nicht notieren"). Anything else is unclear, and unclear is no
+    consent (L13: only an explicit "ja" stores the reason). An assent word
+    stays a word of the yes, also when `about` names it: "Ich bin nicht
+    einverstanden" is a no, "Ich bin einverstanden" a yes. `refuse` names words
+    a no may carry and a yes never: they make no yes."""
     lowered = text.lower()
     rest = _WORD.sub(
-        lambda word: " " if word.group() in _NOTE_IT else word.group(), lowered
+        lambda word: (
+            " " if word.group() in about and word.group() not in _YES else word.group()
+        ),
+        lowered,
     )
     if is_yes(text) or is_yes(rest):
         return "yes"
@@ -318,10 +326,141 @@ def consent_answer(text: str) -> Answer:
         return "unclear"
     words = _WORD.findall(lowered)
     if (_NO & set(words) or "nicht" in words) and all(
-        word in _NO or word in _NO_FILLER or word in _NOTE_IT for word in words
+        word in _NO or word in _NO_FILLER or word in about or word in refuse
+        for word in words
     ):
         return "no"
     return "unclear"
+
+
+# Words a yes or a no to the recording question may carry besides the assent
+# and the filler: "Ja, ich bin damit einverstanden", "Nein, nicht aufnehmen".
+_RECORD_IT = frozenset(
+    {"ich", "bin", "damit", "wir", "sie", "dürfen", "duerfen", "können", "koennen"}
+    | {"aufnehmen", "aufzeichnen", "einverstanden"}
+)
+# A sentence with one word of each list stops a running recording. Generous on
+# purpose: a stop that is wrongly heard costs a recording, one that is missed
+# keeps what the caller took back (L2). Hand-made like the lists above; the
+# second list by the beginning of the word.
+_RECORDED = frozenset(
+    {"aufnahme", "aufzeichnung", "mitschnitt", "aufnehmen", "aufzeichnen"}
+    | {"aufgenommen", "aufgezeichnet", "aufzunehmen", "aufzuzeichnen"}
+    | {"aufnahmen", "aufzeichnungen", "mitschnitte"}
+)
+# "Nehmen Sie das nicht auf": in a main clause the verb splits, and only "auf"
+# stays behind. Read with a plain negation only: "Nehmen Sie meine Bestellung
+# auf, ohne Zwiebeln" is an order.
+_SPLIT_VERBS = frozenset({"nehmen", "nehmt", "nimm", "zeichnen", "zeichnet"})
+_PLAIN_NOT = frozenset({"nicht", "nichts", "kein", "keine"})
+# Taking the consent back without naming the recording: while one runs, the
+# recording is the only consent there is to take back.
+_TAKE_BACK = ("widerruf",)
+_CONSENT = frozenset(
+    {"einwilligung", "zustimmung", "einverständnis", "einverstaendnis"}
+)
+_BACK = frozenset({"zurück", "zurueck"})
+# A refusal of the recording question may carry these besides its no: "Nein,
+# das möchte ich nicht", "Nein, auf keinen Fall", "Nein, ich bin dagegen".
+# Never part of a yes: "Ja, auf keinen Fall" stays unclear.
+_REFUSE = frozenset({"möchte", "moechte", "will", "dagegen", "auf", "keinen", "fall"})
+_STOPPED = ("stop", "beend", "lösch", "loesch", "abbrech", "ende", "aufhör", "aufhoer")
+_NOT = frozenset({"aus", "nicht", "keine", "kein", "ohne", "weg", "abschalten"})
+# "Aufnahmestopp", "Aufzeichnungsende": the stop in one word, the noun first.
+_RECORDING_NOUNS = ("aufnahme", "aufzeichnung", "mitschnitt")
+# "Hören Sie auf, mich aufzunehmen": "aufhören" split in two, as German does.
+_HEAR = ("hör", "hoer")
+# What may stand next to the words of a stop without saying anything else.
+_ONLY_A_STOP = frozenset(
+    {"sie", "die", "ich", "will", "möchte", "moechte", "werden", "wieder", "jetzt"}
+    | {"mich", "uns", "auf", "das", "meine", "mehr", "bin", "damit"}
+    | _SPLIT_VERBS
+    | _CONSENT
+    | _BACK
+    | {"nehme", "einverstanden"}
+)
+
+
+def recording_answer(text: str) -> Answer:
+    """The answer to the recording question (L2): only an explicit yes starts
+    one. "Aufnahme stoppen" is a no here as anywhere, and the question asked
+    back ("Bin ich damit einverstanden") is none."""
+    if stops_recording(text):
+        return "no"
+    if any(
+        _asks_back(_WORD.findall(sentence))
+        for sentence in _SENTENCE_END.split(text.lower())
+    ):
+        return "unclear"
+    return consent_answer(text, _RECORD_IT, refuse=_REFUSE)
+
+
+def bare_recording_answer(text: str) -> bool:
+    """Does the sentence answer the recording question and say nothing more?
+    A yes always does (`is_yes`). A no with a request in it ("Nein, nicht
+    aufnehmen. Ich hätte gern einen Tisch") is logged as the no, and the
+    request still goes to the core."""
+    answer = recording_answer(text)
+    return answer == "yes" or (
+        answer == "no"
+        and (
+            only_stops_recording(text)
+            or consent_answer(text, _RECORD_IT, refuse=_REFUSE) == "no"
+        )
+    )
+
+
+def _asks_back(words: list[str]) -> bool:
+    """ "Bin ich ..." as the first words of a sentence, a thanks in front not
+    counted: the verb before its subject, a question with or without its mark.
+    "Ja, bin ich" stays the answer: the assent in front makes it the short
+    form of "Ja, das bin ich"."""
+    at = 0
+    while at < len(words) and words[at] in _OUTSIDE_THE_CLAUSE:
+        at += 1
+    return words[at : at + 2] == ["bin", "ich"]
+
+
+def _stop_in_one_word(word: str) -> bool:
+    for noun in _RECORDING_NOUNS:
+        if word.startswith(noun):
+            rest = word[len(noun) :]
+            # The linking "s" of "Aufzeichnungsstopp", the "s" of "stop" kept.
+            return rest.startswith(_STOPPED) or rest[1:].startswith(_STOPPED)
+    return False
+
+
+def stops_recording(text: str) -> bool:
+    """Does the caller take the recording back ("Aufnahme stoppen")?"""
+    words = _WORD.findall(text.lower())
+    said = set(words)
+    if any(_stop_in_one_word(word) or word.startswith(_TAKE_BACK) for word in words):
+        return True
+    if _CONSENT & said and _BACK & said:
+        return True
+    if {"nicht", "mehr", "einverstanden"} <= said:
+        return True
+    if "auf" in said and _SPLIT_VERBS & said and _PLAIN_NOT & said:
+        return True
+    split_stop = "auf" in said and any(word.startswith(_HEAR) for word in words)
+    return bool(_RECORDED & said) and (
+        split_stop or any(word in _NOT or word.startswith(_STOPPED) for word in words)
+    )
+
+
+def only_stops_recording(text: str) -> bool:
+    """A stop and nothing else: no sentence for the model."""
+    return stops_recording(text) and all(
+        word in _RECORDED
+        or word in _NOT
+        or word.startswith(_STOPPED)
+        or word.startswith(_HEAR)
+        or word.startswith(_TAKE_BACK)
+        or _stop_in_one_word(word)
+        or word in _FILLER
+        or word in _ONLY_A_STOP
+        for word in _WORD.findall(text.lower())
+    )
 
 
 # Words of an answer to "Sind Sie noch da?" besides its yes: "Ja, ich bin noch

@@ -1,0 +1,45 @@
+{
+  "id": "aufnahme_0005",
+  "name": "A withdrawal at the read-back leaves the draft standing for its yes",
+  "tags": [
+    "aufnahme",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "recording": true,
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ja."
+    },
+    {
+      "role": "customer",
+      "text": "Ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Bitte die Aufnahme stoppen."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "confirmed": true,
+    "escalated": false,
+    "party_size": 4,
+    "customer_name": "Mueller",
+    "consent": [
+      "yes",
+      "no"
+    ],
+    "recording": "withdrawn"
+  }
+}

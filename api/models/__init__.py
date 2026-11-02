@@ -2,7 +2,7 @@
 
 from api.models.audit import AuditLog
 from api.models.base import Base
-from api.models.calls import Call, Callback, ComplaintRule, ConsentLog
+from api.models.calls import Call, Callback, ComplaintRule, ConsentLog, Recording
 from api.models.customers import (
     Address,
     Customer,
@@ -49,6 +49,7 @@ __all__ = [
     "OrderItem",
     "OutboxEvent",
     "RecognitionObjection",
+    "Recording",
     "Reservation",
     "ServiceConfig",
     "SpecialDay",

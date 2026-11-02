@@ -119,7 +119,7 @@ Who rings first in `overflow` is not decided here: our voice layer answers every
 
 Whatever the mode (#252, Maxi 12.10.2026): an order above `service_config.order_approval_above_cents` (150 euros unless the restaurant sets another amount) waits for the approval in the GUI before a slip prints, in `primary` as well. The guest's yes confirms it all the same (`domain/ordering/confirm.py`, docs/04 §confirm).
 
-A call that reaches the agent in `shadow` or `paused` anyway is transferred to the team extension at once, without a word from the AI (`telephony/handler.py`, T-1.13). The mode is read at the start of every call, so the emergency stop holds from the next call on, whatever the routing in front of the voice layer says. A call above the limit of concurrent AI calls goes to the team the same way, silently (D16, T-10.9, `docs/20_VOICE_LAYER.md` §8).
+A call that reaches the agent in `shadow` or `paused` anyway is transferred to the team extension at once, without a word from the AI (`telephony/handler.py`, T-1.13). The exception is `shadow` with `RECORDING_ENABLED` (off until the team's written consents, docs/09 L11): the voice layer asks for the caller's consent to a recording before the team rings, its first sentence names the AI, and the team rings whatever the answer is, recorded only after an explicit "ja" (T-11.3, docs/20 §4). The mode is read at the start of every call, so the emergency stop holds from the next call on, whatever the routing in front of the voice layer says. A call above the limit of concurrent AI calls goes to the team the same way, silently (D16, T-10.9, `docs/20_VOICE_LAYER.md` §8).
 
 ---
 

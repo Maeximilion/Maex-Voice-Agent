@@ -23,6 +23,12 @@ Live calls are held in this process. A turn for a call this process does not kno
 With the own voice layer (docs/20 §4) the handler also says which sentence the
 caller may talk over, answers a silent line with two questions from the code
 before it ends the call, and sends a call whose ear or mouth failed to the team.
+
+With `RECORDING_ENABLED` the first sentence asks whether the call may be recorded
+(docs/09 L2, `agent/recording.py`). The core takes the answer on a call the AI
+answers, and the handler follows `state.recording` on the line. In mode `shadow`
+no core runs: the handler takes the answer itself, and the call goes to the team
+whatever it is, recorded only after a yes.
 """
 
 import re
@@ -39,9 +45,12 @@ from math import ceil
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from api.agent import recording
+from api.agent.consent import recording_answer, stops_recording
+from api.agent.escalation import without_human_question
 from api.agent.guards import names_dish, note_said
 from api.agent.llm import LLMClient, Usage, cost_cents
-from api.agent.loop import SAY_HUMAN_ANSWER, ConversationLoop
+from api.agent.loop import SAY_HUMAN_ANSWER, SAY_NOT_A_PERSON, ConversationLoop
 from api.agent.outcome import CLOSING_STAGES, call_outcome, call_usage, log_usage
 from api.agent.prompt import build_system_prompt
 from api.agent.state import ConversationState, initial_state
@@ -57,18 +66,21 @@ from api.domain.calls import (
     start_call,
     takes_call,
 )
+from api.domain.calls.consent import Answer
 from api.domain.menu.items import active_count
 from api.schemas.calls import EndCallRequest, Outcome, StartCallRequest
 from api.telephony.port import TelephonyPort
 from api.telephony.speech import SpeechUsage
 from api.telephony.speech_spike import spoken_name
 
-# docs/05 §6. Drafts until the legal check in docs/09; the greeting carries no
-# recording notice because nothing is recorded.
-GREETING = "Guten Tag, hier ist der KI-Assistent von {name}.{privacy} Was kann ich für Sie tun?"
+# docs/05 §6. Drafts until the legal check in docs/09. It ends on what the caller
+# answers: with `RECORDING_ENABLED` that is the recording question (`greeting`).
+GREETING = "Guten Tag, hier ist der KI-Assistent von {name}.{privacy} {ask}"
 # Where the full privacy notice is (docs/09 L4), from service_config; left out
 # while the restaurant has set none.
 PRIVACY_POINTER = " Hinweise zum Datenschutz finden Sie unter {address}."
+# Mode `shadow`, behind the answer to the recording question. Draft.
+SAY_TO_THE_TEAM = "Ich verbinde Sie mit dem Restaurant."
 SAY_OUTAGE = (
     "Bei mir gibt es gerade eine technische Störung. "
     "Ich verbinde Sie direkt mit dem Restaurant."
@@ -302,6 +314,11 @@ class CallHandler:
         if live is not None:
             self._guarded(live, lambda: self._silent(live))
 
+    def on_talked_over(self, session_id: str, text: str) -> None:
+        live = self._lookup(session_id)
+        if live is not None:
+            self._guarded(live, lambda: self._talked_over(live, text))
+
     def on_voice_failure(self, session_id: str) -> None:
         """Ear or mouth failed: the outage sentence, as far as it can still be
         spoken, and the team (rule 5). Also on a call the core was ending: a
@@ -358,9 +375,32 @@ class CallHandler:
             _close_quietly(session)
         return card is not None
 
+    def on_recording_stopped(self, session_id: str) -> bool:
+        session: Session | None = None
+        try:
+            session = self._session_factory()
+            return recording.withdrawn_on_the_team_leg(
+                session, self._tenant_id, session_id, self._now
+            )
+        except Exception as exc:  # noqa: BLE001 - the dialplan deleted the file
+            logger.error(
+                "the stop of a recorded team leg was not logged",
+                extra={
+                    "extra": {"session_id": session_id, "error": type(exc).__name__}
+                },
+            )
+            return False
+        finally:
+            _close_quietly(session)
+
     # -- the call ----------------------------------------------------------------
 
     def _open(self, live: _LiveCall, routing: CallRouting) -> None:
+        if settings.recording_enabled and routing.mode == "shadow":
+            # The AI takes no call in this mode, so the question comes before
+            # the team rings, and its first sentence still names the AI (L2).
+            self._ask_recording(live, routing)
+            return
         if not routing.ai_answers:
             # Agent switched off or in shadow mode: the team takes the call, and
             # the agent says nothing at all.
@@ -381,16 +421,71 @@ class CallHandler:
             now=self._now,
             clock=self._clock,
         )
+        if settings.recording_enabled:
+            self._ask_recording(live, routing)
+            return
         live.state.greeted = True
         self._port.say(live.session_id, greeting(routing))
 
+    def _ask_recording(self, live: _LiveCall, routing: CallRouting) -> None:
+        """Played to the end like every first sentence: only a yes to a
+        question heard to the end counts."""
+        live.state.greeted = True
+        live.state.recording = "asked"
+        self._port.say(live.session_id, greeting(routing, ask=recording.question()))
+
+    def _follow_recording(self, live: _LiveCall, before: str | None) -> None:
+        """What the core decided in a turn, on the line, before its sentences."""
+        state = live.state
+        if state.recording == before:
+            return
+        if state.recording == "on" and state.recording_file:
+            self._port.start_recording(live.session_id, state.recording_file)
+        elif state.recording == "withdrawn":
+            self._port.stop_recording(live.session_id, discard=True)
+
+    def _to_the_team_after_the_question(self, live: _LiveCall, answer: Answer) -> None:
+        """Mode `shadow`: the answer decides only whether the team leg is
+        recorded. A human is no price of a no, and an error ends with the team
+        like everything else, without a recording."""
+        bind_call_id(str(live.call_id))
+        recording.settle(live.session, live.state, answer, self._now)
+        if live.state.recording == "on":
+            self._port.record_team_leg(live.session_id)
+            self._port.say(live.session_id, recording.SAY_HOW_TO_STOP)
+        self._port.say(live.session_id, SAY_TO_THE_TEAM)
+        self._transfer(live, live.team_phone)
+
+    def _talked_over(self, live: _LiveCall, text: str) -> None:
+        """Into a read-back or another protected sentence: no turn, and what
+        was said to the guest stands. Only the withdrawal counts."""
+        if live.state.recording != "on" or not stops_recording(text):
+            return
+        recording.withdraw(live.session, live.state, self._now)
+        self._follow_recording(live, "on")
+        self._port.say(live.session_id, recording.SAY_RECORDING_STOPPED)
+        # The notice is the last sentence heard: an "Okay" answers it, not the
+        # read-back or the question it was said into (rule 3, L13).
+        note_said(live.state, recording.SAY_RECORDING_STOPPED)
+
     def _turn(self, live: _LiveCall, text: str) -> None:
         if live.loop is None:
-            raise RuntimeError("turn on a call the agent does not answer")
+            if live.state.recording != "asked":
+                raise RuntimeError("turn on a call the agent does not answer")
+            if without_human_question(text) is not None:
+                # Always a truthful answer (L1), and a person is on the way.
+                self._port.say(live.session_id, SAY_NOT_A_PERSON)
+            self._to_the_team_after_the_question(live, recording_answer(text))
+            return
         bind_call_id(str(live.call_id))
         live.silences = 0
         known = set(live.state.known_item_ids)
-        result = live.loop.run_turn(live.state, text)
+        before = live.state.recording
+        try:
+            result = live.loop.run_turn(live.state, text)
+        finally:
+            # Also when the turn broke behind a withdrawal: the file goes.
+            self._follow_recording(live, before)
         ending = result.ended or live.state.stage in CLOSING_STAGES
         # The core takes the sentence that ends a turn as heard
         # (`guards.note_said`): digits behind a question for the guest's number
@@ -401,9 +496,11 @@ class CallHandler:
         # hands the call over (agent/loop.py, ultrareview of PR #372).
         # The same for the question for the allergy as a kitchen note: its
         # answer is consent only to a question heard to the end (L13; Codex
-        # PR #368). And for a remedy the core offers: a yes books it.
+        # PR #368). And for a remedy the core offers: a yes books it. And the
+        # way to stop a recording that has just started (L2).
         counted_as_heard = (
-            live.state.asked_for_phone
+            (before == "asked" and live.state.recording == "on")
+            or live.state.asked_for_phone
             or live.state.known_item_ids != known
             or live.state.last_say == SAY_HUMAN_ANSWER
             or live.state.held_call is not None
@@ -426,7 +523,18 @@ class CallHandler:
 
     def _silent(self, live: _LiveCall) -> None:
         """The caller says nothing: ask twice, then say goodbye and end the
-        call. A draft that waits for its yes stays a draft."""
+        call. A draft that waits for its yes stays a draft. Silence on the
+        recording question is no consent, and the call goes on."""
+        if live.state.recording == "asked":
+            if live.loop is None:
+                self._to_the_team_after_the_question(live, "unclear")
+                return
+            recording.settle(live.session, live.state, "unclear", self._now)
+            note_said(live.state, recording.SAY_WHAT_CAN_I_DO)
+            self._port.say(
+                live.session_id, recording.SAY_WHAT_CAN_I_DO, interruptible=True
+            )
+            return
         if live.silences >= len(STILL_THERE):
             self._hangup(live, last_said="")
             return
@@ -638,12 +746,13 @@ class CallHandler:
             self._named_phones.popitem(last=False)
 
 
-def greeting(routing: CallRouting) -> str:
+def greeting(routing: CallRouting, ask: str = recording.SAY_WHAT_CAN_I_DO) -> str:
     """The first sentence of a call the AI answers: the AI notice, and where the
-    privacy notice is once the restaurant has set it (docs/09 L1, L4)."""
+    privacy notice is once the restaurant has set it (docs/09 L1, L4), and what
+    the caller answers."""
     address = (routing.privacy_notice_address or "").strip()
     privacy = PRIVACY_POINTER.format(address=address) if address else ""
-    return GREETING.format(name=routing.tenant_name, privacy=privacy)
+    return GREETING.format(name=routing.tenant_name, privacy=privacy, ask=ask)
 
 
 def _cost(

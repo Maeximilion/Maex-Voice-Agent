@@ -205,4 +205,12 @@ for file in /templates/conf/*.conf; do
         < "$file" > "/etc/asterisk/$(basename "$file")"
 done
 
+# The folder of the recordings (T-11.3, docs/20 §2): the volume comes up as
+# root's. `voice` and the dispatcher run as RECORDINGS_UID and own it, Asterisk
+# writes a team leg as the group. No start hangs on it: a folder nobody can
+# write costs a recording, never the telephone.
+if ! { chown "${RECORDINGS_UID:-10001}:asterisk" /recordings && chmod 2770 /recordings; }; then
+    echo "asterisk: the folder of the recordings could not be set up" >&2
+fi
+
 exec /usr/local/bin/entrypoint.sh "$@"

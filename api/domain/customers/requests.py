@@ -64,6 +64,7 @@ from api.models import (
     OrderItem,
     OutboxEvent,
     RecognitionObjection,
+    Recording,
     Reservation,
     ServiceConfig,
 )
@@ -621,6 +622,22 @@ def access_copy(
             _event_of(order_ids, table_ids, callback_ids),
         )
     )
+    recorded = session.scalars(
+        select(Recording).where(
+            Recording.tenant_id == tenant_id,
+            Recording.call_id.in_([call.id for call in person.calls]),
+        )
+    )
+    # A number-only call may hold a recording the copy cannot name before the
+    # guest claims it: the team has to know to ask (T-11.3 security review).
+    recorded_unclaimed = set(
+        session.scalars(
+            select(Recording.call_id).where(
+                Recording.tenant_id == tenant_id,
+                Recording.call_id.in_([call.id for call in person.unclaimed_calls]),
+            )
+        )
+    )
     objections = session.scalars(
         select(RecognitionObjection.phone).where(
             RecognitionObjection.tenant_id == tenant_id,
@@ -679,9 +696,17 @@ def access_copy(
             "outbox": [
                 _fields(e, "event_type", "payload", "created_at") for e in events
             ],
+            # The team hands the audio over from the folder (docs/09 §2).
+            "recordings": [
+                _fields(r, "call_id", "file_name", "started_at", "withdrawn_at")
+                for r in recorded
+            ],
         },
         "ask_the_guest": {
-            "calls": [_call_fields(row) for row in person.unclaimed_calls],
+            "calls": [
+                {**_call_fields(row), "recorded": row.id in recorded_unclaimed}
+                for row in person.unclaimed_calls
+            ],
             "callbacks": [_callback_fields(row) for row in person.unclaimed_callbacks],
             "recognition_objections": list(objections),
         },
@@ -762,7 +787,8 @@ def erase(
 ) -> list[LedgerEntry]:
     """Every store of U2, all at once: rows that stay stripped keep what the tax
     records need (L18, Art. 17(3)(b)), `consent_log` stays as the proof of L13
-    (docs/03). Open rows stop it, so that no second run has to find a person
+    (docs/03). A recording is withdrawn here, and the next pass of the deletion
+    job takes its file, the one process that holds the folder. Open rows stop it, so that no second run has to find a person
     whose name is already gone; `keep` names the ones the guest chose to keep. An
     order draft becomes `cancelled`: `confirm` takes any draft of its call, also
     of one that ended, and must not send the kitchen one without its notes. A
@@ -853,6 +879,19 @@ def erase(
         ledger,
     )
     _clear_calls(session, tenant_id, person.calls, ledger)
+    _write(
+        session,
+        update(Recording)
+        .where(
+            Recording.tenant_id == tenant_id,
+            Recording.call_id.in_([call.id for call in person.calls]),
+            Recording.withdrawn_at.is_(None),
+        )
+        .values(withdrawn_at=func.now()),
+        Recording,
+        "withdrawn",
+        ledger,
+    )
     # By hand although the key cascades: the ledger names each address.
     _write(
         session,

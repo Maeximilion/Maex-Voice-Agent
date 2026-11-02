@@ -76,6 +76,10 @@ def replay(
         llm=llm,
         model=model,
     )
+    # The first sentence of the phone line asked for the recording (docs/09 L2):
+    # the guest's first line answers it.
+    if case.get("recording"):
+        call.state.recording = "asked"
     turns = []
     for line in customer_lines(case):
         heard = hear(line) if hear else line

@@ -204,6 +204,11 @@ class ConversationState(BaseModel):
     # The reason the callback is made with: a question beyond the database,
     # or a line the core understood nothing on (Codex PR #437). Never sent.
     callback_reason: str = "out_of_scope"
+    # Where the recording of this call stands (`agent/recording.py`, legal
+    # check L2), and its file once the caller said yes. Never sent: the model
+    # has no part in it.
+    recording: Literal["asked", "on", "off", "withdrawn"] | None = None
+    recording_file: str | None = None
     # The rule the core offered, while it waits for the guest's answer
     # (`loop._offer_answered`). Never sent: the model decides no remedy.
     remedy_offer: RemedyOffer | None = None

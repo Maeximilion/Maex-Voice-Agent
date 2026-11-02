@@ -29,6 +29,9 @@ class CallRouting:
     # The mode lets the agent answer; whether it takes this call also depends
     # on the calls it has open (`takes_call`).
     ai_answers: bool
+    # The mode that holds now: in `shadow` the voice layer may ask for a
+    # recording before the team rings (docs/09 L2).
+    mode: str
     # How many calls the agent takes at once right now (D16, T-10.9).
     call_limit: int
     team_phone: str
@@ -63,9 +66,11 @@ def call_routing(
         raise NotFound("Tenant unknown or without service_config")
     now = now or utcnow()
     # The mode that holds now, a window of `call_mode_windows` included (T-8.1).
-    ai_answers = mode_at(session, tenant, config, now).mode in AI_ANSWERS
+    mode = mode_at(session, tenant, config, now).mode
+    ai_answers = mode in AI_ANSWERS
     return CallRouting(
         ai_answers=ai_answers,
+        mode=mode,
         # The limit windows only matter when the agent answers; a mode that
         # sends every call to the team needs no read that could fail on the way.
         call_limit=(

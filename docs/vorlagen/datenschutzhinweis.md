@@ -33,7 +33,7 @@ Der Assistent nennt gespeicherte Daten nie von sich aus laut, er fragt nur nach 
 
 ### 4. Aufzeichnung nur mit Ihrer Einwilligung
 
-Ein Gespräch wird nur aufgezeichnet, wenn Sie nach der Frage ausdrücklich "Ja" sagen. Bei "Nein" oder Schweigen läuft das Gespräch ohne Aufnahme weiter, Ihnen entsteht kein Nachteil. Die Aufnahme wird 30 Tage gespeichert. Sie können sie jederzeit mit "Aufnahme stoppen" beenden; dann wird die Aufnahme sofort gelöscht. Abschriften werden nach 90 Tagen gelöscht. <offen: Der Repo-Stand hat Aufzeichnung und Abschriften noch nicht gebaut (T-11.3, T-7.1). Diesen Abschnitt erst veröffentlichen, wenn sie in Betrieb gehen, sonst "Wir zeichnen keine Gespräche auf" schreiben.>
+Ein Gespräch wird nur aufgezeichnet, wenn Sie nach der Frage ausdrücklich "Ja" sagen. Bei "Nein" oder Schweigen läuft das Gespräch ohne Aufnahme weiter, Ihnen entsteht kein Nachteil. Die Aufnahme wird 30 Tage gespeichert. Sie können sie jederzeit mit "Aufnahme stoppen" beenden; dann wird die Aufnahme sofort gelöscht. Abschriften werden nach 90 Tagen gelöscht. <offen: Die Aufzeichnung ist gebaut und aus (T-11.3), die Abschriften fehlen noch (T-7.1). Diesen Abschnitt erst veröffentlichen, wenn sie in Betrieb gehen, sonst "Wir zeichnen keine Gespräche auf" schreiben.>
 
 ### 5. Anrufprotokoll
 

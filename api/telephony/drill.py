@@ -10,8 +10,9 @@
 
 Starts the AI telephone as the product runs it, the service `asterisk` of
 docker-compose.yml with its configuration in deploy/asterisk/conf/, and the
-service `voice` with the drill engines (an ear that hears nothing, a mouth of
-noise), a model address that does not exist and a throwaway database. In front
+service `voice` with the drill engines (an ear that hears nothing but "Ja" in a
+caller's tone, a mouth of noise), a model address that does not exist and a
+throwaway database. In front
 of it a stand-in for the router (deploy/asterisk/drill/): the registrar the AI
 telephone registers at, the caller who rings it, and the team telephone. Then
 one call per drill:
@@ -49,6 +50,15 @@ one call per drill:
                   meanwhile: no card, the caller hears to call again, from the
                   file `voice` rendered at its start
   sentences       the files Asterisk plays hold the sentences of the code
+  recording off   mode shadow as the product ships: not a word from the AI, the
+                  team rings, and the folder of the recordings stays empty
+  recording       `voice` with RECORDING_ENABLED (T-11.3, docs/09 L2). Mode
+                  shadow: a silent caller is asked, nobody records, the team
+                  rings; a yes records the team leg, once somebody answers; the
+                  key of the team's telephone stops and deletes it; `voice`
+                  dying on the question rings the team. A call the AI takes:
+                  `voice` records it from the yes to the handover, and the team
+                  leg stays off the file
   networks        Asterisk reaches `voice`, and neither the database's name nor
                   its address; the database has no way out
   cut off         `voice` loses its network to Asterisk or to the database, before
@@ -196,6 +206,9 @@ class Drill:
             "DRILL_RUN": str(run_dir),
             "DRILL_UID": str(os.getuid()),
             "DRILL_GID": str(os.getgid()),
+            # `voice` runs as the caller here, and owns the folder of the
+            # recordings as in the product (deploy/asterisk/render.sh).
+            "RECORDINGS_UID": str(os.getuid()),
             "VOICE_NUMBER": VOICE_NUMBER,
             "TEAM_PHONE": TEAM_PHONE,
             # Written loosely, with TEAM_PHONE in its national form: render.sh
@@ -250,6 +263,22 @@ class Drill:
 
     def team_phone(self, number: str) -> None:
         self.sql(f"update service_config set team_phone = '{number}'")
+
+    def recording(self, on: bool) -> None:
+        """`voice` with RECORDING_ENABLED, or as the product ships."""
+        self._env["DRILL_RECORDING"] = "true" if on else "false"
+        self.restart("voice")
+
+    def recordings(self) -> dict[str, int]:
+        """The files of the folder of the recordings, each with its size."""
+        listed = self.compose(
+            "exec", "-T", "voice", "find", "/recordings", "-type", "f",
+            "-printf", "%f %s\\n",
+        )  # fmt: skip
+        return {
+            name: int(size)
+            for name, size in (line.split() for line in listed.splitlines())
+        }
 
     def log(self, service: str) -> list[str]:
         return self.compose("logs", "--no-color", service).splitlines()
@@ -306,7 +335,7 @@ class Drill:
         numbers = [
             form
             for number in [
-                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 120)),
+                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 127)),
                 TEAM_PHONE,
                 LISTED_BUSY_NUMBER,
                 UNLISTED_NUMBER,
@@ -396,6 +425,40 @@ class Call:
             if found:
                 return found.group(1)
         return ""
+
+    def _asterisk_says(self, pattern: str) -> str:
+        for line in self.lines("asterisk"):
+            found = re.search(pattern, line)
+            if found:
+                return found.group(1)
+        return ""
+
+    @property
+    def sid(self) -> str:
+        """The id of the call on the AI telephone: its row, and its file."""
+        return self._asterisk_says(r"call ([0-9.]+): voice leg")
+
+    @property
+    def team_leg_recorded(self) -> str:
+        """ "yes" or "no" as the dialplan took the ending."""
+        return self._asterisk_says(r"recorded \[(\w*)\]")
+
+    def consent(self) -> str:
+        """The answers of the call's consent log, in order."""
+        return self.drill.sql(
+            "select coalesce(string_agg(l.answer, ',' order by l.answered_at), '') "
+            "from consent_log l join calls c on c.id = l.call_id "
+            f"where c.external_session_id = '{self.sid}'"
+        )
+
+    def recording_row(self) -> str:
+        """ "running", "withdrawn" or "" for no row."""
+        return self.drill.sql(
+            "select case when r.withdrawn_at is null then 'running' "
+            "else 'withdrawn' end from recordings r "
+            "join calls c on c.id = r.call_id "
+            f"where c.external_session_id = '{self.sid}'"
+        )
 
 
 def team_check(name: str, call: Call, since: float, extra: str = "") -> Check:
@@ -734,6 +797,190 @@ def plays(drill: Drill, name: str, sentence: str) -> bool:
     return head == sentence + "\x00"
 
 
+# A recording file without audio: the header of a WAV, written when a recording
+# begins (a leg nobody answered, on a call without a sound).
+WAV_HEADER_BYTES = 44
+
+
+def drill_recording_off(drill: Drill) -> list[Check]:
+    """121 in mode shadow, as the product ships: nothing has changed."""
+    try:
+        drill.mode("shadow")
+        call = drill.place(121)
+        check = team_check("recording off, shadow: the team rings", call, call.placed)
+    finally:
+        drill.mode("primary")
+    drill.quiet()
+    files = drill.recordings()
+    return [
+        check,
+        (
+            "recording off, shadow: no word from the AI, and no file",
+            call.ending().startswith("NOANSWER")
+            and "[transfer]" in call.ending()
+            and not files,
+            f"ending {call.ending()}, {len(files)} files",
+        ),
+    ]
+
+
+def in_shadow(drill: Drill, n: int, *wait_for: str) -> Call:
+    """Call n in mode shadow, until the patterns or the end of the call."""
+    try:
+        drill.mode("shadow")
+        call = drill.place(n)
+        call.wait(*wait_for or (call.ended,))
+    finally:
+        drill.mode("primary")
+    return call
+
+
+def recording_silence(drill: Drill) -> list[Check]:
+    """122 says nothing to the question."""
+    call = in_shadow(drill, 122, r"DRILL team rings")
+    seconds = time.monotonic() - call.placed
+    drill.quiet()
+    files = drill.recordings()
+    return [
+        (
+            "recording, silence: the AI asks, the team rings, nothing is recorded",
+            call.ending().startswith("ANSWER")
+            and "[transfer]" in call.ending()
+            and call.team_leg_recorded == "no"
+            and seconds <= TEAM_LIMIT_SECONDS
+            and call.consent() == "unclear"
+            and call.recording_row() == ""
+            and f"{call.sid}.wav" not in files,
+            f"team after {seconds:.1f} s, ending {call.ending()}, recorded "
+            f"[{call.team_leg_recorded}], consent {call.consent()!r}",
+        )
+    ]
+
+
+def recording_yes(drill: Drill) -> list[Check]:
+    """123 says yes: the dialplan records the team leg."""
+    call = in_shadow(drill, 123)
+    drill.quiet()
+    size = drill.recordings().get(f"{call.sid}.wav", 0)
+    return [
+        (
+            "recording, yes: the team rings and its leg is on a file",
+            call.router_says(call.team_rings)
+            and call.team_leg_recorded == "yes"
+            and call.consent() == "yes"
+            and call.recording_row() == "running"
+            and size > WAV_HEADER_BYTES,
+            f"recorded [{call.team_leg_recorded}], consent {call.consent()!r}, "
+            f"row {call.recording_row()!r}, {size} bytes",
+        )
+    ]
+
+
+def recording_stop_key(drill: Drill) -> list[Check]:
+    """124 says yes, and the team presses the key."""
+    with team_away(drill, "stop"):
+        call = in_shadow(drill, 124)
+    drill.quiet()
+    told = call._asterisk_says(r"recording stopped by the team, voice \[(\w*)\]")
+    files = drill.recordings()
+    return [
+        (
+            "recording, the team's key: stopped, deleted, logged, the call goes on",
+            told == "stopped"
+            and f"{call.sid}.wav" not in files
+            and call.consent() == "yes,no"
+            and call.recording_row() == "withdrawn"
+            and call.router_says(call.ended),
+            f"voice [{told}], consent {call.consent()!r}, row "
+            f"{call.recording_row()!r}, {len(files)} files left",
+        )
+    ]
+
+
+def wav_of(drill: Drill, sid: str) -> str:
+    """Channels, rate and how loud the left channel is, as the file says."""
+    return drill.compose(
+        "exec", "-T", "voice", "python", "-c",
+        "import wave; from array import array; "
+        f"w = wave.open('/recordings/{sid}.wav'); "
+        "a = array('h', w.readframes(w.getnframes())); "
+        "print(w.getnchannels(), w.getframerate(), max(a[0::2], default=0))",
+    ).strip()  # fmt: skip
+
+
+def recording_ai_call(drill: Drill) -> list[Check]:
+    """125 takes a call the AI answers, says yes, and the next "Ja" reaches the
+    model, which is down: the call goes to the team, and off the file."""
+    with team_away(drill, "answer"):
+        call = drill.place(125)
+        call.wait(call.team_rings)
+        at_the_handover = drill.recordings()
+        call.wait(call.ended)
+    drill.quiet()
+    name = f"{call.sid}.wav"
+    files = drill.recordings()
+    channels, rate, loudest = [*wav_of(drill, call.sid).split(), "", "", "0"][:3]
+    return [
+        (
+            "recording, AI call: from the yes to the handover, the team off the file",
+            call.consent() == "yes"
+            and call.recording_row() == "running"
+            and call.team_leg_recorded == "no"
+            and files.get(name, 0) > WAV_HEADER_BYTES
+            and files.get(name) == at_the_handover.get(name)
+            and (channels, rate) == ("2", "16000")
+            and int(loudest) >= 1000,
+            f"consent {call.consent()!r}, recorded [{call.team_leg_recorded}], "
+            f"{at_the_handover.get(name)} bytes at the handover, "
+            f"{files.get(name)} at the end, {channels} channels at {rate}, "
+            f"loudest {loudest}",
+        )
+    ]
+
+
+def recording_crash(drill: Drill) -> list[Check]:
+    """`voice` dies while the question waits for its answer: rule 5, and
+    nothing is recorded."""
+    try:
+        drill.mode("shadow")
+        call = drill.place(126)
+        call.wait(call.answered, timeout=15)
+        killed = time.monotonic()
+        drill.compose("kill", "voice")
+        check = team_check(
+            "recording, voice dies on the question: the team rings",
+            call,
+            killed,
+            " from the kill",
+        )
+        unrecorded = "[]" in call.ending() and call.team_leg_recorded == "no"
+    finally:
+        try:
+            drill.mode("primary")
+        finally:
+            drill.restart("voice")
+    drill.quiet()
+    return [
+        check,
+        ("recording, voice dies: the team leg stays off", unrecorded, call.ending()),
+    ]
+
+
+def drill_recording(drill: Drill) -> list[Check]:
+    """`voice` is started with RECORDING_ENABLED for these and set back."""
+    drill.recording(True)
+    try:
+        return [
+            *recording_silence(drill),
+            *recording_yes(drill),
+            *recording_stop_key(drill),
+            *recording_ai_call(drill),
+            *recording_crash(drill),
+        ]
+    finally:
+        drill.recording(False)
+
+
 def drill_stranger(drill: Drill) -> list[Check]:
     """Sent from the container of `voice`, an address on the network that is
     not the router's (#252 finding 2): once as `access`, once from a caller's
@@ -1010,6 +1257,8 @@ SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
     ("the team does not answer (111)", drill_team_missed),
     ("the team does not answer a paused line (112)", drill_team_missed_paused),
     ("the team does not answer, voice goes down (113)", drill_team_missed_voice_down),
+    ("mode shadow, recording off (121)", drill_recording_off),
+    ("the recording of a call (122 to 126)", drill_recording),
     ("a transfer to a number off the list (109)", drill_unlisted),
     ("a transfer to a busy number on the list (110)", drill_listed_busy),
     ("voice crashes in the middle of a call (105)", drill_crash),

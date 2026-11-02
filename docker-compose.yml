@@ -54,6 +54,7 @@ x-settings: &settings
   VOICE_MOUTH:
   VOICE_EAR_DEVICE:
   VOICE_MOUTH_VOICE:
+  RECORDING_ENABLED:
   MENU_FUZZY_THRESHOLD_HIGH:
   MENU_FUZZY_THRESHOLD_LOW:
   CALL_LOG_RETENTION_DAYS:
@@ -66,6 +67,7 @@ x-settings: &settings
   RETENTION_OUTBOX_ROW_DAYS:
   RETENTION_AUDIT_LOG_DAYS:
   RETENTION_ALLERGY_NOTE_DAYS:
+  RETENTION_RECORDING_DAYS:
   RETENTION_CONSENT_LOG_YEARS:
   RETENTION_REQUEST_DETAILS_MONTHS:
   RETENTION_REQUEST_LOG_YEARS:
@@ -184,7 +186,10 @@ services:
     # At the database, and it posts to n8n and the push server.
     networks: [backend, edge]
     <<: *hardened
-    # It writes nothing: its mounts and the image stay as they are.
+    # It writes nothing but deletes recordings (api/jobs/retention.py): its
+    # mounts and the image stay as they are. The user the folder belongs to
+    # (deploy/asterisk/render.sh).
+    user: "10001:10001"
     read_only: true
     tmpfs: [/tmp]
     environment:
@@ -202,6 +207,7 @@ services:
       - ./api:/app/api
       - ./scripts:/app/scripts
       - ./db:/app/db
+      - recordings:/recordings
 
   # The own voice layer (docs/20 §2): the AI telephone. Started only with the
   # profile `voice` (`docker compose --profile voice up -d`, or
@@ -224,7 +230,8 @@ services:
       # Its own secret, shared with Asterisk only.
       VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
     # Not root, from the start (docs/01 open points): it reads its mounts and
-    # writes nothing there but the sentences into /announcements.
+    # writes nothing there but the sentences into /announcements and, with
+    # RECORDING_ENABLED, the calls the AI takes into /recordings.
     user: "10001:10001"
     <<: *hardened
     read_only: true
@@ -250,6 +257,7 @@ services:
       - ./prompts:/app/prompts
       - ./deploy/speech/run/models:/models:ro
       - announcements:/announcements
+      - recordings:/recordings
     # Whisper on the graphics card (VOICE_EAR_DEVICE=cuda, the workbench's).
     # ponytail: asked for on every host that runs the profile; one without a
     # graphics card needs `deploy: !reset {}` in its own Compose file.
@@ -302,12 +310,16 @@ services:
       ACCESS_ALSO: ${ACCESS_ALSO:-}
       ACCESS_USER: ${ACCESS_USER:-}
       ACCESS_PASSWORD: ${ACCESS_PASSWORD:-}
+      # Who owns the folder of the recordings: the user of `voice` and the
+      # dispatcher (deploy/asterisk/render.sh).
+      RECORDINGS_UID: ${RECORDINGS_UID:-10001}
     tmpfs:
       - /etc/asterisk
     volumes:
       - ./deploy/asterisk/conf:/templates/conf:ro
       - ./deploy/asterisk/render.sh:/templates/render.sh:ro
       - announcements:/announcements:ro
+      - recordings:/recordings
     # Healthy only while registered at the access: booted but not registered,
     # no call reaches the AI telephone, and `docker compose ps` should say so
     # (Codex on PR #297). While registered it tells `voice`, for the monitor
@@ -429,3 +441,7 @@ volumes:
       type: tmpfs
       device: tmpfs
       o: "size=4m,uid=10001,gid=10001,mode=0755"
+  # Calls recorded after the caller's yes (docs/09 L2, T-11.3). On disk, in no
+  # backup: file and row go after RETENTION_RECORDING_DAYS by the daily job. Empty
+  # while RECORDING_ENABLED is off.
+  recordings:

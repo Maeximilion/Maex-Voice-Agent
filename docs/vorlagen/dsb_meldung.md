@@ -30,7 +30,7 @@ Eine Pflicht, die als "erster echter Anruf" markiert ist, blockiert jeden echten
 | L9 Verzeichnis von Verarbeitungstätigkeiten | `verarbeitungsverzeichnis.md` | ausfüllen, Kopie außerhalb des Repos ablegen | erster echter Anruf |
 | L10 DSFA fertigstellen, mit Rat des Beauftragten | Entwurf v0.1 liegt außerhalb des Repos | fertigstellen (Abwägung L12 als eine Seite) | erster echter Anruf in jedem Modus |
 | L11 Informationsblatt, Einwilligungen des Teams | `team_information.md` | austeilen, unterschreiben lassen, Kopien außerhalb des Repos | Informationsblatt: erster echter Anruf; Einwilligungen: Modus `shadow` mit Aufzeichnung |
-| L2 Einwilligungsfrage, Aufbewahrung, Stopp der Aufnahme | Abschnitt 4 des Hinweises | warten auf T-11.3 | Modus `shadow` mit Aufzeichnung |
+| L2 Einwilligungsfrage, Aufbewahrung, Stopp der Aufnahme | Abschnitt 4 des Hinweises | gebaut am 02.11.2026 (T-11.3), aus; einschalten erst nach den Einwilligungen des Teams (L11) | Modus `shadow` mit Aufzeichnung |
 | L1, N1 KI-Hinweis, Eval "Sind Sie ein Mensch?" | Abschnitt 2 des Hinweises | nichts; gebaut am 26.10.2026 (T-11.5); N1 bei den endgültigen Art.-50-Leitlinien neu prüfen | erster echter Anruf (erledigt im Code) |
 | L15 Hinweis auf das Anrufprotokoll | Abschnitt 5 des Hinweises | mit dem Hinweis veröffentlichen | Hinweis online |
 | L16 Piper-Lizenz | keiner | vor jeder Weitergabe einer Kopie entscheiden (E16) | Weitergabe einer Kopie |

@@ -6,6 +6,7 @@ fake line records what it was asked to do, so a test reads the call back as a
 list of actions.
 """
 
+from array import array
 from collections.abc import Callable, Iterable
 
 from api.telephony.speech import Heard
@@ -40,6 +41,27 @@ class FakeEar:
         if self._sink is None:
             raise RuntimeError("the ear was not opened")
         self._sink(heard)
+
+
+class DrillEar(FakeEar):
+    """The ear of the outage drills (`telephony/drill.py`): deaf, as FakeEar,
+    except that a loud frame is the caller saying "Ja", every `SAYS_YES_EVERY`
+    seconds of it. No engine runs in a drill, and the consent to a recording
+    takes a spoken yes (docs/09 L2): the router's caller plays a tone for it."""
+
+    SAYS_YES_EVERY = 1.0
+    LOUD = 1000
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._said_at: float | None = None
+
+    def feed(self, frame: bytes, at: float) -> None:
+        if (self._said_at is None or at - self._said_at >= self.SAYS_YES_EVERY) and max(
+            array("h", frame[: len(frame) - len(frame) % 2]), default=0
+        ) >= self.LOUD:
+            self._said_at = at
+            self.hear(Heard("Ja", ended_at=at))
 
 
 class FakeMouth:
@@ -97,6 +119,9 @@ class FakeLine:
 
     def hangup(self) -> None:
         self.actions.append(("hangup",))
+
+    def record_team_leg(self) -> None:
+        self.actions.append(("record_team_leg",))
 
     # -- reading back ----------------------------------------------------------------
 

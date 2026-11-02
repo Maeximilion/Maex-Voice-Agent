@@ -40,7 +40,7 @@ from api.core.logging import configure_logging, get_logger
 from api.db import SessionLocal, bounded_sessions, engine, refuse_a_superuser_role
 from api.domain.calls import call_routing, tenant_named
 from api.domain.customers.phone import E164
-from api.telephony.adapters.fake_speech import FakeEar, FakeMouth
+from api.telephony.adapters.fake_speech import DrillEar, FakeEar, FakeMouth
 from api.telephony.handler import ANNOUNCEMENTS, CallHandler
 from api.telephony.port import CallEvents
 from api.telephony.router import router
@@ -52,8 +52,9 @@ from api.telephony.speech import Ear, Line, Mouth
 MODELS = Path("/models")
 # The ear for orders by the run of 13.10.2026 (docs/20 §11).
 EAR_MODEL = "large-v3-turbo"
-# They hear nothing and speak noise: for drills of the workbench only.
-DRILL_ENGINES = frozenset({"fake"})
+# They hear nothing, or "Ja" in a tone, and speak noise: for drills of the
+# workbench only.
+DRILL_ENGINES = frozenset({"fake", "drill"})
 # How many endings are kept for the dialplan. It asks within a second of the
 # end of our leg; an ending nobody asked for goes after this many newer ones.
 ENDINGS_KEPT = 1000
@@ -252,6 +253,7 @@ def _piper(watchdog: Watchdog) -> Callable[[], Mouth]:
 
 EARS: dict[str, Callable[[Watchdog], Callable[[], Ear]]] = {
     "fake": lambda _: FakeEar,
+    "drill": lambda _: DrillEar,
     "whisper": _whisper,
 }
 MOUTHS: dict[str, Callable[[Watchdog], Callable[[], Mouth]]] = {
@@ -337,6 +339,10 @@ class Voice:
     def missed(self, call_id: str) -> bool:
         """Nobody answered the team leg: True once the callback card is written."""
         return self._events.on_team_missed(call_id)
+
+    def recording_stopped(self, call_id: str) -> bool:
+        """The team stopped the recording of a team leg: True once it is logged."""
+        return self._events.on_recording_stopped(call_id)
 
 
 def announce(mouth: Mouth, folder: Path) -> None:

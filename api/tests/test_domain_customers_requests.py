@@ -15,6 +15,7 @@ from api.domain.confirm import confirm
 from api.domain.customers import find_customer
 from api.domain.customers.requests import (
     Details,
+    LedgerEntry,
     access_copy,
     answer_request,
     erase,
@@ -40,6 +41,7 @@ from api.models import (
     OrderItem,
     OutboxEvent,
     RecognitionObjection,
+    Recording,
     Reservation,
     ServiceConfig,
 )
@@ -572,6 +574,69 @@ def test_the_copy_holds_the_persons_rows_and_nothing_of_another_guest(
     ):
         assert held in text
     assert "Schmidt" not in text
+
+
+def _recording(session, tenant_id, call) -> Recording:
+    row = Recording(
+        tenant_id=tenant_id,
+        call_id=call.id,
+        file_name=f"{call.external_session_id}.wav",
+        started_at=PAST,
+    )
+    session.add(row)
+    session.commit()
+    return row
+
+
+def test_the_copy_names_the_recording_of_the_persons_call(session, tenant_id):
+    call = _call(session, tenant_id)
+    _order(session, tenant_id, call=call)
+    recorded = _recording(session, tenant_id, call)
+
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+    copy = access_copy(session, tenant_id, person)["copy"]
+
+    assert [row["file_name"] for row in copy["recordings"]] == [recorded.file_name]
+
+
+def test_the_erasure_withdraws_the_persons_recording(session, tenant_id):
+    """U2: every store. The file goes with the next pass of the deletion job,
+    the one process that holds the folder, and the ledger names the row."""
+    call = _call(session, tenant_id)
+    _order(session, tenant_id, call=call)
+    other_call = _call(session, tenant_id, caller_id=OTHER_PHONE)
+    _order(session, tenant_id, call=other_call, name="Schmidt", phone=OTHER_PHONE)
+    recorded = _recording(session, tenant_id, call)
+    other = _recording(session, tenant_id, other_call)
+    request = _request(session, tenant_id)
+
+    ledger = erase(session, request, verify(session, tenant_id, MUELLER, ZONE, NOW))
+
+    session.commit()
+    session.expire_all()
+    assert session.get(Recording, recorded.id).withdrawn_at is not None
+    assert session.get(Recording, other.id).withdrawn_at is None
+    assert LedgerEntry("recordings", recorded.id, "withdrawn") in ledger
+
+
+def test_the_team_sees_that_a_number_only_call_was_recorded(session, tenant_id):
+    """The security review of T-11.3: the copy cannot name the recording of a
+    call that is not yet the person's, so the team must know to ask about it;
+    once claimed, the copy names it and the erasure withdraws it."""
+    _order(session, tenant_id)
+    recorded_call = _call(session, tenant_id)
+    plain_call = _call(session, tenant_id)
+    recorded = _recording(session, tenant_id, recorded_call)
+
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+    copy = access_copy(session, tenant_id, person)
+
+    assert not copy["copy"]["recordings"]
+    asked = {row["id"]: row["recorded"] for row in copy["ask_the_guest"]["calls"]}
+    assert asked == {recorded_call.id: True, plain_call.id: False}
+    claimed = verify(session, tenant_id, MUELLER, ZONE, NOW, claimed=[recorded_call.id])
+    names = access_copy(session, tenant_id, claimed)["copy"]["recordings"]
+    assert [row["file_name"] for row in names] == [recorded.file_name]
 
 
 def test_the_copy_keeps_number_only_rows_apart_for_the_team(session, tenant_id):
