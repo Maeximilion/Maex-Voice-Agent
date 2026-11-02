@@ -571,7 +571,7 @@ def _price_list(
 
 
 @router.get("/fragments/preise", response_class=HTMLResponse, include_in_schema=False)
-def preise_fragment(
+def prices_fragment(
     request: Request, session: Session = Depends(get_db)
 ) -> HTMLResponse:
     """Only the price cards: the page fetches them after each `prices` event."""
@@ -584,7 +584,7 @@ def preise_fragment(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def preis(
+def price_answer(
     request: Request,
     menu_item_id: uuid.UUID,
     register_cents: int,

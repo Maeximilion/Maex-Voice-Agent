@@ -66,7 +66,7 @@
     });
   }
 
-  function preise() {
+  function reloadPrices() {
     window.htmx.ajax("GET", "/gui/fragments/preise", {
       target: "#preise-liste",
     });
@@ -283,7 +283,7 @@
   // The price check found a difference, or another tablet answered one (T-4.9).
   strom.addEventListener("prices", function () {
     offline(false);
-    preise();
+    reloadPrices();
   });
   strom.addEventListener("today", function () {
     offline(false);

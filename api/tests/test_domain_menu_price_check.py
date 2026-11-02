@@ -464,8 +464,8 @@ def test_script_reports_a_surcharge_and_changes_no_option(
     assert "--apply-price-changes" in out
     assert "open on the tablet" not in out
     session.expire_all()
-    groß = session.scalar(select(ItemOption).where(ItemOption.option_name == "groß"))
-    assert groß.price_delta_cents == 400
+    large = session.scalar(select(ItemOption).where(ItemOption.option_name == "groß"))
+    assert large.price_delta_cents == 400
 
 
 def test_script_marks_a_rejected_difference(

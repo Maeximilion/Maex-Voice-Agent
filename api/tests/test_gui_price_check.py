@@ -154,7 +154,7 @@ def test_an_unknown_choice_is_not_a_page(client, db, tenant_id):
 
 @pytest.mark.parametrize(
     "headers",
-    [{}, {"HX-Request": "true"}, {"HX-Request": "true", "X-CSRF-Token": "falsch"}],
+    [{}, {"HX-Request": "true"}, {"HX-Request": "true", "X-CSRF-Token": "wrong"}],
 )
 def test_a_price_changes_only_with_the_page_token(client, db, tenant_id, headers):
     dish = difference(db, tenant_id)
