@@ -1,16 +1,17 @@
-{# Notice per weekday (T-3.13, docs/06 §3): a sheet like "Gericht aus". All seven
-   days in one form, so a value out of bounds changes none of them. A weekday
-   without seats is closed and has no field. #}
-<section class="sheet vorbestellzeit" role="dialog" aria-labelledby="vorbestellzeit-titel">
+{# How long before its time a table has to be reserved, per weekday (T-3.13, docs/06
+   §3): a small sheet. All days in one form, so a value out of bounds changes none
+   of them. A weekday without seats is closed and has no field. #}
+<section class="sheet vorlauf" role="dialog" aria-labelledby="vorlauf-titel">
   <div class="sheet-head">
-    <h2 id="vorbestellzeit-titel" tabindex="-1">Vorbestellzeit</h2>
+    <h2 id="vorlauf-titel" tabindex="-1">Reservierungs-Vorlauf</h2>
     <button type="button" class="schliessen" data-schliessen>Fertig</button>
   </div>
   <div class="sheet-tools">
-    <p class="muted">So viele Minuten vor der Uhrzeit muss eine Reservierung spätestens kommen. Kürzer vorher reserviert die KI nichts und sagt nur, ob laut Reservierungen noch Platz ist. 0 heißt: keine Grenze.</p>
+    <p>Wie lange vorher muss ein Tisch spätestens reserviert werden?</p>
+    <p class="muted">Kürzer vorher reserviert die KI nichts und sagt nur, ob laut Reservierungen noch Platz ist. 0 heißt: keine Grenze.</p>
     {% if message %}<p class="banner {{ tone }}">{{ message }}</p>{% endif %}
   </div>
-  <form class="sheet-body" hx-post="/gui/vorbestellzeit" hx-target="#vorbestellzeit" hx-swap="innerHTML">
+  <form class="sheet-body" hx-post="/gui/vorlauf" hx-target="#vorlauf" hx-swap="innerHTML">
     <ul class="notices">
       {% for weekday, name, minutes in days %}
       <li>
@@ -20,7 +21,7 @@
         {% else %}
         <input type="number" id="tag-{{ weekday }}" name="tag-{{ weekday }}" inputmode="numeric"
                value="{{ minutes }}" min="0" max="{{ max_notice }}" required>
-        <span>Min</span>
+        <span>Min vorher</span>
         {% endif %}
       </li>
       {% endfor %}

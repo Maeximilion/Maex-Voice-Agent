@@ -170,12 +170,16 @@ header.aus{background:var(--surface-2)}
 .res-head{display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s1)}
 /* A button in a column heading: the heading stays one line (T-3.13). */
 .betrieb .col h2 .h2-action{margin-left:auto}
-/* Notice per weekday: name, field, unit, one row each. */
-.notices{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,1fr);gap:var(--s2) var(--s5)}
-.notices li{display:flex;align-items:center;gap:var(--s3);min-height:var(--tap)}
-.notices label{width:7em;font-weight:600}
-.notices input{font:inherit;font-size:var(--fs-h2);color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);width:120px;height:var(--tap);padding:0 var(--s3);appearance:textfield}
+/* Notice per weekday (T-3.13): a small sheet, Monday to Thursday on the left,
+   Friday to Sunday on the right, so the weekend stands together. */
+.tafel #vorlauf{bottom:auto;right:auto;width:800px;max-width:100%}
+.vorlauf .sheet-tools p + p{margin-top:var(--s1)}
+.notices{list-style:none;margin:0;padding:0;display:grid;grid-auto-flow:column;grid-template-rows:repeat(4,auto);grid-template-columns:repeat(2,1fr);gap:var(--s2) var(--s5)}
+.notices li{display:flex;align-items:center;gap:var(--s2);min-height:var(--tap);white-space:nowrap}
+.notices label{width:6.4em;font-weight:600}
+.notices input{font:inherit;font-size:var(--fs-h2);color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);width:86px;height:var(--tap);padding:0 var(--s2);appearance:textfield}
 .notices input::-webkit-inner-spin-button,.notices input::-webkit-outer-spin-button{appearance:none;margin:0}
+.betrieb .vorlauf .sheet-foot button{width:100%}
 .res .time{font-size:var(--fs-time);font-weight:700;line-height:1.1}
 .res .name{font-weight:600}
 
@@ -219,8 +223,8 @@ header.aus{background:var(--surface-2)}
    columns, which stay live underneath. Title and close button stay in view
    (.sheet-head), the content scrolls (.sheet-body), the tools (search) and the
    foot (save buttons) stay put. */
-#korrektur,#gericht-aus,#vorbestellzeit,#wartezeit{position:absolute;inset:0;z-index:5;display:flex;padding:var(--s2) var(--s4) var(--s4);background:var(--bg)}
-#korrektur:empty,#gericht-aus:empty,#vorbestellzeit:empty,#wartezeit:empty{display:none}
+#korrektur,#gericht-aus,#vorlauf,#wartezeit{position:absolute;inset:0;z-index:5;display:flex;padding:var(--s2) var(--s4) var(--s4);background:var(--bg)}
+#korrektur:empty,#gericht-aus:empty,#vorlauf:empty,#wartezeit:empty{display:none}
 .sheet{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--surface);border:3px solid var(--accent);border-radius:var(--r-lg);box-shadow:0 8px 32px rgba(0,0,0,.6)}
 .sheet-head{flex:none;display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);border-bottom:2px solid var(--line)}
 .sheet-head h2{margin:0;font-size:var(--fs-h2)}

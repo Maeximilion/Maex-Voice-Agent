@@ -1063,7 +1063,7 @@ def _notice_sheet(
     notices = reservation_notice.weekday_notices(session, tenant.id)
     return templates.TemplateResponse(
         request,
-        "fragments/vorbestellzeit.html",
+        "fragments/vorlauf.html",
         {
             "days": [(d, WEEKDAYS[d], minutes) for d, minutes in notices.items()],
             "max_notice": reservation_notice.MAX_NOTICE_MINUTES,
@@ -1074,10 +1074,8 @@ def _notice_sheet(
     )
 
 
-@router.get("/vorbestellzeit", response_class=HTMLResponse, include_in_schema=False)
-def vorbestellzeit(
-    request: Request, session: Session = Depends(get_db)
-) -> HTMLResponse:
+@router.get("/vorlauf", response_class=HTMLResponse, include_in_schema=False)
+def vorlauf(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
     """The sheet with the notice per weekday (T-3.13)."""
     tenant = _tenant(session)
     if tenant is None:
@@ -1086,12 +1084,12 @@ def vorbestellzeit(
 
 
 @router.post(
-    "/vorbestellzeit",
+    "/vorlauf",
     response_class=HTMLResponse,
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def vorbestellzeit_speichern(
+def vorlauf_speichern(
     request: Request,
     form: dict[str, str] = Depends(_form),
     session: Session = Depends(get_db),
@@ -1108,7 +1106,7 @@ def vorbestellzeit_speichern(
         reservation_notice.set_notices(session, tenant.id, minutes)
     except AppError as exc:
         session.rollback()
-        logger.warning("Vorbestellzeit nicht gespeichert: %s", exc.message)
+        logger.warning("Vorlauf nicht gespeichert: %s", exc.message)
         return _notice_sheet(
             request,
             session,
