@@ -27,6 +27,7 @@ from api.models import (
     Reservation,
 )
 from api.tests.test_domain_customers_requests import (
+    OTHER_PHONE,
     PAST,
     PHONE,
     _call,
@@ -150,6 +151,22 @@ def test_a_person_nobody_can_verify_ends_with_exit_1(session, tenant_id, capsys)
     captured = capsys.readouterr()
     assert captured.out == ""
     assert "not verified" in captured.err
+
+
+def test_two_people_of_one_day_need_the_number_they_called_from(
+    session, tenant_id, capsys
+):
+    """Security audit 02.11.2026: never the union of two guests' numbers."""
+    mine = _order(session, tenant_id)
+    _order(session, tenant_id, phone=OTHER_PHONE)
+    reference = _logged(session, tenant_id, kind="access")
+    assert main(["find", reference, *DETAILS]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "--phone" in captured.err
+    assert main(["find", reference, *DETAILS, "--phone", "07221 555123"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert [row["id"] for row in printed["copy"]["orders"]] == [str(mine.id)]
 
 
 def test_a_number_alone_is_no_way_in(session, tenant_id, capsys):
