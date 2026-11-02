@@ -33,7 +33,7 @@ from api.tests.test_domain_confirm_order import (
     _confirm,
     _mode,
 )
-from api.tests.test_domain_draft_order import NOW, _call, _tenant, item, request
+from api.tests.test_domain_draft_order import NOW, _call, _tenant, ente, item, request
 
 TZ = "Europe/Berlin"
 
@@ -526,3 +526,175 @@ def test_kaputte_namensliste_bricht_nicht_ab(session, tenant_id, call_id):
     _fix(session, tenant_id, order_id, rows=(RowEdit(row.id, 3),))
     [card] = list_new(session, tenant_id, TZ, NOW)
     assert card.lines[0].name == "Frühlingsrollen"
+
+
+# --- The same dish through "Tauschen" -----------------------------------------------
+
+HUHN = (Choice("Fleisch", "Huhn"), Choice("Sauce", "Erdnuss"))
+
+
+def _huhn(session, tenant_id, note=None) -> dict:
+    """Two of dish 47, stored as the agent sent them: the extra first."""
+    choices = (("Sauce", "Erdnuss"), ("Fleisch", "Huhn"))
+    return {**ente(session, tenant_id, *choices, quantity=2), "note": note}
+
+
+def _menu_moved_on(session, tenant_id) -> None:
+    """After the call the menu gets another price, name and extra price."""
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number == "47")
+        .values(price_cents=1990, name="Ente Spezial")
+    )
+    session.execute(
+        update(ItemOption)
+        .where(
+            ItemOption.menu_item_id == item(session, tenant_id, "47"),
+            ItemOption.option_name == "Erdnuss",
+        )
+        .values(price_delta_cents=80)
+    )
+    session.commit()
+
+
+def test_swap_to_the_same_dish_and_choice_changes_nothing(session, tenant_id, call_id):
+    """Codex PR #140: it cost a needless KORREKTUR, a new revision and a hit on
+    the accuracy KPI."""
+    allergie = "WICHTIG: Keine Erdnüsse. Grund: Allergie"
+    items = [_huhn(session, tenant_id, allergie)]
+    order_id = _order(session, tenant_id, call_id, items, mode="primary")
+    [row] = _rows(session, order_id)
+    [event] = _events(session, order_id)
+    session.execute(
+        update(OutboxEvent)
+        .where(OutboxEvent.id == event.id)
+        .values(status="sent", attempts=1)
+    )
+    session.execute(
+        update(Order).where(Order.id == order_id).values(handover_state="sent")
+    )
+    session.commit()
+    # Stored Sauce first and in the menu's spelling: neither may count.
+    choices = (Choice("FLEISCH", "huhn"), Choice("sauce", "ERDNUSS"))
+    same = RowEdit(row.id, 2, swap_to=row.menu_item_id, options=choices)
+    req = _req(session, tenant_id, order_id, rows=(same,))
+
+    plan = preview_correction(session, tenant_id, order_id, req, now=NOW)
+
+    assert plan.rows[0].kind == "kept"
+    assert plan.rows[0].note == allergie
+    assert plan.changed is False
+    assert plan.blockers == [NO_CHANGE]
+    with pytest.raises(InvalidInput) as exc:
+        apply_correction(session, tenant_id, order_id, req, "wrong_item", now=NOW)
+    assert exc.value.say == NO_CHANGE
+    session.rollback()
+    assert _corrections(session, order_id) == []
+    [ticket] = _events(session, order_id)
+    assert ticket.payload["revision"] == 1
+
+
+def test_swap_to_the_same_dish_with_another_choice_stays_a_change(
+    session, tenant_id, call_id
+):
+    order_id = _order(session, tenant_id, call_id, [_huhn(session, tenant_id)])
+    [row] = _rows(session, order_id)
+    _menu_moved_on(session, tenant_id)
+    choices = (Choice("Fleisch", "Ente"), Choice("Sauce", "Erdnuss"))
+    other = RowEdit(row.id, 2, swap_to=row.menu_item_id, options=choices)
+
+    _fix(session, tenant_id, order_id, reason="wrong_item", rows=(other,))
+
+    [stored] = _rows(session, order_id)
+    assert [o["option"] for o in stored.options] == ["Ente", "Erdnuss"]
+    assert stored.unit_price_cents == 1550  # frozen, not the 19,90 of today
+    assert len(_corrections(session, order_id)) == 1
+
+
+def test_a_dropped_choice_on_the_same_dish_stays_a_change(session, tenant_id, call_id):
+    """Fewer options than stored, not only other ones."""
+    order_id = _order(session, tenant_id, call_id, [_huhn(session, tenant_id)])
+    [row] = _rows(session, order_id)
+    fewer = RowEdit(row.id, 2, swap_to=row.menu_item_id, options=HUHN[:1])
+
+    _fix(session, tenant_id, order_id, reason="wrong_item", rows=(fewer,))
+
+    [stored] = _rows(session, order_id)
+    assert [o["option"] for o in stored.options] == ["Huhn"]
+
+
+def test_same_dish_and_choice_with_another_quantity_keeps_the_frozen_prices(
+    session, tenant_id, call_id
+):
+    order_id = _order(session, tenant_id, call_id, [_huhn(session, tenant_id)])
+    [row] = _rows(session, order_id)
+    frozen = list(row.options)
+    _menu_moved_on(session, tenant_id)
+    more = RowEdit(row.id, 3, swap_to=row.menu_item_id, options=HUHN)
+    req = _req(session, tenant_id, order_id, rows=(more,))
+
+    plan = preview_correction(session, tenant_id, order_id, req, now=NOW)
+    apply_correction(session, tenant_id, order_id, req, "wrong_quantity", now=NOW)
+
+    assert plan.rows[0].kind == "changed"
+    [stored] = _rows(session, order_id)
+    assert (stored.quantity, stored.unit_price_cents) == (3, 1550)
+    assert stored.options == frozen
+    # 3 x (15,50 - 1,00 + 0,50), in the preview as after saving.
+    assert plan.total_cents == _order_row(session, order_id).total_cents == 4500
+
+
+def test_same_swap_next_to_a_real_change_leaves_its_row_alone(
+    session, tenant_id, call_id
+):
+    """Prices, options and the label the guest heard: nothing moves to today's menu."""
+    rolls = {
+        "menu_item_id": item(session, tenant_id, "23"),
+        "quantity": 2,
+        "note": None,
+    }
+    items = [_huhn(session, tenant_id), rolls]
+    order_id = _order(session, tenant_id, call_id, items)
+    huhn, roll = _rows(session, order_id)
+    frozen = list(huhn.options)
+    _menu_moved_on(session, tenant_id)
+    same = RowEdit(huhn.id, 2, swap_to=huhn.menu_item_id, options=HUHN)
+
+    _fix(session, tenant_id, order_id, rows=(same, RowEdit(roll.id, 3)))
+
+    stored = _rows(session, order_id)
+    assert (stored[0].unit_price_cents, stored[0].options) == (1550, frozen)
+    assert stored[1].quantity == 3
+    # 2 x (15,50 - 1,00 + 0,50) + 3 x 6,90
+    assert _order_row(session, order_id).total_cents == 5070
+    [audit] = _corrections(session, order_id)
+    assert audit.payload["labels"][0] == ["47", "Ente knusprig"]
+
+
+def test_same_swap_keeps_the_picker_and_asks_nothing_of_the_stored_row(
+    session, tenant_id, call_id
+):
+    """The line stays open for a choice, but a group that became required after
+    the order must not block a row the team did not change: a kept line has no
+    "Zurueck" to leave it."""
+    order_id = _order(session, tenant_id, call_id)
+    [row] = _rows(session, order_id)
+    session.add(
+        ItemOption(
+            menu_item_id=row.menu_item_id,
+            group_name="Dip",
+            option_name="Chili",
+            required=True,
+        )
+    )
+    session.commit()
+    same = RowEdit(row.id, 2, swap_to=row.menu_item_id)
+    req = _req(session, tenant_id, order_id, rows=(same,))
+
+    plan = preview_correction(session, tenant_id, order_id, req, now=NOW)
+
+    [line] = plan.rows
+    assert line.kind == "kept"
+    assert [g.group for g in line.groups] == ["Dip"]
+    assert line.missing == []
+    assert plan.blockers == [NO_CHANGE]
