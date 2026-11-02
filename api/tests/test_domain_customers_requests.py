@@ -619,6 +619,26 @@ def test_the_erasure_withdraws_the_persons_recording(session, tenant_id):
     assert LedgerEntry("recordings", recorded.id, "withdrawn") in ledger
 
 
+def test_the_team_sees_that_a_number_only_call_was_recorded(session, tenant_id):
+    """The security review of T-11.3: the copy cannot name the recording of a
+    call that is not yet the person's, so the team must know to ask about it;
+    once claimed, the copy names it and the erasure withdraws it."""
+    _order(session, tenant_id)
+    recorded_call = _call(session, tenant_id)
+    plain_call = _call(session, tenant_id)
+    recorded = _recording(session, tenant_id, recorded_call)
+
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+    copy = access_copy(session, tenant_id, person)
+
+    assert not copy["copy"]["recordings"]
+    asked = {row["id"]: row["recorded"] for row in copy["ask_the_guest"]["calls"]}
+    assert asked == {recorded_call.id: True, plain_call.id: False}
+    claimed = verify(session, tenant_id, MUELLER, ZONE, NOW, claimed=[recorded_call.id])
+    names = access_copy(session, tenant_id, claimed)["copy"]["recordings"]
+    assert [row["file_name"] for row in names] == [recorded.file_name]
+
+
 def test_the_copy_keeps_number_only_rows_apart_for_the_team(session, tenant_id):
     _order(session, tenant_id)
     call = _call(session, tenant_id)

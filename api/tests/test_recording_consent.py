@@ -129,6 +129,7 @@ def test_the_question_names_the_period_that_is_kept(monkeypatch):
         "Ja, dürfen Sie.",
         "Ja, das können Sie aufzeichnen.",
         "Klar, ja.",
+        "Ja, bin ich.",
     ],
 )
 def test_an_explicit_yes_is_a_yes(said):
@@ -160,6 +161,11 @@ def test_a_no_is_a_no(said):
         "Wie bitte?",
         "Was haben Sie gesagt",
         "Ist das richtig",
+        # The question asked back, its mark dropped by the recognizer.
+        "Bin ich damit einverstanden",
+        "Bin ich einverstanden",
+        "Danke, bin ich damit einverstanden",
+        "Ja. Bin ich damit einverstanden",
         "Ja, ich bin nicht einverstanden.",
         "Ja, ich hätte gern einen Tisch.",
         "Nein, ich möchte eine Pizza.",
@@ -186,6 +192,13 @@ def test_anything_else_is_unclear_and_no_consent(said):
         "Ich will nicht aufgezeichnet werden.",
         "Nehmen Sie das bitte nicht auf, keine Aufnahme.",
         "Aufnahme stoppen, und dann noch eine Cola.",
+        "Hören Sie auf, mich aufzunehmen.",
+        "Hören Sie auf mich aufzunehmen",
+        "Hör auf aufzuzeichnen.",
+        "Aufnahmestopp",
+        "Aufnahmestopp, bitte.",
+        "Aufzeichnungsstopp!",
+        "Aufnahme-Stopp",
     ],
 )
 def test_a_withdrawal_is_heard_in_many_wordings(said):
@@ -200,6 +213,9 @@ def test_a_withdrawal_is_heard_in_many_wordings(said):
         "Nicht die 23.",
         "Ja, passt so.",
         "Die Aufnahme?",
+        "Hören Sie, ich hätte gern einen Tisch.",
+        "Hören Sie auf, die 23 bitte.",
+        "Die Aufnahmen?",
     ],
 )
 def test_a_sentence_without_both_halves_is_no_withdrawal(said):
@@ -208,7 +224,10 @@ def test_a_sentence_without_both_halves_is_no_withdrawal(said):
 
 def test_a_stop_with_more_in_it_is_not_only_a_stop():
     assert only_stops_recording("Bitte die Aufnahme stoppen.")
+    assert only_stops_recording("Hören Sie auf, mich aufzunehmen.")
+    assert only_stops_recording("Aufnahmestopp.")
     assert not only_stops_recording("Aufnahme stoppen, und noch eine Cola.")
+    assert not only_stops_recording("Aufnahmestopp, und noch eine Cola.")
 
 
 def test_the_words_of_a_stop_do_not_change_what_a_yes_is():

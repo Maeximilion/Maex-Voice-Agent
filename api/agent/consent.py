@@ -341,27 +341,63 @@ _RECORD_IT = frozenset(
 # second list by the beginning of the word.
 _RECORDED = frozenset(
     {"aufnahme", "aufzeichnung", "mitschnitt", "aufnehmen", "aufzeichnen"}
-    | {"aufgenommen", "aufgezeichnet"}
+    | {"aufgenommen", "aufgezeichnet", "aufzunehmen", "aufzuzeichnen"}
 )
 _STOPPED = ("stop", "beend", "lösch", "loesch", "abbrech", "ende", "aufhör", "aufhoer")
 _NOT = frozenset({"aus", "nicht", "keine", "kein", "ohne", "weg", "abschalten"})
+# "Aufnahmestopp", "Aufzeichnungsende": the stop in one word, the noun first.
+_RECORDING_NOUNS = ("aufnahme", "aufzeichnung", "mitschnitt")
+# "Hören Sie auf, mich aufzunehmen": "aufhören" split in two, as German does.
+_HEAR = ("hör", "hoer")
 # What may stand next to the words of a stop without saying anything else.
 _ONLY_A_STOP = frozenset(
     {"sie", "die", "ich", "will", "möchte", "moechte", "werden", "wieder", "jetzt"}
+    | {"mich", "uns", "auf"}
 )
 
 
 def recording_answer(text: str) -> Answer:
     """The answer to the recording question (L2): only an explicit yes starts
-    one. "Aufnahme stoppen" is a no here as anywhere."""
-    return "no" if stops_recording(text) else consent_answer(text, _RECORD_IT)
+    one. "Aufnahme stoppen" is a no here as anywhere, and the question asked
+    back ("Bin ich damit einverstanden") is none."""
+    if stops_recording(text):
+        return "no"
+    if any(
+        _asks_back(_WORD.findall(sentence))
+        for sentence in _SENTENCE_END.split(text.lower())
+    ):
+        return "unclear"
+    return consent_answer(text, _RECORD_IT)
+
+
+def _asks_back(words: list[str]) -> bool:
+    """ "Bin ich ..." as the first words of a sentence, a thanks in front not
+    counted: the verb before its subject, a question with or without its mark.
+    "Ja, bin ich" stays the answer: the assent in front makes it the short
+    form of "Ja, das bin ich"."""
+    at = 0
+    while at < len(words) and words[at] in _OUTSIDE_THE_CLAUSE:
+        at += 1
+    return words[at : at + 2] == ["bin", "ich"]
+
+
+def _stop_in_one_word(word: str) -> bool:
+    for noun in _RECORDING_NOUNS:
+        if word.startswith(noun):
+            rest = word[len(noun) :]
+            # The linking "s" of "Aufzeichnungsstopp", the "s" of "stop" kept.
+            return rest.startswith(_STOPPED) or rest[1:].startswith(_STOPPED)
+    return False
 
 
 def stops_recording(text: str) -> bool:
     """Does the caller take the recording back ("Aufnahme stoppen")?"""
     words = _WORD.findall(text.lower())
-    return bool(_RECORDED.intersection(words)) and any(
-        word in _NOT or word.startswith(_STOPPED) for word in words
+    if any(_stop_in_one_word(word) for word in words):
+        return True
+    split_stop = "auf" in words and any(word.startswith(_HEAR) for word in words)
+    return bool(_RECORDED.intersection(words)) and (
+        split_stop or any(word in _NOT or word.startswith(_STOPPED) for word in words)
     )
 
 
@@ -371,6 +407,8 @@ def only_stops_recording(text: str) -> bool:
         word in _RECORDED
         or word in _NOT
         or word.startswith(_STOPPED)
+        or word.startswith(_HEAR)
+        or _stop_in_one_word(word)
         or word in _FILLER
         or word in _ONLY_A_STOP
         for word in _WORD.findall(text.lower())
