@@ -85,6 +85,15 @@ Cost of the day above `ALARM_COST_PER_DAY_CENTS`; `ALARM_ERROR_CALLS_PER_HOUR` o
 | Agent antwortet nicht | Rufumleitung greift automatisch | `/health`, Container-Logs, Status of `voice` and Asterisk (docs/20 §5, target, not yet measured) |
 | Datenbank weg | KI pausieren | letztes Backup prüfen, `scripts/restore.sh` |
 
+### Kitchen token stolen or leaked (security audit 02.11.2026)
+
+When the register PC is lost or was used by someone else, the token was seen or typed somewhere it stays, or the server's `.env` left the server: whoever holds `KITCHEN_BRIDGE_TOKEN` can fetch the slips of the operation (name, address, note, dishes; no phone number) and mark them printed. Replace it at once; the slips wait in the outbox meanwhile, nothing is lost.
+
+1. On the server: `openssl rand -hex 32`, the output becomes `KITCHEN_BRIDGE_TOKEN` in `.env` (it must differ from `AGENT_API_TOKEN`, docs/13 §3).
+2. Restart `api` so it reads the new value: `docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d api` (`restart` keeps the old environment). From now on the old token gets `unauthorized`, and the tablet may show „Druckbrücke meldet sich nicht" until step 4.
+3. On the register PC, in Command Prompt (`cmd`), not PowerShell: `setx MAEX_KITCHEN_TOKEN "<new value>"`.
+4. Sign out of Windows and in again: the task starts the bridge with the new value. Check its log (`printbridge/README.md`, step 6) and print a test order.
+
 ### Menüänderung
 1. Adminansicht → Menü → ändern
 2. Aliase für neue Gerichte ergänzen (mindestens zwei umgangssprachliche)
@@ -209,5 +218,6 @@ Kinds of audit: **full** covers every exposed area and **scoped** every exposed 
 | 30.10.2026 | component | `e43208b` | T-10.1 step 2 and T-10.2, the 33 exposed files changed since `9d5e281`: the mode in `call_routing`, the agent core of #437, the routes `/asterisk/alive` and `/asterisk/seen`, the Asterisk healthcheck, the operator alarms and the `ops` topic, the bridge heartbeat, holiday suggestions and the tablet routes, migrations 013 to 017, `scripts/backup.sh`; nothing under `deploy/` changed | no P1, no P2; three notes ([#252, comment of 30.10.2026](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6520130125)) |
 | 30.10.2026 | component | `7768182` | T-10.1 step 2 and T-10.2, the five exposed files changed since `e43208b`, all from PR #445: `api/agent/allergies.py`, `consent.py`, `escalation.py`, `guards.py`, `loop.py`, plus what they call; a read-only pass with one skeptic per finding, no pytest and no database | no P1, six P2 (allergen guards and readings, none on the fate of a call), three P3 ([#252, second comment of 30.10.2026](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6533664709)) |
 | 31.10.2026 | component | `52bf88c` | T-10.1 step 2 and T-10.2, the six exposed files changed since `7768182`, all from PR #447: `api/agent/allergies.py`, `consent.py`, `escalation.py`, `guards.py`, `loop.py`, `api/domain/menu/wishes.py`, plus what they call; a read-only pass with one skeptic per finding, no pytest and no database | no P1, nine P2 (the allergen path, most of them regressions of #447, none on the fate of a call), three P3 ([#252, comment of 31.10.2026](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6535938572)) |
+| 02.11.2026 | component | `a48d142` | T-10.1 step 2 and T-10.2, the 105 exposed files changed since `52bf88c` (the merges of 01. and 02.11.2026: customers and delivery, T-11.3 recordings, T-11.8, T-10.11, T-4.9, T-9.6, T-9.8, the print bridge build); six read-only area reviewers on Opus 5.5 at xhigh, one skeptic per P1 and P2, each P1 and P2 checked in the code by the main session; no pytest and no database | 3 P1 (a number the caller only names recognizes and changes a stored customer; the data subject verification can be planted, and merges two guests of the same name on one day), 2 P2, 13 P3 ([#252, comment of 02.11.2026](https://github.com/Maeximilion/Maex-Voice-Agent/issues/252#issuecomment-6585608078)); the P1s are fixed in pull requests of their own before the trigger |
 
 **Waived, not audited (Maxi, 31.10.2026):** the audit of the #449 diff (`52bf88c` to `34c3a2e`, the six allergen files of the row above) for the wire run of T-10.2 only. That run uses invented calls, and the diff changes how allergy sentences are read, nothing in Asterisk, the tunnel or the outage path. A waiver is no audit, so it has no row and `audit_due.sh` keeps naming T-10.1 as due; the audit runs before the first real guest call.
