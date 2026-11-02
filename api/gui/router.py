@@ -759,6 +759,32 @@ async def _form(request: Request) -> dict[str, str]:
     return {k: v[-1] for k, v in parse_qs(body, keep_blank_values=True).items()}
 
 
+@router.get(
+    "/wartezeit/{service}", response_class=HTMLResponse, include_in_schema=False
+)
+def wartezeit_blatt(
+    request: Request, service: str, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """The sheet of one wait: today's value and the standard (T-3.9, T-3.14)."""
+    tenant = _tenant(session)
+    config = session.get(ServiceConfig, tenant.id) if tenant else None
+    if service not in WAIT_SERVICES or config is None:
+        raise HTTPException(status_code=404)
+    name = WAIT_SERVICES[service]
+    return templates.TemplateResponse(
+        request,
+        "fragments/wartezeit.html",
+        {
+            "key": service,
+            "label": service.capitalize(),
+            "minutes": current_wait(config, name, clock.utcnow()),
+            "standard": standard_wait(config, name),
+            "wait_min": switches.MIN_WAIT_MINUTES,
+            "wait_max": switches.MAX_WAIT_MINUTES,
+        },
+    )
+
+
 def _typed_minutes(text: str) -> int:
     """The digits the team typed; 0 for anything else, which the limits refuse."""
     text = text.strip()
