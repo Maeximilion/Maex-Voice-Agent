@@ -97,6 +97,13 @@ header.aus .top > .mode ~ .mode{opacity:.6}
 .cb.complaint{border-left:6px solid var(--danger);padding-left:15px}
 .cb-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
 .betrieb a.button{display:inline-flex;align-items:center;justify-content:center;min-height:60px;min-width:60px;padding:12px 18px;font-size:18px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--text);text-decoration:none}
+/* Key figures (T-8.4): four values side by side, the history below. */
+.kz-title{margin:0;font-size:22px}
+.kz-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.kz{display:flex;flex-direction:column}
+.kz b{font-size:28px;font-weight:600;line-height:1.2}
+.kz-history{margin-top:16px;overflow-x:auto}
+@media (max-width:900px){ .kz-bar{grid-template-columns:1fr 1fr} }
 .board{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:start}
 .col{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px}
 .col h2{margin:0 0 12px;font-size:20px;font-weight:600;display:flex;align-items:center;gap:10px}

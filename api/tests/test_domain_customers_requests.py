@@ -4,12 +4,14 @@ the person is, access, erasure and objection, on the verified person's rows only
 import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, InvalidInput, NotFound
+from api.domain.confirm import confirm
 from api.domain.customers import find_customer
 from api.domain.customers.requests import (
     Details,
@@ -31,12 +33,15 @@ from api.models import (
     ConsentLog,
     Customer,
     DataSubjectRequest,
+    MenuItem,
     Order,
     OrderItem,
     OutboxEvent,
     RecognitionObjection,
     Reservation,
+    ServiceConfig,
 )
+from api.schemas.confirm import ConfirmRequest
 from api.tests.test_domain_draft_order import _tenant, item
 
 ZONE = "Europe/Berlin"
@@ -582,6 +587,72 @@ def test_the_copy_keeps_number_only_rows_apart_for_the_team(session, tenant_id):
     assert ask["recognition_objections"] == [PHONE]
 
 
+def _labels(session, tenant_id, order, labels, action="order.draft_created"):
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            actor="agent",
+            action=action,
+            entity="order",
+            entity_id=order.id,
+            payload={"labels": labels},
+        )
+    )
+    session.flush()
+
+
+def _lines_of_the_copy(session, tenant_id):
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+    return access_copy(session, tenant_id, person)["copy"]["orders"][0]["items"]
+
+
+def test_the_copy_names_the_dish_as_it_was_ordered(session, tenant_id):
+    """Renamed since the call: the guest ordered the name that was read back."""
+    order = _order(session, tenant_id)
+    _labels(session, tenant_id, order, [["23", "Pho wie damals"]])
+    lines = _lines_of_the_copy(session, tenant_id)
+    assert [(line["number"], line["dish"]) for line in lines] == [
+        ("23", "Pho wie damals")
+    ]
+
+
+def test_the_copy_takes_the_labels_of_the_last_correction(session, tenant_id):
+    order = _order(session, tenant_id)
+    _labels(session, tenant_id, order, [["23", "Erst so"]])
+    _labels(session, tenant_id, order, [["24", "Dann so"]], action="order.corrected")
+    assert _lines_of_the_copy(session, tenant_id)[0]["dish"] == "Dann so"
+
+
+def test_each_label_stays_with_its_line(session, tenant_id):
+    order = _order(session, tenant_id, item_note="erste Position")
+    first = session.scalar(select(OrderItem).where(OrderItem.order_id == order.id))
+    session.add(
+        OrderItem(
+            tenant_id=tenant_id,
+            order_id=order.id,
+            menu_item_id=first.menu_item_id,
+            quantity=3,
+            unit_price_cents=1200,
+            note="zweite Position",
+            created_at=first.created_at + timedelta(microseconds=1),
+        )
+    )
+    _labels(session, tenant_id, order, [["23", "Erste"], ["24", "Zweite"]])
+    lines = _lines_of_the_copy(session, tenant_id)
+    assert [(line["dish"], line["note"]) for line in lines] == [
+        ("Erste", "erste Position"),
+        ("Zweite", "zweite Position"),
+    ]
+
+
+def test_the_copy_falls_back_to_the_menu_without_stored_labels(session, tenant_id):
+    order = _order(session, tenant_id)
+    line = session.scalar(select(OrderItem).where(OrderItem.order_id == order.id))
+    dish = session.get(MenuItem, line.menu_item_id)
+    lines = _lines_of_the_copy(session, tenant_id)
+    assert [(row["number"], row["dish"]) for row in lines] == [(dish.number, dish.name)]
+
+
 def test_reading_the_copy_writes_nothing(session, tenant_id):
     order = _order(session, tenant_id)
     person = verify(session, tenant_id, MUELLER, ZONE, NOW)
@@ -794,6 +865,196 @@ def test_an_order_still_in_the_kitchen_cannot_be_kept_and_waits(session, tenant_
         _erase(session, tenant_id)
     with pytest.raises(InvalidInput):
         _erase(session, tenant_id, keep=[cooking.id])
+
+
+@pytest.mark.parametrize(
+    ("status", "handover_state"),
+    [
+        # Waiting for "Passt": `approve_order` builds the slip from these rows.
+        ("confirmed", None),
+        # A red card: "Nochmal senden" builds the slip from these rows.
+        ("confirmed", "failed"),
+        ("approved", "failed"),
+        ("confirmed", "pending"),
+        ("approved", "pending"),
+    ],
+)
+def test_an_order_the_kitchen_has_no_slip_for_stops_the_erasure_past_its_time(
+    session, tenant_id, status, handover_state
+):
+    order = _order(
+        session,
+        tenant_id,
+        status=status,
+        item_note="WICHTIG: Keine Erdnüsse. Grund: Allergie",
+    )
+    order.handover_state = handover_state
+    session.flush()
+    with pytest.raises(Conflict) as refused:
+        _erase(session, tenant_id)
+    assert str(order.id) in refused.value.message
+    assert _fresh(session, order).customer_name == "Müller"
+    line = session.scalar(select(OrderItem).where(OrderItem.order_id == order.id))
+    assert line.note.startswith("WICHTIG")
+
+
+def test_an_order_past_its_time_with_its_slip_out_is_finished(session, tenant_id):
+    order = _order(session, tenant_id, status="approved")
+    order.handover_state = "sent"
+    session.flush()
+    _erase(session, tenant_id)
+    assert _fresh(session, order).customer_name == ""
+
+
+def test_a_waiting_order_goes_once_the_kitchen_has_its_slip(session, tenant_id):
+    order = _order(session, tenant_id, status="confirmed")
+    with pytest.raises(Conflict):
+        _erase(session, tenant_id)
+    order.status = "approved"
+    order.handover_state = "sent"
+    session.flush()
+    _erase(session, tenant_id)
+    assert _fresh(session, order).customer_name == ""
+
+
+ALLERGY = "WICHTIG: Keine Erdnüsse. Grund: Allergie"
+# Younger than `service_config.max_call_seconds`, 420 by default.
+JUST_NOW = timedelta(minutes=2)
+TOO_OLD = timedelta(minutes=8)
+
+
+def _confirm(session, tenant_id, row, entity):
+    request = ConfirmRequest(
+        call_id=row.call_id,
+        tenant_id=tenant_id,
+        entity=entity,
+        entity_id=row.id,
+        idempotency_key=uuid.uuid4().hex,
+    )
+    return confirm(session, request, NOW)
+
+
+def _draft(session, tenant_id, age=JUST_NOW, ended_at=None) -> Order:
+    """A draft of a guest with an older order, the row that opens the person."""
+    _order(session, tenant_id)
+    draft = _order(session, tenant_id, status="draft", ready_at=None, item_note=ALLERGY)
+    draft.created_at = NOW - age
+    session.get(Call, draft.call_id).ended_at = ended_at
+    session.flush()
+    return draft
+
+
+def _table_draft(session, tenant_id, age=JUST_NOW, ended_at=None) -> Reservation:
+    _order(session, tenant_id)
+    draft = _reservation(session, tenant_id, reserved_for=FUTURE, status="draft")
+    draft.created_at = NOW - age
+    session.get(Call, draft.call_id).ended_at = ended_at
+    session.flush()
+    return draft
+
+
+def test_a_draft_its_call_can_confirm_stops_the_erasure(session, tenant_id):
+    draft = _draft(session, tenant_id)
+    with pytest.raises(Conflict) as refused:
+        _erase(session, tenant_id)
+    assert str(draft.id) in refused.value.message
+    assert _fresh(session, draft).customer_name == "Müller"
+    line = session.scalar(select(OrderItem).where(OrderItem.order_id == draft.id))
+    assert line.note == ALLERGY
+
+
+def test_the_yes_after_a_refused_erasure_brings_the_kitchen_its_allergy_note(
+    session, tenant_id
+):
+    draft = _draft(session, tenant_id)
+    with pytest.raises(Conflict):
+        _erase(session, tenant_id)
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant_id)
+        .values(call_mode="primary")
+    )
+    _labels(session, tenant_id, draft, [["23", "Pho"]])
+    assert _confirm(session, tenant_id, draft, "order").status == "confirmed"
+    payload = session.scalar(
+        select(OutboxEvent.payload).where(OutboxEvent.event_type == "order.confirmed")
+    )
+    assert payload["customer_name"] == "Müller"
+    assert payload["items"][0]["note"] == ALLERGY
+
+
+def test_an_order_draft_cannot_be_kept(session, tenant_id):
+    draft = _draft(session, tenant_id)
+    with pytest.raises(InvalidInput):
+        _erase(session, tenant_id, keep=[draft.id])
+
+
+@pytest.mark.parametrize(
+    ("age", "ended_at"),
+    [(JUST_NOW, NOW - timedelta(minutes=1)), (TOO_OLD, None)],
+    ids=["call ended", "older than any call"],
+)
+def test_a_draft_no_call_can_confirm_goes_and_cannot_be_confirmed(
+    session, tenant_id, age, ended_at
+):
+    """`confirm` itself takes any draft of its call, also of a call that ended,
+    so an erasure closes it instead of leaving it to be confirmed without its
+    notes, and waits for nobody."""
+    draft = _draft(session, tenant_id, age, ended_at)
+    _erase(session, tenant_id)
+    kept = _fresh(session, draft)
+    assert (kept.customer_name, kept.status) == ("", "cancelled")
+    with pytest.raises(Conflict):
+        _confirm(session, tenant_id, kept, "order")
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 0
+
+
+def test_a_reservation_draft_its_call_can_confirm_stops_the_erasure(session, tenant_id):
+    draft = _table_draft(session, tenant_id)
+    with pytest.raises(Conflict) as refused:
+        _erase(session, tenant_id)
+    assert str(draft.id) in refused.value.message
+    assert _fresh(session, draft).guest_name == "Müller"
+
+
+def test_the_yes_after_a_refused_erasure_keeps_the_reservation(session, tenant_id):
+    draft = _table_draft(session, tenant_id)
+    with pytest.raises(Conflict):
+        _erase(session, tenant_id)
+    assert _confirm(session, tenant_id, draft, "reservation").status == "confirmed"
+    assert _fresh(session, draft).guest_name == "Müller"
+
+
+def test_a_reservation_draft_the_guest_keeps_stays_whole(session, tenant_id):
+    draft = _table_draft(session, tenant_id)
+    _erase(session, tenant_id, keep=[draft.id])
+    assert _fresh(session, draft).guest_name == "Müller"
+
+
+@pytest.mark.parametrize(
+    ("age", "ended_at"),
+    [(JUST_NOW, NOW - timedelta(minutes=1)), (TOO_OLD, None)],
+    ids=["call ended", "older than any call"],
+)
+def test_a_reservation_draft_no_call_can_confirm_goes_for_good(
+    session, tenant_id, age, ended_at
+):
+    draft = _table_draft(session, tenant_id, age, ended_at)
+    gone = SimpleNamespace(id=draft.id, call_id=draft.call_id)
+    _erase(session, tenant_id)
+    session.expire_all()
+    assert session.get(Reservation, gone.id) is None
+    with pytest.raises(NotFound):
+        _confirm(session, tenant_id, gone, "reservation")
+
+
+def test_a_soft_deleted_draft_stops_nothing(session, tenant_id):
+    """A soft-deleted draft: `confirm` refuses it, so it stops nothing."""
+    draft = _draft(session, tenant_id)
+    draft.deleted_at = NOW
+    session.flush()
+    _erase(session, tenant_id)
+    assert _fresh(session, draft).customer_name == ""
 
 
 def test_an_unsent_event_stops_the_erasure_until_it_went_out(session, tenant_id):

@@ -22,10 +22,20 @@ import uuid
 from collections import Counter, defaultdict
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, NamedTuple
 
-from sqlalchemy import ColumnElement, Date, cast, delete, func, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    Date,
+    case,
+    cast,
+    delete,
+    func,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -40,6 +50,8 @@ from api.domain.customers.personal import (
 )
 from api.domain.customers.phone import DEFAULT_COUNTRY_CODE
 from api.domain.menu.numberwords import fold
+from api.domain.ordering.handover import SENT
+from api.domain.ordering.labels import current_labels_many, labels_for_rows
 from api.models import (
     Address,
     AuditLog,
@@ -48,12 +60,12 @@ from api.models import (
     ConsentLog,
     Customer,
     DataSubjectRequest,
-    MenuItem,
     Order,
     OrderItem,
     OutboxEvent,
     RecognitionObjection,
     Reservation,
+    ServiceConfig,
 )
 
 ACTOR_JOB = "job:data_requests"
@@ -478,7 +490,38 @@ def _open_rows(
 ) -> list[OpenRow]:
     """Rows still being served. An event not sent yet counts: its payload is the
     slip or the team's notification, and it would go out with the guest's name
-    after the erasure (docs/09 §2)."""
+    after the erasure (docs/09 §2). So does an order the kitchen has no slip for,
+    whatever its time says: "Passt" and "Nochmal senden" build the slip from these
+    rows, its allergy note included. So does a draft its call can still confirm:
+    the call has not ended and the draft is younger than the longest a call may
+    last (docs/04 §confirm, the rule of `reservations/capacity.py`). No config, no
+    `confirm`, so no draft is live. `erase` closes every other draft."""
+    lifetime = timedelta(
+        seconds=session.scalar(
+            select(ServiceConfig.max_call_seconds).where(
+                ServiceConfig.tenant_id == tenant_id
+            )
+        )
+        or 0
+    )
+
+    def live(model: Any, rows: Sequence[Any]) -> set[uuid.UUID]:
+        return set(
+            session.scalars(
+                select(model.id)
+                .join(Call, Call.id == model.call_id)
+                .where(
+                    model.tenant_id == tenant_id,
+                    model.id.in_([row.id for row in rows]),
+                    model.status == "draft",
+                    model.deleted_at.is_(None),
+                    model.created_at > now - lifetime,
+                    Call.ended_at.is_(None),
+                )
+            )
+        )
+
+    drafts = live(Order, orders) | live(Reservation, tables)
     waiting = {
         value
         for payload in session.scalars(
@@ -494,16 +537,21 @@ def _open_rows(
             OpenRow(Order.__tablename__, order.id)
             for order in orders
             if str(order.id) in waiting
+            or order.id in drafts
             or (
                 order.status in OPEN_ORDER_STATUSES
                 and order.deleted_at is None
-                and (order.ready_at or order.created_at) > now
+                and (
+                    order.handover_state != SENT
+                    or (order.ready_at or order.created_at) > now
+                )
             )
         ),
         *(
             OpenRow(Reservation.__tablename__, table.id)
             for table in tables
             if str(table.id) in waiting
+            or table.id in drafts
             or (
                 table.status == "confirmed"
                 and table.deleted_at is None
@@ -531,15 +579,30 @@ def access_copy(
     order_ids = [order.id for order in person.orders]
     table_ids = [table.id for table in person.reservations]
     callback_ids = [callback.id for callback in person.callbacks]
-    lines: dict[uuid.UUID, list[dict[str, Any]]] = defaultdict(list)
-    for line, dish in session.execute(
-        select(OrderItem, MenuItem.name)
-        .join(MenuItem, MenuItem.id == OrderItem.menu_item_id)
+    items: dict[uuid.UUID, list[OrderItem]] = defaultdict(list)
+    for line in session.scalars(
+        select(OrderItem)
         .where(OrderItem.tenant_id == tenant_id, OrderItem.order_id.in_(order_ids))
+        .order_by(OrderItem.order_id, OrderItem.created_at, OrderItem.id)
     ):
-        lines[line.order_id].append(
-            {"dish": dish, **_fields(line, "quantity", "options", "note")}
-        )
+        items[line.order_id].append(line)
+    # What was read back to the guest: a dish can be renamed since the call.
+    stored = current_labels_many(session, order_ids)
+    lines = {
+        order_id: [
+            {
+                "number": number,
+                "dish": dish,
+                **_fields(line, "quantity", "options", "note"),
+            }
+            for line, (number, dish) in zip(
+                rows,
+                labels_for_rows(session, order_id, rows, stored.get(order_id)),
+                strict=True,
+            )
+        ]
+        for order_id, rows in items.items()
+    }
     addresses = session.scalars(
         select(Address).where(
             Address.tenant_id == tenant_id,
@@ -590,7 +653,7 @@ def access_copy(
                         "ready_at",
                         "total_cents",
                     ),
-                    "items": lines[order.id],
+                    "items": lines.get(order.id, []),
                 }
                 for order in person.orders
             ],
@@ -700,7 +763,10 @@ def erase(
     """Every store of U2, all at once: rows that stay stripped keep what the tax
     records need (L18, Art. 17(3)(b)), `consent_log` stays as the proof of L13
     (docs/03). Open rows stop it, so that no second run has to find a person
-    whose name is already gone; `keep` names the ones the guest chose to keep."""
+    whose name is already gone; `keep` names the ones the guest chose to keep. An
+    order draft becomes `cancelled`: `confirm` takes any draft of its call, also
+    of one that ended, and must not send the kitchen one without its notes. A
+    reservation draft is deleted like any finished table."""
     _require(request, "erasure")
     keepable = {row.row_id for row in person.open_rows if row.table in KEEPABLE}
     if not keepable.issuperset(keep):
@@ -765,7 +831,10 @@ def erase(
         session,
         update(Order)
         .where(Order.tenant_id == tenant_id, Order.id.in_(orders))
-        .values(**ORDER_GONE),
+        .values(
+            **ORDER_GONE,
+            status=case((Order.status == "draft", "cancelled"), else_=Order.status),
+        ),
         Order,
         "cleared",
         ledger,

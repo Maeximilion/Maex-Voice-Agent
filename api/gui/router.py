@@ -39,7 +39,7 @@ from api.domain.status import bridge
 from api.domain.status import config as switches
 from api.domain.status import holidays as holiday_days
 from api.domain.status.mode import CAUTION, mode_at
-from api.gui import orders_view
+from api.gui import figures_view, orders_view
 from api.gui.sse import today_event_stream
 from api.models import ServiceConfig, Tenant
 
@@ -317,6 +317,18 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
         }
     return _page_response(
         request, "betrieb/index.html", context, status_code=200 if tenant else 503
+    )
+
+
+@router.get("/kennzahlen", response_class=HTMLResponse, include_in_schema=False)
+def kennzahlen(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+    """Key figures: the four values of the last 7 days and the history (T-8.4)."""
+    tenant = _tenant(session)
+    context: dict = {"problem": NO_TENANT}
+    if tenant is not None:
+        context = {"tenant": tenant, **figures_view.page(session, tenant)}
+    return _page_response(
+        request, "betrieb/kennzahlen.html", context, status_code=200 if tenant else 503
     )
 
 

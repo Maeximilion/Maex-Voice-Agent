@@ -119,6 +119,8 @@ Gebaut (T-4.8): Knopf „Gericht aus" in der Kopfzeile, daneben die Zahl der Ger
 
 **Immer sichtbar, in jedem Bereich:** vier Kennzahlen der letzten 7 Tage — Genauigkeit, Kosten je Bestellung, Anteil an das Team übergeben, verpasste Anrufe. Der Bereich „Kennzahlen" zeigt dann den Verlauf. Bereiche als Reiter, keine Seitenleiste.
 
+**Stand T-8.4 (02.11.2026):** gebaut ist die Seite `/gui/kennzahlen` (Knopf „Kennzahlen“ in der Kopfzeile der Betriebsansicht): oben die vier Werte der letzten 7 Tage, darunter der Verlauf je Betriebstag (14 Tage). Die Leiste in jedem Bereich folgt mit den übrigen Reitern; bis dahin gibt es nur diese Seite. Rechnung in `domain/calls/figures.py`: Genauigkeit = angenommene Bestellungen ohne Korrektur durch das Team, Kosten je Bestellung = Modellkosten der Anrufe durch angenommene Bestellungen, übergeben = Anrufe mit Ergebnis `transferred` oder `callback`, verpasst = `abandoned` oder `error`. Ein Strich heißt: nichts, wodurch geteilt werden könnte.
+
 | Bereich | Inhalt |
 |---|---|
 | **Menü** | Liste mit Suche nach Name oder Nummer, kein Kachel-Raster. Zeile = Nummer grau, Name, Preis, Warnbadges. Aufklappen zeigt Optionen, Allergene und **Aliase mit Trefferzahl**. Darunter **Vorschläge aus Anrufen**: Alias, Anzahl „nicht erkannt", Knopf „Annehmen" (aus der Schattenmessung, Stufe 4). Warnbadges in der Zeile: „Allergene fehlen" (gelb, KI gibt keine Auskunft) · „Kasse: 13,50 €" (rot, Preisabgleich hat eine Abweichung gefunden, Klick übernimmt oder verwirft). Until this area exists, the difference is a card in column 2 of the operations view (§3, T-4.9). |
