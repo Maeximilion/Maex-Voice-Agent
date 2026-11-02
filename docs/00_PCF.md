@@ -482,6 +482,43 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 02.11.2026 - #244 threads, T-6.1, T-6.7, T-6.2 part 1, deps
+Status: merged 01./02.11.2026: #452 (the four open threads of #244), #453
+        (findings 8 and 9 of the audit on 7768182), #454 (T-6.1, migration
+        018), #458 (the team drills on a day with a row of its own), #459
+        (the four Dependabot PRs in one), #460 (T-6.7, customers go after 24
+        months), #461 (a holiday suggestion reaches a tablet left open), #462
+        (T-6.2 part 1, find_customer gives ids and no stored word), and the
+        print bridge's exit code in the PR of this block. No open Dependabot
+        PR, no open security alert. The workbench is at migration 018 (backup
+        before_migration_018) and passes the outage drills 27 of 27; its
+        running images are from before #459. Not run: the real-model eval on
+        FastAPI 0.162 and on #452, T-10.2 on the wire.
+Artifacts: api/models/customers.py, db/migrations/versions/018_customers.py,
+        api/domain/customers/lookup.py, api/tools/find_customer.py,
+        api/agent/guest_details.py (asks_for_a_phone_number).
+Decisions: find_customer gives ids only, against the first draft of docs/04,
+        which L12 forbids. recognition_objections has no period. A shared
+        number without a telling name counts as unknown. All three are under
+        Made Assumptions, awaiting Maxi. T-6.2 part 2 waits for T-6.5 and a
+        real-model run; T-11.3 and the open points marked "Maxi decides" were
+        left alone on purpose.
+Gate: G0 open. It waits for T-10.2 on the wire and two calls at once (T-10.1).
+Open: 1. T-10.2 with Maxi at the telephones (Opus 5.5 xhigh, Ubuntu). Rebuild
+        the workbench images first. 2. T-10.1 scoped audit before the first
+        real guest call, eight agent files. 3. Real-model eval, Maxi names the
+        start. 4. holiday_region = 'BW' on Maxi's word. 5. The four threads on
+        #244 have no reply: the write was denied, they are fixed by #452.
+Lessons: Start the wait on Codex a minute after a push: right away it read the
+        old head and came back clean. Editing a PR body re-runs the required
+        title check, so the merge is refused for a moment. BACKUP_PASSPHRASE_FILE
+        and BACKUP_DOCKER_NETWORK are empty in the workbench .env: pass
+        ~/.config/maex-voice-agent/backup.passphrase and
+        maex-voice-agent_default by hand. Merging Dependabot's branches into
+        one PR marks their PRs as merged.
+```
+
+```text
 ## Handover 30.10.2026 - #437, T-9.5, #441 next
 Status: merged today #437 (a call that carries only noise goes to the team,
         18701bb) and #439 (T-9.5, holiday suggestions, migration 015,

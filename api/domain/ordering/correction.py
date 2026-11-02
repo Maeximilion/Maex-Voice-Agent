@@ -109,7 +109,7 @@ class PlannedLine:
     options: list[dict]
     note: str | None
     menu_item_id: uuid.UUID
-    # Only for swapped and new positions: the choice the tablet offers.
+    # Only where the team entered a number: the choice the tablet offers.
     groups: list[OptionGroup] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     sold_out: bool = False
@@ -394,6 +394,16 @@ def _plan(
     planned_rows = []
     for row, (number, name), edit in zip(rows, labels, edits, strict=True):
         quantity = _quantity(edit.quantity, allow_zero=True)
+        stored = PlannedLine(
+            "changed" if quantity != row.quantity else "kept",
+            number,
+            name,
+            quantity,
+            row.unit_price_cents,
+            row.options,
+            row.note,
+            row.menu_item_id,
+        )
         if quantity == 0:
             kind = "removed"
             line = PlannedLine(
@@ -420,18 +430,13 @@ def _plan(
             if edit.swap_to == row.menu_item_id:
                 # Only the choice was swapped: the base price stays frozen.
                 line.unit_price_cents = row.unit_price_cents
+                if _choice_keys(line.options) == _choice_keys(row.options):
+                    # Nothing was swapped: the stored row stands, as without a
+                    # tap. Only its choices stay offered for the next one.
+                    stored.groups = line.groups
+                    line = stored
         else:
-            kind = "changed" if quantity != row.quantity else "kept"
-            line = PlannedLine(
-                kind,
-                number,
-                name,
-                quantity,
-                row.unit_price_cents,
-                row.options,
-                row.note,
-                row.menu_item_id,
-            )
+            line = stored
         line.order_item_id = row.id
         planned_rows.append(line)
 
@@ -479,6 +484,11 @@ def _plan(
         blockers=blockers,
         reasons=_reasons(order),
     )
+
+
+def _choice_keys(options: list[dict]) -> list[tuple[str, str]]:
+    """Which options, whatever their order, spelling and frozen price."""
+    return sorted((option_key(o["group"]), option_key(o["option"])) for o in options)
 
 
 def _quantity(value: int, allow_zero: bool = False) -> int:

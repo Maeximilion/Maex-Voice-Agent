@@ -110,7 +110,7 @@ Gast darauf, ist es eine Beschwerde und geht ans Team.
 ### Lieferung
 Zusätzlich: **Adresse**
 ```text
-find_customer hat Adresse  → "Wieder an …?" → Ja genügt
+find_customer hat Adresse  → "An dieselbe Adresse wie beim letzten Mal?" → Ja genügt (L12: nie die Adresse selbst)
 sonst                      → PLZ → Straße (buchstabieren) → Hausnummer (Tastatur)
 → check_delivery
    out_of_zone    → Abholung anbieten

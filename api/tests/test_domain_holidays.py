@@ -2,7 +2,7 @@
 no hours until the team answers, the answers, the pass over tenants (T-9.5)."""
 
 import uuid
-from datetime import UTC, date, datetime, time
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -194,6 +194,27 @@ def test_open_suggestions_leave_out_past_and_answered_days(session, tenant_id):
 
 
 # --- answers --------------------------------------------------------------------
+
+
+def test_the_token_moves_with_the_open_suggestions(session, tenant_id):
+    """What the event stream compares (gui/sse.py). A date that passes moves it
+    too: the card goes at midnight."""
+    day = date(2026, 10, 3)
+    empty = days.suggestions_change_token(session, tenant_id, day)
+
+    row = _suggested(session, tenant_id, day)
+    session.commit()
+    shown = days.suggestions_change_token(session, tenant_id, day)
+    assert shown != empty
+    assert days.suggestions_change_token(session, tenant_id, day) == shown
+
+    assert (
+        days.suggestions_change_token(session, tenant_id, day + timedelta(1)) == empty
+    )
+
+    days.answer(session, tenant_id, row.id, days.CLOSED)
+    session.commit()
+    assert days.suggestions_change_token(session, tenant_id, day) == empty
 
 
 def _suggested(session, tenant_id, day: date) -> SpecialDay:

@@ -24,6 +24,12 @@
       {% if o.pickup_code %}<span class="code" title="Abholcode">{{ o.pickup_code }}</span>{% endif %}
     </div>
     <div class="name">{{ o.name }} <span class="muted">&middot; {{ o.phone }}</span></div>
+    {% if o.delivery %}
+    <div class="address">
+      {% if o.address %}{{ o.address }}{% if o.floor_note %} <span class="muted">&middot; {{ o.floor_note }}</span>{% endif %}
+      {% else %}<span class="badge danger">Adresse fehlt</span>{% endif %}
+    </div>
+    {% endif %}
     {% if o.note %}<div class="note">Für die ganze Bestellung: {{ o.note }}</div>{% endif %}
     <ul class="lines">
       {% for l in o.lines %}
@@ -36,6 +42,7 @@
     </ul>
     <div class="order-foot">
       <b>{{ o.total }}</b>
+      {% if o.fee %}<span>Lieferpauschale {{ o.fee }}</span>{% endif %}
       {% if o.ready %}<span>fertig {{ o.ready }}</span>{% endif %}
     </div>
     <div class="state">

@@ -7,6 +7,7 @@ closed, or the weekday's hours as always (`dismissed`, never suggested again).
 The code never decides the hours (CLAUDE.md §2 rule 1).
 """
 
+import hashlib
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -186,6 +187,14 @@ def open_suggestions(
         .order_by(SpecialDay.date)
     ).all()
     return [Suggestion(row.id, row.date, row.note or "", _like(row)) for row in rows]
+
+
+def suggestions_change_token(
+    session: Session, tenant_id: uuid.UUID, today: date
+) -> str:
+    """A fingerprint of the open suggestions for the event stream (gui/sse.py)."""
+    ids = ",".join(str(s.id) for s in open_suggestions(session, tenant_id, today))
+    return hashlib.sha256(ids.encode()).hexdigest()[:16]
 
 
 def answer(

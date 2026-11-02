@@ -658,7 +658,7 @@ What step 2 does not answer yet: two calls at once over the router (no second te
 by its own limit, §3), transfer from the IP telephone and what a second and third caller hear
 (T-10.2).
 
-### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, run set for 02.11.2026)
+### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, not run, date with Maxi)
 
 | | |
 |---|---|
@@ -687,6 +687,8 @@ up -d`):
 | Asterisk is down | `stop asterisk`, and once `kill asterisk`; whether the router drops the registration at once or holds it up to its 300 s is what the row shows | calls; which telephones ring, and after how long |
 | A second and a third caller | nothing; the AI takes one call at a time (`max_concurrent_calls` 1) | while one call talks to the AI, a second caller calls (the core hands it to the team), then a third (the router's limit of 2 calls per IP telephone): what each hears |
 | Loop test | `stop asterisk` | calls the number `TEAM_PHONE` names: a team telephone rings, nothing ends at the test number |
+
+**With two mobiles (Maxi, 02.11.2026).** No team telephone at hand and nobody watching it, so its ringing is assumed for now. Each row is still run: one mobile calls, and what counts is what the caller hears and the `to the team` and `team leg ...` lines of Asterisk with their times. The row "A live call handed to the team" shows only the leg, not the talk or the caller's number the team sees; the row with a third caller shows two callers, not the router's limit. The go of T-10.2 and those two points stay open until someone watches the team telephone.
 
 Not covered here: anything that needs the trunk (T-10.12). The tunnel and `ACCESS_ALSO` are looked
 up once, so a new public address of the router during the run shows as `asterisk` unhealthy (not

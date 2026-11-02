@@ -37,6 +37,7 @@ from api.models import (
     Call,
     Callback,
     ConsentLog,
+    Customer,
     Order,
     OrderItem,
     OutboxEvent,
@@ -96,6 +97,15 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
                 or_(Callback.phone != "", Callback.summary != ""),
             )
             .values(phone="", summary=""),
+        ),
+        # For real: the addresses go with it, an order keeps only cleared
+        # links (migration 018), and an objection hangs on the number.
+        "customers": lambda: _run(
+            session,
+            delete(Customer).where(
+                Customer.last_contact_at
+                < now - timedelta(days=settings.retention_customer_days)
+            ),
         ),
         "outbox_payloads": lambda: _outbox_payloads(session, now),
         "outbox_rows": lambda: _run(

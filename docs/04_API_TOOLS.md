@@ -68,7 +68,7 @@ Geschlossen → `is_open: false` plus `say` mit den nächsten Öffnungszeiten.
 ## `find_customer`
 Nur sinnvoll, wenn die Nummer übermittelt wurde.
 
-**Request** `{ "call_id": "…", "tenant_id": "…", "caller_id": "+4972215551234" }`
+**Request** `{ "call_id": "…", "tenant_id": "…", "caller_id": "+4972215551234", "guest_name": "Müller" }`; `guest_name` is optional, what the guest said
 
 **Response**
 ```json
@@ -77,16 +77,16 @@ Nur sinnvoll, wenn die Nummer übermittelt wurde.
   "data": {
     "found": true,
     "customer_id": "…",
-    "name": "Herr Müller",
-    "addresses": [
-      { "address_id": "…", "label": "Musterstraße 1, 12345 Musterstadt", "is_default": true }
-    ],
-    "order_count": 12
+    "address_id": "…"
   },
-  "say": "Wieder an die Rheinstraße 54?"
+  "say": "An dieselbe Adresse wie beim letzten Mal?"
 }
 ```
-Unbekannt → `found: false`, `say: null`. **Nie** raten, welcher Kunde gemeint sein könnte.
+Ids only (legal check L12): the agent never says stored data aloud unprompted, so no name, address or order count leaves the tool, and the model cannot say what it was not given. `address_id` is the default address, `say` the question for it; without a default address both are null.
+
+Unbekannt → `found: false`, `say: null`. **Nie** raten, welcher Kunde gemeint sein könnte. The same `found: false` for an objection to recognition on the number (`recognition_objections`), a blocked customer, several customers on the number without a `guest_name` that tells them apart, and a name that does not match: that is a new customer, the record of the other stays closed.
+
+Built as an HTTP tool (T-6.2 part 1, 01.11.2026). The core does not call it yet: it is not in `dispatch.TOOLS` and the prompt names it as not available, and nothing writes a customer before T-6.5.
 
 ---
 

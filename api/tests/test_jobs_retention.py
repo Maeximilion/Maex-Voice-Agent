@@ -22,6 +22,7 @@ from api.models import (
     Order,
     OrderItem,
     OutboxEvent,
+    RecognitionObjection,
     Reservation,
     Tenant,
 )
@@ -180,6 +181,72 @@ def test_caller_number_goes_after_90_days_and_the_statistics_stay(session, tenan
 
 
 # --- orders and reservations: guest details 90 days after their date ---------------
+
+
+def _a_guest(session, tenant_id, last_contact_at):
+    customer = _customer(session, tenant_id)
+    customer.last_contact_at = last_contact_at
+    session.add(
+        Address(
+            tenant_id=tenant_id,
+            customer_id=customer.id,
+            street="Hauptstr.",
+            house_number="1",
+            postal_code="76530",
+            city="Ort",
+        )
+    )
+    session.flush()
+    return customer.id
+
+
+def _customers(session):
+    return set(session.scalars(select(Customer.id)))
+
+
+def test_a_customer_goes_with_the_addresses_after_24_months(session, tenant_id):
+    """T-6.7, docs/03: from the last contact, not from the first order."""
+    period = settings.retention_customer_days * DAY
+    _a_guest(session, tenant_id, NOW - period - DAY)
+    stays = _a_guest(session, tenant_id, NOW - period + DAY)
+    at_the_limit = _a_guest(session, tenant_id, NOW - period)
+    session.commit()
+
+    counts = purge(session, NOW)
+
+    assert counts["customers"] == 1
+    assert _customers(session) == {stays, at_the_limit}
+    left = session.scalars(select(Address.customer_id)).all()
+    assert sorted(left) == sorted([stays, at_the_limit])
+
+
+def test_a_deleted_customer_leaves_the_order_and_the_objection(session, tenant_id):
+    """The order is a tax row (L18), and the objection hangs on the number and
+    outlives the customer (L12)."""
+    order = _order(session, tenant_id, NOW - 89 * DAY)
+    customer = session.get(Customer, order.customer_id)
+    customer.last_contact_at = NOW - settings.retention_customer_days * DAY - DAY
+    session.add(RecognitionObjection(tenant_id=tenant_id, phone=customer.phone))
+    session.commit()
+
+    purge(session, NOW)
+
+    assert _customers(session) == set()
+    kept = _fresh(session, order)
+    assert kept.customer_id is None
+    assert (kept.customer_name, kept.total_cents) == ("Mueller", 1980)
+    assert session.scalar(select(RecognitionObjection.phone)) == "+497215551234"
+
+
+def test_a_contact_within_the_period_keeps_the_customer(session, tenant_id):
+    customer = _a_guest(
+        session, tenant_id, NOW - 2 * settings.retention_customer_days * DAY
+    )
+    session.get(Customer, customer).last_contact_at = NOW - DAY
+    session.commit()
+
+    assert purge(session, NOW)["customers"] == 0
+    assert _customers(session) == {customer}
 
 
 def test_a_delivery_loses_its_address_link_after_90_days(session, tenant_id):

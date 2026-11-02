@@ -820,6 +820,32 @@ def test_ein_feiertagsvorschlag_steht_mit_drei_antworten_auf_der_seite(
         assert f"/gui/feiertage/{sid}/{choice}" in body
 
 
+def test_the_holiday_list_comes_alone(client, engine, tenant_id):
+    """#207: what the page reloads when the event stream says the list moved."""
+    sid, _ = feiertag(engine, tenant_id)
+
+    response = client.get("/gui/fragments/feiertage")
+
+    assert response.status_code == 200
+    assert f"/gui/feiertage/{sid}/wie" in response.text
+    assert "<html" not in response.text
+
+
+def test_the_holiday_list_is_empty_without_a_suggestion(client, tenant_id):
+    assert client.get("/gui/fragments/feiertage").text.strip() == ""
+
+
+def test_the_page_reloads_the_holiday_list_on_its_event():
+    """No JS test run in the project, so the contract as a text check."""
+    js = (Path(__file__).resolve().parents[1] / "gui" / "static" / "app.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'strom.addEventListener("holidays"' in js
+    assert '"/gui/fragments/feiertage"' in js
+    assert 'target: "#feiertage-liste"' in js
+
+
 def test_ohne_vorschlag_bleibt_der_kasten_leer(client, tenant_id):
     assert "Feiertage" not in client.get("/gui").text
 

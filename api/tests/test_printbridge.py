@@ -466,6 +466,57 @@ def test_probebon_ohne_server(monkeypatch):
     assert uuid.UUID(SAMPLE["order_id"])
 
 
+@pytest.fixture
+def bridge_env(monkeypatch, tmp_path):
+    for name, value in (
+        ("MAEX_PRINTER", "tcp:127.0.0.1"),
+        ("MAEX_SERVER_URL", "https://server"),
+        ("MAEX_KITCHEN_TOKEN", "token"),
+        ("MAEX_TENANT_ID", str(uuid.uuid4())),
+        ("MAEX_STATE_FILE", str(tmp_path / "state.json")),
+    ):
+        monkeypatch.setenv(name, value)
+
+
+def test_once_reports_a_failed_run(monkeypatch, bridge_env):
+    """Codex PR #143: `--once` is the check after an installation, and a script
+    could not tell a failed one from a good one."""
+
+    def fails(*_):
+        raise ServerError("server gone")
+
+    monkeypatch.setattr("printbridge.bridge.run_once", fails)
+
+    assert main(["--once"]) == 1
+
+
+def test_once_reports_a_good_run(monkeypatch, bridge_env):
+    monkeypatch.setattr("printbridge.bridge.run_once", lambda *_: 0)
+
+    assert main(["--once"]) == 0
+
+
+def test_the_loop_goes_on_after_a_failed_run(monkeypatch, bridge_env):
+    """The bridge never dies: only the one-shot run ends on an error."""
+    runs = []
+
+    def fails(*_):
+        runs.append(1)
+        raise ServerError("server gone")
+
+    def second_run_ends_the_test(_):
+        if len(runs) == 2:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr("printbridge.bridge.run_once", fails)
+    monkeypatch.setattr("printbridge.bridge.time.sleep", second_run_ends_the_test)
+
+    with pytest.raises(KeyboardInterrupt):
+        main([])
+
+    assert len(runs) == 2
+
+
 def test_gescheiterte_meldung_haelt_die_uebrigen_bons_nicht_auf(tmp_path):
     tickets = [
         {"id": f"e{n}", "ticket": {**TICKET, "order_id": f"o{n}"}} for n in range(3)

@@ -15,7 +15,7 @@ from api.domain.ordering import draft_order
 from api.domain.ordering.correction import RowEdit
 from api.events.types import ORDER_CONFIRMED
 from api.main import app
-from api.models import ItemOption, Order, OrderItem, OutboxEvent
+from api.models import Address, Customer, ItemOption, Order, OrderItem, OutboxEvent
 from api.tests.conftest import p95_ms
 from api.tests.test_domain_confirm_order import _confirm, _mode
 from api.tests.test_domain_draft_order import NOW, _call, _tenant, item, request
@@ -71,6 +71,32 @@ def _order(db, tenant_id, mode="overflow", note=None, order_note=None) -> uuid.U
     order_id = draft_order(db, req, now=NOW).order_id
     _confirm(db, tenant_id, call_id, order_id)
     return order_id
+
+
+def _delivery(db, tenant_id, order_id, floor_note=None, with_address=True, fee=250):
+    """Turn a stored order into a delivery, as T-6.5 will write it."""
+    order = db.get(Order, order_id)
+    if with_address:
+        customer = Customer(tenant_id=tenant_id, phone="+4972215551234", name="Gast")
+        db.add(customer)
+        db.flush()
+        address = Address(
+            tenant_id=tenant_id,
+            customer_id=customer.id,
+            street="Hauptstraße",
+            house_number="12a",
+            postal_code="76133",
+            city="Karlsruhe",
+            floor_note=floor_note,
+        )
+        db.add(address)
+        db.flush()
+        order.address_id = address.id
+    order.type = "delivery"
+    order.pickup_code = None
+    order.delivery_fee_cents = fee
+    order.total_cents = order.items_total_cents + fee
+    db.commit()
 
 
 def _state(html: str) -> str:
@@ -254,6 +280,53 @@ def test_korrektur_two_extras_of_one_optional_group_per_tap(client, db, tenant_i
     assert len([c for c in after if c[0] == "Sauce"]) == 1
 
 
+def test_korrektur_same_number_counts_nothing_and_keeps_the_choice(
+    client, db, tenant_id
+):
+    """Tauschen with the line's own number is how the team reaches its choices.
+
+    Nothing is changed by that alone, but the buttons have to stay: an extra
+    on a line without options can be added no other way.
+    """
+    db.add(
+        ItemOption(
+            menu_item_id=item(db, tenant_id, "23"),
+            group_name="Dip",
+            option_name="Chili",
+            price_delta_cents=100,
+        )
+    )
+    db.commit()
+    order_id = _order(db, tenant_id)
+    base = f"/gui/bestellungen/{order_id}/korrigieren"
+
+    def tap(html: str, op: str, number: str = "") -> str:
+        data = {"state": _state(html), "op": op, "number": number}
+        return client.post(f"{base}/vorschau", data=data, headers=HX).text
+
+    html = tap(client.get(base).text, "swap:0")
+    html = tap(html, "number", "23")
+    assert "Noch nichts geändert." in html
+    assert "getauscht" not in html
+    assert "Chili" in html
+
+    html = tap(html, "opt:r:0:0:0")
+    assert "Gewählt: Chili" in html
+    assert "getauscht" in html
+    assert "Noch nichts geändert." not in html
+
+    html = tap(html, "opt:r:0:0:0")  # off again: back at the stored row
+    assert "Noch nichts geändert." in html
+
+    html = tap(html, "opt:r:0:0:0")
+    saved = client.post(
+        base, data={"state": _state(html), "reason": "other"}, headers=HX
+    )
+    assert saved.status_code == 200
+    # 2 x (6,90 + 1,00)
+    assert _fresh(db, order_id).total_cents == 1580
+
+
 def test_card_shows_the_note_of_the_whole_order(client, db, tenant_id):
     """D24: an allergy not tied to a dish stands on the card above the dishes."""
     _order(db, tenant_id, order_note="WICHTIG: Keine Sesam. Grund: Allergie")
@@ -267,6 +340,44 @@ def test_card_without_a_note_of_the_whole_order_has_no_line_for_it(
 ):
     _order(db, tenant_id)
     assert "ganze Bestellung" not in client.get("/gui").text
+
+
+def test_delivery_card_shows_address_floor_and_fee(client, db, tenant_id):
+    order_id = _order(db, tenant_id)
+    _delivery(db, tenant_id, order_id, floor_note="3. Stock links")
+    html = client.get("/gui").text
+    assert "Lieferung" in html
+    assert "Hauptstraße 12a, 76133 Karlsruhe" in html
+    assert "3. Stock links" in html
+    assert "Lieferpauschale 2,50 €" in html
+    assert "Abholcode" not in html
+
+
+def test_delivery_card_without_floor_note_has_no_floor_line(client, db, tenant_id):
+    order_id = _order(db, tenant_id)
+    _delivery(db, tenant_id, order_id)
+    html = client.get("/gui").text
+    assert "Hauptstraße 12a, 76133 Karlsruhe" in html
+    assert "Stockwerk" not in html
+
+
+def test_delivery_card_without_address_still_renders(client, db, tenant_id):
+    order_id = _order(db, tenant_id)
+    _delivery(db, tenant_id, order_id, with_address=False, fee=0)
+    html = client.get("/gui").text
+    assert f'data-id="{order_id}"' in html
+    assert "Adresse fehlt" in html
+    assert "Lieferpauschale" not in html
+
+
+def test_pickup_card_has_no_address_or_fee_line(client, db, tenant_id):
+    _order(db, tenant_id)
+    html = client.get("/gui").text
+    assert (
+        "Lieferpauschale" not in html
+        and "Adresse fehlt" not in html
+        and "Hauptstra" not in html
+    )
 
 
 def test_hinweis_zeile_faellt_nicht_mit_minus_weg(client, db, tenant_id):
