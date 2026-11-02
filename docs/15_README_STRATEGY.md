@@ -102,6 +102,8 @@ The logo is **MÆX**: the ligature Æ, in which the A and the E share one stroke
 | `coral` | `#FF5277` | Crashed, blocked, a hard violation, a no-go; never anything else |
 | `plum` | `#76699F` | Not passed, open, planned |
 
+The operations view uses the same palette with the same meanings (D27, `api/gui/static/app.css`).
+
 Checked with the colour validator of the `dataviz` skill against `surface` (14.10.2026): every adjacent pair passes the colour-blind separation and the normal-vision floor, and every colour has at least 3:1 contrast. Neon yellow sits above the lightness band on purpose; it is the brand, and every mark in it carries a text label, so identity never rests on colour alone. Type is the system monospace stack; nothing loads a web font or a script.
 
 ### The images
