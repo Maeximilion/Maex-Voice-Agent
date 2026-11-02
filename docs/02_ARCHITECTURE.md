@@ -147,7 +147,7 @@ A call that reaches the agent in `shadow` or `paused` anyway is transferred to t
 | Datum | Master | Kopie |
 |---|---|---|
 | Umsätze und Bons | <Kassensystem> (TSE) | – |
-| Menü und Preise | Kasse (`.dbf`-Kopie, docs/14 §Quelle Kasse) | Agent-DB mit wöchentlichem Abgleich-Check, Schlüssel ist die Artikelnummer der Kasse |
+| Menü und Preise | Kasse (`.dbf`-Kopie, docs/14 §Quelle Kasse) | Agent-DB mit Abgleich-Check, Schlüssel ist die Artikelnummer der Kasse. The check is built (`scripts/price_check.py`, T-4.9) and runs by hand after each copy; weekly is the aim, nothing brings the copy to the server yet. A price changes only by a person's step |
 | Öffnungszeiten, Wartezeit, Zonen | Agent-DB | GUI zeigt an |
 | Kundenstamm für die Telefonerkennung | Agent-DB | – |
 | Anrufaufnahmen und Transkripte | EU-Server, verschlüsselter Speicher, mit Löschfrist | nie im Repo, nie auf Maxis PC |

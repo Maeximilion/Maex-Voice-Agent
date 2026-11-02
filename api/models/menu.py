@@ -46,6 +46,13 @@ class MenuItem(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
         # Position darf nur auf ein Gericht desselben Mandanten zeigen.
         UniqueConstraint("id", "tenant_id", name="uq_menu_items_id_tenant"),
         CheckConstraint("price_cents >= 0", name="ck_menu_items_price_cents"),
+        CheckConstraint(
+            "register_price_cents >= 0", name="ck_menu_items_register_price_cents"
+        ),
+        CheckConstraint(
+            "NOT register_price_rejected OR register_price_cents IS NOT NULL",
+            name="ck_menu_items_register_price_rejected",
+        ),
         # Trigram-Suche fuer search_menu (docs/04): "Fruehlingsrolle" findet
         # "Frühlingsrollen (4 Stück)" auch bei Tippfehlern der Erkennung.
         Index(
@@ -68,6 +75,14 @@ class MenuItem(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     # Artikelnummer genau wie in der Kasse ("35B"); `number` ist klein für die
     # Suche. Eingabezettel und Kassenübergabe brauchen diese Schreibweise (T-4.11).
     pos_code: Mapped[str | None] = mapped_column(Text)
+    # What the last price check read where the register differs (T-4.9). Never
+    # a price the agent says: only `domain/menu/price_check.decide` moves it to
+    # `price_cents`, on a person's tap.
+    register_price_cents: Mapped[int | None] = mapped_column(Integer)
+    # The team rejected exactly that price; another one shows again.
+    register_price_rejected: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
 
 
 class ItemOption(UUIDPrimaryKey, Timestamps, Base):

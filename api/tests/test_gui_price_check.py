@@ -165,6 +165,19 @@ def test_a_price_changes_only_with_the_page_token(client, db, tenant_id, headers
     assert price(db, dish) == 690
 
 
+@pytest.mark.parametrize("cents", ["0", "-720", "99999999999", str(10**30)])
+def test_a_price_in_the_address_is_never_taken(client, db, tenant_id, cents):
+    """The price comes from the database only: the address can name the one on
+    the card and nothing else, and a wild number is no server error."""
+    dish = difference(db, tenant_id)
+
+    answer = client.post(f"/gui/preise/{dish}/{cents}/uebernehmen", headers=HX)
+
+    assert answer.status_code == 200
+    assert "Kasse: 7,20 €" in answer.text
+    assert price(db, dish) == 690
+
+
 def test_a_get_never_changes_a_price(client, db, tenant_id):
     dish = difference(db, tenant_id)
 
@@ -173,7 +186,9 @@ def test_a_get_never_changes_a_price(client, db, tenant_id):
 
 
 def test_the_page_reloads_the_list_on_the_event():
-    script = Path("api/gui/static/app.js").read_text(encoding="utf-8")
+    script = (Path(__file__).parents[1] / "gui/static/app.js").read_text(
+        encoding="utf-8"
+    )
 
     assert 'strom.addEventListener("prices"' in script
     assert '"/gui/fragments/preise"' in script

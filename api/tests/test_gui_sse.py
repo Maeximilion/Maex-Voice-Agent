@@ -239,7 +239,7 @@ def test_neuer_rueckruf_sendet_nur_callbacks(monkeypatch):
     assert [c for c in chunks if c.startswith("event:")][-1] == (
         "event: callbacks\ndata: 1:y\n\n"
     )
-    assert len([c for c in chunks if c.startswith("event:")]) == 7
+    assert len([c for c in chunks if c.startswith("event:")]) == 8
 
 
 def test_kopfzeile_ohne_datenbank_meldet_problem(monkeypatch):

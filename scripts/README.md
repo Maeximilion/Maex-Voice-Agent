@@ -6,7 +6,7 @@
 | `import_menu.py` | Load CSV per `docs/14_MENU_IMPORT_FORMAT.md`, `--dry-run`, `--deactivate-missing` (refuses an empty file or more than half the active menu unless `--allow-large-deactivation`) | T-4.2, T-4.11 |
 | `seed_zones.py` | Delivery zones from CSV per `docs/14_MENU_IMPORT_FORMAT.md`, `--dry-run`; an overlap or any other error writes nothing | T-6.9 |
 | `kasse_to_csv.py` | Register `.dbf` copies in `imports/kasse/` to the CSV files of docs/14, read-only | T-4.11 |
-| `menu_diff.py` | Price register vs. agent DB | T-4.9 |
+| `price_check.py` | Register `.dbf` copies against the agent database: differences per dish in cents, `--dry-run`; changes no price, open differences go to the tablet (docs/14 §Quelle Kasse) | T-4.9 |
 | `backup.sh` / `restore.sh` | Encrypted `pg_dump` of the database of `DATABASE_URL`; restore into a new database with `--check` (rehearsal) or `--replace` (swap by rename). `lib_pg.sh` is their shared part. Usage in `docs/13_DEPLOYMENT.md` §4 | T-9.3 |
 | `db_role.sh` | The application's own database role without superuser: creates or updates the user of `DATABASE_URL` as the owner (`OWNER_DATABASE_URL`), then logs in as that role and checks what it holds. Safe to run again, changes no data. Usage in `docs/13_DEPLOYMENT.md` §3 | #252 |
 | `migrate.sh` | Alembic as the owner of the schema, in a one-off container of the `api` service; `make migrate` calls it. Arguments go to Alembic, default `upgrade head` | #252 |

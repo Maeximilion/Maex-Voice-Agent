@@ -21,6 +21,9 @@
     <div id="feiertage-liste">
       {% include "fragments/feiertage.html" %}
     </div>
+    <div id="preise-liste">
+      {% include "fragments/preise.html" %}
+    </div>
     {# Ziel des Ereignisstroms: app.js holt dieses Fragment neu, sobald sich an
        den Reservierungen des Tages etwas aendert. #}
     <div id="heute-liste" hx-get="/gui/fragments/heute" hx-trigger="none">

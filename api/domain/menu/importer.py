@@ -20,8 +20,9 @@ forgotten dish should not vanish silently. The report names them. With
 never deleted.
 
 Prices from the file replace an existing price only with
-`apply_price_changes`; without it they appear as "Preisänderung" in the
-report. Money only as integer cents, never via float (CLAUDE.md §8).
+`apply_price_changes`, the surcharge of an existing option too (T-4.9);
+without it they appear as "Preisänderung" in the report. Money only as integer
+cents, never via float (CLAUDE.md §8).
 """
 
 import contextlib
@@ -184,6 +185,10 @@ class Report:
     items_deactivated: list[str] = field(default_factory=list)
     # (Nummer, alt, neu) in Cent
     price_changes: list[tuple[str, int, int]] = field(default_factory=list)
+    # (Nummer, Gruppe, Option, alt, neu) in Cent: the surcharge of an existing option.
+    option_price_changes: list[tuple[str, str, str, int, int]] = field(
+        default_factory=list
+    )
     price_changes_applied: bool = False
     # Hint at --deactivate-missing only for a register file without the switch.
     suggest_deactivate: bool = False
@@ -223,18 +228,24 @@ class Report:
         ]
         if self.allergens_changed:
             lines.append("Allergene geändert bei: " + ", ".join(self.allergens_changed))
+        if not self.price_changes_applied:
+            state = "NICHT übernommen"
+        elif self.dry_run:
+            # A dry run rolls back: "übernommen" would be a lie (Codex PR #115).
+            state = "würde übernommen"
+        else:
+            state = "übernommen"
         for number, old, new in self.price_changes:
-            if not self.price_changes_applied:
-                state = "NICHT übernommen"
-            elif self.dry_run:
-                # A dry run rolls back: "übernommen" would be a lie (Codex PR #115).
-                state = "würde übernommen"
-            else:
-                state = "übernommen"
             lines.append(
                 f"Preisänderung {number}: {_eur(old)} -> {_eur(new)} ({state})"
             )
-        if self.price_changes and not self.price_changes_applied:
+        for number, group, option, old, new in self.option_price_changes:
+            lines.append(
+                f"Preisänderung {number} {group}/{option}: "
+                f"{_eur(old)} -> {_eur(new)} ({state})"
+            )
+        any_price = self.price_changes or self.option_price_changes
+        if any_price and not self.price_changes_applied:
             lines.append("Preise übernehmen mit --apply-price-changes.")
         if self.items_deactivated:
             state = "würden deaktiviert" if self.dry_run else "deaktiviert"
@@ -255,7 +266,7 @@ class Report:
                     "--deactivate-missing."
                 )
         lines += [f"Warnung: {w}" for w in self.warnings]
-        if not self.changed and not self.price_changes:
+        if not self.changed and not any_price:
             lines.append("Keine Änderung - die Karte ist schon auf diesem Stand.")
         return "\n".join(lines)
 
@@ -697,6 +708,11 @@ def apply(
                 report.price_changes.append((number, item.price_cents, row.price_cents))
                 if apply_price_changes:
                     item.price_cents = row.price_cents
+            if item.price_cents == row.price_cents:
+                # In line with the file: a card from an earlier price check
+                # would offer a stale price (T-4.9).
+                item.register_price_cents = None
+                item.register_price_rejected = False
         items[number] = item
     session.flush()
 
@@ -721,6 +737,10 @@ def apply(
                     "price_changes": [
                         {"number": n, "from": old, "to": new}
                         for n, old, new in report.price_changes
+                    ],
+                    "option_price_changes": [
+                        {"number": n, "group": g, "option": o, "from": old, "to": new}
+                        for n, g, o, old, new in report.option_price_changes
                     ],
                     "price_changes_applied": apply_price_changes,
                     "items_deactivated": report.items_deactivated,
@@ -794,7 +814,21 @@ def _sync_options(
             if row.price_reason is None
             else row.price_reason or None
         )
-        values = (row.price_delta_cents, row.is_default, row.required, reason)
+        delta = row.price_delta_cents
+        if option.price_delta_cents != delta:
+            report.option_price_changes.append(
+                (
+                    item.number,
+                    row.group_name,
+                    row.option_name,
+                    option.price_delta_cents,
+                    delta,
+                )
+            )
+            # A surcharge is a price: like the dish's, only with the switch (T-4.9).
+            if not report.price_changes_applied:
+                delta = option.price_delta_cents
+        values = (delta, row.is_default, row.required, reason)
         current_values = (
             option.price_delta_cents,
             option.is_default,

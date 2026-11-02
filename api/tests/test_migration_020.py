@@ -102,6 +102,6 @@ def test_downgrade_drops_the_columns_and_keeps_the_price(scratch_db_url):
                 690,
             )
         command.upgrade(_config(scratch_db_url), "head")
-        assert COLUMNS <= _columns(scratch_db_url)
+        assert _columns(scratch_db_url) >= COLUMNS
     finally:
         engine.dispose()

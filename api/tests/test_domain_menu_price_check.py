@@ -250,7 +250,9 @@ def test_a_rejected_difference_cannot_be_taken_later(session, tenant_id):
 
 def test_a_dish_of_another_tenant_is_not_found(session, tenant_id):
     check(session, tenant_id, PRICE_720)
-    other = uuid.UUID(seed(session, tenant_name="Anderer").tenant_id)
+    other = uuid.UUID(
+        seed(session, tenant_name="Anderer", timezone="Europe/Berlin").tenant_id
+    )
 
     with pytest.raises(NotFound):
         price_check.decide(
@@ -402,6 +404,7 @@ def test_script_reports_a_surcharge_and_changes_no_option(
     out = capsys.readouterr().out
     assert "Surcharge 1 Miso Suppe, Größe/groß: 400 -> 450 cents" in out
     assert "--apply-price-changes" in out
+    assert "Open differences" not in out
     session.expire_all()
     groß = session.scalar(select(ItemOption).where(ItemOption.option_name == "groß"))
     assert groß.price_delta_cents == 400
@@ -420,6 +423,7 @@ def test_script_marks_a_rejected_difference(
 
     out = capsys.readouterr().out
     assert "600 -> 650 cents (6,00 € -> 6,50 €), rejected on the tablet" in out
+    assert "Open differences" not in out
 
 
 def test_script_names_register_errors(

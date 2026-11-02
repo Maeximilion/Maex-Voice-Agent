@@ -66,6 +66,12 @@
     });
   }
 
+  function preise() {
+    window.htmx.ajax("GET", "/gui/fragments/preise", {
+      target: "#preise-liste",
+    });
+  }
+
   // Ton bei neuen Rueckrufen (docs/06 §1 Regel 5), Beschwerden mit eigenem Ton
   // (§3). Erzeugt statt Audiodatei: nichts nachzuladen, laeuft ohne Internet.
   // Browser spielen erst nach dem ersten Tap auf die Seite Ton ab; am Tablet
@@ -273,6 +279,11 @@
   strom.addEventListener("holidays", function () {
     offline(false);
     feiertage();
+  });
+  // The price check found a difference, or another tablet answered one (T-4.9).
+  strom.addEventListener("prices", function () {
+    offline(false);
+    preise();
   });
   strom.addEventListener("today", function () {
     offline(false);
