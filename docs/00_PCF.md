@@ -494,7 +494,8 @@ State at 18:00, moved to the Ubuntu terminal (replaces the Status line above whe
 - #479 T-10.11 head `6c1efeb`, migration 021 with parent 019, Codex clean, conflicts on `docs/01_STATUS.md`. Refs #403, which stays open: the catalogue is Maxi's.
 - #476 T-4.9 head `e7c9a17`, migration 020 with parent 019, all findings fixed, Codex was running, conflicts with `main`. One assumption still waits for Maxi: surcharges stay report-only.
 - #481 phone number said in words, head `e2baac5`, Codex clean, 7114 passed, label bug. `lieferung_0016` stays red with the stand-in.
-- T-11.3: see the line below. Recording stays off behind a setting that defaults to off.
+- `task/11-3-recording-consent` head `378f3d0`, no PR, built behind `RECORDING_ENABLED`, off by default, migration 022 on 019 until 020 and 021 merge, drill 43 of 43, `/ponytail-review` and `/security-review` done. Left: pytest, mypy and scripted evals on the merged head; two fixes in `agent/consent.py` with tests, steps in the head commit message ("Hören Sie auf mich aufzunehmen" and "Aufnahmestopp" are no stop today, "Bin ich damit einverstanden" without a question mark counts as a yes, it must not); status bump; PR with `Closes #405`.
+- Two tests failed once under load and passed alone, cause not found: `test_correction_after_an_older_printed_slip_says_korrektur`, `test_ueberholter_bon_ohne_versuche_ist_kein_alarm`. Both sit in the handover code. If one fails in CI, read it first.
 - Whichever of #479 and #476 merges second must set `down_revision` on the other's head, or alembic gets two heads. T-11.3 takes the next free number.
 - No `--delete-branch` where a PR stacks on the branch. A new head that merges `main` often stalls Codex: one `@codex review`.
 
@@ -502,7 +503,7 @@ Open, next concrete step first:
 1. #479: merge `origin/main` into its branch, keep every Done row and changelog line, status version above main's, full suite, mypy, ruff, scripted evals on the final tree, push once, wait for CI and Codex, merge.
 2. #476 the same way; set `down_revision` of 020 to 021 (or the reverse) and test up and down. T-4.9 decides prices: evals on the exact head.
 3. #481 the same way. Its diff hits `xhigh`: evals on the exact head.
-4. T-11.3: finish, PR with `Closes #405`, the same way.
+4. T-11.3: the left list above, then the same way; set its migration's `down_revision` to the head on `main`.
 5. Ultrareview candidates for Maxi: #479, #481, T-11.3.
 6. Delete the remote branch `docs/handover-2026-11-02` once this block is on `main`, and the memory `resume-after-restart-2026-11-02`. Deleting needs Maxi's word: the permission check refused it.
 7. Maxi: the real zone list as `imports/zones.csv`, the `<offen>` marks, the complaint rules, a delivery slip and a "STORNIERT" note on paper (the register PC needs the new bridge build, an older one prints KORREKTUR), whether the driver needs a phone number on the slip, steps 3 to 9 of `printbridge/README.md`, surcharges on the tablet or not.
