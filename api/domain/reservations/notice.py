@@ -27,7 +27,7 @@ def weekday_notices(session: Session, tenant_id: uuid.UUID) -> dict[int, int | N
         .where(Capacity.tenant_id == tenant_id)
         .group_by(Capacity.weekday)
     ).all()
-    found = {weekday: minutes for weekday, minutes in rows}
+    found = dict(rows)
     return {weekday: found.get(weekday) for weekday in range(7)}
 
 

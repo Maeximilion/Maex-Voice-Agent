@@ -1,0 +1,38 @@
+{
+  "id": "reservierung_0041",
+  "name": "An hour ahead with a notice of an hour: the table is booked (T-3.13)",
+  "tags": [
+    "reservierung",
+    "vorbestellzeit",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "notices": {
+    "1": 60
+  },
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Einen Tisch fuer vier Personen heute um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "confirmed": true,
+    "escalated": false,
+    "party_size": 4,
+    "customer_name": "Mueller"
+  }
+}

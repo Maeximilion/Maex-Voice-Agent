@@ -223,7 +223,8 @@
   // correction open.
   var correctionBox = document.getElementById("korrektur");
   var dishBox = document.getElementById("gericht-aus");
-  var sheets = [correctionBox, dishBox].filter(Boolean);
+  var noticeBox = document.getElementById("vorbestellzeit");
+  var sheets = [correctionBox, dishBox, noticeBox].filter(Boolean);
   var board = document.querySelector(".board");
   var opener = null;
   var idleTimer = null;

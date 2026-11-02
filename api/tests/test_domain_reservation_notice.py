@@ -97,9 +97,7 @@ def test_inside_the_notice_nothing_is_booked_and_the_seats_are_named(
     assert "so kurzfristig" in slot.say
 
 
-def test_inside_the_notice_a_full_evening_is_named_as_full(
-    session, tenant_id, call_id
-):
+def test_inside_the_notice_a_full_evening_is_named_as_full(session, tenant_id, call_id):
     set_notice(session, tenant_id, 60)
     book(session, tenant_id, call_id, 40)
 
@@ -115,7 +113,9 @@ def test_the_seats_are_named_for_this_party(session, tenant_id, call_id):
     set_notice(session, tenant_id, 60)
     book(session, tenant_id, call_id, 36)
 
-    assert "noch Platz" in check_slot(session, tenant_id, berlin(18, 30), 2, now=NOW).say
+    assert (
+        "noch Platz" in check_slot(session, tenant_id, berlin(18, 30), 2, now=NOW).say
+    )
     assert "belegt" in check_slot(session, tenant_id, berlin(18, 30), 6, now=NOW).say
 
 
@@ -172,7 +172,9 @@ def test_the_notice_of_another_weekday_does_not_count(session, tenant_id):
 
 def test_a_day_like_sunday_takes_the_notice_of_sunday(session, tenant_id):
     session.add(
-        SpecialDay(tenant_id=tenant_id, date=DIENSTAG, like_weekday=SUNDAY, status="set")
+        SpecialDay(
+            tenant_id=tenant_id, date=DIENSTAG, like_weekday=SUNDAY, status="set"
+        )
     )
     session.commit()
     set_notice(session, tenant_id, 60, weekday=SUNDAY)

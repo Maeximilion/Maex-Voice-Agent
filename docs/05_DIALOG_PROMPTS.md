@@ -79,6 +79,7 @@ PR #127). Das gilt für Reservierung und Abholung.
 → check_slot
    frei      → create_reservation → vorlesen → Ja → confirm
    belegt    → Alternativen aus dem Tool anbieten (max. 2) → erneut check_slot
+   zu kurzfristig → the sentence from the tool: seats by the bookings, no table promised, later times outside the notice (T-3.13)
    geschlossen → `say` vorlesen (fragt nach anderer Uhrzeit, keine Alternative) → erneut check_slot
    nichts    → create_callback
    team_callback → the core creates the callback itself (the tool's sentence, then the callback's), the call ends; without a number it hands over like every handover (transfer, or the sentence that nobody can be reached)

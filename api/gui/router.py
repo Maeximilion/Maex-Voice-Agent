@@ -34,6 +34,7 @@ from api.domain.menu import sold_out as dishes
 from api.domain.ordering import board as order_board
 from api.domain.ordering import correction
 from api.domain.reservations import list_today
+from api.domain.reservations import notice as reservation_notice
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status import bridge
 from api.domain.status import config as switches
