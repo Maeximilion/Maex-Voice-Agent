@@ -76,6 +76,59 @@ def test_bon_enthaelt_was_die_kueche_braucht():
     assert b"\x1ba" not in data  # and nothing on it is centered
 
 
+DELIVERY = {
+    **TICKET,
+    "type": "delivery",
+    "items_total_cents": 2330,
+    "delivery_fee_cents": 250,
+    "address": {
+        "street": "Lindenstraße",
+        "house_number": "12",
+        "postal_code": "12345",
+        "city": "Musterdorf",
+        "floor_note": "2. OG, Klingel Braun",
+    },
+}
+
+
+def test_a_delivery_slip_carries_address_floor_note_and_fee():
+    """T-6.5: the register provider gives no interface, so this slip is the
+    only way a delivery reaches the register and the driver."""
+    text = render(DELIVERY).decode("cp858")
+    assert "LIEFERUNG A17" in text
+    assert "\x1bE\x01Lindenstraße 12\n12345 Musterdorf\n" in text
+    assert "Hinweis: 2. OG, Klingel Braun" in text
+    assert "Waren 23,30 EUR" in text
+    assert "Liefergebühr 2,50 EUR" in text
+    assert "Summe 25,80 EUR" in text
+    assert text.index("Name: Müller") < text.index("Lindenstraße")
+    assert text.index("Lindenstraße") < text.index("2x 23")
+    assert text.index("Liefergebühr") < text.index("Summe")
+    assert "5551234" not in text
+
+
+def test_a_delivery_without_a_floor_note_or_a_fee_has_no_empty_line():
+    address = {**DELIVERY["address"], "floor_note": None}
+    text = render({**DELIVERY, "address": address, "delivery_fee_cents": 0}).decode(
+        "cp858"
+    )
+    assert "Hinweis" not in text
+    assert "Liefergebühr" not in text
+    assert "Waren" not in text
+
+
+def test_a_delivery_whose_address_is_gone_says_so():
+    """Never a slip that reads like a pickup: the customer row may be deleted."""
+    text = render({**DELIVERY, "address": None}).decode("cp858")
+    assert "ADRESSE FEHLT" in text
+
+
+def test_a_pickup_slip_has_no_address_block():
+    text = render(TICKET).decode("cp858")
+    assert "ADRESSE FEHLT" not in text
+    assert "Liefergebühr" not in text
+
+
 def test_eingabezettel_sagt_ganz_oben_nicht_in_kasse():
     """D2 (docs/02 §2a): die Bruecke druckt einen Eingabezettel an der Kasse, keinen
     Kuechenbon. Ganz oben und vor einer Korrektur, damit ihn niemand fuer einen
@@ -622,6 +675,18 @@ def test_control_bytes_in_guest_text_never_reach_the_printer(field, command):
     for byte in (0x1B, 0x1D, 0x10, 0x00):
         assert hostile.count(bytes([byte])) == clean.count(bytes([byte]))
     assert b"Max" in hostile and b"Mustermann" in hostile
+
+
+@pytest.mark.parametrize("field", ["street", "floor_note", "city"])
+@pytest.mark.parametrize("command", COMMANDS)
+def test_control_bytes_in_an_address_never_reach_the_printer(field, command):
+    """An address is what a caller said and a model wrote down."""
+    address = {**DELIVERY["address"], field: f"Max{command.decode('latin-1')}Gasse"}
+    clean = render({**DELIVERY, "address": {**DELIVERY["address"], field: "MaxGasse"}})
+    hostile = render({**DELIVERY, "address": address})
+
+    for byte in (0x1B, 0x1D, 0x10, 0x00):
+        assert hostile.count(bytes([byte])) == clean.count(bytes([byte]))
 
 
 def test_a_line_break_in_a_note_does_not_glue_words():

@@ -1,7 +1,7 @@
 # 05 – Dialog, Prompts und Eskalation
 
 > Die Gesprächsführung gehört ins Modell. Jede Prüfung gehört in den Code.
-> Prompts liegen versioniert unter `prompts/` (`system_v1.md`, `system_v2.md`, …). Jede Version bekommt einen Eval-Lauf. Aktuell ist `v2` (Reservierung und Abholung, `agent/prompt.py` `PROMPT_VERSION`); `v1` bleibt ladbar.
+> Prompts liegen versioniert unter `prompts/` (`system_v1.md`, `system_v2.md`, …). Jede Version bekommt einen Eval-Lauf. Aktuell ist `v3` (Reservierung, Abholung und Lieferung, `agent/prompt.py` `PROMPT_VERSION`; the eval run on a real model waits for a GPU slot, docs/01); `v1` und `v2` bleiben ladbar.
 
 ---
 
@@ -110,13 +110,17 @@ Gast darauf, ist es eine Beschwerde und geht ans Team.
 ### Lieferung
 Zusätzlich: **Adresse**
 ```text
-find_customer hat Adresse  → "An dieselbe Adresse wie beim letzten Mal?" → Ja genügt (L12: nie die Adresse selbst)
-sonst                      → PLZ → Straße (buchstabieren) → Hausnummer (Tastatur)
-→ check_delivery
+find_customer hat Adresse  → "An dieselbe Adresse wie beim letzten Mal?" → Ja genügt (L12: nie die Adresse selbst), Name nur, wenn der Gast ihn nennt
+sonst                      → PLZ → Straße (buchstabieren) → Hausnummer (Tastatur) → check_delivery → Name
    out_of_zone    → Abholung anbieten
-   below_minimum  → Fehlbetrag nennen, nachbestellen lassen
 → draft_order → vorlesen → Ja → confirm
+   below_minimum  → Fehlbetrag nennen, nachbestellen lassen, neuer draft_order
+   closed         → `say` vorlesen, er bietet Abholung nur an, wo sie offen ist
 ```
+
+**L12 in the code (T-6.2, T-6.5):** the model cannot say what it was not given. `find_customer` gives ids, the state keeps `customer` with `found` and `address_id` only, and `draft_order` takes a stored name and address from the database itself. The read-back names neither (`domain/ordering/readback.py`), and the core's booking sentence names the order's name only when the guest said it (`loop._order_name`). A name in a `find_customer` call passes only as the guest said it. An objection to recognition goes to the team (prompt rule), which enters it (docs/09 §2); `recognition_objections` then closes `find_customer` and a stored address in `draft_order`, also in the middle of a call, and an order under the same name writes a new customer instead of reaching the old one.
+
+**The address in the state:** `street`, `house_number`, `postal_code`, `city`, `floor_note` are guest slots. A change of one after the read-back takes the draft back, as a new number does (`state.apply_state_patch`): the read-back named the old one. The state carries `cart` from the wish for a delivery on, so a model gets the slot names before the first dish (`llm.ORDER_FORMAT`).
 
 ### Auskunft
 Öffnungszeiten, Liefergebiet, Wartezeit → aus `get_service_status` und `check_delivery`. Danach: „Möchten Sie gleich bestellen?"
@@ -135,7 +139,7 @@ question for a human alone → fixed sentence of the core, no model call: "Ich b
    anything else            → the call goes on, the model sees the offer in last_say
 question with a request   → "Ich bin ein KI-Assistent, kein Mensch." and the model's answer to the request, no offer
 ```
-The AI Act asks for a truthful answer every time (docs/09 §1 L1), so the code gives it before the model, like the greeting (T-11.5, `agent/escalation.py` `without_human_question`, `agent/loop.py`). Only the question order counts, and a statement with "oder?" behind it ("Sind Sie ein Mensch?", "Spreche ich mit einer Maschine oder mit einem Menschen?", "Ist da ein Mensch?", "Sie sind ein Roboter, oder?"); a phrasing the list misses goes to the model, which says in its first sentence that it is an AI (the prompt has no room for more, `test_prompts_v2.py` budget). Greetings around the question ("Hallo, sagen Sie mal, ...") are no request; any other word or a digit is, and the model answers it after the truthful sentence. "Ich will mit einem Menschen sprechen" stays the wish of §4 and goes to the team at once. The triggers of §4 are read in the rest of the sentence, without the question's own words: a complaint, a cancellation or the wish for a human next to the question goes to the team as well, with the truthful sentence first. The offer stands while it is the last thing the guest heard: any sentence after it, the phone line's "Sind Sie noch da?" too, takes it back, and a "Ja" then answers that sentence. The question gets the answer only within the call limit; past `max_call_seconds` the truthful sentence comes before the handover of the timeout.
+The AI Act asks for a truthful answer every time (docs/09 §1 L1), so the code gives it before the model, like the greeting (T-11.5, `agent/escalation.py` `without_human_question`, `agent/loop.py`). Only the question order counts, and a statement with "oder?" behind it ("Sind Sie ein Mensch?", "Spreche ich mit einer Maschine oder mit einem Menschen?", "Ist da ein Mensch?", "Sie sind ein Roboter, oder?"); a phrasing the list misses goes to the model, which says in its first sentence that it is an AI (the prompt has no room for more, `test_prompts_v3.py` budget). Greetings around the question ("Hallo, sagen Sie mal, ...") are no request; any other word or a digit is, and the model answers it after the truthful sentence. "Ich will mit einem Menschen sprechen" stays the wish of §4 and goes to the team at once. The triggers of §4 are read in the rest of the sentence, without the question's own words: a complaint, a cancellation or the wish for a human next to the question goes to the team as well, with the truthful sentence first. The offer stands while it is the last thing the guest heard: any sentence after it, the phone line's "Sind Sie noch da?" too, takes it back, and a "Ja" then answers that sentence. The question gets the answer only within the call limit; past `max_call_seconds` the truthful sentence comes before the handover of the timeout.
 
 ### Allergie
 ```text
@@ -317,11 +321,12 @@ transcript:
   `greeted`). An offer of several dishes is therefore in sight for the one turn that
   answers it, by name and card number, never with an id; the order still takes only dishes
   the core knows (`guards.take_cart`).
-- `service`: `{"is_open": true, "pickup_enabled": true}` once `get_service_status` answered in this call, both flags or nothing (pickup can be off while the restaurant is open, Codex PR #291). A model
+- `customer`: `{"found": true, "address_id": "…"}` once `find_customer` answered in this call, ids only (L12).
+- `service`: `{"is_open": true, "pickup_enabled": true, "delivery_enabled": true}` once `get_service_status` answered in this call, all flags or nothing (pickup can be off while the restaurant is open, Codex PR #291). A model
   asked for the status at the start of every turn, one request each time, and then answered
   from the status instead of calling `check_slot`. The prompt asks for the status before an order
   when `service` is missing, again on a question about closing time or waiting time (the
-  state keeps only the two flags, Codex PR #291), and not for a table: `check_slot` knows
+  state keeps only the flags, Codex PR #291), and not for a table: `check_slot` knows
   the opening hours.
 
 **Answer format of the own core (T-2.4)** — a real model behind `agent/llm.py` gets the

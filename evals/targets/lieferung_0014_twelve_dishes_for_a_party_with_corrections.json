@@ -9,7 +9,7 @@
     "level-5"
   ],
   "source": "handcrafted",
-  "pending": "T-6.5: delivery with address, zone and minimum order value",
+  "pending": "T-6.8: delivery is built (T-6.5), the scripted stand-in does not follow these sentences; waits for the real model",
   "caller_id": "+497215551234",
   "transcript": [
     {

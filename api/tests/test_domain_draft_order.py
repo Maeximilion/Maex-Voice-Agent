@@ -532,14 +532,6 @@ def test_option_eines_anderen_gerichts(session, tenant_id, call_id):
         draft_order(session, request(session, tenant_id, call_id, items), now=NOW)
 
 
-def test_lieferung_noch_nicht(session, tenant_id, call_id):
-    with pytest.raises(InvalidInput) as err:
-        draft_order(
-            session, request(session, tenant_id, call_id, type="delivery"), now=NOW
-        )
-    assert "Möchten Sie abholen?" in err.value.say
-
-
 def test_unbekannter_anruf(session, tenant_id):
     with pytest.raises(NotFound):
         draft_order(session, request(session, tenant_id, uuid.uuid4()), now=NOW)

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import SAY_ON_FAILURE, InvalidInput, NotFound
 from api.core.time import utcnow
+from api.domain.customers.contact import note_contact
 from api.domain.customers.phone import normalize_phone
 from api.events import enqueue
 from api.events.types import CALLBACK_CREATED
@@ -72,6 +73,7 @@ def create_callback(
     )
     session.add(callback)
     session.flush()
+    note_contact(session, req.tenant_id, phone, now)
 
     session.add(
         AuditLog(

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import SAY_ON_FAILURE, Conflict, NotFound
 from api.core.time import utcnow
+from api.domain.customers.contact import note_contact
 from api.domain.ordering.confirm import confirm_order
 from api.domain.reservations.capacity import has_room, lock_capacity_days
 from api.domain.reservations.slots import ASK_OTHER_TIME
@@ -101,6 +102,7 @@ def _confirm_reservation(
         raise Conflict("Plätze inzwischen vergeben", say=SAY_SEATS_GONE)
 
     reservation.status = "confirmed"
+    note_contact(session, req.tenant_id, reservation.phone, now, reservation.guest_name)
     session.add(
         AuditLog(
             tenant_id=req.tenant_id,

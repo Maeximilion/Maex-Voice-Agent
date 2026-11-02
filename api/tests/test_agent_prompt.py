@@ -36,20 +36,18 @@ def test_tool_reference_names_every_tool_the_core_can_call():
 
 
 def test_tool_reference_leaves_out_what_is_not_for_the_model():
-    """The file also serves the voice platform: its note on HTTP and the bearer
-    token, and the tools that do not exist yet, stay out of the prompt."""
+    """The file also serves clients over HTTP: its note on the bearer token
+    stays out of the prompt."""
     prompt = build_system_prompt(tools=True)
 
     assert "Bearer" not in prompt
     assert "AGENT_API_TOKEN" not in prompt
-    assert "find_customer" not in prompt
-    assert "check_delivery" not in prompt
 
 
 def test_what_the_core_sends_stays_inside_its_budget():
     """Rule 6 measured on what a model really gets on every request: system
     prompt, tool reference and answer format. The 800 of docs/05 §5 is the
-    budget of `system_vN.md` alone (test_prompts_v2.py). Measured with the
+    budget of `system_vN.md` alone (test_prompts_v3.py). Measured with the
     longer of the two formats, the one a call about an order gets."""
     sent = f"{build_system_prompt(tools=True)}\n\n{ORDER_FORMAT}"
     tokens = math.ceil(len(sent) / 4)
