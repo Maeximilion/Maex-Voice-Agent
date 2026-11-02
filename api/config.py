@@ -142,6 +142,12 @@ class Settings(BaseSettings):
     # years after the year it was given (Maxi, 26.10.2026): the proof of a
     # stored allergy note for as long as a claim can arise (§§ 195, 199 BGB).
     retention_consent_log_years: int = Field(default=3, ge=1, le=10)
+    # The request log of data subjects (U2, accepted 02.11.2026): the details
+    # go this many months after the answer, the thin row at the end of this
+    # many calendar years after its year. At most 12 months, so the details
+    # never outlast the row.
+    retention_request_details_months: int = Field(default=3, ge=1, le=12)
+    retention_request_log_years: int = Field(default=3, ge=1, le=10)
     # How often the dispatcher process runs the job. Each pass only does what is
     # due, so a restart or a missed pass is caught up by the next one.
     retention_interval_seconds: float = Field(default=3600.0, gt=0, le=86400)
