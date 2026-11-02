@@ -589,6 +589,17 @@ def test_a_call_of_one_tenant_never_hears_the_rule_of_another(
         "Ich bin unzufrieden, das Essen war kalt, mein Anwalt meldet sich.",
         # Asked, not said.
         "Ich bin unzufrieden, war das Essen kalt?",
+        # A wish of its own: the call ends with the remedy, and it would be
+        # lost (Codex PR #479). Speech recognition sets no comma to rely on.
+        "Ich bin unzufrieden, das Essen war kalt und ich möchte zwei Suppen "
+        "zum Abholen bestellen.",
+        "ich bin unzufrieden das essen war kalt ich möchte zwei suppen bestellen",
+        "Ich möchte mich beschweren, das Essen war kalt, und zwei Suppen bestellen.",
+        "ich möchte mich beschweren das essen war kalt und zwei suppen mitnehmen",
+        "ich möchte suppe bestellen und mich beschweren das essen war kalt",
+        "Ich bin unzufrieden, das Essen war kalt, ich hätte gern einen Tisch.",
+        "Ich bin unzufrieden, das Essen war kalt, bitte einmal die 23.",
+        "Ich bin unzufrieden, das Essen war kalt, ich will mein Geld zurück.",
     ],
 )
 def test_a_sentence_with_more_in_it_goes_to_the_team(session, tenant_id, state, said):
@@ -600,6 +611,43 @@ def test_a_sentence_with_more_in_it_goes_to_the_team(session, tenant_id, state, 
     assert result.ended is True
     assert state.remedy_offer is None
     assert booked(session) == []
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # The only wish in these is the complaint itself.
+        "Ich möchte mich beschweren, das Essen war kalt.",
+        "ich möchte mich beschweren das essen war kalt",
+        "Ich will mich über die Lieferung beschweren, das Essen war kalt.",
+        "Ich möchte das reklamieren, das Essen war kalt.",
+        "Ich hätte gerne eine Beschwerde, das Essen war kalt.",
+        # What already happened is no wish.
+        "Die Lieferung war kalt, ich bin unzufrieden.",
+        "Die Bestellung war gestern kalt, ich bin unzufrieden.",
+        "Ich habe gestern bestellt, das Essen war kalt, ich bin unzufrieden.",
+        "Ich habe vorhin abgeholt, das Essen war kalt, das war ärgerlich.",
+    ],
+)
+def test_a_complaint_that_only_tells_what_happened_gets_the_offer(
+    session, tenant_id, state, said
+):
+    rule(session, tenant_id)
+
+    assert loop(session).run_turn(state, said).say == [OFFER]
+
+
+def test_a_wish_only_the_model_saw_keeps_its_handover(session, tenant_id, state):
+    rule(session, tenant_id)
+    call = ToolCall(name="transfer_to_team", args={"reason": "complaint"})
+
+    result = loop(session, [LLMTurn(tool_call=call)]).run_turn(
+        state, "Das Essen war gestern kalt, ich möchte zwei Suppen abholen."
+    )
+
+    assert result.ended is True
+    assert state.stage == "transferred"
+    assert state.remedy_offer is None
 
 
 def test_the_question_for_a_person_keeps_its_truthful_answer(session, tenant_id, state):
