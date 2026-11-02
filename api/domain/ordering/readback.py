@@ -4,7 +4,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from api.domain.reservations.spoken import COUNTS
-from api.models import Order
+from api.models import Address, Order
+
+SAME_ADDRESS = "an dieselbe Adresse wie beim letzten Mal"
 
 
 @dataclass(frozen=True)
@@ -22,21 +24,49 @@ class SpokenLine:
     note: str | None
 
 
-def readback(order: Order, lines: Sequence[SpokenLine]) -> str:
+def readback(
+    order: Order,
+    lines: Sequence[SpokenLine],
+    address: Address | None = None,
+    name_heard: bool = True,
+) -> str:
     """Bezug für "in etwa N Minuten" ist der Anlagezeitpunkt, nicht die Uhr:
-    derselbe Schlüssel liefert denselben Satz."""
+    derselbe Schlüssel liefert denselben Satz.
+
+    A delivery names the total with its fee before the yes (N2, distance
+    contract). `address` is the one the guest said in this call. None on a
+    delivery means a stored one, and `name_heard` False a stored name: neither
+    is said aloud, the guest only hears the question (L12)."""
     satz = " ".join(_spoken_line(line) for line in lines)
     if order.note:
         # The note of the whole order after its dishes (D24), repeated like
         # the note of a line.
         satz += f" Für die ganze Bestellung: {order.note}."
     satz += f" Macht {spoken_euro(order.total_cents)}"
+    if order.delivery_fee_cents:
+        satz += f" inklusive {spoken_euro(order.delivery_fee_cents)} Liefergebühr"
     if order.ready_at is not None:
         # Abrunden: ready_at ist aufgerundet, die Differenz liegt in
         # [Wartezeit, Wartezeit + 1 Minute) und ergibt so genau die Wartezeit.
         minutes = int((order.ready_at - order.created_at).total_seconds() // 60)
-        satz += f", abholbereit in etwa {minutes} Minuten"
-    return satz + f", auf den Namen {order.customer_name}. Passt das so?"
+        if order.type == "delivery":
+            where = _spoken_address(address) if address else SAME_ADDRESS
+            satz += f", Lieferung in etwa {minutes} Minuten {where}"
+        else:
+            satz += f", abholbereit in etwa {minutes} Minuten"
+    if name_heard:
+        satz += f", auf den Namen {order.customer_name}"
+    return satz + ". Passt das so?"
+
+
+def _spoken_address(address: Address) -> str:
+    """With the postal code: it decided the fee. "die Adresse" holds for every
+    street name ("Am Markt 3")."""
+    text = (
+        f"an die Adresse {address.street} {address.house_number}, "
+        f"{address.postal_code} {address.city}"
+    )
+    return f"{text}, {address.floor_note}" if address.floor_note else text
 
 
 def _spoken_line(line: SpokenLine) -> str:

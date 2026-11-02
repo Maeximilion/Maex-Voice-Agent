@@ -491,6 +491,10 @@ def _guest_details(call: ToolCall) -> tuple[Any, Any]:
         return args.get("guest_name"), args.get("phone")
     if call.name == "create_callback":
         return None, args.get("phone")
+    if call.name == "find_customer":
+        # Only what the guest said: a name a model tries would read out who
+        # stands behind the number (L12).
+        return args.get("guest_name"), None
     customer = args.get("customer") if call.name == "draft_order" else None
     if isinstance(customer, dict):
         return customer.get("name"), customer.get("phone")

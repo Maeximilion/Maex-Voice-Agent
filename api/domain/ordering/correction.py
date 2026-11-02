@@ -279,7 +279,7 @@ def apply_correction(
                     for r, lbl in zip(after_rows, after_labels, strict=True)
                 ],
                 "before_total_cents": plan.before_total_cents,
-                "after_total_cents": items_total,
+                "after_total_cents": order.total_cents,
                 "labels": after_labels,
                 "note_dropped": any(
                     e.drop_note and e.quantity == 0 and by_id[e.order_item_id].note
@@ -477,7 +477,7 @@ def _plan(
         version=order_version(rows),
         rows=planned_rows,
         added=planned_added,
-        before_total_cents=order.items_total_cents,
+        before_total_cents=order.total_cents,
         items_total_cents=items_total,
         total_cents=items_total + order.delivery_fee_cents,
         changed=changed,

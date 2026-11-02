@@ -75,10 +75,8 @@ def test_ordering_something_table_like_is_no_pickup(sentence):
         "Einen Vierertisch bitte, und vorher etwas zum Mitnehmen",
         # The price of that rule: "tisch" also stands in an adjective.
         "Haben Sie auch etwas Asiatisches zum Mitnehmen?",
-        # Delivery is not offered yet and must not be read as a pickup.
-        "Ich möchte etwas bestellen, zum Liefern",
+        # Delivery next to a pickup: two wishes as well.
         "Können Sie mir das liefern, oder muss ich es abholen?",
-        "Ich möchte Essen nach Hause bestellen",
         # No wish at all.
         "Es zwölf bitte",
         "Die 23 und einmal Pho Bo",

@@ -52,9 +52,12 @@ guest names for another reason with a word for it ("meine alte Nummer war
 (docs/01_STATUS.md, Open Points). The ear of the voice layer decides how
 numbers and letters arrive as text (T-10.5); read them here once it shows
 that.
-ponytail: a name is known from guest sentences only. Once a known caller's
-name comes from the database (`find_customer`, stage 3), that name has to
-count as well, the way the caller ID does for the number.
+
+The name of a recognized caller never comes through here. `find_customer`
+gives ids only (L12), so a model cannot write it: `draft_order` without a name
+runs under the name of the customer the number recognizes, in the domain
+(`domain/delivery/address.py`), and neither the read-back nor the booking
+sentence says it. A name a model does write has to be one the guest said.
 """
 
 import re

@@ -1,58 +1,60 @@
 {
-  "id": "lieferung_0005",
-  "name": "Two dishes by name",
+  "id": "lieferung_0004",
+  "name": "One dish with meat, address in one sentence",
   "tags": [
     "lieferung",
-    "name",
-    "level-2"
+    "pflichtoption",
+    "level-1"
   ],
   "source": "handcrafted",
-  "pending": "T-6.5: delivery with address, zone and minimum order value",
   "caller_id": "+497215551234",
   "transcript": [
     {
       "role": "customer",
-      "text": "Hallo, liefern Sie heute noch?"
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
     },
     {
       "role": "customer",
-      "text": "Dann bitte eine Pho Bo und zweimal Gyoza."
+      "text": "Einmal die 30 mit Huhn und zweimal die 23."
     },
     {
       "role": "customer",
-      "text": "Nein, danke."
+      "text": "Nein, das wars."
     },
     {
       "role": "customer",
-      "text": "Am Markt 3, 12345 Musterdorf."
+      "text": "12345 Musterdorf, Lindenstrasse 12."
     },
     {
       "role": "customer",
-      "text": "Auf Kaya."
+      "text": "Auf den Namen Braun."
     },
     {
       "role": "customer",
-      "text": "Ja."
+      "text": "Ja, passt."
     }
   ],
   "expected": {
     "intent": "delivery",
     "items": [
       {
-        "number": "13",
-        "quantity": 1
+        "number": "30",
+        "quantity": 1,
+        "options": [
+          "Huhn"
+        ]
       },
       {
-        "number": "22",
+        "number": "23",
         "quantity": 2
       }
     ],
-    "customer_name": "Kaya",
+    "customer_name": "Braun",
     "confirmed": true,
     "escalated": false,
     "address": {
-      "street": "Am Markt",
-      "house_number": "3",
+      "street": "Lindenstrasse",
+      "house_number": "12",
       "city": "Musterdorf",
       "postal_code": "12345"
     },
