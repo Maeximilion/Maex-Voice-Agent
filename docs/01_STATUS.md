@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.12.9
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.12.10
 
 ---
 
@@ -285,7 +285,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D2 | ~~Handoff path to register~~ **decided 26.09.2026 (Maxi): receipt and kitchen ticket come only from the register** (<POS System>, TSE). An order is fed into the register, the register books it and sends receipt and kitchen ticket to its own printers. The print bridge stays as an **independent path** and prints on the **main receipt printer at the register** (80 mm), never in the kitchen: until a register interface exists it prints **every** confirmed order as an input slip headed "NICHT IN KASSE – bitte eingeben", the team types it in; with an interface (variant C) only when the register does not accept in time (rule 5). Planning assumption: <POS Provider> does not cooperate, orders are transferred by hand. Asking <POS Provider> stays open (interface, test mode, whether the unused register at Maxi's home may serve as a test system). docs/02 §2a, T-4.6 | Maxi | done; bridge changes open in T-4.6 |
 | D3 | ~~Hosting provider in the EU~~ **decided 07.10.2026 (Maxi), in two stages:** test phase on the workbench (Maxi's PC, Ubuntu in WSL) with invented data and own test calls only; operation on a netcup VPS 1000 in Nuremberg (4 vCPU / 8 GB, about 17 EUR a month on a 12-month term) with Scaleway Object Storage as the encrypted off-site backup target (about 1 EUR a month; closes the open part of T-9.3 once ordered). Ordered when the first of these is due: the team uses tablet or print bridge against the real system, the measurement calls for G1, the first real customer call. Prices are research of 07.10.2026. E9 holds: real customer calls and customer data run on the EU server only | Maxi | done; order at the trigger |
 | D4 | Voice: natural or audibly synthetic. **12.10.2026:** Maxi heard the test-phase voice (Piper `thorsten`) and finds it not clean, also before the telephone line; it stays for building and testing only. His idea, kept for later: his own voice, synthesized. Not built: it needs either about an hour of recordings and a training run, or a cloning model (licence and graphics memory to check), and a caller who hears the owner's voice may take the AI for him, so the disclosure stays. Decide with real samples side by side when the EU text-to-speech services are measured (T-10.3, second half) | Maxi | Stage 1, dialog test |
-| D5 | Delivery zones: postal code list or polygons | Maxi | before T-6.x (Stage 3) |
+| D5 | ~~Delivery zones: postal code list or polygons~~ **decided 02.11.2026 (Maxi): postal code list; polygons stay T-6.4** | Maxi | done |
 | D6 | ~~GUI tech: HTMX or React~~ **decided 17.09.2026: Jinja2 + HTMX** (docs/06 §2) | Maxi | done |
 | D8 | ~~Wishes the menu does not know ("Nudeln statt Reis" without an option)~~ **decided 24.09.2026: no offer on the phone.** The agent offers only what is stored on the menu; surcharges come from `item_options` (e.g. a side-dish group "Reis 0 €, Nudeln +3 €"), the reason for a surcharge only from the menu data. Removal wishes ("ohne Karotten") are a note without price. Allergy wording before go-live with the legal check (docs/09). Built with T-4.10 on 24.09.2026 | Maxi | done |
 | D7 | ~~Does our own conversation core (`agent/`) also run in operations, or does the platform run its own loop?~~ **decided 07.10.2026 with D1: our own core runs in operation**, so test and operation are the same code | Maxi | done |
@@ -522,6 +522,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 02.11.2026 | **T-6.6 delivery orders on the tablet.** A delivery card shows the address from `orders.address_id` (street, number, postal code, city, floor note) and the delivery fee; a delivery without an address shows "Adresse fehlt". The switch "Lieferung aus" was already complete (T-3.2, tested), untouched. D5 decided: postal code list. |
 | 02.11.2026 | **A blocked customer counts on a shared number (#207, review of #462).** `find_customer` dropped them before it counted who stands behind the number, so a blocked "Müller" next to an unblocked "Schmidt" gave Schmidt's ids to a call without a name. Such a call now finds nobody; a name still finds the unblocked one |
 | 02.11.2026 | **A swap to the same dish and options is no correction** (open point of PR #140). The line stays the stored row, so `NO_CHANGE` blocks and no `order.corrected`, revision or KORREKTUR follows; another quantity is a quantity change at the frozen prices. Its choices stay offered, because Tauschen with the line's own number is how the team reaches them |
 | 02.11.2026 | **The register converter refuses two spellings of one file** (open point of PR #149). On a case-sensitive file system `artikel.DBF` and `artikel.dbf` could both sit in the folder and the first one was read, so an old table could meet a newer memo. Now it stops with exit 2 and names both |
@@ -677,6 +678,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.12.10 · 02.11.2026:** T-6.6 done: delivery cards show address and fee
 - **v2.12.9 · 02.11.2026:** A blocked customer counts on a shared number (#207)
 - **v2.12.8 · 02.11.2026:** A swap to the same dish and options is no correction: the line stays the stored row
 - **v2.12.7 · 02.11.2026:** The register converter refuses two spellings of one file
