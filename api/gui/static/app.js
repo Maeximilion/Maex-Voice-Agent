@@ -35,6 +35,17 @@
     offline(true);
   });
 
+  // The holiday strip is replaced with its list after every answer; keep it open
+  // while the team works through the suggestions, or each tap would fold it.
+  var feiertageOffen = false;
+  document.addEventListener("toggle", function (e) {
+    if (e.target.id === "feiertage-fold") feiertageOffen = e.target.open;
+  }, true);
+  document.body.addEventListener("htmx:afterSwap", function () {
+    var fold = document.getElementById("feiertage-fold");
+    if (fold && feiertageOffen) fold.open = true;
+  });
+
   if (!liste || !window.EventSource) return;
 
   function offline(yes) {

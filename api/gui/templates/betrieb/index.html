@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block body_class %}betrieb{% endblock %}
+{% block body_class %}betrieb tafel{% endblock %}
 
 {% block header %}
 {% include "fragments/kopfzeile.html" %}
@@ -18,16 +18,17 @@
   </section>
 
   <section class="col">
-    <div id="feiertage-liste">
-      {% include "fragments/feiertage.html" %}
-    </div>
-    <div id="preise-liste">
-      {% include "fragments/preise.html" %}
-    </div>
     {# Ziel des Ereignisstroms: app.js holt dieses Fragment neu, sobald sich an
        den Reservierungen des Tages etwas aendert. #}
     <div id="heute-liste" hx-get="/gui/fragments/heute" hx-trigger="none">
       {% include "fragments/heute.html" %}
+    </div>
+    <div id="preise-liste">
+      {% include "fragments/preise.html" %}
+    </div>
+    {# Folded below the reservations: they are the time-critical content. #}
+    <div id="feiertage-liste">
+      {% include "fragments/feiertage.html" %}
     </div>
   </section>
 
