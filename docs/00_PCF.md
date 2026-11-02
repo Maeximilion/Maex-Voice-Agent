@@ -470,7 +470,7 @@ maex-voice-agent/
 ```text
 ## Handover 02.11.2026 - T-6.3, T-6.9, T-11.9, T-3.7, T-6.5, T-11.8, paused for a restart of Claude
 
-Status: merged on `main`: #468 (T-6.3), #469 (T-6.9), #470 (T-11.9), #471 (T-3.7 check behind Caddy). Open, not merged: #472 (T-6.5 with T-6.2 part 2, head `1e288ea`, status 2.14.0, Codex clean on that head, CI green before), #473 (T-11.8, head `be96219`, migration 019, Codex still running). Unfinished, pushed, no PR: `task/8-4-key-figures` (`c50c393`), `task/9-6-print-bridge-program` (`c967f9f`), `task/4-9-price-reconcile` (`b49f111`). T-9.8 has a design and no commit. A detached script runs two real-model passes at 14:20.
+Status: merged on `main`: #468 (T-6.3), #469 (T-6.9), #470 (T-11.9), #471 (T-3.7 check behind Caddy). Open, not merged: #472 (T-6.5 with T-6.2 part 2, head `1e288ea`, status 2.14.0, Codex clean on that head, CI green before), #473 (T-11.8, head `be96219`, migration 019, CI green, two Codex findings). Unfinished, pushed, no PR: `task/8-4-key-figures` (`c50c393`), `task/9-6-print-bridge-program` (`c967f9f`), `task/4-9-price-reconcile` (`b49f111`). T-9.8 has a design and no commit. A detached script runs two real-model passes at 14:20.
 
 Artifacts:
 - GPU run: `/tmp/claude-1001/-home-maeximilion-Maex-Voice-Agent--claude-worktrees-task-t-6-3-9a3077/fd4a6b23-1d28-4d55-8683-8a303fe8c999/scratchpad/gpu_eval.sh`, PID in `gpu_eval.pid` beside it, results in `gpu/`: `run.log`, `passes.log`, `head`, `reports/`, `done` when finished, about 14:50. It takes the head of `task/6-5-delivery-orders` at 14:19, `UD-IQ3_XXS` with the flags of docs/18 lane 4, and cleans up after itself. Stop it with `kill`, only on Maxi's word. Reports go to `evals/reports/` of the main folder for `scripts/readme_assets.py pending --record`.
@@ -491,7 +491,7 @@ Gate: G0 open, unchanged. It waits for T-10.2 on the wire and two calls at once 
 Open, next concrete step first:
 1. After 14:50 read the GPU result on the head in `gpu/head`: compare with the recorded main runs (37/56 on `a9eddab`, false escalations 17.8 %) on identical case files only; 0 guessed, 0 unconfirmed, 0 missed are hard. docs/08 asks for two runs on `main` too, Maxi approved two passes in all, so name that limit or ask for two more.
 2. #472, one push: `note_contact` (`api/domain/customers/contact.py`) must not move `last_contact_at` on a number with an objection, because it extends the old record's period; p95 in docs/01 to 50 ms and 75 ms. That push needs a new Codex review; no conversation code changes, so the GPU result still holds. If #473 merges first, merge `origin/main` into #472.
-3. #473: read Codex, fix, merge. Ultrareview candidate for both, Maxi's call.
+3. #473: CI green, Codex found two on `be96219`, check each against the code: P1 `api/domain/customers/requests.py:500` overdue orders awaiting kitchen release must stay out of erasure; P2 `:537` export the stored order labels, not current menu names. Fix in one push, then merge. Ultrareview candidate for both #472 and #473, Maxi's call.
 4. T-6.8, T-11.3, T-10.11 after #472, then finish T-8.4, T-9.6, T-4.9, T-9.8. New agents, one brief each; the T-9.8 brief needs only the design above.
 5. Maxi: the real zone list as `imports/zones.csv`, the `<offen>` marks, the complaint rules, a delivery slip on paper, whether the driver needs a phone number on the slip.
 
