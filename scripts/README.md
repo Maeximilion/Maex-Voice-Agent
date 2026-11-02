@@ -4,6 +4,7 @@
 |---|---|---|
 | `seed.py` | Tenant, hours, capacity, test config | T-1.2 |
 | `import_menu.py` | Load CSV per `docs/14_MENU_IMPORT_FORMAT.md`, `--dry-run`, `--deactivate-missing` (refuses an empty file or more than half the active menu unless `--allow-large-deactivation`) | T-4.2, T-4.11 |
+| `seed_zones.py` | Delivery zones from CSV per `docs/14_MENU_IMPORT_FORMAT.md`, `--dry-run`; an overlap or any other error writes nothing | T-6.9 |
 | `kasse_to_csv.py` | Register `.dbf` copies in `imports/kasse/` to the CSV files of docs/14, read-only | T-4.11 |
 | `menu_diff.py` | Price register vs. agent DB | T-4.9 |
 | `backup.sh` / `restore.sh` | Encrypted `pg_dump` of the database of `DATABASE_URL`; restore into a new database with `--check` (rehearsal) or `--replace` (swap by rename). `lib_pg.sh` is their shared part. Usage in `docs/13_DEPLOYMENT.md` §4 | T-9.3 |
