@@ -899,14 +899,16 @@ def _dish_list(
         return templates.TemplateResponse(
             request,
             template,
-            {"dishes": [], "query": query, "dish_problem": NO_TENANT},
+            {"groups": [], "query": query, "dish_problem": NO_TENANT},
             503,
         )
     return templates.TemplateResponse(
         request,
         template,
         {
-            "dishes": dishes.list_switches(session, tenant.id, query),
+            "groups": dishes.group_switches(
+                dishes.list_switches(session, tenant.id, query)
+            ),
             "query": query,
             "dish_problem": problem,
         },

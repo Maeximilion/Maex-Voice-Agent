@@ -47,6 +47,12 @@ class DishSwitch:
     sold_out: bool
 
 
+@dataclass(frozen=True)
+class DishGroup:
+    category: str
+    dishes: list[DishSwitch]
+
+
 # A number in the search field: a digit first, also after a prefix ("s1", T-4.12).
 _NUMBER_START = re.compile(r"[a-z]{0,2}\d")
 
@@ -105,6 +111,17 @@ def list_switches(
         for item in _active(session, tenant_id)
         if _matches(item, query)
     ]
+
+
+def group_switches(switches: list[DishSwitch]) -> list[DishGroup]:
+    """Group the list by category. The groups come in menu order: a category
+    stands where its first dish stands in card order, so the order comes from
+    the data and no category name is known here. Takes the already filtered
+    list, so a search shows grouped results."""
+    groups: dict[str, list[DishSwitch]] = {}
+    for switch in switches:
+        groups.setdefault(switch.category, []).append(switch)
+    return [DishGroup(category, items) for category, items in groups.items()]
 
 
 def sold_out_count(

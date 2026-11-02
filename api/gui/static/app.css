@@ -85,10 +85,11 @@ header{background:var(--surface);border-bottom:2px solid var(--line)}
 .tafel{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
 .tafel header{flex:none}
 .tafel main{flex:1;min-height:0;display:flex;flex-direction:column;padding-bottom:0;overflow-y:auto}
-/* With a panel open the page scrolls and the columns keep a height of their own. */
-.tafel .board{flex:1 1 0;min-height:360px;grid-template-rows:minmax(0,1fr)}
+/* Main is the frame of the sheets (T-3.8): they lie over the columns, the
+   command bar above stays free. */
+.tafel main{position:relative;overflow:hidden}
+.tafel .board{flex:1 1 0;min-height:0;grid-template-rows:minmax(0,1fr)}
 .tafel .col{height:100%;overflow-y:auto}
-#korrektur,#gericht-aus{flex:none}
 
 /* Command bar. Paused: grey; the red state and the text "KI ist aus" stay strong
    (docs/06 §5). */
@@ -185,12 +186,22 @@ header.aus .top > .mode ~ .mode{opacity:.75}
 .fold .fold-less,.fold[open] .fold-more{display:none}
 .fold[open] .fold-less{display:inline}
 .fold .cards{padding:var(--s2) var(--s2) var(--s2) 0}
-/* Correction: wide panel over the columns. */
-#korrektur:empty{display:none}
-#korrektur{margin-bottom:var(--s4)}
-.korrektur{border:3px solid var(--accent)}
-.korrektur h2{margin:0;font-size:var(--fs-h2)}
-.korrektur .schliessen{margin-left:auto}
+/* Sheet (T-3.8): "Korrigieren" and "Gericht aus" open the same way, over the
+   columns, which stay live underneath. Title and close button stay in view
+   (.sheet-head), the content scrolls (.sheet-body), the tools (search) and the
+   foot (save buttons) stay put. */
+#korrektur,#gericht-aus{position:absolute;inset:0;z-index:5;display:flex;padding:var(--s2) var(--s4) var(--s4);background:var(--bg)}
+#korrektur:empty,#gericht-aus:empty{display:none}
+.sheet{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--surface);border:3px solid var(--accent);border-radius:var(--r-lg);box-shadow:0 8px 32px rgba(0,0,0,.6)}
+.sheet-head{flex:none;display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);border-bottom:2px solid var(--line)}
+.sheet-head h2{margin:0;font-size:var(--fs-h2)}
+.sheet-head h2:focus{outline:none}
+.sheet-head .schliessen{margin-left:auto}
+.sheet-tools{flex:none;padding:var(--s2) var(--s4) 0}
+.sheet-tools p{margin:0}
+.sheet-body{flex:1;min-height:0;overflow-y:auto;padding:var(--s3) var(--s4)}
+.sheet-foot{position:sticky;bottom:0;background:var(--surface);border-top:2px solid var(--line);padding:var(--s2) 0 0;margin-top:var(--s3)}
+.sheet-foot p{margin:var(--s1) 0}
 .korrektur fieldset{border:0;margin:0;padding:0;min-width:0}
 .korrektur fieldset[disabled]{opacity:.6}
 /* Disabled looks disabled; the reason stands above as text. */
@@ -224,14 +235,14 @@ header.aus .top > .mode ~ .mode{opacity:.75}
 }
 /* "Gericht aus" (T-4.8): panel like the correction, switches from 60 px, the
    words "heute aus" stand next to the colour (docs/06 §1 rules 3 and 4). */
-#gericht-aus:empty{display:none}
-#gericht-aus{margin-bottom:var(--s4)}
-.gericht-aus{border:3px solid var(--accent)}
-.gericht-aus h2{margin:0;font-size:var(--fs-h2)}
-.gericht-aus .schliessen{margin-left:auto}
-.gericht-aus input[type=search]{font:inherit;color:inherit;background:var(--surface);border:2px solid var(--line-strong);border-radius:var(--r-sm);padding:10px 14px;width:100%;height:var(--tap);font-size:var(--fs-h2);margin:var(--s1) 0 var(--s3)}
+.gericht-aus input[type=search]{font:inherit;color:inherit;background:var(--surface);border:2px solid var(--line-strong);border-radius:var(--r-sm);padding:10px 14px;width:100%;height:var(--tap);font-size:var(--fs-h2);margin:var(--s2) 0 var(--s2)}
 .dishes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
 .dish{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3);background:var(--surface-2);border:2px solid var(--line);border-radius:var(--r);padding:10px var(--s3)}
 .dish .dish-name{flex:1 1 140px}
 .dish.aus{border-color:var(--warn-line);box-shadow:inset var(--edge) 0 0 var(--warn-line);padding-left:var(--s4)}
 .dish.aus .dish-name{color:var(--muted)}
+/* One group per category in menu order; the heading sticks while the dishes of
+   its group scroll by. */
+.dish-group + .dish-group{margin-top:var(--s3)}
+.dish-cat{position:sticky;top:calc(var(--s3) * -1);z-index:1;margin:0 0 var(--s2);padding:var(--s2) 0;background:var(--surface);border-bottom:2px solid var(--line-strong);font-size:var(--fs-lg);font-weight:700}
+.sheet-foot .order-foot{border-top:0;margin-top:0;padding-top:0}

@@ -198,53 +198,99 @@
     });
   }
 
-  // Korrektur: eigener Kasten ueber den Spalten. Er schliesst nach dem
-  // Speichern (Ereignis vom Server), mit "Abbrechen" und nach 90 Sekunden ohne
-  // Tap - wer zum klingelnden Telefon geht, laesst sonst eine halbe Korrektur
-  // offen stehen.
+  // Blatt (T-3.8): "Korrigieren" und "Gericht aus" oeffnen gleich, als Blatt
+  // ueber den Spalten, die darunter live bleiben. Das Blatt nimmt den Fokus,
+  // die Spalten darunter sind solange nicht fokussierbar (inert), und beim
+  // Schliessen kehrt der Fokus zum Knopf zurueck, der es geoeffnet hat.
+  // Escape schliesst. Die Korrektur schliesst ausserdem nach dem Speichern
+  // (Ereignis vom Server) und nach 90 Sekunden ohne Tap - wer zum klingelnden
+  // Telefon geht, laesst sonst eine halbe Korrektur offen stehen.
   var correctionBox = document.getElementById("korrektur");
+  var dishBox = document.getElementById("gericht-aus");
+  var sheets = [correctionBox, dishBox].filter(Boolean);
+  var board = document.querySelector(".board");
+  var opener = null;
   var idleTimer = null;
   var IDLE_MS = 90000;
-  function closeCorrection() {
-    if (correctionBox) correctionBox.innerHTML = "";
-    if (idleTimer) window.clearTimeout(idleTimer);
+  function syncBoard() {
+    if (board) board.inert = sheets.some(function (b) { return b.firstElementChild; });
+  }
+  function closeSheet(box) {
+    if (!box || !box.firstElementChild) return;
+    box.innerHTML = "";
+    if (box === correctionBox && idleTimer) window.clearTimeout(idleTimer);
     idleTimer = null;
+    syncBoard();
+    if (opener && document.contains(opener)) opener.focus();
+    opener = null;
+  }
+  function closeCorrection() {
+    closeSheet(correctionBox);
   }
   function armIdleTimer() {
     if (idleTimer) window.clearTimeout(idleTimer);
     idleTimer = window.setTimeout(closeCorrection, IDLE_MS);
   }
-  if (correctionBox) {
-    correctionBox.addEventListener("click", function (e) {
+  sheets.forEach(function (box) {
+    box.addEventListener("click", function (e) {
       if (e.target.closest("[data-schliessen]")) {
-        closeCorrection();
+        closeSheet(box);
         return;
       }
-      armIdleTimer();
+      if (box === correctionBox) armIdleTimer();
     });
+  });
+  if (correctionBox) {
     // Tippen im Nummernfeld zaehlt auch als Taetigkeit, nicht nur Tippen auf Knoepfe.
     correctionBox.addEventListener("input", armIdleTimer);
-    // Ins Bild rollen nur beim Oeffnen, nicht nach jedem Tap: rollt die Seite
-    // unter dem Finger weg, trifft der naechste Tap einen anderen Knopf (im
-    // Browsertest die Wartezeit in der Kopfzeile).
-    var wasOpen = false;
-    document.body.addEventListener("htmx:beforeSwap", function (e) {
-      if (e.detail.target === correctionBox) wasOpen = !!correctionBox.firstElementChild;
-    });
-    document.body.addEventListener("htmx:afterSwap", function (e) {
-      if (e.detail.target !== correctionBox || !correctionBox.firstElementChild) return;
-      armIdleTimer();
-      if (!wasOpen) correctionBox.scrollIntoView({ block: "start" });
-    });
   }
-  // "Gericht aus" (T-4.8): eigener Kasten wie die Korrektur, "Fertig" schliesst.
-  // Nach jedem Tap zeigt die Kachel in der Kopfzeile sofort die neue Zahl.
-  var dishBox = document.getElementById("gericht-aus");
-  if (dishBox) {
-    dishBox.addEventListener("click", function (e) {
-      if (e.target.closest("[data-schliessen]")) dishBox.innerHTML = "";
-    });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") sheets.forEach(closeSheet);
+  });
+  // Nur das Oeffnen holt den Fokus: nach einem Tap im Blatt bleibt er stehen.
+  var wasOpen = false;
+  document.body.addEventListener("htmx:beforeRequest", function (e) {
+    var t = e.detail.target;
+    if (sheets.indexOf(t) >= 0 && !t.firstElementChild) opener = e.detail.elt;
+  });
+  // A tap inside the sheet redraws it whole: keep the scroll position, or a
+  // tap on a line far down would throw the view back to the top. A search
+  // (GET) starts at the top on purpose.
+  var scrollWas = 0;
+  function scroller(t) {
+    return t.classList.contains("sheet-body") ? t : t.querySelector(".sheet-body");
   }
+  document.body.addEventListener("htmx:beforeSwap", function (e) {
+    var t = e.detail.target;
+    wasOpen = !!t.firstElementChild;
+    var sc = scroller(t);
+    var post = e.detail.requestConfig && e.detail.requestConfig.verb === "post";
+    scrollWas = wasOpen && post && sc ? sc.scrollTop : 0;
+  });
+  document.body.addEventListener("htmx:afterSwap", function (e) {
+    var t = e.detail.target;
+    var inList = t.id === "gericht-liste";
+    if (!inList && sheets.indexOf(t) < 0) return;
+    var sc = scroller(t);
+    if (sc) sc.scrollTop = scrollWas;
+    // The tapped button was redrawn: keep the focus inside the sheet.
+    var box = inList ? t.closest("#gericht-aus") : t;
+    if (wasOpen && box && !box.contains(document.activeElement)) {
+      var title = box.querySelector(".sheet-head h2");
+      if (title) title.focus({ preventScroll: true });
+    }
+  });
+  document.body.addEventListener("htmx:afterSwap", function (e) {
+    var box = e.detail.target;
+    if (sheets.indexOf(box) < 0 || !box.firstElementChild) return;
+    sheets.forEach(function (other) {
+      if (other !== box) other.innerHTML = "";
+    });
+    syncBoard();
+    if (box === correctionBox) armIdleTimer();
+    var title = box.querySelector(".sheet-head h2");
+    if (!wasOpen && title) title.focus();
+  });
   function reloadDishes() {
     var search = document.getElementById("gericht-suche");
     if (!search) return;

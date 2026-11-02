@@ -1,4 +1,4 @@
-{# Korrektur einer Bestellung (docs/06 §3 "Korrigieren", T-4.7). Eigener Kasten
+{# Korrektur einer Bestellung (docs/06 §3 "Korrigieren", T-4.7). Eigenes Blatt
    ueber den Spalten, nicht in der Liste: die Spalte laedt weiter neu, klingelt
    bei neuen Bestellungen, und nichts ueberschreibt, was das Team gerade tippt.
 
@@ -65,11 +65,12 @@
   {% endif %}
 </li>
 {%- endmacro %}
-<section class="card korrektur" data-order="{{ order_id }}">
-  <div class="res-head">
-    <h2>Bestellung korrigieren</h2>
+<section class="sheet korrektur" data-order="{{ order_id }}" role="dialog" aria-labelledby="korrektur-titel">
+  <div class="sheet-head">
+    <h2 id="korrektur-titel" tabindex="-1">Bestellung korrigieren</h2>
     <button type="button" class="schliessen" data-schliessen>Abbrechen</button>
   </div>
+  <div class="sheet-body">
   {% if message %}<p class="banner warn">{{ message }}</p>{% endif %}
   {% if state is defined %}
   {# Enter im Nummernfeld schickt die Nummer, nicht einen Grund. #}
@@ -88,11 +89,13 @@
         <input type="text" id="number" name="number" inputmode="text" autocomplete="off">
         <button type="submit">Übernehmen</button>
       </div>
+      {% for b in blockers %}<p class="blocker">{{ b }}</p>{% endfor %}
+      <div class="sheet-foot">
       <div class="order-foot">
         <b>Summe {{ total }}</b>
         <span class="muted">vorher {{ before }}</span>
       </div>
-      {% for b in blockers %}<p class="blocker">{{ b }}</p>{% endfor %}
+      {% if blockers %}<p class="blocker">Speichern geht erst, wenn oben alles ausgefüllt ist.</p>{% endif %}
       <p class="muted">Grund antippen, dann ist gespeichert:</p>
       <div class="reasons">
         {% for key, label in reasons.items() %}
@@ -103,7 +106,9 @@
                 {% if blockers %}disabled{% endif %}>{{ label }}</button>
         {% endfor %}
       </div>
+      </div>
     </fieldset>
   </form>
   {% endif %}
+  </div>
 </section>
