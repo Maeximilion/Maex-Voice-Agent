@@ -179,7 +179,47 @@ def test_senken_erhoeht_nie_einen_wert_unter_der_untergrenze(session, tenant_id)
 
     assert config.pickup_wait_minutes == 5
     config = switches.change_wait(session, tenant_id, "pickup", 15)
-    assert config.pickup_wait_minutes == 20
+    assert config.pickup_wait_minutes == 15
+
+
+def test_the_lower_limit_does_not_take_the_wait_off_the_grid(session, tenant_id):
+    """Maxi, 02.11.2026: 30 down to 10 and back gave 25 and 40 instead of 30 and 45."""
+    config = session.get(ServiceConfig, tenant_id)
+    config.pickup_wait_minutes = 30
+    session.commit()
+
+    seen = []
+    for step in (-15, -15, -15, 15, 15, 15):
+        config = switches.change_wait(session, tenant_id, "pickup", step)
+        seen.append(config.pickup_wait_minutes)
+
+    assert seen == [15, 10, 10, 15, 30, 45]
+
+
+@pytest.mark.parametrize(
+    "before, step, after",
+    [
+        (25, 15, 30),
+        (25, -15, 15),
+        (40, 15, 45),
+        (40, -15, 30),
+        (170, 15, 180),
+        (175, 15, 180),
+        (200, 15, 200),
+        (200, -15, 195),
+    ],
+)
+def test_a_value_off_the_grid_goes_to_the_next_stop(
+    session, tenant_id, before, step, after
+):
+    """A wait stored before this rule, or typed in later, joins the grid on its next tap."""
+    config = session.get(ServiceConfig, tenant_id)
+    config.pickup_wait_minutes = before
+    session.commit()
+
+    config = switches.change_wait(session, tenant_id, "pickup", step)
+
+    assert config.pickup_wait_minutes == after
 
 
 @pytest.mark.parametrize(("service", "minuten"), [("pickup", 0), ("dinein", 15)])
@@ -195,7 +235,9 @@ def test_ohne_service_config_klare_meldung(session):
 
 def test_gleichzeitige_taps_gehen_nicht_verloren(engine, session, tenant_id):
     """Zwei Tablets tippen gleichzeitig "Wartezeit Abholung +15": das ergibt +30, nicht +15."""
-    start = session.get(ServiceConfig, tenant_id).pickup_wait_minutes
+    config = session.get(ServiceConfig, tenant_id)
+    config.pickup_wait_minutes = start = 30
+    session.commit()
     barrier = threading.Barrier(2)
 
     def tap():
