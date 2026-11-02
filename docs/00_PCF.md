@@ -538,6 +538,53 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 02.11.2026, evening - security audit T-10.1 and its fixes, paused by Maxi
+Status: the scoped security audit of T-10.1 ran on a48d142 (105 exposed files
+        since 52bf88c): 3 P1, 2 P2, 13 P3, none refuted; recorded in docs/09
+        section 5 and on #252 (comment of 02.11.2026). Merged: #484 (print
+        bridge and kitchen token hardening, P2 no. 5 and P3 nos. 15 to 18,
+        with the audit record), #489 (recognition only on the caller's own
+        line, P1 no. 1 and P3 nos. 12, 13). Closed: the group issues #7 and
+        #395 (all sub-issues done). 37 merged local branches deleted.
+#491 state: pushed head = the commit that adds this handover (docs/00_PCF.md
+        only) on top of 38e938f, which merged origin/main 95b4915 (#489) and
+        all four Dependabot branches: #485 ntfy v2.35.0, #486 n8n 2.45.7,
+        #487 mypy 2.4.1, pydantic 2.14.2, pydantic-core 2.50.2,
+        pydantic-settings 2.16.2, pytest 9.2.0, ruff 0.17.3, #488 types-pyyaml
+        6.0.12.20261030 (each only docker-compose.yml or api/requirements.txt;
+        PR body: Closes #485, #486, #487, #488). Ran on 38e938f, test image
+        built from it with the new pins: full suite 7557 passed, 319 skipped,
+        latency 44 passed, 3 skipped; ruff format, ruff check, mypy clean. Not
+        run on it (paused): the scripted evals against main (last run on
+        9c454b3: identical to main 13a72db case by case); CI and Codex not
+        waited for.
+Artifacts: api/domain/customers/lookup.py (line_of, recognize),
+        api/domain/delivery/address.py (own_line), api/domain/customers/
+        requests.py (verify on own-line rows, Ambiguous), api/domain/ordering/
+        handover.py (SLIP_FIELDS), printbridge/install.ps1.
+Decisions: a guest calling from another phone and naming the usual number is
+        asked for name and address again (fails closed, Made Assumptions).
+        P2 no. 4 (a spoofed caller ID moves the default address) waits for
+        Maxi: keep, keep the old default until the team marks the delivery
+        done, or read the street back after a recent change.
+Gate: G0 open, unchanged. It waits for T-10.2 on the wire and two calls at
+        once (T-10.1). The T-10.1 audit holds only once #491 is merged and
+        until the next exposed file changes.
+Open: 1. #491 (P1 nos. 2 and 3, data subject verification) with the four
+        Dependabot bumps #485 to #488: on its pushed head run the full suite,
+        ruff, mypy and the scripted evals compared with main, wait for CI and
+        Codex, then merge with --match-head-commit (xhigh, Claude merges once
+        clean). 2. Maxi: P2 no. 4. 3. #252: /v1/calls/start sits behind the
+        same AGENT_API_TOKEN as the tools, so a token holder can create a call
+        with any caller ID (a separate token or no mount outside dev and test).
+        4. The four recording points (P3 nos. 6 to 9) before RECORDING_ENABLED
+        is switched on.
+Lessons: GitHub does not move a stacked PR's base when the branch below is
+        merged without deletion: PATCH the base to main by hand. Merging main
+        moves the head, so the stacked PR needs CI and Codex again.
+```
+
+```text
 ## Handover 02.11.2026 - #244 threads, T-6.1, T-6.7, T-6.2 part 1, deps
 Status: merged 01./02.11.2026: #452 (the four open threads of #244), #453
         (findings 8 and 9 of the audit on 7768182), #454 (T-6.1, migration
