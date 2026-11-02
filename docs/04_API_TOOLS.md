@@ -86,7 +86,7 @@ Ids only (legal check L12): the agent never says stored data aloud unprompted, s
 
 Unbekannt → `found: false`, `say: null`. **Nie** raten, welcher Kunde gemeint sein könnte. The same `found: false` for an objection to recognition on the number (`recognition_objections`), a blocked customer, several customers on the number without a `guest_name` that tells them apart, and a name that does not match: that is a new customer, the record of the other stays closed.
 
-Built as an HTTP tool (T-6.2 part 1, 01.11.2026). The core does not call it yet: it is not in `dispatch.TOOLS` and the prompt names it as not available, and nothing writes a customer before T-6.5.
+Built as an HTTP tool (T-6.2 part 1, 01.11.2026), in the core since T-6.5 (`agent/dispatch.py`). There the number is always the one of the call (`calls.caller_id`), never one a model writes, and `guest_name` passes only as the guest said it (`guards._guest_details`): trying numbers or names would read out who stands behind them. A withheld caller ID or one that is no number gives `found: false`. The state keeps `found` and `address_id` under `customer`, no stored word (L12).
 
 ---
 
@@ -351,7 +351,7 @@ Für Rückfragen zu Optionen, Extras und Allergenen.
   "say": null
 }
 ```
-**Allergene:** Ist `known: false` **und** `allergen_question: true`, lautet `say` wörtlich „Das kann ich Ihnen nicht sicher sagen, dazu ist bei uns nichts hinterlegt." (aus dem Code, `domain/menu/details.py`). The own core hands the call to the team right after it, or sets a callback when nobody answers, and the call ends before any `confirm` (T-11.1, legal check L17: allergen information belongs before the contract). Over HTTP a client has to hand over or set the callback itself; the model's tool texts (`prompts/tools_v2.md`) no longer ask for it, since in the own core the loop does it. Ohne Allergenfrage bleibt der Satz weg: sonst bekäme die Frage nach der Sauce den Rückruf statt einer Antwort. `known: false` steht trotzdem in den Daten - der Agent nennt nie ein Allergen, das dort nicht steht. Der Agent formuliert hier **nichts** selbst. `codes` ist dann leer und `confirmed_at` `null`: keine Auskunft, nicht „frei davon". Gepflegte Codes kommen in der Reihenfolge der LMIV-Liste, damit jeder Anruf dieselbe Reihenfolge hört; `confirmed_at` ist der jüngste Nachweis, als **Ortsdatum** des Mandanten (CLAUDE.md §8) und nicht als UTC-Datum: ein Nachweis vom 19.09. um 00:30 Ortszeit liegt als 18.09. 22:30 UTC in der Zeile.
+**Allergene:** Ist `known: false` **und** `allergen_question: true`, lautet `say` wörtlich „Das kann ich Ihnen nicht sicher sagen, dazu ist bei uns nichts hinterlegt." (aus dem Code, `domain/menu/details.py`). The own core hands the call to the team right after it, or sets a callback when nobody answers, and the call ends before any `confirm` (T-11.1, legal check L17: allergen information belongs before the contract). Over HTTP a client has to hand over or set the callback itself; the model's tool texts (`prompts/tools_v3.md`) no longer ask for it, since in the own core the loop does it. Ohne Allergenfrage bleibt der Satz weg: sonst bekäme die Frage nach der Sauce den Rückruf statt einer Antwort. `known: false` steht trotzdem in den Daten - der Agent nennt nie ein Allergen, das dort nicht steht. Der Agent formuliert hier **nichts** selbst. `codes` ist dann leer und `confirmed_at` `null`: keine Auskunft, nicht „frei davon". Gepflegte Codes kommen in der Reihenfolge der LMIV-Liste, damit jeder Anruf dieselbe Reihenfolge hört; `confirmed_at` ist der jüngste Nachweis, als **Ortsdatum** des Mandanten (CLAUDE.md §8) und nicht als UTC-Datum: ein Nachweis vom 19.09. um 00:30 Ortszeit liegt als 18.09. 22:30 UTC in der Zeile.
 
 Die `menu_item_id` kommt aus `search_menu`, ein anderer Weg in die Karte existiert nicht. Inaktive Gerichte liefert das Tool nicht (`not_found`), ausverkaufte schon, mit `sold_out: true` und demselben Satz wie die Suche - es sei denn, es ging um Allergene und die Auskunft fehlt, die wiegt dann schwerer.
 
@@ -381,6 +381,7 @@ Außerhalb → `ok: false`, `error.code: "out_of_zone"`, `say` bietet Abholung a
 - Only active zones of the tenant with `match_type` `postal_code` count.
 - A postal code in two active zones is `service_unavailable` with the team sentence: the fee would be whichever row came first (hard rule 2), so `scripts/seed_zones.py` (T-6.9) must refuse an overlap.
 - The tool says where, not when: whether delivery is open right now stays with `get_service_status` and `draft_order`.
+- `draft_order` runs the same check on its own address, so a model that skipped this tool still gets the fee of the zone, and a stored address the zone of today.
 
 ---
 
@@ -451,7 +452,9 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
 **Request**
 ```json
 { "call_id": "…", "tenant_id": "…", "idempotency_key": "…", "type": "delivery",
-  "customer": { "name": "Müller", "phone": "+49…", "address_id": "…" },
+  "customer": { "name": "Müller", "phone": "+49…",
+                "address": { "street": "Rheinstraße", "house_number": "54", "postal_code": "76530",
+                             "city": "Musterstadt", "floor_note": "2. OG" } },
   "items": [
     { "menu_item_id": "…", "quantity": 2,
       "options": [{ "group": "Sauce", "name": "Erdnuss" }], "note": "ohne Zwiebeln" }
@@ -470,7 +473,7 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
     "items_total_cents": 1480, "delivery_fee_cents": 250, "total_cents": 1730,
     "ready_at": "2026-09-15T18:50:00Z",
     "warnings": [],
-    "readback": "Zweimal Nummer 23 Frühlingsrollen mit Erdnusssauce, ohne Zwiebeln. Macht 17 Euro 30, Lieferung in etwa 50 Minuten an die Rheinstraße 54. Passt das so?"
+    "readback": "Zweimal Nummer 23 Frühlingsrollen mit Erdnusssauce, ohne Zwiebeln. Macht 17 Euro 30 inklusive 2 Euro 50 Liefergebühr, Lieferung in etwa 50 Minuten an die Adresse Rheinstraße 54, 76530 Musterstadt, 2. OG, auf den Namen Müller. Passt das so?"
   },
   "say": null
 }
@@ -479,11 +482,30 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
 **Prüfungen im Code, nicht im Modell:** Öffnungszeit · Position aktiv und nicht ausverkauft · Optionen gültig · Pflichtgruppen gewählt · Zone auflösbar · Mindestbestellwert erreicht · Summe korrekt · Lieferzeit aus aktueller Wartezeit.
 Verstoß → `ok: false` mit passendem Code und `say`.
 
-**Stand T-4.5 (nur Abholung):** `type: "delivery"` antwortet `invalid_input` mit der Frage, ob der Gast abholen möchte; Zone, Pauschale und Mindestbestellwert kommen mit T-6.5. Im Code (`domain/ordering/`):
+**Delivery (T-6.5, `domain/delivery/address.py`):** `customer.address` is what the guest said, `customer.address_id` the default address `find_customer` gave, after the guest's yes; `address` wins if both come. `name` may be left out on a recognized number (below).
+
+| Case | Answer |
+|---|---|
+| Delivery not open: no delivery window now, the team's switch `delivery_enabled` off, or the emergency stop | `closed`, `say` „Lieferung ist gerade leider nicht möglich.", with „Möchten Sie abholen?" only where pickup is open. The config is read fresh: the session of a call does not expire, and a tap on the tablet in the middle of a call must hold |
+| Neither `address` nor `address_id` | `invalid_input`, `say` asks for the address |
+| Postal code outside every active zone | `out_of_zone` (`say` offers pickup), also for a stored address |
+| Postal code not understood, or in two zones | as in `check_delivery` |
+| Dishes below `min_order_cents` of the zone | `below_minimum`, `say` names the missing amount („Bis zum Mindestbestellwert fehlen noch 6 Euro 20. …"). The fee does not count towards the minimum. Nothing is written |
+| `address_id` is not the default address of the customer the number and the name recognize: another name, another number, an objection, a blocked customer, several customers on the number, an invented id | `invalid_input`, `say` asks for the address, nothing stored is named (L12) |
+| A blocked customer on the number | `service_unavailable` with the team sentence: nobody drives out on a prank (assumption, docs/01) |
+| No name, and the number recognizes nobody | `invalid_input`, `say` asks for the name |
+
+- **Fee and total:** `delivery_fee_cents` comes from the zone, `total_cents` is dishes plus fee. Nothing in the request can set either.
+- **`ready_at`:** now plus the longer of `service_config.delivery_wait_minutes` and `eta_minutes` of the zone, rounded up as for a pickup. `ready_after_close` reads the delivery window.
+- **Customer and address (L12):** written once the draft stands, in the same transaction. The same number and name (`fold`) is the same customer, a name that does not match is a new one; the same address said again is the same row. `zone_id` is set on the address, also on a stored one. A draft counts for nothing: default address, `order_count`, `last_order_at` and `last_contact_at` wait for `confirm`.
+- **Read-back:** the total with the fee before the yes (legal check N2), with „inklusive … Liefergebühr" unless the fee is zero; the address the guest said, with postal code, city and floor note. A stored address is read as „an dieselbe Adresse wie beim letzten Mal", and a name left out is not read at all: the order runs under the stored name, which neither the read-back nor the booking sentence says (L12). `audit_log` keeps two flags for the replay and no word of the address.
+
+Im Code (`domain/ordering/`):
 
 | Lage | Antwort |
 |---|---|
 | Abholung gerade nicht offen | `closed` |
+| Abholung ohne Name | `invalid_input`, `say` fragt nach dem Namen |
 | Gericht unbekannt, inaktiv oder von einem anderen Mandanten | `not_found` |
 | Gericht ausverkauft | `conflict`, `say` wie bei `search_menu` |
 | Option gibt es an diesem Gericht nicht, doppelt, oder Pflichtgruppe mehrfach | `invalid_input` mit `say` |
@@ -515,7 +537,9 @@ Der einzige Übergang von `draft` nach `confirmed`.
 - `pickup_code` ist „A" plus laufende Nummer je Mandant und Betriebstag (A1, A2, …; Betriebstag ab 05:00, `core/time`). Der Tag kommt aus dem Anlagezeitpunkt der Bestellung. Zwei gleichzeitige Bestätigungen zählen nacheinander (Sperre je Mandant und Tag), nie zweimal derselbe Code.
 - `handover` hängt am Modus beim Bestätigen: nur `primary` gibt `"queued"`, setzt `handover_state = pending` und legt `order.confirmed` in die Outbox (Bon für die Küche). In `overflow`, `shadow` und `paused` antwortet es `"awaiting_approval"`: die Bestellung ist bestätigt, aber nichts geht an die Küche, bis das Team im Tablet freigibt (T-4.7, docs/02 §Modus). Exception since T-8.2: with `service_config.overflow_needs_approval` false (the restaurant switches it off after G5), `overflow` answers like `primary`. The mode is the one that holds at the moment of `confirm`, a window of `call_mode_windows` included (T-8.1). Ein späterer Moduswechsel ändert die Antwort auf einen erneuten Aufruf nicht.
 - **The amount holds a ticket back too, in every mode (#252, 13.10.2026):** an order whose `total_cents` (items plus delivery fee, what the guest was read) is above `service_config.order_approval_above_cents` answers `"awaiting_approval"` in `primary` as well: confirmed, pickup code assigned, no `order.confirmed` in the outbox until "Passt" on the tablet. Above the amount, not from it: with the default of 15000 an order of exactly 150,00 euros goes to the kitchen. A limit of 0 holds every order, one that costs nothing included. The limit is read at the moment of the confirm; a limit changed afterwards does not change the answer to a repeated call. The `audit_log` entry `order.confirmed` says why the ticket waited: `waits_for` is `"mode"`, `"amount"` or `null`.
-- Das Ereignis trägt die ganze Bestellung (Positionen mit Nummer, Name, Menge, Optionen, Hinweis, Preis). Nummer und Name kommen aus dem Schnappschuss des Entwurfs: auf dem Bon steht, was dem Gast vorgelesen wurde - nach einer Korrektur im Tablet der korrigierte Stand.
+- **Delivery (T-6.5):** the team's switch is read again here, under the lock: a delivery it turned off between the read-back and the yes is a `conflict` with the sentence of `closed`, and the draft can never be confirmed. A yes makes the order's address the customer's default and counts the order on the customer.
+- **`last_contact_at` (T-6.2):** set at the yes of an order and a reservation, on the customer with that number and name, and on a callback (`create_callback`) and a complaint (`transfer_to_team`), which name no person, on every customer of the number.
+- Das Ereignis trägt die ganze Bestellung (Positionen mit Nummer, Name, Menge, Optionen, Hinweis, Preis), bei einer Lieferung `address` (street, house_number, postal_code, city, floor_note), sonst `null`, und `delivery_fee_cents`: the input slip is the only way a delivery reaches the register and the driver. Nummer und Name kommen aus dem Schnappschuss des Entwurfs: auf dem Bon steht, was dem Gast vorgelesen wurde - nach einer Korrektur im Tablet der korrigierte Stand.
 - **Bon aus dem Tablet (T-4.7):** „Passt" auf einer wartenden Bestellung, „Nochmal senden" und eine Korrektur, nachdem die Küche schon einen Bon hat, legen ebenfalls `order.confirmed` mit der ganzen Bestellung ab (`domain/ordering/ticket.py`). Zwei Felder kommen dazu: `revision` (Anzahl der Korrekturen, 0 beim ersten Bon) und `correction_reason` (`wrong_item` / `wrong_quantity` / `wrong_address` / `other`, nur wenn die Küche schon einen Bon hatte - dann druckt sie „KORREKTUR"; sonst `null`). Whether the bridge may hold a slip is read from its tickets, not from the card (repo audit 27.10.2026, `handover.may_hold_a_slip`): a ticket it picked up whose pickup got no print error back, acked or never answered. A card the watchdog turned red after a lost ack, or one red from a newer ticket's print error while an older slip is at the register, still gets „KORREKTUR"; after a reported print error on every pickup the corrected slip is a first slip. „Nochmal senden" keeps the reason of the newest ticket.
 - **Vertrag für den Bon-Empfänger (T-4.6):** Der Dispatcher stellt nach `next_attempt_at` zu, nicht nach Bestellung. Deshalb (a) überschreibt ein neuer Stand einen Bon, den noch niemand zu senden versucht hat (`pending`, `attempts = 0`), statt einen zweiten anzulegen; (b) verwirft der Empfänger einen Bon, dessen `revision` kleiner ist als eine für dieselbe `order_id` schon gedruckte; (c) folgt `handover_state` nur dem Ereignis mit der aktuellen Revision. Umgesetzt in T-4.6: (b) und (c) prüft der Server selbst beim Abholen und bei der Rückmeldung, die Druckbrücke verwirft zusätzlich jede schon gedruckte Revision (§Küchenbon).
 - Eine Bestellung aus einem anderen Anruf ergibt `not_found`, eine stornierte `conflict`.

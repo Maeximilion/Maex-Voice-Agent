@@ -700,7 +700,7 @@ def _seen(hit: dict[str, Any]) -> dict[str, Any]:
 
 
 # Tools, mit denen eine Korrektur nach dem Vorlesen beginnt: eine Reservierung ueber
-# check_slot, eine Bestellung ueber draft_order (prompts/system_v2.md).
+# check_slot, eine Bestellung ueber draft_order (prompts/system_v3.md).
 _CORRECTING = frozenset({"check_slot", "create_reservation", "draft_order"})
 # Eine Korrektur der Gerichte beginnt mit search_menu: das loest den
 # vorgelesenen Entwurf ab, erfolgreich oder nicht - endet der Zug mit einer

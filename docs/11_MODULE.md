@@ -90,12 +90,12 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 
 ### `domain/delivery/`
 - `zones.py` — PLZ-Match, später Polygon (`shapely`), ein Interface für beides
-- `fees.py` — Pauschale, Mindestbestellwert, Lieferzeit je Zone
-- `address.py` — Straße, Hausnummer, PLZ normalisieren, Zone auflösen und an der Adresse speichern
+- `address.py` — wer, wohin, welche Zone (T-6.5): `place` liest nur und wirft, `keep` schreibt Kunde und Adresse; Zone auflösen und an der Adresse speichern. Mindestbestellwert und „Lieferung offen" stehen in `domain/ordering/validation.py`, neben den übrigen Prüfungen vor der Summe
 
 ### `domain/customers/`
 - `phone.py` — E.164-Normalisierung deutscher Nummern, inkl. unterdrückter Nummer
 - `lookup.py` — Kunde und Adressen zur Nummer, `blocked` beachten
+- `contact.py` — `last_contact_at`, Zähler und Standardadresse beim Ja
 - `retention.py` — Löschfristen setzen und anwenden
 
 ### `domain/callbacks/`
@@ -202,7 +202,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `cli.py` — Gespräch im Terminal: du tippst den Kunden, der Agent antwortet, Tool-Aufrufe werden angezeigt
 - `replay.py` — spielt ein Transkript aus `evals/cases/` ab
 - `session.py` — die gemeinsame Mechanik beider Eingänge: Anruf-Zeile öffnen und schließen, Zustand halten, Tool-Protokoll und Ausgabe
-- `scripted_llm.py` — regelbasierter Modell-Ersatz bis T-2.4: erkennt Reservierung und Abholung aus `prompts/system_v2.md`, rät nie, meldet Unverstandenes an die Leiter
+- `scripted_llm.py` — regelbasierter Modell-Ersatz bis T-2.4: erkennt Reservierung, Abholung und Lieferung aus `prompts/system_v3.md`, rät nie, meldet Unverstandenes an die Leiter
 - `scripted_order.py` — der Abholfluss des Modell-Ersatzes: Gerichte, Pflichtoptionen, Name, `draft_order`, vorlesen, `confirm`; what a card number is on the open allergy question it takes from the active menu (`MenuNumbers`, handed in by `session.py`), not from the import grammar
 - `noise.py` — verrauscht Eingaben absichtlich (Buchstabendreher, abgeschnittene Wörter), um die Leiter zu testen
 
