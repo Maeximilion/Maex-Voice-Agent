@@ -369,7 +369,6 @@ def test_wartezeit_abholung_minus_15_und_knopf_aus_an_der_grenze(
     client, engine, tenant_id
 ):
     client.post("/gui/kopfzeile/wartezeit/abholung/-15", headers=HX)
-    # The default of 20 lies between two stops of the 15-minute grid.
     assert config_von(engine, tenant_id).pickup_wait_minutes == 15
 
     for _ in range(5):

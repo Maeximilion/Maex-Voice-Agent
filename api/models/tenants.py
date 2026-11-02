@@ -109,10 +109,10 @@ class ServiceConfig(Timestamps, Base):
         Boolean, nullable=False, server_default="true"
     )
     pickup_wait_minutes: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default="20"
+        Integer, nullable=False, server_default="30"
     )
     delivery_wait_minutes: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default="45"
+        Integer, nullable=False, server_default="60"
     )
     team_phone: Mapped[str] = mapped_column(Text, nullable=False)
     max_call_seconds: Mapped[int] = mapped_column(
