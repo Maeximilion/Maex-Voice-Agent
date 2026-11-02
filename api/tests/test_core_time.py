@@ -73,3 +73,19 @@ def test_betriebstag_anfang_ist_konfigurierbar():
     assert t.business_day(dt, "Europe/Berlin", day_starts_at=time(2, 0)) == date(
         2026, 9, 17
     )
+
+
+@pytest.mark.parametrize(
+    ("day", "months", "expected"),
+    [
+        (date(2026, 11, 2), 1, date(2026, 12, 2)),
+        (date(2026, 12, 15), 1, date(2027, 1, 15)),
+        # Art. 3(2)(c) of Regulation 1182/71: a month without that day ends on
+        # its last one.
+        (date(2027, 1, 31), 1, date(2027, 2, 28)),
+        (date(2028, 1, 31), 1, date(2028, 2, 29)),
+        (date(2026, 11, 30), 3, date(2027, 2, 28)),
+    ],
+)
+def test_add_months(day, months, expected):
+    assert t.add_months(day, months) == expected
