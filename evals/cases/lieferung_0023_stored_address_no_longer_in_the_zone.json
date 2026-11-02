@@ -1,0 +1,57 @@
+{
+  "id": "lieferung_0023",
+  "name": "Stored address no longer in the zone",
+  "tags": [
+    "lieferung",
+    "adresse",
+    "wiedererkennung",
+    "zone",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "customers": [
+    {
+      "phone": "+497215551234",
+      "name": "Brandt",
+      "address": {
+        "street": "Talstrasse",
+        "house_number": "5",
+        "postal_code": "54321",
+        "city": "Fernstadt"
+      }
+    }
+  ],
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, genau."
+    },
+    {
+      "role": "customer",
+      "text": "Dann lasse ich es, danke."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": false,
+    "tools": [
+      {
+        "tool": "draft_order",
+        "error": "out_of_zone"
+      }
+    ]
+  }
+}

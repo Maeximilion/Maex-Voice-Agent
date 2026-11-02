@@ -1,0 +1,81 @@
+{
+  "id": "lieferung_0020",
+  "name": "Yes to the same address, then a name that does not match",
+  "tags": [
+    "lieferung",
+    "adresse",
+    "wiedererkennung",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "customers": [
+    {
+      "phone": "+497215551234",
+      "name": "Brandt",
+      "address": {
+        "street": "Rheinstrasse",
+        "house_number": "54",
+        "postal_code": "12345",
+        "city": "Musterdorf",
+        "floor_note": "Hinterhaus"
+      }
+    }
+  ],
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, auf den Namen Neumann."
+    },
+    {
+      "role": "customer",
+      "text": "Bergstrasse 3, 12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "13",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Neumann",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Bergstrasse",
+      "house_number": "3",
+      "postal_code": "12345",
+      "city": "Musterdorf"
+    },
+    "tools": [
+      "find_customer",
+      "check_delivery",
+      {
+        "tool": "draft_order",
+        "error": "invalid_input"
+      }
+    ],
+    "order_type": "delivery",
+    "said": [
+      "An dieselbe Adresse wie beim letzten Mal?"
+    ]
+  }
+}

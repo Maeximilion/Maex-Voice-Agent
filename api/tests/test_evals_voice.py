@@ -15,6 +15,7 @@ from evals.runner import run
 from evals.voice import (
     SAMPLE_RATE,
     answer_to_readback,
+    hear_keys,
     hear_with_noise,
     noise_cases,
     recognition,
@@ -101,6 +102,13 @@ def test_the_case_is_played_as_the_ear_heard_it(migrated_db_url, tmp_path):
     [result] = report.cases
     assert not result.passed
     assert any("items" in d for d in result.diffs), result.diffs
+
+
+def test_a_line_of_bare_digits_is_the_keypad_no_ear_hears():
+    hear = hear_keys(lambda line: "gehoert")
+    assert hear("12345") == "12345"
+    assert hear("0721 5551234") == "gehoert"
+    assert hear("Zweimal die 13.") == "gehoert"
 
 
 def test_a_line_without_speech_is_no_turn(migrated_db_url, tmp_path):

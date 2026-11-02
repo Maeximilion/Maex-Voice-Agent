@@ -34,7 +34,13 @@ from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import denies_allergy, mentions_allergy, only_denies
-from sim.scripted_order import CLEAR_MATCHES, SAY_NAME, MenuNumbers, PickupScript
+from sim.scripted_order import (
+    ADDRESS_FIELDS,
+    CLEAR_MATCHES,
+    SAY_NAME,
+    MenuNumbers,
+    PickupScript,
+)
 
 # Reihenfolge, in der gefragt wird. Entspricht den Pflichtfeldern von
 # CreateReservationRequest (api/schemas/reservations.py).
@@ -121,13 +127,32 @@ _NAME_CLAUSE = re.compile(
     r"[A-ZÄÖÜ][^\s,.;!?]{1,40}"
 )
 _PHONE = re.compile(r"(\+?\d[\d\s/()-]{5,})")
-# An address in plain digits and the usual street words. Number words, a
-# correction inside it and a street without such a word are for a real model.
-_POSTAL = re.compile(r"\b(\d{5})\s+([A-ZÄÖÜ][\wäöüß-]+)")
-_STREET = re.compile(
-    r"\b([A-ZÄÖÜ][\wäöüß-]*(?:stra(?:ss|ß)e|str\.|weg|platz|gasse|allee|ring|damm)"
-    r"|Am [A-ZÄÖÜ][\wäöüß-]+)\s+(\d+\s?[a-z]?)\b"
+# An address in the usual street words, as far as the eval cases say one. A
+# street without such a word is for a real model. A code of the wrong length
+# passes: only `check_delivery` tells a code not understood (docs/04).
+_POSTAL = re.compile(r"\b(\d{4,6})\s+([A-ZÄÖÜ][\wäöüß-]+)")
+_STREET_WORD = r"(?:stra(?:ss|ß)e|str\.|weg|platz|gasse|allee|ring|damm)"
+_STREET_NAME = rf"[A-ZÄÖÜ][\wäöüß-]*{_STREET_WORD}|Am [A-ZÄÖÜ][\wäöüß-]+"
+_STREET = re.compile(rf"\b({_STREET_NAME})\s+(\d+\s?[a-z]?)\b")
+_STREET_ALONE = re.compile(rf"\b({_STREET_NAME})")
+# "W, E, S, E, R, W, E, G" or "L I N D E N Strasse": what `_spelled` of
+# `agent/guest_details.py` takes for a name, here for the street.
+_SPELLED = re.compile(
+    r"(\b[A-ZÄÖÜ]\b(?:[\s,.-]+\b[A-ZÄÖÜ]\b){2,})"
+    rf"(?:[\s,.-]*((?i:{_STREET_WORD}))\b)?"
 )
+_LABELLED_POSTAL = re.compile(
+    r"(?i:postleitzahl)\s+(?:ist\s+)?([^,.]+)(?:,\s*([A-ZÄÖÜ][\wäöüß-]+))?"
+)
+_LABELLED_HOUSE = re.compile(r"(?i:hausnummer)(?:\s+ist)?")
+_HOUSE = re.compile(r"[\s,]*(\d+|[^\W\d_]+)(?:\s?([a-zA-Z])\b)?")
+# "Gartenweg 14, nein, 41": the number behind the no counts.
+_HOUSE_AGAIN = re.compile(r"\bnein\W+(\d+\s?[a-z]?)\b")
+_CITY = re.compile(r"\b(?:in|nach)\s+([A-ZÄÖÜ][\wäöüß-]+)")
+# An objection to recognition goes to the team, by the prompt's rule.
+_OBJECTION = re.compile(r"widersprech|widerspruch|wiedererkannt", re.IGNORECASE)
+# Above this many digits a bare number is a phone number, no part of an address.
+_MAX_ADDRESS_DIGITS = 6
 _DELIVERY_WORDS = re.compile(
     r"\b(?:liefern lassen|liefern|geliefert haben|geliefert|lieferung|nach)\b",
     re.IGNORECASE,
@@ -203,6 +228,10 @@ class ScriptedLLM:
     # -- Kundenzug ---------------------------------------------------------
 
     def _after_customer(self, state: dict[str, Any], text: str) -> LLMTurn:
+        if _OBJECTION.search(text):
+            return LLMTurn(
+                tool_call=ToolCall("transfer_to_team", {"reason": "out_of_scope"})
+            )
         patch = self._extract(text, state.get("slots", {}))
         slots = {**state.get("slots", {}), **patch}
 
@@ -216,6 +245,8 @@ class ScriptedLLM:
             self._pickup.readback_for = state["order_id"]
         if self._pickup is not None and self._pickup.readback_for:
             yes = _mentions_word(text, YES) and not _mentions_word(text, NO)
+            if not yes and any(field in patch for field in ADDRESS_FIELDS):
+                return self._pickup.on_new_address(slots, patch)
             return self._pickup.on_readback(yes, text)
         if state.get("stage") == "readback_pending" and self._pickup is None:
             return self._after_readback(state, text, slots, patch)
@@ -388,10 +419,7 @@ class ScriptedLLM:
         if not result.get("ok"):
             if self._pickup is not None:
                 # The tool's sentence offers pickup, or asks for one more dish.
-                if result.get("error_code") == "out_of_zone":
-                    self._pickup.delivery = False
-                if result.get("error_code") == "below_minimum":
-                    self._pickup.phase = "more"
+                self._pickup.on_order_refused(name, result.get("error_code"))
             if name == "search_menu" and self._pickup is not None:
                 # War es die Antwort auf eine Rueckfrage, gilt die Frage weiter.
                 reopened = self._pickup.on_search_failed(say)
@@ -554,10 +582,11 @@ class ScriptedLLM:
         if phone:
             patch["phone"] = phone
         if self._pickup is not None or _mentions_stem(text, DELIVERY):
-            if postal := _POSTAL.search(text):
-                patch["postal_code"], patch["city"] = postal.groups()
-            if street := _STREET.search(text):
-                patch["street"], patch["house_number"] = street.groups()
+            patch |= _address_said(text)
+            if self._pickup is not None and self._pickup.delivery:
+                patch |= _labelled_address(text, patch)
+            if self._pickup is not None and self._pickup.takes_address(slots):
+                patch |= _address_answer(text, {**slots, **patch})
         return patch
 
     def _reserved_for(self, text: str, slots: dict[str, Any]) -> str | None:
@@ -680,6 +709,80 @@ def _party_size(text: str) -> int | None:
         if value is not None:
             return value
     return _number_before(text, _PARTY_NOUN)
+
+
+def _address_said(text: str) -> dict[str, str]:
+    """An address in plain digits, wherever it is said."""
+    said: dict[str, str] = {}
+    if postal := _POSTAL.search(text):
+        said["postal_code"], said["city"] = postal.groups()
+    if street := _STREET.search(text):
+        said["street"], said["house_number"] = street.groups()
+        if again := _HOUSE_AGAIN.search(text, street.end()):
+            said["house_number"] = again[1]
+    return said
+
+
+def _labelled_address(text: str, found: dict[str, str]) -> dict[str, str]:
+    """What the guest names by its label, also as a correction of the read-back
+    ("Nein, die Hausnummer ist 41"), and the number behind a street in words."""
+    said: dict[str, str] = {}
+    code = _LABELLED_POSTAL.search(text)
+    if code and "postal_code" not in found and (digits := _digits_said(code[1])):
+        said["postal_code"] = digits
+        if code[2]:
+            said["city"] = code[2]
+    mark = _LABELLED_HOUSE.search(text) or _STREET_ALONE.search(text)
+    if (
+        mark
+        and "house_number" not in found
+        and (number := _house_number(text[mark.end() :]))
+    ):
+        said["house_number"] = number
+    return said
+
+
+def _address_answer(text: str, slots: dict[str, Any]) -> dict[str, str]:
+    """The answer while the address is asked for and not accepted: a spelled
+    street, a street without its number, a city, a bare number. Keys on the
+    phone reach the core as bare digits (`telephony/handler.py` `on_dtmf`). A
+    bare number is the house number the street still lacks, else the code."""
+    said: dict[str, str] = {}
+    if spelled := _SPELLED.search(text):
+        letters = "".join(char for char in spelled[1] if char.isalpha())
+        said["street"] = letters.capitalize() + (spelled[2] or "").lower()
+        if number := _house_number(text[spelled.end() :]):
+            said["house_number"] = number
+    elif street := _STREET_ALONE.search(text):
+        said["street"] = street[1]
+    if city := _CITY.search(text):
+        said["city"] = city[1]
+    digits = _digits_said(text)
+    if digits and len(digits) <= _MAX_ADDRESS_DIGITS:
+        wanted = "postal_code"
+        if slots.get("street") and not slots.get("house_number"):
+            wanted = "house_number"
+        said[wanted] = digits
+    return said
+
+
+def _house_number(text: str) -> str | None:
+    """The words `text` starts with as a house number: "7b", "7 b", "sieben b"."""
+    match = _HOUSE.match(text)
+    if match is None:
+        return None
+    number = match[1] if match[1].isdigit() else parse_cardinal(match[1])
+    return f"{number}{(match[2] or '').lower()}" if number else None
+
+
+def _digits_said(text: str) -> str | None:
+    """A sentence of digits and number words as digits, or None: "12345", "eins
+    zwei drei vier fuenf", "zwoelf drei fuenfundvierzig"."""
+    words = re.findall(r"[^\W_]+", text)
+    parts = [w if w.isdigit() else parse_cardinal(w) for w in words]
+    if not parts or None in parts:
+        return None
+    return "".join(str(part) for part in parts)
 
 
 def _phone(text: str) -> str | None:
