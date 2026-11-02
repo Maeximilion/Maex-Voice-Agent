@@ -186,6 +186,7 @@ def test_caller_number_goes_after_90_days_and_the_statistics_stay(session, tenan
 def _a_guest(session, tenant_id, last_contact_at):
     customer = _customer(session, tenant_id)
     customer.last_contact_at = last_contact_at
+    customer.order_count = 1
     session.add(
         Address(
             tenant_id=tenant_id,
@@ -218,6 +219,20 @@ def test_a_customer_goes_with_the_addresses_after_24_months(session, tenant_id):
     assert _customers(session) == {stays, at_the_limit}
     left = session.scalars(select(Address.customer_id)).all()
     assert sorted(left) == sorted([stays, at_the_limit])
+
+
+def test_a_customer_only_a_draft_made_goes_with_the_guest_details(session, tenant_id):
+    """T-6.5: the row of a delivery nobody said yes to does not stay 24 months."""
+    period = settings.retention_guest_details_days * DAY
+    gone = _a_guest(session, tenant_id, NOW - period - DAY)
+    session.get(Customer, gone).order_count = 0
+    young = _a_guest(session, tenant_id, NOW - period + DAY)
+    session.get(Customer, young).order_count = 0
+    booked = _a_guest(session, tenant_id, NOW - period - DAY)
+    session.commit()
+
+    assert purge(session, NOW)["customers"] == 1
+    assert _customers(session) == {young, booked}
 
 
 def test_a_deleted_customer_leaves_the_order_and_the_objection(session, tenant_id):

@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import SAY_ON_FAILURE, InvalidInput, NotFound
 from api.core.time import utcnow
 from api.domain.callbacks.create import create_callback
+from api.domain.customers.contact import note_contact
 from api.domain.customers.phone import normalize_phone
 from api.domain.status.hours import load_hours, open_window_at
 from api.models import AuditLog, Call, Callback, ServiceConfig, Tenant
@@ -83,6 +84,9 @@ def transfer_to_team(
                 payload={"reason": req.reason},
             )
         )
+        number = _number(call.caller_id)
+        if req.reason == "complaint" and number is not None:
+            note_contact(session, req.tenant_id, number, now)
     session.commit()
     return TransferResult(transfer_to=config.team_phone, available=available)
 

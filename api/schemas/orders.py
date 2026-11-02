@@ -30,11 +30,26 @@ class OrderItemIn(BaseModel):
     note: str | None = Field(default=None, max_length=NOTE_MAX)
 
 
+class OrderAddress(BaseModel):
+    """A delivery address as the guest said it."""
+
+    street: str = Field(min_length=1, max_length=200)
+    house_number: str = Field(min_length=1, max_length=20)
+    # No shape here: a code not understood gets its question from the domain.
+    postal_code: str = Field(max_length=40)
+    city: str = Field(min_length=1, max_length=200)
+    floor_note: str | None = Field(default=None, max_length=NOTE_MAX)
+
+
 class OrderCustomer(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
+    # A delivery to a recognized customer may leave it out: the order then runs
+    # under the stored name, which the read-back never says (L12).
+    name: str | None = Field(default=None, min_length=1, max_length=200)
     phone: str = Field(min_length=3, max_length=40)
-    # Erst mit Lieferung (T-6.5) ausgewertet.
+    # The default address `find_customer` gave, after the guest's yes.
     address_id: uuid.UUID | None = None
+    # A new address; wins over `address_id`.
+    address: OrderAddress | None = None
 
 
 class DraftOrderRequest(ToolRequest):

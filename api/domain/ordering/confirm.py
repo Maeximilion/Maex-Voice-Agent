@@ -22,12 +22,15 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from api.core.errors import SAY_ON_FAILURE, Conflict, NotFound
-from api.core.time import business_day, business_day_bounds_utc
+from api.core.time import business_day, business_day_bounds_utc, tz, utcnow
+from api.domain.customers.contact import note_order
 from api.domain.ordering.draft import draft_labels
+from api.domain.ordering.validation import delivery_closed_say
 from api.domain.status.mode import mode_at
+from api.domain.status.service import DELIVERY
 from api.events import enqueue
 from api.events.types import ORDER_CONFIRMED
-from api.models import AuditLog, Order, OrderItem, ServiceConfig, Tenant
+from api.models import Address, AuditLog, Order, OrderItem, ServiceConfig, Tenant
 from api.schemas.confirm import Confirmation, ConfirmRequest
 
 ACTOR_AGENT = "agent"
@@ -88,6 +91,16 @@ def confirm_order(
     if config is None or tenant is None:
         raise NotFound("Mandant ohne service_config", say=SAY_ON_FAILURE)
 
+    if order.type == DELIVERY and not config.delivery_enabled:
+        # The team switched delivery off between the read-back and the yes.
+        # A conflict: this draft can never be confirmed (`state._refused_for_good`).
+        raise Conflict(
+            "Lieferung seit dem Entwurf abgeschaltet",
+            say=delivery_closed_say(
+                session, req.tenant_id, now or utcnow(), tz(tenant.timezone)
+            ),
+        )
+
     # The mode that holds now, a window of `call_mode_windows` included (T-8.1).
     mode = mode_at(session, tenant, config, now).mode
     waits_for = _waits_for(order, mode, config)
@@ -95,6 +108,7 @@ def confirm_order(
     order.status = "confirmed"
     order.pickup_code = _next_pickup_code(session, order, tenant.timezone)
     order.handover_state = "pending" if direct else None
+    note_order(session, order, now or utcnow())
 
     session.add(
         AuditLog(
@@ -186,6 +200,19 @@ def _next_pickup_code(session: Session, order: Order, tz_name: str) -> str:
     return f"{PICKUP_PREFIX}{issued + 1}"
 
 
+def _address(session: Session, order: Order) -> dict | None:
+    address = session.get(Address, order.address_id) if order.address_id else None
+    if address is None:
+        return None
+    return {
+        "street": address.street,
+        "house_number": address.house_number,
+        "postal_code": address.postal_code,
+        "city": address.city,
+        "floor_note": address.floor_note,
+    }
+
+
 def order_event_payload(
     session: Session,
     order: Order,
@@ -217,6 +244,9 @@ def order_event_payload(
         "customer_name": order.customer_name,
         "phone": order.phone,
         "ready_at": order.ready_at.isoformat() if order.ready_at else None,
+        # The input slip is the only way a delivery reaches the register and
+        # the driver (printbridge/escpos.py).
+        "address": _address(session, order),
         # The note of the whole order (D24), such as the guest's allergy.
         "note": order.note,
         "revision": revision,

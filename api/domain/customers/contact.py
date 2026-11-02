@@ -1,0 +1,53 @@
+"""What a contact does to a customer (T-6.2, docs/03): `last_contact_at` starts
+the 24-month period again, on an order, a reservation, a callback and a
+complaint. Set at the yes, not on a draft.
+
+A callback and a complaint name no person, only the number: every customer on
+it counts. An order and a reservation carry a name, so only that customer does.
+"""
+
+import uuid
+from datetime import datetime
+
+from sqlalchemy import select, update
+from sqlalchemy.orm import Session
+
+from api.domain.menu.numberwords import fold
+from api.models import Address, Customer, Order
+
+
+def note_contact(
+    session: Session,
+    tenant_id: uuid.UUID,
+    phone: str,
+    at: datetime,
+    name: str | None = None,
+) -> None:
+    for customer in session.scalars(
+        select(Customer).where(Customer.tenant_id == tenant_id, Customer.phone == phone)
+    ):
+        if name is None or fold(customer.name) == fold(name):
+            customer.last_contact_at = at
+
+
+def note_order(session: Session, order: Order, at: datetime) -> None:
+    """A confirmed order. Its address becomes the default, the one and only
+    "letztes Mal" `find_customer` may ask about: the old one goes first, or the
+    unique index stops the second."""
+    if order.customer_id is None:
+        note_contact(session, order.tenant_id, order.phone, at, order.customer_name)
+        return
+    customer = session.get_one(Customer, order.customer_id)
+    customer.last_contact_at = at
+    customer.last_order_at = at
+    customer.order_count += 1
+    if order.address_id is None:
+        return
+    session.execute(
+        update(Address)
+        .where(Address.customer_id == customer.id, Address.is_default.is_(True))
+        .values(is_default=False)
+    )
+    session.execute(
+        update(Address).where(Address.id == order.address_id).values(is_default=True)
+    )

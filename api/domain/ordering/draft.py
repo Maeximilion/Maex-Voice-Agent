@@ -5,8 +5,10 @@ der Karte, nie aus dem Request (CLAUDE.md §2 Regel 1): der Agent schickt nur
 `menu_item_id`, Menge und die Namen der gewählten Optionen. Erst `confirm`
 macht den Entwurf gültig.
 
-Lieferung kommt mit T-6.5 (Zone, Pauschale, Mindestbestellwert); bis dahin
-nimmt das Tool nur Abholungen an.
+A delivery (T-6.5) adds the zone of its address, the fee from that zone and
+the minimum order value (`domain/delivery/address.py`). Customer and address
+are written here, the moment the draft stands; `confirm` makes the address the
+customer's default.
 """
 
 import uuid
@@ -27,26 +29,24 @@ from api.core.errors import (
 )
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
+from api.domain.delivery.address import keep, place, require_minimum
 from api.domain.ordering.labels import ACTION_DRAFT_CREATED, current_labels
 from api.domain.ordering.pricing import Line, items_total_cents
 from api.domain.ordering.readback import SpokenLine, readback
 from api.domain.ordering.validation import (
-    pickup_open_at,
+    require_delivery_open,
     require_pickup_open,
+    service_open_at,
     validated_lines,
 )
-from api.domain.status.service import PICKUP
-from api.models import AuditLog, Call, Order, OrderItem, ServiceConfig, Tenant
+from api.domain.status.service import DELIVERY
+from api.models import Address, AuditLog, Call, Order, OrderItem, ServiceConfig, Tenant
 from api.schemas.orders import DraftOrderRequest, OrderDraft, OrderStatus
 
 ACTOR_AGENT = "agent"
 # Die zugesagte Zeit liegt nach Schluss der Abholung. Der Agent sagt es dem
 # Gast nicht selbst; das Team sieht die Warnung am Entwurf.
 WARNING_READY_AFTER_CLOSE = "ready_after_close"
-
-SAY_NO_DELIVERY = (
-    "Lieferungen kann ich gerade noch nicht aufnehmen. Möchten Sie abholen?"
-)
 
 
 def draft_order(
@@ -67,18 +67,35 @@ def draft_order(
     call = session.get(Call, req.call_id)
     if call is None or call.tenant_id != req.tenant_id:
         raise NotFound("Anruf unbekannt", say=SAY_ON_FAILURE)
-    if req.type != PICKUP:
-        raise InvalidInput("type: Lieferung erst ab T-6.5", say=SAY_NO_DELIVERY)
+    # The session of a call does not expire on commit: without this a tap on
+    # the tablet in the middle of the call would not count.
+    session.refresh(config)
 
-    name = req.customer.name.strip()
-    if not name:
+    delivery = req.type == DELIVERY
+    name = (req.customer.name or "").strip()
+    if not name and not delivery:
         raise InvalidInput("customer.name: darf nicht leer sein")
     phone = normalize_phone(req.customer.phone)
 
-    require_pickup_open(session, req.tenant_id, now, zone)
+    if delivery:
+        require_delivery_open(session, tenant, config, now)
+    else:
+        require_pickup_open(session, req.tenant_id, now, zone)
     lines = validated_lines(session, req.tenant_id, req.items, now)
     total = items_total_cents(lines)
-    ready_at = _ready_at(now, config.pickup_wait_minutes)
+    fee = 0
+    wait = config.pickup_wait_minutes
+    where = customer_id = address_id = None
+    if delivery:
+        where = place(session, req.tenant_id, req.customer, phone)
+        require_minimum(total, where.zone)
+        name = where.name
+        fee = where.zone.fee_cents
+        # The longer of the two: the team raises the wait in a rush, a far
+        # zone takes longer whatever the wait.
+        wait = max(config.delivery_wait_minutes, where.zone.eta_minutes)
+        customer, address = keep(session, req.tenant_id, phone, where)
+        customer_id, address_id = customer.id, address.id
 
     order = Order(
         tenant_id=req.tenant_id,
@@ -87,10 +104,12 @@ def draft_order(
         status="draft",
         phone=phone,
         customer_name=name,
+        customer_id=customer_id,
+        address_id=address_id,
         items_total_cents=total,
-        delivery_fee_cents=0,
-        total_cents=total,
-        ready_at=ready_at,
+        delivery_fee_cents=fee,
+        total_cents=total + fee,
+        ready_at=_ready_at(now, wait),
         note=(req.note or "").strip() or None,
         idempotency_key=req.idempotency_key,
         # Fester Bezugspunkt für den readback, damit ein Replay dieselbe Zahl sagt.
@@ -125,7 +144,13 @@ def draft_order(
         )
     warnings = _warnings(session, order, zone)
     labels = [[line.item.number, line.item.name] for line in lines]
-    draft = _response(order, readback(order, _spoken(lines, labels)), warnings)
+    name_heard = where is None or where.name_heard
+    spoken_address = None if where is None or where.stored else address
+    draft = _response(
+        order,
+        readback(order, _spoken(lines, labels), spoken_address, name_heard),
+        warnings,
+    )
     session.add(
         AuditLog(
             tenant_id=req.tenant_id,
@@ -137,7 +162,11 @@ def draft_order(
                 "call_id": str(req.call_id),
                 "type": req.type,
                 "positions": len(lines),
-                "total_cents": total,
+                "total_cents": total + fee,
+                # Whether the read-back may say them (L12): a replay says the
+                # same. The address itself stays out, as every personal word.
+                "name_heard": name_heard,
+                "address_heard": spoken_address is not None,
                 # Stand von Karte und Öffnungszeiten beim Anlegen. Der Replay
                 # liest ihn von hier, statt neu zu rechnen, denn beides kann
                 # sich seitdem geändert haben (Codex PR #124). Nur Kartendaten:
@@ -186,7 +215,11 @@ def _replay(
         SpokenLine(number, name, row.quantity, row.options, row.note)
         for row, (number, name) in zip(rows, snapshot["labels"], strict=True)
     ]
-    return _response(existing, readback(existing, spoken), snapshot["warnings"])
+    address = None
+    if snapshot.get("address_heard") and existing.address_id:
+        address = session.get(Address, existing.address_id)
+    said = readback(existing, spoken, address, snapshot.get("name_heard", True))
+    return _response(existing, said, snapshot["warnings"])
 
 
 def draft_labels(session: Session, order_id: uuid.UUID) -> list[list[str]]:
@@ -219,8 +252,8 @@ def _spoken(lines: list[Line], labels: list[list[str]]) -> list[SpokenLine]:
 
 
 def _warnings(session: Session, order: Order, zone: ZoneInfo) -> list[str]:
-    if order.ready_at is not None and not pickup_open_at(
-        session, order.tenant_id, order.ready_at, zone
+    if order.ready_at is not None and not service_open_at(
+        session, order.tenant_id, order.ready_at, zone, order.type
     ):
         return [WARNING_READY_AFTER_CLOSE]
     return []

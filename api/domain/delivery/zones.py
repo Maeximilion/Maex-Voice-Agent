@@ -26,11 +26,15 @@ SAY_POSTAL_CODE_NOT_UNDERSTOOD = (
 SAY_OUT_OF_ZONE = "Dorthin liefern wir leider nicht. Möchten Sie stattdessen abholen?"
 
 
+def postal_digits(postal_code: str) -> str:
+    """Speech recognition spaces digits out: "7 6 5 3 0"."""
+    return "".join(postal_code.split())
+
+
 def check_delivery(
     session: Session, tenant_id: uuid.UUID, postal_code: str
 ) -> DeliveryCheck:
-    # Speech recognition spaces digits out: "7 6 5 3 0".
-    code = "".join(postal_code.split())
+    code = postal_digits(postal_code)
     if not POSTAL_CODE.fullmatch(code):
         raise InvalidInput(
             f"postal code invalid: {postal_code!r}",

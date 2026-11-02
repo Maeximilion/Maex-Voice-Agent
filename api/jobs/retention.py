@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import (
     Text,
+    and_,
     case,
     cast,
     delete,
@@ -99,12 +100,21 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
             .values(phone="", summary=""),
         ),
         # For real: the addresses go with it, an order keeps only cleared
-        # links (migration 018), and an objection hangs on the number.
+        # links (migration 018), and an objection hangs on the number. A row
+        # only a draft made, nobody ever said yes to it, goes with the guest
+        # details of that draft instead of after 24 months.
         "customers": lambda: _run(
             session,
             delete(Customer).where(
-                Customer.last_contact_at
-                < now - timedelta(days=settings.retention_customer_days)
+                or_(
+                    Customer.last_contact_at
+                    < now - timedelta(days=settings.retention_customer_days),
+                    and_(
+                        Customer.order_count == 0,
+                        Customer.last_contact_at
+                        < now - timedelta(days=settings.retention_guest_details_days),
+                    ),
+                )
             ),
         ),
         "outbox_payloads": lambda: _outbox_payloads(session, now),
