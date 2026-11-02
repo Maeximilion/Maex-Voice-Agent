@@ -29,7 +29,8 @@ function Wait-Until([scriptblock]$condition, $what) {
 }
 
 function Invoke-Installer($arguments) {
-    & powershell -NoProfile -ExecutionPolicy Bypass -File $installer -Folder $folder @arguments
+    # Write-Host: anything left in the output stream would become part of the return value.
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $installer -Folder $folder @arguments | Write-Host
     return $LASTEXITCODE
 }
 
@@ -50,6 +51,9 @@ Assert-That ($xml -match "LogonTrigger") "the task starts at logon"
 Assert-That ($task.Settings.ExecutionTimeLimit -eq "PT0S") "the task has no time limit"
 Assert-That ($task.Actions[0].WorkingDirectory -eq $folder) "the task starts in the install folder"
 
+Start-Sleep -Seconds 5
+Get-ScheduledTaskInfo -TaskName "Maex Print Bridge" | Format-List LastRunTime, LastTaskResult
+$task.State
 Wait-Until { (Test-Path $log) -and ((Get-Content -Raw $log) -match "Durchlauf abgebrochen") } "the hidden bridge runs and logs"
 
 $first = (Get-Bridge).Id

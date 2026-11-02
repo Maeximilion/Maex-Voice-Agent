@@ -49,7 +49,7 @@ class _Refuses(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         self.send_error(404)
 
-    def log_message(self, format, *args):  # noqa: A002 - name set by the base class
+    def log_message(self, format, *args):
         pass
 
 

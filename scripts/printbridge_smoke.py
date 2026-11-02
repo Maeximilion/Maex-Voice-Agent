@@ -99,9 +99,7 @@ def checks(program: Sequence[str], tls_url: str | None = None) -> list[str]:
     code, output, slip = _test_slip(program)
     expect(
         "--test slip",
-        code == 0
-        and "Umlaute äöü ß".encode("cp858") in slip
-        and slip.endswith(CUT),
+        code == 0 and "Umlaute äöü ß".encode("cp858") in slip and slip.endswith(CUT),
         f"{output}\nreceived {len(slip)} bytes",
     )
     return failures
