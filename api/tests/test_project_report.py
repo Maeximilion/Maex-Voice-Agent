@@ -869,7 +869,7 @@ def test_history_intake_checks_direct_membership_and_preserves_archives(
         }
 
     monkeypatch.setattr(project_report, "graphql", graphql)
-    board = []
+    board: list[Item] = []
     assert (
         project_report.reconcile_history("PROJECT", board, [item], "token", fix=True)
         == []
