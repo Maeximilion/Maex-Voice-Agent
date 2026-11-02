@@ -22,10 +22,20 @@ import uuid
 from collections import Counter, defaultdict
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, NamedTuple
 
-from sqlalchemy import ColumnElement, Date, cast, delete, func, or_, select, update
+from sqlalchemy import (
+    ColumnElement,
+    Date,
+    case,
+    cast,
+    delete,
+    func,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -55,6 +65,7 @@ from api.models import (
     OutboxEvent,
     RecognitionObjection,
     Reservation,
+    ServiceConfig,
 )
 
 ACTOR_JOB = "job:data_requests"
@@ -481,7 +492,36 @@ def _open_rows(
     slip or the team's notification, and it would go out with the guest's name
     after the erasure (docs/09 §2). So does an order the kitchen has no slip for,
     whatever its time says: "Passt" and "Nochmal senden" build the slip from these
-    rows, its allergy note included."""
+    rows, its allergy note included. So does a draft its call can still confirm:
+    the call has not ended and the draft is younger than the longest a call may
+    last (docs/04 §confirm, the rule of `reservations/capacity.py`). No config, no
+    `confirm`, so no draft is live. `erase` closes every other draft."""
+    lifetime = timedelta(
+        seconds=session.scalar(
+            select(ServiceConfig.max_call_seconds).where(
+                ServiceConfig.tenant_id == tenant_id
+            )
+        )
+        or 0
+    )
+
+    def live(model: Any, rows: Sequence[Any]) -> set[uuid.UUID]:
+        return set(
+            session.scalars(
+                select(model.id)
+                .join(Call, Call.id == model.call_id)
+                .where(
+                    model.tenant_id == tenant_id,
+                    model.id.in_([row.id for row in rows]),
+                    model.status == "draft",
+                    model.deleted_at.is_(None),
+                    model.created_at > now - lifetime,
+                    Call.ended_at.is_(None),
+                )
+            )
+        )
+
+    drafts = live(Order, orders) | live(Reservation, tables)
     waiting = {
         value
         for payload in session.scalars(
@@ -497,6 +537,7 @@ def _open_rows(
             OpenRow(Order.__tablename__, order.id)
             for order in orders
             if str(order.id) in waiting
+            or order.id in drafts
             or (
                 order.status in OPEN_ORDER_STATUSES
                 and order.deleted_at is None
@@ -510,6 +551,7 @@ def _open_rows(
             OpenRow(Reservation.__tablename__, table.id)
             for table in tables
             if str(table.id) in waiting
+            or table.id in drafts
             or (
                 table.status == "confirmed"
                 and table.deleted_at is None
@@ -721,7 +763,10 @@ def erase(
     """Every store of U2, all at once: rows that stay stripped keep what the tax
     records need (L18, Art. 17(3)(b)), `consent_log` stays as the proof of L13
     (docs/03). Open rows stop it, so that no second run has to find a person
-    whose name is already gone; `keep` names the ones the guest chose to keep."""
+    whose name is already gone; `keep` names the ones the guest chose to keep. An
+    order draft becomes `cancelled`: `confirm` takes any draft of its call, also
+    of one that ended, and must not send the kitchen one without its notes. A
+    reservation draft is deleted like any finished table."""
     _require(request, "erasure")
     keepable = {row.row_id for row in person.open_rows if row.table in KEEPABLE}
     if not keepable.issuperset(keep):
@@ -786,7 +831,10 @@ def erase(
         session,
         update(Order)
         .where(Order.tenant_id == tenant_id, Order.id.in_(orders))
-        .values(**ORDER_GONE),
+        .values(
+            **ORDER_GONE,
+            status=case((Order.status == "draft", "cancelled"), else_=Order.status),
+        ),
         Order,
         "cleared",
         ledger,

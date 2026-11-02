@@ -4,12 +4,14 @@ the person is, access, erasure and objection, on the verified person's rows only
 import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, InvalidInput, NotFound
+from api.domain.confirm import confirm
 from api.domain.customers import find_customer
 from api.domain.customers.requests import (
     Details,
@@ -37,7 +39,9 @@ from api.models import (
     OutboxEvent,
     RecognitionObjection,
     Reservation,
+    ServiceConfig,
 )
+from api.schemas.confirm import ConfirmRequest
 from api.tests.test_domain_draft_order import _tenant, item
 
 ZONE = "Europe/Berlin"
@@ -911,6 +915,146 @@ def test_a_waiting_order_goes_once_the_kitchen_has_its_slip(session, tenant_id):
     session.flush()
     _erase(session, tenant_id)
     assert _fresh(session, order).customer_name == ""
+
+
+ALLERGY = "WICHTIG: Keine Erdnüsse. Grund: Allergie"
+# Younger than `service_config.max_call_seconds`, 420 by default.
+JUST_NOW = timedelta(minutes=2)
+TOO_OLD = timedelta(minutes=8)
+
+
+def _confirm(session, tenant_id, row, entity):
+    request = ConfirmRequest(
+        call_id=row.call_id,
+        tenant_id=tenant_id,
+        entity=entity,
+        entity_id=row.id,
+        idempotency_key=uuid.uuid4().hex,
+    )
+    return confirm(session, request, NOW)
+
+
+def _draft(session, tenant_id, age=JUST_NOW, ended_at=None) -> Order:
+    """A draft of a guest with an older order, the row that opens the person."""
+    _order(session, tenant_id)
+    draft = _order(session, tenant_id, status="draft", ready_at=None, item_note=ALLERGY)
+    draft.created_at = NOW - age
+    session.get(Call, draft.call_id).ended_at = ended_at
+    session.flush()
+    return draft
+
+
+def _table_draft(session, tenant_id, age=JUST_NOW, ended_at=None) -> Reservation:
+    _order(session, tenant_id)
+    draft = _reservation(session, tenant_id, reserved_for=FUTURE, status="draft")
+    draft.created_at = NOW - age
+    session.get(Call, draft.call_id).ended_at = ended_at
+    session.flush()
+    return draft
+
+
+def test_a_draft_its_call_can_confirm_stops_the_erasure(session, tenant_id):
+    draft = _draft(session, tenant_id)
+    with pytest.raises(Conflict) as refused:
+        _erase(session, tenant_id)
+    assert str(draft.id) in refused.value.message
+    assert _fresh(session, draft).customer_name == "Müller"
+    line = session.scalar(select(OrderItem).where(OrderItem.order_id == draft.id))
+    assert line.note == ALLERGY
+
+
+def test_the_yes_after_a_refused_erasure_brings_the_kitchen_its_allergy_note(
+    session, tenant_id
+):
+    draft = _draft(session, tenant_id)
+    with pytest.raises(Conflict):
+        _erase(session, tenant_id)
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant_id)
+        .values(call_mode="primary")
+    )
+    _labels(session, tenant_id, draft, [["23", "Pho"]])
+    assert _confirm(session, tenant_id, draft, "order").status == "confirmed"
+    payload = session.scalar(
+        select(OutboxEvent.payload).where(OutboxEvent.event_type == "order.confirmed")
+    )
+    assert payload["customer_name"] == "Müller"
+    assert payload["items"][0]["note"] == ALLERGY
+
+
+def test_an_order_draft_cannot_be_kept(session, tenant_id):
+    draft = _draft(session, tenant_id)
+    with pytest.raises(InvalidInput):
+        _erase(session, tenant_id, keep=[draft.id])
+
+
+@pytest.mark.parametrize(
+    ("age", "ended_at"),
+    [(JUST_NOW, NOW - timedelta(minutes=1)), (TOO_OLD, None)],
+    ids=["call ended", "older than any call"],
+)
+def test_a_draft_no_call_can_confirm_goes_and_cannot_be_confirmed(
+    session, tenant_id, age, ended_at
+):
+    """`confirm` itself takes any draft of its call, also of a call that ended,
+    so an erasure closes it instead of leaving it to be confirmed without its
+    notes, and waits for nobody."""
+    draft = _draft(session, tenant_id, age, ended_at)
+    _erase(session, tenant_id)
+    kept = _fresh(session, draft)
+    assert (kept.customer_name, kept.status) == ("", "cancelled")
+    with pytest.raises(Conflict):
+        _confirm(session, tenant_id, kept, "order")
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 0
+
+
+def test_a_reservation_draft_its_call_can_confirm_stops_the_erasure(session, tenant_id):
+    draft = _table_draft(session, tenant_id)
+    with pytest.raises(Conflict) as refused:
+        _erase(session, tenant_id)
+    assert str(draft.id) in refused.value.message
+    assert _fresh(session, draft).guest_name == "Müller"
+
+
+def test_the_yes_after_a_refused_erasure_keeps_the_reservation(session, tenant_id):
+    draft = _table_draft(session, tenant_id)
+    with pytest.raises(Conflict):
+        _erase(session, tenant_id)
+    assert _confirm(session, tenant_id, draft, "reservation").status == "confirmed"
+    assert _fresh(session, draft).guest_name == "Müller"
+
+
+def test_a_reservation_draft_the_guest_keeps_stays_whole(session, tenant_id):
+    draft = _table_draft(session, tenant_id)
+    _erase(session, tenant_id, keep=[draft.id])
+    assert _fresh(session, draft).guest_name == "Müller"
+
+
+@pytest.mark.parametrize(
+    ("age", "ended_at"),
+    [(JUST_NOW, NOW - timedelta(minutes=1)), (TOO_OLD, None)],
+    ids=["call ended", "older than any call"],
+)
+def test_a_reservation_draft_no_call_can_confirm_goes_for_good(
+    session, tenant_id, age, ended_at
+):
+    draft = _table_draft(session, tenant_id, age, ended_at)
+    gone = SimpleNamespace(id=draft.id, call_id=draft.call_id)
+    _erase(session, tenant_id)
+    session.expire_all()
+    assert session.get(Reservation, gone.id) is None
+    with pytest.raises(NotFound):
+        _confirm(session, tenant_id, gone, "reservation")
+
+
+def test_a_soft_deleted_draft_stops_nothing(session, tenant_id):
+    """A soft-deleted draft: `confirm` refuses it, so it stops nothing."""
+    draft = _draft(session, tenant_id)
+    draft.deleted_at = NOW
+    session.flush()
+    _erase(session, tenant_id)
+    assert _fresh(session, draft).customer_name == ""
 
 
 def test_an_unsent_event_stops_the_erasure_until_it_went_out(session, tenant_id):
