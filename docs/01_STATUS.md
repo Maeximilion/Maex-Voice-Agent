@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.13.4
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.13.5
 
 ---
 
@@ -317,6 +317,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 ## Made Assumptions (subject to change)
 
+- **Key figures (T-8.4, 02.11.2026), Claude's choices, awaiting Maxi:** (a) docs/06 §4 names the four values but the daily report counts none of them, so they are derived from existing rows: accuracy = taken orders (`confirmed`, `approved`, `handed_over`) without an `order.corrected` entry over all taken orders; cost per order = summed `calls.cost_cents` over taken orders, rounded to whole cents, calls without a cost are noted and not counted; handed to the team = calls ending `transferred` or `callback` over all calls; missed = calls ending `abandoned` or `error`; (b) an order the team corrected counts as wrong once, however often it was corrected; (c) only one admin page exists, so the bar of four values sits on the Kennzahlen page and not yet in every area; the history is per business day (14 days), week and month views are left; (d) no access guard of its own: the page sits under `/gui` like the operations view (Caddy Basic-Auth).
 - **`find_customer` (T-6.2 part 1, 01.11.2026), Claude's choices, awaiting Maxi:** (a) the tool gives the model ids only, against the first draft of `docs/04`; (b) a shared number without a telling name counts as unknown, so such a guest is asked like a new one; (c) a name must match in full, apart from upper case and umlaut spelling, so "Herr Müller" is not "Müller", which costs a new record and never opens someone else's
 - **Customers and the objection to recognition (T-6.1, 01.11.2026), Claude's choices, awaiting Maxi:** (a) `recognition_objections` has no period: the row is what keeps recognition off, so it stays until the guest withdraws the objection; (b) `customers.delete_after` of the first draft is gone, the 24 months run from `last_contact_at`, so one contact cannot leave a stale date behind; (c) a phone number on `customers` and `recognition_objections` must be E.164 by a check of the table, and a customer has at most one default address
 - **The print bridge's heartbeat (T-8.3, 30.10.2026), Claude's choices; (d) confirmed by Maxi 30.10.2026:** (a) silent counts only once pickup or delivery has been open for those minutes, because the register PC is off at night, may come on a little after opening, and only orders print; (b) `ALARM_BRIDGE_SILENT_MINUTES` is 5, in `.env`; (c) a bridge that is set up (`KITCHEN_BRIDGE_TENANT_ID`) and never polled counts as silent; (d) the tablet shows it to the team as well, unlike the other operator alarms, because the team can check the register PC at once.
@@ -529,6 +530,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | Date | What |
 |---|---|
 | 02.11.2026 | **T-11.8 (#407): requests of data subjects.** Migration 019 `data_subject_requests` with `tenant_id`, checked `reference` and `outcome`, up and down tested; `RETENTION_REQUEST_DETAILS_MONTHS` and `RETENTION_REQUEST_LOG_YEARS` in `api/jobs/retention.py`; `domain/customers/requests.py` with `verify`, `access_copy`, `erase` and `record_objection`, behind `python -m api.jobs.data_requests`; `domain/customers/personal.py` holds what a row loses, shared with the deletion job. Name with a date or the address, never a number alone; only the verified person's rows in their tenant; the tax rows of orders stay. docs/09 §2 now uses the job. Readings under Made Assumptions |
+| 02.11.2026 | **T-8.4 key figures (#79).** `/gui/kennzahlen`, linked from the header of the operations view: accuracy, cost per order, share handed to the team and missed calls for the last 7 days, and a 14-day history per business day. `domain/calls/figures.py` reads calls, orders and `order.corrected`; no migration. 9 tests (normal day, empty day, rounding, tenant separation, page). Open: the bar in every admin area (only this page exists), week and month views. |
 | 02.11.2026 | **T-3.7 checked behind Caddy.** Caddy run from `deploy/Caddyfile` in a throwaway container (plain HTTP on a local port, the API behind it): manifest and both icons answer 401 without Basic-Auth and 200 with it, the CSP and `nosniff` headers are set. The link with `crossorigin="use-credentials"` is covered by `test_the_view_can_go_on_the_home_screen`. Still open: the tap on the real tablet once the server exists. |
 | 02.11.2026 | **T-11.9 drafts of the paper duties.** Seven German drafts with placeholders in `docs/vorlagen/`: `datenschutzhinweis.md` (L4), `lieferbedingungen.md` (N2), `verarbeitungsverzeichnis.md` (L9, filled copy stays outside the repo), `team_information.md` (L11 with the consent for `shadow`), `verfahrensdokumentation_telefon.md` (L18, D2), `allergenliste.md` (L17, structure only, values from the database), `dsb_meldung.md` (D9 and a checklist of every duty with the step it blocks). Every gap is a marked `<offen: ...>`; publishing, signing and reporting stay Maxi's. Not legal advice (D20). |
 | 02.11.2026 | **T-6.9 `scripts/seed_zones.py`.** The pilot's zone list as `imports/zones.csv` reaches `delivery_zones` whole or not at all: a postal code in two zones, a bad code, an empty amount or an empty file writes nothing; a zone the file no longer names goes inactive. Still needed: the real list from Maxi. |
@@ -689,7 +691,9 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.13.5 · 02.11.2026:** T-11.8 requests of data subjects
 - **v2.13.4 · 02.11.2026:** T-11.8: request log of data subjects with its periods, and a job for access, erasure and objection (migration 019)
+- **v2.13.4 · 02.11.2026:** T-8.4 key figures page
 - **v2.13.3 · 02.11.2026:** T-3.7 Caddy check of the home-screen icon
 - **v2.13.2 · 02.11.2026:** T-11.9 drafts of the paper duties
 - **v2.13.1 · 02.11.2026:** T-6.9 seed_zones: zone list into delivery_zones, whole or not at all

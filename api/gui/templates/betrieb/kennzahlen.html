@@ -1,0 +1,51 @@
+{# Key figures (T-8.4, docs/06 §4): the bar of four values for the last 7 days
+   on top, the history per business day below. A dash means the day had nothing
+   to divide by. A cost marked * leaves out calls whose cost is unknown. #}
+{% extends "base.html" %}
+{% block title %}Kennzahlen{% endblock %}
+{% block body_class %}betrieb{% endblock %}
+
+{% block header %}
+<header>
+  <div class="top">
+    <a class="button" href="/gui">Zurück</a>
+    <h1 class="kz-title">Kennzahlen</h1>
+    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
+  </div>
+</header>
+{% endblock %}
+
+{% block main %}
+{% if tenant %}
+<section class="card">
+  <h2>Letzte 7 Tage</h2>
+  <div class="kz-bar">
+    {% for label, text in week %}
+    <div class="kz"><span class="muted">{{ label }}</span><b>{{ text }}</b></div>
+    {% endfor %}
+  </div>
+  {% if week_unknown_cost %}
+  <p class="note">Bei {{ week_unknown_cost }} Anrufen sind die Kosten nicht bekannt und nicht mitgezählt.</p>
+  {% endif %}
+</section>
+<section class="card kz-history">
+  <h2>Verlauf</h2>
+  <table class="tbl">
+    <thead>
+      <tr><th>Tag</th><th>Anrufe</th><th>Bestellungen</th>{% for label in labels %}<th>{{ label }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for row in history %}
+      <tr>
+        <td>{{ row.day }}</td><td>{{ row.calls }}</td><td>{{ row.orders }}</td>
+        {% for text in row["values"] %}<td>{{ text }}{% if loop.index == 2 and row.unknown_cost %} *{% endif %}</td>{% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if history|selectattr("unknown_cost")|list %}
+  <p class="note">* An diesem Tag sind bei einigen Anrufen die Kosten nicht bekannt und nicht mitgezählt.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}
