@@ -20,7 +20,7 @@ Alle Preise sind Endpreise in Euro einschließlich Umsatzsteuer. Die Liefergebü
 
 ### Kein Widerrufsrecht
 
-Für Lieferungen von Speisen und Getränken, die schnell verderben können oder deren Verfallsdatum schnell überschritten würde, besteht kein Widerrufsrecht (§ 312g Abs. 2 Nr. 9 BGB). Sie können Ihre telefonische Bestellung nach Ihrem "Ja" deshalb nicht widerrufen. Rufen Sie uns bei einem Problem an: <Telefonnummer>.
+Für die Lieferung von Speisen und Getränken zu einem vereinbarten Zeitpunkt oder in einem vereinbarten Zeitraum besteht kein Widerrufsrecht (§ 312g Abs. 2 Nr. 9 BGB). <offen: Maxi prüft, ob die Bestellung eine feste Zeit nennt; die Lieferzeit wird beim Vorlesen genannt> Sie können Ihre telefonische Bestellung nach Ihrem "Ja" deshalb nicht widerrufen. Rufen Sie uns bei einem Problem an: <Telefonnummer>.
 
 ### Allergene
 
