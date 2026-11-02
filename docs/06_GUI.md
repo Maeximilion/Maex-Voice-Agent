@@ -126,7 +126,7 @@ Gebaut (T-4.8): Knopf „Gericht aus" in der Kopfzeile, daneben die Zahl der Ger
 | **Anrufe** | Liste mit Filter: Datum, Ergebnis, Absicht. Je Anruf: Dauer, Tool-Aufrufe, Kosten, Ergebnis, Transkript (falls vorhanden). |
 | **Kennzahlen** | Genauigkeit, Eskalationsquote, Abbrüche, verpasste Anrufe, Kosten je Anruf und je Bestellung. Tag, Woche, Monat. |
 | **Evals** | letzter Lauf, Verlauf der Genauigkeit über die Prompt-Versionen, fehlgeschlagene Fälle im Detail |
-| **Daten** | Löschfristen, manuelles Löschen auf Kundenwunsch, Exporte |
+| **Daten** | Löschfristen, manuelles Löschen auf Kundenwunsch, Exporte. The mockup's search by number stays a mockup: the legal check forbids it (U2, a number is no person). The page asks for a name with a date or the address and calls `domain/customers/requests.py`, as `api/jobs/data_requests.py` does until it exists (T-11.8) |
 
 ---
 

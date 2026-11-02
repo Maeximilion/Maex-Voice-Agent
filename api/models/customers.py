@@ -8,11 +8,12 @@ Löschkonzept), so nothing here is soft-deleted.
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Double,
     ForeignKeyConstraint,
@@ -31,6 +32,9 @@ from api.models.tenants import _in
 
 ZONE_MATCH_TYPES = ("postal_code", "polygon")
 E164 = r"phone ~ '^\+[1-9][0-9]{1,14}$'"
+REQUEST_KINDS = ("access", "erasure", "objection")
+REQUEST_CHANNELS = ("phone", "mail", "in_person")
+REQUEST_OUTCOMES = ("done", "not_verified", "refused", "withdrawn")
 
 
 class DeliveryZone(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
@@ -140,3 +144,38 @@ class RecognitionObjection(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     )
 
     phone: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class DataSubjectRequest(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
+    """The request log (U2, docs/09 §2): the proof of the one-month deadline
+    (Art. 12(3)). Only `verification_note` holds personal data, so `reference`
+    and `outcome` are checked: free text there would stay for years."""
+
+    __tablename__ = "data_subject_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "reference ~ '^dsr_[0-9]{4}_[0-9]{3,}$'", name="ck_dsr_reference"
+        ),
+        _in("kind", REQUEST_KINDS, "ck_dsr_kind"),
+        _in("channel", REQUEST_CHANNELS, "ck_dsr_channel"),
+        _in("outcome", REQUEST_OUTCOMES, "ck_dsr_outcome"),
+        CheckConstraint(
+            "(answered_at IS NULL) = (outcome IS NULL)"
+            " AND (answered_at IS NULL) = (delete_after IS NULL)",
+            name="ck_dsr_answered",
+        ),
+        UniqueConstraint("tenant_id", "reference", name="uq_dsr_reference"),
+    )
+
+    # In the form of a backup label: `dsr_2026_001`.
+    reference: Mapped[str] = mapped_column(Text, nullable=False)
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    deadline: Mapped[date] = mapped_column(Date, nullable=False)
+    verification_note: Mapped[str | None] = mapped_column(Text)
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[str | None] = mapped_column(Text)
+    delete_after: Mapped[date | None] = mapped_column(Date)
