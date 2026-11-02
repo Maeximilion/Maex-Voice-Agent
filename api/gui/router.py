@@ -211,6 +211,11 @@ def _header(session: Session, tenant: Tenant) -> dict:
     now = clock.utcnow()
     holding = mode_at(session, tenant, config, now)
     tone, label = MODE_LABELS.get(holding.mode, ("danger", "KI ist aus"))
+    # The AI answers and nothing can be booked: not the green tick (T-3.10).
+    if tone == "ok" and not (
+        config.pickup_enabled or config.delivery_enabled or config.reservations_enabled
+    ):
+        tone = "warn"
     rank = MODE_CHOICES.index(holding.mode) if holding.mode in MODE_CHOICES else -1
     return {
         **base,

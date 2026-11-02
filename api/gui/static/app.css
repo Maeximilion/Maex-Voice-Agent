@@ -111,8 +111,13 @@ header.aus{background:var(--surface-2)}
 /* Abholung, Lieferung, Reservierung (T-3.10): the state in words, the tone next
    to them. Two lines, so the bar keeps its room. */
 .betrieb .seg.services button{min-width:0;padding:0 var(--s2);line-height:1.1;white-space:normal;width:min-content}
+.betrieb .seg.services{margin-right:var(--s3)}
 .betrieb .seg.services .on{background:var(--ok-bg);color:var(--ok)}
-.betrieb .seg.services .off{background:var(--warn-bg);color:var(--warn)}
+.betrieb .seg.services .on::after{content:"\00a0\2713"}
+.betrieb .seg.services .off{background:transparent;color:var(--warn)}
+.betrieb .seg.services .off::after{content:"\00a0\2715"}
+/* The emergency stop holds: the three say nothing about calls, so they step back. */
+header.aus .seg.services .on{background:transparent;color:var(--muted)}
 /* Wartezeit stepper: label and value left, minus and plus right. */
 .step{display:flex;align-items:center;gap:var(--s1);border:2px solid var(--line);border-radius:var(--r);background:var(--surface-2);padding-left:var(--s3)}
 .step b{font-size:var(--fs-body);font-weight:700;line-height:1.2;width:10.4em}
@@ -258,6 +263,8 @@ header.aus{background:var(--surface-2)}
    at the top right, away from the routine buttons (UI review, 02.11.2026). */
 @media (max-width:1240px){
   .betrieb .top .seg.services{order:3}
+  .step b{width:9.6em}
+  .betrieb .actions button,.betrieb .actions a.button{padding-left:var(--s2);padding-right:var(--s2)}
 }
 /* Smaller tablets (1024 px): the bar gives up some padding, not the 60 px targets. */
 @media (max-width:1100px){

@@ -547,6 +547,21 @@ def test_a_service_goes_off_and_on_from_the_header(
     assert getattr(config_von(engine, tenant_id), field) is True
 
 
+def test_with_all_three_off_the_status_gives_up_its_tick(client, engine, tenant_id):
+    with Session(engine) as s:
+        config = s.get_one(ServiceConfig, tenant_id)
+        config.call_mode = "primary"
+        s.commit()
+    assert "tone-ok" in client.get("/gui").text
+
+    for path in ("abholung", "lieferung", "reservierung"):
+        client.post(f"/gui/kopfzeile/{path}/aus", headers=HX)
+
+    text = client.get("/gui").text
+    assert "mode status tone-warn" in text
+    assert "KI nimmt an" in text
+
+
 def test_the_header_shows_all_three_services(client, tenant_id):
     text = client.get("/gui").text
 
