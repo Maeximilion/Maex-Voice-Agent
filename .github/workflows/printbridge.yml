@@ -1,0 +1,45 @@
+name: printbridge
+
+# The print bridge as one Windows program (T-9.6): built, run and packed on a real Windows
+# runner, because nothing else here can run a Windows file. Not a required check: the path
+# filter leaves most pull requests without it.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - printbridge/**
+      - scripts/printbridge_*
+      - .github/workflows/printbridge.yml
+  pull_request:
+    paths:
+      - printbridge/**
+      - scripts/printbridge_*
+      - .github/workflows/printbridge.yml
+
+# Least privilege: the job only reads the repository.
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install --require-hashes -r printbridge/requirements-build.txt
+      # transport.py imports win32print by name at run time, which PyInstaller cannot see.
+      - run: pyinstaller --onefile --clean --noconfirm --name maex-printbridge --paths . --hidden-import win32print printbridge/__main__.py
+      - run: python scripts/printbridge_smoke.py dist/maex-printbridge.exe --tls-url https://api.github.com
+      - run: Copy-Item printbridge/install.ps1, printbridge/run.ps1 dist/
+        shell: powershell
+      - run: scripts/printbridge_install_check.ps1 -Package dist
+        shell: powershell
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: maex-printbridge-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error

@@ -182,6 +182,8 @@ Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht 
 - `transport.py` — Netzwerkdrucker (TCP 9100 mit Statusabfrage) oder Windows-Warteschlange (pywin32, wartet bis gedruckt)
 - `state.py` — Druckprotokoll: welche Bestellung in welcher Revision gedruckt ist, gegen doppelte und veraltete Bons
 - `client.py` — `/v1/kitchen/*`, nur https außer localhost
+- `install.ps1`, `run.ps1` — Windows only (T-9.6): `install.ps1` installs or removes the program for the signed-in user and registers the task at logon, `run.ps1` keeps one program running
+- `requirements-build.txt` — build-time pins of `.github/workflows/printbridge.yml`, no runtime dependency
 
 Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebucht und die GUI zeigt sie. Das Ereignis wartet, bis n8n zurück ist. Kein Vorgang geht verloren, keiner wird doppelt gesendet.
 
