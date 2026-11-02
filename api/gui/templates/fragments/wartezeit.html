@@ -1,14 +1,15 @@
 {# The wait of one service (T-3.9, T-3.14): a small sheet under the header, so the
    header stays live while somebody types. Today's wait ends at 05:00, the standard
    holds for every day. Saving closes the sheet, a refused value stays with the
-   sentence in the header. #}
+   sentence in the header: `novalidate`, so that sentence is the only one, in
+   German, and not a bubble in the language of the browser. #}
 <section class="sheet wartezeit" role="dialog" aria-labelledby="wartezeit-titel">
   <div class="sheet-head">
     <h2 id="wartezeit-titel" tabindex="-1">Wartezeit {{ label }}</h2>
-    <button type="button" class="schliessen" data-schliessen>Fertig</button>
+    <button type="button" class="schliessen" data-schliessen>Schließen</button>
   </div>
   <div class="sheet-body wait-rows">
-    <form class="wait-row" hx-post="/gui/kopfzeile/wartezeit/{{ key }}"
+    <form class="wait-row" novalidate hx-post="/gui/kopfzeile/wartezeit/{{ key }}"
           hx-target="#kopfzeile" hx-swap="outerHTML">
       <label for="wait-heute"><b>Heute</b><span class="muted">bis Betriebsschluss</span></label>
       <input type="number" id="wait-heute" name="minuten" inputmode="numeric"
@@ -16,7 +17,7 @@
       <span>Min</span>
       <button type="submit" class="primary">Übernehmen</button>
     </form>
-    <form class="wait-row" hx-post="/gui/kopfzeile/standardzeit/{{ key }}"
+    <form class="wait-row" novalidate hx-post="/gui/kopfzeile/standardzeit/{{ key }}"
           hx-target="#kopfzeile" hx-swap="outerHTML">
       <label for="wait-standard"><b>Standard</b><span class="muted">für alle Tage</span></label>
       <input type="number" id="wait-standard" name="minuten" inputmode="numeric"

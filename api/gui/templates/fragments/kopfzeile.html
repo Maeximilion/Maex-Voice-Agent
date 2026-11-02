@@ -56,7 +56,7 @@
        differs from it (T-3.14). #}
     {% for key, label, minutes, standard in waits %}
     <div class="step">
-      <button class="step-value" hx-get="/gui/wartezeit/{{ key }}" hx-target="#wartezeit"><b>Wartezeit {{ label }} {{ minutes }} Min</b>{% if minutes != standard %}<span class="step-std">Standard {{ standard }}</span>{% endif %}</button>
+      <button class="step-value" hx-get="/gui/wartezeit/{{ key }}" hx-target="#wartezeit"><b>Wartezeit {{ label }} {{ minutes }} Min</b>{% if minutes != standard %}<span class="step-std">Standard {{ standard }} Min</span>{% endif %}</button>
       <button hx-post="/gui/kopfzeile/wartezeit/{{ key }}/-{{ wait_step }}"
               hx-target="#kopfzeile" hx-swap="outerHTML"
               aria-label="Wartezeit {{ label }} {{ wait_step }} Minuten weniger"
