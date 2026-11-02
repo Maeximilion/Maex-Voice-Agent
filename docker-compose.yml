@@ -107,7 +107,7 @@ services:
   api:
     build: ./api
     restart: unless-stopped
-    networks: [backend]
+    networks: [backend, edge]
     # Capabilities stay: in development it runs as root and writes into the
     # mounted checkout (status_bump.py, eval reports), which on a Linux host
     # belongs to another user and needs DAC_OVERRIDE. The production file
@@ -179,7 +179,8 @@ services:
     # Eigener Prozess, damit der heiße Pfad nie auf n8n wartet (docs/11 §events).
     build: ./api
     restart: unless-stopped
-    networks: [backend]
+    # At the database, and it posts to n8n and the push server.
+    networks: [backend, edge]
     <<: *hardened
     # It writes nothing: its mounts and the image stay as they are.
     read_only: true
@@ -323,7 +324,8 @@ services:
     # the database through the authorize endpoint) affects every older release.
     image: n8nio/n8n:2.45.6
     restart: unless-stopped
-    networks: [backend]
+    # Third-party code behind the proxy: never on `backend` with the database.
+    networks: [edge]
     environment:
       # No usage data to n8n (#252 finding 9).
       N8N_DIAGNOSTICS_ENABLED: "false"
@@ -360,7 +362,7 @@ services:
     # upstream relay, the messages stay on this server.
     image: binwiederhier/ntfy:v2.34.0
     restart: unless-stopped
-    networks: [backend]
+    networks: [edge]
     # The server refuses to start with an empty user list, and with access
     # rules for users it does not know. So the rules are set only when users
     # exist; without users it starts closed for everyone instead of not at all.
@@ -398,14 +400,17 @@ services:
     read_only: true
     tmpfs: [/tmp]
 
-# Who stands where (docs/13 §3, api/tests/test_compose_networks.py). Both are
+# Who stands where (docs/13 §3, api/tests/test_compose_networks.py). All are
 # plain bridges here: Docker publishes no port of a container that is only on
 # an `internal` network, and such a container has no `host.docker.internal`,
 # so the dev ports and a model on the host need them plain. The production
-# file makes `backend` internal.
+# file makes `backend` and `edge` internal.
 networks:
-  # Database, API, dispatcher, n8n, push server and `voice`.
+  # The database and the three that use it: API, dispatcher, `voice`.
   backend:
+  # What Caddy passes on to, API, n8n and push server, and the dispatcher's way
+  # to the last two.
+  edge:
   # Asterisk and `voice`.
   telephony:
 

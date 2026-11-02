@@ -359,6 +359,16 @@ def test_a_database_with_a_way_out_fails(tmp_path):
     assert verdicts(networks_stage(tmp_path, ip_route=routes))[2] is False
 
 
+def test_every_address_of_the_database_is_tried(tmp_path):
+    """Two addresses on one `nc` line would be a bad call, which reads as "no"."""
+    stage = networks_stage(tmp_path, **{"hostname -i": "172.30.0.2 fd00::2\n"})
+    assert verdicts(stage) == [True, True, True]
+    stage = networks_stage(
+        tmp_path, **{"hostname -i": "172.30.0.2 fd00::2\n", "fd00::2 5432": "reached\n"}
+    )
+    assert verdicts(stage)[1] is False
+
+
 @pytest.mark.parametrize("empty", ["hostname -i", "ip route"])
 def test_a_check_that_saw_nothing_is_no_pass(tmp_path, empty):
     """An empty address tries nothing, and an empty list has no default route."""

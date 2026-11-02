@@ -1,7 +1,8 @@
 """Who stands on which Docker network (T-9.8, docs/13 §3).
 
-Asterisk takes outside input, so of the containers it reaches `voice` alone.
-Caddy stands on the edge and never sees the database. The database, the API and
+Asterisk takes outside input, so of the containers it reaches `voice` alone, and
+Caddy's published ports as the internet does. Caddy stands on the edge and never
+sees the database. The database, the API and
 the dispatcher sit on internal networks, without a way out of the server. These
 promises live in the Compose files and nowhere in the code, and a service that
 loses its `networks:` line lands on `default` without any error. So a service
@@ -34,13 +35,13 @@ DRILL = LINE.parent / "docker-compose.drill.yml"
 # Production: every service, and the one reason each network is there for it.
 PRODUCTION = {
     "db": {"backend"},
-    "dispatcher": {"backend"},
+    # At the database, and posts to n8n and the push server.
+    "dispatcher": {"backend", "edge"},
     # Behind Caddy, and at the database.
     "api": {"backend", "edge"},
-    # Behind Caddy for the editor, and the dispatcher's webhook on `backend`.
-    "n8n": {"backend", "edge"},
-    # Behind Caddy for the team's devices, on `backend` for n8n and the dispatcher.
-    "push": {"backend", "edge"},
+    # Behind Caddy. Neither needs the database, and n8n is third-party code.
+    "n8n": {"edge"},
+    "push": {"edge"},
     # Asterisk on one side, the database on the other, and its way out.
     "voice": {"backend", "telephony"},
     "asterisk": {"telephony"},
@@ -50,8 +51,8 @@ PRODUCTION = {
 # published ports, `telephony` for SIP, the model and the speech services.
 INTERNAL = {"backend", "edge"}
 WITH_A_WAY_OUT = {"public", "telephony"}
-# Added by the production file. On the workbench they would hold nothing.
-PRODUCTION_ONLY = {"edge", "public"}
+# Added by the production file, for Caddy, which the workbench does not run.
+PRODUCTION_ONLY = {"public"}
 
 
 def _networks_of(service: dict) -> set[str]:
@@ -94,8 +95,9 @@ def test_every_production_service_stands_where_it_belongs():
 
 
 def test_the_workbench_has_the_same_services_on_the_same_networks():
-    """Without what only the proxy needs: what runs there is what runs on the
-    server, and a drill or a test call finds the same walls."""
+    """Without what only the proxy needs, so a test call runs on the server's
+    layout. Not its walls: a published dev port is open across the networks by
+    address, even on loopback (measured 02.11.2026, docs/13 §3)."""
     base = {
         name: _networks_of(service) for name, service in _services(_load(BASE)).items()
     }
@@ -112,6 +114,12 @@ def test_asterisk_shares_a_network_with_voice_alone():
     networks = _production_networks()
     neighbours = {name for name, on in networks.items() if on & networks["asterisk"]}
     assert neighbours == {"asterisk", "voice"}
+
+
+def test_only_our_own_code_shares_a_network_with_the_database():
+    networks = _production_networks()
+    neighbours = {name for name, on in networks.items() if on & networks["db"]}
+    assert neighbours == {"db", "api", "dispatcher", "voice"}
 
 
 def test_caddy_shares_no_network_with_the_database():

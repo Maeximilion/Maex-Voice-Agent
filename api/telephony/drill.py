@@ -907,9 +907,9 @@ def drill_networks(drill: Drill) -> list[Check]:
     """What the networks promise (docs/13 §3), tried from inside. By address as
     well as by name: Docker's name lookup alone would say nothing about a
     route."""
-    address = drill.compose("exec", "-T", "db", "hostname", "-i").strip()
+    addresses = drill.compose("exec", "-T", "db", "hostname", "-i").split()
     database = {
-        host: reaches(drill, "asterisk", host, 5432) for host in ("db", address)
+        host: reaches(drill, "asterisk", host, 5432) for host in ("db", *addresses)
     }
     routes = drill.compose("exec", "-T", "db", "ip", "route")
     return [
@@ -920,7 +920,7 @@ def drill_networks(drill: Drill) -> list[Check]:
         ),
         (
             "networks: Asterisk reaches neither the database's name nor its address",
-            bool(address) and not any(database.values()),
+            bool(addresses) and not any(database.values()),
             f"tried {', '.join(database)}",
         ),
         (
