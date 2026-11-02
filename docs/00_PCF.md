@@ -488,20 +488,27 @@ Decisions:
 
 Gate: G0 open, unchanged. It waits for T-10.2 on the wire and two calls at once (T-10.1), with Maxi at the telephones.
 
-State at 15:05 (replaces the Status line above where they differ):
-- Merged: #468 T-6.3, #469 T-6.9, #470 T-11.9, #471 T-3.7, #472 T-6.5 with T-6.2 part 2, #473 T-11.8, #474 T-8.4.
-- Real-model run on #472 head `2e5e430`, prompt v3: on the 56 identical case files 36 and 38, mean 37, against 37 of the one run on `a9eddab`; 0 guessed, 0 unconfirmed, 0 missed; false escalations 17.6 % and 21.6 %. Limit: main has one run at that commit, docs/08 asks for two. Recorded with #475.
-- Open PRs, in merge order: #475 T-9.6 (`76d275d`), #476 T-4.9, #477 T-9.8.
-- #476 next push carries the `main` merge, this branch, the Codex P2 on German test identifiers (thread 4442786672) and the mark that Maxi accepted its three price assumptions.
-- Building: T-6.8, T-11.3, T-10.11 (mechanism with an empty catalogue, #403 stays open).
+State at 18:00, moved to the Ubuntu terminal (replaces the Status line above where they differ):
+- Merged today: #468 T-6.3, #469 T-6.9, #470 T-11.9, #471 T-3.7, #472 T-6.5 with T-6.2, #473 T-11.8, #474 T-8.4, #475 T-9.6, #477 T-9.8, #478 T-6.8, #480 the button "Storniert". T-2.4 and #234 closed.
+- Maxi's order: finish the open PRs one by one, take up no other issue for now. The earlier agents belong to the old desktop session; a new session starts new agents on the same branches.
+- #479 T-10.11 head `6c1efeb`, migration 021 with parent 019, Codex clean, conflicts on `docs/01_STATUS.md`. Refs #403, which stays open: the catalogue is Maxi's.
+- #476 T-4.9 head `e7c9a17`, migration 020 with parent 019, all findings fixed, Codex was running, conflicts with `main`. One assumption still waits for Maxi: surcharges stay report-only.
+- #481 phone number said in words, head `e2baac5`, Codex clean, 7114 passed, label bug. `lieferung_0016` stays red with the stand-in.
+- T-11.3: see the line below. Recording stays off behind a setting that defaults to off.
+- Whichever of #479 and #476 merges second must set `down_revision` on the other's head, or alembic gets two heads. T-11.3 takes the next free number.
+- No `--delete-branch` where a PR stacks on the branch. A new head that merges `main` often stalls Codex: one `@codex review`.
 
 Open, next concrete step first:
-1. Merge #475, #476, #477 in order, each after `origin/main`, CI and a clean review on its head. No `--delete-branch` where a PR stacks on the branch.
-2. Merge T-6.8, T-11.3, T-10.11 the same way; the later migration renumbers.
-3. A real-model run for the recognition evals of T-6.8 needs a start time from Maxi: about 13 minutes per pass.
-4. Maxi: the real zone list as `imports/zones.csv`, the `<offen>` marks, the complaint rules, a delivery slip on paper, whether the driver needs a phone number on the slip, a cancel button for an unreleased order, steps 3 to 9 of `printbridge/README.md`.
+1. #479: merge `origin/main` into its branch, keep every Done row and changelog line, status version above main's, full suite, mypy, ruff, scripted evals on the final tree, push once, wait for CI and Codex, merge.
+2. #476 the same way; set `down_revision` of 020 to 021 (or the reverse) and test up and down. T-4.9 decides prices: evals on the exact head.
+3. #481 the same way. Its diff hits `xhigh`: evals on the exact head.
+4. T-11.3: finish, PR with `Closes #405`, the same way.
+5. Ultrareview candidates for Maxi: #479, #481, T-11.3.
+6. Delete the remote branch `docs/handover-2026-11-02` once this block is on `main`, and the memory `resume-after-restart-2026-11-02`. Deleting needs Maxi's word: the permission check refused it.
+7. Maxi: the real zone list as `imports/zones.csv`, the `<offen>` marks, the complaint rules, a delivery slip and a "STORNIERT" note on paper (the register PC needs the new bridge build, an older one prints KORREKTUR), whether the driver needs a phone number on the slip, steps 3 to 9 of `printbridge/README.md`, surcharges on the tablet or not.
 
 Lessons:
+- A session the desktop app starts bypasses Headroom by design: check with `printenv ANTHROPIC_BASE_URL`; the Ubuntu terminal is routed.
 - Never `--delete-branch` on a PR with a PR on top: GitHub closed #469 and #470. Repair: push the old head back as the branch, reopen, PATCH the base, delete the branch.
 - `gh pr view --json statusCheckRollup` gives an empty `conclusion` for a running check: read `status`.
 - Codex stalls on a head that only merges `main`: one `@codex review`, it then answers in minutes.
