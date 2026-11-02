@@ -676,6 +676,7 @@ def find_issues(
             if item.work_started
             and item.closed_at
             and item.work_started > item.closed_at
+            and not item.fields.get("Start date")
         ],
         "Target date differs from completion": [
             item

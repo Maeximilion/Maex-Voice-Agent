@@ -7,6 +7,7 @@ an einem Pull Request fehlt.
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 
@@ -137,6 +138,58 @@ def test_closed_issues_are_included_in_the_metadata_run(monkeypatch) -> None:
         "/repos/owner/repo/issues/1/assignees",
         "/repos/owner/repo/issues/1/labels",
     ]
+
+
+@pytest.mark.parametrize(
+    ("kind", "state", "merged_at", "labels", "expected_finding", "expected_writes"),
+    [
+        ("issue", "open", None, ["code-review"], False, 1),
+        ("issue", "closed", None, ["code-review"], False, 1),
+        ("issue", "closed", None, [], True, 1),
+        ("pull", "closed", None, [], False, 0),
+        ("pull", "closed", "2026-09-23T10:00:00Z", [], True, 1),
+        ("pull", "open", None, [], True, 1),
+    ],
+)
+def test_metadata_findings_ignore_review_parents_and_rejected_prs(
+    monkeypatch,
+    tmp_path,
+    kind,
+    state,
+    merged_at,
+    labels,
+    expected_finding,
+    expected_writes,
+) -> None:
+    item = {
+        **pull("Unclassified work", labels=labels),
+        "head": {"ref": "test-branch"},
+        "state": state,
+        "merged_at": merged_at,
+        "milestone": None,
+    }
+    output = tmp_path / "findings.json"
+    calls = []
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/repo")
+    monkeypatch.setattr(sys, "argv", ["pr_metadata.py", "--findings-json", str(output)])
+    monkeypatch.setattr(
+        pr_metadata, "all_issues", lambda *a: [item] if kind == "issue" else []
+    )
+    monkeypatch.setattr(
+        pr_metadata, "all_pulls", lambda *a: [item] if kind == "pull" else []
+    )
+    monkeypatch.setattr(pr_metadata, "pages", lambda *a: [])
+    monkeypatch.setattr(pr_metadata.time, "sleep", lambda *a: None)
+    monkeypatch.setattr(pr_metadata, "rest", lambda *a: calls.append(a))
+    assert pr_metadata.main() == 0
+    findings = json.loads(output.read_text(encoding="utf-8"))["Repository metadata"]
+    assert [finding["id"] for finding in findings] == (
+        ["1"] if expected_finding else []
+    )
+    assert [call[1] for call in calls] == [
+        "/repos/owner/repo/issues/1/assignees"
+    ] * expected_writes
 
 
 def test_all_issues_leave_out_pull_requests_over_every_page(monkeypatch) -> None:

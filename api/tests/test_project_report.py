@@ -760,6 +760,24 @@ def test_later_followup_cannot_create_start_after_completion() -> None:
     ] == [item]
 
 
+def test_manual_start_clears_late_implementation_finding() -> None:
+    item = eintrag(101, state="CLOSED", iteration=None)
+    item.kind = "Issue"
+    item.closed_at = datetime(2026, 9, 23, 10, tzinfo=UTC)
+    item.work_started = datetime(2026, 9, 24, 10, tzinfo=UTC)
+    item.fields["Start date"] = "2026-09-20"
+    findings = project_report.find_issues([item], JETZT)
+    assert findings["Implementation starts after completion"] == []
+    assert findings["Start date after completion"] == []
+    assert project_report.derive_fields(item) == {"Target date": "2026-09-23"}
+
+    # A manual value clears the inferred conflict, but still needs to be valid.
+    item.fields["Start date"] = "2026-09-25"
+    assert project_report.find_issues([item], JETZT)["Start date after completion"] == [
+        item
+    ]
+
+
 def test_date_conflicts_are_reported_without_overwriting_manual_values() -> None:
     item = pr(
         101,

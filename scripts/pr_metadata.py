@@ -220,7 +220,11 @@ def main() -> int:
 
     try:
         issues = all_issues(repo, token)
-        pulls = all_pulls(repo, token)
+        pulls = [
+            pull
+            for pull in all_pulls(repo, token)
+            if pull.get("state") != "closed" or pull.get("merged_at")
+        ]
         changes = [
             (pull, change) for pull in pulls if (change := missing(pull, owner))
         ] + [
@@ -279,7 +283,7 @@ def main() -> int:
                 }
                 for item in [*issues, *pulls]
                 if not {label["name"] for label in item.get("labels", [])}
-                & (KNOWN_TYPES | {"projektpflege"})
+                & (KNOWN_TYPES | {"projektpflege", "code-review"})
                 and derive_label(item["title"]) is None
             ]
             args.findings_json.write_text(

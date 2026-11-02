@@ -79,7 +79,7 @@ jobs:
 
       - name: Reconcile work-package relationships
         id: relationships
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -87,7 +87,7 @@ jobs:
 
       - name: Fill missing metadata, including history
         id: metadata
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}

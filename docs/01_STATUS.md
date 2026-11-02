@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 03.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.23
+> Status: 03.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.24
 
 ---
 
@@ -746,6 +746,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.24 · 03.11.2026:** Resolve project-maintenance review findings: clearable dates, metadata exclusions, main-only writes and Claude skill sync (#511).
 - **v2.14.23 · 03.11.2026:** Reconcile project history, completion dates and work-package relationships; require visible PR completion checklists (#511).
 - **v2.14.22 · 03.11.2026:** Print bridge re-audit fixes: claim answer of a cancellation, uninstall order and exit code, update stop phase, package only from main
 - **v2.14.21 · 02.11.2026:** Re-audit fix: a contact moves only recognized customer rows, a planted row keeps its 90 days
