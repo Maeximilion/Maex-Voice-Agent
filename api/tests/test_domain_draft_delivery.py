@@ -1111,3 +1111,74 @@ def test_a_callback_after_a_draft_keeps_the_full_period(session, tenant_id, call
     purge(session, contact + _past(settings.retention_guest_details_days))
 
     assert _customers(session) == 1
+
+
+def test_with_an_objection_a_pickup_moves_no_period(session, tenant_id, call_id):
+    """L12: the old record's period must not grow by a contact on that number."""
+    known, _ = known_customer(session, tenant_id)
+    before = known.last_contact_at
+    _object(session, tenant_id)
+    later = NOW + timedelta(days=1)
+    order = draft_order(session, request(session, tenant_id, call_id), now=later)
+
+    confirmed(session, tenant_id, call_id, order.order_id, later)
+
+    session.refresh(known)
+    assert known.last_contact_at == before
+
+
+def test_with_an_objection_a_callback_moves_no_period(session, tenant_id, call_id):
+    known, _ = known_customer(session, tenant_id)
+    before = known.last_contact_at
+    _object(session, tenant_id)
+
+    create_callback(
+        session,
+        CreateCallbackRequest(
+            call_id=call_id,
+            tenant_id=tenant_id,
+            phone=PHONE,
+            reason="out_of_scope",
+            summary="Bitte zurückrufen.",
+        ),
+        now=NOW + timedelta(days=1),
+    )
+
+    session.refresh(known)
+    assert known.last_contact_at == before
+
+
+def test_with_an_objection_a_complaint_moves_no_period(session, tenant_id, call_id):
+    known, _ = known_customer(session, tenant_id)
+    before = known.last_contact_at
+    _object(session, tenant_id)
+
+    transfer_to_team(
+        session,
+        TransferToTeamRequest(call_id=call_id, tenant_id=tenant_id, reason="complaint"),
+        now=NOW,
+    )
+
+    session.refresh(known)
+    assert known.last_contact_at == before
+
+
+def test_with_an_objection_a_new_row_still_counts_its_own_order(
+    session, tenant_id, call_id
+):
+    """The yes of a delivery touches the row that draft wrote, no old record."""
+    known, _ = known_customer(session, tenant_id)
+    before = known.last_contact_at
+    _object(session, tenant_id)
+    draft = draft_order(
+        session, delivery(session, tenant_id, call_id, name="Müller"), now=NOW
+    )
+
+    confirmed(session, tenant_id, call_id, draft.order_id)
+
+    order = session.get(Order, draft.order_id)
+    fresh = session.get(Customer, order.customer_id)
+    session.refresh(fresh)
+    session.refresh(known)
+    assert fresh.order_count == 1
+    assert known.last_contact_at == before

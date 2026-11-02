@@ -313,7 +313,7 @@ Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, o
 | name | TEXT | |
 | last_order_at | TIMESTAMPTZ | |
 | order_count | INT | |
-| last_contact_at | TIMESTAMPTZ | set on an order, a reservation, a callback and a complaint; the 24-month period of the Löschkonzept runs from it, so no stored deletion date next to it (Maxi, 28.10.2026, #344) |
+| last_contact_at | TIMESTAMPTZ | set on an order, a reservation, a callback and a complaint, never on a number with an objection, which must not extend the old record's period; the 24-month period of the Löschkonzept runs from it, so no stored deletion date next to it (Maxi, 28.10.2026, #344) |
 | blocked | BOOL | Spam- oder Scherzanrufer |
 
 ### `recognition_objections`

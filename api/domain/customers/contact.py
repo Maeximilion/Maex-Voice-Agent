@@ -4,6 +4,8 @@ complaint. Set at the yes, not on a draft.
 
 A callback and a complaint name no person, only the number: every customer on
 it counts. An order and a reservation carry a name, so only that customer does.
+With an objection on the number nothing moves: recognition is off, and a contact
+must not extend the period of the old record (L12).
 """
 
 import uuid
@@ -12,6 +14,7 @@ from datetime import datetime
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from api.domain.customers.lookup import objected
 from api.domain.menu.numberwords import fold
 from api.models import Address, Customer, Order
 
@@ -23,6 +26,8 @@ def note_contact(
     at: datetime,
     name: str | None = None,
 ) -> None:
+    if objected(session, tenant_id, phone):
+        return
     for customer in session.scalars(
         select(Customer).where(Customer.tenant_id == tenant_id, Customer.phone == phone)
     ):
