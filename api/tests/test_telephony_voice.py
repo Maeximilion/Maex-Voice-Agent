@@ -33,6 +33,7 @@ from api.telephony.app import Voice, create_app, voice_from_settings
 from api.telephony.handler import ANNOUNCEMENTS, GREETING
 from api.telephony.router import _write
 from api.telephony.session import Lines
+from api.tests.test_compose_ports import _load
 from api.tests.test_telephony import (  # noqa: F401 - fixtures
     TEAM_PHONE,
     handler_for,
@@ -522,10 +523,49 @@ def test_the_stop_key_stops_deletes_and_tells_voice():
     dialplan = DIALPLAN.read_text(encoding="utf-8")
     stop = dialplan[dialplan.index("[stop-recording]") :]
     assert "StopMixMonitor()" in stop
-    assert "rm -f /recordings/${VOICE_CALL}.wav" in stop
+    assert "TrySystem(rm -f /recordings/${VOICE_CALL}.wav)" in stop
     assert "/calls/${VOICE_CALL}/recording/stop" in stop
     features = DIALPLAN.with_name("features.conf").read_text(encoding="utf-8")
     assert "stop_recording => *7,peer,Gosub(stop-recording,s,1)" in features
+
+
+def test_no_shell_step_can_hang_up_a_call():
+    """`System` hangs up the channel it runs on when the shell cannot run, and
+    the stop key runs on the live team leg; `TrySystem` only sets a status
+    (rule 5, audit of 02.11.2026 no. 6). Comments may name it."""
+    steps = [
+        line
+        for line in DIALPLAN.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith(";")
+    ]
+    assert not [step for step in steps if re.search(r"(?<!Try)System\(", step)]
+
+
+def _services(*parts: str) -> dict:
+    return _load(Path(__file__).resolve().parents[2].joinpath(*parts))["services"]
+
+
+def test_the_recordings_folder_belongs_to_the_user_of_voice_and_the_dispatcher():
+    """render.sh gives the folder to RECORDINGS_UID, and nobody else may write
+    or delete there: any other uid than the one of `voice` and the dispatcher
+    breaks every deletion of the job (audit of 02.11.2026 no. 8), so .env has
+    no say in it."""
+    base = _services("docker-compose.yml")
+    prod = _services("deploy", "docker-compose.prod.yml")
+    owner = base["asterisk"]["environment"]["RECORDINGS_UID"]
+    assert owner == "10001"
+    users = {
+        f["user"].split(":")[0]
+        for f in (base["voice"], base["dispatcher"], prod["dispatcher"])
+    }
+    assert users == {owner}
+    assert "user" not in prod["voice"]
+
+
+def test_the_drill_gives_the_recordings_folder_to_its_own_voice():
+    drill = _services("deploy", "asterisk", "docker-compose.drill.yml")
+    owner = drill["asterisk"]["environment"]["RECORDINGS_UID"]
+    assert drill["voice"]["user"].split(":")[0] == owner == "${DRILL_UID}"
 
 
 def test_no_number_of_a_recorded_leg_reaches_the_log():

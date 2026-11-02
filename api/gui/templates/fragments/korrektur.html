@@ -1,11 +1,11 @@
-{# Korrektur einer Bestellung (docs/06 §3 "Korrigieren", T-4.7). Eigenes Blatt
-   ueber den Spalten, nicht in der Liste: die Spalte laedt weiter neu, klingelt
-   bei neuen Bestellungen, und nichts ueberschreibt, was das Team gerade tippt.
+{# Correction of an order (docs/06 §3 "Korrigieren", T-4.7). Its own sheet over
+   the columns, not inside the list: the column keeps reloading, rings for new
+   orders, and nothing overwrites what the team is typing.
 
-   Jeder Tap schickt den Stand (verstecktes Feld) an den Server, der rechnet neu
-   und schickt diesen Kasten zurueck - Geld wird nie im Browser gerechnet.
-   hx-sync verwirft einen zweiten Tap, solange der erste unterwegs ist, und
-   hx-disabled-elt graut die Knoepfe so lange sichtbar aus. #}
+   Every tap sends the state (hidden field) to the server, which recalculates
+   and sends this sheet back - money is never calculated in the browser.
+   hx-sync drops a second tap while the first is in flight, and
+   hx-disabled-elt greys the buttons out visibly meanwhile. #}
 {% macro tap(op, label, cls="", confirm=None, disabled=False) -%}
 <button type="button" class="{{ cls }}"
         hx-post="/gui/bestellungen/{{ order_id }}/korrigieren/vorschau"

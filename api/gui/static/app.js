@@ -214,13 +214,13 @@
     });
   }
 
-  // Blatt (T-3.8): "Korrigieren" und "Gericht aus" oeffnen gleich, als Blatt
-  // ueber den Spalten, die darunter live bleiben. Das Blatt nimmt den Fokus,
-  // die Spalten darunter sind solange nicht fokussierbar (inert), und beim
-  // Schliessen kehrt der Fokus zum Knopf zurueck, der es geoeffnet hat.
-  // Escape schliesst. Die Korrektur schliesst ausserdem nach dem Speichern
-  // (Ereignis vom Server) und nach 90 Sekunden ohne Tap - wer zum klingelnden
-  // Telefon geht, laesst sonst eine halbe Korrektur offen stehen.
+  // Sheet (T-3.8): "Korrigieren" and "Gericht aus" open the same way, as a
+  // sheet over the columns, which stay live underneath. The sheet takes the
+  // focus, the columns below are inert meanwhile, and on close the focus goes
+  // back to the button that opened it. Escape closes. The correction also
+  // closes after saving (event from the server) and after 90 seconds without a
+  // tap: whoever walks off to the ringing phone would leave a half-done
+  // correction open.
   var correctionBox = document.getElementById("korrektur");
   var dishBox = document.getElementById("gericht-aus");
   var sheets = [correctionBox, dishBox].filter(Boolean);
@@ -270,7 +270,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") sheets.forEach(closeSheet);
   });
-  // Nur das Oeffnen holt den Fokus: nach einem Tap im Blatt bleibt er stehen.
+  // Only opening takes the focus: after a tap inside the sheet it stays put.
   var wasOpen = false;
   document.body.addEventListener("htmx:beforeRequest", function (e) {
     var t = e.detail.target;
@@ -299,9 +299,9 @@
     if (!inList && sheets.indexOf(t) < 0) return;
     var sc = scroller(t);
     if (sc) sc.scrollTop = scrollWas;
-    // The tapped button was redrawn: keep the focus inside the sheet.
+    // Only if the swap removed the focused element (focus fell back to body): focus elsewhere, e.g. the wait field in the header, stays.
     var box = inList ? t.closest("#gericht-aus") : t;
-    if (wasOpen && box && !box.contains(document.activeElement)) {
+    if (wasOpen && box && document.activeElement === document.body) {
       var title = box.querySelector(".sheet-head h2");
       if (title) title.focus({ preventScroll: true });
     }
