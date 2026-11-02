@@ -67,7 +67,12 @@ from collections.abc import Mapping
 
 from api.core.errors import InvalidInput
 from api.domain.customers.phone import TRUNK_IN_BRACKETS, normalize_phone
-from api.domain.menu.numberwords import CARD_SUFFIXES, fold
+from api.domain.menu.numberwords import (
+    ARTICLES,
+    CARD_SUFFIXES,
+    fold,
+    parse_cardinal,
+)
 
 # Letters only: digits and punctuation belong to no name.
 _WORD = re.compile(r"[^\W\d_]+")
@@ -79,6 +84,31 @@ _DIGIT_RUN = re.compile(r"\+?\d[\d\s\-/().,]*")
 _NUMBER_END = re.compile(r",|\.\s|\s[-/(]|[-/]\s")
 # What may stand around a number without being part of it.
 _AROUND_A_NUMBER = " \t\r\n\f\v-/().,"
+# Marks digits said in words until `_read_together` has read them.
+_SAID = "\0"
+# "doppel fünf", "Doppel-Null", "doppelt 5".
+_DOUBLE = re.compile(r"\bdoppelt?[\s\-]*([^\W\d_]+|\d+)")
+# Digits with what may stand between the pieces of a number said in words, and
+# the blanks before a word that may claim the last of them. A word that closes
+# the number claims none.
+_SPOKEN_RUN = re.compile(
+    rf"(\d+{_SAID}*(?:[\s,.\-]+\d+{_SAID}*)*)"
+    r"(\s*(?!(?:bitte|danke|erreichbar|ist)\b)(?=[^\W\d_]))?"
+)
+# What a guest says between the area code and the rest, folded, in a sentence
+# that says "Vorwahl".
+_AFTER_AREA_CODE = re.compile(
+    rf"(?<=[\d{_SAID}])[\s,.\-]+"
+    r"(?:(?:und|dann|danach|die|ist|nummer|rufnummer|vorwahl)[\s,.\-]+)+(?=\d)"
+)
+# An area code has this many digits or more, the zero included.
+_AREA_CODE_DIGITS = 3
+# Digits said in words, fewer than this are an area code and something else
+# ("null sieben zwei eins, zweiundvierzig").
+_SHORTEST_NUMBER = 8
+# With this many digits a number is complete for a pause: what follows the pause
+# is something else.
+_COMPLETE_NUMBER = 11
 # What may stand between two letters a guest spells.
 _BETWEEN_LETTERS = " \t,-."
 # Other digits of a turn with this many digits may be the head of the number.
@@ -253,14 +283,14 @@ def names_a_phone_number(sentence: str) -> bool:
     Without that, digits that look like a phone number may be anything: in
     "zu meiner alten Bestellung 0171 2345678 habe ich eine Frage" they are
     no number the team should call back (Codex PR #244, P1)."""
-    lowered = _nfc(sentence).lower()
-    words = {fold(word) for word in _WORD.findall(lowered)}
+    text = _in_digits(sentence)
+    words = set(_WORD.findall(text))
     if words & _PHONE_WORDS or any(word.startswith(_PHONE_STEMS) for word in words):
         return True
-    runs = list(_DIGIT_RUN.finditer(lowered))
-    if not runs:
+    runs = list(_DIGIT_RUN.finditer(text))
+    if not runs or not runs[-1][0].startswith(("0", "+")):
         return False
-    before = lowered[: runs[-1].start()].rstrip(" \t:(")
+    before = text[: runs[-1].start()].rstrip(" \t:(")
     return before.endswith("unter") and not before[-6:-5].isalpha()
 
 
@@ -295,10 +325,11 @@ def numbers_said(sentence: str) -> set[str]:
     date or a dish before the number does no harm: "für 4 am 16.09., meine
     Nummer ist 0171 2345678". A guest whose number stands next to other such
     digits is asked again and says it alone. An hour without its colon is read
-    with one: "um 0900 Uhr, meine Nummer ist ..." (Codex PR #244, P2)."""
+    with one: "um 0900 Uhr, meine Nummer ist ..." (Codex PR #244, P2). A number
+    said in words is read as these digits (`_in_digits`)."""
     groups = [
         piece.strip(_AROUND_A_NUMBER)
-        for run in _DIGIT_RUN.findall(_COMPACT_TIME.sub(r"\1:\2", sentence))
+        for run in _DIGIT_RUN.findall(_COMPACT_TIME.sub(r"\1:\2", _in_digits(sentence)))
         for piece in _NUMBER_END.split(_without_trunk_zero(run))
         if _has_digit(piece)
     ]
@@ -308,6 +339,78 @@ def numbers_said(sentence: str) -> set[str]:
         return set()
     number = e164(groups[-1])
     return {number} if number else set()
+
+
+def _in_digits(sentence: str) -> str:
+    """The sentence folded, with what it says in number words in digits, for
+    the rules of `numbers_said`: an ear that writes "vier" or "4" does not change
+    what the guest said. So digits and number words are one row of digits, a
+    word that is no number ends it as it ends digits, and a bare article is no
+    digit ("eine Cola"). Each word stands for itself: "vierzig sieben" is 40 and
+    7 in a phone number, not the 47 of a dish.
+
+    The pauses of a number said in words are `_read_together`. Naming the area
+    code says that the number goes on behind it, so what is said between the
+    two is a pause and the digits count as said in words."""
+    text = _DOUBLE.sub(_doubled, fold(_nfc(sentence)))
+    text = _WORD.sub(_marked_digits, text).replace(f"{_SAID}-", f"{_SAID} ")
+    if "vorwahl" in text:
+        text = _AFTER_AREA_CODE.sub(", ", text).replace(",", f"{_SAID},")
+    return _SPOKEN_RUN.sub(_read_together, text)
+
+
+def _said_digits(word: str) -> str:
+    """The digits a folded word says: "null" 0, "zweiundsiebzig" 72."""
+    value = None if word in ARTICLES else parse_cardinal(word)
+    return "" if value is None else str(value)
+
+
+def _marked_digits(word: re.Match[str]) -> str:
+    digits = _said_digits(word[0])
+    return f"{digits}{_SAID}" if digits else word[0]
+
+
+def _doubled(double: re.Match[str]) -> str:
+    """ "doppel fünf" is fünf twice. Of anything but one digit it says nothing."""
+    said = double[1]
+    digits = said if said.isdigit() else _said_digits(said)
+    return f"{said} {said}" if len(digits) == 1 else double[0]
+
+
+def _read_together(run: re.Match[str]) -> str:
+    """A pause the ear writes between the pieces of a number said in words
+    goes, from the first piece that begins like an area code on: "Null sieben
+    zwei eins, fünf fünf fünf, vier vier drei drei." Digits alone stay as they
+    stand, a comma ends those (`numbers_said`).
+
+    Behind a pause may stand something else ("..., neunzehn"), so nothing joins
+    a number that is complete. A word right behind the digits may claim the
+    last of them ("neunzehn Uhr", "zwei Cola"), and digits too short for a
+    number hold something else as well. Then the last digit stays apart, and
+    what stands before it reads as digits followed by more digits: no number."""
+    if _SAID not in run[1]:
+        return run[0]
+    groups: list[str] = []
+    for piece in _NUMBER_END.split(run[1].replace(_SAID, "")):
+        if groups and _goes_on(groups[-1]):
+            groups[-1] += piece
+        else:
+            groups.append(piece.strip(_AROUND_A_NUMBER))
+    if run[2] is not None or _digits(groups[-1]) < _SHORTEST_NUMBER:
+        last = groups.pop()
+        groups += [last[:-1], last[-1:]]
+    return ", ".join(filter(None, groups)) + (run[2] or "")
+
+
+def _goes_on(group: str) -> bool:
+    """Digits that begin like an area code and are no complete number yet."""
+    return group.startswith("0") and (
+        _AREA_CODE_DIGITS <= _digits(group) < _COMPLETE_NUMBER
+    )
+
+
+def _digits(text: str) -> int:
+    return sum(char.isdigit() for char in text)
 
 
 def _without_trunk_zero(run: str) -> str:
@@ -333,11 +436,10 @@ def _may_be_a_head(group: str) -> bool:
     text = group.lstrip("( ")
     if _DATE_LIKE.match(text) or _is_date(text, full_year=True):
         return False
-    digits = sum(char.isdigit() for char in text)
+    digits = _digits(text)
     if digits >= _HEAD_DIGITS or text.startswith("+"):
         return True
-    # An area code has three digits or more, the zero included.
-    return digits > 2 and text.startswith("0")
+    return digits >= _AREA_CODE_DIGITS and text.startswith("0")
 
 
 def _ends_with_other_digits(group: str) -> bool:

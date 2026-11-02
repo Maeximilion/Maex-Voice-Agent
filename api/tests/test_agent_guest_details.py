@@ -499,6 +499,13 @@ def test_patterns_on_guest_text_stay_linear():
         "a, " * 10_000,
         "a's " * 10_000,
         "a " * 20_000,
+        "null " * 5_000,
+        "null, " * 5_000,
+        "null sieben " + "eins, " * 5_000,
+        "doppel " * 5_000,
+        "doppel" + " " * 20_000,
+        "vorwahl 0721 und " * 3_000,
+        "vorwahl 1" + " " * 20_000,
     ):
         words_said(text)
         numbers_said(text)
@@ -506,6 +513,220 @@ def test_patterns_on_guest_text_stay_linear():
         name_said(text, {})
 
     assert time.perf_counter() - started < 2
+
+
+# --- A number said in words: read as if it stood in digits ---
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # The sentences of the eval targets lieferung_0016 and reservierung_0030.
+        "Null sieben zwei eins, fuenf fuenf fuenf, vier vier drei drei.",
+        "Die Nummer ist null sieben zwei eins, fünf fünf fünf, vier vier drei drei.",
+        # Digit by digit, with or without what an ear hears as a pause.
+        "null sieben zwei eins fünf fünf fünf vier vier drei drei",
+        "Null sieben zwei eins. Fünf fünf fünf. Vier vier drei drei.",
+        "Null-sieben-zwei-eins, fünf-fünf-fünf, vier-vier-drei-drei.",
+        "Null sieben zwei eins - fünf fünf fünf - vier vier drei drei",
+        "null sieben zwo eins fuenf fuenf fuenf vier vier drei drei",
+        # In pairs and in threes.
+        "Null sieben zwei eins, fünfundfünfzig, fünf, vierundvierzig, dreiunddreißig.",
+        "null sieben zwei eins fünf fünf fünf vierundvierzig dreiunddreißig",
+        "Null siebenhunderteinundzwanzig, fünfhundertfünfundfünfzig, vier vier drei drei.",
+        # Doppel.
+        "Null sieben zwei eins, doppel fünf, fünf, doppel vier, doppel drei.",
+        "Null sieben zwei eins, Doppel-Fünf, fünf, doppelt vier, Doppeldrei.",
+        "null sieben zwei eins fünf doppel fünf doppel vier doppel 3",
+        # Vorwahl, named before the digits or behind them, in words and digits.
+        "Vorwahl null sieben zwei eins, fünf fünf fünf, vier vier drei drei.",
+        "Vorwahl null sieben zwei eins, dann fünf fünf fünf vier vier drei drei.",
+        "Die Vorwahl ist null sieben zwei eins und die Nummer "
+        "fünf fünf fünf vier vier drei drei.",
+        "Null sieben zwei eins ist die Vorwahl, dann fünf fünf fünf vier vier drei drei.",
+        "Die Vorwahl ist 0721, die Nummer 555 44 33.",
+        "Vorwahl 0721, 5554433",
+        # Digits and words mixed.
+        "0721 fünf fünf fünf vier vier drei drei",
+        "0721, fünf fünf fünf, vier vier drei drei.",
+        "null sieben zwei eins 555 4433",
+        "Null sieben zwei eins, 555, 44 33.",
+        "0721 555 vierundvierzig dreiunddreißig",
+        # A pause or a word that closes the number behind it.
+        "Null sieben zwei eins, fünf fünf fünf, vier vier drei drei, bitte.",
+        "Null sieben zwei eins, fünf fünf fünf, vier vier drei drei bitte",
+        "Ich bin unter null sieben zwei eins fünf fünf fünf vier vier drei drei erreichbar",
+        "Null sieben zwei eins fünf fünf fünf vier vier drei drei ist meine Nummer",
+    ],
+)
+def test_number_said_in_words_is_the_number(sentence):
+    assert numbers(sentence) == {"+497215554433"}
+
+
+def test_number_said_in_words_holds_a_country_code_and_a_mobile_number():
+    assert numbers("null null vier neun sieben zwei eins fünf fünf fünf vier vier") == {
+        "+4972155544"
+    }
+    assert numbers(
+        "Null eins fünf eins, eins zwei drei vier, fünf sechs sieben acht."
+    ) == {"+4915112345678"}
+    assert numbers(
+        "Null eins sieben eins, dreiundzwanzig, fünfundvierzig, siebenundsechzig, acht."
+    ) == {"+491712345678"}
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Für vier Personen um neunzehn Uhr, null sieben zwei eins, fünf fünf fünf, "
+        "vier vier drei drei.",
+        "Zweimal die dreiundzwanzig, meine Nummer ist null sieben zwei eins, "
+        "fünf fünf fünf, vier vier drei drei.",
+        "Die dreiundzwanzig, null sieben zwei eins, fünf fünf fünf, vier vier drei drei.",
+        "Vier, null sieben zwei eins, fünf fünf fünf, vier vier drei drei.",
+        "Auf den Namen Sommer, null sieben zwei eins fünf fünf fünf vier vier drei drei",
+        "Um acht Uhr null fünf, null sieben zwei eins, fünf fünf fünf, vier vier drei drei.",
+        "Am 16.09. um 19 Uhr, null sieben zwei eins fünf fünf fünf vier vier drei drei",
+    ],
+)
+def test_what_stands_before_a_number_in_words_stays_out_of_it(sentence):
+    """A count, a dish or an hour before the number does no harm, as in digits."""
+    assert numbers(sentence) == {"+497215554433"}
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        # Nothing here is a number: no area code, too short, no zero to begin with.
+        "Die dreiundzwanzig bitte",
+        "Zweimal die dreiundzwanzig und die vierundvierzig",
+        "Vier Personen um neunzehn Uhr",
+        "Um neunzehn Uhr dreißig für zwölf Personen",
+        "sieben zwei eins fünf fünf fünf vier vier drei drei",
+        "fünf fünf fünf vier vier drei drei",
+        "Null sieben zwei eins",
+        "Null sieben zwei eins, fünf",
+        "null Problem",
+        "Um null Uhr",
+        "Um acht Uhr null fünf",
+        "Um null acht fünfzehn Uhr",
+        "Doppelzimmer für zwei",
+        "Eine doppelte Portion",
+        # A time, a count or a dish behind the number, with or without a pause.
+        "Null sieben zwei eins fünf fünf fünf vier vier drei drei neunzehn Uhr",
+        "Null sieben zwei eins fünf fünf fünf vier vier drei drei, neunzehn Uhr passt",
+        "Null sieben zwei eins fünf fünf fünf vier vier drei drei, vier Personen",
+        "Null sieben zwei eins, fünf fünf fünf, vier vier drei drei, zwei Cola bitte",
+        "Null sieben zwei eins fünf fünf fünf vier vier drei drei zweimal die dreiundzwanzig",
+        "Null sieben zwei eins fünf fünf fünf vier vier drei drei und die dreiundzwanzig",
+        "Null sieben zwei eins fünf fünf fünf vier vier drei drei um neunzehn Uhr dreißig",
+        # With the number complete, what follows a pause is something else.
+        "Null sieben zwei eins fünf fünf fünf vier vier drei drei, neunzehn.",
+        "Null sieben zwei eins, fünf fünf fünf, vier vier drei drei, zweiundzwanzig.",
+        "0721 5554433, vier.",
+        # Too short for a number: an area code and something else.
+        "Null sieben zwei eins, zweiundvierzig.",
+        "Vorwahl null sieben zwei eins und die zweiundvierzig.",
+        "null sieben zwei eins vierzig sieben",
+        # Digits that a word may have claimed: spoken and written alike.
+        "0721 5554433 neunzehn Uhr",
+        "Die alte war 0172 3456789, die neue ist null sieben zwei eins.",
+        # The number goes on behind a word: digits are missing either way.
+        "null eins sieben eins zwei drei vier äh fünf sechs sieben acht",
+        "null eins sieben eins zwei drei vier und dann fünf sechs sieben acht",
+        "null sieben zwei eins fünf fünf fünf drei und zwanzig",
+        "0171 234 und dann fünf sechs sieben acht",
+        # Two numbers: the core picks neither.
+        "Die alte war null eins sieben zwei drei vier fünf sechs sieben acht neun, "
+        "die neue ist null sieben zwei eins fünf fünf fünf vier vier drei drei",
+        # Doppel of anything but a digit is no digit.
+        "Null sieben zwei eins doppel zwanzig fünf fünf fünf",
+        # An article is no digit: the number breaks there, it does not go on.
+        "Null sieben zwei eins eine Cola fünf fünf fünf vier vier drei drei",
+    ],
+)
+def test_number_words_that_are_no_number_are_none(sentence):
+    """Strict as in digits (`test_digits_followed_by_more_digits_are_no_number`):
+    a number nobody said is never taken, the guest is asked again."""
+    said_numbers = numbers(sentence)
+
+    assert said_numbers == set()
+    for written in (
+        "+497215554433",
+        "+49721555443319",
+        "+4972155544334",
+        "+497215554433223",
+        "+49171234",
+        "+491712345678",
+    ):
+        assert number_known(written, None, said_numbers) is False
+
+
+def test_digits_alone_keep_their_reading_when_a_word_stands_next_to_them():
+    """A number word elsewhere in the sentence changes nothing for digits: only
+    a number that was said in words is read across its pauses."""
+    assert numbers("Für vier Personen, 0721 555, 1234") == set()
+    assert numbers("Für vier Personen, 0171 234 - 5678") == set()
+
+
+def test_date_with_blanks_next_to_a_number_word_is_no_number():
+    assert numbers("Tisch für vier, 01 10 2026") == set()
+
+
+def test_number_in_words_names_itself_as_one_with_unter():
+    sentence = "Bitte unter null sieben zwei eins fünf fünf fünf vier vier drei drei"
+
+    assert names_a_phone_number(sentence) is True
+    assert heard(sentence, caller=CALLER).slots["phone"] == "+497215554433"
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    ["Unter vier Augen bitte", "Die Lieferung dauert unter dreißig Minuten"],
+)
+def test_unter_before_a_number_word_names_no_number_to_call(sentence):
+    assert names_a_phone_number(sentence) is False
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Zu meiner alten Bestellung null eins sieben eins zwei drei vier "
+        "fünf sechs sieben acht habe ich eine Frage",
+        "Die Bestellnummer war null eins sieben eins zwei drei vier fünf sechs sieben acht",
+        "Null eins sieben eins zwei drei vier fünf sechs sieben acht",
+    ],
+)
+def test_number_in_words_nobody_called_a_phone_number_is_none(sentence):
+    """Digits or words, the sentence still has to say what they are."""
+    state = heard(sentence, caller=CALLER)
+
+    assert names_a_phone_number(sentence) is False
+    assert state.said_numbers == set()
+    assert state.slots["phone"] == CALLER
+
+
+def test_answer_in_words_to_the_question_for_the_number_is_taken():
+    """lieferung_0016: a withheld caller ID, the guest answers the question in
+    words, the number books the order and a changed digit does not."""
+    state = heard("Auf den Namen Sommer.")
+    note_said(state, "Unter welcher Telefonnummer sind Sie erreichbar?")
+
+    note_guest_details(
+        state, "Null sieben zwei eins, fuenf fuenf fuenf, vier vier drei drei."
+    )
+
+    assert state.slots["phone"] == "+497215554433"
+    assert refused(state, order(name="Sommer", phone="0721 5554433")) is None
+    assert refused(state, order(name="Sommer", phone="0721 5554434")) is not None
+
+
+def test_number_in_words_with_a_word_behind_it_asks_again():
+    """An earlier number stays out of it too: the last one said is the one
+    that counts, and it could not be read."""
+    assert numbers("0171 2345678, nein, null sieben zwei eins fünf fünf eins Cola") == (
+        set()
+    )
 
 
 # --- The state: what a model writes into the slots ---
