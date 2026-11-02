@@ -236,7 +236,8 @@ def test_a_customer_only_a_draft_made_goes_with_the_guest_details(session, tenan
     only_a_draft(NOW - period - DAY)
     young = only_a_draft(NOW - period + DAY)
     # No order on the customer, and a contact after the row was written: a
-    # confirmed pickup or table (Codex PR #472).
+    # blocked row, or one a contact moved before the security re-audit of
+    # 02.11.2026, evening (Codex PR #472).
     contacted = _a_guest(session, tenant_id, NOW - period - DAY)
     customer = session.get(Customer, contacted)
     customer.order_count, customer.created_at = 0, NOW - period - 2 * DAY
