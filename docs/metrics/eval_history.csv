@@ -52,3 +52,7 @@ date,run_at,report,model,suite,total,passed,crashed,pending,guessed,unconfirmed,
 2026-10-30,2026-10-30T13:25:58+00:00,eval_20261030_132558_746806.json,qwen3.6-35b-a3b-iq3,targets,29,2,0,16,0,0,0,0.6786,6,18293,report,"PR 445 head 0a79872, IQ3_XXS with 14.0 GB free"
 2026-10-31,2026-10-31T22:10:04+00:00,eval_20261031_221004_791543.json,qwen3.6-35b-a3b-iq3,cases,56,37,0,0,0,0,0,0.1778,11,24559,report,"main a9eddab after #449, IQ3_XXS with 11.7 GB free"
 2026-10-31,2026-10-31T22:18:42+00:00,eval_20261031_221842_739297.json,qwen3.6-35b-a3b-iq3,targets,29,1,0,16,0,0,0,0.7143,3,16107,report,"main a9eddab after #449, IQ3_XXS with 11.7 GB free"
+2026-11-02,2026-11-02T13:20:18+00:00,eval_20261102_132018_995003.json,qwen3.6-35b-a3b-iq3,cases,62,39,0,0,0,0,0,0.1765,25,27713,report,"PR 472 head 2e5e430, prompt v3, IQ3_XXS fully on the GPU"
+2026-11-02,2026-11-02T13:33:43+00:00,eval_20261102_133343_056718.json,qwen3.6-35b-a3b-iq3,cases,62,40,0,0,0,0,0,0.2157,23,27926,report,"PR 472 head 2e5e430, prompt v3, IQ3_XXS fully on the GPU"
+2026-11-02,2026-11-02T13:29:04+00:00,eval_20261102_132904_747230.json,qwen3.6-35b-a3b-iq3,targets,24,2,0,11,0,0,0,0.2174,6,36269,report,"PR 472 head 2e5e430, prompt v3, IQ3_XXS fully on the GPU"
+2026-11-02,2026-11-02T13:42:27+00:00,eval_20261102_134227_709609.json,qwen3.6-35b-a3b-iq3,targets,24,2,0,11,0,0,0,0.3478,3,32772,report,"PR 472 head 2e5e430, prompt v3, IQ3_XXS fully on the GPU"
