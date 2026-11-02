@@ -1213,7 +1213,7 @@ def test_bekannte_luecke_im_report(migrated_db_url, tmp_path):
         fall(
             "luecke",
             ["Hallo, liefern Sie auch? Die 13 bitte.", "0721 5551234"],
-            {"escalated": False},
+            {"confirmed": True},
             pending="T-6.5: Lieferung",
         ),
     )

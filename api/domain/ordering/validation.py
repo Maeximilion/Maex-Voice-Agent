@@ -62,7 +62,7 @@ def require_delivery_open(
         or not service_open_at(session, tenant.id, now, zone, DELIVERY)
     ):
         raise Closed(
-            "Lieferung gerade geschlossen",
+            "delivery closed right now",
             say=delivery_closed_say(session, tenant.id, now, zone),
         )
 

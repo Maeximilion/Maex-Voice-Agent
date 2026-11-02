@@ -146,7 +146,9 @@ def _address(ticket: dict[str, Any], width: int) -> list[bytes]:
     place = f"{address.get('postal_code', '')} {address.get('city', '')}"
     out = [
         BOLD_ON,
-        _wrapped(f"{address.get('street', '')} {address.get('house_number', '')}", width),
+        _wrapped(
+            f"{address.get('street', '')} {address.get('house_number', '')}", width
+        ),
         _wrapped(place, width),
         BOLD_OFF,
     ]
@@ -222,10 +224,12 @@ def render(
     if fee:
         # The register holds no fee of its own: whoever types the order in
         # needs it as a line of its own (paper check 06.10.2026).
-        out.append(_line(f"Waren {_euro(ticket.get('items_total_cents'))}".rjust(width)))
-        out.append(_line(f"Liefergebuehr {_euro(fee)}".rjust(width)))
+        out.append(
+            _line(f"Waren {_euro(ticket.get('items_total_cents'))}".rjust(width))
+        )
+        out.append(_line(f"Liefergebühr {_euro(fee)}".rjust(width)))
     out.append(_line(f"Summe {_euro(ticket.get('total_cents'))}".rjust(width)))
-    stamp =ticket.get("print_time") or (printed_at or local_now()).strftime("%H:%M")
+    stamp = ticket.get("print_time") or (printed_at or local_now()).strftime("%H:%M")
     revision = int(ticket.get("revision") or 0)
     footer = f"Gedruckt {stamp}" + (f" - Stand {revision}" if revision else "")
     out.append(_line(footer))

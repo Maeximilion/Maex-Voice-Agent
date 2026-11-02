@@ -1,8 +1,9 @@
 """Pickup order in the rule-based stand-in model (`sim/scripted_llm.py`).
 
-The flow from `prompts/system_v2.md` §Ablauf 4: dishes via `search_menu`, ask
+The flow from `prompts/system_v3.md` §Ablauf: dishes via `search_menu`, ask
 for mandatory options, name and phone number, `draft_order`, read back,
-`confirm` on a yes. Like the rest of the script this only recognises patterns
+`confirm` on a yes. A delivery adds `find_customer`, the address and
+`check_delivery` before the draft. Like the rest of the script this only recognises patterns
 and guesses nothing: a position enters the cart only with a `menu_item_id`
 from `search_menu`; with several hits they are offered, never one chosen
 (CLAUDE.md §2 rule 2). Names of dishes and options come from the tool results,
@@ -48,6 +49,12 @@ SAY_MORE = "Darf es noch etwas sein?"
 SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
 SAY_PHONE = "Unter welcher Telefonnummer sind Sie erreichbar?"
 SAY_RESTART = "Dann noch einmal von vorn: was möchten Sie bestellen?"
+SAY_ADDRESS = (
+    "An welche Adresse dürfen wir liefern? Bitte nennen Sie Postleitzahl, Ort, "
+    "Straße und Hausnummer."
+)
+# The fields of an address the script needs for `check_delivery`.
+ADDRESS_FIELDS = ("postal_code", "city", "street", "house_number")
 
 # Whoever says this is done with the dishes.
 DONE_PHRASES = ("nein", "das war", "das wars", "nichts mehr", "alles", "sonst nichts")
@@ -100,6 +107,17 @@ class PickupScript:
         self._menu = menu or MenuNumbers
         self.cart: list[CartItem] = []
         self.phase = "dishes"  # dishes · choose · option · more · customer
+        # A delivery (docs/05 §Lieferung): the guest said so, or still means it
+        # after `out_of_zone`, which takes it back.
+        self.delivery = False
+        # `find_customer` was asked; the default address it gave, once the
+        # guest's yes stands; the question for it is open; the address
+        # `check_delivery` accepted.
+        self._looked_up = False
+        self._stored_address: str | None = None
+        self._same_open = False
+        self._use_stored = False
+        self._checked: tuple[Any, ...] | None = None
         self._suggestions: list[dict[str, Any]] = []
         self._suggestion_query = ""
         self._suggestion_wish: dict[str, Any] | None = None
@@ -147,6 +165,10 @@ class PickupScript:
     def on_customer(
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
     ) -> LLMTurn:
+        if self._same_open:
+            self._same_open = False
+            self._use_stored = _agrees(text)
+            return self._next(slots, patch)
         if self._allergy_for:
             return self._answer_allergy(text, slots, patch)
         if self._group_for:
@@ -222,6 +244,28 @@ class PickupScript:
         if self.phase == "customer":
             return self._next(slots, patch, understood=bool(patch))
         return _search(text, patch)
+
+    def on_lookup(
+        self, data: dict[str, Any], say: str | None, slots: dict[str, Any]
+    ) -> LLMTurn:
+        """What `find_customer` said: only ids and the question (L12)."""
+        if data.get("address_id") and say:
+            self._stored_address = data["address_id"]
+            self._same_open = True
+            return LLMTurn(say=say)
+        return self._next(slots, {})
+
+    def on_zone(self, slots: dict[str, Any]) -> LLMTurn:
+        self._checked = _address(slots)
+        return self._next(slots, {})
+
+    def on_out_of_zone(self) -> None:
+        """The sentence offers pickup: from here on it is one."""
+        self.delivery = False
+
+    def on_below_minimum(self) -> None:
+        """The sentence asks for more: the next dish is an order."""
+        self.phase = "more"
 
     def on_draft(self, data: dict[str, Any]) -> LLMTurn:
         self.readback_for = data["order_id"]
@@ -705,10 +749,35 @@ class PickupScript:
         if not self.cart:
             self.phase = "dishes"
             return LLMTurn(say=_join(lead, SAY_WHAT), state_patch=state_patch)
+        # The address counts in the sentence it was said in, whatever the
+        # phase: "die 13 nach 54321 Musterstadt" hears `out_of_zone` first.
+        if self.delivery and not self._use_stored:
+            address = _address(slots)
+            if all(address) and address != self._checked:
+                return LLMTurn(
+                    tool_call=ToolCall("check_delivery", _address_args(slots)),
+                    state_patch=state_patch,
+                )
         if self.phase != "customer":
             self.phase = "more"
             return LLMTurn(say=_join(lead, SAY_MORE), state_patch=state_patch)
-        if not slots.get("guest_name"):
+        if self.delivery:
+            if not self._looked_up and slots.get("phone"):
+                self._looked_up = True
+                name = slots.get("guest_name")
+                return LLMTurn(
+                    tool_call=ToolCall(
+                        "find_customer", {"guest_name": name} if name else {}
+                    ),
+                    state_patch=state_patch,
+                )
+            if not self._use_stored and self._checked != _address(slots):
+                return LLMTurn(
+                    say=_join(lead, SAY_ADDRESS),
+                    state_patch=state_patch,
+                    understanding_failure=None if understood else "address",
+                )
+        if not slots.get("guest_name") and not self._use_stored:
             return LLMTurn(
                 say=_join(lead, SAY_NAME),
                 state_patch=state_patch,
@@ -726,9 +795,16 @@ class PickupScript:
         )
 
     def _draft_args(self, slots: dict[str, Any]) -> dict[str, Any]:
+        customer: dict[str, Any] = {"phone": slots["phone"]}
+        if slots.get("guest_name"):
+            customer["name"] = slots["guest_name"]
+        if self.delivery and self._use_stored:
+            customer["address_id"] = self._stored_address
+        elif self.delivery:
+            customer["address"] = _address_args(slots)
         return {
-            "type": "pickup",
-            "customer": {"name": slots["guest_name"], "phone": slots["phone"]},
+            "type": "delivery" if self.delivery else "pickup",
+            "customer": customer,
             "items": [
                 {
                     "menu_item_id": i.menu_item_id,
@@ -739,6 +815,14 @@ class PickupScript:
                 for i in self.cart
             ],
         }
+
+
+def _address(slots: dict[str, Any]) -> tuple[Any, ...]:
+    return tuple(slots.get(field) for field in ADDRESS_FIELDS)
+
+
+def _address_args(slots: dict[str, Any]) -> dict[str, Any]:
+    return {field: slots[field] for field in ADDRESS_FIELDS}
 
 
 def _wish_sentence(

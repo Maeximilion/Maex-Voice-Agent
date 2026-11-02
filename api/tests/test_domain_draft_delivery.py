@@ -54,7 +54,7 @@ from api.models import (
 from api.schemas.callbacks import CreateCallbackRequest
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.transfer import TransferToTeamRequest
-from api.tests.test_domain_draft_order import NOW, _call, _tenant, item, request
+from api.tests.test_domain_draft_order import NOW, _call, _tenant, request
 
 PHONE = "+497215551234"
 HOME = {
@@ -496,7 +496,9 @@ def test_a_stored_address_is_never_said(session, tenant_id, call_id):
     assert "Musterdorf" not in draft.readback
     assert "Müller" not in draft.readback
     assert "an dieselbe Adresse wie beim letzten Mal" in draft.readback
-    assert draft.readback.endswith("Minuten an dieselbe Adresse wie beim letzten Mal. Passt das so?")
+    assert draft.readback.endswith(
+        "Minuten an dieselbe Adresse wie beim letzten Mal. Passt das so?"
+    )
     order = session.get(Order, draft.order_id)
     assert (order.customer_id, order.address_id) == (known.id, home.id)
     assert order.customer_name == "Müller"
@@ -583,7 +585,9 @@ def test_another_name_opens_no_stored_address(session, tenant_id, call_id):
 
     with pytest.raises(InvalidInput) as err:
         draft_order(
-            session, _stored(session, tenant_id, call_id, home.id, name="Braun"), now=NOW
+            session,
+            _stored(session, tenant_id, call_id, home.id, name="Braun"),
+            now=NOW,
         )
 
     assert "Rheinstraße" not in err.value.say

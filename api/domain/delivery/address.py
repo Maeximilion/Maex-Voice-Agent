@@ -14,7 +14,12 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.core.errors import SAY_ON_FAILURE, BelowMinimum, InvalidInput, ServiceUnavailable
+from api.core.errors import (
+    SAY_ON_FAILURE,
+    BelowMinimum,
+    InvalidInput,
+    ServiceUnavailable,
+)
 from api.domain.customers.lookup import find_customer
 from api.domain.delivery.zones import check_delivery, postal_digits
 from api.domain.menu.numberwords import fold
@@ -68,14 +73,19 @@ def place(
     ):
         # Says nothing of what is stored: to the guest it is a question.
         raise InvalidInput("not the customer's default address", say=SAY_WHICH_ADDRESS)
-    if not name and not match.found:
+    known = session.get(Customer, match.customer_id) if match.customer_id else None
+    runs_under = name or (known.name if known else "")
+    if not runs_under:
         raise InvalidInput("delivery without a name", say=SAY_WHICH_NAME)
 
-    known = session.get(Customer, match.customer_id) if match.customer_id else None
-    stored = None if wanted.address else session.get(Address, wanted.address_id)
-    postal_code = wanted.address.postal_code if wanted.address else stored.postal_code
+    stored = None
+    if wanted.address is not None:
+        postal_code = wanted.address.postal_code
+    else:
+        stored = session.get_one(Address, wanted.address_id)
+        postal_code = stored.postal_code
     return Place(
-        name=name or known.name,
+        name=runs_under,
         name_heard=bool(name),
         zone=check_delivery(session, tenant_id, postal_code),
         spoken=wanted.address,

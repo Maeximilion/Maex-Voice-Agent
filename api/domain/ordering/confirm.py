@@ -95,7 +95,7 @@ def confirm_order(
         # The team switched delivery off between the read-back and the yes.
         # A conflict: this draft can never be confirmed (`state._refused_for_good`).
         raise Conflict(
-            "Lieferung seit dem Entwurf abgeschaltet",
+            "delivery switched off since the draft",
             say=delivery_closed_say(
                 session, req.tenant_id, now or utcnow(), tz(tenant.timezone)
             ),

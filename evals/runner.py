@@ -43,7 +43,7 @@ from api.agent.llm import LLMClient, Usage
 from api.config import settings
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import apply, parse
-from api.models import MenuItem
+from api.models import DeliveryZone, MenuItem
 from evals.judge import (
     CaseError,
     heard_readback,
@@ -65,6 +65,16 @@ from sim.scripted_order import MenuNumbers
 from sim.session import SCRIPTED, make_llm, menu_numbers, resolve_tenant
 
 HERE = Path(__file__).resolve().parent
+# The zone of the delivery cases: every other postal code is out of it. Fee,
+# minimum and time are made up, as the eval menu's prices are.
+EVAL_ZONE = {
+    "name": "Evalzone",
+    "match_type": "postal_code",
+    "postal_codes": ["12345"],
+    "fee_cents": 250,
+    "min_order_cents": 1500,
+    "eta_minutes": 50,
+}
 CASES = HERE / "cases"
 MENU = HERE / "menu"
 REPORTS = HERE / "reports"
@@ -133,6 +143,8 @@ def _prepare(session: Session, now: datetime, plan, name: str = TENANT):
     seed(session, tenant_name=name, timezone=TIMEZONE)
     tenant = resolve_tenant(session, name)
     apply(session, tenant.id, plan, now=now)
+    session.add(DeliveryZone(tenant_id=tenant.id, **EVAL_ZONE))
+    session.commit()
     return tenant
 
 

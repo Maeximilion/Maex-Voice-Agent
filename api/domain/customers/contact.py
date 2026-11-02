@@ -37,15 +37,21 @@ def note_order(session: Session, order: Order, at: datetime) -> None:
     if order.customer_id is None:
         note_contact(session, order.tenant_id, order.phone, at, order.customer_name)
         return
-    customer = session.get_one(Customer, order.customer_id)
-    customer.last_contact_at = at
-    customer.last_order_at = at
-    customer.order_count += 1
+    # In SQL: the session of a call may hold a count from before another call.
+    session.execute(
+        update(Customer)
+        .where(Customer.id == order.customer_id)
+        .values(
+            last_contact_at=at,
+            last_order_at=at,
+            order_count=Customer.order_count + 1,
+        )
+    )
     if order.address_id is None:
         return
     session.execute(
         update(Address)
-        .where(Address.customer_id == customer.id, Address.is_default.is_(True))
+        .where(Address.customer_id == order.customer_id, Address.is_default.is_(True))
         .values(is_default=False)
     )
     session.execute(

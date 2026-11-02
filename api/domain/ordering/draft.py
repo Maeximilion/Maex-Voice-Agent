@@ -85,7 +85,7 @@ def draft_order(
     total = items_total_cents(lines)
     fee = 0
     wait = config.pickup_wait_minutes
-    where = customer_id = address_id = None
+    where = customer = address = None
     if delivery:
         where = place(session, req.tenant_id, req.customer, phone)
         require_minimum(total, where.zone)
@@ -95,7 +95,6 @@ def draft_order(
         # zone takes longer whatever the wait.
         wait = max(config.delivery_wait_minutes, where.zone.eta_minutes)
         customer, address = keep(session, req.tenant_id, phone, where)
-        customer_id, address_id = customer.id, address.id
 
     order = Order(
         tenant_id=req.tenant_id,
@@ -104,8 +103,8 @@ def draft_order(
         status="draft",
         phone=phone,
         customer_name=name,
-        customer_id=customer_id,
-        address_id=address_id,
+        customer_id=customer.id if customer else None,
+        address_id=address.id if address else None,
         items_total_cents=total,
         delivery_fee_cents=fee,
         total_cents=total + fee,

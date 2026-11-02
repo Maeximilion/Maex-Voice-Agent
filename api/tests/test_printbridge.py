@@ -99,11 +99,11 @@ def test_a_delivery_slip_carries_address_floor_note_and_fee():
     assert "\x1bE\x01Lindenstraße 12\n12345 Musterdorf\n" in text
     assert "Hinweis: 2. OG, Klingel Braun" in text
     assert "Waren 23,30 EUR" in text
-    assert "Liefergebuehr 2,50 EUR" in text
+    assert "Liefergebühr 2,50 EUR" in text
     assert "Summe 25,80 EUR" in text
     assert text.index("Name: Müller") < text.index("Lindenstraße")
     assert text.index("Lindenstraße") < text.index("2x 23")
-    assert text.index("Liefergebuehr") < text.index("Summe")
+    assert text.index("Liefergebühr") < text.index("Summe")
     assert "5551234" not in text
 
 
@@ -113,7 +113,7 @@ def test_a_delivery_without_a_floor_note_or_a_fee_has_no_empty_line():
         "cp858"
     )
     assert "Hinweis" not in text
-    assert "Liefergebuehr" not in text
+    assert "Liefergebühr" not in text
     assert "Waren" not in text
 
 
@@ -126,7 +126,7 @@ def test_a_delivery_whose_address_is_gone_says_so():
 def test_a_pickup_slip_has_no_address_block():
     text = render(TICKET).decode("cp858")
     assert "ADRESSE FEHLT" not in text
-    assert "Liefergebuehr" not in text
+    assert "Liefergebühr" not in text
 
 
 def test_eingabezettel_sagt_ganz_oben_nicht_in_kasse():

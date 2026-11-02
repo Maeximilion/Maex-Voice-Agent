@@ -2,10 +2,10 @@
 
 `api/agent/llm.py` hält die Schnittstelle (`LLMClient`) und ein Testdouble für die
 Loop-Unit-Tests bereit; das hier ist der skriptfähige Fake für `sim/`, den sein
-Docstring ankündigt. Er versteht die Abläufe aus `prompts/system_v2.md`: Status
+Docstring ankündigt. Er versteht die Abläufe aus `prompts/system_v3.md`: Status
 abfragen, dann entweder Reservierungsangaben einsammeln, `check_slot`,
 `create_reservation`, vorlesen, auf ein Ja hin `confirm` - oder eine Abholung
-(`sim/scripted_order.py`).
+oder Lieferung (`sim/scripted_order.py`).
 
 Er ist ausdrücklich **kein** Sprachmodell: er rät nichts, er erkennt Muster. Wo er
 nichts erkennt, meldet er einen Fehlversuch (`understanding_failure`) und überlässt
@@ -49,7 +49,7 @@ QUESTIONS = {
 
 GREETING = (
     "Guten Tag, hier ist der KI-Assistent des Restaurants. "
-    "Ich kann einen Tisch für Sie reservieren oder eine Bestellung zum Abholen aufnehmen."
+    "Ich kann einen Tisch für Sie reservieren oder eine Bestellung zum Abholen oder Liefern aufnehmen."
 )
 SAY_ASK_AGAIN = "Was soll ich ändern?"
 SAY_HANDOVER = "Ich gebe an das Team weiter."
@@ -60,13 +60,13 @@ SAY_PHONE_AGAIN = (
     "Unter welcher Nummer sind Sie erreichbar?"
 )
 
-# Anliegen, die dieses Skript nicht selbst kann: Lieferung (Version 2 noch nicht),
-# Allergene und das Vorlesen der Karte (dafuer ist ein echtes Modell noetig).
-OUT_OF_SCOPE = ("speisekarte", "liefer", "allergi", "karte")
+# Anliegen, die dieses Skript nicht selbst kann: Allergene und das Vorlesen der
+# Karte (dafuer ist ein echtes Modell noetig).
+OUT_OF_SCOPE = ("speisekarte", "allergi", "karte")
 # Waehrend einer Bestellung faellt "Karte" natuerlich ("die 23 von der Karte").
 # Die Frage nach Allergenen geht ans Team; die eigene Allergie ("ich habe eine
 # Erdnussallergie") ist ein Hinweis zur Position (E14, Codex PR #139).
-OUT_OF_SCOPE_IN_ORDER = ("liefer", "allergen", "allergiefrei")
+OUT_OF_SCOPE_IN_ORDER = ("allergen", "allergiefrei")
 # In the sentence that announces the pickup the guest's own allergy may be a
 # note on the dish named with it (Codex PR #139); everything else in that
 # sentence is judged like the call before the order and like the order itself.
@@ -74,7 +74,7 @@ ALLERGY_STEM = "allergi"
 # The parts of an opening sentence, with what joins them kept.
 _PARTS = re.compile(r"(,|\bund\b)", re.IGNORECASE)
 # A question for safety or contact about allergens, which the prompt answers
-# with one fixed sentence (`prompts/system_v2.md`); the core hands the call to
+# with one fixed sentence (`prompts/system_v3.md`); the core hands the call to
 # the team on it (`guards.allergen_claim`, L17). Patterns, as everywhere here.
 _SAFETY = re.compile(
     r"\b(?:wirklich|ganz|absolut) sicher|hundertprozentig|garantier"
@@ -82,6 +82,7 @@ _SAFETY = re.compile(
     re.IGNORECASE,
 )
 PICKUP = ("abhol", "mitnehmen")
+DELIVERY = ("liefer",)
 # "bestellen" allein ist keine Abholung: "einen Tisch bestellen" ist eine
 # Reservierung (Codex PR #130, P1). Nur ohne Wort aus der Reservierung.
 ORDER_WORD = ("bestell",)
@@ -120,6 +121,17 @@ _NAME_CLAUSE = re.compile(
     r"[A-ZÄÖÜ][^\s,.;!?]{1,40}"
 )
 _PHONE = re.compile(r"(\+?\d[\d\s/()-]{5,})")
+# An address in plain digits and the usual street words. Number words, a
+# correction inside it and a street without such a word are for a real model.
+_POSTAL = re.compile(r"\b(\d{5})\s+([A-ZÄÖÜ][\wäöüß-]+)")
+_STREET = re.compile(
+    r"\b([A-ZÄÖÜ][\wäöüß-]*(?:stra(?:ss|ß)e|str\.|weg|platz|gasse|allee|ring|damm)"
+    r"|Am [A-ZÄÖÜ][\wäöüß-]+)\s+(\d+\s?[a-z]?)\b"
+)
+_DELIVERY_WORDS = re.compile(
+    r"\b(?:liefern lassen|liefern|geliefert haben|geliefert|lieferung|nach)\b",
+    re.IGNORECASE,
+)
 _TIME_COLON = re.compile(r"\b(\d{1,2}):(\d{2})\b")
 _TIME_DOT = re.compile(r"\b(\d{1,2})\.(\d{2})\s*uhr\b", re.IGNORECASE)
 _TIME_HOUR = re.compile(r"\b(\d{1,2})\s*uhr(?:\s+(\d{1,2}))?\b", re.IGNORECASE)
@@ -208,7 +220,10 @@ class ScriptedLLM:
         if state.get("stage") == "readback_pending" and self._pickup is None:
             return self._after_readback(state, text, slots, patch)
 
-        wants_pickup = self._pickup is None and _wants_pickup(text)
+        wants_delivery = _mentions_stem(text, DELIVERY)
+        if self._pickup is not None and wants_delivery:
+            self._pickup.delivery = True
+        wants_pickup = self._pickup is None and (wants_delivery or _wants_pickup(text))
         # A denied allergy ("ich habe keine Allergie") is no allergy (#252).
         # Judged on the clause the search classifies, not with the dish in
         # front ("Ente auf Thai Art").
@@ -269,8 +284,11 @@ class ScriptedLLM:
         started_pickup = False
         if wants_pickup:
             self._pickup = PickupScript(self._menu)
+            self._pickup.delivery = wants_delivery
             self._opening_allergy = text if own_allergy else None
             started_pickup = True
+            if wants_delivery:
+                dish_text = _delivery_dish(dish_text)
             if not self._status_checked:
                 self._opening_query = _opening_dish(dish_text)
 
@@ -368,6 +386,10 @@ class ScriptedLLM:
         if name == "search_menu" and self._opening_prefix is not None:
             return self._after_opening_search(result, slots)
         if not result.get("ok"):
+            if self._pickup is not None and result.get("error_code") == "out_of_zone":
+                self._pickup.on_out_of_zone()
+            if self._pickup is not None and result.get("error_code") == "below_minimum":
+                self._pickup.on_below_minimum()
             if name == "search_menu" and self._pickup is not None:
                 # War es die Antwort auf eine Rueckfrage, gilt die Frage weiter.
                 reopened = self._pickup.on_search_failed(say)
@@ -406,6 +428,10 @@ class ScriptedLLM:
                 return self._pickup.on_search(self._last_query, data, slots, say)
             if name == "draft_order":
                 return self._pickup.on_draft(data)
+            if name == "find_customer":
+                return self._pickup.on_lookup(data, say, slots)
+            if name == "check_delivery":
+                return self._pickup.on_zone(slots)
         if name == "check_slot":
             if data.get("available"):
                 # The state is what the core took. A detail this script read
@@ -525,6 +551,11 @@ class ScriptedLLM:
         phone = _phone(text)
         if phone:
             patch["phone"] = phone
+        if self._pickup is not None or _mentions_stem(text, DELIVERY):
+            if postal := _POSTAL.search(text):
+                patch["postal_code"], patch["city"] = postal.groups()
+            if street := _STREET.search(text):
+                patch["street"], patch["house_number"] = street.groups()
         return patch
 
     def _reserved_for(self, text: str, slots: dict[str, Any]) -> str | None:
@@ -724,6 +755,15 @@ def _wants_pickup(text: str) -> bool:
     return _mentions_stem(text, ORDER_WORD) and not _mentions_stem(
         text, RESERVATION_WORDS
     )
+
+
+def _delivery_dish(text: str) -> str:
+    """The sentence that announces a delivery without the address and the word
+    for it, and with no dish in it unless a number says so: "liefern Sie heute
+    noch?" names none."""
+    rest = _STREET.sub(" ", _POSTAL.sub(" ", text))
+    rest = _DELIVERY_WORDS.sub(" ", rest)
+    return rest if re.search(r"\d", rest) else ""
 
 
 def _opening_dish(text: str) -> str | None:
