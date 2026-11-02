@@ -39,7 +39,7 @@ If a view is missing: create a view, never a project.
 | Field | Type | Where the value comes from |
 |---|---|---|
 | Status | Single select `Todo`, `Blocked`, `In progress`, `In review`, `Done` | Section 4. Never by hand |
-| Milestone | The gates G0 to G5 | The `stufe-N` label (`scripts/pr_metadata.py`, section 5). Set by hand it stays: the label is only the default, a task a gate waits for gets that gate by hand (T-10.1 and T-10.2 carry `stufe-1` and belong to G0) |
+| Milestone | The gates G0 to G5, and `Features`, `Bugs`, `Etcetera` for pull requests that belong to no gate | `scripts/pr_metadata.py`, section 5. Set by hand it stays: the label is only the default, a task a gate waits for gets that gate by hand (T-10.1 and T-10.2 carry `stufe-1` and belong to G0) |
 | Iteration, Quarter | Iteration | The daily run (section 5) |
 | Start date, Target date | Date | The daily run (section 5) |
 | Team | Single select, GitHub's default values | Empty on every entry, not used |
@@ -103,7 +103,7 @@ Days are counted in Berlin time. What was set by hand stays. An issue without a 
 
 **Iterations roll on:** GitHub does not add iterations by itself (Iteration 3 ended on 2026-10-27 with none after it, 2026-10-28). The run appends iterations of the same length until one covers the day 28 days ahead; existing ones keep their ids, so the values on items stay.
 
-In addition, `scripts/pr_metadata.py` sets the repo owner as assignee on every pull request without one, and on every pull request without a label the type label from the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). Without a recognizable type the label stays empty - better none than a guessed one. Every open issue without an assignee gets the owner as well; its labels are set at creation, not derived. Every issue without a milestone, open or closed, gets the gate of its `stufe-N` label (`stufe-1` to `G1 ...`); one without such a label stays in the group "No Milestone" of the roadmap. It runs when a pull request or an issue opens or reopens (`.github/workflows/pr-metadata.yml`), so a pull request opened without the flags of `/done` step 7 is complete within a minute, and again in the daily run for whatever slipped past.
+In addition, `scripts/pr_metadata.py` sets the repo owner as assignee on every pull request without one, and on every pull request without a label the type label from the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). Without a recognizable type the label stays empty - better none than a guessed one. Every open issue without an assignee gets the owner as well; its labels are set at creation, not derived. Every issue without a milestone, open or closed, gets the gate of its `stufe-N` label (`stufe-1` to `G1 ...`); one without such a label stays in the group "No Milestone" of the roadmap. Every pull request without a milestone takes the gate of the issue it closes, else of the task in its title or branch name (`docs/07_WORKPACKAGES.md`, a task without an issue counts through the group issue of its block), else `Features` for `feat`, `Bugs` for `fix` and `Etcetera` for the rest. A pull request in `Features`, `Bugs` or `Etcetera` is never part of a gate, and the roadmaps show issues only. It runs when a pull request or an issue opens or reopens (`.github/workflows/pr-metadata.yml`), so a pull request opened without the flags of `/done` step 7 is complete within a minute, and again in the daily run for whatever slipped past.
 
 **Only reported** is everything that needs a decision:
 

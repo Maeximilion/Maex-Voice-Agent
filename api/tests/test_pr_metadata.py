@@ -157,3 +157,98 @@ def test_no_stage_label_or_no_such_gate_means_no_guess() -> None:
 
 def test_two_stage_labels_take_the_earlier_gate() -> None:
     assert pr_metadata.gate_of(issue("stufe-1", "stufe-0"), GATES)["number"] == 1
+
+
+WORKPACKAGES = """## Block 1 - Stage 1  ·  Sammel-Issue #6
+
+| ID | Issue | Task |
+|---|---|---|
+| T-1.1 | #30 | first |
+| T-1.2 | - | no issue of its own |
+
+## Block 1c - Stage 1  ·  group issue #394
+
+| T-10.1 | #396 | spike |
+"""
+TASKS = pr_metadata.task_issues(WORKPACKAGES)
+GATE_0 = {"number": 1, "title": "G0 Go/No-Go"}
+GATE_1 = {"number": 2, "title": "G1 Reservation through-cut"}
+GATE_2 = {"number": 3, "title": "G2 Pickup"}
+ISSUE_GATES = {30: GATE_1, 6: GATE_2, 396: GATE_0}
+BY_TITLE = {
+    "Bugs": {"number": 7, "title": "Bugs"},
+    "Features": {"number": 8, "title": "Features"},
+    "Etcetera": {"number": 9, "title": "Etcetera"},
+}
+
+
+def pr(title: str, *, body=None, branch="fix/x", milestone=None) -> dict:
+    return {
+        "title": title,
+        "body": body,
+        "head": {"ref": branch},
+        "milestone": milestone,
+    }
+
+
+def milestone(pull: dict) -> dict | None:
+    return pr_metadata.milestone_of_pull(pull, ISSUE_GATES, TASKS, BY_TITLE)
+
+
+def test_a_task_takes_its_own_issue_else_the_group_issue_of_its_block() -> None:
+    assert TASKS == {"T-1.1": 30, "T-1.2": 6, "T-10.1": 396}
+
+
+def test_a_milestone_on_a_pull_request_stays() -> None:
+    assert milestone(pr("fix: x", milestone=GATE_1)) is None
+
+
+def test_the_closed_issue_wins_over_the_named_task() -> None:
+    assert milestone(pr("feat: T-1.1 x", body="Closes #396")) == GATE_0
+
+
+@pytest.mark.parametrize("word", ["Closes", "closed", "Fixes", "fix", "resolves"])
+def test_every_closing_keyword_counts(word: str) -> None:
+    assert milestone(pr("chore: x", body=f"{word} #30")) == GATE_1
+
+
+def test_a_mention_of_an_issue_is_no_closing() -> None:
+    assert milestone(pr("chore: x", body="See #30")) == BY_TITLE["Etcetera"]
+
+
+def test_a_task_counts_from_the_title_or_the_branch() -> None:
+    assert milestone(pr("feat: T-10.1 spike")) == GATE_0
+    assert milestone(pr("feat: spike", branch="task/10-1-spike")) == GATE_0
+    assert milestone(pr("feat: spike", branch="task/T-1.2-x")) == GATE_2
+
+
+def test_two_tasks_take_the_earlier_gate() -> None:
+    assert milestone(pr("feat: T-1.1 and T-10.1")) == GATE_0
+
+
+def test_a_closed_issue_without_a_gate_falls_through_to_the_task() -> None:
+    assert milestone(pr("feat: T-1.1", body="Closes #999")) == GATE_1
+
+
+@pytest.mark.parametrize(
+    ("title", "wanted"),
+    [
+        ("feat(gui): x", "Features"),
+        ("fix(gui): x", "Bugs"),
+        ("chore(deps): bump x", "Etcetera"),
+        ("docs: x", "Etcetera"),
+        ("Merge something", "Etcetera"),
+    ],
+)
+def test_without_a_gate_the_title_decides(title: str, wanted: str) -> None:
+    assert milestone(pr(title)) == BY_TITLE[wanted]
+
+
+def test_without_the_type_milestones_nothing_is_written() -> None:
+    assert pr_metadata.milestone_of_pull(pr("fix: x"), ISSUE_GATES, TASKS, {}) is None
+
+
+def test_the_real_task_list_is_parsed() -> None:
+    tasks = pr_metadata.task_issues(pr_metadata.WORKPACKAGES.read_text("utf-8"))
+    assert tasks["T-10.1"] == 396
+    assert tasks["T-10.4"] == 394

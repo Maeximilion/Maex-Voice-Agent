@@ -10,7 +10,9 @@ Zweck : Jeder Pull Request bekommt den Repo-Eigentuemer als Assignee und ein
         2026-10-28); its labels (type, stufe-N) are set at creation and not
         derived here. Every issue, open or closed, without a milestone gets the
         gate of its stufe-N label (stufe-1 -> "G1 ..."), so the roadmap can group
-        by gate (Maxi, 2026-11-02). A milestone set by hand stays.
+        by gate (Maxi, 2026-11-02). A milestone set by hand stays. A pull request
+        takes the gate of the issue it closes, else of the task it names
+        (docs/07_WORKPACKAGES.md), else Bugs, Features or Etcetera by its title.
 Aufruf: python scripts/pr_metadata.py [--dry-run]
 Umgeb.: GITHUB_TOKEN       Token mit Schreibrecht auf Issues und Pull Requests;
                            in der Action der eingebaute
@@ -25,8 +27,10 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 API_URL = "https://api.github.com"
 
@@ -45,6 +49,18 @@ TYPE_LABELS = {
 }
 TYPE_PREFIX = re.compile(r"^(?P<type>[a-z]+)(\([^)]*\))?!?:")
 GATE_TITLE = re.compile(r"^G(?P<stage>\d+)\b")
+
+WORKPACKAGES = Path(__file__).resolve().parent.parent / "docs/07_WORKPACKAGES.md"
+TASK_ROW = re.compile(r"^\| (?P<task>T-\d+\.\d+) \| (?:#(?P<issue>\d+)|-) \|")
+GROUP_ISSUE = re.compile(r"^## .*(?:Sammel-Issue|group issue) #(?P<issue>\d+)")
+CLOSING = re.compile(r"(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)")
+TASK_IN_TITLE = re.compile(r"\bT-\d+\.\d+\b")
+TASK_BRANCH = re.compile(r"^task/(?:T-)?(?P<block>\d+)[-.](?P<task>\d+)\b")
+# What names no gate. A title without a known type lands in the last one.
+TYPE_MILESTONES = {"feat": "Features", "fix": "Bugs"}
+OTHER_MILESTONE = "Etcetera"
+# GitHub's limit for writes in a burst is 80 a minute; a run over it fails halfway.
+WRITE_PAUSE_SECONDS = 1
 
 
 class MetadataError(RuntimeError):
@@ -89,6 +105,48 @@ def gate_of(issue: dict, gates: dict[str, dict]) -> dict | None:
         return None
     labels = sorted(label["name"] for label in issue.get("labels", []))
     return next((gates[name] for name in labels if name in gates), None)
+
+
+def task_issues(text: str) -> dict[str, int]:
+    """The issue of each task in docs/07: its own, else the group issue of its block."""
+    tasks: dict[str, int] = {}
+    group = None
+    for line in text.splitlines():
+        if heading := GROUP_ISSUE.match(line):
+            group = int(heading["issue"])
+        elif row := TASK_ROW.match(line):
+            issue = int(row["issue"]) if row["issue"] else group
+            if issue:
+                tasks[row["task"]] = issue
+    return tasks
+
+
+def named_tasks(pull: dict) -> set[str]:
+    """The tasks in the title, else the task in the branch name."""
+    tasks = set(TASK_IN_TITLE.findall(pull["title"]))
+    branch = TASK_BRANCH.match(pull["head"]["ref"])
+    return tasks or ({f"T-{branch['block']}.{branch['task']}"} if branch else set())
+
+
+def milestone_of_pull(
+    pull: dict,
+    issue_gates: dict[int, dict],
+    tasks: dict[str, int],
+    milestones: dict[str, dict],
+) -> dict | None:
+    """The milestone a pull request lacks, None if it has one. The earliest gate wins,
+    as for an issue. Missing type milestones mean no write, not a guess."""
+    if pull.get("milestone"):
+        return None
+    closed = [int(number) for number in CLOSING.findall(pull.get("body") or "")]
+    named = [tasks[task] for task in named_tasks(pull) if task in tasks]
+    for numbers in (closed, named):
+        gates = [issue_gates[number] for number in numbers if number in issue_gates]
+        if gates:
+            return min(gates, key=lambda gate: gate["title"])
+    match = TYPE_PREFIX.match(pull["title"].strip())
+    kind = match.group("type") if match else None
+    return milestones.get(TYPE_MILESTONES.get(kind, OTHER_MILESTONE))
 
 
 def rest(method: str, path: str, token: str, payload: dict | None = None):
@@ -152,10 +210,9 @@ def main() -> int:
 
     try:
         issues = all_issues(repo, token)
+        pulls = all_pulls(repo, token)
         changes = [
-            (pull, change)
-            for pull in all_pulls(repo, token)
-            if (change := missing(pull, owner))
+            (pull, change) for pull in pulls if (change := missing(pull, owner))
         ] + [
             (issue, change)
             for issue in issues
@@ -179,17 +236,28 @@ def main() -> int:
                 )
             if "labels" in change:
                 rest("POST", f"{base}/labels", token, {"labels": change["labels"]})
-        gates = gate_milestones(pages(f"/repos/{repo}/milestones?state=all", token))
+        milestones = pages(f"/repos/{repo}/milestones?state=all", token)
+        gates = gate_milestones(milestones)
         gated = [(i, gate) for i in issues if (gate := gate_of(i, gates))]
-        for issue, gate in gated:
-            print(f"#{issue['number']}: milestone={gate['title']}")
+        issue_gates = {i["number"]: i["milestone"] for i in issues if i["milestone"]}
+        issue_gates |= {i["number"]: gate for i, gate in gated}
+        tasks = task_issues(WORKPACKAGES.read_text(encoding="utf-8"))
+        by_title = {milestone["title"]: milestone for milestone in milestones}
+        gated += [
+            (pull, milestone)
+            for pull in pulls
+            if (milestone := milestone_of_pull(pull, issue_gates, tasks, by_title))
+        ]
+        for item, milestone in gated:
+            print(f"#{item['number']}: milestone={milestone['title']}")
             if not args.dry_run:
                 rest(
                     "PATCH",
-                    f"/repos/{repo}/issues/{issue['number']}",
+                    f"/repos/{repo}/issues/{item['number']}",
                     token,
-                    {"milestone": gate["number"]},
+                    {"milestone": milestone["number"]},
                 )
+                time.sleep(WRITE_PAUSE_SECONDS)
     except MetadataError as exc:
         print(f"PR-Metadaten fehlgeschlagen: {exc}", file=sys.stderr)
         return 1
