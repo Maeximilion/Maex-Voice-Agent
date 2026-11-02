@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.12.8
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.12.9
 
 ---
 
@@ -522,6 +522,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 02.11.2026 | **A blocked customer counts on a shared number (#207, review of #462).** `find_customer` dropped them before it counted who stands behind the number, so a blocked "Müller" next to an unblocked "Schmidt" gave Schmidt's ids to a call without a name. Such a call now finds nobody; a name still finds the unblocked one |
 | 02.11.2026 | **A swap to the same dish and options is no correction** (open point of PR #140). The line stays the stored row, so `NO_CHANGE` blocks and no `order.corrected`, revision or KORREKTUR follows; another quantity is a quantity change at the frozen prices. Its choices stay offered, because Tauschen with the line's own number is how the team reaches them |
 | 02.11.2026 | **The register converter refuses two spellings of one file** (open point of PR #149). On a case-sensitive file system `artikel.DBF` and `artikel.dbf` could both sit in the folder and the first one was read, so an old table could meet a newer memo. Now it stops with exit 2 and names both |
 | 02.11.2026 | **Handover:** #452 to #462 merged, the block is in `docs/00_PCF.md` §13; next T-10.2 with Maxi |
@@ -676,6 +677,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.12.9 · 02.11.2026:** A blocked customer counts on a shared number (#207)
 - **v2.12.8 · 02.11.2026:** A swap to the same dish and options is no correction: the line stays the stored row
 - **v2.12.7 · 02.11.2026:** The register converter refuses two spellings of one file
 - **v2.12.6 · 02.11.2026:** Handover 02.11.2026: #452 to #462 merged, next T-10.2 with Maxi
