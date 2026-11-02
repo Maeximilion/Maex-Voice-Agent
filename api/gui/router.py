@@ -290,7 +290,7 @@ def _switch(
     except AppError as exc:
         session.rollback()
         logger.warning("Kopfzeile nicht umgeschaltet: %s", exc.message)
-        status, problem = 409, SWITCH_FAILED
+        status, problem = 409, exc.say or SWITCH_FAILED
     return templates.TemplateResponse(
         request,
         "fragments/kopfzeile.html",
@@ -746,6 +746,34 @@ async def _form(request: Request) -> dict[str, str]:
     """
     body = (await request.body()).decode("utf-8", errors="replace")
     return {k: v[-1] for k, v in parse_qs(body, keep_blank_values=True).items()}
+
+
+def _typed_minutes(text: str) -> int:
+    """The digits the team typed; 0 for anything else, which the limits refuse."""
+    text = text.strip()
+    return int(text) if text.isascii() and text.isdigit() and len(text) <= 4 else 0
+
+
+@router.post(
+    "/kopfzeile/wartezeit/{service}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def wartezeit_getippt(
+    request: Request,
+    service: str,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    if service not in WAIT_SERVICES:
+        raise HTTPException(status_code=404)
+    minutes = _typed_minutes(form.get("minuten", ""))
+    return _switch(
+        request,
+        session,
+        lambda t: switches.set_wait(session, t, WAIT_SERVICES[service], minutes),
+    )
 
 
 def _correction_panel(

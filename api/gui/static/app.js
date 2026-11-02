@@ -16,6 +16,13 @@
   // schlimmer als der Fehler selbst. Dann bleibt die Ansicht stehen und die
   // rote Leiste oben meldet es (docs/06 §5).
   document.body.addEventListener("htmx:beforeSwap", function (e) {
+    // A header fetched before the wait field opened lands after it: keep the
+    // field (T-3.9). Saving is a POST and swaps; closing the field fetches again.
+    if (e.detail.requestConfig.verb === "get" && e.detail.target.id === "kopfzeile" &&
+        document.querySelector("#kopfzeile details[open]")) {
+      e.detail.shouldSwap = false;
+      return;
+    }
     var xhr = e.detail.xhr;
     if (xhr.status < 400) {
       if (stoerung) stoerung.hidden = true;
@@ -46,6 +53,12 @@
     if (fold && feiertageOffen) fold.open = true;
   });
 
+  document.addEventListener("toggle", function (e) {
+    if (!e.target.classList.contains("step-edit")) return;
+    if (e.target.open) e.target.querySelector("input").select();
+    else if (window.EventSource) kopfzeile();
+  }, true);
+
   if (!liste || !window.EventSource) return;
 
   function offline(yes) {
@@ -59,6 +72,9 @@
   }
 
   function kopfzeile() {
+    // Somebody is typing a wait (T-3.9): a redraw would take the field away.
+    // Closing the field fetches the header, so nothing stays out of date.
+    if (document.querySelector("#kopfzeile details[open]")) return;
     window.htmx.ajax("GET", "/gui/fragments/kopfzeile", {
       target: "#kopfzeile",
       swap: "outerHTML",
@@ -215,11 +231,18 @@
   function syncBoard() {
     if (board) board.inert = sheets.some(function (b) { return b.firstElementChild; });
   }
+  // Empties a sheet and, if it is the correction, stops its idle timer: a timer
+  // left running would close the next correction early.
+  function dropSheet(box) {
+    box.innerHTML = "";
+    if (box === correctionBox && idleTimer) {
+      window.clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+  }
   function closeSheet(box) {
     if (!box || !box.firstElementChild) return;
-    box.innerHTML = "";
-    if (box === correctionBox && idleTimer) window.clearTimeout(idleTimer);
-    idleTimer = null;
+    dropSheet(box);
     syncBoard();
     if (opener && document.contains(opener)) opener.focus();
     opener = null;
@@ -264,8 +287,11 @@
     var t = e.detail.target;
     wasOpen = !!t.firstElementChild;
     var sc = scroller(t);
-    var post = e.detail.requestConfig && e.detail.requestConfig.verb === "post";
-    scrollWas = wasOpen && post && sc ? sc.scrollTop : 0;
+    var cfg = e.detail.requestConfig || {};
+    // A tap (POST) and a background refresh keep the view; a search (GET from
+    // the field) starts at the top on purpose.
+    var keep = cfg.verb === "post" || (cfg.headers && cfg.headers["X-Refresh"]);
+    scrollWas = wasOpen && keep && sc ? sc.scrollTop : 0;
   });
   document.body.addEventListener("htmx:afterSwap", function (e) {
     var t = e.detail.target;
@@ -284,7 +310,7 @@
     var box = e.detail.target;
     if (sheets.indexOf(box) < 0 || !box.firstElementChild) return;
     sheets.forEach(function (other) {
-      if (other !== box) other.innerHTML = "";
+      if (other !== box) dropSheet(other);
     });
     syncBoard();
     if (box === correctionBox) armIdleTimer();
@@ -297,6 +323,7 @@
     window.htmx.ajax("GET", "/gui/fragments/gericht-aus", {
       target: "#gericht-liste",
       values: { q: search.value },
+      headers: { "X-Refresh": "1" },
     });
   }
   document.body.addEventListener("gerichte-geaendert", function () {

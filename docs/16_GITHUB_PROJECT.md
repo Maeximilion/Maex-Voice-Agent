@@ -1,7 +1,7 @@
 # 16 – GitHub Project
 
 > The board on GitHub is a **derivation**, not manual work. It shows the state that issues and pull requests already have.
-> Version 1.2 · 21.10.2026
+> Version 1.3 · 02.11.2026
 
 ---
 
@@ -19,13 +19,14 @@ Why: a board that is written to by hand or by the agent in the middle of a task 
 
 What looks like a second project is always a **view**. Views cost nothing, share the same data and cannot contradict each other:
 
-| View | Type | Shows |
-|---|---|---|
-| Board | Board by status | The work flow: Todo, In progress, Done |
-| Current iteration | Table | What is on right now |
-| Backlog | Table, by priority | Open, not yet assigned to an iteration |
-| Roadmap | Roadmap | The stages over time. Month or quarter is a setting of this view, not a separate project |
-| In Review | Table | Pull requests waiting for review |
+| View | Type | Filter | Shows |
+|---|---|---|---|
+| Monthly roadmap | Roadmap, grouped by Milestone | `is:issue` | The issues over time, one collapsible block per gate |
+| Quarterly roadmap | Roadmap, grouped by Milestone | `is:issue` | The same over a longer range |
+| Backlog | Table, grouped by Milestone | `is:issue is:open` | The open issues per gate; a block folds out into its sub-issues |
+| Board | Board by Status | `-closed:<@today-3d` | Everything open plus what closed in the last three days: Todo, Blocked, In progress, In review, Done |
+
+The REST API can create a view but not change one, and the group of a view is set only in the web interface. A view takes one level of grouping, so a roadmap groups by gate or by parent issue, not by both.
 
 If a view is missing: create a view, never a project.
 
@@ -37,15 +38,19 @@ If a view is missing: create a view, never a project.
 
 | Field | Type | Where the value comes from |
 |---|---|---|
-| Status | Single select | Built-in workflows (section 4). Never by hand |
-| Stufe (stage) | Single select `stufe-0` to `stufe-5` | Label of the issue, set on creation |
-| Art (kind) | Single select `feature`, `chore`, `docs`, `test`, `refactor` | Label of the issue, exactly one |
-| Prioritaet (priority) | Single select `hoch` (high), `mittel` (medium), `niedrig` (low) | Label `priority: *` |
-| Iteration | Iteration | Set during planning, not during work |
+| Status | Single select `Todo`, `Blocked`, `In progress`, `In review`, `Done` | Section 4. Never by hand |
+| Milestone | The gates G0 to G5, and `Features`, `Bugs`, `Etcetera` for pull requests that belong to no gate | `scripts/pr_metadata.py`, section 5. Set by hand it stays: the label is only the default, a task a gate waits for gets that gate by hand (T-10.1 and T-10.2 carry `stufe-1` and belong to G0) |
+| Iteration, Quarter | Iteration | The daily run (section 5) |
+| Start date, Target date | Date | The daily run (section 5) |
+| Team | Single select, GitHub's default values | Empty on every entry, not used |
+
+Stage, kind and priority are labels only (`stufe-N`, the type label, `priority: *`), set on creation. They are no fields of the project, and a label cannot be grouped by.
+
+Add a Status column in the web interface, never with `updateProjectV2Field`: that call replaces the whole option list, and a wrong id would take the status of every entry with it.
 
 **Status lives only in the field, never additionally as a label.** Two places for the same truth always drift apart. The labels `status: in-progress` and `status: needs-review` are therefore abolished.
 
-The one exception: `status: blocked`. `docs/07_WORKPACKAGES.md` lists "blocked" as a task status, and that file is the source of truth. The label mirrors it so that a blocked work package is visible even without the board.
+The one exception: `status: blocked`. `docs/07_WORKPACKAGES.md` lists "blocked" as a task status, and that file is the source of truth. The label mirrors it so that a blocked work package is visible even without the board, and the column `Blocked` follows the label.
 
 Dropped and paused work (06.10.2026): a pull request cannot be deleted, only closed, so the list grows. Work that is dropped on purpose (a Python or Postgres major bump that stays out for compatibility, a feature that was decided against) gets the existing label `wontfix` on its closed pull request or issue. Work that is only paused is not a label: it stays an open issue on the board in `Todo`, because a second "parked" place would drift from the Status field. The pull request list is read with `is:pr is:open`.
 
@@ -62,12 +67,14 @@ Switched on once in the project settings under "Workflows", after that without f
 | Issue closed | Status `Done` |
 | Entry reopened | Status `In Progress` |
 
-On top of them, `.github/workflows/project-sync.yml` runs `scripts/project_report.py --fix` on every pull request event (opened, reopened, closed, edited, ready for review) and every issue opened, reopened or closed (Maxi, 2026-10-28):
+On top of them, `.github/workflows/project-sync.yml` runs `scripts/project_report.py --fix` on every pull request event (opened, reopened, closed, edited, ready for review) and every issue opened, reopened, closed, labeled or unlabeled (Maxi, 2026-10-28, 2026-11-02):
 
 | Event | Result |
 |---|---|
-| Pull request opened | Status `In progress`, start date and iteration set |
-| Pull request with `Closes #12` opened | Issue #12 also `In progress`, its start date and iteration from that pull request |
+| Pull request opened | Status `In review`, start date and iteration set |
+| Pull request with `Closes #12` opened | Issue #12 `In progress`, its start date and iteration from that pull request |
+| Label `status: blocked` set, on an open issue or pull request | Status `Blocked`, whatever else is true of it |
+| Label removed | Back to what the facts say: `In review`, `In progress`, or `Todo` for an issue without an open pull request |
 | Pull request merged, issue closed | Status `Done`, target date set |
 
 So that the merge takes the linked issue along, **every** pull request description carries a keyword: `Closes #12`. Without it the merge closes only the pull request and the issue stays open.
@@ -82,7 +89,7 @@ So that the merge takes the linked issue along, **every** pull request descripti
 
 **Corrected:** what is done (issue `CLOSED`, pull request `MERGED`) but the board does not show as `Done`. A pull request that was closed without a merge also has the state `CLOSED` but is not done - it is never set to `Done` automatically. This is the gap the built-in workflows leave, because they act only on new events and never retroactively. The correction is idempotent and only pulls the board toward the truth, never away from it.
 
-**Set to `In progress`:** an open pull request, and an open issue that an open pull request closes (`Closes #N`), while the board shows `Todo` or nothing. An open item on `Done` is reported, not moved.
+**Set from the facts** (`wanted_status`): open and labeled `status: blocked` to `Blocked`, an open pull request to `In review`, an open issue that an open pull request closes (`Closes #N`) to `In progress`. An issue someone put on `In progress` by hand stays. An open item on `Done` is reported, not moved.
 
 **Filled in**, only into empty fields, for pull requests and for issues someone works on:
 
@@ -96,7 +103,7 @@ Days are counted in Berlin time. What was set by hand stays. An issue without a 
 
 **Iterations roll on:** GitHub does not add iterations by itself (Iteration 3 ended on 2026-10-27 with none after it, 2026-10-28). The run appends iterations of the same length until one covers the day 28 days ahead; existing ones keep their ids, so the values on items stay.
 
-In addition, `scripts/pr_metadata.py` sets the repo owner as assignee on every pull request without one, and on every pull request without a label the type label from the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). Without a recognizable type the label stays empty - better none than a guessed one. Every open issue without an assignee gets the owner as well; its labels are set at creation, not derived. It runs when a pull request or an issue opens or reopens (`.github/workflows/pr-metadata.yml`), so a pull request opened without the flags of `/done` step 7 is complete within a minute, and again in the daily run for whatever slipped past.
+In addition, `scripts/pr_metadata.py` sets the repo owner as assignee on every pull request without one, and on every pull request without a label the type label from the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). Without a recognizable type the label stays empty - better none than a guessed one. Every open issue without an assignee gets the owner as well; its labels are set at creation, not derived. Every issue without a milestone, open or closed, gets the gate of its `stufe-N` label (`stufe-1` to `G1 ...`); one without such a label stays in the group "No Milestone" of the roadmap. Every pull request without a milestone takes the gate of the issue it closes, else of the task in its title or branch name (`docs/07_WORKPACKAGES.md`, a task without an issue counts through the group issue of its block), else `Features` for `feat`, `Bugs` for `fix` and `Etcetera` for the rest. A pull request in `Features`, `Bugs` or `Etcetera` is never part of a gate, and the roadmaps show issues only. It runs when a pull request or an issue opens or reopens (`.github/workflows/pr-metadata.yml`), so a pull request opened without the flags of `/done` step 7 is complete within a minute, and again in the daily run for whatever slipped past.
 
 **Only reported** is everything that needs a decision:
 
@@ -106,8 +113,8 @@ In addition, `scripts/pr_metadata.py` sets the repo owner as assignee on every p
 - archived, but open again - it is brought back, not created anew. Archived duplicates are excepted: if an active entry with the same URL is on the board, the copy stays in the archive. Archived entries count as present when matching against the repo, but not in any other check
 - the same item twice on the board
 - entries without a status
-- entries in progress without an iteration (deliberately not the whole backlog, otherwise the report would list everything daily)
-- `In Progress` for seven days without movement — reported, not moved
+- entries in progress or in review without an iteration (deliberately not the whole backlog, otherwise the report would list everything daily)
+- `In progress` or `In review` for seven days without movement — reported, not moved
 
 **Nothing is ever archived automatically.** For a portfolio, visible finished work in the roadmap is an asset and not ballast. Whoever wants to tidy up starts the run by hand with the `archive` switch; then `Done` entries that have not moved for fourteen days disappear - but only finished ones. An open entry on `Done` is never archived, and what the same run has just set to `Done` counts as freshly moved.
 
