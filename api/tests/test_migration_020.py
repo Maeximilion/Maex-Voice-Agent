@@ -1,4 +1,4 @@
-"""Migration 019: the register price of the price check on the dish (T-4.9), up and down."""
+"""Migration 020: the register price of the price check on the dish (T-4.9), up and down."""
 
 import pytest
 from alembic import command
@@ -32,12 +32,12 @@ def _dish(conn) -> object:
 
 
 def test_an_existing_dish_has_no_difference_after_the_upgrade(scratch_db_url):
-    command.upgrade(_config(scratch_db_url), "018")
+    command.upgrade(_config(scratch_db_url), "019")
     engine = create_engine(scratch_db_url)
     try:
         with engine.begin() as conn:
             _dish(conn)
-        command.upgrade(_config(scratch_db_url), "019")
+        command.upgrade(_config(scratch_db_url), "020")
         with engine.connect() as conn:
             row = conn.execute(
                 text(
@@ -55,7 +55,7 @@ def test_an_existing_dish_has_no_difference_after_the_upgrade(scratch_db_url):
     ["register_price_cents = -1", "register_price_rejected = true"],
 )
 def test_the_database_refuses_a_wrong_difference(scratch_db_url, values):
-    command.upgrade(_config(scratch_db_url), "019")
+    command.upgrade(_config(scratch_db_url), "020")
     engine = create_engine(scratch_db_url)
     try:
         with engine.begin() as conn:
@@ -69,7 +69,7 @@ def test_the_database_refuses_a_wrong_difference(scratch_db_url, values):
 
 
 def test_a_rejected_difference_keeps_its_price(scratch_db_url):
-    command.upgrade(_config(scratch_db_url), "019")
+    command.upgrade(_config(scratch_db_url), "020")
     engine = create_engine(scratch_db_url)
     try:
         with engine.begin() as conn:
@@ -86,7 +86,7 @@ def test_a_rejected_difference_keeps_its_price(scratch_db_url):
 
 
 def test_downgrade_drops_the_columns_and_keeps_the_price(scratch_db_url):
-    command.upgrade(_config(scratch_db_url), "019")
+    command.upgrade(_config(scratch_db_url), "020")
     engine = create_engine(scratch_db_url)
     try:
         with engine.begin() as conn:
@@ -95,7 +95,7 @@ def test_downgrade_drops_the_columns_and_keeps_the_price(scratch_db_url):
                 text("UPDATE menu_items SET register_price_cents = 720 WHERE id = :d"),
                 {"d": dish},
             )
-        command.downgrade(_config(scratch_db_url), "018")
+        command.downgrade(_config(scratch_db_url), "019")
         assert not COLUMNS & _columns(scratch_db_url)
         with engine.connect() as conn:
             assert conn.execute(text("SELECT price_cents FROM menu_items")).one() == (
