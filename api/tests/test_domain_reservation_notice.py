@@ -158,6 +158,42 @@ def test_a_wish_at_a_time_nobody_starts_offers_nothing_inside_the_notice(
     assert all(at >= berlin(18) for at in slot.alternatives)
 
 
+def test_a_notice_that_hides_every_slot_is_not_called_full(session, tenant_id):
+    """Codex #513: before opening, with a day-long notice, nothing can be offered.
+    The seats are free, so "nichts mehr frei" would be false."""
+    set_notice(session, tenant_id, 1440)
+
+    slot = check_slot(session, tenant_id, berlin(11), 4, now=berlin(9))
+
+    assert slot.available is False
+    assert slot.alternatives == []
+    assert "nichts mehr frei" not in slot.say
+    assert "so kurzfristig" in slot.say
+
+
+def test_a_full_day_before_opening_is_still_called_full(session, tenant_id, call_id):
+    set_notice(session, tenant_id, 30)
+    book(session, tenant_id, call_id, 40)
+    for start in (time(12), time(13)):
+        session.add(
+            Reservation(
+                tenant_id=tenant_id,
+                call_id=call_id,
+                status="confirmed",
+                guest_name="Test",
+                phone="+4900000000",
+                party_size=15,
+                reserved_for=datetime.combine(DIENSTAG, start, tzinfo=BERLIN),
+                idempotency_key=uuid.uuid4().hex,
+            )
+        )
+    session.commit()
+
+    slot = check_slot(session, tenant_id, berlin(11), 4, now=berlin(9))
+
+    assert "nichts mehr frei" in slot.say
+
+
 def test_a_big_party_inside_the_notice_gets_no_callback(session, tenant_id):
     """The rule of the day says no booking: a callback would promise a table."""
     set_notice(session, tenant_id, 60)
