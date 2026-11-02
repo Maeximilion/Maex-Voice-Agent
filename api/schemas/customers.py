@@ -8,7 +8,9 @@ from api.schemas.common import ToolRequest
 
 
 class FindCustomerRequest(ToolRequest):
-    caller_id: str = Field(min_length=3, max_length=40)
+    """No number: the one the call came from counts, never one a client sends
+    (security audit 02.11.2026). A `caller_id` in the body is ignored."""
+
     guest_name: str | None = Field(default=None, max_length=200)
 
 

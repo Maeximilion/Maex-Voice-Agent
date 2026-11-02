@@ -8,7 +8,7 @@ macht den Entwurf gültig.
 A delivery (T-6.5) adds the zone of its address, the fee from that zone and
 the minimum order value (`domain/delivery/address.py`). Customer and address
 are written here, the moment the draft stands; `confirm` makes the address the
-customer's default.
+customer's default, on the line the call came from only.
 """
 
 import uuid
@@ -28,7 +28,7 @@ from api.core.errors import (
     ServiceUnavailable,
 )
 from api.core.time import utcnow
-from api.domain.customers.phone import normalize_phone
+from api.domain.customers.phone import normalize_phone, number_or_none
 from api.domain.delivery.address import SAY_WHICH_NAME, keep, place
 from api.domain.ordering.labels import ACTION_DRAFT_CREATED, current_labels
 from api.domain.ordering.pricing import Line, items_total_cents
@@ -88,14 +88,16 @@ def draft_order(
     wait = config.pickup_wait_minutes
     where = customer = address = None
     if delivery:
-        where = place(session, req.tenant_id, req.customer, phone)
+        # Recognition only on the line the call came from (L12).
+        caller_line = number_or_none(call.caller_id)
+        where = place(session, req.tenant_id, req.customer, phone, caller_line)
         require_minimum(total, where.zone)
         name = where.name
         fee = where.zone.fee_cents
         # The longer of the two: the team raises the wait in a rush, a far
         # zone takes longer whatever the wait.
         wait = max(config.delivery_wait_minutes, where.zone.eta_minutes)
-        customer, address = keep(session, req.tenant_id, phone, where)
+        customer, address = keep(session, req.tenant_id, req.call_id, phone, where)
 
     order = Order(
         tenant_id=req.tenant_id,

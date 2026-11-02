@@ -28,7 +28,7 @@ from api.core.time import to_utc, tz
 from api.core.tool_log import append_tool_call
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
-from api.domain.customers import find_customer, normalize_phone
+from api.domain.customers import normalize_phone, recognize
 from api.domain.delivery import check_delivery
 from api.domain.menu import get_item_details, search_menu
 from api.domain.menu.items import card_format
@@ -41,10 +41,10 @@ from api.domain.menu.search import (
 from api.domain.ordering import draft_order
 from api.domain.reservations import check_slot, create_reservation
 from api.domain.status import get_service_status
-from api.models import Call, Tenant
+from api.models import Tenant
 from api.schemas.callbacks import CreateCallbackRequest
 from api.schemas.confirm import ConfirmRequest
-from api.schemas.customers import CustomerMatch, FindCustomerRequest
+from api.schemas.customers import FindCustomerRequest
 from api.schemas.delivery import CheckDeliveryRequest
 from api.schemas.menu import ItemDetailsRequest, SearchMenuRequest, SearchResult
 from api.schemas.orders import DraftOrderRequest
@@ -426,17 +426,8 @@ def _find_customer(
     """Recognition goes by the number the call came from, never by one a model
     writes: it could read out who stands behind any number (L12). A caller ID
     that is withheld or no number recognizes nobody."""
-    call = session.get(Call, call_id)
-    caller_id = call.caller_id if call and call.tenant_id == tenant_id else None
-    if not caller_id:
-        return CustomerMatch(found=False)
-    req = FindCustomerRequest(
-        call_id=call_id, tenant_id=tenant_id, **{**args, "caller_id": caller_id}
-    )
-    try:
-        return find_customer(session, req.tenant_id, req.caller_id, req.guest_name)
-    except InvalidInput:
-        return CustomerMatch(found=False)
+    req = FindCustomerRequest(call_id=call_id, tenant_id=tenant_id, **args)
+    return recognize(session, req.tenant_id, req.call_id, req.guest_name)
 
 
 TOOLS: dict[str, Adapter] = {

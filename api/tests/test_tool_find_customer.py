@@ -22,6 +22,7 @@ from scripts.seed import seed
 AUTH = {"Authorization": f"Bearer {settings.agent_api_token}"}
 CALLER = "+4972215551234"
 NATIONAL = "07221 5551234"
+STARTED = datetime(2026, 9, 15, 16, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -44,8 +45,17 @@ def tenant_id(session):
     )
 
 
-def customer(session, tenant_id, name="Müller", phone=CALLER, blocked=False):
-    row = Customer(tenant_id=tenant_id, phone=phone, name=name, blocked=blocked)
+def customer(
+    session, tenant_id, name="Müller", phone=CALLER, blocked=False, order_count=1
+):
+    """A customer with a confirmed delivery from this number."""
+    row = Customer(
+        tenant_id=tenant_id,
+        phone=phone,
+        name=name,
+        blocked=blocked,
+        order_count=order_count,
+    )
     session.add(row)
     session.flush()
     return row
@@ -133,10 +143,12 @@ def test_a_blocked_customer_is_not_recognized(session, tenant_id):
     assert find_customer(session, tenant_id, CALLER).found is False
 
 
-def test_a_blocked_customer_counts_on_a_shared_number(session, tenant_id):
+@pytest.mark.parametrize("orders", [0, 1])
+def test_a_blocked_customer_counts_on_a_shared_number(session, tenant_id, orders):
     """#207: taken out before the count, the other one looked like the only
-    customer on the number, and the blocked guest would hear that address."""
-    customer(session, tenant_id, name="Müller", blocked=True)
+    customer on the number, and the blocked guest would hear that address.
+    Also a blocked row no order was confirmed on."""
+    customer(session, tenant_id, name="Müller", blocked=True, order_count=orders)
     row = customer(session, tenant_id, name="Schmidt")
     address(session, tenant_id, row)
 
@@ -202,6 +214,24 @@ def test_a_customer_without_a_default_address_gets_no_question(session, tenant_i
     assert (found.found, found.address_id, found.say) == (True, None, None)
 
 
+def test_a_row_no_confirmed_delivery_made_is_not_recognized(session, tenant_id):
+    """Security audit 02.11.2026: a draft nobody said yes to, or a booking
+    under a number the guest only named, writes a row and counts no order on
+    it. It must not give its name to whoever calls from the number later."""
+    customer(session, tenant_id, order_count=0)
+
+    assert find_customer(session, tenant_id, CALLER).found is False
+    assert find_customer(session, tenant_id, CALLER, "Müller").found is False
+
+
+def test_a_row_without_an_order_hides_nobody(session, tenant_id):
+    customer(session, tenant_id, name="Müller", order_count=0)
+    row = customer(session, tenant_id, name="Müller")
+
+    assert find_customer(session, tenant_id, CALLER).customer_id == row.id
+    assert find_customer(session, tenant_id, CALLER, "Müller").customer_id == row.id
+
+
 def test_another_tenant_finds_nobody(session, tenant_id):
     customer(session, tenant_id)
     other = seed(session, tenant_name="Anderer", timezone="Europe/Berlin").tenant_id
@@ -214,16 +244,22 @@ def test_a_number_that_is_none_is_refused(session, tenant_id):
         find_customer(session, tenant_id, "unbekannt")
 
 
-@pytest.fixture
-def client(engine, tenant_id, session):
+def _call(session, tenant_id, caller_id: str | None = NATIONAL) -> Call:
     call = Call(
         tenant_id=tenant_id,
-        external_session_id="ext",
-        started_at=datetime.now(UTC),
-        delete_after=datetime.now(UTC).date(),
+        external_session_id=uuid.uuid4().hex,
+        started_at=STARTED,
+        delete_after=STARTED.date(),
+        caller_id=caller_id,
     )
     session.add(call)
     session.commit()
+    return call
+
+
+@pytest.fixture
+def client(engine, tenant_id, session):
+    call = _call(session, tenant_id)
 
     def override_get_db():
         with Session(engine) as db:
@@ -236,7 +272,6 @@ def client(engine, tenant_id, session):
             {
                 "call_id": str(call.id),
                 "tenant_id": str(tenant_id),
-                "caller_id": NATIONAL,
             },
         )
     finally:
@@ -278,16 +313,56 @@ def test_the_tool_needs_the_token(client):
     assert http.post("/v1/tools/find_customer", json=body).status_code == 401
 
 
-def test_the_tool_refuses_a_number_that_is_none(client):
+def test_the_tool_goes_by_the_line_of_the_call(client, session, tenant_id):
+    """Security audit 02.11.2026: a number in the request is no key to
+    someone's record (L12), as in the core (`agent/dispatch.py`)."""
     http, body = client
+    other = customer(session, tenant_id, phone="+4972215559999")
+    address(session, tenant_id, other)
+    session.commit()
 
     response = http.post(
         "/v1/tools/find_customer",
-        json={**body, "caller_id": "unbekannt"},
+        json={**body, "caller_id": "+4972215559999"},
         headers=AUTH,
     )
 
-    assert response.json()["ok"] is False
+    assert response.json()["ok"] is True
+    assert response.json()["data"]["found"] is False
+
+
+@pytest.mark.parametrize("caller_id", [None, "anonymous"])
+def test_a_withheld_line_recognizes_nobody_over_the_tool(
+    client, session, tenant_id, caller_id
+):
+    http, body = client
+    row = customer(session, tenant_id)
+    address(session, tenant_id, row)
+    call = _call(session, tenant_id, caller_id=caller_id)
+
+    response = http.post(
+        "/v1/tools/find_customer",
+        json={**body, "call_id": str(call.id), "caller_id": CALLER},
+        headers=AUTH,
+    )
+
+    assert response.json()["data"]["found"] is False
+
+
+def test_a_call_of_another_tenant_recognizes_nobody(client, session, tenant_id):
+    http, body = client
+    row = customer(session, tenant_id)
+    address(session, tenant_id, row)
+    other = seed(session, tenant_name="Anderer", timezone="Europe/Berlin").tenant_id
+    call = _call(session, uuid.UUID(other))
+
+    response = http.post(
+        "/v1/tools/find_customer",
+        json={**body, "call_id": str(call.id)},
+        headers=AUTH,
+    )
+
+    assert response.json()["data"]["found"] is False
 
 
 @pytest.mark.latency

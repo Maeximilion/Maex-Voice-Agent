@@ -7,6 +7,12 @@ does not match means a new customer, and with an objection on the number so
 does one that matches. A stored address counts only as the default of the
 customer `find_customer` recognizes on this very number, which holds an
 objection and a blocked customer as well, also in the middle of a call.
+
+Only on the line the call came from (security audit 02.11.2026). A number the
+guest only names, or a withheld line, is the number the team calls back on and
+no key to a record: no stored name or address, no row reused, a new row that
+`confirm` leaves without default and counters, so `find_customer` never offers
+it. A blocked customer on the booking number or on the line goes to the team.
 """
 
 import uuid
@@ -19,7 +25,8 @@ from api.core.errors import SAY_ON_FAILURE, InvalidInput, ServiceUnavailable
 from api.domain.customers.lookup import find_customer, objected
 from api.domain.delivery.zones import check_delivery, postal_digits
 from api.domain.menu.numberwords import fold
-from api.models import Address, Customer
+from api.models import Address, Customer, Order
+from api.schemas.customers import CustomerMatch
 from api.schemas.delivery import DeliveryCheck
 from api.schemas.orders import OrderAddress, OrderCustomer
 
@@ -40,25 +47,39 @@ class Place:
     # The stored address, and its customer.
     stored: Address | None
     customer_id: uuid.UUID | None
+    # The booking number is the line the call came from.
+    own_line: bool
 
 
 def place(
-    session: Session, tenant_id: uuid.UUID, wanted: OrderCustomer, phone: str
+    session: Session,
+    tenant_id: uuid.UUID,
+    wanted: OrderCustomer,
+    phone: str,
+    line: str | None,
 ) -> Place:
+    """`line`: the number the call came from, None when withheld."""
     name = (wanted.name or "").strip()
     if session.scalar(
         select(Customer.id).where(
             Customer.tenant_id == tenant_id,
-            Customer.phone == phone,
+            # The booking number and the line: a prank names another number.
+            Customer.phone.in_([phone, line or phone]),
             Customer.blocked.is_(True),
         )
     ):
         # Spam or a prank (docs/03): the team decides, nobody drives out on it.
-        raise ServiceUnavailable("blocked number on a delivery", say=SAY_ON_FAILURE)
+        # The message names no state of the number: it reaches an HTTP client.
+        raise ServiceUnavailable("delivery left to the team", say=SAY_ON_FAILURE)
     if wanted.address is None and wanted.address_id is None:
         raise InvalidInput("delivery without an address", say=SAY_WHICH_ADDRESS)
 
-    match = find_customer(session, tenant_id, phone, name or None)
+    own_line = phone == line
+    match = (
+        find_customer(session, tenant_id, phone, name or None)
+        if own_line
+        else CustomerMatch(found=False)
+    )
     if wanted.address is None and (
         not match.found or match.address_id != wanted.address_id
     ):
@@ -82,16 +103,21 @@ def place(
         spoken=wanted.address,
         stored=stored,
         customer_id=known.id if known else None,
+        own_line=own_line,
     )
 
 
 def keep(
-    session: Session, tenant_id: uuid.UUID, phone: str, where: Place
+    session: Session,
+    tenant_id: uuid.UUID,
+    call_id: uuid.UUID,
+    phone: str,
+    where: Place,
 ) -> tuple[Customer, Address]:
     """The rows the draft points at, with the zone on the address. Flushed:
     the order needs their ids. Default and counters wait for `confirm`: a draft
     nobody said yes to is no "letztes Mal"."""
-    customer = _customer(session, tenant_id, phone, where)
+    customer = _customer(session, tenant_id, call_id, phone, where)
     address = where.stored or _address(session, tenant_id, customer, where.spoken)
     address.zone_id = where.zone.zone_id
     session.flush()
@@ -99,19 +125,26 @@ def keep(
 
 
 def _customer(
-    session: Session, tenant_id: uuid.UUID, phone: str, where: Place
+    session: Session,
+    tenant_id: uuid.UUID,
+    call_id: uuid.UUID,
+    phone: str,
+    where: Place,
 ) -> Customer:
     if where.customer_id:
         return session.get_one(Customer, where.customer_id)
-    # An objection switches recognition off for the number (L12): the name
-    # does not lead to the old record either.
-    if not objected(session, tenant_id, phone):
-        same_number = session.scalars(
+    # Besides the one `find_customer` recognized, only the row an earlier
+    # draft of this call wrote: any other row on the number may be one a
+    # booking under a number someone only named wrote. A named number and an
+    # objection (L12) reuse none, the name does not lead to an old record.
+    if where.own_line and not objected(session, tenant_id, phone):
+        this_call = session.scalars(
             select(Customer)
-            .where(Customer.tenant_id == tenant_id, Customer.phone == phone)
+            .join(Order, Order.customer_id == Customer.id)
+            .where(Order.call_id == call_id, Customer.phone == phone)
             .order_by(Customer.created_at)
         ).all()
-        for row in same_number:
+        for row in this_call:
             if fold(row.name) == fold(where.name):
                 return row
     customer = Customer(tenant_id=tenant_id, phone=phone, name=where.name)

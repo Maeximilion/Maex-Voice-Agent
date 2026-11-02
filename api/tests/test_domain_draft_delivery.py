@@ -26,6 +26,7 @@ from api.core.errors import (
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
 from api.domain.customers import SAY_SAME_ADDRESS, find_customer
+from api.domain.delivery.address import SAY_WHICH_NAME
 from api.domain.delivery.zones import SAY_OUT_OF_ZONE
 from api.domain.ordering import draft_order
 from api.domain.ordering.confirm import confirm_order
@@ -1192,3 +1193,218 @@ def test_with_an_objection_a_new_row_still_counts_its_own_order(
     session.refresh(known)
     assert fresh.order_count == 1
     assert known.last_contact_at == before
+
+
+# Security audit 02.11.2026 (docs/09 §5): the number a guest names is the number
+# the team calls back on, never a key to someone's record (L12). Recognition
+# goes by the line the call came from, as `find_customer` in the core does.
+OTHER_LINE = "+497215559999"
+
+
+def _from(session, tenant_id, caller_id=OTHER_LINE):
+    """A call from another line than the number the booking runs under."""
+    return _call(session, tenant_id, caller_id=caller_id)
+
+
+@pytest.mark.parametrize("caller_id", [OTHER_LINE, None, "anonymous"])
+def test_a_named_number_opens_no_stored_record(session, tenant_id, caller_id):
+    """The caller names a stored customer's number and name and gives an
+    address of their own: at the yes it must not become that customer's
+    "letztes Mal"."""
+    known, home = known_customer(session, tenant_id)
+    before = known.last_contact_at
+    call = _from(session, tenant_id, caller_id)
+
+    draft = draft_order(
+        session, delivery(session, tenant_id, call, name="Müller"), now=NOW
+    )
+    confirmed(session, tenant_id, call, draft.order_id)
+
+    order = session.get(Order, draft.order_id)
+    fresh = session.get(Customer, order.customer_id)
+    session.refresh(fresh)
+    session.refresh(known)
+    session.refresh(home)
+    assert order.customer_id != known.id
+    assert order.phone == PHONE
+    assert (fresh.order_count, fresh.last_order_at) == (0, None)
+    assert home.is_default is True
+    assert (known.order_count, known.last_contact_at) == (1, before)
+    match = find_customer(session, tenant_id, PHONE)
+    assert (match.customer_id, match.address_id) == (known.id, home.id)
+
+
+@pytest.mark.parametrize("caller_id", [OTHER_LINE, None])
+def test_a_named_number_gives_no_stored_name(session, tenant_id, caller_id):
+    known_customer(session, tenant_id)
+    call = _from(session, tenant_id, caller_id)
+
+    with pytest.raises(InvalidInput) as err:
+        draft_order(session, delivery(session, tenant_id, call, name=None), now=NOW)
+
+    assert err.value.say == SAY_WHICH_NAME
+
+
+def test_a_named_number_opens_no_stored_address(session, tenant_id):
+    _, home = known_customer(session, tenant_id)
+    call = _from(session, tenant_id)
+
+    with pytest.raises(InvalidInput) as err:
+        draft_order(session, _stored(session, tenant_id, call, home.id), now=NOW)
+
+    assert "Rheinstraße" not in err.value.say
+    assert counts(session) == (1, 1, 0)
+
+
+def test_the_own_line_in_another_spelling_still_recognizes(session, tenant_id):
+    """`calls.caller_id` keeps what the line gave when it is no E.164."""
+    known, home = known_customer(session, tenant_id)
+    call = _from(session, tenant_id, "0721 555-1234")
+
+    draft = draft_order(session, _stored(session, tenant_id, call, home.id), now=NOW)
+
+    assert session.get(Order, draft.order_id).customer_id == known.id
+
+
+def test_a_blocked_line_that_names_another_number_goes_to_the_team(session, tenant_id):
+    session.add(
+        Customer(tenant_id=tenant_id, phone=OTHER_LINE, name="Anders", blocked=True)
+    )
+    session.commit()
+    call = _from(session, tenant_id)
+
+    with pytest.raises(ServiceUnavailable) as err:
+        draft_order(session, delivery(session, tenant_id, call), now=NOW)
+
+    assert err.value.say == SAY_ON_FAILURE
+    # The log line and the HTTP answer name no state of the number.
+    assert "block" not in err.value.message
+    assert counts(session) == (1, 0, 0)
+
+
+def test_a_row_a_named_number_wrote_is_offered_to_nobody(session, tenant_id, call_id):
+    """Nobody was stored on the number. The row that booking writes must not
+    give its name or its address to the owner of the number later."""
+    planted = _from(session, tenant_id)
+    draft = draft_order(
+        session, delivery(session, tenant_id, planted, name="Braun"), now=NOW
+    )
+    confirmed(session, tenant_id, planted, draft.order_id)
+
+    assert find_customer(session, tenant_id, PHONE).found is False
+    assert find_customer(session, tenant_id, PHONE, "Braun").found is False
+    with pytest.raises(InvalidInput) as err:
+        draft_order(session, delivery(session, tenant_id, call_id, name=None), now=NOW)
+    assert err.value.say == SAY_WHICH_NAME
+
+
+def test_the_owner_of_a_named_number_gets_a_row_of_their_own(
+    session, tenant_id, call_id
+):
+    planted_call = _from(session, tenant_id)
+    first = draft_order(
+        session, delivery(session, tenant_id, planted_call, name="Braun"), now=NOW
+    )
+    confirmed(session, tenant_id, planted_call, first.order_id)
+    planted = session.get(Order, first.order_id)
+
+    own = draft_order(
+        session,
+        delivery(
+            session,
+            tenant_id,
+            call_id,
+            name="Braun",
+            address={**HOME, "house_number": "41"},
+        ),
+        now=NOW,
+    )
+    confirmed(session, tenant_id, call_id, own.order_id)
+
+    order = session.get(Order, own.order_id)
+    assert order.customer_id != planted.customer_id
+    match = find_customer(session, tenant_id, PHONE, "Braun")
+    assert (match.customer_id, match.address_id) == (
+        order.customer_id,
+        order.address_id,
+    )
+
+
+def test_two_drafts_from_a_named_number_write_two_rows(session, tenant_id):
+    """Like an objection: no row is reused, not even one of the same call."""
+    call = _from(session, tenant_id)
+
+    first = draft_order(session, delivery(session, tenant_id, call), now=NOW)
+    second = draft_order(session, delivery(session, tenant_id, call), now=NOW)
+
+    assert (
+        session.get(Order, first.order_id).customer_id
+        != session.get(Order, second.order_id).customer_id
+    )
+
+
+def _contact_under(kind, session, tenant_id, call, at):
+    """A pickup, a callback or a table booked under PHONE in `call`."""
+    if kind == "pickup":
+        order = draft_order(session, request(session, tenant_id, call), now=NOW)
+        confirmed(session, tenant_id, call, order.order_id, at)
+    elif kind == "callback":
+        create_callback(
+            session,
+            CreateCallbackRequest(
+                call_id=call,
+                tenant_id=tenant_id,
+                phone=PHONE,
+                reason="out_of_scope",
+                summary="Bitte zurückrufen.",
+            ),
+            now=at,
+        )
+    else:
+        table = Reservation(
+            tenant_id=tenant_id,
+            call_id=call,
+            status="draft",
+            guest_name="Müller",
+            phone=PHONE,
+            party_size=2,
+            reserved_for=NOW + timedelta(days=1),
+            idempotency_key=uuid.uuid4().hex,
+        )
+        session.add(table)
+        session.commit()
+        confirm(
+            session,
+            ConfirmRequest(
+                call_id=call,
+                tenant_id=tenant_id,
+                entity="reservation",
+                entity_id=table.id,
+                idempotency_key=uuid.uuid4().hex,
+            ),
+            now=at,
+        )
+
+
+@pytest.mark.parametrize("caller_id", [OTHER_LINE, None])
+@pytest.mark.parametrize("kind", ["pickup", "callback", "reservation"])
+def test_a_named_number_moves_no_period(session, tenant_id, kind, caller_id):
+    """The customers of a number the caller only named keep their period: a
+    booking under it from another line is no contact of theirs (L12)."""
+    known, _ = known_customer(session, tenant_id)
+    before = (known.last_contact_at, known.last_order_at, known.order_count)
+
+    _contact_under(kind, session, tenant_id, _from(session, tenant_id, caller_id), NOW)
+
+    session.refresh(known)
+    assert (known.last_contact_at, known.last_order_at, known.order_count) == before
+
+
+@pytest.mark.parametrize("kind", ["pickup", "callback", "reservation"])
+def test_the_own_line_still_moves_the_period(session, tenant_id, call_id, kind):
+    known, _ = known_customer(session, tenant_id)
+
+    _contact_under(kind, session, tenant_id, call_id, NOW + timedelta(days=1))
+
+    session.refresh(known)
+    assert known.last_contact_at == NOW + timedelta(days=1)

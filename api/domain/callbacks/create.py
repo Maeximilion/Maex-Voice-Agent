@@ -73,7 +73,7 @@ def create_callback(
     )
     session.add(callback)
     session.flush()
-    note_contact(session, req.tenant_id, phone, now)
+    note_contact(session, req.tenant_id, req.call_id, phone, now)
 
     session.add(
         AuditLog(
