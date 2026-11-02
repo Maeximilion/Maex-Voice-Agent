@@ -133,6 +133,34 @@ def test_a_blocked_customer_is_not_recognized(session, tenant_id):
     assert find_customer(session, tenant_id, CALLER).found is False
 
 
+def test_a_blocked_customer_counts_on_a_shared_number(session, tenant_id):
+    """#207: taken out before the count, the other one looked like the only
+    customer on the number, and the blocked guest would hear that address."""
+    customer(session, tenant_id, name="Müller", blocked=True)
+    row = customer(session, tenant_id, name="Schmidt")
+    address(session, tenant_id, row)
+
+    found = find_customer(session, tenant_id, CALLER)
+
+    assert (found.found, found.customer_id, found.say) == (False, None, None)
+
+
+def test_a_name_finds_the_customer_next_to_a_blocked_one(session, tenant_id):
+    customer(session, tenant_id, name="Müller", blocked=True)
+    row = customer(session, tenant_id, name="Schmidt")
+
+    found = find_customer(session, tenant_id, CALLER, "Schmidt")
+
+    assert found.customer_id == row.id
+
+
+def test_a_blocked_customer_is_not_found_by_name(session, tenant_id):
+    customer(session, tenant_id, name="Müller", blocked=True)
+    customer(session, tenant_id, name="Schmidt")
+
+    assert find_customer(session, tenant_id, CALLER, "Müller").found is False
+
+
 def test_a_shared_number_without_a_name_finds_nobody(session, tenant_id):
     """Never guess which customer is meant (docs/04)."""
     customer(session, tenant_id, name="Müller")
