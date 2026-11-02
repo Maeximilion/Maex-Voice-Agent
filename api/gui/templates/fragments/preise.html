@@ -1,0 +1,26 @@
+{# Price differences of the register (T-4.9, docs/06 §3): a card like the holiday
+   suggestions, because there is no admin list yet. Replaced as a whole after an
+   answer; empty when nothing is open. The button carries the price on the card:
+   a newer copy with another price is not taken by a tap on this one. #}
+{% if price_problem %}
+<p class="empty">{{ price_problem }}</p>
+{% elif prices %}
+<h2>Preise <span class="count">{{ prices|length }}</span></h2>
+<ul class="cards">
+  {% for p in prices %}
+  <li class="card">
+    <div class="res-head">
+      <b><span class="nr">{{ p.number }}</span> {{ p.name }}</b>
+      <span class="badge danger">Kasse: {{ p.register }}</span>
+    </div>
+    <p class="muted">Die KI nennt {{ p.price }}. Das bleibt so bis zu einer Antwort.</p>
+    <div class="cb-actions">
+      <button class="primary" hx-post="/gui/preise/{{ p.id }}/{{ p.register_cents }}/uebernehmen"
+              hx-target="#preise-liste" hx-swap="innerHTML">Kassenpreis &uuml;bernehmen</button>
+      <button hx-post="/gui/preise/{{ p.id }}/{{ p.register_cents }}/verwerfen"
+              hx-target="#preise-liste" hx-swap="innerHTML">Verwerfen</button>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

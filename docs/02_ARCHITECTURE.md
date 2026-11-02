@@ -69,6 +69,8 @@ Wächter (eigener Faden)       ─► 60 s unabgeholt: Karte rot, Alarm, order.h
 
 The <Kassenanbieter> gives no interface (Maxi, 02.11.2026), so there is no variant C and this is the permanent path: the team types the order in, the register prints receipt and kitchen ticket, and the bridge prints **every** confirmed order with the head "NICHT IN KASSE – bitte eingeben". A slip of the bridge is an input slip for the team, no kitchen ticket and no receipt. `handover_state` reads "Zettel liegt an der Kasse"; that the order was typed in is the tablet's mark "In Kasse eingegeben" (T-11.6, L18).
 
+**A cancelled order (02.11.2026):** the slip at the register still asks to be typed in, so "Storniert" on the tablet decides by the tickets, not by the card (`handover.withdraw_tickets`). A ticket never picked up or with a reported print error is withdrawn and nothing prints. A ticket that may have printed, or that a pickup holds right now, gets a note: the same `order.confirmed` with `correction_reason` `cancelled` and a revision of its own, which `order.cancelled` adds to the count. So the print log lets it through, every older ticket still due is passed over, `handover_state` follows the note, and a note that does not print turns the card red like any other slip.
+
 ---
 
 ## 3. Anrufablauf (Beispiel Abholung)
@@ -147,7 +149,7 @@ A call that reaches the agent in `shadow` or `paused` anyway is transferred to t
 | Datum | Master | Kopie |
 |---|---|---|
 | Umsätze und Bons | <Kassensystem> (TSE) | – |
-| Menü und Preise | Kasse (`.dbf`-Kopie, docs/14 §Quelle Kasse) | Agent-DB mit wöchentlichem Abgleich-Check, Schlüssel ist die Artikelnummer der Kasse |
+| Menü und Preise | Kasse (`.dbf`-Kopie, docs/14 §Quelle Kasse) | Agent-DB mit Abgleich-Check, Schlüssel ist die Artikelnummer der Kasse. The check is built (`scripts/price_check.py`, T-4.9) and runs by hand after each copy; weekly is the aim, nothing brings the copy to the server yet. A price changes only by a person's step |
 | Öffnungszeiten, Wartezeit, Zonen | Agent-DB | GUI zeigt an |
 | Kundenstamm für die Telefonerkennung | Agent-DB | – |
 | Anrufaufnahmen und Transkripte | EU-Server, verschlüsselter Speicher, mit Löschfrist | nie im Repo, nie auf Maxis PC |

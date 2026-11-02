@@ -401,12 +401,13 @@ class CallHandler:
         # hands the call over (agent/loop.py, ultrareview of PR #372).
         # The same for the question for the allergy as a kitchen note: its
         # answer is consent only to a question heard to the end (L13; Codex
-        # PR #368).
+        # PR #368). And for a remedy the core offers: a yes books it.
         counted_as_heard = (
             live.state.asked_for_phone
             or live.state.known_item_ids != known
             or live.state.last_say == SAY_HUMAN_ANSWER
             or live.state.held_call is not None
+            or live.state.remedy_offer is not None
         )
         interruptible = (
             not ending
@@ -524,13 +525,15 @@ class CallHandler:
         already gone to the team or ended, and a failure here must not send it
         through the outage path a second time. Called once per call, by
         whoever claimed it (`_claim`)."""
-        derived, intent = call_outcome(live.state)
         try:
             usage = call_usage(live.llm)
             log_usage(logger, live.call_id, usage)
             # A statement that failed and was caught leaves the transaction
             # aborted, and nothing more would run in it.
             live.session.rollback()
+            if live.loop is not None:
+                live.loop.offer_unanswered(live.state)
+            derived, intent = call_outcome(live.state)
             # The line bounds its statements (`db.bounded_sessions`); this
             # write waits longer, in this transaction only, which the commit
             # of `end_call` ends. Not when the transfer to the team failed:
