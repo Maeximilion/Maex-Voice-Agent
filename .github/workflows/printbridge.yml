@@ -6,7 +6,7 @@ name: printbridge
 on:
   workflow_dispatch:
   push:
-    branches: [main, task/9-6-print-bridge-program]
+    branches: [main]
     paths:
       - printbridge/**
       - scripts/printbridge_*

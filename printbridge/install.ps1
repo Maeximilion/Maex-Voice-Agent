@@ -18,6 +18,21 @@ $Required = "MAEX_SERVER_URL", "MAEX_KITCHEN_TOKEN", "MAEX_TENANT_ID", "MAEX_PRI
 $Optional = "MAEX_PRINTER_WIDTH", "MAEX_STATE_FILE", "MAEX_INTERVAL_SECONDS"
 
 $run = Join-Path $Folder "run.ps1"
+$program = Join-Path $PSScriptRoot "maex-printbridge.exe"
+
+# Checked before anything stops: a refused update must leave the running bridge alone.
+if (-not $Uninstall) {
+    # Read from the stored scopes: a value set only in this console never reaches the task.
+    $missing = $Required | Where-Object {
+        -not ([Environment]::GetEnvironmentVariable($_, "User") -or
+            [Environment]::GetEnvironmentVariable($_, "Machine"))
+    }
+    if ($missing) {
+        throw "Settings missing: $($missing -join ', '). Set them with setx first (printbridge/README.md)."
+    }
+    if (-not (Test-Path $program)) { throw "$program not found: unpack the whole package." }
+}
+
 $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($task) { Stop-ScheduledTask -TaskName $TaskName }
 # Stop-ScheduledTask does not wait for run.ps1. Alive, it restarts the program during an
@@ -46,17 +61,8 @@ if ($Uninstall) {
     return
 }
 
-# Read from the stored scopes: a value set only in this console never reaches the task.
-$missing = $Required | Where-Object {
-    -not ([Environment]::GetEnvironmentVariable($_, "User") -or
-        [Environment]::GetEnvironmentVariable($_, "Machine"))
-}
-if ($missing) {
-    throw "Settings missing: $($missing -join ', '). Set them with setx first (printbridge/README.md)."
-}
-
 New-Item -ItemType Directory -Force $Folder | Out-Null
-Copy-Item (Join-Path $PSScriptRoot "maex-printbridge.exe"), (Join-Path $PSScriptRoot "run.ps1") $Folder -Force
+Copy-Item $program, (Join-Path $PSScriptRoot "run.ps1") $Folder -Force
 # A downloaded file carries a mark that makes Windows ask first. Nobody sees a hidden start.
 Unblock-File (Join-Path $Folder "maex-printbridge.exe"), (Join-Path $Folder "run.ps1")
 

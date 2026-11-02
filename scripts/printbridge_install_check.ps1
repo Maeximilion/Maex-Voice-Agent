@@ -57,6 +57,13 @@ $first = (Get-Bridge).Id
 Get-Bridge | Stop-Process -Force
 Wait-Until { @(Get-Bridge | Where-Object { $first -notcontains $_.Id }).Count -gt 0 } "run.ps1 starts the program again"
 
+# A refused update must not stop what runs.
+$alive = (Get-Bridge).Id
+[Environment]::SetEnvironmentVariable("MAEX_PRINTER", $null, "User")
+Assert-That ((Invoke-Installer @()) -ne 0) "an update without settings is refused"
+Assert-That (@(Get-Bridge | Where-Object { $alive -contains $_.Id }).Count -gt 0) "a refused update leaves the bridge running"
+[Environment]::SetEnvironmentVariable("MAEX_PRINTER", $settings.MAEX_PRINTER, "User")
+
 # An update: the same installer again over a running bridge.
 $printLog = Join-Path $folder "printbridge_state.json"
 Set-Content $printLog '{"printed": {}}'
