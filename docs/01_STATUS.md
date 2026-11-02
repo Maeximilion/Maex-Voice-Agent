@@ -1,11 +1,13 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.10
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.11
 
 ---
 
 ## Summary
+
+**The operations view has a new look (D26, 02.11.2026).** The approved mockup of 16.09.2026 is replaced for the look only: the header went from three rows (319 of 800 px) to two (about 155 px) and stays while each column scrolls by itself; the status dot, and every warning badge, carries a glyph as well as its text; each card has one main action with the rest beside it and „Storniert“ apart as a text button; an allergy note is a framed callout; the holiday suggestions are one folded strip under the reservations. Design tokens (colour, type, space, radius, the 60 px target) sit at the top of `api/gui/static/app.css`. Found and fixed on the way: control borders at 1.8:1 (now at least 3:1), muted text at 4.4:1 on the column grey, and the key-figures table at 13 to 14 px (now 18 px). Checked in a headless browser at 1280 x 800, light and dark, with before and after screenshots in `docs/design/2026-11-redesign/`, 193 GUI tests, ruff clean; every control measured at 60 px or more. Below 1180 px the bar wraps to more rows. Not done: the operating test of T-3.5 on a real tablet, which now has to run on this look (Maxi), and a look at the screens on the real tablet.
 
 **Consent to a recording is built, and it stays off (T-11.3, 02.11.2026).** With `RECORDING_ENABLED`, false by default, the first sentence names the AI and asks with U1's words, in mode `shadow` before the team rings. Only an explicit "ja" records: `voice` writes a call the AI takes up to the handover, the dialplan a team leg in `shadow`, and "nein", silence or anything else leaves the call going on without one. "Aufnahme stoppen" stops and deletes; on a team leg, where no ear listens, the team presses `*7`. Recordings expire after 30 days by the daily job, and erasure and access reach them. A failing question costs a recording, never the call. Nothing ran on a real call: the team's written consents (L11) are not signed.
 
@@ -321,6 +323,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 | D23 | A `deny` rule for `.env` in `.claude/settings.json` (Claude setup audit, 19.10.2026). Since 19.10.2026 an `ask` rule makes Claude ask before its Read tool opens a `.env`; tested headless, the Grep tool and `cat .env` still read it. `deny` blocks Read, Grep and `cat` as well, but also every edit of `.env` by Claude, so Maxi would set values there himself. CI fails on a tracked env file since the same day | Maxi | after the next gates (Maxi, 19.10.2026) |
 | D24 | ~~How far the agent handles the guest's own allergy~~ **decided 19.10.2026 (Maxi, in the review of PR #330):** the kitchen note keeps the fixed wording "WICHTIG: Keine <Zutat>. Grund: Allergie" (E14 stays). It goes on the dish when the guest ties the allergy to that dish, otherwise on the whole order; when that is unclear, on the whole order. Questions about a dish's allergens are answered only from confirmed database values (`get_item_details`, unchanged). When the guest asks beyond what the database holds (traces, cross-contact, "Ist das wirklich sicher?"), the call goes to a team member, or a callback when nobody answers; this must be checked in the tests with the real model. Allergies are rare on the phone, so the parser is not to grow further. Not built yet: an order-level note in `draft_order` (the `orders.note` column exists), the placement rule, the transfer rule, prompt and evals. **Extended 20.10.2026 (legal check L13, L17):** the note is stored only after the caller's explicit "ja" (E14 replaced), on "nein" only "ohne <Zutat>"; the transfer or callback for a question beyond the database comes before `confirm` | Maxi | done; built as T-11.1 before G1 |
 | D25 | ~~Ring the team outside the opening hours?~~ **decided 20.10.2026 (Maxi, T-10.8):** no. Outside the opening hours a handover by the agent becomes a callback card at once and nobody's telephone rings at night; the outage paths (paused, shadow, `voice` down, a failure) ring `TEAM_PHONE` at any hour as before (rule 5), and now leave a card when nobody answers; inside them the call is handed to the team and the dial result decides: a leg nobody answers at `TEAM_PHONE` becomes a callback card (docs/20 §5). The text phone and the evals keep the opening hours alone |
+| D26 | ~~Replace the approved look of the operations view (docs/06 §7)?~~ **decided 02.11.2026 (Maxi, after a design critique and an accessibility review of the screens):** yes, with the direction of `gui/mockups/betrieb-tablet.html`: a two-row command bar that stays, columns that scroll on their own, one main action per card, holiday suggestions folded, design tokens in `app.css`. Same screens, functions and texts. The operating test (T-3.5, docs/06 §8) has not been run on any build, so no pass is lost; it must run on this look. |
 
 ---
 
@@ -725,6 +728,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.11 · 02.11.2026:** GUI: operations view redesigned for the tablet (D26), screenshots in docs/design/2026-11-redesign
 - **v2.14.10 · 02.11.2026:** Print bridge and kitchen token hardening from the security audit of 02.11.2026; audit row and open points recorded
 - **v2.14.9 · 02.11.2026:** Weekday agent limit: table in CLAUDE.md, the hook agent_limit.sh names today's row
 - **v2.14.8 · 02.11.2026:** T-11.3 consent to recording, off behind RECORDING_ENABLED; review findings fixed

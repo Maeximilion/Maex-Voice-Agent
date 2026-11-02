@@ -4,7 +4,8 @@
 {% if holiday_problem %}
 <p class="empty">{{ holiday_problem }}</p>
 {% elif holidays %}
-<h2>Feiertage <span class="count">{{ holidays|length }}</span></h2>
+<details class="fold" id="feiertage-fold">
+<summary><span class="count">{{ holidays|length }}</span><span class="fold-text">Feiertage warten auf Antwort</span><span class="fold-toggle"><span class="fold-more">Öffnen</span><span class="fold-less">Schließen</span></span></summary>
 <ul class="cards">
   {% for h in holidays %}
   <li class="card holiday" data-id="{{ h.id }}">
@@ -25,4 +26,5 @@
   </li>
   {% endfor %}
 </ul>
+</details>
 {% endif %}
