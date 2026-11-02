@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.8
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.9
 
 ---
 
@@ -546,6 +546,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Date | What |
 |---|---|
+| 02.11.2026 | **Weekday agent limit (Maxi, 02.11.2026).** A table in `CLAUDE.md` (Model Routing, "Agents per weekday"): Sunday no limit, Monday 10, Tuesday to Thursday 5, Friday and Saturday 8 agents at once, a workflow's agents included, with when workflows, ultracode, review and audit agents are worth it. The project hook `.claude/hooks/agent_limit.sh` reads today's row at every session start and names it; tests in `api/tests/test_hooks_agent_limit.py`, docs/19 lists the hook. `max` still only when Maxi asks, and a workflow still only on his opt-in |
 | 02.11.2026 | **T-11.3 (#405): consent to recording, off behind `RECORDING_ENABLED`.** Migration 022 `recordings`, up and down tested, on 020, the head after T-10.11's 021 and T-4.9's 020. The question of U1 in the first sentence, also in `shadow` before the team rings; `agent/recording.py`, `consent.recording_answer` and `stops_recording`; the file of an AI call in `telephony/recording.py`, ended at the handover; `record <number>`, `MixMonitor` and the key `*7` in the dialplan and `features.conf`; `POST /calls/{id}/recording/stop`; `RETENTION_RECORDING_DAYS` (30) and the step `recordings` of the daily job; erasure and access. Evals `aufnahme_0001` to `0006`, eight new drill points. Before the PR an independent review of the branch (four lenses, a skeptic per finding) confirmed two P1 and five P2, all fixed with red tests first: a stop with the verb split ("Nehmen Sie das nicht auf"), an "Okay" to the stop notice that confirmed a read-back, refusals and withdrawals that were not heard, a no with a request that dropped the request, the eval judge mixing the two consent questions, and the way to stop played interruptible; the own security review's three points too. Assumptions above; nothing ran on a real call. |
 | 02.11.2026 | **A phone number said in words is heard.** `guest_details._in_digits` reads number words as digits through `parse_cardinal`, so `numbers_said` and `names_a_phone_number` keep one set of digit rules; pauses of a number said in words join, "doppel" and "Vorwahl" are read. `reservierung_0039` joined `cases/` (81), the Open Point is closed, `lieferung_0016` keeps `pending` for T-5.3 only. `xhigh`. A date partly in words ("Am 01 zehn 2026, vier bitte") no longer takes the count behind it as a number (Codex PR #481, P1). |
 | 02.11.2026 | **T-10.11 (#403): the mechanism for complaints resolved by fixed rules, with an empty catalogue.** Migration 021 `complaint_rules` per tenant, up and down tested, seeded by nothing. `domain/callbacks/complaint_rules.py` matches the guest's sentence against the active rows in code, one rule or none; `agent/loop.py` offers it in the words of the row, before the model on a trigger word and in place of the model's handover otherwise, so the prompt stays at v3 and needs no real-model run. Only an explicit yes to the offer itself books the amount of the row, as a callback card with an audit row in one transaction; anything else, and a line that ends on the offer, leaves the complaint with the team. With an empty catalogue, no match or any doubt the behaviour is what it was. The phone line plays the offer to the end. #403 stays open: the catalogue is Maxi's. Readings under Made Assumptions |
@@ -718,6 +719,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.9 · 02.11.2026:** Weekday agent limit: table in CLAUDE.md, the hook agent_limit.sh names today's row
 - **v2.14.8 · 02.11.2026:** T-11.3 consent to recording, off behind RECORDING_ENABLED; review findings fixed
 - **v2.14.7 · 02.11.2026:** A phone number said in words is heard (guest_details._in_digits, reservierung_0039)
 - **v2.14.6 · 02.11.2026:** T-4.9 price check of the register against the database

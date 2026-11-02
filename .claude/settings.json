@@ -22,6 +22,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/agent_limit.sh\"",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PreToolUse": [
