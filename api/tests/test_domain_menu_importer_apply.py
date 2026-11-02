@@ -236,7 +236,9 @@ def test_optionen_werden_angeglichen(session, tenant_id):
         "47;Fleisch;Ente;3,00;nein;ja\n"
     )
 
-    report = run(session, tenant_id, files={OPTIONS_FILE: optionen})
+    report = run(
+        session, tenant_id, files={OPTIONS_FILE: optionen}, apply_price_changes=True
+    )
 
     assert (report.options_added, report.options_changed, report.options_removed) == (
         0,
@@ -247,6 +249,90 @@ def test_optionen_werden_angeglichen(session, tenant_id):
     ente = session.scalar(select(ItemOption).where(ItemOption.option_name == "Ente"))
     assert ente.price_delta_cents == 300
     assert count(session, ItemOption) == 2
+
+
+def option_delta(session, name) -> int:
+    session.expire_all()
+    return session.scalar(
+        select(ItemOption.price_delta_cents).where(ItemOption.option_name == name)
+    )
+
+
+TEURERE_ENTE = {OPTIONS_FILE: files()[OPTIONS_FILE].replace("2,50", "3,00")}
+
+
+def test_a_surcharge_changes_only_with_the_price_switch(session, tenant_id):
+    """T-4.9: a surcharge is a price the agent says. Without the switch the
+    import changed it silently, and no report or audit entry named it."""
+    run(session, tenant_id)
+
+    ohne = run(session, tenant_id, files=TEURERE_ENTE)
+
+    assert ohne.option_price_changes == [("47", "Fleisch", "Ente", 250, 300)]
+    assert ohne.options_changed == 0 and not ohne.changed
+    assert option_delta(session, "Ente") == 250
+    text = ohne.as_text()
+    assert "Preisänderung 47 Fleisch/Ente: 2,50 € -> 3,00 € (NICHT übernommen)" in text
+    assert "--apply-price-changes" in text
+    assert "Keine Änderung" not in text
+
+    mit = run(session, tenant_id, files=TEURERE_ENTE, apply_price_changes=True)
+
+    assert mit.option_price_changes == [("47", "Fleisch", "Ente", 250, 300)]
+    assert mit.options_changed == 1
+    assert option_delta(session, "Ente") == 300
+    [*_, eintrag] = session.scalars(
+        select(AuditLog)
+        .where(AuditLog.action == "menu.imported")
+        .order_by(AuditLog.created_at)
+    ).all()
+    assert eintrag.payload["option_price_changes"] == [
+        {"number": "47", "group": "Fleisch", "option": "Ente", "from": 250, "to": 300}
+    ]
+    assert run(session, tenant_id, files=TEURERE_ENTE).option_price_changes == []
+
+
+def test_a_surcharge_without_the_switch_still_takes_the_other_fields(
+    session, tenant_id
+):
+    """Only the price waits: default, required and reason follow the file."""
+    run(session, tenant_id)
+    anders = files()[OPTIONS_FILE].replace(
+        "47;Größe;klein;-1,00;nein;nein", "47;Größe;klein;-2,00;ja;nein"
+    )
+
+    report = run(session, tenant_id, files={OPTIONS_FILE: anders})
+
+    assert report.options_changed == 1
+    session.expire_all()
+    klein = session.scalar(select(ItemOption).where(ItemOption.option_name == "klein"))
+    assert klein.is_default is True and klein.price_delta_cents == -100
+
+
+def test_a_new_option_needs_no_price_switch(session, tenant_id):
+    """Nothing to compare it with: as before it comes with the import."""
+    run(session, tenant_id)
+    mehr = files()[OPTIONS_FILE] + "47;Extras;Reis;1,50;nein;nein\n"
+
+    report = run(session, tenant_id, files={OPTIONS_FILE: mehr})
+
+    assert report.options_added == 1 and report.option_price_changes == []
+    assert option_delta(session, "Reis") == 150
+
+
+def test_a_dry_run_says_a_surcharge_would_change(session, tenant_id):
+    run(session, tenant_id)
+
+    report = run(
+        session,
+        tenant_id,
+        files=TEURERE_ENTE,
+        apply_price_changes=True,
+        dry_run=True,
+    )
+
+    assert "Fleisch/Ente: 2,50 € -> 3,00 € (würde übernommen)" in report.as_text()
+    assert option_delta(session, "Ente") == 250
 
 
 def test_without_an_options_file_the_options_stay(session, tenant_id):

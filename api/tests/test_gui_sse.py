@@ -33,6 +33,7 @@ def feste_kopfzeile(monkeypatch):
     monkeypatch.setattr(sse, "_orders_token", lambda *_: "o0")
     monkeypatch.setattr(sse, "_dishes_token", lambda *_: "d0")
     monkeypatch.setattr(sse, "_holidays_token", lambda *_: "f0")
+    monkeypatch.setattr(sse, "_prices_token", lambda *_: "p0")
 
 
 def drain(stream: AsyncIterator[str]) -> list[str]:
@@ -194,6 +195,7 @@ def test_erholung_nimmt_die_gelbe_leiste_weg(monkeypatch):
         "event: orders\ndata: o0\n\n",
         "event: dishes\ndata: d0\n\n",
         "event: holidays\ndata: f0\n\n",
+        "event: prices\ndata: p0\n\n",
         "event: problem\ndata: db\n\n",
         # Nach der Erholung alle Signale, damit jeder Bereich frisch ist.
         "event: header\ndata: h0\n\n",
@@ -202,6 +204,7 @@ def test_erholung_nimmt_die_gelbe_leiste_weg(monkeypatch):
         "event: orders\ndata: o0\n\n",
         "event: dishes\ndata: d0\n\n",
         "event: holidays\ndata: f0\n\n",
+        "event: prices\ndata: p0\n\n",
     ]
 
 
@@ -220,6 +223,7 @@ def test_umgeschaltete_kopfzeile_sendet_nur_header(monkeypatch):
         "event: orders\ndata: o0\n\n",
         "event: dishes\ndata: d0\n\n",
         "event: holidays\ndata: f0\n\n",
+        "event: prices\ndata: p0\n\n",
         "event: header\ndata: h1\n\n",
     ]
 
@@ -274,6 +278,7 @@ def test_ein_takt_braucht_eine_sitzung(monkeypatch):
     monkeypatch.setattr(sse, "_orders_token", lambda *_: "o")
     monkeypatch.setattr(sse, "_dishes_token", lambda *_: "d")
     monkeypatch.setattr(sse, "_holidays_token", lambda *_: "f")
+    monkeypatch.setattr(sse, "_prices_token", lambda *_: "p")
 
     tokens = sse._tokens(uuid.uuid4(), "Europe/Berlin")
 
@@ -284,6 +289,7 @@ def test_ein_takt_braucht_eine_sitzung(monkeypatch):
         "orders": "o",
         "dishes": "d",
         "holidays": "f",
+        "prices": "p",
     }
     assert len(geoeffnet) == 1 and len(geschlossen) == 1
 
@@ -300,6 +306,19 @@ def test_a_suggestion_of_the_job_reaches_an_open_tablet(monkeypatch):
     events = [c for c in chunks if c.startswith("event: ")]
     assert events[-1] == "event: holidays\ndata: f1\n\n"
     assert sum(c.startswith("event: holidays") for c in events) == 2
+
+
+def test_a_price_difference_of_the_script_reaches_an_open_tablet(monkeypatch):
+    """The script runs now and then: a tablet stays open for days (T-4.9)."""
+    monkeypatch.setattr(sse, "_token", lambda *_: "t0")
+    tokens = iter(["p0", "p0", "p1"])
+    monkeypatch.setattr(sse, "_prices_token", lambda *_: next(tokens))
+
+    chunks = drain(stream(FakeRequest(), max_ticks=3))
+
+    events = [c for c in chunks if c.startswith("event: ")]
+    assert events[-1] == "event: prices\ndata: p1\n\n"
+    assert sum(c.startswith("event: prices") for c in events) == 2
 
 
 def test_gericht_aus_sendet_nur_dishes(monkeypatch):
