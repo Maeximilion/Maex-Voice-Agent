@@ -43,6 +43,20 @@
 
 ---
 
+## `zones.csv`
+
+Delivery zones (T-6.9): `python -m scripts.seed_zones imports/zones.csv --dry-run`, then without `--dry-run`. UTF-8, semicolon, decimal comma.
+
+| Column | Example | Note |
+|---|---|---|
+| `name` | Zone 1 | the key: a second run updates the zone of that name |
+| `postal_codes` | 76530, 76532 | five digits, split by comma or space |
+| `fee` | 2,50 | euros; an empty cell is an error, free delivery is `0,00` |
+| `min_order` | 20,00 | euros, same rule |
+| `eta_minutes` | 50 | whole minutes |
+
+A file with any error writes nothing, also one with a postal code in two zones or without a row. The file is the whole truth for postal code zones: a zone it no longer names goes inactive and stays, because addresses point at it. Polygon zones are left alone.
+
 ## Prüfregeln des Importers (`--dry-run` zeigt sie)
 
 - A missing `item_options.csv` or `item_aliases.csv` leaves the options or the imported aliases of every dish as they are; a file with only its header row removes them for the dishes in `menu_items.csv` (repo audit 27.10.2026). Before, a folder without `item_options.csv` removed every size and extra of the dishes it named, and the register import, which writes no aliases file, removed the aliases from the chat. `item_allergens.csv` already worked this way per dish.
