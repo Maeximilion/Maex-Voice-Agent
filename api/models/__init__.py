@@ -3,7 +3,13 @@
 from api.models.audit import AuditLog
 from api.models.base import Base
 from api.models.calls import Call, Callback, ConsentLog
-from api.models.customers import Address, Customer, DeliveryZone, RecognitionObjection
+from api.models.customers import (
+    Address,
+    Customer,
+    DataSubjectRequest,
+    DeliveryZone,
+    RecognitionObjection,
+)
 from api.models.menu import ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.orders import Order, OrderItem
 from api.models.outbox import OutboxEvent
@@ -31,6 +37,7 @@ __all__ = [
     "Capacity",
     "ConsentLog",
     "Customer",
+    "DataSubjectRequest",
     "DeliveryZone",
     "ItemAlias",
     "ItemAllergen",

@@ -41,6 +41,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core.logging import error_text, get_logger, log
 from api.core.time import business_day, business_day_bounds_utc, to_local
+from api.domain.calls.figures import ORDERS_TAKEN
 from api.domain.status import bridge
 from api.events.types import KITCHEN
 from api.models import AuditLog, Call, Order, OutboxEvent, Reservation, Tenant
@@ -64,7 +65,6 @@ OUTCOME_WORDS = {
     "abandoned": "abandoned",
     "error": "error",
 }
-ORDERS_TAKEN = ("confirmed", "approved", "handed_over")
 
 Send = Callable[[str, str, str], None]
 # (kind, key, title, text, priority): the key makes a push once per day or hour.

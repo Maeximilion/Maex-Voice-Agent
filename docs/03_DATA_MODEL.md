@@ -325,6 +325,23 @@ Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, o
 
 An objection under Art. 21 switches recognition off for the number (legal check L12, T-6.2). It hangs on the number, not on a customer, and outlives every customer behind it.
 
+### `data_subject_requests`
+The request log (legal check U2, T-11.8, migration 019): the proof of the one-month deadline of Art. 12(3). Only `verification_note` holds personal data; `reference` and `outcome` are checked by the table, because free text there would stay for years.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | every lookup and the cleanup are scoped by it |
+| reference | TEXT | `dsr_2026_001`, by the table's check: lower-case letters, digits and underscores, so it also works as a backup label. Counted per tenant and local year, unique per tenant |
+| kind | TEXT | `access` / `erasure` / `objection` |
+| channel | TEXT | `phone` / `mail` / `in_person` |
+| received_at | TIMESTAMPTZ | |
+| deadline | DATE | one month after the local day of receipt (the last day of a shorter month, Regulation 1182/71), three after `extend` |
+| verification_note | TEXT NULL | the details as the guest gave them and every number they say they used; stripped by the deletion job |
+| answered_at | TIMESTAMPTZ NULL | set with `outcome` and `delete_after`, by the table's check all three or none |
+| outcome | TEXT NULL | `done` / `not_verified` / `refused` / `withdrawn` |
+| delete_after | DATE NULL | the last day of the row: 31.12. of the third year after the local year of the answer, set from `RETENTION_REQUEST_LOG_YEARS` when it is answered |
+
 ### `addresses`
 | Feld | Typ | Bemerkung |
 |---|---|---|
@@ -383,7 +400,7 @@ An objection under Art. 21 switches recognition off for the number (legal check 
 
 ## Löschkonzept
 
-Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md` §1, L8, L13, L15). Every period is a setting (`.env` or `service_config`), never a number in the code. **Built:** the call log deletion (`scripts/call_log.py`) and, since T-11.2 (26.10.2026), the daily deletion job `api/jobs/retention.py` for every row below that names it. It runs in the dispatcher process once an hour (`RETENTION_INTERVAL_SECONDS`, first pass at the start of the process) or by hand with `python -m api.jobs.retention`; a pass only does what is due, writes one log line "Retention pass" with a count per period, and repeating it changes nothing. Rows stay and lose their personal fields: required text columns become empty strings, so no migration was needed. The periods are the settings `RETENTION_*_DAYS` (`.env.example`), each at least one day and at most 3,660 (a larger value overflows the date arithmetic). Each period runs in a savepoint of its own: one that fails is rolled back and logged as "Retention step failed" with its name, the others still delete, and the pass line lists it under `failed`. T-11.7 (26.10.2026) set the periods of the logs outside the database, rows below. Open: T-6.7 and T-9.3.
+Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md` §1, L8, L13, L15). Every period is a setting (`.env` or `service_config`), never a number in the code. **Built:** the call log deletion (`scripts/call_log.py`) and, since T-11.2 (26.10.2026), the daily deletion job `api/jobs/retention.py` for every row below that names it. It runs in the dispatcher process once an hour (`RETENTION_INTERVAL_SECONDS`, first pass at the start of the process) or by hand with `python -m api.jobs.retention`; a pass only does what is due, writes one log line "Retention pass" with a count per period, and repeating it changes nothing. Rows stay and lose their personal fields: required text columns become empty strings, so no migration was needed. The periods are the settings `RETENTION_*_DAYS` (`.env.example`), each at least one day and at most 3,660 (a larger value overflows the date arithmetic). Each period runs in a savepoint of its own: one that fails is rolled back and logged as "Retention step failed" with its name, the others still delete, and the pass line lists it under `failed`. T-11.7 (26.10.2026) set the periods of the logs outside the database, rows below. An erasure on request goes through `domain/customers/requests.py`, which clears the same fields (`domain/customers/personal.py`), so a field added to one reaches the other. Open: T-9.3.
 
 | Data | Period | How |
 |---|---|---|
@@ -403,7 +420,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | n8n executions | 7 days | `EXECUTIONS_DATA_PRUNE=true`, `EXECUTIONS_DATA_MAX_AGE=168` on the service `n8n` (`docker-compose.yml`, T-11.7); n8n's own default is 336 hours |
 | Backups | rolling 30 days | retention of `scripts/backup.sh` (labelled dumps included) and a lifecycle rule on the storage; the `_before_restore_` copy of a restore is dropped by hand within `BACKUP_KEEP_DAYS` (docs/13 §4); an erasure ledger outside the database and its backups is replayed after a restore (T-9.3) |
 | `audit_log` | 12 months, `RETENTION_AUDIT_LOG_DAYS` (365) | daily job deletes the entries; they carry no names, phone numbers or notes |
-| Request log of data subjects (`docs/09_OPERATIONS_LEGAL.md` §1 U2) | **Assumption, awaiting Maxi (21.10.2026):** the verification details (name, order or reservation date, delivery address as the requester gave them) are stripped 3 months after the request is answered; the row without them (request id, received and answered date, kind, outcome) stays until the end of the third calendar year after the year of the answer, then the row is deleted. Reasoning: the details are needed only to answer and to defend the answer if the requester complains; the thin row is the proof of the one-month deadline (Art. 12(3), accountability Art. 5(2)) for as long as a claim can arise (regular limitation of 3 years, § 195 BGB, which under § 199(1) BGB starts at the end of the year in which the claim arose). A legal choice: Maxi confirms or changes it | Place: table `data_subject_requests`, planned with T-11.8 (id, `tenant_id` (business table, so every lookup and the cleanup are scoped by it), `received_at`, `answered_at`, `kind`, `verification_note`, `outcome`, `delete_after`); until it exists the manual procedure keeps the log in a file outside the repository (no customer data in the repo), cleaned by hand in the monthly routine (docs/09 §3). Cleanup once the table exists: the daily job of T-11.2 (it strips `verification_note` and deletes expired rows, a log line per run). The erasure ledger (U7) is a separate list of row ids without personal data and is not touched by this period |
+| Request log of data subjects (`docs/09_OPERATIONS_LEGAL.md` §1 U2) | Accepted 02.11.2026 under Maxi's delegation (docs/09 §1): `verification_note` is stripped 3 months after the request is answered, `RETENTION_REQUEST_DETAILS_MONTHS` (1 to 12); the row without it stays until the end of the third calendar year after the year of the answer, `RETENTION_REQUEST_LOG_YEARS` (1 to 10), then the row is deleted. Reasoning: the details are needed only to answer and to defend the answer if the requester complains; the thin row is the proof of the one-month deadline (Art. 12(3), accountability Art. 5(2)) for as long as a claim can arise (regular limitation of 3 years, § 195 BGB, which under § 199(1) BGB starts at the end of the year in which the claim arose). A request nobody answered keeps everything: its deadline is still running | table `data_subject_requests`; daily job (steps `request_details` and `request_rows`, T-11.8). `delete_after` is fixed at the answer, so a changed year setting holds for requests answered after it, and it is read on the tenant's calendar. The erasure ledger (U7) is a separate list of row ids without personal data and is not touched by this period |
 | Order rows without personal fields | as long as the tax adviser asks (L18); the register is the master | kept |
 
 ---
@@ -430,4 +447,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 016 | `bridge_heartbeats`: the time of the print bridge's last poll (T-8.3); nothing backfilled, the downgrade drops the table and the next poll writes it again |
 | 017 | `uq_special_days_set`: one `set` row per tenant and date (#441); the upgrade first lists every date with two `set` rows and stops without a change, the team decides which row holds; the downgrade drops the key |
 | 018 | `delivery_zones`, `customers`, `addresses`, `recognition_objections`, `orders.address_id` and the foreign keys of `orders.customer_id` and `orders.address_id` (T-6.1, L12); nothing writes them yet, T-6.2 and T-6.5 do, T-6.7 deletes; the downgrade drops the four tables with every row and the links on the orders |
+| 019 | `data_subject_requests`: the request log of data subjects (T-11.8, U2); nothing backfilled, the lines of the interim file are moved in by hand (docs/09 §2); the downgrade drops the table with every logged request |
 | planned, next free number | `eval_cases`, `eval_runs` |
