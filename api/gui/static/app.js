@@ -299,9 +299,9 @@
     if (!inList && sheets.indexOf(t) < 0) return;
     var sc = scroller(t);
     if (sc) sc.scrollTop = scrollWas;
-    // The tapped button was redrawn: keep the focus inside the sheet.
+    // Only if the swap removed the focused element (focus fell back to body): focus elsewhere, e.g. the wait field in the header, stays.
     var box = inList ? t.closest("#gericht-aus") : t;
-    if (wasOpen && box && !box.contains(document.activeElement)) {
+    if (wasOpen && box && document.activeElement === document.body) {
       var title = box.querySelector(".sheet-head h2");
       if (title) title.focus({ preventScroll: true });
     }
