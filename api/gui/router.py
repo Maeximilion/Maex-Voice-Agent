@@ -1045,7 +1045,7 @@ def _notice_sheet(
     session: Session,
     tenant: Tenant,
     message: str | None = None,
-    tone: str = "warn",
+    tone: str = "danger",
     status: int = 200,
 ) -> HTMLResponse:
     notices = reservation_notice.weekday_notices(session, tenant.id)

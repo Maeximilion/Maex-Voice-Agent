@@ -174,7 +174,8 @@ header.aus .top > .mode ~ .mode{opacity:.75}
 .notices label{width:6.4em;font-weight:600}
 .notices input{font:inherit;font-size:var(--fs-h2);color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);width:86px;height:var(--tap);padding:0 var(--s2);appearance:textfield}
 .notices input::-webkit-inner-spin-button,.notices input::-webkit-outer-spin-button{appearance:none;margin:0}
-.betrieb .vorlauf .sheet-foot button{width:100%}
+.vorlauf .sheet-foot{display:flex;align-items:center;gap:var(--s3)}
+.betrieb .vorlauf .sheet-foot button{flex:0 0 40%}
 .res .time{font-size:var(--fs-time);font-weight:700;line-height:1.1}
 .res .name{font-weight:600}
 
