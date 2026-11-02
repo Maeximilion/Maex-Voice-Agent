@@ -70,7 +70,7 @@
               hx-target="#korrektur" hx-swap="innerHTML">Korrigieren</button>
       {# The guest cancelled or never came (docs/09 §1 L18): the question back of
          docs/06 §1 rule 6, and the state the card shows, as for the mark. #}
-      <button hx-post="/gui/bestellungen/{{ o.id }}/storniert/{{ o.version }}"
+      <button class="quiet" hx-post="/gui/bestellungen/{{ o.id }}/storniert/{{ o.version }}"
               hx-confirm="Bestellung{{ ' ' ~ o.pickup_code if o.pickup_code }} stornieren? Steht sie schon in der Kasse, dort auch stornieren."
               hx-target="#bestellungen-liste" hx-swap="innerHTML">Storniert</button>
       {% endif %}

@@ -5,67 +5,57 @@
 <header id="kopfzeile" class="{{ 'aus' if config and config.call_mode == 'paused' }}">
   {% if header_problem %}<div class="banner danger">{{ header_problem }}</div>{% endif %}
   {% if bridge_problem %}<div class="banner danger">{{ bridge_problem }}</div>{% endif %}
+  {# Row 1: what the AI does now (status, mode switch, emergency stop). Row 2:
+     the settings the team changes during service. The tone class and the glyph
+     of the dot say the state without colour (§1 rule 4). #}
   <div class="top">
-    <div class="mode">
-      <span class="dot {{ mode_tone }}"></span>
+    <div class="mode status tone-{{ mode_tone|default('danger') }}">
+      <span class="dot {{ mode_tone|default('danger') }}"></span>
       <b>{{ mode_label|default("KI ist aus") }}</b>
       {# A window of the plan holds the mode (T-8.1): until when, in words. #}
       {% if mode_until %}<span>nach Plan bis {{ mode_until }}</span>{% endif %}
     </div>
     {% if config %}
-    <div class="mode">
+    {% if mode_choices and config.call_mode != "paused" %}
+    {# The mode switch (T-8.1, docs/06 §3). The mode that holds is pressed. A
+       step that lets the agent take more calls asks first, a step back is one
+       tap (docs/09 §4). During the emergency stop only "KI einschalten" is
+       offered. #}
+    <div class="seg" role="group" aria-label="Modus der KI">
+      {% for mode, label, pressed, up in mode_choices %}
+      <button hx-post="/gui/kopfzeile/modus/{{ mode }}"
+              hx-target="#kopfzeile" hx-swap="outerHTML"
+              class="{{ 'primary' if pressed }}"
+              aria-pressed="{{ 'true' if pressed else 'false' }}"
+              {% if up %}hx-confirm="Auf „{{ label }}“ umschalten? Danach nimmt die KI mehr Anrufe an."{% endif %}>{{ label }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="mode tone-{{ 'ok' if config.delivery_enabled else 'danger' }}">
       <span class="dot {{ 'ok' if config.delivery_enabled else 'danger' }}"></span>
       <b>{{ "Lieferung an" if config.delivery_enabled else "Lieferung aus" }}</b>
     </div>
-    {% endif %}
-    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
-  </div>
-  {% if config %}
-  <div class="top actions">
     {% if config.call_mode == "paused" %}
     {# Wieder einschalten fragt nach, pausieren nie: der Not-Aus darf keine
        Sekunde kosten (docs/06 §3). #}
-    <button class="primary" hx-post="/gui/kopfzeile/ki-einschalten"
+    <button class="primary push" hx-post="/gui/kopfzeile/ki-einschalten"
             hx-target="#kopfzeile" hx-swap="outerHTML"
             hx-confirm="KI wieder einschalten? Danach nimmt sie wieder Anrufe an.">KI einschalten</button>
     {% else %}
-    <button class="stop" hx-post="/gui/kopfzeile/ki-pausieren"
+    <button class="stop push" hx-post="/gui/kopfzeile/ki-pausieren"
             hx-target="#kopfzeile" hx-swap="outerHTML">KI pausieren</button>
     {% endif %}
-    {% if config.delivery_enabled %}
-    <button hx-post="/gui/kopfzeile/lieferung/aus"
-            hx-target="#kopfzeile" hx-swap="outerHTML">Lieferung aus</button>
-    {% else %}
-    <button hx-post="/gui/kopfzeile/lieferung/an"
-            hx-target="#kopfzeile" hx-swap="outerHTML">Lieferung an</button>
     {% endif %}
-    <a class="button" href="/gui/kennzahlen">Kennzahlen</a>
-    {# Kachel "Gericht aus" (docs/06 §3): die Zahl nennt, wie viele heute aus sind. #}
-    <button hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
   </div>
-  {% if mode_choices and config.call_mode != "paused" %}
-  {# The mode switch (T-8.1, docs/06 §3). The mode that holds is pressed. A
-     step that lets the agent take more calls asks first, a step back is one
-     tap (docs/09 §4). During the emergency stop only "KI einschalten" is
-     offered. #}
-  <div class="top actions" role="group" aria-label="Modus der KI">
-    {% for mode, label, pressed, up in mode_choices %}
-    <button hx-post="/gui/kopfzeile/modus/{{ mode }}"
-            hx-target="#kopfzeile" hx-swap="outerHTML"
-            class="{{ 'primary' if pressed }}"
-            aria-pressed="{{ 'true' if pressed else 'false' }}"
-            {% if up %}hx-confirm="Auf „{{ label }}“ umschalten? Danach nimmt die KI mehr Anrufe an."{% endif %}>{{ label }}</button>
-    {% endfor %}
-  </div>
-  {% endif %}
-  {# Wartezeit je Service, senkbar und erhöhbar (T-3.6, docs/06 §3). Immer mit
-     "Wartezeit" und dem Service daneben; an der Grenze ist der Knopf aus, statt
-     einen Tap ohne Wirkung zu schlucken. #}
+  {% if config %}
   <div class="top actions">
+    {# Wartezeit je Service, senkbar und erhöhbar (T-3.6, docs/06 §3). Immer mit
+       "Wartezeit" und dem Service daneben; an der Grenze ist der Knopf aus, statt
+       einen Tap ohne Wirkung zu schlucken. #}
     {% for key, label, minutes in [
          ("abholung", "Abholung", config.pickup_wait_minutes),
          ("lieferung", "Lieferung", config.delivery_wait_minutes)] %}
-    <div class="mode">
+    <div class="step">
       <b>Wartezeit {{ label }} {{ minutes }} Min</b>
       <button hx-post="/gui/kopfzeile/wartezeit/{{ key }}/-{{ wait_step }}"
               hx-target="#kopfzeile" hx-swap="outerHTML"
@@ -77,6 +67,16 @@
               {% if minutes >= wait_max %}disabled{% endif %}>+{{ wait_step }}</button>
     </div>
     {% endfor %}
+    {% if config.delivery_enabled %}
+    <button class="push" hx-post="/gui/kopfzeile/lieferung/aus"
+            hx-target="#kopfzeile" hx-swap="outerHTML">Lieferung aus</button>
+    {% else %}
+    <button class="push" hx-post="/gui/kopfzeile/lieferung/an"
+            hx-target="#kopfzeile" hx-swap="outerHTML">Lieferung an</button>
+    {% endif %}
+    {# Kachel "Gericht aus" (docs/06 §3): die Zahl nennt, wie viele heute aus sind. #}
+    <button hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
+    <a class="button" href="/gui/kennzahlen">Kennzahlen</a>
   </div>
   {% endif %}
 </header>

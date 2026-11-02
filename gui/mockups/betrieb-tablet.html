@@ -1,0 +1,91 @@
+<!doctype html><html lang="de"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#EEF1EE;--surface:#fff;--surface-2:#F5F7F5;--text:#17211C;--muted:#55605A;--line:#D5DBD6;--line-strong:#7C8881;
+--accent:#0B6B52;--accent-bg:#DDF2EA;--accent-text:#064536;--warn:#7A4A06;--warn-bg:#FCEBC8;--warn-line:#C27F0E;--danger:#A52828;--danger-bg:#FBE4E4;--ok:#2F6410;--ok-bg:#E4F1D6;--on-accent:#fff}
+@media(prefers-color-scheme:dark){:root{--bg:#101513;--surface:#1B2220;--surface-2:#222B28;--text:#EAF0EC;--muted:#A3AFA8;--line:#34403A;--line-strong:#7E8B84;
+--accent:#5DCAA5;--accent-bg:#0F3A2F;--accent-text:#A8E8D2;--warn:#FFCE85;--warn-bg:#3D2A0C;--warn-line:#E0A23A;--danger:#F29B9B;--danger-bg:#431C1C;--ok:#C6E3A0;--ok-bg:#243A16;--on-accent:#10201A}}
+*{box-sizing:border-box}html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:18px/1.4 system-ui,"IBM Plex Sans",sans-serif;display:flex;flex-direction:column;overflow:hidden}
+button{font:inherit;font-weight:600;min-height:60px;min-width:60px;padding:0 20px;border-radius:12px;border:2px solid var(--line-strong);background:var(--surface);color:var(--text)}
+.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.quiet{border-color:transparent;background:transparent;color:var(--danger);text-decoration:underline;text-underline-offset:4px}
+.bar{background:var(--surface);border-bottom:2px solid var(--line);padding:10px 16px;display:flex;flex-direction:column;gap:10px;flex:none}
+.row{display:flex;align-items:center;gap:12px}
+.status{display:flex;align-items:center;gap:12px;font-size:22px;font-weight:700;padding:0 20px;min-height:60px;border-radius:12px;background:var(--ok-bg);color:var(--ok);border:2px solid var(--ok)}
+.ico{width:26px;height:26px;flex:none}
+.seg{display:flex;border:2px solid var(--line-strong);border-radius:12px;overflow:hidden}
+.seg button{border:0;border-radius:0;min-width:130px}.seg button+button{border-left:2px solid var(--line-strong)}
+.seg .on{background:var(--accent);color:var(--on-accent)}
+.sp{flex:1}.row button{white-space:nowrap;padding:0 14px}.step{padding-left:10px}.step b{font-size:16px;line-height:1.2}.step b span{font-size:20px}
+.step{display:flex;align-items:center;border:2px solid var(--line);border-radius:12px;background:var(--surface-2);padding-left:14px;gap:6px}
+.step b{font-weight:600}.step b span{font-size:22px;font-weight:700}.step button{border:0;border-left:2px solid var(--line);border-radius:0;background:transparent;min-width:60px}
+.board{flex:1;min-height:0;display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:14px;padding:14px 16px 0}
+.col{display:flex;flex-direction:column;min-height:0}
+.col h2{margin:0 0 10px;font-size:22px;display:flex;gap:10px;align-items:center}
+.n{background:var(--text);color:var(--bg);border-radius:20px;min-width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;font-size:18px}
+.scroll{overflow:hidden;display:flex;flex-direction:column;gap:12px;padding-bottom:14px}
+.card{background:var(--surface);border:2px solid var(--line);border-radius:14px;padding:14px 16px;position:relative}
+.card.late{border-color:var(--danger);box-shadow:inset 8px 0 0 var(--danger)}
+.card.wait{border-color:var(--warn-line);box-shadow:inset 8px 0 0 var(--warn-line)}
+.head{display:flex;align-items:center;gap:12px}
+.time{font-size:26px;font-weight:700}
+.chip{font-size:18px;font-weight:600;padding:2px 10px;border-radius:8px;background:var(--accent-bg);color:var(--accent-text)}
+.code{margin-left:auto;font-size:36px;font-weight:800;line-height:1;padding:8px 14px;border-radius:10px;background:var(--accent);color:var(--on-accent)}
+.who{margin:4px 0 8px;color:var(--muted)}.who b{color:var(--text)}
+.lines{margin:0;padding:0;list-style:none;font-size:20px}.lines li{padding:3px 0;display:flex;gap:10px}.q{font-weight:700;min-width:30px}.nr{color:var(--muted);min-width:34px}
+.callout{display:flex;gap:10px;align-items:flex-start;background:var(--warn-bg);color:var(--warn);border:2px solid var(--warn-line);border-radius:10px;padding:8px 12px;margin:8px 0;font-weight:600}
+.state{display:flex;justify-content:space-between;align-items:center;margin:8px 0;padding-top:8px;border-top:2px solid var(--line)}
+.tag{display:inline-flex;gap:8px;align-items:center;font-weight:600;padding:3px 10px;border-radius:8px}
+.tag.ok{background:var(--ok-bg);color:var(--ok)}.tag.bad{background:var(--danger-bg);color:var(--danger)}.tag.w{background:var(--warn-bg);color:var(--warn)}
+.acts{display:flex;gap:10px;align-items:center}.acts .primary,.acts .danger{flex:1}
+.mini{display:flex;align-items:center;gap:12px;background:var(--surface);border:2px solid var(--line);border-radius:14px;padding:8px 8px 8px 16px}
+.mini div{flex:1;line-height:1.25}
+.fold{background:var(--surface-2);border:2px dashed var(--line-strong);border-radius:14px;padding:10px 16px;display:flex;align-items:center;gap:12px;font-weight:600}
+</style>
+<svg width="0" height="0" style="position:absolute"><defs>
+<symbol id="ok" viewBox="0 0 24 24"><circle cx="12" cy="12" r="11" fill="currentColor"/><path d="M6.5 12.5l4 4 7-8" stroke="var(--surface)" stroke-width="3" fill="none"/></symbol>
+<symbol id="tri" viewBox="0 0 24 24"><path d="M12 1.5L23 21.5H1z" fill="currentColor"/><path d="M12 9v6" stroke="var(--surface)" stroke-width="3"/></symbol>
+<symbol id="x" viewBox="0 0 24 24"><rect x="1" y="1" width="22" height="22" rx="4" fill="currentColor"/><path d="M7 7l10 10M17 7L7 17" stroke="var(--surface)" stroke-width="3"/></symbol>
+</defs></svg>
+<div class="bar">
+ <div class="row">
+  <div class="status"><svg class="ico"><use href="#ok"/></svg>KI nimmt an</div>
+  <div class="seg" role="group" aria-label="Modus der KI"><button>KI hört mit</button><button>KI springt ein</button><button class="on" aria-pressed="true">KI nimmt an</button></div>
+  <span class="sp"></span>
+  <button class="danger">KI pausieren</button>
+ </div>
+ <div class="row">
+  <div class="step"><b>Wartezeit Abholung<br><span>40 Min</span></b><button>−15</button><button>+15</button></div>
+  <div class="step"><b>Wartezeit Lieferung<br><span>45 Min</span></b><button>−15</button><button>+15</button></div>
+  <span class="sp"></span>
+  <button>Lieferung an</button><button>Gericht aus</button><button>Kennzahlen</button>
+ </div>
+</div>
+<div class="board">
+ <section class="col"><h2>Neue Bestellungen <span class="n">2</span></h2><div class="scroll">
+  <div class="card late"><div class="head"><span class="time">19:44</span><span class="chip">Abholung</span><span class="code">B04</span></div>
+   <div class="who"><b>Schmidt</b> · +49 176 5550 0456</div>
+   <ul class="lines"><li><span class="q">1×</span><span class="nr">11</span>Mixed Tapas</li></ul>
+   <div class="state"><b style="font-size:22px">16,00 €</b><span>fertig 20:23</span></div>
+   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px"><span class="tag bad"><svg class="ico" style="width:20px;height:20px"><use href="#x"/></svg>Zettel nicht gedruckt</span></div>
+   <div class="acts"><button class="danger">Nochmal senden</button><button>Korrigieren</button></div></div>
+  <div class="card"><div class="head"><span class="time">19:50</span><span class="chip">Abholung</span><span class="code">A17</span></div>
+   <div class="who"><b>Mueller</b> · +49 176 5550 0123</div>
+   <ul class="lines"><li><span class="q">1×</span><span class="nr">11</span>Mixed Tapas</li><li><span class="q">2×</span><span class="nr">10</span>Goi Cuon Sommerrollen</li><li><span class="q">1×</span><span class="nr">1</span>Miso Suppe</li></ul>
+   <div class="callout"><svg class="ico" style="width:22px;height:22px;margin-top:2px"><use href="#tri"/></svg>WICHTIG: Keine Erdnüsse. Grund: Allergie</div>
+   <div class="state"><b style="font-size:22px">29,00 €</b><span class="tag ok"><svg class="ico" style="width:20px;height:20px"><use href="#ok"/></svg>Zettel liegt an der Kasse</span></div>
+   <div class="acts"><button class="primary">Passt</button><button>Korrigieren</button><button class="quiet">Storniert</button></div></div>
+ </div></section>
+ <section class="col"><h2>Heute <span class="n">2</span></h2><div class="scroll">
+  <div class="card"><div class="head"><span class="time">19:30</span><span class="chip">4 Personen</span></div><div class="who"><b>Weber</b> · +49 176 5550 0999</div><div>Kinderstuhl</div></div>
+  <div class="card"><div class="head"><span class="time">20:30</span><span class="chip">2 Personen</span></div><div class="who"><b>Becker</b> · +49 176 5550 0998</div></div>
+  <div class="fold"><span class="tag w"><svg class="ico" style="width:20px;height:20px"><use href="#tri"/></svg>3 Feiertage warten auf Antwort</span><span class="sp"></span><button>Öffnen</button></div>
+ </div></section>
+ <section class="col"><h2>Rückrufe <span class="n">2</span></h2><div class="scroll">
+  <div class="card late"><div class="head"><span class="time">19:41</span><span class="tag bad"><svg class="ico" style="width:20px;height:20px"><use href="#tri"/></svg>Beschwerde</span></div>
+   <div class="who"><b>+49 176 5550 0789</b></div><div style="margin-bottom:10px">„Letzte Lieferung war kalt“</div><div class="acts"><button>Anrufen</button><button class="primary">Erledigt</button></div></div>
+  <div class="card"><div class="head"><span class="time">19:23</span><span class="chip">Will Mitarbeiter sprechen</span></div>
+   <div class="who"><b>+49 176 5550 0321</b></div><div style="margin-bottom:10px">„Möchte mit jemandem sprechen“</div><div class="acts"><button>Anrufen</button><button class="primary">Erledigt</button></div></div>
+ </div></section>
+</div>
