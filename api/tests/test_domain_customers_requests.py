@@ -25,6 +25,8 @@ from api.domain.customers.requests import (
     record_objection,
     verify,
 )
+from api.domain.ordering.board import cancel_order, version_of
+from api.domain.ordering.handover import ack_ticket
 from api.models import (
     Address,
     AuditLog,
@@ -913,6 +915,48 @@ def test_a_waiting_order_goes_once_the_kitchen_has_its_slip(session, tenant_id):
     order.status = "approved"
     order.handover_state = "sent"
     session.flush()
+    _erase(session, tenant_id)
+    assert _fresh(session, order).customer_name == ""
+
+
+def test_an_order_nobody_will_serve_goes_with_the_button(session, tenant_id):
+    """Nobody ever tapped "Passt", so the order would stop the erasure for good."""
+    order = _order(session, tenant_id, status="confirmed")
+    session.commit()
+    with pytest.raises(Conflict):
+        _erase(session, tenant_id)
+
+    cancel_order(session, tenant_id, order.id, version_of(session, order), now=NOW)
+
+    assert verify(session, tenant_id, MUELLER, ZONE, NOW).open_rows == []
+    _erase(session, tenant_id)
+    kept = _fresh(session, order)
+    assert (kept.customer_name, kept.status) == ("", "cancelled")
+
+
+def test_a_cancel_note_on_its_way_stops_the_erasure_until_it_printed(
+    session, tenant_id
+):
+    """The note carries the guest's name, like every slip: its event is open."""
+    order = _order(session, tenant_id, status="approved")
+    _labels(session, tenant_id, order, [["23", "Frühlingsrollen"]])
+    printed = _event(session, tenant_id, order_id=str(order.id))
+    printed.attempts = 1
+    session.commit()
+
+    cancel_order(session, tenant_id, order.id, version_of(session, order), now=NOW)
+
+    with pytest.raises(Conflict) as refused:
+        _erase(session, tenant_id)
+    assert str(order.id) in refused.value.message
+    note = session.scalar(
+        select(OutboxEvent).where(
+            OutboxEvent.status == "pending",
+            OutboxEvent.payload["order_id"].astext == str(order.id),
+        )
+    )
+    ack_ticket(session, tenant_id, note.id, True, NOW)
+
     _erase(session, tenant_id)
     assert _fresh(session, order).customer_name == ""
 
