@@ -22,7 +22,7 @@ from api.agent.guest_details import (
     numbers_said,
     words_said,
 )
-from api.agent.intent import heard
+from api.agent.intent import heard, names_the_way
 from api.core.errors import InvalidInput
 from api.domain.calls.consent import Answer
 from api.domain.customers.phone import normalize_phone
@@ -56,8 +56,8 @@ def last_words(say: str) -> str:
 
 
 # What the state keeps of get_service_status: whether the restaurant is open,
-# and whether it takes pickups, which can be off while it is open.
-SERVICE_FLAGS = ("is_open", "pickup_enabled")
+# and whether it takes pickups and deliveries, which can be off while it is open.
+SERVICE_FLAGS = ("is_open", "pickup_enabled", "delivery_enabled")
 
 
 class Allergy(BaseModel):
@@ -144,11 +144,15 @@ class ConversationState(BaseModel):
     # (docs/05 §5).
     last_say: str | None = None
     # What get_service_status said in this call about being open and taking
-    # pickups (`SERVICE_FLAGS`); None until then. The model reads from it that
+    # orders (`SERVICE_FLAGS`); None until then. The model reads from it that
     # the status is known: it asked again at the start of every turn, one
     # request each. Both flags, or a model that sees only "open" could take a
     # pickup while the kitchen takes none (Codex PR #291, P1).
     service: dict[str, bool] | None = None
+    # What `find_customer` said in this call: found or not, and the id of the
+    # default address for `draft_order`. Ids only, no stored word enters the
+    # state (L12); None until it was asked.
+    customer: dict[str, Any] | None = None
     # Team extension from transfer_to_team, for the phone line to dial. Not part
     # of the prompt: the model has no use for the number.
     transfer_to: str | None = None
@@ -197,6 +201,8 @@ class ConversationState(BaseModel):
             data["last_say"] = self.last_say
         if self.service is not None:
             data["service"] = dict(self.service)
+        if self.customer is not None:
+            data["customer"] = dict(self.customer)
         if self.intent:
             data["intent"] = self.intent
         if self.slots:
@@ -221,11 +227,13 @@ class ConversationState(BaseModel):
             # refused until it is, and a model that keeps nothing between
             # turns needs the sentence to read it out. Gone again once heard.
             data["readback"] = self.readback
-        if self.cart or self.seen_items:
+        if self.cart or self.seen_items or self.intent == "delivery":
             # From the first menu search on, also while it is empty: the model
             # has to write the dish it just found into it, and the client sends
             # the rules for that only when the state carries the field
             # (`agent/llm.py` `ORDER_FORMAT`). A call about a table never does.
+            # A delivery from the wish on: an address said before the first
+            # dish needs the names of its slots.
             data["cart"] = [self._line(line) for line in self.cart]
         return data
 
@@ -272,7 +280,14 @@ def initial_state(
 # the guest said, and a tool result copied there (`open`, `closes_at`, a price)
 # would be answered from on a later turn instead of asked from the database
 # (CLAUDE.md §2 rule 1). Extend it when a flow needs a new guest detail.
-GUEST_SLOTS = frozenset({"party_size", "reserved_for", "guest_name", "phone", "note"})
+# The address a guest said, in the fields of `customer.address` of draft_order.
+ADDRESS_SLOTS = frozenset(
+    {"street", "house_number", "postal_code", "city", "floor_note"}
+)
+GUEST_SLOTS = (
+    frozenset({"party_size", "reserved_for", "guest_name", "phone", "note"})
+    | ADDRESS_SLOTS
+)
 
 
 def apply_state_patch(
@@ -300,6 +315,12 @@ def apply_state_patch(
     if "guest_name" in named:
         # As it was checked: the blanks around a name are no part of it.
         named["guest_name"] = clean_name(named["guest_name"])
+    if state.stage == "readback_pending" and any(
+        state.slots.get(slot) != named[slot] for slot in named.keys() & ADDRESS_SLOTS
+    ):
+        # The read-back named the old address: a yes must not send the driver
+        # there (CLAUDE.md §2 rule 3), as after a new number.
+        _drop_readback(state, "draft_order")
     state.slots.update(named)
     return named
 
@@ -323,6 +344,9 @@ def _said_by_the_guest(state: ConversationState, slot: str, value: Any) -> bool:
     if slot == "phone":
         return number_known(value, state.caller_phone, state.said_numbers)
     return True
+
+
+_ORDER_WISHES: tuple[str, ...] = ("pickup", "delivery")
 
 
 def note_guest_details(state: ConversationState, guest_text: str) -> bool:
@@ -357,11 +381,11 @@ def note_guest_details(state: ConversationState, guest_text: str) -> bool:
 
 def note_intent(state: ConversationState, guest_text: str) -> None:
     """Keeps what the guest called for (`agent/intent.py`) for the turns after
-    this one. It only fills an empty `intent`: a word in a later sentence
-    never replaces what the state holds (a side question about taking the dog
-    along, in a call about a table), and from the draft on `intent` follows
-    the tools as before. It is also what the call log says the call was about
-    (`agent/outcome.py`).
+    this one. It fills an empty `intent`, and a later word only changes pickup
+    to delivery or back: it never replaces what else the state holds (a side
+    question about taking the dog along, in a call about a table), and from
+    the draft on `intent` follows the tools as before. It is also what the
+    call log says the call was about (`agent/outcome.py`).
 
     And never against what the state shows already: a guest who gave a party
     size without the word for a table asks whether the leftovers can be taken
@@ -371,19 +395,34 @@ def note_intent(state: ConversationState, guest_text: str) -> None:
     thing after a booking, keeps the first wish in the state until a tool of
     the other flow drafts. The model reads the change in the sentence itself,
     and from the first menu search on the state carries the order (`cart`)."""
-    if state.intent is not None or (wish := heard(guest_text)) is None:
+    wish = heard(guest_text)
+    if wish is None:
+        return
+    if state.intent is not None:
+        # Pickup or delivery is the one thing a later word changes, until a
+        # draft says which it is: "dann lieber abholen", "bitte doch liefern".
+        # A bare order word is none: "ich möchte zweimal die 23 bestellen"
+        # after "etwas liefern lassen" leaves the delivery (Codex PR #472).
+        if (
+            state.intent in _ORDER_WISHES
+            and wish in _ORDER_WISHES
+            and names_the_way(guest_text)
+            and state.order_id is None
+            and state.stage != "confirmed"
+        ):
+            state.intent = wish
         return
     # An order outranks table details, and those a search that may have been
     # only a question about the menu.
     if state.cart:
-        shown = "pickup"
+        shown = _ORDER_WISHES
     elif state.slots.keys() & {"party_size", "reserved_for"}:
-        shown = "reservation"
+        shown = ("reservation",)
     elif state.seen_items:
-        shown = "pickup"
+        shown = _ORDER_WISHES
     else:
-        shown = wish
-    if shown == wish:
+        shown = (wish,)
+    if wish in shown:
         state.intent = wish
 
 
@@ -523,7 +562,7 @@ def apply_tool_result(
         state.booking_say = None
         _to_read_out(state, result)
     elif name == "draft_order":
-        state.intent = "pickup"
+        state.intent = (args or {}).get("type", "pickup")
         state.order_id = uuid.UUID(result.data["order_id"])
         state.reservation_id = None
         state.stage = "readback_pending"
@@ -536,6 +575,11 @@ def apply_tool_result(
             state.cart = cart_lines((args or {}).get("items"))
     elif name == "search_menu":
         _note_search(state, result.data)
+    elif name == "find_customer":
+        state.customer = {
+            "found": result.data["found"],
+            "address_id": result.data["address_id"],
+        }
     elif name == "get_item_details":
         # Read as the tool read it: "true" is a yes there too.
         with suppress(ValidationError):
@@ -659,7 +703,7 @@ def _seen(hit: dict[str, Any]) -> dict[str, Any]:
 
 
 # Tools, mit denen eine Korrektur nach dem Vorlesen beginnt: eine Reservierung ueber
-# check_slot, eine Bestellung ueber draft_order (prompts/system_v2.md).
+# check_slot, eine Bestellung ueber draft_order (prompts/system_v3.md).
 _CORRECTING = frozenset({"check_slot", "create_reservation", "draft_order"})
 # Eine Korrektur der Gerichte beginnt mit search_menu: das loest den
 # vorgelesenen Entwurf ab, erfolgreich oder nicht - endet der Zug mit einer
@@ -710,5 +754,8 @@ def _drop_readback(state: ConversationState, name: str) -> None:
     state.reservation_id = None
     state.readback = None
     state.readback_heard = False
-    state.intent = "pickup" if name in _PICKUP_TOOLS else "reservation"
+    if name not in _PICKUP_TOOLS:
+        state.intent = "reservation"
+    elif state.intent != "delivery":
+        state.intent = "pickup"
     state.stage = "collecting"

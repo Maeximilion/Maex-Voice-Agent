@@ -800,9 +800,12 @@ class ConversationLoop:
         return ToolCall(name=held["name"], args=held["args"])
 
     def _order_name(self, state: ConversationState) -> str | None:
-        """The name the confirmed order runs under, from the database."""
+        """The name the confirmed order runs under, from the database, when
+        the guest said it: a stored name is not said aloud (L12)."""
         order = self._session.get(Order, state.order_id) if state.order_id else None
-        return order.customer_name if order else None
+        if order is None or not name_said(order.customer_name, state.said_words):
+            return None
+        return order.customer_name
 
     def _left_in_turn(self, turn_started: float | None) -> float | None:
         """Seconds the guest still waits for this turn; None without a deadline."""

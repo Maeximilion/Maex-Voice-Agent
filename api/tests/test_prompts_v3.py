@@ -1,4 +1,4 @@
-"""prompts/system_v2.md + tools_v2.md: Menue-Tools und Abholung, Token-Budget eingehalten.
+"""prompts/system_v3.md + tools_v3.md: Menue-Tools, Abholung, Lieferung, Token-Budget eingehalten.
 
 Die Liste der Tools kommt aus agent/dispatch.TOOLS, nicht aus einer Kopie: ein
 Tool, das der Agent aufrufen kann, muss im Prompt stehen, und der Prompt darf
@@ -12,18 +12,17 @@ from api.agent.dispatch import TOOLS
 from api.agent.prompt import PROMPT_VERSION
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SYSTEM_PROMPT = REPO_ROOT / "prompts" / "system_v2.md"
-TOOL_DESCRIPTIONS = REPO_ROOT / "prompts" / "tools_v2.md"
+SYSTEM_PROMPT = REPO_ROOT / "prompts" / "system_v3.md"
+TOOL_DESCRIPTIONS = REPO_ROOT / "prompts" / "tools_v3.md"
 TOKEN_BUDGET = 800
-NOT_YET = ("check_delivery", "find_customer")
 
 
 def _approx_tokens(text: str) -> int:
     return math.ceil(len(text) / 4)
 
 
-def test_v2_ist_die_aktuelle_version():
-    assert PROMPT_VERSION == "v2"
+def test_v3_ist_die_aktuelle_version():
+    assert PROMPT_VERSION == "v3"
 
 
 def test_system_prompt_enthaelt_die_pflichtabschnitte():
@@ -34,26 +33,44 @@ def test_system_prompt_enthaelt_die_pflichtabschnitte():
         "# Harte Regeln",
         "# Ablauf",
     ):
-        assert heading in text, f"Abschnitt {heading!r} fehlt in system_v2.md"
+        assert heading in text, f"Abschnitt {heading!r} fehlt in system_v3.md"
 
 
 def test_system_prompt_nennt_jedes_tool_des_agenten():
     text = SYSTEM_PROMPT.read_text(encoding="utf-8")
     fehlend = [tool for tool in TOOLS if tool not in text]
-    assert not fehlend, f"system_v2.md erwähnt diese Tools nicht: {fehlend}"
+    assert not fehlend, f"system_v3.md erwähnt diese Tools nicht: {fehlend}"
 
 
 def test_tool_beschreibungen_haben_je_tool_eine_ueberschrift():
     text = TOOL_DESCRIPTIONS.read_text(encoding="utf-8")
     fehlend = [tool for tool in TOOLS if f"## {tool}" not in text]
-    assert not fehlend, f"tools_v2.md hat keine Überschrift für: {fehlend}"
+    assert not fehlend, f"tools_v3.md hat keine Überschrift für: {fehlend}"
 
 
-def test_noch_nicht_gebaute_tools_haben_keine_ueberschrift():
-    text = TOOL_DESCRIPTIONS.read_text(encoding="utf-8")
-    for tool in NOT_YET:
-        assert f"## {tool}" not in text
-        assert tool not in SYSTEM_PROMPT.read_text(encoding="utf-8")
+def test_lieferung_steht_im_prompt():
+    """T-6.5: delivery is offered, and no line still says it is not."""
+    text = SYSTEM_PROMPT.read_text(encoding="utf-8")
+    assert "Lieferung kannst du noch nicht" not in text
+    regel = next(z for z in text.splitlines() if z.startswith("4. Lieferung"))
+    assert "`find_customer`" in regel
+    flow = text.split("4. Lieferung")[1]
+    for wort in (
+        "`address_id`",
+        "`check_delivery`",
+        "`below_minimum`",
+        "`out_of_zone`",
+    ):
+        assert wort in flow
+
+
+def test_gespeicherte_daten_nennt_das_modell_nie():
+    """L12: a prompt rule next to the code guard, and an objection goes to the
+    team, which enters it (docs/09)."""
+    text = SYSTEM_PROMPT.read_text(encoding="utf-8")
+    regel = next(z for z in text.splitlines() if z.startswith("- Gespeicherte"))
+    assert "nennst du nie" in regel
+    assert "Widerspruch" in next(z for z in text.splitlines() if "Beschwerde" in z)
 
 
 def test_system_prompt_haelt_das_token_budget():

@@ -14,7 +14,7 @@ from api.db import get_db
 from api.domain.menu.importer import apply, parse
 from api.domain.ordering import draft
 from api.main import app
-from api.models import Call, MenuItem
+from api.models import Call, DeliveryZone, MenuItem
 from api.tests.conftest import p95_ms
 from api.tests.test_domain_draft_order import KARTE
 from scripts.seed import seed
@@ -206,3 +206,109 @@ def test_latenz_confirm_bestellung(client):
         assert http.post("/v1/tools/confirm", json=body, headers=AUTH).json()["ok"]
 
     assert p95_ms(call) < 300
+
+
+def _zone(tenant_id: str) -> None:
+    with next(app.dependency_overrides[get_db]()) as session:
+        session.add(
+            DeliveryZone(
+                tenant_id=uuid.UUID(tenant_id),
+                name="Zone 1",
+                match_type="postal_code",
+                postal_codes=["12345"],
+                fee_cents=250,
+                min_order_cents=1000,
+                eta_minutes=50,
+            )
+        )
+        session.commit()
+
+
+def _delivery(tenant_id, call_id, ids) -> dict:
+    body = _body(tenant_id, call_id, ids)
+    body["type"] = "delivery"
+    body["customer"] = {
+        **body["customer"],
+        "address": {
+            "street": "Lindenstraße",
+            "house_number": "12",
+            "postal_code": "12345",
+            "city": "Musterdorf",
+        },
+    }
+    return body
+
+
+def test_lieferung_ueber_http(client):
+    http, tenant_id, call_id, ids = client
+    _zone(tenant_id)
+
+    answer = http.post(
+        "/v1/tools/draft_order", json=_delivery(tenant_id, call_id, ids), headers=AUTH
+    ).json()
+
+    assert answer["ok"] is True
+    assert answer["data"]["delivery_fee_cents"] == 250
+    assert answer["data"]["total_cents"] == answer["data"]["items_total_cents"] + 250
+
+
+def test_mindestbestellwert_ueber_http(client):
+    http, tenant_id, call_id, ids = client
+    _zone(tenant_id)
+    body = _delivery(tenant_id, call_id, ids)
+    body["items"] = [{"menu_item_id": str(ids["23"]), "quantity": 1}]
+
+    answer = http.post("/v1/tools/draft_order", json=body, headers=AUTH).json()
+
+    assert answer["ok"] is False
+    assert answer["error"]["code"] == "below_minimum"
+    assert "3 Euro 10" in answer["say"]
+
+
+def test_ausserhalb_der_zone_ueber_http(client):
+    http, tenant_id, call_id, ids = client
+    _zone(tenant_id)
+    body = _delivery(tenant_id, call_id, ids)
+    body["customer"]["address"]["postal_code"] = "54321"
+
+    answer = http.post("/v1/tools/draft_order", json=body, headers=AUTH).json()
+
+    assert answer["ok"] is False
+    assert answer["error"]["code"] == "out_of_zone"
+
+
+@pytest.mark.latency
+def test_latenz_lieferung(client):
+    http, tenant_id, call_id, ids = client
+    _zone(tenant_id)
+
+    def call():
+        body = _delivery(tenant_id, call_id, ids)
+        assert http.post("/v1/tools/draft_order", json=body, headers=AUTH).json()["ok"]
+
+    measured = p95_ms(call)
+    print(f"draft_order delivery p95 {measured:.1f} ms")
+    assert measured < 300
+
+
+@pytest.mark.latency
+def test_latenz_confirm_lieferung(client):
+    """The yes of a delivery: order, customer counters, default address, event."""
+    http, tenant_id, call_id, ids = client
+    _zone(tenant_id)
+    drafts = iter(
+        http.post(
+            "/v1/tools/draft_order",
+            json=_delivery(tenant_id, call_id, ids),
+            headers=AUTH,
+        ).json()["data"]["order_id"]
+        for _ in range(60)
+    )
+
+    def call():
+        body = _confirm_body(tenant_id, call_id, next(drafts))
+        assert http.post("/v1/tools/confirm", json=body, headers=AUTH).json()["ok"]
+
+    measured = p95_ms(call)
+    print(f"confirm delivery p95 {measured:.1f} ms")
+    assert measured < 300

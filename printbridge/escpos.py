@@ -4,7 +4,8 @@ Nur Standardbibliothek: die Bruecke laeuft auf einem Rechner im Lokal, dort soll
 nichts ausser Python noetig sein.
 
 Inhalt nach Datensparsamkeit: Abholcode, Zeit, Name, Positionen mit Optionen und
-Hinweis, Summe. Keine Telefonnummer - die braucht die Kueche nicht.
+Hinweis, Summe. Keine Telefonnummer - die braucht die Kueche nicht. A delivery
+adds its address, the floor note and the delivery fee (T-6.5).
 """
 
 import textwrap
@@ -133,6 +134,29 @@ def _option(option: Any) -> str:
     return str(option)
 
 
+def _address(ticket: dict[str, Any], width: int) -> list[bytes]:
+    """The slip is the only way a delivery reaches the register and the driver:
+    the provider gives no interface. An address that is gone (its customer
+    deleted) is said, not left out."""
+    if ticket.get("type") != "delivery":
+        return []
+    address = ticket.get("address")
+    if not address:
+        return [BOLD_ON, _line("ADRESSE FEHLT"), BOLD_OFF]
+    place = f"{address.get('postal_code', '')} {address.get('city', '')}"
+    out = [
+        BOLD_ON,
+        _wrapped(
+            f"{address.get('street', '')} {address.get('house_number', '')}", width
+        ),
+        _wrapped(place, width),
+        BOLD_OFF,
+    ]
+    if address.get("floor_note"):
+        out.append(_wrapped(f"Hinweis: {address['floor_note']}", width))
+    return out
+
+
 def render(
     ticket: dict[str, Any],
     width: int = DEFAULT_WIDTH,
@@ -176,6 +200,7 @@ def render(
         out += [BOLD_ON, _line(f"Fertig um {ready}"), BOLD_OFF]
     if ticket.get("customer_name"):
         out.append(_wrapped(f"Name: {ticket['customer_name']}", width))
+    out += _address(ticket, width)
     if ticket.get("note"):
         # The note of the whole order (an allergy), bold above the dishes.
         out += [BOLD_ON, _wrapped(f"! {ticket['note']}", width), BOLD_OFF]
@@ -195,6 +220,14 @@ def render(
                 BOLD_OFF,
             ]
     out.append(_line("-" * width))
+    fee = ticket.get("delivery_fee_cents")
+    if fee:
+        # The register holds no fee of its own: whoever types the order in
+        # needs it as a line of its own (paper check 06.10.2026).
+        out.append(
+            _line(f"Waren {_euro(ticket.get('items_total_cents'))}".rjust(width))
+        )
+        out.append(_line(f"Liefergebühr {_euro(fee)}".rjust(width)))
     out.append(_line(f"Summe {_euro(ticket.get('total_cents'))}".rjust(width)))
     stamp = ticket.get("print_time") or (printed_at or local_now()).strftime("%H:%M")
     revision = int(ticket.get("revision") or 0)

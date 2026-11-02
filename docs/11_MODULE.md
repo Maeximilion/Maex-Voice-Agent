@@ -91,12 +91,12 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 
 ### `domain/delivery/`
 - `zones.py` — PLZ-Match, später Polygon (`shapely`), ein Interface für beides
-- `fees.py` — Pauschale, Mindestbestellwert, Lieferzeit je Zone
-- `address.py` — Straße, Hausnummer, PLZ normalisieren, Zone auflösen und an der Adresse speichern
+- `address.py` — wer, wohin, welche Zone (T-6.5): `place` liest nur und wirft, `keep` schreibt Kunde und Adresse; Zone auflösen und an der Adresse speichern. Mindestbestellwert und „Lieferung offen" stehen in `domain/ordering/validation.py`, neben den übrigen Prüfungen vor der Summe
 
 ### `domain/customers/`
 - `phone.py` — E.164-Normalisierung deutscher Nummern, inkl. unterdrückter Nummer
 - `lookup.py` — Kunde und Adressen zur Nummer, `blocked` beachten
+- `contact.py` — `last_contact_at`, Zähler und Standardadresse beim Ja
 - `personal.py` — what a row loses when its personal data goes, shared by the deletion job and an erasure, so a store added to one reaches the other
 - `requests.py` — requests of data subjects (T-11.8, docs/09 §2): the log with its deadline, `verify` (a name with a date or the address, never a number alone), the access copy, `erase` and the objection; commits nothing, the job writes the ledger first
 - `retention.py` — Löschfristen setzen und anwenden
@@ -182,6 +182,8 @@ Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht 
 - `transport.py` — Netzwerkdrucker (TCP 9100 mit Statusabfrage) oder Windows-Warteschlange (pywin32, wartet bis gedruckt)
 - `state.py` — Druckprotokoll: welche Bestellung in welcher Revision gedruckt ist, gegen doppelte und veraltete Bons
 - `client.py` — `/v1/kitchen/*`, nur https außer localhost
+- `install.ps1`, `run.ps1` — Windows only (T-9.6): `install.ps1` installs or removes the program for the signed-in user and registers the task at logon, `run.ps1` keeps one program running
+- `requirements-build.txt` — build-time pins of `.github/workflows/printbridge.yml`, no runtime dependency
 
 Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebucht und die GUI zeigt sie. Das Ereignis wartet, bis n8n zurück ist. Kein Vorgang geht verloren, keiner wird doppelt gesendet.
 
@@ -206,7 +208,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `cli.py` — Gespräch im Terminal: du tippst den Kunden, der Agent antwortet, Tool-Aufrufe werden angezeigt
 - `replay.py` — spielt ein Transkript aus `evals/cases/` ab
 - `session.py` — die gemeinsame Mechanik beider Eingänge: Anruf-Zeile öffnen und schließen, Zustand halten, Tool-Protokoll und Ausgabe
-- `scripted_llm.py` — regelbasierter Modell-Ersatz bis T-2.4: erkennt Reservierung und Abholung aus `prompts/system_v2.md`, rät nie, meldet Unverstandenes an die Leiter
+- `scripted_llm.py` — regelbasierter Modell-Ersatz bis T-2.4: erkennt Reservierung, Abholung und Lieferung aus `prompts/system_v3.md`, rät nie, meldet Unverstandenes an die Leiter
 - `scripted_order.py` — der Abholfluss des Modell-Ersatzes: Gerichte, Pflichtoptionen, Name, `draft_order`, vorlesen, `confirm`; what a card number is on the open allergy question it takes from the active menu (`MenuNumbers`, handed in by `session.py`), not from the import grammar
 - `noise.py` — verrauscht Eingaben absichtlich (Buchstabendreher, abgeschnittene Wörter), um die Leiter zu testen
 
