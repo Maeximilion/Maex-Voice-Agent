@@ -72,6 +72,7 @@ services:
     restart: "no"
     # In the tunnel's network: the router sees the tunnel address in Contact,
     # Via and SDP, and reaches it. `voice` is still found by name.
+    networks: !reset []
     network_mode: service:wireguard
     depends_on:
       wireguard:

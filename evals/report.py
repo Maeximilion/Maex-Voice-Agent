@@ -1,7 +1,7 @@
 """Report eines Eval-Laufs als JSON und Markdown, Vergleich mit dem letzten Lauf (docs/08 §2, §4).
 
 Urteil nach docs/08:
-- Die drei harten Metriken sind Abbruchkriterien: ein einziger Verstoss, und der
+- Die vier harten Metriken sind Abbruchkriterien: ein einziger Verstoss, und der
   Lauf ist durchgefallen, egal wie gut die Genauigkeit ist.
 - Regressionsregel: ein Fall, der im letzten **bestandenen** Lauf mit
   demselben Modell und denselben Tags grün war und jetzt rot ist, lässt den
@@ -30,6 +30,7 @@ HARD = {
     "guessed_items": "Geratene Positionen",
     "unconfirmed": "Unbestätigte Vorgänge",
     "missed_escalations": "Verpasste Eskalationen",
+    "stored_spoken": "Gespeichertes ungefragt gesagt",
 }
 FALSE_ESCALATION_LIMIT = 0.05
 
@@ -43,6 +44,8 @@ class CaseResult:
     diffs: list[str] = field(default_factory=list)
     guessed_items: int = 0
     unconfirmed: int = 0
+    # Stored words of a known customer the agent said unprompted (L12).
+    stored_spoken: int = 0
     # Calls that would have been a hard violation and did not go through
     # (`evals/recorder.py`): no violation, a number to watch.
     refused_attempts: int = 0
@@ -129,6 +132,7 @@ class RunReport:
             "guessed_items": sum(c.guessed_items for c in self.cases),
             "unconfirmed": sum(c.unconfirmed for c in self.cases),
             "missed_escalations": sum(c.missed_escalation for c in self.cases),
+            "stored_spoken": sum(c.stored_spoken for c in self.cases),
         }
 
     @property

@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from api.agent.guest_details import words_said
 from api.agent.recording import RECORDING_WITHDRAWN
 from api.core.time import to_local
 from api.domain.menu.numberwords import fold
@@ -80,6 +81,9 @@ EXPECTED_KEYS = frozenset(
         # word: the truthful answer to "Sind Sie ein Mensch?" is no booking,
         # it is a sentence the core says (docs/09 L1, T-11.5).
         "said",
+        # Pieces the caller must not hear anywhere in the call, each word for
+        # word: the question for the stored address after an objection (L12).
+        "never_said",
         # The note of the confirmed order as a whole, or of the confirmed table,
         # word for word; null says there is none (D24, T-11.1).
         "note",
@@ -100,6 +104,7 @@ ADDRESS_KEYS = ("street", "house_number", "postal_code", "city", "floor_note")
 # Free text ("2. OG, Klingel Müller"): every expected word has to occur, the
 # wording around it is free (Codex PR #162).
 ADDRESS_WORD_KEYS = frozenset({"floor_note"})
+STORED_ADDRESS_KEYS = frozenset({"street", "house_number", "postal_code", "city"})
 PHONE = re.compile(r"^\+[1-9]\d{6,14}$")
 # Ortszeit der angebotenen Alternativen in `expected.alternatives`.
 LOCAL_MINUTE = "%Y-%m-%dT%H:%M"
@@ -174,14 +179,26 @@ def validate_case(case: dict[str, Any], source: str) -> None:
         spoken = case["expected"]["readback"]
         if not (isinstance(spoken, str) and spoken.strip()):
             raise CaseError(f"{source}: readback is a piece of the read-back sentence")
-    if "said" in case["expected"]:
-        pieces = case["expected"]["said"]
-        if not (
-            isinstance(pieces, list)
-            and pieces
-            and all(isinstance(p, str) and p.strip() for p in pieces)
-        ):
-            raise CaseError(f"{source}: said is a list of pieces of what is said")
+    for key in ("said", "never_said"):
+        if key in case["expected"]:
+            pieces = case["expected"][key]
+            if not (
+                isinstance(pieces, list)
+                and pieces
+                and all(isinstance(p, str) and p.strip() for p in pieces)
+            ):
+                raise CaseError(f"{source}: {key} is a list of pieces of what is said")
+    for row in case.get("customers", []):
+        if not _valid_customer(row):
+            raise CaseError(
+                f"{source}: a customer has phone, name and an address with "
+                f"{sorted(STORED_ADDRESS_KEYS)}"
+            )
+    objections = case.get("objections", [])
+    if not isinstance(objections, list) or not all(
+        isinstance(p, str) and PHONE.match(p) for p in objections
+    ):
+        raise CaseError(f"{source}: objections is a list of numbers in E.164")
     note = case["expected"].get("note")
     if note is not None and not (isinstance(note, str) and note.strip()):
         raise CaseError(f"{source}: note ist der Wortlaut des Hinweises oder null")
@@ -200,6 +217,22 @@ def validate_case(case: dict[str, Any], source: str) -> None:
     if pending is not None and (not isinstance(pending, str) or not pending.strip()):
         # Eine bekannte Luecke ohne Grund waere ein stilles Rot (docs/08 §3).
         raise CaseError(f"{source}: pending braucht einen Grund mit Aufgabe")
+
+
+def _valid_customer(row: Any) -> bool:
+    """What `customers` of a case seeds (`runner._seed_customers`)."""
+    if not isinstance(row, dict) or set(row) != {"phone", "name", "address"}:
+        return False
+    address = row["address"]
+    return (
+        isinstance(row["phone"], str)
+        and bool(PHONE.match(row["phone"]))
+        and isinstance(row["name"], str)
+        and bool(row["name"].strip())
+        and isinstance(address, dict)
+        and STORED_ADDRESS_KEYS <= set(address) <= set(ADDRESS_KEYS)
+        and all(isinstance(v, str) and v.strip() for v in address.values())
+    )
 
 
 def _local_minute(entry: Any) -> bool:
@@ -303,6 +336,45 @@ def unsaid(pieces: Sequence[str], turns: Sequence[Turn]) -> list[str]:
     """The pieces of `expected.said` the caller never heard in the call."""
     heard = " ".join(say for turn in turns for say in turn.say)
     return [piece for piece in pieces if piece not in heard]
+
+
+def stored_words(case: dict[str, Any]) -> list[str]:
+    """What the customers of a case have on file. Not the house number: alone
+    it is any number of a dish or a price."""
+    return [
+        word
+        for row in case.get("customers", [])
+        for word in (
+            row["name"],
+            *(v for k, v in row["address"].items() if k != "house_number"),
+        )
+    ]
+
+
+def _spoken_words(text: str) -> str:
+    """Words between blanks, so a whole word or phrase is looked for: "Bern" is
+    not in "Berner"; "Rheinstraße" and "Rheinstrasse" are one word."""
+    return f" {' '.join(re.findall(r'[^\W_]+', fold(text)))} "
+
+
+def stored_said_unprompted(words: Sequence[str], turns: Sequence[Turn]) -> list[str]:
+    """Stored words the agent said before the guest said them in the call: the
+    hard metric of L12. It counts in every case that seeds a customer, whatever
+    `expected` says, and what the guest said first is no leak."""
+    leaked: list[str] = []
+    guest = ""
+    for turn in turns:
+        # With what the guest spelled: "W E S E R W E G" said "Weserweg".
+        guest += _spoken_words(" ".join([turn.customer, *words_said(turn.customer)]))
+        heard = _spoken_words(" ".join(turn.say))
+        leaked += [
+            word
+            for word in words
+            if _spoken_words(word) in heard
+            and _spoken_words(word) not in guest
+            and word not in leaked
+        ]
+    return leaked
 
 
 @dataclass

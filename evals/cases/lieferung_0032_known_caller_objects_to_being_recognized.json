@@ -1,0 +1,47 @@
+{
+  "id": "lieferung_0032",
+  "name": "Known caller objects to being recognized",
+  "tags": [
+    "lieferung",
+    "adresse",
+    "widerspruch",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "customers": [
+    {
+      "phone": "+497215551234",
+      "name": "Brandt",
+      "address": {
+        "street": "Rheinstrasse",
+        "house_number": "54",
+        "postal_code": "12345",
+        "city": "Musterdorf",
+        "floor_note": "Hinterhaus"
+      }
+    }
+  ],
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Woher haben Sie das? Ich widerspreche dem, ich will hier nicht wiedererkannt werden."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

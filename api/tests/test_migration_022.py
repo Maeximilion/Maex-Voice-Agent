@@ -1,4 +1,4 @@
-"""Migration 021: the recordings of calls (T-11.3, legal check L2), up and down."""
+"""Migration 022: the recordings of calls (T-11.3, legal check L2), up and down."""
 
 import pytest
 from alembic import command
@@ -37,7 +37,7 @@ _INSERT = text(
 
 
 def test_upgrade_makes_a_table_of_one_recording_per_call(scratch_db_url):
-    command.upgrade(_config(scratch_db_url), "021")
+    command.upgrade(_config(scratch_db_url), "022")
     engine = create_engine(scratch_db_url)
     try:
         with engine.begin() as conn:
@@ -56,7 +56,7 @@ def test_upgrade_makes_a_table_of_one_recording_per_call(scratch_db_url):
 
 def test_a_recording_keeps_its_call(scratch_db_url):
     """The row finds the file: the call it belongs to cannot go first."""
-    command.upgrade(_config(scratch_db_url), "021")
+    command.upgrade(_config(scratch_db_url), "022")
     engine = create_engine(scratch_db_url)
     try:
         with engine.begin() as conn:
@@ -69,7 +69,7 @@ def test_a_recording_keeps_its_call(scratch_db_url):
 
 
 def test_downgrade_drops_the_table_and_leaves_the_rest(scratch_db_url):
-    command.upgrade(_config(scratch_db_url), "021")
+    command.upgrade(_config(scratch_db_url), "022")
     assert "recordings" in _tables(scratch_db_url)
 
     command.downgrade(_config(scratch_db_url), "019")
@@ -78,5 +78,5 @@ def test_downgrade_drops_the_table_and_leaves_the_rest(scratch_db_url):
     assert "recordings" not in tables
     assert {"calls", "consent_log"} <= tables
 
-    command.upgrade(_config(scratch_db_url), "021")
+    command.upgrade(_config(scratch_db_url), "022")
     assert "recordings" in _tables(scratch_db_url)

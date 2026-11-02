@@ -252,6 +252,16 @@ def noise_cases(cases: list[dict]) -> list[dict]:
     return out
 
 
+def hear_keys(hear: Hear) -> Hear:
+    """A line of bare digits is the keypad (`telephony/handler.py` `on_dtmf`):
+    the core gets the digits, nobody speaks them and no ear hears them."""
+
+    def heard(line: str) -> str | None:
+        return line if line.isdecimal() else hear(line)
+
+    return heard
+
+
 def hear_with_noise(hear: Hear, noise: str | None) -> Hear:
     def heard(line: str) -> str | None:
         return noise if line == NOISE else hear(line)
@@ -459,6 +469,7 @@ def summarize(
         "yes_inside_readback": len(inside),
         "unconfirmed": sum(c.unconfirmed for c in voice_report.cases),
         "guessed_items": sum(c.guessed_items for c in voice_report.cases),
+        "stored_spoken": sum(c.stored_spoken for c in voice_report.cases),
     }
     return {
         "hard": hard,
@@ -559,7 +570,9 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     cases = load_cases(args.cases, [])[: args.limit]
-    lines = [line for case in cases for line in customer_lines(case)]
+    lines = [
+        line for case in cases for line in customer_lines(case) if not line.isdecimal()
+    ]
     print(
         f"hearing {len(dict.fromkeys(lines))} lines of {len(cases)} cases", flush=True
     )
@@ -569,8 +582,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     noise = _text(noise_final)
 
-    def hear(line: str) -> str | None:
-        return heard[line]["heard"]
+    hear = hear_keys(lambda line: heard[line]["heard"])
 
     run_dir = args.run_dir
     print("cases as text", flush=True)

@@ -1,0 +1,61 @@
+{
+  "id": "lieferung_0031",
+  "name": "Postal code outside the zone in words, guest picks up",
+  "tags": [
+    "lieferung",
+    "adresse",
+    "zone",
+    "zahlwort",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Hauptstrasse 1, Postleitzahl fuenf vier drei zwei eins, Musterstadt."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, dann hole ich es ab."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Lorenz."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "items": [
+      {
+        "number": "13",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Lorenz",
+    "confirmed": true,
+    "escalated": false,
+    "tools": [
+      {
+        "tool": "check_delivery",
+        "error": "out_of_zone"
+      }
+    ],
+    "order_type": "pickup"
+  }
+}

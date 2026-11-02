@@ -1,0 +1,74 @@
+{
+  "id": "lieferung_0017",
+  "name": "Known caller says yes to the same address",
+  "tags": [
+    "lieferung",
+    "adresse",
+    "wiedererkennung",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "customers": [
+    {
+      "phone": "+497215551234",
+      "name": "Brandt",
+      "address": {
+        "street": "Rheinstrasse",
+        "house_number": "54",
+        "postal_code": "12345",
+        "city": "Musterdorf",
+        "floor_note": "Hinterhaus"
+      }
+    }
+  ],
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, genau."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "13",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Brandt",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Rheinstrasse",
+      "house_number": "54",
+      "postal_code": "12345",
+      "city": "Musterdorf",
+      "floor_note": "Hinterhaus"
+    },
+    "tools": [
+      "find_customer"
+    ],
+    "order_type": "delivery",
+    "said": [
+      "An dieselbe Adresse wie beim letzten Mal?"
+    ],
+    "readback": "an dieselbe Adresse wie beim letzten Mal"
+  }
+}

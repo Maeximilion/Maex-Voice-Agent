@@ -1,7 +1,8 @@
 # Outage drills of the AI telephone on the workbench (T-1.11, docs/20 §5 and
 # §10). Started and judged by scripts/voice_drill.py, which renders the router's
-# configuration into DRILL_RUN and names the project after that folder. Own
-# network, no host port, invented numbers, a throwaway database.
+# configuration into DRILL_RUN and names the project after that folder. Its own
+# networks, laid out as in production (`backend` internal, Asterisk on `telephony`
+# only), no host port, invented numbers, a throwaway database.
 #
 # `asterisk` is the service of the product, taken from docker-compose.yml as it
 # is: its configuration (deploy/asterisk/conf/) is what the drills exercise.
@@ -11,6 +12,7 @@
 services:
   db:
     image: postgres:16-alpine
+    networks: [backend]
     environment:
       POSTGRES_USER: maex
       POSTGRES_PASSWORD: maex
@@ -23,6 +25,7 @@ services:
 
   setup:
     build: ../../api
+    networks: [backend]
     user: "${DRILL_UID}:${DRILL_GID}"
     environment: &app
       HOME: /tmp
@@ -44,6 +47,7 @@ services:
 
   voice:
     build: ../../api
+    networks: [backend, telephony]
     user: "${DRILL_UID}:${DRILL_GID}"
     environment:
       <<: *app
@@ -83,6 +87,7 @@ services:
     # The stand-in for the router or the trunk: the registrar the AI telephone
     # registers at, the caller who rings it, and the team telephone.
     image: andrius/asterisk:22.11.0_alpine-3.24-537e52c@sha256:98c0e598fb16492215ddc7cc52c3200646b44584ffa9267bebecff531fd3530b
+    networks: [telephony]
     environment:
       PUID: ${DRILL_UID}
       PGID: ${DRILL_GID}
@@ -105,6 +110,11 @@ services:
         condition: service_healthy
       voice:
         condition: service_healthy
+
+networks:
+  backend:
+    internal: true
+  telephony:
 
 volumes:
   # As in docker-compose.yml, owned by the drill's user, who runs `voice` here.

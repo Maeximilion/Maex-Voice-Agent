@@ -9,9 +9,9 @@ recorded while `RECORDING_ENABLED` is off, so the table stays empty until then.
 A new table, nothing existing changes. The downgrade drops it with its rows, and
 the files they name stay in the folder without a way to find them: on a database
 that holds a restaurant's data, delete the files first and take a backup with
-`bash scripts/backup.sh --label before_migration_021` (CLAUDE.md §8, docs/13 §4).
+`bash scripts/backup.sh --label before_migration_022` (CLAUDE.md §8, docs/13 §4).
 
-Revision: 021
+Revision: 022
 Revises: 019
 Created: 2026-11-02
 """
@@ -21,7 +21,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "021"
+revision: str = "022"
 down_revision: str | None = "019"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

@@ -1,0 +1,69 @@
+{
+  "id": "lieferung_0030",
+  "name": "Postal code spoken digit by digit, not understood first",
+  "tags": [
+    "lieferung",
+    "adresse",
+    "plz_unklar",
+    "zahlwort",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "123456 Musterdorf, Lindenstrasse 12."
+    },
+    {
+      "role": "customer",
+      "text": "Eins zwei drei vier fuenf."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Lorenz."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "13",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Lorenz",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Lindenstrasse",
+      "house_number": "12",
+      "postal_code": "12345",
+      "city": "Musterdorf"
+    },
+    "tools": [
+      "check_delivery",
+      {
+        "tool": "check_delivery",
+        "error": "invalid_input"
+      }
+    ],
+    "order_type": "delivery"
+  }
+}

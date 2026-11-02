@@ -183,7 +183,7 @@ One row per answer to a consent question of the agent (legal check L13, T-11.1, 
 Since T-11.3 it also holds the answers about a recording (L2): one row per call that was asked, and a `no` behind the `yes` for a withdrawal.
 
 ### `recordings`
-One row per recorded call (legal check L2, T-11.3, migration 021): what finds the file. The audio is a WAV file in the volume `recordings`, mounted at `/recordings`, outside the database and in no backup (`domain/calls/recordings.py`). The row is committed before a byte is written. Empty while `RECORDING_ENABLED` is off.
+One row per recorded call (legal check L2, T-11.3, migration 022): what finds the file. The audio is a WAV file in the volume `recordings`, mounted at `/recordings`, outside the database and in no backup (`domain/calls/recordings.py`). The row is committed before a byte is written. Empty while `RECORDING_ENABLED` is off.
 
 | Feld | Typ | Bemerkung |
 |---|---|---|
@@ -462,5 +462,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 017 | `uq_special_days_set`: one `set` row per tenant and date (#441); the upgrade first lists every date with two `set` rows and stops without a change, the team decides which row holds; the downgrade drops the key |
 | 018 | `delivery_zones`, `customers`, `addresses`, `recognition_objections`, `orders.address_id` and the foreign keys of `orders.customer_id` and `orders.address_id` (T-6.1, L12); nothing writes them yet, T-6.2 and T-6.5 do, T-6.7 deletes; the downgrade drops the four tables with every row and the links on the orders |
 | 019 | `data_subject_requests`: the request log of data subjects (T-11.8, U2); nothing backfilled, the lines of the interim file are moved in by hand (docs/09 §2); the downgrade drops the table with every logged request |
-| 021 | `recordings`: one row per recorded call, unique on `call_id` (T-11.3, L2); the downgrade drops the table, and the files it named stay in the folder without a way to find them. On top of 019 until the PR of T-4.9 (020) merges: the later PR renumbers |
+| 022 | `recordings`: one row per recorded call, unique on `call_id` (T-11.3, L2); the downgrade drops the table, and the files it named stay in the folder without a way to find them. On top of 019 until the PRs of T-4.9 (020) and T-10.11 (021) merge: the later PR moves its `down_revision` |
 | planned, next free number | `eval_cases`, `eval_runs` |

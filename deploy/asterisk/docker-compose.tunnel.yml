@@ -15,8 +15,12 @@ services:
       service: wireguard
     profiles: ["voice"]
     restart: unless-stopped
+    # Asterisk sits in this container's network and finds `voice` through it.
+    networks: [telephony]
 
   asterisk:
+    # Docker takes a network of its own or another container's, never both.
+    networks: !reset []
     network_mode: service:wireguard
     depends_on:
       wireguard:
