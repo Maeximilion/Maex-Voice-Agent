@@ -71,6 +71,10 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         "name": order.customer_name,
         "phone": order.phone,
         "note": order.note,
+        "delivery": order.type == "delivery",
+        "address": _address(order.address),
+        "floor_note": order.address.floor_note if order.address else None,
+        "fee": euro(order.delivery_fee_cents) if order.delivery_fee_cents else None,
         "lines": order.lines,
         "total": euro(order.total_cents),
         "ready": clock(order.ready_at, tz_name) if order.ready_at else None,
@@ -85,6 +89,14 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         "corrected": REASONS.get(order.corrected) if order.corrected else None,
         **_register(order, tz_name),
     }
+
+
+def _address(address) -> str | None:
+    if address is None:
+        return None
+    return (
+        f"{address.street} {address.house_number}, {address.postal_code} {address.city}"
+    )
 
 
 def _register(order: BoardOrder, tz_name: str) -> dict:

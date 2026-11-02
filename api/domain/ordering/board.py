@@ -38,7 +38,7 @@ from api.domain.ordering.labels import (
 )
 from api.domain.ordering.ticket import last_reason, send_ticket
 from api.domain.status.config import ACTOR_TABLET
-from api.models import AuditLog, Order, OrderItem, ServiceConfig
+from api.models import Address, AuditLog, Order, OrderItem, ServiceConfig
 
 CONFIRMED = "confirmed"
 APPROVED = "approved"
@@ -101,6 +101,10 @@ class BoardOrder:
     # cannot mark the newer one. Taken from the very rows the card shows, not
     # from a count of audit entries, which the deletion job removes.
     version: str = ""
+    # Delivery (T-6.6): the fee in cents, and the address as stored; None for a
+    # pickup or a delivery whose address is missing.
+    delivery_fee_cents: int = 0
+    address: Address | None = None
 
 
 def _window(tz_name: str, now: datetime | None) -> tuple[datetime, datetime]:
@@ -178,6 +182,19 @@ def list_new(
     ):
         items[row.order_id].append(row)
 
+    address_ids = {o.address_id for o in orders if o.address_id}
+    addresses = (
+        {
+            a.id: a
+            for a in session.scalars(
+                select(Address).where(
+                    Address.tenant_id == tenant_id, Address.id.in_(address_ids)
+                )
+            )
+        }
+        if address_ids
+        else {}
+    )
     labels = current_labels_many(session, ids)
     corrected = _last_correction_reasons(session, tenant_id, ids)
     for oid in ids:
@@ -211,6 +228,8 @@ def list_new(
             register_entered_at=o.register_entered_at,
             register_late=o.id in late,
             version=order_version(items[o.id]),
+            delivery_fee_cents=o.delivery_fee_cents,
+            address=addresses.get(o.address_id) if o.address_id else None,
         )
         for o in orders
     ]
