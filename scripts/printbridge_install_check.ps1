@@ -51,14 +51,19 @@ Assert-That ($xml -match "LogonTrigger") "the task starts at logon"
 Assert-That ($task.Settings.ExecutionTimeLimit -eq "PT0S") "the task has no time limit"
 Assert-That ($task.Actions[0].WorkingDirectory -eq $folder) "the task starts in the install folder"
 
-Start-Sleep -Seconds 5
-Get-ScheduledTaskInfo -TaskName "Maex Print Bridge" | Format-List LastRunTime, LastTaskResult
-$task.State
 Wait-Until { (Test-Path $log) -and ((Get-Content -Raw $log) -match "Durchlauf abgebrochen") } "the hidden bridge runs and logs"
 
 $first = (Get-Bridge).Id
 Get-Bridge | Stop-Process -Force
 Wait-Until { @(Get-Bridge | Where-Object { $first -notcontains $_.Id }).Count -gt 0 } "run.ps1 starts the program again"
+
+# An update: the same installer again over a running bridge.
+$printLog = Join-Path $folder "printbridge_state.json"
+Set-Content $printLog '{"printed": {}}'
+$before = (Get-Bridge).Id
+Assert-That ((Invoke-Installer @()) -eq 0) "an update over a running bridge succeeds"
+Assert-That (Test-Path $printLog) "an update keeps the print log"
+Wait-Until { @(Get-Bridge | Where-Object { $before -notcontains $_.Id }).Count -gt 0 } "the update starts the new program"
 
 Assert-That ((Invoke-Installer @("-Uninstall")) -eq 0) "uninstall succeeds"
 Assert-That (-not (Get-ScheduledTask -TaskName "Maex Print Bridge" -ErrorAction SilentlyContinue)) "the task is gone"

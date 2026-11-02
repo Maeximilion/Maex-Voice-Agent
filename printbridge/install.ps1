@@ -17,8 +17,18 @@ $TaskName = "Maex Print Bridge"
 $Required = "MAEX_SERVER_URL", "MAEX_KITCHEN_TOKEN", "MAEX_TENANT_ID", "MAEX_PRINTER"
 $Optional = "MAEX_PRINTER_WIDTH", "MAEX_STATE_FILE", "MAEX_INTERVAL_SECONDS"
 
+$run = Join-Path $Folder "run.ps1"
 $task = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
 if ($task) { Stop-ScheduledTask -TaskName $TaskName }
+# Stop-ScheduledTask does not wait for run.ps1. Alive, it restarts the program during an
+# update and holds the folder during a removal, so it goes first and for certain.
+$loops = Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" |
+    Where-Object { $_.CommandLine -and $_.CommandLine.Contains($run) }
+$running = @($loops | ForEach-Object { Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue })
+if ($running) {
+    $running | Stop-Process -Force
+    $running | Wait-Process
+}
 $running = Get-Process maex-printbridge -ErrorAction SilentlyContinue
 if ($running) {
     $running | Stop-Process -Force
@@ -51,7 +61,6 @@ Copy-Item (Join-Path $PSScriptRoot "maex-printbridge.exe"), (Join-Path $PSScript
 Unblock-File (Join-Path $Folder "maex-printbridge.exe"), (Join-Path $Folder "run.ps1")
 
 $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-$run = Join-Path $Folder "run.ps1"
 $action = New-ScheduledTaskAction -Execute "powershell.exe" -WorkingDirectory $Folder `
     -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$run`""
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
