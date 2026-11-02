@@ -145,7 +145,7 @@ def milestone_of_pull(
         if gates:
             return min(gates, key=lambda gate: gate["title"])
     match = TYPE_PREFIX.match(pull["title"].strip())
-    kind = match.group("type") if match else None
+    kind = match.group("type") if match else ""
     return milestones.get(TYPE_MILESTONES.get(kind, OTHER_MILESTONE))
 
 
