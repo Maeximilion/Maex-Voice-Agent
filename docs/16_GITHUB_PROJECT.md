@@ -22,8 +22,8 @@ What looks like a second project is always a **view**. Views cost nothing, share
 | View | Type | Filter | Shows |
 |---|---|---|---|
 | Monthly roadmap | Roadmap, grouped by Milestone | `is:issue` | The issues over time, one collapsible block per gate |
-| Quarterly roadmap | Roadmap, grouped by Team | none | The same over a longer range |
-| Backlog | Table | none | Every entry with its fields |
+| Quarterly roadmap | Roadmap, grouped by Milestone | `is:issue` | The same over a longer range |
+| Backlog | Table, grouped by Milestone | `is:issue is:open` | The open issues per gate; a block folds out into its sub-issues |
 | Board | Board by Status | `-closed:<@today-3d` | Everything open plus what closed in the last three days: Todo, Blocked, In progress, In review, Done |
 
 The REST API can create a view but not change one, and the group of a view is set only in the web interface. A view takes one level of grouping, so a roadmap groups by gate or by parent issue, not by both.
@@ -39,7 +39,7 @@ If a view is missing: create a view, never a project.
 | Field | Type | Where the value comes from |
 |---|---|---|
 | Status | Single select `Todo`, `Blocked`, `In progress`, `In review`, `Done` | Section 4. Never by hand |
-| Milestone | The gates G0 to G5 | The `stufe-N` label (`scripts/pr_metadata.py`, section 5). Set by hand it stays |
+| Milestone | The gates G0 to G5 | The `stufe-N` label (`scripts/pr_metadata.py`, section 5). Set by hand it stays: the label is only the default, a task a gate waits for gets that gate by hand (T-10.1 and T-10.2 carry `stufe-1` and belong to G0) |
 | Iteration, Quarter | Iteration | The daily run (section 5) |
 | Start date, Target date | Date | The daily run (section 5) |
 | Team | Single select, GitHub's default values | Empty on every entry, not used |
