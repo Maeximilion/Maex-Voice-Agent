@@ -17,6 +17,10 @@ Bestellung bis dahin ohne Bon (domain/ordering/confirm.py) - dann ist "Passt"
 die Freigabe an die Kueche. The mark (`mark_entered`) comes after "Passt":
 the team types the order in from the slip it releases. Korrekturen stehen in
 `correction.py`; a correction clears the mark.
+
+"Storniert" (`cancel_order`) is the way out for an order nobody will serve, so
+that no false mark reaches the register (L18). The card leaves at once. It only
+comes back red when the note for a slip at the register cannot print.
 """
 
 import uuid
@@ -30,13 +34,19 @@ from sqlalchemy.orm import Session
 from api.core.errors import Conflict, NotFound
 from api.core.time import business_day, business_day_bounds_utc, utcnow
 from api.domain.ordering.confirm import ACTION_CONFIRMED, ALREADY_CONFIRMED
-from api.domain.ordering.correction import order_version
+from api.domain.ordering.correction import STALE, order_version
+from api.domain.ordering.handover import withdraw_tickets
 from api.domain.ordering.labels import (
     ACTION_CORRECTED,
     current_labels_many,
     labels_for_rows,
 )
-from api.domain.ordering.ticket import last_reason, send_ticket
+from api.domain.ordering.ticket import (
+    ACTION_CANCELLED,
+    CANCELLED,
+    last_reason,
+    send_ticket,
+)
 from api.domain.status.config import ACTOR_TABLET
 from api.models import Address, AuditLog, Order, OrderItem, ServiceConfig
 
@@ -48,6 +58,8 @@ ACTION_RESENT = "order.resent"
 ACTION_REGISTER_ENTERED = "order.register_entered"
 # The register is typed from the slip that "Passt" releases (docs/02 §2a).
 MARKABLE = (APPROVED, "handed_over")
+# A red card: the slip that did not print, or the note of a cancelled order.
+RESENDABLE = (CONFIRMED, APPROVED, CANCELLED)
 CORRECTED_SINCE = (
     "Die Bestellung wurde inzwischen korrigiert. Bitte die neue Fassung eingeben."
 )
@@ -122,8 +134,9 @@ def _filters(tenant_id: uuid.UUID) -> tuple:
             # only button would otherwise vanish at 05:00 (Codex PR #140).
             _unmarked(),
             # Ohne Tagesgrenze: ein fehlender Bon wird um 05:00 nicht besser.
+            # Nor a missing note: the slip at the register still asks to be typed in.
             and_(
-                Order.status.in_((CONFIRMED, APPROVED)),
+                Order.status.in_(RESENDABLE),
                 Order.handover_state == FAILED,
             ),
         ),
@@ -384,7 +397,7 @@ def approve_order(
         session.commit()
         return order
     if order.status != CONFIRMED:
-        raise Conflict(f"Bestellung {order.id} ist {order.status}")
+        raise Conflict(f"Bestellung {order.id} ist {order.status}", say=STALE)
     if order.handover_state == FAILED:
         raise Conflict(f"Bestellung {order.id}: Kueche nicht erreicht")
 
@@ -415,11 +428,13 @@ def resend_order(
 ) -> Order:
     """ "Nochmal senden" auf einer roten Karte (docs/06 §3). Nur bei `failed`."""
     order = _locked(session, tenant_id, order_id)
-    if order.handover_state != FAILED or order.status not in (CONFIRMED, APPROVED):
+    if order.handover_state != FAILED or order.status not in RESENDABLE:
         # Anderes Tablet war schneller oder die Seite ist alt: nichts zu tun.
         session.commit()
         return order
-    send_ticket(session, order, correction_reason=last_reason(session, order))
+    # From the status, not the outbox: a thinned row must not print the order.
+    reason = CANCELLED if order.status == CANCELLED else last_reason(session, order)
+    send_ticket(session, order, correction_reason=reason)
     order.handover_state = "pending"
     session.add(
         AuditLog(
@@ -457,7 +472,7 @@ def mark_entered(
         session.commit()
         return order
     if order.status not in MARKABLE:
-        raise Conflict(f"Bestellung {order.id} ist {order.status}")
+        raise Conflict(f"Bestellung {order.id} ist {order.status}", say=STALE)
     current = version_of(session, order)
     if current != seen_version:
         raise Conflict(
@@ -475,6 +490,62 @@ def mark_entered(
             payload={"call_id": str(order.call_id), "version": current},
         )
     )
+    session.commit()
+    return order
+
+
+def cancel_order(
+    session: Session,
+    tenant_id: uuid.UUID,
+    order_id: uuid.UUID,
+    seen_version: str,
+    actor: str = ACTOR_TABLET,
+    now: datetime | None = None,
+) -> Order:
+    """ "Storniert": the guest cancelled by phone or never came (docs/06 §3). Twice
+    tapped or on two tablets: one entry, one note.
+
+    `seen_version` as in `mark_entered`: a card older than a correction is
+    refused, the team decides on the state it sees. A slip nobody printed is
+    withdrawn. One that may lie at the register, where it asks to be typed in,
+    gets a note through the handover (`withdraw_tickets`, docs/02 §2a).
+
+    An order already typed in keeps its mark: that the register still holds a
+    sale is true, and the team cancels it there, which the question back says.
+    """
+    order = _locked(session, tenant_id, order_id)
+    if order.status == CANCELLED:
+        session.commit()
+        return order
+    if order.status not in ALREADY_CONFIRMED:
+        raise Conflict(f"Bestellung {order.id} ist {order.status}", say=STALE)
+    current = version_of(session, order)
+    if current != seen_version:
+        raise Conflict(
+            f"Bestellung {order.id}: Stand {seen_version} gesehen, {current} aktuell",
+            say=STALE,
+        )
+    slip = withdraw_tickets(session, order, now or utcnow())
+    order.status = CANCELLED
+    order.handover_state = "pending" if slip else None
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            actor=actor,
+            action=ACTION_CANCELLED,
+            entity="order",
+            entity_id=order.id,
+            payload={
+                "call_id": str(order.call_id),
+                "version": current,
+                "note_sent": slip,
+            },
+        )
+    )
+    # The note's revision counts this entry (`ticket.revision`).
+    session.flush()
+    if slip:
+        send_ticket(session, order, correction_reason=CANCELLED)
     session.commit()
     return order
 
