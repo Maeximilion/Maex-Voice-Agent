@@ -43,7 +43,13 @@ from api.agent.llm import LLMClient, Usage
 from api.config import settings
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import apply, parse
-from api.models import DeliveryZone, MenuItem
+from api.models import (
+    Address,
+    Customer,
+    DeliveryZone,
+    MenuItem,
+    RecognitionObjection,
+)
 from evals.judge import (
     CaseError,
     heard_readback,
@@ -51,6 +57,8 @@ from evals.judge import (
     missing_tools,
     observe,
     offered_alternatives,
+    stored_said_unprompted,
+    stored_words,
     unchecked_address,
     unsaid,
     validate_case,
@@ -180,6 +188,30 @@ def _sell_out(session: Session, tenant_id, numbers: list[str], now: datetime) ->
     session.commit()
 
 
+def _seed_customers(session: Session, tenant_id, case: dict[str, Any]) -> None:
+    """A guest who ordered before: `"customers"` with their default address and
+    `"objections"`, the numbers recognition is off for (L12)."""
+    for row in case.get("customers", []):
+        customer = Customer(
+            tenant_id=tenant_id, phone=row["phone"], name=row["name"], order_count=1
+        )
+        session.add(customer)
+        session.flush()
+        session.add(
+            Address(
+                tenant_id=tenant_id,
+                customer_id=customer.id,
+                is_default=True,
+                **row["address"],
+            )
+        )
+    session.add_all(
+        RecognitionObjection(tenant_id=tenant_id, phone=phone)
+        for phone in case.get("objections", [])
+    )
+    session.commit()
+
+
 def _repeat_confirm(session: Session, case, call, tenant, llm, now) -> list[str]:
     """`"repeat_confirm": true`: den letzten confirm des Modells ein zweites Mal
     senden, wie eine Plattform, die nach einem Timeout wiederholt. Das Replay
@@ -229,6 +261,7 @@ def run_case(
         inner = make_llm(now, lambda: menu_numbers(session, tenant.id))
         llm = RecordingLLM(inner)
         _sell_out(session, tenant.id, case.get("sold_out", []), now)
+        _seed_customers(session, tenant.id, case)
         call, turns = replay(session, case, tenant, now=now, llm=llm, hear=hear)
         result.readback = heard_readback(turns)
         repeated = _repeat_confirm(session, case, call, tenant, llm, now)
@@ -253,6 +286,17 @@ def run_case(
         missed = unsaid(expected.get("said", []), turns)
         if missed:
             diffs.append(f"said: never heard {missed!r}")
+        unwanted = [
+            piece
+            for piece in expected.get("never_said", [])
+            if not unsaid([piece], turns)
+        ]
+        if unwanted:
+            diffs.append(f"never_said: heard {unwanted!r}")
+        leaked = stored_said_unprompted(stored_words(case), turns)
+        if leaked:
+            result.stored_spoken = len(leaked)
+            diffs.append(f"stored data said unprompted: {leaked!r}")
     except Exception as exc:  # noqa: BLE001 - ein abgestuerzter Fall ist ein roter Fall, kein Abbruch
         session.rollback()
         result.error = f"{type(exc).__name__}: {exc}"

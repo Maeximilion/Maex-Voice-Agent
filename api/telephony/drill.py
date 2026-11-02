@@ -49,6 +49,12 @@ one call per drill:
                   meanwhile: no card, the caller hears to call again, from the
                   file `voice` rendered at its start
   sentences       the files Asterisk plays hold the sentences of the code
+  networks        Asterisk reaches `voice`, and neither the database's name nor
+                  its address; the database has no way out
+  cut off         `voice` loses its network to Asterisk or to the database, before
+                  a call and in the middle of one: nothing answers and nothing
+                  refuses, unlike a stopped container, and the team rings
+  back            the networks are back: the next call is the AI's, no restart
 
 A team ring is timed on this machine's monotonic clock from the call being
 placed, or from the kill, against the limit of docs/20 §5 (proposal: 30 s).
@@ -201,8 +207,7 @@ class Drill:
         }
 
     def compose(self, *args: str) -> str:
-        command = [
-            "docker",
+        return self.docker(
             "compose",
             "-p",
             self.project,
@@ -211,7 +216,10 @@ class Drill:
             "--profile",
             "voice",
             *args,
-        ]
+        )
+
+    def docker(self, *args: str) -> str:
+        command = ["docker", *args]
         if self.dry_run:
             print("   [dry-run]", " ".join(command))
             return ""
@@ -298,7 +306,7 @@ class Drill:
         numbers = [
             form
             for number in [
-                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 114)),
+                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 120)),
                 TEAM_PHONE,
                 LISTED_BUSY_NUMBER,
                 UNLISTED_NUMBER,
@@ -399,13 +407,19 @@ def team_check(name: str, call: Call, since: float, extra: str = "") -> Check:
 
 
 def drill_silent(drill: Drill) -> list[Check]:
-    call = drill.place(101)
+    return silent_call(
+        drill, 101, "silent caller: the AI answers, asks, says goodbye and hangs up"
+    )
+
+
+def silent_call(drill: Drill, n: int, name: str) -> list[Check]:
+    call = drill.place(n)
     call.wait(call.ended)
     seconds = time.monotonic() - call.placed
     drill.quiet()
     return [
         (
-            "silent caller: the AI answers, asks, says goodbye and hangs up",
+            name,
             call.dialstatus() == "ANSWER"
             and call.ending().endswith("[hangup]")
             and not call.router_says(call.team_rings),
@@ -551,19 +565,26 @@ SET_THE_DAY_BACK = (
 
 
 @contextmanager
+def open_all_day(drill: Drill) -> Iterator[None]:
+    """For one drill today is open, whatever the hour. Set back whatever fails."""
+    drill.sql(OPEN_ALL_DAY)
+    try:
+        yield
+    finally:
+        drill.sql(SET_THE_DAY_BACK)
+
+
+@contextmanager
 def team_away(drill: Drill, how: str) -> Iterator[None]:
     """The router's team telephone does not answer for one drill: "busy" at
     once, or "ring" for longer than the AI telephone waits. Set back whatever
     fails, as are the hours."""
-    drill.sql(OPEN_ALL_DAY)
-    try:
-        drill.cli("router", f"dialplan set global TEAM_AWAY {how}")
-        yield
-    finally:
+    with open_all_day(drill):
         try:
-            drill.cli("router", "dialplan set global TEAM_AWAY answer")
+            drill.cli("router", f"dialplan set global TEAM_AWAY {how}")
+            yield
         finally:
-            drill.sql(SET_THE_DAY_BACK)
+            drill.cli("router", "dialplan set global TEAM_AWAY answer")
 
 
 def missed_of(call: Call) -> tuple[str, str, str]:
@@ -868,6 +889,117 @@ def drill_database_down(drill: Drill) -> list[Check]:
     return [check]
 
 
+def reaches(drill: Drill, service: str, host: str, port: int) -> bool:
+    """A TCP connection from inside `service`. A name that does not resolve is
+    no connection either."""
+    answer = drill.compose(
+        "exec",
+        "-T",
+        service,
+        "sh",
+        "-c",
+        f"nc -z -w 2 {host} {port} && echo reached || echo no",
+    )
+    return answer.strip() == "reached"
+
+
+def drill_networks(drill: Drill) -> list[Check]:
+    """What the networks promise (docs/13 §3), tried from inside. By address as
+    well as by name: Docker's name lookup alone would say nothing about a
+    route."""
+    addresses = drill.compose("exec", "-T", "db", "hostname", "-i").split()
+    database = {
+        host: reaches(drill, "asterisk", host, 5432) for host in ("db", *addresses)
+    }
+    routes = drill.compose("exec", "-T", "db", "ip", "route")
+    return [
+        (
+            "networks: Asterisk reaches voice",
+            reaches(drill, "asterisk", "voice", 8001),
+            "voice:8001",
+        ),
+        (
+            "networks: Asterisk reaches neither the database's name nor its address",
+            bool(addresses) and not any(database.values()),
+            f"tried {', '.join(database)}",
+        ),
+        (
+            "networks: the database has no way out",
+            bool(routes.strip()) and "default" not in routes,
+            routes.strip().replace("\n", "; "),
+        ),
+    ]
+
+
+@contextmanager
+def cut_off(drill: Drill, service: str, network: str) -> Iterator[None]:
+    """`service` loses `network` the way a cable is pulled: its packets go
+    nowhere, and nothing answers or refuses, which a stopped container does.
+    Put back under its name whatever fails."""
+    name = f"{drill.project}_{network}"
+    container = drill.compose("ps", "-q", service).strip()
+    drill.docker("network", "disconnect", name, container)
+    try:
+        yield
+    finally:
+        drill.docker("network", "connect", "--alias", service, name, container)
+
+
+def drill_cut_before_a_call(
+    drill: Drill, n: int, network: str, name: str
+) -> list[Check]:
+    with cut_off(drill, "voice", network):
+        call = drill.place(n)
+        check = team_check(name, call, call.placed)
+    drill.quiet()
+    return [check]
+
+
+def drill_cut_mid_call(drill: Drill, n: int, network: str, name: str) -> list[Check]:
+    call = drill.place(n)
+    call.wait(call.answered, timeout=15)
+    cut = time.monotonic()
+    with cut_off(drill, "voice", network):
+        check = team_check(name, call, cut, " from the cut")
+    drill.quiet()
+    return [check]
+
+
+def drill_cut_from_asterisk(drill: Drill) -> list[Check]:
+    return drill_cut_before_a_call(
+        drill, 115, "telephony", "cut from Asterisk: the team rings"
+    )
+
+
+def drill_cut_from_asterisk_mid_call(drill: Drill) -> list[Check]:
+    """Only Asterisk's pings notice: no FIN and no RST reach it."""
+    return drill_cut_mid_call(
+        drill, 116, "telephony", "cut from Asterisk mid-call: the team rings"
+    )
+
+
+def drill_cut_from_database_mid_call(drill: Drill) -> list[Check]:
+    """117 presses keys after the cut: the turn finds a database that takes
+    its packets and never answers, which the stopped one does not. Inside the
+    opening hours, when guests call, whatever the hour of the run."""
+    with open_all_day(drill):
+        return drill_cut_mid_call(
+            drill, 117, "backend", "cut from the database mid-call: the team rings"
+        )
+
+
+def drill_cut_from_database(drill: Drill) -> list[Check]:
+    return drill_cut_before_a_call(
+        drill, 118, "backend", "cut from the database: the team rings"
+    )
+
+
+def drill_back_after_the_cuts(drill: Drill) -> list[Check]:
+    """Run last: whatever a cut left behind in `voice`, a dead connection in a
+    pool or a name it lost, shows here."""
+    return silent_call(drill, 119, "back after the cuts: the AI answers again")
+
+
 SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
     ("a silent caller (101)", drill_silent),
     ("a call from our own number (100)", drill_own_number),
@@ -885,6 +1017,15 @@ SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
     ("voice is frozen (107)", drill_voice_frozen),
     ("voice freezes in the middle of a call (108)", drill_voice_frozen_mid_call),
     ("the database is down (106)", drill_database_down),
+    ("what the networks let through", drill_networks),
+    ("voice is cut off from Asterisk (115)", drill_cut_from_asterisk),
+    ("voice is cut off from Asterisk mid-call (116)", drill_cut_from_asterisk_mid_call),
+    (
+        "voice is cut off from the database mid-call (117)",
+        drill_cut_from_database_mid_call,
+    ),
+    ("voice is cut off from the database (118)", drill_cut_from_database),
+    ("the networks are back (119)", drill_back_after_the_cuts),
 ]
 
 

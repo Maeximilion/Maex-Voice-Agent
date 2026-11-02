@@ -15,6 +15,11 @@ Deshalb:
   Korrekturen); die Kueche verwirft eine Revision, die kleiner ist als eine schon
   gedruckte (Vertrag fuer T-4.6, docs/04 §confirm). Einen Bon mit Versuchen
   anzufassen waere falsch: n8n kann ihn schon haben und entdoppelt ueber die id.
+
+A cancelled order whose slip may lie at the register gets a fourth ticket, the
+note: the same event with `correction_reason` "cancelled" and a revision of its
+own, so the print log lets it through and it outranks every older ticket
+(`board.cancel_order`).
 """
 
 from sqlalchemy import func, select
@@ -26,16 +31,20 @@ from api.events import enqueue
 from api.events.types import ORDER_CONFIRMED
 from api.models import AuditLog, Order, OutboxEvent
 
+ACTION_CANCELLED = "order.cancelled"
+# The status of such an order and the `correction_reason` of its note.
+CANCELLED = "cancelled"
+
 
 def revision(session: Session, order: Order) -> int:
-    """Wie oft das Team die Positionen korrigiert hat."""
+    """How often the team changed the order: each correction, and the cancellation."""
     # scalar_one: a count without GROUP BY is always exactly one row.
     return session.execute(
         select(func.count(AuditLog.id)).where(
             AuditLog.tenant_id == order.tenant_id,
             AuditLog.entity == "order",
             AuditLog.entity_id == order.id,
-            AuditLog.action == ACTION_CORRECTED,
+            AuditLog.action.in_((ACTION_CORRECTED, ACTION_CANCELLED)),
         )
     ).scalar_one()
 

@@ -488,21 +488,18 @@ Decisions:
 
 Gate: G0 open, unchanged. It waits for T-10.2 on the wire and two calls at once (T-10.1), with Maxi at the telephones.
 
-State at 13:10, third pause (replaces the Status line above where they differ):
-- Merged too: #474 (T-8.4), #79 closed.
-- #473 (T-11.8) head `ae759f1`, `main` merged in, status 2.13.5, all three Codex findings fixed, 6820 passed. CI and Codex on that head are outstanding. A draft its call can still confirm stops the erasure; any other order draft becomes `cancelled`, any other reservation draft is deleted. v2.13.4 stands twice in the changelog (T-8.4 and the old T-11.8 line): drop the old one.
-- #472 (T-6.5) head `1e288ea`, Codex clean, needs the push of step 1.
-- #475 (T-9.6) head `c0c34d6`: Codex clean, 13 checks green, Windows run 19 of 19 install checks. It conflicts with `main` on the status file; fix that when it is next. #409 closes on merge, T-9.6 stays open in docs/07 until Maxi's steps 3 to 9 in `printbridge/README.md`.
-- `task/4-9-price-reconcile` `5c414a6`, no PR: all cuts done, 6853 passed before #473's last commits; mypy and ruff check to re-run. Left: merge `origin/task/11-8-data-subject-requests` once #473 is final, HTTP pass, full suite outside 14:20 to 14:55, status bump, PR `--base task/11-8-data-subject-requests` (or `main` if #473 is in), `Closes #53`. Draft body with `@@CHECKS@@` in the scratchpad at `t49/pr_body.md`. Its new `main` base needs migration 020 after 019.
-- `task/9-8-docker-networks` `6bcad0c`, no PR, worktree `.claude/worktrees/task-9-8-networks`, `main` merged in: production rehearsal and path checks clean, reachability matrix 0 unexpected, drill 35 of 35 before the last tightening (`n8n` and `push` off `backend`, so only `api`, `dispatcher`, `voice` reach `db`). `/security-review` and `/ponytail-review` done. Left: final drill (35), full tests and ruff, dev check on the tightened layout, docs 20, 07, 01_STATUS, status bump, PR with `Closes #410`.
-- No drill or test suite from 14:20 to 14:55: the GPU run needs the machine and port 8080.
+State at 15:05 (replaces the Status line above where they differ):
+- Merged: #468 T-6.3, #469 T-6.9, #470 T-11.9, #471 T-3.7, #472 T-6.5 with T-6.2 part 2, #473 T-11.8, #474 T-8.4.
+- Real-model run on #472 head `2e5e430`, prompt v3: on the 56 identical case files 36 and 38, mean 37, against 37 of the one run on `a9eddab`; 0 guessed, 0 unconfirmed, 0 missed; false escalations 17.6 % and 21.6 %. Limit: main has one run at that commit, docs/08 asks for two. Recorded with #475.
+- Open PRs, in merge order: #475 T-9.6 (`76d275d`), #476 T-4.9, #477 T-9.8.
+- #476 next push carries the `main` merge, this branch, the Codex P2 on German test identifiers (thread 4442786672) and the mark that Maxi accepted its three price assumptions.
+- Building: T-6.8, T-11.3, T-10.11 (mechanism with an empty catalogue, #403 stays open).
 
 Open, next concrete step first:
-1. Read CI and Codex on #473 `ae759f1`; on clean, ponytail ran, evals are not needed, merge it. Then, by 14:10 at the latest, one push on #472 by its agent: merge `origin/main`, merge this handover branch, `note_contact` (`api/domain/customers/contact.py`) must not move `last_contact_at` on a number with an objection, p95 in docs/01 to 50 ms and 75 ms. The GPU script takes that head at 14:19. If #473 is not through by 14:00, push #472 without it. Merge nothing else into `main` until #472 is in.
-2. After 14:50 read the GPU result on the head in `gpu/head`: compare with the recorded main runs (37/56 on `a9eddab`, false escalations 17.8 %) on identical case files only; 0 guessed, 0 unconfirmed, 0 missed are hard. docs/08 asks for two runs on `main` too, Maxi approved two passes in all, so name that limit or ask for two more.
-3. Merge #472, then #475, T-4.9, T-9.8 in that order, each after `origin/main`, CI and a clean review on its head. No `--delete-branch` where a PR stacks on the branch. Ultrareview candidates: #472, #473, Maxi's call.
-4. T-6.8, T-11.3, T-10.11 after #472. New agents, one brief each, with a scratch folder of their own.
-5. Maxi: the real zone list as `imports/zones.csv`, the `<offen>` marks, the complaint rules, a delivery slip on paper, whether the driver needs a phone number on the slip, a cancel button for an unreleased order, steps 3 to 9 of `printbridge/README.md`.
+1. Merge #475, #476, #477 in order, each after `origin/main`, CI and a clean review on its head. No `--delete-branch` where a PR stacks on the branch.
+2. Merge T-6.8, T-11.3, T-10.11 the same way; the later migration renumbers.
+3. A real-model run for the recognition evals of T-6.8 needs a start time from Maxi: about 13 minutes per pass.
+4. Maxi: the real zone list as `imports/zones.csv`, the `<offen>` marks, the complaint rules, a delivery slip on paper, whether the driver needs a phone number on the slip, a cancel button for an unreleased order, steps 3 to 9 of `printbridge/README.md`.
 
 Lessons:
 - Never `--delete-branch` on a PR with a PR on top: GitHub closed #469 and #470. Repair: push the old head back as the branch, reopen, PATCH the base, delete the branch.

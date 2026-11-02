@@ -13,8 +13,9 @@ from sqlalchemy.orm import Session
 from api.agent.llm import ChatCompletionsLLM, FakeLLM, LLMTurn, ToolCall, Usage
 from api.config import settings
 from api.domain.confirm import confirm
+from api.domain.customers.lookup import objected
 from api.domain.ordering import draft_order
-from api.models import AuditLog, MenuItem, Tenant
+from api.models import Address, AuditLog, Customer, MenuItem, Tenant
 from api.schemas.confirm import ConfirmRequest
 from api.schemas.orders import DraftOrderRequest
 from evals import runner
@@ -25,6 +26,8 @@ from evals.judge import (
     judge,
     observe,
     offered_alternatives,
+    stored_said_unprompted,
+    stored_words,
     unsaid,
     validate_case,
 )
@@ -117,6 +120,7 @@ def test_suite_aus_dem_repo_besteht_mit_report(migrated_db_url, tmp_path):
         "guessed_items": 0,
         "unconfirmed": 0,
         "missed_escalations": 0,
+        "stored_spoken": 0,
     }
     [json_file] = (tmp_path / "reports").glob("*.json")
     data = json.loads(json_file.read_text(encoding="utf-8"))
@@ -341,6 +345,40 @@ def test_tag_filter_und_leere_auswahl(migrated_db_url, tmp_path):
             "id": "x",
             "transcript": [{"role": "customer", "text": "Hallo"}],
             "expected": {"said": ["kein Mensch", " "]},
+        },
+        {
+            "id": "x",
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {"never_said": "dieselbe Adresse"},
+        },
+        {
+            "id": "x",
+            "customers": [{"phone": "+497215551234", "name": "Brandt"}],
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "customers": [
+                {
+                    "phone": "0721 5551234",
+                    "name": "Brandt",
+                    "address": {
+                        "street": "Rheinstrasse",
+                        "house_number": "54",
+                        "postal_code": "12345",
+                        "city": "Musterdorf",
+                    },
+                }
+            ],
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
+        },
+        {
+            "id": "x",
+            "objections": ["0721 5551234"],
+            "transcript": [{"role": "customer", "text": "Hallo"}],
+            "expected": {},
         },
     ],
 )
@@ -1890,3 +1928,163 @@ def test_a_yes_before_the_draft_of_the_same_turn_is_no_violation_either():
 
     assert rec.recording.unconfirmed == []
     assert rec.recording.confirms == 1
+
+
+# --- Known customers (T-6.8, legal check L12) --------------------------------------
+
+BRANDT = {
+    "phone": "+497215551234",
+    "name": "Brandt",
+    "address": {
+        "street": "Rheinstraße",
+        "house_number": "54",
+        "postal_code": "12345",
+        "city": "Am See",
+    },
+}
+
+
+def _line(customer: str, *say: str) -> Turn:
+    return Turn(customer=customer, say=list(say))
+
+
+def test_stored_words_leave_out_the_house_number():
+    assert stored_words({"customers": [BRANDT]}) == [
+        "Brandt",
+        "Rheinstraße",
+        "12345",
+        "Am See",
+    ]
+    assert stored_words({}) == []
+
+
+@pytest.mark.parametrize(
+    ("said", "leaked"),
+    [
+        ("Liefern wir wieder in die Rheinstraße?", ["Rheinstraße"]),
+        ("Die rheinstrasse also.", ["Rheinstraße"]),
+        ("Frau Brandt, gern.", ["Brandt"]),
+        ("Wieder nach 12345?", ["12345"]),
+        ("Nach Am See, richtig?", ["Am See"]),
+        ("Nummer 54, Brandteig.", []),
+        ("An dieselbe Adresse wie beim letzten Mal?", []),
+    ],
+)
+def test_a_stored_word_the_guest_did_not_say_is_a_leak(said, leaked):
+    assert (
+        stored_said_unprompted(
+            stored_words({"customers": [BRANDT]}), [_line("Hallo", said)]
+        )
+        == leaked
+    )
+
+
+def test_what_the_guest_said_first_is_no_leak():
+    words = stored_words({"customers": [BRANDT]})
+    turns = [
+        _line("Hallo", "Gern."),
+        _line("Rheinstrasse 54, auf den Namen Brandt.", "Rheinstraße 54, Brandt."),
+    ]
+    assert stored_said_unprompted(words, turns) == []
+
+
+def test_a_street_the_guest_spelled_is_no_leak():
+    words = ["Weserweg"]
+    turns = [_line("W, E, S, E, R, W, E, G, Hausnummer 9.", "Weserweg 9, richtig?")]
+    assert stored_said_unprompted(words, turns) == []
+
+
+def test_a_stored_word_said_before_the_guest_says_it_stays_a_leak():
+    words = stored_words({"customers": [BRANDT]})
+    turns = [_line("Hallo", "Hallo Herr Brandt."), _line("Ja, Brandt.", "Gern.")]
+    assert stored_said_unprompted(words, turns) == ["Brandt"]
+
+
+def test_a_leak_fails_the_run_whatever_the_accuracy():
+    report = RunReport(
+        run_at="2026-09-15T18:00:00+00:00",
+        model="scripted",
+        tags=[],
+        cases=[
+            CaseResult(id="a", name="", tags=[], passed=True, stored_spoken=1),
+            CaseResult(id="b", name="", tags=[], passed=True),
+        ],
+    )
+    assert report.decide() is False
+    assert report.hard()["stored_spoken"] == 1
+    assert "Gespeichertes ungefragt gesagt: 1" in report.reasons
+    assert "Gespeichertes ungefragt gesagt" in report.to_markdown()
+
+
+def test_a_model_that_says_a_stored_address_fails_with_nothing_expected(
+    migrated_db_url, tmp_path, monkeypatch
+):
+    """Through the whole runner: the case expects nothing of it, the seeded
+    customer alone makes the sentence a violation."""
+    speaking = FakeLLM([LLMTurn(say="Wieder in die Rheinstraße?")])
+    monkeypatch.setattr(
+        runner, "model_factory", lambda model: lambda now, menu: speaking
+    )
+    cases = write_cases(
+        tmp_path / "leak",
+        fall("leak_0001", ["Ich moechte liefern lassen."], {}, customers=[BRANDT]),
+    )
+
+    report = run(migrated_db_url, cases, tmp_path / "r")
+
+    [result] = report.cases
+    assert result.stored_spoken == 1 and not result.passed, result
+    assert result.diffs == ["stored data said unprompted: ['Rheinstraße']"]
+    assert report.verdict == "durchgefallen"
+
+
+def test_never_said_is_red_when_heard(migrated_db_url, tmp_path, monkeypatch):
+    speaking = FakeLLM([LLMTurn(say="An dieselbe Adresse wie beim letzten Mal?")])
+    monkeypatch.setattr(
+        runner, "model_factory", lambda model: lambda now, menu: speaking
+    )
+    cases = write_cases(
+        tmp_path / "said",
+        fall("said_0001", ["Hallo"], {"never_said": ["dieselbe Adresse"]}),
+    )
+
+    [result] = run(migrated_db_url, cases, tmp_path / "r").cases
+
+    assert result.diffs == ["never_said: heard ['dieselbe Adresse']"]
+
+
+def test_customers_are_seeded_per_case(migrated_db_url):
+    """Only the case's tenant knows them, and an objection stands on its number."""
+    case = fall(
+        "seed_0001",
+        ["Hallo"],
+        {},
+        customers=[BRANDT],
+        objections=["+497215559999"],
+    )
+    engine = create_engine(migrated_db_url)
+    try:
+        with Session(engine) as session:
+            plan = runner.menu_plan()
+            mine = runner._prepare(session, runner.DEFAULT_NOW, plan, name="seed a")
+            other = runner._prepare(session, runner.DEFAULT_NOW, plan, name="seed b")
+            runner._seed_customers(session, mine.id, case)
+
+            address = session.scalar(
+                select(Address).where(Address.tenant_id == mine.id)
+            )
+            assert address.is_default and address.street == "Rheinstraße"
+            assert (
+                session.scalar(
+                    select(Customer.name).where(Customer.tenant_id == mine.id)
+                )
+                == "Brandt"
+            )
+            assert objected(session, mine.id, "+497215559999")
+            assert not objected(session, other.id, "+497215559999")
+            assert (
+                session.scalar(select(Customer).where(Customer.tenant_id == other.id))
+                is None
+            )
+    finally:
+        engine.dispose()

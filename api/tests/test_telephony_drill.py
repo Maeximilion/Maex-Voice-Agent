@@ -33,6 +33,9 @@ class Stage(drill.Drill):
         self.prints: dict[str, str | Exception] = {}
 
     def compose(self, *args: str) -> str:
+        return self.docker(*args)
+
+    def docker(self, *args: str) -> str:
         self.commands.append(args)
         joined = " ".join(args)
         out = next((out for key, out in self.prints.items() if key in joined), "")
@@ -313,6 +316,151 @@ def test_voice_is_started_again_when_the_team_never_rings(tmp_path, monkeypatch)
     with pytest.raises(drill.DrillError):
         drill.drill_voice_down(stage)
     assert stage.commands[-1] == ("up", "-d", "--wait", "voice")
+
+
+def networks_stage(tmp_path, **prints: str) -> Stage:
+    """A stack whose walls hold, unless a test says otherwise. A key names a
+    piece of the command, the first that matches answers."""
+    stage = Stage(tmp_path, {})
+    stage.prints = {
+        "hostname -i": "172.30.0.2\n",
+        "ip route": "172.30.0.0/16 dev eth0 scope link\n",
+        "voice 8001": "reached\n",
+        **{key.replace("_", " "): value for key, value in prints.items()},
+        "5432": "no\n",
+    }
+    return stage
+
+
+def verdicts(stage: Stage) -> list[bool]:
+    return [ok for _, ok, _ in drill.drill_networks(stage)]
+
+
+def test_walls_that_hold_pass(tmp_path):
+    stage = networks_stage(tmp_path)
+    assert verdicts(stage) == [True, True, True]
+    tried = {" ".join(c) for c in stage.commands if "sh" in c}
+    assert any("nc -z -w 2 db 5432" in c for c in tried)
+    assert any("nc -z -w 2 172.30.0.2 5432" in c for c in tried)
+
+
+def test_an_asterisk_that_lost_voice_fails(tmp_path):
+    assert verdicts(networks_stage(tmp_path, voice_8001="no\n"))[0] is False
+
+
+@pytest.mark.parametrize("host", ["db_5432", "172.30.0.2_5432"])
+def test_a_database_asterisk_can_open_fails_by_name_and_by_address(tmp_path, host):
+    stage = networks_stage(tmp_path, **{host: "reached\n"})
+    assert verdicts(stage)[1] is False
+
+
+def test_a_database_with_a_way_out_fails(tmp_path):
+    routes = "default via 172.30.0.1 dev eth0\n172.30.0.0/16 dev eth0\n"
+    assert verdicts(networks_stage(tmp_path, ip_route=routes))[2] is False
+
+
+def test_every_address_of_the_database_is_tried(tmp_path):
+    """Two addresses on one `nc` line would be a bad call, which reads as "no"."""
+    stage = networks_stage(tmp_path, **{"hostname -i": "172.30.0.2 fd00::2\n"})
+    assert verdicts(stage) == [True, True, True]
+    stage = networks_stage(
+        tmp_path, **{"hostname -i": "172.30.0.2 fd00::2\n", "fd00::2 5432": "reached\n"}
+    )
+    assert verdicts(stage)[1] is False
+
+
+@pytest.mark.parametrize("empty", ["hostname -i", "ip route"])
+def test_a_check_that_saw_nothing_is_no_pass(tmp_path, empty):
+    """An empty address tries nothing, and an empty list has no default route."""
+    stage = networks_stage(tmp_path)
+    stage.prints[empty] = ""
+    assert False in verdicts(stage)
+
+
+def network_commands(stage: Stage) -> list[tuple[str, ...]]:
+    return [c for c in stage.commands if c[0] == "network"]
+
+
+def test_voice_is_cut_before_the_call_and_put_back_under_its_name(tmp_path):
+    stage = Stage(tmp_path, {115: {"router": [*router(115, "dials"), TEAM_RINGS]}})
+    stage.prints["ps -q voice"] = "abc123\n"
+
+    [(_, ok, detail)] = drill.drill_cut_from_asterisk(stage)
+
+    assert ok, detail
+    network = f"{stage.project}_telephony"
+    assert network_commands(stage) == [
+        ("network", "disconnect", network, "abc123"),
+        ("network", "connect", "--alias", "voice", network, "abc123"),
+    ]
+    placed = next(
+        i for i, c in enumerate(stage.commands) if "channel originate" in str(c)
+    )
+    assert stage.commands.index(network_commands(stage)[0]) < placed
+
+
+def test_a_cut_in_the_middle_of_a_call_waits_for_the_answer_first(tmp_path):
+    lines = [*router(116, "answered"), TEAM_RINGS]
+    stage = Stage(tmp_path, {116: {"router": lines}})
+
+    [(_, ok, detail)] = drill.drill_cut_from_asterisk_mid_call(stage)
+
+    assert ok and detail.endswith("from the cut"), detail
+    assert len(network_commands(stage)) == 2
+
+
+def test_the_database_drills_cut_the_database_network(tmp_path):
+    stage = Stage(tmp_path, {117: {"router": [*router(117, "answered"), TEAM_RINGS]}})
+    drill.drill_cut_from_database_mid_call(stage)
+    assert network_commands(stage)[0][2] == f"{stage.project}_backend"
+
+
+def test_a_cut_voice_is_put_back_when_the_team_never_rings(tmp_path, monkeypatch):
+    """Or every later drill would find it cut off."""
+    monkeypatch.setattr(drill, "TEAM_LIMIT_SECONDS", -9.9)
+    stage = Stage(tmp_path, {118: {"router": router(118, "dials")}})
+
+    with pytest.raises(drill.DrillError):
+        drill.drill_cut_from_database(stage)
+    assert network_commands(stage)[-1][1] == "connect"
+
+
+def test_the_caller_of_the_database_cut_presses_keys():
+    """Without a turn nothing asks the database in the middle of the call."""
+    dialplan = (drill.CONFIG_DIR / "drill" / "extensions.conf").read_text()
+    keys = next(line for line in dialplan.splitlines() if "?keys)" in line)
+    assert '"117"' in keys
+
+
+def test_the_database_cut_mid_call_runs_inside_the_opening_hours(tmp_path, monkeypatch):
+    """Set back whatever fails, as for the team's drills."""
+    monkeypatch.setattr(drill, "TEAM_LIMIT_SECONDS", -9.9)
+    stage = Stage(tmp_path, {117: {"router": router(117, "answered")}})
+
+    with pytest.raises(drill.DrillError):
+        drill.drill_cut_from_database_mid_call(stage)
+    days = [c[1] for c in stage.commands if c[0] == "sql"]
+    assert days == [drill.OPEN_ALL_DAY, drill.SET_THE_DAY_BACK]
+
+
+def test_the_cut_drills_are_in_the_run_and_the_way_back_comes_last():
+    run = [scenario for _, scenario in drill.SCENARIOS]
+    assert {
+        drill.drill_networks,
+        drill.drill_cut_from_asterisk,
+        drill.drill_cut_from_asterisk_mid_call,
+        drill.drill_cut_from_database_mid_call,
+        drill.drill_cut_from_database,
+    } <= set(run)
+    assert run[-1] is drill.drill_back_after_the_cuts
+
+
+def test_the_way_back_fails_when_the_team_took_the_call(tmp_path):
+    lines = [*router(119, "dials", "answered"), TEAM_RINGS]
+    lines += router(119, "caller leg ended dialstatus=ANSWER")
+    stage = Stage(tmp_path, {119: {"router": lines}})
+    [(_, ok, _)] = drill.drill_back_after_the_cuts(stage)
+    assert not ok
 
 
 def test_a_secret_in_a_containers_output_fails(tmp_path):

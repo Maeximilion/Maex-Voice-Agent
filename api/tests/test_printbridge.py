@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from api.config import settings
 from api.db import get_db
+from api.domain.ordering.board import cancel_order, version_of
 from api.main import app
 from api.models import Order, OutboxEvent
 from api.tests.test_domain_confirm_order import _confirm, _draft, _mode
@@ -160,6 +161,41 @@ def test_korrektur_steht_oben_mit_grund_und_stand():
     assert text.index("KORREKTUR") < text.index("ABHOLUNG")
     assert "Grund: falsche Menge" in text
     assert "Stand 2" in text
+
+
+CANCEL_NOTE: dict[str, Any] = {
+    **TICKET,
+    "revision": 1,
+    "correction_reason": "cancelled",
+    "note": "WICHTIG: Keine Sesam. Grund: Allergie",
+}
+
+
+def test_a_cancel_note_says_so_at_both_ends_and_never_asks_to_type_it_in():
+    text = render(CANCEL_NOTE).decode("cp858")
+    assert text.count("STORNIERT") == 2
+    assert text.index("STORNIERT") < text.index("ABHOLUNG A17")
+    assert text.rindex("STORNIERT") > text.index("Stand 1")
+    assert "Nicht in die Kasse eingeben." in text
+    assert "Schon eingegeben: in der Kasse stornieren." in text
+    assert "Ersetzt den vorigen Bon dieser Bestellung." in text
+    for gone in ("NICHT IN KASSE", "Bitte in die Kasse eingeben", "KORREKTUR"):
+        assert gone not in text
+
+
+def test_a_cancel_note_names_the_order_and_leaves_out_what_nobody_needs():
+    """It finds the slip it voids. Nobody cooks from it, so no allergy goes on
+    paper a second time, and nobody drives to the address."""
+    ticket = {
+        **CANCEL_NOTE,
+        "type": "delivery",
+        "address": {"street": "Hauptstraße", "house_number": "12a"},
+    }
+    text = render(ticket).decode("cp858")
+    assert "LIEFERUNG A17" in text and "Name: Müller" in text
+    assert "2x 23" in text and "Summe 25,80 EUR" in text
+    for gone in ("Keine Sesam", "Keine Erdnüsse", "Hauptstraße", "ADRESSE FEHLT"):
+        assert gone not in text
 
 
 def test_lange_zeilen_werden_umbrochen():
@@ -451,6 +487,23 @@ def test_durchlauf_druckt_und_die_karte_wird_normal(setup, tmp_path):
     assert run_once(setup.server, printer, log) == 1
     assert b"ABHOLUNG A" in printer.bons[0]
     assert setup.handover() == "sent"
+    assert run_once(setup.server, printer, log) == 0
+
+
+def test_cancelling_prints_a_note_past_the_print_log(setup, tmp_path):
+    """The log holds each order and revision once: the note needs its own."""
+    printer = FakePrinter()
+    log = PrintedLog(tmp_path / "state.json")
+    assert run_once(setup.server, printer, log) == 1
+
+    with Session(setup.engine) as s:
+        order = s.get_one(Order, setup.order_id)
+        cancel_order(s, order.tenant_id, order.id, version_of(s, order))
+    setup.make_due()
+
+    assert run_once(setup.server, printer, log) == 1
+    assert b"STORNIERT" in printer.bons[1]
+    assert b"NICHT IN KASSE" not in printer.bons[1]
     assert run_once(setup.server, printer, log) == 0
 
 

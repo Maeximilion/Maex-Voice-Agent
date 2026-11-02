@@ -1,0 +1,65 @@
+{
+  "id": "lieferung_0029",
+  "name": "House number corrected at the read-back",
+  "tags": [
+    "lieferung",
+    "adresse",
+    "korrektur",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Gartenweg 14, 12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Lorenz."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, die Hausnummer ist 41."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "13",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Lorenz",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Gartenweg",
+      "house_number": "41",
+      "postal_code": "12345",
+      "city": "Musterdorf"
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery",
+    "readback": "Gartenweg 41"
+  }
+}

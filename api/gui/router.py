@@ -641,6 +641,26 @@ def register_mark_tap(
     )
 
 
+@router.post(
+    "/bestellungen/{order_id}/storniert/{version}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def cancel_order_tap(
+    request: Request,
+    order_id: uuid.UUID,
+    version: str,
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """ "Storniert": the button asks first (hx-confirm, docs/06 §1 rule 6)."""
+    return _order_tap(
+        request,
+        session,
+        lambda t: order_board.cancel_order(session, t, order_id, version),
+    )
+
+
 async def _form(request: Request) -> dict[str, str]:
     """Formularfelder eines HTMX-Taps (application/x-www-form-urlencoded).
 

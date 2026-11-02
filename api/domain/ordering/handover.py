@@ -55,6 +55,9 @@ FAILED = "failed"
 ACTOR = "system"
 ACTION_HANDOVER_SENT = "order.handover_sent"
 ACTION_HANDOVER_FAILED = "order.handover_failed"
+WITHDRAWN = "not printed: order cancelled"
+# Starts the `last_error` of a superseded ticket that may have printed.
+UNANSWERED = "no answer: "
 
 
 def _revision(event: OutboxEvent) -> int:
@@ -81,26 +84,65 @@ def _newest_revision(session: Session, event: OutboxEvent) -> int | None:
     )
 
 
+def _tickets_of(order: Order) -> tuple:
+    return (
+        OutboxEvent.tenant_id == order.tenant_id,
+        OutboxEvent.event_type.in_(KITCHEN),
+        OutboxEvent.payload["order_id"].astext == str(order.id),
+    )
+
+
 def may_hold_a_slip(session: Session, order: Order) -> bool:
     """May the bridge have printed a slip of this order? A ticket it picked up
     whose pickup got no error back: acked as printed, or never answered (the
     network went down after the print). A reported print error, a ticket never
-    picked up and one superseded before its print are no slip. The card's
-    state cannot tell: the watchdog turns it red after a lost ack, and a newer
-    ticket's error turns it red while an older slip is at the register."""
+    picked up and one superseded before its print are no slip; one superseded
+    while its answer was open is. The card's state cannot tell: the watchdog
+    turns it red after a lost ack, and a newer ticket's error turns it red while
+    an older slip is at the register."""
     return bool(
         session.scalar(
             select(
                 exists().where(
-                    OutboxEvent.tenant_id == order.tenant_id,
-                    OutboxEvent.event_type.in_(KITCHEN),
-                    OutboxEvent.payload["order_id"].astext == str(order.id),
+                    *_tickets_of(order),
                     OutboxEvent.attempts > 0,
-                    OutboxEvent.last_error.is_(None),
+                    or_(
+                        OutboxEvent.last_error.is_(None),
+                        OutboxEvent.last_error.startswith(UNANSWERED),
+                    ),
                 )
             )
         )
     )
+
+
+def withdraw_tickets(session: Session, order: Order, now: datetime) -> bool:
+    """Take back the tickets of a cancelled order that nobody printed. True when
+    a slip may exist all the same. Does not commit; the caller holds the order.
+
+    A ticket never picked up goes, and so does one with a reported print error:
+    still due, it would print the order once the printer is back. One picked up
+    and not answered stays: the note's revision passes it over at the next pickup.
+
+    SKIP LOCKED as in `send_ticket`: an answer takes the ticket first and then
+    the order, so waiting here could deadlock with it. A ticket a pickup holds
+    right now is on its way out, so a ticket left pending counts as a slip.
+    """
+    pending = (*_tickets_of(order), OutboxEvent.status == PENDING)
+    unprinted = session.scalars(
+        select(OutboxEvent)
+        .where(
+            *pending,
+            or_(OutboxEvent.attempts == 0, OutboxEvent.last_error.is_not(None)),
+        )
+        .with_for_update(skip_locked=True)
+    ).all()
+    for event in unprinted:
+        mark_sent(event, now, count_attempt=False)
+        event.last_error = WITHDRAWN
+    session.flush()
+    held = bool(session.scalar(select(exists().where(*pending))))
+    return held or may_hold_a_slip(session, order)
 
 
 def _is_current(session: Session, event: OutboxEvent) -> bool:
@@ -196,8 +238,11 @@ def _audit(
 
 def _supersede(event: OutboxEvent, newest: int, now: datetime) -> None:
     """Ueberholter Bon: erledigt, ohne Druck und ohne Alarm."""
+    # Picked up and never answered: it may lie at the register (`may_hold_a_slip`).
+    unanswered = event.attempts > 0 and event.last_error is None
     mark_sent(event, now, count_attempt=False)
-    event.last_error = f"nicht gedruckt: ueberholt von Revision {newest}"
+    head = UNANSWERED if unanswered else "nicht gedruckt: "
+    event.last_error = f"{head}ueberholt von Revision {newest}"
 
 
 def _local_times(session: Session, tenant_id: uuid.UUID, now: datetime) -> tuple:

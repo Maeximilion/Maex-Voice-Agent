@@ -197,6 +197,7 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 | `voice` is down or refuses the media connection | the dialplan | the dialplan dials the team number |
 | A crash in the middle of a call, or a transfer asked for by the core | the dialplan asks `voice` after the leg ends; only an explicit "done" hangs up | the dialplan dials the team number |
 | Model, database, a tool | the existing paths in `agent/loop.py` and `telephony/handler.py` | `TelephonyPort.transfer` |
+| A Docker network between `voice` and Asterisk or the database is cut | the dialplan, Asterisk's pings, or the timeouts of the phone line's database sessions (§6) | the dialplan dials the team number |
 | The team does not pick up | the dial status | at another number of the list (`TRANSFER_TARGETS`): `TEAM_PHONE` once (T-10.13); at `TEAM_PHONE`: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8) |
 | Asterisk or the whole machine is down | test phase: the router, the AI telephone is simply not registered. Operation: the trunk | test phase: the team telephones ring as before. Operation: the trunk's forwarding rules |
 
@@ -330,6 +331,29 @@ is rung (Maxi, 20.10.2026). The outage paths (paused, shadow, `voice` down, a fa
 | The same on a paused line | the card, nothing played, the call never answered |
 | `voice` is stopped while the team telephone rings unanswered | no card, the caller hears to call again, from the file |
 | The files Asterisk plays | hold the code's two sentences |
+
+**Built with T-9.8 (02.11.2026): separate networks, and a cut one.** Asterisk stands on
+`telephony` with `voice` alone and the database on `backend`, which is internal in production
+(docs/13 §3). Networks bring a way to fail no row above had: a stopped container refuses or leaves
+the name lookup, a cut network takes the packets and answers nothing, so no FIN and no RST reach
+anybody. The drill file keeps the production layout, and the drills cut `voice` off with `docker
+network disconnect`, without touching either container:
+
+| Drill | Result |
+|---|---|
+| `voice` cut off from Asterisk before a call | "voice not reached", the team rang after 5.3 s |
+| `voice` cut off from Asterisk in the middle of a call | Asterisk's pings notice, as for a freeze; the team rang 8.4 s after the cut |
+| `voice` cut off from the database in the middle of a call, inside the opening hours | the caller's keys start a turn that finds a silent database, "call failed, handing it to the team", ending `transfer`; the team rang 12.4 s after the cut, within the limit of 30 s, though it is the slowest of these |
+| `voice` cut off from the database before a call | "call could not be opened, handing it to the team"; the team rang after 8.3 s |
+| The networks are back | the next call is the AI's: answered, asked, goodbye, no team ring, no restart of `voice` |
+| Tried from inside Asterisk | `voice:8001` connects; `db:5432` does not, by name or by address |
+| The database's routes | no default route, on the internal network |
+
+Outside the opening hours the same cut mid-call ended the same way (12.5 s on 02.11.2026, a run
+before the drill was fixed to an open day): a card cannot be written then either, and the outage
+path rings the team at any hour. Not covered: the access's side of `telephony`, where the stand-in
+router stands next to Asterisk and no real router or trunk (T-10.2, T-10.12), and a call on this
+layout on the server, which does not exist yet.
 
 Numbers per run: §11. **The access's addresses:** the ACL and `match` hold the addresses of
 `ACCESS_HOST`, its SRV targets and the names or addresses in `ACCESS_ALSO`. The pilot's router
@@ -697,10 +721,10 @@ registered) until `... up -d --force-recreate wireguard asterisk` (§12).
 | Start folder | the repository folder in the Ubuntu home directory (or a worktree of it), Ubuntu terminal |
 | The one command | `python3 -m scripts.voice_drill` (about 2 minutes, the first run longer for the image; `--dry-run` prints the steps, `--keep` leaves the containers running, `--down` stops them again) |
 | Maxi has to have ready | Docker Desktop running with the WSL integration. No account, no `.env` entry, no sudo |
-| What the result looks like | one line `pass` or `FAIL` per point, "15 of 15 points passed", exit code 0; `deploy/asterisk/drill-run/report.json` holds the same list, `drill.log` next to it the output of the containers |
+| What the result looks like | one line `pass` or `FAIL` per point, "35 of 35 points passed", exit code 0; `deploy/asterisk/drill-run/report.json` holds the same list, `drill.log` next to it the output of the containers |
 
-What it starts (`deploy/asterisk/docker-compose.drill.yml`, one Compose project per run folder, own
-network, no host port): the service `asterisk` of `docker-compose.yml` as it is, so the drills
+What it starts (`deploy/asterisk/docker-compose.drill.yml`, one Compose project per run folder, its
+own networks laid out as in production, no host port): the service `asterisk` of `docker-compose.yml` as it is, so the drills
 exercise the product's configuration; the service `voice` with the drill engines, a model address
 that does not exist and a throwaway database, migrated and seeded; and a stand-in for the router
 (`deploy/asterisk/drill/`), a second Asterisk that is the registrar the AI telephone registers at,
@@ -795,6 +819,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 | 28.10.2026 | T-10.1 step 2 | `deploy/asterisk/docker-compose.line.yml` on the workbench: the product's Asterisk 22 registered at the pilot's router (FRITZ!Box 6591 Cable) as an IP telephone on the test number, through a WireGuard tunnel of its own; the probe in place of `voice`. Maxi called from his mobile, twice | **Go for step 2 except two calls at once, which is open.** Before the tunnel: registered, but every call ended at the router with 408 (the INVITE went to the address translation of Docker and WSL and stopped there), the caller heard "not reachable". With the tunnel: registered in 6 to 8 s, Contact the tunnel address, 300 s. The router sent calls from its public address: refused by the ACL (403) until `ACCESS_ALSO`, the answer sent past the tunnel until it was routed through it. Then both calls were answered with the tone, Maxi heard his echo. Call 1: 27.9 s of audio in, frames every 20.0 ms on average, longest gap 42 ms, caller number arrived (national form). Call 2: 21.2 s, longest gap 129 ms, keys 1 and 2 arrived as `DTMF_END`. Above the probe's floor 3.7 s and 3.6 s (quiet speech, §10). Not measured: two calls at once, delay from mouth to ear, transfer |
 | 29.10.2026 | T-10.7 | `python -m evals.voice` in the speech image on the workbench's graphics card: the 56 cases of `evals/cases/` spoken by `kerstin-low` (steady) through the modelled line, heard by the service's ear (Whisper large-v3-turbo behind the segmenting ear), no key terms | **Hard 0 with both models, every read-back checked.** Scripted: cases as text 56/56, as heard 10/56; qwen3.6-35b-a3b: 29/56 and 14/56. Numbers of single-number lines right 8, silently wrong 1 ("Zweimal die S 12" heard as "S2" and taken), asked 7 of 16; dish names 1 of 4 by letters. No speech in 7 lines ("Ja.", "Sesam.", "Keine.", "Nein, danke.", "... hallo ..."). Line noise heard as no speech; noise variants that got to their read-back 3/39 (scripted) and 5/39. Medians: agent's mouth to the first audio of a read-back 0.06 s, ear after the last frame 0.15 s (max 2.8 s), core per turn with setup 2.5 s on qwen. The ear's miss after silence, §12 |
 | 29.10.2026 | T-10.7, line with noise | the same run on a line that carries band-limited noise of about -55 dBFS around and under every sentence (`speech_bench.on_the_line`) instead of digital silence; scripted model; engine tests in the speech image | **Hard 0, every read-back checked (3/3).** Lines without speech 2 instead of 7 ("Keine.", "... hallo ..."); single-number lines 8 right, 3 silently wrong, 5 asked of 16, the wrong ones all numbers with a letter ("S 12", "Sushi zwölf", "45g" heard as "5 und 40 D", §12 "numbers with a letter"); cases as heard 9/56. Engine tests 9/9: the answer after 4 and 10 s heard in `thorsten-medium` and `thorsten-high`, the quiet line alone no speech. The detector unchanged |
+| 02.11.2026 | T-9.8 | `python3 -m scripts.voice_drill` on the workbench on the separate networks, `backend` internal as in production, with eight new points and `voice` cut off by `docker network disconnect` | **35 of 35 points.** The 27 points of before all passed. Cut from Asterisk: the team rang after 5.3 s, 8.4 s after a cut mid-call. Cut from the database: after 8.3 s, 12.4 s after a cut mid-call. The next call was the AI's. Asterisk reached `voice` and not the database, by name or by address; the database has no default route. The production files themselves: docs/13 §3 |
 
 ---
 
