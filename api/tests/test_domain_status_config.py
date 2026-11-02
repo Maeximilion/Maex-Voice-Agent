@@ -233,6 +233,86 @@ def test_ohne_service_config_klare_meldung(session):
         switches.pause_ai(session, uuid.uuid4())
 
 
+def _wait_audits(session, tenant_id) -> list[dict]:
+    rows = session.scalars(
+        select(AuditLog)
+        .where(AuditLog.tenant_id == tenant_id)
+        .where(AuditLog.action == switches.ACTION_WAIT)
+    ).all()
+    return [row.payload for row in rows]
+
+
+def test_a_typed_wait_is_taken_and_stands_in_the_audit(session, tenant_id):
+    """T-3.9: 17 is not on the grid of the stepper, and the team may want it."""
+    before = session.get(ServiceConfig, tenant_id).pickup_wait_minutes
+
+    config = switches.set_wait(session, tenant_id, "pickup", 17)
+
+    assert config.pickup_wait_minutes == 17
+    assert _wait_audits(session, tenant_id)[-1] == {
+        "service": "pickup",
+        "typed": True,
+        "from": before,
+        "to": 17,
+    }
+
+
+def test_a_typed_wait_touches_only_its_service(session, tenant_id):
+    before = session.get(ServiceConfig, tenant_id).pickup_wait_minutes
+
+    config = switches.set_wait(session, tenant_id, "delivery", 75)
+
+    assert config.delivery_wait_minutes == 75
+    assert config.pickup_wait_minutes == before
+
+
+@pytest.mark.parametrize(
+    "minutes", [switches.MIN_WAIT_MINUTES, switches.MAX_WAIT_MINUTES]
+)
+def test_a_typed_wait_may_stand_on_a_limit(session, tenant_id, minutes):
+    config = switches.set_wait(session, tenant_id, "pickup", minutes)
+
+    assert config.pickup_wait_minutes == minutes
+
+
+@pytest.mark.parametrize(
+    "minutes",
+    [0, -5, switches.MIN_WAIT_MINUTES - 1, switches.MAX_WAIT_MINUTES + 1],
+)
+def test_a_typed_wait_outside_the_limits_changes_nothing(session, tenant_id, minutes):
+    before = session.get(ServiceConfig, tenant_id).pickup_wait_minutes
+
+    with pytest.raises(InvalidInput) as refused:
+        switches.set_wait(session, tenant_id, "pickup", minutes)
+
+    assert "10 bis 180 Minuten" in refused.value.say
+    session.rollback()
+    assert session.get(ServiceConfig, tenant_id).pickup_wait_minutes == before
+    assert _wait_audits(session, tenant_id) == []
+
+
+def test_the_same_wait_typed_again_writes_nothing(session, tenant_id):
+    switches.set_wait(session, tenant_id, "pickup", 17)
+
+    switches.set_wait(session, tenant_id, "pickup", 17)
+
+    assert len(_wait_audits(session, tenant_id)) == 1
+
+
+def test_a_typed_wait_survives_a_restart(engine, session, tenant_id):
+    """Maxi, 02.11.2026: set 15 and it stays 15. A new session reads the database,
+    which is all a restarted process has."""
+    switches.set_wait(session, tenant_id, "pickup", 15)
+
+    with Session(engine) as restarted:
+        assert restarted.get(ServiceConfig, tenant_id).pickup_wait_minutes == 15
+
+
+def test_an_unknown_service_is_refused(session, tenant_id):
+    with pytest.raises(InvalidInput):
+        switches.set_wait(session, tenant_id, "dinein", 30)
+
+
 def test_gleichzeitige_taps_gehen_nicht_verloren(engine, session, tenant_id):
     """Zwei Tablets tippen gleichzeitig "Wartezeit Abholung +15": das ergibt +30, nicht +15."""
     config = session.get(ServiceConfig, tenant_id)
