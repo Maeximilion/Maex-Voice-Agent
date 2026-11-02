@@ -6,7 +6,8 @@ Zweck : Das Board ist eine Ableitung. Waehrend der Arbeit fasst es niemand an;
         docs/07_WORKPACKAGES.md passt, und meldet die Abweichungen.
 Aufruf: python scripts/project_report.py [--fix] [--archive]
         Ohne Schalter wird nur gelesen und berichtet (Trockenlauf).
-        --fix      setzt Abgeschlossenes auf Done, Offenes in Arbeit auf In progress,
+        --fix      setzt Abgeschlossenes auf Done, Offenes auf In review, In progress
+                   oder Blocked,
                    traegt leere Felder nach (Start, Ziel, Iteration, Quarter) und
                    haengt Iterationen an, bevor die letzte endet - taeglich und bei
                    jedem Ereignis an einem Pull Request oder Issue (project-sync.yml)
@@ -188,6 +189,19 @@ mutation($projectId: ID!, $itemId: ID!) {
 # Bericht still danebenliegen, darum wird normalisiert statt gleichgesetzt.
 IN_PROGRESS_NAMES = frozenset({"in progress", "in arbeit"})
 DONE_NAMES = frozenset({"done", "fertig", "erledigt"})
+IN_REVIEW_NAMES = frozenset({"in review"})
+BLOCKED_NAMES = frozenset({"blocked"})
+STATUS_NAMES = {
+    "Todo": frozenset({"todo"}),
+    "Blocked": BLOCKED_NAMES,
+    "In progress": IN_PROGRESS_NAMES,
+    "In review": IN_REVIEW_NAMES,
+    "Done": DONE_NAMES,
+}
+
+# Mirrors the blocked state of docs/07_WORKPACKAGES.md, the one status that is also
+# a label (docs/16_GITHUB_PROJECT.md section 3). It wins over every other open state.
+BLOCKED_LABEL = "status: blocked"
 
 # Das Label des Entscheidungs-Issues (scripts/decision_issue.py). Das Issue landet
 # ueber die automatische Aufnahme selbst auf dem Board; wieder geoeffnet steht es auf
@@ -250,6 +264,11 @@ class Item:
     @property
     def is_in_progress(self) -> bool:
         return _normalized(self.status) in IN_PROGRESS_NAMES
+
+    @property
+    def is_active(self) -> bool:
+        """Someone is on it: being worked on or waiting for its review."""
+        return self.is_in_progress or _normalized(self.status) in IN_REVIEW_NAMES
 
     @property
     def is_done(self) -> bool:
@@ -496,13 +515,12 @@ def find_issues(
         "In Arbeit, aber ohne Iteration": [
             item
             for item in board
-            if item.is_in_progress and not item.fields.get("Iteration")
+            if item.is_active and not item.fields.get("Iteration")
         ],
         f"In Arbeit, seit {IN_PROGRESS_STALE_AFTER_DAYS} Tagen ohne Bewegung": [
             item
             for item in board
-            if item.is_in_progress
-            and item.age_days(now) >= IN_PROGRESS_STALE_AFTER_DAYS
+            if item.is_active and item.age_days(now) >= IN_PROGRESS_STALE_AFTER_DAYS
         ],
         f"Fertig, aelter als {DONE_ARCHIVE_AFTER_DAYS} Tage (Archiv-Kandidat)": [
             item
@@ -601,20 +619,30 @@ def items_to_mark_done(items: list[Item]) -> list[Item]:
     ]
 
 
-def items_to_mark_in_progress(items: list[Item]) -> list[Item]:
-    """Open work that the board still shows as Todo (or without status): an open
-    pull request, or an open issue that an open pull request closes. Never an item
-    on Done: an open item on Done is drift for a human, not for this run."""
-    return [
-        item
-        for item in items
-        if not item.is_archived
-        and not item.is_maintenance
-        and item.state == "OPEN"
-        and not item.is_in_progress
-        and not item.is_done
-        and (item.kind == "PullRequest" or item.has_open_pr)
-    ]
+def wanted_status(item: Item) -> str | None:
+    """The status an open item should have, None to leave it alone: an issue set to
+    In progress by hand stays. Never an item on Done: an open item on Done is drift
+    for a human, not for this run."""
+    if item.is_archived or item.is_maintenance or item.state != "OPEN" or item.is_done:
+        return None
+    if BLOCKED_LABEL in item.labels:
+        return "Blocked"
+    if item.kind == "PullRequest":
+        return "In review"
+    if item.has_open_pr:
+        return "In progress"
+    # The label came off: an issue without an open pull request starts over.
+    return "Todo" if _normalized(item.status) in BLOCKED_NAMES else None
+
+
+def status_moves(items: list[Item]) -> dict[str, list[Item]]:
+    """The open items whose status differs from what the facts say, by target."""
+    moves: dict[str, list[Item]] = {}
+    for item in items:
+        wanted = wanted_status(item)
+        if wanted and _normalized(item.status) not in STATUS_NAMES[wanted]:
+            moves.setdefault(wanted, []).append(item)
+    return moves
 
 
 def pick_option(options: list[dict], names: frozenset[str], wanted: str) -> str:
@@ -648,15 +676,14 @@ def set_status(
     token: str,
     wanted: str,
 ) -> list[str]:
-    """Set `wanted` ("Done" or "In progress") on the items. Idempotent."""
+    """Set `wanted`, a key of STATUS_NAMES, on the items. Idempotent."""
     if not items:
         return []
     data = graphql(STATUS_FIELD_QUERY, {"owner": owner, "number": number}, token)
     status_field = ((data.get("user") or {}).get("projectV2") or {}).get("field")
     if not status_field or "options" not in status_field:
         raise ProjectError("Das Project hat kein Single-Select-Feld namens Status.")
-    names = DONE_NAMES if wanted == "Done" else IN_PROGRESS_NAMES
-    option_id = pick_option(status_field["options"], names, wanted)
+    option_id = pick_option(status_field["options"], STATUS_NAMES[wanted], wanted)
 
     fixed = []
     for item in items:
@@ -898,17 +925,13 @@ def main() -> int:
             if args.fix
             else []
         )
-        started = (
-            set_status(
-                owner,
-                number,
-                project_id,
-                items_to_mark_in_progress(items),
-                token,
-                "In progress",
-            )
+        moved = (
+            {
+                wanted: set_status(owner, number, project_id, group, token, wanted)
+                for wanted, group in status_moves(items).items()
+            }
             if args.fix
-            else []
+            else {}
         )
         # Before the fields: a pull request opened today needs an iteration to land in.
         extended = extend_iterations(owner, number, token) if args.fix else []
@@ -931,9 +954,9 @@ def main() -> int:
         if fixed:
             report += f"\n\n## Auf Done gesetzt ({len(fixed)})\n\n"
             report += "\n".join(f"- {label}" for label in fixed)
-        if started:
-            report += f"\n\n## Auf In progress gesetzt ({len(started)})\n\n"
-            report += "\n".join(f"- {label}" for label in started)
+        for wanted, labels in moved.items():
+            report += f"\n\n## Auf {wanted} gesetzt ({len(labels)})\n\n"
+            report += "\n".join(f"- {label}" for label in labels)
         if extended:
             report += f"\n\n## Iterationen angehaengt ({len(extended)})\n\n"
             report += "\n".join(f"- {line}" for line in extended)
