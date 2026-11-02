@@ -43,10 +43,14 @@ DEFAULT_SKIP_GROUPS = (
 
 
 def _find(folder: Path, name: str) -> Path:
-    for path in folder.iterdir():
-        if path.name.lower() == name.lower():
-            return path
-    raise FileNotFoundError(f"{name} fehlt in {folder}")
+    found = sorted(p for p in folder.iterdir() if p.name.lower() == name.lower())
+    if not found:
+        raise FileNotFoundError(f"{name} fehlt in {folder}")
+    if len(found) > 1:
+        # Table and memo are looked up apart: an old one could meet a newer one.
+        spellings = ", ".join(p.name for p in found)
+        raise DbfError(f"{name} is there in more than one spelling: {spellings}")
+    return found[0]
 
 
 def load(folder: Path, table: str, memo: bool = False) -> Table:
