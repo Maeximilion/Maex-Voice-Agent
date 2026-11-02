@@ -40,8 +40,8 @@ def set_notices(
     """All or nothing: one value out of bounds changes no weekday."""
     if not all(0 <= m <= MAX_NOTICE_MINUTES for m in minutes_by_weekday.values()):
         raise InvalidInput(
-            "Vorbestellzeit ausserhalb der Grenzen",
-            say=f"Die Vorbestellzeit geht von 0 bis {MAX_NOTICE_MINUTES} Minuten.",
+            "Vorlauf ausserhalb der Grenzen",
+            say=f"Der Vorlauf geht von 0 bis {MAX_NOTICE_MINUTES} Minuten.",
         )
     rows = session.scalars(
         select(Capacity).where(Capacity.tenant_id == tenant_id).with_for_update()

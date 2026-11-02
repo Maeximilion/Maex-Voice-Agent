@@ -222,7 +222,7 @@
   // correction open.
   var correctionBox = document.getElementById("korrektur");
   var dishBox = document.getElementById("gericht-aus");
-  var noticeBox = document.getElementById("vorbestellzeit");
+  var noticeBox = document.getElementById("vorlauf");
   var waitBox = document.getElementById("wartezeit");
   var sheets = [correctionBox, dishBox, noticeBox, waitBox].filter(Boolean);
   var board = document.querySelector(".board");
