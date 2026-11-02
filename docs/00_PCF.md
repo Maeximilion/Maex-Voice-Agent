@@ -490,6 +490,7 @@ Gate: G0 open, unchanged. It waits for T-10.2 on the wire and two calls at once 
 
 State at 18:00, moved to the Ubuntu terminal (replaces the Status line above where they differ):
 - Merged today: #468 T-6.3, #469 T-6.9, #470 T-11.9, #471 T-3.7, #472 T-6.5 with T-6.2, #473 T-11.8, #474 T-8.4, #475 T-9.6, #477 T-9.8, #478 T-6.8, #480 the button "Storniert". T-2.4 and #234 closed.
+- Agent limit, for the session of this handover only (Maxi, 02.11.2026): at most 5 agents at once Monday to Thursday, 8 on Friday and Saturday, no limit on Sunday; a workflow's agents count. Workflows, ultracode and review or audit agents are welcome when they help. Saturday is Claude's reading, Maxi named Friday, Sunday and Monday.
 - Maxi's order: finish the open PRs one by one, take up no other issue for now. The earlier agents belong to the old desktop session; a new session starts new agents on the same branches.
 - #479 T-10.11 head `6c1efeb`, migration 021 with parent 019, Codex clean, conflicts on `docs/01_STATUS.md`. Refs #403, which stays open: the catalogue is Maxi's.
 - #476 T-4.9 head `e7c9a17`, migration 020 with parent 019, earlier findings fixed, a new Codex P1 on that head, thread 4445181638, `api/domain/menu/importer.py:718`: pending price cards must be invalidated when an import replaces sizes; conflicts with `main`. One assumption still waits for Maxi: surcharges stay report-only.
