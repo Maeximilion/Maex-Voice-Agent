@@ -1016,10 +1016,23 @@ def _customers(session) -> int:
     return session.scalar(select(func.count()).select_from(Customer))
 
 
-def _abandoned_draft(session, tenant_id, call_id) -> datetime:
-    """A delivery draft nobody said yes to; when its customer row was written."""
+# A contact inside the opening hours of the seed (a Tuesday at 18:00), and the
+# day of the draft before it. Fixed: a row dated by the real clock would put the
+# contact in or out of the hours by the time the suite runs, and on a Monday
+# after 14:00 or on a Sunday it failed (CI on #472).
+CONTACT = NOW
+DRAFTED = CONTACT - timedelta(days=1)
+
+
+def _abandoned_draft(session, tenant_id, call_id) -> None:
+    """A delivery draft nobody said yes to. Its customer row is what the insert
+    wrote, `created_at` equal to `last_contact_at`, the mark of a draft-only
+    customer; only the day moves, to before `CONTACT`."""
     draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
-    return session.scalar(select(Customer.created_at))
+    row = session.scalar(select(Customer))
+    assert row.last_contact_at == row.created_at
+    row.created_at = row.last_contact_at = DRAFTED
+    session.commit()
 
 
 def _past(period_days: int) -> timedelta:
@@ -1029,9 +1042,9 @@ def _past(period_days: int) -> timedelta:
 def test_a_draft_nobody_said_yes_to_goes_with_its_guest_details(
     session, tenant_id, call_id
 ):
-    written = _abandoned_draft(session, tenant_id, call_id)
+    _abandoned_draft(session, tenant_id, call_id)
 
-    purge(session, written + _past(settings.retention_guest_details_days))
+    purge(session, DRAFTED + _past(settings.retention_guest_details_days))
 
     assert _customers(session) == 0
 
@@ -1047,23 +1060,21 @@ def test_a_confirmed_pickup_after_a_draft_keeps_the_full_period(
 ):
     """Codex PR #472: a pickup counts no order on the customer, so `order_count`
     alone would delete a guest 90 days after a confirmed contact."""
-    written = _abandoned_draft(session, tenant_id, call_id)
-    contact = written + timedelta(days=1)
-    order = draft_order(session, _pickup(session, tenant_id, call_id), now=contact)
-    confirmed(session, tenant_id, call_id, order.order_id, contact)
+    _abandoned_draft(session, tenant_id, call_id)
+    order = draft_order(session, _pickup(session, tenant_id, call_id), now=CONTACT)
+    confirmed(session, tenant_id, call_id, order.order_id, CONTACT)
 
-    purge(session, contact + _past(settings.retention_guest_details_days))
+    purge(session, CONTACT + _past(settings.retention_guest_details_days))
     assert _customers(session) == 1
 
-    purge(session, contact + _past(settings.retention_customer_days))
+    purge(session, CONTACT + _past(settings.retention_customer_days))
     assert _customers(session) == 0
 
 
 def test_a_confirmed_table_after_a_draft_keeps_the_full_period(
     session, tenant_id, call_id
 ):
-    written = _abandoned_draft(session, tenant_id, call_id)
-    contact = written + timedelta(days=1)
+    _abandoned_draft(session, tenant_id, call_id)
     table = Reservation(
         tenant_id=tenant_id,
         call_id=call_id,
@@ -1071,7 +1082,7 @@ def test_a_confirmed_table_after_a_draft_keeps_the_full_period(
         guest_name="Braun",
         phone=PHONE,
         party_size=2,
-        reserved_for=contact + timedelta(days=1),
+        reserved_for=CONTACT + timedelta(days=1),
         idempotency_key=uuid.uuid4().hex,
     )
     session.add(table)
@@ -1085,17 +1096,16 @@ def test_a_confirmed_table_after_a_draft_keeps_the_full_period(
             entity_id=table.id,
             idempotency_key=uuid.uuid4().hex,
         ),
-        now=contact,
+        now=CONTACT,
     )
 
-    purge(session, contact + _past(settings.retention_guest_details_days))
+    purge(session, CONTACT + _past(settings.retention_guest_details_days))
 
     assert _customers(session) == 1
 
 
 def test_a_callback_after_a_draft_keeps_the_full_period(session, tenant_id, call_id):
-    written = _abandoned_draft(session, tenant_id, call_id)
-    contact = written + timedelta(days=1)
+    _abandoned_draft(session, tenant_id, call_id)
     create_callback(
         session,
         CreateCallbackRequest(
@@ -1105,10 +1115,10 @@ def test_a_callback_after_a_draft_keeps_the_full_period(session, tenant_id, call
             reason="out_of_scope",
             summary="Bitte zurückrufen.",
         ),
-        now=contact,
+        now=CONTACT,
     )
 
-    purge(session, contact + _past(settings.retention_guest_details_days))
+    purge(session, CONTACT + _past(settings.retention_guest_details_days))
 
     assert _customers(session) == 1
 
