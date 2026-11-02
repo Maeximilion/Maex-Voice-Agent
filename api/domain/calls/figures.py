@@ -19,6 +19,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from api.core.time import business_day_bounds_utc
+from api.domain.ordering.board import CLOCK_MARGIN
 from api.domain.ordering.labels import ACTION_CORRECTED
 from api.models import AuditLog, Call, Order, Tenant
 
@@ -97,10 +98,16 @@ def span_figures(
         .select_from(Order)
         .where(
             *taken,
+            # An entry cannot predate its order (bounded like the board's lookup).
+            # The second bound says the same for the whole span; only a constant
+            # lets Postgres read the (tenant_id, at) index instead of a year of rows.
             exists().where(
                 AuditLog.tenant_id == Order.tenant_id,
-                AuditLog.action == ACTION_CORRECTED,
+                AuditLog.entity == "order",
                 AuditLog.entity_id == Order.id,
+                AuditLog.action == ACTION_CORRECTED,
+                AuditLog.at >= Order.created_at - CLOCK_MARGIN,
+                AuditLog.at >= start - CLOCK_MARGIN,
             ),
         )
     )
