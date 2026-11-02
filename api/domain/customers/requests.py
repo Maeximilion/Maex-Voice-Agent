@@ -40,7 +40,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from api.config import settings
-from api.core.errors import Conflict, InvalidInput, NotFound
+from api.core.errors import Ambiguous, Conflict, InvalidInput, NotFound
 from api.core.time import add_months, to_local
 from api.domain.customers.personal import (
     CALLBACK_GONE,
@@ -48,7 +48,11 @@ from api.domain.customers.personal import (
     ORDER_GONE,
     thin_payload,
 )
-from api.domain.customers.phone import DEFAULT_COUNTRY_CODE
+from api.domain.customers.phone import (
+    DEFAULT_COUNTRY_CODE,
+    normalize_phone,
+    number_or_none,
+)
 from api.domain.menu.numberwords import fold
 from api.domain.ordering.handover import SENT
 from api.domain.ordering.labels import current_labels_many, labels_for_rows
@@ -88,6 +92,9 @@ class Details:
     street: str | None = None
     house_number: str | None = None
     postal_code: str | None = None
+    # Numbers the guest says they called from: they narrow what a day or the
+    # address opens to one person, and never open anything themselves.
+    phones: tuple[str, ...] = ()
 
 
 class LedgerEntry(NamedTuple):
@@ -254,19 +261,59 @@ def _local_day(column: Any, zone: str) -> ColumnElement:
     return cast(func.timezone(zone, column), Date)
 
 
+def _on_day(
+    session: Session, tenant_id: uuid.UUID, day: date, zone: str, name: str
+) -> list[Order | Reservation | Customer]:
+    """What one day opens under the name: orders and reservations booked under
+    the line their call came from (security audit 02.11.2026: a caller can
+    book a draft under any name and number, no yes needed), and customers."""
+    orders = _own_line(
+        session, Order, _local_day(ORDER_DAY, zone) == day, Order.tenant_id == tenant_id
+    )
+    tables = _own_line(
+        session,
+        Reservation,
+        _local_day(Reservation.reserved_for, zone) == day,
+        Reservation.tenant_id == tenant_id,
+    )
+    return [
+        *(order for order in orders if _folded(order.customer_name) == name),
+        *(table for table in tables if _folded(table.guest_name) == name),
+        *_by_day(session, tenant_id, day, zone, name),
+    ]
+
+
+def _own_line(session: Session, model: Any, *where: Any) -> list:
+    """Rows of `model` whose number is the one their call came from. A call
+    without a caller ID, withheld or cleared, proves nothing."""
+    return [
+        row
+        for row, line in session.execute(
+            select(model, Call.caller_id)
+            .join(Call, Call.id == model.call_id)
+            .where(*where)
+        )
+        if row.phone == number_or_none(line)
+    ]
+
+
 def _by_day(
-    session: Session, tenant_id: uuid.UUID, days: Sequence[date], zone: str, name: str
+    session: Session, tenant_id: uuid.UUID, day: date, zone: str, name: str
 ) -> list[Customer]:
     """The order of a customer loses its name after 90 days, the customer stays
-    for 24 months: without this the row of a pickup guest could not be reached."""
+    for 24 months: without this the row of a pickup guest could not be reached.
+    Only a customer with a confirmed delivery from their own line: a delivery
+    draft under a named number writes a row dated by its own insert, and only
+    the own line moves the two days (`customers.contact`)."""
     return [
         customer
         for customer in session.scalars(
             select(Customer).where(
                 Customer.tenant_id == tenant_id,
+                Customer.order_count > 0,
                 or_(
-                    _local_day(Customer.last_order_at, zone).in_(days),
-                    _local_day(Customer.last_contact_at, zone).in_(days),
+                    _local_day(Customer.last_order_at, zone) == day,
+                    _local_day(Customer.last_contact_at, zone) == day,
                 ),
             )
         )
@@ -277,11 +324,14 @@ def _by_day(
 def _by_address(
     session: Session, tenant_id: uuid.UUID, details: Details, name: str
 ) -> list[Customer]:
+    """As in `_by_day`, only a customer with a confirmed delivery from their own
+    line: the address of a draft under a named number is the planter's."""
     rows = session.execute(
         select(Customer, Address)
         .join(Address, Address.customer_id == Customer.id)
         .where(
             Customer.tenant_id == tenant_id,
+            Customer.order_count > 0,
             Address.postal_code == (details.postal_code or "").strip(),
         )
     ).all()
@@ -384,6 +434,19 @@ def _calls_and_callbacks(
     return calls, callbacks, unclaimed_calls, unclaimed_callbacks
 
 
+def _one_person(rows: list, said: set[str]) -> list:
+    """What one detail opens, on the numbers the guest said if they said any.
+    The name on two numbers is two people (L12): the union would hand one of
+    them the other's data (security audit 02.11.2026)."""
+    rows = [row for row in rows if not said or row.phone in said]
+    if len({row.phone for row in rows}) > 1:
+        raise Ambiguous(
+            "not verified: one detail opens the name on several numbers; ask the "
+            "guest for the number they called from (--phone)"
+        )
+    return rows
+
+
 def verify(
     session: Session,
     tenant_id: uuid.UUID,
@@ -401,37 +464,20 @@ def verify(
             "a name with the date of an order or reservation, or with the "
             "delivery address: never a number or a name alone"
         )
-    found_orders = [
-        order
-        for order in session.scalars(
-            select(Order).where(
-                Order.tenant_id == tenant_id,
-                _local_day(ORDER_DAY, zone).in_(details.days),
-            )
-        )
-        if _folded(order.customer_name) == name
-    ]
-    found_tables = [
-        table
-        for table in session.scalars(
-            select(Reservation).where(
-                Reservation.tenant_id == tenant_id,
-                _local_day(Reservation.reserved_for, zone).in_(details.days),
-            )
-        )
-        if _folded(table.guest_name) == name
-    ]
-    found_customers = _by_day(session, tenant_id, details.days, zone, name)
+    said = {normalize_phone(phone) for phone in details.phones}
+    found: list[Order | Reservation | Customer] = []
+    for day in details.days:
+        found += _one_person(_on_day(session, tenant_id, day, zone, name), said)
     if all(address):
-        found_customers += _by_address(session, tenant_id, details, name)
-    if not (found_orders or found_tables or found_customers):
+        found += _one_person(_by_address(session, tenant_id, details, name), said)
+    if not found:
         raise NotFound("not verified: no row carries these details")
 
-    phones = {order.phone for order in found_orders}
-    phones |= {table.phone for table in found_tables}
-    phones |= {customer.phone for customer in found_customers}
-    linked = {c.id for c in found_customers}
-    linked |= {o.customer_id for o in found_orders if o.customer_id}
+    phones = {row.phone for row in found}
+    linked = {row.id for row in found if isinstance(row, Customer)}
+    linked |= {
+        row.customer_id for row in found if isinstance(row, Order) and row.customer_id
+    }
     customers = [
         customer
         for customer in session.scalars(

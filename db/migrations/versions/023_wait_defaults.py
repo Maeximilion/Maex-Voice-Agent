@@ -6,7 +6,10 @@ pair moves with it. A wait somebody changed on the tablet stays as it is.
 
 The downgrade puts the old defaults back and moves only rows on the new pair: a
 row that really stood on 30 and 60 before the upgrade cannot be told from one
-that moved. No personal data is touched.
+that moved. No personal data is touched. Both directions change rows, and what
+the waits were cannot be read back from anything else: on a database that holds
+a restaurant's data, take a backup first with
+`bash scripts/backup.sh --label before_migration_023` (CLAUDE.md §8, docs/13 §4).
 
 Revision: 023
 Revises: 022

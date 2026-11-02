@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, InvalidInput, NotFound
+from api.core.errors import Ambiguous, Conflict, InvalidInput, NotFound
 from api.domain.confirm import confirm
 from api.domain.customers import find_customer
 from api.domain.customers.requests import (
@@ -346,6 +346,7 @@ def test_the_log_writes_the_audit_log_without_a_name(session, tenant_id):
         Details(name="", days=(date(2026, 10, 12),)),
         Details(name="   ", days=(date(2026, 10, 12),)),
         Details(name="Müller", street="Hauptstraße", postal_code="76530"),
+        Details(name="Müller", phones=(PHONE,)),
     ],
 )
 def test_a_name_alone_or_a_date_alone_verifies_nobody(session, tenant_id, details):
@@ -539,6 +540,115 @@ def test_a_call_with_another_guests_name_is_not_offered(session, tenant_id):
     assert not person.unclaimed_calls
     assert not person.unclaimed_callbacks
     assert callback not in person.callbacks
+
+
+# Security audit 02.11.2026 (docs/09 §5): a detail opens only what was booked on
+# the line its call came from, and one person at a time.
+
+ADDRESS = Details(
+    name="Müller", street="Hauptstraße", house_number="12a", postal_code="76530"
+)
+OWN_DAY = PAST + timedelta(days=3)
+
+
+def _planted(session, tenant_id, kind):
+    """What a caller on OTHER_PHONE leaves behind who books under Müller's name
+    and number: a draft needs no yes. A delivery draft also writes a customer
+    with the planter's own address, and no confirmed delivery from its line
+    ever counts on it (`customers.contact.note_order`)."""
+    call = _call(session, tenant_id, caller_id=OTHER_PHONE)
+    if kind == "order":
+        _order(session, tenant_id, call=call, status="draft")
+    elif kind == "reservation":
+        _reservation(session, tenant_id, call=call, status="draft")
+    else:
+        row = Customer(
+            tenant_id=tenant_id,
+            phone=PHONE,
+            name="Müller",
+            created_at=PAST,
+            last_contact_at=PAST,
+        )
+        session.add(row)
+        session.flush()
+        _address(session, tenant_id, row)
+
+
+@pytest.mark.parametrize("kind", ["order", "reservation", "customer"])
+@pytest.mark.parametrize("details", [MUELLER, ADDRESS], ids=["day", "address"])
+def test_rows_booked_under_a_named_number_open_nothing(
+    session, tenant_id, kind, details
+):
+    """The neighbour's own order is on another day: the planted rows must not
+    lead to it."""
+    _order(session, tenant_id, ready_at=OWN_DAY)
+    _planted(session, tenant_id, kind)
+    with pytest.raises(NotFound):
+        verify(session, tenant_id, details, ZONE, NOW)
+
+
+@pytest.mark.parametrize("caller_id", [None, "anonymous"])
+def test_a_row_from_a_withheld_line_opens_nothing(session, tenant_id, caller_id):
+    _order(session, tenant_id, call=_call(session, tenant_id, caller_id=caller_id))
+    with pytest.raises(NotFound):
+        verify(session, tenant_id, MUELLER, ZONE, NOW)
+
+
+def test_the_own_line_in_another_spelling_opens_its_rows(session, tenant_id):
+    call = _call(session, tenant_id, caller_id="0049 7221 555123")
+    order = _order(session, tenant_id, call=call)
+    assert verify(session, tenant_id, MUELLER, ZONE, NOW).orders == [order]
+
+
+def test_a_contact_booked_under_a_named_number_moves_no_day(session, tenant_id):
+    """`_by_day` reads `last_contact_at`: a table confirmed under Müller's
+    number from another line must not make its day a detail of Müller."""
+    customer = _customer(session, tenant_id)
+    customer.last_order_at = customer.last_contact_at = PAST - timedelta(days=30)
+    table = _reservation(
+        session,
+        tenant_id,
+        call=_call(session, tenant_id, caller_id=OTHER_PHONE),
+        reserved_for=FUTURE,
+        status="draft",
+    )
+    assert _confirm(session, tenant_id, table, "reservation").status == "confirmed"
+    day = Details(name="Müller", days=(NOW.date(), FUTURE.date()))
+    with pytest.raises(NotFound):
+        verify(session, tenant_id, day, ZONE, NOW)
+
+
+@pytest.mark.parametrize("details", [MUELLER, ADDRESS], ids=["day", "address"])
+def test_one_detail_with_the_name_on_two_numbers_asks_for_more(
+    session, tenant_id, details
+):
+    """Two guests called Müller, each on a number of their own: the union would
+    hand one the other's data."""
+    for phone in (PHONE, OTHER_PHONE):
+        _address(session, tenant_id, _customer(session, tenant_id, phone=phone))
+        _order(session, tenant_id, phone=phone)
+    with pytest.raises(Ambiguous):
+        verify(session, tenant_id, details, ZONE, NOW)
+
+
+@pytest.mark.parametrize("said", ["07221 555123", PHONE])
+def test_the_number_the_guest_used_tells_them_apart(session, tenant_id, said):
+    mine = _order(session, tenant_id)
+    theirs = _order(session, tenant_id, phone=OTHER_PHONE)
+    details = Details(name="Müller", days=MUELLER.days, phones=(said,))
+    person = verify(session, tenant_id, details, ZONE, NOW)
+    assert person.orders == [mine]
+    assert person.phones == {PHONE}
+    copy = json.dumps(access_copy(session, tenant_id, person)["copy"], default=str)
+    assert str(theirs.id) not in copy
+    assert OTHER_PHONE not in copy
+
+
+def test_a_number_narrows_and_never_opens(session, tenant_id):
+    _order(session, tenant_id)
+    details = Details(name="Müller", days=MUELLER.days, phones=(OTHER_PHONE,))
+    with pytest.raises(NotFound):
+        verify(session, tenant_id, details, ZONE, NOW)
 
 
 # Access

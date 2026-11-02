@@ -41,6 +41,10 @@ updates:
     directory: /
     schedule:
       interval: monthly
+    # One PR for all actions of a run instead of one per action.
+    groups:
+      actions:
+        patterns: ["*"]
     commit-message:
       prefix: chore
       include: scope
@@ -51,6 +55,10 @@ updates:
       - /deploy/speech
     schedule:
       interval: monthly
+    # One PR for all Dockerfile base images of a run instead of one per image.
+    groups:
+      docker-images:
+        patterns: ["*"]
     commit-message:
       prefix: chore
       include: scope
@@ -76,6 +84,10 @@ updates:
       - /deploy/asterisk
     schedule:
       interval: monthly
+    # One PR for all compose images of a run instead of one per image.
+    groups:
+      compose-images:
+        patterns: ["*"]
     commit-message:
       prefix: chore
       include: scope
