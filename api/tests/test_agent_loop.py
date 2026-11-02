@@ -932,7 +932,11 @@ def test_last_sentence_reaches_the_next_turn_but_no_tool_hop(session, state):
     assert second["greeted"] is True
     assert "last_say" not in hop
     # NOW is eight in the morning: closed, and known for the rest of the call.
-    assert hop["service"] == {"is_open": False, "pickup_enabled": False}
+    assert hop["service"] == {
+        "is_open": False,
+        "pickup_enabled": False,
+        "delivery_enabled": False,
+    }
     assert third["last_say"] == "Und um wie viel Uhr?"
     assert third["service"] == hop["service"]
 

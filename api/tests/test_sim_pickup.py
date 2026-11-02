@@ -187,7 +187,8 @@ def test_ausverkauftes_gericht_kommt_nicht_in_den_warenkorb(session, tenant):
     assert "Was möchten Sie bestellen?" in text
 
 
-def test_lieferung_bleibt_ein_rueckruf(session, tenant):
+def test_lieferung_ist_kein_rueckruf_mehr(session, tenant):
+    """T-6.5: the stand-in takes a delivery, as the prompt says."""
     replay(
         session,
         case("Koennen Sie mir das liefern?", "0721 5551234"),
@@ -195,7 +196,7 @@ def test_lieferung_bleibt_ein_rueckruf(session, tenant):
         now=NOW,
     )
     session.expire_all()
-    assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
+    assert [c.reason for c in session.scalars(select(Callback))] == []
     assert orders(session) == []
 
 
@@ -1933,7 +1934,6 @@ def test_allergy_in_the_opening_sentence_is_an_order(session, tenant):
 @pytest.mark.parametrize(
     "opening",
     [
-        "Ich moechte bestellen, koennen Sie das auch liefern?",
         # "Karte" next to the pickup stays what it was before the order.
         "Koennen Sie mir die Speisekarte vorlesen? Ich moechte bestellen.",
         # No pickup named: the allergy alone starts no order.

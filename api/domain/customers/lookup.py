@@ -20,6 +20,19 @@ from api.schemas.customers import CustomerMatch
 SAY_SAME_ADDRESS = "An dieselbe Adresse wie beim letzten Mal?"
 
 
+def objected(session: Session, tenant_id: uuid.UUID, phone: str) -> bool:
+    """An objection to recognition stands on this number (L12)."""
+    return (
+        session.scalar(
+            select(RecognitionObjection.id).where(
+                RecognitionObjection.tenant_id == tenant_id,
+                RecognitionObjection.phone == phone,
+            )
+        )
+        is not None
+    )
+
+
 def find_customer(
     session: Session,
     tenant_id: uuid.UUID,
@@ -27,13 +40,7 @@ def find_customer(
     guest_name: str | None = None,
 ) -> CustomerMatch:
     phone = normalize_phone(caller_id)
-    objected = session.scalar(
-        select(RecognitionObjection.id).where(
-            RecognitionObjection.tenant_id == tenant_id,
-            RecognitionObjection.phone == phone,
-        )
-    )
-    if objected is not None:
+    if objected(session, tenant_id, phone):
         return CustomerMatch(found=False)
     customers = session.scalars(
         select(Customer).where(Customer.tenant_id == tenant_id, Customer.phone == phone)

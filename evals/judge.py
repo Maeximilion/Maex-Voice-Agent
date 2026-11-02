@@ -25,6 +25,7 @@ from api.domain.ordering.confirm import ACTION_CONFIRMED as ORDER_CONFIRMED_ACTI
 from api.domain.reservations.slots import MAX_ALTERNATIVES
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
+    Address,
     AuditLog,
     Call,
     Callback,
@@ -60,9 +61,8 @@ EXPECTED_KEYS = frozenset(
         # Start of the confirmed reservation as local time "YYYY-MM-DDTHH:MM": a
         # corrected day or time has to arrive in the result (Codex PR #162).
         "reserved_for",
-        # Delivery address, only the fields the case names (ADDRESS_KEYS). It can be
-        # observed once the addresses table exists (T-6.1); until then a case with
-        # an address is always red instead of silently skipping the correction.
+        # Delivery address of the confirmed order, only the fields the case names
+        # (ADDRESS_KEYS).
         "address",
         # Type of the confirmed order: when the guest switches to pickup after
         # "outside the zone", a pickup order has to result (Codex PR #162).
@@ -386,6 +386,11 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
     ]
     with_reason = sum(ALLERGY_REASON in (note or "") for note in stored)
 
+    address = None
+    if done_orders and done_orders[-1].address_id:
+        row = session.get_one(Address, done_orders[-1].address_id)
+        address = {key: getattr(row, key) for key in ADDRESS_KEYS if getattr(row, key)}
+
     name = None
     if done_orders:
         name = done_orders[-1].customer_name
@@ -401,6 +406,7 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         customer_name=name,
         party_size=done_res[-1].party_size if done_res else None,
         reserved_for=_reserved_local(session, call, done_res),
+        address=address,
         order_type=done_orders[-1].type if done_orders else None,
         confirmed_without_confirm=max(0, booked - confirms),
         duplicate_confirms=duplicates,

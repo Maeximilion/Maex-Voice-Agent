@@ -31,7 +31,7 @@ needs a line in the answer format and a run against the baseline (docs/05 §5).
 import re
 from typing import Literal
 
-HeardIntent = Literal["pickup", "reservation"]
+HeardIntent = Literal["pickup", "delivery", "reservation"]
 
 # Anywhere in a word: the noun, the infinitive with "zu", the participle and
 # compounds all count.
@@ -40,8 +40,6 @@ _PICKUP = re.compile(r"ab(?:zu|ge)?hol|mit(?:zu)?nehm")
 # ends in it asks for no table. "reservier" anywhere, and not shorter: a
 # "Reserva" is a wine. "Platz" is no table word, it stands in addresses.
 _TABLE = re.compile(r"\btisch(?:e[ns]?)?\b|reservier")
-# Not offered by phone yet (T-6.5): a sentence that names a delivery says
-# nothing, so that an order to be delivered is not read as a pickup.
 _DELIVERY = re.compile(r"liefer")
 # An order "nach Hause" is a delivery too. It counts only next to the bare
 # order word: a guest who reserves a table before going home, or takes the
@@ -55,7 +53,8 @@ _HOME = re.compile(r"nach\s+hause")
 _NEGATION = re.compile(r"\b(?:nichts?|kein(?:e[mnrs]?)?|nein|ohne|(?:an)?statt)\b")
 # "bestellen" alone is no pickup, a guest also orders a table (Codex PR #130):
 # it counts only when nothing table-like is named.
-# ponytail: until delivery is built an order by phone is a pickup (T-6.5).
+# ponytail: a bare order is heard as a pickup, the more common of the two; a
+# word for the way in a later sentence replaces it (`state.note_intent`).
 _ORDER = re.compile(r"bestell")
 # Anything that may be a table, compounds included: not sure enough to be
 # heard as one, but enough to make a pickup or an order word next to it say
@@ -64,18 +63,30 @@ _ORDER = re.compile(r"bestell")
 _TABLE_LIKE = re.compile(r"tisch|platz|pl(?:ä|ae)tz|reserv")
 
 
+def names_the_way(text: str) -> bool:
+    """Does the sentence say how the order comes, not only that the guest
+    orders? A bare order word is heard as a pickup, which fills an empty
+    `intent` and changes none (`state.note_intent`)."""
+    lowered = text.lower()
+    return any(word.search(lowered) for word in (_PICKUP, _DELIVERY, _HOME))
+
+
 def heard(text: str) -> HeardIntent | None:
     """The one wish the sentence names, or None."""
     lowered = text.lower()
-    if _DELIVERY.search(lowered) or _NEGATION.search(lowered):
+    if _NEGATION.search(lowered):
         return None
     table_like = bool(_TABLE_LIKE.search(lowered))
-    if _PICKUP.search(lowered):
+    pickup = bool(_PICKUP.search(lowered))
+    if _DELIVERY.search(lowered):
+        # Next to a pickup or a table it is two wishes.
+        return None if pickup or table_like else "delivery"
+    if pickup:
         # Next to anything table-like it is two wishes, or one that words
         # cannot tell.
         return None if table_like else "pickup"
     if _TABLE.search(lowered):
         return "reservation"
-    if table_like or _HOME.search(lowered):
+    if table_like or not _ORDER.search(lowered):
         return None
-    return "pickup" if _ORDER.search(lowered) else None
+    return "delivery" if _HOME.search(lowered) else "pickup"

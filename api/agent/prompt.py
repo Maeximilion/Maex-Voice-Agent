@@ -1,7 +1,8 @@
 """System-Prompt aus `prompts/system_vN.md` bauen (docs/05 §1, §5).
 
-Version 2 kennt die Menü-Tools und die Abholung. The model finds dishes through
-the menu tools; the full menu is never in the prompt (CLAUDE.md §2 rule 6).
+Version 3 kennt die Menü-Tools, die Abholung und die Lieferung. The model finds
+dishes through the menu tools; the full menu is never in the prompt (CLAUDE.md
+§2 rule 6).
 
 `tools=True` adds the tool reference from `prompts/tools_vN.md`: the own core
 does not use the function calling of a platform, so a real model learns the
@@ -10,7 +11,7 @@ tools and their arguments from the prompt (T-2.4).
 
 from pathlib import Path
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 # Budget in estimated tokens (characters / 4) for everything the own core sends
 # as system message on every request: system prompt, tool reference and answer

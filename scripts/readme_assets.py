@@ -250,6 +250,8 @@ FLOW_NODES: dict[str, dict] = {
 }
 # What the picture leaves out on purpose, each with its reason.
 NOT_DRAWN: dict[str, str] = {
+    "tool:check_delivery": "a delivery takes the same hop through the core; the picture follows a pickup call",
+    "tool:find_customer": "a delivery takes the same hop through the core; the picture follows a pickup call",
     "tool:check_slot": "a reservation takes the same hop through the core; the picture follows a pickup call",
     "tool:create_reservation": "a reservation takes the same hop through the core; the picture follows a pickup call",
     "tool:get_item_details": "a question about a dish, the same hop and the same menu as search_menu",
