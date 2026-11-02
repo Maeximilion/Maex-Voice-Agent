@@ -114,13 +114,23 @@ def check_slot(
         opens, closes = service
         return opens + lead <= at <= closes - last and at < closes
 
-    def fits(at: datetime, service: Window) -> bool:
-        if not startable(at, service):
-            return False
+    def seats_free(at: datetime) -> bool:
         window = _window_for(windows, at)
         if window is None:
             return False
         return booked[window] + party_size <= window.max_guests
+
+    def inside_notice(at: datetime) -> bool:
+        # The restaurant's notice for the day (T-3.13): measured in UTC, for the
+        # same reason as `distance` below.
+        window = _window_for(windows, at)
+        if window is None:
+            return False
+        notice = timedelta(minutes=window.notice_minutes)
+        return at.astimezone(UTC) < now.astimezone(UTC) + notice
+
+    def fits(at: datetime, service: Window) -> bool:
+        return startable(at, service) and seats_free(at) and not inside_notice(at)
 
     def free_slots(service: Window) -> list[datetime]:
         return [
@@ -171,7 +181,9 @@ def check_slot(
         candidates = [s for s in free_slots(service) if distance(s) < UNAMBIGUOUS]
         candidates.sort(key=lambda slot: (distance(slot), slot))
         chosen = candidates[:MAX_ALTERNATIVES]
-        if startable(local, service):
+        if startable(local, service) and inside_notice(local):
+            say = _say_too_soon(seats_free(local), local, chosen)
+        elif startable(local, service):
             say = _say_full(local, chosen)
         else:
             say = _say_with_options(
@@ -278,6 +290,25 @@ def _say_team_decides_time(wish: datetime) -> str:
         f"Um {spoken_time(wish)} kann ich den Tisch nicht selbst zusagen, das "
         "bespricht das Team persönlich mit Ihnen."
     )
+
+
+def _say_too_soon(
+    seats_free: bool, wish: datetime, alternatives: list[datetime]
+) -> str:
+    """Inside the notice nothing is booked. "Laut unseren Reservierungen": the
+    database knows the bookings and not who walks in, and the guest hears no more
+    than that. No promise of a table (T-3.13, hard rule 1)."""
+    if seats_free:
+        lead_in = (
+            "Laut unseren Reservierungen ist zu der Zeit noch Platz, "
+            "aber so kurzfristig kann ich Ihnen keinen Tisch fest zusagen."
+        )
+    else:
+        lead_in = (
+            "Laut unseren Reservierungen ist zu der Zeit leider alles belegt, "
+            "und so kurzfristig kann ich keinen Tisch reservieren."
+        )
+    return _say_with_options(lead_in, wish, alternatives)
 
 
 def _say_full(wish: datetime, alternatives: list[datetime]) -> str:

@@ -322,6 +322,7 @@ class Capacity(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
         # closes a window for reservations and is a setting (migration 006).
         CheckConstraint("slot_minutes > 0", name="ck_capacity_slot_minutes"),
         CheckConstraint("max_guests >= 0", name="ck_capacity_max_guests"),
+        CheckConstraint("notice_minutes >= 0", name="ck_capacity_notice_minutes"),
     )
 
     weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
@@ -330,4 +331,9 @@ class Capacity(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     max_guests: Mapped[int] = mapped_column(Integer, nullable=False)
     slot_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="30"
+    )
+    # How long before its time a table of this window can be reserved (T-3.13).
+    # Not `reservation_lead_minutes`, the gap after opening.
+    notice_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
     )
