@@ -495,6 +495,7 @@ def test_run_too_short_or_too_long_to_be_a_phone_number_is_none(written):
     assert number_known(written, CALLER, said_numbers) is False
 
 
+@pytest.mark.latency
 def test_patterns_on_guest_text_stay_linear():
     """Guest text has no length limit on the text phone. The same inputs as
     for the menu patterns (test_domain_menu_regex_cost.py)."""
