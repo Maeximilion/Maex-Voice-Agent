@@ -1,0 +1,38 @@
+{
+  "id": "reservierung_0039",
+  "name": "Phone number said in words, caller ID withheld",
+  "tags": [
+    "reservierung",
+    "rufnummer",
+    "zahlwort",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich haette gern einen Tisch fuer zwei Personen morgen um 19 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Sommer."
+    },
+    {
+      "role": "customer",
+      "text": "Null sieben zwei eins, fuenf fuenf fuenf, vier vier drei drei."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "party_size": 2,
+    "customer_name": "Sommer",
+    "confirmed": true,
+    "escalated": false,
+    "reserved_for": "2026-09-16T19:00",
+    "phone": "+497215554433"
+  }
+}
