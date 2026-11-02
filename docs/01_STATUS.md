@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.2
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.3
 
 ---
 
@@ -705,6 +705,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.3 · 02.11.2026:** T-4.9 price check of the register against the database
 - **v2.14.2 · 02.11.2026:** T-9.8 separate Docker networks
 - **v2.14.2 · 02.11.2026:** T-4.9 price check of the register against the database
 - **v2.14.1 · 02.11.2026:** T-9.6 print bridge as one program file
