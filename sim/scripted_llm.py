@@ -386,10 +386,12 @@ class ScriptedLLM:
         if name == "search_menu" and self._opening_prefix is not None:
             return self._after_opening_search(result, slots)
         if not result.get("ok"):
-            if self._pickup is not None and result.get("error_code") == "out_of_zone":
-                self._pickup.on_out_of_zone()
-            if self._pickup is not None and result.get("error_code") == "below_minimum":
-                self._pickup.on_below_minimum()
+            if self._pickup is not None:
+                # The tool's sentence offers pickup, or asks for one more dish.
+                if result.get("error_code") == "out_of_zone":
+                    self._pickup.delivery = False
+                if result.get("error_code") == "below_minimum":
+                    self._pickup.phase = "more"
             if name == "search_menu" and self._pickup is not None:
                 # War es die Antwort auf eine Rueckfrage, gilt die Frage weiter.
                 reopened = self._pickup.on_search_failed(say)

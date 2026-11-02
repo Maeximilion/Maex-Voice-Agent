@@ -14,16 +14,10 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.core.errors import (
-    SAY_ON_FAILURE,
-    BelowMinimum,
-    InvalidInput,
-    ServiceUnavailable,
-)
+from api.core.errors import SAY_ON_FAILURE, InvalidInput, ServiceUnavailable
 from api.domain.customers.lookup import find_customer
 from api.domain.delivery.zones import check_delivery, postal_digits
 from api.domain.menu.numberwords import fold
-from api.domain.ordering.readback import spoken_euro
 from api.models import Address, Customer
 from api.schemas.delivery import DeliveryCheck
 from api.schemas.orders import OrderAddress, OrderCustomer
@@ -33,10 +27,6 @@ SAY_WHICH_ADDRESS = (
     "Straße und Hausnummer."
 )
 SAY_WHICH_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
-SAY_BELOW_MINIMUM = (
-    "Bis zum Mindestbestellwert fehlen noch {missing}. "
-    "Möchten Sie noch etwas dazunehmen?"
-)
 
 
 @dataclass(frozen=True)
@@ -92,16 +82,6 @@ def place(
         stored=stored,
         customer_id=known.id if known else None,
     )
-
-
-def require_minimum(items_cents: int, zone: DeliveryCheck) -> None:
-    """The dishes count, the fee does not."""
-    missing = zone.min_order_cents - items_cents
-    if missing > 0:
-        raise BelowMinimum(
-            f"{missing} cents below the minimum order value",
-            say=SAY_BELOW_MINIMUM.format(missing=spoken_euro(missing)),
-        )
 
 
 def keep(

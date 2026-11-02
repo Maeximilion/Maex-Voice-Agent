@@ -259,14 +259,6 @@ class PickupScript:
         self._checked = _address(slots)
         return self._next(slots, {})
 
-    def on_out_of_zone(self) -> None:
-        """The sentence offers pickup: from here on it is one."""
-        self.delivery = False
-
-    def on_below_minimum(self) -> None:
-        """The sentence asks for more: the next dish is an order."""
-        self.phase = "more"
-
     def on_draft(self, data: dict[str, Any]) -> LLMTurn:
         self.readback_for = data["order_id"]
         return LLMTurn(say=data["readback"])

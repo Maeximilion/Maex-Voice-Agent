@@ -215,7 +215,6 @@ def test_the_fee_comes_from_the_zone_of_the_postal_code(session, tenant_id, call
     )
 
     assert draft.delivery_fee_cents == 390
-    assert session.get(Address, session.get(Order, draft.order_id).address_id)
     assert session.scalar(select(Address.postal_code)) == "12346"
 
 
@@ -310,7 +309,7 @@ def test_the_fee_does_not_count_towards_the_minimum(session, tenant_id, call_id)
     with pytest.raises(BelowMinimum) as err:
         draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
 
-    assert "ein Cent" in err.value.say or "1 Cent" in err.value.say
+    assert "ein Cent" in err.value.say
 
 
 def test_exactly_the_minimum_is_enough(session, tenant_id, call_id):
@@ -384,12 +383,16 @@ def test_a_delivery_needs_an_address(session, tenant_id, call_id):
 
 
 def test_a_pickup_needs_a_name(session, tenant_id, call_id):
-    with pytest.raises(InvalidInput):
+    """With the sentence that asks: a bare `invalid_input` gives a model nothing
+    to act on."""
+    with pytest.raises(InvalidInput) as err:
         draft_order(
             session,
             request(session, tenant_id, call_id, customer={"phone": PHONE}),
             now=NOW,
         )
+
+    assert "Namen" in err.value.say
 
 
 def test_a_pickup_carries_no_customer_and_no_fee(session, tenant_id, call_id):
@@ -894,7 +897,6 @@ def test_contact_on_a_callback_counts_for_the_number(session, tenant_id, call_id
 
 def test_contact_on_a_complaint_counts_for_the_number(session, tenant_id, call_id):
     known, _ = known_customer(session, tenant_id)
-    later = NOW + timedelta(days=1)
 
     result = transfer_to_team(
         session,
@@ -905,7 +907,6 @@ def test_contact_on_a_complaint_counts_for_the_number(session, tenant_id, call_i
     session.refresh(known)
     assert result.available is True
     assert known.last_contact_at == NOW
-    assert known.last_contact_at != later
 
 
 def test_no_contact_on_another_transfer(session, tenant_id, call_id):

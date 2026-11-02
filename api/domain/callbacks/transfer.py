@@ -84,8 +84,7 @@ def transfer_to_team(
                 payload={"reason": req.reason},
             )
         )
-        number = _number(call.caller_id)
-        if req.reason == "complaint" and number is not None:
+        if req.reason == "complaint" and (number := _number(call.caller_id)):
             note_contact(session, req.tenant_id, number, now)
     session.commit()
     return TransferResult(transfer_to=config.team_phone, available=available)

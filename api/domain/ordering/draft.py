@@ -29,12 +29,13 @@ from api.core.errors import (
 )
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
-from api.domain.delivery.address import keep, place, require_minimum
+from api.domain.delivery.address import SAY_WHICH_NAME, keep, place
 from api.domain.ordering.labels import ACTION_DRAFT_CREATED, current_labels
 from api.domain.ordering.pricing import Line, items_total_cents
 from api.domain.ordering.readback import SpokenLine, readback
 from api.domain.ordering.validation import (
     require_delivery_open,
+    require_minimum,
     require_pickup_open,
     service_open_at,
     validated_lines,
@@ -74,7 +75,7 @@ def draft_order(
     delivery = req.type == DELIVERY
     name = (req.customer.name or "").strip()
     if not name and not delivery:
-        raise InvalidInput("customer.name: darf nicht leer sein")
+        raise InvalidInput("customer.name: darf nicht leer sein", say=SAY_WHICH_NAME)
     phone = normalize_phone(req.customer.phone)
 
     if delivery:

@@ -14,19 +14,32 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.core.errors import Closed, Conflict, InvalidInput, NotFound, ServiceUnavailable
+from api.core.errors import (
+    BelowMinimum,
+    Closed,
+    Conflict,
+    InvalidInput,
+    NotFound,
+    ServiceUnavailable,
+)
 from api.domain.menu.items import is_sold_out, option_key
 from api.domain.menu.search import SAY_SOLD_OUT
 from api.domain.ordering.pricing import Line
+from api.domain.ordering.readback import spoken_euro
 from api.domain.status.hours import load_hours, open_window_at
 from api.domain.status.mode import PAUSED
 from api.domain.status.service import DELIVERY, PICKUP
 from api.models import ItemOption, MenuItem, ServiceConfig, Tenant
+from api.schemas.delivery import DeliveryCheck
 from api.schemas.orders import OrderItemIn
 
 SAY_PICKUP_CLOSED = "Abholung ist gerade leider nicht möglich."
 SAY_DELIVERY_CLOSED = "Lieferung ist gerade leider nicht möglich."
 SAY_OFFER_PICKUP = "Möchten Sie abholen?"
+SAY_BELOW_MINIMUM = (
+    "Bis zum Mindestbestellwert fehlen noch {missing}. "
+    "Möchten Sie noch etwas dazunehmen?"
+)
 SAY_ITEM_UNKNOWN = "Ein Gericht habe ich nicht auf der Karte gefunden. Können Sie mir die Nummer sagen?"
 SAY_OPTION_UNKNOWN = "{option} gibt es zu {name} nicht."
 SAY_OPTION_MISSING = "Welche Auswahl bei {group} möchten Sie zu {name}?"
@@ -74,6 +87,16 @@ def delivery_closed_say(
     if service_open_at(session, tenant_id, now, zone, PICKUP):
         return f"{SAY_DELIVERY_CLOSED} {SAY_OFFER_PICKUP}"
     return SAY_DELIVERY_CLOSED
+
+
+def require_minimum(items_cents: int, zone: DeliveryCheck) -> None:
+    """The dishes count, the fee does not."""
+    missing = zone.min_order_cents - items_cents
+    if missing > 0:
+        raise BelowMinimum(
+            f"{missing} cents below the minimum order value",
+            say=SAY_BELOW_MINIMUM.format(missing=spoken_euro(missing)),
+        )
 
 
 def service_open_at(
