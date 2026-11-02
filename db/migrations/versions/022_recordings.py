@@ -12,7 +12,7 @@ that holds a restaurant's data, delete the files first and take a backup with
 `bash scripts/backup.sh --label before_migration_022` (CLAUDE.md §8, docs/13 §4).
 
 Revision: 022
-Revises: 019
+Revises: 020
 Created: 2026-11-02
 """
 
@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "022"
-down_revision: str | None = "019"
+down_revision: str | None = "020"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

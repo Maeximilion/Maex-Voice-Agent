@@ -5,7 +5,8 @@ nichts ausser Python noetig sein.
 
 Inhalt nach Datensparsamkeit: Abholcode, Zeit, Name, Positionen mit Optionen und
 Hinweis, Summe. Keine Telefonnummer - die braucht die Kueche nicht. A delivery
-adds its address, the floor note and the delivery fee (T-6.5).
+adds its address, the floor note and the delivery fee (T-6.5). The note for a
+cancelled order only names the slip it voids: no address and no guest's note.
 """
 
 import textwrap
@@ -37,6 +38,8 @@ REASONS = {
     "wrong_address": "falsche Adresse",
     "other": "sonstiges",
 }
+# The `correction_reason` of a cancelled order (domain/ordering/ticket.py).
+CANCELLED = "cancelled"
 
 
 def printable(text: str) -> str:
@@ -95,7 +98,8 @@ def _tall(lines: bytes) -> bytes:
 
 
 def _notice(text: str, width: int) -> list[bytes]:
-    """Test slip only: a centered block, big and inverted like the banner.
+    """A centered block, big and inverted like the banner, for a slip that must
+    not be taken for an order: the test slip and the note of a cancelled order.
 
     Every line is padded to the longest one, so the black bars form one block.
     """
@@ -168,28 +172,37 @@ def render(
     Kein Kuechenbon und kein Beleg: Quittung und Kuechenbon druckt die Kasse (TSE,
     D2, docs/02 §2a). Der Zettel liegt am Haupt-Bondrucker, bis jemand die
     Bestellung in die Kasse getippt hat, deshalb steht das ganz oben.
+
+    A cancelled order's note is the opposite: it stops the slip before it.
     """
     out = [INIT, CODEPAGE]
-    # Test slip only: the same block above everything and again as the last lines
-    # before the cut, so it is read whichever end of the slip is picked up.
-    notice_lines = _notice(notice, width) if notice else []
-    out += notice_lines
-    # Gross und invertiert zuruecksetzen, bevor die Zeile endet: sonst stehen die
-    # Steuerzeichen am Anfang der naechsten Zeile.
-    banner = printable(" NICHT IN KASSE ").encode(ENCODING)
-    out += [BIG_ON, INVERT_ON, banner, INVERT_OFF, BIG_OFF, _tall(b"\n")]
-    out.append(_line("Bitte in die Kasse eingeben."))
     reason = ticket.get("correction_reason")
-    if reason:
-        out += [
-            BIG_ON,
-            INVERT_ON,
-            _tall(_line(" KORREKTUR ")),
-            INVERT_OFF,
-            BIG_OFF,
-        ]
-        out.append(_line(f"Grund: {REASONS.get(reason, reason)}"))
+    cancelled = reason == CANCELLED
+    # The same block above everything and again as the last lines before the
+    # cut, so it is read whichever end of the slip is picked up.
+    block = "STORNIERT" if cancelled else notice
+    notice_lines = _notice(block, width) if block else []
+    out += notice_lines
+    if cancelled:
+        out.append(_line("Nicht in die Kasse eingeben."))
+        out.append(_line("Schon eingegeben: in der Kasse stornieren."))
         out.append(_line("Ersetzt den vorigen Bon dieser Bestellung."))
+    else:
+        # Gross und invertiert zuruecksetzen, bevor die Zeile endet: sonst stehen
+        # die Steuerzeichen am Anfang der naechsten Zeile.
+        banner = printable(" NICHT IN KASSE ").encode(ENCODING)
+        out += [BIG_ON, INVERT_ON, banner, INVERT_OFF, BIG_OFF, _tall(b"\n")]
+        out.append(_line("Bitte in die Kasse eingeben."))
+        if reason:
+            out += [
+                BIG_ON,
+                INVERT_ON,
+                _tall(_line(" KORREKTUR ")),
+                INVERT_OFF,
+                BIG_OFF,
+            ]
+            out.append(_line(f"Grund: {REASONS.get(reason, reason)}"))
+            out.append(_line("Ersetzt den vorigen Bon dieser Bestellung."))
     kind = TYPES.get(ticket.get("type") or "", str(ticket.get("type") or "").upper())
     code = ticket.get("pickup_code") or ""
     out += [BIG_ON, _tall(_wrapped(f"{kind} {code}".strip(), width // 2)), BIG_OFF]
@@ -200,8 +213,9 @@ def render(
         out += [BOLD_ON, _line(f"Fertig um {ready}"), BOLD_OFF]
     if ticket.get("customer_name"):
         out.append(_wrapped(f"Name: {ticket['customer_name']}", width))
-    out += _address(ticket, width)
-    if ticket.get("note"):
+    if not cancelled:
+        out += _address(ticket, width)
+    if ticket.get("note") and not cancelled:
         # The note of the whole order (an allergy), bold above the dishes.
         out += [BOLD_ON, _wrapped(f"! {ticket['note']}", width), BOLD_OFF]
     out.append(_line("-" * width))
@@ -212,7 +226,7 @@ def render(
             text = _option(option)
             if text:
                 out.append(_wrapped(f"+ {text}", width, indent="   "))
-        if item.get("note"):
+        if item.get("note") and not cancelled:
             # Hinweise (etwa eine Allergie) fett: die Kueche darf sie nicht ueberlesen.
             out += [
                 BOLD_ON,

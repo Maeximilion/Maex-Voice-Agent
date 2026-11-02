@@ -491,6 +491,102 @@ def test_mark_with_the_card_from_before_a_correction_says_so(client, db, tenant_
     assert _fresh(db, order_id).register_entered_at is None
 
 
+# --- Storniert (docs/06 §1 rule 6, docs/09 §1 L18) ---------------------------------
+
+
+def _cancel_button(html: str, order_id) -> tuple[str, str]:
+    """The opening tag of the card's button "Storniert" and the URL it posts to."""
+    match = re.search(
+        rf'<button[^>]*hx-post="(/gui/bestellungen/{order_id}/storniert/[0-9a-f]{{32}})"'
+        r"[^>]*>Storniert</button>",
+        html,
+    )
+    assert match, html
+    return match.group(0), match.group(1)
+
+
+def test_storniert_asks_first_and_the_card_leaves(client, db, tenant_id):
+    order_id = _order(db, tenant_id)
+    html = client.get("/gui/fragments/bestellungen").text
+    button, url = _cancel_button(html, order_id)
+    assert 'hx-confirm="Bestellung A1 stornieren?' in button
+
+    assert client.post(url).status_code == 403
+    assert _fresh(db, order_id).status == "confirmed"
+    response = client.post(url, headers=HX)
+    assert response.status_code == 200
+    assert f'data-id="{order_id}"' not in response.text
+    assert _fresh(db, order_id).status == "cancelled"
+    # A second tablet with the old page: no error, the fresh column.
+    again = client.post(url, headers=HX)
+    assert again.status_code == 200 and "Das hat nicht geklappt" not in again.text
+
+
+def test_storniert_is_on_every_card_after_the_yes(client, db, tenant_id):
+    order_id = _order(db, tenant_id)
+    html = client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX).text
+    _, url = _cancel_button(html, order_id)
+    assert client.post(_mark_url(html, order_id), headers=HX).status_code == 200
+    db.execute(
+        update(Order).where(Order.id == order_id).values(handover_state="failed")
+    )
+    db.commit()
+
+    # Marked, and red all the same: the card stands, and so does its button.
+    html = client.get("/gui/fragments/bestellungen").text
+    assert _cancel_button(html, order_id)[1] == url
+
+
+def test_storniert_with_the_card_from_before_a_correction_says_so(
+    client, db, tenant_id
+):
+    order_id = _order(db, tenant_id)
+    html = client.get("/gui/fragments/bestellungen").text
+    _, stale = _cancel_button(html, order_id)
+    [row] = _rows(db, order_id)
+    _fix(db, tenant_id, order_id, rows=(RowEdit(row.id, 3),))
+
+    html = client.post(stale, headers=HX).text
+    assert "inzwischen geändert" in html
+    assert _cancel_button(html, order_id)[1] != stale
+    assert _fresh(db, order_id).status == "confirmed"
+
+
+def test_a_tap_on_a_card_another_tablet_cancelled_says_why(client, db, tenant_id):
+    order_id = _order(db, tenant_id)
+    html = client.get("/gui/fragments/bestellungen").text
+    _, url = _cancel_button(html, order_id)
+    assert client.post(url, headers=HX).status_code == 200
+
+    html = client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX).text
+    assert "inzwischen geändert" in html
+    assert f'data-id="{order_id}"' not in html
+
+
+def test_a_cancelled_card_only_waits_for_its_note(client, db, tenant_id):
+    """The note did not print: the card is red until it does, and nothing but
+    "Nochmal senden" is left to tap, whatever day it is from."""
+    order_id = _order(db, tenant_id)
+    db.execute(
+        update(Order)
+        .where(Order.id == order_id)
+        .values(
+            status="cancelled",
+            handover_state="failed",
+            created_at=NOW - timedelta(days=2),
+        )
+    )
+    db.commit()
+
+    html = client.get("/gui/fragments/bestellungen").text
+    assert f'data-id="{order_id}"' in html
+    assert "Storno-Zettel nicht gedruckt" in html
+    assert "Nochmal senden" in html
+    for gone in ("Passt", "Korrigieren", "In Kasse eingegeben", ">Storniert<"):
+        assert gone not in html
+    assert "in der Kasse" not in html
+
+
 def test_unmarked_order_of_an_earlier_day_is_red_with_its_day(client, db, tenant_id):
     order_id = _order(db, tenant_id)
     client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX)

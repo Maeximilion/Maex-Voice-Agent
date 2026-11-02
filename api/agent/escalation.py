@@ -88,6 +88,34 @@ _BEYOND = re.compile(
 )
 
 
+# What no fixed rule answers, whatever else the sentence says: a guest who fell
+# ill, or a legal step (D19: on any doubt the team). Stems, as in `_TRIGGERS`.
+# shortcut: a closed word list that misses other words for the same thing, add
+# the word when the call log shows it.
+_TEAM_ONLY = re.compile(
+    r"krank|übel|uebel|erbroch|durchfall|vergift|arzt|ärztin|notaufnahme"
+    r"|anwalt|anwältin|polizei|gesundheitsamt|verbraucherzentrale"
+)
+# What the guest still wants: the call ends with a remedy, and an order or a
+# table asked for next to the complaint would be lost (Codex PR #479). Forms of
+# the present only: "die Lieferung", "bestellt" and "abgeholt" tell what
+# happened. Any of them goes to the team, the safe side.
+# shortcut: a dish named with no such word ("und zweimal die 23") is missed and
+# stands only on the card, add the word when the call log shows it.
+_WANTS = (
+    r"\b(?:m(?:ö|oe)chten?|will|wollen|h(?:ä|ae)tten?|nehmen?|brauchen?|bitte"
+    r"|gerne?|bestell(?:e|en)|abholen|abzuholen|mitnehmen|mitzunehmen"
+    r"|reservieren|tisch(?:e[ns]?)?)\b"
+)
+_WANTS_ANYTHING = re.compile(_WANTS)
+# The wish that is the complaint: "ich möchte mich über die Lieferung
+# beschweren". By distance, not by sentence: speech recognition sets commas
+# where it likes. Further away, or behind an "und", it is a wish of its own.
+_WANTS_TO_COMPLAIN = re.compile(
+    _WANTS + r"(?:\W+(?!und\b)\w+){0,4}?\W+(?:beschwer|reklam)\w*"
+)
+
+
 def speaks_of_allergies(text: str) -> bool:
     """The guest's own allergy ("Erdnussallergie", "ich vertrage keine
     Erdnüsse") or the allergens of a dish ("Allergene")."""
@@ -126,6 +154,28 @@ def asks_beyond_the_allergens(text: str) -> bool:
     finding sentences about payment, persons or time (redesign of PR #369,
     Maxi, 27.10.2026)."""
     return _BEYOND.search(text.lower()) is not None
+
+
+def only_a_complaint(text: str) -> bool:
+    """Is the complaint all this sentence holds? Not with another trigger, a
+    question, an allergy or allergen, a health incident, a legal step or a
+    wish of its own in it: those are for the team, however well a rule of the
+    catalogue fits."""
+    lowered = text.lower()
+    return not (
+        any(
+            keyword in lowered
+            for reason, keywords in _TRIGGERS
+            if reason != "complaint"
+            for keyword in keywords
+        )
+        or is_question(text)
+        or speaks_of_allergies(text)
+        or names_an_allergen(text)
+        or asks_beyond_the_allergens(text)
+        or _TEAM_ONLY.search(lowered)
+        or _WANTS_ANYTHING.search(_WANTS_TO_COMPLAIN.sub(" ", lowered))
+    )
 
 
 def check(text: str) -> EscalationReason | None:

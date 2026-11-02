@@ -36,6 +36,7 @@ LATER_TABLES = {
     "recognition_objections",
     "data_subject_requests",
     "recordings",
+    "complaint_rules",
 }
 
 

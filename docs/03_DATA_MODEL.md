@@ -167,7 +167,23 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | status | TEXT | `open` / `done` |
 | done_by / done_at | TEXT / TIMESTAMPTZ | |
 
-A callback the core writes on a handover quotes the guest's sentence in `summary`, except a sentence that names an allergy: that is health data the caller agreed to at most as a kitchen note (L13, T-11.1). A question about allergens beyond the maintained values gets the card "Frage zu Allergenen über die hinterlegten Angaben hinaus, vor einer Bestellung zu klären." with the dish and an unplaced order, reason `out_of_scope` (L17).
+A callback the core writes on a handover quotes the guest's sentence in `summary`, except a sentence that names an allergy: that is health data the caller agreed to at most as a kitchen note (L13, T-11.1). A question about allergens beyond the maintained values gets the card "Frage zu Allergenen über die hinterlegten Angaben hinaus, vor einer Bestellung zu klären." with the dish and an unplaced order, reason `out_of_scope` (L17). A remedy of `complaint_rules` the guest said yes to is booked as a card of reason `complaint` with the rule's name and amount (T-10.11).
+
+### `complaint_rules`
+The catalogue of fixed answers to a complaint, per tenant (D19, T-10.11, migration 021, docs/05 §3). Empty, and nothing seeds it: the catalogue is Maxi's, and with an empty one every complaint goes to the team. Read by the core, never by the model. No personal data.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| name | TEXT | what the team reads on the card; not blank, at most 100 characters so a card always fits |
+| phrases | TEXT[] | the words that select the rule, at least one; any of them matches, as whole words and as written (`kalt` does not cover `kalte`) |
+| remedy_cents | INTEGER | the remedy, above 0: every remedy is money (D19). The amount on the card and in `audit_log`; a sentence that names an amount has to name this one |
+| offer_say | TEXT | the offer in German, closing with the question the guest's yes answers; not blank |
+| granted_say | TEXT | what the guest hears after the yes, the last sentence of the call; not blank |
+| active | BOOLEAN | false on a new row: a remedy is money, so a rule is switched on by someone |
+
+The yes writes `complaint.remedy_booked` to `audit_log` (rule id, `call_id`, `remedy_cents`), in the transaction of the card.
 
 ### `consent_log`
 One row per answer to a consent question of the agent (legal check L13, T-11.1, migration 010). The proof a stored allergy note with "Grund: Allergie" rests on; the allergy itself is not in it.
@@ -237,6 +253,8 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | sold_out_until | TIMESTAMPTZ NULL | Schalter „Gericht aus" |
 | description | TEXT | |
 | pos_code | TEXT NULL | Artikelnummer genau wie in der Kasse („35B"), `number` ist klein für die Suche. Eingabezettel und Kassenübergabe sollen sie drucken (Umstellung mit T-4.6, heute steht dort noch `number`); leer bei Gerichten, die nicht aus der Kasse kommen (T-4.11, Migration 004) |
+| register_price_cents | INT NULL | what the last price check read where the register differs (T-4.9, migration 020). Never a price the agent says: `price_cents` changes only on a person's tap on the tablet or with `--apply-price-changes` |
+| register_price_rejected | BOOL, default false | the team rejected exactly that price, so it stays out of sight until the register says another one (T-4.9, migration 020) |
 
 **Eindeutigkeit:** `(tenant_id, number)` ist unique. Die Nummer ist der robusteste Weg durch eine schlechte Leitung.
 
@@ -300,7 +318,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 
 `approved` heißt: das Team hat die Bestellung im Tablet mit „Passt" abgehakt (T-4.7). Außerhalb von `primary` ist das zugleich die Freigabe an die Küche - vorher gibt es keinen Bon (docs/04 §confirm). Im Überlauf-Betrieb (Stufe 5) ist genau das der Freigabe-Schritt; since T-8.2 the restaurant can switch it off after G5 with `service_config.overflow_needs_approval`.
 
-Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, ob damit der Bon losging), `order.resent` (Nochmal senden) und `order.corrected` (Korrektur, mit `reason`, `before`/`after` je Position, `labels` und `note_dropped`, aber ohne Name, Telefon und Hinweistext). Die jüngste `labels`-Liste aus `order.draft_created` oder `order.corrected` nennt Nummer und Name je Position in der Reihenfolge von `created_at` (`domain/ordering/labels.py`). Die Zahl der `order.corrected`-Zeilen ist die Revision des Bons.
+Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, ob damit der Bon losging), `order.resent` (Nochmal senden), `order.cancelled` („Storniert“, with `version` and `note_sent`: whether a note went to the register) und `order.corrected` (Korrektur, mit `reason`, `before`/`after` je Position, `labels` und `note_dropped`, aber ohne Name, Telefon und Hinweistext). Die jüngste `labels`-Liste aus `order.draft_created` oder `order.corrected` nennt Nummer und Name je Position in der Reihenfolge von `created_at` (`domain/ordering/labels.py`). Die Zahl der `order.corrected`- und `order.cancelled`-Zeilen ist die Revision des Bons.
 
 ### `order_items`
 | Feld | Typ | Bemerkung |
@@ -462,5 +480,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 017 | `uq_special_days_set`: one `set` row per tenant and date (#441); the upgrade first lists every date with two `set` rows and stops without a change, the team decides which row holds; the downgrade drops the key |
 | 018 | `delivery_zones`, `customers`, `addresses`, `recognition_objections`, `orders.address_id` and the foreign keys of `orders.customer_id` and `orders.address_id` (T-6.1, L12); nothing writes them yet, T-6.2 and T-6.5 do, T-6.7 deletes; the downgrade drops the four tables with every row and the links on the orders |
 | 019 | `data_subject_requests`: the request log of data subjects (T-11.8, U2); nothing backfilled, the lines of the interim file are moved in by hand (docs/09 §2); the downgrade drops the table with every logged request |
+| 020 (after 021) | `menu_items.register_price_cents` and `register_price_rejected`: what the price check found (T-4.9); every dish starts without a difference; the downgrade drops both, the next check finds the differences again and a rejection has to be repeated, `audit_log` keeps it |
+| 021 | `complaint_rules`: the catalogue of fixed answers to a complaint, empty (T-10.11, D19); nothing backfilled and nothing seeded; the downgrade drops the table with every rule, booked remedies stay on their cards and in `audit_log` |
 | 022 | `recordings`: one row per recorded call, unique on `call_id` (T-11.3, L2); the downgrade drops the table, and the files it named stay in the folder without a way to find them. On top of 019 until the PRs of T-4.9 (020) and T-10.11 (021) merge: the later PR moves its `down_revision` |
 | planned, next free number | `eval_cases`, `eval_runs` |

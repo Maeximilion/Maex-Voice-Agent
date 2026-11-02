@@ -72,7 +72,7 @@ def test_downgrade_drops_the_table_and_leaves_the_rest(scratch_db_url):
     command.upgrade(_config(scratch_db_url), "022")
     assert "recordings" in _tables(scratch_db_url)
 
-    command.downgrade(_config(scratch_db_url), "019")
+    command.downgrade(_config(scratch_db_url), "020")
 
     tables = _tables(scratch_db_url)
     assert "recordings" not in tables

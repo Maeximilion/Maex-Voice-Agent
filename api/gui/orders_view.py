@@ -26,6 +26,7 @@ from api.domain.ordering.correction import (
     PlannedLine,
     RowEdit,
 )
+from api.domain.ordering.ticket import CANCELLED
 
 TYPE_LABELS = {"pickup": "Abholung", "delivery": "Lieferung"}
 UNKNOWN_NUMBER = "Nummer {number} gibt es nicht auf der Karte."
@@ -49,8 +50,10 @@ def card(order: BoardOrder, tz_name: str) -> dict:
     Die Bruecke druckt einen Eingabezettel an der Kasse, die Kasse erst den
     Kuechenbon (D2, docs/02 §2a): die Karte sagt, wo der Zettel ist, nicht "Kueche".
     """
+    cancelled = order.status == CANCELLED
     if order.handover_state == "failed":
-        tone, state = "danger", "Zettel nicht gedruckt"
+        slip = "Storno-Zettel" if cancelled else "Zettel"
+        tone, state = "danger", f"{slip} nicht gedruckt"
     elif order.overdue and order.waiting_since is not None:
         # Nobody has tapped "Passt" within the restaurant's minutes (#252). The
         # clock time of the guest's yes, not a count of minutes: the card is
@@ -86,6 +89,9 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         # "Passt" nur, solange das Team noch nicht abgehakt hat und die Kueche
         # erreichbar war; eine rote Karte braucht "Nochmal senden".
         "can_approve": order.status == "confirmed" and order.handover_state != "failed",
+        # A cancelled card only waits for its note: "Nochmal senden" is all it has.
+        "can_change": not cancelled,
+        "version": order.version,
         "corrected": REASONS.get(order.corrected) if order.corrected else None,
         **_register(order, tz_name),
     }
@@ -106,7 +112,7 @@ def _register(order: BoardOrder, tz_name: str) -> dict:
     releases. Until then the card says so in words, from an earlier business
     day in red with the day it was taken.
     """
-    if order.register_entered_at is not None:
+    if order.register_entered_at is not None or order.status == CANCELLED:
         return {"register": None, "can_mark": False, "register_late": False}
     if order.register_late:
         # The business day, as in the daily push: 00:30 belongs to the day before.
@@ -118,7 +124,6 @@ def _register(order: BoardOrder, tz_name: str) -> dict:
         "register": register,
         "can_mark": order.status in MARKABLE,
         "register_late": order.register_late,
-        "version": order.version,
     }
 
 
