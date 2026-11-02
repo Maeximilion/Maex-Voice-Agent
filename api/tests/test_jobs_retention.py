@@ -764,6 +764,22 @@ def test_a_file_outside_the_folder_is_never_touched(
     assert outside.exists()
 
 
+def test_a_process_without_the_folder_leaves_the_row(
+    session, tenant_id, folder, monkeypatch
+):
+    """A pass by hand in `api`, which does not hold the volume: a row that went
+    here would leave its file with nothing to find it."""
+    row = _recording(session, tenant_id, folder, NOW - 31 * DAY)
+    row_id = row.id
+    monkeypatch.setattr(recordings, "FOLDER", folder / "not-mounted")
+
+    counts = purge(session, NOW)
+
+    session.expire_all()
+    assert counts["recordings"] == 0
+    assert session.get(Recording, row_id) is not None
+
+
 def test_the_recording_period_comes_from_the_setting(
     session, tenant_id, folder, monkeypatch
 ):

@@ -30,7 +30,11 @@ def path_of(file_name: str) -> Path:
 
 def delete_file(file_name: str) -> None:
     """Gone for good; a file that was never written or is gone already is no
-    error. Raises `OSError` when it stays."""
+    error. Raises `OSError` when it stays, also in a process without the volume
+    (`python -m api.jobs.retention` in `api`): its row must not go for a file
+    this process cannot see."""
+    if not FOLDER.is_dir():
+        raise NotADirectoryError(str(FOLDER))
     path_of(file_name).unlink(missing_ok=True)
 
 

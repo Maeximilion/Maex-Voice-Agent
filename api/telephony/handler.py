@@ -47,9 +47,10 @@ from sqlalchemy.orm import Session
 
 from api.agent import recording
 from api.agent.consent import recording_answer, stops_recording
+from api.agent.escalation import without_human_question
 from api.agent.guards import names_dish, note_said
 from api.agent.llm import LLMClient, Usage, cost_cents
-from api.agent.loop import SAY_HUMAN_ANSWER, ConversationLoop
+from api.agent.loop import SAY_HUMAN_ANSWER, SAY_NOT_A_PERSON, ConversationLoop
 from api.agent.outcome import CLOSING_STAGES, call_outcome, call_usage, log_usage
 from api.agent.prompt import build_system_prompt
 from api.agent.state import ConversationState, initial_state
@@ -468,6 +469,9 @@ class CallHandler:
         if live.loop is None:
             if live.state.recording != "asked":
                 raise RuntimeError("turn on a call the agent does not answer")
+            if without_human_question(text) is not None:
+                # Always a truthful answer (L1), and a person is on the way.
+                self._port.say(live.session_id, SAY_NOT_A_PERSON)
             self._to_the_team_after_the_question(live, recording_answer(text))
             return
         bind_call_id(str(live.call_id))

@@ -21,7 +21,7 @@ from api.agent.consent import (
     recording_answer,
     stops_recording,
 )
-from api.agent.loop import ConversationLoop
+from api.agent.loop import SAY_NOT_A_PERSON, ConversationLoop
 from api.agent.recording import (
     RECORDING_WITHDRAWN,
     SAY_HOW_TO_STOP,
@@ -573,6 +573,17 @@ def test_shadow_a_no_or_anything_else_rings_the_team_without(
     assert the_recording(session) is None
     assert port.transfers(SID) == [TEAM_PHONE]
     assert port.says(SID)[1:] == [SAY_TO_THE_TEAM]
+
+
+def test_shadow_answers_the_question_for_a_human_truthfully(session, tenant, shadow):
+    """L1: always, also in the one sentence the voice layer says here."""
+    port, handler = shadow_call(session, tenant)
+
+    handler.on_user_turn(SID, "Sind Sie ein Mensch?")
+
+    assert port.says(SID)[1:] == [SAY_NOT_A_PERSON, SAY_TO_THE_TEAM]
+    assert not port.team_leg_recorded(SID)
+    assert port.transfers(SID) == [TEAM_PHONE]
 
 
 def test_shadow_silence_rings_the_team_without(session, tenant, shadow):
