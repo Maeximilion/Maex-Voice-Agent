@@ -38,7 +38,10 @@ jobs:
         shell: powershell
       - run: scripts/printbridge_install_check.ps1 -Package dist
         shell: powershell
+      # Installable packages come from main or a manual run only: a pull request's build is
+      # checked above but never offered for download (security audit 02.11.2026).
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: github.event_name != 'pull_request'
         with:
           name: maex-printbridge-${{ github.sha }}
           path: dist/

@@ -21,6 +21,22 @@ updates:
       prefix: chore
       include: scope
 
+  # The build pins of the print bridge program (printbridge.yml). Never installed on the
+  # register PC, but they end up inside the program file there.
+  - package-ecosystem: pip
+    directory: /printbridge
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      printbridge-minor-patch:
+        update-types:
+          - minor
+          - patch
+    commit-message:
+      prefix: chore
+      include: scope
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
