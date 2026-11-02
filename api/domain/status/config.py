@@ -225,6 +225,44 @@ def change_wait(
     return config
 
 
+def set_wait(
+    session: Session,
+    tenant_id: uuid.UUID,
+    service: str,
+    minutes: int,
+    actor: str = ACTOR_TABLET,
+) -> ServiceConfig:
+    """Set the wait of a service to a typed value (T-3.9).
+
+    The stepper's limits, and no grid: the team may want 17. The value stays in
+    `service_config`, nothing resets it, so it holds across a restart.
+    """
+    field = WAIT_FIELDS.get(service)
+    if field is None:
+        raise InvalidInput(f"Unbekannter Service {service!r} fuer die Wartezeit")
+    if not MIN_WAIT_MINUTES <= minutes <= MAX_WAIT_MINUTES:
+        raise InvalidInput(
+            f"Wartezeit {minutes} ausserhalb der Grenzen",
+            say=(
+                f"Die Wartezeit geht von {MIN_WAIT_MINUTES} bis "
+                f"{MAX_WAIT_MINUTES} Minuten."
+            ),
+        )
+    config = _locked(session, tenant_id)
+    before = getattr(config, field)
+    if minutes != before:
+        _audit(
+            session,
+            config,
+            ACTION_WAIT,
+            actor,
+            {"service": service, "typed": True, "from": before, "to": minutes},
+        )
+        setattr(config, field, minutes)
+    session.commit()
+    return config
+
+
 def config_change_token(
     session: Session, tenant_id: uuid.UUID, now: datetime | None = None
 ) -> str:

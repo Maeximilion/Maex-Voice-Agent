@@ -28,8 +28,9 @@ Status lives in the project's Status field and nowhere else - never additionally
 | Event | Status |
 |---|---|
 | Issue opened | Todo |
-| Pull request opened | In progress |
+| Pull request opened | In review |
 | Pull request with `Closes #N` opened | Issue #N In progress |
+| Label `status: blocked` on an open item | Blocked |
 | Pull request merged | Done |
 | Issue closed | Done |
 | Item reopened | In Progress |
