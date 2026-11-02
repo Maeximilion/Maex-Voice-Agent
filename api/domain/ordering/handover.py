@@ -34,6 +34,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
 from api.core.logging import get_logger, log
+from api.domain.ordering.ticket import CANCELLED
 from api.domain.status.bridge import note_poll
 from api.events import enqueue
 from api.events.outbox import MAX_ATTEMPTS, mark_attempt_failed, mark_sent
@@ -68,7 +69,6 @@ SLIP_FIELDS = (
 ITEM_FIELDS = ("quantity", "number", "name", "options", "note")
 # A cancellation note only names the slip it voids: escpos prints no address and
 # no note on it (security re-audit 02.11.2026).
-CANCELLED = "cancelled"
 NOT_ON_A_CANCELLATION = ("address", "note")
 
 
