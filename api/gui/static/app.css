@@ -71,6 +71,7 @@ header{background:var(--surface);border-bottom:2px solid var(--line)}
 .banner{padding:var(--s3) var(--s4);font-weight:600}
 .banner.warn{background:var(--warn-bg);color:var(--warn)}
 .banner.danger{background:var(--danger-bg);color:var(--danger)}
+.banner.ok{background:var(--ok-bg);color:var(--ok)}
 
 /* Operations view: tablet in landscape. Text from 18 px, targets from 60 px
    (docs/06 §1 rule 3): the team works standing, with greasy fingers. */
@@ -111,27 +112,25 @@ header.aus{background:var(--surface-2)}
    to them. Two lines, so the bar keeps its room. */
 .betrieb .seg.services button{min-width:0;padding:0 var(--s2);line-height:1.1;white-space:normal;width:min-content}
 .betrieb .seg.services .on{background:var(--ok-bg);color:var(--ok)}
-.betrieb .seg.services .off{background:var(--danger-bg);color:var(--danger)}
+.betrieb .seg.services .off{background:var(--warn-bg);color:var(--warn)}
 /* Wartezeit stepper: label and value left, minus and plus right. */
 .step{display:flex;align-items:center;gap:var(--s1);border:2px solid var(--line);border-radius:var(--r);background:var(--surface-2);padding-left:var(--s3)}
 .step b{font-size:var(--fs-body);font-weight:700;line-height:1.2;width:10.4em}
-/* Tap on the value: a field drops below it, over the columns (T-3.9). */
-.step-edit{position:relative}
-.step-edit > summary{display:flex;align-items:center;min-height:var(--tap);cursor:pointer;list-style:none}
-.step-edit > summary::-webkit-details-marker{display:none}
-.step-edit > summary b{text-decoration:underline dotted;text-underline-offset:4px}
-.step-forms{position:absolute;top:100%;left:0;z-index:5;display:flex;flex-direction:column;gap:var(--s2);margin-top:var(--s2);padding:var(--s3);background:var(--surface);border:2px solid var(--accent);border-radius:var(--r)}
-.step-form{display:flex;align-items:center;gap:var(--s2)}
-.step-form label{width:5em;font-weight:600}
+/* The value opens its sheet (T-3.9): the dotted line says it can be tapped. */
+.betrieb .step > .step-value{border:0;background:transparent;padding:0 var(--s1) 0 0;min-height:var(--tap);text-align:left;white-space:normal}
+.step-value b{display:block;text-decoration:underline dotted;text-underline-offset:4px}
 /* The wait differs from the standard: said in words, next to the value. */
-.step-std{display:block;color:var(--warn);font-weight:600}
-.step-edit:has(.step-std) > summary{flex-direction:column;align-items:flex-start;justify-content:center}
-.step-edit:has(.step-std) b{line-height:1.1}
-.step-std{line-height:1.1}
-.betrieb .step-form input{font:inherit;font-size:var(--fs-h2);color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);width:110px;height:var(--tap);padding:0 var(--s3);appearance:textfield}
+.step-std{display:block;color:var(--warn);font-weight:600;line-height:1.1}
+.step-value:has(.step-std) b{line-height:1.1}
+/* The sheet of a wait is small: it covers no more than it needs. */
+.tafel #wartezeit{bottom:auto;right:auto;width:720px;max-width:100%}
+.wait-rows{display:flex;flex-direction:column;gap:var(--s3)}
+.wait-row{display:flex;align-items:center;gap:var(--s3)}
+.wait-row label{width:11em;display:flex;flex-direction:column;line-height:1.2}
+.wait-row input{font:inherit;font-size:var(--fs-h2);color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);width:110px;height:var(--tap);padding:0 var(--s3);appearance:textfield}
 /* The little arrows of a number field are no 60 px target; the number pad does the job. */
-.step-form input::-webkit-inner-spin-button,.step-form input::-webkit-outer-spin-button{appearance:none;margin:0}
-.betrieb .step-form button{flex:1;white-space:nowrap}
+.wait-row input::-webkit-inner-spin-button,.wait-row input::-webkit-outer-spin-button{appearance:none;margin:0}
+.betrieb .wait-row button{flex:1;white-space:nowrap}
 .betrieb .step > button{border:0;border-left:2px solid var(--line);border-radius:0;background:transparent}
 .betrieb .top button,.betrieb .top a.button{white-space:nowrap}
 .betrieb .top .seg.services button{white-space:normal}
@@ -190,7 +189,7 @@ header.aus{background:var(--surface-2)}
 .order .lines li{padding:3px 0}
 /* A note on the order or a line (an allergy, for one): a framed callout with a
    glyph, never grey small print. */
-.order .note{margin:var(--s2) 0;padding:var(--s2) var(--s3);background:var(--warn-bg);color:var(--warn);border:2px solid var(--warn-line);border-radius:10px;font-weight:600}
+.order .note{margin:var(--s2) 0;padding:var(--s2) var(--s3);background:var(--warn-line);color:var(--bg);border:2px solid var(--warn-line);border-radius:10px;font-weight:600}
 .order .note::before{content:"\25B2\00a0"}
 .nr{color:var(--muted);font-weight:500}
 .opt{padding-left:1.4em;color:var(--muted)}
@@ -220,8 +219,8 @@ header.aus{background:var(--surface-2)}
    columns, which stay live underneath. Title and close button stay in view
    (.sheet-head), the content scrolls (.sheet-body), the tools (search) and the
    foot (save buttons) stay put. */
-#korrektur,#gericht-aus,#vorbestellzeit{position:absolute;inset:0;z-index:5;display:flex;padding:var(--s2) var(--s4) var(--s4);background:var(--bg)}
-#korrektur:empty,#gericht-aus:empty,#vorbestellzeit:empty{display:none}
+#korrektur,#gericht-aus,#vorbestellzeit,#wartezeit{position:absolute;inset:0;z-index:5;display:flex;padding:var(--s2) var(--s4) var(--s4);background:var(--bg)}
+#korrektur:empty,#gericht-aus:empty,#vorbestellzeit:empty,#wartezeit:empty{display:none}
 .sheet{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--surface);border:3px solid var(--accent);border-radius:var(--r-lg);box-shadow:0 8px 32px rgba(0,0,0,.6)}
 .sheet-head{flex:none;display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);border-bottom:2px solid var(--line)}
 .sheet-head h2{margin:0;font-size:var(--fs-h2)}
@@ -250,6 +249,11 @@ header.aus{background:var(--surface-2)}
 .hint{margin:var(--s2) 0 0}
 .betrieb .banner{font-size:var(--fs-body)}
 
+/* Below the width of one row the three services wrap, and the stop keeps its place
+   at the top right, away from the routine buttons (UI review, 02.11.2026). */
+@media (max-width:1240px){
+  .betrieb .top .seg.services{order:3}
+}
 /* Smaller tablets (1024 px): the bar gives up some padding, not the 60 px targets. */
 @media (max-width:1100px){
   .betrieb .mode.status{font-size:var(--fs-body);padding:0 12px}
@@ -274,5 +278,20 @@ header.aus{background:var(--surface-2)}
 /* One group per category in menu order; the heading sticks while the dishes of
    its group scroll by. */
 .dish-group + .dish-group{margin-top:var(--s3)}
+/* A category is a fold: its summary is a 60 px target and sticks while the open
+   group scrolls by. */
+details.dish-group > summary{display:flex;align-items:center;gap:var(--s3);min-height:var(--tap);cursor:pointer;list-style:none}
+details.dish-group > summary::-webkit-details-marker{display:none}
+details.dish-group > summary::before{content:"\25B8";flex:none;width:1em}
+details.dish-group[open] > summary::before{content:"\25BE"}
+details.dish-group > summary .cat-name{flex:1}
+details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 .dish-cat{position:sticky;top:calc(var(--s3) * -1);z-index:1;margin:0 0 var(--s2);padding:var(--s2) 0;background:var(--surface);border-bottom:2px solid var(--line-strong);font-size:var(--fs-lg);font-weight:700}
 .sheet-foot .order-foot{border-top:0;margin-top:0;padding-top:0}
+/* "Nothing changed yet" is a state, not an error: violet, never coral (D27). */
+.state-note{color:var(--warn);font-weight:600;margin:var(--s1) 0}
+/* !important: the sheets set their inset by id. New order or complaint while a sheet covers the columns (T-3.8): a neon strip
+   above the sheet; the sheets (every direct child of main with an id) make room. */
+.sheet-alert{position:absolute;top:var(--s2);left:var(--s4);right:var(--s4);z-index:6}
+.betrieb button.sheet-alert{background:var(--accent);border-color:var(--accent);color:var(--surface);font-size:var(--fs-h2);font-weight:700}
+.tafel main.alert-on > [id]{top:calc(var(--tap) + var(--s2)) !important}

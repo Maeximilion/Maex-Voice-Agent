@@ -12,6 +12,7 @@ import secrets
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -631,6 +632,7 @@ def _orders_fragment(
     session: Session,
     tenant: Tenant | None,
     problem: str | None = None,
+    notice: str | None = None,
 ) -> HTMLResponse:
     if tenant is None:
         return templates.TemplateResponse(
@@ -639,7 +641,11 @@ def _orders_fragment(
     return templates.TemplateResponse(
         request,
         "fragments/bestellungen.html",
-        {"orders": _order_rows(session, tenant), "order_problem": problem},
+        {
+            "orders": _order_rows(session, tenant),
+            "order_problem": problem,
+            "order_notice": notice,
+        },
     )
 
 
@@ -654,7 +660,10 @@ def orders_fragment(
 
 
 def _order_tap(
-    request: Request, session: Session, change: Callable[[uuid.UUID], object]
+    request: Request,
+    session: Session,
+    change: Callable[[uuid.UUID], object],
+    notice: Callable[[Any], str] | None = None,
 ) -> HTMLResponse:
     """Passt oder Nochmal senden: die Spalte kommt frisch zurueck.
 
@@ -665,15 +674,17 @@ def _order_tap(
     tenant = _tenant(session)
     if tenant is None:
         return _orders_fragment(request, session, None)
-    problem = None
+    problem = line = None
     try:
-        change(tenant.id)
+        result = change(tenant.id)
+        # The card leaves the column at once: say what happened, until the next refresh.
+        line = notice(result) if notice else None
     except AppError as exc:
         session.rollback()
         logger.info("Bestellung nicht umgestellt: %s", exc.message)
         if exc.code == "conflict":
             problem = exc.say or ORDER_FAILED
-    return _orders_fragment(request, session, tenant, problem)
+    return _orders_fragment(request, session, tenant, problem, line)
 
 
 @router.post(
@@ -742,6 +753,9 @@ def cancel_order_tap(
         request,
         session,
         lambda t: order_board.cancel_order(session, t, order_id, version),
+        lambda order: (
+            f"Bestellung {order.pickup_code or order.customer_name}: Storniert"
+        ),
     )
 
 
@@ -754,6 +768,32 @@ async def _form(request: Request) -> dict[str, str]:
     """
     body = (await request.body()).decode("utf-8", errors="replace")
     return {k: v[-1] for k, v in parse_qs(body, keep_blank_values=True).items()}
+
+
+@router.get(
+    "/wartezeit/{service}", response_class=HTMLResponse, include_in_schema=False
+)
+def wartezeit_blatt(
+    request: Request, service: str, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """The sheet of one wait: today's value and the standard (T-3.9, T-3.14)."""
+    tenant = _tenant(session)
+    config = session.get(ServiceConfig, tenant.id) if tenant else None
+    if service not in WAIT_SERVICES or config is None:
+        raise HTTPException(status_code=404)
+    name = WAIT_SERVICES[service]
+    return templates.TemplateResponse(
+        request,
+        "fragments/wartezeit.html",
+        {
+            "key": service,
+            "label": service.capitalize(),
+            "minutes": current_wait(config, name, clock.utcnow()),
+            "standard": standard_wait(config, name),
+            "wait_min": switches.MIN_WAIT_MINUTES,
+            "wait_max": switches.MAX_WAIT_MINUTES,
+        },
+    )
 
 
 def _typed_minutes(text: str) -> int:
@@ -1003,7 +1043,8 @@ def _dish_list(
         template,
         {
             "groups": dishes.group_switches(
-                dishes.list_switches(session, tenant.id, query)
+                dishes.list_switches(session, tenant.id, query),
+                sold_out_first=not query.strip(),
             ),
             "query": query,
             "dish_problem": problem,

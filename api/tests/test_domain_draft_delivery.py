@@ -1129,78 +1129,20 @@ def test_a_draft_nobody_said_yes_to_goes_with_its_guest_details(
     assert _customers(session) == 0
 
 
-def _pickup(session, tenant_id, call_id):
-    return request(
-        session, tenant_id, call_id, customer={"name": "Braun", "phone": PHONE}
-    )
-
-
-def test_a_confirmed_pickup_after_a_draft_keeps_the_full_period(
-    session, tenant_id, call_id
+@pytest.mark.parametrize("kind", ["pickup", "callback", "reservation", "complaint"])
+def test_a_contact_after_a_draft_leaves_its_row_the_90_days(
+    session, tenant_id, call_id, kind
 ):
-    """Codex PR #472: a pickup counts no order on the customer, so `order_count`
-    alone would delete a guest 90 days after a confirmed contact."""
+    """A row only a draft wrote is never recognized or reused in a later call
+    (#489), so a contact of its own line keeps nothing alive on it: it goes
+    with the draft's guest details. Until the security re-audit of 02.11.2026,
+    evening, any such contact gave it the 24 months (Codex PR #472)."""
     _abandoned_draft(session, tenant_id, call_id)
-    order = draft_order(session, _pickup(session, tenant_id, call_id), now=CONTACT)
-    confirmed(session, tenant_id, call_id, order.order_id, CONTACT)
 
-    purge(session, CONTACT + _past(settings.retention_guest_details_days))
-    assert _customers(session) == 1
+    _contact_under(kind, session, tenant_id, call_id, CONTACT, name="Braun")
 
-    purge(session, CONTACT + _past(settings.retention_customer_days))
+    purge(session, DRAFTED + _past(settings.retention_guest_details_days))
     assert _customers(session) == 0
-
-
-def test_a_confirmed_table_after_a_draft_keeps_the_full_period(
-    session, tenant_id, call_id
-):
-    _abandoned_draft(session, tenant_id, call_id)
-    table = Reservation(
-        tenant_id=tenant_id,
-        call_id=call_id,
-        status="draft",
-        guest_name="Braun",
-        phone=PHONE,
-        party_size=2,
-        reserved_for=CONTACT + timedelta(days=1),
-        idempotency_key=uuid.uuid4().hex,
-    )
-    session.add(table)
-    session.commit()
-    confirm(
-        session,
-        ConfirmRequest(
-            call_id=call_id,
-            tenant_id=tenant_id,
-            entity="reservation",
-            entity_id=table.id,
-            idempotency_key=uuid.uuid4().hex,
-        ),
-        now=CONTACT,
-    )
-
-    purge(session, CONTACT + _past(settings.retention_guest_details_days))
-
-    assert _customers(session) == 1
-
-
-def test_a_callback_after_a_draft_keeps_the_full_period(session, tenant_id, call_id):
-    _abandoned_draft(session, tenant_id, call_id)
-    create_callback(
-        session,
-        CreateCallbackRequest(
-            call_id=call_id,
-            tenant_id=tenant_id,
-            phone=PHONE,
-            reason="out_of_scope",
-            summary="Bitte zurückrufen.",
-        ),
-        now=CONTACT,
-    )
-
-    purge(session, CONTACT + _past(settings.retention_guest_details_days))
-
-    assert _customers(session) == 1
 
 
 def test_with_an_objection_a_pickup_moves_no_period(session, tenant_id, call_id):
@@ -1422,11 +1364,23 @@ def test_two_drafts_from_a_named_number_write_two_rows(session, tenant_id):
     )
 
 
-def _contact_under(kind, session, tenant_id, call, at):
-    """A pickup, a callback or a table booked under PHONE in `call`."""
+def _contact_under(kind, session, tenant_id, call, at, name="Müller"):
+    """A pickup, a callback, a complaint or a table booked under PHONE in
+    `call`; the pickup and the table under `name`."""
     if kind == "pickup":
-        order = draft_order(session, request(session, tenant_id, call), now=NOW)
+        guest = {"name": name, "phone": PHONE}
+        order = draft_order(
+            session, request(session, tenant_id, call, customer=guest), now=NOW
+        )
         confirmed(session, tenant_id, call, order.order_id, at)
+    elif kind == "complaint":
+        transfer_to_team(
+            session,
+            TransferToTeamRequest(
+                call_id=call, tenant_id=tenant_id, reason="complaint"
+            ),
+            now=at,
+        )
     elif kind == "callback":
         create_callback(
             session,
@@ -1444,7 +1398,7 @@ def _contact_under(kind, session, tenant_id, call, at):
             tenant_id=tenant_id,
             call_id=call,
             status="draft",
-            guest_name="Müller",
+            guest_name=name,
             phone=PHONE,
             party_size=2,
             reserved_for=NOW + timedelta(days=1),
@@ -1487,3 +1441,46 @@ def test_the_own_line_still_moves_the_period(session, tenant_id, call_id, kind):
 
     session.refresh(known)
     assert known.last_contact_at == NOW + timedelta(days=1)
+
+
+@pytest.mark.parametrize("kind", ["pickup", "callback", "reservation", "complaint"])
+def test_the_owners_contact_leaves_a_planted_row_its_90_days(
+    session, tenant_id, call_id, kind
+):
+    """Security re-audit 02.11.2026, evening: a delivery draft from another line
+    under the owner's number and name writes a row that is nobody's record. The
+    owner's own contact moves their record, never that row, which would
+    otherwise keep a stranger's name and address for 24 months."""
+    known, _ = known_customer(session, tenant_id)
+    draft = draft_order(
+        session,
+        delivery(session, tenant_id, _from(session, tenant_id), name="Müller"),
+        now=NOW,
+    )
+    planted = session.get(Customer, session.get(Order, draft.order_id).customer_id)
+    planted.created_at = planted.last_contact_at = DRAFTED
+    planted_id = planted.id
+    session.commit()
+
+    _contact_under(kind, session, tenant_id, call_id, CONTACT)
+
+    session.refresh(known)
+    assert known.last_contact_at == CONTACT
+    purge(session, DRAFTED + _past(settings.retention_guest_details_days))
+    session.expire_all()
+    assert session.get(Customer, planted_id) is None
+    assert session.get(Customer, known.id) is not None
+
+
+def test_a_blocked_row_without_orders_still_counts_a_contact(
+    session, tenant_id, call_id
+):
+    """A blocked row is someone's record too: `find_customer` counts it."""
+    row = Customer(tenant_id=tenant_id, phone=PHONE, name="Müller", blocked=True)
+    session.add(row)
+    session.commit()
+
+    _contact_under("callback", session, tenant_id, call_id, CONTACT)
+
+    session.refresh(row)
+    assert row.last_contact_at == CONTACT

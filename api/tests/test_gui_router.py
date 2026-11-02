@@ -404,14 +404,10 @@ def test_a_wait_that_differs_names_the_standard(client, engine, tenant_id):
     ).text
 
     assert f'<span class="step-std">Standard {standard}</span>' in text
-    assert "/gui/kopfzeile/standardzeit/abholung/zurueck" in text
 
 
 def test_a_wait_on_its_standard_names_nothing(client, tenant_id):
-    text = client.get("/gui").text
-
-    assert "step-std" not in text
-    assert "standardzeit/abholung/zurueck" not in text
+    assert "step-std" not in client.get("/gui").text
 
 
 def test_the_standard_is_set_from_the_header(client, engine, tenant_id):
@@ -597,25 +593,50 @@ def test_a_typed_wait_needs_the_csrf_header(client, engine, tenant_id):
     assert wait_of(config_von(engine, tenant_id), "pickup") == before
 
 
-def test_the_header_offers_the_typed_wait_for_both_services(client, tenant_id):
+def test_the_value_in_the_header_opens_the_sheet_of_its_wait(client, tenant_id):
     text = client.get("/gui").text
 
+    assert 'hx-get="/gui/wartezeit/abholung"' in text
+    assert 'hx-get="/gui/wartezeit/lieferung"' in text
+
+
+def test_the_sheet_of_a_wait_holds_today_and_the_standard(client, engine, tenant_id):
+    config = config_von(engine, tenant_id)
+
+    text = client.get("/gui/wartezeit/abholung").text
+
     assert 'hx-post="/gui/kopfzeile/wartezeit/abholung"' in text
-    assert 'hx-post="/gui/kopfzeile/wartezeit/lieferung"' in text
-    assert 'name="minuten"' in text
+    assert 'hx-post="/gui/kopfzeile/standardzeit/abholung"' in text
     assert 'inputmode="numeric"' in text
+    assert f'value="{config.pickup_wait_standard_minutes}"' in text
+    assert "bis Betriebsschluss" in text
+    assert "für alle Tage" in text
+    assert "Zurück auf Standard" not in text
 
 
-def test_the_stream_does_not_redraw_the_header_while_somebody_types():
-    """No JS test run in the project, so the contract as a text check."""
+def test_the_sheet_of_a_wait_that_differs_offers_the_way_back(client, tenant_id):
+    client.post(
+        "/gui/kopfzeile/wartezeit/abholung", content="minuten=17", headers=TYPED
+    )
+
+    text = client.get("/gui/wartezeit/abholung").text
+
+    assert 'value="17"' in text
+    assert "Zurück auf Standard" in text
+
+
+def test_the_sheet_of_a_wait_needs_a_known_service(client, tenant_id):
+    assert client.get("/gui/wartezeit/reservierung").status_code == 404
+
+
+def test_nothing_holds_the_header_back_any_more():
+    """The wait sheet lies outside the header, so the stream redraws it always:
+    rule 7 of docs/06 §1, "Ist die KI an?", found by the UI review of 02.11.2026."""
     js = (Path(__file__).resolve().parents[1] / "gui" / "static" / "app.js").read_text(
         encoding="utf-8"
     )
 
-    assert "#kopfzeile details[open]" in js
-    # The fetch before the redraw, and the answer of one already on its way.
-    assert js.count("#kopfzeile details[open]") == 2
-    assert 'e.detail.requestConfig.verb === "get"' in js
+    assert "details[open]" not in js
 
 
 def test_wartezeit_abholung_minus_15_und_knopf_aus_an_der_grenze(

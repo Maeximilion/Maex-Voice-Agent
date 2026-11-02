@@ -16,13 +16,6 @@
   // schlimmer als der Fehler selbst. Dann bleibt die Ansicht stehen und die
   // rote Leiste oben meldet es (docs/06 §5).
   document.body.addEventListener("htmx:beforeSwap", function (e) {
-    // A header fetched before the wait field opened lands after it: keep the
-    // field (T-3.9). Saving is a POST and swaps; closing the field fetches again.
-    if (e.detail.requestConfig.verb === "get" && e.detail.target.id === "kopfzeile" &&
-        document.querySelector("#kopfzeile details[open]")) {
-      e.detail.shouldSwap = false;
-      return;
-    }
     var xhr = e.detail.xhr;
     if (xhr.status < 400) {
       if (stoerung) stoerung.hidden = true;
@@ -53,12 +46,6 @@
     if (fold && feiertageOffen) fold.open = true;
   });
 
-  document.addEventListener("toggle", function (e) {
-    if (!e.target.classList.contains("step-edit")) return;
-    if (e.target.open) e.target.querySelector("input").select();
-    else if (window.EventSource) kopfzeile();
-  }, true);
-
   if (!liste || !window.EventSource) return;
 
   function offline(yes) {
@@ -72,9 +59,6 @@
   }
 
   function kopfzeile() {
-    // Somebody is typing a wait (T-3.9): a redraw would take the field away.
-    // Closing the field fetches the header, so nothing stays out of date.
-    if (document.querySelector("#kopfzeile details[open]")) return;
     window.htmx.ajax("GET", "/gui/fragments/kopfzeile", {
       target: "#kopfzeile",
       swap: "outerHTML",
@@ -182,6 +166,11 @@
         if (red) red.scrollIntoView({ block: "nearest", behavior: "smooth" });
       }
       if (!newOrders.length) return;
+      // A sheet covers the columns: say so on the sheet, a tap shows the card.
+      notifySheet(
+        "Neue Bestellung \u00b7 ansehen",
+        '#bestellungen-liste [data-id="' + newOrders[0] + '"]'
+      );
       // Eigener Ton fuer Bestellungen, dazu kurzes Blinken (docs/06 §3).
       // Die erste neue Karte rollt ins Bild: steht sie unten, saehe sonst
       // niemand das Blinken. A card that turned red in the same redraw keeps
@@ -205,6 +194,16 @@
     var beschwerde = neu.some(function (id) {
       return jetzt[id] === "complaint";
     });
+    if (beschwerde) {
+      notifySheet(
+        "Neue Beschwerde \u00b7 ansehen",
+        '#rueckrufe-liste [data-id="' +
+          neu.filter(function (id) {
+            return jetzt[id] === "complaint";
+          })[0] +
+          '"]'
+      );
+    }
     ton(beschwerde ? [660, 440, 660, 440] : [880, 1175]);
   });
 
@@ -224,18 +223,68 @@
   var correctionBox = document.getElementById("korrektur");
   var dishBox = document.getElementById("gericht-aus");
   var noticeBox = document.getElementById("vorbestellzeit");
-  var sheets = [correctionBox, dishBox, noticeBox].filter(Boolean);
+  var waitBox = document.getElementById("wartezeit");
+  var sheets = [correctionBox, dishBox, noticeBox, waitBox].filter(Boolean);
   var board = document.querySelector(".board");
   var opener = null;
   var idleTimer = null;
   var IDLE_MS = 90000;
+  function sheetOpen() {
+    return sheets.some(function (b) { return b.firstElementChild; });
+  }
+  // A new order or complaint while a sheet covers the columns: a strip above
+  // the sheet, a tap closes the sheets and brings the card into view. It reads
+  // `sheets`, so every sheet added to the array gets it.
+  var alertBtn = null;
+  var alertTarget = null;
+  function hideAlert() {
+    if (alertBtn) alertBtn.remove();
+    alertBtn = null;
+    alertTarget = null;
+    var main = document.querySelector(".tafel main");
+    if (main) main.classList.remove("alert-on");
+  }
+  function notifySheet(text, selector) {
+    var main = document.querySelector(".tafel main");
+    if (!main || !sheetOpen()) return;
+    if (!alertBtn) {
+      alertBtn = document.createElement("button");
+      alertBtn.type = "button";
+      alertBtn.className = "sheet-alert";
+      alertBtn.addEventListener("click", function () {
+        var target = alertTarget ? document.querySelector(alertTarget) : null;
+        sheets.forEach(closeSheet);
+        hideAlert();
+        if (target) target.scrollIntoView({ block: "nearest" });
+      });
+      main.appendChild(alertBtn);
+    }
+    alertBtn.textContent = text;
+    alertTarget = selector;
+    main.classList.add("alert-on");
+  }
+  // The idle timer closed a correction: say that nothing was saved, until the
+  // next tap.
+  function showAbandoned() {
+    var main = document.querySelector(".tafel main");
+    if (!main || !board || main.querySelector(".abandoned")) return;
+    var note = document.createElement("div");
+    note.className = "banner warn abandoned";
+    note.setAttribute("role", "status");
+    note.textContent = "Korrektur abgebrochen, nichts gespeichert.";
+    main.insertBefore(note, board);
+    document.addEventListener("click", function () { note.remove(); }, { capture: true, once: true });
+  }
   function syncBoard() {
-    if (board) board.inert = sheets.some(function (b) { return b.firstElementChild; });
+    var open = sheetOpen();
+    if (board) board.inert = open;
+    if (!open) hideAlert();
   }
   // Empties a sheet and, if it is the correction, stops its idle timer: a timer
   // left running would close the next correction early.
   function dropSheet(box) {
     box.innerHTML = "";
+    if (box === dishBox) openCats = {};
     if (box === correctionBox && idleTimer) {
       window.clearTimeout(idleTimer);
       idleTimer = null;
@@ -248,12 +297,24 @@
     if (opener && document.contains(opener)) opener.focus();
     opener = null;
   }
+  // A wait that was taken closes its sheet; a refused one stays, with the
+  // sentence in the header (T-3.9).
+  document.body.addEventListener("htmx:afterRequest", function (e) {
+    if (e.detail.successful && waitBox && waitBox.contains(e.detail.elt) &&
+        e.detail.requestConfig.verb === "post") {
+      closeSheet(waitBox);
+    }
+  });
   function closeCorrection() {
     closeSheet(correctionBox);
   }
   function armIdleTimer() {
     if (idleTimer) window.clearTimeout(idleTimer);
-    idleTimer = window.setTimeout(closeCorrection, IDLE_MS);
+    idleTimer = window.setTimeout(function () {
+      var open = correctionBox && correctionBox.firstElementChild;
+      closeCorrection();
+      if (open) showAbandoned();
+    }, IDLE_MS);
   }
   sheets.forEach(function (box) {
     box.addEventListener("click", function (e) {
@@ -298,6 +359,7 @@
     var t = e.detail.target;
     var inList = t.id === "gericht-liste";
     if (!inList && sheets.indexOf(t) < 0) return;
+    if (inList) applyOpenCats(t);
     var sc = scroller(t);
     if (sc) sc.scrollTop = scrollWas;
     // Only if the swap removed the focused element (focus fell back to body): focus elsewhere, e.g. the wait field in the header, stays.
@@ -318,6 +380,37 @@
     var title = box.querySelector(".sheet-head h2");
     if (!wasOpen && title) title.focus();
   });
+  document.body.addEventListener("htmx:afterSwap", function (e) {
+    if (e.detail.target !== waitBox) return;
+    var field = waitBox.querySelector("input");
+    if (field) field.select();
+  });
+  // Which categories of "Gericht aus" the team opened, by name, so a redraw (a
+  // tap, a refresh, a search that is cleared) keeps them. Reset when the sheet
+  // closes. A search shows its hits open and does not count as the team's choice.
+  var openCats = {};
+  function searching() {
+    var s = document.getElementById("gericht-suche");
+    return !!(s && s.value.trim());
+  }
+  // toggle does not bubble: listen in the capture phase.
+  document.addEventListener(
+    "toggle",
+    function (e) {
+      var d = e.target;
+      if (!d.matches || !d.matches("#gericht-liste details[data-cat]") || searching()) return;
+      var cat = d.getAttribute("data-cat");
+      if (d.open) openCats[cat] = true;
+      else delete openCats[cat];
+    },
+    true
+  );
+  function applyOpenCats(list) {
+    if (searching()) return;
+    list.querySelectorAll("details[data-cat]").forEach(function (d) {
+      if (openCats[d.getAttribute("data-cat")]) d.open = true;
+    });
+  }
   function reloadDishes() {
     var search = document.getElementById("gericht-suche");
     if (!search) return;

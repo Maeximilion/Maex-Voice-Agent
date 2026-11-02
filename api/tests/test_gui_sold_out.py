@@ -1,5 +1,6 @@
 """gui: "Gericht aus" am Tablet (T-4.8, docs/06 §3)."""
 
+import re
 import uuid
 from datetime import UTC
 
@@ -72,6 +73,30 @@ def test_kasten_zeigt_aktive_gerichte(client, tenant_id):
     assert 'id="gericht-suche"' in html
     assert "Frühlingsrollen" in html and "Pho Bo" in html
     assert "Altes Gericht" not in html
+
+
+def test_ausgeschaltete_gerichte_stehen_zuerst_ohne_suche(client, db, tenant_id):
+    pho = db.scalar(select(MenuItem.id).where(MenuItem.name == "Pho Bo"))
+    client.post(f"/gui/gericht-aus/{pho}/aus", headers=HX)
+    html = client.get("/gui/gericht-aus").text
+    heads = re.findall(r'(?:<h3 class="dish-cat">|class="cat-name">)([^<]+)<', html)
+    assert heads[0] == "Heute aus"
+    assert html.index("Pho Bo") < html.index(heads[1])
+    # A search keeps the dish in its category.
+    found = client.get("/gui/fragments/gericht-aus", params={"q": "pho"}).text
+    assert "Heute aus</h3>" not in found
+
+
+def test_gerichte_stehen_unter_ihrer_kategorie(client, tenant_id):
+    html = client.get("/gui/gericht-aus").text
+    heads = re.findall(r'(?:<h3 class="dish-cat">|class="cat-name">)([^<]+)<', html)
+    assert heads == sorted(set(heads), key=heads.index) and len(heads) >= 1
+    # A search shows grouped results too.
+    found = client.get("/gui/fragments/gericht-aus", params={"q": "pho"}).text
+    assert (
+        re.findall(r'(?:<h3 class="dish-cat">|class="cat-name">)([^<]+)<', found) != []
+    )
+    assert "Pho Bo" in found
 
 
 def test_suchfeld_filtert(client, tenant_id):
