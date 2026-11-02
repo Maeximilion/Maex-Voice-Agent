@@ -65,6 +65,24 @@ SLIP_FIELDS = (
     "total_cents",
     "items",
 )
+ITEM_FIELDS = ("quantity", "number", "name", "options", "note")
+# A cancellation note only names the slip it voids: escpos prints no address and
+# no note on it (security re-audit 02.11.2026).
+CANCELLED = "cancelled"
+NOT_ON_A_CANCELLATION = ("address", "note")
+
+
+def _slip(payload: dict[str, Any]) -> dict[str, Any]:
+    """The part of a kitchen event the bridge prints (`SLIP_FIELDS`)."""
+    cancelled = payload.get("correction_reason") == CANCELLED
+    drop = NOT_ON_A_CANCELLATION if cancelled else ()
+    slip = {k: payload[k] for k in SLIP_FIELDS if k in payload and k not in drop}
+    slip["items"] = [
+        {k: item[k] for k in ITEM_FIELDS if k in item and k not in drop}
+        for item in slip.get("items") or []
+    ]
+    return slip
+
 
 PENDING = "pending"
 SENT = "sent"
@@ -315,9 +333,7 @@ def claim_tickets(
             {
                 "id": str(event.id),
                 "attempt": event.attempts,
-                "ticket": {
-                    k: event.payload[k] for k in SLIP_FIELDS if k in event.payload
-                },
+                "ticket": _slip(event.payload),
                 # Uhrzeiten schon in Ortszeit des Betriebs: die Bruecke kennt
                 # keine Zeitzone (CLAUDE.md §8, Anzeige in Europe/Berlin).
                 "ready_time": datetime.fromisoformat(ready_at)
