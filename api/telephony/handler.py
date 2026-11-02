@@ -464,6 +464,9 @@ class CallHandler:
         recording.withdraw(live.session, live.state, self._now)
         self._follow_recording(live, "on")
         self._port.say(live.session_id, recording.SAY_RECORDING_STOPPED)
+        # The notice is the last sentence heard: an "Okay" answers it, not the
+        # read-back or the question it was said into (rule 3, L13).
+        note_said(live.state, recording.SAY_RECORDING_STOPPED)
 
     def _turn(self, live: _LiveCall, text: str) -> None:
         if live.loop is None:
@@ -493,9 +496,11 @@ class CallHandler:
         # hands the call over (agent/loop.py, ultrareview of PR #372).
         # The same for the question for the allergy as a kitchen note: its
         # answer is consent only to a question heard to the end (L13; Codex
-        # PR #368). And for a remedy the core offers: a yes books it.
+        # PR #368). And for a remedy the core offers: a yes books it. And the
+        # way to stop a recording that has just started (L2).
         counted_as_heard = (
-            live.state.asked_for_phone
+            (before == "asked" and live.state.recording == "on")
+            or live.state.asked_for_phone
             or live.state.known_item_ids != known
             or live.state.last_say == SAY_HUMAN_ANSWER
             or live.state.held_call is not None

@@ -148,6 +148,11 @@ def test_an_explicit_yes_is_a_yes(said):
         "Ich bin nicht einverstanden.",
         "Nicht einverstanden.",
         "Aufnahme stoppen",
+        # Review of the branch: refusals that read as unclear before.
+        "Nein, das möchte ich nicht.",
+        "Nein, auf keinen Fall.",
+        "Ne, lieber nicht.",
+        "Nein, ich bin dagegen.",
     ],
 )
 def test_a_no_is_a_no(said):
@@ -169,6 +174,7 @@ def test_a_no_is_a_no(said):
         "Ja, ich bin nicht einverstanden.",
         "Ja, ich hätte gern einen Tisch.",
         "Nein, ich möchte eine Pizza.",
+        "Ja, auf keinen Fall.",
         "Zwei",
         "42",
         "",
@@ -199,6 +205,16 @@ def test_anything_else_is_unclear_and_no_consent(said):
         "Aufnahmestopp, bitte.",
         "Aufzeichnungsstopp!",
         "Aufnahme-Stopp",
+        # Review of the branch: the verb split in a main clause, plurals, and
+        # taking the consent back without naming the recording.
+        "Nehmen Sie das bitte nicht auf.",
+        "Nehmen Sie mich nicht auf.",
+        "Zeichnen Sie das nicht auf.",
+        "Keine Aufnahmen bitte.",
+        "Aufnahmen stoppen.",
+        "Ich bin damit nicht mehr einverstanden.",
+        "Ich widerrufe meine Einwilligung.",
+        "Ich nehme meine Zustimmung zurück.",
     ],
 )
 def test_a_withdrawal_is_heard_in_many_wordings(said):
@@ -216,6 +232,9 @@ def test_a_withdrawal_is_heard_in_many_wordings(said):
         "Hören Sie, ich hätte gern einen Tisch.",
         "Hören Sie auf, die 23 bitte.",
         "Die Aufnahmen?",
+        "Nehmen Sie bitte meine Bestellung auf.",
+        "Nehmen Sie meine Bestellung auf, ohne Zwiebeln.",
+        "Ich bin damit einverstanden.",
     ],
 )
 def test_a_sentence_without_both_halves_is_no_withdrawal(said):
@@ -226,6 +245,8 @@ def test_a_stop_with_more_in_it_is_not_only_a_stop():
     assert only_stops_recording("Bitte die Aufnahme stoppen.")
     assert only_stops_recording("Hören Sie auf, mich aufzunehmen.")
     assert only_stops_recording("Aufnahmestopp.")
+    assert only_stops_recording("Nehmen Sie das bitte nicht auf.")
+    assert only_stops_recording("Ich widerrufe meine Einwilligung.")
     assert not only_stops_recording("Aufnahme stoppen, und noch eine Cola.")
     assert not only_stops_recording("Aufnahmestopp, und noch eine Cola.")
 
@@ -313,6 +334,35 @@ def test_an_unclear_answer_is_the_callers_first_turn(session, tenant, switched_o
     assert len(port.says(SID)) > 1
     handler.on_call_ended(SID)
     assert the_call(session, SID).intent == "reservation"
+
+
+@pytest.mark.parametrize(
+    "refusal", ["Nein danke, nicht aufnehmen.", "Ich will keine Aufnahme."]
+)
+def test_a_no_with_a_request_in_it_keeps_the_request(
+    session, tenant, switched_on, refusal
+):
+    """Review of the branch: the no is logged and nothing is recorded, and the
+    request behind it goes to the core instead of being dropped."""
+    port, handler = on_the_phone(session, tenant)
+
+    handler.on_user_turn(SID, f"{refusal} {A_TABLE}")
+
+    assert answers(session) == ["no"]
+    assert not port.recordings(SID)
+    assert SAY_WHAT_CAN_I_DO not in port.says(SID)[1:]
+    # The core took the table and asks what it needs for it.
+    assert "Tisch" in port.says(SID)[-1]
+
+
+def test_the_way_to_stop_is_played_to_the_end(session, tenant, switched_on):
+    """L2 wants the way to stop announced: a caller who starts talking does not
+    cut it off while the recording already runs."""
+    port, handler = on_the_phone(session, tenant)
+
+    handler.on_user_turn(SID, "Ja.")
+
+    assert SAY_HOW_TO_STOP not in port.interruptible(SID)
 
 
 def test_silence_is_no_consent_and_the_call_goes_on(session, tenant, switched_on):
@@ -528,6 +578,24 @@ def test_a_stop_said_into_a_protected_sentence_counts(session, tenant, switched_
     assert answers(session) == ["yes", "no"]
     assert port.stopped(SID) == ["discard"]
     assert port.says(SID)[-1] == SAY_RECORDING_STOPPED
+
+
+def test_an_okay_to_the_stop_notice_confirms_nothing(session, tenant, switched_on):
+    """Review of the branch: a stop said into the read-back puts the notice
+    behind it, and the guest's "Okay" answers the notice, not the read-back
+    (rule 3). The draft is read out again instead."""
+    port, handler = on_the_phone(session, tenant)
+    handler.on_user_turn(SID, "Ja.")
+    handler.on_user_turn(SID, A_TABLE)
+    handler.on_user_turn(SID, "Auf den Namen Mueller.")
+    assert "Mueller" in port.says(SID)[-1]
+
+    handler.on_talked_over(SID, "Aufnahme stoppen!")
+    assert port.says(SID)[-1] == SAY_RECORDING_STOPPED
+    handler.on_user_turn(SID, "Okay.")
+
+    assert session.scalars(select(Reservation.status)).all() == ["draft"]
+    assert "Mueller" in port.says(SID)[-1]
 
 
 def test_anything_else_said_into_a_protected_sentence_stays_unheard(

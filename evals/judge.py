@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from api.agent.consent import ALLERGY_QUESTION
 from api.agent.guest_details import words_said
 from api.agent.recording import RECORDING_WITHDRAWN
 from api.core.time import to_local
@@ -455,15 +456,20 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         ]
 
     duplicates = _duplicate_confirms(session, orders, reservations)
-    consent = list(
-        session.scalars(
-            select(ConsentLog.answer)
-            .where(ConsentLog.call_id == call_id)
-            # A replay runs on one instant: the withdrawal comes behind its yes.
-            .order_by(
-                ConsentLog.answered_at, ConsentLog.question == RECORDING_WITHDRAWN
-            )
-        )
+    logged = session.execute(
+        select(ConsentLog.question, ConsentLog.answer)
+        .where(ConsentLog.call_id == call_id)
+        # A replay runs on one instant: the withdrawal comes behind its yes.
+        .order_by(ConsentLog.answered_at, ConsentLog.question == RECORDING_WITHDRAWN)
+    ).all()
+    consent = [answer for _, answer in logged]
+    # Each hard check reads the answer to its own question (review of T-11.3):
+    # the log holds the allergy note and the recording, whose wording carries
+    # the period and so has no fixed text.
+    allergy_yes = (ALLERGY_QUESTION, "yes") in logged
+    recording_yes = any(
+        answer == "yes" and question not in (ALLERGY_QUESTION, RECORDING_WITHDRAWN)
+        for question, answer in logged
     )
     recorded = session.scalar(select(Recording).where(Recording.call_id == call_id))
     stored = [
@@ -504,9 +510,9 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         extra_reservations=max(0, len(done_res) - 1),
         note=done[-1].note if done else None,
         consent=consent,
-        reason_without_consent=0 if "yes" in consent else with_reason,
+        reason_without_consent=0 if allergy_yes else with_reason,
         recording=_recording_state(recorded),
-        recording_without_consent=recorded is not None and "yes" not in consent,
+        recording_without_consent=recorded is not None and not recording_yes,
     )
 
 

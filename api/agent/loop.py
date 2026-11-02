@@ -28,6 +28,7 @@ from api.agent import allergies, escalation, guards, recording
 from api.agent.consent import (
     ALLERGY_QUESTION,
     bare_answer,
+    bare_recording_answer,
     consent_answer,
     is_yes,
     only_stops_recording,
@@ -269,11 +270,11 @@ class ConversationLoop:
         if state.recording == "asked":
             answer = recording_answer(user_text)
             recording.settle(self._session, state, answer, self._now)
-            if answer != "unclear":
+            if bare_recording_answer(user_text):
                 guards.note_said(state, recording.SAY_WHAT_CAN_I_DO)
                 return TurnResult(state=state, say=_opening(state))
-            # No consent, and no second question: the sentence is what the
-            # guest called for.
+            # No consent, and no second question: the sentence, or what it
+            # holds besides a no, is what the guest called for.
         if state.recording != "on" or not stops_recording(user_text):
             return self._guest_turn(state, user_text)
         recording.withdraw(self._session, state, self._now)

@@ -904,6 +904,82 @@ def test_gebucht_ohne_confirm_des_modells_wird_erkannt(migrated_db_url):
         engine.dispose()
 
 
+@pytest.mark.parametrize(
+    ("logged", "with_recording", "reason_without", "recorded_without"),
+    [
+        # A yes to the recording is no consent to the allergy as a reason.
+        ([("recording", "yes"), ("allergy", "no")], True, 1, False),
+        # A yes to the allergy note is no consent to a recording.
+        ([("recording", "no"), ("allergy", "yes")], True, 0, True),
+        ([("recording", "yes"), ("allergy", "yes")], True, 0, False),
+    ],
+)
+def test_each_consent_check_reads_the_answer_to_its_own_question(
+    migrated_db_url, logged, with_recording, reason_without, recorded_without
+):
+    """Review of T-11.3: the consent log holds both questions now, and each hard
+    check must read the answer to its own."""
+    from api.agent import recording
+    from api.agent.consent import ALLERGY_QUESTION
+    from api.models import ConsentLog, OrderItem, Recording
+
+    questions = {"recording": recording.question(), "allergy": ALLERGY_QUESTION}
+    engine = create_engine(migrated_db_url)
+    try:
+        with Session(engine) as session:
+            tenant = runner._prepare(session, runner.DEFAULT_NOW, runner.menu_plan())
+            call = SimCall(session, tenant, now=runner.DEFAULT_NOW)
+            item_id = session.scalar(
+                select(MenuItem.id).where(
+                    MenuItem.tenant_id == tenant.id, MenuItem.number == "13"
+                )
+            )
+            draft = draft_order(
+                session,
+                DraftOrderRequest(
+                    call_id=call.call_id,
+                    tenant_id=tenant.id,
+                    idempotency_key=uuid.uuid4().hex,
+                    type="pickup",
+                    customer={"name": "Schmidt", "phone": "0721 5551234"},
+                    items=[{"menu_item_id": item_id, "quantity": 1}],
+                ),
+                now=runner.DEFAULT_NOW,
+            )
+            line = session.scalars(
+                select(OrderItem).where(OrderItem.order_id == draft.order_id)
+            ).one()
+            line.note = "Keine Nuesse. Grund: Allergie"
+            for which, answer in logged:
+                session.add(
+                    ConsentLog(
+                        tenant_id=tenant.id,
+                        call_id=call.call_id,
+                        question=questions[which],
+                        answer=answer,
+                        answered_at=runner.DEFAULT_NOW,
+                    )
+                )
+            if with_recording:
+                session.add(
+                    Recording(
+                        tenant_id=tenant.id,
+                        call_id=call.call_id,
+                        file_name="x.wav",
+                        started_at=runner.DEFAULT_NOW,
+                    )
+                )
+            session.commit()
+
+            seen = observe(session, call.call_id, confirms=0)
+
+            assert seen.reason_without_consent == reason_without
+            assert seen.recording_without_consent is recorded_without
+            assert seen.consent == [answer for _, answer in logged]
+    finally:
+        engine.dispose()
+
+
 def test_vergleich_nur_felder_aus_expected():
     seen = Observed(
         intent="pickup",
