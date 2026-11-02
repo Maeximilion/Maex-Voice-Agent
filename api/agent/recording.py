@@ -4,8 +4,9 @@ The code asks and the code decides, never the model, which hears nothing of this
 (`ConversationState.to_prompt_json`). Opt-out is not enough: the recording starts
 only after an explicit "ja" (`consent.recording_answer`); a "nein", silence or
 anything else leaves the call going on without one. Nothing here may cost a call
-(CLAUDE.md §2 rule 5): when the consent log or the row cannot be written, nothing
-is recorded and the call goes on.
+(CLAUDE.md §2 rule 5): when the consent log or the row cannot be written, or the
+disk is nearly full (`recordings.open_recording`), nothing is recorded, the
+guest hears nothing of a recording, and the call goes on.
 
 `state.recording` says where a call stands, and the phone line follows it
 (`telephony/handler.py`): None, nothing was asked; "asked", the answer is waited
