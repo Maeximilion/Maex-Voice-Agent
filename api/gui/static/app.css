@@ -1,182 +1,248 @@
-/* Farben, Abstaende und Klassen des abgenommenen Mockups
-   (gui/mockups/admin-desktop.html, docs/06 §7). Keine Schrift aus dem Netz:
-   die GUI muss ohne Internet laufen (docs/06 §2), deshalb Systemschrift als
-   Rueckfall hinter IBM Plex Sans. */
+/* Design tokens and component classes of the operations view (docs/06 §7).
+   One source for the design: tokens first, then components that use only
+   tokens. No font from the network, the GUI must run without internet
+   (docs/06 §2), so the system font is the fallback behind IBM Plex Sans.
+   Borders of controls reach 3:1 against their surface, text 4.5:1 (checked in
+   the redesign of 02.11.2026, docs/06 §7). */
 
 :root{
-  --bg:#F4F6F3; --surface:#FFFFFF; --surface-2:#EDF1EC;
-  --text:#1E2A24; --muted:#66716B; --line:#D9DFDA; --line-strong:#B9C2BB;
-  --accent:#0F6E56; --accent-bg:#E1F5EE; --accent-text:#085041;
-  --warn:#854F0B; --warn-bg:#FAEEDA; --danger:#A32D2D; --danger-bg:#FCEBEB;
-  --ok:#3B6D11; --ok-bg:#EAF3DE;
+  /* colour */
+  --bg:#EEF1EE; --surface:#FFFFFF; --surface-2:#F5F7F5;
+  --text:#17211C; --muted:#55605A; --line:#D5DBD6; --line-strong:#7C8881;
+  --accent:#0B6B52; --accent-bg:#DDF2EA; --accent-text:#064536;
+  --warn:#7A4A06; --warn-bg:#FCEBC8; --warn-line:#C27F0E;
+  --danger:#A52828; --danger-bg:#FBE4E4;
+  --ok:#2F6410; --ok-bg:#E4F1D6;
+  /* type */
+  --fs-body:18px; --fs-lg:20px; --fs-h2:22px; --fs-time:26px; --fs-kpi:32px; --fs-code:36px;
+  /* space */
+  --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px;
+  /* shape and size */
+  --r-sm:8px; --r:12px; --r-lg:14px; --tap:60px; --edge:6px;
 }
 @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
-  --bg:#141917; --surface:#1C2320; --surface-2:#232B27;
-  --text:#E6EBE7; --muted:#9AA69F; --line:#2E3733; --line-strong:#465049;
-  --accent:#5DCAA5; --accent-bg:#0F3A2F; --accent-text:#9FE1CB;
-  --warn:#FAC775; --warn-bg:#3D2A0C; --danger:#F09595; --danger-bg:#3F1A1A;
-  --ok:#C0DD97; --ok-bg:#243A16;
+  --bg:#101513; --surface:#1B2220; --surface-2:#222B28;
+  --text:#EAF0EC; --muted:#A3AFA8; --line:#34403A; --line-strong:#7E8B84;
+  --accent:#5DCAA5; --accent-bg:#0F3A2F; --accent-text:#A8E8D2;
+  --warn:#FFCE85; --warn-bg:#3D2A0C; --warn-line:#E0A23A;
+  --danger:#F29B9B; --danger-bg:#431C1C;
+  --ok:#C6E3A0; --ok-bg:#243A16;
 }}
 :root[data-theme="dark"]{
-  --bg:#141917; --surface:#1C2320; --surface-2:#232B27;
-  --text:#E6EBE7; --muted:#9AA69F; --line:#2E3733; --line-strong:#465049;
-  --accent:#5DCAA5; --accent-bg:#0F3A2F; --accent-text:#9FE1CB;
-  --warn:#FAC775; --warn-bg:#3D2A0C; --danger:#F09595; --danger-bg:#3F1A1A;
-  --ok:#C0DD97; --ok-bg:#243A16;
+  --bg:#101513; --surface:#1B2220; --surface-2:#222B28;
+  --text:#EAF0EC; --muted:#A3AFA8; --line:#34403A; --line-strong:#7E8B84;
+  --accent:#5DCAA5; --accent-bg:#0F3A2F; --accent-text:#A8E8D2;
+  --warn:#FFCE85; --warn-bg:#3D2A0C; --warn-line:#E0A23A;
+  --danger:#F29B9B; --danger-bg:#431C1C;
+  --ok:#C6E3A0; --ok-bg:#243A16;
 }
 
 *{box-sizing:border-box}
 html,body{margin:0}
-body{background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;font-variant-numeric:tabular-nums}
+body{background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,Arial,Helvetica,sans-serif;font-size:15px;line-height:1.4;font-variant-numeric:tabular-nums}
 a{color:var(--accent)}
-button{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:7px 12px;cursor:pointer}
+button{font:inherit;color:inherit;background:var(--surface);border:2px solid var(--line-strong);border-radius:var(--r);padding:7px 12px;cursor:pointer}
 button:hover{background:var(--surface-2)}
-button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:focus-visible,a:focus-visible,[tabindex]:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
 button.primary:hover{filter:brightness(1.08)}
-input[type=text],select{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:7px 10px;height:36px}
-.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
+input[type=text],select{font:inherit;color:inherit;background:var(--surface);border:2px solid var(--line-strong);border-radius:var(--r-sm);padding:7px 10px;height:36px}
 
-header{background:var(--surface);border-bottom:1px solid var(--line)}
-.top{display:flex;align-items:center;gap:12px;min-height:56px;padding:8px 20px;flex-wrap:wrap}
+header{background:var(--surface);border-bottom:2px solid var(--line)}
+.top{display:flex;align-items:center;gap:var(--s3);padding:var(--s2) var(--s4);flex-wrap:wrap}
 .brand{display:flex;align-items:baseline;gap:10px;margin-left:auto}
 .brand b{font-weight:600;font-size:17px}
 .brand span{color:var(--muted)}
-.mode{display:flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--line);border-radius:999px;font-size:14px}
-.dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none}
+.mode{display:flex;align-items:center;gap:var(--s2);padding:6px 12px;border:2px solid var(--line);border-radius:var(--r);font-size:14px}
+/* Status dot: a shape with a glyph in it, so the three states differ without
+   colour (docs/06 §1 rule 4); the text stands next to it as well. */
+.dot{width:14px;height:14px;border-radius:50%;background:var(--ok);flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--surface);font-size:12px;line-height:1;font-weight:700}
 .dot.ok{background:var(--ok)}
-.dot.warn{background:var(--warn)}
-.dot.danger{background:var(--danger)}
+.dot.warn{background:var(--warn-line);border-radius:3px}
+.dot.danger{background:var(--danger);border-radius:3px}
+.dot.ok::before{content:"\2713"}
+.dot.warn::before{content:"\25B2"}
+.dot.danger::before{content:"\2715"}
 
-.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 20px}
-.badge{font-size:12px;padding:2px 8px;border-radius:4px;font-weight:500;white-space:nowrap}
+.card{background:var(--surface);border:2px solid var(--line);border-radius:var(--r-lg);padding:14px var(--s4)}
+.badge{font-size:12px;padding:2px 10px;border-radius:var(--r-sm);font-weight:600;white-space:nowrap}
 .badge.warn{background:var(--warn-bg);color:var(--warn)}
 .badge.danger{background:var(--danger-bg);color:var(--danger)}
 .badge.ok{background:var(--ok-bg);color:var(--ok)}
 .badge.accent{background:var(--accent-bg);color:var(--accent-text)}
-.list{background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden}
-.row{display:grid;grid-template-columns:56px 1fr 120px 90px 200px;align-items:center;gap:12px;padding:12px 16px;border-top:1px solid var(--line);cursor:pointer}
-.row:first-child{border-top:0}
-.row:hover{background:var(--surface-2)}
-.detail{display:grid;grid-template-columns:1fr 1fr;gap:24px;padding:16px;border-top:1px solid var(--line);background:var(--surface-2)}
+/* A glyph in front of the warning tones: the tone is never the only signal. */
+.badge.warn::before{content:"\25B2\00a0"}
+.badge.danger::before{content:"\2715\00a0"}
+.badge.ok::before{content:"\2713\00a0"}
 .tbl{width:100%;border-collapse:collapse;font-size:14px}
-.tbl td,.tbl th{padding:6px 8px;border-top:1px solid var(--line);text-align:left;vertical-align:top}
-.tbl th{color:var(--muted);font-weight:500;font-size:13px;border-top:0}
+.tbl td,.tbl th{padding:6px 8px;border-top:2px solid var(--line);text-align:left;vertical-align:top}
+.tbl th{color:var(--muted);font-weight:600;font-size:13px;border-top:0}
 .muted{color:var(--muted)}
 .note{font-size:13px;color:var(--muted);margin-top:6px}
 
-/* Leiste ueber allem: Fehler rot, fehlende Verbindung gelb (docs/06 §5). */
-.banner{padding:12px 20px;font-weight:500}
+/* Bar over everything: error red, missing connection yellow (docs/06 §5). */
+.banner{padding:var(--s3) var(--s4);font-weight:600}
 .banner.warn{background:var(--warn-bg);color:var(--warn)}
 .banner.danger{background:var(--danger-bg);color:var(--danger)}
 
-/* Betriebsansicht: Tablet im Querformat. Schrift ab 18 px, Ziele ab 60 px
-   (docs/06 §1 Regel 3) - bedient wird im Stehen, mit fettigen Fingern. */
-.betrieb{font-size:18px}
-.betrieb button{min-height:60px;min-width:60px;font-size:18px;padding:12px 18px}
-.betrieb .mode{font-size:18px;padding:10px 16px}
-.betrieb .dot{width:14px;height:14px}
-.betrieb main{padding:16px 20px 40px}
-/* Kopfzeile: Knoepfe unter den Anzeigen. Pausiert wird sie grau (docs/06 §5),
-   der rote Punkt und der Text "KI ist aus" bleiben kraeftig. */
-.actions{border-top:1px solid var(--line)}
+/* Operations view: tablet in landscape. Text from 18 px, targets from 60 px
+   (docs/06 §1 rule 3): the team works standing, with greasy fingers. */
+.betrieb{font-size:var(--fs-body)}
+.betrieb button{min-height:var(--tap);min-width:var(--tap);font-size:var(--fs-body);font-weight:600;padding:var(--s3) 18px}
+.betrieb input[type=text]{min-height:var(--tap)}
+.betrieb .mode{font-size:var(--fs-body);padding:10px 16px}
+.betrieb .dot{width:28px;height:28px;font-size:16px}
+.betrieb main{padding:var(--s4) var(--s4) 40px}
+/* The board page fills the screen: the command bar stays, each column scrolls
+   on its own, so a new order never pushes the stop button out of view. */
+.tafel{height:100vh;height:100dvh;display:flex;flex-direction:column;overflow:hidden}
+.tafel header{flex:none}
+.tafel main{flex:1;min-height:0;display:flex;flex-direction:column;padding-bottom:0;overflow-y:auto}
+/* With a panel open the page scrolls and the columns keep a height of their own. */
+.tafel .board{flex:1 0 360px}
+.tafel .col{height:100%;overflow-y:auto}
+#korrektur,#gericht-aus{flex:none}
+
+/* Command bar. Paused: grey; the red state and the text "KI ist aus" stay strong
+   (docs/06 §5). */
+.actions{border-top:0;padding-top:0;gap:var(--s2)}
+.betrieb .actions button,.betrieb .actions a.button{padding-left:14px;padding-right:14px}
 .betrieb button.stop{background:var(--danger);border-color:var(--danger);color:var(--surface)}
 .betrieb button.stop:hover{filter:brightness(1.08)}
+.betrieb .top .push{margin-left:auto}
 header.aus{background:var(--surface-2)}
-header.aus .top > .mode ~ .mode{opacity:.6}
-/* Spalte Rueckrufe: Beschwerde mit rotem Rand, Text im Abzeichen daneben
-   (docs/06 §1 Regel 4). "Anrufen" ist ein tel:-Link im Knopfkleid. */
-.cb .res-head{flex-wrap:wrap;gap:8px 12px;margin-bottom:6px}
+header.aus .top > .mode ~ .mode{opacity:.75}
+.betrieb .mode.tone-ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok)}
+.betrieb .mode.tone-warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-line)}
+.betrieb .mode.tone-danger{background:var(--danger-bg);color:var(--danger);border-color:var(--danger)}
+.betrieb .mode.status{font-size:var(--fs-h2);font-weight:700;min-height:var(--tap);padding:0 20px}
+/* Mode switch: three segments, the one that holds is filled. */
+.seg{display:flex;border:2px solid var(--line-strong);border-radius:var(--r);overflow:hidden}
+.betrieb .seg button{border:0;border-radius:0;min-width:120px}
+.betrieb .seg button + button{border-left:2px solid var(--line-strong)}
+/* Wartezeit stepper: label and value left, minus and plus right. */
+.step{display:flex;align-items:center;gap:var(--s1);border:2px solid var(--line);border-radius:var(--r);background:var(--surface-2);padding-left:var(--s3)}
+.step b{font-size:var(--fs-body);font-weight:700;line-height:1.2;width:9.6em}
+.betrieb .step button{border:0;border-left:2px solid var(--line);border-radius:0;background:transparent}
+.betrieb .top button,.betrieb .top a.button{white-space:nowrap}
+/* Column Callbacks: a complaint has a wide red edge, the word stays next to it
+   (docs/06 §1 rule 4). "Anrufen" is a tel: link dressed as a button. */
+.cb .res-head{flex-wrap:wrap;gap:var(--s2) var(--s3);margin-bottom:var(--s1)}
 .cb .when{display:flex;align-items:baseline;gap:6px;white-space:nowrap}
-.cb .time{font-size:24px;font-weight:600;line-height:1.1}
-.cb .phone{font-weight:500;letter-spacing:.02em}
+.cb .time{font-size:var(--fs-time);font-weight:700;line-height:1.1}
+.cb .phone{font-weight:600;letter-spacing:.02em}
 .cb .cb-note{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;margin-top:6px}
 .cb .summary{margin:6px 0 0;color:var(--text)}
-/* Beschwerde: breiter roter Rand links statt duennem Rahmen - aus zwei Metern
-   sichtbar, und das Wort "Beschwerde" steht trotzdem daneben. */
-.cb.complaint{border-left:6px solid var(--danger);padding-left:15px}
-.cb-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
-.betrieb a.button{display:inline-flex;align-items:center;justify-content:center;min-height:60px;min-width:60px;padding:12px 18px;font-size:18px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--text);text-decoration:none}
+.cb.complaint{border-color:var(--danger);box-shadow:inset var(--edge) 0 0 var(--danger);padding-left:20px}
+/* Card actions: the main action takes the free width, the rest sit beside it. */
+.cb-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:14px}
+.cb-actions > .primary,.cb-actions > .stop,.cb-actions > a.button{flex:1 1 auto}
+.betrieb button.quiet{border-color:transparent;background:transparent;color:var(--danger);text-decoration:underline;text-underline-offset:4px}
+.betrieb a.button{display:inline-flex;align-items:center;justify-content:center;min-height:var(--tap);min-width:var(--tap);padding:var(--s3) 18px;font-size:var(--fs-body);font-weight:600;border:2px solid var(--line-strong);border-radius:var(--r);background:var(--surface);color:var(--text);text-decoration:none}
 /* Key figures (T-8.4): four values side by side, the history below. */
-.kz-title{margin:0;font-size:22px}
-.kz-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.kz-title{margin:0;font-size:var(--fs-h2)}
+.kz-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--s4)}
 .kz{display:flex;flex-direction:column}
-.kz b{font-size:28px;font-weight:600;line-height:1.2}
-.kz-history{margin-top:16px;overflow-x:auto}
+.kz b{font-size:var(--fs-kpi);font-weight:700;line-height:1.2}
+.kz-history{margin-top:var(--s4);overflow-x:auto}
+.betrieb .tbl{font-size:var(--fs-body)}
+.betrieb .tbl th{font-size:var(--fs-body)}
 @media (max-width:900px){ .kz-bar{grid-template-columns:1fr 1fr} }
-.board{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;align-items:start}
-.col{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px}
-.col h2{margin:0 0 12px;font-size:20px;font-weight:600;display:flex;align-items:center;gap:10px}
-.count{font-size:18px;font-weight:600;min-width:32px;height:32px;padding:0 8px;border-radius:16px;background:var(--surface);border:1px solid var(--line-strong);display:inline-flex;align-items:center;justify-content:center}
-/* Schrift ab 18 px auch fuer Notiz und Abzeichen (docs/06 §1 Regel 3): die
-   Klassen stammen aus dem Desktop-Mockup und sind dort kleiner. */
+.board{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+.col{background:transparent;padding:0}
+.col h2{margin:0;padding:0 0 10px;font-size:var(--fs-h2);font-weight:700;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:1;background:var(--bg)}
+.count{font-size:var(--fs-body);font-weight:700;min-width:34px;height:34px;padding:0 8px;border-radius:17px;background:var(--text);color:var(--bg);display:inline-flex;align-items:center;justify-content:center}
+/* Text from 18 px also for note and badge (docs/06 §1 rule 3): the classes come
+   from the desktop mockup and are smaller there. */
 .betrieb .note{font-size:18px}
-.betrieb .badge{font-size:18px;padding:3px 10px}
-.empty{color:var(--muted);margin:0;padding:8px 2px}
-.cards{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:10px}
-.res-head{display:flex;align-items:center;gap:12px;margin-bottom:4px}
-.res .time{font-size:24px;font-weight:600;line-height:1.1}
-.res .name{font-weight:500}
+.betrieb .badge{font-size:18px;padding:3px 10px;white-space:normal}
+.empty{color:var(--muted);margin:0;padding:var(--s2) 2px}
+.cards{list-style:none;margin:0;padding:0 0 var(--s4);display:flex;flex-direction:column;gap:var(--s3)}
+.res-head{display:flex;align-items:center;gap:var(--s3);margin-bottom:var(--s1)}
+.res .time{font-size:var(--fs-time);font-weight:700;line-height:1.1}
+.res .name{font-weight:600}
 
-/* Spalte Neue Bestellungen (T-4.7). Abholcode gross und farbig hinterlegt:
-   aus zwei Metern lesbar (docs/06 §3). Kartennummer grau vor dem Namen. */
-.order .code{margin-left:auto;font-size:28px;font-weight:700;line-height:1;padding:6px 12px;border-radius:6px;background:var(--accent);color:var(--surface);letter-spacing:.02em}
-.order .lines{list-style:none;margin:8px 0;padding:0}
-.order .lines li{padding:2px 0}
+/* Column New orders (T-4.7). The pickup code is big and filled: readable from
+   two metres (docs/06 §3). The card number stays grey before the name. */
+.order .time{font-size:var(--fs-time);font-weight:700;line-height:1.1}
+.order .code{margin-left:auto;font-size:var(--fs-code);font-weight:800;line-height:1;padding:8px 14px;border-radius:10px;background:var(--accent);color:var(--surface);letter-spacing:.02em}
+.order .name{font-weight:600}
+.order .lines{list-style:none;margin:var(--s2) 0;padding:0;font-size:var(--fs-lg)}
+.order .lines li{padding:3px 0}
+/* A note on the order or a line (an allergy, for one): a framed callout with a
+   glyph, never grey small print. */
+.order .note{margin:var(--s2) 0;padding:var(--s2) var(--s3);background:var(--warn-bg);color:var(--warn);border:2px solid var(--warn-line);border-radius:10px;font-weight:600}
+.order .note::before{content:"\25B2\00a0"}
 .nr{color:var(--muted);font-weight:500}
 .opt{padding-left:1.4em;color:var(--muted)}
-.order-foot{display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-top:1px solid var(--line);padding-top:8px;margin-top:8px}
-.order .state{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
-/* Wartet auf Freigabe: gelber Rand plus Text, die Kueche hat noch nichts. */
-.order.awaiting{border-left:6px solid var(--warn);padding-left:15px}
-/* Rote Karte: Uebergabe fehlgeschlagen (docs/06 §3). Rahmen rot, Text daneben. */
-.order.failed{border:3px solid var(--danger)}
+.order-foot{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s3);border-top:2px solid var(--line);padding-top:var(--s2);margin-top:var(--s2)}
+.order-foot b{font-size:var(--fs-h2)}
+.order .state{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s2)}
+/* Waits for "Passt": yellow edge plus text, the kitchen has nothing yet. */
+.order.awaiting{border-color:var(--warn-line);box-shadow:inset var(--edge) 0 0 var(--warn-line);padding-left:20px}
+/* Red card: handover failed (docs/06 §3). Red frame, text next to it. */
+.order.failed{border:3px solid var(--danger);box-shadow:inset var(--edge) 0 0 var(--danger);padding-left:20px}
 /* Waits for "Passt" too long: the waiting card's edge, in red. Not the full red
    frame, which says the slip did not print. */
-.order.overdue{border-left:6px solid var(--danger);padding-left:15px}
+.order.overdue{border-color:var(--danger);box-shadow:inset var(--edge) 0 0 var(--danger);padding-left:20px}
 .order.neu{animation:blink 1s ease-in-out 3}
 @keyframes blink{50%{background:var(--accent-bg)}}
 @media (prefers-reduced-motion:reduce){.order.neu{animation:none;background:var(--accent-bg)}}
-/* Korrektur: breiter Kasten ueber den Spalten. */
+/* Holiday suggestions: one folded strip, the cards open on a tap. */
+.fold{background:var(--surface-2);border:2px dashed var(--line-strong);border-radius:var(--r-lg);padding:var(--s2) var(--s2) var(--s2) var(--s4);margin-bottom:var(--s3)}
+.fold > summary{display:flex;align-items:center;gap:var(--s3);min-height:var(--tap);font-weight:600;cursor:pointer;list-style:none}
+.fold > summary::-webkit-details-marker{display:none}
+.fold .fold-text{flex:1;min-width:0}
+.fold .fold-toggle{flex:none;border:2px solid var(--line-strong);border-radius:var(--r);padding:14px 18px;background:var(--surface)}
+.fold .fold-less,.fold[open] .fold-more{display:none}
+.fold[open] .fold-less{display:inline}
+.fold .cards{padding:var(--s2) var(--s2) var(--s2) 0}
+/* Correction: wide panel over the columns. */
 #korrektur:empty{display:none}
-#korrektur{margin-bottom:16px}
-.korrektur{border:2px solid var(--accent)}
-.korrektur h2{margin:0;font-size:22px}
+#korrektur{margin-bottom:var(--s4)}
+.korrektur{border:3px solid var(--accent)}
+.korrektur h2{margin:0;font-size:var(--fs-h2)}
 .korrektur .schliessen{margin-left:auto}
 .korrektur fieldset{border:0;margin:0;padding:0;min-width:0}
 .korrektur fieldset[disabled]{opacity:.6}
-/* Gesperrt sieht gesperrt aus; der Grund steht als Text darueber. */
+/* Disabled looks disabled; the reason stands above as text. */
 .betrieb button:disabled{opacity:.4;cursor:not-allowed;filter:grayscale(1)}
-.edit-line{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:12px}
+.edit-line{background:var(--surface-2);border:2px solid var(--line);border-radius:var(--r);padding:var(--s3)}
 .edit-line.removed .edit-head > span:first-child{text-decoration:line-through;color:var(--muted)}
-.edit-head{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.edit-head{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3)}
 .edit-head .price{margin-left:auto}
 .edit-actions,.choice,.reasons{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;align-items:center}
-.choice-name{min-width:120px;font-weight:500}
-.betrieb button.qty{min-width:72px;font-size:26px;font-weight:600}
-.betrieb button.picked{background:var(--accent-bg);border:2px solid var(--accent);color:var(--accent-text);font-weight:600}
+.choice-name{min-width:120px;font-weight:600}
+.betrieb button.qty{min-width:72px;font-size:26px;font-weight:700}
+.betrieb button.picked{background:var(--accent-bg);border:3px solid var(--accent);color:var(--accent-text);font-weight:700}
 .nummer{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0}
-.betrieb .nummer input{height:60px;min-width:140px;font-size:22px}
-.blocker{color:var(--danger);font-weight:500;margin:8px 0}
-.hint{margin:8px 0 0}
-.betrieb .banner{font-size:18px}
+.betrieb .nummer input{height:var(--tap);min-width:140px;font-size:var(--fs-h2)}
+.blocker{color:var(--danger);font-weight:600;margin:var(--s2) 0}
+.hint{margin:var(--s2) 0 0}
+.betrieb .banner{font-size:var(--fs-body)}
 
+/* Smaller tablets (1024 px): the bar gives up some padding, not the 60 px targets. */
+@media (max-width:1100px){
+  .betrieb .mode.status{font-size:var(--fs-body);padding:0 12px}
+  .betrieb .seg button{min-width:0;padding-left:10px;padding-right:10px}
+  .betrieb .mode{padding:6px 10px}
+  .order .code{font-size:30px;padding:6px 10px}
+}
 @media (max-width:900px){
   .board{grid-template-columns:1fr}
-  .row{grid-template-columns:48px 1fr 90px}
-  .detail{grid-template-columns:1fr}
-  .wrap{padding:0 14px}
+  .tafel{height:auto;overflow:visible}
+  .tafel .col{height:auto;overflow:visible}
 }
-/* "Gericht aus" (T-4.8): Kasten wie die Korrektur, Schalter ab 60 px, das
-   Wort "heute aus" steht neben der Farbe (docs/06 §1 Regel 3 und 4). */
+/* "Gericht aus" (T-4.8): panel like the correction, switches from 60 px, the
+   words "heute aus" stand next to the colour (docs/06 §1 rules 3 and 4). */
 #gericht-aus:empty{display:none}
-#gericht-aus{margin-bottom:16px}
-.gericht-aus{border:2px solid var(--accent)}
-.gericht-aus h2{margin:0;font-size:22px}
+#gericht-aus{margin-bottom:var(--s4)}
+.gericht-aus{border:3px solid var(--accent)}
+.gericht-aus h2{margin:0;font-size:var(--fs-h2)}
 .gericht-aus .schliessen{margin-left:auto}
-.gericht-aus input[type=search]{font:inherit;color:inherit;background:var(--surface);border:1px solid var(--line-strong);border-radius:6px;padding:10px 14px;width:100%;height:60px;font-size:22px;margin:4px 0 12px}
+.gericht-aus input[type=search]{font:inherit;color:inherit;background:var(--surface);border:2px solid var(--line-strong);border-radius:var(--r-sm);padding:10px 14px;width:100%;height:var(--tap);font-size:var(--fs-h2);margin:var(--s1) 0 var(--s3)}
 .dishes{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px}
-.dish{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.dish{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s3);background:var(--surface-2);border:2px solid var(--line);border-radius:var(--r);padding:10px var(--s3)}
 .dish .dish-name{flex:1 1 140px}
-.dish.aus{border-left:6px solid var(--warn);padding-left:7px}
+.dish.aus{border-color:var(--warn-line);box-shadow:inset var(--edge) 0 0 var(--warn-line);padding-left:var(--s4)}
 .dish.aus .dish-name{color:var(--muted)}
