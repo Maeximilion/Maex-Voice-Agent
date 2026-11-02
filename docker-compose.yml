@@ -81,6 +81,7 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    networks: [backend]
     <<: *hardened
     # The image's entrypoint starts as root, makes the data directory the
     # postgres user's and drops to it.
@@ -106,6 +107,7 @@ services:
   api:
     build: ./api
     restart: unless-stopped
+    networks: [backend]
     # Capabilities stay: in development it runs as root and writes into the
     # mounted checkout (status_bump.py, eval reports), which on a Linux host
     # belongs to another user and needs DAC_OVERRIDE. The production file
@@ -177,6 +179,7 @@ services:
     # Eigener Prozess, damit der heiße Pfad nie auf n8n wartet (docs/11 §events).
     build: ./api
     restart: unless-stopped
+    networks: [backend]
     <<: *hardened
     # It writes nothing: its mounts and the image stay as they are.
     read_only: true
@@ -208,6 +211,9 @@ services:
       context: ./api
       target: voice
     restart: unless-stopped
+    # The one service on both: Asterisk reaches it, and it reaches the database.
+    # `telephony` is its way out in production, to the model and the speech services.
+    networks: [backend, telephony]
     environment:
       <<: *settings
       # The core of a call asks the model.
@@ -267,6 +273,8 @@ services:
     # issue #1979, the drill "voice frozen").
     image: andrius/asterisk:22.11.0_alpine-3.24-537e52c@sha256:98c0e598fb16492215ddc7cc52c3200646b44584ffa9267bebecff531fd3530b
     restart: unless-stopped
+    # It takes outside input: of the containers it reaches `voice` alone.
+    networks: [telephony]
     # Renders deploy/asterisk/conf/ into the tmpfs below, then starts as the
     # image does, without its -vvvddd: verbose output prints every dialplan
     # step with its values, the media token included.
@@ -315,6 +323,7 @@ services:
     # the database through the authorize endpoint) affects every older release.
     image: n8nio/n8n:2.45.6
     restart: unless-stopped
+    networks: [backend]
     environment:
       # No usage data to n8n (#252 finding 9).
       N8N_DIAGNOSTICS_ENABLED: "false"
@@ -351,6 +360,7 @@ services:
     # upstream relay, the messages stay on this server.
     image: binwiederhier/ntfy:v2.34.0
     restart: unless-stopped
+    networks: [backend]
     # The server refuses to start with an empty user list, and with access
     # rules for users it does not know. So the rules are set only when users
     # exist; without users it starts closed for everyone instead of not at all.
@@ -387,6 +397,17 @@ services:
     <<: *hardened
     read_only: true
     tmpfs: [/tmp]
+
+# Who stands where (docs/13 §3, api/tests/test_compose_networks.py). Both are
+# plain bridges here: Docker publishes no port of a container that is only on
+# an `internal` network, and such a container has no `host.docker.internal`,
+# so the dev ports and a model on the host need them plain. The production
+# file makes `backend` internal.
+networks:
+  # Database, API, dispatcher, n8n, push server and `voice`.
+  backend:
+  # Asterisk and `voice`.
+  telephony:
 
 volumes:
   pgdata:

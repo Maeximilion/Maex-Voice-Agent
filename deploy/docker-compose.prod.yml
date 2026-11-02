@@ -1,8 +1,8 @@
 # Produktion: zusammen mit der Basis-Datei starten
 #   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d --build
 #
-# Only caddy publishes a host port. db, api, n8n and push stay inside the Docker
-# network because the base file gives them no port and this file adds none;
+# Only caddy publishes a host port. db, api, n8n and push stay inside their Docker
+# networks because the base file gives them no port and this file adds none;
 # `ports: []` here would not remove one (Compose merges the lists). Naming the
 # files with -f also keeps docker-compose.override.yml, the dev ports, out.
 # Docker publishes past ufw: a port set here is open whatever the host firewall says.
@@ -21,6 +21,7 @@ services:
   api:
     logging: *journald
     restart: always
+    networks: [edge]
     command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     environment:
       ENV: prod
@@ -90,6 +91,7 @@ services:
   n8n:
     logging: *journald
     restart: always
+    networks: [edge]
     volumes:
       # The workflow exports are read for the import, never written back here.
       - ./n8n:/workflows:ro
@@ -97,6 +99,7 @@ services:
   push:
     logging: *journald
     restart: always
+    networks: [edge]
     environment:
       # Caddy stands in front: take the visitor address from its header.
       - NTFY_BEHIND_PROXY=true
@@ -106,6 +109,8 @@ services:
     # Pinned like n8n and ntfy: a floating tag changes the proxy on the next pull. Dependabot proposes updates.
     image: caddy:2.11.7-alpine
     restart: always
+    # Never on `backend`: the proxy sees what it passes on, not the database.
+    networks: [public, edge]
     environment:
       # Zugang zur Betriebsansicht. Ohne diese Werte startet Caddy zwar,
       # lässt aber niemanden auf /gui/* durch - das ist die sichere Seite.
@@ -138,6 +143,20 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [api, n8n, push]
+
+# Compose adds these to the base file's lists and definitions. `internal` takes
+# the gateway away: a service on such networks alone has no way out of the
+# server, which api, dispatcher, n8n and the push server do not need, and db
+# least of all. Caddy leaves through `public` (certificates), `voice` and
+# Asterisk through `telephony`. api/tests/test_compose_networks.py checks it.
+networks:
+  backend:
+    internal: true
+  # Caddy and the three services it passes requests on to.
+  edge:
+    internal: true
+  # Caddy alone: it publishes 80 and 443, which an internal network cannot.
+  public:
 
 volumes:
   caddy_data:

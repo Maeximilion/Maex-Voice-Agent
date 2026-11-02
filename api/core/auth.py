@@ -47,8 +47,8 @@ def require_gui_proxy(x_maex_proxy_secret: str = Header(default="")) -> None:
     """The operations view answers only requests that came through Caddy.
 
     Caddy's Basic-Auth is the view's only access check, and every container on
-    the Docker network reaches api:8000 without it, Asterisk among them, which
-    takes calls from outside (security audit of 15.10.2026, #252 finding 6).
+    the API's Docker networks reaches api:8000 without it (security audit of
+    15.10.2026, #252 finding 6; Asterisk no longer does since T-9.8, docs/13 §3).
     Caddy sets this header from GUI_PROXY_SECRET on every request it passes on,
     replacing one a client sent. Outside dev and test a missing or weak secret,
     or one equal to the agent token, closes the view; dev has no Caddy.
