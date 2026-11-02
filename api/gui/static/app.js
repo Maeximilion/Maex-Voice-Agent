@@ -300,7 +300,7 @@
   // A wait that was taken closes its sheet; a refused one stays, with the
   // sentence in the header (T-3.9).
   document.body.addEventListener("htmx:afterRequest", function (e) {
-    if (e.detail.successful && waitBox && waitBox.contains(e.detail.elt) &&
+    if (e.detail.xhr.status < 300 && waitBox && waitBox.contains(e.detail.elt) &&
         e.detail.requestConfig.verb === "post") {
       closeSheet(waitBox);
     }

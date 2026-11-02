@@ -403,7 +403,7 @@ def test_a_wait_that_differs_names_the_standard(client, engine, tenant_id):
         "/gui/kopfzeile/wartezeit/abholung", content="minuten=17", headers=TYPED
     ).text
 
-    assert f'<span class="step-std">Standard {standard}</span>' in text
+    assert f'<span class="step-std">Standard {standard} Min</span>' in text
 
 
 def test_a_wait_on_its_standard_names_nothing(client, tenant_id):
