@@ -468,6 +468,41 @@ maex-voice-agent/
 ## 12. Handover Block (Template for Each Chat End)
 
 ```text
+## Handover 02.11.2026 - T-6.3, T-6.9, T-11.9, T-3.7, T-6.5, T-11.8, paused for a restart of Claude
+
+Status: merged on `main`: #468 (T-6.3), #469 (T-6.9), #470 (T-11.9), #471 (T-3.7 check behind Caddy). Open, not merged: #472 (T-6.5 with T-6.2 part 2, head `1e288ea`, status 2.14.0, Codex clean on that head, CI green before), #473 (T-11.8, head `be96219`, migration 019, Codex still running). Unfinished, pushed, no PR: `task/8-4-key-figures` (`c50c393`), `task/9-6-print-bridge-program` (`c967f9f`), `task/4-9-price-reconcile` (`b49f111`). T-9.8 has a design and no commit. A detached script runs two real-model passes at 14:20.
+
+Artifacts:
+- GPU run: `/tmp/claude-1001/-home-maeximilion-Maex-Voice-Agent--claude-worktrees-task-t-6-3-9a3077/fd4a6b23-1d28-4d55-8683-8a303fe8c999/scratchpad/gpu_eval.sh`, PID in `gpu_eval.pid` beside it, results in `gpu/`: `run.log`, `passes.log`, `head`, `reports/`, `done` when finished, about 14:50. It takes the head of `task/6-5-delivery-orders` at 14:19, `UD-IQ3_XXS` with the flags of docs/18 lane 4, and cleans up after itself. Stop it with `kill`, only on Maxi's word. Reports go to `evals/reports/` of the main folder for `scripts/readme_assets.py pending --record`.
+- T-8.4 left: `/ponytail-review`, docs 06, 07, 01_STATUS with the assumptions on the four values, status bump, PR with `Closes #79`.
+- T-9.6 left: run tests, read `gh run list --workflow printbridge.yml`, remove the temporary `push: branches` entry in `printbridge.yml`, README with Maxi's steps, docs 13, 07, 11, 01_STATUS, scripts/README, review, PR with `Closes #409`. Nothing on that branch has been run.
+- T-4.9 left: all implementation; the branch holds red tests only, never run. Migration 019 there collides with #473, so it renumbers. Read `api/tests/test_domain_menu_price_check.py` first, it entered the commit unread. The tests change import behaviour: an existing surcharge stays without `--apply-price-changes`.
+- T-9.8 left: all of it. Design: `backend` (db, api, dispatcher, n8n, push, voice) and `telephony` (asterisk, voice) in the base file; the prod file sets `backend` internal and adds internal `edge` (caddy, api, n8n, push) and `public` (caddy only). `networks: !reset []` for asterisk in the line and tunnel files, `wireguard` on `telephony`, `BACKUP_DOCKER_NETWORK` to `<project>_backend`, a drill point with `docker network disconnect` in mid-call, `api/tests/test_compose_networks.py`.
+
+Decisions:
+- Register: the <POS Provider> gives no interface; the input slip is the permanent path, variant C is gone (D2, Maxi).
+- Legal: no lawyer. docs/09 §1 "Review of 02.11.2026": no question open, U1 to U8 accepted, tax adviser no longer blocks, new N1 and N2. Drafts in `docs/vorlagen/` carry 38 `<offen: ...>` marks for Maxi.
+- Objection (L12): an objection on a number means no link by name, a new customer row (Claude's call, fixed in #472).
+- Maxi on blocked work, 02.11.2026: what costs money or needs hardware stays blocked; what he blocked himself is checked. Result: T-9.8 released, T-10.11 buildable with an empty rule catalogue, no invented remedy.
+- T-6.4 stays unbuilt while D5 needs no polygon.
+
+Gate: G0 open, unchanged. It waits for T-10.2 on the wire and two calls at once (T-10.1), with Maxi at the telephones.
+
+Open, next concrete step first:
+1. After 14:50 read the GPU result on the head in `gpu/head`: compare with the recorded main runs (37/56 on `a9eddab`, false escalations 17.8 %) on identical case files only; 0 guessed, 0 unconfirmed, 0 missed are hard. docs/08 asks for two runs on `main` too, Maxi approved two passes in all, so name that limit or ask for two more.
+2. #472, one push: `note_contact` (`api/domain/customers/contact.py`) must not move `last_contact_at` on a number with an objection, because it extends the old record's period; p95 in docs/01 to 50 ms and 75 ms. That push needs a new Codex review; no conversation code changes, so the GPU result still holds. If #473 merges first, merge `origin/main` into #472.
+3. #473: read Codex, fix, merge. Ultrareview candidate for both, Maxi's call.
+4. T-6.8, T-11.3, T-10.11 after #472, then finish T-8.4, T-9.6, T-4.9, T-9.8. New agents, one brief each; the T-9.8 brief needs only the design above.
+5. Maxi: the real zone list as `imports/zones.csv`, the `<offen>` marks, the complaint rules, a delivery slip on paper, whether the driver needs a phone number on the slip.
+
+Lessons:
+- Never `--delete-branch` on a PR with a PR on top: GitHub closed #469 and #470. Repair: push the old head back as the branch, reopen, PATCH the base, delete the branch.
+- `gh pr view --json statusCheckRollup` gives an empty `conclusion` for a running check: read `status`.
+- Codex stalls on a head that only merges `main`: one `@codex review`, it then answers in minutes.
+- Agents share the scratchpad and overwrite each other's files there (`msg.txt`, `resolve.py`): give each its own folder.
+- The hook matches the merge command in any text of a Bash call, so a note about it goes into a file.
+- T-3.7 was already built on 28.10.; check the code before a brief says build.
+
 ## Handover <Date> – C<Nr> <Topic>
 Status: <what runs, what doesn't>
 Artifacts: <files, links>
