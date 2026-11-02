@@ -64,16 +64,10 @@ Wächter (eigener Faden)       ─► 60 s unabgeholt: Karte rot, Alarm, order.h
 - `handover_state` folgt nur dem Bon mit der neuesten Revision; ein überholter Bon wird nicht mehr ausgeliefert (docs/04 §confirm, Vertrag b und c).
 - Rot wird die Karte sofort, wenn die Küche den Bon nicht hat (Druckfehler oder 60 s unabgeholt), nicht erst nach dem letzten Backoff. Der Bon bleibt fällig und wird gedruckt, sobald Drucker oder Brücke zurück sind; die Karte wird dann wieder normal.
 - Die Brücke führt ein Druckprotokoll (nur Bestell-ids und Revisionen) und druckt einen Bon nie zweimal, auch wenn die Rückmeldung verloren ging.
-- Die Kasse (Variante C, D2) bekommt später einen eigenen Weg über n8n; die Brücke hängt nicht daran.
 
 **Entscheidung 26.09.2026 (D2): Bons druckt die Kasse.** Eine Bestellung wird in die Kasse eingespielt, die Kasse bucht sie mit TSE und verteilt Quittung und Küchenbon selbst auf ihre Drucker. Die Druckbrücke bleibt als **unabhängiger Weg** bestehen und druckt auf den **Haupt-Bondrucker an der Kasse** (80 mm, 48 Zeichen), nicht in die Küche:
 
-| Phase | Kasse | Druckbrücke |
-|---|---|---|
-| Bis zur Kassenschnittstelle (Annahme: <Kassenanbieter> arbeitet nicht mit) | Team tippt die Bestellung ein, die Kasse druckt Quittung und Küchenbon | druckt **jede** bestätigte Bestellung mit dem Kopf „NICHT IN KASSE – bitte eingeben" |
-| Mit Kassenschnittstelle (Variante C) | Bestellung kommt automatisch, Kasse druckt | druckt nur, wenn die Kasse die Bestellung nicht rechtzeitig annimmt; Kopf wie oben, Team bucht nach (Regel 5) |
-
-Ein Bon der Brücke ist ein Eingabezettel für das Team, kein Küchenbon und kein Beleg. `handover_state` heißt bis zur Schnittstelle „Zettel liegt an der Kasse", danach „Kasse hat angenommen".
+The <Kassenanbieter> gives no interface (Maxi, 02.11.2026), so there is no variant C and this is the permanent path: the team types the order in, the register prints receipt and kitchen ticket, and the bridge prints **every** confirmed order with the head "NICHT IN KASSE – bitte eingeben". A slip of the bridge is an input slip for the team, no kitchen ticket and no receipt. `handover_state` reads "Zettel liegt an der Kasse"; that the order was typed in is the tablet's mark "In Kasse eingegeben" (T-11.6, L18).
 
 ---
 

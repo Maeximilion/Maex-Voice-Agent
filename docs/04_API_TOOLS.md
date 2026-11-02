@@ -375,6 +375,13 @@ Die `menu_item_id` kommt aus `search_menu`, ein anderer Weg in die Karte existie
 ```
 Außerhalb → `ok: false`, `error.code: "out_of_zone"`, `say` bietet Abholung an.
 
+**Postal code variant (T-6.3, D5):** only `postal_code` is required and only it decides, so a guest who asks whether we deliver there gets an answer without a street (docs/05 Auskunft); `street`, `house_number` and `city` may be sent and are ignored until the polygon variant reads them (T-6.4).
+
+- Spaces between digits are removed. Anything else that is not five digits is `invalid_input` with a sentence that asks again: a code not understood must never read as `out_of_zone`, the guest would lose the delivery to a hearing error.
+- Only active zones of the tenant with `match_type` `postal_code` count.
+- A postal code in two active zones is `service_unavailable` with the team sentence: the fee would be whichever row came first (hard rule 2), so `scripts/seed_zones.py` (T-6.9) must refuse an overlap.
+- The tool says where, not when: whether delivery is open right now stays with `get_service_status` and `draft_order`.
+
 ---
 
 ## `check_slot`

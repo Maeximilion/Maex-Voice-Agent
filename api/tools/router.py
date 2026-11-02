@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from api.core.auth import require_token
 from api.tools import (
+    check_delivery,
     check_slot,
     confirm,
     create_callback,
@@ -27,3 +28,4 @@ router.include_router(search_menu.router)
 router.include_router(get_item_details.router)
 router.include_router(draft_order.router)
 router.include_router(find_customer.router)
+router.include_router(check_delivery.router)
