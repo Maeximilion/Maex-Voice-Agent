@@ -29,6 +29,7 @@ from api.core.time import business_day, to_local
 from api.db import SessionLocal, get_db
 from api.domain.callbacks import list_open, mark_done
 from api.domain.callbacks.board import NUMBER_OTHER, NUMBER_WITHHELD
+from api.domain.menu import price_check
 from api.domain.menu import sold_out as dishes
 from api.domain.ordering import board as order_board
 from api.domain.ordering import correction
@@ -155,6 +156,21 @@ def _holiday_rows(session: Session, tenant: Tenant) -> list[dict]:
             "like": WEEKDAYS[s.like_weekday],
         }
         for s in holiday_days.open_suggestions(session, tenant.id, today)
+    ]
+
+
+def _price_rows(session: Session, tenant: Tenant) -> list[dict]:
+    """Register prices the team has not answered yet (T-4.9), in menu order."""
+    return [
+        {
+            "id": str(d.menu_item_id),
+            "number": d.number,
+            "name": d.name,
+            "price": orders_view.euro(d.price_cents),
+            "register": orders_view.euro(d.register_cents),
+            "register_cents": d.register_cents,
+        }
+        for d in price_check.open_differences(session, tenant.id)
     ]
 
 
@@ -296,6 +312,7 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
             "callbacks": _callback_rows(session, tenant),
             "orders": _order_rows(session, tenant),
             "holidays": _holiday_rows(session, tenant),
+            "prices": _price_rows(session, tenant),
             **_header(session, tenant),
         }
     return _page_response(
@@ -533,6 +550,65 @@ def feiertag(
         "fragments/feiertage.html",
         {"holidays": _holiday_rows(session, tenant)},
     )
+
+
+# --- Price differences of the register (T-4.9) ---------------------------------------
+
+# The buttons of a card -> take the register's price, or keep ours.
+PRICE_ANSWERS = {"uebernehmen": True, "verwerfen": False}
+
+
+def _price_list(
+    request: Request, session: Session, tenant: Tenant | None
+) -> HTMLResponse:
+    if tenant is None:
+        return templates.TemplateResponse(
+            request, "fragments/preise.html", {"price_problem": NO_TENANT}, 503
+        )
+    return templates.TemplateResponse(
+        request, "fragments/preise.html", {"prices": _price_rows(session, tenant)}
+    )
+
+
+@router.get("/fragments/preise", response_class=HTMLResponse, include_in_schema=False)
+def prices_fragment(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Only the price cards: the page fetches them after each `prices` event."""
+    return _price_list(request, session, _tenant(session))
+
+
+@router.post(
+    "/preise/{menu_item_id}/{register_cents}/{choice}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def price_answer(
+    request: Request,
+    menu_item_id: uuid.UUID,
+    register_cents: int,
+    choice: str,
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The team's answer to the price on its card; the list comes back fresh. A
+    price that moved or an answer from another tablet is no error for the team."""
+    if choice not in PRICE_ANSWERS:
+        raise HTTPException(status_code=404)
+    tenant = _tenant(session)
+    if tenant is not None:
+        try:
+            price_check.decide(
+                session,
+                tenant.id,
+                menu_item_id,
+                register_cents,
+                take=PRICE_ANSWERS[choice],
+            )
+        except AppError as exc:
+            session.rollback()
+            logger.info("Price difference not answered: %s", exc.message)
+    return _price_list(request, session, tenant)
 
 
 # --- Spalte "Neue Bestellungen" (T-4.7) ---------------------------------------------

@@ -239,6 +239,8 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | sold_out_until | TIMESTAMPTZ NULL | Schalter „Gericht aus" |
 | description | TEXT | |
 | pos_code | TEXT NULL | Artikelnummer genau wie in der Kasse („35B"), `number` ist klein für die Suche. Eingabezettel und Kassenübergabe sollen sie drucken (Umstellung mit T-4.6, heute steht dort noch `number`); leer bei Gerichten, die nicht aus der Kasse kommen (T-4.11, Migration 004) |
+| register_price_cents | INT NULL | what the last price check read where the register differs (T-4.9, migration 020). Never a price the agent says: `price_cents` changes only on a person's tap on the tablet or with `--apply-price-changes` |
+| register_price_rejected | BOOL, default false | the team rejected exactly that price, so it stays out of sight until the register says another one (T-4.9, migration 020) |
 
 **Eindeutigkeit:** `(tenant_id, number)` ist unique. Die Nummer ist der robusteste Weg durch eine schlechte Leitung.
 
@@ -464,5 +466,6 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 017 | `uq_special_days_set`: one `set` row per tenant and date (#441); the upgrade first lists every date with two `set` rows and stops without a change, the team decides which row holds; the downgrade drops the key |
 | 018 | `delivery_zones`, `customers`, `addresses`, `recognition_objections`, `orders.address_id` and the foreign keys of `orders.customer_id` and `orders.address_id` (T-6.1, L12); nothing writes them yet, T-6.2 and T-6.5 do, T-6.7 deletes; the downgrade drops the four tables with every row and the links on the orders |
 | 019 | `data_subject_requests`: the request log of data subjects (T-11.8, U2); nothing backfilled, the lines of the interim file are moved in by hand (docs/09 §2); the downgrade drops the table with every logged request |
+| 020 (after 021) | `menu_items.register_price_cents` and `register_price_rejected`: what the price check found (T-4.9); every dish starts without a difference; the downgrade drops both, the next check finds the differences again and a rejection has to be repeated, `audit_log` keeps it |
 | 021 | `complaint_rules`: the catalogue of fixed answers to a complaint, empty (T-10.11, D19); nothing backfilled and nothing seeded; the downgrade drops the table with every rule, booked remedies stay on their cards and in `audit_log` |
 | planned, next free number | `eval_cases`, `eval_runs` |

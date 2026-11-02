@@ -69,6 +69,16 @@ def load(folder: Path, table: str, memo: bool = False) -> Table:
         raise DbfError(f"{table}: {exc}") from exc
 
 
+def read_tables(folder: Path) -> dict[str, Table]:
+    """The four register tables `convert` needs, also for `price_check`."""
+    return {
+        "artikel": load(folder, "artikel", memo=True),
+        "warengrp": load(folder, "warengrp"),
+        "zutaten": load(folder, "zutaten", memo=True),
+        "zutgrp": load(folder, "zutgrp"),
+    }
+
+
 class AliasFileError(OSError):
     """Alias-Datei nicht lesbar für den Import: dann wird nichts geschrieben."""
 
@@ -231,14 +241,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Ordner nicht gefunden: {args.folder}", file=sys.stderr)
         return 2
     try:
-        tables = {
-            "artikel": load(args.folder, "artikel", memo=True),
-            "warengrp": load(args.folder, "warengrp"),
-            "zutaten": load(args.folder, "zutaten", memo=True),
-            "zutgrp": load(args.folder, "zutgrp"),
-        }
         result = convert(
-            **tables,
+            **read_tables(args.folder),
             skip_groups=args.skip_groups.split(","),
             allergens_confirmed_by=args.allergens_confirmed_by,
         )

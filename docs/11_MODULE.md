@@ -71,6 +71,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 | `importer.py` | CSV nach 14 lesen, prüfen, einspielen, Bericht; mit `deactivate_missing` werden fehlende Gerichte inaktiv |
 | `pos_dbf.py` | dBase-Tabellen der Kasse lesen, nur lesend, Bytes rein, Zeilen raus (T-4.11) |
 | `pos_convert.py` | Kassenartikel in die CSV nach 14: Größen, Extras, Allergen-Umsetztabelle, Bericht (T-4.11) |
+| `price_check.py` | what the price check found on the dish, the team's answer on the tablet, `audit_log`, the report; the comparison itself is `importer.apply` in a dry run (T-4.9) |
 
 ### `domain/ordering/`
 | Datei | Verantwortung |
@@ -191,7 +192,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
 - `retention.py` — deletion job after docs/03 "Löschkonzept" (T-11.2): `purge(session, now)` strips the personal fields whose period is over and logs one line per pass; `cold_path.py` runs it in a thread of its own every `RETENTION_INTERVAL_SECONDS`, `python -m api.jobs.retention` runs one pass by hand
 - `data_requests.py` — requests of data subjects by hand on the server (T-11.8, docs/09 §2): `python -m api.jobs.data_requests log|open|extend|find|erase|object|answer`; stdout is the copy or the lines of the erasure ledger, written before the commit
-- `menu_diff.py` — Abgleich Kasse gegen Agent-DB
+- `price_check.py` — Abgleich Kasse gegen Agent-DB (T-4.9)
 - `daily_report.py` — daily report as an outbox event `daily.report`. Built with T-11.6: from `REGISTER_REPORT_HOUR` local time, once per business day, how many orders of earlier days nobody marked „In Kasse eingegeben“ (L18), none when all are marked, and again an hour after one the dispatcher gave up on; `cold_path.py` runs it in a thread of its own every five minutes. The day's key figures follow with T-8.3
 - `monitor.py` — alarms and the day report for the operator (T-8.3, docs/13 §5): every 5 minutes in `cold_path.py`, per tenant, the model cost of the business day above `ALARM_COST_PER_DAY_CENTS`, at least `ALARM_ERROR_CALLS_PER_HOUR` error calls in the last hour, events to n8n that failed in the last hour (kitchen slips go to the print bridge and are left out), `voice` not answering and Asterisk not registered (with `VOICE_URL`), the print bridge silent, no `backup.done` for `ALARM_BACKUP_HOURS`, and from `MONITOR_REPORT_HOUR` the previous business day in one line. Posted straight to the push server, topic `ops`, not through n8n (n8n down is one of the outages it reports); the audit log (`monitor.alarm`) remembers what was sent, a failed post goes out on the next pass
 - `holidays.py` — holiday suggestions (T-9.5): every `INTERVAL_SECONDS` in `cold_path.py`, per tenant with `service_config.holiday_region`, the holidays of the next 60 days without a row in `special_days` as `suggested` (`domain/status/holidays.py`); `python -m api.jobs.holidays` runs one pass by hand
