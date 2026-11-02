@@ -123,7 +123,7 @@ Spec: `docs/09_OPERATIONS_LEGAL.md` §1, the row named in each task. Maxi's pape
 | T-3.11 | #496 | Floor plan editor: tables with size and seats, which tables combine, a few assets (Maxi, 02.11.2026) | 03, 06 | - | open |
 | T-3.12 | #497 | Manual table reservations, a reservation seated on tables or a combination (Maxi, 02.11.2026) | 03, 06 | T-3.11 | open |
 | T-3.13 | #499 | Reservation notice per weekday, set on the tablet: inside it the agent books nothing and may name the seats free right now (Maxi, 02.11.2026) | 03, 04, 05, 06 | T-1.5 | open |
-| T-3.14 | #505 | Standard wait per service, today's wait returns to it at 05:00 (Maxi, 02.11.2026) | 03, 06 §3 | T-3.9 | open |
+| T-3.14 | #505 | Standard wait per service, today's wait returns to it at 05:00 (Maxi, 02.11.2026) | 03, 06 §3 | T-3.9 | done 02.11.2026: `domain/status/waits.py`, migration 024 |
 
 **→ Gate G1** nach T-1.11, T-10.4 bis T-10.8 und T-3.5 und T-11.1: 20 Rollenspiel-Anrufe, Latenz, Kosten, Ausfalltest. Also before G1: T-11.1 (the caller's own allergy with consent, marked "before G1" in block 1d). Before the first real customer call, which can come with or after G1: the duties of block 1d marked that way (T-11.2, T-11.5; T-11.6 before the first real order) and Maxi's paper duties in `docs/01_STATUS.md` "In Chat (Maxi)" (`docs/09_OPERATIONS_LEGAL.md` §1).
 

@@ -40,7 +40,8 @@ from api.domain.ordering.validation import (
     service_open_at,
     validated_lines,
 )
-from api.domain.status.service import DELIVERY
+from api.domain.status.service import DELIVERY, PICKUP
+from api.domain.status.waits import current_wait
 from api.models import Address, AuditLog, Call, Order, OrderItem, ServiceConfig, Tenant
 from api.schemas.orders import DraftOrderRequest, OrderDraft, OrderStatus
 
@@ -85,7 +86,7 @@ def draft_order(
     lines = validated_lines(session, req.tenant_id, req.items, now)
     total = items_total_cents(lines)
     fee = 0
-    wait = config.pickup_wait_minutes
+    wait = current_wait(config, PICKUP, now)
     where = customer = address = None
     if delivery:
         # Recognition only on the line the call came from (L12).
@@ -96,7 +97,7 @@ def draft_order(
         fee = where.zone.fee_cents
         # The longer of the two: the team raises the wait in a rush, a far
         # zone takes longer whatever the wait.
-        wait = max(config.delivery_wait_minutes, where.zone.eta_minutes)
+        wait = max(current_wait(config, DELIVERY, now), where.zone.eta_minutes)
         customer, address = keep(session, req.tenant_id, req.call_id, phone, where)
 
     order = Order(

@@ -229,7 +229,7 @@ def test_a_fee_in_the_request_counts_for_nothing(session, tenant_id, call_id):
 
 
 def test_the_time_is_the_longer_of_zone_and_current_wait(session, tenant_id, call_id):
-    session.execute(update(ServiceConfig).values(delivery_wait_minutes=80))
+    session.execute(update(ServiceConfig).values(delivery_wait_standard_minutes=80))
     session.commit()
 
     draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
@@ -238,8 +238,17 @@ def test_the_time_is_the_longer_of_zone_and_current_wait(session, tenant_id, cal
     assert "in etwa 80 Minuten" in draft.readback
 
 
+def test_todays_delivery_wait_is_read_with_the_zone_time(session, tenant_id, call_id):
+    """T-3.14: today's wait, not the standard, is what is held against the zone."""
+    status_config.set_wait(session, tenant_id, "delivery", 80, now=NOW)
+
+    draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
+
+    assert "in etwa 80 Minuten" in draft.readback
+
+
 def test_the_zone_time_counts_when_the_wait_is_shorter(session, tenant_id, call_id):
-    session.execute(update(ServiceConfig).values(delivery_wait_minutes=10))
+    session.execute(update(ServiceConfig).values(delivery_wait_standard_minutes=10))
     session.commit()
 
     draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)

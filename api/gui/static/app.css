@@ -116,11 +116,18 @@ header.aus .top > .mode ~ .mode{opacity:.75}
 .step-edit > summary{display:flex;align-items:center;min-height:var(--tap);cursor:pointer;list-style:none}
 .step-edit > summary::-webkit-details-marker{display:none}
 .step-edit > summary b{text-decoration:underline dotted;text-underline-offset:4px}
-.step-form{position:absolute;top:100%;left:0;z-index:5;display:flex;align-items:center;gap:var(--s2);margin-top:var(--s2);padding:var(--s3);background:var(--surface);border:2px solid var(--accent);border-radius:var(--r)}
+.step-forms{position:absolute;top:100%;left:0;z-index:5;display:flex;flex-direction:column;gap:var(--s2);margin-top:var(--s2);padding:var(--s3);background:var(--surface);border:2px solid var(--accent);border-radius:var(--r)}
+.step-form{display:flex;align-items:center;gap:var(--s2)}
+.step-form label{width:5em;font-weight:600}
+/* The wait differs from the standard: said in words, next to the value. */
+.step-std{display:block;color:var(--warn);font-weight:600}
+.step-edit:has(.step-std) > summary{flex-direction:column;align-items:flex-start;justify-content:center}
+.step-edit:has(.step-std) b{line-height:1.1}
+.step-std{line-height:1.1}
 .betrieb .step-form input{font:inherit;font-size:var(--fs-h2);color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);width:110px;height:var(--tap);padding:0 var(--s3);appearance:textfield}
 /* The little arrows of a number field are no 60 px target; the number pad does the job. */
 .step-form input::-webkit-inner-spin-button,.step-form input::-webkit-outer-spin-button{appearance:none;margin:0}
-.betrieb .step-form button{border:2px solid var(--accent)}
+.betrieb .step-form button{flex:1;white-space:nowrap}
 .betrieb .step > button{border:0;border-left:2px solid var(--line);border-radius:0;background:transparent}
 .betrieb .top button,.betrieb .top a.button{white-space:nowrap}
 /* Column Callbacks: a complaint has a wide red edge, the word stays next to it

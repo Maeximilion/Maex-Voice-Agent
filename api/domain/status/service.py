@@ -11,6 +11,7 @@ from api.core.time import utcnow
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.hours import load_hours, next_opening, open_window_at
 from api.domain.status.mode import mode_at
+from api.domain.status.waits import current_wait
 from api.models import ServiceConfig, Tenant
 from api.models.tenants import SERVICES
 from api.schemas.status import ServiceStatus
@@ -53,8 +54,8 @@ def get_service_status(
         closes_at=closes_at,
         pickup_enabled=pickup_open,
         delivery_enabled=delivery_open and config.delivery_enabled,
-        pickup_wait_minutes=config.pickup_wait_minutes,
-        delivery_wait_minutes=config.delivery_wait_minutes,
+        pickup_wait_minutes=current_wait(config, PICKUP, now),
+        delivery_wait_minutes=current_wait(config, DELIVERY, now),
         call_mode=mode_at(session, tenant, config, now).mode,
         say=say,
     )
