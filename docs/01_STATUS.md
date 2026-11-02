@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.13.5
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.13.6
 
 ---
 
@@ -693,6 +693,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.13.6 · 02.11.2026:** T-4.9 price check of the register against the database
 - **v2.13.5 · 02.11.2026:** T-11.8 requests of data subjects
 - **v2.13.4 · 02.11.2026:** T-11.8: request log of data subjects with its periods, and a job for access, erasure and objection (migration 019)
 - **v2.13.4 · 02.11.2026:** T-8.4 key figures page
