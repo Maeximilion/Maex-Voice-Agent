@@ -22,7 +22,8 @@ model only what stands in there:
   They begin with an area code or a country code and are compared in E.164.
   A date, a time or a number without an area code is no phone number,
   whatever a model makes of its digits, and digits next to other digits that
-  may belong to them are none either.
+  may belong to them are none either. A number said in words is read as these
+  digits (`_in_digits`), by the reading of `domain/menu/numberwords.py`.
 
 The number is not left to the model at all: the one the guest gave goes into
 `slots` by the core's own hand (`state.note_guest_details`), and a tool books
@@ -34,20 +35,26 @@ more question, one that is wrongly taken books under a stranger.
 The sentences behind each rule are the cases of
 `api/tests/test_agent_guest_details.py`.
 
-ponytail: words are not understanding. Not heard: a number said in words
-("null eins sieben ..."), a number without its area code or with a country
-code and no plus, a number named without a word for it before the agent has
-asked, a number that stands next to other digits that may belong to it, one
-with a dash or a slash between blanks ("0721 / 5551234") or named in two
-turns, an extension of one or two digits behind a hyphen ("0721 5551234-0"),
+ponytail: words are not understanding. Not heard: a number without its area
+code or with a country code and no plus ("plus vier neun ..."), a number named
+without a word for it before the agent has asked, a number that stands next to
+other digits that may belong to it, one with a dash or a slash between blanks
+("0721 / 5551234") or named in two turns, an extension of one or two digits
+behind a hyphen ("0721 5551234-0"), a number in words that runs into a word
+that does not close it ("... drei drei zu erreichen") or has a word inside it
+("null sieben zwei eins und dann ..." without "Vorwahl", "dreimal fünf"),
 letter names when spelling ("Doppel-L", "Ypsilon"), a name written with
 another accent than it was said with, and a spelling the agent proposed and
 the guest only agreed to ("Maier mit a-i?" - "Ja"). Each ends in a question
 for the guest, never in a booking.
 ponytail: blanks alone do not tell where a number ends. "0171 2345678 19
 Uhr" is read as one number of thirteen digits and stands in `slots` as that;
-numbers are said in groups, so a blank cannot end one. And a number the
-guest names for another reason with a word for it ("meine alte Nummer war
+numbers are said in groups, so a blank cannot end one. In words the same
+holds for a number word behind the last digit ("... drei drei zwei bitte"),
+and for one behind a pause when the digits before it may still be a number
+that goes on ("null drei null eins zwei drei vier fünf sechs sieben, vier").
+And a number the guest names for another reason with a word for it ("meine
+alte Nummer war
 ...") is taken for the one to call. Reading the number back would close both
 (docs/01_STATUS.md, Open Points). The ear of the voice layer decides how
 numbers and letters arrive as text (T-10.5); read them here once it shows
@@ -384,28 +391,32 @@ def _read_together(run: re.Match[str]) -> str:
     stand, a comma ends those (`numbers_said`).
 
     Behind a pause may stand something else ("..., neunzehn"), so nothing joins
-    a number that is complete. A word right behind the digits may claim the
-    last of them ("neunzehn Uhr", "zwei Cola"), and digits too short for a
-    number hold something else as well. Then the last digit stays apart, and
-    what stands before it reads as digits followed by more digits: no number."""
+    a number that is complete. A word right behind digits said in words may
+    claim the last of them ("neunzehn Uhr", "zwei Cola"), and such digits too
+    short for a number hold something else as well. Then the last digit stays
+    apart, and what stands before it reads as digits followed by more digits:
+    no number."""
     if _SAID not in run[1]:
         return run[0]
     groups: list[str] = []
-    for piece in _NUMBER_END.split(run[1].replace(_SAID, "")):
+    for piece in _NUMBER_END.split(run[1]):
         if groups and _goes_on(groups[-1]):
             groups[-1] += piece
         else:
             groups.append(piece.strip(_AROUND_A_NUMBER))
-    if run[2] is not None or _digits(groups[-1]) < _SHORTEST_NUMBER:
-        last = groups.pop()
-        groups += [last[:-1], last[-1:]]
-    return ", ".join(filter(None, groups)) + (run[2] or "")
+    last = groups[-1].rstrip(_SAID)
+    if _SAID in groups[-1] and (run[2] is not None or _digits(last) < _SHORTEST_NUMBER):
+        groups[-1:] = [last[:-1], last[-1:]]
+    return ", ".join(filter(None, groups)).replace(_SAID, "") + (run[2] or "")
 
 
 def _goes_on(group: str) -> bool:
-    """Digits that begin like an area code and are no complete number yet."""
-    return group.startswith("0") and (
-        _AREA_CODE_DIGITS <= _digits(group) < _COMPLETE_NUMBER
+    """Digits that begin like an area code and are no complete number yet. A
+    date does not: joined to what follows it would pass as a number."""
+    return (
+        group.startswith("0")
+        and _AREA_CODE_DIGITS <= _digits(group) < _COMPLETE_NUMBER
+        and not _is_date(group)
     )
 
 

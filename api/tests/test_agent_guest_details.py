@@ -628,6 +628,8 @@ def test_what_stands_before_a_number_in_words_stays_out_of_it(sentence):
         "Null sieben zwei eins, zweiundvierzig.",
         "Vorwahl null sieben zwei eins und die zweiundvierzig.",
         "null sieben zwei eins vierzig sieben",
+        # A date with blanks takes nothing in behind a pause.
+        "Am 01 10 2026, vier.",
         # Digits that a word may have claimed: spoken and written alike.
         "0721 5554433 neunzehn Uhr",
         "Die alte war 0172 3456789, die neue ist null sieben zwei eins.",
@@ -667,6 +669,8 @@ def test_digits_alone_keep_their_reading_when_a_word_stands_next_to_them():
     a number that was said in words is read across its pauses."""
     assert numbers("Für vier Personen, 0721 555, 1234") == set()
     assert numbers("Für vier Personen, 0171 234 - 5678") == set()
+    assert numbers("Vier, 0171 2345678 auf Müller") == {"+491712345678"}
+    assert numbers("Vier, 0171 2345678") == {"+491712345678"}
 
 
 def test_date_with_blanks_next_to_a_number_word_is_no_number():

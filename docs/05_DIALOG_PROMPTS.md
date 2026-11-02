@@ -483,6 +483,24 @@ between digits; a comma, a period before a blank, and a dash or slash next to a 
 it. A date (also one written with blanks, "01 10 2026"), a time, a run too short or too
 long, and a number without its area code are no phone number.
 
+*A number said in words* is read as those digits, by the reading of
+`domain/menu/numberwords.py` and under every rule above; each word stands for itself, so
+"vierzig sieben" is 40 and 7 here, not the 47 of a dish, and a bare article is no digit.
+Heard are single digits ("null sieben zwei eins"), pairs and threes ("zweiundsiebzig",
+"fünfhundertfünfundfünfzig"), "doppel fünf", digits and words mixed ("0721 fünf fünf
+fünf"), and "Vorwahl": in a sentence that says it, what stands between the area code and
+the rest ("und die Nummer", "dann", "ist die Vorwahl, dann") is a pause, for digits too.
+The pause an ear writes between the pieces (a comma, a period, a dash) does not end such a
+number, from the first piece on that begins like an area code. Three things keep a number
+nobody said out. A piece behind a pause does not join a number of eleven digits: it is
+something else ("0721 5554433, vier."). A word right behind the digits may claim the last
+of them ("... drei drei neunzehn Uhr", "..., zwei Cola"), so the turn gives no number,
+unless the word closes the number ("bitte", "danke", "erreichbar", "ist"). And fewer than
+eight digits are an area code and something else ("null sieben zwei eins,
+zweiundvierzig"). Digits alone keep their reading when a number word stands elsewhere in
+the sentence, and a number word counts as digits there: "0171 2345678 und wir sind vier"
+is asked again like "0171 2345678, 4 Personen".
+
 *Whose decision the number is.* The number the guest gave goes into `slots` by the core's
 own hand, in E.164, before the model is asked: a guest who names another number than the
 one they call from is reached under that one (§3), whether or not the model writes it
@@ -494,12 +512,14 @@ its yes, the draft is dropped like after any correction: it was made under the o
 number and read out without it, so a later yes would book under the one the guest
 replaced.
 
-*Not heard, each costing one more question and never a booking:* a number said in words
-("null eins sieben ..."), a number without its area code or with a country code and no
-plus, a number named without a word for it before the agent has asked, a number followed
-by other digits in the same turn or named next to a second one, one written with a dash or
-a slash between blanks ("0721 / 5551234") or named in two turns, an extension of one or
-two digits behind a hyphen ("0721 5551234-0"), letter names when spelling ("Doppel-L",
+*Not heard, each costing one more question and never a booking:* a number without its
+area code or with a country code and no plus ("plus vier neun ..."), a number named
+without a word for it before the agent has asked, a number followed by other digits in the
+same turn or named next to a second one, one written with a dash or a slash between blanks
+("0721 / 5551234") or named in two turns, an extension of one or two digits behind a
+hyphen ("0721 5551234-0"), a number in words that runs into a word that does not close it
+("... drei drei zu erreichen") or has a word inside it ("null sieben zwei eins und dann
+..." without "Vorwahl", "dreimal fünf"), letter names when spelling ("Doppel-L",
 "Ypsilon"), a name with another accent than it was said with, and a spelling the agent
 proposed and the guest only agreed to ("Maier mit a-i?" - "Ja"). How numbers and letters
 arrive as text is decided by the ear of the voice layer (T-10.5); the check is extended
@@ -507,7 +527,10 @@ there.
 
 *Not stopped:* blanks alone do not tell where a number ends, since numbers are said in
 groups: "0171 2345678 19 Uhr" is one number of thirteen digits and stands in `slots` as
-that. And a number the guest names for another reason, with a word for it ("meine alte
+that. In words the same holds for a number word behind the last digit ("... drei drei zwei
+bitte") and behind a pause when the digits before it are fewer than eleven ("null drei
+null eins zwei drei vier fünf sechs sieben, vier"). And a number the guest names for
+another reason, with a word for it ("meine alte
 Nummer war ..."), is taken for the one to call. A number taken from speech is not read
 back today, which would close both (Open Points in `docs/01_STATUS.md`). A name is known
 from guest sentences only: once a known caller's name comes from the database

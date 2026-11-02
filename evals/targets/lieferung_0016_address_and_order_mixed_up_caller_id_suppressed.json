@@ -10,7 +10,7 @@
     "level-5"
   ],
   "source": "handcrafted",
-  "pending": "T-5.3: address and dishes mixed across sentences are for a model, and the core takes a spoken number only in digits (guest_details.numbers_said), so the phone number here is refused today",
+  "pending": "T-5.3: address and dishes mixed across sentences are for a model; the core hears the phone number said in words (reservierung_0039), the stand-in never gets to that turn",
   "transcript": [
     {
       "role": "customer",
