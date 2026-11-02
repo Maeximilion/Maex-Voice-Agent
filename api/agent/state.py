@@ -191,6 +191,11 @@ class ConversationState(BaseModel):
     # The reason the callback is made with: a question beyond the database,
     # or a line the core understood nothing on (Codex PR #437). Never sent.
     callback_reason: str = "out_of_scope"
+    # Where the recording of this call stands (`agent/recording.py`, legal
+    # check L2), and its file once the caller said yes. Never sent: the model
+    # has no part in it.
+    recording: Literal["asked", "on", "off", "withdrawn"] | None = None
+    recording_file: str | None = None
 
     def to_prompt_json(self) -> dict[str, Any]:
         """Format aus docs/05 §5: geht bei jedem Zug ans Modell statt des Verlaufs."""

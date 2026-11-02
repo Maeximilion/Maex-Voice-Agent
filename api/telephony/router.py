@@ -11,6 +11,9 @@
 - `/calls/{call_id}/missed`: nobody answered the team leg at TEAM_PHONE. A
   callback card is written; "noted" once it is, "none" otherwise, and the
   dialplan tells the caller which (docs/20 §5, T-10.8).
+- `/calls/{call_id}/recording/stop`: the team pressed the stop key on a recorded
+  team leg, and the dialplan stopped and deleted the file. "stopped" once the
+  withdrawal is logged, "none" otherwise (docs/20 §5, T-11.3).
 
 - `/asterisk/alive`: Asterisk's healthcheck, while it is registered, and
   `/asterisk/seen`, how long ago, for the monitor (T-8.3, api/jobs/monitor.py).
@@ -87,6 +90,14 @@ def missed(call_id: str, request: Request) -> str:
     if not voice.authorized(request.headers.get("authorization")):
         raise HTTPException(status_code=401)
     return "noted" if voice.missed(call_id) else "none"
+
+
+@router.post("/calls/{call_id}/recording/stop", response_class=PlainTextResponse)
+def recording_stopped(call_id: str, request: Request) -> str:
+    voice = _voice(request.app)
+    if not voice.authorized(request.headers.get("authorization")):
+        raise HTTPException(status_code=401)
+    return "stopped" if voice.recording_stopped(call_id) else "none"
 
 
 @router.websocket("/media")

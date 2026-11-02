@@ -33,6 +33,7 @@ from api.config import settings
 from api.core.logging import configure_logging, error_text, get_logger, log
 from api.core.time import business_day, business_day_bounds_utc, to_local, tz, utcnow
 from api.db import SessionLocal
+from api.domain.calls.recordings import delete_file
 from api.domain.customers.personal import (
     CALLBACK_GONE,
     ORDER_DAY,
@@ -49,6 +50,7 @@ from api.models import (
     Order,
     OrderItem,
     OutboxEvent,
+    Recording,
     Reservation,
     Tenant,
 )
@@ -137,6 +139,7 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
                 AuditLog.at < now - timedelta(days=settings.retention_audit_log_days)
             ),
         ),
+        "recordings": lambda: _recordings(session, now),
         "consent_answers": lambda: _consent_answers(
             session, now, settings.retention_consent_log_years
         ),
@@ -274,6 +277,34 @@ def _without_allergy(payload: dict) -> dict:
             for item in out["items"]
         ]
     return out
+
+
+def _recordings(session: Session, now: datetime) -> int:
+    """L2: file and row go for good, 30 days after the start, or now after a
+    withdrawal, whose file the line deleted already if it could. A row counts
+    only with its file gone: one that cannot be deleted stays and is tried again
+    by the next pass, and it must not hold up the others."""
+    cutoff = now - timedelta(days=settings.retention_recording_days)
+    deleted = 0
+    for row in session.scalars(
+        select(Recording).where(
+            or_(Recording.withdrawn_at.is_not(None), Recording.started_at < cutoff)
+        )
+    ).all():
+        try:
+            delete_file(row.file_name)
+        except OSError as exc:
+            log(
+                logger,
+                logging.ERROR,
+                "Recording not deleted",
+                recording=str(row.id),
+                error=error_text(exc),
+            )
+            continue
+        session.delete(row)
+        deleted += 1
+    return deleted
 
 
 def _consent_answers(session: Session, now: datetime, years: int) -> int:

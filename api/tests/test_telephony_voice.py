@@ -21,6 +21,7 @@ from sqlalchemy.orm import sessionmaker
 from starlette.websockets import WebSocketDisconnect
 
 from api.agent.llm import LLMError
+from api.agent.recording import SAY_WHAT_CAN_I_DO
 from api.config import settings
 from api.core.errors import NotFound
 from api.domain.calls import tenant_named
@@ -81,6 +82,7 @@ class Core:
         self.lines = lines
         self.seen: list[tuple[str, ...]] = []
         self.at_start = "greet"
+        self.stopped = True
 
     def on_call_started(self, session_id: str) -> None:
         self.seen.append(("started", session_id))
@@ -107,6 +109,10 @@ class Core:
 
     def on_call_ended(self, session_id: str, speech=None) -> None:
         self.seen.append(("ended",))
+
+    def on_recording_stopped(self, session_id: str) -> bool:
+        self.seen.append(("recording_stopped", session_id))
+        return self.stopped
 
     def on_team_missed(self, session_id: str) -> bool:
         self.seen.append(("missed", session_id))
@@ -484,6 +490,53 @@ def test_the_missed_door_says_noted_only_for_a_written_card(phone, written, answ
     assert ("missed", CALL) in core.seen
 
 
+def test_the_stop_door_wants_the_token(phone):
+    client, core = phone
+    assert client.post(f"/calls/{CALL}/recording/stop").status_code == 401
+    assert ("recording_stopped", CALL) not in core.seen
+
+
+@pytest.mark.parametrize(("stopped", "answer"), [(True, "stopped"), (False, "none")])
+def test_the_stop_door_says_what_became_of_it(phone, stopped, answer):
+    client, core = phone
+    core.stopped = stopped
+
+    response = client.post(f"/calls/{CALL}/recording/stop", headers=basic(TOKEN))
+
+    assert (response.status_code, response.text) == (200, answer)
+    assert ("recording_stopped", CALL) in core.seen
+
+
+def test_the_dialplan_records_a_team_leg_only_on_the_word_record():
+    """Only "record <number>" sets it, it is dialled like a transfer, and the
+    recording begins when the team answers (`b`), never while it rings."""
+    dialplan = DIALPLAN.read_text(encoding="utf-8")
+    assert '$["${ENDING:0:7}" = "record "]' in dialplan
+    assert "MixMonitor(/recordings/${UNIQUEID}.wav,b)" in dialplan
+    start = dialplan.index("exten => team,1")
+    assert '$["${RECORD}" != "yes"]' in dialplan[start:]
+    assert dialplan.index("MixMonitor(") > start
+
+
+def test_the_stop_key_stops_deletes_and_tells_voice():
+    dialplan = DIALPLAN.read_text(encoding="utf-8")
+    stop = dialplan[dialplan.index("[stop-recording]") :]
+    assert "StopMixMonitor()" in stop
+    assert "rm -f /recordings/${VOICE_CALL}.wav" in stop
+    assert "/calls/${VOICE_CALL}/recording/stop" in stop
+    features = DIALPLAN.with_name("features.conf").read_text(encoding="utf-8")
+    assert "stop_recording => *7,peer,Gosub(stop-recording,s,1)" in features
+
+
+def test_no_number_of_a_recorded_leg_reaches_the_log():
+    """The word goes before the line that logs the first eight characters:
+    "record +" and a digit behind it would be the start of a number."""
+    dialplan = DIALPLAN.read_text(encoding="utf-8")
+    assert dialplan.index("Set(ENDING=transfer ${ENDING:7})") < dialplan.index(
+        "ending [${ENDING:0:8}]"
+    )
+
+
 def test_the_announcements_are_rendered_with_the_mouth_of_the_process(tmp_path):
     voice_app.announce(FakeMouth(), tmp_path)
 
@@ -631,7 +684,7 @@ def test_a_call_is_greeted_and_logged_when_the_caller_hangs_up(session, tenant):
 
     # The fake mouth's audio is the sentence itself, padded to whole frames.
     assert audio.rstrip(b"\x00").decode() == GREETING.format(
-        name=tenant.name, privacy=""
+        name=tenant.name, privacy="", ask=SAY_WHAT_CAN_I_DO
     )
     call = the_call(session, CALL)
     assert call.ended_at is not None and call.outcome == "abandoned"

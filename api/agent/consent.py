@@ -301,16 +301,21 @@ _NO = frozenset({"nein", "nee", "nö", "noe"})
 _NO_FILLER = (_FILLER - {"doch"}) | {"lieber", "besser", "nicht", "nötig", "noetig"}
 
 
-def consent_answer(text: str) -> Answer:
-    """The answer to `ALLERGY_QUESTION`. A yes as strict as for a booking
-    (`is_yes`), with the words that say "note it" besides: anything more, as
-    in "Ja, und noch eine Cola", is no explicit consent. A no is a sentence of
-    a no word or "nicht" and filler ("Nein, nicht notieren"). Anything else is
-    unclear, and unclear is no consent (L13: only an explicit "ja" stores the
-    reason)."""
+def consent_answer(text: str, about: frozenset[str] = _NOTE_IT) -> Answer:
+    """The answer to `ALLERGY_QUESTION`, or with `about` to another consent
+    question. A yes as strict as for a booking (`is_yes`), with the words that
+    say "note it" besides: anything more, as in "Ja, und noch eine Cola", is no
+    explicit consent. A no is a sentence of a no word or "nicht" and filler
+    ("Nein, nicht notieren"). Anything else is unclear, and unclear is no
+    consent (L13: only an explicit "ja" stores the reason). An assent word
+    stays a word of the yes, also when `about` names it: "Ich bin nicht
+    einverstanden" is a no, "Ich bin einverstanden" a yes."""
     lowered = text.lower()
     rest = _WORD.sub(
-        lambda word: " " if word.group() in _NOTE_IT else word.group(), lowered
+        lambda word: (
+            " " if word.group() in about and word.group() not in _YES else word.group()
+        ),
+        lowered,
     )
     if is_yes(text) or is_yes(rest):
         return "yes"
@@ -318,10 +323,58 @@ def consent_answer(text: str) -> Answer:
         return "unclear"
     words = _WORD.findall(lowered)
     if (_NO & set(words) or "nicht" in words) and all(
-        word in _NO or word in _NO_FILLER or word in _NOTE_IT for word in words
+        word in _NO or word in _NO_FILLER or word in about for word in words
     ):
         return "no"
     return "unclear"
+
+
+# Words a yes or a no to the recording question may carry besides the assent
+# and the filler: "Ja, ich bin damit einverstanden", "Nein, nicht aufnehmen".
+_RECORD_IT = frozenset(
+    {"ich", "bin", "damit", "wir", "sie", "dürfen", "duerfen", "können", "koennen"}
+    | {"aufnehmen", "aufzeichnen", "einverstanden"}
+)
+# A sentence with one word of each list stops a running recording. Generous on
+# purpose: a stop that is wrongly heard costs a recording, one that is missed
+# keeps what the caller took back (L2). Hand-made like the lists above; the
+# second list by the beginning of the word.
+_RECORDED = frozenset(
+    {"aufnahme", "aufzeichnung", "mitschnitt", "aufnehmen", "aufzeichnen"}
+    | {"aufgenommen", "aufgezeichnet"}
+)
+_STOPPED = ("stop", "beend", "lösch", "loesch", "abbrech", "ende", "aufhör", "aufhoer")
+_NOT = frozenset({"aus", "nicht", "keine", "kein", "ohne", "weg", "abschalten"})
+# What may stand next to the words of a stop without saying anything else.
+_ONLY_A_STOP = frozenset(
+    {"sie", "die", "ich", "will", "möchte", "moechte", "werden", "wieder", "jetzt"}
+)
+
+
+def recording_answer(text: str) -> Answer:
+    """The answer to the recording question (L2): only an explicit yes starts
+    one. "Aufnahme stoppen" is a no here as anywhere."""
+    return "no" if stops_recording(text) else consent_answer(text, _RECORD_IT)
+
+
+def stops_recording(text: str) -> bool:
+    """Does the caller take the recording back ("Aufnahme stoppen")?"""
+    words = _WORD.findall(text.lower())
+    return bool(_RECORDED.intersection(words)) and any(
+        word in _NOT or word.startswith(_STOPPED) for word in words
+    )
+
+
+def only_stops_recording(text: str) -> bool:
+    """A stop and nothing else: no sentence for the model."""
+    return stops_recording(text) and all(
+        word in _RECORDED
+        or word in _NOT
+        or word.startswith(_STOPPED)
+        or word in _FILLER
+        or word in _ONLY_A_STOP
+        for word in _WORD.findall(text.lower())
+    )
 
 
 # Words of an answer to "Sind Sie noch da?" besides its yes: "Ja, ich bin noch

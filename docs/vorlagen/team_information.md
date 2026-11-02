@@ -15,7 +15,7 @@ An unserem Telefon hilft ein KI-Assistent bei Reservierungen, Abhol- und Lieferb
 ### Welche Daten von Ihnen verarbeiten wir?
 
 - **Zugangskonten und Protokoll Ihrer Aktionen am Tablet** (Kennungen, Gründe, Bezeichnungen). Das Protokoll enthält keine Namen, Telefonnummern oder Notizen von Gästen. Rechtsgrundlage: Art. 6 Abs. 1 lit. b, c, f DSGVO. Löschung nach 12 Monaten.
-- **Aufnahmen Ihrer Telefonate im Modus "KI hört mit"** (Ihre Stimme am Telefon), nur wenn Sie vorher schriftlich eingewilligt haben (Teil 2) und der Anrufer der Aufnahme zugestimmt hat. Rechtsgrundlage: Art. 6 Abs. 1 lit. a DSGVO. Aufnahmen werden nach 30 Tagen gelöscht, Abschriften nach 90 Tagen, bei Widerruf sofort. <offen: noch nicht gebaut (T-11.3); Teil 2 erst unterschreiben lassen, wenn die Aufzeichnung kommt>
+- **Aufnahmen Ihrer Telefonate im Modus "KI hört mit"** (Ihre Stimme am Telefon), nur wenn Sie vorher schriftlich eingewilligt haben (Teil 2) und der Anrufer der Aufnahme zugestimmt hat. Rechtsgrundlage: Art. 6 Abs. 1 lit. a DSGVO. Aufnahmen werden nach 30 Tagen gelöscht, Abschriften nach 90 Tagen, bei Widerruf sofort. Sagt der Anrufer "Aufnahme stoppen", drücken Sie am Telefon *7: Die Aufnahme endet und wird gelöscht, das Gespräch läuft weiter. <offen: gebaut und aus (T-11.3); Teil 2 erst unterschreiben lassen, wenn die Aufzeichnung kommt; die Tasten an den echten Telefonen vorher prüfen>
 - Spricht der KI-Assistent einen Anruf und gibt ihn dann an Sie weiter, wird das Gespräch ab der Übergabe weder aufgezeichnet noch in Text umgewandelt.
 
 ### Zugesagt

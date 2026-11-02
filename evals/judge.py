@@ -19,6 +19,7 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from api.agent.recording import RECORDING_WITHDRAWN
 from api.core.time import to_local
 from api.domain.menu.numberwords import fold
 from api.domain.ordering.confirm import ACTION_CONFIRMED as ORDER_CONFIRMED_ACTION
@@ -34,6 +35,7 @@ from api.models import (
     Order,
     OrderItem,
     OutboxEvent,
+    Recording,
     Reservation,
     Tenant,
 )
@@ -83,10 +85,15 @@ EXPECTED_KEYS = frozenset(
         "note",
         # The answers to the question for the allergy as a kitchen note, in
         # the order of the consent log ("yes", "no", "unclear"); [] says it
-        # was never asked (legal check L13, T-11.1).
+        # was never asked (legal check L13, T-11.1). The question for a
+        # recording counts too, and a withdrawal comes as a "no" behind its yes.
         "consent",
+        # What became of the recording of the call (L2, T-11.3): `RECORDINGS`.
+        "recording",
     }
 )
+# The states of `expected.recording`, by the row of the call.
+RECORDINGS = ("none", "running", "withdrawn")
 # What only a note with the caller's yes may carry (L13, `domain/menu/wishes.py`).
 ALLERGY_REASON = "Grund: Allergie"
 ADDRESS_KEYS = ("street", "house_number", "postal_code", "city", "floor_note")
@@ -178,6 +185,10 @@ def validate_case(case: dict[str, Any], source: str) -> None:
     note = case["expected"].get("note")
     if note is not None and not (isinstance(note, str) and note.strip()):
         raise CaseError(f"{source}: note ist der Wortlaut des Hinweises oder null")
+    if case["expected"].get("recording", "none") not in RECORDINGS:
+        raise CaseError(f"{source}: recording ist eines von {RECORDINGS}")
+    if not isinstance(case.get("recording", False), bool):
+        raise CaseError(f"{source}: recording am Fall ist true oder false")
     consent = case["expected"].get("consent", [])
     if not isinstance(consent, list) or not set(consent) <= set(CONSENT_ANSWERS):
         raise CaseError(
@@ -327,6 +338,10 @@ class Observed:
     # included, while no "yes" stands in its consent log: stored health data
     # without consent (L13).
     reason_without_consent: int = 0
+    # The recording of the call, one of `RECORDINGS`.
+    recording: str = "none"
+    # A row of a call without a "yes" in its log: always red (L2).
+    recording_without_consent: bool = False
 
 
 def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
@@ -372,9 +387,13 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         session.scalars(
             select(ConsentLog.answer)
             .where(ConsentLog.call_id == call_id)
-            .order_by(ConsentLog.answered_at)
+            # A replay runs on one instant: the withdrawal comes behind its yes.
+            .order_by(
+                ConsentLog.answered_at, ConsentLog.question == RECORDING_WITHDRAWN
+            )
         )
     )
+    recorded = session.scalar(select(Recording).where(Recording.call_id == call_id))
     stored = [
         *session.scalars(
             select(OrderItem.note).where(
@@ -414,7 +433,15 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         note=done[-1].note if done else None,
         consent=consent,
         reason_without_consent=0 if "yes" in consent else with_reason,
+        recording=_recording_state(recorded),
+        recording_without_consent=recorded is not None and "yes" not in consent,
     )
+
+
+def _recording_state(row: Recording | None) -> str:
+    if row is None:
+        return "none"
+    return "running" if row.withdrawn_at is None else "withdrawn"
 
 
 def _reserved_local(session: Session, call, done_res) -> str | None:
@@ -582,6 +609,12 @@ def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
         diffs.append(
             f"consent: erwartet {expected['consent']!r}, geloggt {seen.consent!r}"
         )
+    if "recording" in expected and expected["recording"] != seen.recording:
+        diffs.append(
+            f"recording: erwartet {expected['recording']!r}, ist {seen.recording!r}"
+        )
+    if seen.recording_without_consent:
+        diffs.append("Aufnahme ohne Einwilligung")
     # Always, not only when expected: the reason without a yes is never right.
     if seen.reason_without_consent:
         diffs.append(

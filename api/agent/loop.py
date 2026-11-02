@@ -24,8 +24,16 @@ from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.agent import allergies, escalation, guards
-from api.agent.consent import ALLERGY_QUESTION, bare_answer, consent_answer, is_yes
+from api.agent import allergies, escalation, guards, recording
+from api.agent.consent import (
+    ALLERGY_QUESTION,
+    bare_answer,
+    consent_answer,
+    is_yes,
+    only_stops_recording,
+    recording_answer,
+    stops_recording,
+)
 from api.agent.dispatch import ToolResult, dispatch, in_local_time, log_refused
 from api.agent.guest_details import name_said
 from api.agent.ladder import (
@@ -195,6 +203,20 @@ class TurnResult:
     ended: bool = False
 
 
+def _opening(state: ConversationState) -> list[str]:
+    """What follows the answer to the recording question."""
+    if state.recording == "on":
+        return [recording.SAY_HOW_TO_STOP, recording.SAY_WHAT_CAN_I_DO]
+    return [recording.SAY_WHAT_CAN_I_DO]
+
+
+def _still_open(state: ConversationState) -> str:
+    """The sentence the guest has not answered yet, in full."""
+    if state.readback_heard and state.readback:
+        return state.readback
+    return state.last_say or recording.SAY_WHAT_CAN_I_DO
+
+
 class ConversationLoop:
     def __init__(
         self,
@@ -228,6 +250,31 @@ class ConversationLoop:
         self._zone: str | None = None
 
     def run_turn(self, state: ConversationState, user_text: str) -> TurnResult:
+        """One sentence of the guest. What belongs to the recording comes
+        first, before the model and whatever else the sentence asks: the
+        answer to the question of the phone line (L2), or its withdrawal."""
+        if state.recording == "asked":
+            answer = recording_answer(user_text)
+            recording.settle(self._session, state, answer, self._now)
+            if answer != "unclear":
+                guards.note_said(state, recording.SAY_WHAT_CAN_I_DO)
+                return TurnResult(state=state, say=_opening(state))
+            # No consent, and no second question: the sentence is what the
+            # guest called for.
+        if state.recording != "on" or not stops_recording(user_text):
+            return self._guest_turn(state, user_text)
+        recording.withdraw(self._session, state, self._now)
+        if only_stops_recording(user_text):
+            # What the guest was asked stands: said again, it changes nothing
+            # of a read-back that waits for its yes.
+            return TurnResult(
+                state=state, say=[recording.SAY_RECORDING_STOPPED, _still_open(state)]
+            )
+        result = self._guest_turn(state, user_text)
+        result.say.insert(0, recording.SAY_RECORDING_STOPPED)
+        return result
+
+    def _guest_turn(self, state: ConversationState, user_text: str) -> TurnResult:
         # The guest has stopped speaking: from here on they wait.
         turn_started = None if self._turn_deadline is None else self._clock()
         # First of all: a name or number the model writes in this turn may

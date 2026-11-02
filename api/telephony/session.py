@@ -37,6 +37,11 @@ arrived in time is handled as in time, however late the worker gets to it.
 rings the team (docs/20 §5), so a crash here never leaves a caller on a dead
 line. A call whose voice failed is never hung up by us.
 
+**A recording** (T-11.3, docs/09 L2) runs from the caller's yes to the handover
+or the end of the call. A team leg is the telephone system's: with
+`record_team_leg` the line tells the dialplan to record it. Nothing a recording
+does touches the call: when the file fails, it goes, and the call goes on.
+
 The media adapter (`adapters/asterisk.py`, T-1.11) creates a session per call,
 runs its worker and feeds it; the ports for ear, mouth and line are in
 `telephony/speech.py`.
@@ -49,8 +54,11 @@ import time
 from collections.abc import Callable
 from typing import Any, Literal
 
+from api.config import settings
 from api.core.logging import get_logger
+from api.domain.calls import recordings
 from api.telephony.port import CallEvents
+from api.telephony.recording import Tape
 from api.telephony.speech import Ear, Heard, Line, Mouth, SpeechUsage
 
 # A partial of this many words stops a sentence that may be interrupted. One
@@ -155,6 +163,8 @@ class CallSession:
         self._failure_told = False
         # The mouth failed on this call: it is not asked again.
         self._mouth_failed = False
+        # The recording of this call while it runs.
+        self._tape: Tape | None = None
 
     # -- what happens on the call: any thread, only enqueues ---------------------------
 
@@ -195,6 +205,15 @@ class CallSession:
 
     def hangup(self) -> None:
         self._ask("hangup")
+
+    def start_recording(self, file_name: str) -> None:
+        self._ask("start_recording", file_name)
+
+    def stop_recording(self, discard: bool) -> None:
+        self._ask("stop_recording", discard)
+
+    def record_team_leg(self) -> None:
+        self._ask("record_team_leg")
 
     # -- the worker ---------------------------------------------------------------------
 
@@ -278,6 +297,8 @@ class CallSession:
         self._turn(lambda: self._events.on_call_started(self.session_id))
 
     def _on_audio(self, at: float, frame: bytes) -> None:
+        if self._tape is not None:
+            self._taped(self._tape.caller, frame)
         if not self._listening():
             return
         try:
@@ -327,7 +348,12 @@ class CallSession:
             return
         self._unheard = 0
         if heard.ended_at <= self._protected_until:
-            # Said into a sentence that may not be interrupted.
+            # Said into a sentence that may not be interrupted. No turn, but
+            # a withdrawal holds however it is said (L2).
+            if self._tape is not None:
+                self._turn(
+                    lambda: self._events.on_talked_over(self.session_id, heard.text)
+                )
             self._wait_for_the_caller(at)
             return
         if self._playing_since is not None and heard.ended_at >= self._playing_since:
@@ -411,6 +437,8 @@ class CallSession:
             self._protected_until = math.inf
         self._silence_due = None
         self._line.play(audio, self._mark)
+        if self._tape is not None:
+            self._taped(self._tape.spoken, audio)
 
     def _on_expect(self, at: float, terms: list[str]) -> None:
         self._ear.expect(terms)
@@ -420,6 +448,21 @@ class CallSession:
 
     def _on_hangup(self, at: float, _: None) -> None:
         self._queue_ending(("hangup", None))
+
+    def _on_start_recording(self, at: float, file_name: str) -> None:
+        try:
+            self._tape = Tape(recordings.path_of(file_name), self._sample_rate)
+        except Exception:
+            logger.exception(
+                "the recording could not begin, the call goes on without",
+                extra={"extra": {"session_id": self.session_id}},
+            )
+
+    def _on_stop_recording(self, at: float, discard: bool) -> None:
+        self._stop_tape(discard)
+
+    def _on_record_team_leg(self, at: float, _: None) -> None:
+        self._line.record_team_leg()
 
     def _on_closed(self, at: float, _: None) -> None:
         self._end("closed")
@@ -481,6 +524,42 @@ class CallSession:
         self._outstanding = []
         self._playing_since = self._playing_until = None
         self._line.flush()
+        if self._tape is not None:
+            self._taped(self._tape.flush)
+
+    def _taped(self, write: Callable[..., None], *audio: bytes) -> None:
+        """A recording that fails is over, and its call goes on (rule 5)."""
+        try:
+            write(*audio)
+        except Exception:
+            logger.exception(
+                "the recording failed, the call goes on without",
+                extra={"extra": {"session_id": self.session_id}},
+            )
+            self._stop_tape(discard=True)
+
+    def _stop_tape(self, discard: bool = False) -> None:
+        """Never raises. A file that stays behind a discard is the deletion
+        job's: its row names it."""
+        tape, self._tape = self._tape, None
+        if tape is None:
+            return
+        try:
+            tape.close()
+        except Exception:
+            logger.exception(
+                "the recording could not be closed",
+                extra={"extra": {"session_id": self.session_id}},
+            )
+        if not discard:
+            return
+        try:
+            recordings.delete_file(tape.path.name)
+        except OSError:
+            logger.exception(
+                "the recording could not be deleted",
+                extra={"extra": {"session_id": self.session_id}},
+            )
 
     def _synthesize(self, text: str) -> bytes:
         """The audio of one sentence, or an exception: the engine's own, a
@@ -594,6 +673,10 @@ class CallSession:
         ):
             return
         self._ending = ending
+        if ending[0] == "transfer":
+            # The recording of a call the AI takes ends at the handover, not
+            # with the leg: the team is no part of it (L11).
+            self._stop_tape()
         self._silence_due = self._utterance_due = self._utterance_began = None
         self._digits, self._digits_due = "", None
         if not self._outstanding:
@@ -615,6 +698,7 @@ class CallSession:
         if self.over:
             return
         self.outcome = outcome
+        self._stop_tape()
         try:
             self._ear.close()
         except Exception:
@@ -691,10 +775,25 @@ class Lines:
         if session is not None:
             session.hangup()
 
-    def start_recording(self, session_id: str) -> None:
-        """Nothing is recorded: not built, and not allowed before the legal
-        check in docs/09 is ticked (CLAUDE.md §9)."""
-        raise RuntimeError("recording is not part of the voice layer")
+    def start_recording(self, session_id: str, file_name: str) -> None:
+        """A last gate behind the core's: nothing is recorded while the setting
+        is off (docs/09 L2, CLAUDE.md §9)."""
+        if not settings.recording_enabled:
+            logger.error("a recording was asked for while recording is off")
+            return
+        session = self._get(session_id)
+        if session is not None:
+            session.start_recording(file_name)
+
+    def stop_recording(self, session_id: str, *, discard: bool = False) -> None:
+        session = self._get(session_id)
+        if session is not None:
+            session.stop_recording(discard)
+
+    def record_team_leg(self, session_id: str) -> None:
+        session = self._get(session_id)
+        if session is not None:
+            session.record_team_leg()
 
     def _get(self, session_id: str) -> CallSession | None:
         with self._lock:

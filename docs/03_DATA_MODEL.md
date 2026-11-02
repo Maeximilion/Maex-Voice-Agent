@@ -176,9 +176,23 @@ One row per answer to a consent question of the agent (legal check L13, T-11.1, 
 |---|---|---|
 | id | UUID PK | |
 | tenant_id / call_id | UUID FK | |
-| question | TEXT | the question word for word as it was asked, its version (`agent/consent.py` `ALLERGY_QUESTION`) |
-| answer | TEXT | `yes` / `no` / `unclear`; only `yes` lets a note keep the reason, `unclear` is no consent |
+| question | TEXT | the question word for word as it was asked, its version (`agent/consent.py` `ALLERGY_QUESTION`, `agent/recording.py` `question()`); a withdrawal of a recording holds the caller's words `Aufnahme stoppen` |
+| answer | TEXT | `yes` / `no` / `unclear`; only `yes` lets a note keep the reason or a call be recorded, `unclear` is no consent, silence on the recording question too |
 | answered_at | TIMESTAMPTZ | |
+
+Since T-11.3 it also holds the answers about a recording (L2): one row per call that was asked, and a `no` behind the `yes` for a withdrawal.
+
+### `recordings`
+One row per recorded call (legal check L2, T-11.3, migration 021): what finds the file. The audio is a WAV file in the volume `recordings`, mounted at `/recordings`, outside the database and in no backup (`domain/calls/recordings.py`). The row is committed before a byte is written. Empty while `RECORDING_ENABLED` is off.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| call_id | UUID FK, unique | one recording per call; `RESTRICT`: the row finds the file |
+| file_name | TEXT | `<calls.external_session_id>.wav`, the name the dialplan builds from `${UNIQUEID}`; deleted inside the folder whatever it says |
+| started_at | TIMESTAMPTZ | the caller's yes; the 30 days count from here |
+| withdrawn_at | TIMESTAMPTZ NULL | "Aufnahme stoppen", the team's key, or an erasure: the next pass of the daily job takes file and row |
 
 ### `outbox`
 Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorgang geschrieben.
@@ -404,13 +418,13 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 
 | Data | Period | How |
 |---|---|---|
-| Call recordings | 30 days; at once on withdrawal | daily job, hard delete (T-11.3) |
+| Call recordings | 30 days from the start, `RETENTION_RECORDING_DAYS`, the number the question says aloud; at once on withdrawal (`recordings.withdrawn_at`) | daily job, hard delete of file and row (T-11.3). On a withdrawal the line deletes the file at once and the job, within the hour, what is left of it and the row, so an erasure, which no process with the folder runs, waits for the job too. A file that cannot be deleted keeps its row, is logged as "Recording not deleted" and tried again by the next pass; it holds up no other. The folder is in no backup, so nothing comes back after a restore. The answer stays in `consent_log` |
 | Transcripts | 90 days; no real wording ever goes into the repository, eval cases are synthetic (L14) | daily job (T-7.1) |
 | Call log without audio (`imports/anrufprotokoll.csv`, docs/17) | 90 days (D10); the hour of the call only, not the minute (L15) | weekly `scripts/call_log.py --frist-tage 90 --loeschen`; paper sheets destroyed after typing |
 | `calls.caller_id` | 90 days after the call (was 24 months), `RETENTION_CALLER_ID_DAYS` | daily job nulls it; the statistics in `calls` stay |
 | Name, phone, address, notes and the links `customer_id` and `address_id` on orders and reservations | 90 days after the order or reservation date (`ready_at` of an order, its creation while it has none; `reserved_for`), `RETENTION_GUEST_DETAILS_DAYS` | daily job strips the fields and nulls the links, so the row cannot be traced through the customer record; items, prices, times and `call_id` stay. The notes of the positions (`order_items.note`) go with them. `address_id` joins with T-6.1 |
 | A caller's allergy in `order_items.note`, `orders.note` or `reservations.note` | end of the business day of the order (the night after `ready_at`, 05:00 local time, `core/time.py`), collected or not; for a reservation the night after its date; `RETENTION_ALLERGY_NOTE_DAYS` business days later (0) | daily job empties the note text (L13), also its copies in the outbox payloads of the same orders and reservations (`note`, `items[].note`; Codex PR #371), so it does not wait for the payload period. A note counts as an allergy when it contains "Allergi…" (the kitchen wording "Grund: Allergie" included), "Unverträglich…" or "Intoleran…", the words the call log refuses too; the whole note goes. Any other note stays until the guest details go |
-| `consent_log` | end of the third calendar year after the year of the answer (Maxi, 26.10.2026), `RETENTION_CONSENT_LOG_YEARS` (3): the row holds no allergy and no number, but it shows that the caller named one of their own; it is the proof of the "ja" behind a stored allergy note (Art. 7(1)) for as long as a claim can arise (§§ 195, 199 BGB), the reasoning of the request log (U2). Not with the `calls` row: that one is never deleted | daily job deletes the row (T-11.1) |
+| `consent_log` | end of the third calendar year after the year of the answer (Maxi, 26.10.2026), `RETENTION_CONSENT_LOG_YEARS` (3): the row holds no allergy and no number, but it shows that the caller named one of their own; it is the proof of the "ja" behind a stored allergy note or a recording (Art. 7(1)) for as long as a claim can arise (§§ 195, 199 BGB), the reasoning of the request log (U2). Not with the `calls` row: that one is never deleted | daily job deletes the row (T-11.1) |
 | `callbacks.phone` and `callbacks.summary` | 90 days after the callback is done (the window of orders and reservations; not named in the check, set with it), `RETENTION_CALLBACK_DAYS` | daily job strips both fields (T-11.2). A callback never marked done loses them 90 days after its creation (Maxi, 26.10.2026, after the ultrareview of PR #371): nobody calls back after three months. Its card stays open with its reason and says "Nummer nach der Löschfrist entfernt" instead of offering a call |
 | Customers and their addresses | 24 months after the last contact (`customers.last_contact_at`), `RETENTION_CUSTOMER_DAYS` (730). **A customer only a draft made** (no order, and `last_contact_at` still equal to `created_at`: no contact since the row was written) goes with the guest details of that draft, `RETENTION_GUEST_DETAILS_DAYS` (90), assumption of T-6.5; a confirmed pickup, table, callback or complaint moves `last_contact_at` and gives the full period | daily job, hard delete (T-6.7); the addresses go with the customer, orders keep only the cleared links |
 | `recognition_objections` | **Assumption, awaiting Maxi (01.11.2026):** no period: the row is what keeps recognition off, so it stays until the guest withdraws the objection | removed by hand on a withdrawal, in the procedure of `docs/09_OPERATIONS_LEGAL.md` §2 |
@@ -448,4 +462,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 017 | `uq_special_days_set`: one `set` row per tenant and date (#441); the upgrade first lists every date with two `set` rows and stops without a change, the team decides which row holds; the downgrade drops the key |
 | 018 | `delivery_zones`, `customers`, `addresses`, `recognition_objections`, `orders.address_id` and the foreign keys of `orders.customer_id` and `orders.address_id` (T-6.1, L12); nothing writes them yet, T-6.2 and T-6.5 do, T-6.7 deletes; the downgrade drops the four tables with every row and the links on the orders |
 | 019 | `data_subject_requests`: the request log of data subjects (T-11.8, U2); nothing backfilled, the lines of the interim file are moved in by hand (docs/09 §2); the downgrade drops the table with every logged request |
+| 021 | `recordings`: one row per recorded call, unique on `call_id` (T-11.3, L2); the downgrade drops the table, and the files it named stay in the folder without a way to find them. On top of 019 until the PR of T-4.9 (020) merges: the later PR renumbers |
 | planned, next free number | `eval_cases`, `eval_runs` |

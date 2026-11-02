@@ -8,10 +8,13 @@ port the real handler uses.
 """
 
 import threading
+import wave
 from types import SimpleNamespace
 
 import pytest
 
+from api.config import settings
+from api.domain.calls import recordings
 from api.telephony.adapters.fake_speech import FakeEar, FakeLine, FakeMouth
 from api.telephony.session import KEYPAD_MAX_DIGITS, SAMPLE_RATE, CallSession, Lines
 from api.telephony.session import PLAYED_GRACE_SECONDS as GRACE
@@ -72,6 +75,9 @@ class Core:
     def on_voice_failure(self, session_id: str) -> None:
         self.calls.append(("voice_failure",))
         self._do(session_id, self.on_failure)
+
+    def on_talked_over(self, session_id: str, text: str) -> None:
+        self.calls.append(("talked_over", text))
 
     def on_call_ended(self, session_id: str, speech=None) -> None:
         self.calls.append(("ended",))
@@ -1152,10 +1158,245 @@ def test_key_terms_reach_the_ear_before_the_answer_to_the_turn(call):
     assert call.line.played()[-1] == "Die knusprige oder die süß-saure?"
 
 
-def test_nothing_is_recorded(call):
-    """Nothing calls it before the legal check in docs/09 (CLAUDE.md §9)."""
-    with pytest.raises(RuntimeError):
-        call.lines.start_recording("s1")
+# --- The recording of a call the AI takes (T-11.3, docs/09 L2) --------------------------
+
+FILE = "s1.wav"
+A_FRAME = b"\x01\x02" * 160
+
+
+@pytest.fixture
+def folder(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings, "recording_enabled", True)
+    monkeypatch.setattr(recordings, "FOLDER", tmp_path)
+    return tmp_path
+
+
+def on_the_tape(path) -> tuple[bytes, bytes]:
+    """What the two channels of a finished recording hold."""
+    with wave.open(str(path), "rb") as tape:
+        assert (tape.getnchannels(), tape.getsampwidth()) == (2, 2)
+        assert tape.getframerate() == SAMPLE_RATE
+        data = tape.readframes(tape.getnframes())
+    left, right = bytearray(), bytearray()
+    for at in range(0, len(data), 4):
+        left += data[at : at + 2]
+        right += data[at + 2 : at + 4]
+    return bytes(left), bytes(right)
+
+
+def test_nothing_is_recorded_while_the_setting_is_off(call, tmp_path, monkeypatch):
+    """The last gate behind the core's, and it costs the call nothing
+    (docs/09 L2, CLAUDE.md §9)."""
+    monkeypatch.setattr(recordings, "FOLDER", tmp_path)
+    call.start(("say", "Guten Tag."))
+    call.lines.start_recording("s1", FILE)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    assert list(tmp_path.iterdir()) == []
+    assert not call.s.over
+
+
+def test_a_recording_holds_the_caller_left_and_the_ai_right(call, folder):
+    call.start(("say", "Guten Tag."))
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.s.audio(A_FRAME)
+    call.lines.say("s1", "Ab")
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    call.played()
+    call.lines.hangup("s1")
+    call.s.drain()
+    call.played()
+    call.s.drain()
+    assert call.s.outcome == "hangup"
+
+    left, right = on_the_tape(folder / FILE)
+    assert left.startswith(A_FRAME + A_FRAME)
+    # The sentence behind the first frame, and nothing of the greeting before.
+    assert right[:320] == bytes(320)
+    assert right[320:322] == b"Ab"
+
+
+def test_what_was_said_before_the_yes_is_not_on_the_tape(call, folder):
+    call.start(("say", "Guten Tag."))
+    call.s.audio(b"\x09\x09" * 160)
+    call.s.drain()
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.s.audio(A_FRAME)
+    call.s.closed()
+    call.s.drain()
+
+    left, right = on_the_tape(folder / FILE)
+    assert left == A_FRAME
+    assert b"Guten" not in right
+
+
+def test_a_recording_stops_at_the_handover(call, folder):
+    """L11: the team is no part of the recording of a call the AI takes, and
+    the sentence before the handover is the last on it. The line gets a plain
+    transfer: the dialplan records nothing."""
+    call.start(("say", "Guten Tag."))
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.s.audio(A_FRAME)
+    call.lines.say("s1", "Ich verbinde Sie.")
+    call.lines.transfer("s1", "+497215550000")
+    call.s.drain()
+    call.s.audio(b"\x07\x07" * 160)
+    call.s.drain()
+    call.played()
+    call.s.drain()
+
+    assert ("transfer", "+497215550000") in call.line.actions
+    assert ("record_team_leg",) not in call.line.actions
+    left, _ = on_the_tape(folder / FILE)
+    assert b"\x07\x07" not in left
+
+
+def test_a_recording_ends_with_a_caller_who_hangs_up(call, folder):
+    call.start(("say", "Guten Tag."))
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.s.audio(A_FRAME)
+    call.s.closed()
+    call.s.drain()
+
+    assert call.s.outcome == "closed"
+    assert on_the_tape(folder / FILE)[0] == A_FRAME
+
+
+def test_a_recording_ends_with_a_session_that_breaks(call, folder):
+    call.start(("say", "Guten Tag."))
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    call.core.crash_on = "Eins"
+    call.said("Eins", after=1.0)
+
+    assert call.s.outcome == "failed"
+    assert on_the_tape(folder / FILE)[0] == A_FRAME
+
+
+def test_a_withdrawal_stops_the_recording_and_deletes_the_file(call, folder):
+    call.start(("say", "Guten Tag."))
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.s.audio(A_FRAME)
+    call.lines.stop_recording("s1", discard=True)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+
+    assert list(folder.iterdir()) == []
+    assert not call.s.over
+
+
+def test_a_stop_without_discard_keeps_the_file(call, folder):
+    call.start(("say", "Guten Tag."))
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.s.audio(A_FRAME)
+    call.lines.stop_recording("s1")
+    call.s.audio(b"\x07\x07" * 160)
+    call.s.drain()
+
+    assert on_the_tape(folder / FILE)[0] == A_FRAME
+
+
+def test_a_flush_takes_what_was_not_played_off_the_tape(call, folder):
+    call.start(("say", "Guten Tag."))
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.lines.say("s1", "Eine lange Antwort", True)
+    call.s.drain()
+    call.said("Halt.", after=0.1)
+    call.s.closed()
+    call.s.drain()
+
+    assert ("flush",) in call.line.actions
+    _, right = on_the_tape(folder / FILE)
+    assert b"lange" not in right
+
+
+def test_a_recording_that_cannot_begin_costs_the_call_nothing(
+    call, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(settings, "recording_enabled", True)
+    monkeypatch.setattr(recordings, "FOLDER", tmp_path / "gone")
+    call.start(("say", "Guten Tag."))
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+
+    assert not call.s.over
+    assert call.core.count("voice_failure") == 0
+    assert call.ear.frames
+
+
+def test_a_recording_that_fails_goes_and_costs_the_call_nothing(
+    call, folder, monkeypatch
+):
+    call.start(("say", "Guten Tag."))
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+
+    def full(self, left, right):
+        raise OSError("no space left on the device")
+
+    monkeypatch.setattr("api.telephony.recording.Tape._write", full)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    # The tape is gone: the next frame does not touch it.
+    frames = len(call.ear.frames)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+
+    assert len(call.ear.frames) == frames + 1
+    assert not call.s.over
+    assert call.core.count("voice_failure") == 0
+    assert list(folder.iterdir()) == []
+
+
+def test_a_stop_said_into_a_protected_sentence_reaches_the_core_as_no_turn(
+    call, folder
+):
+    """A read-back drops what is said into it (rule 3); a withdrawal must not
+    get lost with it (L2)."""
+    call.start(("say", "Guten Tag."))
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.lines.say("s1", READBACK)
+    call.s.drain()
+
+    call.said("Aufnahme stoppen", after=0.1)
+
+    assert call.core.turns() == []
+    assert ("talked_over", "Aufnahme stoppen") in call.core.calls
+
+
+def test_a_protected_sentence_stays_protected_without_a_recording(call):
+    call.start(("say", READBACK))
+    call.said("Aufnahme stoppen", after=0.1)
+    assert call.core.turns() == []
+    assert call.core.count("talked_over") == 0
+
+
+def test_a_recorded_team_leg_is_the_lines_to_record(call):
+    """Mode `shadow`: the AI has no part in the call, so the session writes
+    nothing, and the line tells the dialplan."""
+    call.start(("say", "Frage."))
+    call.played()
+    call.lines.record_team_leg("s1")
+    call.lines.transfer("s1", "+497215550000")
+    call.s.drain()
+
+    assert call.line.kinds()[-2:] == ["record_team_leg", "transfer"]
+    assert call.s.outcome == "transfer"
 
 
 # --- One worker per call -----------------------------------------------------------------

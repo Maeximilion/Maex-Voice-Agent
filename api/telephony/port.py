@@ -48,9 +48,20 @@ class TelephonyPort(Protocol):
         """End the call after everything said so far was spoken."""
         ...
 
-    def start_recording(self, session_id: str) -> None:
-        """Part of the port so an adapter can be tested against it. Nothing calls
-        it before the legal check in docs/09 is ticked (CLAUDE.md §9)."""
+    def start_recording(self, session_id: str, file_name: str) -> None:
+        """Record the call from here on, into `file_name` of the recordings'
+        folder, up to the handover or its end (`agent/recording.py`). Only after
+        the caller's yes, and only with `RECORDING_ENABLED` (docs/09 L2, L11).
+        Never raises for a recording that fails: the call goes on without."""
+        ...
+
+    def stop_recording(self, session_id: str, *, discard: bool = False) -> None:
+        """End it now; `discard` deletes the file too (a withdrawal)."""
+        ...
+
+    def record_team_leg(self, session_id: str) -> None:
+        """The team leg of the next transfer is recorded by the telephone
+        system. A recorded call in mode `shadow`: the AI has no part in it."""
         ...
 
 
@@ -81,6 +92,11 @@ class CallEvents(Protocol):
         silence; the next one counts from the end of what is said in answer."""
         ...
 
+    def on_talked_over(self, session_id: str, text: str) -> None:
+        """While a recording runs: the caller said `text` into a sentence that
+        may not be interrupted. No turn; it may be a withdrawal (docs/09 L2)."""
+        ...
+
     def on_voice_failure(self, session_id: str) -> None:
         """The voice layer itself failed on this call: the ear or the mouth
         raised, or the ear makes nothing of the caller's speech. A hosted
@@ -100,4 +116,11 @@ class CallEvents(Protocol):
         was reported: a callback card for the team (docs/20 §5, T-10.8). True
         only once the card is written, so the caller may hear that the
         restaurant calls back. Never raises."""
+        ...
+
+    def on_recording_stopped(self, session_id: str) -> bool:
+        """The team stopped the recording of a team leg with the key of their
+        telephone (docs/20 §5, T-11.3); the dialplan deleted the file. True when
+        a running recording was withdrawn. Never raises. Like `on_team_missed`
+        it comes from the dialplan and uses no session of the call."""
         ...

@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.config import Settings, settings
+from api.domain.calls import recordings
 from api.jobs.retention import purge
 from api.models import (
     Address,
@@ -24,6 +25,7 @@ from api.models import (
     OrderItem,
     OutboxEvent,
     RecognitionObjection,
+    Recording,
     Reservation,
     Tenant,
 )
@@ -648,6 +650,138 @@ def _berlin(
     year: int, month: int, day: int, hour: int = 0, minute: int = 0
 ) -> datetime:
     return datetime(year, month, day, hour, minute, tzinfo=BERLIN).astimezone(UTC)
+
+
+# -- recordings (T-11.3, docs/09 L2) ---------------------------------------------
+
+
+@pytest.fixture
+def folder(monkeypatch, tmp_path):
+    monkeypatch.setattr(recordings, "FOLDER", tmp_path)
+    return tmp_path
+
+
+def _recording(session, tenant_id, folder, started_at, withdrawn_at=None) -> Recording:
+    call = _call(session, tenant_id, started_at=started_at)
+    session.flush()
+    row = Recording(
+        tenant_id=tenant_id,
+        call_id=call.id,
+        file_name=f"{call.external_session_id}.wav",
+        started_at=started_at,
+        withdrawn_at=withdrawn_at,
+    )
+    session.add(row)
+    session.commit()
+    (folder / row.file_name).write_bytes(b"audio")
+    return row
+
+
+def test_a_recording_goes_after_30_days_with_its_file(session, tenant_id, folder):
+    old = _recording(session, tenant_id, folder, NOW - 30 * DAY - timedelta(seconds=1))
+    young = _recording(
+        session, tenant_id, folder, NOW - 30 * DAY + timedelta(seconds=1)
+    )
+    old_id, young_id, young_file = old.id, young.id, young.file_name
+
+    counts = purge(session, NOW)
+
+    session.expire_all()
+    assert counts["recordings"] == 1
+    assert session.get(Recording, old_id) is None
+    assert session.get(Recording, young_id) is not None
+    assert [path.name for path in folder.iterdir()] == [young_file]
+
+
+def test_a_withdrawn_recording_does_not_wait_for_its_period(session, tenant_id, folder):
+    row = _recording(session, tenant_id, folder, NOW - DAY, withdrawn_at=NOW)
+    row_id = row.id
+
+    counts = purge(session, NOW)
+
+    session.expire_all()
+    assert counts["recordings"] == 1
+    assert session.get(Recording, row_id) is None
+    assert list(folder.iterdir()) == []
+
+
+def test_a_recording_whose_file_is_gone_loses_its_row(session, tenant_id, folder):
+    """A team nobody answered leaves no audio; a withdrawal took it already."""
+    row = _recording(session, tenant_id, folder, NOW - 31 * DAY)
+    (folder / row.file_name).unlink()
+    row_id = row.id
+
+    purge(session, NOW)
+
+    session.expire_all()
+    assert session.get(Recording, row_id) is None
+
+
+def test_a_file_that_cannot_be_deleted_keeps_its_row_and_holds_up_nothing(
+    session, tenant_id, folder, monkeypatch, caplog
+):
+    stuck = _recording(session, tenant_id, folder, NOW - 40 * DAY)
+    other = _recording(session, tenant_id, folder, NOW - 39 * DAY)
+    stuck_id, other_id, name = stuck.id, other.id, stuck.file_name
+    real = recordings.delete_file
+
+    def refusing(file_name):
+        if file_name == name:
+            raise PermissionError("the file stays")
+        real(file_name)
+
+    monkeypatch.setattr("api.jobs.retention.delete_file", refusing)
+    with caplog.at_level(logging.ERROR):
+        counts = purge(session, NOW)
+
+    session.expire_all()
+    assert counts["recordings"] == 1
+    assert session.get(Recording, stuck_id) is not None
+    assert session.get(Recording, other_id) is None
+    assert any(r.getMessage() == "Recording not deleted" for r in caplog.records)
+
+    monkeypatch.setattr("api.jobs.retention.delete_file", real)
+    assert purge(session, NOW)["recordings"] == 1
+    session.expire_all()
+    assert session.get(Recording, stuck_id) is None
+
+
+def test_a_file_outside_the_folder_is_never_touched(
+    session, tenant_id, folder, monkeypatch
+):
+    """Whatever a row says, the job deletes inside the folder only."""
+    inside = folder / "inside"
+    inside.mkdir()
+    outside = folder / "outside.wav"
+    outside.write_bytes(b"audio")
+    monkeypatch.setattr(recordings, "FOLDER", inside)
+    row = _recording(session, tenant_id, inside, NOW - 31 * DAY)
+    row.file_name = "../outside.wav"
+    session.commit()
+
+    purge(session, NOW)
+
+    assert outside.exists()
+
+
+def test_the_recording_period_comes_from_the_setting(
+    session, tenant_id, folder, monkeypatch
+):
+    monkeypatch.setattr(settings, "retention_recording_days", 5)
+    row = _recording(session, tenant_id, folder, NOW - 6 * DAY)
+    row_id = row.id
+
+    purge(session, NOW)
+
+    session.expire_all()
+    assert session.get(Recording, row_id) is None
+
+
+def test_a_pass_without_a_due_recording_changes_nothing(session, tenant_id, folder):
+    row = _recording(session, tenant_id, folder, NOW - DAY)
+
+    assert purge(session, NOW)["recordings"] == 0
+    assert (folder / row.file_name).exists()
 
 
 def test_consent_answer_goes_at_the_end_of_the_third_year_after(session, tenant_id):

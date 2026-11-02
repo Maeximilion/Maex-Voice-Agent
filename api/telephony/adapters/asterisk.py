@@ -180,6 +180,9 @@ class MediaLine:
         # Marks of the messages of audio that Asterisk has not played yet.
         self._in_flight: set[str] = set()
         self._chunks = 0
+        # What the dialplan is told to do with a transfer: only the word
+        # `record` makes it record the team leg.
+        self._transfer_word = "transfer"
 
     def attach(self, session: "CallSession") -> None:
         self._session = session
@@ -213,10 +216,13 @@ class MediaLine:
     def transfer(self, target: str) -> None:
         if not _TARGET.fullmatch(target):
             raise ValueError("not a number a call can be handed to")
-        self._end(f"transfer {target}")
+        self._end(f"{self._transfer_word} {target}")
 
     def hangup(self) -> None:
         self._end("hangup")
+
+    def record_team_leg(self) -> None:
+        self._transfer_word = "record"
 
     # -- what Asterisk sends, from the connection ----------------------------------
 

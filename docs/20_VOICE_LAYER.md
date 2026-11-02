@@ -49,10 +49,11 @@ caller → telephone network → access (test: the pilot's router as PBX · oper
 |---|---|---|
 | Registration, dialplan, media | Compose service `asterisk` (22.11.0, pinned by digest; not older, §11), profile `voice`; built (T-1.11) | `deploy/asterisk/conf/`, rendered by `deploy/asterisk/render.sh` |
 | Voice process | Compose service `voice`, the API's image with the speech engines (target `voice` of `api/Dockerfile`), one worker, profile `voice`; built (T-1.11) | `api/telephony/app.py` |
-| WebSocket endpoint, dialplan callback | inside `voice`: `/media` and `/calls/{id}/ending`; built (T-1.11) | `api/telephony/router.py` |
+| WebSocket endpoint, dialplan callback | inside `voice`: `/media`, `/calls/{id}/ending`, `/calls/{id}/missed` and `/calls/{id}/recording/stop`; built (T-1.11, T-10.8, T-11.3) | `api/telephony/router.py` |
 | Media protocol of Asterisk and the line on it | built (T-1.11) | `api/telephony/adapters/asterisk.py` |
 | Call session, provider neutral | built (T-10.4) | `api/telephony/session.py` |
 | Ports for ear, mouth and the line | built (T-10.4) | `api/telephony/speech.py` |
+| The recording of a call | built (T-11.3), off unless `RECORDING_ENABLED`, §4: a call the AI takes in `voice`, a team leg in the dialplan | `api/agent/recording.py`, `api/telephony/recording.py`, `deploy/asterisk/conf/extensions.conf` |
 | Speech engines and their fakes | built (T-10.5), inside `voice` since T-1.11 part 2 | `api/telephony/adapters/stt_<engine>.py`, `tts_<engine>.py`, `fake_speech.py` |
 
 **Reused unchanged:** `api/agent/`, `api/domain/`, `api/events/`, `api/gui/`, `sim/`, `evals/`,
@@ -188,6 +189,21 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 | A frame the line does not understand | A failure of the voice layer (`CallSession.broken`), not a caller who hung up: the call log says so, and without an ending the dialplan rings the team. |
 | Access | `/media` and `/calls/{id}/ending` want the media token as the password of Basic credentials, which is how Asterisk sends `username` and `password` of `websocket_client.conf` (recorded). A refused connection fails `Dial`, and the team rings. |
 
+**Built with T-11.3 (02.11.2026): the recording, off behind `RECORDING_ENABLED`** (docs/09 L2, L11, U1). Nothing has run on a real call: the setting stays off until the team's written consents are signed. Drilled on the stand-in for the router (§5).
+
+| Topic | As built |
+|---|---|
+| Off | While `RECORDING_ENABLED` is false no question is asked, the greeting ends on "Was kann ich für Sie tun?", mode `shadow` hands the call on before a word, and nothing is written. `Lines.start_recording` holds the same gate a second time. |
+| The question | U1 word for word (`agent/recording.py`), its number from `RETENTION_RECORDING_DAYS`, in the place of "Was kann ich für Sie tun?" in the first sentence, behind the AI notice and the privacy pointer. Like every first sentence it may not be talked over, so a yes counts only to a question heard to the end. Only in `overflow`, `primary` and `shadow`: `paused` and a call above the limit go to the team without a word, as ever. |
+| The answer | `consent.recording_answer`: the strict yes of `is_yes` with the words of a consent ("Ja, ich bin damit einverstanden"). "Nein", "Lieber nicht", "Aufnahme stoppen" are a no. Anything else is unclear, silence too, and unclear is no consent; keys are no "ja". Each goes into `consent_log`, the question word for word. A hangup on the question writes no row: nothing was answered. |
+| A call the AI takes | The core answers, without the model (`loop.run_turn`). On a yes: the row (`domain/calls/recordings.py`), then `start_recording`, the way to stop said, "Was kann ich für Sie tun?". On a no the last sentence alone. An unclear answer is not asked again: the sentence goes to the core as the guest's first turn. The session writes one WAV file (`telephony/recording.py`), 16 kHz, 16 bit, the caller left and the AI right, from the yes on. The media channel has no command to start a recording on the telephone system in the middle of a call. |
+| The handover | The file ends when the transfer is queued (`_queue_ending`), before the team rings, and the line says `transfer`, so nothing of the team leg is recorded (L11, U5). Also on the outage path. |
+| Mode `shadow` | No core runs: the handler takes the answer and the call goes to the team whatever it is. On a yes the ending is `record <number>` instead of `transfer <number>`. Only that word sets it, the dialplan dials it like a transfer, also through the list check, and starts `MixMonitor` with `b`: nothing of the ringing, and only an empty file of a leg nobody answers. It is written as `/recordings/${UNIQUEID}.wav`, the name of the `recordings` row. Asterisk writes it: `voice` is off the call. |
+| "Aufnahme stoppen" on a call the AI takes | Read by the core before anything else (`consent.stops_recording`, generous on purpose: a stop wrongly heard costs a recording). The file is closed and deleted at once, a `no` goes into the log with the question `Aufnahme stoppen`, the row gets `withdrawn_at`. The call goes on: "Die Aufnahme ist gestoppt und gelöscht." and the sentence the guest had not answered, a read-back word for word, which still waits for its yes. A sentence with more in it goes on as a turn. Said into a sentence that may not be interrupted it is no turn and the sentence stands, but the session hands it over while a recording runs (`on_talked_over`), so it does not get lost like an answer would. Not heard during the farewell: the ear is off by then, and the request goes the way of docs/09 §2. |
+| "Aufnahme stoppen" on a team leg | No ear listens there. A team member, or the caller, presses `*7` (`features.conf`, set only on a recorded leg). The dialplan stops `MixMonitor` and deletes the file itself, so it holds with `voice` down, and asks `POST /calls/{id}/recording/stop` to log the withdrawal. `*7` from the caller's side runs on the team's channel, where there is nothing to stop: the file is deleted all the same, and what is still written goes into a file that is gone. Drilled with the stand-in's `SendDTMF`; the keys of the pilot's telephones through the router are not tried yet. |
+| The folder | The volume `recordings`, mounted by `voice`, `asterisk` and the dispatcher, in no backup. `render.sh` gives it to `RECORDINGS_UID` (10001, the user of `voice` and the dispatcher) with the group of Asterisk, mode 2770, at every start; when that fails the telephone starts all the same. The row comes first, so no file exists that the job cannot find. Expiry and a late delete are the daily job's (docs/03 Löschkonzept). |
+| A recording fails | Never the call (rule 5). The log or the row cannot be written: nothing is recorded, the session is rolled back, and the call goes on; in `shadow` the team rings as on a no. The folder is missing or the file fails: the file goes, the row expires, the call goes on and its core is not told. A withdrawal whose log fails stops and deletes all the same. |
+
 ---
 
 ## 5. Outage map (hard rule 5)
@@ -198,6 +214,7 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 | A crash in the middle of a call, or a transfer asked for by the core | the dialplan asks `voice` after the leg ends; only an explicit "done" hangs up | the dialplan dials the team number |
 | Model, database, a tool | the existing paths in `agent/loop.py` and `telephony/handler.py` | `TelephonyPort.transfer` |
 | The team does not pick up | the dial status | at another number of the list (`TRANSFER_TARGETS`): `TEAM_PHONE` once (T-10.13); at `TEAM_PHONE`: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8) |
+| The recording: the question, its log, the row or the file | `agent/recording.py`, the session | nothing has to: the call goes on without a recording, and in mode `shadow` the team rings as on a no (§4, T-11.3) |
 | Asterisk or the whole machine is down | test phase: the router, the AI telephone is simply not registered. Operation: the trunk | test phase: the team telephones ring as before. Operation: the trunk's forwarding rules |
 
 **Test number.** In the test phase every row of this table is tried on a number customers do not call, with a team telephone assigned to that number next to the AI telephone. The main number stays untouched until operation.
@@ -336,6 +353,17 @@ Numbers per run: §11. **The access's addresses:** the ACL and `match` hold the 
 needs the last: it calls from its public address, also through its VPN (T-10.1 step 2, §3). A trunk
 whose calls come from other addresses than its SRV targets (T-10.12) needs them there too; the
 drill "stranger" shows whether a call from an address not on the list is refused.
+
+**The recording on the wire (T-11.3, 02.11.2026).** `python3 -m scripts.voice_drill` restarts `voice` with `RECORDING_ENABLED` for these points and sets it back. The drill's ear hears nothing but "Ja" in a caller's tone, one a second; its mouth takes no time. The whole run: 35 of 35 points.
+
+| Drill | Result on 02.11.2026 |
+|---|---|
+| Off, mode `shadow` | the team rang after 0.2 s, the AI never answered, no file |
+| On, `shadow`, a silent caller | the AI answers and asks, the team rang after 2.7 s (the 2 s of silence of the drill), not recorded, consent `unclear` |
+| On, `shadow`, a yes | the leg ends `record`, the team's leg is on a file of about 32 KB, consent `yes` |
+| On, `shadow`, a yes and the team's key | `*7` from the team's side: stopped, the file gone, `voice` answered `stopped`, consent `yes,no`, the row withdrawn, and the call went on |
+| On, a call the AI takes | from the yes to the handover on a file of `voice`, stereo at 16 kHz with the caller's tone on the left; the same size at the end of the team leg, and the dialplan recorded nothing |
+| On, `voice` killed while the question waits | the team rang after 0.6 to 1.3 s, no ending and nothing recorded |
 
 ---
 
@@ -518,9 +546,11 @@ hangup went out, and the dialplan rings the team only once the write is done. A 
 whose leg ends while it is still being opened is closed once it is open, with no greeting. The
 call log gets the model and its cost, and the log the line "model usage", as on the text phone.
 
+The recording came with T-11.3 (02.11.2026): `RECORDING_ENABLED` (off; on only after the team's written consents, docs/09 L11) and `RETENTION_RECORDING_DAYS` (30, which the question says aloud). Its folder is a path and no setting, `/recordings`: the dialplan names it too.
+
 For Asterisk only, never in Python: the registrar's host, user and password (`ACCESS_HOST`,
 `ACCESS_USER`, `ACCESS_PASSWORD`), the numbers besides `TEAM_PHONE` a transfer may go to
-(`TRANSFER_TARGETS`, §5), and the public media address (not yet, it comes with the trunk).
+(`TRANSFER_TARGETS`, §5), the owner of the recordings' folder (`RECORDINGS_UID`, §4), and the public media address (not yet, it comes with the trunk).
 Asterisk takes SIP only from the IPv4 addresses of the servers `ACCESS_HOST`'s `_sip._udp` SRV
 records name, or of `ACCESS_HOST` itself without such records, looked up when it starts (§5).
 The pilot's router and a later trunk provider are named in `.env`, never in the repository.

@@ -102,7 +102,8 @@ class Settings(BaseSettings):
     # Ear and mouth by the names of their engines in `telephony/app.py`
     # (`EARS`, `MOUTHS`), the local engines of the test phase (docs/20 §6).
     # `fake` is the drill pair of the workbench, an ear that hears nothing and
-    # a mouth of noise, and is refused outside dev and test.
+    # a mouth of noise, and is refused outside dev and test, as is the ear
+    # `drill`, which hears "Ja" in a tone.
     voice_ear: str = ""
     voice_mouth: str = ""
     # Where the ear's engine runs: on the graphics card, or on the processor,
@@ -112,6 +113,9 @@ class Settings(BaseSettings):
     # for the engine's own (`telephony/adapters/`). Which one is Maxi's to
     # hear (D4).
     voice_mouth_voice: str = ""
+    # The recording of calls (docs/09 §1 L2, T-11.3). Off: no question is asked
+    # and nothing is recorded. On only after the team's written consents (L11).
+    recording_enabled: bool = False
 
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45
@@ -138,6 +142,9 @@ class Settings(BaseSettings):
     # A caller's allergy note goes this many business days after the one of the
     # order or reservation; 0 is the night after (L13).
     retention_allergy_note_days: int = Field(default=0, ge=0, le=MAX_RETENTION_DAYS)
+    # A call recording, from its start (L2, T-11.3); the question names this
+    # number. A withdrawal does not wait for it.
+    retention_recording_days: int = Field(default=30, ge=1, le=MAX_RETENTION_DAYS)
     # An answer to a consent question goes at the end of this many calendar
     # years after the year it was given (Maxi, 26.10.2026): the proof of a
     # stored allergy note for as long as a claim can arise (§§ 195, 199 BGB).

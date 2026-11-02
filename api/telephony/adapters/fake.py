@@ -31,7 +31,7 @@ CUSTOMER = "customer"
 
 @dataclass(frozen=True)
 class Action:
-    kind: str  # say, transfer, hangup, recording
+    kind: str  # say, transfer, hangup, recording, recording_stopped, team_leg
     session_id: str
     value: str | None = None
     # For `say`: may the caller talk over the sentence?
@@ -104,8 +104,15 @@ class FakeTelephony:
         self.actions.append(Action("hangup", session_id))
         self._open.discard(session_id)
 
-    def start_recording(self, session_id: str) -> None:
-        self.actions.append(Action("recording", session_id))
+    def start_recording(self, session_id: str, file_name: str) -> None:
+        self.actions.append(Action("recording", session_id, file_name))
+
+    def stop_recording(self, session_id: str, *, discard: bool = False) -> None:
+        how = "discard" if discard else "keep"
+        self.actions.append(Action("recording_stopped", session_id, how))
+
+    def record_team_leg(self, session_id: str) -> None:
+        self.actions.append(Action("team_leg", session_id))
 
     # -- reading back ----------------------------------------------------------------
 
@@ -134,6 +141,14 @@ class FakeTelephony:
             for a in self.actions
             if a.kind == "recording" and a.session_id == session_id
         ]
+
+    def stopped(self, session_id: str) -> list[str]:
+        return self._values("recording_stopped", session_id)
+
+    def team_leg_recorded(self, session_id: str) -> bool:
+        return any(
+            a.kind == "team_leg" and a.session_id == session_id for a in self.actions
+        )
 
     def _values(self, kind: str, session_id: str) -> list[str]:
         return [

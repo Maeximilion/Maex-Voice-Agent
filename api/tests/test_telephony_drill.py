@@ -16,6 +16,9 @@ from alembic import command
 from sqlalchemy import create_engine, text
 
 from api.telephony import drill
+from api.telephony.adapters.fake_speech import DrillEar
+from api.telephony.audio import tone
+from api.telephony.speech import Heard
 from api.tests.conftest import alembic_config
 
 
@@ -125,6 +128,150 @@ def test_paused_passes_only_when_the_ai_never_answered(tmp_path):
     assert rings[1] and unanswered[1]
     _, answered = drill.drill_paused(paused("ANSWER"))
     assert not answered[1]
+
+
+# -- the recording (T-11.3) -------------------------------------------------------
+
+ANSWERED = "call 1.1: voice leg ANSWER ending [transfer] recorded [{}]"
+
+
+def speaking(n: int, recorded: str, *more: str) -> dict[int, dict[str, list[str]]]:
+    """Call n: the AI answers, the team rings, the leg ends."""
+    return {
+        n: {
+            "router": [
+                *router(n, "dials", "answered"),
+                TEAM_RINGS,
+                f"NoOp(DRILL {n} caller leg ended dialstatus=ANSWER)",
+            ],
+            "asterisk": [ANSWERED.format(recorded), *more],
+        }
+    }
+
+
+def test_recording_off_passes_only_without_a_word_and_a_file(tmp_path):
+    silent = {
+        115: {
+            "router": [*router(115, "dials"), TEAM_RINGS],
+            "asterisk": [
+                "call 1.1: voice leg NOANSWER ending [transfer] recorded [no]"
+            ],
+        }
+    }
+    assert all(ok for _, ok, _ in drill.drill_recording_off(Stage(tmp_path, silent)))
+
+    stage = Stage(tmp_path, silent)
+    stage.prints["find"] = "1.1.wav 44\n"
+    assert not drill.drill_recording_off(stage)[1][1]
+
+    asked = Stage(tmp_path, speaking(115, "no"))
+    assert not drill.drill_recording_off(asked)[1][1]
+
+
+def test_a_recording_on_a_silent_call_fails_the_drill(tmp_path):
+    def silence(recorded: str, consent: str) -> Stage:
+        stage = Stage(tmp_path, speaking(116, recorded))
+        stage.prints["string_agg"] = consent
+        stage.prints["recordings r"] = ""
+        return stage
+
+    [(_, ok, detail)] = drill.recording_silence(silence("no", "unclear"))
+    assert ok, detail
+    assert not drill.recording_silence(silence("yes", "unclear"))[0][1]
+    assert not drill.recording_silence(silence("no", "yes"))[0][1]
+
+
+def test_a_yes_passes_only_with_audio_on_the_file(tmp_path):
+    def yes(size: int) -> Stage:
+        stage = Stage(tmp_path, speaking(117, "yes"))
+        stage.prints["string_agg"] = "yes"
+        stage.prints["recordings r"] = "running"
+        stage.prints["find"] = f"1.1.wav {size}\n"
+        return stage
+
+    [(_, ok, detail)] = drill.recording_yes(yes(8044))
+    assert ok, detail
+    assert not drill.recording_yes(yes(44))[0][1]
+
+
+def test_the_stop_key_passes_only_with_the_file_gone_and_the_log_written(tmp_path):
+    told = "call 1.1: recording stopped by the team, voice [stopped]"
+
+    def stopped(files: str, consent: str) -> Stage:
+        stage = Stage(tmp_path, speaking(118, "yes", told))
+        stage.prints["string_agg"] = consent
+        stage.prints["recordings r"] = "withdrawn"
+        stage.prints["find"] = files
+        return stage
+
+    [(_, ok, detail)] = drill.recording_stop_key(stopped("", "yes,no"))
+    assert ok, detail
+    assert not drill.recording_stop_key(stopped("1.1.wav 4000\n", "yes,no"))[0][1]
+    assert not drill.recording_stop_key(stopped("", "yes"))[0][1]
+
+
+def test_the_team_key_sets_the_router_back(tmp_path):
+    stage = Stage(tmp_path, speaking(118, "yes"))
+    drill.recording_stop_key(stage)
+    assert ("cli", "router", "dialplan set global TEAM_AWAY answer") in stage.commands
+    assert ("sql", "update service_config set call_mode = 'primary'") in stage.commands
+
+
+def test_an_ai_call_passes_only_when_the_file_stops_at_the_handover(tmp_path):
+    def ai_call(recorded: str, wav: str) -> Stage:
+        stage = Stage(tmp_path, speaking(119, recorded))
+        stage.prints["string_agg"] = "yes"
+        stage.prints["recordings r"] = "running"
+        stage.prints["find"] = "1.1.wav 96044\n"
+        stage.prints["wave.open"] = wav
+        return stage
+
+    [(_, ok, detail)] = drill.recording_ai_call(ai_call("no", "2 16000 9000"))
+    assert ok, detail
+    assert not drill.recording_ai_call(ai_call("yes", "2 16000 9000"))[0][1]
+    assert not drill.recording_ai_call(ai_call("no", "2 16000 0"))[0][1]
+
+
+def test_voice_dying_on_the_question_is_started_again(tmp_path):
+    stage = Stage(
+        tmp_path,
+        {
+            120: {
+                "router": [*router(120, "dials", "answered"), TEAM_RINGS],
+                "asterisk": ["call 1.1: voice leg ANSWER ending [] recorded [no]"],
+            }
+        },
+    )
+    rings, off = drill.recording_crash(stage)
+    assert rings[1] and off[1]
+    assert ("up", "-d", "--wait", "voice") in stage.commands
+
+
+def test_the_recording_is_switched_off_again_whatever_fails(tmp_path, monkeypatch):
+    stage = Stage(tmp_path, {})
+
+    def broken(_):
+        raise drill.DrillError("a call of the last drill does not end")
+
+    monkeypatch.setattr(drill, "recording_silence", broken)
+    with pytest.raises(drill.DrillError):
+        drill.drill_recording(stage)
+    assert stage._env["DRILL_RECORDING"] == "false"
+
+
+def test_the_drill_ear_says_yes_to_a_tone_and_nothing_to_silence():
+    ear = DrillEar()
+    heard: list[Heard] = []
+    ear.open(heard.append)
+    silence, loud = bytes(320), tone(440, 0.02, 16000)
+
+    ear.feed(silence, 1.0)
+    assert heard == []
+
+    ear.feed(loud, 2.0)
+    ear.feed(loud, 2.5)
+    ear.feed(loud, 3.0)
+    assert [(h.text, h.ended_at) for h in heard] == [("Ja", 2.0), ("Ja", 3.0)]
 
 
 OFF_THE_LIST = [

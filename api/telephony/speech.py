@@ -128,3 +128,8 @@ class Line(Protocol):
     def hangup(self) -> None:
         """End the call."""
         ...
+
+    def record_team_leg(self) -> None:
+        """The transfer that follows goes to a recorded team leg: the caller
+        said yes, and the telephone system records it (T-11.3)."""
+        ...

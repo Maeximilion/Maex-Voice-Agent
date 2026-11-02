@@ -3,7 +3,16 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, Text, text
+from sqlalchemy import (
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -81,3 +90,23 @@ class ConsentLog(UUIDPrimaryKey, TenantScoped, Base):
     answered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+
+
+class Recording(UUIDPrimaryKey, TenantScoped, Base):
+    """The recording of one call, after the caller's explicit "ja" (legal check
+    L2, T-11.3). The audio is a file in a folder outside the database
+    (`domain/calls/recordings.py`), and this row is what finds it: the daily
+    job deletes both 30 days after `started_at`, or at once once `withdrawn_at`
+    is set. The consent itself is in `consent_log`."""
+
+    __tablename__ = "recordings"
+    __table_args__ = (UniqueConstraint("call_id", name="uq_recordings_call_id"),)
+
+    call_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("calls.id", ondelete="RESTRICT"), nullable=False
+    )
+    file_name: Mapped[str] = mapped_column(Text, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    withdrawn_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -282,6 +282,8 @@ class _Line:
 
     def transfer(self, target: str) -> None: ...
 
+    def record_team_leg(self) -> None: ...
+
     def hangup(self) -> None: ...
 
 
@@ -304,11 +306,16 @@ class _Core:
 
     def on_voice_failure(self, session_id: str) -> None: ...
 
+    def on_talked_over(self, session_id: str, text: str) -> None: ...
+
     def on_call_ended(
         self, session_id: str, speech: SpeechUsage | None = None
     ) -> None: ...
 
     def on_team_missed(self, session_id: str) -> bool:
+        return False
+
+    def on_recording_stopped(self, session_id: str) -> bool:
         return False
 
 

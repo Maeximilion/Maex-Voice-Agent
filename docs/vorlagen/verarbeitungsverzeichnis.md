@@ -61,7 +61,7 @@ Gemeinsame technische und organisatorische Maßnahmen (Art. 32), für alle Blöc
 - **Betroffene:** Anrufer, Teammitglieder.
 - **Datenkategorien:** Tonaufnahme, Abschrift.
 - **Löschfristen:** Aufnahme 30 Tage, bei Widerruf sofort; Abschrift 90 Tage.
-- **Hinweis:** <offen: noch nicht gebaut (T-11.3, T-7.x); Block erst aktivieren, wenn die Aufzeichnung läuft>
+- **Hinweis:** <offen: die Aufzeichnung ist gebaut und aus (T-11.3, `RECORDING_ENABLED`), die Abschriften fehlen noch (T-7.x); Block erst aktivieren, wenn die Aufzeichnung läuft>
 
 ### V7 Zugangskonten und Protokoll der Team-Aktionen
 

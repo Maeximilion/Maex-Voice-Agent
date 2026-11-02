@@ -526,8 +526,15 @@ On the phone the code says this sentence before the first turn (`telephony/handl
 **Answer to „Sind Sie ein Mensch?"** (`agent/loop.py` `SAY_NOT_A_PERSON`, `SAY_TEAM_OFFER`, draft; §3)
 > „Ich bin ein KI-Assistent, kein Mensch. Möchten Sie lieber mit jemandem aus dem Team sprechen?"
 
-**Mit Aufzeichnung** (nur wenn der Rechts-Check das trägt)
-> „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Das Gespräch wird zur Qualitätssicherung aufgezeichnet. Wenn Sie das nicht möchten, verbinde ich Sie mit einem Mitarbeiter. Was kann ich für Sie tun?"
+**With recording** (only with `RECORDING_ENABLED`, T-11.3, docs/09 L2, U1): the question takes the place of the last sentence of the greeting, also in mode `shadow`, before the team rings. A human is never the price of a no. The code asks and the code decides, the model hears nothing of it (`agent/recording.py`):
+> „Guten Tag, hier ist der KI-Assistent von <Pilotbetrieb>. Hinweise zum Datenschutz finden Sie unter example.com/datenschutz. Zur Verbesserung unseres Assistenten würden wir dieses Gespräch gern aufzeichnen und 30 Tage speichern. Sind Sie damit einverstanden? Bitte sagen Sie Ja oder Nein."
+
+Behind a yes (draft, U1 does not name the way to stop, L2 does), and then the last sentence of the greeting, in mode `shadow` the sentence before the team rings:
+> „Sie können die Aufnahme jederzeit mit den Worten Aufnahme stoppen beenden."
+> „Was kann ich für Sie tun?" / „Ich verbinde Sie mit dem Restaurant."
+
+On „Aufnahme stoppen" (draft), then what the guest had not answered yet:
+> „Die Aufnahme ist gestoppt und gelöscht."
 
 **Weiterleitung**
 > „Ich verbinde Sie mit einem Mitarbeiter, einen Moment bitte."
