@@ -37,14 +37,14 @@ def find_customer(
         return CustomerMatch(found=False)
     customers = session.scalars(
         select(Customer).where(
-            Customer.tenant_id == tenant_id,
-            Customer.phone == phone,
-            Customer.blocked.is_(False),
+            Customer.tenant_id == tenant_id, Customer.phone == phone
         )
     ).all()
     if guest_name is not None:
         customers = [c for c in customers if fold(c.name) == fold(guest_name.strip())]
-    if len(customers) != 1:
+    # A blocked customer counts: without them the other would look like the
+    # only one on the number (#207).
+    if len(customers) != 1 or customers[0].blocked:
         return CustomerMatch(found=False)
     customer = customers[0]
     address_id = session.scalar(
