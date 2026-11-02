@@ -254,6 +254,53 @@ def test_korrektur_two_extras_of_one_optional_group_per_tap(client, db, tenant_i
     assert len([c for c in after if c[0] == "Sauce"]) == 1
 
 
+def test_korrektur_same_number_counts_nothing_and_keeps_the_choice(
+    client, db, tenant_id
+):
+    """Tauschen with the line's own number is how the team reaches its choices.
+
+    Nothing is changed by that alone, but the buttons have to stay: an extra
+    on a line without options can be added no other way.
+    """
+    db.add(
+        ItemOption(
+            menu_item_id=item(db, tenant_id, "23"),
+            group_name="Dip",
+            option_name="Chili",
+            price_delta_cents=100,
+        )
+    )
+    db.commit()
+    order_id = _order(db, tenant_id)
+    base = f"/gui/bestellungen/{order_id}/korrigieren"
+
+    def tap(html: str, op: str, number: str = "") -> str:
+        data = {"state": _state(html), "op": op, "number": number}
+        return client.post(f"{base}/vorschau", data=data, headers=HX).text
+
+    html = tap(client.get(base).text, "swap:0")
+    html = tap(html, "number", "23")
+    assert "Noch nichts geändert." in html
+    assert "getauscht" not in html
+    assert "Chili" in html
+
+    html = tap(html, "opt:r:0:0:0")
+    assert "Gewählt: Chili" in html
+    assert "getauscht" in html
+    assert "Noch nichts geändert." not in html
+
+    html = tap(html, "opt:r:0:0:0")  # off again: back at the stored row
+    assert "Noch nichts geändert." in html
+
+    html = tap(html, "opt:r:0:0:0")
+    saved = client.post(
+        base, data={"state": _state(html), "reason": "other"}, headers=HX
+    )
+    assert saved.status_code == 200
+    # 2 x (6,90 + 1,00)
+    assert _fresh(db, order_id).total_cents == 1580
+
+
 def test_card_shows_the_note_of_the_whole_order(client, db, tenant_id):
     """D24: an allergy not tied to a dish stands on the card above the dishes."""
     _order(db, tenant_id, order_note="WICHTIG: Keine Sesam. Grund: Allergie")
