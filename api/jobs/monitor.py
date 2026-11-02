@@ -18,6 +18,9 @@ looks at each tenant and pushes to the operator, never to the team:
 - no `backup.done` from scripts/backup.sh for ALARM_BACKUP_HOURS, once a day.
   The row is missed rather than a failure reported, so a cron line that never
   ran counts too;
+- a call recording the deletion job should have taken, a day past
+  RETENTION_RECORDING_DAYS or two of its passes after a withdrawal, once a day
+  (#252, audit of 02.11.2026). Legal check L2 promises both;
 - from MONITOR_REPORT_HOUR local time, the previous business day in one line:
   calls by outcome, cost, orders, reservations. A day without a call is
   reported too: no call at all can mean the line is down.
@@ -35,7 +38,7 @@ from collections.abc import Callable
 from datetime import UTC, date, datetime, time, timedelta
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
@@ -44,7 +47,15 @@ from api.core.time import business_day, business_day_bounds_utc, to_local
 from api.domain.calls.figures import ORDERS_TAKEN
 from api.domain.status import bridge
 from api.events.types import KITCHEN
-from api.models import AuditLog, Call, Order, OutboxEvent, Reservation, Tenant
+from api.models import (
+    AuditLog,
+    Call,
+    Order,
+    OutboxEvent,
+    Recording,
+    Reservation,
+    Tenant,
+)
 
 logger = get_logger("api.jobs.monitor")
 
@@ -255,6 +266,19 @@ def _due(
                 "high",
             )
         )
+    overdue = _recordings_overdue(session, tenant, now)
+    if overdue:
+        due.append(
+            (
+                "recordings",
+                day.isoformat(),
+                "Recordings not deleted",
+                f"Still there past their period or withdrawal: {overdue}. The "
+                "deletion job cannot remove them; the dispatcher's log names "
+                'why ("Recording not deleted").',
+                "high",
+            )
+        )
 
     if to_local(now, tenant.timezone).time() >= time(settings.monitor_report_hour):
         due.append(_day_report(session, tenant, day - timedelta(days=1)))
@@ -298,6 +322,25 @@ def _backup_overdue(session: Session, tenant: Tenant, now: datetime) -> bool:
         )
     )
     return last is None or last < now - timedelta(hours=settings.alarm_backup_hours)
+
+
+def _recordings_overdue(session: Session, tenant: Tenant, now: datetime) -> int:
+    """Rows api/jobs/retention.py should have taken. A row goes only once its
+    file is gone, so one still here is a file the job could not delete."""
+    period = now - timedelta(days=settings.retention_recording_days + 1)
+    passes = timedelta(seconds=2 * settings.retention_interval_seconds)
+    withdrawn = now - max(timedelta(hours=2), passes)
+    return (
+        session.scalar(
+            select(func.count())
+            .select_from(Recording)
+            .where(
+                Recording.tenant_id == tenant.id,
+                or_(Recording.started_at < period, Recording.withdrawn_at < withdrawn),
+            )
+        )
+        or 0
+    )
 
 
 def _day_report(session: Session, tenant: Tenant, day: date) -> Alarm:

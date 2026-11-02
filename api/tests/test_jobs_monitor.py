@@ -15,7 +15,7 @@ from api.config import settings
 from api.domain.status import bridge
 from api.events.outbox import MAX_ATTEMPTS, mark_attempt_failed
 from api.jobs import monitor
-from api.models import AuditLog, Call, OpeningHours, OutboxEvent
+from api.models import AuditLog, Call, OpeningHours, OutboxEvent, Recording
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -466,6 +466,105 @@ def test_a_limit_of_zero_switches_the_backup_alarm_off(session, tenant_id, monke
     monkeypatch.setattr(settings, "alarm_backup_hours", 0)
 
     assert run(session).sent == []
+
+
+# --- Recordings the deletion job could not take (#252, audit of 02.11.2026) --
+
+
+@pytest.fixture
+def periods(monkeypatch):
+    monkeypatch.setattr(settings, "retention_recording_days", 30)
+    monkeypatch.setattr(settings, "retention_interval_seconds", 3600.0)
+
+
+def recording(session, tenant_id, started, withdrawn=None) -> None:
+    sid = uuid.uuid4().hex
+    row = Call(
+        tenant_id=tenant_id,
+        external_session_id=sid,
+        started_at=started,
+        delete_after=date(2028, 10, 29),
+    )
+    session.add(row)
+    session.flush()
+    session.add(
+        Recording(
+            tenant_id=tenant_id,
+            call_id=row.id,
+            file_name=f"{sid}.wav",
+            started_at=started,
+            withdrawn_at=withdrawn,
+        )
+    )
+    session.commit()
+
+
+def test_a_recording_past_its_period_and_a_day_alarms_once_a_day(
+    session, tenant_id, periods
+):
+    recording(session, tenant_id, NOW - timedelta(days=31, minutes=1))
+
+    first = run(session)
+    again = run(session)
+
+    assert first.titles() == ["Recordings not deleted"]
+    assert "withdrawal: 1." in first.sent[0][1]
+    assert first.sent[0][2] == "high"
+    assert again.sent == []
+    assert run(session, now=NOW + timedelta(days=1)).titles() == [
+        "Recordings not deleted"
+    ]
+
+
+def test_a_recording_withdrawn_over_two_hours_ago_alarms(session, tenant_id, periods):
+    recording(
+        session,
+        tenant_id,
+        NOW - timedelta(hours=5),
+        NOW - timedelta(hours=2, seconds=1),
+    )
+    recording(session, tenant_id, NOW - timedelta(days=40))
+
+    pushes = run(session)
+
+    assert pushes.titles() == ["Recordings not deleted"]
+    assert "withdrawal: 2." in pushes.sent[0][1]
+
+
+def test_recordings_the_job_still_has_time_for_stay_quiet(session, tenant_id, periods):
+    """The job deletes after 30 days and on its next pass after a withdrawal:
+    a day of grace, and two of its passes."""
+    recording(session, tenant_id, NOW - timedelta(days=31))
+    recording(session, tenant_id, NOW - timedelta(hours=3), NOW - timedelta(hours=2))
+
+    assert run(session).sent == []
+
+
+def test_a_slow_deletion_job_gets_two_of_its_passes(
+    session, tenant_id, periods, monkeypatch
+):
+    monkeypatch.setattr(settings, "retention_interval_seconds", 6 * 3600.0)
+    recording(session, tenant_id, NOW - timedelta(days=1), NOW - timedelta(hours=11))
+
+    assert run(session).sent == []
+    assert run(session, now=NOW + timedelta(hours=1, seconds=1)).titles() == [
+        "Recordings not deleted"
+    ]
+
+
+def test_a_recording_of_another_tenant_is_not_counted(session, tenant_id, periods):
+    other = uuid.UUID(
+        seed(session, tenant_name="Zweitbetrieb", timezone="Europe/Berlin").tenant_id
+    )
+    recording(session, other, NOW - timedelta(days=40))
+
+    pushes = run(session)
+
+    # One push for the other tenant, and its count is its own.
+    assert pushes.titles() == ["Recordings not deleted"]
+    assert session.scalars(
+        select(AuditLog.tenant_id).where(AuditLog.action == monitor.ACTION)
+    ).all() == [other]
 
 
 # --- Print bridge ------------------------------------------------------------
