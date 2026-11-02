@@ -116,7 +116,7 @@ core runs in a worker thread, and the port methods only enqueue.
 |---|---|
 | End of utterance | The speech engine's endpoint event closes a turn. Turns are sequential: no second turn starts while one is running. |
 | Barge-in | Only on a sentence marked interruptible. A partial of two words or a key stops playback. Never once a transfer or hangup is queued. |
-| Read-back (hard rule 3) | A read-back is not interruptible. An utterance counts as the answer only if it ends after the read-back was played to the end. A final transcript without speech energy is dropped, so line noise cannot become a yes. |
+| Read-back (hard rule 3) | A read-back is not interruptible, nor is the offer of a complaint rule, whose yes books money (T-10.11). An utterance counts as the answer only if it ends after the read-back was played to the end. A final transcript without speech energy is dropped, so line noise cannot become a yes. |
 | Silence | A timer from the end of playback. Two re-prompts from code, then the farewell and hangup. |
 | Keypad | Digits are collected until `#` or a gap of 3 s, then handed over as one answer. |
 | Draining | Queued speech is played in order. A transfer or hangup waits for the end of the last sentence. |

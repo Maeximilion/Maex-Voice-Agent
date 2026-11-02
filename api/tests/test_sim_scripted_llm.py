@@ -20,7 +20,13 @@ from sim.scripted_llm import (
     SAY_ASK_AGAIN,
     SAY_PHONE_AGAIN,
     ScriptedLLM,
+    _address_answer,
+    _address_said,
+    _digits_said,
+    _house_number,
+    _labelled_address,
 )
+from sim.scripted_order import PickupScript
 
 BERLIN = ZoneInfo("Europe/Berlin")
 NOW = datetime(2026, 9, 15, 18, 0, tzinfo=BERLIN)  # Dienstag, Abendfenster
@@ -344,3 +350,132 @@ def test_refusal_for_another_reason_still_goes_to_the_team(llm):
     turn = llm.next_turn("", {**START, "slots": WITH_CALLER_ID}, refused)
 
     assert turn.tool_call.name == "transfer_to_team"
+
+
+# --- An address as the eval cases say it (T-6.8) ---------------------------------
+
+
+@pytest.mark.parametrize(
+    ("said", "digits"),
+    [
+        ("12345", "12345"),
+        ("Eins zwei drei vier fuenf.", "12345"),
+        ("zwölf drei fünfundvierzig", "12345"),
+        ("null sieben", "07"),
+        ("Musterdorf", None),
+        ("eins zwei, Moment", None),
+        ("", None),
+    ],
+)
+def test_digits_said(said, digits):
+    assert _digits_said(said) == digits
+
+
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [
+        (" 7b", "7b"),
+        (" 7 b, 12345", "7b"),
+        (" sieben b", "7b"),
+        (" neunzehn, Postleitzahl", "19"),
+        (" 12 in Musterdorf", "12"),
+        (" und dann", None),
+        (", bitte", None),
+        ("", None),
+    ],
+)
+def test_house_number(said, number):
+    assert _house_number(said) == number
+
+
+def test_the_number_behind_the_no_counts():
+    said = _address_said("12345 Musterdorf, Gartenweg 14, nein, 41.")
+    assert said["house_number"] == "41"
+    assert _address_said("Gartenweg 14, nein, danke.")["house_number"] == "14"
+
+
+def test_a_code_of_the_wrong_length_reaches_the_tool():
+    """Only `check_delivery` says that a code was not understood (docs/04)."""
+    assert _address_said("1234 Musterdorf")["postal_code"] == "1234"
+    assert "postal_code" not in _address_said("Meine Nummer ist 0721 5551234.")
+
+
+def test_labelled_details_read_in_words():
+    said = _labelled_address("Postleitzahl eins zwei drei vier fuenf, Musterdorf.", {})
+    assert said == {"postal_code": "12345", "city": "Musterdorf"}
+    assert _labelled_address("Nein, die Hausnummer ist 41.", {}) == {
+        "house_number": "41"
+    }
+    assert _labelled_address("Ahornweg neunzehn.", {}) == {"house_number": "19"}
+    assert _labelled_address("Postleitzahl weiss ich nicht.", {}) == {}
+
+
+@pytest.mark.parametrize(
+    ("said", "street"),
+    [
+        ("W, E, S, E, R, W, E, G, Hausnummer 9.", "Weserweg"),
+        ("W-E-S-E-R-W-E-G", "Weserweg"),
+        ("M U E H L E N Strasse 21.", "Muehlenstrasse"),
+        ("Lindenstrasse.", "Lindenstrasse"),
+    ],
+)
+def test_a_street_in_the_answer_for_the_address(said, street):
+    assert _address_answer(said, {})["street"] == street
+
+
+def test_a_bare_number_is_what_the_address_lacks():
+    assert _address_answer("12", {"street": "Lindenstrasse"}) == {"house_number": "12"}
+    full = {"street": "Lindenstrasse", "house_number": "12"}
+    assert _address_answer("12345", full) == {"postal_code": "12345"}
+    # A number to call back on is none of the address.
+    assert _address_answer("07215551234", {}) == {}
+    assert _address_answer("Das weiss ich nicht.", {}) == {}
+
+
+def test_the_answer_is_read_only_until_the_address_stands():
+    """A name like "Hartweg" is no street once the zone took the address, and a
+    stored address needs no answer."""
+    slots = {
+        "postal_code": "12345",
+        "city": "Musterdorf",
+        "street": "Lindenstrasse",
+        "house_number": "12",
+    }
+    script = PickupScript()
+    script.delivery, script.phase = True, "more"
+    assert not script.takes_address(slots)
+    script.phase = "customer"
+    assert script.takes_address(slots)
+    script.on_zone(slots)
+    assert not script.takes_address(slots)
+
+
+def test_a_stored_address_goes_with_a_refused_draft():
+    script = PickupScript()
+    script.delivery, script.phase = True, "customer"
+    script.on_lookup({"address_id": "a"}, "An dieselbe Adresse?", {})
+    script.on_customer("Ja", {}, {})
+    script.phase = "customer"
+    assert not script.takes_address({})
+
+    script.on_order_refused("draft_order", "invalid_input")
+
+    assert script.takes_address({})
+
+
+def test_out_of_zone_leaves_the_delivery_and_the_dishes():
+    script = PickupScript()
+    script.delivery, script.phase = True, "dishes"
+    script.on_order_refused("check_delivery", "out_of_zone")
+    assert (script.delivery, script.phase) == (False, "more")
+
+    script.delivery, script.phase = True, "customer"
+    script.on_order_refused("draft_order", "out_of_zone")
+    assert (script.delivery, script.phase) == (False, "customer")
+
+
+def test_below_the_minimum_asks_for_more_dishes():
+    script = PickupScript()
+    script.delivery, script.phase = True, "customer"
+    script.on_order_refused("draft_order", "below_minimum")
+    assert (script.delivery, script.phase) == (True, "more")

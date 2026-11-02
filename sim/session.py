@@ -161,6 +161,7 @@ class SimCall:
         """Ende ist jetzt, nicht der Gespraechsbeginn: mit dem Startzeitpunkt stuenden
         in jedem Anruf aus dem Terminal 0 Sekunden und die Gespraechsdauer waere als
         Kennzahl wertlos (Codex-Review PR #104, P2)."""
+        self._loop.offer_unanswered(self.state)
         outcome, intent = call_outcome(self.state)
         usage = self.usage
         # Once per call: a repeated `finish` writes nothing (`end_call` is

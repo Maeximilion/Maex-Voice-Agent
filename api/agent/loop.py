@@ -36,10 +36,12 @@ from api.agent.ladder import (
 from api.agent.llm import LLMClient, LLMError, LLMTurn, ToolCall
 from api.agent.state import (
     ConversationState,
+    RemedyOffer,
     apply_state_patch,
     apply_tool_result,
     cart_lines,
     draft_replaced,
+    last_words,
     note_guest_details,
     note_intent,
 )
@@ -47,11 +49,13 @@ from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
+from api.domain.callbacks import matching_rule, note_remedy
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.calls import record_consent
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import mentions_allergy
+from api.domain.ordering.readback import spoken_euro
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Reservation, Tenant
 from api.schemas.callbacks import CallbackReason
@@ -114,6 +118,7 @@ _HEARD = {
     "allergy_consent",
     "held_call",
     "callback_waits",
+    "remedy_offer",
 }
 # Turns in a row without any of it before the call goes to the team: the
 # ladder's budget for one piece of information (docs/05 §2).
@@ -125,6 +130,10 @@ ENDED_STAGES = frozenset({"transferred", "ended"})
 CART = "cart"
 # The same for a sentence the core did not let through (`guards.false_booking`).
 SAY = "say"
+# What the model hands a complaint over with. The core reads a rule first (D19).
+_COMPLAINT_TOOLS = ("transfer_to_team", "create_callback")
+# The model's handover did not go out: a rule of the catalogue was offered.
+_RULE_FIRST = ToolResult(ok=False, error_code="conflict")
 
 _CALLBACK_REASONS = frozenset(get_args(CallbackReason))
 _TRANSFER_REASONS = frozenset(get_args(TransferReason))
@@ -157,6 +166,10 @@ SUMMARY_ALLERGENS = (
 SUMMARY_KITCHEN_NOTE = (
     "Hinweis für die Küche nicht vollständig aufgenommen, mit dem Gast zu klären."
 )
+# The cards of a rule of the catalogue (D19): name and amount from its row, the
+# guest's sentence behind them. Draft wording.
+SUMMARY_REMEDY_BOOKED = "Beschwerde, Gast hat zugestimmt, bitte ausführen: {remedy}."
+SUMMARY_REMEDY_OPEN = "Kunde hat sich beschwert, Angebot nicht angenommen: {remedy}."
 # How a card names a booking made earlier in the call (`_handoff_summary`).
 _BOOKED = " Bereits gebucht: "
 SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
@@ -236,7 +249,12 @@ class ConversationLoop:
             # The answer to the question for the callback number (L17),
             # before the model and before any `confirm`.
             return self._callback_answered(state, user_text)
+        if state.remedy_offer is not None:
+            return self._offer_answered(state, user_text)
         heard = state.model_dump(include=_HEARD)
+        # What the call was about before this sentence: a delivery the guest
+        # complains about is no wish the call still has to serve.
+        wish = state.intent
         if note_guest_details(state, user_text):
             # The core wrote the number itself, so a model has nothing to
             # report as understood (Codex PR #244, P2).
@@ -280,7 +298,9 @@ class ConversationLoop:
             # the transfer says what that call was.
             note_intent(state, user_text)
         escalated: TurnResult | None = None
-        if reason is not None:
+        if reason == "complaint" and wish is None:
+            escalated = self._offer_remedy(state, user_text)
+        if reason is not None and escalated is None:
             escalated = self._handoff(
                 state,
                 SAY_ESCALATION,
@@ -288,7 +308,11 @@ class ConversationLoop:
                 # A "Ja" tells the team nothing the reason does not say.
                 detail=None if answered_offer else user_text,
             )
-        elif asks and self._clock() - self._started > self._max_call_seconds:
+        elif (
+            reason is None
+            and asks
+            and self._clock() - self._started > self._max_call_seconds
+        ):
             # The answer keeps no call open past its limit: asked again and
             # again, it would (Codex PR #372).
             escalated = self._handoff(state, SAY_TIMEOUT, detail=user_text)
@@ -341,7 +365,7 @@ class ConversationLoop:
                     say.insert(0, SAY_NOT_A_PERSON)
                 return TurnResult(state=state, say=say)
             state.held_call = None
-        result = self._converse(state, user_text, turn_started, held, open_table)
+        result = self._converse(state, user_text, turn_started, held, open_table, wish)
         if not result.ended:
             unchanged = state.model_dump(include=_HEARD) == heard
             self._unheard = self._unheard + 1 if unchanged else 0
@@ -374,11 +398,13 @@ class ConversationLoop:
         turn_started: float | None,
         held: ToolCall | None = None,
         open_table: str | None = None,
+        wish: str | None = None,
     ) -> TurnResult:
         """The model's part of a guest turn: model calls and tools until a
         sentence for the guest, a handoff or a limit. `held` is the draft the
         guest just answered a question of the core for (`_held_answered`):
-        carried out first, in place of a model call."""
+        carried out first, in place of a model call. `wish` is what the call
+        was about before this sentence."""
         start = guards.begin_turn(state)
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,
@@ -561,6 +587,23 @@ class ConversationLoop:
                     state=state, say=[say], ended=state.stage in ENDED_STAGES
                 )
 
+            if (
+                turn.tool_call.name in _COMPLAINT_TOOLS
+                and turn.tool_call.args.get("reason") == "complaint"
+                and wish is None
+                and (offered := self._offer_remedy(state, user_text)) is not None
+            ):
+                # The model only says it is a complaint. What follows is the
+                # core's, and its prompt rule stays as it is (D19).
+                log_refused(
+                    self._session,
+                    state.call_id,
+                    state.tenant_id,
+                    turn.tool_call.name,
+                    _RULE_FIRST,
+                )
+                return offered
+
             # Hard rules 2 and 3 are held here, not by the prompt (guards.py).
             refused = guards.refusal(
                 state,
@@ -711,6 +754,100 @@ class ConversationLoop:
             pending_input = _tool_result_as_input(turn.tool_call.name, result, zone)
 
         return self._handoff(state, SAY_STUCK, detail=user_text)
+
+    def _offer_remedy(
+        self, state: ConversationState, user_text: str
+    ) -> TurnResult | None:
+        """A complaint with a fixed answer in the catalogue (D19): the core
+        offers the rule in the words of its row and the model is not asked.
+        None leaves the complaint with the team, as with an empty catalogue,
+        no match or any doubt. The call ends with the remedy, so nothing else
+        may be open in it; and without a number nobody could carry it out."""
+        if (
+            state.stage != "start"
+            or state.slots.keys() != {"phone"}
+            or state.cart
+            or state.seen_items
+            or state.held_call
+            or state.allergies
+            or state.allergy_talk
+            or _names_health(state, user_text)
+            or not escalation.only_a_complaint(user_text)
+        ):
+            return None
+        rule = matching_rule(self._session, state.tenant_id, user_text)
+        if rule is None:
+            return None
+        state.remedy_offer = RemedyOffer(
+            rule_id=rule.id,
+            name=rule.name,
+            remedy_cents=rule.remedy_cents,
+            offer_say=rule.offer_say,
+            granted_say=rule.granted_say,
+            complaint=user_text,
+        )
+        guards.note_said(state, rule.offer_say)
+        return TurnResult(state=state, say=[rule.offer_say])
+
+    def _offer_answered(self, state: ConversationState, user_text: str) -> TurnResult:
+        """The answer to a rule the core offered. Only a yes as strict as for a
+        booking, to the offer as the last thing the guest heard, books it
+        (rule 3): a card tells the team what to carry out, with the audit row
+        in its transaction, and the money moves when the team does it.
+        Anything else, a card that cannot be written too, goes to the team,
+        with what was offered and the guest's words on the card: the team
+        must not offer it again."""
+        offer, state.remedy_offer = state.remedy_offer, None
+        assert offer is not None  # `run_turn`
+        note_guest_details(state, user_text)
+        if state.last_say == last_words(offer.offer_say) and is_yes(user_text):
+            note_remedy(
+                self._session,
+                state.tenant_id,
+                state.call_id,
+                offer.rule_id,
+                offer.remedy_cents,
+            )
+            if self._complaint_card(state, offer, SUMMARY_REMEDY_BOOKED).ok:
+                return TurnResult(state=state, say=[offer.granted_say], ended=True)
+        result = self._handoff(
+            state,
+            SAY_ESCALATION,
+            "complaint",
+            f"{offer.complaint} {user_text}",
+            summary=_remedy_card(SUMMARY_REMEDY_OPEN, offer),
+        )
+        if escalation.without_human_question(user_text) is not None:
+            # The truthful answer first, in every turn (docs/09 L1).
+            result.say.insert(0, SAY_NOT_A_PERSON)
+        return result
+
+    def offer_unanswered(self, state: ConversationState) -> None:
+        """The call ended while a rule waited for its answer: nothing is
+        booked, and the complaint stays with the team on a card, or a guest
+        who hangs up on the offer is lost (rule 5). Called by whoever closes
+        a call; a call without an open offer writes nothing."""
+        offer, state.remedy_offer = state.remedy_offer, None
+        if offer is not None:
+            self._complaint_card(state, offer, SUMMARY_REMEDY_OPEN)
+
+    def _complaint_card(
+        self, state: ConversationState, offer: RemedyOffer, sentence: str
+    ) -> ToolResult:
+        """The callback card of a complaint a rule was offered for."""
+        card = self._dispatch(
+            state,
+            "create_callback",
+            {
+                "phone": state.slots["phone"],
+                "reason": "complaint",
+                "summary": _handoff_summary(
+                    "complaint", offer.complaint, base=_remedy_card(sentence, offer)
+                ),
+            },
+        )
+        apply_tool_result(state, "create_callback", card)
+        return card
 
     def _callback_without_number(
         self,
@@ -1254,6 +1391,11 @@ def _handoff_summary(
     # A booking of this call stands whatever went wrong after it: the card says
     # so, or the team books a second time (Codex PR #347).
     return f"{base}{_BOOKED}{booked}" if booked else base
+
+
+def _remedy_card(card: str, offer: RemedyOffer) -> str:
+    """A card sentence with the rule's name and amount, both from its row."""
+    return card.format(remedy=f"{offer.name}, {spoken_euro(offer.remedy_cents)}")
 
 
 def _tool_result_as_input(name: str, result: ToolResult, zone: tzinfo) -> str:

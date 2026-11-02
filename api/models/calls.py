@@ -3,8 +3,18 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, Text, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+    text,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import Base, SoftDelete, TenantScoped, Timestamps, UUIDPrimaryKey
@@ -59,6 +69,35 @@ class Callback(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="open")
     done_by: Mapped[str | None] = mapped_column(Text)
     done_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ComplaintRule(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
+    """One fixed answer to a complaint (D19, docs/05 §3): the words that select
+    it, the remedy in cents and the two sentences the guest hears. The core
+    reads it, the model never does (hard rule 1). No personal data. A new row
+    stays off until someone switches it on: a remedy is money."""
+
+    __tablename__ = "complaint_rules"
+    __table_args__ = (
+        CheckConstraint("cardinality(phrases) > 0", name="ck_complaint_rules_phrases"),
+        CheckConstraint("remedy_cents > 0", name="ck_complaint_rules_remedy_cents"),
+        CheckConstraint(
+            "btrim(name) <> '' AND btrim(offer_say) <> '' AND btrim(granted_say) <> ''",
+            name="ck_complaint_rules_texts",
+        ),
+        # With the amount and the guest's sentence it fits a callback's summary.
+        CheckConstraint("char_length(name) <= 100", name="ck_complaint_rules_name"),
+    )
+
+    # What the team reads on the card.
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    phrases: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    remedy_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    offer_say: Mapped[str] = mapped_column(Text, nullable=False)
+    granted_say: Mapped[str] = mapped_column(Text, nullable=False)
+    active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
 
 CONSENT_ANSWERS = ("yes", "no", "unclear")

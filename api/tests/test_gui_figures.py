@@ -134,6 +134,20 @@ def test_four_values_over_a_day(db, now):
     assert figures.missed == 1
 
 
+def test_a_cancelled_order_is_no_order_taken(db, now):
+    """Nor a corrected one: a slip that was fixed and then cancelled says nothing
+    about the accuracy of an order that was never served."""
+    tenant = _tenant(db, "Eins")
+    day = _week(db, tenant, now)
+    before = span_figures(db, tenant, day, day)
+    call = _call(db, tenant, now, "completed", cost=0)
+    _order(db, tenant, call, now, status="cancelled", corrected=True)
+    db.commit()
+
+    figures = span_figures(db, tenant, day, day)
+    assert (figures.orders, figures.corrected) == (before.orders, before.corrected)
+
+
 def test_empty_day_has_no_ratios(db, now):
     tenant = _tenant(db, "Leer")
     day = business_day(now, tenant.timezone)

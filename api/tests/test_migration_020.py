@@ -1,4 +1,4 @@
-"""Migration 020: the register price of the price check on the dish (T-4.9), up and down."""
+"""Migration 020: the register price of the price check on the dish (T-4.9), up and down; it follows 021."""
 
 import pytest
 from alembic import command
@@ -32,7 +32,7 @@ def _dish(conn) -> object:
 
 
 def test_an_existing_dish_has_no_difference_after_the_upgrade(scratch_db_url):
-    command.upgrade(_config(scratch_db_url), "019")
+    command.upgrade(_config(scratch_db_url), "021")
     engine = create_engine(scratch_db_url)
     try:
         with engine.begin() as conn:
@@ -95,7 +95,7 @@ def test_downgrade_drops_the_columns_and_keeps_the_price(scratch_db_url):
                 text("UPDATE menu_items SET register_price_cents = 720 WHERE id = :d"),
                 {"d": dish},
             )
-        command.downgrade(_config(scratch_db_url), "019")
+        command.downgrade(_config(scratch_db_url), "021")
         assert not COLUMNS & _columns(scratch_db_url)
         with engine.connect() as conn:
             assert conn.execute(text("SELECT price_cents FROM menu_items")).one() == (

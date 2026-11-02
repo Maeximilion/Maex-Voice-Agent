@@ -10,7 +10,7 @@
     "level-5"
   ],
   "source": "handcrafted",
-  "pending": "T-6.8: delivery is built (T-6.5), the scripted stand-in does not follow these sentences; waits for the real model",
+  "pending": "T-5.3: address and dishes mixed across sentences are for a model, and the core takes a spoken number only in digits (guest_details.numbers_said), so the phone number here is refused today",
   "transcript": [
     {
       "role": "customer",

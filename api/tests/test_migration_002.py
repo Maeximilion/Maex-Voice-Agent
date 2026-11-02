@@ -35,6 +35,7 @@ LATER_TABLES = {
     "delivery_zones",
     "recognition_objections",
     "data_subject_requests",
+    "complaint_rules",
 }
 
 

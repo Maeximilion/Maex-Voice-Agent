@@ -1,0 +1,60 @@
+{
+  "id": "lieferung_0024",
+  "name": "Street spelled letter by letter",
+  "tags": [
+    "lieferung",
+    "adresse",
+    "buchstabiert",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "12345 Musterdorf, die Strasse buchstabiere ich: W, E, S, E, R, W, E, G, Hausnummer 9."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Lorenz."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "13",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Lorenz",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Weserweg",
+      "house_number": "9",
+      "postal_code": "12345",
+      "city": "Musterdorf"
+    },
+    "tools": [
+      "check_delivery"
+    ],
+    "order_type": "delivery"
+  }
+}

@@ -18,7 +18,7 @@ next check finds the differences again, a rejection has to be repeated, and
 `audit_log` keeps it.
 
 Revision: 020
-Revises: 019
+Revises: 021 (021 reached main first, so 020 follows it)
 Created: 2026-11-02
 """
 
@@ -28,7 +28,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "020"
-down_revision: str | None = "019"
+down_revision: str | None = "021"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

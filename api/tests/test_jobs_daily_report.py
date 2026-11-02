@@ -8,7 +8,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.config import settings
-from api.domain.ordering.board import approve_order, mark_entered
+from api.domain.ordering.board import approve_order, cancel_order, mark_entered
 from api.events.types import DAILY_REPORT
 from api.jobs import daily_report
 from api.jobs.daily_report import REGISTER_UNMARKED, report
@@ -97,6 +97,14 @@ def test_no_report_when_every_order_is_marked(session, tenant_id, call_id):
         update(Order).where(Order.id == cancelled).values(status="cancelled")
     )
     session.commit()
+
+    assert report(session, NOW) == 0
+    assert _reports(session) == []
+
+
+def test_an_order_the_team_cancelled_is_no_longer_reported(session, tenant_id, call_id):
+    cancelled = _order(session, tenant_id, call_id, now=NOW - 2 * DAY)
+    cancel_order(session, tenant_id, cancelled, _seen(session, cancelled), now=NOW)
 
     assert report(session, NOW) == 0
     assert _reports(session) == []
