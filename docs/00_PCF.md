@@ -488,20 +488,18 @@ Decisions:
 
 Gate: G0 open, unchanged. It waits for T-10.2 on the wire and two calls at once (T-10.1), with Maxi at the telephones.
 
-State at 14:10, fourth pause (replaces the Status line above where they differ):
-- Merged too: #473 (T-11.8, #407 closed, evals on its head green), #474 (T-8.4).
-- #472 (T-6.5) head `2e5e430`, `main` and this branch merged in, `note_contact` fixed, p95 in docs, status 2.14.0, 6945 passed. CI and Codex on that head outstanding; the PR text still says 6808 tests and has no line on `note_contact`: fix it by `gh api -X PATCH`. Latency tests and the eval runner did not run on this tree.
-- #475 (T-9.6) head `c0c34d6`: Codex clean, 13 checks green, Windows 19 of 19. Conflicts with `main` on the status file; fix when next. T-9.6 stays open in docs/07 until Maxi's steps 3 to 9 in `printbridge/README.md`.
-- `task/4-9-price-reconcile` `f448ea9`, no PR, `main` merged in, 6885 passed, mypy and ruff clean, HTTP pass fine. Left: `python3 scripts/status_bump.py patch "<one line>"`, push, `gh pr create --base main --assignee @me --label feature --body-file` with the scratchpad's `t49/pr_body.md`, title `feat(menu): price check of the register against the database (T-4.9)`.
-- `task/9-8-docker-networks` `0788c3c`, no PR, 0 behind `main` at its push, drill 35 of 35 on that head, 109 network and drill tests passed. Left: the full test run, about 10 minutes, then the PR with `Closes #410` and the body in the scratchpad's `t98/pr_body.md` (fill the `@@` marks). The diff hits an `xhigh` trigger (outage fallback).
-- No drill or test suite from 14:20 to 14:55: the GPU run needs the machine and port 8080.
+State at 15:05 (replaces the Status line above where they differ):
+- Merged: #468 T-6.3, #469 T-6.9, #470 T-11.9, #471 T-3.7, #472 T-6.5 with T-6.2 part 2, #473 T-11.8, #474 T-8.4.
+- Real-model run on #472 head `2e5e430`, prompt v3: on the 56 identical case files 36 and 38, mean 37, against 37 of the one run on `a9eddab`; 0 guessed, 0 unconfirmed, 0 missed; false escalations 17.6 % and 21.6 %. Limit: main has one run at that commit, docs/08 asks for two. Recorded with #475.
+- Open PRs, in merge order: #475 T-9.6 (`76d275d`), #476 T-4.9, #477 T-9.8.
+- #476 next push carries the `main` merge, this branch, the Codex P2 on German test identifiers (thread 4442786672) and the mark that Maxi accepted its three price assumptions.
+- Building: T-6.8, T-11.3, T-10.11 (mechanism with an empty catalogue, #403 stays open).
 
 Open, next concrete step first:
-1. Read CI and Codex on #472 `2e5e430`, fix what holds in one push.
-2. After 14:50 read the GPU result on the head in `gpu/head` (it must say `2e5e430`): compare with the recorded main runs (37/56 on `a9eddab`, false escalations 17.8 %) on identical case files only; 0 guessed, 0 unconfirmed, 0 missed are hard. docs/08 asks for two runs on `main` too, Maxi approved two passes in all, so name that limit or ask for two more. Copy `gpu/reports/` to `evals/reports/` of the main folder for `scripts/readme_assets.py pending --record`.
-3. Merge #472, then #475, T-4.9, T-9.8 in that order, each after `origin/main`, CI and a clean review on its head. Merge nothing else before #472. No `--delete-branch` where a PR stacks on the branch. Ultrareview candidates: #472, T-9.8, Maxi's call.
-4. T-6.8, T-11.3, T-10.11 after #472. New agents, one brief each, with a scratch folder of their own.
-5. Maxi: the real zone list as `imports/zones.csv`, the `<offen>` marks, the complaint rules, a delivery slip on paper, whether the driver needs a phone number on the slip, a cancel button for an unreleased order, steps 3 to 9 of `printbridge/README.md`.
+1. Merge #475, #476, #477 in order, each after `origin/main`, CI and a clean review on its head. No `--delete-branch` where a PR stacks on the branch.
+2. Merge T-6.8, T-11.3, T-10.11 the same way; the later migration renumbers.
+3. A real-model run for the recognition evals of T-6.8 needs a start time from Maxi: about 13 minutes per pass.
+4. Maxi: the real zone list as `imports/zones.csv`, the `<offen>` marks, the complaint rules, a delivery slip on paper, whether the driver needs a phone number on the slip, a cancel button for an unreleased order, steps 3 to 9 of `printbridge/README.md`.
 
 Lessons:
 - Never `--delete-branch` on a PR with a PR on top: GitHub closed #469 and #470. Repair: push the old head back as the branch, reopen, PATCH the base, delete the branch.
