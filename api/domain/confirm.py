@@ -15,7 +15,7 @@ from api.core.time import utcnow
 from api.domain.customers.contact import note_contact
 from api.domain.ordering.confirm import confirm_order
 from api.domain.reservations.capacity import has_room, lock_capacity_days
-from api.domain.reservations.slots import ASK_OTHER_TIME
+from api.domain.reservations.slots import ASK_OTHER_TIME, SAY_RESERVATIONS_OFF
 from api.events import enqueue
 from api.events.types import RESERVATION_CONFIRMED
 from api.models import AuditLog, Call, Reservation, ServiceConfig, Tenant
@@ -85,9 +85,13 @@ def _confirm_reservation(
     # One that is confirmed after that, or after the capacity was lowered, may
     # find them given away: check again, under the same lock as the making of
     # a draft, so that two late confirmations cannot both see the window empty.
-    config = session.get(ServiceConfig, req.tenant_id)
+    config = session.get(ServiceConfig, req.tenant_id, populate_existing=True)
     if config is None:
         raise NotFound("Mandant ohne service_config", say=SAY_ON_FAILURE)
+    if not config.reservations_enabled:
+        # The team switched reservations off between the read-back and the yes
+        # (T-3.10). A conflict: this draft can never be confirmed.
+        raise Conflict("reservations switched off", say=SAY_RESERVATIONS_OFF)
     zone = ZoneInfo(tenant.timezone)
     lock_capacity_days(
         session, req.tenant_id, reservation.reserved_for.astimezone(zone).date()

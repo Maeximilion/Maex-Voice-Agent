@@ -56,8 +56,14 @@ def last_words(say: str) -> str:
 
 
 # What the state keeps of get_service_status: whether the restaurant is open,
-# and whether it takes pickups and deliveries, which can be off while it is open.
-SERVICE_FLAGS = ("is_open", "pickup_enabled", "delivery_enabled")
+# and whether it takes pickups, deliveries and tables, which can be off while it
+# is open.
+SERVICE_FLAGS = (
+    "is_open",
+    "pickup_enabled",
+    "delivery_enabled",
+    "reservations_enabled",
+)
 
 
 class Allergy(BaseModel):
@@ -159,7 +165,7 @@ class ConversationState(BaseModel):
     # What get_service_status said in this call about being open and taking
     # orders (`SERVICE_FLAGS`); None until then. The model reads from it that
     # the status is known: it asked again at the start of every turn, one
-    # request each. Both flags, or a model that sees only "open" could take a
+    # request each. All flags, or a model that sees only "open" could take a
     # pickup while the kitchen takes none (Codex PR #291, P1).
     service: dict[str, bool] | None = None
     # What `find_customer` said in this call: found or not, and the id of the

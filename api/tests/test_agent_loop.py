@@ -936,6 +936,7 @@ def test_last_sentence_reaches_the_next_turn_but_no_tool_hop(session, state):
         "is_open": False,
         "pickup_enabled": False,
         "delivery_enabled": False,
+        "reservations_enabled": True,
     }
     assert third["last_say"] == "Und um wie viel Uhr?"
     assert third["service"] == hop["service"]

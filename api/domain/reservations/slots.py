@@ -53,6 +53,7 @@ MAX_ALTERNATIVES = 2
 UNAMBIGUOUS = timedelta(hours=6)
 DINEIN = "dinein"
 ASK_OTHER_TIME = "Zu welcher anderen Uhrzeit passt es Ihnen?"
+SAY_RESERVATIONS_OFF = "Reservierungen nehmen wir gerade leider nicht an."
 
 
 def check_slot(
@@ -68,11 +69,15 @@ def check_slot(
     row = session.execute(
         select(Tenant, ServiceConfig)
         .join(ServiceConfig, ServiceConfig.tenant_id == Tenant.id)
-        .where(Tenant.id == tenant_id)
+        .where(Tenant.id == tenant_id),
+        # The session of a call does not expire: a tap on the tablet has to count.
+        execution_options={"populate_existing": True},
     ).first()
     if row is None:
         raise NotFound("Mandant unbekannt")
     tenant, config = row
+    if not config.reservations_enabled:
+        return _unavailable([], SAY_RESERVATIONS_OFF)
     now = now or utcnow()
     if reserved_for <= now:
         raise InvalidInput(

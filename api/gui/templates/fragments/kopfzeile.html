@@ -31,9 +31,15 @@
       {% endfor %}
     </div>
     {% endif %}
-    <div class="mode tone-{{ 'ok' if config.delivery_enabled else 'danger' }}">
-      <span class="dot {{ 'ok' if config.delivery_enabled else 'danger' }}"></span>
-      <b>{{ "Lieferung an" if config.delivery_enabled else "Lieferung aus" }}</b>
+    {# Abholung, Lieferung, Reservierung (T-3.10): the button says what holds, in
+       words, and a tap changes it at once; no question (docs/06 §1 rule 6). #}
+    <div class="seg services" role="group" aria-label="Was wir gerade annehmen">
+      {% for key, label, on in services %}
+      <button hx-post="/gui/kopfzeile/{{ key }}/{{ 'aus' if on else 'an' }}"
+              hx-target="#kopfzeile" hx-swap="outerHTML"
+              class="{{ 'on' if on else 'off' }}"
+              aria-pressed="{{ 'true' if on else 'false' }}">{{ label }} {{ 'an' if on else 'aus' }}</button>
+      {% endfor %}
     </div>
     {% if config.call_mode == "paused" %}
     {# Wieder einschalten fragt nach, pausieren nie: der Not-Aus darf keine
@@ -93,15 +99,8 @@
               {% if minutes >= wait_max %}disabled{% endif %}>+{{ wait_step }}</button>
     </div>
     {% endfor %}
-    {% if config.delivery_enabled %}
-    <button class="push" hx-post="/gui/kopfzeile/lieferung/aus"
-            hx-target="#kopfzeile" hx-swap="outerHTML">Lieferung aus</button>
-    {% else %}
-    <button class="push" hx-post="/gui/kopfzeile/lieferung/an"
-            hx-target="#kopfzeile" hx-swap="outerHTML">Lieferung an</button>
-    {% endif %}
     {# Kachel "Gericht aus" (docs/06 §3): die Zahl nennt, wie viele heute aus sind. #}
-    <button hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
+    <button class="push" hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
     <a class="button" href="/gui/kennzahlen">Kennzahlen</a>
   </div>
   {% endif %}

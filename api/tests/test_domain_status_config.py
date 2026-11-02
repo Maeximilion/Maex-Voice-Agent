@@ -240,6 +240,36 @@ def test_ohne_service_config_klare_meldung(session):
         switches.pause_ai(session, uuid.uuid4())
 
 
+@pytest.mark.parametrize(
+    "setter, field, action",
+    [
+        (switches.set_pickup, "pickup_enabled", switches.ACTION_PICKUP),
+        (
+            switches.set_reservations,
+            "reservations_enabled",
+            switches.ACTION_RESERVATIONS,
+        ),
+    ],
+)
+def test_a_service_switch_stands_in_the_audit_once(
+    session, tenant_id, setter, field, action
+):
+    setter(session, tenant_id, False)
+    config = setter(session, tenant_id, False)
+
+    assert getattr(config, field) is False
+    entries = [e for e in audit(session, tenant_id) if e.action == action]
+    assert [e.payload for e in entries] == [{"from": True, "to": False}]
+
+
+@pytest.mark.parametrize("setter", [switches.set_pickup, switches.set_reservations])
+def test_the_stream_sees_a_service_switch(session, tenant_id, setter):
+    before = switches.config_change_token(session, tenant_id)
+    setter(session, tenant_id, False)
+
+    assert switches.config_change_token(session, tenant_id) != before
+
+
 def _wait_audits(session, tenant_id) -> list[dict]:
     rows = session.scalars(
         select(AuditLog)

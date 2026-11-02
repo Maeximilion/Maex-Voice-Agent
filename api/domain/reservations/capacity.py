@@ -62,7 +62,9 @@ def capacity_windows(
     rows = session.scalars(
         select(Capacity).where(
             Capacity.tenant_id == tenant_id, Capacity.weekday == weekday
-        )
+        ),
+        # A notice set while a call runs counts in that call (T-3.13).
+        execution_options={"populate_existing": True},
     ).all()
     windows = []
     for row in rows:

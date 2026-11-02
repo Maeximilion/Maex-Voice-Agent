@@ -38,7 +38,7 @@ from api.domain.ordering.correction import (
 )
 from api.domain.ordering.draft import WARNING_READY_AFTER_CLOSE
 from api.domain.ordering.labels import ACTION_CORRECTED
-from api.domain.ordering.validation import SAY_DELIVERY_CLOSED
+from api.domain.ordering.validation import SAY_DELIVERY_CLOSED, SAY_PICKUP_CLOSED
 from api.domain.status import config as status_config
 from api.events.types import ORDER_CONFIRMED
 from api.jobs.retention import purge
@@ -797,6 +797,75 @@ def test_the_switch_after_the_read_back_holds_at_the_yes(
     session.rollback()
     assert SAY_DELIVERY_CLOSED in err.value.say
     assert session.get(Order, draft.order_id).status == "draft"
+
+
+def test_a_pickup_is_refused_with_the_switch_off(session, tenant_id, call_id):
+    status_config.set_pickup(session, tenant_id, False)
+
+    with pytest.raises(Closed) as err:
+        draft_order(session, request(session, tenant_id, call_id), now=NOW)
+
+    assert err.value.say == f"{SAY_PICKUP_CLOSED} Möchten Sie liefern lassen?"
+
+
+def test_the_pickup_switch_holds_in_the_middle_of_a_call(
+    engine, session, tenant_id, call_id
+):
+    """The session of a call outlives a tap on another tablet."""
+    assert session.get(ServiceConfig, tenant_id).pickup_enabled is True
+    with Session(engine) as tablet:
+        status_config.set_pickup(tablet, tenant_id, False)
+
+    with pytest.raises(Closed):
+        draft_order(session, request(session, tenant_id, call_id), now=NOW)
+
+
+def test_the_pickup_switch_after_the_read_back_holds_at_the_yes(
+    engine, session, tenant_id, call_id
+):
+    draft = draft_order(session, request(session, tenant_id, call_id), now=NOW)
+    with Session(engine) as tablet:
+        status_config.set_pickup(tablet, tenant_id, False)
+
+    with pytest.raises(Conflict) as err:
+        confirmed(session, tenant_id, call_id, draft.order_id)
+
+    session.rollback()
+    assert SAY_PICKUP_CLOSED in err.value.say
+    assert session.get(Order, draft.order_id).status == "draft"
+
+
+def test_the_pickup_switch_leaves_a_delivery_alone(session, tenant_id, call_id):
+    status_config.set_pickup(session, tenant_id, False)
+
+    draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
+
+    assert confirmed(session, tenant_id, call_id, draft.order_id)
+
+
+def test_a_closed_delivery_offers_no_pickup_that_is_switched_off(
+    session, tenant_id, call_id
+):
+    """Availability from the database: a switched-off pickup is not on offer."""
+    status_config.set_pickup(session, tenant_id, False)
+    status_config.set_delivery(session, tenant_id, False)
+
+    with pytest.raises(Closed) as err:
+        draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
+
+    assert err.value.say == SAY_DELIVERY_CLOSED
+
+
+def test_a_closed_pickup_offers_no_delivery_that_is_switched_off(
+    session, tenant_id, call_id
+):
+    status_config.set_pickup(session, tenant_id, False)
+    status_config.set_delivery(session, tenant_id, False)
+
+    with pytest.raises(Closed) as err:
+        draft_order(session, request(session, tenant_id, call_id), now=NOW)
+
+    assert err.value.say == SAY_PICKUP_CLOSED
 
 
 def test_the_switch_leaves_a_pickup_alone(engine, session, tenant_id, call_id):

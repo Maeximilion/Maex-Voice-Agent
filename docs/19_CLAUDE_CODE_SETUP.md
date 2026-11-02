@@ -834,6 +834,14 @@ If the Windows copy is gone too, save the two files from section 4 into `~/.clau
 
 `claude-rc`, same console: `mkdir -p ~/.local/bin`, save the script above as `~/.local/bin/claude-rc`, then `chmod 755 ~/.local/bin/claude-rc`. Ubuntu's `~/.profile` puts `~/.local/bin` on `PATH` at the next login once the folder exists; until then call it as `~/.local/bin/claude-rc`.
 
+### GitHub stacks (both systems)
+
+Chained pull requests are linked as native stacks (CLAUDE.md §6), which needs the official extension once per machine (Maxi, 2026-11-02):
+
+```bash
+gh extension install github/gh-stack
+```
+
 ### Ubuntu threads for projects and claude.ai
 
 A project in the desktop app (or claude.ai/code) can only start a session inside Ubuntu when a Remote Control server runs there. Console: Ubuntu terminal.

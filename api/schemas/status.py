@@ -15,6 +15,7 @@ class ServiceStatus(BaseModel):
     closes_at: datetime | None
     pickup_enabled: bool
     delivery_enabled: bool
+    reservations_enabled: bool
     pickup_wait_minutes: int
     delivery_wait_minutes: int
     sold_out: list[SoldOutItem] = Field(default_factory=list)

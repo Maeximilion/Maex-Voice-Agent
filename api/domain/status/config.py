@@ -32,6 +32,8 @@ from api.models import AuditLog, ServiceConfig, Tenant
 ACTOR_TABLET = "gui:tablet"
 ACTION_MODE = "service_config.mode_changed"
 ACTION_DELIVERY = "service_config.delivery_changed"
+ACTION_PICKUP = "service_config.pickup_changed"
+ACTION_RESERVATIONS = "service_config.reservations_changed"
 ACTION_WAIT = "service_config.wait_changed"
 ACTION_WAIT_STANDARD = "service_config.wait_standard_changed"
 
@@ -155,22 +157,49 @@ def set_mode(
     return config
 
 
+def _set_switch(
+    session: Session,
+    tenant_id: uuid.UUID,
+    field: str,
+    action: str,
+    enabled: bool,
+    actor: str,
+) -> ServiceConfig:
+    """Zustand statt Umschalten: doppelt getippt bleibt es aus."""
+    config = _locked(session, tenant_id)
+    before = getattr(config, field)
+    if before != enabled:
+        _audit(session, config, action, actor, {"from": before, "to": enabled})
+        setattr(config, field, enabled)
+    session.commit()
+    return config
+
+
 def set_delivery(
     session: Session, tenant_id: uuid.UUID, enabled: bool, actor: str = ACTOR_TABLET
 ) -> ServiceConfig:
-    """Lieferung an oder aus. Zustand statt Umschalten: doppelt getippt bleibt es aus."""
-    config = _locked(session, tenant_id)
-    if config.delivery_enabled != enabled:
-        _audit(
-            session,
-            config,
-            ACTION_DELIVERY,
-            actor,
-            {"from": config.delivery_enabled, "to": enabled},
-        )
-        config.delivery_enabled = enabled
-    session.commit()
-    return config
+    """Lieferung an oder aus."""
+    return _set_switch(
+        session, tenant_id, "delivery_enabled", ACTION_DELIVERY, enabled, actor
+    )
+
+
+def set_pickup(
+    session: Session, tenant_id: uuid.UUID, enabled: bool, actor: str = ACTOR_TABLET
+) -> ServiceConfig:
+    """Pickup on or off (T-3.10)."""
+    return _set_switch(
+        session, tenant_id, "pickup_enabled", ACTION_PICKUP, enabled, actor
+    )
+
+
+def set_reservations(
+    session: Session, tenant_id: uuid.UUID, enabled: bool, actor: str = ACTOR_TABLET
+) -> ServiceConfig:
+    """Reservations on or off (T-3.10)."""
+    return _set_switch(
+        session, tenant_id, "reservations_enabled", ACTION_RESERVATIONS, enabled, actor
+    )
 
 
 def _next_wait(before: int, step: int) -> int:
@@ -377,6 +406,7 @@ def config_change_token(
         for s in STANDARD_FIELDS
     )
     return (
-        f"{holding.mode}:{until}:{quiet}:{int(config.delivery_enabled)}:{waits}:"
+        f"{holding.mode}:{until}:{quiet}:{int(config.delivery_enabled)}:"
+        f"{int(config.pickup_enabled)}:{int(config.reservations_enabled)}:{waits}:"
         f"{config.updated_at.isoformat()}"
     )

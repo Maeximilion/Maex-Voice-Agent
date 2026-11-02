@@ -9,9 +9,13 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, InvalidInput
+from api.domain.confirm import confirm
 from api.domain.reservations import check_slot, create_reservation
 from api.domain.reservations import notice as notices
+from api.domain.reservations.slots import SAY_RESERVATIONS_OFF
+from api.domain.status import config as status_config
 from api.models import AuditLog, Call, Capacity, Reservation, SpecialDay
+from api.schemas.confirm import ConfirmRequest
 from api.schemas.reservations import CreateReservationRequest
 from scripts.seed import seed
 
@@ -280,3 +284,83 @@ def test_a_notice_may_stand_on_a_limit(session, tenant_id, minutes):
     set_notice(session, tenant_id, minutes)
 
     assert notices.weekday_notices(session, tenant_id)[TUESDAY] == minutes
+
+
+def test_with_the_switch_off_no_table_is_offered(session, tenant_id):
+    """T-3.10: no times to try, no callback that would promise one."""
+    status_config.set_reservations(session, tenant_id, False)
+
+    slot = check_slot(session, tenant_id, berlin(20), 4, now=NOW)
+
+    assert slot.available is False
+    assert slot.alternatives == []
+    assert slot.team_callback is False
+    assert slot.say == SAY_RESERVATIONS_OFF
+
+
+def test_the_switch_holds_in_the_middle_of_a_call(engine, session, tenant_id):
+    """The session of a call outlives a tap on another tablet."""
+    assert check_slot(session, tenant_id, berlin(20), 4, now=NOW).available
+    with Session(engine) as tablet:
+        status_config.set_reservations(tablet, tenant_id, False)
+
+    assert not check_slot(session, tenant_id, berlin(20), 4, now=NOW).available
+
+
+def test_a_notice_set_in_the_middle_of_a_call_holds(engine, session, tenant_id):
+    assert check_slot(session, tenant_id, berlin(18, 30), 4, now=NOW).available
+    with Session(engine) as tablet:
+        notices.set_notices(tablet, tenant_id, {TUESDAY: 60})
+
+    assert not check_slot(session, tenant_id, berlin(18, 30), 4, now=NOW).available
+
+
+def _request(tenant_id, call_id) -> CreateReservationRequest:
+    return CreateReservationRequest(
+        idempotency_key=uuid.uuid4().hex,
+        call_id=call_id,
+        tenant_id=tenant_id,
+        guest_name="Weber",
+        phone="+4972215551234",
+        party_size=4,
+        reserved_for=berlin(20),
+    )
+
+
+def test_a_draft_is_refused_with_the_switch_off(session, tenant_id, call_id):
+    status_config.set_reservations(session, tenant_id, False)
+
+    with pytest.raises(Conflict) as refused:
+        create_reservation(session, _request(tenant_id, call_id), now=NOW)
+
+    assert refused.value.say == SAY_RESERVATIONS_OFF
+
+
+def test_the_switch_after_the_read_back_holds_at_the_yes(
+    engine, session, tenant_id, call_id
+):
+    """The team switched reservations off between the read-back and the yes."""
+    draft = create_reservation(session, _request(tenant_id, call_id), now=NOW)
+    with Session(engine) as tablet:
+        status_config.set_reservations(tablet, tenant_id, False)
+
+    request = ConfirmRequest(
+        idempotency_key="yes",
+        call_id=call_id,
+        tenant_id=tenant_id,
+        entity="reservation",
+        entity_id=draft.reservation_id,
+    )
+    with pytest.raises(Conflict) as refused:
+        confirm(session, request, NOW)
+
+    assert refused.value.say == SAY_RESERVATIONS_OFF
+    session.rollback()
+    assert session.get(Reservation, draft.reservation_id).status == "draft"
+
+
+def test_a_table_is_booked_again_with_the_switch_on(session, tenant_id):
+    status_config.set_reservations(session, tenant_id, False)
+    status_config.set_reservations(session, tenant_id, True)
+
+    assert check_slot(session, tenant_id, berlin(20), 4, now=NOW).available
