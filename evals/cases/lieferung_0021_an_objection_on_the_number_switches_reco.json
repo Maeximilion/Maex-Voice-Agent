@@ -1,0 +1,80 @@
+{
+  "id": "lieferung_0021",
+  "name": "An objection on the number switches recognition off",
+  "tags": [
+    "lieferung",
+    "adresse",
+    "widerspruch",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "customers": [
+    {
+      "phone": "+497215551234",
+      "name": "Brandt",
+      "address": {
+        "street": "Rheinstrasse",
+        "house_number": "54",
+        "postal_code": "12345",
+        "city": "Musterdorf",
+        "floor_note": "Hinterhaus"
+      }
+    }
+  ],
+  "objections": [
+    "+497215551234"
+  ],
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 13."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Rheinstrasse 54, 12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Brandt."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "items": [
+      {
+        "number": "13",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Brandt",
+    "confirmed": true,
+    "escalated": false,
+    "address": {
+      "street": "Rheinstrasse",
+      "house_number": "54",
+      "postal_code": "12345",
+      "city": "Musterdorf"
+    },
+    "tools": [
+      "find_customer",
+      "check_delivery"
+    ],
+    "order_type": "delivery",
+    "never_said": [
+      "dieselbe Adresse"
+    ]
+  }
+}
