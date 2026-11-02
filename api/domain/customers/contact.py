@@ -11,12 +11,18 @@ Only a booking under the line the call came from is a contact of the customers
 on that number. A number the guest only names, or a withheld line, moves nobody
 (security audit 02.11.2026): a stranger could keep someone's record alive, and a
 confirmed delivery would make the stranger's address that customer's default.
+
+And only a row that is someone's record moves: one with an order counted, or a
+blocked one, the rows `find_customer` recognizes. A row only a draft wrote, also
+one a booking from another line wrote under this number, keeps its 90 days
+(`jobs/retention.py`): the owner's callback must not keep a stranger's name and
+address for 24 months (security re-audit 02.11.2026, evening).
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.orm import Session
 
 from api.domain.customers.lookup import line_of, objected
@@ -37,7 +43,11 @@ def note_contact(
     ):
         return
     for customer in session.scalars(
-        select(Customer).where(Customer.tenant_id == tenant_id, Customer.phone == phone)
+        select(Customer).where(
+            Customer.tenant_id == tenant_id,
+            Customer.phone == phone,
+            or_(Customer.order_count > 0, Customer.blocked.is_(True)),
+        )
     ):
         if name is None or fold(customer.name) == fold(name):
             customer.last_contact_at = at

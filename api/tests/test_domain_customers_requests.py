@@ -3,6 +3,7 @@ the person is, access, erasure and objection, on the verified person's rows only
 
 import json
 import uuid
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
@@ -457,15 +458,74 @@ def test_the_same_name_on_another_number_is_another_person(session, tenant_id):
     assert verify(session, tenant_id, MUELLER, ZONE, NOW).orders == [mine]
 
 
+TWO_DAYS = (date(2026, 10, 12), date(2026, 10, 13))
+
+
 def test_a_second_number_counts_with_a_detail_of_its_own(session, tenant_id):
+    """Only with every number named (`--phone`): re-audit 02.11.2026, evening,
+    two details on two numbers are refused without them (below)."""
     mine = _order(session, tenant_id)
     second = _order(
         session, tenant_id, phone=OTHER_PHONE, ready_at=PAST + timedelta(days=1)
     )
-    details = Details(name="Müller", days=(date(2026, 10, 12), date(2026, 10, 13)))
+    details = Details(name="Müller", days=TWO_DAYS, phones=(PHONE, OTHER_PHONE))
     person = verify(session, tenant_id, details, ZONE, NOW)
     assert {order.id for order in person.orders} == {mine.id, second.id}
     assert person.phones == {PHONE, OTHER_PHONE}
+
+
+def _namesake_on_the_next_day(session, tenant_id) -> tuple[Order, Customer]:
+    """Müller on PHONE on the 12th, and another Müller on OTHER_PHONE with an
+    order on the 13th and the delivery address of ADDRESS."""
+    mine = _order(session, tenant_id)
+    _order(session, tenant_id, phone=OTHER_PHONE, ready_at=PAST + timedelta(days=1))
+    namesake = _customer(session, tenant_id, phone=OTHER_PHONE)
+    _address(session, tenant_id, namesake)
+    return mine, namesake
+
+
+WITH_ADDRESS = Details(
+    name="Müller",
+    days=TWO_DAYS[:1],
+    street="Hauptstraße",
+    house_number="12a",
+    postal_code="76530",
+)
+
+
+@pytest.mark.parametrize(
+    "details",
+    [Details(name="Müller", days=TWO_DAYS), WITH_ADDRESS],
+    ids=["two days", "day and address"],
+)
+def test_two_details_on_two_numbers_ask_for_every_number(session, tenant_id, details):
+    """Re-audit 02.11.2026, evening: each detail opens one number, the union
+    two, and `find`, `erase` and `object` would reach the namesake."""
+    _namesake_on_the_next_day(session, tenant_id)
+    with pytest.raises(Ambiguous, match="--phone"):
+        verify(session, tenant_id, details, ZONE, NOW)
+
+
+@pytest.mark.parametrize(
+    "details",
+    [Details(name="Müller", days=TWO_DAYS), WITH_ADDRESS],
+    ids=["two days", "day and address"],
+)
+def test_one_number_named_keeps_only_its_rows(session, tenant_id, details):
+    mine, namesake = _namesake_on_the_next_day(session, tenant_id)
+    said = replace(details, phones=("07221 555123",))
+    person = verify(session, tenant_id, said, ZONE, NOW)
+    assert person.orders == [mine]
+    assert person.phones == {PHONE}
+    assert namesake not in person.customers
+
+
+def test_two_details_on_one_number_need_no_number(session, tenant_id):
+    first = _order(session, tenant_id)
+    later = _order(session, tenant_id, ready_at=PAST + timedelta(days=1))
+    person = verify(session, tenant_id, Details("Müller", TWO_DAYS), ZONE, NOW)
+    assert {order.id for order in person.orders} == {first.id, later.id}
+    assert person.phones == {PHONE}
 
 
 def test_a_later_order_of_the_person_counts_without_a_date_of_its_own(
