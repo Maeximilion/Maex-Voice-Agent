@@ -16,6 +16,13 @@
   // schlimmer als der Fehler selbst. Dann bleibt die Ansicht stehen und die
   // rote Leiste oben meldet es (docs/06 §5).
   document.body.addEventListener("htmx:beforeSwap", function (e) {
+    // A header fetched before the wait field opened lands after it: keep the
+    // field (T-3.9). Saving is a POST and swaps; closing the field fetches again.
+    if (e.detail.requestConfig.verb === "get" && e.detail.target.id === "kopfzeile" &&
+        document.querySelector("#kopfzeile details[open]")) {
+      e.detail.shouldSwap = false;
+      return;
+    }
     var xhr = e.detail.xhr;
     if (xhr.status < 400) {
       if (stoerung) stoerung.hidden = true;
@@ -46,6 +53,12 @@
     if (fold && feiertageOffen) fold.open = true;
   });
 
+  document.addEventListener("toggle", function (e) {
+    if (!e.target.classList.contains("step-edit")) return;
+    if (e.target.open) e.target.querySelector("input").select();
+    else if (window.EventSource) kopfzeile();
+  }, true);
+
   if (!liste || !window.EventSource) return;
 
   function offline(yes) {
@@ -59,6 +72,9 @@
   }
 
   function kopfzeile() {
+    // Somebody is typing a wait (T-3.9): a redraw would take the field away.
+    // Closing the field fetches the header, so nothing stays out of date.
+    if (document.querySelector("#kopfzeile details[open]")) return;
     window.htmx.ajax("GET", "/gui/fragments/kopfzeile", {
       target: "#kopfzeile",
       swap: "outerHTML",

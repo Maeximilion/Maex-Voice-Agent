@@ -105,6 +105,10 @@ services:
       file: ../../docker-compose.yml
       service: asterisk
     restart: "no"
+    environment:
+      # `voice` runs as the drill's user here and owns the folder of the
+      # recordings, as in the product (deploy/asterisk/render.sh).
+      RECORDINGS_UID: ${DRILL_UID}
     depends_on:
       router:
         condition: service_healthy
