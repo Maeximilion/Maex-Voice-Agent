@@ -55,6 +55,7 @@ x-settings: &settings
   VOICE_EAR_DEVICE:
   VOICE_MOUTH_VOICE:
   RECORDING_ENABLED:
+  RECORDING_MIN_FREE_MB:
   MENU_FUZZY_THRESHOLD_HIGH:
   MENU_FUZZY_THRESHOLD_LOW:
   CALL_LOG_RETENTION_DAYS:
@@ -311,8 +312,9 @@ services:
       ACCESS_USER: ${ACCESS_USER:-}
       ACCESS_PASSWORD: ${ACCESS_PASSWORD:-}
       # Who owns the folder of the recordings: the user of `voice` and the
-      # dispatcher (deploy/asterisk/render.sh).
-      RECORDINGS_UID: ${RECORDINGS_UID:-10001}
+      # dispatcher (deploy/asterisk/render.sh). Not from .env: any other uid
+      # breaks every deletion of the job (#252); the drills set their own.
+      RECORDINGS_UID: "10001"
     tmpfs:
       - /etc/asterisk
     volumes:

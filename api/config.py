@@ -116,6 +116,12 @@ class Settings(BaseSettings):
     # The recording of calls (docs/09 §1 L2, T-11.3). Off: no question is asked
     # and nothing is recorded. On only after the team's written consents (L11).
     recording_enabled: bool = False
+    # Free megabytes on the disk of the recordings' folder below which a yes
+    # records nothing and the call goes on (#252, audit of 02.11.2026): it is
+    # the database's disk too. 2048: Postgres lets its write-ahead log grow to
+    # 1 GB by default, and an hour of a recorded team leg is about 60 MB. 0
+    # switches the check off.
+    recording_min_free_mb: int = Field(default=2048, ge=0)
 
     menu_fuzzy_threshold_high: float = 0.72
     menu_fuzzy_threshold_low: float = 0.45

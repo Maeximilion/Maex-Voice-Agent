@@ -206,9 +206,6 @@ class Drill:
             "DRILL_RUN": str(run_dir),
             "DRILL_UID": str(os.getuid()),
             "DRILL_GID": str(os.getgid()),
-            # `voice` runs as the caller here, and owns the folder of the
-            # recordings as in the product (deploy/asterisk/render.sh).
-            "RECORDINGS_UID": str(os.getuid()),
             "VOICE_NUMBER": VOICE_NUMBER,
             "TEAM_PHONE": TEAM_PHONE,
             # Written loosely, with TEAM_PHONE in its national form: render.sh

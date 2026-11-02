@@ -8,6 +8,7 @@ committed before a byte is recorded, so no file exists that the deletion job
 cannot find (`jobs/retention.py`).
 """
 
+import shutil
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -15,12 +16,28 @@ from pathlib import Path
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api.core.time import utcnow
 from api.models import Call, Recording
 
 # The volume `voice`, Asterisk and the dispatcher share (docker-compose.yml). A
 # path and no setting: the dialplan names it too.
 FOLDER = Path("/recordings")
+
+
+class NoRoomForARecording(Exception):
+    """Less free on the folder's disk than RECORDING_MIN_FREE_MB."""
+
+
+def room_for_a_recording() -> bool:
+    """The volume lies on the host's disk, next to the database's (#252). A
+    process without the folder (`api`, the evals) records no file itself and
+    does not measure: `voice` and Asterisk, which do, hold it."""
+    try:
+        free = shutil.disk_usage(FOLDER).free
+    except FileNotFoundError:
+        return True
+    return free >= settings.recording_min_free_mb * 1024 * 1024
 
 
 def path_of(file_name: str) -> Path:
@@ -45,7 +62,11 @@ def open_recording(
     now: datetime | None = None,
 ) -> str:
     """Writes the row and commits; returns the name of the file. By the id of
-    the call on the line, as the dialplan knows it (`${UNIQUEID}`)."""
+    the call on the line, as the dialplan knows it (`${UNIQUEID}`). Raises
+    `NoRoomForARecording` before the row on a nearly full disk: the caller of
+    a recording that never starts is told nothing of one."""
+    if not room_for_a_recording():
+        raise NoRoomForARecording
     call = session.get_one(Call, call_id)
     file_name = f"{call.external_session_id}.wav"
     session.add(

@@ -11,8 +11,10 @@ Call, from the stack's folder:
 
 The verified person comes from `--name` with `--on` (repeatable) or with
 `--street`, `--house-number` and `--postal-code`, never from a number. A detail
-that opens the name on two numbers is refused; `--phone` (repeatable), the
-number the guest called from, narrows it to one and opens nothing itself.
+that opens the name on two numbers is refused, and so are details that open it
+on two numbers between them until `--phone` (repeatable) names every number the
+guest called from. `--phone` narrows what the details open and opens nothing
+itself.
 
 stdout is what the operator keeps: the copy of `find` and the lines of the
 erasure ledger of `erase` and `object` (`date,table,row_id,action`), to be
