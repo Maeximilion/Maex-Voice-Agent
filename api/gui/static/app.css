@@ -1,46 +1,33 @@
 /* Design tokens and component classes of the operations view (docs/06 §7).
    One source for the design: tokens first, then components that use only
-   tokens. No font from the network, the GUI must run without internet
-   (docs/06 §2), so the system font is the fallback behind IBM Plex Sans.
-   Borders of controls reach 3:1 against their surface, text 4.5:1 (checked in
-   the redesign of 02.11.2026, docs/06 §7). */
+   tokens. The colours are the brand palette of the README (docs/15), and they
+   keep its meaning: neon is done and the main action, violet is open or
+   waiting, coral is only what went wrong. One theme, dark. No font from the
+   network, the GUI must run without internet (docs/06 §2). */
 
 :root{
   /* colour */
-  --bg:#EEF1EE; --surface:#FFFFFF; --surface-2:#F5F7F5;
-  --text:#17211C; --muted:#55605A; --line:#D5DBD6; --line-strong:#7C8881;
-  --accent:#0B6B52; --accent-bg:#DDF2EA; --accent-text:#064536;
-  --warn:#7A4A06; --warn-bg:#FCEBC8; --warn-line:#C27F0E;
-  --danger:#A52828; --danger-bg:#FBE4E4;
-  --ok:#2F6410; --ok-bg:#E4F1D6;
+  --bg:#0D0819; --surface:#17102B; --surface-2:#21183D;
+  --text:#F1ECFF; --muted:#A89CCB; --line:#2B2148; --line-strong:#76699F;
+  --accent:#E8FF2E; --accent-bg:#2B2148; --accent-text:#F1ECFF;
+  --warn:#C9B6FF; --warn-bg:#2C2057; --warn-line:#9D7BFF;
+  --danger:#FF5277; --danger-bg:#3D1226;
+  --ok:#E8FF2E; --ok-bg:#2A2E0A;
   /* type */
+  --font-sans:"IBM Plex Sans",system-ui,Arial,Helvetica,sans-serif;
+  --font-mono:ui-monospace,"SF Mono",Menlo,Consolas,"DejaVu Sans Mono",monospace;
   --fs-body:18px; --fs-lg:20px; --fs-h2:22px; --fs-time:26px; --fs-kpi:32px; --fs-code:36px;
   /* space */
   --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px;
   /* shape and size */
   --r-sm:8px; --r:12px; --r-lg:14px; --tap:60px; --edge:6px;
 }
-@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
-  --bg:#101513; --surface:#1B2220; --surface-2:#222B28;
-  --text:#EAF0EC; --muted:#A3AFA8; --line:#34403A; --line-strong:#7E8B84;
-  --accent:#5DCAA5; --accent-bg:#0F3A2F; --accent-text:#A8E8D2;
-  --warn:#FFCE85; --warn-bg:#3D2A0C; --warn-line:#E0A23A;
-  --danger:#F29B9B; --danger-bg:#431C1C;
-  --ok:#C6E3A0; --ok-bg:#243A16;
-}}
-:root[data-theme="dark"]{
-  --bg:#101513; --surface:#1B2220; --surface-2:#222B28;
-  --text:#EAF0EC; --muted:#A3AFA8; --line:#34403A; --line-strong:#7E8B84;
-  --accent:#5DCAA5; --accent-bg:#0F3A2F; --accent-text:#A8E8D2;
-  --warn:#FFCE85; --warn-bg:#3D2A0C; --warn-line:#E0A23A;
-  --danger:#F29B9B; --danger-bg:#431C1C;
-  --ok:#C6E3A0; --ok-bg:#243A16;
-}
 
 *{box-sizing:border-box}
 html,body{margin:0}
-body{background:var(--bg);color:var(--text);font-family:"IBM Plex Sans",system-ui,Arial,Helvetica,sans-serif;font-size:15px;line-height:1.4;font-variant-numeric:tabular-nums}
+body{background:var(--bg);color:var(--text);font-family:var(--font-sans);font-size:15px;line-height:1.4;font-variant-numeric:tabular-nums}
 a{color:var(--accent)}
+::placeholder{color:var(--muted);opacity:1}
 button{font:inherit;color:inherit;background:var(--surface);border:2px solid var(--line-strong);border-radius:var(--r);padding:7px 12px;cursor:pointer}
 button:hover{background:var(--surface-2)}
 button:focus-visible,a:focus-visible,[tabindex]:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
@@ -99,7 +86,7 @@ header{background:var(--surface);border-bottom:2px solid var(--line)}
 .tafel header{flex:none}
 .tafel main{flex:1;min-height:0;display:flex;flex-direction:column;padding-bottom:0;overflow-y:auto}
 /* With a panel open the page scrolls and the columns keep a height of their own. */
-.tafel .board{flex:1 0 360px}
+.tafel .board{flex:1 1 0;min-height:360px;grid-template-rows:minmax(0,1fr)}
 .tafel .col{height:100%;overflow-y:auto}
 #korrektur,#gericht-aus{flex:none}
 
@@ -165,6 +152,7 @@ header.aus .top > .mode ~ .mode{opacity:.75}
 /* Column New orders (T-4.7). The pickup code is big and filled: readable from
    two metres (docs/06 §3). The card number stays grey before the name. */
 .order .time{font-size:var(--fs-time);font-weight:700;line-height:1.1}
+.time,.code,.count,.nr,.kz b,.order-foot b{font-family:var(--font-mono)}
 .order .code{margin-left:auto;font-size:var(--fs-code);font-weight:800;line-height:1;padding:8px 14px;border-radius:10px;background:var(--accent);color:var(--surface);letter-spacing:.02em}
 .order .name{font-weight:600}
 .order .lines{list-style:none;margin:var(--s2) 0;padding:0;font-size:var(--fs-lg)}
@@ -193,7 +181,7 @@ header.aus .top > .mode ~ .mode{opacity:.75}
 .fold > summary{display:flex;align-items:center;gap:var(--s3);min-height:var(--tap);font-weight:600;cursor:pointer;list-style:none}
 .fold > summary::-webkit-details-marker{display:none}
 .fold .fold-text{flex:1;min-width:0}
-.fold .fold-toggle{flex:none;border:2px solid var(--line-strong);border-radius:var(--r);padding:14px 18px;background:var(--surface)}
+.fold .fold-toggle{flex:none;display:inline-flex;align-items:center;min-height:var(--tap);border:2px solid var(--line-strong);border-radius:var(--r);padding:14px 18px;background:var(--surface)}
 .fold .fold-less,.fold[open] .fold-more{display:none}
 .fold[open] .fold-less{display:inline}
 .fold .cards{padding:var(--s2) var(--s2) var(--s2) 0}
@@ -231,6 +219,7 @@ header.aus .top > .mode ~ .mode{opacity:.75}
 @media (max-width:900px){
   .board{grid-template-columns:1fr}
   .tafel{height:auto;overflow:visible}
+  .tafel .board{flex:none;grid-template-rows:none}
   .tafel .col{height:auto;overflow:visible}
 }
 /* "Gericht aus" (T-4.8): panel like the correction, switches from 60 px, the
