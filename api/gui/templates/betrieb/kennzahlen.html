@@ -1,6 +1,6 @@
-{# Kennzahlen (T-8.4, docs/06 §4): oben die Leiste mit vier Werten der letzten
-   7 Tage, darunter der Verlauf je Betriebstag. Ein Strich heisst: an dem Tag
-   gab es nichts, wodurch geteilt werden koennte. #}
+{# Key figures (T-8.4, docs/06 §4): the bar of four values for the last 7 days
+   on top, the history per business day below. A dash means the day had nothing
+   to divide by. A cost marked * leaves out calls whose cost is unknown. #}
 {% extends "base.html" %}
 {% block title %}Kennzahlen{% endblock %}
 {% block body_class %}betrieb{% endblock %}
@@ -38,11 +38,14 @@
       {% for row in history %}
       <tr>
         <td>{{ row.day }}</td><td>{{ row.calls }}</td><td>{{ row.orders }}</td>
-        {% for text in row["values"] %}<td>{{ text }}</td>{% endfor %}
+        {% for text in row["values"] %}<td>{{ text }}{% if loop.index == 2 and row.unknown_cost %} *{% endif %}</td>{% endfor %}
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  {% if history|selectattr("unknown_cost")|list %}
+  <p class="note">* An diesem Tag sind bei einigen Anrufen die Kosten nicht bekannt und nicht mitgezählt.</p>
+  {% endif %}
 </section>
 {% endif %}
 {% endblock %}

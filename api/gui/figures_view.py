@@ -56,6 +56,7 @@ def page(session: Session, tenant: Tenant) -> dict:
                 "calls": figures.calls,
                 "orders": figures.orders,
                 "values": values(figures),
+                "unknown_cost": figures.unknown_cost_calls,
             }
         )
     return {

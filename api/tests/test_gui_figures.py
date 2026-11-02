@@ -172,6 +172,14 @@ def test_page_shows_week_and_history(db, client, now):
     assert html.count("<tr>") == 1 + 14
 
 
+def test_history_marks_a_day_with_unpriced_calls(db, client, now):
+    tenant = _tenant(db, "Eins")
+    _week(db, tenant, now)  # today has one call without a cost
+    html = client.get("/gui/kennzahlen").text
+    assert html.count("€ *</td>") == 1
+    assert "An diesem Tag sind bei einigen Anrufen" in html
+
+
 def test_page_on_an_empty_day_shows_dashes(db, client, now):
     _tenant(db, "Leer")
     html = client.get("/gui/kennzahlen").text
