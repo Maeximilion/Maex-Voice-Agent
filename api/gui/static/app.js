@@ -46,6 +46,12 @@
     if (fold && feiertageOffen) fold.open = true;
   });
 
+  document.addEventListener("toggle", function (e) {
+    if (!e.target.classList.contains("step-edit")) return;
+    if (e.target.open) e.target.querySelector("input").select();
+    else if (window.EventSource) kopfzeile();
+  }, true);
+
   if (!liste || !window.EventSource) return;
 
   function offline(yes) {
@@ -59,6 +65,9 @@
   }
 
   function kopfzeile() {
+    // Somebody is typing a wait (T-3.9): a redraw would take the field away.
+    // Closing the field fetches the header, so nothing stays out of date.
+    if (document.querySelector("#kopfzeile details[open]")) return;
     window.htmx.ajax("GET", "/gui/fragments/kopfzeile", {
       target: "#kopfzeile",
       swap: "outerHTML",

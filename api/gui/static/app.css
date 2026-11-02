@@ -109,8 +109,18 @@ header.aus .top > .mode ~ .mode{opacity:.75}
 .betrieb .seg button + button{border-left:2px solid var(--line-strong)}
 /* Wartezeit stepper: label and value left, minus and plus right. */
 .step{display:flex;align-items:center;gap:var(--s1);border:2px solid var(--line);border-radius:var(--r);background:var(--surface-2);padding-left:var(--s3)}
-.step b{font-size:var(--fs-body);font-weight:700;line-height:1.2;width:9.6em}
-.betrieb .step button{border:0;border-left:2px solid var(--line);border-radius:0;background:transparent}
+.step b{font-size:var(--fs-body);font-weight:700;line-height:1.2;width:10.4em}
+/* Tap on the value: a field drops below it, over the columns (T-3.9). */
+.step-edit{position:relative}
+.step-edit > summary{display:flex;align-items:center;min-height:var(--tap);cursor:pointer;list-style:none}
+.step-edit > summary::-webkit-details-marker{display:none}
+.step-edit > summary b{text-decoration:underline dotted;text-underline-offset:4px}
+.step-form{position:absolute;top:100%;left:0;z-index:5;display:flex;align-items:center;gap:var(--s2);margin-top:var(--s2);padding:var(--s3);background:var(--surface);border:2px solid var(--accent);border-radius:var(--r)}
+.betrieb .step-form input{font:inherit;font-size:var(--fs-h2);color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);width:110px;height:var(--tap);padding:0 var(--s3);appearance:textfield}
+/* The little arrows of a number field are no 60 px target; the number pad does the job. */
+.step-form input::-webkit-inner-spin-button,.step-form input::-webkit-outer-spin-button{appearance:none;margin:0}
+.betrieb .step-form button{border:2px solid var(--accent)}
+.betrieb .step > button{border:0;border-left:2px solid var(--line);border-radius:0;background:transparent}
 .betrieb .top button,.betrieb .top a.button{white-space:nowrap}
 /* Column Callbacks: a complaint has a wide red edge, the word stays next to it
    (docs/06 §1 rule 4). "Anrufen" is a tel: link dressed as a button. */

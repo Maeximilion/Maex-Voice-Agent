@@ -365,6 +365,71 @@ def test_wartezeit_lieferung_plus_15_laesst_abholung_stehen(client, engine, tena
     assert f"Wartezeit Lieferung {nachher.delivery_wait_minutes} Min" in body
 
 
+TYPED = {**HX, "Content-Type": "application/x-www-form-urlencoded"}
+
+
+def test_a_typed_wait_comes_back_in_the_header(client, engine, tenant_id):
+    body = client.post(
+        "/gui/kopfzeile/wartezeit/abholung", content="minuten=17", headers=TYPED
+    )
+
+    assert body.status_code == 200
+    assert "Wartezeit Abholung 17 Min" in body.text
+    assert config_von(engine, tenant_id).pickup_wait_minutes == 17
+
+
+@pytest.mark.parametrize("value", ["", "abc", "9", "181", "-5", "15.5", "9" * 40])
+def test_a_typed_wait_that_is_no_wait_gets_a_sentence(client, engine, tenant_id, value):
+    before = config_von(engine, tenant_id).pickup_wait_minutes
+
+    body = client.post(
+        "/gui/kopfzeile/wartezeit/abholung", content=f"minuten={value}", headers=TYPED
+    )
+
+    assert body.status_code == 409
+    assert "10 bis 180 Minuten" in body.text
+    assert config_von(engine, tenant_id).pickup_wait_minutes == before
+
+
+def test_a_typed_wait_needs_a_known_service(client, tenant_id):
+    body = client.post(
+        "/gui/kopfzeile/wartezeit/reservierung", content="minuten=30", headers=TYPED
+    )
+
+    assert body.status_code == 404
+
+
+def test_a_typed_wait_needs_the_csrf_header(client, engine, tenant_id):
+    before = config_von(engine, tenant_id).pickup_wait_minutes
+
+    body = client.post(
+        "/gui/kopfzeile/wartezeit/abholung",
+        content="minuten=17",
+        headers={"HX-Request": "true"},
+    )
+
+    assert body.status_code == 403
+    assert config_von(engine, tenant_id).pickup_wait_minutes == before
+
+
+def test_the_header_offers_the_typed_wait_for_both_services(client, tenant_id):
+    text = client.get("/gui").text
+
+    assert 'hx-post="/gui/kopfzeile/wartezeit/abholung"' in text
+    assert 'hx-post="/gui/kopfzeile/wartezeit/lieferung"' in text
+    assert 'name="minuten"' in text
+    assert 'inputmode="numeric"' in text
+
+
+def test_the_stream_does_not_redraw_the_header_while_somebody_types():
+    """No JS test run in the project, so the contract as a text check."""
+    js = (Path(__file__).resolve().parents[1] / "gui" / "static" / "app.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "#kopfzeile details[open]" in js
+
+
 def test_wartezeit_abholung_minus_15_und_knopf_aus_an_der_grenze(
     client, engine, tenant_id
 ):
