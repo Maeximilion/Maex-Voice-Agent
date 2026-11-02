@@ -1,5 +1,6 @@
 # Runs install.ps1 and run.ps1 on a real Windows machine: the runner of printbridge.yml (T-9.6).
-# It sets and deletes the bridge settings of the user, so it refuses to run anywhere else.
+# It sets and deletes the bridge settings of the user and of the machine, so it refuses to
+# run anywhere else.
 param([Parameter(Mandatory = $true)][string]$Package)
 $ErrorActionPreference = "Stop"
 if (-not $env:GITHUB_ACTIONS) { throw "CI only: this would delete the settings of the bridge." }
@@ -72,7 +73,20 @@ Assert-That ((Invoke-Installer @()) -eq 0) "an update over a running bridge succ
 Assert-That (Test-Path $printLog) "an update keeps the print log"
 Wait-Until { @(Get-Bridge | Where-Object { $before -notcontains $_.Id }).Count -gt 0 } "the update starts the new program"
 
+# A failed update starts the bridge it stopped again: a held run.ps1 makes the copy fail.
+$lock = [IO.File]::Open((Join-Path $folder "run.ps1"), "Open", "Read", "Read")
+try {
+    Assert-That ((Invoke-Installer @()) -ne 0) "an update that cannot copy fails"
+} finally {
+    $lock.Dispose()
+}
+Wait-Until { (Get-Bridge).Count -gt 0 } "a failed update starts the old bridge again"
+
+# The install check accepts the Machine scope, so removing it clears that scope too. The
+# runner's account is an administrator; a plain user gets a warning instead.
+[Environment]::SetEnvironmentVariable("MAEX_KITCHEN_TOKEN", $token, "Machine")
 Assert-That ((Invoke-Installer @("-Uninstall")) -eq 0) "uninstall succeeds"
+Assert-That (-not [Environment]::GetEnvironmentVariable("MAEX_KITCHEN_TOKEN", "Machine")) "the token is gone for all users"
 Assert-That (-not (Get-ScheduledTask -TaskName "Maex Print Bridge" -ErrorAction SilentlyContinue)) "the task is gone"
 Assert-That (-not (Test-Path $folder)) "the folder is gone"
 Assert-That ((Get-Bridge).Count -eq 0) "the program is stopped"

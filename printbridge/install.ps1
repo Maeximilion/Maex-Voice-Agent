@@ -53,30 +53,47 @@ if ($running) {
 if ($Uninstall) {
     if ($task) { Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false }
     if (Test-Path $Folder) { Remove-Item -Recurse -Force $Folder }
-    # No token stays behind on a machine that no longer runs the bridge.
+    # No token stays behind on a machine that no longer runs the bridge. The install
+    # check accepts the Machine scope too, so it is cleared as well; that needs an
+    # elevated console.
+    $left = @()
     foreach ($name in $Required + $Optional) {
         [Environment]::SetEnvironmentVariable($name, $null, "User")
+        if ([Environment]::GetEnvironmentVariable($name, "Machine")) {
+            try { [Environment]::SetEnvironmentVariable($name, $null, "Machine") }
+            catch { $left += $name }
+        }
     }
     Write-Output "Print bridge removed."
+    if ($left) {
+        Write-Warning ("Still set for all users of this PC: $($left -join ', '). " +
+            "Run the removal again in a console opened as administrator to clear them.")
+    }
     return
 }
 
-New-Item -ItemType Directory -Force $Folder | Out-Null
-Copy-Item $program, (Join-Path $PSScriptRoot "run.ps1") $Folder -Force
-# A downloaded file carries a mark that makes Windows ask first. Nobody sees a hidden start.
-Unblock-File (Join-Path $Folder "maex-printbridge.exe"), (Join-Path $Folder "run.ps1")
+try {
+    New-Item -ItemType Directory -Force $Folder | Out-Null
+    Copy-Item $program, (Join-Path $PSScriptRoot "run.ps1") $Folder -Force
+    # A downloaded file carries a mark that makes Windows ask first. Nobody sees a hidden start.
+    Unblock-File (Join-Path $Folder "maex-printbridge.exe"), (Join-Path $Folder "run.ps1")
 
-$user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -WorkingDirectory $Folder `
-    -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$run`""
-$trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
-$principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
-# Zero means no limit: the default stops a task after three days. The defaults would also
-# stop it on battery. run.ps1 restarts the program; these restart run.ps1.
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
-    -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
-    -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
-    -Principal $principal -Settings $settings -Force | Out-Null
+    $user = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -WorkingDirectory $Folder `
+        -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$run`""
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
+    $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+    # Zero means no limit: the default stops a task after three days. The defaults would also
+    # stop it on battery. run.ps1 restarts the program; these restart run.ps1.
+    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+        -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
+        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
+        -Principal $principal -Settings $settings -Force | Out-Null
+} catch {
+    # A failed update must not leave the kitchen without slips: the old bridge runs on.
+    if ($task) { Start-ScheduledTask -TaskName $TaskName }
+    throw
+}
 Start-ScheduledTask -TaskName $TaskName
 Write-Output "Print bridge installed in $Folder and started. Log: $Folder\bridge.log"
