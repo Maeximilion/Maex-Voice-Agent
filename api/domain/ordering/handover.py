@@ -47,6 +47,24 @@ LEASE_SECONDS = 60
 # So lange darf ein faelliger Bon unabgeholt liegen, bevor die Karte rot wird.
 PICKUP_TIMEOUT_SECONDS = 60
 CLAIM_LIMIT_MAX = 10
+# What the print bridge reads (printbridge/bridge.py, escpos.py) and nothing more:
+# a stolen kitchen token gets no phone number (security audit 02.11.2026). The
+# outbox event keeps the whole payload for n8n.
+SLIP_FIELDS = (
+    "order_id",
+    "type",
+    "pickup_code",
+    "customer_name",
+    "ready_at",
+    "address",
+    "note",
+    "revision",
+    "correction_reason",
+    "items_total_cents",
+    "delivery_fee_cents",
+    "total_cents",
+    "items",
+)
 
 PENDING = "pending"
 SENT = "sent"
@@ -297,7 +315,9 @@ def claim_tickets(
             {
                 "id": str(event.id),
                 "attempt": event.attempts,
-                "ticket": event.payload,
+                "ticket": {
+                    k: event.payload[k] for k in SLIP_FIELDS if k in event.payload
+                },
                 # Uhrzeiten schon in Ortszeit des Betriebs: die Bruecke kennt
                 # keine Zeitzone (CLAUDE.md §8, Anzeige in Europe/Berlin).
                 "ready_time": datetime.fromisoformat(ready_at)

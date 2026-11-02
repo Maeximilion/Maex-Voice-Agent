@@ -31,6 +31,7 @@ from api.tests.test_domain_confirm_order import _confirm, _draft, _mode
 from api.tests.test_domain_draft_order import _call, _tenant
 from api.tests.test_domain_ordering_correction import _fix
 from api.tests.test_events_dispatcher import FakeN8n
+from printbridge import escpos
 
 
 @pytest.fixture
@@ -114,6 +115,41 @@ def test_bon_abholen_drucken_melden(session, tenant_id, order_id):
     again = ack_ticket(session, tenant_id, event.id, False, _now(), "zu spaet")
     assert again == "sent"
     assert _order(session, order_id).handover_state == "sent"
+
+
+@pytest.mark.parametrize("kind", ["pickup", "delivery"])
+def test_claim_answer_carries_only_what_the_slip_prints(
+    session, tenant_id, order_id, kind
+):
+    # Security audit 02.11.2026: a stolen kitchen token reads no phone number.
+    [event] = _events(session, order_id)
+    if kind == "delivery":
+        event.payload = {
+            **event.payload,
+            "type": "delivery",
+            "address": {
+                "street": "Hauptstr.",
+                "house_number": "5",
+                "postal_code": "76133",
+                "city": "Karlsruhe",
+                "floor_note": "3. OG",
+            },
+            "items_total_cents": 2000,
+            "delivery_fee_cents": 300,
+            "total_cents": 2300,
+        }
+        session.commit()
+    payload = dict(event.payload)
+    [claimed] = claim_tickets(session, tenant_id, _now())
+
+    assert payload["phone"]  # the outbox event keeps it for n8n
+    assert "phone" not in claimed["ticket"]
+    assert "call_id" not in claimed["ticket"]
+    # The slip comes out byte for byte as from the whole event.
+    times = {"ready_time": claimed["ready_time"], "print_time": claimed["print_time"]}
+    assert escpos.render({**claimed["ticket"], **times}) == escpos.render(
+        {**payload, **times}
+    )
 
 
 def test_dispatcher_laesst_den_bon_der_bruecke(session, tenant_id, order_id):
