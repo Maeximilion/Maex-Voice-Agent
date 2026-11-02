@@ -1,8 +1,8 @@
 """The operations view answers only requests that came through Caddy.
 
-Security audit of 15.10.2026, #252 finding 6: every container on the Docker network
-reaches api:8000, Asterisk among them, and Caddy's Basic-Auth is the view's only
-check. Caddy sends GUI_PROXY_SECRET; outside dev and test the view needs it.
+Security audit of 15.10.2026, #252 finding 6: every container on the API's Docker
+networks reaches api:8000, and Caddy's Basic-Auth is the view's only check. Caddy
+sends GUI_PROXY_SECRET; outside dev and test the view needs it.
 """
 
 from pathlib import Path
