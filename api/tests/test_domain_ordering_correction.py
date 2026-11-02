@@ -590,8 +590,9 @@ def test_swap_to_the_same_dish_and_choice_changes_nothing(session, tenant_id, ca
     assert exc.value.say == NO_CHANGE
     session.rollback()
     assert _corrections(session, order_id) == []
+    # One ticket, and it still counts no correction: no KORREKTUR for the kitchen.
     [ticket] = _events(session, order_id)
-    assert ticket.payload["revision"] == 1
+    assert ticket.payload["revision"] == 0
 
 
 def test_swap_to_the_same_dish_with_another_choice_stays_a_change(
@@ -698,3 +699,32 @@ def test_same_swap_keeps_the_picker_and_asks_nothing_of_the_stored_row(
     assert [g.group for g in line.groups] == ["Dip"]
     assert line.missing == []
     assert plan.blockers == [NO_CHANGE]
+
+
+@pytest.mark.parametrize(
+    ("quantity", "choices", "kind", "notice"),
+    [
+        (2, HUHN, "kept", False),
+        (3, HUHN, "changed", False),
+        (2, (Choice("Fleisch", "Ente"), Choice("Sauce", "Erdnuss")), "swapped", True),
+    ],
+)
+def test_sold_out_notice_only_where_the_dish_is_taken_anew(
+    session, tenant_id, call_id, quantity, choices, kind, notice
+):
+    """docs/06: the team may take a dish that is out today and sees it next to
+    it. A stored row takes nothing, and without a tap it shows no notice either."""
+    order_id = _order(session, tenant_id, call_id, [_huhn(session, tenant_id)])
+    [row] = _rows(session, order_id)
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.id == row.menu_item_id)
+        .values(sold_out_until=NOW.replace(hour=23))
+    )
+    session.commit()
+    edit = RowEdit(row.id, quantity, swap_to=row.menu_item_id, options=choices)
+    req = _req(session, tenant_id, order_id, rows=(edit,))
+
+    plan = preview_correction(session, tenant_id, order_id, req, now=NOW)
+
+    assert (plan.rows[0].kind, plan.rows[0].sold_out) == (kind, notice)

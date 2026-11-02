@@ -394,6 +394,16 @@ def _plan(
     planned_rows = []
     for row, (number, name), edit in zip(rows, labels, edits, strict=True):
         quantity = _quantity(edit.quantity, allow_zero=True)
+        stored = PlannedLine(
+            "changed" if quantity != row.quantity else "kept",
+            number,
+            name,
+            quantity,
+            row.unit_price_cents,
+            row.options,
+            row.note,
+            row.menu_item_id,
+        )
         if quantity == 0:
             kind = "removed"
             line = PlannedLine(
@@ -421,24 +431,12 @@ def _plan(
                 # Only the choice was swapped: the base price stays frozen.
                 line.unit_price_cents = row.unit_price_cents
                 if _choice_keys(line.options) == _choice_keys(row.options):
-                    # Nothing was swapped: the stored row stands with its label
-                    # and option prices. Its choices stay offered for the next tap.
-                    line.kind = "changed" if quantity != row.quantity else "kept"
-                    line.number, line.name = number, name
-                    line.options = row.options
-                    line.missing = []
+                    # Nothing was swapped: the stored row stands, as without a
+                    # tap. Only its choices stay offered for the next one.
+                    stored.groups = line.groups
+                    line = stored
         else:
-            kind = "changed" if quantity != row.quantity else "kept"
-            line = PlannedLine(
-                kind,
-                number,
-                name,
-                quantity,
-                row.unit_price_cents,
-                row.options,
-                row.note,
-                row.menu_item_id,
-            )
+            line = stored
         line.order_item_id = row.id
         planned_rows.append(line)
 
