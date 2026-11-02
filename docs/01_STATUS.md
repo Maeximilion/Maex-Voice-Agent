@@ -1,13 +1,15 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.13
+> Status: 02.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.14
 
 ---
 
 ## Summary
 
-**The operations view has a new look (D26, 02.11.2026).** The approved mockup of 16.09.2026 is replaced for the look only: the header went from three rows (319 of 800 px) to two (about 155 px) and stays while each column scrolls by itself; the status dot, and every warning badge, carries a glyph as well as its text; each card has one main action with the rest beside it and „Storniert“ apart as a text button; an allergy note is a framed callout; the holiday suggestions are one folded strip under the reservations. Design tokens (colour, type, space, radius, the 60 px target) sit at the top of `api/gui/static/app.css`. Found and fixed on the way: control borders at 1.8:1 (now at least 3:1), muted text at 4.4:1 on the column grey, and the key-figures table at 13 to 14 px (now 18 px). Checked in a headless browser at 1280 x 800, light and dark, with before and after screenshots in `docs/design/2026-11-redesign/`, 193 GUI tests, ruff clean; every control measured at 60 px or more. Below 1180 px the bar wraps to more rows. Not done: the operating test of T-3.5 on a real tablet, which now has to run on this look (Maxi), and a look at the screens on the real tablet.
+**The wait time stays on its 15-minute grid (Maxi, 02.11.2026).** The lower limit of 10 minutes cut a tap short, and every tap after it stayed off the grid: 30, 15, 10, then 25 and 40. `change_wait` now goes to the next multiple of the step, with the limits as stops: 30, 15, 10, 15, 30, 45. A value between two stops, like the default of 20 for pickup, joins the grid on its next tap, so the button can move it by less than the 15 it names. Red test first, seven cases.
+
+**The operations view has a new look (D26, 02.11.2026).** The approved mockup of 16.09.2026 is replaced for the look only: the header went from three rows (319 of 800 px) to two (about 155 px) and stays while each column scrolls by itself; the status dot, and every warning badge, carries a glyph as well as its text; each card has one main action with the rest beside it and „Storniert“ apart as a text button; an allergy note is a framed callout; the holiday suggestions are one folded strip under the reservations. Design tokens (colour, type, space, radius, the 60 px target) sit at the top of `api/gui/static/app.css`. Found and fixed on the way: control borders at 1.8:1 (now at least 3:1), muted text at 4.4:1 on the column grey, and the key-figures table at 13 to 14 px (now 18 px). Checked in a headless browser at 1280 x 800, light and dark, with before and after screenshots in `docs/design/2026-11-redesign/`, the GUI test files green, ruff clean; every control of the board at rest measured at 60 px and 18 px or more. Below 1180 px the bar wraps to more rows. Not done: the operating test of T-3.5 on a real tablet, which now has to run on this look (Maxi), and a look at the screens on the real tablet.
 
 **Consent to a recording is built, and it stays off (T-11.3, 02.11.2026).** With `RECORDING_ENABLED`, false by default, the first sentence names the AI and asks with U1's words, in mode `shadow` before the team rings. Only an explicit "ja" records: `voice` writes a call the AI takes up to the handover, the dialplan a team leg in `shadow`, and "nein", silence or anything else leaves the call going on without one. "Aufnahme stoppen" stops and deletes; on a team leg, where no ear listens, the team presses `*7`. Recordings expire after 30 days by the daily job, and erasure and access reach them. A failing question costs a recording, never the call. Nothing ran on a real call: the team's written consents (L11) are not signed.
 
@@ -731,7 +733,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.14.13 · 02.11.2026:** Security audit fix: the data subject verification cannot be planted or merge two people
+- **v2.14.14 · 02.11.2026:** Security audit fix: the data subject verification cannot be planted or merge two people
+- **v2.14.13 · 02.11.2026:** Wait time stays on its 15-minute grid
 - **v2.14.12 · 02.11.2026:** Security audit fix: recognition only on the caller's own line
 - **v2.14.11 · 02.11.2026:** GUI: operations view redesigned for the tablet (D26), screenshots in docs/design/2026-11-redesign
 - **v2.14.10 · 02.11.2026:** Print bridge and kitchen token hardening from the security audit of 02.11.2026; audit row and open points recorded

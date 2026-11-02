@@ -368,13 +368,9 @@ def test_wartezeit_lieferung_plus_15_laesst_abholung_stehen(client, engine, tena
 def test_wartezeit_abholung_minus_15_und_knopf_aus_an_der_grenze(
     client, engine, tenant_id
 ):
-    vorher = config_von(engine, tenant_id)
-
     client.post("/gui/kopfzeile/wartezeit/abholung/-15", headers=HX)
-    nachher = config_von(engine, tenant_id)
-    assert nachher.pickup_wait_minutes == max(
-        vorher.pickup_wait_minutes - 15, switches.MIN_WAIT_MINUTES
-    )
+    # The default of 20 lies between two stops of the 15-minute grid.
+    assert config_von(engine, tenant_id).pickup_wait_minutes == 15
 
     for _ in range(5):
         body = client.post("/gui/kopfzeile/wartezeit/abholung/-15", headers=HX).text

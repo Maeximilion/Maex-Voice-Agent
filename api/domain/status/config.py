@@ -169,6 +169,28 @@ def set_delivery(
     return config
 
 
+def _next_wait(before: int, step: int) -> int:
+    """The next stop of the wait time in the direction of `step`.
+
+    The stops are the multiples of the step plus the two limits. A plain
+    `before + step` left the grid once the lower limit had cut a tap short:
+    30 -15 -15 -15 gave 10, and +15 from there gave 25 and 40 where the team
+    expects 30 and 45. Now a tap goes to the next multiple of the step, and a
+    value that already lies beyond a limit is never pulled back by a tap in
+    the other direction.
+    """
+    size = abs(step)
+    if step < 0:
+        floor = min(MIN_WAIT_MINUTES, before)
+        if before <= floor:
+            return before
+        return max(((before - 1) // size) * size, floor)
+    ceiling = max(MAX_WAIT_MINUTES, before)
+    if before >= ceiling:
+        return before
+    return min((before // size + 1) * size, ceiling)
+
+
 def change_wait(
     session: Session,
     tenant_id: uuid.UUID,
@@ -176,7 +198,7 @@ def change_wait(
     minutes: int,
     actor: str = ACTOR_TABLET,
 ) -> ServiceConfig:
-    """Ändert die Wartezeit eines Service um `minutes`, zwischen Unter- und Obergrenze.
+    """Ändert die Wartezeit eines Service um einen Schritt von `minutes`, zwischen Unter- und Obergrenze.
 
     Abholung und Lieferung getrennt (T-3.6, docs/06 §3): ist nur der Fahrer
     unterwegs, bleibt die Abholzeit, wie sie ist. An einer Grenze angekommen,
@@ -189,12 +211,7 @@ def change_wait(
         raise InvalidInput("Wartezeit ändert sich um 0 Minuten nicht")
     config = _locked(session, tenant_id)
     before = getattr(config, field)
-    # Die Grenze gilt nur in Tipp-Richtung: steht in der DB schon weniger als die
-    # Untergrenze, macht "-15" daraus nicht mehr (und "+15" über 180 nicht weniger).
-    if minutes < 0:
-        after = max(before + minutes, min(MIN_WAIT_MINUTES, before))
-    else:
-        after = min(before + minutes, max(MAX_WAIT_MINUTES, before))
+    after = _next_wait(before, minutes)
     if after != before:
         _audit(
             session,
