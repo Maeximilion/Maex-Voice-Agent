@@ -509,6 +509,12 @@ Open, next concrete step first:
 6. Delete the remote branch `docs/handover-2026-11-02` once this block is on `main`, and the memory `resume-after-restart-2026-11-02`. Deleting needs Maxi's word: the permission check refused it.
 7. Maxi: the real zone list as `imports/zones.csv`, the `<offen>` marks, the complaint rules, a delivery slip and a "STORNIERT" note on paper (the register PC needs the new bridge build, an older one prints KORREKTUR), whether the driver needs a phone number on the slip, steps 3 to 9 of `printbridge/README.md`, surcharges on the tablet or not.
 
+State at 20:00 (Ubuntu terminal; replaces items 1 to 4 above):
+- Merged: #479 T-10.11, #476 T-4.9, #481 the phone number in words, #482 T-11.3 (#405 closed). The migration chain on `main` is 019, 021, 020, 022: 020 follows 021, which merged first, and 022 sits on 020.
+- Fixed on the way, each with a red test first: Codex P1 on #476, where an import that changes a dish's sizes now withdraws its open price card; Codex P1 on #481, where a date partly in words takes no count as a phone number. On T-11.3, the three security review points and seven findings of an independent multi-lens review: a stop with the verb split ("Nehmen Sie das nicht auf"), an "Okay" to the stop notice that confirmed a read-back, missed refusals and withdrawals, a no with a request that dropped the request, the eval judge mixing the two consent questions, and the way to stop played interruptible.
+- The weekday agent limit (memory `weekday-agent-limits-planned`): the table in `CLAUDE.md` and `.claude/hooks/agent_limit.sh`, in the PR of this block.
+- Still open: items 5 to 7 above. Delete the memory `weekday-agent-limits-planned` once the agent limit PR is merged.
+
 Lessons:
 - A session the desktop app starts bypasses Headroom by design: check with `printenv ANTHROPIC_BASE_URL`; the Ubuntu terminal is routed.
 - Never `--delete-branch` on a PR with a PR on top: GitHub closed #469 and #470. Repair: push the old head back as the branch, reopen, PATCH the base, delete the branch.
