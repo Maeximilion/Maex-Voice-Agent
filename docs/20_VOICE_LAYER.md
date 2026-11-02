@@ -378,7 +378,7 @@ needs the last: it calls from its public address, also through its VPN (T-10.1 s
 whose calls come from other addresses than its SRV targets (T-10.12) needs them there too; the
 drill "stranger" shows whether a call from an address not on the list is refused.
 
-**The recording on the wire (T-11.3, 02.11.2026).** `python3 -m scripts.voice_drill` restarts `voice` with `RECORDING_ENABLED` for these points and sets it back. The drill's ear hears nothing but "Ja" in a caller's tone, one a second; its mouth takes no time. The whole run: 35 of 35 points.
+**The recording on the wire (T-11.3, 02.11.2026).** `python3 -m scripts.voice_drill` restarts `voice` with `RECORDING_ENABLED` for these points and sets it back. The drill's ear hears nothing but "Ja" in a caller's tone, one a second; its mouth takes no time. The whole run: 43 of 43 points.
 
 | Drill | Result on 02.11.2026 |
 |---|---|
