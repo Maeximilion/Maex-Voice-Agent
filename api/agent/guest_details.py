@@ -412,11 +412,12 @@ def _read_together(run: re.Match[str]) -> str:
 
 def _goes_on(group: str) -> bool:
     """Digits that begin like an area code and are no complete number yet. A
-    date does not: joined to what follows it would pass as a number."""
+    date does not: joined to what follows it would pass as a number. The date
+    is read without the marks of digits said in words (Codex PR #481, P1)."""
     return (
         group.startswith("0")
         and _AREA_CODE_DIGITS <= _digits(group) < _COMPLETE_NUMBER
-        and not _is_date(group)
+        and not _is_date(group.replace(_SAID, ""))
     )
 
 

@@ -346,6 +346,20 @@ def test_date_written_with_blanks_is_no_phone_number(sentence):
         assert number_known(written, None, said_numbers) is False
 
 
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Am 01 zehn 2026, vier bitte.",
+        "Am 01 zehn 26, vier bitte.",
+        "Am 01 elf 2026, zwei Personen.",
+    ],
+)
+def test_a_date_partly_in_words_takes_no_count_behind_it(sentence):
+    """Codex PR #481, P1: the marks of digits said in words made the date
+    check fail, so the date went on into the count and became +4911020264."""
+    assert numbers(sentence) == set()
+
+
 def test_trunk_zero_in_brackets_keeps_the_country_code():
     """Review of 31a3a81: read at the bracket as two, the tail of the Austrian
     number became a German one."""
