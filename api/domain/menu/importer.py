@@ -852,6 +852,11 @@ def _sync_options(
             report.options_changed += 1
     if differs:
         report.options_differ.append(item.number)
+        if not item.register_price_rejected:
+            # An open card was compared with the old sizes: its take would now
+            # make a price neither side has. A rejection stands, as in
+            # price_check.record (Codex PR #476).
+            item.register_price_cents = None
 
 
 def _sync_allergens(

@@ -450,6 +450,44 @@ def test_a_dry_run_of_the_import_leaves_the_difference_open(session, tenant_id):
     assert open_ones(session, tenant_id) == [("23", 690, 720)]
 
 
+@pytest.mark.parametrize("sizes", [DUCK_SIZE_DROPPED, DUCK_OPTION_MOVED])
+def test_an_import_that_changes_the_sizes_withdraws_the_card(
+    session, tenant_id, sizes
+):
+    """Codex PR #476: the card's base was compared with the old sizes, so its
+    take after the import would make a price neither side has."""
+    check(session, tenant_id, DUCK_1600)
+    dish = item(session, tenant_id, "47").id
+
+    run(session, tenant_id, files={**DUCK_1600, **sizes})
+
+    assert open_ones(session, tenant_id) == []
+    with pytest.raises(NotFound):
+        price_check.decide(session, tenant_id, dish, 1600, take=True)
+    session.rollback()
+    assert item(session, tenant_id, "47").price_cents == 1550
+
+
+def test_an_import_that_changes_the_sizes_keeps_a_rejection(session, tenant_id):
+    check(session, tenant_id, DUCK_1600)
+    price_check.decide(
+        session, tenant_id, item(session, tenant_id, "47").id, 1600, take=False
+    )
+
+    run(session, tenant_id, files={**DUCK_1600, **DUCK_SIZE_DROPPED})
+
+    duck = item(session, tenant_id, "47")
+    assert (duck.register_price_cents, duck.register_price_rejected) == (1600, True)
+
+
+def test_a_dry_run_that_changes_the_sizes_leaves_the_card(session, tenant_id):
+    check(session, tenant_id, DUCK_1600)
+
+    run(session, tenant_id, files={**DUCK_1600, **DUCK_SIZE_DROPPED}, dry_run=True)
+
+    assert open_ones(session, tenant_id) == [("47", 1550, 1600)]
+
+
 # --- the script --------------------------------------------------------------
 
 
