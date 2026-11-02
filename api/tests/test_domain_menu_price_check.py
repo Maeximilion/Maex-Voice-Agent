@@ -451,9 +451,7 @@ def test_a_dry_run_of_the_import_leaves_the_difference_open(session, tenant_id):
 
 
 @pytest.mark.parametrize("sizes", [DUCK_SIZE_DROPPED, DUCK_OPTION_MOVED])
-def test_an_import_that_changes_the_sizes_withdraws_the_card(
-    session, tenant_id, sizes
-):
+def test_an_import_that_changes_the_sizes_withdraws_the_card(session, tenant_id, sizes):
     """Codex PR #476: the card's base was compared with the old sizes, so its
     take after the import would make a price neither side has."""
     check(session, tenant_id, DUCK_1600)
