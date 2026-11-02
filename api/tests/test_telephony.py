@@ -38,6 +38,7 @@ from api.models import (
     Call,
     Callback,
     CallLimitWindow,
+    ComplaintRule,
     MenuItem,
     Reservation,
     ServiceConfig,
@@ -987,6 +988,71 @@ def test_the_consent_question_is_not_talked_over(session, tenant):
 
     assert ALLERGY_QUESTION in port.says(sid)
     assert ALLERGY_QUESTION not in port.interruptible(sid)
+
+
+def _a_rule(session, tenant) -> str:
+    """Invented for these tests, no rule of any restaurant. The offer it adds."""
+    offer = "Testangebot, stimmt das so für Sie?"
+    session.add(
+        ComplaintRule(
+            tenant_id=tenant.id,
+            name="Testregel",
+            phrases=["kalt"],
+            remedy_cents=345,
+            offer_say=offer,
+            granted_say="Testzusage.",
+            active=True,
+        )
+    )
+    session.commit()
+    return offer
+
+
+COLD_FOOD = {"role": "customer", "text": "Ich bin unzufrieden, das Essen war kalt."}
+
+
+def test_a_remedy_offer_is_not_talked_over_and_its_yes_ends_the_call(session, tenant):
+    """T-10.11: a yes books money, so it counts only for an offer heard to the
+    end, like a read-back."""
+    offer = _a_rule(session, tenant)
+    port = FakeTelephony()
+    case = {
+        "caller_id": "0721 5551234",
+        "transcript": [COLD_FOOD, {"role": "customer", "text": "Ja."}],
+    }
+    sid = port.play(case, handler_for(session, tenant, port))
+
+    assert offer in port.says(sid)
+    assert offer not in port.interruptible(sid)
+    assert "Testzusage." in port.says(sid)
+    assert not port.transfers(sid)
+    assert port.actions[-1].kind == "hangup"
+    assert the_call(session, sid).outcome == "callback"
+
+
+def test_a_guest_who_hangs_up_on_a_remedy_offer_stays_with_the_team(session, tenant):
+    """Rule 5: the complaint no longer goes to the team at once, so the end of
+    the line must not lose it. Nothing is booked."""
+    _a_rule(session, tenant)
+    port = FakeTelephony()
+    case = {"caller_id": "0721 5551234", "transcript": [COLD_FOOD]}
+    sid = port.play(case, handler_for(session, tenant, port))
+
+    call = the_call(session, sid)
+    assert call.outcome == "callback"
+    card = session.scalars(select(Callback).where(Callback.call_id == call.id)).one()
+    assert card.reason == "complaint"
+    assert "Essen war kalt" in card.summary
+
+
+def test_a_yes_to_are_you_still_there_is_no_yes_to_a_remedy_offer(session, tenant):
+    _a_rule(session, tenant)
+    port = FakeTelephony()
+    case = {"caller_id": "0721 5551234", "transcript": [COLD_FOOD, SILENCE, YES]}
+    sid = port.play(case, handler_for(session, tenant, port))
+
+    assert port.transfers(sid) == [TEAM_PHONE]
+    assert "Testzusage." not in port.says(sid)
 
 
 def test_what_is_said_before_a_transfer_is_not_talked_over(session, tenant):

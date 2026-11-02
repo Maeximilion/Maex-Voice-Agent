@@ -583,6 +583,8 @@ Die Rufnummer wird nach E.164 normalisiert. Eine geklammerte `(0)` hinter der La
 
 Ist niemand erreichbar → `available: false`, der Agent legt stattdessen einen Rückruf an. `available` is the opening hours, not a ping (Maxi, 20.10.2026): outside them the agent's handover rings nobody and the agent writes the callback (the outage paths of the phone line ring the team at any hour); inside them the call is handed to the team, and on the phone line the dial result decides: a leg nobody answers at `TEAM_PHONE` becomes a callback card written by the line's process (`callbacks.team_missed`, docs/20 §5, T-10.8). **Schleifenschutz:** Ziel ist immer die Durchwahl, nie die Hauptnummer, und `transfer_to_team` wird je Anruf höchstens einmal ausgeführt.
 
+With a rule of the catalogue that answers the guest's sentence, the conversation core does not carry out the model's `transfer_to_team` or `create_callback` with reason `complaint`: it offers the rule instead (D19, T-10.11, docs/05 §3), and the call stands in `calls.tool_calls` as refused (`conflict`). The HTTP tools are not touched: they know no rules.
+
 ---
 
 ## Weitere Endpunkte (nicht vom Agenten aufgerufen)
