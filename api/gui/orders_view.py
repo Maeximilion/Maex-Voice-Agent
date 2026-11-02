@@ -18,6 +18,7 @@ from api.core.time import business_day, to_local
 from api.domain.ordering.board import MARKABLE, BoardOrder
 from api.domain.ordering.correction import (
     MAX_QUANTITY,
+    NO_CHANGE,
     REASONS,
     AddEdit,
     Choice,
@@ -91,6 +92,7 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         "can_approve": order.status == "confirmed" and order.handover_state != "failed",
         # A cancelled card only waits for its note: "Nochmal senden" is all it has.
         "can_change": not cancelled,
+        "cancelled": cancelled,
         "version": order.version,
         "corrected": REASONS.get(order.corrected) if order.corrected else None,
         **_register(order, tz_name),
@@ -361,6 +363,13 @@ def edit_lines(plan: CorrectionPlan, state: EditState) -> dict:
         "total": euro(plan.total_cents),
         "before": euro(plan.before_total_cents),
         "blockers": plan.blockers,
+        # One line for the foot: a real error first, "nothing changed" is only a state.
+        "foot_blocker": next(
+            (b for b in plan.blockers if b != NO_CHANGE), plan.blockers[0]
+        )
+        if plan.blockers
+        else None,
+        "foot_is_error": any(b != NO_CHANGE for b in plan.blockers),
         "reasons": plan.reasons,
         "swapping": state.swapping,
         "state": state.dump(),
