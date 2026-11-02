@@ -185,7 +185,7 @@ class Report:
     items_deactivated: list[str] = field(default_factory=list)
     # (Nummer, alt, neu) in Cent
     price_changes: list[tuple[str, int, int]] = field(default_factory=list)
-    # (Nummer, Gruppe, Option, alt, neu) in Cent: the surcharge of an existing option.
+    # (number, group, option, old, new) in cents: an existing option's surcharge.
     option_price_changes: list[tuple[str, str, str, int, int]] = field(
         default_factory=list
     )

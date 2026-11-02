@@ -123,7 +123,6 @@ def decide(
     register_cents: int,
     *,
     take: bool,
-    actor: str = ACTOR_TABLET,
 ) -> None:
     """The answer to the price the person saw. One tap, no question back (docs/06
     §1 rule 6).
@@ -136,12 +135,16 @@ def decide(
             MenuItem.tenant_id == tenant_id,
             MenuItem.id == menu_item_id,
             MenuItem.active.is_(True),
-            MenuItem.register_price_cents == register_cents,
-            MenuItem.register_price_rejected.is_(False),
         )
         .with_for_update()
     ).first()
-    if item is None:
+    # Compared here, after the lock: a number from the address that does not
+    # fit the column is no price on a card, not a database error.
+    if (
+        item is None
+        or item.register_price_cents != register_cents
+        or item.register_price_rejected
+    ):
         raise NotFound("No open price difference")
     if take:
         action = ACTION_TAKEN
@@ -163,7 +166,7 @@ def decide(
     session.add(
         AuditLog(
             tenant_id=tenant_id,
-            actor=actor,
+            actor=ACTOR_TABLET,
             action=action,
             entity="menu_item",
             entity_id=item.id,
@@ -188,17 +191,20 @@ def _amounts(old: int, new: int) -> str:
 
 
 def report_text(
-    plan: Plan, report: Report, answered: set[tuple[str, int | None]], *, stored: bool
+    plan: Plan,
+    report: Report,
+    answered: set[tuple[str, int | None]],
+    *,
+    cards: int | None,
 ) -> str:
-    """The differences per dish in cents, and what could not be compared."""
+    """The differences per dish in cents, and what could not be compared.
+    `cards`: the open differences on the tablet, None in a dry run."""
     total = len(report.price_changes) + len(report.option_price_changes)
     lines = [
         f"Price check: {total} difference(s)." if total else "No price difference."
     ]
-    on_tablet = False
     for number, old, new in report.price_changes:
         gone = (canonical_card(number), new) in answered
-        on_tablet = on_tablet or not gone
         state = ", rejected on the tablet" if gone else ""
         name = plan.items[number].name
         lines.append(f"{number} {name}: {_amounts(old, new)}{state}")
@@ -221,8 +227,8 @@ def report_text(
             "In the database, not in the register copy: "
             + ", ".join(report.items_not_in_file)
         )
-    if not stored:
+    if cards is None:
         lines.append("Dry run, nothing stored.")
-    elif on_tablet:
-        lines.append("Open differences are on the tablet.")
+    elif cards:
+        lines.append(f"{cards} open on the tablet.")
     return "\n".join(lines)

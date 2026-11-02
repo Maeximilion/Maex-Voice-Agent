@@ -1,10 +1,12 @@
 """domain/menu/price_check and scripts/price_check: register against database (T-4.9)."""
 
+import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from api.core.errors import NotFound
@@ -19,6 +21,10 @@ from scripts.seed import seed
 NOW = datetime(2026, 9, 18, 10, 0, tzinfo=UTC)
 PRICE_720 = {MENU_FILE: files()[MENU_FILE].replace("6,90", "7,20")}
 PRICE_750 = {MENU_FILE: files()[MENU_FILE].replace("6,90", "7,50")}
+WAITING = text(
+    "SELECT count(*) FROM pg_stat_activity "
+    "WHERE datname = current_database() AND wait_event_type = 'Lock'"
+)
 
 
 @pytest.fixture
@@ -236,6 +242,41 @@ def test_a_second_tap_changes_nothing(session, tenant_id):
     assert len(entries(session, price_check.ACTION_TAKEN)) == 1
 
 
+def test_a_tap_that_waited_on_another_finds_nothing_open(engine, session, tenant_id):
+    """The check stands after the row lock: the second tablet reads the row the
+    first one left. The first holds the row by hand until the second waits, so
+    the order is certain; two free threads pass even without a lock."""
+    check(session, tenant_id, PRICE_720)
+    dish = item(session, tenant_id, "23").id
+    session.commit()
+
+    def second_tablet() -> None:
+        with Session(engine) as own:
+            price_check.decide(own, tenant_id, dish, 720, take=True)
+
+    def someone_waits() -> bool:
+        with engine.connect() as conn:
+            return bool(conn.scalar(WAITING))
+
+    with Session(engine) as first, ThreadPoolExecutor(max_workers=1) as pool:
+        row = first.scalar(
+            select(MenuItem).where(MenuItem.id == dish).with_for_update()
+        )
+        row.price_cents, row.register_price_cents = 720, None
+        first.flush()
+        tap = pool.submit(second_tablet)
+        deadline = time.monotonic() + 10
+        while not someone_waits():
+            assert time.monotonic() < deadline, "the second tap never reached the row"
+            time.sleep(0.01)
+        first.commit()
+        with pytest.raises(NotFound):
+            tap.result(timeout=10)
+
+    assert entries(session, price_check.ACTION_TAKEN) == []
+    assert item(session, tenant_id, "23").price_cents == 720
+
+
 def test_a_rejected_difference_cannot_be_taken_later(session, tenant_id):
     check(session, tenant_id, PRICE_720)
     dish = item(session, tenant_id, "23")
@@ -349,8 +390,25 @@ def test_script_reports_cents_per_dish_and_stores_the_difference(
     out = capsys.readouterr().out
     assert "1 Miso Suppe: 600 -> 650 cents (6,00 € -> 6,50 €)" in out
     assert "1 difference" in out
+    assert "1 open on the tablet." in out
     assert open_ones(session, tenant_id) == [("1", 600, 650)]
     assert item(session, tenant_id, "1").price_cents == 600
+
+
+def test_script_counts_what_really_is_on_the_tablet(
+    copy_folder, session, tenant_id, run_script, capsys
+):
+    """An inactive dish has no card, so the report must not claim one."""
+    soup = on_the_card(session, tenant_id, price_cents=600)
+    soup.active = False
+    session.commit()
+    _kasse(copy_folder, [SUPPE])
+
+    assert run_script(copy_folder) == 0
+
+    out = capsys.readouterr().out
+    assert "600 -> 650 cents" in out
+    assert "open on the tablet" not in out
 
 
 def test_script_dry_run_reports_and_stores_nothing(
@@ -404,7 +462,7 @@ def test_script_reports_a_surcharge_and_changes_no_option(
     out = capsys.readouterr().out
     assert "Surcharge 1 Miso Suppe, Größe/groß: 400 -> 450 cents" in out
     assert "--apply-price-changes" in out
-    assert "Open differences" not in out
+    assert "open on the tablet" not in out
     session.expire_all()
     groß = session.scalar(select(ItemOption).where(ItemOption.option_name == "groß"))
     assert groß.price_delta_cents == 400
@@ -423,7 +481,7 @@ def test_script_marks_a_rejected_difference(
 
     out = capsys.readouterr().out
     assert "600 -> 650 cents (6,00 € -> 6,50 €), rejected on the tablet" in out
-    assert "Open differences" not in out
+    assert "open on the tablet" not in out
 
 
 def test_script_names_register_errors(
@@ -483,6 +541,21 @@ def test_script_stops_on_a_register_number_taken_by_another_dish(
 
     assert "pos_code" in capsys.readouterr().err
     assert session.scalar(select(func.count()).select_from(MenuItem)) == 3
+    assert entries(session, price_check.ACTION_CHECKED) == []
+
+
+def test_script_stops_on_a_set_the_import_checks_refuse(
+    copy_folder, session, tenant_id, run_script, capsys
+):
+    """A NUL passes the converter, the database could not store it: the operator
+    gets the line of the file, and nothing is compared or stored."""
+    on_the_card(session, tenant_id, price_cents=600)
+    _kasse(copy_folder, [{**SUPPE, "BEZEICH": "Miso\x00Suppe"}])
+
+    assert run_script(copy_folder) == 1
+
+    assert "NUL" in capsys.readouterr().err
+    assert open_ones(session, tenant_id) == []
     assert entries(session, price_check.ACTION_CHECKED) == []
 
 

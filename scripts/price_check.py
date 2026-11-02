@@ -78,8 +78,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"Tenant not found: {args.tenant_name}", file=sys.stderr)
                 return 2
             report = apply(session, tenant.id, plan, dry_run=True)
+            cards = None
             if not args.dry_run:
                 price_check.record(session, tenant.id, report.price_changes)
+                cards = len(price_check.open_differences(session, tenant.id))
             answered = price_check.rejected(session, tenant.id)
         except ValueError as exc:
             # Stock does not fit the set (a register number on another dish).
@@ -92,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
-    print(price_check.report_text(plan, report, answered, stored=not args.dry_run))
+    print(price_check.report_text(plan, report, answered, cards=cards))
     return 0
 
 

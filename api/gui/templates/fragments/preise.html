@@ -8,7 +8,7 @@
 <h2>Preise <span class="count">{{ prices|length }}</span></h2>
 <ul class="cards">
   {% for p in prices %}
-  <li class="card" data-id="{{ p.id }}">
+  <li class="card">
     <div class="res-head">
       <b><span class="nr">{{ p.number }}</span> {{ p.name }}</b>
       <span class="badge danger">Kasse: {{ p.register }}</span>
