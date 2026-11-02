@@ -256,6 +256,23 @@ def test_object_records_the_number_and_prints_the_ledger(session, tenant_id, cap
     assert objections == [PHONE]
 
 
+def test_an_objection_on_two_numbers_needs_every_number_named(
+    session, tenant_id, capsys
+):
+    """Re-audit 02.11.2026, evening: day A on the guest's number and day B on
+    a namesake's must not write an objection for the namesake's number."""
+    _order(session, tenant_id)
+    _order(session, tenant_id, phone=OTHER_PHONE, ready_at=PAST + timedelta(days=1))
+    reference = _logged(session, tenant_id, kind="objection", received_at=PAST)
+    two_days = [*DETAILS, "--on", "2026-10-13"]
+    assert main(["object", reference, *two_days]) == 1
+    assert "--phone" in capsys.readouterr().err
+    assert session.scalars(select(RecognitionObjection.phone)).all() == []
+    assert main(["object", reference, *two_days, "--phone", PHONE]) == 0
+    session.expire_all()
+    assert session.scalars(select(RecognitionObjection.phone)).all() == [PHONE]
+
+
 def test_an_unknown_tenant_ends_with_exit_2(session, tenant_id, capsys):
     assert main(["open", "--tenant-name", "Niemand"]) == 2
     assert "tenant not found" in capsys.readouterr().err

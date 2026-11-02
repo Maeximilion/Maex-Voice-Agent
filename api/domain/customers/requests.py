@@ -456,7 +456,8 @@ def verify(
     claimed: Collection[uuid.UUID] = (),
 ) -> Person:
     """The person behind the details, or `NotFound`. A second number needs a
-    detail of its own: a number the guest only names opens nothing."""
+    detail of its own and the guest's word (`phones`): a number the guest only
+    names opens nothing."""
     name = _folded(details.name)
     address = (details.street, details.house_number, details.postal_code)
     if not name or not (details.days or all(address)):
@@ -474,6 +475,13 @@ def verify(
         raise NotFound("not verified: no row carries these details")
 
     phones = {row.phone for row in found}
+    # Two details on two numbers can be two namesakes as well (security re-audit
+    # 02.11.2026, evening): only numbers the guest names join.
+    if len(phones) > 1 and not said:
+        raise Ambiguous(
+            "not verified: the details open the name on several numbers; ask the "
+            "guest for every number they called from and pass each with --phone"
+        )
     linked = {row.id for row in found if isinstance(row, Customer)}
     linked |= {
         row.customer_id for row in found if isinstance(row, Order) and row.customer_id
