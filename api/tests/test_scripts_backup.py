@@ -670,10 +670,10 @@ def test_the_compose_network_always_takes_the_client_from_the_image():
     # A client on the host cannot resolve `db`, whatever is installed there.
     done = _lib(
         'PGHOST=db; pg_resolve_client; echo "$PG_CLIENT ${DOCKER_ARGS[*]}"',
-        BACKUP_DOCKER_NETWORK="maex_default",
+        BACKUP_DOCKER_NETWORK="maex_backend",
     )
 
-    assert done.stdout.strip() == "docker --network maex_default"
+    assert done.stdout.strip() == "docker --network maex_backend"
 
 
 @pytest.mark.parametrize(
