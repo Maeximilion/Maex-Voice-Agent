@@ -40,6 +40,8 @@ from api.domain.customers.personal import (
 )
 from api.domain.customers.phone import DEFAULT_COUNTRY_CODE
 from api.domain.menu.numberwords import fold
+from api.domain.ordering.handover import SENT
+from api.domain.ordering.labels import current_labels_many, labels_for_rows
 from api.models import (
     Address,
     AuditLog,
@@ -48,7 +50,6 @@ from api.models import (
     ConsentLog,
     Customer,
     DataSubjectRequest,
-    MenuItem,
     Order,
     OrderItem,
     OutboxEvent,
@@ -478,7 +479,9 @@ def _open_rows(
 ) -> list[OpenRow]:
     """Rows still being served. An event not sent yet counts: its payload is the
     slip or the team's notification, and it would go out with the guest's name
-    after the erasure (docs/09 §2)."""
+    after the erasure (docs/09 §2). So does an order the kitchen has no slip for,
+    whatever its time says: "Passt" and "Nochmal senden" build the slip from these
+    rows, its allergy note included."""
     waiting = {
         value
         for payload in session.scalars(
@@ -497,7 +500,10 @@ def _open_rows(
             or (
                 order.status in OPEN_ORDER_STATUSES
                 and order.deleted_at is None
-                and (order.ready_at or order.created_at) > now
+                and (
+                    order.handover_state != SENT
+                    or (order.ready_at or order.created_at) > now
+                )
             )
         ),
         *(
@@ -531,15 +537,30 @@ def access_copy(
     order_ids = [order.id for order in person.orders]
     table_ids = [table.id for table in person.reservations]
     callback_ids = [callback.id for callback in person.callbacks]
-    lines: dict[uuid.UUID, list[dict[str, Any]]] = defaultdict(list)
-    for line, dish in session.execute(
-        select(OrderItem, MenuItem.name)
-        .join(MenuItem, MenuItem.id == OrderItem.menu_item_id)
+    items: dict[uuid.UUID, list[OrderItem]] = defaultdict(list)
+    for line in session.scalars(
+        select(OrderItem)
         .where(OrderItem.tenant_id == tenant_id, OrderItem.order_id.in_(order_ids))
+        .order_by(OrderItem.order_id, OrderItem.created_at, OrderItem.id)
     ):
-        lines[line.order_id].append(
-            {"dish": dish, **_fields(line, "quantity", "options", "note")}
-        )
+        items[line.order_id].append(line)
+    # What was read back to the guest: a dish can be renamed since the call.
+    stored = current_labels_many(session, order_ids)
+    lines = {
+        order_id: [
+            {
+                "number": number,
+                "dish": dish,
+                **_fields(line, "quantity", "options", "note"),
+            }
+            for line, (number, dish) in zip(
+                rows,
+                labels_for_rows(session, order_id, rows, stored.get(order_id)),
+                strict=True,
+            )
+        ]
+        for order_id, rows in items.items()
+    }
     addresses = session.scalars(
         select(Address).where(
             Address.tenant_id == tenant_id,
@@ -590,7 +611,7 @@ def access_copy(
                         "ready_at",
                         "total_cents",
                     ),
-                    "items": lines[order.id],
+                    "items": lines.get(order.id, []),
                 }
                 for order in person.orders
             ],

@@ -31,6 +31,7 @@ from api.models import (
     ConsentLog,
     Customer,
     DataSubjectRequest,
+    MenuItem,
     Order,
     OrderItem,
     OutboxEvent,
@@ -582,6 +583,72 @@ def test_the_copy_keeps_number_only_rows_apart_for_the_team(session, tenant_id):
     assert ask["recognition_objections"] == [PHONE]
 
 
+def _labels(session, tenant_id, order, labels, action="order.draft_created"):
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            actor="agent",
+            action=action,
+            entity="order",
+            entity_id=order.id,
+            payload={"labels": labels},
+        )
+    )
+    session.flush()
+
+
+def _lines_of_the_copy(session, tenant_id):
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+    return access_copy(session, tenant_id, person)["copy"]["orders"][0]["items"]
+
+
+def test_the_copy_names_the_dish_as_it_was_ordered(session, tenant_id):
+    """Renamed since the call: the guest ordered the name that was read back."""
+    order = _order(session, tenant_id)
+    _labels(session, tenant_id, order, [["23", "Pho wie damals"]])
+    lines = _lines_of_the_copy(session, tenant_id)
+    assert [(line["number"], line["dish"]) for line in lines] == [
+        ("23", "Pho wie damals")
+    ]
+
+
+def test_the_copy_takes_the_labels_of_the_last_correction(session, tenant_id):
+    order = _order(session, tenant_id)
+    _labels(session, tenant_id, order, [["23", "Erst so"]])
+    _labels(session, tenant_id, order, [["24", "Dann so"]], action="order.corrected")
+    assert _lines_of_the_copy(session, tenant_id)[0]["dish"] == "Dann so"
+
+
+def test_each_label_stays_with_its_line(session, tenant_id):
+    order = _order(session, tenant_id, item_note="erste Position")
+    first = session.scalar(select(OrderItem).where(OrderItem.order_id == order.id))
+    session.add(
+        OrderItem(
+            tenant_id=tenant_id,
+            order_id=order.id,
+            menu_item_id=first.menu_item_id,
+            quantity=3,
+            unit_price_cents=1200,
+            note="zweite Position",
+            created_at=first.created_at + timedelta(microseconds=1),
+        )
+    )
+    _labels(session, tenant_id, order, [["23", "Erste"], ["24", "Zweite"]])
+    lines = _lines_of_the_copy(session, tenant_id)
+    assert [(line["dish"], line["note"]) for line in lines] == [
+        ("Erste", "erste Position"),
+        ("Zweite", "zweite Position"),
+    ]
+
+
+def test_the_copy_falls_back_to_the_menu_without_stored_labels(session, tenant_id):
+    order = _order(session, tenant_id)
+    line = session.scalar(select(OrderItem).where(OrderItem.order_id == order.id))
+    dish = session.get(MenuItem, line.menu_item_id)
+    lines = _lines_of_the_copy(session, tenant_id)
+    assert [(row["number"], row["dish"]) for row in lines] == [(dish.number, dish.name)]
+
+
 def test_reading_the_copy_writes_nothing(session, tenant_id):
     order = _order(session, tenant_id)
     person = verify(session, tenant_id, MUELLER, ZONE, NOW)
@@ -794,6 +861,56 @@ def test_an_order_still_in_the_kitchen_cannot_be_kept_and_waits(session, tenant_
         _erase(session, tenant_id)
     with pytest.raises(InvalidInput):
         _erase(session, tenant_id, keep=[cooking.id])
+
+
+@pytest.mark.parametrize(
+    ("status", "handover_state"),
+    [
+        # Waiting for "Passt": `approve_order` builds the slip from these rows.
+        ("confirmed", None),
+        # A red card: "Nochmal senden" builds the slip from these rows.
+        ("confirmed", "failed"),
+        ("approved", "failed"),
+        ("confirmed", "pending"),
+        ("approved", "pending"),
+    ],
+)
+def test_an_order_the_kitchen_has_no_slip_for_stops_the_erasure_past_its_time(
+    session, tenant_id, status, handover_state
+):
+    order = _order(
+        session,
+        tenant_id,
+        status=status,
+        item_note="WICHTIG: Keine Erdnüsse. Grund: Allergie",
+    )
+    order.handover_state = handover_state
+    session.flush()
+    with pytest.raises(Conflict) as refused:
+        _erase(session, tenant_id)
+    assert str(order.id) in refused.value.message
+    assert _fresh(session, order).customer_name == "Müller"
+    line = session.scalar(select(OrderItem).where(OrderItem.order_id == order.id))
+    assert line.note.startswith("WICHTIG")
+
+
+def test_an_order_past_its_time_with_its_slip_out_is_finished(session, tenant_id):
+    order = _order(session, tenant_id, status="approved")
+    order.handover_state = "sent"
+    session.flush()
+    _erase(session, tenant_id)
+    assert _fresh(session, order).customer_name == ""
+
+
+def test_a_waiting_order_goes_once_the_kitchen_has_its_slip(session, tenant_id):
+    order = _order(session, tenant_id, status="confirmed")
+    with pytest.raises(Conflict):
+        _erase(session, tenant_id)
+    order.status = "approved"
+    order.handover_state = "sent"
+    session.flush()
+    _erase(session, tenant_id)
+    assert _fresh(session, order).customer_name == ""
 
 
 def test_an_unsent_event_stops_the_erasure_until_it_went_out(session, tenant_id):
