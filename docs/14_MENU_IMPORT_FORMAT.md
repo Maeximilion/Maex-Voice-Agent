@@ -194,7 +194,7 @@ Gespeichert sind die Buchstaben groß (`AG`), die Maske der Kasse zeigt sie klei
 - **Surcharges stand in the report only:** one changed extra would be a card on every dish it fits. They are taken with the import above and `--apply-price-changes`, which takes every price of the file, a rejected one too.
 - **`audit_log`:** `menu.price_checked` for a new difference, with the prices in cents, then `menu_item.price_taken` or `menu_item.price_rejected`, and `menu.imported` for what the import takes.
 - **Exit code:** 0 compared, with or without differences; 1 the import's checks refused the set, or a database error, which is safe to repeat because no price changes; 2 nothing compared (folder or file not readable, no dish in the copy, tenant not found).
-- **After closing, by hand for now:** the script runs after each copy, like the copy itself after closing. While it compares it holds a lock on the menu rows, as the import and its dry run do, and a new order line needs its dish's row, so a live call's `draft_order` would wait until the comparison ends. Nothing brings the copy to the server yet, so the weekly check of docs/02 §6 is the aim, not a schedule.
+- **After closing, by hand for now:** the script runs after each copy, like the copy itself after closing. While it compares and stores it holds one lock on the menu rows, so no import can change a price between the two, and a new order line needs its dish's row, so a live call's `draft_order` would wait until the comparison ends. Nothing brings the copy to the server yet, so the weekly check of docs/02 §6 is the aim, not a schedule.
 
 ### `warengrp.dbf` → `category`
 

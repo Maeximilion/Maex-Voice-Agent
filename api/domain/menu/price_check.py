@@ -28,7 +28,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
-from api.domain.menu.importer import Plan, Report, format_eur
+from api.domain.menu.importer import Plan, Report, apply, format_eur
 from api.domain.menu.numberwords import canonical_card
 from api.domain.menu.sold_out import number_key
 from api.domain.status.config import ACTOR_TABLET
@@ -47,6 +47,21 @@ class Difference:
     name: str
     price_cents: int
     register_cents: int
+
+
+def compare_and_record(session: Session, tenant_id: uuid.UUID, plan: Plan) -> Report:
+    """Compare and keep the result under one lock on the menu rows.
+
+    The dry run ends with a rollback. In a savepoint that rollback leaves the
+    lock taken here, so no import, which locks these rows first, can change a
+    price between the comparison and what is recorded from it."""
+    session.scalars(
+        select(MenuItem.id).where(MenuItem.tenant_id == tenant_id).with_for_update()
+    ).all()
+    session.begin_nested()
+    report = apply(session, tenant_id, plan, dry_run=True)
+    record(session, tenant_id, report)
+    return report
 
 
 def record(session: Session, tenant_id: uuid.UUID, report: Report) -> None:

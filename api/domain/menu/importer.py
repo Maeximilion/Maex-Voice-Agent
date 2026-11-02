@@ -762,7 +762,9 @@ def apply(
         session.rollback()
         raise
     if dry_run:
-        session.rollback()
+        # Only a caller's savepoint, so the locks taken before it stay
+        # (price_check.compare_and_record); `session.rollback` would end them.
+        (session.get_nested_transaction() or session).rollback()
         return report
     # What the commit raises is about the commit alone (no constraint is
     # deferred to it), and there the server may have committed before its

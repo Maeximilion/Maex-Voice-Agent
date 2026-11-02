@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from api.db import get_db
 from api.domain.menu import price_check
-from api.domain.menu.importer import MENU_FILE, apply, parse
+from api.domain.menu.importer import MENU_FILE, parse
 from api.main import app
 from api.models import AuditLog, MenuItem
 from api.tests.test_domain_draft_order import KARTE, NOW, _tenant, item
@@ -61,8 +61,7 @@ def difference(db, tenant_id, register="7,20") -> uuid.UUID:
     """The register copy says another price for 23 Frühlingsrollen."""
     plan = parse({**KARTE, MENU_FILE: KARTE[MENU_FILE].replace("6,90", register)})
     assert plan.ok, plan.errors
-    report = apply(db, tenant_id, plan, dry_run=True, now=NOW)
-    price_check.record(db, tenant_id, report)
+    price_check.compare_and_record(db, tenant_id, plan)
     return item(db, tenant_id, "23")
 
 

@@ -77,10 +77,10 @@ def main(argv: list[str] | None = None) -> int:
             if tenant is None:
                 print(f"Tenant not found: {args.tenant_name}", file=sys.stderr)
                 return 2
-            report = apply(session, tenant.id, plan, dry_run=True)
-            cards = None
-            if not args.dry_run:
-                price_check.record(session, tenant.id, report)
+            if args.dry_run:
+                report, cards = apply(session, tenant.id, plan, dry_run=True), None
+            else:
+                report = price_check.compare_and_record(session, tenant.id, plan)
                 cards = len(price_check.open_differences(session, tenant.id))
             answered = price_check.rejected(session, tenant.id)
         except ValueError as exc:

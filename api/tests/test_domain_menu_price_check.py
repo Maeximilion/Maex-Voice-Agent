@@ -3,22 +3,21 @@
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine, func, select, text
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from api.core.errors import NotFound
 from api.domain.menu import price_check
-from api.domain.menu.importer import MENU_FILE, OPTIONS_FILE, apply, parse
+from api.domain.menu.importer import MENU_FILE, OPTIONS_FILE, parse
 from api.models import AuditLog, ItemOption, MenuItem
 from api.tests.test_domain_menu_importer_apply import SUPPE, _kasse, item, nur, run
 from api.tests.test_domain_menu_importer_parse import files
 from scripts import price_check as script
 from scripts.seed import seed
 
-NOW = datetime(2026, 9, 18, 10, 0, tzinfo=UTC)
 PRICE_720 = {MENU_FILE: files()[MENU_FILE].replace("6,90", "7,20")}
 PRICE_750 = {MENU_FILE: files()[MENU_FILE].replace("6,90", "7,50")}
 WAITING = text(
@@ -53,8 +52,7 @@ def check(session, tenant_id, over=None):
     """One run of the script without the files: compare, then keep what it found."""
     plan = parse(files(**(over or {})))
     assert plan.ok, plan.errors
-    report = apply(session, tenant_id, plan, dry_run=True, now=NOW)
-    price_check.record(session, tenant_id, report)
+    report = price_check.compare_and_record(session, tenant_id, plan)
     return report
 
 
@@ -118,8 +116,7 @@ def test_a_register_back_in_line_ends_the_difference(session, tenant_id):
 def check_a_copy_without_23(session, tenant_id):
     """A copy that does not name 23: gone from the register, or unreadable."""
     plan = parse(nur("number;name;category;price_eur\n47;Ente knusprig;Haupt;15,50\n"))
-    report = apply(session, tenant_id, plan, dry_run=True, now=NOW)
-    price_check.record(session, tenant_id, report)
+    report = price_check.compare_and_record(session, tenant_id, plan)
     assert "23" in report.items_not_in_file
 
 
@@ -153,6 +150,36 @@ DUCK_OPTION_MOVED = {OPTIONS_FILE: files()[OPTIONS_FILE].replace("2,50", "2,00")
 DUCK_SIZE_DROPPED = {
     OPTIONS_FILE: files()[OPTIONS_FILE].replace("47;Größe;klein;-1,00;nein;nein\n", "")
 }
+
+
+def test_an_import_cannot_slip_between_comparison_and_record(
+    engine, session, tenant_id, monkeypatch
+):
+    """Codex PR #476: when the comparison's locks ended before the record, an
+    import could change the base and surcharge the card was compared with."""
+    real_record = price_check.record
+    blocked = []
+
+    def an_import_tries_to_commit(*args) -> None:
+        with Session(engine) as other:
+            other.execute(text("SET lock_timeout = '300ms'"))
+            try:
+                other.execute(
+                    text("UPDATE menu_items SET price_cents = 999 WHERE number = '23'")
+                )
+                other.commit()
+            except OperationalError:
+                blocked.append(True)
+        real_record(*args)
+
+    monkeypatch.setattr(price_check, "record", an_import_tries_to_commit)
+    plan = parse(files(**PRICE_720))
+
+    price_check.compare_and_record(session, tenant_id, plan)
+
+    assert blocked == [True]
+    assert open_ones(session, tenant_id) == [("23", 690, 720)]
+    assert item(session, tenant_id, "23").price_cents == 690
 
 
 def test_a_price_whose_surcharge_moved_too_gets_no_card(session, tenant_id):
