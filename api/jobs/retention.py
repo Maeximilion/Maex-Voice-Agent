@@ -101,8 +101,11 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
         ),
         # For real: the addresses go with it, an order keeps only cleared
         # links (migration 018), and an objection hangs on the number. A row
-        # only a draft made, nobody ever said yes to it, goes with the guest
-        # details of that draft instead of after 24 months.
+        # only a draft made goes with the guest details of that draft instead
+        # of after 24 months: no order, and no contact since it was written.
+        # Both columns take `now()` of the same insert, and every confirmed
+        # contact moves `last_contact_at` (`domain/customers/contact.py`),
+        # also a pickup or a table, which count no order on the customer.
         "customers": lambda: _run(
             session,
             delete(Customer).where(
@@ -111,6 +114,7 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
                     < now - timedelta(days=settings.retention_customer_days),
                     and_(
                         Customer.order_count == 0,
+                        Customer.last_contact_at == Customer.created_at,
                         Customer.last_contact_at
                         < now - timedelta(days=settings.retention_guest_details_days),
                     ),

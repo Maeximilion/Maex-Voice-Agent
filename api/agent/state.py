@@ -22,7 +22,7 @@ from api.agent.guest_details import (
     numbers_said,
     words_said,
 )
-from api.agent.intent import heard
+from api.agent.intent import heard, names_the_way
 from api.core.errors import InvalidInput
 from api.domain.calls.consent import Answer
 from api.domain.customers.phone import normalize_phone
@@ -401,9 +401,12 @@ def note_intent(state: ConversationState, guest_text: str) -> None:
     if state.intent is not None:
         # Pickup or delivery is the one thing a later word changes, until a
         # draft says which it is: "dann lieber abholen", "bitte doch liefern".
+        # A bare order word is none: "ich möchte zweimal die 23 bestellen"
+        # after "etwas liefern lassen" leaves the delivery (Codex PR #472).
         if (
             state.intent in _ORDER_WISHES
             and wish in _ORDER_WISHES
+            and names_the_way(guest_text)
             and state.order_id is None
             and state.stage != "confirmed"
         ):

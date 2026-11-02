@@ -3,9 +3,10 @@
 
 `place` only reads and raises, so a refused delivery leaves no row behind;
 `keep` writes the customer and the address once the draft stands. A name that
-does not match means a new customer. A stored address counts only as the
-default of the customer `find_customer` recognizes on this very number, which
-holds an objection and a blocked customer as well, also in the middle of a call.
+does not match means a new customer, and with an objection on the number so
+does one that matches. A stored address counts only as the default of the
+customer `find_customer` recognizes on this very number, which holds an
+objection and a blocked customer as well, also in the middle of a call.
 """
 
 import uuid
@@ -15,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import SAY_ON_FAILURE, InvalidInput, ServiceUnavailable
-from api.domain.customers.lookup import find_customer
+from api.domain.customers.lookup import find_customer, objected
 from api.domain.delivery.zones import check_delivery, postal_digits
 from api.domain.menu.numberwords import fold
 from api.models import Address, Customer
@@ -102,14 +103,17 @@ def _customer(
 ) -> Customer:
     if where.customer_id:
         return session.get_one(Customer, where.customer_id)
-    same_number = session.scalars(
-        select(Customer)
-        .where(Customer.tenant_id == tenant_id, Customer.phone == phone)
-        .order_by(Customer.created_at)
-    ).all()
-    for row in same_number:
-        if fold(row.name) == fold(where.name):
-            return row
+    # An objection switches recognition off for the number (L12): the name
+    # does not lead to the old record either.
+    if not objected(session, tenant_id, phone):
+        same_number = session.scalars(
+            select(Customer)
+            .where(Customer.tenant_id == tenant_id, Customer.phone == phone)
+            .order_by(Customer.created_at)
+        ).all()
+        for row in same_number:
+            if fold(row.name) == fold(where.name):
+                return row
     customer = Customer(tenant_id=tenant_id, phone=phone, name=where.name)
     session.add(customer)
     session.flush()

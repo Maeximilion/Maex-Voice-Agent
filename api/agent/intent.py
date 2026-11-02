@@ -53,14 +53,22 @@ _HOME = re.compile(r"nach\s+hause")
 _NEGATION = re.compile(r"\b(?:nichts?|kein(?:e[mnrs]?)?|nein|ohne|(?:an)?statt)\b")
 # "bestellen" alone is no pickup, a guest also orders a table (Codex PR #130):
 # it counts only when nothing table-like is named.
-# ponytail: a bare order is heard as a pickup, the more common of the two; the
-# word for a delivery in a later sentence replaces it (`state.note_intent`).
+# ponytail: a bare order is heard as a pickup, the more common of the two; a
+# word for the way in a later sentence replaces it (`state.note_intent`).
 _ORDER = re.compile(r"bestell")
 # Anything that may be a table, compounds included: not sure enough to be
 # heard as one, but enough to make a pickup or an order word next to it say
 # nothing. It also holds "tisch" inside an adjective such as "asiatisch": that
 # wish is missed, which is the safe side.
 _TABLE_LIKE = re.compile(r"tisch|platz|pl(?:ä|ae)tz|reserv")
+
+
+def names_the_way(text: str) -> bool:
+    """Does the sentence say how the order comes, not only that the guest
+    orders? A bare order word is heard as a pickup, which fills an empty
+    `intent` and changes none (`state.note_intent`)."""
+    lowered = text.lower()
+    return any(word.search(lowered) for word in (_PICKUP, _DELIVERY, _HOME))
 
 
 def heard(text: str) -> HeardIntent | None:

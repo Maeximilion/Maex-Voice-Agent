@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import create_engine, delete, func, select, update
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api.core.errors import (
     SAY_ON_FAILURE,
     BelowMinimum,
@@ -39,6 +40,7 @@ from api.domain.ordering.labels import ACTION_CORRECTED
 from api.domain.ordering.validation import SAY_DELIVERY_CLOSED
 from api.domain.status import config as status_config
 from api.events.types import ORDER_CONFIRMED
+from api.jobs.retention import purge
 from api.models import (
     Address,
     AuditLog,
@@ -964,3 +966,148 @@ def test_contact_never_on_a_draft(session, tenant_id, call_id):
 
     session.refresh(known)
     assert known.last_contact_at == before
+
+
+def _object(session, tenant_id):
+    session.add(RecognitionObjection(tenant_id=tenant_id, phone=PHONE))
+    session.commit()
+
+
+def test_with_an_objection_a_name_links_to_no_old_row(session, tenant_id, call_id):
+    """L12: an objection switches recognition off for the number, so the same
+    name does not reach the old record either."""
+    known, _ = known_customer(session, tenant_id)
+    _object(session, tenant_id)
+
+    draft = draft_order(
+        session, delivery(session, tenant_id, call_id, name="Müller"), now=NOW
+    )
+
+    order = session.get(Order, draft.order_id)
+    assert order.customer_id != known.id
+    assert session.get(Customer, order.customer_id).name == "Müller"
+    assert session.scalar(select(func.count()).select_from(Customer)) == 2
+
+
+def test_with_an_objection_every_order_is_a_new_row(session, tenant_id, call_id):
+    _object(session, tenant_id)
+
+    first = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
+    second = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
+
+    assert (
+        session.get(Order, first.order_id).customer_id
+        != session.get(Order, second.order_id).customer_id
+    )
+
+
+def test_with_an_objection_a_confirmed_order_is_not_offered(
+    session, tenant_id, call_id
+):
+    _object(session, tenant_id)
+    draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
+
+    confirmed(session, tenant_id, call_id, draft.order_id)
+
+    assert find_customer(session, tenant_id, PHONE, "Braun").found is False
+
+
+def _customers(session) -> int:
+    return session.scalar(select(func.count()).select_from(Customer))
+
+
+def _abandoned_draft(session, tenant_id, call_id) -> datetime:
+    """A delivery draft nobody said yes to; when its customer row was written."""
+    draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
+    return session.scalar(select(Customer.created_at))
+
+
+def _past(period_days: int) -> timedelta:
+    return timedelta(days=period_days + 1)
+
+
+def test_a_draft_nobody_said_yes_to_goes_with_its_guest_details(
+    session, tenant_id, call_id
+):
+    written = _abandoned_draft(session, tenant_id, call_id)
+
+    purge(session, written + _past(settings.retention_guest_details_days))
+
+    assert _customers(session) == 0
+
+
+def _pickup(session, tenant_id, call_id):
+    return request(
+        session, tenant_id, call_id, customer={"name": "Braun", "phone": PHONE}
+    )
+
+
+def test_a_confirmed_pickup_after_a_draft_keeps_the_full_period(
+    session, tenant_id, call_id
+):
+    """Codex PR #472: a pickup counts no order on the customer, so `order_count`
+    alone would delete a guest 90 days after a confirmed contact."""
+    written = _abandoned_draft(session, tenant_id, call_id)
+    contact = written + timedelta(days=1)
+    order = draft_order(session, _pickup(session, tenant_id, call_id), now=contact)
+    confirmed(session, tenant_id, call_id, order.order_id, contact)
+
+    purge(session, contact + _past(settings.retention_guest_details_days))
+    assert _customers(session) == 1
+
+    purge(session, contact + _past(settings.retention_customer_days))
+    assert _customers(session) == 0
+
+
+def test_a_confirmed_table_after_a_draft_keeps_the_full_period(
+    session, tenant_id, call_id
+):
+    written = _abandoned_draft(session, tenant_id, call_id)
+    contact = written + timedelta(days=1)
+    table = Reservation(
+        tenant_id=tenant_id,
+        call_id=call_id,
+        status="draft",
+        guest_name="Braun",
+        phone=PHONE,
+        party_size=2,
+        reserved_for=contact + timedelta(days=1),
+        idempotency_key=uuid.uuid4().hex,
+    )
+    session.add(table)
+    session.commit()
+    confirm(
+        session,
+        ConfirmRequest(
+            call_id=call_id,
+            tenant_id=tenant_id,
+            entity="reservation",
+            entity_id=table.id,
+            idempotency_key=uuid.uuid4().hex,
+        ),
+        now=contact,
+    )
+
+    purge(session, contact + _past(settings.retention_guest_details_days))
+
+    assert _customers(session) == 1
+
+
+def test_a_callback_after_a_draft_keeps_the_full_period(session, tenant_id, call_id):
+    written = _abandoned_draft(session, tenant_id, call_id)
+    contact = written + timedelta(days=1)
+    create_callback(
+        session,
+        CreateCallbackRequest(
+            call_id=call_id,
+            tenant_id=tenant_id,
+            phone=PHONE,
+            reason="out_of_scope",
+            summary="Bitte zurückrufen.",
+        ),
+        now=contact,
+    )
+
+    purge(session, contact + _past(settings.retention_guest_details_days))
+
+    assert _customers(session) == 1

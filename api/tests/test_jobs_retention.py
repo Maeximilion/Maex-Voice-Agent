@@ -224,15 +224,23 @@ def test_a_customer_goes_with_the_addresses_after_24_months(session, tenant_id):
 def test_a_customer_only_a_draft_made_goes_with_the_guest_details(session, tenant_id):
     """T-6.5: the row of a delivery nobody said yes to does not stay 24 months."""
     period = settings.retention_guest_details_days * DAY
-    gone = _a_guest(session, tenant_id, NOW - period - DAY)
-    session.get(Customer, gone).order_count = 0
-    young = _a_guest(session, tenant_id, NOW - period + DAY)
-    session.get(Customer, young).order_count = 0
-    booked = _a_guest(session, tenant_id, NOW - period - DAY)
+
+    def only_a_draft(at):
+        customer = session.get(Customer, _a_guest(session, tenant_id, at))
+        customer.order_count, customer.created_at = 0, at
+        return customer.id
+
+    only_a_draft(NOW - period - DAY)
+    young = only_a_draft(NOW - period + DAY)
+    # No order on the customer, and a contact after the row was written: a
+    # confirmed pickup or table (Codex PR #472).
+    contacted = _a_guest(session, tenant_id, NOW - period - DAY)
+    customer = session.get(Customer, contacted)
+    customer.order_count, customer.created_at = 0, NOW - period - 2 * DAY
     session.commit()
 
     assert purge(session, NOW)["customers"] == 1
-    assert _customers(session) == {young, booked}
+    assert _customers(session) == {young, contacted}
 
 
 def test_a_deleted_customer_leaves_the_order_and_the_objection(session, tenant_id):

@@ -610,3 +610,40 @@ def test_a_new_order_after_out_of_zone_is_a_pickup(session, tenant_id, call_id):
 
     assert said.say[-1] == SAY_OUT_OF_ZONE
     assert state.order_id is None
+
+
+def test_a_bare_order_sentence_keeps_the_delivery(call_id, tenant_id):
+    """Codex PR #472: the model has only the state, so a delivery lost here is
+    lost. A bare order word says that the guest orders, not how it comes."""
+    state = _state(call_id, tenant_id)
+    note_intent(state, "Ich möchte etwas liefern lassen.")
+
+    note_intent(state, "Ich möchte zweimal die 23 bestellen.")
+
+    assert state.intent == "delivery"
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Dann möchte ich es doch abholen.",
+        "Ich möchte zweimal die 23 zum Abholen bestellen.",
+        "Ich bestelle das zum Mitnehmen.",
+    ],
+)
+def test_a_word_for_the_pickup_still_changes_a_delivery(call_id, tenant_id, sentence):
+    state = _state(call_id, tenant_id)
+    note_intent(state, "Ich möchte etwas liefern lassen.")
+
+    note_intent(state, sentence)
+
+    assert state.intent == "pickup"
+
+
+def test_an_order_for_home_changes_a_bare_order(call_id, tenant_id):
+    state = _state(call_id, tenant_id)
+    note_intent(state, "Ich möchte bestellen.")
+
+    note_intent(state, "Ich möchte das nach Hause bestellen.")
+
+    assert state.intent == "delivery"
