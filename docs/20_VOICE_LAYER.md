@@ -688,7 +688,7 @@ up -d`):
 | A second and a third caller | nothing; the AI takes one call at a time (`max_concurrent_calls` 1) | while one call talks to the AI, a second caller calls (the core hands it to the team), then a third (the router's limit of 2 calls per IP telephone): what each hears |
 | Loop test | `stop asterisk` | calls the number `TEAM_PHONE` names: a team telephone rings, nothing ends at the test number |
 
-**With two mobiles (Maxi, 02.11.2026).** No team telephone at hand and nobody watching it, so its ringing is assumed for now. Each row is still run: one mobile calls, and what counts is what the caller hears and the `to the team` and `team leg ...` lines of Asterisk with their times. The row "A live call handed to the team" shows only the leg, not the talk or the caller's number the team sees; the row with a third caller shows two callers, not the router's limit. The go of T-10.2 and those two points stay open until someone watches the team telephone.
+**With two mobiles (Maxi, 02.11.2026).** `TEAM_PHONE` is Maxi's mobile, so it is the team telephone of this run, and his wife's mobile calls the test number. Every row is measured by Maxi's clock as written. The row with a second caller: Maxi's mobile is the second caller, so the core's handover dials a telephone that is busy, and that is what the row shows. The third caller stays open: there is no third telephone.
 
 Not covered here: anything that needs the trunk (T-10.12). The tunnel and `ACCESS_ALSO` are looked
 up once, so a new public address of the router during the run shows as `asterisk` unhealthy (not
