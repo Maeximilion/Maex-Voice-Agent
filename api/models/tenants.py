@@ -57,6 +57,15 @@ class ServiceConfig(Timestamps, Base):
     __table_args__ = (
         _in("call_mode", CALL_MODES, "ck_service_config_call_mode"),
         CheckConstraint(
+            "(pickup_wait_today_minutes IS NULL) = (pickup_wait_today_until IS NULL)",
+            name="ck_service_config_pickup_wait_today",
+        ),
+        CheckConstraint(
+            "(delivery_wait_today_minutes IS NULL) = "
+            "(delivery_wait_today_until IS NULL)",
+            name="ck_service_config_delivery_wait_today",
+        ),
+        CheckConstraint(
             "reservation_lead_minutes >= 0",
             name="ck_service_config_reservation_lead_minutes",
         ),
@@ -108,11 +117,26 @@ class ServiceConfig(Timestamps, Base):
     delivery_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )
-    pickup_wait_minutes: Mapped[int] = mapped_column(
+    pickup_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
+    reservations_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
+    # Read through domain/status/waits.py: today's wait, where it holds, wins.
+    pickup_wait_standard_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="30"
     )
-    delivery_wait_minutes: Mapped[int] = mapped_column(
+    delivery_wait_standard_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="60"
+    )
+    pickup_wait_today_minutes: Mapped[int | None] = mapped_column(Integer)
+    pickup_wait_today_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    delivery_wait_today_minutes: Mapped[int | None] = mapped_column(Integer)
+    delivery_wait_today_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
     )
     team_phone: Mapped[str] = mapped_column(Text, nullable=False)
     max_call_seconds: Mapped[int] = mapped_column(
@@ -304,6 +328,7 @@ class Capacity(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
         # closes a window for reservations and is a setting (migration 006).
         CheckConstraint("slot_minutes > 0", name="ck_capacity_slot_minutes"),
         CheckConstraint("max_guests >= 0", name="ck_capacity_max_guests"),
+        CheckConstraint("notice_minutes >= 0", name="ck_capacity_notice_minutes"),
     )
 
     weekday: Mapped[int] = mapped_column(SmallInteger, nullable=False)
@@ -312,4 +337,9 @@ class Capacity(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     max_guests: Mapped[int] = mapped_column(Integer, nullable=False)
     slot_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="30"
+    )
+    # How long before its time a table of this window can be reserved (T-3.13).
+    # Not `reservation_lead_minutes`, the gap after opening.
+    notice_minutes: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
     )

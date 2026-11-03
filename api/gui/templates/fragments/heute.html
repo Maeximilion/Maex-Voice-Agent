@@ -1,7 +1,9 @@
 {# Spalte "Heute": bestaetigte Reservierungen des Betriebstags nach Uhrzeit
    (docs/06 §3). Wird als Ganzes ersetzt, deshalb ohne aeusseres Geruest. Die
    Ueberschrift gehoert dazu, damit die Zahl mitwandert. #}
-<h2>Heute{% if today %} <span class="count">{{ today|length }}</span>{% endif %}</h2>
+<h2>Heute{% if today %} <span class="count">{{ today|length }}</span>{% endif %}
+  <button type="button" class="h2-action" hx-get="/gui/vorlauf" hx-target="#vorlauf">Reservierungs-Vorlauf</button>
+</h2>
 {% if problem %}
 <p class="empty">{{ problem }}</p>
 {% elif not today %}

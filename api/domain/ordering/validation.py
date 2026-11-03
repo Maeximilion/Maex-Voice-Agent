@@ -36,6 +36,7 @@ from api.schemas.orders import OrderItemIn
 SAY_PICKUP_CLOSED = "Abholung ist gerade leider nicht möglich."
 SAY_DELIVERY_CLOSED = "Lieferung ist gerade leider nicht möglich."
 SAY_OFFER_PICKUP = "Möchten Sie abholen?"
+SAY_OFFER_DELIVERY = "Möchten Sie liefern lassen?"
 SAY_BELOW_MINIMUM = (
     "Bis zum Mindestbestellwert fehlen noch {missing}. "
     "Möchten Sie noch etwas dazunehmen?"
@@ -54,20 +55,44 @@ Offered = dict[str, dict[str, ItemOption]]
 
 
 def require_pickup_open(
-    session: Session, tenant_id: uuid.UUID, now: datetime, zone: ZoneInfo
+    session: Session, tenant: Tenant, config: ServiceConfig, now: datetime
 ) -> None:
-    if not service_open_at(session, tenant_id, now, zone, PICKUP):
-        raise Closed("Abholung gerade geschlossen", say=SAY_PICKUP_CLOSED)
+    """The hours of the pickup service and the team's switch. `config` has to be
+    fresh, as for `require_delivery_open`."""
+    zone = ZoneInfo(tenant.timezone)
+    if not (
+        config.pickup_enabled and service_open_at(session, tenant.id, now, zone, PICKUP)
+    ):
+        raise Closed(
+            "Abholung gerade geschlossen",
+            say=pickup_closed_say(session, tenant.id, config, now, zone),
+        )
+
+
+def pickup_closed_say(
+    session: Session,
+    tenant_id: uuid.UUID,
+    config: ServiceConfig,
+    now: datetime,
+    zone: ZoneInfo,
+) -> str:
+    """Delivery only where `require_delivery_open` would take it."""
+    if (
+        config.delivery_enabled
+        and config.call_mode != PAUSED
+        and service_open_at(session, tenant_id, now, zone, DELIVERY)
+    ):
+        return f"{SAY_PICKUP_CLOSED} {SAY_OFFER_DELIVERY}"
+    return SAY_PICKUP_CLOSED
 
 
 def require_delivery_open(
     session: Session, tenant: Tenant, config: ServiceConfig, now: datetime
 ) -> None:
-    """The mirror of `require_pickup_open`: the hours of the delivery service,
-    the team's switch, and the emergency stop, which a call already running
-    outlives (docs/02 §4). Every other mode is decided by `confirm`, which
-    holds such an order for "Passt". `config` has to be fresh: the session of
-    a call outlives a tap on the tablet."""
+    """The hours of the delivery service, the team's switch, and the emergency
+    stop, which a call already running outlives (docs/02 §4). Every other mode is
+    decided by `confirm`, which holds such an order for "Passt". `config` has to
+    be fresh: the session of a call outlives a tap on the tablet."""
     zone = ZoneInfo(tenant.timezone)
     if (
         not config.delivery_enabled
@@ -76,15 +101,20 @@ def require_delivery_open(
     ):
         raise Closed(
             "delivery closed right now",
-            say=delivery_closed_say(session, tenant.id, now, zone),
+            say=delivery_closed_say(session, tenant.id, config, now, zone),
         )
 
 
 def delivery_closed_say(
-    session: Session, tenant_id: uuid.UUID, now: datetime, zone: ZoneInfo
+    session: Session,
+    tenant_id: uuid.UUID,
+    config: ServiceConfig,
+    now: datetime,
+    zone: ZoneInfo,
 ) -> str:
-    """Pickup only where it is open: availability comes from the database."""
-    if service_open_at(session, tenant_id, now, zone, PICKUP):
+    """Pickup only where it is open and switched on: availability comes from the
+    database."""
+    if config.pickup_enabled and service_open_at(session, tenant_id, now, zone, PICKUP):
         return f"{SAY_DELIVERY_CLOSED} {SAY_OFFER_PICKUP}"
     return SAY_DELIVERY_CLOSED
 

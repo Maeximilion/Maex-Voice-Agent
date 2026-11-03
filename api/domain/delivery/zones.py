@@ -16,14 +16,15 @@ from api.core.errors import (
     OutOfZone,
     ServiceUnavailable,
 )
-from api.models import DeliveryZone
+from api.models import DeliveryZone, ServiceConfig
 from api.schemas.delivery import DeliveryCheck
 
 POSTAL_CODE = re.compile(r"[0-9]{5}")
 SAY_POSTAL_CODE_NOT_UNDERSTOOD = (
     "Die Postleitzahl habe ich nicht verstanden. Können Sie sie noch einmal sagen?"
 )
-SAY_OUT_OF_ZONE = "Dorthin liefern wir leider nicht. Möchten Sie stattdessen abholen?"
+SAY_OUT_OF_ZONE_NO_PICKUP = "Dorthin liefern wir leider nicht."
+SAY_OUT_OF_ZONE = f"{SAY_OUT_OF_ZONE_NO_PICKUP} Möchten Sie stattdessen abholen?"
 
 
 def postal_digits(postal_code: str) -> str:
@@ -49,7 +50,11 @@ def check_delivery(
         )
     ).all()
     if not zones:
-        raise OutOfZone(f"no zone for postal code {code}", say=SAY_OUT_OF_ZONE)
+        # No offer of a pickup the order path would refuse (T-3.10).
+        config = session.get(ServiceConfig, tenant_id, populate_existing=True)
+        offer = config is None or config.pickup_enabled
+        say = SAY_OUT_OF_ZONE if offer else SAY_OUT_OF_ZONE_NO_PICKUP
+        raise OutOfZone(f"no zone for postal code {code}", say=say)
     if len(zones) > 1:
         # The fee would be whichever row came first (hard rule 2).
         raise ServiceUnavailable(

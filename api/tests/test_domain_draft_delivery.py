@@ -27,7 +27,7 @@ from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
 from api.domain.customers import SAY_SAME_ADDRESS, find_customer
 from api.domain.delivery.address import SAY_WHICH_NAME
-from api.domain.delivery.zones import SAY_OUT_OF_ZONE
+from api.domain.delivery.zones import SAY_OUT_OF_ZONE, SAY_OUT_OF_ZONE_NO_PICKUP
 from api.domain.ordering import draft_order
 from api.domain.ordering.confirm import confirm_order
 from api.domain.ordering.correction import (
@@ -38,7 +38,7 @@ from api.domain.ordering.correction import (
 )
 from api.domain.ordering.draft import WARNING_READY_AFTER_CLOSE
 from api.domain.ordering.labels import ACTION_CORRECTED
-from api.domain.ordering.validation import SAY_DELIVERY_CLOSED
+from api.domain.ordering.validation import SAY_DELIVERY_CLOSED, SAY_PICKUP_CLOSED
 from api.domain.status import config as status_config
 from api.events.types import ORDER_CONFIRMED
 from api.jobs.retention import purge
@@ -229,7 +229,7 @@ def test_a_fee_in_the_request_counts_for_nothing(session, tenant_id, call_id):
 
 
 def test_the_time_is_the_longer_of_zone_and_current_wait(session, tenant_id, call_id):
-    session.execute(update(ServiceConfig).values(delivery_wait_minutes=80))
+    session.execute(update(ServiceConfig).values(delivery_wait_standard_minutes=80))
     session.commit()
 
     draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
@@ -238,8 +238,17 @@ def test_the_time_is_the_longer_of_zone_and_current_wait(session, tenant_id, cal
     assert "in etwa 80 Minuten" in draft.readback
 
 
+def test_todays_delivery_wait_is_read_with_the_zone_time(session, tenant_id, call_id):
+    """T-3.14: today's wait, not the standard, is what is held against the zone."""
+    status_config.set_wait(session, tenant_id, "delivery", 80, now=NOW)
+
+    draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
+
+    assert "in etwa 80 Minuten" in draft.readback
+
+
 def test_the_zone_time_counts_when_the_wait_is_shorter(session, tenant_id, call_id):
-    session.execute(update(ServiceConfig).values(delivery_wait_minutes=10))
+    session.execute(update(ServiceConfig).values(delivery_wait_standard_minutes=10))
     session.commit()
 
     draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
@@ -788,6 +797,110 @@ def test_the_switch_after_the_read_back_holds_at_the_yes(
     session.rollback()
     assert SAY_DELIVERY_CLOSED in err.value.say
     assert session.get(Order, draft.order_id).status == "draft"
+
+
+def test_a_pickup_is_refused_with_the_switch_off(session, tenant_id, call_id):
+    status_config.set_pickup(session, tenant_id, False)
+
+    with pytest.raises(Closed) as err:
+        draft_order(session, request(session, tenant_id, call_id), now=NOW)
+
+    assert err.value.say == f"{SAY_PICKUP_CLOSED} Möchten Sie liefern lassen?"
+
+
+def test_the_pickup_switch_holds_in_the_middle_of_a_call(
+    engine, session, tenant_id, call_id
+):
+    """The session of a call outlives a tap on another tablet."""
+    assert session.get(ServiceConfig, tenant_id).pickup_enabled is True
+    with Session(engine) as tablet:
+        status_config.set_pickup(tablet, tenant_id, False)
+
+    with pytest.raises(Closed):
+        draft_order(session, request(session, tenant_id, call_id), now=NOW)
+
+
+def test_the_pickup_switch_after_the_read_back_holds_at_the_yes(
+    engine, session, tenant_id, call_id
+):
+    draft = draft_order(session, request(session, tenant_id, call_id), now=NOW)
+    with Session(engine) as tablet:
+        status_config.set_pickup(tablet, tenant_id, False)
+
+    with pytest.raises(Conflict) as err:
+        confirmed(session, tenant_id, call_id, draft.order_id)
+
+    session.rollback()
+    assert SAY_PICKUP_CLOSED in err.value.say
+    assert session.get(Order, draft.order_id).status == "draft"
+
+
+def test_the_pickup_switch_leaves_a_delivery_alone(session, tenant_id, call_id):
+    status_config.set_pickup(session, tenant_id, False)
+
+    draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
+
+    assert confirmed(session, tenant_id, call_id, draft.order_id)
+
+
+def test_a_closed_delivery_offers_no_pickup_that_is_switched_off(
+    session, tenant_id, call_id
+):
+    """Availability from the database: a switched-off pickup is not on offer."""
+    status_config.set_pickup(session, tenant_id, False)
+    status_config.set_delivery(session, tenant_id, False)
+
+    with pytest.raises(Closed) as err:
+        draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
+
+    assert err.value.say == SAY_DELIVERY_CLOSED
+
+
+def test_a_closed_pickup_offers_no_delivery_that_is_switched_off(
+    session, tenant_id, call_id
+):
+    status_config.set_pickup(session, tenant_id, False)
+    status_config.set_delivery(session, tenant_id, False)
+
+    with pytest.raises(Closed) as err:
+        draft_order(session, request(session, tenant_id, call_id), now=NOW)
+
+    assert err.value.say == SAY_PICKUP_CLOSED
+
+
+def test_a_closed_pickup_offers_no_delivery_during_the_emergency_stop(
+    session, tenant_id, call_id
+):
+    """Codex #515: the offer would only meet the next refusal."""
+    status_config.set_pickup(session, tenant_id, False)
+    session.get(ServiceConfig, tenant_id).call_mode = "paused"
+    session.commit()
+
+    with pytest.raises(Closed) as err:
+        draft_order(session, request(session, tenant_id, call_id), now=NOW)
+
+    assert err.value.say == SAY_PICKUP_CLOSED
+
+
+def test_outside_the_zone_no_pickup_is_offered_with_its_switch_off(
+    engine, session, tenant_id, call_id
+):
+    """Codex #515: the guest would say yes and meet the next refusal."""
+    assert session.get(ServiceConfig, tenant_id).pickup_enabled is True
+    with Session(engine) as tablet:
+        status_config.set_pickup(tablet, tenant_id, False)
+
+    with pytest.raises(OutOfZone) as err:
+        draft_order(
+            session,
+            delivery(
+                session, tenant_id, call_id, address={**HOME, "postal_code": "54321"}
+            ),
+            now=NOW,
+        )
+
+    assert err.value.say == SAY_OUT_OF_ZONE_NO_PICKUP
+    assert "abholen" not in err.value.say
 
 
 def test_the_switch_leaves_a_pickup_alone(engine, session, tenant_id, call_id):

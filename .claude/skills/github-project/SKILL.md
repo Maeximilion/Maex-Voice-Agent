@@ -29,13 +29,13 @@ Status lives in the project's Status field and nowhere else - never additionally
 |---|---|
 | Issue opened | Todo |
 | Pull request opened | In review |
-| Pull request with `Closes #N` opened | Issue #N In progress |
+| Pull request with `Closes #N` opened | Open issue #N In progress; a closed issue remains Done |
 | Label `status: blocked` on an open item | Blocked |
 | Pull request merged | Done |
 | Issue closed | Done |
 | Item reopened | In Progress |
 
-`Done` comes from the merge. Never set it by hand, never before the merge.
+`Done` comes from a PR merge or issue closure. Never set it by hand or before completion.
 
 Exception in the label set: `status: blocked` mirrors the blocked state that `docs/07_WORKPACKAGES.md` tracks, because that file is the source of truth. `status: in-progress` and `status: needs-review` are abolished.
 
@@ -45,9 +45,15 @@ Issues: assignee `@me`, exactly one type label (`feature`, `chore`, `docs`, `tes
 
 Pull requests: always `gh pr create --assignee @me --label feature`, where `feature` is replaced by the type label matching the Conventional Commit prefix of the title (`feat` -> `feature`, `fix` -> `bug`, `docs`, `chore`, `refactor`, `test`). The workflow `pr-metadata` fills in what is still missing when the pull request opens, and the daily run catches the rest, but a pull request should be complete from the start.
 
-## Maintenance runs on events and daily, never from a session
+## Maintenance runs on events, hourly and daily, never from a session
 
-`.github/workflows/project-sync.yml` runs `scripts/project_report.py --fix` on every pull request and issue event, `.github/workflows/project-maintenance.yml` once a day. Besides status it fills start date, target date, iteration and quarter from facts and appends iterations before the last one ends. The daily run It sets items that are finished (issue `CLOSED`, PR `MERGED` - a PR closed without merge is not finished) but not on `Done` to `Done` - the gap the built-in workflows leave, since they never act retroactively - and reports everything else in the job summary. Archiving never runs automatically; finished work stays visible in the roadmap. What it cannot decide lands in one issue labelled `projektpflege` (`scripts/decision_issue.py`, written with the built-in `GITHUB_TOKEN` so the mention actually notifies). Mention only on new points; the issue closes itself when nothing is left. Read that issue at the start of `/project` - it is the to-do list.
+`.github/workflows/project-sync.yml` runs `scripts/project_report.py --fix` on pull request and issue events. At minute 17 of every hour it also runs with `--fix --status-only`, restoring closed issues and merged PRs to `Done` if a later Development link moved them back to `In progress`. Scheduled runs can be delayed; this is reconciliation, not a synchronous lock.
+
+`.github/workflows/project-maintenance.yml` runs daily with `scripts/project_report.py --fix --history`: all issues, including closed ones, and open or merged PRs. It checks direct project memberships before adding missing items and preserves archived memberships. A PR closed without merge is not finished. Missing start date, target date, iteration and quarter come from facts; manual values stay, conflicts are reported, and iterations are extended before they run out. Archiving never runs automatically; finished work stays visible in the roadmap.
+
+The daily run also uses `scripts/pr_metadata.py` for missing assignees, types and milestones, and `python -m scripts.project_relationships --fix` for parents and prerequisites from `docs/07_WORKPACKAGES.md`. Relationships are only added, never removed or replaced; ambiguous mappings, conflicting parents and cycles are reported. Both write steps run only on `main`.
+
+What the run cannot decide lands in one issue labelled `projektpflege` (`scripts/decision_issue.py`, written with the built-in `GITHUB_TOKEN` so the mention actually notifies). Mention only on new points; the issue closes itself when nothing is left. Read that issue at the start of `/project` - it is the to-do list.
 
 Needs `PROJECT_TOKEN` as a secret and `PROJECT_NUMBER` (= 2) as a repo variable, both set up 2026-09-24 - the `GITHUB_TOKEN` cannot read account-owned projects.
 

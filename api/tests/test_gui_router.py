@@ -18,6 +18,7 @@ from api.core.time import DAY_STARTS_AT, business_day
 from api.db import get_db
 from api.domain.status import bridge
 from api.domain.status import config as switches
+from api.domain.status.waits import current_wait
 from api.gui.router import _page_response
 from api.main import app
 from api.models import Call, CallModeWindow, OpeningHours, Reservation, ServiceConfig
@@ -226,13 +227,17 @@ def config_von(engine, tenant_id) -> ServiceConfig:
         return config
 
 
+def wait_of(config: ServiceConfig, service: str) -> int:
+    return current_wait(config, service, api_time.utcnow())
+
+
 def test_kopfzeile_zeigt_die_knoepfe(client, tenant_id):
     body = client.get("/gui/").text
 
     assert 'id="kopfzeile"' in body
     for knopf in (
         "KI pausieren",
-        "Lieferung aus",
+        "Lieferung an",
         "Wartezeit Abholung 15 Minuten weniger",
         "Wartezeit Abholung 15 Minuten mehr",
         "Wartezeit Lieferung 15 Minuten weniger",
@@ -360,9 +365,9 @@ def test_wartezeit_lieferung_plus_15_laesst_abholung_stehen(client, engine, tena
     body = client.post("/gui/kopfzeile/wartezeit/lieferung/15", headers=HX).text
 
     nachher = config_von(engine, tenant_id)
-    assert nachher.delivery_wait_minutes == vorher.delivery_wait_minutes + 15
-    assert nachher.pickup_wait_minutes == vorher.pickup_wait_minutes
-    assert f"Wartezeit Lieferung {nachher.delivery_wait_minutes} Min" in body
+    assert wait_of(nachher, "delivery") == wait_of(vorher, "delivery") + 15
+    assert wait_of(nachher, "pickup") == wait_of(vorher, "pickup")
+    assert f"Wartezeit Lieferung {wait_of(nachher, 'delivery')} Min" in body
 
 
 TYPED = {**HX, "Content-Type": "application/x-www-form-urlencoded"}
@@ -375,12 +380,12 @@ def test_a_typed_wait_comes_back_in_the_header(client, engine, tenant_id):
 
     assert body.status_code == 200
     assert "Wartezeit Abholung 17 Min" in body.text
-    assert config_von(engine, tenant_id).pickup_wait_minutes == 17
+    assert wait_of(config_von(engine, tenant_id), "pickup") == 17
 
 
 @pytest.mark.parametrize("value", ["", "abc", "9", "181", "-5", "15.5", "9" * 40])
 def test_a_typed_wait_that_is_no_wait_gets_a_sentence(client, engine, tenant_id, value):
-    before = config_von(engine, tenant_id).pickup_wait_minutes
+    before = wait_of(config_von(engine, tenant_id), "pickup")
 
     body = client.post(
         "/gui/kopfzeile/wartezeit/abholung", content=f"minuten={value}", headers=TYPED
@@ -388,7 +393,192 @@ def test_a_typed_wait_that_is_no_wait_gets_a_sentence(client, engine, tenant_id,
 
     assert body.status_code == 409
     assert "10 bis 180 Minuten" in body.text
-    assert config_von(engine, tenant_id).pickup_wait_minutes == before
+    assert wait_of(config_von(engine, tenant_id), "pickup") == before
+
+
+def test_a_wait_that_differs_names_the_standard(client, engine, tenant_id):
+    standard = config_von(engine, tenant_id).pickup_wait_standard_minutes
+
+    text = client.post(
+        "/gui/kopfzeile/wartezeit/abholung", content="minuten=17", headers=TYPED
+    ).text
+
+    assert f'<span class="step-std">Standard {standard} Min</span>' in text
+
+
+def test_a_wait_on_its_standard_names_nothing(client, tenant_id):
+    assert "step-std" not in client.get("/gui").text
+
+
+def test_the_standard_is_set_from_the_header(client, engine, tenant_id):
+    body = client.post(
+        "/gui/kopfzeile/standardzeit/abholung", content="minuten=15", headers=TYPED
+    )
+
+    assert body.status_code == 200
+    assert "Wartezeit Abholung 15 Min" in body.text
+    assert config_von(engine, tenant_id).pickup_wait_standard_minutes == 15
+
+
+@pytest.mark.parametrize("value", ["", "abc", "9", "181"])
+def test_a_standard_that_is_no_wait_gets_a_sentence(client, engine, tenant_id, value):
+    before = config_von(engine, tenant_id).pickup_wait_standard_minutes
+
+    body = client.post(
+        "/gui/kopfzeile/standardzeit/abholung",
+        content=f"minuten={value}",
+        headers=TYPED,
+    )
+
+    assert body.status_code == 409
+    assert "10 bis 180 Minuten" in body.text
+    assert config_von(engine, tenant_id).pickup_wait_standard_minutes == before
+
+
+def test_one_tap_goes_back_to_the_standard(client, engine, tenant_id):
+    client.post(
+        "/gui/kopfzeile/wartezeit/lieferung", content="minuten=75", headers=TYPED
+    )
+
+    body = client.post("/gui/kopfzeile/standardzeit/lieferung/zurueck", headers=HX)
+
+    config = config_von(engine, tenant_id)
+    assert wait_of(config, "delivery") == config.delivery_wait_standard_minutes
+    assert "step-std" not in body.text
+
+
+@pytest.mark.parametrize(
+    "path", ["standardzeit/reservierung", "standardzeit/x/zurueck"]
+)
+def test_the_standard_needs_a_known_service(client, tenant_id, path):
+    body = client.post(f"/gui/kopfzeile/{path}", content="minuten=30", headers=TYPED)
+
+    assert body.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "path", ["standardzeit/abholung", "standardzeit/abholung/zurueck"]
+)
+def test_the_standard_needs_the_csrf_header(client, engine, tenant_id, path):
+    before = config_von(engine, tenant_id).pickup_wait_standard_minutes
+
+    body = client.post(
+        f"/gui/kopfzeile/{path}", content="minuten=15", headers={"HX-Request": "true"}
+    )
+
+    assert body.status_code == 403
+    assert config_von(engine, tenant_id).pickup_wait_standard_minutes == before
+
+
+def test_the_notice_sheet_lists_the_week_with_closed_days(client, tenant_id):
+    """T-3.13. Monday has no seats in the seed, so it has no field."""
+    text = client.get("/gui/vorlauf").text
+
+    assert "Montag" in text and "geschlossen" in text
+    assert 'name="tag-0"' not in text
+    assert 'name="tag-1"' in text
+    assert 'name="tag-6"' in text
+
+
+def test_the_notice_is_saved_from_the_sheet(client, tenant_id):
+    body = client.post("/gui/vorlauf", content="tag-1=60&tag-6=30", headers=TYPED)
+
+    assert body.status_code == 200
+    assert "Gespeichert." in body.text
+    assert 'value="60"' in body.text
+    assert 'value="30"' in body.text
+
+
+@pytest.mark.parametrize("value", ["", "abc", "1441", "-5", "15.5"])
+def test_a_notice_that_is_no_notice_gets_a_sentence(client, tenant_id, value):
+    body = client.post("/gui/vorlauf", content=f"tag-1={value}&tag-6=30", headers=TYPED)
+
+    assert body.status_code == 409
+    assert "0 bis 1440 Minuten" in body.text
+    assert 'value="30"' not in body.text
+
+
+def test_a_closed_day_cannot_be_given_a_notice(client, tenant_id):
+    body = client.post("/gui/vorlauf", content="tag-0=30", headers=TYPED)
+
+    assert body.status_code == 409
+
+
+def test_an_unknown_field_of_the_notice_form_is_ignored(client, tenant_id):
+    body = client.post("/gui/vorlauf", content="tag-1=30&tag-9=5&x=1", headers=TYPED)
+
+    assert body.status_code == 200
+
+
+def test_the_notice_needs_the_csrf_header(client, tenant_id):
+    body = client.post(
+        "/gui/vorlauf",
+        content="tag-1=30",
+        headers={"HX-Request": "true"},
+    )
+
+    assert body.status_code == 403
+
+
+def test_the_column_heute_opens_the_notice(client, tenant_id):
+    assert 'hx-get="/gui/vorlauf"' in client.get("/gui").text
+
+
+@pytest.mark.parametrize(
+    "path, word, field",
+    [
+        ("abholung", "Abholung", "pickup_enabled"),
+        ("reservierung", "Reservierung", "reservations_enabled"),
+    ],
+)
+def test_a_service_goes_off_and_on_from_the_header(
+    client, engine, tenant_id, path, word, field
+):
+    body = client.post(f"/gui/kopfzeile/{path}/aus", headers=HX)
+
+    assert body.status_code == 200
+    assert f"{word} aus" in body.text
+    assert f'hx-post="/gui/kopfzeile/{path}/an"' in body.text
+    assert getattr(config_von(engine, tenant_id), field) is False
+
+    body = client.post(f"/gui/kopfzeile/{path}/an", headers=HX)
+
+    assert f"{word} an" in body.text
+    assert getattr(config_von(engine, tenant_id), field) is True
+
+
+def test_with_all_three_off_the_status_gives_up_its_tick(client, engine, tenant_id):
+    with Session(engine) as s:
+        config = s.get_one(ServiceConfig, tenant_id)
+        config.call_mode = "primary"
+        s.commit()
+    assert "tone-ok" in client.get("/gui").text
+
+    for path in ("abholung", "lieferung", "reservierung"):
+        client.post(f"/gui/kopfzeile/{path}/aus", headers=HX)
+
+    text = client.get("/gui").text
+    assert "mode status tone-warn" in text
+    assert "KI nimmt an" in text
+
+
+def test_the_header_shows_all_three_services(client, tenant_id):
+    text = client.get("/gui").text
+
+    for word in ("Abholung an", "Lieferung an", "Reservierung an"):
+        assert word in text
+
+
+@pytest.mark.parametrize("path", ["abholung", "reservierung"])
+def test_a_service_switch_knows_only_on_and_off(client, tenant_id, path):
+    assert client.post(f"/gui/kopfzeile/{path}/x", headers=HX).status_code == 404
+
+
+@pytest.mark.parametrize("path", ["abholung", "reservierung"])
+def test_a_service_switch_needs_the_csrf_header(client, engine, tenant_id, path):
+    body = client.post(f"/gui/kopfzeile/{path}/aus", headers={"HX-Request": "true"})
+
+    assert body.status_code == 403
 
 
 def test_a_typed_wait_needs_a_known_service(client, tenant_id):
@@ -400,7 +590,7 @@ def test_a_typed_wait_needs_a_known_service(client, tenant_id):
 
 
 def test_a_typed_wait_needs_the_csrf_header(client, engine, tenant_id):
-    before = config_von(engine, tenant_id).pickup_wait_minutes
+    before = wait_of(config_von(engine, tenant_id), "pickup")
 
     body = client.post(
         "/gui/kopfzeile/wartezeit/abholung",
@@ -409,35 +599,60 @@ def test_a_typed_wait_needs_the_csrf_header(client, engine, tenant_id):
     )
 
     assert body.status_code == 403
-    assert config_von(engine, tenant_id).pickup_wait_minutes == before
+    assert wait_of(config_von(engine, tenant_id), "pickup") == before
 
 
-def test_the_header_offers_the_typed_wait_for_both_services(client, tenant_id):
+def test_the_value_in_the_header_opens_the_sheet_of_its_wait(client, tenant_id):
     text = client.get("/gui").text
 
+    assert 'hx-get="/gui/wartezeit/abholung"' in text
+    assert 'hx-get="/gui/wartezeit/lieferung"' in text
+
+
+def test_the_sheet_of_a_wait_holds_today_and_the_standard(client, engine, tenant_id):
+    config = config_von(engine, tenant_id)
+
+    text = client.get("/gui/wartezeit/abholung").text
+
     assert 'hx-post="/gui/kopfzeile/wartezeit/abholung"' in text
-    assert 'hx-post="/gui/kopfzeile/wartezeit/lieferung"' in text
-    assert 'name="minuten"' in text
+    assert 'hx-post="/gui/kopfzeile/standardzeit/abholung"' in text
     assert 'inputmode="numeric"' in text
+    assert f'value="{config.pickup_wait_standard_minutes}"' in text
+    assert "bis Betriebsschluss" in text
+    assert "für alle Tage" in text
+    assert "Zurück auf Standard" not in text
 
 
-def test_the_stream_does_not_redraw_the_header_while_somebody_types():
-    """No JS test run in the project, so the contract as a text check."""
+def test_the_sheet_of_a_wait_that_differs_offers_the_way_back(client, tenant_id):
+    client.post(
+        "/gui/kopfzeile/wartezeit/abholung", content="minuten=17", headers=TYPED
+    )
+
+    text = client.get("/gui/wartezeit/abholung").text
+
+    assert 'value="17"' in text
+    assert "Zurück auf Standard" in text
+
+
+def test_the_sheet_of_a_wait_needs_a_known_service(client, tenant_id):
+    assert client.get("/gui/wartezeit/reservierung").status_code == 404
+
+
+def test_nothing_holds_the_header_back_any_more():
+    """The wait sheet lies outside the header, so the stream redraws it always:
+    rule 7 of docs/06 §1, "Ist die KI an?", found by the UI review of 02.11.2026."""
     js = (Path(__file__).resolve().parents[1] / "gui" / "static" / "app.js").read_text(
         encoding="utf-8"
     )
 
-    assert "#kopfzeile details[open]" in js
-    # The fetch before the redraw, and the answer of one already on its way.
-    assert js.count("#kopfzeile details[open]") == 2
-    assert 'e.detail.requestConfig.verb === "get"' in js
+    assert "details[open]" not in js
 
 
 def test_wartezeit_abholung_minus_15_und_knopf_aus_an_der_grenze(
     client, engine, tenant_id
 ):
     client.post("/gui/kopfzeile/wartezeit/abholung/-15", headers=HX)
-    assert config_von(engine, tenant_id).pickup_wait_minutes == 15
+    assert wait_of(config_von(engine, tenant_id), "pickup") == 15
 
     for _ in range(5):
         body = client.post("/gui/kopfzeile/wartezeit/abholung/-15", headers=HX).text
@@ -462,7 +677,7 @@ def test_unbekannter_knopf_aendert_nichts(client, engine, tenant_id, pfad):
     assert client.post(pfad, headers=HX).status_code == 404
 
     nachher = config_von(engine, tenant_id)
-    assert nachher.pickup_wait_minutes == vorher.pickup_wait_minutes
+    assert wait_of(nachher, "pickup") == wait_of(vorher, "pickup")
     assert nachher.delivery_enabled == vorher.delivery_enabled
 
 

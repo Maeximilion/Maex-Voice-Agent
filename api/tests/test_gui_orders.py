@@ -495,10 +495,10 @@ def test_mark_with_the_card_from_before_a_correction_says_so(client, db, tenant_
 
 
 def _cancel_button(html: str, order_id) -> tuple[str, str]:
-    """The opening tag of the card's button "Storniert" and the URL it posts to."""
+    """The opening tag of the card's button "Bestellung stornieren" and the URL it posts to."""
     match = re.search(
         rf'<button[^>]*hx-post="(/gui/bestellungen/{order_id}/storniert/[0-9a-f]{{32}})"'
-        r"[^>]*>Storniert</button>",
+        r"[^>]*>Bestellung stornieren</button>",
         html,
     )
     assert match, html
@@ -516,6 +516,12 @@ def test_storniert_asks_first_and_the_card_leaves(client, db, tenant_id):
     response = client.post(url, headers=HX)
     assert response.status_code == 200
     assert f'data-id="{order_id}"' not in response.text
+    # The card is gone: the text travels in an event, not in the fragment the
+    # refresh right after would replace.
+    assert json.loads(response.headers["HX-Trigger"]) == {
+        "order-notice": "Bestellung A1: Storniert"
+    }
+    assert "Storniert" not in response.text
     assert _fresh(db, order_id).status == "cancelled"
     # A second tablet with the old page: no error, the fresh column.
     again = client.post(url, headers=HX)
@@ -582,8 +588,15 @@ def test_a_cancelled_card_only_waits_for_its_note(client, db, tenant_id):
     assert f'data-id="{order_id}"' in html
     assert "Storno-Zettel nicht gedruckt" in html
     assert "Nochmal senden" in html
-    for gone in ("Passt", "Korrigieren", "In Kasse eingegeben", ">Storniert<"):
+    for gone in (
+        "Passt",
+        "Korrigieren",
+        "In Kasse eingegeben",
+        "Bestellung stornieren",
+    ):
         assert gone not in html
+    # The state shows on the card now that the order is cancelled.
+    assert 'badge accent">Storniert</span>' in html
     assert "in der Kasse" not in html
 
 

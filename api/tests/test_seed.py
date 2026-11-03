@@ -75,13 +75,17 @@ def test_seed_ueberschreibt_live_schalter_nicht(session):
     config = session.get(ServiceConfig, result.tenant_id)
     config.call_mode = "primary"
     config.delivery_enabled = False
-    config.pickup_wait_minutes = 55
+    config.pickup_wait_standard_minutes = 55
     session.commit()
 
     seed(session, tenant_name="Testbetrieb", timezone="Europe/Berlin")
     session.expire_all()
     config = session.get(ServiceConfig, result.tenant_id)
-    assert (config.call_mode, config.delivery_enabled, config.pickup_wait_minutes) == (
+    assert (
+        config.call_mode,
+        config.delivery_enabled,
+        config.pickup_wait_standard_minutes,
+    ) == (
         "primary",
         False,
         55,

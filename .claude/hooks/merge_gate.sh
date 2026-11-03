@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# PreToolUse gate for `gh pr merge` (CLAUDE.md §6 "Merging a PR into main", /done step 7b).
+# PreToolUse gate for `gh pr merge` and `gh stack merge` (CLAUDE.md §6 "Merging a PR into
+# main", /done step 7b).
 # It guards against a forgotten step, not against a session that tries to get around it.
 # Allowlist, not a parser: a command that mentions `gh pr merge` passes only in this form,
 #   gh pr merge <number> --merge --match-head-commit <full sha> [--delete-branch]
@@ -37,11 +38,22 @@ continuation=$'\\\n'
 cmd=${cmd//$'`\n'/ } # PowerShell's line continuation is a backtick
 # Flags may stand between gh, pr and merge (gh -R owner/repo pr merge, gh pr -R x merge),
 # but no command separator; merge counts only as a word of its own (not --json mergeable).
-grep -Eqi 'gh(\.exe)?[^;&|[:cntrl:]]*[[:space:]]pr[[:space:]]([^;&|[:cntrl:]]*[[:space:]])?merge([[:space:]]|$)' <<<"${cmd//"$continuation"/ }" || exit 0
+grep -Eqi 'gh(\.exe)?[^;&|[:cntrl:]]*[[:space:]](pr|stack)[[:space:]]([^;&|[:cntrl:]]*[[:space:]])?merge([[:space:]]|$)' <<<"${cmd//"$continuation"/ }" || exit 0
 form='^[[:space:]]*gh pr merge ([0-9]+) --merge --match-head-commit ([0-9a-f]{40})( --delete-branch)?[[:space:]]*$'
-[[ $cmd =~ $form ]] || block "- the gate takes only: gh pr merge <number> --merge --match-head-commit <full head sha> (--delete-branch after it is allowed), run in the repository's folder. A cd in front, a wrapped call, another merge strategy and --auto are refused; text or a search that mentions the command goes into a file or reads \`gh pr merg[e]\`"
-target=${BASH_REMATCH[1]}
-want=${BASH_REMATCH[2]}
+# GitHub refuses `gh pr merge` for a PR in a native stack. `gh stack merge <pr>` merges all
+# of the stack up to that PR, so it passes only for the bottom one: the base check below.
+# shortcut: gh stack merge takes no head commit, so a push right after this check would
+# merge unchecked; upgrade when it gets a pin.
+stack_form='^[[:space:]]*gh stack merge ([0-9]+) --merge --yes[[:space:]]*$'
+if [[ $cmd =~ $stack_form ]]; then
+  target=${BASH_REMATCH[1]}
+  want=""
+elif [[ $cmd =~ $form ]]; then
+  target=${BASH_REMATCH[1]}
+  want=${BASH_REMATCH[2]}
+else
+  block "- the gate takes only: gh pr merge <number> --merge --match-head-commit <full head sha> (--delete-branch after it is allowed), or for a PR in a native stack: gh stack merge <number> --merge --yes, run in the repository's folder. A cd in front, a wrapped call, another merge strategy and --auto are refused; text or a search that mentions the command goes into a file or reads \`gh pr merg[e]\`"
+fi
 
 dir=$(jq -r '.cwd // empty' <<<"$input")
 cd "${dir:-$(dirname "$0")/../..}" || block "- the folder the command runs in was not found: $dir"
@@ -52,7 +64,7 @@ read -r n url head branch base <<<"$(jq -r '[.number, .url, .headRefOid, .headRe
 # The repository gh picked (its default can differ from origin), taken from the PR's URL.
 repo=${url%/pull/*}
 [ "$base" = main ] || block "- the PR targets $base, the gate only merges into main"
-[ "$head" = "$want" ] || block "- the PR's head is ${head:0:7}, the command names ${want:0:7}: check the new head first"
+[ -z "$want" ] || [ "$head" = "$want" ] || block "- the PR's head is ${head:0:7}, the command names ${want:0:7}: check the new head first"
 fail=""
 
 # A check that ran twice on one head counts by the run that started last: a cancelled run

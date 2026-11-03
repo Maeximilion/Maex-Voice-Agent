@@ -1,11 +1,11 @@
-{# Korrektur einer Bestellung (docs/06 §3 "Korrigieren", T-4.7). Eigener Kasten
-   ueber den Spalten, nicht in der Liste: die Spalte laedt weiter neu, klingelt
-   bei neuen Bestellungen, und nichts ueberschreibt, was das Team gerade tippt.
+{# Correction of an order (docs/06 §3 "Korrigieren", T-4.7). Its own sheet over
+   the columns, not inside the list: the column keeps reloading, rings for new
+   orders, and nothing overwrites what the team is typing.
 
-   Jeder Tap schickt den Stand (verstecktes Feld) an den Server, der rechnet neu
-   und schickt diesen Kasten zurueck - Geld wird nie im Browser gerechnet.
-   hx-sync verwirft einen zweiten Tap, solange der erste unterwegs ist, und
-   hx-disabled-elt graut die Knoepfe so lange sichtbar aus. #}
+   Every tap sends the state (hidden field) to the server, which recalculates
+   and sends this sheet back - money is never calculated in the browser.
+   hx-sync drops a second tap while the first is in flight, and
+   hx-disabled-elt greys the buttons out visibly meanwhile. #}
 {% macro tap(op, label, cls="", confirm=None, disabled=False) -%}
 <button type="button" class="{{ cls }}"
         hx-post="/gui/bestellungen/{{ order_id }}/korrigieren/vorschau"
@@ -65,12 +65,14 @@
   {% endif %}
 </li>
 {%- endmacro %}
-<section class="card korrektur" data-order="{{ order_id }}">
-  <div class="res-head">
-    <h2>Bestellung korrigieren</h2>
+<section class="sheet korrektur" data-order="{{ order_id }}" role="dialog" aria-labelledby="korrektur-titel">
+  <div class="sheet-head">
+    <h2 id="korrektur-titel" tabindex="-1">Bestellung korrigieren</h2>
     <button type="button" class="schliessen" data-schliessen>Abbrechen</button>
   </div>
-  {% if message %}<p class="banner warn">{{ message }}</p>{% endif %}
+  <div class="sheet-body">
+  {# With a state the message stands at the number field, in coral: it is an error. #}
+  {% if message and state is not defined %}<p class="banner danger">{{ message }}</p>{% endif %}
   {% if state is defined %}
   {# Enter im Nummernfeld schickt die Nummer, nicht einen Grund. #}
   <form hx-post="/gui/bestellungen/{{ order_id }}/korrigieren/vorschau"
@@ -88,11 +90,13 @@
         <input type="text" id="number" name="number" inputmode="text" autocomplete="off">
         <button type="submit">Übernehmen</button>
       </div>
+      {% if message %}<p class="blocker" id="number-error" role="alert">{{ message }}</p>{% endif %}
+      <div class="sheet-foot">
       <div class="order-foot">
         <b>Summe {{ total }}</b>
         <span class="muted">vorher {{ before }}</span>
       </div>
-      {% for b in blockers %}<p class="blocker">{{ b }}</p>{% endfor %}
+      {% if foot_blocker %}<p class="{{ 'blocker' if foot_is_error else 'state-note' }}">{{ foot_blocker }}</p>{% endif %}
       <p class="muted">Grund antippen, dann ist gespeichert:</p>
       <div class="reasons">
         {% for key, label in reasons.items() %}
@@ -103,7 +107,9 @@
                 {% if blockers %}disabled{% endif %}>{{ label }}</button>
         {% endfor %}
       </div>
+      </div>
     </fieldset>
   </form>
   {% endif %}
+  </div>
 </section>
