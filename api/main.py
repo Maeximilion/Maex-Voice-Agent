@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException
 
-from api.config import settings
+from api.config import LOCAL_ENVS, settings
 from api.core import envelope
 from api.core.auth import require_token
 from api.core.errors import AppError
@@ -68,7 +68,6 @@ def ping() -> JSONResponse:
     return envelope.ok({"pong": True})
 
 
-@app.post("/v1/calls/start", dependencies=[Depends(require_token)])
 def calls_start(
     body: StartCallRequest, session: Session = Depends(get_db)
 ) -> JSONResponse:
@@ -76,6 +75,26 @@ def calls_start(
     folgenden Tool-Aufrufe der Plattform."""
     result = start_call(session, body)
     return envelope.ok(result.model_dump(mode="json"))
+
+
+def add_local_routes(target: FastAPI, env: str) -> None:
+    """Routes that exist in dev and test only (Maxi, 03.11.2026, #252).
+
+    `/v1/calls/start` takes any caller ID, and recognition trusts
+    `calls.caller_id`, so a token holder could open a call in the name of any
+    guest. The voice layer opens its calls in its own process
+    (`telephony/handler.py`), so outside dev and test nothing needs the route.
+    """
+    if env in LOCAL_ENVS:
+        target.add_api_route(
+            "/v1/calls/start",
+            calls_start,
+            methods=["POST"],
+            dependencies=[Depends(require_token)],
+        )
+
+
+add_local_routes(app, settings.env)
 
 
 @app.post("/v1/calls/end", dependencies=[Depends(require_token)])
