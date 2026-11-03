@@ -36,6 +36,7 @@ from api.tests.test_domain_draft_delivery import (
     HOME,
     OTHER_LINE,
     PHONE,
+    _stored,
     _zone,
     confirmed,
     delivery,
@@ -298,6 +299,23 @@ def test_a_correction_does_not_let_an_older_mark_take_the_default(
     _typed_in(session, tenant_id, old, MARKED + timedelta(hours=2))
 
     assert _defaults(session) == [new.address_id]
+
+
+def test_a_newer_draft_holds_no_default(session, tenant_id, call_id):
+    """A draft nobody said yes to, to the stored address, also one from a
+    spoofed caller ID: the owner's marked delivery still moves the default."""
+    _, home = known_customer(session, tenant_id)
+    order = _said_yes(session, tenant_id, call_id, ELSEWHERE)
+    later = _call(session, tenant_id, caller_id=PHONE)
+    draft_order(
+        session,
+        _stored(session, tenant_id, later, home.id),
+        now=NOW + timedelta(hours=1),
+    )
+
+    _typed_in(session, tenant_id, order)
+
+    assert _defaults(session) == [order.address_id]
 
 
 def test_two_marks_of_one_customer_at_once(

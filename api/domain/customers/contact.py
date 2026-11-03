@@ -89,7 +89,7 @@ def note_order(session: Session, order: Order, at: datetime) -> None:
 def default_at_mark(session: Session, order: Order) -> None:
     """The mark "In Kasse eingegeben" of a delivery: its address becomes the
     customer's default, the one and only "letztes Mal" `find_customer` may ask
-    about. Unless a newer delivery of the customer, not cancelled, goes to the
+    about. Unless a newer confirmed delivery of the customer, not cancelled, goes to the
     default there is: a card marked late, also while a correction holds the
     newer one's mark back, does not bring back an address the guest replaced."""
     if not _may_hold_a_default(session, order):
@@ -150,13 +150,13 @@ def _locked_default(session: Session, order: Order) -> uuid.UUID | None:
 
 
 def _deliveries_of(order: Order) -> tuple:
-    """The customer's other deliveries that are not cancelled."""
+    """The customer's other deliveries the guest said yes to, not cancelled."""
     return (
         Order.tenant_id == order.tenant_id,
         Order.customer_id == order.customer_id,
         Order.id != order.id,
         Order.address_id.is_not(None),
-        Order.status != "cancelled",
+        Order.status.not_in(("draft", "cancelled")),
         Order.deleted_at.is_(None),
     )
 
