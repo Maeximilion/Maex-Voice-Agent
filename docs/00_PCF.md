@@ -538,6 +538,35 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 03.11.2026, night - T-3.11 floor plan built (#535), violet is ultra violet (#538), next T-3.12 manual reservations
+
+Status: open, stacked, not merged (Maxi merges, no auto-merge): #535 `task/3-11-floor-plan` (T-3.11, migration 027, `Closes #496`) <- #538 `feat/ultraviolet-uv2` (violet `#7B2FFF`), native stack #539. Both were synced with `main` after #534; head of #535 `521d72b`, of #538 `8a990bc`. Codex was clean on every earlier head of #535 after five rounds and on #538 before the sync; CI green on the earlier heads. CI and Codex were still running on the synced heads at the end of this session: check `python3 scripts/codex_review.py 535` and `538` and `gh pr checks` first. This handover rides on branch `docs/handover-t3-12` (on top of #538, pushed, no PR); the T-3.12 branch starts from it and its PR names `feat/ultraviolet-uv2` as base, then `gh stack link 539 <new PR>`.
+
+Artifacts:
+- T-3.11: `api/models/floor_plan.py`, `db/migrations/versions/027_floor_plan.py`, `api/schemas/floor_plan.py`, `api/domain/reservations/floor_plan.py` (one room per finished step, advisory lock `floor_plan:<tenant>`, revision with 409 and the room as it stands, the answer read before the commit), routes `/gui/raumplan`, `/gui/raumplan/plan`, `POST /gui/raumplan/bereiche`, `PUT /gui/raumplan/bereiche/<id>` in `api/gui/router.py`, `api/gui/static/raumplan.js`, `raumplan-geometry.js` (node-tested by `api/tests/floor_plan_geometry.mjs`), `raumplan.css`, template `betrieb/raumplan.html`, screenshots `docs/design/2026-11-floor-plan/`.
+- Browser walkthrough (62 steps, Playwright from `/usr/lib/node_modules/clawdbot/node_modules/playwright-core` with `~/.cache/ms-playwright/chromium-1248`): scratch script of this session, not in the repo; the scenarios are listed in docs/06 §7 "Raumplan built".
+- Test server for Maxi: port 8019 from the main folder on the throwaway Postgres `t311-db` (127.0.0.1:55432, databases `maex_test`, `walk`, `board`). Stop with `kill` on the port's pid and `docker rm -f t311-db` when nobody needs them.
+
+Decisions (Maxi, 03.11.2026):
+- Floor plan colours: tables and chairs neon, walls, counter and entrance violet, a selection white, one dark theme; the preview's green and light look are gone (design README note). Free labels turn (across, upright from below, upright from above) and never stand on their head.
+- The board keeps its neon as it is (variants A and B were shown and declined). The violet of the software is the electric ultra violet `#7B2FFF` (#538); the README, its images and the social preview keep `#9D7BFF` until Maxi decides about the brand palette.
+- Stack PRs whenever possible (Maxi, again 03.11.2026).
+- T-3.11 assumptions in docs/01 "Made Assumptions": unique table names per restaurant, bounds as guards, label sizes 18 to 32 px, "Erweiterter Modus" per page, every removal asks, no room deletion.
+
+Gate: G0 open, unchanged. Block 2 (#8) belongs to G1.
+
+Open:
+1. T-3.12 manual reservations (#497), Opus 5.5 `xhigh` (a booking, a migration). Maxi's case: a friend asks an employee on WhatsApp and the team enters the table by hand. Plan shown to Maxi, not yet decided in detail: (a) `reservations.call_id` nullable plus `source` (`agent` / `tablet`) and a CHECK that an agent reservation has its call, the tablet entry logged in `audit_log` with its actor; (b) a sheet "Reservierung eintragen" from the column "Heute": date (today by default), time, persons, name, phone (optional, E.164), note, optionally a table or a combination of the floor plan; (c) it counts against the same seats the agent books from (D28), a full window says so and offers "Trotzdem eintragen" behind a question, a table taken at that time is refused; (d) the team member's tap is the confirmation, through the same booking code as the agent, idempotent, with the deletion periods of a reservation. Check hard rule 3 wording (`confirm` is the only path from draft to confirmed) against a tablet entry before building, and ask Maxi in one closed question if it needs his word.
+2. #535 and #538: wait for CI and Codex on the synced heads, fix findings in one push per round; Maxi merges #535 first (`gh stack merge`), #538 after it; each later merge of `main` renumbers the status version again.
+3. README palette to ultra violet: proposal for Maxi, not started.
+4. T-3.15 (#516), T-3.16 (#517), then T-3.5 operating test on the real tablet, which now also covers the floor plan.
+
+Lessons:
+- Every Codex round on #535 found a real defect in the save path (lost answer, typing redrawn, drag sent half-finished, conflict during a drag, answer read after the commit): a client that saves whole documents needs the snapshot, the revision and the redraw rules designed together, not patched one by one.
+- The local uvicorn test server does not reload: after a schema change it answers 422 to the new field until it is restarted.
+- Maxi cannot open files under `/tmp` in WSL; screenshots for him go to `C:\Users\Maxi\Downloads` (`/mnt/c/Users/Maxi/Downloads`).
+- `pkill -f` with the server's command line in the pattern kills the calling shell too; stop a server by the pid on its port.
+
 ## Handover 03.11.2026 - T-3.8 to T-3.14 merged, next the rest of Block 2 (#8): T-3.11, T-3.12, T-3.15, T-3.16, T-3.5
 
 Status: merged on `main`: #490 (redesign, D26), #492 (wait grid), #498 (README colours, D27), #500 (default waits 30 and 60, migration 023), #502 (T-3.9), #503 (T-3.8), #509 (T-3.14, migration 024), #513 (T-3.13, migration 025), #515 (T-3.10, migration 026). The workbench database is at 026 (Maxi ran `make migrate`), the view on port 8000 answers. Nothing of this session is open or uncommitted; this handover rides on branch `docs/handover-t3-gui`, pushed, no PR of its own.
