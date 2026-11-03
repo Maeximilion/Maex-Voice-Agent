@@ -70,12 +70,12 @@
   function fromDoc(doc) {
     var s = G.toClient(doc);
     return { room: s.room, objects: s.objects, links: s.links, revision: s.revision, saved: doc,
-      history: [], saving: false, again: false, unsaved: false, unacked: null };
+      history: [], saving: false, again: false, unsaved: false, unacked: null, pending: null };
   }
 
   function adopt(target, doc) {
     var fresh = fromDoc(doc);
-    ["room", "objects", "links", "revision", "saved"].forEach(function (k) { target[k] = fresh[k]; });
+    ["room", "objects", "links", "revision", "saved", "pending"].forEach(function (k) { target[k] = fresh[k]; });
   }
 
   // A save whose answer never came may have been stored: it goes out again,
@@ -84,7 +84,9 @@
   function save(target) {
     if (target.saving) { target.again = true; return; }
     target.saving = true;
-    var body = target.unacked || { revision: target.revision, area: G.toServer(target) };
+    // Only finished steps go out: `pending` is taken at a drop, a field, an
+    // undo, never from the state a drag in progress is moving (Codex on #535).
+    var body = target.unacked || { revision: target.revision, area: target.pending || G.toServer(target) };
     var replaced = false;
     function lost() {
       target.unacked = body;
@@ -100,7 +102,7 @@
           target.saved = res.data.area;
           target.unsaved = false;
           // Steps made meanwhile, or held back behind a resent save, follow now.
-          if (JSON.stringify(G.toServer(target)) !== JSON.stringify(body.area)) target.again = true;
+          if (target.pending && JSON.stringify(target.pending) !== JSON.stringify(body.area)) target.again = true;
           if (!target.again && target === area) status("Gespeichert.");
         } else if (res.status === 409 && res.data.area) {
           adopt(target, res.data.area);
@@ -172,6 +174,7 @@
     }
     render();
     status(message + " · speichert ...");
+    area.pending = G.toServer(area);
     save(area);
   }
 
@@ -245,6 +248,7 @@
     if (!find(selectedId)) selectedId = "room";
     render();
     status("Letzte Änderung rückgängig gemacht · speichert ...");
+    area.pending = G.toServer(area);
     save(area);
   }
 
