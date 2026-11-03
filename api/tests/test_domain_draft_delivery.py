@@ -25,10 +25,11 @@ from api.core.errors import (
 )
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
-from api.domain.customers import SAY_SAME_ADDRESS, find_customer
+from api.domain.customers import find_customer
 from api.domain.delivery.address import SAY_WHICH_NAME
 from api.domain.delivery.zones import SAY_OUT_OF_ZONE, SAY_OUT_OF_ZONE_NO_PICKUP
 from api.domain.ordering import draft_order
+from api.domain.ordering.board import approve_order, mark_entered, version_of
 from api.domain.ordering.confirm import confirm_order
 from api.domain.ordering.correction import (
     CorrectionRequest,
@@ -714,9 +715,11 @@ def test_a_draft_offers_nobody_its_address(session, tenant_id, call_id):
     assert match.say is None
 
 
-def test_confirm_counts_the_order_and_makes_the_address_the_default(
+def test_confirm_counts_the_order_and_leaves_the_default_to_the_mark(
     session, tenant_id, call_id
 ):
+    """The address becomes the default at the team's mark, not at the yes
+    (test_default_address_at_mark.py)."""
     draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
     later = NOW + timedelta(minutes=1)
 
@@ -729,8 +732,7 @@ def test_confirm_counts_the_order_and_makes_the_address_the_default(
     assert customer.last_order_at == later
     assert customer.last_contact_at == later
     match = find_customer(session, tenant_id, PHONE, "Braun")
-    assert match.address_id == order.address_id
-    assert match.say == SAY_SAME_ADDRESS
+    assert (match.found, match.address_id, match.say) == (True, None, None)
 
 
 def test_a_second_confirm_counts_once(session, tenant_id, call_id):
@@ -740,21 +742,6 @@ def test_a_second_confirm_counts_once(session, tenant_id, call_id):
     confirmed(session, tenant_id, call_id, draft.order_id)
 
     assert session.scalar(select(Customer.order_count)) == 1
-
-
-def test_the_new_address_replaces_the_default(session, tenant_id, call_id):
-    known, home = known_customer(session, tenant_id)
-    draft = draft_order(
-        session, delivery(session, tenant_id, call_id, name="Müller"), now=NOW
-    )
-
-    confirmed(session, tenant_id, call_id, draft.order_id)
-
-    session.refresh(home)
-    order = session.get(Order, draft.order_id)
-    assert home.is_default is False
-    assert session.get(Address, order.address_id).is_default is True
-    assert order.customer_id == known.id
 
 
 def test_the_order_event_carries_the_address_and_the_fee(session, tenant_id, call_id):
@@ -1376,8 +1363,10 @@ def test_the_owner_of_a_named_number_gets_a_row_of_their_own(
         now=NOW,
     )
     confirmed(session, tenant_id, call_id, own.order_id)
-
     order = session.get(Order, own.order_id)
+    approve_order(session, tenant_id, order.id)
+    mark_entered(session, tenant_id, order.id, version_of(session, order), now=NOW)
+
     assert order.customer_id != planted.customer_id
     match = find_customer(session, tenant_id, PHONE, "Braun")
     assert (match.customer_id, match.address_id) == (
