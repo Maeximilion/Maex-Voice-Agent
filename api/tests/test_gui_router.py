@@ -470,6 +470,60 @@ def test_the_standard_needs_the_csrf_header(client, engine, tenant_id, path):
     assert config_von(engine, tenant_id).pickup_wait_standard_minutes == before
 
 
+def test_the_notice_sheet_lists_the_week_with_closed_days(client, tenant_id):
+    """T-3.13. Monday has no seats in the seed, so it has no field."""
+    text = client.get("/gui/vorlauf").text
+
+    assert "Montag" in text and "geschlossen" in text
+    assert 'name="tag-0"' not in text
+    assert 'name="tag-1"' in text
+    assert 'name="tag-6"' in text
+
+
+def test_the_notice_is_saved_from_the_sheet(client, tenant_id):
+    body = client.post("/gui/vorlauf", content="tag-1=60&tag-6=30", headers=TYPED)
+
+    assert body.status_code == 200
+    assert "Gespeichert." in body.text
+    assert 'value="60"' in body.text
+    assert 'value="30"' in body.text
+
+
+@pytest.mark.parametrize("value", ["", "abc", "1441", "-5", "15.5"])
+def test_a_notice_that_is_no_notice_gets_a_sentence(client, tenant_id, value):
+    body = client.post("/gui/vorlauf", content=f"tag-1={value}&tag-6=30", headers=TYPED)
+
+    assert body.status_code == 409
+    assert "0 bis 1440 Minuten" in body.text
+    assert 'value="30"' not in body.text
+
+
+def test_a_closed_day_cannot_be_given_a_notice(client, tenant_id):
+    body = client.post("/gui/vorlauf", content="tag-0=30", headers=TYPED)
+
+    assert body.status_code == 409
+
+
+def test_an_unknown_field_of_the_notice_form_is_ignored(client, tenant_id):
+    body = client.post("/gui/vorlauf", content="tag-1=30&tag-9=5&x=1", headers=TYPED)
+
+    assert body.status_code == 200
+
+
+def test_the_notice_needs_the_csrf_header(client, tenant_id):
+    body = client.post(
+        "/gui/vorlauf",
+        content="tag-1=30",
+        headers={"HX-Request": "true"},
+    )
+
+    assert body.status_code == 403
+
+
+def test_the_column_heute_opens_the_notice(client, tenant_id):
+    assert 'hx-get="/gui/vorlauf"' in client.get("/gui").text
+
+
 def test_a_typed_wait_needs_a_known_service(client, tenant_id):
     body = client.post(
         "/gui/kopfzeile/wartezeit/reservierung", content="minuten=30", headers=TYPED

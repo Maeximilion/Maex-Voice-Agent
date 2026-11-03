@@ -36,6 +36,7 @@ from api.domain.menu import sold_out as dishes
 from api.domain.ordering import board as order_board
 from api.domain.ordering import correction
 from api.domain.reservations import list_today
+from api.domain.reservations import notice as reservation_notice
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status import bridge
 from api.domain.status import config as switches
@@ -62,6 +63,8 @@ SWITCH_FAILED = "Umschalten hat nicht geklappt. Bitte nochmal tippen."
 WAIT_STEP = 15
 # Adresse in der Kopfzeile -> Service in service_config (T-3.6).
 WAIT_SERVICES = {"abholung": "pickup", "lieferung": "delivery"}
+# Form fields of the notice sheet, Monday is 0 (T-3.13).
+NOTICE_FIELDS = {f"tag-{weekday}" for weekday in range(7)}
 
 # Der Punkt der Kopfzeile: Farbe allein reicht nie, der Text steht daneben
 # (docs/06 §1 Regel 4, §3 Kopfzeile).
@@ -801,9 +804,9 @@ def wartezeit_blatt(
 
 
 def _typed_minutes(text: str) -> int:
-    """The digits the team typed; 0 for anything else, which the limits refuse."""
+    """The digits the team typed; -1 for anything else, which every limit refuses."""
     text = text.strip()
-    return int(text) if text.isascii() and text.isdigit() and len(text) <= 4 else 0
+    return int(text) if text.isascii() and text.isdigit() and len(text) <= 4 else -1
 
 
 @router.post(
@@ -1036,6 +1039,71 @@ def _dish_list(
             "dish_problem": problem,
         },
     )
+
+
+def _notice_sheet(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    message: str | None = None,
+    tone: str = "danger",
+    status: int = 200,
+) -> HTMLResponse:
+    notices = reservation_notice.weekday_notices(session, tenant.id)
+    return templates.TemplateResponse(
+        request,
+        "fragments/vorlauf.html",
+        {
+            "days": [(d, WEEKDAYS[d], minutes) for d, minutes in notices.items()],
+            "max_notice": reservation_notice.MAX_NOTICE_MINUTES,
+            "message": message,
+            "tone": tone,
+        },
+        status,
+    )
+
+
+@router.get("/vorlauf", response_class=HTMLResponse, include_in_schema=False)
+def vorlauf(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+    """The sheet with the notice per weekday (T-3.13)."""
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    return _notice_sheet(request, session, tenant)
+
+
+@router.post(
+    "/vorlauf",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def vorlauf_speichern(
+    request: Request,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    minutes = {
+        int(field.removeprefix("tag-")): _typed_minutes(value)
+        for field, value in form.items()
+        if field in NOTICE_FIELDS
+    }
+    try:
+        reservation_notice.set_notices(session, tenant.id, minutes)
+    except AppError as exc:
+        session.rollback()
+        logger.warning("Vorlauf nicht gespeichert: %s", exc.message)
+        return _notice_sheet(
+            request,
+            session,
+            tenant,
+            exc.say or SWITCH_FAILED,
+            status=409,
+        )
+    return _notice_sheet(request, session, tenant, "Gespeichert.", "ok")
 
 
 @router.get("/gericht-aus", response_class=HTMLResponse, include_in_schema=False)

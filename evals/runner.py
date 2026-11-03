@@ -43,6 +43,7 @@ from api.agent.llm import LLMClient, Usage
 from api.config import settings
 from api.core.time import business_day, business_day_bounds_utc
 from api.domain.menu.importer import apply, parse
+from api.domain.reservations import notice as notices
 from api.models import (
     Address,
     Customer,
@@ -262,6 +263,11 @@ def run_case(
         llm = RecordingLLM(inner)
         _sell_out(session, tenant.id, case.get("sold_out", []), now)
         _seed_customers(session, tenant.id, case)
+        notices.set_notices(
+            session,
+            tenant.id,
+            {int(day): minutes for day, minutes in case.get("notices", {}).items()},
+        )
         call, turns = replay(session, case, tenant, now=now, llm=llm, hear=hear)
         result.readback = heard_readback(turns)
         repeated = _repeat_confirm(session, case, call, tenant, llm, now)

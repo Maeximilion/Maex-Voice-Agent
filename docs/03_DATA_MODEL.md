@@ -487,4 +487,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 022 | `recordings`: one row per recorded call, unique on `call_id` (T-11.3, L2); the downgrade drops the table, and the files it named stay in the folder without a way to find them. On top of 019 until the PRs of T-4.9 (020) and T-10.11 (021) merge: the later PR moves its `down_revision` |
 | 023 | `service_config`: default waits 30 and 60 minutes, a tenant on the old 20 and 45 moves, a changed wait stays (Maxi, 02.11.2026); the downgrade moves rows on 30 and 60 back |
 | 024 | `service_config`: the two wait columns become the standard and keep their values, and each service gets a wait for today with its end (T-3.14, #505); the downgrade drops the waits for today, so the standard holds |
+| 025 | `capacity.notice_minutes`, default 0: how long before its time a table can be reserved (T-3.13, #499); the downgrade drops the notices |
 | planned, next free number | `eval_cases`, `eval_runs` |

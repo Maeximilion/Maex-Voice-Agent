@@ -30,6 +30,7 @@ class CapacityWindow:
     end: datetime
     max_guests: int
     slot_minutes: int
+    notice_minutes: int = 0
 
     def contains(self, at: datetime) -> bool:
         return self.start <= at < self.end
@@ -68,7 +69,11 @@ def capacity_windows(
         start = datetime.combine(day, row.slot_start, tzinfo=zone)
         end_day = day + timedelta(days=1) if row.slot_end <= row.slot_start else day
         end = datetime.combine(end_day, row.slot_end, tzinfo=zone)
-        windows.append(CapacityWindow(start, end, row.max_guests, row.slot_minutes))
+        windows.append(
+            CapacityWindow(
+                start, end, row.max_guests, row.slot_minutes, row.notice_minutes
+            )
+        )
     return sorted(windows, key=lambda w: w.start)
 
 

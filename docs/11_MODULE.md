@@ -89,6 +89,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 - `capacity.py` — freie Plätze je Fenster
 - `slots.py` — verfügbar? bis zu zwei Alternativen, nahe am Wunsch
 - `create.py` — Entwurf mit `readback`
+- `notice.py` — the notice a table needs, per weekday, read and set on the tablet (T-3.13)
 
 ### `domain/delivery/`
 - `zones.py` — PLZ-Match, später Polygon (`shapely`), ein Interface für beides
