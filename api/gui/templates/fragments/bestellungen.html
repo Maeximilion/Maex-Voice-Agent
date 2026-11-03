@@ -47,6 +47,7 @@
     </div>
     <div class="state">
       <span class="badge {{ o.tone }}">{{ o.state }}</span>
+      {% if o.cancelled %}<span class="badge accent">Storniert</span>{% endif %}
       {% if o.corrected %}<span class="badge accent">Korrigiert: {{ o.corrected }}</span>{% endif %}
       {% if o.register %}<span class="badge {{ o.register[0] }}">{{ o.register[1] }}</span>{% endif %}
     </div>
@@ -72,7 +73,7 @@
          docs/06 §1 rule 6, and the state the card shows, as for the mark. #}
       <button class="quiet" hx-post="/gui/bestellungen/{{ o.id }}/storniert/{{ o.version }}"
               hx-confirm="Bestellung{{ ' ' ~ o.pickup_code if o.pickup_code }} stornieren? Steht sie schon in der Kasse, dort auch stornieren."
-              hx-target="#bestellungen-liste" hx-swap="innerHTML">Storniert</button>
+              hx-target="#bestellungen-liste" hx-swap="innerHTML">Bestellung stornieren</button>
       {% endif %}
     </div>
   </li>
