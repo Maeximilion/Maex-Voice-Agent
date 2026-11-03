@@ -105,7 +105,12 @@ def confirm_order(
         raise Conflict(
             "pickup switched off since the draft",
             say=pickup_closed_say(
-                session, req.tenant_id, config, now or utcnow(), tz(tenant.timezone)
+                session,
+                req.tenant_id,
+                config,
+                now or utcnow(),
+                tz(tenant.timezone),
+                req.call_id,
             ),
         )
 

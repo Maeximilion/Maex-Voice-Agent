@@ -37,10 +37,9 @@ from api.domain.ordering.validation import (
     require_delivery_open,
     require_minimum,
     require_pickup_open,
-    service_open_at,
     validated_lines,
 )
-from api.domain.status.service import DELIVERY, PICKUP
+from api.domain.status.service import DELIVERY, PICKUP, service_open_at
 from api.domain.status.waits import current_wait
 from api.models import Address, AuditLog, Call, Order, OrderItem, ServiceConfig, Tenant
 from api.schemas.orders import DraftOrderRequest, OrderDraft, OrderStatus
@@ -82,7 +81,7 @@ def draft_order(
     if delivery:
         require_delivery_open(session, tenant, config, now)
     else:
-        require_pickup_open(session, tenant, config, now)
+        require_pickup_open(session, tenant, config, now, req.call_id)
     lines = validated_lines(session, req.tenant_id, req.items, now)
     total = items_total_cents(lines)
     fee = 0
@@ -91,7 +90,7 @@ def draft_order(
     if delivery:
         # Recognition only on the line the call came from (L12).
         caller_line = number_or_none(call.caller_id)
-        where = place(session, req.tenant_id, req.customer, phone, caller_line)
+        where = place(session, req.tenant_id, req.customer, phone, caller_line, now)
         require_minimum(total, where.zone)
         name = where.name
         fee = where.zone.fee_cents

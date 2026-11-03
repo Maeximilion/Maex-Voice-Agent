@@ -21,6 +21,27 @@ PICKUP = "pickup"
 SAY_NO_RESERVATIONS = "Reservierungen nehmen wir gerade nicht an."
 
 
+def service_open_at(
+    session: Session, tenant_id: uuid.UUID, at: datetime, zone: ZoneInfo, service: str
+) -> bool:
+    data = load_hours(session, tenant_id, at.astimezone(zone).date())
+    return open_window_at(data, at, service, zone) is not None
+
+
+def pickup_open(
+    session: Session,
+    tenant_id: uuid.UUID,
+    config: ServiceConfig,
+    at: datetime,
+    zone: ZoneInfo,
+) -> bool:
+    """The team's switch and the pickup hours: what `draft_order` takes a pickup
+    on, and so all a sentence may offer (#524). `config` has to be fresh."""
+    return config.pickup_enabled and service_open_at(
+        session, tenant_id, at, zone, PICKUP
+    )
+
+
 def get_service_status(
     session: Session, tenant_id: uuid.UUID, now: datetime | None = None
 ) -> ServiceStatus:
