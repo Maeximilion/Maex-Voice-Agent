@@ -40,7 +40,9 @@ line. A call whose voice failed is never hung up by us.
 **A recording** (T-11.3, docs/09 L2) runs from the caller's yes to the handover
 or the end of the call. A team leg is the telephone system's: with
 `record_team_leg` the line tells the dialplan to record it. Nothing a recording
-does touches the call: when the file fails, it goes, and the call goes on.
+does touches the call: when the file fails, it goes, and the call goes on. A
+stop is heard until the last sentence before the hangup or the handover has
+been played, and nothing else is then (#522).
 
 The media adapter (`adapters/asterisk.py`, T-1.11) creates a session per call,
 runs its worker and feeds it; the ports for ear, mouth and line are in
@@ -163,8 +165,16 @@ class CallSession:
         self._failure_told = False
         # The mouth failed on this call: it is not asked again.
         self._mouth_failed = False
-        # The recording of this call while it runs.
+        # The recording of this call while it runs, and its file until a
+        # withdrawal deletes it: the tape ends at the handover, the caller's
+        # right to stop it does not (L2, #522).
         self._tape: Tape | None = None
+        self._file: str | None = None
+        # Mode `shadow`: the team leg is to be recorded. Told to the line with
+        # the transfer, so a stop before it keeps the leg off the file.
+        self._team_leg = False
+        # The ear failed while only a stop was listened for.
+        self._deaf = False
 
     # -- what happens on the call: any thread, only enqueues ---------------------------
 
@@ -299,17 +309,33 @@ class CallSession:
     def _on_audio(self, at: float, frame: bytes) -> None:
         if self._tape is not None:
             self._taped(self._tape.caller, frame)
-        if not self._listening():
+        listening = self._listening()
+        if not listening and not self._hears_a_stop():
             return
         try:
             self._fed_bytes += len(frame)
             self._ear.feed(frame, at)
         except Exception:
             logger.exception("the ear failed")
-            self._voice_failed()
+            if listening:
+                self._voice_failed()
+            else:
+                # The call was ending as it should: it still does, only a
+                # stop is not heard any more.
+                self._deaf = True
 
     def _on_heard(self, at: float, heard: Heard) -> None:
         if not self._listening():
+            if (
+                self._hears_a_stop()
+                and heard.final
+                and heard.speech
+                and heard.text.strip()
+            ):
+                # No turn and nothing else: the core takes only a stop.
+                self._turn(
+                    lambda: self._events.on_talked_over(self.session_id, heard.text)
+                )
             return
         if not heard.final:
             # The caller is speaking: no silence, and the ear owes the end of
@@ -452,6 +478,7 @@ class CallSession:
     def _on_start_recording(self, at: float, file_name: str) -> None:
         try:
             self._tape = Tape(recordings.path_of(file_name), self._sample_rate)
+            self._file = self._tape.path.name
         except Exception:
             logger.exception(
                 "the recording could not begin, the call goes on without",
@@ -459,10 +486,11 @@ class CallSession:
             )
 
     def _on_stop_recording(self, at: float, discard: bool) -> None:
+        self._team_leg = False
         self._stop_tape(discard)
 
     def _on_record_team_leg(self, at: float, _: None) -> None:
-        self._line.record_team_leg()
+        self._team_leg = True
 
     def _on_closed(self, at: float, _: None) -> None:
         self._end("closed")
@@ -505,8 +533,19 @@ class CallSession:
 
     def _listening(self) -> bool:
         """Once the call is going to the team or ending, nothing the caller
-        says or presses is taken any more."""
+        says or presses is taken any more, but a stop (`_hears_a_stop`)."""
         return not self._failed and self._ending is None
+
+    def _hears_a_stop(self) -> bool:
+        """While a hangup or transfer waits for its sentence, a recording of
+        the call can still be stopped: the way to stop was promised at any
+        time (L2), and the farewell is still part of the call (#522)."""
+        return (
+            self._ending is not None
+            and not self._failed
+            and not self._deaf
+            and (self._file is not None or self._team_leg)
+        )
 
     def _may_interrupt(self) -> bool:
         """Only if every sentence still to be played may be interrupted: a
@@ -539,22 +578,23 @@ class CallSession:
             self._stop_tape(discard=True)
 
     def _stop_tape(self, discard: bool = False) -> None:
-        """Never raises. A file that stays behind a discard is the deletion
-        job's: its row names it."""
+        """Never raises. A discard deletes the file also after the tape
+        ended. A file that stays behind a discard is the deletion job's: its
+        row names it."""
         tape, self._tape = self._tape, None
-        if tape is None:
+        if tape is not None:
+            try:
+                tape.close()
+            except Exception:
+                logger.exception(
+                    "the recording could not be closed",
+                    extra={"extra": {"session_id": self.session_id}},
+                )
+        if not discard or self._file is None:
             return
+        file_name, self._file = self._file, None
         try:
-            tape.close()
-        except Exception:
-            logger.exception(
-                "the recording could not be closed",
-                extra={"extra": {"session_id": self.session_id}},
-            )
-        if not discard:
-            return
-        try:
-            recordings.delete_file(tape.path.name)
+            recordings.delete_file(file_name)
         except OSError:
             logger.exception(
                 "the recording could not be deleted",
@@ -687,6 +727,8 @@ class CallSession:
         kind, target = self._ending
         if kind == "transfer":
             assert target is not None
+            if self._team_leg:
+                self._line.record_team_leg()
             self._line.transfer(target)
             self.transfer_target = target
             self._end("transfer")
