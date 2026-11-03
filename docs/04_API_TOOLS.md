@@ -86,7 +86,7 @@ Ids only (legal check L12): the agent never says stored data aloud unprompted, s
 
 Unbekannt → `found: false`, `say: null`. **Nie** raten, welcher Kunde gemeint sein könnte. The same `found: false` for an objection to recognition on the number (`recognition_objections`), a blocked customer, several customers on the number without a `guest_name` that tells them apart, and a name that does not match: that is a new customer, the record of the other stays closed. Only a customer with a confirmed delivery from their own line (`order_count`) is recognized, a blocked one still counts in "several": a draft nobody said yes to writes a row, and so does a booking under a number the guest only named (`draft_order` below), and neither may give its name to whoever calls from that number later (security audit 02.11.2026).
 
-Built as an HTTP tool (T-6.2 part 1, 01.11.2026), in the core since T-6.5 (`agent/dispatch.py`). In both the number is always the one of the call (`calls.caller_id`, `customers.recognize`), never one a model writes or a tool request carries; `calls.caller_id` is what the voice layer gave at the start of the call, so the HTTP path trusts the holder of `AGENT_API_TOKEN` as it trusts the voice layer (`/v1/calls/start` sits behind the same token). In the core `guest_name` passes only as the guest said it (`guards._guest_details`): trying numbers or names would read out who stands behind them. A withheld caller ID, one that is no number, or a call of another tenant gives `found: false`. The state keeps `found` and `address_id` under `customer`, no stored word (L12).
+Built as an HTTP tool (T-6.2 part 1, 01.11.2026), in the core since T-6.5 (`agent/dispatch.py`). In both the number is always the one of the call (`calls.caller_id`, `customers.recognize`), never one a model writes or a tool request carries; `calls.caller_id` is what the voice layer gave at the start of the call, in its own process. `POST /v1/calls/start`, which takes any caller ID, exists in dev and test only (Maxi, 03.11.2026, #252), so outside them no holder of `AGENT_API_TOKEN` can open a call in the name of a guest. In the core `guest_name` passes only as the guest said it (`guards._guest_details`): trying numbers or names would read out who stands behind them. A withheld caller ID, one that is no number, or a call of another tenant gives `found: false`. The state keeps `found` and `address_id` under `customer`, no stored word (L12).
 
 ---
 
@@ -593,7 +593,8 @@ With a rule of the catalogue that answers the guest's sentence, the conversation
 | Endpunkt | Zweck |
 |---|---|
 | `GET /health` | Liveness für Monitoring und Compose |
-| `POST /v1/calls/start` · `/end` | Anruf-Log von der Plattform |
+| `POST /v1/calls/start` | Opens the call log; exists in `ENV=dev` and `test` only (Maxi, 03.11.2026, #252): it takes any caller ID and recognition trusts it, while the voice layer opens its calls in its own process. Elsewhere the path answers 404 |
+| `POST /v1/calls/end` | Closes the call log of a call that exists |
 | `GET /v1/gui/...` | Daten für die Oberfläche |
 | `POST /v1/gui/orders/{id}/approve` | Freigabe im Überlauf-Betrieb |
 | `POST /internal/events/replay` | hängengebliebene Übergaben erneut senden |
