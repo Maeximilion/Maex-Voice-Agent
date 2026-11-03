@@ -537,6 +537,7 @@ def test_the_service_status_of_this_call_stays_in_the_state(is_open, pickup):
                 "is_open": is_open,
                 "pickup_enabled": pickup,
                 "delivery_enabled": False,
+                "reservations_enabled": True,
                 "closes_at": None,
             },
         ),
@@ -546,6 +547,7 @@ def test_the_service_status_of_this_call_stays_in_the_state(is_open, pickup):
         "is_open": is_open,
         "pickup_enabled": pickup,
         "delivery_enabled": False,
+        "reservations_enabled": True,
     }
 
 

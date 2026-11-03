@@ -1,0 +1,10 @@
+{# One dish row (docs/06 §3). A tap swaps only this row in place, so the list
+   does not move under the finger: the row answers with its new state. #}
+<li class="dish{{ ' aus' if d.sold_out }}" id="dish-{{ d.menu_item_id }}">
+  {# The badge sits inside the name: a row that turns "heute aus" must not wrap its button to a new line. #}
+  <span class="dish-name"><span class="nr">{{ d.number }}</span> {{ d.name }}{% if d.sold_out %} <span class="badge warn">heute aus</span>{% endif %}</span>
+  <button type="button" class="{{ 'primary' if d.sold_out }}"
+          hx-post="/gui/gericht-aus/{{ d.menu_item_id }}/{{ 'wieder-da' if d.sold_out else 'aus' }}"
+          hx-target="closest li" hx-swap="outerHTML">{{ "Wieder da" if d.sold_out else "Heute aus" }}</button>
+  {% if dish_problem %}<p class="blocker">{{ dish_problem }}</p>{% endif %}
+</li>

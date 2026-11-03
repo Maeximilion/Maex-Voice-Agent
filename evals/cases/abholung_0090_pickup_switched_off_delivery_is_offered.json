@@ -1,0 +1,43 @@
+{
+  "id": "abholung_0090",
+  "name": "Pickup switched off: nothing booked, delivery offered where it is on (T-3.10)",
+  "tags": [
+    "abholung",
+    "schalter",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "switches": {
+    "pickup_enabled": false
+  },
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 23."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Nein danke, das wars."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": false,
+    "escalated": false,
+    "said": [
+      "Abholung ist gerade leider nicht möglich. Möchten Sie liefern lassen?"
+    ]
+  }
+}

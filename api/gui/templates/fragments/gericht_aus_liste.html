@@ -2,16 +2,29 @@
    gefiltert bleibt. hx-sync verwirft einen zweiten Tap, solange der erste
    unterwegs ist. Farbe nie allein: "heute aus" steht als Wort daneben (§1 Regel 4). #}
 {% if dish_problem %}<p class="banner warn">{{ dish_problem }}</p>{% endif %}
-<ul class="dishes" hx-sync="this:drop">
-  {% for d in dishes %}
-  <li class="dish{{ ' aus' if d.sold_out }}">
-    <span class="dish-name"><span class="nr">{{ d.number }}</span> {{ d.name }}</span>
-    {% if d.sold_out %}<span class="badge warn">heute aus</span>{% endif %}
-    <button type="button" class="{{ 'primary' if d.sold_out else 'stop' }}"
-            hx-post="/gui/gericht-aus/{{ d.menu_item_id }}/{{ 'wieder-da' if d.sold_out else 'aus' }}"
-            hx-include="#gericht-suche" hx-target="#gericht-liste">{{ "Wieder da" if d.sold_out else "Heute aus" }}</button>
-  </li>
+<div hx-sync="this:drop">
+  {% for g in groups %}
+  {# Each category folds (docs/06 §3): closed at first, open for a search; app.js
+     keeps which ones the team opened. "Heute aus" is always open, without a fold. #}
+  {% set out = g.dishes|selectattr("sold_out")|list|length %}
+  {% if g.sold_out_group %}
+  <section class="dish-group">
+    <h3 class="dish-cat">Heute aus</h3>
   {% else %}
-  <li class="empty">Kein Gericht gefunden.</li>
+  <details class="dish-group" data-cat="{{ g.category }}"{{ " open" if query.strip() }}>
+    <summary class="dish-cat">
+      <span class="cat-name">{{ g.category }}</span>
+      <span class="count">{{ g.dishes|length }}</span>
+      {% if out %}<span class="badge warn">{{ out }} heute aus</span>{% endif %}
+    </summary>
+  {% endif %}
+    <ul class="dishes">
+      {% for d in g.dishes %}
+      {% include "fragments/gericht_aus_zeile.html" %}
+      {% endfor %}
+    </ul>
+  {% if g.sold_out_group %}</section>{% else %}</details>{% endif %}
+  {% else %}
+  <p class="empty">Kein Gericht gefunden.</p>
   {% endfor %}
-</ul>
+</div>

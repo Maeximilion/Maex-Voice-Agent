@@ -8,10 +8,12 @@ VPN, docs/13 §Caddy), nicht die Anwendung. Deshalb hängt hier bewusst keine
 Token-Abhängigkeit - ein Browser schickt keinen Bearer-Kopf mit.
 """
 
+import json
 import secrets
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -34,11 +36,13 @@ from api.domain.menu import sold_out as dishes
 from api.domain.ordering import board as order_board
 from api.domain.ordering import correction
 from api.domain.reservations import list_today
+from api.domain.reservations import notice as reservation_notice
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status import bridge
 from api.domain.status import config as switches
 from api.domain.status import holidays as holiday_days
 from api.domain.status.mode import CAUTION, mode_at
+from api.domain.status.waits import current_wait, standard_wait
 from api.gui import figures_view, orders_view
 from api.gui.sse import today_event_stream
 from api.models import ServiceConfig, Tenant
@@ -59,6 +63,14 @@ SWITCH_FAILED = "Umschalten hat nicht geklappt. Bitte nochmal tippen."
 WAIT_STEP = 15
 # Adresse in der Kopfzeile -> Service in service_config (T-3.6).
 WAIT_SERVICES = {"abholung": "pickup", "lieferung": "delivery"}
+# The switches of the header, the words in the path are the words on the tablet.
+SERVICE_SWITCHES = {
+    "abholung": switches.set_pickup,
+    "lieferung": switches.set_delivery,
+    "reservierung": switches.set_reservations,
+}
+# Form fields of the notice sheet, Monday is 0 (T-3.13).
+NOTICE_FIELDS = {f"tag-{weekday}" for weekday in range(7)}
 
 # Der Punkt der Kopfzeile: Farbe allein reicht nie, der Text steht daneben
 # (docs/06 §1 Regel 4, §3 Kopfzeile).
@@ -197,8 +209,14 @@ def _header(session: Session, tenant: Tenant) -> dict:
             "mode_label": "KI ist aus",
             "config": None,
         }
-    holding = mode_at(session, tenant, config)
+    now = clock.utcnow()
+    holding = mode_at(session, tenant, config, now)
     tone, label = MODE_LABELS.get(holding.mode, ("danger", "KI ist aus"))
+    # The AI answers and nothing can be booked: not the green tick (T-3.10).
+    if tone == "ok" and not (
+        config.pickup_enabled or config.delivery_enabled or config.reservations_enabled
+    ):
+        tone = "warn"
     rank = MODE_CHOICES.index(holding.mode) if holding.mode in MODE_CHOICES else -1
     return {
         **base,
@@ -212,6 +230,20 @@ def _header(session: Session, tenant: Tenant) -> dict:
         "mode_choices": [
             (mode, MODE_LABELS[mode][1], mode == holding.mode, index > rank)
             for index, mode in enumerate(MODE_CHOICES)
+        ],
+        "services": [
+            ("abholung", "Abholung", config.pickup_enabled),
+            ("lieferung", "Lieferung", config.delivery_enabled),
+            ("reservierung", "Reservierung", config.reservations_enabled),
+        ],
+        "waits": [
+            (
+                key,
+                key.capitalize(),
+                current_wait(config, service, now),
+                standard_wait(config, service),
+            )
+            for key, service in WAIT_SERVICES.items()
         ],
         "config": config,
         "sold_out_count": dishes.sold_out_count(session, tenant.id),
@@ -401,23 +433,6 @@ def modus(
     if mode not in MODE_CHOICES:
         raise HTTPException(status_code=404)
     return _switch(request, session, lambda t: switches.set_mode(session, t, mode))
-
-
-@router.post(
-    "/kopfzeile/lieferung/{state}",
-    response_class=HTMLResponse,
-    include_in_schema=False,
-    dependencies=[Depends(_require_htmx)],
-)
-def lieferung(
-    request: Request, state: str, session: Session = Depends(get_db)
-) -> HTMLResponse:
-    if state not in ("an", "aus"):
-        raise HTTPException(status_code=404)
-    enabled = state == "an"
-    return _switch(
-        request, session, lambda t: switches.set_delivery(session, t, enabled)
-    )
 
 
 @router.post(
@@ -646,7 +661,10 @@ def orders_fragment(
 
 
 def _order_tap(
-    request: Request, session: Session, change: Callable[[uuid.UUID], object]
+    request: Request,
+    session: Session,
+    change: Callable[[uuid.UUID], object],
+    notice: Callable[[Any], str] | None = None,
 ) -> HTMLResponse:
     """Passt oder Nochmal senden: die Spalte kommt frisch zurueck.
 
@@ -657,15 +675,22 @@ def _order_tap(
     tenant = _tenant(session)
     if tenant is None:
         return _orders_fragment(request, session, None)
-    problem = None
+    problem = line = None
     try:
-        change(tenant.id)
+        result = change(tenant.id)
+        # The card leaves the column at once: say what happened.
+        line = notice(result) if notice else None
     except AppError as exc:
         session.rollback()
         logger.info("Bestellung nicht umgestellt: %s", exc.message)
         if exc.code == "conflict":
             problem = exc.say or ORDER_FAILED
-    return _orders_fragment(request, session, tenant, problem)
+    response = _orders_fragment(request, session, tenant, problem)
+    if line:
+        # An event, not a line in the column: the refresh after the tap would
+        # remove it within a second. app.js shows it for a few seconds.
+        response.headers["HX-Trigger"] = json.dumps({"order-notice": line})
+    return response
 
 
 @router.post(
@@ -734,6 +759,9 @@ def cancel_order_tap(
         request,
         session,
         lambda t: order_board.cancel_order(session, t, order_id, version),
+        lambda order: (
+            f"Bestellung {order.pickup_code or order.customer_name}: Storniert"
+        ),
     )
 
 
@@ -748,10 +776,36 @@ async def _form(request: Request) -> dict[str, str]:
     return {k: v[-1] for k, v in parse_qs(body, keep_blank_values=True).items()}
 
 
+@router.get(
+    "/wartezeit/{service}", response_class=HTMLResponse, include_in_schema=False
+)
+def wartezeit_blatt(
+    request: Request, service: str, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """The sheet of one wait: today's value and the standard (T-3.9, T-3.14)."""
+    tenant = _tenant(session)
+    config = session.get(ServiceConfig, tenant.id) if tenant else None
+    if service not in WAIT_SERVICES or config is None:
+        raise HTTPException(status_code=404)
+    name = WAIT_SERVICES[service]
+    return templates.TemplateResponse(
+        request,
+        "fragments/wartezeit.html",
+        {
+            "key": service,
+            "label": service.capitalize(),
+            "minutes": current_wait(config, name, clock.utcnow()),
+            "standard": standard_wait(config, name),
+            "wait_min": switches.MIN_WAIT_MINUTES,
+            "wait_max": switches.MAX_WAIT_MINUTES,
+        },
+    )
+
+
 def _typed_minutes(text: str) -> int:
-    """The digits the team typed; 0 for anything else, which the limits refuse."""
+    """The digits the team typed; -1 for anything else, which every limit refuses."""
     text = text.strip()
-    return int(text) if text.isascii() and text.isdigit() and len(text) <= 4 else 0
+    return int(text) if text.isascii() and text.isdigit() and len(text) <= 4 else -1
 
 
 @router.post(
@@ -774,6 +828,66 @@ def wartezeit_getippt(
         session,
         lambda t: switches.set_wait(session, t, WAIT_SERVICES[service], minutes),
     )
+
+
+@router.post(
+    "/kopfzeile/standardzeit/{service}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def standardzeit(
+    request: Request,
+    service: str,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    if service not in WAIT_SERVICES:
+        raise HTTPException(status_code=404)
+    minutes = _typed_minutes(form.get("minuten", ""))
+    return _switch(
+        request,
+        session,
+        lambda t: switches.set_standard_wait(
+            session, t, WAIT_SERVICES[service], minutes
+        ),
+    )
+
+
+@router.post(
+    "/kopfzeile/standardzeit/{service}/zurueck",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def standardzeit_zurueck(
+    request: Request, service: str, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    if service not in WAIT_SERVICES:
+        raise HTTPException(status_code=404)
+    return _switch(
+        request,
+        session,
+        lambda t: switches.reset_wait(session, t, WAIT_SERVICES[service]),
+    )
+
+
+# After the wait routes: this pattern would take their paths too.
+@router.post(
+    "/kopfzeile/{service}/{state}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def dienst(
+    request: Request, service: str, state: str, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Abholung, Lieferung and Reservierung on or off."""
+    setter = SERVICE_SWITCHES.get(service)
+    if setter is None or state not in ("an", "aus"):
+        raise HTTPException(status_code=404)
+    enabled = state == "an"
+    return _switch(request, session, lambda t: setter(session, t, enabled))
 
 
 def _correction_panel(
@@ -927,18 +1041,86 @@ def _dish_list(
         return templates.TemplateResponse(
             request,
             template,
-            {"dishes": [], "query": query, "dish_problem": NO_TENANT},
+            {"groups": [], "query": query, "dish_problem": NO_TENANT},
             503,
         )
     return templates.TemplateResponse(
         request,
         template,
         {
-            "dishes": dishes.list_switches(session, tenant.id, query),
+            "groups": dishes.group_switches(
+                dishes.list_switches(session, tenant.id, query),
+                sold_out_first=not query.strip(),
+            ),
             "query": query,
             "dish_problem": problem,
         },
     )
+
+
+def _notice_sheet(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    message: str | None = None,
+    tone: str = "danger",
+    status: int = 200,
+) -> HTMLResponse:
+    notices = reservation_notice.weekday_notices(session, tenant.id)
+    return templates.TemplateResponse(
+        request,
+        "fragments/vorlauf.html",
+        {
+            "days": [(d, WEEKDAYS[d], minutes) for d, minutes in notices.items()],
+            "max_notice": reservation_notice.MAX_NOTICE_MINUTES,
+            "message": message,
+            "tone": tone,
+        },
+        status,
+    )
+
+
+@router.get("/vorlauf", response_class=HTMLResponse, include_in_schema=False)
+def vorlauf(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+    """The sheet with the notice per weekday (T-3.13)."""
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    return _notice_sheet(request, session, tenant)
+
+
+@router.post(
+    "/vorlauf",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def vorlauf_speichern(
+    request: Request,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    minutes = {
+        int(field.removeprefix("tag-")): _typed_minutes(value)
+        for field, value in form.items()
+        if field in NOTICE_FIELDS
+    }
+    try:
+        reservation_notice.set_notices(session, tenant.id, minutes)
+    except AppError as exc:
+        session.rollback()
+        logger.warning("Vorlauf nicht gespeichert: %s", exc.message)
+        return _notice_sheet(
+            request,
+            session,
+            tenant,
+            exc.say or SWITCH_FAILED,
+            status=409,
+        )
+    return _notice_sheet(request, session, tenant, "Gespeichert.", "ok")
 
 
 @router.get("/gericht-aus", response_class=HTMLResponse, include_in_schema=False)
@@ -969,20 +1151,19 @@ def dish_switch(
     request: Request,
     menu_item_id: uuid.UUID,
     state: str,
-    form: dict[str, str] = Depends(_form),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
-    """Ein Tap: heute aus oder wieder da. Die Liste kommt frisch zurueck.
+    """One tap: off today or back. Answers with the one row in its new state,
+    which the tablet swaps in place, so the list does not move under the finger.
 
-    Ein Gericht, das es nicht (mehr) gibt, ist fuer das Team kein Fehler - die
-    frische Liste zeigt den Stand. Nur ein Datenbankfehler bekommt eine Zeile.
+    A dish that is gone (not found) is no error for the team: its row goes.
+    Only a database error gets a line in the row.
     """
     if state not in DISH_STATES:
         raise HTTPException(status_code=404)
     tenant = _tenant(session)
-    query = form.get("q", "")
     if tenant is None:
-        return _dish_list(request, session, None, query)
+        return HTMLResponse("", 503)
     problem = None
     try:
         dishes.set_sold_out(
@@ -993,7 +1174,16 @@ def dish_switch(
         logger.info("Gericht nicht umgeschaltet: %s", exc.message)
         if exc.code != "not_found":
             problem = DISH_FAILED
-    response = _dish_list(request, session, tenant, query, problem=problem)
+    row = dishes.get_switch(session, tenant.id, menu_item_id)
+    response = (
+        HTMLResponse("")
+        if row is None
+        else templates.TemplateResponse(
+            request,
+            "fragments/gericht_aus_zeile.html",
+            {"d": row, "dish_problem": problem},
+        )
+    )
     response.headers["HX-Trigger"] = DISHES_CHANGED
     return response
 

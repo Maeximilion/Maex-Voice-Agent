@@ -34,8 +34,12 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | call_mode | TEXT | `shadow` / `overflow` / `primary` / `paused`: the mode the team chose last. What holds at a given moment also depends on `call_mode_windows` and `call_mode_chosen_at` (`domain/status/mode.py`, T-8.1); `paused` beats every window |
 | call_mode_chosen_at | TIMESTAMPTZ NULL | when the team last chose a mode on the tablet's switch (T-8.1, migration 013). A window that began after it holds, the tap holds against one that began before. Pause and resume leave it; NULL until the first tap, so every window holds |
 | delivery_enabled | BOOL | Schalter „Lieferung pausieren" |
-| pickup_wait_minutes | INT, default 30 | aktuelle Wartezeit Abholung; one value that a restart keeps, no separate standard |
-| delivery_wait_minutes | INT, default 60 | aktuelle Wartezeit Lieferung; one value that a restart keeps, no separate standard |
+| pickup_enabled | BOOL, default true | switch for pickup, as for delivery (T-3.10) |
+| reservations_enabled | BOOL, default true | switch for reservations (T-3.10) |
+| pickup_wait_standard_minutes | INT, default 30 | standard wait for pickup; a restart keeps it (T-3.14) |
+| delivery_wait_standard_minutes | INT, default 60 | standard wait for delivery; a restart keeps it (T-3.14) |
+| pickup_wait_today_minutes, delivery_wait_today_minutes | INT, NULL | today's wait, set by the stepper or the typed field; read only through `domain/status/waits.py` |
+| pickup_wait_today_until, delivery_wait_today_until | TIMESTAMPTZ, NULL | when today's wait ends, the end of the business day; past it the standard holds and nothing has to run; a check keeps value and end together |
 | team_phone | TEXT | Durchwahl für `transfer_to_team` |
 | max_call_seconds | INT | Kostenbremse, Default 420. The phone line reads it with the routing at the start of every call, the text phone, the dev phone and the evals when their session starts, and each ends the call by it (`domain/calls/routing.py`, `telephony/handler.py`, `sim/session.py`); a change applies from the next call. The setting `MAX_CALL_SECONDS` is only what the seed writes here. Also how long a reservation draft holds its seats without a confirmation (`domain/reservations/capacity.py`) |
 | reservation_lead_minutes | INT ≥ 0 | frühester Reservierungsbeginn nach Öffnung eines Service, Default 15 (D12, Migration 005) |
@@ -122,6 +126,7 @@ Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
 | slot_start / slot_end | TIME | z. B. 18:00–20:00 |
 | max_guests | INT | Gäste gesamt im Fenster, `>= 0` (0 closes the window for reservations; migration 006) |
 | slot_minutes | INT | Raster, Default 30, `> 0` (migration 006: a grid of zero minutes never ends) |
+| notice_minutes | INT, default 0, `>= 0` | how long before its time a table of this window can be reserved; 0 is no notice (T-3.13, migration 025) |
 
 ### `reservations`
 | Feld | Typ | Bemerkung |
@@ -318,7 +323,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 
 `approved` heißt: das Team hat die Bestellung im Tablet mit „Passt" abgehakt (T-4.7). Außerhalb von `primary` ist das zugleich die Freigabe an die Küche - vorher gibt es keinen Bon (docs/04 §confirm). Im Überlauf-Betrieb (Stufe 5) ist genau das der Freigabe-Schritt; since T-8.2 the restaurant can switch it off after G5 with `service_config.overflow_needs_approval`.
 
-Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, ob damit der Bon losging), `order.resent` (Nochmal senden), `order.cancelled` („Storniert“, with `version` and `note_sent`: whether a note went to the register) und `order.corrected` (Korrektur, mit `reason`, `before`/`after` je Position, `labels` und `note_dropped`, aber ohne Name, Telefon und Hinweistext). Die jüngste `labels`-Liste aus `order.draft_created` oder `order.corrected` nennt Nummer und Name je Position in der Reihenfolge von `created_at` (`domain/ordering/labels.py`). Die Zahl der `order.corrected`- und `order.cancelled`-Zeilen ist die Revision des Bons.
+Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, ob damit der Bon losging), `order.resent` (Nochmal senden), `order.cancelled` („Bestellung stornieren“, with `version` and `note_sent`: whether a note went to the register) und `order.corrected` (Korrektur, mit `reason`, `before`/`after` je Position, `labels` und `note_dropped`, aber ohne Name, Telefon und Hinweistext). Die jüngste `labels`-Liste aus `order.draft_created` oder `order.corrected` nennt Nummer und Name je Position in der Reihenfolge von `created_at` (`domain/ordering/labels.py`). Die Zahl der `order.corrected`- und `order.cancelled`-Zeilen ist die Revision des Bons.
 
 ### `order_items`
 | Feld | Typ | Bemerkung |
@@ -484,4 +489,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 021 | `complaint_rules`: the catalogue of fixed answers to a complaint, empty (T-10.11, D19); nothing backfilled and nothing seeded; the downgrade drops the table with every rule, booked remedies stay on their cards and in `audit_log` |
 | 022 | `recordings`: one row per recorded call, unique on `call_id` (T-11.3, L2); the downgrade drops the table, and the files it named stay in the folder without a way to find them. On top of 019 until the PRs of T-4.9 (020) and T-10.11 (021) merge: the later PR moves its `down_revision` |
 | 023 | `service_config`: default waits 30 and 60 minutes, a tenant on the old 20 and 45 moves, a changed wait stays (Maxi, 02.11.2026); the downgrade moves rows on 30 and 60 back |
+| 024 | `service_config`: the two wait columns become the standard and keep their values, and each service gets a wait for today with its end (T-3.14, #505); the downgrade drops the waits for today, so the standard holds |
+| 025 | `capacity.notice_minutes`, default 0: how long before its time a table can be reserved (T-3.13, #499); the downgrade drops the notices |
+| 026 | `service_config.pickup_enabled`, `reservations_enabled`, default true: the switches next to `delivery_enabled` (T-3.10, #495); the downgrade drops them |
 | planned, next free number | `eval_cases`, `eval_runs` |

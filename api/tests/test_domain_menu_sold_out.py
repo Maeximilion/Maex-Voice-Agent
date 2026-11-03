@@ -19,6 +19,8 @@ from api.domain.menu.importer import (
 )
 from api.domain.menu.sold_out import (
     ACTION_SOLD_OUT,
+    DishSwitch,
+    group_switches,
     list_switches,
     number_key,
     set_sold_out,
@@ -227,3 +229,61 @@ def test_search_field_finds_prefixed_number(session, tenant_id):
     apply(session, tenant_id, plan, now=NOW)
     found = [d.number for d in list_switches(session, tenant_id, "S1", now=NOW)]
     assert found == ["s1", "s12"]
+
+
+def test_sold_out_dishes_form_a_first_group_without_search():
+    def dish(number, category, out=False):
+        return DishSwitch(uuid.uuid4(), number, number, category, out)
+
+    switches = [
+        dish("1", "Suppen"),
+        dish("2", "Suppen", out=True),
+        dish("3", "Salate", out=True),
+        dish("4", "Salate", out=True),
+        dish("5", "Desserts"),
+    ]
+    groups = group_switches(switches, sold_out_first=True)
+    assert [(g.sold_out_group, [d.number for d in g.dishes]) for g in groups] == [
+        (True, ["2", "3", "4"]),
+        (False, ["1"]),
+        (False, ["5"]),
+    ]
+    # Salate is empty after the split and does not appear as a heading.
+    assert [g.category for g in groups[1:]] == ["Suppen", "Desserts"]
+    # Default and search: no split, the dish stays in its category.
+    plain = group_switches(switches)
+    assert not any(g.sold_out_group for g in plain)
+    assert [g.category for g in plain] == ["Suppen", "Salate", "Desserts"]
+    # Nothing is out: no empty first group.
+    assert not group_switches([dish("1", "Suppen")], sold_out_first=True)[
+        0
+    ].sold_out_group
+
+
+def test_groups_follow_menu_order_of_the_data(session, tenant_id):
+    groups = group_switches(list_switches(session, tenant_id, now=NOW))
+    assert [(g.category, [d.number for d in g.dishes]) for g in groups] == [
+        ("Vorspeisen", ["2", "23", "23a", "24"]),
+        ("Suppen", ["12", "13"]),
+    ]
+
+
+def test_search_result_stays_grouped(session, tenant_id):
+    groups = group_switches(list_switches(session, tenant_id, "rollen", now=NOW))
+    assert [g.category for g in groups] == ["Vorspeisen"]
+    assert group_switches([]) == []
+
+
+def test_group_order_is_not_alphabetical_or_hard_coded():
+    def dish(number, category):
+        return DishSwitch(uuid.uuid4(), number, number, category, False)
+
+    # Unknown category names: the first dish decides where a group stands.
+    groups = group_switches(
+        [dish("1", "Zebra"), dish("2", "Alpha"), dish("3", "Zebra"), dish("4", "Mid")]
+    )
+    assert [(g.category, [d.number for d in g.dishes]) for g in groups] == [
+        ("Zebra", ["1", "3"]),
+        ("Alpha", ["2"]),
+        ("Mid", ["4"]),
+    ]

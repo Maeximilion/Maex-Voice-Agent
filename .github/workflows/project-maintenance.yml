@@ -73,9 +73,25 @@ jobs:
         run: |
           # The report lands in the job summary, not as a comment on every
           # entry. One place to look instead of noise on the board.
-          python scripts/project_report.py --fix ${{ inputs.archive && '--archive' || '' }} \
+          python scripts/project_report.py --fix --history ${{ inputs.archive && '--archive' || '' }} \
             --findings-json "$RUNNER_TEMP/befunde.json" \
             | tee "$GITHUB_STEP_SUMMARY"
+
+      - name: Reconcile work-package relationships
+        id: relationships
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -m scripts.project_relationships --fix --findings-json "$RUNNER_TEMP/relationships.json"
+
+      - name: Fill missing metadata, including history
+        id: metadata
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/pr_metadata.py --findings-json "$RUNNER_TEMP/metadata.json"
 
       - name: Maintain the decision issue
         # What the maintenance cannot decide itself lands in exactly one issue.
@@ -88,18 +104,13 @@ jobs:
         run: >-
           python scripts/decision_issue.py "$RUNNER_TEMP/befunde.json"
           --also "README images=$RUNNER_TEMP/images.json"
+          --also "Work-package relationships=$RUNNER_TEMP/relationships.json"
+          --also "Repository metadata=$RUNNER_TEMP/metadata.json"
 
-      - name: Fill in assignee and label of pull requests
-        # Last, so a failure here does not hold up the board and the decision issue.
-        # Sets only what is missing: assignee = owner, label from the title.
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/pr_metadata.py
-
-      - name: Image check failed
+      - name: Maintenance component failed
         # continue-on-error turns a crash of the image check green; the run must
         # not, or the check could stop without anybody noticing (Codex on 2bff6f5).
-        if: ${{ !cancelled() && steps.images.outcome == 'failure' }}
+        if: ${{ !cancelled() && (steps.images.outcome == 'failure' || steps.relationships.outcome == 'failure' || steps.metadata.outcome == 'failure') }}
         run: |
-          echo "::error::readme_assets.py findings failed; the decision issue kept its README images section"
+          echo "::error::A maintenance component failed; the decision issue kept its missing sections"
           exit 1

@@ -25,9 +25,9 @@ from api.core.errors import SAY_ON_FAILURE, Conflict, NotFound
 from api.core.time import business_day, business_day_bounds_utc, tz, utcnow
 from api.domain.customers.contact import note_order
 from api.domain.ordering.draft import draft_labels
-from api.domain.ordering.validation import delivery_closed_say
+from api.domain.ordering.validation import delivery_closed_say, pickup_closed_say
 from api.domain.status.mode import mode_at
-from api.domain.status.service import DELIVERY
+from api.domain.status.service import DELIVERY, PICKUP
 from api.events import enqueue
 from api.events.types import ORDER_CONFIRMED
 from api.models import Address, AuditLog, Order, OrderItem, ServiceConfig, Tenant
@@ -97,7 +97,15 @@ def confirm_order(
         raise Conflict(
             "delivery switched off since the draft",
             say=delivery_closed_say(
-                session, req.tenant_id, now or utcnow(), tz(tenant.timezone)
+                session, req.tenant_id, config, now or utcnow(), tz(tenant.timezone)
+            ),
+        )
+    if order.type == PICKUP and not config.pickup_enabled:
+        # The same for pickup (T-3.10).
+        raise Conflict(
+            "pickup switched off since the draft",
+            say=pickup_closed_say(
+                session, req.tenant_id, config, now or utcnow(), tz(tenant.timezone)
             ),
         )
 

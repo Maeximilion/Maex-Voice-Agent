@@ -27,6 +27,7 @@ from api.domain.menu.importer import (
 from api.domain.ordering import draft_order
 from api.domain.ordering.draft import WARNING_READY_AFTER_CLOSE
 from api.domain.ordering.readback import spoken_euro, spoken_times
+from api.domain.status import config as switches
 from api.models import (
     AuditLog,
     Call,
@@ -268,6 +269,26 @@ def test_wartezeit_wird_nie_kuerzer_angesagt(session, tenant_id, call_id, sekund
     draft = draft_order(session, request(session, tenant_id, call_id), now=now)
     assert draft.ready_at >= now + timedelta(minutes=30)
     assert draft.ready_at.second == 0 and draft.ready_at.microsecond == 0
+    assert "abholbereit in etwa 30 Minuten" in draft.readback
+
+
+def test_the_read_back_names_todays_wait(session, tenant_id, call_id):
+    """T-3.14: the rush value is what the guest hears tonight."""
+    switches.set_wait(session, tenant_id, "pickup", 75, now=NOW)
+
+    draft = draft_order(session, request(session, tenant_id, call_id), now=NOW)
+
+    assert "abholbereit in etwa 75 Minuten" in draft.readback
+    assert draft.ready_at == NOW + timedelta(minutes=75)
+
+
+def test_the_read_back_names_the_standard_the_next_morning(session, tenant_id, call_id):
+    """T-3.14: nobody hears last night's rush value."""
+    switches.set_wait(session, tenant_id, "pickup", 75, now=NOW)
+    next_noon = NOW + timedelta(hours=18)
+
+    draft = draft_order(session, request(session, tenant_id, call_id), now=next_noon)
+
     assert "abholbereit in etwa 30 Minuten" in draft.readback
 
 
