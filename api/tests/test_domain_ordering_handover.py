@@ -117,15 +117,23 @@ def test_bon_abholen_drucken_melden(session, tenant_id, order_id):
     assert _order(session, order_id).handover_state == "sent"
 
 
-@pytest.mark.parametrize("kind", ["pickup", "delivery"])
+@pytest.mark.parametrize("kind", ["pickup", "delivery", "cancelled"])
 def test_claim_answer_carries_only_what_the_slip_prints(
     session, tenant_id, order_id, kind
 ):
-    # Security audit 02.11.2026: a stolen kitchen token reads no phone number.
+    # Security audits of 02.11.2026: a stolen kitchen token reads nothing the
+    # slip does not print, so no phone number and no unit price; a cancellation
+    # note also no address and no guest's note.
     [event] = _events(session, order_id)
-    if kind == "delivery":
-        event.payload = {
-            **event.payload,
+    payload = {
+        **event.payload,
+        "note": "Allergie: Erdnuesse",
+        "items": [
+            {**item, "note": "ohne Koriander"} for item in event.payload["items"]
+        ],
+    }
+    if kind != "pickup":
+        payload |= {
             "type": "delivery",
             "address": {
                 "street": "Hauptstr.",
@@ -138,13 +146,25 @@ def test_claim_answer_carries_only_what_the_slip_prints(
             "delivery_fee_cents": 300,
             "total_cents": 2300,
         }
-        session.commit()
-    payload = dict(event.payload)
+    if kind == "cancelled":
+        payload |= {"revision": 1, "correction_reason": "cancelled"}
+    event.payload = payload
+    session.commit()
     [claimed] = claim_tickets(session, tenant_id, _now())
+    ticket = claimed["ticket"]
 
     assert payload["phone"]  # the outbox event keeps it for n8n
-    assert "phone" not in claimed["ticket"]
-    assert "call_id" not in claimed["ticket"]
+    assert "phone" not in ticket
+    assert "call_id" not in ticket
+    assert all("unit_price_cents" not in item for item in ticket["items"])
+    if kind == "cancelled":
+        assert "address" not in ticket
+        assert "note" not in ticket
+        assert all("note" not in item for item in ticket["items"])
+    else:
+        assert ticket["note"] == payload["note"]
+        assert ticket["items"][0]["note"] == "ohne Koriander"
+        assert ticket["address"] == payload["address"]
     # The slip comes out byte for byte as from the whole event.
     times = {"ready_time": claimed["ready_time"], "print_time": claimed["print_time"]}
     assert escpos.render({**claimed["ticket"], **times}) == escpos.render(

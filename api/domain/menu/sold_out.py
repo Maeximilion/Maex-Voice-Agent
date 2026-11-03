@@ -134,6 +134,31 @@ def group_switches(
     return first + [DishGroup(category, items) for category, items in groups.items()]
 
 
+def get_switch(
+    session: Session,
+    tenant_id: uuid.UUID,
+    menu_item_id: uuid.UUID,
+    now: datetime | None = None,
+) -> DishSwitch | None:
+    """One dish in its current state, for the row the tablet swaps after a tap."""
+    item = session.scalars(
+        select(MenuItem).where(
+            MenuItem.tenant_id == tenant_id,
+            MenuItem.id == menu_item_id,
+            MenuItem.active.is_(True),
+        )
+    ).first()
+    if item is None:
+        return None
+    return DishSwitch(
+        menu_item_id=item.id,
+        number=item.number,
+        name=item.name,
+        category=item.category,
+        sold_out=is_sold_out(item, now or clock.utcnow()),
+    )
+
+
 def sold_out_count(
     session: Session, tenant_id: uuid.UUID, now: datetime | None = None
 ) -> int:

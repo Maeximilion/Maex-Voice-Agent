@@ -8,6 +8,7 @@ VPN, docs/13 §Caddy), nicht die Anwendung. Deshalb hängt hier bewusst keine
 Token-Abhängigkeit - ein Browser schickt keinen Bearer-Kopf mit.
 """
 
+import json
 import secrets
 import uuid
 from collections.abc import Callable
@@ -638,7 +639,6 @@ def _orders_fragment(
     session: Session,
     tenant: Tenant | None,
     problem: str | None = None,
-    notice: str | None = None,
 ) -> HTMLResponse:
     if tenant is None:
         return templates.TemplateResponse(
@@ -647,11 +647,7 @@ def _orders_fragment(
     return templates.TemplateResponse(
         request,
         "fragments/bestellungen.html",
-        {
-            "orders": _order_rows(session, tenant),
-            "order_problem": problem,
-            "order_notice": notice,
-        },
+        {"orders": _order_rows(session, tenant), "order_problem": problem},
     )
 
 
@@ -683,14 +679,19 @@ def _order_tap(
     problem = line = None
     try:
         result = change(tenant.id)
-        # The card leaves the column at once: say what happened, until the next refresh.
+        # The card leaves the column at once: say what happened.
         line = notice(result) if notice else None
     except AppError as exc:
         session.rollback()
         logger.info("Bestellung nicht umgestellt: %s", exc.message)
         if exc.code == "conflict":
             problem = exc.say or ORDER_FAILED
-    return _orders_fragment(request, session, tenant, problem, line)
+    response = _orders_fragment(request, session, tenant, problem)
+    if line:
+        # An event, not a line in the column: the refresh after the tap would
+        # remove it within a second. app.js shows it for a few seconds.
+        response.headers["HX-Trigger"] = json.dumps({"order-notice": line})
+    return response
 
 
 @router.post(
@@ -1133,20 +1134,19 @@ def dish_switch(
     request: Request,
     menu_item_id: uuid.UUID,
     state: str,
-    form: dict[str, str] = Depends(_form),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
-    """Ein Tap: heute aus oder wieder da. Die Liste kommt frisch zurueck.
+    """One tap: off today or back. Answers with the one row in its new state,
+    which the tablet swaps in place, so the list does not move under the finger.
 
-    Ein Gericht, das es nicht (mehr) gibt, ist fuer das Team kein Fehler - die
-    frische Liste zeigt den Stand. Nur ein Datenbankfehler bekommt eine Zeile.
+    A dish that is gone (not found) is no error for the team: its row goes.
+    Only a database error gets a line in the row.
     """
     if state not in DISH_STATES:
         raise HTTPException(status_code=404)
     tenant = _tenant(session)
-    query = form.get("q", "")
     if tenant is None:
-        return _dish_list(request, session, None, query)
+        return HTMLResponse("", 503)
     problem = None
     try:
         dishes.set_sold_out(
@@ -1157,7 +1157,16 @@ def dish_switch(
         logger.info("Gericht nicht umgeschaltet: %s", exc.message)
         if exc.code != "not_found":
             problem = DISH_FAILED
-    response = _dish_list(request, session, tenant, query, problem=problem)
+    row = dishes.get_switch(session, tenant.id, menu_item_id)
+    response = (
+        HTMLResponse("")
+        if row is None
+        else templates.TemplateResponse(
+            request,
+            "fragments/gericht_aus_zeile.html",
+            {"d": row, "dish_problem": problem},
+        )
+    )
     response.headers["HX-Trigger"] = DISHES_CHANGED
     return response
 
