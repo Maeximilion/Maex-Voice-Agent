@@ -16,7 +16,7 @@ from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session
 
 from api.domain.customers import find_customer
-from api.domain.customers.contact import settle_default
+from api.domain.customers.contact import default_at_cancel, default_at_mark
 from api.domain.customers.lookup import SAY_SAME_ADDRESS
 from api.domain.ordering import draft_order
 from api.domain.ordering.board import (
@@ -283,6 +283,23 @@ def test_a_late_mark_keeps_the_newer_address(session, tenant_id, call_id):
     assert _defaults(session) == [new.address_id]
 
 
+def test_a_correction_does_not_let_an_older_mark_take_the_default(
+    session, tenant_id, call_id
+):
+    """Codex #520: the newer delivery was marked, then corrected, which clears
+    its mark until the team marks the new revision. A card of an older delivery
+    marked meanwhile does not bring the older address back."""
+    old = _said_yes(session, tenant_id, call_id, HOME)
+    later = _call(session, tenant_id, caller_id=PHONE)
+    new = _said_yes(session, tenant_id, later, ELSEWHERE, now=NOW + timedelta(hours=1))
+    _typed_in(session, tenant_id, new)
+    _correct(session, tenant_id, new)
+
+    _typed_in(session, tenant_id, old, MARKED + timedelta(hours=2))
+
+    assert _defaults(session) == [new.address_id]
+
+
 def test_two_marks_of_one_customer_at_once(
     session, tenant_id, call_id, migrated_db_url
 ):
@@ -311,7 +328,7 @@ def test_two_marks_of_one_customer_at_once(
             # The first tablet's mark of the older delivery, up to its commit.
             mine = first.get_one(Order, old.id)
             mine.register_entered_at = MARKED
-            settle_default(first, mine)
+            default_at_mark(first, mine)
             thread = threading.Thread(target=tap)
             thread.start()
             _wait_for_a_lock(session)
@@ -322,3 +339,45 @@ def test_two_marks_of_one_customer_at_once(
 
     assert outcome == [None]
     assert _defaults(session) == [new.address_id]
+
+
+def test_two_cancels_of_one_customer_at_once(
+    session, tenant_id, call_id, migrated_db_url
+):
+    """Codex #520: two tablets cancel both marked deliveries of one customer at
+    the same moment. The second waits for the first on the customer row, so
+    the address the first fell back to, the second's own, does not stay."""
+    old = _said_yes(session, tenant_id, call_id, HOME)
+    later = _call(session, tenant_id, caller_id=PHONE)
+    new = _said_yes(session, tenant_id, later, ELSEWHERE, now=NOW + timedelta(hours=1))
+    _typed_in(session, tenant_id, old)
+    _typed_in(session, tenant_id, new, MARKED + timedelta(hours=1))
+    seen = version_of(session, old)
+    engine = create_engine(migrated_db_url)
+    outcome: list[BaseException | None] = []
+
+    def tap() -> None:
+        with Session(engine) as tablet:
+            try:
+                cancel_order(tablet, tenant_id, old.id, seen, now=MARKED)
+                outcome.append(None)
+            except BaseException as exc:  # noqa: BLE001 - handed to the test
+                outcome.append(exc)
+
+    try:
+        with Session(engine) as first:
+            # The first tablet's cancel of the newer delivery, up to its commit:
+            # it falls back to the older one, not cancelled yet.
+            mine = first.get_one(Order, new.id)
+            mine.status = "cancelled"
+            default_at_cancel(first, mine)
+            thread = threading.Thread(target=tap)
+            thread.start()
+            _wait_for_a_lock(session)
+            first.commit()
+        thread.join(timeout=10)
+    finally:
+        engine.dispose()
+
+    assert outcome == [None]
+    assert _defaults(session) == []

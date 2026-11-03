@@ -385,7 +385,7 @@ The request log (legal check U2, T-11.8, migration 019): the proof of the one-mo
 | floor_note | TEXT | „2. OG, Klingel Müller" |
 | zone_id | UUID NULL FK | beim Anlegen aufgelöst und gespeichert, on a stored address again with every draft (T-6.5); a deleted zone clears it |
 | lat / lon | DOUBLE NULL | nur bei Polygon-Zonen |
-| is_default | BOOL | at most one per customer (`uq_addresses_one_default`); set at the team's mark "In Kasse eingegeben", never at the yes: the address of the customer's newest delivery the team marked and did not cancel (`customers/contact.py` `settle_default`; security audit 02.11.2026, P2 no. 4). A draft nobody said yes to, and a yes alone, is no "letztes Mal" (T-6.5) |
+| is_default | BOOL | at most one per customer (`uq_addresses_one_default`); set at the team's mark "In Kasse eingegeben", never at the yes: the delivery's address, unless a newer delivery of the customer, not cancelled, goes to the default there is; „Storniert“ falls back to the newest marked delivery left, or to none (`customers/contact.py` `default_at_mark`, `default_at_cancel`; security audit 02.11.2026, P2 no. 4). A draft nobody said yes to, and a yes alone, is no "letztes Mal" (T-6.5) |
 
 ### `delivery_zones`
 | Feld | Typ | Bemerkung |
