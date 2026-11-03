@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from api.agent import allergies, escalation, guards, recording
 from api.agent.consent import (
     ALLERGY_QUESTION,
+    after_recording_answer,
     bare_answer,
     bare_recording_answer,
     consent_answer,
@@ -273,8 +274,10 @@ class ConversationLoop:
             if bare_recording_answer(user_text):
                 guards.note_said(state, recording.SAY_WHAT_CAN_I_DO)
                 return TurnResult(state=state, say=_opening(state))
-            # No consent, and no second question: the sentence, or what it
-            # holds besides a no, is what the guest called for.
+            # No consent, and no second question: what the sentence holds
+            # besides its answer is what the guest called for, and the only
+            # thing the readers of the turn see (#526).
+            user_text = after_recording_answer(user_text)
         if state.recording != "on" or not stops_recording(user_text):
             return self._guest_turn(state, user_text)
         recording.withdraw(self._session, state, self._now)
