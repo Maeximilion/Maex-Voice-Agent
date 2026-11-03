@@ -399,7 +399,7 @@ def bare_recording_answer(text: str) -> bool:
     """Does the sentence answer the recording question and say nothing more?
     A yes always does (`is_yes`). A no with a request in it ("Nein, nicht
     aufnehmen. Ich hätte gern einen Tisch") is logged as the no, and the
-    request still goes to the core."""
+    request still goes to the core (`after_recording_answer`)."""
     answer = recording_answer(text)
     return answer == "yes" or (
         answer == "no"
@@ -408,6 +408,54 @@ def bare_recording_answer(text: str) -> bool:
             or consent_answer(text, _RECORD_IT, refuse=_REFUSE) == "no"
         )
     )
+
+
+_CLAUSE_MARKS = ",.!?;:"
+# Answer words that may stand in front of a request without a comma.
+_ANSWER_WORDS = _NO | {"ja"}
+# Beginnings of words that may rule out what a request says ("nicht kalt").
+_NEGATIONS = ("nicht", "nie", "kein", "ohne")
+
+
+def _answer_clause(clause: str) -> bool:
+    """A clause that is all answer: a yes or a no without a word that could
+    rule out what the request says, or a stop that names the recording
+    ("nicht aufnehmen"). A digit is always the request's (Codex PR #532)."""
+    if any(char.isdigit() for char in clause) or not bare_recording_answer(clause):
+        return False
+    return stops_recording(clause) or not any(
+        word not in _NO and word.startswith(_NEGATIONS)
+        for word in _WORD.findall(clause.lower())
+    )
+
+
+def after_recording_answer(text: str) -> str:
+    """What a sentence holds besides its answer to the recording question:
+    "Nein, das Essen war kalt" goes on as "das Essen war kalt". The no answers
+    the question, and no reader of the turn may take it for a word of the
+    request, as the doubt of a complaint rule does (#526). The answer is the
+    run of leading clauses that are all answer (`_answer_clause`); without
+    such a clause, the leading "ja" or "nein" words, as speech recognition may
+    drop the comma. A sentence with nothing behind its answer stays whole."""
+    # shortcut: a no with a "nicht" that does not name the recording ("Lieber
+    # nicht.") stays in front, and its "nicht" sends a complaint to the team;
+    # widen `_answer_clause` when the call log shows such answers.
+    cut = start = 0
+    for end, char in enumerate(text + ","):
+        if char not in _CLAUSE_MARKS:
+            continue
+        if text[start:end].strip():
+            if not _answer_clause(text[start:end]):
+                break
+            cut = end
+        start = end + 1
+    if cut == 0:
+        for word in _SPOKEN.finditer(text):
+            if word.group().lower() not in _ANSWER_WORDS:
+                break
+            cut = word.end()
+    rest = text[cut:].lstrip(_CLAUSE_MARKS + " \t\n")
+    return rest or text
 
 
 def _asks_back(words: list[str]) -> bool:
