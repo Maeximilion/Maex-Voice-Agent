@@ -1,29 +1,32 @@
-/* The floor plan editor (T-3.11). Colours, layout and the calm green selection
-   of the approved design (gui/mockups/floor-plan-editor.html), which keeps its
-   own light and dark look (docs/design/floor-plan/README.md). Sizes follow
-   docs/06 §1 instead of the preview: controls 60 px, text 18 px at least. */
+/* The floor plan editor (T-3.11). Layout and behaviour of the approved design
+   (gui/mockups/floor-plan-editor.html); since Maxi's word of 03.11.2026 it wears
+   the colours of the board (D27, app.css) instead of the preview's green: neon
+   marks the selection and the tool in use, coral only removing and what went
+   wrong, one dark theme. Sizes follow docs/06 §1: controls 60 px, text 18 px. */
 
 .re {
-  color-scheme: light dark;
-  --re-bg: light-dark(#f6f8f5, #1d2520); --re-panel: light-dark(#ffffff, #27312a); --re-ink: light-dark(#243c2e, #e5eee7);
-  --re-sub: light-dark(#5a6b5f, #afc2b3); --re-line: light-dark(#dce4dc, #47584b); --re-control: light-dark(#7d8e81, #7f9384);
-  --re-green: light-dark(#35694b, #a1cfac); --re-on: light-dark(#ffffff, #173520); --re-soft: light-dark(#e6f1e7, #354e3b);
-  --re-floor: light-dark(#f3f0e7, #30382e); --re-wood: light-dark(#fffcf3, #4e4d3c); --re-edge: light-dark(#bfb69d, #a09f82);
-  --re-chair: light-dark(#d1c6ad, #858369); --re-wall: light-dark(#8b998b, #8e9e90); --re-red: light-dark(#a3443e, #f0a39b);
-  --re-tap: 60px;
-  color: var(--re-ink); background: var(--re-bg); border: 1px solid var(--re-line); border-radius: 16px; overflow: hidden;
+  color-scheme: dark;
+  --re-bg: var(--bg); --re-panel: var(--surface); --re-ink: var(--text); --re-sub: var(--muted);
+  --re-line: var(--line); --re-control: var(--line-strong);
+  --re-accent: var(--accent); --re-on: var(--surface); --re-soft: var(--accent-bg);
+  --re-floor: var(--surface-2); --re-terrace: #1A1330;
+  --re-wood: #352B5E; --re-wood-on: #433878; --re-counter: #4A3F78;
+  --re-edge: var(--line-strong); --re-chair: var(--line-strong); --re-wall: var(--line-strong);
+  --re-link: var(--muted); --re-red: var(--danger);
+  --re-tap: var(--tap, 60px);
+  color: var(--re-ink); background: var(--re-bg); border: 2px solid var(--re-line); border-radius: var(--r-lg, 14px); overflow: hidden;
   font: 18px/1.4 var(--font-sans, system-ui, sans-serif); margin: 12px;
 }
 .re * { box-sizing: border-box; }
 .re h2, .re h3, .re p { margin: 0; }
 .re button, .re input, .re select { font: inherit; color: inherit; }
-.re button:focus-visible, .re input:focus-visible, .re select:focus-visible, .re summary:focus-visible { outline: 3px solid var(--re-green); outline-offset: 2px; }
+.re button:focus-visible, .re input:focus-visible, .re select:focus-visible, .re summary:focus-visible { outline: 3px solid var(--re-accent); outline-offset: 2px; }
 .re[data-busy="true"] .re-content { opacity: .6; }
 
 .re-room-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 14px 18px; background: var(--re-panel); }
 .re-room-tabs { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; min-width: 0; }
 .re-room-tab { max-width: 100%; overflow-wrap: anywhere; text-align: left; }
-.re-room-tab[aria-current="page"] { background: var(--re-soft); border-color: var(--re-green); color: var(--re-green); font-weight: 600; }
+.re-room-tab[aria-current="page"] { background: var(--re-soft); border-color: var(--re-accent); color: var(--re-accent); font-weight: 600; box-shadow: inset 0 -4px 0 var(--re-accent); }
 .re-area-tag { font-size: 18px; color: var(--re-sub); font-weight: 400; margin-left: 6px; }
 .re-room-form { padding: 16px 18px; border-top: 1px solid var(--re-line); background: var(--re-panel); }
 .re-room-form[hidden] { display: none; }
@@ -31,9 +34,10 @@
 .re-room-form-fields { display: grid; grid-template-columns: 2fr 1.3fr 1fr 1fr; gap: 12px; }
 .re-room-form-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; }
 
-.re-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--re-tap); min-width: var(--re-tap); padding: 8px 16px; border: 2px solid var(--re-control); border-radius: 10px; background: var(--re-panel); color: var(--re-ink); cursor: pointer; }
-.re-btn:hover { background: var(--re-soft); }
-.re-btn[aria-pressed="true"], .re-btn.re-primary { color: var(--re-on); background: var(--re-green); border-color: var(--re-green); }
+.re-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--re-tap); min-width: var(--re-tap); padding: 8px 16px; border: 2px solid var(--re-control); border-radius: var(--r, 12px); background: var(--re-panel); color: var(--re-ink); cursor: pointer; }
+.re-btn:hover { background: var(--surface-2, var(--re-soft)); }
+.re-btn[aria-pressed="true"]:hover, .re-btn.re-primary:hover { background: var(--re-accent); filter: brightness(1.08); }
+.re-btn[aria-pressed="true"], .re-btn.re-primary { color: var(--re-on); background: var(--re-accent); border-color: var(--re-accent); font-weight: 600; }
 .re-btn:disabled { opacity: .45; cursor: default; }
 .re-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; border-block: 1px solid var(--re-line); background: var(--re-panel); }
 .re-tools .re-undo { margin-left: auto; }
@@ -43,20 +47,20 @@
 .re-context { display: flex; gap: 10px; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 8px 18px 0; }
 .re-room-summary { min-height: var(--re-tap); padding: 6px 4px; border: 0; background: transparent; color: var(--re-ink); font-weight: 500; text-decoration: underline; text-underline-offset: 4px; cursor: pointer; }
 .re-grid-control { display: flex; gap: 10px; align-items: center; color: var(--re-sub); min-height: var(--re-tap); cursor: pointer; }
-.re-grid-control input { width: 28px; height: 28px; accent-color: var(--re-green); }
+.re-grid-control input { width: 28px; height: 28px; accent-color: var(--re-accent); }
 .re-stage { height: 520px; position: relative; margin: 0 14px; min-width: 0; }
 .re-floor { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: var(--re-floor); isolation: isolate; touch-action: none; }
-.re-floor.re-grid { background-image: radial-gradient(circle, color-mix(in srgb, var(--re-wall) 38%, transparent) .8px, transparent 1px); }
+.re-floor.re-grid { background-image: radial-gradient(circle, color-mix(in srgb, var(--re-sub) 30%, transparent) .8px, transparent 1px); }
 .re-floor.re-drawing { cursor: crosshair; }
 .re-floor.re-drawing .re-object, .re-floor.re-drawing .re-endpoint { pointer-events: none; }
-.re-floor.re-terrace { background-color: light-dark(#edf1e7, #2c382c); }
+.re-floor.re-terrace { background-color: var(--re-terrace); }
 .re-floor.re-terrace .re-outer { background: transparent; border: 2px dashed var(--re-wall); }
 .re-outer { position: absolute; background: var(--re-wall); pointer-events: none; z-index: 0; }
-.re-dimension { position: absolute; color: var(--re-sub); white-space: nowrap; pointer-events: none; }
+.re-dimension { position: absolute; color: var(--re-sub); font-family: var(--font-mono, monospace); white-space: nowrap; pointer-events: none; }
 .re-dimension-x { left: 50%; top: -32px; transform: translateX(-50%); }
 .re-dimension-y { right: -12px; top: 50%; transform: translate(100%, -50%); writing-mode: vertical-rl; }
 .re-connections { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; }
-.re-connections line { stroke: var(--re-green); stroke-width: 2; stroke-dasharray: 6 6; }
+.re-connections line { stroke: var(--re-link); stroke-width: 2; stroke-dasharray: 6 6; }
 .re-room-empty { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: var(--re-sub); text-align: center; max-width: 85%; pointer-events: none; }
 
 .re-object { position: absolute; z-index: 2; }
@@ -64,34 +68,36 @@
 .re-object button { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .re-object button:active { cursor: grabbing; }
 .re-furniture { transform: translate(-50%, -50%) rotate(var(--re-angle)); }
-.re-piece { position: absolute; inset: 0; width: 100%; height: 100%; border: 1px solid var(--re-edge); border-radius: 7px; background: var(--re-wood); color: var(--re-ink); padding: 0; display: grid; place-items: center; overflow: hidden; box-shadow: 0 2px 0 color-mix(in srgb, var(--re-edge) 30%, transparent); }
+.re-piece { position: absolute; inset: 0; width: 100%; height: 100%; border: 1px solid var(--re-edge); border-radius: 7px; background: var(--re-wood); color: var(--re-ink); padding: 0; display: grid; place-items: center; overflow: hidden; box-shadow: 0 2px 0 rgba(0, 0, 0, .35); }
 .re-round .re-piece { border-radius: 50%; }
-.re-selected .re-piece { background: var(--re-soft); border: 2px solid var(--re-green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--re-green) 13%, transparent); }
+.re-selected .re-piece { background: var(--re-wood-on); border: 3px solid var(--re-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--re-accent) 22%, transparent); }
 .re-piece-text { display: flex; flex-direction: column; align-items: center; transform: rotate(var(--re-text-turn)); pointer-events: none; white-space: nowrap; line-height: 1.15; }
 .re-piece-text.re-vertical { writing-mode: vertical-rl; }
 .re-piece-name { font-weight: 600; }
 .re-piece-seats { color: var(--re-sub); }
+/* Muted text reaches only 4:1 on the lighter fill of a selected table. */
+.re-selected .re-piece-seats { color: var(--re-ink); }
 .re-piece-seats[hidden] { display: none; }
-.re-counter .re-piece { background: var(--re-chair); border-radius: 4px; }
-.re-counter.re-selected .re-piece { background: var(--re-soft); }
+.re-counter .re-piece { background: var(--re-counter); border-radius: 4px; }
+.re-counter.re-selected .re-piece { background: var(--re-wood-on); }
 .re-counter .re-piece-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
 .re-chair { position: absolute; transform: translate(-50%, -50%) rotate(var(--chair-angle, 0deg)); background: var(--re-chair); border-radius: 2px; pointer-events: none; }
 .re-wall-object { transform: translate(-50%, -50%) rotate(var(--re-angle)); }
 .re-wall-hit { position: absolute; inset: 0; border: 0; padding: 0; width: 100%; height: 100%; background: transparent; }
 .re-wall-bar { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: var(--re-thickness); background: var(--re-wall); pointer-events: none; }
-.re-selected .re-wall-bar { background: var(--re-green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--re-green) 15%, transparent); }
-.re-wall-measure { position: absolute; left: 50%; top: calc(50% - 34px); transform: translate(-50%, -100%) rotate(calc(-1 * var(--re-angle))); color: var(--re-green); font-weight: 600; white-space: nowrap; pointer-events: none; }
-.re-preview { position: absolute; background: var(--re-green); opacity: .65; pointer-events: none; z-index: 8; }
+.re-selected .re-wall-bar { background: var(--re-accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--re-accent) 22%, transparent); }
+.re-wall-measure { position: absolute; left: 50%; top: calc(50% - 34px); transform: translate(-50%, -100%) rotate(calc(-1 * var(--re-angle))); color: var(--re-ink); font-family: var(--font-mono, monospace); font-weight: 600; white-space: nowrap; pointer-events: none; }
+.re-preview { position: absolute; background: var(--re-accent); opacity: .55; pointer-events: none; z-index: 8; }
 /* The visible point is small; the target around it is 60 px (docs/06 §1). */
-.re-endpoint { position: absolute; width: 26px; height: 26px; padding: 0; transform: translate(-50%, -50%); border: 3px solid var(--re-green); background: var(--re-panel); border-radius: 50%; z-index: 7; touch-action: none; cursor: crosshair; }
+.re-endpoint { position: absolute; width: 26px; height: 26px; padding: 0; transform: translate(-50%, -50%); border: 3px solid var(--re-accent); background: var(--re-panel); border-radius: 50%; z-index: 7; touch-action: none; cursor: crosshair; }
 .re-endpoint::after { content: ""; position: absolute; inset: -17px; }
-.re-door-gap { position: absolute; background: var(--re-floor); transform: translate(-50%, -50%); pointer-events: none; border-inline: 3px solid var(--re-green); }
-.re-door.re-side .re-door-gap { border-inline: 0; border-block: 3px solid var(--re-green); }
-.re-door-button { position: absolute; transform: translate(-50%, -50%); border: 2px dashed var(--re-green); border-radius: 6px; padding: 6px 10px; background: var(--re-soft); color: var(--re-ink); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.re-door-gap { position: absolute; background: var(--re-floor); transform: translate(-50%, -50%); pointer-events: none; border-inline: 3px solid var(--re-control); }
+.re-door.re-side .re-door-gap { border-inline: 0; border-block: 3px solid var(--re-control); }
+.re-door-button { position: absolute; transform: translate(-50%, -50%); border: 2px dashed var(--re-control); border-radius: 6px; padding: 6px 10px; background: var(--re-soft); color: var(--re-ink); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 .re-door-button::after, .re-label-button::after { content: ""; position: absolute; inset: -10px; }
-.re-selected .re-door-button { border: 3px solid var(--re-green); }
+.re-selected .re-door-button { border: 3px solid var(--re-accent); }
 .re-label-button { position: relative; display: block; transform: translate(-50%, -50%); padding: 4px 6px; border: 2px solid transparent; background: transparent; color: var(--re-ink); border-radius: 6px; max-width: 240px; white-space: normal; overflow-wrap: anywhere; }
-.re-selected .re-label-button { border: 2px dashed var(--re-green); background: var(--re-soft); }
+.re-selected .re-label-button { border: 2px dashed var(--re-accent); background: var(--re-soft); }
 .re-hint { min-height: 44px; padding: 4px 18px 14px; color: var(--re-sub); }
 
 .re-aside { padding: 18px; background: var(--re-panel); border-left: 1px solid var(--re-line); min-width: 0; }
@@ -109,16 +115,19 @@
 .re-advanced { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: var(--re-tap); padding: 10px 0; border-top: 1px solid var(--re-line); cursor: pointer; }
 .re-advanced small { display: block; color: var(--re-sub); font-size: 18px; }
 .re-advanced input { appearance: none; width: 60px; height: 34px; border-radius: 17px; border: 2px solid var(--re-control); background: var(--re-line); position: relative; flex: none; cursor: pointer; }
-.re-advanced input::before { content: ""; position: absolute; width: 24px; height: 24px; left: 3px; top: 3px; border-radius: 50%; background: var(--re-panel); }
-.re-advanced input:checked { background: var(--re-green); border-color: var(--re-green); }
+.re-advanced input::before { content: ""; position: absolute; width: 24px; height: 24px; left: 3px; top: 3px; border-radius: 50%; background: var(--re-sub); }
+.re-advanced input:checked { background: var(--re-accent); border-color: var(--re-accent); }
+.re-advanced input:checked::before { background: var(--re-on); }
 .re-advanced input:checked::before { left: 29px; }
 .re-custom-size { color: var(--re-sub); }
 .re-table-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.re-delete { color: var(--re-red); border-color: var(--re-red); margin-top: 24px; width: 100%; }
+.re-delete { color: var(--re-red); border-color: var(--re-red); background: transparent; margin-top: 24px; width: 100%; }
+.re-delete:hover { background: var(--danger-bg, var(--re-panel)); }
 .re-meta { color: var(--re-sub); margin-top: 14px; }
 .re-combos { margin-top: 18px; border-top: 1px solid var(--re-line); padding-top: 13px; }
 .re-combos summary { min-height: var(--re-tap); display: flex; align-items: center; cursor: pointer; }
 .re-combo-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.re-total { font-family: var(--font-mono, monospace); }
 .re-foot { display: flex; gap: 12px; justify-content: space-between; flex-wrap: wrap; border-top: 1px solid var(--re-line); padding: 12px 18px; background: var(--re-panel); }
 .re-status { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 0 18px 12px; background: var(--re-panel); color: var(--re-sub); min-height: 44px; }
 .re-status.re-error { color: var(--re-red); font-weight: 600; }

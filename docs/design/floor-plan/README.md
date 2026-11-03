@@ -24,6 +24,9 @@ browser permits it; it is not a backup or production persistence.
 - Preserve the calm green selection, neutral furniture, readable labels and
   light/dark appearance of this editor. This approval concerns the floor plan;
   it does not replace D27's operations-board styling elsewhere.
+  Superseded for the colours (Maxi, 03.11.2026, after the first production
+  build): the editor wears the board's D27 palette and its one dark theme.
+  Layout and behaviour stay as approved.
 - Maxi chose HTMX with native pointer events over introducing React for this
   view. D6 stays in force: Python, FastAPI, Jinja2 and HTMX. Dragging is local;
   persist the completed operation rather than making a request for each pointer

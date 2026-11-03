@@ -69,7 +69,7 @@
   function fromDoc(doc) {
     var s = G.toClient(doc);
     return { room: s.room, objects: s.objects, links: s.links, revision: s.revision, saved: doc,
-      history: [], saving: false, again: false, unsaved: false };
+      history: [], saving: false, again: false, unsaved: false, unacked: null };
   }
 
   function adopt(target, doc) {
@@ -77,49 +77,63 @@
     ["room", "objects", "links", "revision", "saved"].forEach(function (k) { target[k] = fresh[k]; });
   }
 
+  // A save whose answer never came may have been stored: it goes out again,
+  // exactly as it was, before anything newer. The server takes the same room
+  // twice as no conflict and answers with its revision (Codex on #535).
   function save(target) {
     if (target.saving) { target.again = true; return; }
     target.saving = true;
-    var sentContent = content(target);
-    send("PUT", "/gui/raumplan/bereiche/" + target.room.id, { revision: target.revision, area: G.toServer(target) })
+    var body = target.unacked || { revision: target.revision, area: G.toServer(target) };
+    var replaced = false;
+    function lost() {
+      target.unacked = body;
+      target.unsaved = true;
+      status(NOT_SAVED, true, true);
+    }
+    send("PUT", "/gui/raumplan/bereiche/" + target.room.id, body)
       .then(function (res) {
         var say = res.data && res.data.say;
         if (res.status === 200) {
+          target.unacked = null;
           target.revision = res.data.area.revision;
           target.saved = res.data.area;
           target.unsaved = false;
+          // Steps made meanwhile, or held back behind a resent save, follow now.
+          if (JSON.stringify(G.toServer(target)) !== JSON.stringify(body.area)) target.again = true;
           if (!target.again && target === area) status("Gespeichert.");
         } else if (res.status === 409 && res.data.area) {
           adopt(target, res.data.area);
+          target.unacked = null;
           target.history = [];
           target.again = false;
+          replaced = true;
           status(say || "Ein anderes Gerät hat diesen Raum geändert.", true);
         } else if (res.status >= 400 && res.status < 500) {
           // Refused: back to what the server holds, the step is not kept.
           adopt(target, target.saved);
+          target.unacked = null;
           var top = target.history[target.history.length - 1];
           if (top && top === content(target)) target.history.pop();
           target.again = false;
+          replaced = true;
           status(say || "Das hat nicht geklappt, nichts gespeichert.", true);
         } else {
-          target.unsaved = true;
-          status(NOT_SAVED, true, true);
+          lost();
         }
-        if (target === area) { if (!find(selectedId)) selectedId = "room"; render(); }
-      }, function () {
-        target.unsaved = true;
-        if (content(target) !== sentContent) target.again = true;
-        status(NOT_SAVED, true, true);
-      })
+        // Only a replaced room is drawn again: a redraw on every answer would
+        // throw away what the team is typing into a field (Codex on #535).
+        if (target === area) {
+          if (replaced) { if (!find(selectedId)) selectedId = "room"; render(); } else controls();
+        }
+      }, lost)
       .catch(function (err) {
         // A fault in this page, not on the line: keep the step and say so.
-        target.unsaved = true;
-        status(NOT_SAVED, true, true);
+        lost();
         if (window.console) window.console.error(err);
       })
       .then(function () {
         target.saving = false;
-        if (target.again) { target.again = false; save(target); }
+        if (target.again && !target.unsaved) { target.again = false; save(target); }
       });
   }
 
