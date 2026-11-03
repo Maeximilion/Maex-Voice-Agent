@@ -1,0 +1,82 @@
+{# The floor plan editor (T-3.11, docs/06 §3 "Raumplan"), after the approved
+   design gui/mockups/floor-plan-editor.html: rooms on top, tools, the plan,
+   the properties on the right. The plan itself is drawn by raumplan.js from
+   /gui/raumplan/plan; every finished step is saved at once. #}
+{% extends "base.html" %}
+{% block title %}Raumplan{% endblock %}
+{% block body_class %}betrieb raumplan-seite{% endblock %}
+{% block head %}<link rel="stylesheet" href="/gui/static/raumplan.css">{% endblock %}
+
+{% block header %}
+<header>
+  <div class="top">
+    <a class="button" href="/gui">Zurück</a>
+    <h1 class="kz-title">Raumplan</h1>
+    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
+  </div>
+</header>
+{% endblock %}
+
+{% block main %}
+{% if tenant %}
+<div id="raumplan" class="re" aria-label="Raumplan mit frei bearbeitbarem Grundriss" data-busy="true">
+  <div class="re-room-bar">
+    <nav class="re-room-tabs" aria-label="Räume und Terrassen"></nav>
+    <button type="button" class="re-btn" data-action="newRoom">Neuer Raum</button>
+  </div>
+  <form class="re-room-form" hidden aria-label="Raum oder Terrasse erstellen">
+    <h2>Raum oder Terrasse erstellen</h2>
+    <div class="re-room-form-fields">
+      <label class="re-field"><span>Name</span><input class="re-input" name="areaName" type="text" maxlength="30" required value="Gastraum"></label>
+      <label class="re-field"><span>Bereich</span><select class="re-input" name="areaKind"><option value="inside">Innenraum</option><option value="terrace">Terrasse</option></select></label>
+      <label class="re-field"><span>Breite (m)</span><input class="re-input" name="areaWidth" type="number" min="2" max="50" step="0.1" value="10" required></label>
+      <label class="re-field"><span>Tiefe (m)</span><input class="re-input" name="areaHeight" type="number" min="2" max="50" step="0.1" value="7" required></label>
+    </div>
+    <div class="re-room-form-actions">
+      <button class="re-btn re-primary" type="submit">Bereich erstellen</button>
+      <button class="re-btn" type="button" data-action="cancelRoom">Abbrechen</button>
+    </div>
+  </form>
+  <div class="re-tools" aria-label="Objekte und Zeichenwerkzeuge">
+    <button type="button" class="re-btn" data-tool="select" aria-pressed="true">Auswählen</button>
+    <button type="button" class="re-btn" data-add="table">Tisch</button>
+    <button type="button" class="re-btn" data-add="counter">Theke</button>
+    <button type="button" class="re-btn" data-add="door">Eingang</button>
+    <button type="button" class="re-btn" data-tool="wall" aria-pressed="false">Wand zeichnen</button>
+    <button type="button" class="re-btn" data-add="label">Text</button>
+    <button type="button" class="re-btn re-undo" data-action="undo" disabled aria-label="Letzte Änderung rückgängig machen">Rückgängig</button>
+  </div>
+  <div class="re-content">
+    <div class="re-work">
+      <div class="re-context">
+        <button type="button" class="re-room-summary" data-action="room"><span class="re-room-value"></span></button>
+        <label class="re-grid-control"><input type="checkbox" data-field="grid" checked>10-cm-Raster</label>
+      </div>
+      <div class="re-stage">
+        <div class="re-floor re-grid" aria-label="Grundriss. Objekte auswählen und ziehen; Pfeiltasten verschieben die Auswahl.">
+          <div class="re-dimension re-dimension-x"></div>
+          <div class="re-dimension re-dimension-y"></div>
+          <svg class="re-connections" aria-hidden="true"></svg>
+          <div class="re-outer" data-side="top"></div>
+          <div class="re-outer" data-side="right"></div>
+          <div class="re-outer" data-side="bottom"></div>
+          <div class="re-outer" data-side="left"></div>
+        </div>
+      </div>
+      <p class="re-hint"></p>
+    </div>
+    <aside class="re-aside" aria-label="Eigenschaften">
+      <label class="re-field"><span>Auswahl</span><select class="re-input" data-field="selection"></select></label>
+      <div class="re-properties"></div>
+    </aside>
+  </div>
+  <footer class="re-foot"><span class="re-total"></span></footer>
+  <div class="re-status" role="status" aria-live="polite">Der Raumplan wird geladen.</div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="/gui/static/raumplan-geometry.js" defer></script>
+<script src="/gui/static/raumplan.js" defer></script>
+{% endblock %}

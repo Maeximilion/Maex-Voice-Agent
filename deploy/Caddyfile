@@ -41,7 +41,8 @@
     # that is never offered to the internet cannot be tried from there.
     @public path /gui /gui/* /v1/kitchen/* /health
     handle @public {
-        # Forms and the bridge send a few hundred bytes.
+        # Forms and the bridge send a few hundred bytes, a room of the floor plan
+        # (T-3.11) at most about 200 KB at its largest (schemas/floor_plan.py).
         request_body {
             max_size 256KB
         }

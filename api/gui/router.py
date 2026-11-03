@@ -17,14 +17,16 @@ from typing import Any
 from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.templating import Jinja2Templates
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.config import LOCAL_ENVS, settings
 from api.core import time as clock
 from api.core.auth import require_gui_proxy
+from api.core.envelope import fail_body
 from api.core.errors import AppError
 from api.core.logging import get_logger
 from api.core.time import business_day, to_local
@@ -35,7 +37,7 @@ from api.domain.menu import price_check
 from api.domain.menu import sold_out as dishes
 from api.domain.ordering import board as order_board
 from api.domain.ordering import correction
-from api.domain.reservations import list_today
+from api.domain.reservations import floor_plan, list_today
 from api.domain.reservations import notice as reservation_notice
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status import bridge
@@ -46,6 +48,7 @@ from api.domain.status.waits import current_wait, standard_wait
 from api.gui import figures_view, orders_view
 from api.gui.sse import today_event_stream
 from api.models import ServiceConfig, Tenant
+from api.schemas.floor_plan import NewArea, SaveArea
 
 TEMPLATES = Path(__file__).parent / "templates"
 STATIC = Path(__file__).parent / "static"
@@ -1186,6 +1189,91 @@ def dish_switch(
     )
     response.headers["HX-Trigger"] = DISHES_CHANGED
     return response
+
+
+# The floor plan editor (T-3.11, docs/06 §3 "Raumplan"). The browser keeps a
+# drag to itself and sends the whole room after each finished step; these routes
+# only translate between JSON and domain/reservations/floor_plan.py.
+PLAN_INVALID = "Der Plan enthält einen ungültigen Wert und ist nicht gespeichert."
+
+
+async def _body(request: Request) -> bytes:
+    """Read in the event loop, so the route itself stays synchronous (as `_form`)."""
+    return await request.body()
+
+
+def _plan_error(exc: AppError, status: int) -> JSONResponse:
+    body = fail_body(exc.code, exc.message, exc.say)
+    if isinstance(exc, floor_plan.StaleRevision):
+        body["area"] = exc.current
+    return JSONResponse(body, status_code=status)
+
+
+def _plan_write(session: Session, write: Callable[[uuid.UUID], dict]) -> JSONResponse:
+    tenant = _tenant(session)
+    if tenant is None:
+        return JSONResponse(fail_body("not_found", "no tenant", NO_TENANT), 503)
+    try:
+        return JSONResponse({"ok": True, "area": write(tenant.id)})
+    except ValidationError:
+        return JSONResponse(fail_body("invalid_input", "plan", PLAN_INVALID), 422)
+    except AppError as exc:
+        session.rollback()
+        logger.info("Raumplan nicht gespeichert: %s", exc.message)
+        return _plan_error(exc, exc.status if exc.status >= 400 else 422)
+
+
+@router.get("/raumplan", response_class=HTMLResponse, include_in_schema=False)
+def raumplan(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+    """The floor plan editor; its data comes from /gui/raumplan/plan."""
+    tenant = _tenant(session)
+    context: dict = {"tenant": tenant} if tenant else {"problem": NO_TENANT}
+    return _page_response(
+        request, "betrieb/raumplan.html", context, status_code=200 if tenant else 503
+    )
+
+
+@router.get("/raumplan/plan", include_in_schema=False)
+def raumplan_daten(session: Session = Depends(get_db)) -> JSONResponse:
+    tenant = _tenant(session)
+    if tenant is None:
+        return JSONResponse(fail_body("not_found", "no tenant", NO_TENANT), 503)
+    return JSONResponse(
+        {"ok": True, "areas": floor_plan.plan(session, tenant.id)},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.post(
+    "/raumplan/bereiche", include_in_schema=False, dependencies=[Depends(_require_htmx)]
+)
+def raumplan_neuer_bereich(
+    body: bytes = Depends(_body), session: Session = Depends(get_db)
+) -> JSONResponse:
+    return _plan_write(
+        session,
+        lambda tenant_id: floor_plan.create_area(
+            session, tenant_id, NewArea.model_validate_json(body)
+        ),
+    )
+
+
+@router.put(
+    "/raumplan/bereiche/{area_id}",
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def raumplan_speichern(
+    area_id: uuid.UUID,
+    body: bytes = Depends(_body),
+    session: Session = Depends(get_db),
+) -> JSONResponse:
+    return _plan_write(
+        session,
+        lambda tenant_id: floor_plan.save_area(
+            session, tenant_id, area_id, SaveArea.model_validate_json(body)
+        ),
+    )
 
 
 @router.get("/events", include_in_schema=False)
