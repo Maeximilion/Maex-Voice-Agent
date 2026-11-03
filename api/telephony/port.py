@@ -94,7 +94,8 @@ class CallEvents(Protocol):
 
     def on_talked_over(self, session_id: str, text: str) -> None:
         """While a recording runs: the caller said `text` into a sentence that
-        may not be interrupted. No turn; it may be a withdrawal (docs/09 L2)."""
+        may not be interrupted, or into the farewell or the sentence before a
+        transfer. No turn; it may be a withdrawal (docs/09 L2)."""
         ...
 
     def on_voice_failure(self, session_id: str) -> None:
@@ -104,11 +105,19 @@ class CallEvents(Protocol):
         the call to the team (docs/20 §4, CLAUDE.md §2 rule 5)."""
         ...
 
-    def on_call_ended(self, session_id: str, speech: SpeechUsage | None = None) -> None:
+    def on_call_ended(
+        self,
+        session_id: str,
+        speech: SpeechUsage | None = None,
+        *,
+        caller_hung_up: bool = False,
+    ) -> None:
         """The line is gone: the caller hung up, or the line closed it after
         our hangup or transfer. Reported once for every call, also after a
         failure; the core closes its call log on it, with what the call cost
-        the ear and the mouth (`speech`, None where not measured)."""
+        the ear and the mouth (`speech`, None where not measured).
+        `caller_hung_up`: the caller's leg was gone before the line had our
+        hangup or transfer, so nothing rings the team for this call."""
         ...
 
     def on_team_missed(self, session_id: str) -> bool:

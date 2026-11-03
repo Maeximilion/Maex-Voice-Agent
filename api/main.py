@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from starlette.exceptions import HTTPException
 
-from api.config import settings
+from api.config import LOCAL_ENVS, settings
 from api.core import envelope
 from api.core.auth import require_token
 from api.core.errors import AppError
@@ -68,7 +68,6 @@ def ping() -> JSONResponse:
     return envelope.ok({"pong": True})
 
 
-@app.post("/v1/calls/start", dependencies=[Depends(require_token)])
 def calls_start(
     body: StartCallRequest, session: Session = Depends(get_db)
 ) -> JSONResponse:
@@ -78,11 +77,36 @@ def calls_start(
     return envelope.ok(result.model_dump(mode="json"))
 
 
-@app.post("/v1/calls/end", dependencies=[Depends(require_token)])
+def add_local_routes(target: FastAPI, env: str) -> None:
+    """Routes that exist in dev and test only (Maxi, 03.11.2026, #252).
+
+    `/v1/calls/start` takes any caller ID, and recognition trusts
+    `calls.caller_id`, so a token holder could open a call in the name of any
+    guest. The voice layer opens its calls in its own process
+    (`telephony/handler.py`), so outside dev and test nothing needs the route.
+    `/v1/calls/end` goes the same way (Maxi, 03.11.2026): it ends a call's log
+    early for whoever holds the token and the call's id.
+    """
+    if env in LOCAL_ENVS:
+        for path, endpoint in (
+            ("/v1/calls/start", calls_start),
+            ("/v1/calls/end", calls_end),
+        ):
+            target.add_api_route(
+                path,
+                endpoint,
+                methods=["POST"],
+                dependencies=[Depends(require_token)],
+            )
+
+
 def calls_end(body: EndCallRequest, session: Session = Depends(get_db)) -> JSONResponse:
     """Anruf-Log schließt (docs/04 §Endpunkte)."""
     result = end_call(session, body)
     return envelope.ok(result.model_dump(mode="json"))
+
+
+add_local_routes(app, settings.env)
 
 
 def _status(request: Request, status: int, gui_status: int) -> int:

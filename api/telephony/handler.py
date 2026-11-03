@@ -28,7 +28,8 @@ With `RECORDING_ENABLED` the first sentence asks whether the call may be recorde
 (docs/09 L2, `agent/recording.py`). The core takes the answer on a call the AI
 answers, and the handler follows `state.recording` on the line. In mode `shadow`
 no core runs: the handler takes the answer itself, and the call goes to the team
-whatever it is, recorded only after a yes.
+whatever it is, recorded only after a yes. A caller who hangs up before the line
+hands such a call on leaves a callback card: the team never rang (#252 no. 9).
 """
 
 import re
@@ -315,9 +316,15 @@ class CallHandler:
             self._guarded(live, lambda: self._silent(live))
 
     def on_talked_over(self, session_id: str, text: str) -> None:
-        live = self._lookup(session_id)
+        """Also on a call the core was ending: a stop said into the farewell
+        or the sentence before a transfer holds (L2, #522)."""
+        with self._lock:
+            ending = self._ending.get(session_id)
+        live = ending[0] if ending is not None else self._lookup(session_id)
         if live is not None:
-            self._guarded(live, lambda: self._talked_over(live, text))
+            self._guarded(
+                live, lambda: self._talked_over(live, text, ending=ending is not None)
+            )
 
     def on_voice_failure(self, session_id: str) -> None:
         """Ear or mouth failed: the outage sentence, as far as it can still be
@@ -333,7 +340,13 @@ class CallHandler:
             )
             self._fail(session_id, live)
 
-    def on_call_ended(self, session_id: str, speech: SpeechUsage | None = None) -> None:
+    def on_call_ended(
+        self,
+        session_id: str,
+        speech: SpeechUsage | None = None,
+        *,
+        caller_hung_up: bool = False,
+    ) -> None:
         with self._lock:
             self._ai_calls.discard(session_id)  # the leg is gone, its place is free
             if session_id in self._starting:
@@ -346,34 +359,17 @@ class CallHandler:
                 return  # closed already, or never known
             self._remember_closed(session_id)
         self._finish(live, outcome, speech=speech)
+        if caller_hung_up and live.loop is None and live.state.recording is not None:
+            # Mode shadow with the recording question: the caller hung up on
+            # it, or behind the answer before the line handed the call on. The
+            # team never rang, and the card is its only notice (#252 no. 9).
+            self._card(session_id, rang=False)
 
     def on_team_missed(self, session_id: str) -> bool:
         with self._lock:
             self._forget_old_named_phones()
             phone, summary, _ = self._named_phones.pop(session_id, (None, None, 0.0))
-        session: Session | None = None
-        try:
-            session = self._session_factory()
-            card = team_missed(
-                session,
-                self._tenant_id,
-                session_id,
-                phone=phone,
-                summary=summary,
-                now=self._now or utcnow(),
-            )
-        except Exception as exc:  # noqa: BLE001 - the caller hears "call again"
-            # The type only: a message can carry the guest's number.
-            logger.error(
-                "no callback card for a team leg nobody answered",
-                extra={
-                    "extra": {"session_id": session_id, "error": type(exc).__name__}
-                },
-            )
-            return False
-        finally:
-            _close_quietly(session)
-        return card is not None
+        return self._card(session_id, phone=phone, summary=summary)
 
     def on_recording_stopped(self, session_id: str) -> bool:
         session: Session | None = None
@@ -456,13 +452,16 @@ class CallHandler:
         self._port.say(live.session_id, SAY_TO_THE_TEAM)
         self._transfer(live, live.team_phone)
 
-    def _talked_over(self, live: _LiveCall, text: str) -> None:
-        """Into a read-back or another protected sentence: no turn, and what
-        was said to the guest stands. Only the withdrawal counts."""
+    def _talked_over(self, live: _LiveCall, text: str, *, ending: bool) -> None:
+        """Into a read-back or another protected sentence, or into the last
+        sentence before the call ends (`ending`): no turn, and what was said
+        to the guest stands. Only the withdrawal counts."""
         if live.state.recording != "on" or not stops_recording(text):
             return
         recording.withdraw(live.session, live.state, self._now)
         self._follow_recording(live, "on")
+        if ending:
+            return  # nothing is said behind the farewell or the transfer sentence
         self._port.say(live.session_id, recording.SAY_RECORDING_STOPPED)
         # The notice is the last sentence heard: an "Okay" answers it, not the
         # read-back or the question it was said into (rule 3, L13).
@@ -671,6 +670,41 @@ class CallHandler:
         finally:
             _close_quietly(live.session)
             _close_model(live.llm)
+
+    def _card(
+        self,
+        session_id: str,
+        *,
+        phone: str | None = None,
+        summary: str | None = None,
+        rang: bool = True,
+    ) -> bool:
+        """A callback card for a call the team did not take (`team_missed`), in
+        a session of its own: our leg's may be closed. Never raises."""
+        session: Session | None = None
+        try:
+            session = self._session_factory()
+            card = team_missed(
+                session,
+                self._tenant_id,
+                session_id,
+                phone=phone,
+                summary=summary,
+                now=self._now or utcnow(),
+                rang=rang,
+            )
+        except Exception as exc:  # noqa: BLE001 - a lost card costs no call
+            # The type only: a message can carry the guest's number.
+            logger.error(
+                "no callback card for a call the team did not take",
+                extra={
+                    "extra": {"session_id": session_id, "error": type(exc).__name__}
+                },
+            )
+            return False
+        finally:
+            _close_quietly(session)
+        return card is not None
 
     # -- bookkeeping ---------------------------------------------------------------
 

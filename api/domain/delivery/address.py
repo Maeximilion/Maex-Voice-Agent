@@ -17,6 +17,7 @@ it. A blocked customer on the booking number or on the line goes to the team.
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -57,6 +58,7 @@ def place(
     wanted: OrderCustomer,
     phone: str,
     line: str | None,
+    now: datetime,
 ) -> Place:
     """`line`: the number the call came from, None when withheld."""
     name = (wanted.name or "").strip()
@@ -99,7 +101,7 @@ def place(
     return Place(
         name=runs_under,
         name_heard=bool(name),
-        zone=check_delivery(session, tenant_id, postal_code),
+        zone=check_delivery(session, tenant_id, postal_code, now),
         spoken=wanted.address,
         stored=stored,
         customer_id=known.id if known else None,
@@ -115,8 +117,9 @@ def keep(
     where: Place,
 ) -> tuple[Customer, Address]:
     """The rows the draft points at, with the zone on the address. Flushed:
-    the order needs their ids. Default and counters wait for `confirm`: a draft
-    nobody said yes to is no "letztes Mal"."""
+    the order needs their ids. Counters wait for `confirm`, the default for the
+    team's mark (`board.settle_default`): a draft nobody said yes to is no
+    "letztes Mal"."""
     customer = _customer(session, tenant_id, call_id, phone, where)
     address = where.stored or _address(session, tenant_id, customer, where.spoken)
     address.zone_id = where.zone.zone_id

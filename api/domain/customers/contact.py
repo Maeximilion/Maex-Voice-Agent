@@ -10,7 +10,12 @@ must not extend the period of the old record (L12).
 Only a booking under the line the call came from is a contact of the customers
 on that number. A number the guest only names, or a withheld line, moves nobody
 (security audit 02.11.2026): a stranger could keep someone's record alive, and a
-confirmed delivery would make the stranger's address that customer's default.
+delivery would make the stranger's address that customer's default.
+
+The default address moves at the team's mark, not at the yes
+(`ordering.board.settle_default`, security audit 02.11.2026, P2 no. 4; Maxi
+03.11.2026): a caller ID can be spoofed, so a yes alone must not change the
+owner's "letztes Mal".
 
 And only a row that is someone's record moves: one with an order counted, or a
 blocked one, the rows `find_customer` recognizes. A row only a draft wrote, also
@@ -27,7 +32,7 @@ from sqlalchemy.orm import Session
 
 from api.domain.customers.lookup import line_of, objected
 from api.domain.menu.numberwords import fold
-from api.models import Address, Customer, Order
+from api.models import Customer, Order
 
 
 def note_contact(
@@ -54,9 +59,8 @@ def note_contact(
 
 
 def note_order(session: Session, order: Order, at: datetime) -> None:
-    """A confirmed order. Its address becomes the default, the one and only
-    "letztes Mal" `find_customer` may ask about: the old one goes first, or the
-    unique index stops the second."""
+    """A confirmed order: its customer's counters and contact. The address
+    waits for the team's mark (`ordering.board.settle_default`)."""
     if order.customer_id is None:
         note_contact(
             session,
@@ -80,14 +84,4 @@ def note_order(session: Session, order: Order, at: datetime) -> None:
             last_order_at=at,
             order_count=Customer.order_count + 1,
         )
-    )
-    if order.address_id is None:
-        return
-    session.execute(
-        update(Address)
-        .where(Address.customer_id == order.customer_id, Address.is_default.is_(True))
-        .values(is_default=False)
-    )
-    session.execute(
-        update(Address).where(Address.id == order.address_id).values(is_default=True)
     )

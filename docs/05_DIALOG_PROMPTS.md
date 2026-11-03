@@ -114,7 +114,7 @@ Zusätzlich: **Adresse**
 ```text
 find_customer hat Adresse  → "An dieselbe Adresse wie beim letzten Mal?" → Ja genügt (L12: nie die Adresse selbst), Name nur, wenn der Gast ihn nennt
 sonst                      → PLZ → Straße (buchstabieren) → Hausnummer (Tastatur) → check_delivery → Name
-   out_of_zone    → Abholung anbieten
+   out_of_zone    → read `say`: it offers pickup only where pickup is open; a closed pickup then offers no delivery back (#524)
 → draft_order → vorlesen → Ja → confirm
    below_minimum  → Fehlbetrag nennen, nachbestellen lassen, neuer draft_order
    closed         → `say` vorlesen, er bietet Abholung nur an, wo sie offen ist
@@ -578,6 +578,8 @@ On the phone the code says this sentence before the first turn (`telephony/handl
 Behind a yes (draft, U1 does not name the way to stop, L2 does), and then the last sentence of the greeting, in mode `shadow` the sentence before the team rings:
 > „Sie können die Aufnahme jederzeit mit den Worten Aufnahme stoppen beenden."
 > „Was kann ich für Sie tun?" / „Ich verbinde Sie mit dem Restaurant."
+
+A caller who hangs up in mode `shadow` before the team rang, on the question or behind the answer, leaves a callback card under the caller id, so the team learns of the call (docs/20 §4, #252 no. 9).
 
 On „Aufnahme stoppen" (draft), then what the guest had not answered yet:
 > „Die Aufnahme ist gestoppt und gelöscht."

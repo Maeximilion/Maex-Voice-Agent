@@ -317,7 +317,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | idempotency_key | TEXT UNIQUE | |
 | pickup_code | TEXT NULL | Abholcode („A17"), ab `confirm` gesetzt (docs/04 confirm, docs/06 §3) |
 | handover_state | TEXT NULL | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse; leer, solange Entwurf, und leer nach `confirm` außerhalb von `primary`, bis das Team freigibt. `sent` setzt die Rückmeldung der Druckbrücke, `failed` heißt „Küche hat den Bon nicht" (Druckfehler oder 60 s unabgeholt) und wird wieder `sent`, sobald der Bon doch gedruckt ist (T-4.6, docs/04 §Küchenbon) |
-| register_entered_at | TIMESTAMPTZ NULL | when the team tapped „In Kasse eingegeben“ on the tablet (T-11.6, docs/09 §1 L18): the order is typed into the register, the only booking system with a TSE. Only after „Passt“ (`approved`); a correction clears it, because the register holds the state that was typed in. Empty on every order before migration 012. An order the guest said yes to without it stays on the tablet, red from the next business day on, and is counted in the daily push (`daily.report`) |
+| register_entered_at | TIMESTAMPTZ NULL | when the team tapped „In Kasse eingegeben“ on the tablet (T-11.6, docs/09 §1 L18): the order is typed into the register, the only booking system with a TSE. Only after „Passt“ (`approved`); a correction clears it, because the register holds the state that was typed in. The first mark of a delivery makes its address the customer's default (`addresses.is_default`). Empty on every order before migration 012. An order the guest said yes to without it stays on the tablet, red from the next business day on, and is counted in the daily push (`daily.report`) |
 
 **Datenbank prüft mit:** `total_cents = items_total_cents + delivery_fee_cents`, Beträge ≥ 0, Menge > 0. Ein Rechenfehler im Code scheitert an der Tabelle, nicht auf dem Bon.
 
@@ -390,7 +390,7 @@ The request log (legal check U2, T-11.8, migration 019): the proof of the one-mo
 | floor_note | TEXT | „2. OG, Klingel Müller" |
 | zone_id | UUID NULL FK | beim Anlegen aufgelöst und gespeichert, on a stored address again with every draft (T-6.5); a deleted zone clears it |
 | lat / lon | DOUBLE NULL | nur bei Polygon-Zonen |
-| is_default | BOOL | at most one per customer (`uq_addresses_one_default`); only `confirm` sets it: the address of a draft nobody said yes to is no "letztes Mal" (T-6.5) |
+| is_default | BOOL | at most one per customer (`uq_addresses_one_default`); set at the team's mark "In Kasse eingegeben", never at the yes: the address of the customer's newest delivery, by creation, that the guest confirmed, nobody cancelled and the team marked once, also when a correction cleared that mark since (the audit entry of the mark stays); none when no such delivery is left, and „Storniert“ settles it again only for a delivery the team marked (`ordering/board.py` `settle_default`; security audit 02.11.2026, P2 no. 4). A draft nobody said yes to, and a yes alone, is no "letztes Mal" (T-6.5) |
 
 ### `delivery_zones`
 | Feld | Typ | Bemerkung |

@@ -6,13 +6,14 @@ L12), and the total with the fee read before the yes (N2).
 """
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, delete, func, select, update
 from sqlalchemy.orm import Session
 
+from api.agent.dispatch import dispatch
 from api.config import settings
 from api.core.errors import (
     SAY_ON_FAILURE,
@@ -25,10 +26,15 @@ from api.core.errors import (
 )
 from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
-from api.domain.customers import SAY_SAME_ADDRESS, find_customer
+from api.domain.customers import find_customer
 from api.domain.delivery.address import SAY_WHICH_NAME
-from api.domain.delivery.zones import SAY_OUT_OF_ZONE, SAY_OUT_OF_ZONE_NO_PICKUP
+from api.domain.delivery.zones import (
+    SAY_OUT_OF_ZONE,
+    SAY_OUT_OF_ZONE_NO_PICKUP,
+    check_delivery,
+)
 from api.domain.ordering import draft_order
+from api.domain.ordering.board import approve_order, mark_entered, version_of
 from api.domain.ordering.confirm import confirm_order
 from api.domain.ordering.correction import (
     CorrectionRequest,
@@ -714,9 +720,11 @@ def test_a_draft_offers_nobody_its_address(session, tenant_id, call_id):
     assert match.say is None
 
 
-def test_confirm_counts_the_order_and_makes_the_address_the_default(
+def test_confirm_counts_the_order_and_leaves_the_default_to_the_mark(
     session, tenant_id, call_id
 ):
+    """The address becomes the default at the team's mark, not at the yes
+    (test_default_address_at_mark.py)."""
     draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
     later = NOW + timedelta(minutes=1)
 
@@ -729,8 +737,7 @@ def test_confirm_counts_the_order_and_makes_the_address_the_default(
     assert customer.last_order_at == later
     assert customer.last_contact_at == later
     match = find_customer(session, tenant_id, PHONE, "Braun")
-    assert match.address_id == order.address_id
-    assert match.say == SAY_SAME_ADDRESS
+    assert (match.found, match.address_id, match.say) == (True, None, None)
 
 
 def test_a_second_confirm_counts_once(session, tenant_id, call_id):
@@ -740,21 +747,6 @@ def test_a_second_confirm_counts_once(session, tenant_id, call_id):
     confirmed(session, tenant_id, call_id, draft.order_id)
 
     assert session.scalar(select(Customer.order_count)) == 1
-
-
-def test_the_new_address_replaces_the_default(session, tenant_id, call_id):
-    known, home = known_customer(session, tenant_id)
-    draft = draft_order(
-        session, delivery(session, tenant_id, call_id, name="Müller"), now=NOW
-    )
-
-    confirmed(session, tenant_id, call_id, draft.order_id)
-
-    session.refresh(home)
-    order = session.get(Order, draft.order_id)
-    assert home.is_default is False
-    assert session.get(Address, order.address_id).is_default is True
-    assert order.customer_id == known.id
 
 
 def test_the_order_event_carries_the_address_and_the_fee(session, tenant_id, call_id):
@@ -901,6 +893,144 @@ def test_outside_the_zone_no_pickup_is_offered_with_its_switch_off(
 
     assert err.value.say == SAY_OUT_OF_ZONE_NO_PICKUP
     assert "abholen" not in err.value.say
+
+
+BERLIN = ZoneInfo("Europe/Berlin")
+OUTSIDE = {**HOME, "postal_code": "54321"}
+# Pickup has closed at 21:00, delivery runs until 23:00 (`_late_delivery`).
+LATE = datetime(2026, 9, 15, 22, 0, tzinfo=BERLIN)
+OFFER_DELIVERY = f"{SAY_PICKUP_CLOSED} Möchten Sie liefern lassen?"
+
+
+def _late_delivery(session, tenant_id):
+    """Different hours for the two services: the seed gives both 17 to 22."""
+    for service, closes in (("pickup", time(21, 0)), ("delivery", time(23, 0))):
+        session.execute(
+            update(OpeningHours)
+            .where(
+                OpeningHours.tenant_id == tenant_id,
+                OpeningHours.service == service,
+                OpeningHours.closes_at == time(22, 0),
+            )
+            .values(closes_at=closes)
+        )
+    session.commit()
+
+
+def test_outside_the_zone_no_pickup_is_offered_after_its_hours(
+    session, tenant_id, call_id
+):
+    """#524: a yes to pickup at 22:00 would meet the next refusal."""
+    _late_delivery(session, tenant_id)
+
+    with pytest.raises(OutOfZone) as err:
+        draft_order(
+            session, delivery(session, tenant_id, call_id, address=OUTSIDE), now=LATE
+        )
+
+    assert err.value.say == SAY_OUT_OF_ZONE_NO_PICKUP
+
+
+@pytest.mark.parametrize(
+    ("now", "say"),
+    [
+        (LATE, SAY_OUT_OF_ZONE_NO_PICKUP),
+        (datetime(2026, 9, 15, 20, 30, tzinfo=BERLIN), SAY_OUT_OF_ZONE),
+        # Monday has no opening hours in the seed.
+        (datetime(2026, 9, 14, 18, 0, tzinfo=BERLIN), SAY_OUT_OF_ZONE_NO_PICKUP),
+    ],
+    ids=["pickup closed", "pickup open", "closed day"],
+)
+def test_check_delivery_offers_pickup_by_its_hours(session, tenant_id, now, say):
+    """The tool the agent asks first: the same check as `draft_order`."""
+    _late_delivery(session, tenant_id)
+
+    with pytest.raises(OutOfZone) as err:
+        check_delivery(session, tenant_id, "54321", now=now)
+
+    assert err.value.say == say
+
+
+@pytest.mark.parametrize("tool", ["check_delivery", "draft_order"])
+def test_a_closed_pickup_offers_no_delivery_the_call_was_refused(
+    session, tenant_id, call_id, tool
+):
+    """#524: the call heard "Dorthin liefern wir leider nicht", and the offer of
+    delivery would send it back to that refusal, round and round."""
+    _late_delivery(session, tenant_id)
+    args = (
+        {"postal_code": "54321"}
+        if tool == "check_delivery"
+        else delivery(session, tenant_id, call_id, address=OUTSIDE).model_dump(
+            mode="json", exclude={"call_id", "tenant_id"}
+        )
+    )
+    refused = dispatch(session, call_id, tenant_id, tool, args, now=LATE)
+    assert refused.error_code == "out_of_zone"
+
+    with pytest.raises(Closed) as err:
+        draft_order(session, request(session, tenant_id, call_id), now=LATE)
+
+    assert err.value.say == SAY_PICKUP_CLOSED
+
+
+def test_an_address_in_the_zone_brings_the_delivery_offer_back(
+    session, tenant_id, call_id
+):
+    _late_delivery(session, tenant_id)
+    for code in ("54321", "12345"):
+        dispatch(
+            session,
+            call_id,
+            tenant_id,
+            "check_delivery",
+            {"postal_code": code},
+            now=LATE,
+        )
+
+    with pytest.raises(Closed) as err:
+        draft_order(session, request(session, tenant_id, call_id), now=LATE)
+
+    assert err.value.say == OFFER_DELIVERY
+
+
+def test_another_call_out_of_zone_leaves_the_delivery_offer(
+    session, tenant_id, call_id
+):
+    _late_delivery(session, tenant_id)
+    other = _call(session, tenant_id, caller_id="+497215559999")
+    dispatch(
+        session, other, tenant_id, "check_delivery", {"postal_code": "54321"}, now=LATE
+    )
+
+    with pytest.raises(Closed) as err:
+        draft_order(session, request(session, tenant_id, call_id), now=LATE)
+
+    assert err.value.say == OFFER_DELIVERY
+
+
+def test_pickup_switched_off_at_the_yes_offers_no_delivery_out_of_zone(
+    engine, session, tenant_id, call_id
+):
+    """The other place the sentence is said: `confirm` after the tablet's tap."""
+    _late_delivery(session, tenant_id)
+    early = datetime(2026, 9, 15, 20, 0, tzinfo=BERLIN)
+    dispatch(
+        session,
+        call_id,
+        tenant_id,
+        "check_delivery",
+        {"postal_code": "54321"},
+        now=early,
+    )
+    draft = draft_order(session, request(session, tenant_id, call_id), now=early)
+    with Session(engine) as tablet:
+        status_config.set_pickup(tablet, tenant_id, False)
+
+    with pytest.raises(Conflict) as err:
+        confirmed(session, tenant_id, call_id, draft.order_id, now=early)
+
+    assert err.value.say == SAY_PICKUP_CLOSED
 
 
 def test_the_switch_leaves_a_pickup_alone(engine, session, tenant_id, call_id):
@@ -1376,8 +1506,10 @@ def test_the_owner_of_a_named_number_gets_a_row_of_their_own(
         now=NOW,
     )
     confirmed(session, tenant_id, call_id, own.order_id)
-
     order = session.get(Order, own.order_id)
+    approve_order(session, tenant_id, order.id)
+    mark_entered(session, tenant_id, order.id, version_of(session, order), now=NOW)
+
     assert order.customer_id != planted.customer_id
     match = find_customer(session, tenant_id, PHONE, "Braun")
     assert (match.customer_id, match.address_id) == (

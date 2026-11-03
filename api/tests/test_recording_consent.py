@@ -30,16 +30,20 @@ from api.agent.recording import (
     SAY_WHAT_CAN_I_DO,
 )
 from api.config import Settings, settings
+from api.domain.callbacks.transfer import SUMMARY_HUNG_UP
 from api.domain.calls import recordings
-from api.models import ConsentLog, Recording, Reservation, ServiceConfig
+from api.models import Callback, ConsentLog, Recording, Reservation, ServiceConfig
+from api.telephony import handler as handler_module
 from api.telephony.adapters.fake import FakeTelephony
 from api.telephony.handler import SAY_TO_THE_TEAM
 from api.tests import test_telephony
 from api.tests.test_telephony import (
+    CLOSED,
     NOW,
     TEAM_PHONE,
     BrokenLLM,
     NoLLM,
+    _Wire,
     handler_for,
     scripted,
     set_mode,
@@ -673,6 +677,119 @@ def test_anything_else_said_into_a_protected_sentence_stays_unheard(
     assert answers(session) == ["yes"]
 
 
+# -- a stop while the call ends (#522) -------------------------------------------
+
+ENDS = pytest.mark.parametrize("how", ["farewell", "transfer"])
+WIRED = "voice-1"  # the call of `_Wire`
+HUMAN = "Ich möchte bitte mit einem Menschen sprechen."
+
+
+def recorded_on_the_wire(session, tenant) -> _Wire:
+    """A call the AI takes, with session and handler, recorded from the yes."""
+    wire = _Wire(session, tenant)
+    wire.played()
+    wire.says("Ja.")
+    return wire
+
+
+def ends(wire: _Wire, how: str) -> None:
+    """The core ends the call: after a confirmed booking, or with a transfer.
+    Its last sentence still plays."""
+    if how == "farewell":
+        wire.until_the_read_back()
+        wire.played()
+        wire.says("Ja, passt so.")
+    else:
+        wire.played()
+        wire.says(HUMAN)
+    assert wire.call.outcome == "open"
+
+
+@ENDS
+def test_a_stop_said_while_the_call_ends_withdraws_and_deletes_the_file(
+    session, tenant, switched_on, how
+):
+    """The farewell after a booking and the sentence before a transfer are
+    still part of the call, and the way to stop was promised at any time
+    (L2). Nothing is said behind them, and the call ends as it would have."""
+    wire = recorded_on_the_wire(session, tenant)
+    ends(wire, how)
+    assert (switched_on / f"{WIRED}.wav").exists()
+    said = list(wire.line.played())
+
+    wire.says("Aufnahme stoppen.")
+
+    assert answers(session) == ["yes", "no"]
+    assert the_recording(session).withdrawn_at is not None
+    assert list(switched_on.iterdir()) == []
+    assert wire.line.played() == said
+    wire.played()
+    assert wire.call.outcome == {"farewell": "hangup", "transfer": "transfer"}[how]
+    expected = {"farewell": "completed", "transfer": "transferred"}[how]
+    assert the_call(session, WIRED).outcome == expected
+    if how == "farewell":
+        assert session.scalars(select(Reservation.status)).all() == ["confirmed"]
+
+
+@ENDS
+def test_a_stop_while_an_unrecorded_call_ends_changes_nothing(
+    session, tenant, switched_on, how
+):
+    wire = _Wire(session, tenant)
+    wire.played()
+    wire.says("Nein.")
+    ends(wire, how)
+
+    wire.says("Aufnahme stoppen.")
+    wire.played()
+
+    assert answers(session) == ["no"]
+    assert wire.call.outcome == {"farewell": "hangup", "transfer": "transfer"}[how]
+
+
+def test_a_stop_said_twice_while_the_call_ends_is_one_withdrawal(
+    session, tenant, switched_on
+):
+    wire = recorded_on_the_wire(session, tenant)
+    ends(wire, "farewell")
+
+    wire.says("Aufnahme stoppen.")
+    wire.says("Aufnahme stoppen!")
+    wire.played()
+
+    assert answers(session) == ["yes", "no"]
+    assert wire.call.outcome == "hangup"
+
+
+def test_a_stop_after_the_line_is_gone_is_not_heard(session, tenant, switched_on):
+    """The leg is gone: the request goes the way of docs/09 §2."""
+    wire = recorded_on_the_wire(session, tenant)
+    ends(wire, "farewell")
+    wire.played()
+
+    wire.says("Aufnahme stoppen.")
+
+    assert answers(session) == ["yes"]
+    assert the_recording(session).withdrawn_at is None
+    assert (switched_on / f"{WIRED}.wav").exists()
+
+
+def test_a_stop_reported_after_the_end_of_the_leg_rings_nobody(
+    session, tenant, switched_on
+):
+    """A late report from an adapter is ignored like any other: the call is
+    closed, and nothing goes to the team a second time."""
+    port, handler = on_the_phone(session, tenant)
+    handler.on_user_turn(SID, "Ja.")
+    handler.on_user_turn(SID, HUMAN)
+    handler.on_call_ended(SID)
+
+    handler.on_talked_over(SID, "Aufnahme stoppen.")
+
+    assert port.transfers(SID) == [TEAM_PHONE]
+    assert answers(session) == ["yes"]
+
+
 # -- mode shadow: the voice layer asks before the team rings -------------------
 
 
@@ -708,6 +825,25 @@ def test_shadow_a_yes_rings_the_team_with_a_recorded_leg(session, tenant, shadow
     assert port.says(SID)[1:] == [SAY_HOW_TO_STOP, SAY_TO_THE_TEAM]
     # What `voice` itself writes is the AI's side only: nothing here.
     assert not port.recordings(SID)
+
+
+def test_shadow_a_stop_before_the_team_rings_keeps_the_leg_off_the_file(
+    session, tenant, shadow
+):
+    """#522: the way to stop is said right before the handover, so a stop is
+    likely there; said into it, it holds, and the dialplan records nothing."""
+    wire = _Wire(session, tenant)
+    wire.played()
+    wire.says("Ja, gerne.")
+    assert wire.line.played()[-2:] == [SAY_HOW_TO_STOP, SAY_TO_THE_TEAM]
+
+    wire.says("Aufnahme stoppen.")
+    wire.played()
+
+    assert answers(session) == ["yes", "no"]
+    assert the_recording(session).withdrawn_at is not None
+    assert wire.line.actions[-1] == ("transfer", TEAM_PHONE)
+    assert ("record_team_leg",) not in wire.line.actions
 
 
 def test_shadow_a_yes_on_a_nearly_full_disk_rings_the_team_without(
@@ -819,13 +955,164 @@ def test_shadow_a_question_that_cannot_be_said_rings_the_team(
 def test_a_caller_who_hangs_up_on_the_question_leaves_no_recording(
     session, tenant, shadow
 ):
+    """Decision (e) of T-11.3: nothing was answered, so no consent row."""
     port, handler = shadow_call(session, tenant)
 
-    handler.on_call_ended(SID)
+    handler.on_call_ended(SID, caller_hung_up=True)
 
     assert answers(session) == []
     assert the_recording(session) is None
     assert not port.team_leg_recorded(SID)
+
+
+# -- mode shadow: a caller who hangs up before the team rang (#252 no. 9) ------
+
+
+def cards(session) -> list[Callback]:
+    return list(session.scalars(select(Callback)))
+
+
+def test_shadow_a_caller_who_hangs_up_on_the_question_leaves_a_card(
+    session, tenant, shadow
+):
+    """The team never rang: the card is its only notice of the call."""
+    port, handler = shadow_call(session, tenant)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    [card] = cards(session)
+    assert card.phone == "+497215551234"
+    assert card.status == "open"
+    assert card.reason == "out_of_scope"
+    assert card.summary.startswith(SUMMARY_HUNG_UP)
+    assert the_call(session, SID).outcome == "callback"
+    assert not port.transfers(SID)
+
+
+def test_shadow_a_withheld_number_leaves_no_card(session, tenant, shadow):
+    """Nobody could call back: the call stays abandoned, as before."""
+    port = FakeTelephony()
+    port.open(SID, caller_id=None)
+    handler = handler_for(session, tenant, port, llm_factory=lambda _: NoLLM())
+    handler.on_call_started(SID)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert cards(session) == []
+    assert the_call(session, SID).outcome == "abandoned"
+
+
+@pytest.mark.parametrize("said", ["Ja, gerne.", "Nein."])
+def test_shadow_a_caller_who_answered_and_left_before_the_team_rang_leaves_a_card(
+    session, tenant, shadow, said
+):
+    """The answer is taken and the transfer asked for, but the line still plays
+    the sentences before it when the caller's leg goes: the team never rang."""
+    _, handler = shadow_call(session, tenant)
+    handler.on_user_turn(SID, said)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert len(cards(session)) == 1
+    assert the_call(session, SID).outcome == "callback"
+
+
+def test_shadow_a_call_that_ends_after_the_transfer_leaves_no_card(
+    session, tenant, shadow
+):
+    """The line took the transfer and the team rings; a leg nobody takes is the
+    dialplan's report (`on_team_missed`)."""
+    _, handler = shadow_call(session, tenant)
+    handler.on_user_turn(SID, "Nein.")
+
+    handler.on_call_ended(SID)
+
+    assert cards(session) == []
+    assert the_call(session, SID).outcome == "transferred"
+
+
+def test_shadow_a_hangup_reported_twice_leaves_one_card(session, tenant, shadow):
+    _, handler = shadow_call(session, tenant)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert len(cards(session)) == 1
+
+
+def test_shadow_a_hangup_outside_the_opening_hours_leaves_a_card_too(
+    session, tenant, shadow
+):
+    """Shadow rings the team at any hour (D25), so its card comes at any hour."""
+    _, handler = shadow_call(session, tenant, now=CLOSED)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert len(cards(session)) == 1
+
+
+def test_shadow_a_card_that_fails_costs_nothing_else(
+    session, tenant, shadow, monkeypatch
+):
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("the database refuses the card")
+
+    monkeypatch.setattr(handler_module, "team_missed", broken)
+    _, handler = shadow_call(session, tenant)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert cards(session) == []
+    assert the_call(session, SID).outcome == "abandoned"
+
+
+def test_shadow_a_hangup_on_the_fake_line_leaves_a_card(session, tenant, shadow):
+    """The fake line reports a caller who hung up as the call session does."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, llm_factory=lambda _: NoLLM())
+    hangup = {"role": "customer", "hangup": True}
+
+    port.play(
+        {"session_id": SID, "caller_id": "+497215551234", "transcript": [hangup]},
+        handler,
+    )
+    port.play(
+        {
+            "session_id": "answered",
+            "caller_id": "+497215551234",
+            "transcript": [{"role": "customer", "text": "Nein."}],
+        },
+        handler,
+    )
+
+    assert [the_call(session, sid).outcome for sid in (SID, "answered")] == [
+        "callback",
+        "transferred",
+    ]
+
+
+@pytest.mark.parametrize("mode", ["primary", "overflow"])
+def test_a_call_the_ai_takes_leaves_no_card_on_a_hangup_at_the_question(
+    session, tenant, switched_on, mode
+):
+    set_mode(session, tenant.id, mode)
+    _, handler = on_the_phone(session, tenant)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert cards(session) == []
+    assert the_call(session, SID).outcome == "abandoned"
+
+
+def test_shadow_without_the_setting_leaves_no_card(session, tenant):
+    """The team rings at once, before the caller could hang up on us."""
+    set_mode(session, tenant.id, "shadow")
+    port, handler = on_the_phone(session, tenant, llm_factory=lambda _: NoLLM())
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert port.transfers(SID) == [TEAM_PHONE]
+    assert cards(session) == []
 
 
 def test_paused_never_asks(session, tenant, switched_on):

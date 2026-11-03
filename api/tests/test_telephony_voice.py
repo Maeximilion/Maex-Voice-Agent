@@ -108,7 +108,7 @@ class Core:
     def on_voice_failure(self, session_id: str) -> None:
         self.seen.append(("failure",))
 
-    def on_call_ended(self, session_id: str, speech=None) -> None:
+    def on_call_ended(self, session_id: str, speech=None, **_) -> None:
         self.seen.append(("ended",))
 
     def on_recording_stopped(self, session_id: str) -> bool:

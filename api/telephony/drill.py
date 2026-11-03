@@ -54,7 +54,9 @@ one call per drill:
                   team rings, and the folder of the recordings stays empty
   recording       `voice` with RECORDING_ENABLED (T-11.3, docs/09 L2). Mode
                   shadow: a silent caller is asked, nobody records, the team
-                  rings; a yes records the team leg, once somebody answers; the
+                  rings; a caller who hangs up on the question rings nobody
+                  and leaves a callback card under the caller's number (#252
+                  no. 9); a yes records the team leg, once somebody answers; the
                   key of the team's telephone stops and deletes it; `voice`
                   dying on the question rings the team. A call the AI takes:
                   `voice` records it from the yes to the handover, and the team
@@ -116,6 +118,8 @@ TEAM_LIMIT_SECONDS = 30.0
 # What a call may take at most before the drill gives up on it.
 CALL_TIMEOUT_SECONDS = 60.0
 POLL_SECONDS = 0.25
+# How long a callback card `voice` writes at the end of a call may take to show.
+CARD_SECONDS = 5.0
 
 Check = tuple[str, bool, str]
 
@@ -332,7 +336,7 @@ class Drill:
         numbers = [
             form
             for number in [
-                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 127)),
+                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 128)),
                 TEAM_PHONE,
                 LISTED_BUSY_NUMBER,
                 UNLISTED_NUMBER,
@@ -854,6 +858,35 @@ def recording_silence(drill: Drill) -> list[Check]:
     ]
 
 
+def recording_hangup(drill: Drill) -> list[Check]:
+    """127 hangs up on the question (#252 no. 9): the team never rings, so a
+    card under the caller's number is its only notice of the call. `voice`
+    writes it once the line reports the caller gone, behind the router's log.
+    A caller's own hangup ends the router's dialling leg with it, so no "caller
+    leg ended" is logged: the router going quiet is the end."""
+    call = in_shadow(drill, 127, r"DRILL 127 answered")
+    drill.quiet()
+    end = time.monotonic() + CARD_SECONDS
+    while True:
+        card = drill.sql(
+            "select c.outcome || '|' || count(b.id) from callbacks b "
+            "join calls c on c.id = b.call_id "
+            f"where b.phone = '{call.caller}' and b.deleted_at is null "
+            "group by c.outcome"
+        )
+        if card or time.monotonic() > end:
+            break
+        time.sleep(POLL_SECONDS)
+    rang = call.router_says(call.team_rings)
+    return [
+        (
+            "recording, a hangup on the question: the team never rings, a card",
+            not rang and card == "callback|1",
+            f"team rang [{'yes' if rang else 'no'}], card {card or 'none'}",
+        )
+    ]
+
+
 def recording_yes(drill: Drill) -> list[Check]:
     """123 says yes: the dialplan records the team leg."""
     call = in_shadow(drill, 123)
@@ -969,6 +1002,7 @@ def drill_recording(drill: Drill) -> list[Check]:
     try:
         return [
             *recording_silence(drill),
+            *recording_hangup(drill),
             *recording_yes(drill),
             *recording_stop_key(drill),
             *recording_ai_call(drill),

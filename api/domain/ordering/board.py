@@ -27,12 +27,24 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import Text, and_, case, cast, func, literal, or_, select
+from sqlalchemy import (
+    Text,
+    and_,
+    case,
+    cast,
+    exists,
+    func,
+    literal,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
 from api.core.time import business_day, business_day_bounds_utc, utcnow
+from api.domain.customers.lookup import line_of
 from api.domain.ordering.confirm import ACTION_CONFIRMED, ALREADY_CONFIRMED
 from api.domain.ordering.correction import STALE, order_version
 from api.domain.ordering.handover import withdraw_tickets
@@ -48,7 +60,7 @@ from api.domain.ordering.ticket import (
     send_ticket,
 )
 from api.domain.status.config import ACTOR_TABLET
-from api.models import Address, AuditLog, Order, OrderItem, ServiceConfig
+from api.models import Address, AuditLog, Customer, Order, OrderItem, ServiceConfig
 
 CONFIRMED = "confirmed"
 APPROVED = "approved"
@@ -466,6 +478,10 @@ def mark_entered(
     refused, so a tablet with an old card never marks a state the register
     does not hold. Read under the order's row lock, which a correction takes
     too: a correction that commits while the mark waits is seen.
+
+    The first mark of a delivery makes its address the customer's default
+    (`settle_default`, security audit 02.11.2026, P2 no. 4), not the
+    guest's yes: a caller ID can be spoofed, a person handles the mark (L18).
     """
     order = _locked(session, tenant_id, order_id)
     if order.register_entered_at is not None:
@@ -480,6 +496,8 @@ def mark_entered(
             say=CORRECTED_SINCE,
         )
     order.register_entered_at = now or utcnow()
+    # A person handled it: now its address may be the customer's "letztes Mal".
+    settle_default(session, order)
     session.add(
         AuditLog(
             tenant_id=tenant_id,
@@ -512,6 +530,10 @@ def cancel_order(
 
     An order already typed in keeps its mark: that the register still holds a
     sale is true, and the team cancels it there, which the question back says.
+    A delivery the team marked, also one whose mark a correction cleared
+    since, may have made its address the customer's default: the default
+    settles again without it (`settle_default`). One never marked never moved
+    it, so its cancel leaves the default alone.
     """
     order = _locked(session, tenant_id, order_id)
     if order.status == CANCELLED:
@@ -527,6 +549,8 @@ def cancel_order(
         )
     slip = withdraw_tickets(session, order, now or utcnow())
     order.status = CANCELLED
+    if session.scalar(select(Order.id).where(Order.id == order.id, _ever_marked())):
+        settle_default(session, order)
     order.handover_state = "pending" if slip else None
     session.add(
         AuditLog(
@@ -548,6 +572,74 @@ def cancel_order(
         send_ticket(session, order, correction_reason=CANCELLED)
     session.commit()
     return order
+
+
+def settle_default(session: Session, order: Order) -> None:
+    """The customer's default address, the one and only "letztes Mal"
+    `find_customer` may ask about (security audit 02.11.2026, P2 no. 4; Maxi
+    03.11.2026): the address of their newest delivery, by creation, that the
+    guest confirmed, nobody cancelled and the team marked "In Kasse
+    eingegeben", also when a correction cleared that mark since; none when no
+    such delivery is left. Never set at the yes: a caller ID can be spoofed,
+    a person handles the mark (L18).
+
+    Under a lock on the customer row: two marks or cancels of one customer at
+    once go one after the other, the second sees the first, and the unique
+    index never stops it.
+    """
+    if (
+        order.customer_id is None
+        or order.address_id is None
+        # A number the guest only named never makes a default (#489).
+        or order.phone != line_of(session, order.tenant_id, order.call_id)
+    ):
+        return
+    # The app's sessions do not flush by themselves (api/db.py): the query
+    # below must see this mark or this cancel.
+    session.flush()
+    session.execute(
+        select(Customer.id).where(Customer.id == order.customer_id).with_for_update()
+    )
+    newest = session.scalar(
+        select(Order.address_id)
+        .where(
+            Order.tenant_id == order.tenant_id,
+            Order.customer_id == order.customer_id,
+            Order.address_id.is_not(None),
+            Order.status != CANCELLED,
+            Order.deleted_at.is_(None),
+            _ever_marked(),
+        )
+        .order_by(Order.created_at.desc(), Order.id.desc())
+        .limit(1)
+    )
+    # The old default goes first, or the unique index stops the second.
+    session.execute(
+        update(Address)
+        .where(Address.customer_id == order.customer_id, Address.is_default.is_(True))
+        .values(is_default=False)
+    )
+    if newest is not None:
+        session.execute(
+            update(Address).where(Address.id == newest).values(is_default=True)
+        )
+
+
+def _ever_marked():
+    """The order was marked "In Kasse eingegeben" once: a correction clears
+    `register_entered_at` until the team marks the new revision, the audit
+    entry of the first mark stays (kept 365 days, `jobs/retention.py`)."""
+    return or_(
+        Order.register_entered_at.is_not(None),
+        exists().where(
+            AuditLog.tenant_id == Order.tenant_id,
+            AuditLog.entity == "order",
+            AuditLog.entity_id == Order.id,
+            AuditLog.action == ACTION_REGISTER_ENTERED,
+            # An entry cannot predate its order (as in `calls/figures.py`).
+            AuditLog.at >= Order.created_at - CLOCK_MARGIN,
+        ),
+    )
 
 
 def version_of(session: Session, order: Order) -> str:

@@ -79,9 +79,10 @@ class Core:
     def on_talked_over(self, session_id: str, text: str) -> None:
         self.calls.append(("talked_over", text))
 
-    def on_call_ended(self, session_id: str, speech=None) -> None:
+    def on_call_ended(self, session_id: str, speech=None, *, caller_hung_up=False):
         self.calls.append(("ended",))
         self.speech = speech
+        self.hung_up = caller_hung_up
 
     def turns(self) -> list[str]:
         return [call[1] for call in self.calls if call[0] == "turn"]
@@ -253,6 +254,42 @@ def test_a_transfer_or_hangup_waits_for_the_end_of_the_last_sentence(
     assert action not in call.line.actions and call.s.outcome == "open"
     call.played(after=2.0)
     assert call.line.actions[-1] == action and call.s.outcome == outcome
+
+
+def test_a_caller_who_hangs_up_before_the_transfer_is_reported_as_such(call):
+    """The transfer waits for its sentence and the caller's leg goes first:
+    the line never got it and nothing rings the team. The core leaves a card
+    then (mode shadow with the recording question, #252 no. 9)."""
+    call.core.replies["Nein"] = [("say", "Ich verbinde Sie."), ("transfer", "+49")]
+    call.start(GREETING)
+    call.played()
+    call.said("Nein", after=1.0)
+    call.s.closed()
+    call.s.drain()
+
+    assert ("transfer", "+49") not in call.line.actions
+    assert call.s.outcome == "closed"
+    assert call.core.hung_up is True
+
+
+@pytest.mark.parametrize(
+    "ending", [("transfer", "+497215550000"), ("hangup",), ("crash",)]
+)
+def test_a_call_the_line_ended_for_us_is_no_caller_who_hung_up(call, ending):
+    """Handed on, hung up by us, or failed (the dialplan rings the team)."""
+    if ending == ("crash",):
+        call.core.crash_on = "Tschüss"
+    else:
+        call.core.replies["Tschüss"] = [("say", "Gut."), ending]
+    call.start(GREETING)
+    call.played()
+    call.said("Tschüss", after=1.0)
+    call.played(after=1.0)
+    call.s.closed()
+    call.s.drain()
+
+    assert call.core.count("ended") == 1
+    assert call.core.hung_up is False
 
 
 def test_a_hangup_the_line_refuses_ends_the_session_as_failed(call):
@@ -1397,6 +1434,123 @@ def test_a_recorded_team_leg_is_the_lines_to_record(call):
 
     assert call.line.kinds()[-2:] == ["record_team_leg", "transfer"]
     assert call.s.outcome == "transfer"
+
+
+# --- A stop while the call ends (#522, docs/09 L2) --------------------------------------
+
+ENDINGS = pytest.mark.parametrize(
+    "ending", [("hangup",), ("transfer", "+497215550000")], ids=["hangup", "transfer"]
+)
+
+
+def ending_after_a_recorded_turn(call, ending: tuple) -> None:
+    """A recording runs, and the core ends the call: its last sentence plays."""
+    call.core.replies["Danke"] = [("say", "Auf Wiederhören."), ending]
+    call.start(GREETING)
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.said("Danke", after=1.0)
+    assert call.s.outcome == "open"
+
+
+@ENDINGS
+def test_a_stop_said_while_the_call_ends_reaches_the_core_as_no_turn(
+    call, folder, ending
+):
+    """The way to stop was promised at any time: the ear listens on while the
+    last sentence plays, for a stop only."""
+    ending_after_a_recorded_turn(call, ending)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    call.partial("Aufnahme")
+    call.said("Aufnahme stoppen", after=0.5)
+
+    assert call.ear.frames[-1][0] == A_FRAME
+    assert ("talked_over", "Aufnahme stoppen") in call.core.calls
+    assert call.core.turns() == ["Danke"]
+    call.played()
+    assert call.line.actions[-1] == ending
+
+
+@ENDINGS
+def test_a_withdrawal_while_the_call_ends_deletes_the_file(call, folder, ending):
+    """Also when the tape ended at the handover; and a second stop finds
+    nothing left to stop."""
+    ending_after_a_recorded_turn(call, ending)
+    call.lines.stop_recording("s1", discard=True)
+    call.s.drain()
+    assert list(folder.iterdir()) == []
+
+    call.said("Aufnahme stoppen", after=0.5)
+    assert call.core.count("talked_over") == 0
+    call.played()
+    assert call.line.actions[-1] == ending
+
+
+def test_nothing_is_listened_for_while_a_call_without_a_recording_ends(call):
+    """The ear costs by the second: without a recording to stop it hears
+    nothing of the farewell."""
+    call.core.replies["Danke"] = [("say", "Auf Wiederhören."), ("hangup",)]
+    call.start(GREETING)
+    call.played()
+    call.said("Danke", after=1.0)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    call.said("Aufnahme stoppen", after=0.5)
+
+    assert call.ear.frames == []
+    assert call.core.count("talked_over") == 0
+
+
+def test_an_ear_that_fails_while_a_recorded_call_ends_costs_the_ending_nothing(
+    call, folder
+):
+    """Only a stop was listened for: the call ended as it should, and the
+    team is not rung for it."""
+    ending_after_a_recorded_turn(call, ("hangup",))
+    call.ear.broken = True
+    call.s.audio(A_FRAME)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    call.said("Aufnahme stoppen", after=0.5)
+
+    assert call.core.count("voice_failure") == 0
+    assert call.core.count("talked_over") == 0
+    call.played()
+    assert call.s.outcome == "hangup"
+
+
+def test_a_stop_after_the_line_is_gone_reaches_nobody(call, folder):
+    ending_after_a_recorded_turn(call, ("hangup",))
+    call.played()
+    assert call.s.outcome == "hangup"
+
+    call.said("Aufnahme stoppen", after=0.5)
+
+    assert call.core.count("talked_over") == 0
+    assert (folder / FILE).exists()
+
+
+def test_a_stop_before_the_handover_keeps_the_team_leg_off_the_file(call):
+    """Mode `shadow`: the line hears of the recorded leg only with the
+    transfer, so a stop said into the sentences before it still holds."""
+    call.start(("say", "Frage."))
+    call.played()
+    call.lines.record_team_leg("s1")
+    call.lines.say("s1", "Ich verbinde Sie.")
+    call.lines.transfer("s1", "+497215550000")
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    call.said("Aufnahme stoppen", after=0.5)
+    assert ("talked_over", "Aufnahme stoppen") in call.core.calls
+
+    call.lines.stop_recording("s1", discard=True)
+    call.s.drain()
+    call.played()
+
+    assert call.ear.frames
+    assert call.line.actions[-1] == ("transfer", "+497215550000")
+    assert "record_team_leg" not in call.line.kinds()
 
 
 # --- One worker per call -----------------------------------------------------------------
