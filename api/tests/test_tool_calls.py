@@ -153,29 +153,35 @@ def _paths(target: FastAPI) -> list[str]:
     return [getattr(route, "path", "") for route in target.routes]
 
 
+LOCAL_ONLY = ("/v1/calls/start", "/v1/calls/end")
+
+
 @pytest.mark.parametrize("env", ["dev", "test"])
-def test_calls_start_exists_in_dev_and_test(env):
+def test_the_call_routes_exist_in_dev_and_test(env):
     target = FastAPI()
     add_local_routes(target, env)
-    assert "/v1/calls/start" in _paths(target)
+    assert set(LOCAL_ONLY) <= set(_paths(target))
 
 
 @pytest.mark.parametrize("env", ["production", "prod", "staging"])
-def test_calls_start_is_absent_outside_dev_and_test(env):
+@pytest.mark.parametrize("path", LOCAL_ONLY)
+def test_the_call_routes_are_absent_outside_dev_and_test(env, path):
     """Recognition trusts `calls.caller_id`, so outside dev and test no token
-    holder may open a call with a caller ID of their choice (#252)."""
+    holder may open a call with a caller ID of their choice (#252), nor end
+    one: the voice layer does both in its own process (Maxi, 03.11.2026)."""
     target = FastAPI()
     add_local_routes(target, env)
-    assert "/v1/calls/start" not in _paths(target)
+    assert path not in _paths(target)
     r = TestClient(target).post(
-        "/v1/calls/start",
+        path,
         json={"tenant_id": str(uuid.uuid4()), "external_session_id": "x"},
         headers=AUTH,
     )
     assert r.status_code == 404
 
 
-def test_the_app_under_test_registers_calls_start_once():
-    """The suite runs with ENV=test, so the app carries the route, once."""
+@pytest.mark.parametrize("path", LOCAL_ONLY)
+def test_the_app_under_test_registers_each_call_route_once(path):
+    """The suite runs with ENV=test, so the app carries the routes, once."""
     assert settings.env == "test"
-    assert _paths(app).count("/v1/calls/start") == 1
+    assert _paths(app).count(path) == 1
