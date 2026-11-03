@@ -442,3 +442,37 @@ def test_two_names_swapped_in_one_save_are_refused_and_nothing_is_stored(
 
     assert refused.value.status == 422
     assert floor_plan.plan(session, tenant_id) == [saved]
+
+
+def test_the_answer_names_the_revision_this_save_wrote(migrated_db_url, tenant_id):
+    """Deterministic: tablet B saves right after A's commit, before A answers.
+    A's answer must still be A's own room, or A's next step would carry B's
+    revision with A's older content and overwrite B (Codex on #535)."""
+    engine = create_engine(migrated_db_url)
+    try:
+        with Session(engine) as setup:
+            room = _room(setup, tenant_id)
+        with Session(engine) as first:
+            commit = first.commit
+            other: list = []
+
+            def commit_then_another_tablet():
+                commit()
+                if not other:
+                    with Session(engine) as second:
+                        other.append(
+                            _save(
+                                second,
+                                tenant_id,
+                                {**room, "revision": 1},
+                                tables=[_table("T9")],
+                            )
+                        )
+
+            first.commit = commit_then_another_tablet  # type: ignore[method-assign]
+            saved = _save(first, tenant_id, room, tables=[_table("T1")])
+        assert other[0]["revision"] == 2
+        assert saved["revision"] == 1
+        assert [t["name"] for t in saved["tables"]] == ["T1"]
+    finally:
+        engine.dispose()

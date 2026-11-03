@@ -46,6 +46,10 @@
 
   // Width and depth as drawn.
   function footprint(o) {
+    // Quarter turns swap exactly: cos(270 degrees) is not quite 0 in floating point.
+    var q = ((Math.round(o.angle || 0) % 360) + 360) % 360;
+    if (q === 0 || q === 180) return [o.w, o.h];
+    if (q === 90 || q === 270) return [o.h, o.w];
     var a = rad(o.angle || 0);
     return [
       Math.abs(Math.cos(a)) * o.w + Math.abs(Math.sin(a)) * o.h,

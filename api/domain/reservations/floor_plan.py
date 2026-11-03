@@ -118,8 +118,9 @@ def create_area(
             payload={field: getattr(area, field) for field in AREA_FIELDS},
         )
     )
+    created = _document(session, area)
     session.commit()
-    return _document(session, area)
+    return created
 
 
 def save_area(
@@ -170,6 +171,11 @@ def save_area(
                 payload={"revision": area.revision, **changes},
             )
         )
+        session.flush()
+        # The answer is read while the locks still hold: after the commit
+        # another tablet may save at once, and this answer must name the
+        # revision this save wrote (Codex on #535).
+        stored = _document(session, area)
         session.commit()
     except IntegrityError as exc:
         # A rule the checks above missed (two renames swapping names): nothing stored.
@@ -180,8 +186,7 @@ def save_area(
             "Änderung prüfen.",
             status=422,
         ) from exc
-    session.refresh(area)
-    return _document(session, area)
+    return stored
 
 
 def _lock(session: Session, tenant_id: uuid.UUID) -> None:

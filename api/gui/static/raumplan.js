@@ -123,6 +123,9 @@
         } else {
           lost();
         }
+        // A drag that began on the room now replaced would bring the old room
+        // back on Escape: it ends here, with nothing to restore (Codex on #535).
+        if (replaced && target === area && drag) { drag = null; drawStart = null; preview = null; mode = "select"; }
         // Only a replaced room is drawn again: a redraw on every answer would
         // throw away what the team is typing into a field (Codex on #535).
         if (target === area) {

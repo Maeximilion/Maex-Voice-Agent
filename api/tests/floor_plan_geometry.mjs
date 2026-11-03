@@ -53,6 +53,12 @@ for (let a = -720; a <= 720; a += 90) {
 // "Drehen" goes across, from below, from above, and across again.
 assert.deepEqual([G.nextLabelTurn(0), G.nextLabelTurn(270), G.nextLabelTurn(90), G.nextLabelTurn(180)], [270, 90, 0, 270])
 
+// A 160 x 80 table fits a 2 x 2 m room at every quarter turn (Codex on #535: 270 was refused).
+for (const angle of [0, 90, 180, 270]) {
+  assert.equal(G.available({ type: 'table', w: 160, h: 80, angle }, { w: 200, h: 200 }), true, `fits at ${angle}`)
+}
+assert.deepEqual(G.footprint({ w: 160, h: 80, angle: 270 }), [80, 160])
+
 // A turned table swaps width and depth as drawn.
 assert.deepEqual(G.footprint({ w: 200, h: 80, angle: 90 }).map(Math.round), [80, 200])
 
