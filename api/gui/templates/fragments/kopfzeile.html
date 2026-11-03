@@ -31,9 +31,15 @@
       {% endfor %}
     </div>
     {% endif %}
-    <div class="mode tone-{{ 'ok' if config.delivery_enabled else 'danger' }}">
-      <span class="dot {{ 'ok' if config.delivery_enabled else 'danger' }}"></span>
-      <b>{{ "Lieferung an" if config.delivery_enabled else "Lieferung aus" }}</b>
+    {# Abholung, Lieferung, Reservierung (T-3.10): the button says what holds, in
+       words, and a tap changes it at once; no question (docs/06 §1 rule 6). #}
+    <div class="seg services" role="group" aria-label="Was wir gerade annehmen">
+      {% for key, label, on in services %}
+      <button hx-post="/gui/kopfzeile/{{ key }}/{{ 'aus' if on else 'an' }}"
+              hx-target="#kopfzeile" hx-swap="outerHTML"
+              class="{{ 'on' if on else 'off' }}"
+              aria-pressed="{{ 'true' if on else 'false' }}">{{ label }} {{ 'an' if on else 'aus' }}</button>
+      {% endfor %}
     </div>
     {% if config.call_mode == "paused" %}
     {# Wieder einschalten fragt nach, pausieren nie: der Not-Aus darf keine
@@ -51,23 +57,12 @@
   <div class="top actions">
     {# Wartezeit je Service, senkbar und erhöhbar (T-3.6, docs/06 §3). Immer mit
        "Wartezeit" und dem Service daneben; an der Grenze ist der Knopf aus, statt
-       einen Tap ohne Wirkung zu schlucken. #}
-    {% for key, label, minutes in [
-         ("abholung", "Abholung", config.pickup_wait_minutes),
-         ("lieferung", "Lieferung", config.delivery_wait_minutes)] %}
+       einen Tap ohne Wirkung zu schlucken. A tap on the value opens its sheet
+       (fragments/wartezeit.html). The word "Standard" stands next to a wait that
+       differs from it (T-3.14). #}
+    {% for key, label, minutes, standard in waits %}
     <div class="step">
-      {# Tap on the value: type a wait by hand (T-3.9). The stepper stays next to it. #}
-      <details class="step-edit" name="wartezeit">
-        <summary><b>Wartezeit {{ label }} {{ minutes }} Min</b></summary>
-        <form class="step-form" hx-post="/gui/kopfzeile/wartezeit/{{ key }}"
-              hx-target="#kopfzeile" hx-swap="outerHTML">
-          <input type="number" name="minuten" inputmode="numeric" value="{{ minutes }}"
-                 min="{{ wait_min }}" max="{{ wait_max }}" required
-                 aria-label="Wartezeit {{ label }} in Minuten">
-          <span>Min</span>
-          <button type="submit" class="primary">Übernehmen</button>
-        </form>
-      </details>
+      <button class="step-value" hx-get="/gui/wartezeit/{{ key }}" hx-target="#wartezeit"><b>Wartezeit {{ label }} {{ minutes }} Min</b>{% if minutes != standard %}<span class="step-std">Standard {{ standard }} Min</span>{% endif %}</button>
       <button hx-post="/gui/kopfzeile/wartezeit/{{ key }}/-{{ wait_step }}"
               hx-target="#kopfzeile" hx-swap="outerHTML"
               aria-label="Wartezeit {{ label }} {{ wait_step }} Minuten weniger"
@@ -78,15 +73,8 @@
               {% if minutes >= wait_max %}disabled{% endif %}>+{{ wait_step }}</button>
     </div>
     {% endfor %}
-    {% if config.delivery_enabled %}
-    <button class="push" hx-post="/gui/kopfzeile/lieferung/aus"
-            hx-target="#kopfzeile" hx-swap="outerHTML">Lieferung aus</button>
-    {% else %}
-    <button class="push" hx-post="/gui/kopfzeile/lieferung/an"
-            hx-target="#kopfzeile" hx-swap="outerHTML">Lieferung an</button>
-    {% endif %}
     {# Kachel "Gericht aus" (docs/06 §3): die Zahl nennt, wie viele heute aus sind. #}
-    <button hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
+    <button class="push" hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
     <a class="button" href="/gui/kennzahlen">Kennzahlen</a>
   </div>
   {% endif %}

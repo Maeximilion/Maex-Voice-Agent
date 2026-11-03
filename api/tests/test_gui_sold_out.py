@@ -1,5 +1,6 @@
 """gui: "Gericht aus" am Tablet (T-4.8, docs/06 §3)."""
 
+import re
 import uuid
 from datetime import UTC
 
@@ -74,6 +75,30 @@ def test_kasten_zeigt_aktive_gerichte(client, tenant_id):
     assert "Altes Gericht" not in html
 
 
+def test_ausgeschaltete_gerichte_stehen_zuerst_ohne_suche(client, db, tenant_id):
+    pho = db.scalar(select(MenuItem.id).where(MenuItem.name == "Pho Bo"))
+    client.post(f"/gui/gericht-aus/{pho}/aus", headers=HX)
+    html = client.get("/gui/gericht-aus").text
+    heads = re.findall(r'(?:<h3 class="dish-cat">|class="cat-name">)([^<]+)<', html)
+    assert heads[0] == "Heute aus"
+    assert html.index("Pho Bo") < html.index(heads[1])
+    # A search keeps the dish in its category.
+    found = client.get("/gui/fragments/gericht-aus", params={"q": "pho"}).text
+    assert "Heute aus</h3>" not in found
+
+
+def test_gerichte_stehen_unter_ihrer_kategorie(client, tenant_id):
+    html = client.get("/gui/gericht-aus").text
+    heads = re.findall(r'(?:<h3 class="dish-cat">|class="cat-name">)([^<]+)<', html)
+    assert heads == sorted(set(heads), key=heads.index) and len(heads) >= 1
+    # A search shows grouped results too.
+    found = client.get("/gui/fragments/gericht-aus", params={"q": "pho"}).text
+    assert (
+        re.findall(r'(?:<h3 class="dish-cat">|class="cat-name">)([^<]+)<', found) != []
+    )
+    assert "Pho Bo" in found
+
+
 def test_suchfeld_filtert(client, tenant_id):
     html = client.get("/gui/fragments/gericht-aus", params={"q": "pho"}).text
     assert "Pho Bo" in html
@@ -99,13 +124,15 @@ def test_ein_tap_heute_aus_und_zurueck(client, db, tenant_id):
     assert "heute aus" not in client.get("/gui/fragments/kopfzeile").text
 
 
-def test_tap_behaelt_die_suche(client, db, tenant_id):
+def test_tap_antwortet_mit_der_einen_zeile_an_ihrem_platz(client, db, tenant_id):
+    """The row is swapped in place: only this dish comes back, in its new state,
+    so the list does not move under the finger."""
     rolls = item(db, tenant_id, "23")
-    html = client.post(
-        f"/gui/gericht-aus/{rolls}/aus", headers=HX, data={"q": "rollen"}
-    ).text
-    assert "Frühlingsrollen" in html
-    assert "Pho Bo" not in html
+    html = client.post(f"/gui/gericht-aus/{rolls}/aus", headers=HX).text
+    assert html.count("<li") == 1
+    assert f'id="dish-{rolls}"' in html and "Frühlingsrollen" in html
+    assert "Pho Bo" not in html and "Wieder da" in html
+    assert 'hx-target="closest li"' in html and 'hx-swap="outerHTML"' in html
 
 
 def test_ohne_htmx_kein_schalten(client, db, tenant_id):
@@ -121,11 +148,11 @@ def test_unbekannter_schalter(client, db, tenant_id, state):
     assert response.status_code in (404, 405)
 
 
-def test_unbekanntes_gericht_zeigt_die_liste(client, tenant_id):
-    """Ein anderes Tablet oder ein Import war schneller: kein Fehler, frische Liste."""
+def test_unbekanntes_gericht_laesst_die_zeile_verschwinden(client, tenant_id):
+    """Another tablet or an import was faster: no error, the row just goes."""
     response = client.post(f"/gui/gericht-aus/{uuid.uuid4()}/aus", headers=HX)
     assert response.status_code == 200
-    assert "Pho Bo" in response.text
+    assert response.text == ""
     assert "nicht geklappt" not in response.text
 
 

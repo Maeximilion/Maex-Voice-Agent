@@ -1,0 +1,48 @@
+{
+  "id": "lieferung_0090",
+  "name": "Delivery and pickup switched off: no pickup offered (T-3.10)",
+  "tags": [
+    "lieferung",
+    "schalter",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "switches": {
+    "pickup_enabled": false,
+    "delivery_enabled": false
+  },
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ich moechte etwas liefern lassen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 23."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Lindenstrasse 12, 12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Nein danke, das wars."
+    }
+  ],
+  "expected": {
+    "intent": "delivery",
+    "confirmed": false,
+    "escalated": false,
+    "never_said": [
+      "Möchten Sie abholen?"
+    ]
+  }
+}

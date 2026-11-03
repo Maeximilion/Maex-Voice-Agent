@@ -153,6 +153,55 @@ def test_lieferung_pausiert_bleibt_offen_mit_hinweis(session, tenant_id):
     assert status.say == "Lieferung ist gerade pausiert. Abholung ist möglich."
 
 
+def test_a_paused_pickup_stays_open_and_names_the_delivery(session, tenant_id):
+    session.get(ServiceConfig, tenant_id).pickup_enabled = False
+    session.commit()
+
+    status = get_service_status(session, tenant_id, now=berlin(DIENSTAG, 18, 30))
+
+    assert status.is_open is True and status.delivery_enabled is True
+    assert status.pickup_enabled is False
+    assert status.say == "Abholung ist gerade pausiert. Lieferung ist möglich."
+
+
+def test_both_services_paused_are_named_together(session, tenant_id):
+    config = session.get(ServiceConfig, tenant_id)
+    config.pickup_enabled = config.delivery_enabled = False
+    session.commit()
+
+    status = get_service_status(session, tenant_id, now=berlin(DIENSTAG, 18, 30))
+
+    assert status.say == "Abholung und Lieferung sind gerade pausiert."
+
+
+def test_reservations_off_are_said_and_flagged(session, tenant_id):
+    session.get(ServiceConfig, tenant_id).reservations_enabled = False
+    session.commit()
+
+    status = get_service_status(session, tenant_id, now=berlin(DIENSTAG, 18, 30))
+
+    assert status.reservations_enabled is False
+    assert status.is_open is True
+    assert status.say == "Reservierungen nehmen wir gerade nicht an."
+
+
+def test_reservations_off_are_said_while_the_restaurant_is_closed(session, tenant_id):
+    """A guest can reserve for tomorrow while it is closed: not with the switch off."""
+    session.get(ServiceConfig, tenant_id).reservations_enabled = False
+    session.commit()
+
+    status = get_service_status(session, tenant_id, now=berlin(MONTAG, 18, 30))
+
+    assert status.say.startswith("Wir haben gerade geschlossen.")
+    assert status.say.endswith("Reservierungen nehmen wir gerade nicht an.")
+
+
+def test_with_every_switch_on_nothing_is_said(session, tenant_id):
+    status = get_service_status(session, tenant_id, now=berlin(DIENSTAG, 18, 30))
+
+    assert status.reservations_enabled is True and status.say is None
+
+
 def test_pausierte_lieferung_als_einziger_service_zaehlt_nicht_als_offen(
     session, tenant_id
 ):

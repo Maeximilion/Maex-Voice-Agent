@@ -47,6 +47,15 @@ class DishSwitch:
     sold_out: bool
 
 
+@dataclass(frozen=True)
+class DishGroup:
+    category: str
+    dishes: list[DishSwitch]
+    # The group of dishes that are out today, shown first; the tablet words its
+    # heading, `category` stays empty.
+    sold_out_group: bool = False
+
+
 # A number in the search field: a digit first, also after a prefix ("s1", T-4.12).
 _NUMBER_START = re.compile(r"[a-z]{0,2}\d")
 
@@ -105,6 +114,49 @@ def list_switches(
         for item in _active(session, tenant_id)
         if _matches(item, query)
     ]
+
+
+def group_switches(
+    switches: list[DishSwitch], sold_out_first: bool = False
+) -> list[DishGroup]:
+    """Group the list by category. The groups come in menu order: a category
+    stands where its first dish stands in card order, so the order comes from
+    the data and no category name is known here. Takes the already filtered
+    list, so a search shows grouped results. With `sold_out_first` the dishes
+    that are out today form a first group and leave their category, so they are
+    found at once; categories left empty by that disappear."""
+    groups: dict[str, list[DishSwitch]] = {}
+    out = [s for s in switches if sold_out_first and s.sold_out]
+    for switch in switches:
+        if not (sold_out_first and switch.sold_out):
+            groups.setdefault(switch.category, []).append(switch)
+    first = [DishGroup("", out, sold_out_group=True)] if out else []
+    return first + [DishGroup(category, items) for category, items in groups.items()]
+
+
+def get_switch(
+    session: Session,
+    tenant_id: uuid.UUID,
+    menu_item_id: uuid.UUID,
+    now: datetime | None = None,
+) -> DishSwitch | None:
+    """One dish in its current state, for the row the tablet swaps after a tap."""
+    item = session.scalars(
+        select(MenuItem).where(
+            MenuItem.tenant_id == tenant_id,
+            MenuItem.id == menu_item_id,
+            MenuItem.active.is_(True),
+        )
+    ).first()
+    if item is None:
+        return None
+    return DishSwitch(
+        menu_item_id=item.id,
+        number=item.number,
+        name=item.name,
+        category=item.category,
+        sold_out=is_sold_out(item, now or clock.utcnow()),
+    )
 
 
 def sold_out_count(

@@ -30,6 +30,7 @@ class CapacityWindow:
     end: datetime
     max_guests: int
     slot_minutes: int
+    notice_minutes: int = 0
 
     def contains(self, at: datetime) -> bool:
         return self.start <= at < self.end
@@ -61,14 +62,20 @@ def capacity_windows(
     rows = session.scalars(
         select(Capacity).where(
             Capacity.tenant_id == tenant_id, Capacity.weekday == weekday
-        )
+        ),
+        # A notice set while a call runs counts in that call (T-3.13).
+        execution_options={"populate_existing": True},
     ).all()
     windows = []
     for row in rows:
         start = datetime.combine(day, row.slot_start, tzinfo=zone)
         end_day = day + timedelta(days=1) if row.slot_end <= row.slot_start else day
         end = datetime.combine(end_day, row.slot_end, tzinfo=zone)
-        windows.append(CapacityWindow(start, end, row.max_guests, row.slot_minutes))
+        windows.append(
+            CapacityWindow(
+                start, end, row.max_guests, row.slot_minutes, row.notice_minutes
+            )
+        )
     return sorted(windows, key=lambda w: w.start)
 
 
