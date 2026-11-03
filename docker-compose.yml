@@ -161,6 +161,8 @@ services:
       # Worktrees mit ihren eigenen .env-Dateien, die im Container nichts zu
       # suchen haben (CLAUDE.md §8). Der Test liest ohnehin nur die Befehle.
       - ./.claude/commands:/app/.claude/commands:ro
+      # /done references the PR template; test_commands.py checks that path too.
+      - ./.github/PULL_REQUEST_TEMPLATE.md:/app/.github/PULL_REQUEST_TEMPLATE.md:ro
       - ./CLAUDE.md:/app/CLAUDE.md:ro
       - ./README.md:/app/README.md:ro
       - ./CHANGELOG.md:/app/CHANGELOG.md:ro

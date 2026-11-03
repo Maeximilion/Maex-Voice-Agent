@@ -124,13 +124,15 @@ def test_ein_tap_heute_aus_und_zurueck(client, db, tenant_id):
     assert "heute aus" not in client.get("/gui/fragments/kopfzeile").text
 
 
-def test_tap_behaelt_die_suche(client, db, tenant_id):
+def test_tap_antwortet_mit_der_einen_zeile_an_ihrem_platz(client, db, tenant_id):
+    """The row is swapped in place: only this dish comes back, in its new state,
+    so the list does not move under the finger."""
     rolls = item(db, tenant_id, "23")
-    html = client.post(
-        f"/gui/gericht-aus/{rolls}/aus", headers=HX, data={"q": "rollen"}
-    ).text
-    assert "Frühlingsrollen" in html
-    assert "Pho Bo" not in html
+    html = client.post(f"/gui/gericht-aus/{rolls}/aus", headers=HX).text
+    assert html.count("<li") == 1
+    assert f'id="dish-{rolls}"' in html and "Frühlingsrollen" in html
+    assert "Pho Bo" not in html and "Wieder da" in html
+    assert 'hx-target="closest li"' in html and 'hx-swap="outerHTML"' in html
 
 
 def test_ohne_htmx_kein_schalten(client, db, tenant_id):
@@ -146,11 +148,11 @@ def test_unbekannter_schalter(client, db, tenant_id, state):
     assert response.status_code in (404, 405)
 
 
-def test_unbekanntes_gericht_zeigt_die_liste(client, tenant_id):
-    """Ein anderes Tablet oder ein Import war schneller: kein Fehler, frische Liste."""
+def test_unbekanntes_gericht_laesst_die_zeile_verschwinden(client, tenant_id):
+    """Another tablet or an import was faster: no error, the row just goes."""
     response = client.post(f"/gui/gericht-aus/{uuid.uuid4()}/aus", headers=HX)
     assert response.status_code == 200
-    assert "Pho Bo" in response.text
+    assert response.text == ""
     assert "nicht geklappt" not in response.text
 
 

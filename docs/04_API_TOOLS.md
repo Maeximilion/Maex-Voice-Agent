@@ -609,7 +609,7 @@ Nur für die Druckbrücke (`printbridge/`), mit eigenem Token `KITCHEN_BRIDGE_TO
 
 **`POST /v1/kitchen/claim`** `{tenant_id, limit}` (1–10, Standard 5) → `{"tickets": [{"id", "attempt", "ticket", "ready_time", "print_time"}]}`
 
-- Fällige `order.confirmed` des Betriebs, älteste zuerst. `ticket` ist der Inhalt aus §confirm (Positionen, `revision`, `correction_reason`), limited to the fields the bridge prints (`SLIP_FIELDS` in `domain/ordering/handover.py`): no `phone` and no `call_id`, so a stolen kitchen token reads no phone number (security audit 02.11.2026). The outbox event itself stays whole.
+- Fällige `order.confirmed` des Betriebs, älteste zuerst. `ticket` ist der Inhalt aus §confirm (Positionen, `revision`, `correction_reason`), limited to the fields the bridge prints (`_slip` in `domain/ordering/handover.py`): no `phone`, no `call_id` and no `unit_price_cents` of a position, and for a cancellation note (`correction_reason` "cancelled") also no `address`, no `note` and no note of a position, so a stolen kitchen token reads nothing the slip does not print (security audits 02.11.2026). The outbox event itself stays whole.
 - `ready_time` und `print_time` sind „HH:MM" in der Zeitzone des Betriebs: die Brücke rechnet nicht selbst um, der Bon stimmt auch auf einem Rechner mit UTC.
 - Abholen zählt als Versuch und leiht den Bon für 60 s aus. Ohne Rückmeldung ist er danach wieder fällig.
 - Ein Bon, zu dem es schon eine höhere Revision gibt, wird nicht ausgeliefert, sondern als erledigt verbucht (`last_error` sagt „überholt von Revision n").

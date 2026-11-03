@@ -1,26 +1,17 @@
 #!/usr/bin/env python3
-"""Taegliche Pflege des GitHub-Projects: Abweichungen melden, nichts nebenbei aendern.
+"""Reconcile the GitHub project with repository facts; read-only by default.
 
-Zweck : Das Board ist eine Ableitung. Waehrend der Arbeit fasst es niemand an;
-        einmal taeglich prueft dieses Skript, ob es noch zu Issues und
-        docs/07_WORKPACKAGES.md passt, und meldet die Abweichungen.
-Aufruf: python scripts/project_report.py [--fix] [--archive]
-        Ohne Schalter wird nur gelesen und berichtet (Trockenlauf).
-        --fix      setzt Abgeschlossenes auf Done, Offenes auf In review, In progress
-                   oder Blocked,
-                   traegt leere Felder nach (Start, Ziel, Iteration, Quarter) und
-                   haengt Iterationen an, bevor die letzte endet - taeglich und bei
-                   jedem Ereignis an einem Pull Request oder Issue (project-sync.yml)
-        --archive  archiviert Done-Eintraege nach 14 Tagen, nur von Hand
-        --findings-json DATEI  schreibt die offenen Befunde als JSON, fuer das
-                   Entscheidungs-Issue (scripts/decision_issue.py)
-Umgeb.: PROJECT_TOKEN   Token mit Projects-Recht (Lesen; fuer --fix/--archive Schreiben)
-        PROJECT_OWNER   Kontoname, dem das Project gehoert
-        PROJECT_NUMBER  Nummer des Projects aus seiner URL
-        PROJECT_REPO    owner/name des Repos fuer den Abgleich offener Issues und
-                        Pull Requests; in einer Action faellt es auf GITHUB_REPOSITORY
-                        zurueck. Fehlt beides, entfaellt dieser eine Abgleich - laut.
-Abhaeng.: nur Standardbibliothek.
+--fix fills missing facts, restores completed status and extends iterations.
+--history includes closed issues and merged PRs; with --fix, adds missing items
+          after checking direct membership, including archives.
+--status-only limits reconciliation to status (the hourly safety net).
+--archive explicitly archives finished Done items idle for fourteen days.
+--findings-json FILE supplies unresolved findings to decision_issue.py.
+
+Environment: PROJECT_TOKEN (Projects read, write for --fix/--archive),
+PROJECT_OWNER, PROJECT_NUMBER. PROJECT_REPO is owner/name, defaulting to
+GITHUB_REPOSITORY. Without either, repository comparison is explicitly omitted.
+Standard library only. Dates are displayed in Europe/Berlin.
 """
 
 from __future__ import annotations
@@ -28,11 +19,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -75,14 +68,15 @@ query($owner: String!, $number: Int!, $cursor: String) {
           content {
             __typename
             ... on Issue {
-              number title state url createdAt closedAt
+              id number title state url createdAt closedAt
               labels(first: 20) { nodes { name } }
               closedByPullRequestsReferences(first: 10, includeClosedPrs: true) {
+                pageInfo { hasNextPage endCursor }
                 nodes { state createdAt }
               }
             }
             ... on PullRequest {
-              number title state url createdAt mergedAt closedAt
+              id number title state url createdAt mergedAt closedAt
               labels(first: 20) { nodes { name } }
             }
             ... on DraftIssue { title }
@@ -97,14 +91,67 @@ query($owner: String!, $number: Int!, $cursor: String) {
 # Ein Platzhalter statt zwei fast gleicher Abfragen: issues und pullRequests haben
 # dieselbe Form. Getrennt blaettern, weil ein gemeinsamer Cursor die fertige Seite
 # der kuerzeren Liste erneut holen und Eintraege doppeln wuerde.
-REPO_OPEN_QUERY = """
+REPO_QUERY = """
 query($owner: String!, $name: String!, $cursor: String) {
   repository(owner: $owner, name: $name) {
-    CONNECTION(states: OPEN, first: 100, after: $cursor) {
+    CONNECTION(states: STATES, first: 100, after: $cursor) {
       pageInfo { hasNextPage endCursor }
-      nodes { number title url updatedAt labels(first: 20) { nodes { name } } }
+      nodes {
+        __typename id number title url state createdAt closedAt updatedAt
+        labels(first: 100) { nodes { name } }
+        EXTRA
+      }
     }
   }
+}
+"""
+
+MEMBERSHIP_QUERY = """
+query($id: ID!, $cursor: String) {
+  node(id: $id) {
+    ... on Issue { projectItems(first: 100, after: $cursor, includeArchived: true) {
+      ...Memberships
+    } }
+    ... on PullRequest { projectItems(first: 100, after: $cursor, includeArchived: true) {
+      ...Memberships
+    } }
+  }
+}
+fragment Memberships on ProjectV2ItemConnection {
+  pageInfo { hasNextPage endCursor }
+  nodes {
+    id isArchived updatedAt project { id }
+    fieldValues(first: 100) { nodes {
+      ... on ProjectV2ItemFieldSingleSelectValue {
+        name field { ... on ProjectV2SingleSelectField { name } }
+      }
+      ... on ProjectV2ItemFieldIterationValue {
+        title field { ... on ProjectV2IterationField { name } }
+      }
+      ... on ProjectV2ItemFieldDateValue {
+        date field { ... on ProjectV2Field { name } }
+      }
+    } }
+  }
+}
+"""
+
+ADD_ITEM_MUTATION = """
+mutation($projectId: ID!, $contentId: ID!) {
+  addProjectV2ItemById(input: {projectId: $projectId, contentId: $contentId}) {
+    item { id isArchived }
+  }
+}
+"""
+
+CLOSING_PAGE_QUERY = """
+query($id: ID!, $cursor: String) {
+  node(id: $id) { ... on Issue {
+    closedByPullRequestsReferences(first: 100, after: $cursor, includeClosedPrs: true) {
+      pageInfo { hasNextPage endCursor }
+      nodes { state createdAt }
+    }
+  } }
 }
 """
 
@@ -252,6 +299,8 @@ class Item:
     work_started: datetime | None = None
     # An issue with an open pull request that closes it is in progress.
     has_open_pr: bool = False
+    content_id: str = ""
+    body: str = ""
 
     @property
     def status(self) -> str | None:
@@ -323,6 +372,10 @@ def graphql(query: str, variables: dict, token: str) -> dict:
     if body.get("errors"):
         messages = "; ".join(error.get("message", "?") for error in body["errors"])
         raise ProjectError(f"GraphQL-Fehler: {messages}")
+    if query.lstrip().startswith("mutation"):
+        # Historical backfills can contain hundreds of field writes. Pace every
+        # mutation, including status and dates, below the secondary write limit.
+        time.sleep(1)
     return body["data"]
 
 
@@ -367,6 +420,8 @@ def parse_item(node: dict) -> Item | None:
         updated_at=datetime.fromisoformat(node["updatedAt"].replace("Z", "+00:00")),
         number=content.get("number"),
         kind=kind,
+        content_id=content.get("id", ""),
+        body=content.get("body") or "",
         work_started=work_started,
         has_open_pr=any(ref["state"] == "OPEN" for ref in closing),
         created_at=_timestamp(content.get("createdAt")),
@@ -420,6 +475,8 @@ def fetch_items(owner: str, number: int, token: str) -> tuple[str, str, list[Ite
         project_title = project["title"]
 
         page = project["items"]
+        for node in page["nodes"]:
+            complete_closing_refs(node.get("content") or {}, token)
         # Unlesbare Eintraege haben weder Nummer noch Zustand, --fix faende nichts und
         # liefe still gruen durch.
         unreadable += sum(1 for node in page["nodes"] if _is_unreadable(node))
@@ -438,15 +495,46 @@ def fetch_items(owner: str, number: int, token: str) -> tuple[str, str, list[Ite
     return project_id, project_title, items
 
 
-def fetch_open_in_repo(repo: str, token: str) -> list[Item]:
-    """Alle offenen Issues und Pull Requests des Repos, als Items ohne Board-Felder."""
+def complete_closing_refs(content: dict, token: str) -> None:
+    """Do not derive a start from a truncated list of linked implementations."""
+    closing = content.get("closedByPullRequestsReferences") or {}
+    next_page = closing.get("pageInfo", {})
+    while next_page.get("hasNextPage"):
+        extra = graphql(
+            CLOSING_PAGE_QUERY,
+            {"id": content["id"], "cursor": next_page["endCursor"]},
+            token,
+        )["node"]["closedByPullRequestsReferences"]
+        closing["nodes"].extend(extra["nodes"])
+        next_page = extra["pageInfo"]
+
+
+def fetch_in_repo(repo: str, token: str, *, history: bool) -> list[Item]:
+    """Read the repository, including historical issues and merged PRs on request."""
     owner, _, name = repo.partition("/")
     if not owner or not name:
         raise ProjectError(f"PROJECT_REPO muss owner/name sein, nicht {repo!r}")
 
     found: list[Item] = []
     for connection in ("issues", "pullRequests"):
-        query = REPO_OPEN_QUERY.replace("CONNECTION", connection)
+        states = "OPEN"
+        if history:
+            states = "[OPEN, CLOSED]" if connection == "issues" else "[OPEN, MERGED]"
+        query = (
+            REPO_QUERY.replace("CONNECTION", connection)
+            .replace("STATES", states)
+            .replace(
+                "EXTRA",
+                "body mergedAt"
+                if connection == "pullRequests"
+                else """
+                closedByPullRequestsReferences(first: 10, includeClosedPrs: true) {
+                    pageInfo { hasNextPage endCursor }
+                    nodes { state createdAt }
+                }
+            """,
+            )
+        )
         cursor: str | None = None
         while True:
             data = graphql(
@@ -456,28 +544,95 @@ def fetch_open_in_repo(repo: str, token: str) -> list[Item]:
             if repository is None:
                 raise ProjectError(f"Repo {repo} nicht gefunden oder nicht lesbar.")
             page = repository[connection]
-            found.extend(
-                Item(
-                    node_id="",
-                    title=node["title"],
-                    updated_at=datetime.fromisoformat(
-                        node["updatedAt"].replace("Z", "+00:00")
-                    ),
-                    number=node["number"],
-                    state="OPEN",
-                    url=node["url"],
-                    kind="PullRequest" if connection == "pullRequests" else "Issue",
-                    labels=frozenset(
-                        label["name"]
-                        for label in (node.get("labels") or {}).get("nodes", [])
-                    ),
+            for node in page["nodes"]:
+                complete_closing_refs(node, token)
+                item = parse_item(
+                    {"id": "", "updatedAt": node["updatedAt"], "content": node}
                 )
-                for node in page["nodes"]
-            )
+                assert item is not None
+                found.append(item)
             if not page["pageInfo"]["hasNextPage"]:
                 break
             cursor = page["pageInfo"]["endCursor"]
     return found
+
+
+def enrich_starts(items: list[Item], repo_items: list[Item]) -> None:
+    """Explicit same-repository PR references can evidence an earlier partial step.
+
+    They do not create closing links or change issue status. Code examples and
+    comments are excluded; bare issue mentions are not implementation evidence.
+    """
+    starts: dict[str, datetime] = {}
+    for pull in repo_items:
+        if pull.kind != "PullRequest" or pull.state not in {"OPEN", "MERGED"}:
+            continue
+        if not pull.url or not pull.created_at:
+            continue
+        body = re.sub(
+            r"<!--.*?-->|```.*?```|~~~.*?~~~|`[^`]*`", "", pull.body, flags=re.S
+        )
+        for number in re.findall(
+            r"(?i)\b(?:refs?|close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b", body
+        ):
+            url = pull.url.rsplit("/pull/", 1)[0] + "/issues/" + number
+            starts[url] = min(starts.get(url, pull.created_at), pull.created_at)
+    for item in items:
+        if item.kind == "Issue" and item.url in starts:
+            item.work_started = min(
+                item.work_started or starts[item.url], starts[item.url]
+            )
+
+
+def reconcile_history(
+    project_id: str, items: list[Item], repo_items: list[Item], token: str, *, fix: bool
+) -> list[str]:
+    """Check direct membership before adding missing history; never unarchive it.
+
+    GitHub's project-wide connection has omitted an existing item in practice.
+    The content's membership connection is the second check before any write.
+    """
+    added = []
+    for missing in find_missing(items, repo_items):
+        if missing.is_maintenance:
+            continue
+        cursor = None
+        memberships: list[dict] = []
+        while True:
+            page = graphql(
+                MEMBERSHIP_QUERY, {"id": missing.content_id, "cursor": cursor}, token
+            )["node"]["projectItems"]
+            memberships.extend(
+                n for n in page["nodes"] if n["project"]["id"] == project_id
+            )
+            if not page["pageInfo"]["hasNextPage"]:
+                break
+            cursor = page["pageInfo"]["endCursor"]
+        for membership in memberships:
+            # Keep repository facts and recover the existing board fields.
+            recovered = parse_item(membership)
+            assert recovered is not None
+            items.append(
+                replace(
+                    missing,
+                    node_id=recovered.node_id,
+                    fields=recovered.fields,
+                    is_archived=recovered.is_archived,
+                    updated_at=recovered.updated_at,
+                )
+            )
+        if memberships or not fix:
+            continue
+        result = graphql(
+            ADD_ITEM_MUTATION,
+            {"projectId": project_id, "contentId": missing.content_id},
+            token,
+        )["addProjectV2ItemById"]["item"]
+        missing.node_id = result["id"]
+        missing.is_archived = result["isArchived"]
+        items.append(missing)
+        added.append(missing.label)
+    return added
 
 
 def find_missing(items: list[Item], open_in_repo: list[Item]) -> list[Item]:
@@ -508,6 +663,36 @@ def find_issues(
     duplicates = [item for item in board if item.url and seen[item.url] > 1]
 
     findings = {
+        "Start date after completion": [
+            item
+            for item in board
+            if item.closed_at
+            and item.fields.get("Start date", "")
+            > item.closed_at.astimezone(BERLIN).date().isoformat()
+        ],
+        "Implementation starts after completion": [
+            item
+            for item in board
+            if item.work_started
+            and item.closed_at
+            and item.work_started > item.closed_at
+            and not item.fields.get("Start date")
+        ],
+        "Target date differs from completion": [
+            item
+            for item in board
+            if item.closed_at
+            and item.fields.get("Target date")
+            and item.fields["Target date"]
+            != item.closed_at.astimezone(BERLIN).date().isoformat()
+        ],
+        "Start date after target date": [
+            item
+            for item in board
+            if item.fields.get("Start date")
+            and item.fields.get("Target date")
+            and item.fields["Start date"] > item.fields["Target date"]
+        ],
         "Doppelt auf dem Board": duplicates,
         "Ohne Status": [item for item in board if not item.status],
         # Nur was wirklich in Arbeit ist, braucht eine Iteration. Die Prueflinie auf
@@ -557,7 +742,16 @@ def find_issues(
     }
     if open_in_repo is not None:
         findings["Offen im Repo, fehlt auf dem Board"] = find_missing(
-            items, [ref for ref in open_in_repo if not ref.is_maintenance]
+            items,
+            [
+                ref
+                for ref in open_in_repo
+                if not ref.is_maintenance and ref.state == "OPEN"
+            ],
+        )
+        findings["Completed in repository, missing from project"] = find_missing(
+            items,
+            [ref for ref in open_in_repo if not ref.is_maintenance and ref.is_finished],
         )
     return findings
 
@@ -718,16 +912,19 @@ def pick_iteration(iterations: list[dict], day: date) -> str | None:
 
 
 def derive_fields(item: Item) -> dict[str, str]:
-    """Welche leeren Board-Felder aus Fakten folgen, als Berliner Tag (ISO). Bei
-    Iteration und Quarter ist es der Tag, nach dem sie gewaehlt werden.
+    """Fill empty fields from facts, preserving manual values.
 
-    Only items someone works on (see work_started), only empty fields: what was set
-    by hand stays.
+    Completion does not depend on a linked PR. Start and periods require evidence
+    of implementation no later than completion. Values are ISO Berlin dates;
+    iteration fields use that date to select the configured period.
     """
-    if item.work_started is None:
-        return {}
-    started = item.work_started.astimezone(BERLIN).date().isoformat()
-    derived = dict.fromkeys(("Start date", *ITERATION_FIELDS), started)
+    derived = {}
+    if item.work_started is not None and (
+        item.closed_at is None or item.work_started <= item.closed_at
+    ):
+        started = item.work_started.astimezone(BERLIN).date().isoformat()
+        derived = dict.fromkeys(("Start date", *ITERATION_FIELDS), started)
+    # Completion is known even when no implementation PR is linked.
     if item.closed_at is not None:
         derived["Target date"] = item.closed_at.astimezone(BERLIN).date().isoformat()
     return {name: value for name, value in derived.items() if not item.fields.get(name)}
@@ -890,6 +1087,16 @@ def main() -> int:
         metavar="DATEI",
         help="Offene Befunde als JSON schreiben, Eingabe fuer scripts/decision_issue.py.",
     )
+    parser.add_argument(
+        "--history",
+        action="store_true",
+        help="Reconcile all issues and merged PRs; --fix also adds missing items.",
+    )
+    parser.add_argument(
+        "--status-only",
+        action="store_true",
+        help="Reconcile status only, for the hourly safety net.",
+    )
     args = parser.parse_args()
 
     token = os.environ.get("PROJECT_TOKEN", "")
@@ -917,7 +1124,22 @@ def main() -> int:
 
     now = datetime.now(UTC)
     try:
+        if args.history and (not repo or args.status_only):
+            raise ProjectError(
+                "--history requires PROJECT_REPO and cannot be combined with --status-only."
+            )
         project_id, project_title, items = fetch_items(owner, number, token)
+        repo_items = (
+            fetch_in_repo(repo, token, history=args.history)
+            if repo and not args.status_only
+            else None
+        )
+        added = (
+            reconcile_history(project_id, items, repo_items or [], token, fix=args.fix)
+            if args.history
+            else []
+        )
+        enrich_starts(items, repo_items or [])
 
         # Erst korrigieren, dann pruefen: der Bericht zeigt, was danach noch offen ist.
         fixed = (
@@ -933,14 +1155,19 @@ def main() -> int:
             if args.fix
             else {}
         )
+        if args.status_only:
+            print(
+                f"Status reconciliation: {len(fixed)} completed items restored to Done; "
+                f"{sum(len(group) for group in moved.values())} open items moved."
+            )
+            return 0
         # Before the fields: a pull request opened today needs an iteration to land in.
         extended = extend_iterations(owner, number, token) if args.fix else []
         filled = (
             fill_fields(owner, number, project_id, items, token) if args.fix else []
         )
 
-        open_in_repo = fetch_open_in_repo(repo, token) if repo else None
-        findings = find_issues(items, now, open_in_repo)
+        findings = find_issues(items, now, repo_items)
         archive_key = next(key for key in findings if "Archiv-Kandidat" in key)
         candidates = findings.pop(archive_key)
         # Erledigtes bleibt sichtbar, bis es jemand bewusst archiviert. Ohne --archive
@@ -949,8 +1176,11 @@ def main() -> int:
             findings[archive_key] = candidates
 
         report = render_report(project_title, items, findings, now)
-        if open_in_repo is None:
+        if repo_items is None:
             report += "\n\nHinweis: PROJECT_REPO nicht gesetzt, fehlende Eintraege wurden nicht gesucht."
+        if added:
+            report += f"\n\n## Historical items added ({len(added)})\n\n"
+            report += "\n".join(f"- {label}" for label in added)
         if fixed:
             report += f"\n\n## Auf Done gesetzt ({len(fixed)})\n\n"
             report += "\n".join(f"- {label}" for label in fixed)

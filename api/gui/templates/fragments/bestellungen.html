@@ -8,8 +8,6 @@
 <p class="empty">{{ problem }}</p>
 {% else %}
 {% if order_problem %}<p class="banner danger">{{ order_problem }}</p>{% endif %}
-{# What a tap did to a card that has left the column; gone with the next refresh. #}
-{% if order_notice %}<p class="banner ok" role="status">{{ order_notice }}</p>{% endif %}
 {% if not orders %}
 <p class="empty">Noch keine Bestellungen heute.</p>
 {% else %}

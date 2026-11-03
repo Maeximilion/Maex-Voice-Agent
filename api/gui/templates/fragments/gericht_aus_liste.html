@@ -20,13 +20,7 @@
   {% endif %}
     <ul class="dishes">
       {% for d in g.dishes %}
-      <li class="dish{{ ' aus' if d.sold_out }}">
-        <span class="dish-name"><span class="nr">{{ d.number }}</span> {{ d.name }}</span>
-        {% if d.sold_out %}<span class="badge warn">heute aus</span>{% endif %}
-        <button type="button" class="{{ 'primary' if d.sold_out }}"
-                hx-post="/gui/gericht-aus/{{ d.menu_item_id }}/{{ 'wieder-da' if d.sold_out else 'aus' }}"
-                hx-include="#gericht-suche" hx-target="#gericht-liste">{{ "Wieder da" if d.sold_out else "Heute aus" }}</button>
-      </li>
+      {% include "fragments/gericht_aus_zeile.html" %}
       {% endfor %}
     </ul>
   {% if g.sold_out_group %}</section>{% else %}</details>{% endif %}

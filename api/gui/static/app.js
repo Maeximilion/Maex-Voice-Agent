@@ -253,7 +253,14 @@
       alertBtn.className = "sheet-alert";
       alertBtn.addEventListener("click", function () {
         var target = alertTarget ? document.querySelector(alertTarget) : null;
+        // A correction with changes (the foot shows no "nothing changed" state)
+        // is dropped: say so.
+        var dirty =
+          correctionBox &&
+          correctionBox.querySelector(".sheet-foot") &&
+          !correctionBox.querySelector(".sheet-foot .state-note");
         sheets.forEach(closeSheet);
+        if (dirty) showBoardNote(ABANDONED, "warn");
         hideAlert();
         if (target) target.scrollIntoView({ block: "nearest" });
       });
@@ -263,18 +270,39 @@
     alertTarget = selector;
     main.classList.add("alert-on");
   }
-  // The idle timer closed a correction: say that nothing was saved, until the
-  // next tap.
-  function showAbandoned() {
-    var main = document.querySelector(".tafel main");
-    if (!main || !board || main.querySelector(".abandoned")) return;
-    var note = document.createElement("div");
-    note.className = "banner warn abandoned";
-    note.setAttribute("role", "status");
-    note.textContent = "Korrektur abgebrochen, nichts gespeichert.";
-    main.insertBefore(note, board);
-    document.addEventListener("click", function () { note.remove(); }, { capture: true, once: true });
+  // One line above the columns, in view whatever the scroll position: it goes
+  // with the next tap, or after `ms` when a time is given. A new one replaces
+  // the old.
+  var boardNote = null;
+  var boardNoteTimer = null;
+  function dropBoardNote() {
+    if (boardNote) boardNote.remove();
+    boardNote = null;
+    if (boardNoteTimer) window.clearTimeout(boardNoteTimer);
+    boardNoteTimer = null;
   }
+  function showBoardNote(text, tone, ms) {
+    var main = document.querySelector(".tafel main");
+    if (!main || !board) return;
+    dropBoardNote();
+    var note = document.createElement("div");
+    note.className = "banner " + tone + " board-note";
+    note.setAttribute("role", "status");
+    note.textContent = text;
+    main.insertBefore(note, board);
+    boardNote = note;
+    if (ms) {
+      boardNoteTimer = window.setTimeout(dropBoardNote, ms);
+    } else {
+      document.addEventListener("click", function () { if (boardNote === note) dropBoardNote(); }, { capture: true, once: true });
+    }
+  }
+  var ABANDONED = "Korrektur abgebrochen, nichts gespeichert.";
+  // The text a cancel tap sends in its HX-Trigger: the refresh that follows
+  // would remove a line inside the column.
+  document.body.addEventListener("order-notice", function (e) {
+    showBoardNote(e.detail.value, "ok", 6000);
+  });
   function syncBoard() {
     var open = sheetOpen();
     if (board) board.inert = open;
@@ -313,7 +341,7 @@
     idleTimer = window.setTimeout(function () {
       var open = correctionBox && correctionBox.firstElementChild;
       closeCorrection();
-      if (open) showAbandoned();
+      if (open) showBoardNote(ABANDONED, "warn");
     }, IDLE_MS);
   }
   sheets.forEach(function (box) {
@@ -350,13 +378,17 @@
     wasOpen = !!t.firstElementChild;
     var sc = scroller(t);
     var cfg = e.detail.requestConfig || {};
-    // A tap (POST) and a background refresh keep the view; a search (GET from
-    // the field) starts at the top on purpose.
-    var keep = cfg.verb === "post" || (cfg.headers && cfg.headers["X-Refresh"]);
-    scrollWas = wasOpen && keep && sc ? sc.scrollTop : 0;
+    scrollWas = wasOpen && cfg.verb === "post" && sc ? sc.scrollTop : 0;
   });
   document.body.addEventListener("htmx:afterSwap", function (e) {
     var t = e.detail.target;
+    // A dish row was replaced in place: its button is new, keep the focus on it.
+    if (t.tagName === "LI" && t.id.indexOf("dish-") === 0) {
+      var row = document.getElementById(t.id);
+      var btn = row && row.querySelector("button");
+      if (btn && document.activeElement === document.body) btn.focus({ preventScroll: true });
+      return;
+    }
     var inList = t.id === "gericht-liste";
     if (!inList && sheets.indexOf(t) < 0) return;
     if (inList) applyOpenCats(t);
@@ -377,6 +409,15 @@
     });
     syncBoard();
     if (box === correctionBox) armIdleTimer();
+    var refused = box.querySelector("#number-error");
+    if (refused) {
+      // The sticky foot covers the bottom of the list: the sentence must stand above it.
+      var body = box.querySelector(".sheet-body");
+      var foot = box.querySelector(".sheet-foot");
+      var gap = foot ? body.getBoundingClientRect().bottom - foot.getBoundingClientRect().top : 0;
+      var over = refused.getBoundingClientRect().bottom - (body.getBoundingClientRect().bottom - gap) + 12;
+      if (over > 0) body.scrollTop += over;
+    }
     var title = box.querySelector(".sheet-head h2");
     if (!wasOpen && title) title.focus();
   });
@@ -385,8 +426,8 @@
     var field = waitBox.querySelector("input");
     if (field) field.select();
   });
-  // Which categories of "Gericht aus" the team opened, by name, so a redraw (a
-  // tap, a refresh, a search that is cleared) keeps them. Reset when the sheet
+  // Which categories of "Gericht aus" the team opened, by name, so a search
+  // that is cleared brings them back. Reset when the sheet
   // closes. A search shows its hits open and does not count as the team's choice.
   var openCats = {};
   function searching() {
@@ -400,8 +441,15 @@
       var d = e.target;
       if (!d.matches || !d.matches("#gericht-liste details[data-cat]") || searching()) return;
       var cat = d.getAttribute("data-cat");
+      // Opened by the team (not restored by a redraw): heading to the top, or
+      // the dishes of a group at the bottom would hide below the fold.
+      var fresh = d.open && !openCats[cat];
       if (d.open) openCats[cat] = true;
       else delete openCats[cat];
+      if (fresh) {
+        var sc = d.closest(".sheet-body");
+        if (sc) sc.scrollTop += d.getBoundingClientRect().top - sc.getBoundingClientRect().top - 12;
+      }
     },
     true
   );
@@ -409,15 +457,6 @@
     if (searching()) return;
     list.querySelectorAll("details[data-cat]").forEach(function (d) {
       if (openCats[d.getAttribute("data-cat")]) d.open = true;
-    });
-  }
-  function reloadDishes() {
-    var search = document.getElementById("gericht-suche");
-    if (!search) return;
-    window.htmx.ajax("GET", "/gui/fragments/gericht-aus", {
-      target: "#gericht-liste",
-      values: { q: search.value },
-      headers: { "X-Refresh": "1" },
     });
   }
   document.body.addEventListener("gerichte-geaendert", function () {
@@ -446,12 +485,13 @@
     offline(false);
     kopfzeile();
   });
-  // Ein anderes Tablet hat ein Gericht aus- oder wieder angeschaltet, oder der
-  // Schalter ist am Morgen abgelaufen: Kachel und offene Liste zeigen es.
+  // Another tablet switched a dish, or a switch ran out in the morning: the
+  // tile shows it. An open list is not redrawn (a dish would slide away under
+  // the finger); every button sets a state, so a stale row does no harm, and
+  // the list is fresh the next time the sheet opens.
   strom.addEventListener("dishes", function () {
     offline(false);
     kopfzeile();
-    reloadDishes();
   });
   // The job wrote a suggestion, or another tablet answered one (#207).
   strom.addEventListener("holidays", function () {
