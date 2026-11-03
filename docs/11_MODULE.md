@@ -53,6 +53,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 Öffnungszeiten, Sondertage, Wartezeiten, Modus. Beantwortet: *Geht gerade etwas, und was?*
 - `hours.py` — ist offen? nächste Öffnung? je Service
 - `config.py` — `service_config` lesen und schreiben, mit `audit_log`
+- `waits.py` — the wait a guest is told: today's wait while it holds, otherwise the standard (T-3.14); the one reader
 - `mode.py` — which call mode holds now: the team's choice, weekly windows, the emergency stop (T-8.1)
 - `bridge.py` — the print bridge's sign of life: `note_poll` from the claim, `silence` for the alarm and the header (T-8.3)
 - `holidays.py` — the statewide statutory holidays of the 16 states (Easter by the Gregorian formula), suggested in `special_days` and answered by the team: like Sunday, closed, or the weekday's hours (T-9.5). A suggestion counts for nothing until then

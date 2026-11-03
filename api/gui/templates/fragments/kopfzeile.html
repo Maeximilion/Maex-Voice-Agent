@@ -51,23 +51,12 @@
   <div class="top actions">
     {# Wartezeit je Service, senkbar und erhöhbar (T-3.6, docs/06 §3). Immer mit
        "Wartezeit" und dem Service daneben; an der Grenze ist der Knopf aus, statt
-       einen Tap ohne Wirkung zu schlucken. #}
-    {% for key, label, minutes in [
-         ("abholung", "Abholung", config.pickup_wait_minutes),
-         ("lieferung", "Lieferung", config.delivery_wait_minutes)] %}
+       einen Tap ohne Wirkung zu schlucken. A tap on the value opens its sheet
+       (fragments/wartezeit.html). The word "Standard" stands next to a wait that
+       differs from it (T-3.14). #}
+    {% for key, label, minutes, standard in waits %}
     <div class="step">
-      {# Tap on the value: type a wait by hand (T-3.9). The stepper stays next to it. #}
-      <details class="step-edit" name="wartezeit">
-        <summary><b>Wartezeit {{ label }} {{ minutes }} Min</b></summary>
-        <form class="step-form" hx-post="/gui/kopfzeile/wartezeit/{{ key }}"
-              hx-target="#kopfzeile" hx-swap="outerHTML">
-          <input type="number" name="minuten" inputmode="numeric" value="{{ minutes }}"
-                 min="{{ wait_min }}" max="{{ wait_max }}" required
-                 aria-label="Wartezeit {{ label }} in Minuten">
-          <span>Min</span>
-          <button type="submit" class="primary">Übernehmen</button>
-        </form>
-      </details>
+      <button class="step-value" hx-get="/gui/wartezeit/{{ key }}" hx-target="#wartezeit"><b>Wartezeit {{ label }} {{ minutes }} Min</b>{% if minutes != standard %}<span class="step-std">Standard {{ standard }} Min</span>{% endif %}</button>
       <button hx-post="/gui/kopfzeile/wartezeit/{{ key }}/-{{ wait_step }}"
               hx-target="#kopfzeile" hx-swap="outerHTML"
               aria-label="Wartezeit {{ label }} {{ wait_step }} Minuten weniger"

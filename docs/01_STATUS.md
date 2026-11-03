@@ -1,15 +1,17 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 03.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.25
+> Status: 03.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.26
 
 ---
 
 ## Summary
 
-**The wait is typed by hand and stays (T-3.9, 02.11.2026).** A tap on the value in the header opens a field with the number pad; any whole minute from 10 to 180 is taken, anything else gets a sentence and changes nothing. `set_wait` writes `service_config` and `audit_log`, and that value is the standard: no second field. Checked in a browser: typed 17, a refused 500, the stream holding back a redraw while the field is open, and 15 after the server was killed and started again. No migration, and the agent reads the value as before.
+**A rush value ends by itself: standard wait and today's wait (T-3.14, #505, 02.11.2026).** Until now one value held both, so last night's wait was told to the next day's guests. The two columns are the standard now and keep their values; the stepper and the typed field write a wait for today with the moment it ends, 05:00 local time. No job runs at 05:00: past that moment `current_wait` (`domain/status/waits.py`, the one reader) gives the standard, so a stopped process cannot leave a rush value standing, and the header token sees the change without a write. The issue asked for a job with an audit entry; this does without both, as "Gericht aus" does, and the audit entry of the change names the end. On the tablet a tap on the value opens a small sheet with "Heute", "Standard" and, while they differ, "Zurück auf Standard" (two taps: open, tap), and the header names the standard next to a wait that differs. The sheet replaced a popover in the header after the UI review of 02.11.2026: while it was open the header could not redraw, so "KI ist aus" from another tablet stayed hidden. Migration 024 renames two columns, so the running stack needs `make migrate` with this code. Checked: tests on both sides of 05:00 and across both clock changes of the coming year, up and down of the migration, the agent's status and the read-back, and in a browser a wait for today running out with the header redrawn by the stream and the standard kept after a killed server.
 
-**The default waits are 30 minutes for pickup and 60 for delivery (Maxi, 02.11.2026).** Migration 023 changes the defaults and moves a tenant still on the old 20 and 45; a wait changed on the tablet stays. The wait the agent names lives in `service_config` and survives a restart; nothing resets it, so there is one value and no separate standard. The notice a reservation needs before its time, per weekday, is T-3.13 (#499).
+**The wait is typed by hand and stays (T-3.9, 02.11.2026).** A tap on the value in the header opens a field with the number pad; any whole minute from 10 to 180 is taken, anything else gets a sentence and changes nothing. `set_wait` writes `service_config` and `audit_log`. Checked in a browser: typed 17, a refused 500, and 15 after the server was killed and started again. No migration, and the agent reads the value as before.
+
+**The default waits are 30 minutes for pickup and 60 for delivery (Maxi, 02.11.2026).** Migration 023 changes the defaults and moves a tenant still on the old 20 and 45; a wait changed on the tablet stays. The notice a reservation needs before its time, per weekday, is T-3.13 (#499).
 
 **The operations view wears the README colours, and its columns really scroll (D27, 02.11.2026).** Midnight background, neon for done and the main action, violet for open or waiting, coral only for what went wrong, monospace for times and codes; one dark theme. A browser check over all visible text and every panel found that the columns of D26 did not scroll on their own, as docs/06 and this file had claimed, and that "Öffnen" was 57 px high; both fixed. Maxi's other wishes of the day are work packages: T-3.8 panels and "Gericht aus" by category (#493), T-3.9 a typed wait (#494), T-3.10 pickup and reservation switches (#495), T-3.11 floor plan (#496), T-3.12 manual table reservations (#497).
 
@@ -748,6 +750,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.26 · 03.11.2026:** T-3.14 done: standard wait, today's wait ends at 05:00
 - **v2.14.25 · 02.11.2026:** T-3.8 panels as sheets, Gericht aus grouped by category
 - **v2.14.24 · 03.11.2026:** Reconcile project history, dates and relationships; retain PR checklists and resolve maintenance review findings (#511).
 - **v2.14.23 · 03.11.2026:** Kennzahlen correction lookup bounded in time (#252 P3 no. 14), audit log row of the component audit

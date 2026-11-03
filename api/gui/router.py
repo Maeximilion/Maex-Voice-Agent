@@ -41,6 +41,7 @@ from api.domain.status import bridge
 from api.domain.status import config as switches
 from api.domain.status import holidays as holiday_days
 from api.domain.status.mode import CAUTION, mode_at
+from api.domain.status.waits import current_wait, standard_wait
 from api.gui import figures_view, orders_view
 from api.gui.sse import today_event_stream
 from api.models import ServiceConfig, Tenant
@@ -199,7 +200,8 @@ def _header(session: Session, tenant: Tenant) -> dict:
             "mode_label": "KI ist aus",
             "config": None,
         }
-    holding = mode_at(session, tenant, config)
+    now = clock.utcnow()
+    holding = mode_at(session, tenant, config, now)
     tone, label = MODE_LABELS.get(holding.mode, ("danger", "KI ist aus"))
     rank = MODE_CHOICES.index(holding.mode) if holding.mode in MODE_CHOICES else -1
     return {
@@ -214,6 +216,15 @@ def _header(session: Session, tenant: Tenant) -> dict:
         "mode_choices": [
             (mode, MODE_LABELS[mode][1], mode == holding.mode, index > rank)
             for index, mode in enumerate(MODE_CHOICES)
+        ],
+        "waits": [
+            (
+                key,
+                key.capitalize(),
+                current_wait(config, service, now),
+                standard_wait(config, service),
+            )
+            for key, service in WAIT_SERVICES.items()
         ],
         "config": config,
         "sold_out_count": dishes.sold_out_count(session, tenant.id),
@@ -763,6 +774,32 @@ async def _form(request: Request) -> dict[str, str]:
     return {k: v[-1] for k, v in parse_qs(body, keep_blank_values=True).items()}
 
 
+@router.get(
+    "/wartezeit/{service}", response_class=HTMLResponse, include_in_schema=False
+)
+def wartezeit_blatt(
+    request: Request, service: str, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """The sheet of one wait: today's value and the standard (T-3.9, T-3.14)."""
+    tenant = _tenant(session)
+    config = session.get(ServiceConfig, tenant.id) if tenant else None
+    if service not in WAIT_SERVICES or config is None:
+        raise HTTPException(status_code=404)
+    name = WAIT_SERVICES[service]
+    return templates.TemplateResponse(
+        request,
+        "fragments/wartezeit.html",
+        {
+            "key": service,
+            "label": service.capitalize(),
+            "minutes": current_wait(config, name, clock.utcnow()),
+            "standard": standard_wait(config, name),
+            "wait_min": switches.MIN_WAIT_MINUTES,
+            "wait_max": switches.MAX_WAIT_MINUTES,
+        },
+    )
+
+
 def _typed_minutes(text: str) -> int:
     """The digits the team typed; 0 for anything else, which the limits refuse."""
     text = text.strip()
@@ -788,6 +825,48 @@ def wartezeit_getippt(
         request,
         session,
         lambda t: switches.set_wait(session, t, WAIT_SERVICES[service], minutes),
+    )
+
+
+@router.post(
+    "/kopfzeile/standardzeit/{service}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def standardzeit(
+    request: Request,
+    service: str,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    if service not in WAIT_SERVICES:
+        raise HTTPException(status_code=404)
+    minutes = _typed_minutes(form.get("minuten", ""))
+    return _switch(
+        request,
+        session,
+        lambda t: switches.set_standard_wait(
+            session, t, WAIT_SERVICES[service], minutes
+        ),
+    )
+
+
+@router.post(
+    "/kopfzeile/standardzeit/{service}/zurueck",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def standardzeit_zurueck(
+    request: Request, service: str, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    if service not in WAIT_SERVICES:
+        raise HTTPException(status_code=404)
+    return _switch(
+        request,
+        session,
+        lambda t: switches.reset_wait(session, t, WAIT_SERVICES[service]),
     )
 
 
