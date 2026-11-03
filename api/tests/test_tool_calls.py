@@ -3,13 +3,14 @@
 import uuid
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from api.config import settings
 from api.db import get_db
-from api.main import app
+from api.main import add_local_routes, app
 from scripts.seed import seed
 
 AUTH = {"Authorization": f"Bearer {settings.agent_api_token}"}
@@ -146,3 +147,35 @@ def test_unbekanntes_ergebnis_ist_invalid_input(client):
 
     assert r.json()["ok"] is False
     assert r.json()["error"]["code"] == "invalid_input"
+
+
+def _paths(target: FastAPI) -> list[str]:
+    return [getattr(route, "path", "") for route in target.routes]
+
+
+@pytest.mark.parametrize("env", ["dev", "test"])
+def test_calls_start_exists_in_dev_and_test(env):
+    target = FastAPI()
+    add_local_routes(target, env)
+    assert "/v1/calls/start" in _paths(target)
+
+
+@pytest.mark.parametrize("env", ["production", "prod", "staging"])
+def test_calls_start_is_absent_outside_dev_and_test(env):
+    """Recognition trusts `calls.caller_id`, so outside dev and test no token
+    holder may open a call with a caller ID of their choice (#252)."""
+    target = FastAPI()
+    add_local_routes(target, env)
+    assert "/v1/calls/start" not in _paths(target)
+    r = TestClient(target).post(
+        "/v1/calls/start",
+        json={"tenant_id": str(uuid.uuid4()), "external_session_id": "x"},
+        headers=AUTH,
+    )
+    assert r.status_code == 404
+
+
+def test_the_app_under_test_registers_calls_start_once():
+    """The suite runs with ENV=test, so the app carries the route, once."""
+    assert settings.env == "test"
+    assert _paths(app).count("/v1/calls/start") == 1
