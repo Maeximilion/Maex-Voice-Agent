@@ -237,7 +237,7 @@ def test_kopfzeile_zeigt_die_knoepfe(client, tenant_id):
     assert 'id="kopfzeile"' in body
     for knopf in (
         "KI pausieren",
-        "Lieferung aus",
+        "Lieferung an",
         "Wartezeit Abholung 15 Minuten weniger",
         "Wartezeit Abholung 15 Minuten mehr",
         "Wartezeit Lieferung 15 Minuten weniger",
@@ -522,6 +522,63 @@ def test_the_notice_needs_the_csrf_header(client, tenant_id):
 
 def test_the_column_heute_opens_the_notice(client, tenant_id):
     assert 'hx-get="/gui/vorlauf"' in client.get("/gui").text
+
+
+@pytest.mark.parametrize(
+    "path, word, field",
+    [
+        ("abholung", "Abholung", "pickup_enabled"),
+        ("reservierung", "Reservierung", "reservations_enabled"),
+    ],
+)
+def test_a_service_goes_off_and_on_from_the_header(
+    client, engine, tenant_id, path, word, field
+):
+    body = client.post(f"/gui/kopfzeile/{path}/aus", headers=HX)
+
+    assert body.status_code == 200
+    assert f"{word} aus" in body.text
+    assert f'hx-post="/gui/kopfzeile/{path}/an"' in body.text
+    assert getattr(config_von(engine, tenant_id), field) is False
+
+    body = client.post(f"/gui/kopfzeile/{path}/an", headers=HX)
+
+    assert f"{word} an" in body.text
+    assert getattr(config_von(engine, tenant_id), field) is True
+
+
+def test_with_all_three_off_the_status_gives_up_its_tick(client, engine, tenant_id):
+    with Session(engine) as s:
+        config = s.get_one(ServiceConfig, tenant_id)
+        config.call_mode = "primary"
+        s.commit()
+    assert "tone-ok" in client.get("/gui").text
+
+    for path in ("abholung", "lieferung", "reservierung"):
+        client.post(f"/gui/kopfzeile/{path}/aus", headers=HX)
+
+    text = client.get("/gui").text
+    assert "mode status tone-warn" in text
+    assert "KI nimmt an" in text
+
+
+def test_the_header_shows_all_three_services(client, tenant_id):
+    text = client.get("/gui").text
+
+    for word in ("Abholung an", "Lieferung an", "Reservierung an"):
+        assert word in text
+
+
+@pytest.mark.parametrize("path", ["abholung", "reservierung"])
+def test_a_service_switch_knows_only_on_and_off(client, tenant_id, path):
+    assert client.post(f"/gui/kopfzeile/{path}/x", headers=HX).status_code == 404
+
+
+@pytest.mark.parametrize("path", ["abholung", "reservierung"])
+def test_a_service_switch_needs_the_csrf_header(client, engine, tenant_id, path):
+    body = client.post(f"/gui/kopfzeile/{path}/aus", headers={"HX-Request": "true"})
+
+    assert body.status_code == 403
 
 
 def test_a_typed_wait_needs_a_known_service(client, tenant_id):

@@ -52,6 +52,7 @@ def test_antwort_folgt_der_huelle(client):
         "closes_at",
         "pickup_enabled",
         "delivery_enabled",
+        "reservations_enabled",
         "pickup_wait_minutes",
         "delivery_wait_minutes",
         "sold_out",

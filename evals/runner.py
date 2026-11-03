@@ -50,6 +50,7 @@ from api.models import (
     DeliveryZone,
     MenuItem,
     RecognitionObjection,
+    ServiceConfig,
 )
 from evals.judge import (
     CaseError,
@@ -263,6 +264,13 @@ def run_case(
         llm = RecordingLLM(inner)
         _sell_out(session, tenant.id, case.get("sold_out", []), now)
         _seed_customers(session, tenant.id, case)
+        if "switches" in case:
+            session.execute(
+                update(ServiceConfig)
+                .where(ServiceConfig.tenant_id == tenant.id)
+                .values(**case["switches"])
+            )
+            session.commit()
         notices.set_notices(
             session,
             tenant.id,

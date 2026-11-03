@@ -82,7 +82,7 @@ def draft_order(
     if delivery:
         require_delivery_open(session, tenant, config, now)
     else:
-        require_pickup_open(session, req.tenant_id, now, zone)
+        require_pickup_open(session, tenant, config, now)
     lines = validated_lines(session, req.tenant_id, req.items, now)
     total = items_total_cents(lines)
     fee = 0

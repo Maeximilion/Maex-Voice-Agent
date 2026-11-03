@@ -63,6 +63,12 @@ SWITCH_FAILED = "Umschalten hat nicht geklappt. Bitte nochmal tippen."
 WAIT_STEP = 15
 # Adresse in der Kopfzeile -> Service in service_config (T-3.6).
 WAIT_SERVICES = {"abholung": "pickup", "lieferung": "delivery"}
+# The switches of the header, the words in the path are the words on the tablet.
+SERVICE_SWITCHES = {
+    "abholung": switches.set_pickup,
+    "lieferung": switches.set_delivery,
+    "reservierung": switches.set_reservations,
+}
 # Form fields of the notice sheet, Monday is 0 (T-3.13).
 NOTICE_FIELDS = {f"tag-{weekday}" for weekday in range(7)}
 
@@ -206,6 +212,11 @@ def _header(session: Session, tenant: Tenant) -> dict:
     now = clock.utcnow()
     holding = mode_at(session, tenant, config, now)
     tone, label = MODE_LABELS.get(holding.mode, ("danger", "KI ist aus"))
+    # The AI answers and nothing can be booked: not the green tick (T-3.10).
+    if tone == "ok" and not (
+        config.pickup_enabled or config.delivery_enabled or config.reservations_enabled
+    ):
+        tone = "warn"
     rank = MODE_CHOICES.index(holding.mode) if holding.mode in MODE_CHOICES else -1
     return {
         **base,
@@ -219,6 +230,11 @@ def _header(session: Session, tenant: Tenant) -> dict:
         "mode_choices": [
             (mode, MODE_LABELS[mode][1], mode == holding.mode, index > rank)
             for index, mode in enumerate(MODE_CHOICES)
+        ],
+        "services": [
+            ("abholung", "Abholung", config.pickup_enabled),
+            ("lieferung", "Lieferung", config.delivery_enabled),
+            ("reservierung", "Reservierung", config.reservations_enabled),
         ],
         "waits": [
             (
@@ -417,23 +433,6 @@ def modus(
     if mode not in MODE_CHOICES:
         raise HTTPException(status_code=404)
     return _switch(request, session, lambda t: switches.set_mode(session, t, mode))
-
-
-@router.post(
-    "/kopfzeile/lieferung/{state}",
-    response_class=HTMLResponse,
-    include_in_schema=False,
-    dependencies=[Depends(_require_htmx)],
-)
-def lieferung(
-    request: Request, state: str, session: Session = Depends(get_db)
-) -> HTMLResponse:
-    if state not in ("an", "aus"):
-        raise HTTPException(status_code=404)
-    enabled = state == "an"
-    return _switch(
-        request, session, lambda t: switches.set_delivery(session, t, enabled)
-    )
 
 
 @router.post(
@@ -871,6 +870,24 @@ def standardzeit_zurueck(
         session,
         lambda t: switches.reset_wait(session, t, WAIT_SERVICES[service]),
     )
+
+
+# After the wait routes: this pattern would take their paths too.
+@router.post(
+    "/kopfzeile/{service}/{state}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def dienst(
+    request: Request, service: str, state: str, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Abholung, Lieferung and Reservierung on or off."""
+    setter = SERVICE_SWITCHES.get(service)
+    if setter is None or state not in ("an", "aus"):
+        raise HTTPException(status_code=404)
+    enabled = state == "an"
+    return _switch(request, session, lambda t: setter(session, t, enabled))
 
 
 def _correction_panel(

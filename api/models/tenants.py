@@ -117,6 +117,12 @@ class ServiceConfig(Timestamps, Base):
     delivery_enabled: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )
+    pickup_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
+    reservations_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="true"
+    )
     # Read through domain/status/waits.py: today's wait, where it holds, wins.
     pickup_wait_standard_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="30"

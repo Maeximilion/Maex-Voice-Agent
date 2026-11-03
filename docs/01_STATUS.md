@@ -1,11 +1,15 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 03.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.27
+> Status: 03.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.28
 
 ---
 
 ## Summary
+
+**Pickup and reservations can be switched off, like delivery (T-3.10, #495, 02.11.2026).** Three buttons in the first row of the header say what holds, „Abholung an“ or „aus“, and a tap changes it at once. The switch reaches the whole agent path: `get_service_status` reports and says it, `draft_order` and `check_slot` refuse, also in the middle of a call, and `confirm` refuses a draft made before the tap. A closed service offers the other one only where its hours run and its switch is on: the delivery sentence offered a pickup by the hours alone before. A long-lived call session now reads the switches and the notice fresh in `check_slot`. Reservations off stops new tables only. Evals `reservierung_0043`, `abholung_0090`, `lieferung_0090`, stand-in only; no real model has run them, and the status sentence and the extra flag grew the prompt state by one key.
+
+**A table can need notice, per weekday (T-3.13, #499, 02.11.2026).** On a busy weekend a guest cannot reserve ten minutes ahead. "Vorbestellzeit" in the column "Heute" opens a sheet with minutes per weekday; 0, the start, changes nothing. Inside the notice `check_slot` books nothing and the core says, by the bookings, whether there is room, offers later times outside the notice and promises no table; `create_reservation` asks `check_slot`, so a model that tries anyway gets a refusal. The notice lives on `capacity`, so a day "wie Sonntag" takes Sunday's. Assumptions: at most 1440 minutes, a party above the agent's limit inside the notice gets the same sentence and no callback, and the sentence says "laut unseren Reservierungen" because the database does not know who walked in. A draft made before the notice began stays good until its yes. Evals `reservierung_0040` to `0042` on both sides of the limit, stand-in only; no real model has run them.
 
 **A table can need notice, per weekday (T-3.13, #499, 02.11.2026).** On a busy weekend a guest cannot reserve ten minutes ahead. "Reservierungs-Vorlauf" in the column "Heute" opens a sheet with minutes per weekday; 0, the start, changes nothing. Inside the notice `check_slot` books nothing and the core says, by the bookings, whether there is room, offers later times outside the notice and promises no table; `create_reservation` asks `check_slot`, so a model that tries anyway gets a refusal. The notice lives on `capacity`, so a day "wie Sonntag" takes Sunday's. Assumptions: at most 1440 minutes, a party above the agent's limit inside the notice gets the same sentence and no callback, and the sentence says "laut unseren Reservierungen" because the database does not know who walked in. A draft made before the notice began stays good until its yes. Evals `reservierung_0040` to `0042` on both sides of the limit, stand-in only; no real model has run them.
 
@@ -752,6 +756,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.28 · 03.11.2026:** T-3.10 done: switches for pickup and reservations
 - **v2.14.27 · 03.11.2026:** T-3.13 done: a reservation notice per weekday
 - **v2.14.26 · 03.11.2026:** T-3.14 done: standard wait, today's wait ends at 05:00
 - **v2.14.25 · 02.11.2026:** T-3.8 panels as sheets, Gericht aus grouped by category

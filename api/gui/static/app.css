@@ -100,15 +100,24 @@ header{background:var(--surface);border-bottom:2px solid var(--line)}
 .betrieb button.stop:hover{filter:brightness(1.08)}
 .betrieb .top .push{margin-left:auto}
 header.aus{background:var(--surface-2)}
-header.aus .top > .mode ~ .mode{opacity:.75}
 .betrieb .mode.tone-ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok)}
 .betrieb .mode.tone-warn{background:var(--warn-bg);color:var(--warn);border-color:var(--warn-line)}
 .betrieb .mode.tone-danger{background:var(--danger-bg);color:var(--danger);border-color:var(--danger)}
-.betrieb .mode.status{font-size:var(--fs-h2);font-weight:700;min-height:var(--tap);padding:0 20px}
+.betrieb .mode.status{font-size:var(--fs-lg);font-weight:700;min-height:var(--tap);padding:0 14px}
 /* Mode switch: three segments, the one that holds is filled. */
 .seg{display:flex;border:2px solid var(--line-strong);border-radius:var(--r);overflow:hidden}
-.betrieb .seg button{border:0;border-radius:0;min-width:120px}
+.betrieb .seg button{border:0;border-radius:0;min-width:0;padding-left:var(--s2);padding-right:var(--s2)}
 .betrieb .seg button + button{border-left:2px solid var(--line-strong)}
+/* Abholung, Lieferung, Reservierung (T-3.10): the state in words, the tone next
+   to them. Two lines, so the bar keeps its room. */
+.betrieb .seg.services button{min-width:0;padding:0 var(--s2);line-height:1.1;white-space:normal;width:min-content}
+.betrieb .seg.services{margin-right:var(--s3)}
+.betrieb .seg.services .on{background:var(--ok-bg);color:var(--ok)}
+.betrieb .seg.services .on::after{content:"\00a0\2713"}
+.betrieb .seg.services .off{background:transparent;color:var(--warn)}
+.betrieb .seg.services .off::after{content:"\00a0\2715"}
+/* The emergency stop holds: the three say nothing about calls, so they step back. */
+header.aus .seg.services .on{background:transparent;color:var(--muted)}
 /* Wartezeit stepper: label and value left, minus and plus right. */
 .step{display:flex;align-items:center;gap:var(--s1);border:2px solid var(--line);border-radius:var(--r);background:var(--surface-2);padding-left:var(--s3)}
 .step b{font-size:var(--fs-body);font-weight:700;line-height:1.2;width:10.4em}
@@ -129,6 +138,7 @@ header.aus .top > .mode ~ .mode{opacity:.75}
 .betrieb .wait-row button{flex:1;white-space:nowrap}
 .betrieb .step > button{border:0;border-left:2px solid var(--line);border-radius:0;background:transparent}
 .betrieb .top button,.betrieb .top a.button{white-space:nowrap}
+.betrieb .top .seg.services button{white-space:normal}
 /* Column Callbacks: a complaint has a wide red edge, the word stays next to it
    (docs/06 §1 rule 4). "Anrufen" is a tel: link dressed as a button. */
 .cb .res-head{flex-wrap:wrap;gap:var(--s2) var(--s3);margin-bottom:var(--s1)}
@@ -251,6 +261,13 @@ header.aus .top > .mode ~ .mode{opacity:.75}
 .hint{margin:var(--s2) 0 0}
 .betrieb .banner{font-size:var(--fs-body)}
 
+/* Below the width of one row the three services wrap, and the stop keeps its place
+   at the top right, away from the routine buttons (UI review, 02.11.2026). */
+@media (max-width:1240px){
+  .betrieb .top .seg.services{order:3}
+  .step b{width:9.6em}
+  .betrieb .actions button,.betrieb .actions a.button{padding-left:var(--s2);padding-right:var(--s2)}
+}
 /* Smaller tablets (1024 px): the bar gives up some padding, not the 60 px targets. */
 @media (max-width:1100px){
   .betrieb .mode.status{font-size:var(--fs-body);padding:0 12px}
