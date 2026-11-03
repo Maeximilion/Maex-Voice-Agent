@@ -6,6 +6,8 @@ Says where, not when: whether delivery is open right now stays with
 
 import re
 import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -16,7 +18,9 @@ from api.core.errors import (
     OutOfZone,
     ServiceUnavailable,
 )
-from api.models import DeliveryZone, ServiceConfig
+from api.core.time import utcnow
+from api.domain.status.service import pickup_open
+from api.models import Call, DeliveryZone, ServiceConfig, Tenant
 from api.schemas.delivery import DeliveryCheck
 
 POSTAL_CODE = re.compile(r"[0-9]{5}")
@@ -33,7 +37,10 @@ def postal_digits(postal_code: str) -> str:
 
 
 def check_delivery(
-    session: Session, tenant_id: uuid.UUID, postal_code: str
+    session: Session,
+    tenant_id: uuid.UUID,
+    postal_code: str,
+    now: datetime | None = None,
 ) -> DeliveryCheck:
     code = postal_digits(postal_code)
     if not POSTAL_CODE.fullmatch(code):
@@ -50,11 +57,10 @@ def check_delivery(
         )
     ).all()
     if not zones:
-        # No offer of a pickup the order path would refuse (T-3.10).
-        config = session.get(ServiceConfig, tenant_id, populate_existing=True)
-        offer = config is None or config.pickup_enabled
-        say = SAY_OUT_OF_ZONE if offer else SAY_OUT_OF_ZONE_NO_PICKUP
-        raise OutOfZone(f"no zone for postal code {code}", say=say)
+        raise OutOfZone(
+            f"no zone for postal code {code}",
+            say=_out_of_zone_say(session, tenant_id, now or utcnow()),
+        )
     if len(zones) > 1:
         # The fee would be whichever row came first (hard rule 2).
         raise ServiceUnavailable(
@@ -68,3 +74,32 @@ def check_delivery(
         min_order_cents=zone.min_order_cents,
         eta_minutes=zone.eta_minutes,
     )
+
+
+def _out_of_zone_say(session: Session, tenant_id: uuid.UUID, now: datetime) -> str:
+    """No offer of a pickup the order path would refuse (T-3.10, #524)."""
+    tenant = session.get(Tenant, tenant_id)
+    config = session.get(ServiceConfig, tenant_id, populate_existing=True)
+    if tenant is None or config is None:
+        return SAY_OUT_OF_ZONE_NO_PICKUP
+    if pickup_open(session, tenant_id, config, now, ZoneInfo(tenant.timezone)):
+        return SAY_OUT_OF_ZONE
+    return SAY_OUT_OF_ZONE_NO_PICKUP
+
+
+def told_out_of_zone(
+    session: Session, tenant_id: uuid.UUID, call_id: uuid.UUID
+) -> bool:
+    """The last zone answer of this call was `out_of_zone`, from `check_delivery`
+    or a delivery `draft_order` (#524). Read from `calls.tool_calls`, which the
+    agent and the tool route both write before they answer; a zone that
+    `check_delivery` found since takes it back."""
+    log = session.scalar(
+        select(Call.tool_calls).where(Call.id == call_id, Call.tenant_id == tenant_id)
+    )
+    for entry in reversed(log or []):
+        if entry.get("error_code") == OutOfZone.code:
+            return True
+        if entry.get("name") == "check_delivery" and entry.get("ok"):
+            return False
+    return False

@@ -374,7 +374,7 @@ Die `menu_item_id` kommt aus `search_menu`, ein anderer Weg in die Karte existie
   "say": null
 }
 ```
-Außerhalb → `ok: false`, `error.code: "out_of_zone"`, `say` bietet Abholung an.
+Outside → `ok: false`, `error.code: "out_of_zone"`, `say` offers pickup only where `draft_order` would take it: the team's switch `pickup_enabled` on and a pickup window open now, read from the database like for `closed` (#524).
 
 **Postal code variant (T-6.3, D5):** only `postal_code` is required and only it decides, so a guest who asks whether we deliver there gets an answer without a street (docs/05 Auskunft); `street`, `house_number` and `city` may be sent and are ignored until the polygon variant reads them (T-6.4).
 
@@ -490,9 +490,9 @@ Verstoß → `ok: false` mit passendem Code und `say`.
 | Case | Answer |
 |---|---|
 | Delivery not open: no delivery window now, the team's switch `delivery_enabled` off, or the emergency stop | `closed`, `say` „Lieferung ist gerade leider nicht möglich.", with „Möchten Sie abholen?" only where pickup is open. The config is read fresh: the session of a call does not expire, and a tap on the tablet in the middle of a call must hold |
-| Pickup not open: no pickup window now, or the team's switch `pickup_enabled` off (T-3.10) | `closed` | the sentence offers delivery only where it is open and switched on; the delivery sentence offers pickup under the same rule |
+| Pickup not open: no pickup window now, or the team's switch `pickup_enabled` off (T-3.10) | `closed` | the sentence offers delivery only where it is open and switched on, and never after the last zone answer of the call was `out_of_zone` (`calls.tool_calls`; a zone `check_delivery` found since takes it back, #524); the delivery sentence offers pickup under the same rule |
 | Neither `address` nor `address_id` | `invalid_input`, `say` asks for the address |
-| Postal code outside every active zone | `out_of_zone` (`say` offers pickup), also for a stored address |
+| Postal code outside every active zone | `out_of_zone`, also for a stored address; `say` offers pickup only where it is switched on and open now, as in `check_delivery` |
 | Postal code not understood, or in two zones | as in `check_delivery` |
 | Dishes below `min_order_cents` of the zone | `below_minimum`, `say` names the missing amount („Bis zum Mindestbestellwert fehlen noch 6 Euro 20. …"). The fee does not count towards the minimum. Nothing is written |
 | `address_id` is not the default address of the customer the number and the name recognize: another name, another number, a number the guest only named, an objection, a blocked customer, several customers on the number, an invented id | `invalid_input`, `say` asks for the address, nothing stored is named (L12) |

@@ -37,10 +37,9 @@ from api.domain.ordering.validation import (
     require_delivery_open,
     require_minimum,
     require_pickup_open,
-    service_open_at,
     validated_lines,
 )
-from api.domain.status.service import DELIVERY, PICKUP
+from api.domain.status.service import DELIVERY, PICKUP, service_open_at
 from api.domain.status.waits import current_wait
 from api.models import Address, AuditLog, Call, Order, OrderItem, ServiceConfig, Tenant
 from api.schemas.orders import DraftOrderRequest, OrderDraft, OrderStatus
@@ -78,20 +77,21 @@ def draft_order(
     if not name and not delivery:
         raise InvalidInput("customer.name: darf nicht leer sein", say=SAY_WHICH_NAME)
     phone = normalize_phone(req.customer.phone)
+    # Recognition (L12) and the verification of a data subject (#523) go by
+    # the line the call came from, never by a number the guest names.
+    caller_line = number_or_none(call.caller_id)
 
     if delivery:
         require_delivery_open(session, tenant, config, now)
     else:
-        require_pickup_open(session, tenant, config, now)
+        require_pickup_open(session, tenant, config, now, req.call_id)
     lines = validated_lines(session, req.tenant_id, req.items, now)
     total = items_total_cents(lines)
     fee = 0
     wait = current_wait(config, PICKUP, now)
     where = customer = address = None
     if delivery:
-        # Recognition only on the line the call came from (L12).
-        caller_line = number_or_none(call.caller_id)
-        where = place(session, req.tenant_id, req.customer, phone, caller_line)
+        where = place(session, req.tenant_id, req.customer, phone, caller_line, now)
         require_minimum(total, where.zone)
         name = where.name
         fee = where.zone.fee_cents
@@ -106,6 +106,7 @@ def draft_order(
         type=req.type,
         status="draft",
         phone=phone,
+        booked_on_own_line=phone == caller_line,
         customer_name=name,
         customer_id=customer.id if customer else None,
         address_id=address.id if address else None,

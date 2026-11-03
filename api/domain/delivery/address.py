@@ -17,6 +17,7 @@ it. A blocked customer on the booking number or on the line goes to the team.
 
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -57,6 +58,7 @@ def place(
     wanted: OrderCustomer,
     phone: str,
     line: str | None,
+    now: datetime,
 ) -> Place:
     """`line`: the number the call came from, None when withheld."""
     name = (wanted.name or "").strip()
@@ -99,7 +101,7 @@ def place(
     return Place(
         name=runs_under,
         name_heard=bool(name),
-        zone=check_delivery(session, tenant_id, postal_code),
+        zone=check_delivery(session, tenant_id, postal_code, now),
         spoken=wanted.address,
         stored=stored,
         customer_id=known.id if known else None,

@@ -22,13 +22,13 @@ from api.core.errors import (
     NotFound,
     ServiceUnavailable,
 )
+from api.domain.delivery.zones import told_out_of_zone
 from api.domain.menu.items import is_sold_out, option_key
 from api.domain.menu.search import SAY_SOLD_OUT
 from api.domain.ordering.pricing import Line
 from api.domain.ordering.readback import spoken_euro
-from api.domain.status.hours import load_hours, open_window_at
 from api.domain.status.mode import PAUSED
-from api.domain.status.service import DELIVERY, PICKUP
+from api.domain.status.service import DELIVERY, pickup_open, service_open_at
 from api.models import ItemOption, MenuItem, ServiceConfig, Tenant
 from api.schemas.delivery import DeliveryCheck
 from api.schemas.orders import OrderItemIn
@@ -55,17 +55,19 @@ Offered = dict[str, dict[str, ItemOption]]
 
 
 def require_pickup_open(
-    session: Session, tenant: Tenant, config: ServiceConfig, now: datetime
+    session: Session,
+    tenant: Tenant,
+    config: ServiceConfig,
+    now: datetime,
+    call_id: uuid.UUID,
 ) -> None:
     """The hours of the pickup service and the team's switch. `config` has to be
     fresh, as for `require_delivery_open`."""
     zone = ZoneInfo(tenant.timezone)
-    if not (
-        config.pickup_enabled and service_open_at(session, tenant.id, now, zone, PICKUP)
-    ):
+    if not pickup_open(session, tenant.id, config, now, zone):
         raise Closed(
             "Abholung gerade geschlossen",
-            say=pickup_closed_say(session, tenant.id, config, now, zone),
+            say=pickup_closed_say(session, tenant.id, config, now, zone, call_id),
         )
 
 
@@ -75,12 +77,15 @@ def pickup_closed_say(
     config: ServiceConfig,
     now: datetime,
     zone: ZoneInfo,
+    call_id: uuid.UUID,
 ) -> str:
-    """Delivery only where `require_delivery_open` would take it."""
+    """Delivery only where `require_delivery_open` would take it, and not to a
+    call just told its address is outside every zone (#524)."""
     if (
         config.delivery_enabled
         and config.call_mode != PAUSED
         and service_open_at(session, tenant_id, now, zone, DELIVERY)
+        and not told_out_of_zone(session, tenant_id, call_id)
     ):
         return f"{SAY_PICKUP_CLOSED} {SAY_OFFER_DELIVERY}"
     return SAY_PICKUP_CLOSED
@@ -114,7 +119,7 @@ def delivery_closed_say(
 ) -> str:
     """Pickup only where it is open and switched on: availability comes from the
     database."""
-    if config.pickup_enabled and service_open_at(session, tenant_id, now, zone, PICKUP):
+    if pickup_open(session, tenant_id, config, now, zone):
         return f"{SAY_DELIVERY_CLOSED} {SAY_OFFER_PICKUP}"
     return SAY_DELIVERY_CLOSED
 
@@ -127,13 +132,6 @@ def require_minimum(items_cents: int, zone: DeliveryCheck) -> None:
             f"{missing} cents below the minimum order value",
             say=SAY_BELOW_MINIMUM.format(missing=spoken_euro(missing)),
         )
-
-
-def service_open_at(
-    session: Session, tenant_id: uuid.UUID, at: datetime, zone: ZoneInfo, service: str
-) -> bool:
-    data = load_hours(session, tenant_id, at.astimezone(zone).date())
-    return open_window_at(data, at, service, zone) is not None
 
 
 def validated_lines(

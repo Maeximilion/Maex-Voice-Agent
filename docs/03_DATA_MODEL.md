@@ -137,6 +137,7 @@ Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
 | status | TEXT | `draft` / `confirmed` / `cancelled` |
 | guest_name | TEXT | |
 | phone | TEXT | E.164 |
+| booked_on_own_line | BOOL | `phone` is the line the call came from, read once by `create_reservation` (#523, migration 027): a data subject request opens the table by it after the call's caller ID is gone (90 days, objection, erasure); a withheld caller ID or a number the guest only named is false |
 | party_size | INT | `> 0` (migration 006) |
 | reserved_for | TIMESTAMPTZ | |
 | note | TEXT | Kinderstuhl, Allergie, Anlass |
@@ -307,6 +308,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | status | TEXT | `draft` / `confirmed` / `approved` / `handed_over` / `cancelled` |
 | customer_id | UUID NULL FK | keeps the tenant of the order; a deleted customer clears only the link (migration 018) |
 | phone | TEXT | |
+| booked_on_own_line | BOOL | `phone` is the line the call came from, read once by `draft_order` (#523, migration 027), as `reservations.booked_on_own_line` |
 | customer_name | TEXT | |
 | address_id | UUID NULL FK | delivery only (`ck_orders_address_on_delivery`); keeps the tenant of the order, a deleted address clears only the link (migration 018) |
 | items_total_cents | INT | |
@@ -492,4 +494,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 024 | `service_config`: the two wait columns become the standard and keep their values, and each service gets a wait for today with its end (T-3.14, #505); the downgrade drops the waits for today, so the standard holds |
 | 025 | `capacity.notice_minutes`, default 0: how long before its time a table can be reserved (T-3.13, #499); the downgrade drops the notices |
 | 026 | `service_config.pickup_enabled`, `reservations_enabled`, default true: the switches next to `delivery_enabled` (T-3.10, #495); the downgrade drops them |
+| 027 | `orders.booked_on_own_line`, `reservations.booked_on_own_line`, default false: the draft notes whether the booking's number is the line its call came from (#523); the upgrade fills it from the caller IDs still there, a row whose caller ID is gone stays false; the downgrade drops both, and what a cleared caller ID said cannot be read back |
 | planned, next free number | `eval_cases`, `eval_runs` |
