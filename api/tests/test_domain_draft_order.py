@@ -565,6 +565,34 @@ def test_leerer_name(session, tenant_id, call_id):
         draft_order(session, req, now=NOW)
 
 
+@pytest.mark.parametrize(
+    ("caller_id", "own"),
+    [("+497215551234", True), ("0721 555 9999", False), (None, False)],
+    ids=["own line", "named number", "withheld"],
+)
+def test_the_draft_notes_whether_it_was_booked_on_its_own_line(
+    session, tenant_id, caller_id, own
+):
+    """Read once, here: the caller ID of the call goes before the order's name
+    and number do (#523)."""
+    call_id = _call(session, tenant_id, caller_id=caller_id)
+    draft = draft_order(session, request(session, tenant_id, call_id), now=NOW)
+    assert session.get(Order, draft.order_id).booked_on_own_line is own
+
+
+def test_each_draft_of_a_call_notes_its_own_number(session, tenant_id):
+    call_id = _call(session, tenant_id, caller_id="0721 555 1234")
+    named = {"name": "Schmidt", "phone": "0721 555 9999"}
+    drafts = [
+        draft_order(session, request(session, tenant_id, call_id), now=NOW),
+        draft_order(
+            session, request(session, tenant_id, call_id, customer=named), now=NOW
+        ),
+    ]
+    rows = [session.get(Order, draft.order_id) for draft in drafts]
+    assert [row.booked_on_own_line for row in rows] == [True, False]
+
+
 # --- Vorlesen ohne Datenbank -------------------------------------------------------
 
 

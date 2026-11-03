@@ -4,10 +4,10 @@ Three new tables, nothing existing changes, and nothing reads them for a booking
 the agent keeps counting seats in `capacity` (D28). The downgrade drops the three
 with every room, table and pair the team drew; on a database that holds a
 restaurant's data, take a backup first with
-`bash scripts/backup.sh --label before_migration_027` (CLAUDE.md §8, docs/13 §4).
+`bash scripts/backup.sh --label before_migration_028` (CLAUDE.md §8, docs/13 §4).
 
-Revision: 027
-Revises: 026
+Revision: 028
+Revises: 027
 Created: 2026-11-03
 """
 
@@ -17,8 +17,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "027"
-down_revision: str | None = "026"
+revision: str = "028"
+down_revision: str | None = "027"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

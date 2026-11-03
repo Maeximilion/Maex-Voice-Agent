@@ -3,7 +3,15 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import Base, SoftDelete, TenantScoped, Timestamps, UUIDPrimaryKey
@@ -26,6 +34,11 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="draft")
     guest_name: Mapped[str] = mapped_column(Text, nullable=False)
     phone: Mapped[str] = mapped_column(Text, nullable=False)
+    # `phone` is the line the call came from, read once by the draft: the
+    # caller ID of the call goes before the table's name does (#523).
+    booked_on_own_line: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     party_size: Mapped[int] = mapped_column(Integer, nullable=False)
     reserved_for: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
