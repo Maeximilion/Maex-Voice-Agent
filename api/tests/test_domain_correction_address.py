@@ -41,7 +41,15 @@ from api.domain.ordering.correction import (
 )
 from api.domain.ordering.labels import ACTION_CORRECTED
 from api.events.types import ORDER_CONFIRMED
-from api.models import Address, AuditLog, Customer, Order, OutboxEvent, ServiceConfig
+from api.models import (
+    Address,
+    AuditLog,
+    Customer,
+    DeliveryZone,
+    Order,
+    OutboxEvent,
+    ServiceConfig,
+)
 from api.tests.test_domain_draft_delivery import (
     FEE,
     HOME,
@@ -426,3 +434,39 @@ def test_a_card_from_before_the_address_change_is_stale(session, tenant_id, orde
     assert marked.value.say == CORRECTED_SINCE
     assert corrected.value.say == STALE
     assert _address(session, order).postal_code == "54321"
+
+
+def test_back_at_the_first_address_with_another_fee_the_card_is_stale(
+    session, tenant_id, order
+):
+    """Codex #537: the zone's fee changed since the yes. Away and back, the
+    order points at its first row again with the dishes unchanged, but the
+    fee of today's zone makes another total: a card from before can neither
+    mark that state nor correct it."""
+    approve_order(session, tenant_id, order.id)
+    seen = version_of(session, order)
+    old_card = _request(session, tenant_id, order, address=NEXT_DOOR)
+    first = order.address_id
+    session.execute(
+        update(DeliveryZone).where(DeliveryZone.name == "Zone 1").values(fee_cents=300)
+    )
+    session.commit()
+    for address in (FAR, AddressEdit(**HOME)):
+        apply_correction(
+            session,
+            tenant_id,
+            order.id,
+            _request(session, tenant_id, order, address=address),
+            "wrong_address",
+        )
+    after = _fresh(session, order)
+    assert after.address_id == first and after.total_cents == 1380 + 300
+
+    with pytest.raises(Conflict) as marked:
+        mark_entered(session, tenant_id, order.id, seen)
+    session.rollback()
+    with pytest.raises(Conflict):
+        apply_correction(session, tenant_id, order.id, old_card, "wrong_address")
+    session.rollback()
+
+    assert marked.value.say == CORRECTED_SINCE

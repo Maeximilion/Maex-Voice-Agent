@@ -515,3 +515,58 @@ def test_two_cancels_of_one_customer_at_once(
 
     assert outcome == [None]
     assert _defaults(session) == []
+
+
+def test_two_address_corrections_of_one_customer_at_once(
+    session, tenant_id, call_id, migrated_db_url
+):
+    """Codex #537: two tablets correct the addresses of two marked deliveries
+    of one customer at the same moment. The first one's new row holds a share
+    lock on the customer through its foreign key; the second waits for the
+    customer row before it writes its own, so neither runs into a deadlock on
+    the FOR UPDATE of `settle_default`, and the newer delivery's address wins."""
+    old = _said_yes(session, tenant_id, call_id, HOME)
+    later = _call(session, tenant_id, caller_id=PHONE)
+    new = _said_yes(session, tenant_id, later, ELSEWHERE, now=NOW + timedelta(hours=1))
+    _typed_in(session, tenant_id, old)
+    _typed_in(session, tenant_id, new, MARKED + timedelta(minutes=1))
+    engine = create_engine(migrated_db_url)
+    outcome: list[BaseException | None] = []
+
+    def tap() -> None:
+        with Session(engine, autoflush=False, expire_on_commit=False) as tablet:
+            try:
+                _move(tablet, tenant_id, new, CORRECTED)
+                outcome.append(None)
+            except BaseException as exc:  # noqa: BLE001 - handed to the test
+                outcome.append(exc)
+
+    try:
+        with Session(engine, autoflush=False, expire_on_commit=False) as first:
+            # The first tablet's correction of the older delivery, up to the
+            # row of its new address and the default it settles.
+            mine = first.get_one(Order, old.id)
+            moved = Address(
+                tenant_id=tenant_id,
+                customer_id=mine.customer_id,
+                street="Hauptstraße",
+                house_number="1",
+                postal_code=HOME["postal_code"],
+                city=HOME["city"],
+            )
+            first.add(moved)
+            first.flush()
+            mine.address_id = moved.id
+            thread = threading.Thread(target=tap)
+            thread.start()
+            _wait_for_a_lock(session)
+            settle_default(first, mine)
+            first.commit()
+        thread.join(timeout=10)
+    finally:
+        engine.dispose()
+
+    assert outcome == [None]
+    session.refresh(new)
+    assert session.get_one(Address, new.address_id).house_number == "31"
+    assert _defaults(session) == [new.address_id]

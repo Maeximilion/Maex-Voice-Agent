@@ -253,7 +253,7 @@ def list_new(
             overdue=o.id in overdue,
             register_entered_at=o.register_entered_at,
             register_late=o.id in late,
-            version=order_version(items[o.id], o.address_id),
+            version=order_version(items[o.id], o),
             delivery_fee_cents=o.delivery_fee_cents,
             address=addresses.get(o.address_id) if o.address_id else None,
         )
@@ -661,7 +661,7 @@ def version_of(session: Session, order: Order) -> str:
         .order_by(OrderItem.created_at, OrderItem.id)
         .execution_options(populate_existing=True)
     ).all()
-    return order_version(list(rows), order.address_id)
+    return order_version(list(rows), order)
 
 
 def unmarked_before(

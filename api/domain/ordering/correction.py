@@ -57,7 +57,7 @@ from api.domain.ordering.handover import may_hold_a_slip
 from api.domain.ordering.labels import ACTION_CORRECTED, labels_for_rows
 from api.domain.ordering.pricing import row_cents
 from api.domain.ordering.ticket import send_ticket
-from api.models import Address, AuditLog, MenuItem, Order, OrderItem
+from api.models import Address, AuditLog, Customer, MenuItem, Order, OrderItem
 from api.schemas.delivery import DeliveryCheck
 from api.schemas.menu import OptionGroup
 
@@ -202,9 +202,9 @@ class CorrectionPlan:
     where: AddressPlan
 
 
-def order_version(rows: list[OrderItem], address_id: uuid.UUID | None) -> str:
-    """Fingerprint of the positions and the address: the state a correction
-    and the register mark refer to.
+def order_version(rows: list[OrderItem], order: Order) -> str:
+    """Fingerprint of the positions, the address and the fee: the state a
+    correction and the register mark refer to.
 
     Not updated_at on purpose: handover and release change the row but not the
     positions; a correction would otherwise be stale for no reason.
@@ -220,9 +220,11 @@ def order_version(rows: list[OrderItem], address_id: uuid.UUID | None) -> str:
         ]
         for r in rows
     ]
-    if address_id is not None:
-        # The register holds the address too (#525). A pickup's print stays as it was.
-        data.append(str(address_id))
+    if order.address_id is not None or order.delivery_fee_cents:
+        # The register holds address and fee too (#525): back at the first
+        # address the row is the same, the fee of today's zone need not be
+        # (Codex #537). A pickup's print stays as it was.
+        data.append([str(order.address_id), order.delivery_fee_cents])
     return hashlib.md5(
         json.dumps(data, sort_keys=True, ensure_ascii=False).encode()
     ).hexdigest()
@@ -254,8 +256,8 @@ def preview_correction(
         raise Conflict(f"Bestellung {order.id} ist {order.status}", say=STALE)
     rows = _rows(session, order)
     if req is None:
-        req = CorrectionRequest(version=order_version(rows, order.address_id))
-    elif req.version != order_version(rows, order.address_id):
+        req = CorrectionRequest(version=order_version(rows, order))
+    elif req.version != order_version(rows, order):
         raise Conflict(STALE)
     return _plan(session, order, rows, req, now or utcnow())
 
@@ -282,7 +284,7 @@ def apply_correction(
         raise InvalidInput(f"Grund {reason!r} unbekannt")
 
     rows = _rows(session, order)
-    if req.version != order_version(rows, order.address_id):
+    if req.version != order_version(rows, order):
         raise Conflict("Positionen seit dem Oeffnen geaendert", say=STALE)
     plan = _plan(session, order, rows, req, now)
     if plan.blockers:
@@ -433,6 +435,12 @@ def _move(
     """The order goes to `said`: its row of the customer, zone and fee of today.
     The caller sets the total in the same flush (`ck_orders_total`)."""
     assert order.customer_id is not None and zone is not None  # `_where`
+    # The customer row first, as `settle_default` takes it later: the new
+    # row's foreign key holds a share lock on it, and two corrections of one
+    # customer, each holding that share, deadlock on its FOR UPDATE (Codex #537).
+    session.execute(
+        select(Customer.id).where(Customer.id == order.customer_id).with_for_update()
+    )
     row = address_row(session, order.tenant_id, order.customer_id, said)
     row.zone_id = zone.zone_id
     # The row's id, before the order points at it.
@@ -587,7 +595,7 @@ def _plan(
         blockers.append(where.blocker)
     return CorrectionPlan(
         order_id=order.id,
-        version=order_version(rows, order.address_id),
+        version=order_version(rows, order),
         rows=planned_rows,
         added=planned_added,
         before_total_cents=order.total_cents,
