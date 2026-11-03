@@ -212,6 +212,37 @@ def test_rufnummer_wird_normalisiert(session, tenant_id, call_id):
     assert session.get(Reservation, draft.reservation_id).phone == "+497215551234"
 
 
+@pytest.mark.parametrize(
+    ("caller_id", "own"),
+    [("07221 5551234", True), ("+4972215559999", False), (None, False)],
+    ids=["own line", "named number", "withheld"],
+)
+def test_the_draft_notes_whether_it_was_booked_on_its_own_line(
+    session, tenant_id, call_id, caller_id, own
+):
+    """Read once, here: the caller ID of the call goes before the table's name
+    and number do (#523)."""
+    session.get(Call, call_id).caller_id = caller_id
+    session.commit()
+    draft = create_reservation(session, request(tenant_id, call_id), now=NOW)
+    assert session.get(Reservation, draft.reservation_id).booked_on_own_line is own
+
+
+def test_each_draft_of_a_call_notes_its_own_number(session, tenant_id, call_id):
+    session.get(Call, call_id).caller_id = "+4972215551234"
+    session.commit()
+    drafts = [
+        create_reservation(session, request(tenant_id, call_id), now=NOW),
+        create_reservation(
+            session,
+            request(tenant_id, call_id, guest_name="Schmidt", phone="07221 5559999"),
+            now=NOW,
+        ),
+    ]
+    rows = [session.get(Reservation, draft.reservation_id) for draft in drafts]
+    assert [row.booked_on_own_line for row in rows] == [True, False]
+
+
 def test_ungueltige_rufnummer_ist_invalid_input(session, tenant_id, call_id):
     with pytest.raises(InvalidInput) as exc:
         create_reservation(session, request(tenant_id, call_id, phone="12345"), now=NOW)

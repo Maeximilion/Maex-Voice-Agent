@@ -12,6 +12,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -77,6 +78,11 @@ class Order(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     customer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     address_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     phone: Mapped[str] = mapped_column(Text, nullable=False)
+    # `phone` is the line the call came from, read once by the draft: the
+    # caller ID of the call goes before the order's name does (#523).
+    booked_on_own_line: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
     customer_name: Mapped[str] = mapped_column(Text, nullable=False)
     items_total_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     delivery_fee_cents: Mapped[int] = mapped_column(
