@@ -402,6 +402,47 @@ def test_a_pr_into_another_base_blocks(gate):
     assert "targets release" in done.stderr
 
 
+def test_the_bottom_of_a_native_stack_merges_by_gh_stack(gate):
+    """GitHub refuses `gh pr merge` for a PR in a stack (#503, 03.11.2026)."""
+    assert gate.run("gh stack merge 7 --merge --yes").returncode == 0
+
+
+def test_gh_stack_merge_meets_the_same_checks(gate):
+    gate.comments(gate.codex(gate.head, open_findings=True))
+
+    assert gate.run("gh stack merge 7 --merge --yes").returncode == 2
+
+
+def test_a_pr_higher_up_a_stack_does_not_merge(gate):
+    """`gh stack merge <pr>` takes all below it along: only the bottom PR, which
+    targets main, may be named."""
+    gate.pr(base="task/below")
+
+    done = gate.run("gh stack merge 7 --merge --yes")
+
+    assert done.returncode == 2
+    assert "targets task/below" in done.stderr
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gh stack merge",
+        "gh stack merge --yes",
+        "gh stack merge 7",
+        "gh stack merge 7 --yes",
+        "gh stack merge 7 --squash --yes",
+        "cd /tmp && gh stack merge 7 --merge --yes",
+        'git commit -m "gh stack merge 7"',
+    ],
+)
+def test_gh_stack_merge_passes_only_in_its_one_form(gate, command):
+    done = gate.run(command)
+
+    assert done.returncode == 2
+    assert not gate.asked.exists()
+
+
 def test_the_review_must_be_clean_on_the_head(gate):
     gate.comments(gate.codex("0" * 40))
     done = gate.run()
