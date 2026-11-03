@@ -77,6 +77,9 @@ def draft_order(
     if not name and not delivery:
         raise InvalidInput("customer.name: darf nicht leer sein", say=SAY_WHICH_NAME)
     phone = normalize_phone(req.customer.phone)
+    # Recognition (L12) and the verification of a data subject (#523) go by
+    # the line the call came from, never by a number the guest names.
+    caller_line = number_or_none(call.caller_id)
 
     if delivery:
         require_delivery_open(session, tenant, config, now)
@@ -88,8 +91,6 @@ def draft_order(
     wait = current_wait(config, PICKUP, now)
     where = customer = address = None
     if delivery:
-        # Recognition only on the line the call came from (L12).
-        caller_line = number_or_none(call.caller_id)
         where = place(session, req.tenant_id, req.customer, phone, caller_line, now)
         require_minimum(total, where.zone)
         name = where.name
@@ -105,6 +106,7 @@ def draft_order(
         type=req.type,
         status="draft",
         phone=phone,
+        booked_on_own_line=phone == caller_line,
         customer_name=name,
         customer_id=customer.id if customer else None,
         address_id=address.id if address else None,

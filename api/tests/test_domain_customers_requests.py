@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import Ambiguous, Conflict, InvalidInput, NotFound
 from api.domain.confirm import confirm
 from api.domain.customers import find_customer
+from api.domain.customers.phone import number_or_none
 from api.domain.customers.requests import (
     Details,
     LedgerEntry,
@@ -29,6 +30,7 @@ from api.domain.customers.requests import (
 )
 from api.domain.ordering.board import cancel_order, version_of
 from api.domain.ordering.handover import ack_ticket
+from api.jobs.retention import purge
 from api.models import (
     Address,
     AuditLog,
@@ -95,14 +97,16 @@ def _order(
     customer=None,
     item_note=None,
 ) -> Order:
+    call = call or _call(session, tenant_id, phone)
     order = Order(
         tenant_id=tenant_id,
-        call_id=(call or _call(session, tenant_id, phone)).id,
+        call_id=call.id,
         type="pickup",
         status=status,
         customer_id=customer.id if customer else None,
         customer_name=name,
         phone=phone,
+        booked_on_own_line=phone == number_or_none(call.caller_id),
         note="Bitte klingeln",
         items_total_cents=1200,
         total_cents=1200,
@@ -134,12 +138,14 @@ def _reservation(
     status="confirmed",
     call=None,
 ) -> Reservation:
+    call = call or _call(session, tenant_id, phone)
     reservation = Reservation(
         tenant_id=tenant_id,
-        call_id=(call or _call(session, tenant_id, phone)).id,
+        call_id=call.id,
         status=status,
         guest_name=name,
         phone=phone,
+        booked_on_own_line=phone == number_or_none(call.caller_id),
         party_size=2,
         reserved_for=reserved_for,
         idempotency_key=uuid.uuid4().hex,
@@ -709,6 +715,83 @@ def test_a_number_narrows_and_never_opens(session, tenant_id):
     details = Details(name="Müller", days=MUELLER.days, phones=(OTHER_PHONE,))
     with pytest.raises(NotFound):
         verify(session, tenant_id, details, ZONE, NOW)
+
+
+# #523: the own line is read once, at the draft. An objection, an erasure and
+# the caller ID's period clear `calls.caller_id`, the booking stays longer.
+
+LONG_AGO = NOW - timedelta(days=100)
+
+
+@pytest.mark.parametrize("kind", ["order", "reservation"])
+def test_a_booking_stays_verifiable_after_the_objection(session, tenant_id, kind):
+    """A pickup or table guest has no customer with an order counted: their
+    booking is the only detail, and the objection cleared its caller ID."""
+    row = (_order if kind == "order" else _reservation)(session, tenant_id)
+    request = _request(session, tenant_id, kind="objection")
+    record_objection(session, request, verify(session, tenant_id, MUELLER, ZONE, NOW))
+    assert session.get(Call, row.call_id).caller_id is None
+
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+    assert [*person.orders, *person.reservations] == [_fresh(session, row)]
+
+
+def test_a_table_booked_long_ahead_verifies_after_the_caller_id_went(
+    session, tenant_id
+):
+    """The caller ID goes 90 days after the call, the table's name 90 days
+    after its own day."""
+    call = _call(session, tenant_id, started_at=LONG_AGO)
+    table = _reservation(session, tenant_id, call=call)
+    session.commit()
+    purge(session, NOW)
+    assert _fresh(session, call).caller_id is None
+
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+    assert person.reservations == [_fresh(session, table)]
+
+
+def test_a_kept_table_verifies_for_the_later_erasure(session, tenant_id):
+    """The first erasure clears the caller ID of the kept table's call too."""
+    table = _reservation(session, tenant_id, reserved_for=FUTURE)
+    ahead = Details(name="Müller", days=(FUTURE.date(),))
+    _erase(session, tenant_id, ahead, keep=[table.id])
+    assert session.get(Call, table.call_id).caller_id is None
+
+    person = verify(session, tenant_id, ahead, ZONE, NOW)
+    assert person.reservations == [_fresh(session, table)]
+
+
+@pytest.mark.parametrize("kind", ["order", "reservation"])
+def test_a_booking_under_a_named_number_stays_closed_after_the_clean_up(
+    session, tenant_id, kind
+):
+    """Booked under Müller's name and number from another line, the row never
+    opened Müller: a cleared caller ID must not open it either."""
+    call = _call(session, tenant_id, caller_id=OTHER_PHONE, started_at=LONG_AGO)
+    (_order if kind == "order" else _reservation)(session, tenant_id, call=call)
+    session.commit()
+    purge(session, NOW)
+    assert _fresh(session, call).caller_id is None
+    with pytest.raises(NotFound):
+        verify(session, tenant_id, MUELLER, ZONE, NOW)
+
+
+def test_each_booking_of_a_call_keeps_its_own_line(session, tenant_id):
+    """One call from Müller's line books Müller's table and one under a
+    neighbour's name and number, both long ahead."""
+    call = _call(session, tenant_id, started_at=LONG_AGO)
+    mine = _reservation(session, tenant_id, call=call)
+    _reservation(session, tenant_id, name="Schmidt", phone=OTHER_PHONE, call=call)
+    session.commit()
+    purge(session, NOW)
+    assert _fresh(session, call).caller_id is None
+
+    assert verify(session, tenant_id, MUELLER, ZONE, NOW).reservations == [
+        _fresh(session, mine)
+    ]
+    with pytest.raises(NotFound):
+        verify(session, tenant_id, replace(MUELLER, name="Schmidt"), ZONE, NOW)
 
 
 # Access
