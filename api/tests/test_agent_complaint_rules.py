@@ -513,6 +513,19 @@ def test_the_same_sentence_without_the_question_keeps_its_no_a_doubt(
     assert_went_to_the_team(result, session, state)
 
 
+def test_a_negation_in_front_of_the_complaint_is_no_answer_to_cut(session, tenant_id):
+    """Codex PR #532, P1: "Nicht" alone would be a refusal of the recording,
+    but here it rules out what the rule names, and the doubt stands."""
+    rule(session, tenant_id)
+    state = asked(session, tenant_id)
+
+    result = loop(session).run_turn(
+        state, "Nicht kalt, sondern versalzen. Ich bin unzufrieden."
+    )
+
+    assert_went_to_the_team(result, session, state)
+
+
 def test_a_bare_no_is_answered_alone_and_the_complaint_comes_next(session, tenant_id):
     rule(session, tenant_id)
     state = asked(session, tenant_id)

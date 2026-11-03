@@ -206,6 +206,19 @@ def test_anything_else_is_unclear_and_no_consent(said):
         # A no of the request behind the answer stays with the request.
         ("Nein, das Essen war nicht warm.", "das Essen war nicht warm."),
         ("Nein, 2 Pizzen bitte.", "2 Pizzen bitte."),
+        ("Nee nee das Essen war kalt", "das Essen war kalt"),
+        # Codex PR #532: a stop never takes a number of the request with it, and
+        # a negation that may belong to the request stays in front of it.
+        (
+            "Nicht aufnehmen. Ich nehme 3, bitte die Margherita.",
+            "Ich nehme 3, bitte die Margherita.",
+        ),
+        (
+            "Nicht kalt, sondern versalzen. Ich bin unzufrieden.",
+            "Nicht kalt, sondern versalzen. Ich bin unzufrieden.",
+        ),
+        ("Nein, nicht gut, das Essen war kalt.", "nicht gut, das Essen war kalt."),
+        ("Lieber nicht. Das Essen war kalt.", "Lieber nicht. Das Essen war kalt."),
         # No answer in front, or nothing behind it: the sentence stays whole.
         (A_TABLE, A_TABLE),
         ("Ja?", "Ja?"),
