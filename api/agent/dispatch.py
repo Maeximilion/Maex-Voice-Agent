@@ -413,7 +413,7 @@ def _check_delivery(
     now: datetime | None,
 ) -> BaseModel:
     req = CheckDeliveryRequest(call_id=call_id, tenant_id=tenant_id, **args)
-    return check_delivery(session, req.tenant_id, req.postal_code)
+    return check_delivery(session, req.tenant_id, req.postal_code, now)
 
 
 def _find_customer(

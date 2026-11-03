@@ -316,9 +316,15 @@ class CallHandler:
             self._guarded(live, lambda: self._silent(live))
 
     def on_talked_over(self, session_id: str, text: str) -> None:
-        live = self._lookup(session_id)
+        """Also on a call the core was ending: a stop said into the farewell
+        or the sentence before a transfer holds (L2, #522)."""
+        with self._lock:
+            ending = self._ending.get(session_id)
+        live = ending[0] if ending is not None else self._lookup(session_id)
         if live is not None:
-            self._guarded(live, lambda: self._talked_over(live, text))
+            self._guarded(
+                live, lambda: self._talked_over(live, text, ending=ending is not None)
+            )
 
     def on_voice_failure(self, session_id: str) -> None:
         """Ear or mouth failed: the outage sentence, as far as it can still be
@@ -446,13 +452,16 @@ class CallHandler:
         self._port.say(live.session_id, SAY_TO_THE_TEAM)
         self._transfer(live, live.team_phone)
 
-    def _talked_over(self, live: _LiveCall, text: str) -> None:
-        """Into a read-back or another protected sentence: no turn, and what
-        was said to the guest stands. Only the withdrawal counts."""
+    def _talked_over(self, live: _LiveCall, text: str, *, ending: bool) -> None:
+        """Into a read-back or another protected sentence, or into the last
+        sentence before the call ends (`ending`): no turn, and what was said
+        to the guest stands. Only the withdrawal counts."""
         if live.state.recording != "on" or not stops_recording(text):
             return
         recording.withdraw(live.session, live.state, self._now)
         self._follow_recording(live, "on")
+        if ending:
+            return  # nothing is said behind the farewell or the transfer sentence
         self._port.say(live.session_id, recording.SAY_RECORDING_STOPPED)
         # The notice is the last sentence heard: an "Okay" answers it, not the
         # read-back or the question it was said into (rule 3, L13).

@@ -1436,6 +1436,123 @@ def test_a_recorded_team_leg_is_the_lines_to_record(call):
     assert call.s.outcome == "transfer"
 
 
+# --- A stop while the call ends (#522, docs/09 L2) --------------------------------------
+
+ENDINGS = pytest.mark.parametrize(
+    "ending", [("hangup",), ("transfer", "+497215550000")], ids=["hangup", "transfer"]
+)
+
+
+def ending_after_a_recorded_turn(call, ending: tuple) -> None:
+    """A recording runs, and the core ends the call: its last sentence plays."""
+    call.core.replies["Danke"] = [("say", "Auf Wiederhören."), ending]
+    call.start(GREETING)
+    call.played()
+    call.lines.start_recording("s1", FILE)
+    call.said("Danke", after=1.0)
+    assert call.s.outcome == "open"
+
+
+@ENDINGS
+def test_a_stop_said_while_the_call_ends_reaches_the_core_as_no_turn(
+    call, folder, ending
+):
+    """The way to stop was promised at any time: the ear listens on while the
+    last sentence plays, for a stop only."""
+    ending_after_a_recorded_turn(call, ending)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    call.partial("Aufnahme")
+    call.said("Aufnahme stoppen", after=0.5)
+
+    assert call.ear.frames[-1][0] == A_FRAME
+    assert ("talked_over", "Aufnahme stoppen") in call.core.calls
+    assert call.core.turns() == ["Danke"]
+    call.played()
+    assert call.line.actions[-1] == ending
+
+
+@ENDINGS
+def test_a_withdrawal_while_the_call_ends_deletes_the_file(call, folder, ending):
+    """Also when the tape ended at the handover; and a second stop finds
+    nothing left to stop."""
+    ending_after_a_recorded_turn(call, ending)
+    call.lines.stop_recording("s1", discard=True)
+    call.s.drain()
+    assert list(folder.iterdir()) == []
+
+    call.said("Aufnahme stoppen", after=0.5)
+    assert call.core.count("talked_over") == 0
+    call.played()
+    assert call.line.actions[-1] == ending
+
+
+def test_nothing_is_listened_for_while_a_call_without_a_recording_ends(call):
+    """The ear costs by the second: without a recording to stop it hears
+    nothing of the farewell."""
+    call.core.replies["Danke"] = [("say", "Auf Wiederhören."), ("hangup",)]
+    call.start(GREETING)
+    call.played()
+    call.said("Danke", after=1.0)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    call.said("Aufnahme stoppen", after=0.5)
+
+    assert call.ear.frames == []
+    assert call.core.count("talked_over") == 0
+
+
+def test_an_ear_that_fails_while_a_recorded_call_ends_costs_the_ending_nothing(
+    call, folder
+):
+    """Only a stop was listened for: the call ended as it should, and the
+    team is not rung for it."""
+    ending_after_a_recorded_turn(call, ("hangup",))
+    call.ear.broken = True
+    call.s.audio(A_FRAME)
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    call.said("Aufnahme stoppen", after=0.5)
+
+    assert call.core.count("voice_failure") == 0
+    assert call.core.count("talked_over") == 0
+    call.played()
+    assert call.s.outcome == "hangup"
+
+
+def test_a_stop_after_the_line_is_gone_reaches_nobody(call, folder):
+    ending_after_a_recorded_turn(call, ("hangup",))
+    call.played()
+    assert call.s.outcome == "hangup"
+
+    call.said("Aufnahme stoppen", after=0.5)
+
+    assert call.core.count("talked_over") == 0
+    assert (folder / FILE).exists()
+
+
+def test_a_stop_before_the_handover_keeps_the_team_leg_off_the_file(call):
+    """Mode `shadow`: the line hears of the recorded leg only with the
+    transfer, so a stop said into the sentences before it still holds."""
+    call.start(("say", "Frage."))
+    call.played()
+    call.lines.record_team_leg("s1")
+    call.lines.say("s1", "Ich verbinde Sie.")
+    call.lines.transfer("s1", "+497215550000")
+    call.s.audio(A_FRAME)
+    call.s.drain()
+    call.said("Aufnahme stoppen", after=0.5)
+    assert ("talked_over", "Aufnahme stoppen") in call.core.calls
+
+    call.lines.stop_recording("s1", discard=True)
+    call.s.drain()
+    call.played()
+
+    assert call.ear.frames
+    assert call.line.actions[-1] == ("transfer", "+497215550000")
+    assert "record_team_leg" not in call.line.kinds()
+
+
 # --- One worker per call -----------------------------------------------------------------
 
 
