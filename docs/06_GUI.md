@@ -18,6 +18,13 @@
 
 ## 2. Technik
 
+**Floor plan approval (Maxi, 03.11.2026):** T-3.11 uses the accepted
+[interactive floor plan](../gui/mockups/floor-plan-editor.html) and its
+[behavior and rationale](design/floor-plan/README.md). Keep the fixed sidebar,
+multi-room editor and the documented seating rules. Maxi selected HTMX with
+native pointer events for this view; D6 remains in force. This is a design
+reference, not production functionality or a replacement for D28.
+
 **Entschieden (D6, 17.09.2026):** FastAPI + Jinja2 + HTMX + Server-Sent-Events. Statt Pico.css traegt `api/gui/static/app.css` die Variablen und Klassen des abgenommenen Mockups (§7) - eine Quelle fuer die Gestaltung statt zwei, und eine Abhaengigkeit weniger. HTMX liegt lokal in `api/gui/static/`, nichts kommt aus einem CDN.
 
 | Warum | |

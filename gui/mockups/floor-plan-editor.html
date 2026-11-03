@@ -1,0 +1,485 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Raumplan - interaktiver Entwurf</title>
+<style>
+body { margin: 0; padding: 16px; font-family: system-ui, sans-serif; }
+main { max-width: 1040px; margin: 0 auto; }
+.cursor-interaction { cursor: pointer; }
+@media(max-width:580px) { body { padding:8px; } }
+</style>
+<script>
+(() => {
+  const key = 'maex-approved-floor-plan-v3';
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(key)); } catch (_) {}
+  window.floorPlanPreview = {
+    widgetState: saved,
+    async setWidgetState(value) {
+      this.widgetState = value;
+      try { localStorage.setItem(key, JSON.stringify(value)); } catch (_) {}
+    }
+  };
+})();
+</script>
+</head>
+<body><main>
+<style>
+#maex-room-editor {
+ --re-bg:light-dark(#f6f8f5,#1d2520); --re-panel:light-dark(#ffffff,#27312a); --re-ink:light-dark(#243c2e,#e5eee7);
+ --re-sub:light-dark(#65776a,#afc2b3); --re-line:light-dark(#dce4dc,#47584b); --re-green:light-dark(#35694b,#a1cfac);
+ --re-on:light-dark(#ffffff,#173520); --re-soft:light-dark(#e6f1e7,#354e3b); --re-floor:light-dark(#f3f0e7,#30382e);
+ --re-wood:light-dark(#fffcf3,#4e4d3c); --re-edge:light-dark(#bfb69d,#a09f82); --re-chair:light-dark(#d1c6ad,#858369);
+ --re-wall:light-dark(#8b998b,#8e9e90); --re-red:light-dark(#a3443e,#f0a39b);
+ color:var(--re-ink); background:var(--re-bg); border:1px solid var(--re-line); border-radius:16px; overflow:hidden;
+ font:14px/1.45 "Segoe UI",system-ui,sans-serif;
+}
+#maex-room-editor * {box-sizing:border-box;}
+#maex-room-editor h2,#maex-room-editor h3,#maex-room-editor p {margin:0;}
+#maex-room-editor button,#maex-room-editor input,#maex-room-editor select {font:inherit;}
+#maex-room-editor .re-head {display:flex;gap:13px;align-items:center;padding:19px 105px 19px 21px;background:var(--re-panel);}
+#maex-room-editor .re-room-bar {display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:0 18px 14px;background:var(--re-panel);}
+#maex-room-editor .re-room-tabs {display:flex;gap:6px;flex-wrap:wrap;flex:1;min-width:0;}
+#maex-room-editor .re-room-tab {max-width:100%;overflow-wrap:anywhere;text-align:left;}
+#maex-room-editor .re-room-tab[aria-current="page"] {background:var(--re-soft);border-color:var(--re-green);color:var(--re-green);}
+#maex-room-editor .re-area-tag {font-size:11px;color:var(--re-sub);font-weight:400;}
+#maex-room-editor .re-room-form {padding:16px 18px;border-top:1px solid var(--re-line);background:var(--re-panel);}
+#maex-room-editor .re-room-form[hidden] {display:none;}
+#maex-room-editor .re-room-form h3 {font-size:16px;font-weight:500;margin-bottom:12px;}
+#maex-room-editor .re-room-form-fields {display:grid;grid-template-columns:2fr 1.3fr 1fr 1fr;gap:10px;}
+#maex-room-editor .re-room-form-actions {display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+#maex-room-editor .re-btn.re-primary {background:var(--re-green);color:var(--re-on);border-color:var(--re-green);}
+#maex-room-editor .re-advanced {display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid var(--re-line);color:var(--re-ink);font-size:13px;}
+#maex-room-editor .re-advanced small {display:block;font-size:11px;color:var(--re-sub);}
+#maex-room-editor .re-advanced input {appearance:none;width:36px;height:21px;border-radius:12px;border:1px solid var(--re-line);background:var(--re-line);position:relative;flex:none;}
+#maex-room-editor .re-advanced input::before {content:"";position:absolute;width:15px;height:15px;left:2px;top:2px;border-radius:50%;background:var(--re-panel);}
+#maex-room-editor .re-advanced input:checked {background:var(--re-green);border-color:var(--re-green);}
+#maex-room-editor .re-advanced input:checked::before {left:17px;}
+#maex-room-editor .re-custom-size {font-size:12px;color:var(--re-sub);}
+#maex-room-editor .re-table-actions {display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+#maex-room-editor .re-table-actions .re-btn {font-size:12px;padding:7px 6px;}
+#maex-room-editor .re-room-empty {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:var(--re-sub);font-size:13px;text-align:center;max-width:85%;pointer-events:none;}
+#maex-room-editor .re-floor.re-terrace {background-color:light-dark(#edf1e7,#2c382c);}
+#maex-room-editor .re-floor.re-terrace .re-outer {background:transparent;border:1px dashed var(--re-wall);}
+#maex-room-editor .re-logo {width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-size:21px;background:var(--re-green);color:var(--re-on);flex:none;}
+#maex-room-editor h2 {font-size:22px;font-weight:500;line-height:1.25;}
+#maex-room-editor .re-sub {color:var(--re-sub);font-size:12px;}
+#maex-room-editor .re-tools {display:flex;flex-wrap:wrap;align-items:center;gap:7px;padding:12px 16px;border-block:1px solid var(--re-line);background:var(--re-panel);}
+#maex-room-editor .re-btn {display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;padding:8px 11px;border:1px solid var(--re-line);border-radius:8px;background:var(--re-panel);color:var(--re-ink);}
+#maex-room-editor .re-btn:hover {background:var(--re-soft);}
+#maex-room-editor .re-btn[aria-pressed="true"] {color:var(--re-on);background:var(--re-green);border-color:var(--re-green);}
+#maex-room-editor .re-btn:disabled {opacity:.45;}
+#maex-room-editor svg:not(.re-connections) {width:16px;height:16px;flex:none;}
+#maex-room-editor .re-tools .re-undo {margin-left:auto;}
+#maex-room-editor .re-content {display:grid;grid-template-columns:minmax(0,1fr) 265px;align-items:stretch;}
+#maex-room-editor .re-work {min-width:0;display:flex;flex-direction:column;}
+#maex-room-editor .re-context {display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between;align-items:center;padding:14px 18px 0;}
+#maex-room-editor .re-room-summary {padding:6px 0;border:0;background:transparent;color:var(--re-ink);font-weight:500;display:flex;align-items:center;gap:7px;}
+#maex-room-editor .re-grid-control {display:flex;gap:6px;align-items:center;color:var(--re-sub);font-size:12px;}
+#maex-room-editor .re-grid-control input {width:16px;height:16px;accent-color:var(--re-green);}
+#maex-room-editor .re-stage {height:500px;position:relative;margin:0 14px;min-width:0;}
+#maex-room-editor .re-floor {position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:var(--re-floor);isolation:isolate;touch-action:none;}
+#maex-room-editor .re-floor.re-grid {background-image:radial-gradient(circle,color-mix(in srgb,var(--re-wall) 38%,transparent) .8px,transparent 1px);}
+#maex-room-editor .re-floor.re-drawing {cursor:crosshair;}
+#maex-room-editor .re-floor.re-drawing .re-object,#maex-room-editor .re-floor.re-drawing .re-endpoint {pointer-events:none;}
+#maex-room-editor .re-outer {position:absolute;background:var(--re-wall);pointer-events:none;z-index:0;}
+#maex-room-editor .re-dimension {position:absolute;color:var(--re-sub);font-size:11px;white-space:nowrap;pointer-events:none;}
+#maex-room-editor .re-dimension-x {left:50%;top:-26px;transform:translateX(-50%);}
+#maex-room-editor .re-dimension-y {right:-9px;top:50%;transform:translate(100%,-50%);writing-mode:vertical-rl;}
+#maex-room-editor .re-connections {position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;}
+#maex-room-editor .re-connections line {stroke:var(--re-green);stroke-width:1.5;stroke-dasharray:5 5;}
+#maex-room-editor .re-object {position:absolute;z-index:2;}
+#maex-room-editor .re-object.re-selected {z-index:5;}
+#maex-room-editor .re-object button {cursor:grab;touch-action:none;user-select:none;}
+#maex-room-editor .re-object button:active {cursor:grabbing;}
+#maex-room-editor .re-furniture {transform:translate(-50%,-50%) rotate(var(--re-angle));}
+#maex-room-editor .re-piece {position:absolute;inset:0;width:100%;height:100%;border:1px solid var(--re-edge);border-radius:7px;background:var(--re-wood);color:var(--re-ink);padding:0;display:grid;place-items:center;box-shadow:0 2px 0 color-mix(in srgb,var(--re-edge) 30%,transparent);}
+#maex-room-editor .re-round .re-piece {border-radius:50%;}
+#maex-room-editor .re-selected .re-piece {background:var(--re-soft);border:2px solid var(--re-green);box-shadow:0 0 0 4px color-mix(in srgb,var(--re-green) 13%,transparent);}
+#maex-room-editor .re-piece-text {display:flex;flex-direction:column;align-items:center;transform:rotate(calc(-1 * var(--re-angle)));pointer-events:none;white-space:nowrap;}
+#maex-room-editor .re-piece-name {font-size:13px;font-weight:500;}
+#maex-room-editor .re-piece-seats {font-size:11px;color:var(--re-sub);}
+#maex-room-editor .re-counter .re-piece {background:var(--re-chair);border-radius:4px;}
+#maex-room-editor .re-counter.re-selected .re-piece {background:var(--re-soft);}
+#maex-room-editor .re-counter .re-piece-name {font-size:12px;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;text-align:center;}
+#maex-room-editor .re-chair {position:absolute;transform:translate(-50%,-50%) rotate(var(--chair-angle,0deg));background:var(--re-chair);border-radius:2px;pointer-events:none;}
+#maex-room-editor .re-wall-object {transform:translate(-50%,-50%) rotate(var(--re-angle));}
+#maex-room-editor .re-wall-hit {position:absolute;inset:0;border:0;padding:0;width:100%;height:100%;background:transparent;}
+#maex-room-editor .re-wall-bar {position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);height:var(--re-thickness);background:var(--re-wall);pointer-events:none;}
+#maex-room-editor .re-selected .re-wall-bar {background:var(--re-green);box-shadow:0 0 0 4px color-mix(in srgb,var(--re-green) 15%,transparent);}
+#maex-room-editor .re-wall-measure {position:absolute;left:50%;top:calc(50% - 23px);transform:translate(-50%,-100%);font-size:11px;color:var(--re-green);white-space:nowrap;pointer-events:none;}
+#maex-room-editor .re-endpoint {position:absolute;width:16px;height:16px;padding:0;transform:translate(-50%,-50%);border:2px solid var(--re-green);background:var(--re-panel);border-radius:50%;z-index:7;touch-action:none;cursor:crosshair;}
+#maex-room-editor .re-endpoint::after {content:"";position:absolute;inset:-7px;}
+#maex-room-editor .re-door-gap {position:absolute;background:var(--re-floor);transform:translate(-50%,-50%);pointer-events:none;border-inline:2px solid var(--re-green);}
+#maex-room-editor .re-door.re-side .re-door-gap {border-inline:0;border-block:2px solid var(--re-green);}
+#maex-room-editor .re-door-button {position:absolute;transform:translate(-50%,-50%);border:1px dashed var(--re-green);border-radius:5px;padding:4px 7px;background:var(--re-soft);color:var(--re-ink);font-size:11px;white-space:nowrap;max-width:150px;overflow:hidden;text-overflow:ellipsis;}
+#maex-room-editor .re-selected .re-door-button {border:2px solid var(--re-green);}
+#maex-room-editor .re-label-button {display:block;transform:translate(-50%,-50%);padding:3px 5px;border:1px solid transparent;background:transparent;color:var(--re-ink);border-radius:5px;max-width:160px;white-space:normal;overflow-wrap:anywhere;}
+#maex-room-editor .re-selected .re-label-button {border:1px dashed var(--re-green);background:var(--re-soft);}
+#maex-room-editor .re-hint {min-height:40px;padding:0 18px 14px;color:var(--re-sub);font-size:12px;}
+#maex-room-editor .re-aside {padding:18px;background:var(--re-panel);border-left:1px solid var(--re-line);min-width:0;}
+#maex-room-editor .re-aside h3 {font-size:18px;font-weight:500;margin:18px 0 14px;}
+#maex-room-editor .re-field {display:grid;gap:6px;min-width:0;}
+#maex-room-editor .re-field>span {font-size:12px;color:var(--re-sub);}
+#maex-room-editor .re-input {width:100%;min-width:0;min-height:39px;border:1px solid var(--re-line);border-radius:7px;background:var(--re-panel);color:var(--re-ink);padding:7px 9px;}
+#maex-room-editor .re-field-grid {display:grid;grid-template-columns:1fr 1fr;gap:13px 10px;}
+#maex-room-editor .re-full {grid-column:1 / -1;}
+#maex-room-editor .re-stepper {display:flex;align-items:center;border:1px solid var(--re-line);border-radius:8px;overflow:hidden;}
+#maex-room-editor .re-stepper .re-btn {border:0;border-radius:0;min-width:42px;}
+#maex-room-editor .re-stepper input {width:100%;min-width:0;border:0;background:var(--re-panel);color:var(--re-ink);text-align:center;padding:7px 0;appearance:textfield;}
+#maex-room-editor .re-stepper input::-webkit-inner-spin-button {appearance:none;}
+#maex-room-editor .re-delete {color:var(--re-red);margin-top:18px;}
+#maex-room-editor .re-meta {font-size:12px;color:var(--re-sub);margin-top:14px;}
+#maex-room-editor .re-combos {margin-top:18px;border-top:1px solid var(--re-line);padding-top:13px;}
+#maex-room-editor .re-combos summary {font-size:12px;color:var(--re-sub);}
+#maex-room-editor .re-combo-buttons {display:flex;flex-wrap:wrap;gap:5px;margin-top:10px;}
+#maex-room-editor .re-combo-buttons .re-btn {padding:5px 8px;min-height:34px;}
+#maex-room-editor .re-foot {display:flex;gap:12px;justify-content:space-between;flex-wrap:wrap;border-top:1px solid var(--re-line);padding:12px 18px;background:var(--re-panel);font-size:12px;}
+#maex-room-editor .re-status {padding:0 18px 12px;background:var(--re-panel);color:var(--re-sub);font-size:12px;min-height:30px;}
+#maex-room-editor .re-status.re-error {color:var(--re-red);}
+@media(max-width:740px){#maex-room-editor .re-content{grid-template-columns:minmax(0,1fr) 225px;}#maex-room-editor .re-aside{padding:14px;}#maex-room-editor .re-stage{height:460px;margin:0 6px;}#maex-room-editor .re-context{padding-inline:12px;}#maex-room-editor .re-piece-seats{display:none;}}
+@media(max-width:580px){#maex-room-editor .re-content{grid-template-columns:1fr;}#maex-room-editor .re-aside{border-left:0;border-top:1px solid var(--re-line);padding:16px;}#maex-room-editor .re-stage{height:380px;margin:0 8px;}#maex-room-editor .re-head{padding:16px 96px 16px 14px;}#maex-room-editor h2{font-size:19px;}#maex-room-editor .re-head .re-sub{font-size:11px;}#maex-room-editor .re-logo{width:30px;height:30px;font-size:17px;}#maex-room-editor .re-tools{padding:10px;gap:6px;}#maex-room-editor .re-tools .re-btn{font-size:12px;padding:7px 8px;}#maex-room-editor .re-tools .re-undo{margin-left:0;}#maex-room-editor .re-input{font-size:16px;}#maex-room-editor .re-piece-name{font-size:11px;}#maex-room-editor .re-room-bar{padding-inline:12px;}#maex-room-editor .re-room-form-fields{grid-template-columns:1fr 1fr;}}
+@media(pointer:coarse){#maex-room-editor .re-btn,#maex-room-editor .re-input{min-height:44px;}#maex-room-editor .re-endpoint::after{inset:-14px;}}
+</style>
+<div id="maex-room-editor" aria-label="Raumplan mit frei bearbeitbarem Grundriss">
+ <header class="re-head"><div class="re-logo" aria-hidden="true">m</div><div><h2>Raumplan</h2><p class="re-sub">Interaktiver Entwurf · Beispieldaten</p></div></header>
+ <div class="re-room-bar"><nav class="re-room-tabs" aria-label="Räume und Terrassen"></nav><button type="button" class="re-btn cursor-interaction" data-action="newRoom">Neuer Raum</button></div>
+ <form class="re-room-form" hidden aria-label="Raum oder Terrasse erstellen">
+  <h3>Raum oder Terrasse erstellen</h3>
+  <div class="re-room-form-fields">
+   <label class="re-field"><span>Name</span><input class="re-input" name="areaName" type="text" maxlength="30" required value="Nebenraum"></label>
+   <label class="re-field"><span>Bereich</span><select class="re-input" name="areaKind"><option value="inside">Innenraum</option><option value="terrace">Terrasse</option></select></label>
+   <label class="re-field"><span>Breite (m)</span><input class="re-input" name="areaWidth" type="number" min="3" max="30" step="0.1" value="8" required></label>
+   <label class="re-field"><span>Tiefe (m)</span><input class="re-input" name="areaHeight" type="number" min="3" max="30" step="0.1" value="6" required></label>
+  </div>
+  <div class="re-room-form-actions"><button class="re-btn re-primary cursor-interaction" type="button" data-action="createRoom">Bereich erstellen</button><button class="re-btn cursor-interaction" type="button" data-action="cancelRoom">Abbrechen</button></div>
+ </form>
+ <div class="re-tools" aria-label="Objekte und Zeichenwerkzeuge">
+  <button type="button" class="re-btn cursor-interaction" data-tool="select" aria-pressed="true">Auswählen</button>
+  <button type="button" class="re-btn cursor-interaction" data-add="table">Tisch</button>
+  <button type="button" class="re-btn cursor-interaction" data-add="counter">Theke</button>
+  <button type="button" class="re-btn cursor-interaction" data-add="door">Eingang</button>
+  <button type="button" class="re-btn cursor-interaction" data-tool="wall" aria-pressed="false">Wand zeichnen</button>
+  <button type="button" class="re-btn cursor-interaction" data-add="label">Text</button>
+  <button type="button" class="re-btn re-undo cursor-interaction" data-action="undo" disabled aria-label="Letzte Änderung rückgängig machen">Rückgängig</button>
+ </div>
+ <div class="re-content">
+  <div class="re-work">
+   <div class="re-context"><button type="button" class="re-room-summary cursor-interaction" data-action="room"><span class="re-room-value">10 × 7 m · Raum anpassen</span></button><label class="re-grid-control"><input type="checkbox" data-field="grid" checked>10-cm-Raster</label></div>
+   <div class="re-stage"><div class="re-floor re-grid" aria-label="Grundriss. Objekte auswählen und ziehen; Pfeiltasten verschieben die Auswahl."><div class="re-dimension re-dimension-x"></div><div class="re-dimension re-dimension-y"></div><svg class="re-connections" aria-hidden="true"></svg><div class="re-outer" data-side="top"></div><div class="re-outer" data-side="right"></div><div class="re-outer" data-side="bottom"></div><div class="re-outer" data-side="left"></div></div></div>
+   <p class="re-hint">Objekte ziehen · Wände an den Endpunkten ändern · Pfeiltasten verschieben</p>
+  </div>
+  <aside class="re-aside" aria-label="Eigenschaften"><label class="re-field"><span>Auswahl</span><select class="re-input" data-field="selection"></select></label><div class="re-properties"></div></aside>
+ </div>
+ <footer class="re-foot"><span class="re-total"></span><span class="re-sub">Nur Vorschau · kein produktiver Raumplan</span></footer>
+ <div class="re-status" role="status" aria-live="polite">Raumgröße, Eingänge und Möbel sind frei anpassbar.</div>
+</div>
+<script>
+(() => {
+ const root=document.getElementById('maex-room-editor'), floor=root.querySelector('.re-floor'), stage=root.querySelector('.re-stage'), props=root.querySelector('.re-properties');
+ const initial={version:3,advanced:false,otherRooms:[],room:{id:'r1',name:'Gastraum',kind:'inside',w:1000,h:700,shape:'rectangle',thickness:20},selected:'room',grid:true,links:[],nextId:12,objects:[
+  {id:'o1',type:'table',name:'T1',x:170,y:180,w:120,h:80,seats:4,shape:'rect',angle:0},
+  {id:'o2',type:'table',name:'T2',x:440,y:180,w:120,h:80,seats:4,shape:'rect',angle:0},
+  {id:'o3',type:'table',name:'T3',x:710,y:170,w:110,h:110,seats:4,shape:'round',angle:0},
+  {id:'o4',type:'table',name:'T4',x:170,y:465,w:120,h:80,seats:4,shape:'rect',angle:0},
+  {id:'o5',type:'table',name:'T5',x:440,y:465,w:160,h:80,seats:6,shape:'rect',angle:0},
+  {id:'o6',type:'table',name:'T6',x:710,y:465,w:80,h:80,seats:2,shape:'rect',angle:0},
+  {id:'o7',type:'table',name:'T7',x:430,y:330,w:80,h:80,seats:2,shape:'rect',angle:0},
+  {id:'o8',type:'counter',name:'Theke',x:880,y:450,w:80,h:260,angle:0},
+  {id:'o9',type:'door',name:'Eingang',side:'bottom',offset:150,width:110},
+  {id:'o10',type:'wall',name:'Trennwand',x:800,y:170,length:200,angle:90,thickness:20},
+  {id:'o11',type:'label',text:'Fensterseite',x:200,y:55,font:14}
+ ]};
+ let state=structuredClone(initial), scale=1, mode='select', drag=null, drawStart=null, preview=null, history=[], ignoreClickUntil=0;
+ const options={chairs:true};
+ const tablePresets={rect:[[80,80],[120,80],[140,80],[160,80],[180,90],[200,100]],round:[[80,80],[100,100],[110,110],[120,120],[140,140]]};
+ const fmt=(n,d=2)=>new Intl.NumberFormat('de-DE',{maximumFractionDigits:d}).format(n);
+ const clamp=(n,min,max)=>Math.max(min,Math.min(max,n));
+ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const selected=()=>state.objects.find(o=>o.id===state.selected);
+ const label=o=>({table:'Tisch ',counter:'',door:'',wall:''}[o.type]??'')+(o.type==='label'?o.text:o.name);
+ const snap=n=>state.grid?Math.round(n/10)*10:Math.round(n);
+ const rad=a=>a*Math.PI/180;
+ function snapshot(){return structuredClone(state);}
+ function remember(before=snapshot()){history.push(before);if(history.length>30)history.shift();}
+ function activeData(){const {room,objects,links,selected,nextId}=state;return structuredClone({room,objects,links,selected,nextId});}
+ function areas(){return [state,...state.otherRooms].sort((a,b)=>Number(a.room.id.slice(1))-Number(b.room.id.slice(1)));}
+ function objectCount(){return areas().reduce((n,a)=>n+a.objects.length,0);}
+ function persist(){if(!window.floorPlanPreview?.setWidgetState)return;window.floorPlanPreview.setWidgetState({modelContent:{preview:'Raumplan mit mehreren Räumen',activeRoom:state.room.name,advanced:state.advanced,rooms:areas().map(a=>({name:a.room.name,type:a.room.kind,tables:a.objects.filter(o=>o.type==='table').length,seats:a.objects.reduce((n,o)=>n+(o.seats||0),0)})),selected:state.selected==='room'?state.room.name:label(selected())},privateContent:state}).catch(()=>{});}
+ function validateArea(s){
+  if(!s||!s.room||!Array.isArray(s.objects)||s.objects.length>100)return null;
+  if(!/^r\d+$/.test(s.room.id)||typeof s.room.name!=='string'||!s.room.name.trim()||s.room.name.length>30||!['inside','terrace'].includes(s.room.kind))return null;
+  if(![s.room.w,s.room.h,s.room.thickness].every(Number.isFinite)||s.room.w<300||s.room.w>3000||s.room.h<300||s.room.h>3000||s.room.thickness<5||s.room.thickness>60)return null;
+  if(!['rectangle','square'].includes(s.room.shape)||(s.room.shape==='square'&&s.room.w!==s.room.h))return null;
+  const ids=new Set();
+  for(const o of s.objects){
+   if(!o||!/^o\d+$/.test(o.id)||ids.has(o.id)||!['table','counter','door','wall','label'].includes(o.type))return null;ids.add(o.id);
+   if(o.type!=='door'&&![o.x,o.y].every(Number.isFinite))return null;
+   if(o.type==='table'||o.type==='counter'){if(![o.w,o.h,o.angle].every(Number.isFinite)||o.w<30||o.w>500||o.h<30||o.h>500)return null;}
+   if(o.type==='table'&&(!Number.isInteger(o.seats)||o.seats<1||o.seats>20||!['rect','round'].includes(o.shape)||(o.headSide!==undefined&&!['left','right'].includes(o.headSide))))return null;
+   if(o.type==='door'&&(!['top','right','bottom','left'].includes(o.side)||![o.width,o.offset].every(Number.isFinite)||o.width<60||o.width>300))return null;
+   if(o.type==='wall'&&(![o.length,o.angle,o.thickness].every(Number.isFinite)||o.length<20||o.thickness<5||o.thickness>60))return null;
+   if(o.type==='label'&&(typeof o.text!=='string'||o.text.length>60||![12,14,18,22].includes(o.font)))return null;
+   if(o.type!=='label'&&(typeof o.name!=='string'||o.name.length>25))return null;
+  }
+  return {room:structuredClone(s.room),objects:structuredClone(s.objects),selected:ids.has(s.selected)?s.selected:'room',nextId:Math.max(...s.objects.map(o=>Number(o.id.slice(1))),0)+1,links:Array.isArray(s.links)?s.links.filter(p=>Array.isArray(p)&&p.length===2&&p[0]!==p[1]&&p.every(id=>s.objects.some(o=>o.id===id&&o.type==='table'))):[]};
+ }
+ function restore(saved){
+  let s=saved?.privateContent;if(!s||![2,3].includes(s.version))return false;s=structuredClone(s);
+  if(s.version===2){s.room={...s.room,id:'r1',name:'Gastraum',kind:'inside'};s.otherRooms=[];s.advanced=false;}
+  if(!Array.isArray(s.otherRooms)||s.otherRooms.length>7)return false;
+  const active=validateArea(s),others=s.otherRooms.map(validateArea);if(!active||others.some(a=>!a))return false;
+  if(new Set([active,...others].map(a=>a.room.id)).size!==others.length+1||[active,...others].reduce((n,a)=>n+a.objects.length,0)>100)return false;
+  state={...active,version:3,grid:s.grid!==false,advanced:s.advanced===true,otherRooms:others};state.objects.forEach(fit);return true;
+ }
+ function status(text,error=false){const el=root.querySelector('.re-status');el.textContent=text;el.classList.toggle('re-error',error);}
+ function footprint(o){const a=rad(o.angle||0);return [Math.abs(Math.cos(a))*o.w+Math.abs(Math.sin(a))*o.h,Math.abs(Math.sin(a))*o.w+Math.abs(Math.cos(a))*o.h];}
+ function endpoints(o){const dx=Math.cos(rad(o.angle))*o.length/2,dy=Math.sin(rad(o.angle))*o.length/2;return [{x:o.x-dx,y:o.y-dy},{x:o.x+dx,y:o.y+dy}];}
+ function wallFromPoints(o,a,b){o.x=(a.x+b.x)/2;o.y=(a.y+b.y)/2;o.length=Math.hypot(b.x-a.x,b.y-a.y);o.angle=Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI;}
+ function fit(o){
+  const r=state.room;
+  if(o.type==='door'){const extent=['top','bottom'].includes(o.side)?r.w:r.h;o.width=Math.min(o.width,extent-40);o.offset=clamp(o.offset,o.width/2+10,extent-o.width/2-10);return;}
+  if(o.type==='wall'){
+   const margin=o.thickness/2+1;o.x=clamp(o.x,margin+10,r.w-margin-10);o.y=clamp(o.y,margin+10,r.h-margin-10);
+   const c=Math.abs(Math.cos(rad(o.angle))),s=Math.abs(Math.sin(rad(o.angle)));
+   const max=Math.min(c>.0001?(r.w-2*margin)/c:Infinity,s>.0001?(r.h-2*margin)/s:Infinity);
+   o.length=clamp(o.length,20,max);const hw=c*o.length/2+margin,hh=s*o.length/2+margin;
+   o.x=clamp(o.x,hw,r.w-hw);o.y=clamp(o.y,hh,r.h-hh);return;
+  }
+  const [w,h]=o.type==='label'?[40,30]:footprint(o);const pad=o.type==='table'?20:5;
+  o.x=clamp(o.x,w/2+pad,r.w-w/2-pad);o.y=clamp(o.y,h/2+pad,r.h-h/2-pad);
+ }
+ function doorPoint(o){return {x:o.side==='left'?0:o.side==='right'?state.room.w:o.offset,y:o.side==='top'?0:o.side==='bottom'?state.room.h:o.offset};}
+ function moveDoor(o,p){const sides=[['left',Math.abs(p.x)],['right',Math.abs(p.x-state.room.w)],['top',Math.abs(p.y)],['bottom',Math.abs(p.y-state.room.h)]].sort((a,b)=>a[1]-b[1]);o.side=sides[0][0];o.offset=snap(['top','bottom'].includes(o.side)?p.x:p.y);fit(o);}
+ function point(event){const b=floor.getBoundingClientRect();return {x:clamp(snap((event.clientX-b.left)/scale),0,state.room.w),y:clamp(snap((event.clientY-b.top)/scale),0,state.room.h)};}
+ function chairNodes(o){
+  if(!options.chairs)return '';let html='';const chairW=clamp(24*scale,6,17),chairH=clamp(10*scale,3,7);
+  function chair(x,y,a=0){html+=`<span class="re-chair" style="left:${x}px;top:${y}px;width:${chairW}px;height:${chairH}px;--chair-angle:${a}deg" aria-hidden="true"></span>`;}
+  if(o.shape==='round'){for(let i=0;i<o.seats;i++){const a=2*Math.PI*i/o.seats-Math.PI/2;chair(o.w*scale/2+(o.w*scale/2+chairH+2)*Math.cos(a),o.h*scale/2+(o.h*scale/2+chairH+2)*Math.sin(a),a*180/Math.PI+90);}}
+  else {
+   const ends=o.seats>=6?2:o.seats%2,longSeats=o.seats-ends,top=Math.ceil(longSeats/2),bottom=Math.floor(longSeats/2);
+   for(let i=0;i<top;i++)chair(o.w*scale*(i+1)/(top+1),-chairH-2);
+   for(let i=0;i<bottom;i++)chair(o.w*scale*(i+1)/(bottom+1),o.h*scale+chairH+2);
+   if(ends===2||ends===1&&o.headSide!=='right')chair(-chairH-2,o.h*scale/2,90);
+   if(ends===2||ends===1&&o.headSide==='right')chair(o.w*scale+chairH+2,o.h*scale/2,90);
+  }
+  return html;
+ }
+ function drawObject(o){
+  const el=document.createElement('div');el.className='re-object';el.dataset.id=o.id;const active=o.id===state.selected;
+  if(active)el.classList.add('re-selected');
+  el.style.left=(o.x||0)*scale+'px';el.style.top=(o.y||0)*scale+'px';
+  if(o.type==='table'||o.type==='counter'){
+   el.classList.add('re-furniture');if(o.type==='counter')el.classList.add('re-counter');if(o.shape==='round')el.classList.add('re-round');
+   Object.assign(el.style,{width:o.w*scale+'px',height:o.h*scale+'px'});el.style.setProperty('--re-angle',o.angle+'deg');
+   const [visibleW,visibleH]=footprint(o),verticalLabel=o.type==='counter'&&visibleH>visibleW*1.5;
+   el.innerHTML=(o.type==='table'?chairNodes(o):'')+`<button class="re-piece" type="button" aria-label="${esc(label(o))}${o.seats?', '+o.seats+' Plätze':''}" aria-pressed="${active}"><span class="re-piece-text" style="writing-mode:${verticalLabel?'vertical-rl':'horizontal-tb'}"><span class="re-piece-name">${esc(o.name)}</span>${o.type==='table'?`<span class="re-piece-seats">${o.seats} ${o.seats===1?'Platz':'Plätze'}</span>`:''}</span></button>`;
+  }else if(o.type==='wall'){
+   el.classList.add('re-wall-object');Object.assign(el.style,{width:o.length*scale+'px',height:Math.max(24,o.thickness*scale)+'px'});el.style.setProperty('--re-angle',o.angle+'deg');el.style.setProperty('--re-thickness',Math.max(2,o.thickness*scale)+'px');
+   el.innerHTML=`<button class="re-wall-hit" type="button" aria-label="${esc(o.name)}, ${fmt(o.length/100)} Meter" aria-pressed="${active}"><span class="re-wall-bar"></span></button>${active?`<span class="re-wall-measure">${fmt(o.length/100)} m · ${fmt(o.thickness)} cm</span>`:''}`;
+  }else if(o.type==='door'){
+   const p=doorPoint(o),side=['left','right'].includes(o.side),t=Math.max(4,state.room.thickness*scale)+6;el.classList.add('re-door');if(side)el.classList.add('re-side');el.style.left=p.x*scale+'px';el.style.top=p.y*scale+'px';
+   const dx=o.side==='left'?46:o.side==='right'?-46:0,dy=o.side==='top'?23:o.side==='bottom'?-23:0,arrow={left:'→',right:'←',top:'↓',bottom:'↑'}[o.side];
+   el.innerHTML=`<span class="re-door-gap" style="width:${side?t:o.width*scale}px;height:${side?o.width*scale:t}px"></span><button type="button" class="re-door-button" style="left:${dx}px;top:${dy}px" aria-label="${esc(o.name)}, ${fmt(o.width)} Zentimeter breit" aria-pressed="${active}">${arrow} ${esc(o.name)}</button>`;
+  }else {
+   el.classList.add('re-label');el.innerHTML=`<button type="button" class="re-label-button" style="font-size:${o.font}px" aria-label="Beschriftung: ${esc(o.text)}" aria-pressed="${active}">${esc(o.text)}</button>`;
+  }
+  floor.append(el);
+  if(o.type==='label'){const b=el.querySelector('button'),w=Math.min(160,b.offsetWidth),h=b.offsetHeight;el.style.left=clamp(o.x*scale,w/2+3,state.room.w*scale-w/2-3)+'px';el.style.top=clamp(o.y*scale,h/2+3,state.room.h*scale-h/2-3)+'px';}
+  if(o.type==='door'){const b=el.querySelector('button'),p=doorPoint(o),x=p.x*scale,y=p.y*scale,w=b.offsetWidth,h=b.offsetHeight;const bx=x+parseFloat(b.style.left),by=y+parseFloat(b.style.top);b.style.left=(clamp(bx,w/2+3,state.room.w*scale-w/2-3)-x)+'px';b.style.top=(clamp(by,h/2+3,state.room.h*scale-h/2-3)-y)+'px';}
+  if(active&&o.type==='wall')endpoints(o).forEach((p,index)=>{const b=document.createElement('button');b.type='button';b.className='re-endpoint';b.dataset.endpoint=index;b.dataset.id=o.id;b.setAttribute('aria-label','Wand-Endpunkt '+(index+1));b.style.left=p.x*scale+'px';b.style.top=p.y*scale+'px';floor.append(b);});
+ }
+ function renderScene(){
+  const focused=document.activeElement,focusId=focused?.closest('.re-object')?.dataset.id,focusEndpoint=focused?.dataset.endpoint;
+  const hadFocus=floor.contains(focused);floor.querySelectorAll('.re-object,.re-endpoint,.re-preview,.re-room-empty').forEach(el=>el.remove());
+  const r=state.room;floor.classList.toggle('re-grid',state.grid);floor.classList.toggle('re-drawing',mode==='wall');floor.classList.toggle('re-terrace',r.kind==='terrace');floor.style.backgroundSize=10*scale+'px '+10*scale+'px';
+  const t=Math.max(2,r.thickness*scale),w=r.w*scale,h=r.h*scale;
+  for(const side of ['top','bottom','left','right']){const el=floor.querySelector(`[data-side="${side}"]`),horizontal=['top','bottom'].includes(side);Object.assign(el.style,{left:(side==='right'?w-t/2:-t/2)+'px',top:(side==='bottom'?h-t/2:-t/2)+'px',width:(horizontal?w+t:t)+'px',height:(horizontal?t:h+t)+'px'});}
+  floor.querySelector('.re-dimension-x').textContent=fmt(r.w/100)+' m';floor.querySelector('.re-dimension-y').textContent=fmt(r.h/100)+' m';
+  const svg=floor.querySelector('.re-connections');svg.setAttribute('viewBox',`0 0 ${w} ${h}`);svg.innerHTML=state.links.map(([a,b])=>{const x=state.objects.find(o=>o.id===a),y=state.objects.find(o=>o.id===b);return `<line x1="${x.x*scale}" y1="${x.y*scale}" x2="${y.x*scale}" y2="${y.y*scale}"></line>`;}).join('');
+  for(const type of ['wall','counter','table','label','door'])state.objects.filter(o=>o.type===type).forEach(drawObject);
+  if(!state.objects.length){const empty=document.createElement('div');empty.className='re-room-empty';empty.textContent=r.name+' · noch leer';floor.append(empty);}
+  if(preview){const el=document.createElement('div');el.className='re-preview re-wall-object';const o={};wallFromPoints(o,preview.a,preview.b);Object.assign(el.style,{position:'absolute',left:o.x*scale+'px',top:o.y*scale+'px',width:o.length*scale+'px',height:Math.max(3,20*scale)+'px',background:'var(--re-green)',opacity:'.65',pointerEvents:'none',zIndex:8});el.style.setProperty('--re-angle',o.angle+'deg');floor.append(el);}
+  if(hadFocus){if(focusEndpoint!==undefined)floor.querySelector(`[data-endpoint="${focusEndpoint}"]`)?.focus({preventScroll:true});else if(focusId)floor.querySelector(`[data-id="${focusId}"] button`)?.focus({preventScroll:true});}
+ }
+ function layout(){const height=Math.min(500,Math.max(250,(stage.clientWidth-66)*state.room.h/state.room.w+76));stage.style.height=height+'px';const box=stage.getBoundingClientRect();scale=Math.max(.01,Math.min((box.width-66)/state.room.w,(box.height-76)/state.room.h));floor.style.width=state.room.w*scale+'px';floor.style.height=state.room.h*scale+'px';renderScene();}
+ function numberField(name,title,value,min,max,step=1,full=false){return `<label class="re-field ${full?'re-full':''}"><span>${title}</span><input class="re-input" type="number" data-field="${name}" value="${value}" min="${min}" max="${max}" step="${step}"></label>`;}
+ function textField(name,title,value,max=25){return `<label class="re-field re-full"><span>${title}</span><input class="re-input" type="text" data-field="${name}" value="${esc(value)}" maxlength="${max}"></label>`;}
+ function selectField(name,title,value,entries,full=true){return `<label class="re-field ${full?'re-full':''}"><span>${title}</span><select class="re-input" data-field="${name}">${entries.map(([v,t])=>`<option value="${v}" ${String(v)===String(value)?'selected':''}>${t}</option>`).join('')}</select></label>`;}
+ function inspector(){
+  const oldFocus=props.contains(document.activeElement)?document.activeElement.dataset.field:null,comboOpen=props.querySelector('.re-combos')?.open;
+  const selector=root.querySelector('[data-field="selection"]');selector.innerHTML=`<option value="room">${esc(state.room.name)}</option>`+state.objects.map(o=>`<option value="${o.id}">${esc(o.type==='label'?'Text: '+o.text:label(o))}</option>`).join('');selector.value=state.selected;
+  let html='',extra='',title=state.room.kind==='terrace'?'Terrasse':'Raum';const o=selected(),r=state.room;
+  if(!o){html=textField('roomName','Raumname',r.name,30)+selectField('roomKind','Bereich',r.kind,[['inside','Innenraum'],['terrace','Terrasse']])+selectField('roomShape','Grundform',r.shape,[['rectangle','Rechteck'],['square','Quadrat']])+numberField('roomW','Breite (m)',r.w/100,3,30,.1)+numberField('roomH','Tiefe (m)',r.h/100,3,30,.1)+(r.kind==='inside'?numberField('roomThickness','Außenwand (cm)',r.thickness,5,60,1,true):'');extra=`<p class="re-meta">${fmt(r.w*r.h/10000)} m² Grundfläche${r.shape==='square'?' · Seitenlängen gekoppelt':''}</p>`;}
+  else {
+   title={table:'Tisch',counter:'Theke',door:'Eingang',wall:'Wand',label:'Beschriftung'}[o.type];
+   html=o.type==='label'?textField('text','Text',o.text,60):textField('name','Bezeichnung',o.name);
+   if(o.type==='table'){
+    html+=`<div class="re-field re-full"><span>Sitzplätze · Einerschritte</span><div class="re-stepper"><button type="button" class="re-btn cursor-interaction" data-action="minus" aria-label="Ein Sitzplatz weniger" ${o.seats===1?'disabled':''}>−</button><input type="number" data-field="seats" value="${o.seats}" min="1" max="20" step="1" aria-label="Sitzplätze"><button type="button" class="re-btn cursor-interaction" data-action="plus" aria-label="Ein Sitzplatz mehr" ${o.seats===20?'disabled':''}>+</button></div></div>`;
+    html+=selectField('shape','Tischform',o.shape,[['rect','Rechteckig'],['round','Rund']]);
+    const presets=tablePresets[o.shape],match=presets.some(([w,h])=>w===o.w&&h===o.h),presetValue=match?o.w+'x'+o.h:'custom';
+    const choices=presets.map(([w,h])=>[w+'x'+h,o.shape==='round'?'Ø '+w+' cm':w+' × '+h+' cm']);
+    if(!match)choices.unshift(['custom','Individuell: '+(o.shape==='round'?'Ø '+o.w:o.w+' × '+o.h)+' cm']);
+    html+=selectField('preset','Tischgröße',presetValue,choices);
+    if(o.shape==='rect'&&o.seats<6&&o.seats%2)html+=selectField('headSide','Zusatzplatz an der Stirnseite',o.headSide||'left',[['left','Links'],['right','Rechts']]);
+    html+=`<label class="re-advanced re-full"><span>Erweiterter Modus<small>Individuelle Tischmaße</small></span><input type="checkbox" role="switch" data-field="advanced" ${state.advanced?'checked':''}></label>`;
+    if(!state.advanced&&!match)html+='<p class="re-custom-size re-full">Individuelle Maße bleiben erhalten und sind gesperrt.</p>';
+   }
+   if(o.type==='table'||o.type==='counter'){
+    if(o.type==='counter'||state.advanced){html+=numberField('w',o.shape==='round'?'Durchmesser (cm)':'Breite (cm)',o.w,30,500,1,o.shape==='round');if(o.shape!=='round')html+=numberField('h','Tiefe (cm)',o.h,30,500,1);}
+    if(o.type==='table')html+=`<div class="re-table-actions re-full">${o.shape!=='round'?'<button type="button" class="re-btn cursor-interaction" data-action="rotate">90° drehen</button>':''}<button type="button" class="re-btn cursor-interaction" data-action="clone" ${objectCount()>=100?'disabled':''}>Tisch kopieren</button></div>`;
+    else html+='<button type="button" class="re-btn re-full cursor-interaction" data-action="rotate">Um 90° drehen</button>';
+   }
+   if(o.type==='table'){extra=`<details class="re-combos" ${comboOpen?'open':''}><summary class="cursor-interaction">Tische kombinieren</summary><div class="re-combo-buttons">${state.objects.filter(x=>x.type==='table'&&x.id!==o.id).map(x=>`<button class="re-btn cursor-interaction" type="button" data-partner="${x.id}" aria-pressed="${state.links.some(p=>p.includes(x.id)&&p.includes(o.id))}">${esc(x.name)}</button>`).join('')}</div></details>`;}
+   if(o.type==='door')html+=selectField('side','Außenwand',o.side,[['top','Oben'],['right','Rechts'],['bottom','Unten'],['left','Links']])+numberField('doorWidth','Breite (cm)',o.width,60,300,5,true)+numberField('offset',['top','bottom'].includes(o.side)?'Mitte ab linker Ecke (cm)':'Mitte ab oberer Ecke (cm)',o.offset,0,['top','bottom'].includes(o.side)?r.w:r.h,10,true);
+   if(o.type==='wall')html+=numberField('length','Länge (m)',Number((o.length/100).toFixed(2)),.2,Math.hypot(r.w,r.h)/100,.01)+numberField('thickness','Dicke (cm)',o.thickness,5,60,1)+numberField('angle','Winkel (°)',Number(o.angle.toFixed(1)),-180,180,1,true);
+   if(o.type==='label')html+=selectField('font','Schriftgröße',o.font,[[12,'Klein'],[14,'Normal'],[18,'Groß'],[22,'Sehr groß']]);
+   extra+=`<button class="re-btn re-delete cursor-interaction" type="button" data-action="delete">${title} entfernen</button>`;
+  }
+  props.innerHTML=`<h3>${title}</h3><div class="re-field-grid">${html}</div>${extra}`;
+  if(oldFocus)props.querySelector(`[data-field="${oldFocus}"]`)?.focus({preventScroll:true});
+ }
+ function controls(){
+  const roomNav=root.querySelector('.re-room-tabs'),focusedRoom=roomNav.contains(document.activeElement)?document.activeElement.dataset.roomId:null;
+  roomNav.innerHTML=areas().map(a=>`<button class="re-btn re-room-tab cursor-interaction" type="button" data-room-id="${a.room.id}" ${a.room.id===state.room.id?'aria-current="page"':''}>${esc(a.room.name)}${a.room.kind==='terrace'&&!/terrasse/i.test(a.room.name)?'<span class="re-area-tag">Terrasse</span>':''}</button>`).join('');
+  if(focusedRoom)roomNav.querySelector(`[data-room-id="${focusedRoom}"]`)?.focus({preventScroll:true});
+  root.querySelector('[data-action="newRoom"]').disabled=state.otherRooms.length>=7;
+  root.querySelectorAll('[data-tool]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tool===mode)));root.querySelector('[data-field="grid"]').checked=state.grid;root.querySelector('[data-action="undo"]').disabled=!history.length;root.querySelectorAll('[data-add]').forEach(b=>b.disabled=objectCount()>=100);
+  root.querySelector('.re-room-value').textContent=fmt(state.room.w/100)+' × '+fmt(state.room.h/100)+' m · '+(state.room.kind==='terrace'?'Terrasse':'Raum')+' anpassen';
+  const tables=state.objects.filter(o=>o.type==='table');root.querySelector('.re-total').textContent=state.room.name+' · '+tables.length+' Tische · '+tables.reduce((n,o)=>n+o.seats,0)+' Plätze · '+fmt(state.room.w*state.room.h/10000)+' m²';root.querySelector('.re-hint').textContent=mode==='wall'?'Zwei Punkte setzen oder ziehen · Esc bricht ab':'Objekte ziehen · Wände an den Endpunkten ändern · Pfeiltasten verschieben';
+ }
+ function render(){controls();inspector();layout();}
+ function commit(message,before){if(before&&new TextEncoder().encode(JSON.stringify(state)).byteLength>14500){state=before;render();status('Die Vorschau ist voll. Bitte zuerst nicht benötigte Objekte entfernen.',true);return false;}if(before)remember(before);render();persist();status(message+' · nur Vorschau');return true;}
+ function choose(id){state.selected=id;mode='select';drawStart=null;preview=null;render();persist();}
+ function activateRoom(id){const index=state.otherRooms.findIndex(a=>a.room.id===id);if(index<0)return;const target=state.otherRooms[index],current=activeData(),others=state.otherRooms.filter((a,i)=>i!==index);Object.assign(state,target);state.otherRooms=[...others,current];mode='select';drawStart=null;preview=null;}
+ function nextTableName(){const names=new Set(areas().flatMap(a=>a.objects.filter(o=>o.type==='table').map(o=>o.name)));let n=1;while(names.has('T'+n))n++;return 'T'+n;}
+ function placeCopy(o,source){
+  const [w,h]=footprint(o),r=state.room,candidates=[[source.x+w+45,source.y],[source.x,source.y+h+45],[source.x-w-45,source.y],[source.x,source.y-h-45]];
+  for(let y=h/2+30;y<r.h-h/2-20;y+=h+45)for(let x=w/2+30;x<r.w-w/2-20;x+=w+45)candidates.push([x,y]);
+  for(const [x,y]of candidates){if(x<w/2+20||x>r.w-w/2-20||y<h/2+20||y>r.h-h/2-20)continue;
+   const free=state.objects.filter(a=>a.type==='table'||a.type==='counter').every(a=>{const [aw,ah]=footprint(a);return Math.abs(a.x-x)>(aw+w)/2+25||Math.abs(a.y-y)>(ah+h)/2+25;});if(free){o.x=x;o.y=y;return;}}
+  o.x=source.x+40;o.y=source.y+40;fit(o);
+ }
+ function cloneTable(){const source=selected();if(!source||source.type!=='table'||objectCount()>=100)return;const before=snapshot(),copy=structuredClone(source);copy.id='o'+state.nextId++;copy.name=nextTableName();placeCopy(copy,source);state.objects.push(copy);state.selected=copy.id;commit('Tisch '+source.name+' als '+copy.name+' kopiert',before);}
+ function available(o){if(!['table','counter'].includes(o.type))return true;const [w,h]=footprint(o),pad=o.type==='table'?40:10;return w+pad<=state.room.w&&h+pad<=state.room.h;}
+ function add(type){
+  if(objectCount()>=100){status('Die Vorschau umfasst höchstens 100 Objekte über alle Räume.',true);return;}
+  const before=snapshot(),id='o'+state.nextId++,x=state.room.w*.5+((state.objects.length%3)-1)*60,y=state.room.h*.5;let o;
+  if(type==='table')o={id,type,name:nextTableName(),x,y,w:120,h:80,angle:0,shape:'rect',seats:4,headSide:'left'};
+  if(type==='counter')o={id,type,name:'Theke',x,y,w:80,h:220,angle:0};
+  if(type==='door')o={id,type,name:'Eingang',side:'bottom',offset:state.room.w*.7,width:100};
+  if(type==='label')o={id,type,text:'Beschriftung',x,y,font:14};
+  fit(o);state.objects.push(o);state.selected=id;mode='select';drawStart=null;preview=null;const added=commit('Objekt hinzugefügt',before);
+  if(added&&type==='label'){const input=props.querySelector('[data-field="text"]');input.focus();input.select();}
+ }
+ function finishWall(a,b){
+  if(Math.hypot(b.x-a.x,b.y-a.y)<20){status('Die Wand muss mindestens 20 cm lang sein.',true);return false;}
+  if(objectCount()>=100){status('Die Vorschau umfasst höchstens 100 Objekte über alle Räume.',true);return false;}
+  const before=snapshot(),o={id:'o'+state.nextId++,type:'wall',name:'Wand',thickness:20};wallFromPoints(o,a,b);fit(o);state.objects.push(o);state.selected=o.id;drawStart=null;preview=null;mode='select';commit('Wand gezeichnet',before);return true;
+ }
+ root.addEventListener('click',event=>{
+  if(Date.now()<ignoreClickUntil&&floor.contains(event.target))return;
+  const b=event.target.closest('button');if(!b)return;
+  if(b.dataset.roomId){activateRoom(b.dataset.roomId);root.querySelector('.re-room-form').hidden=true;render();persist();status(state.room.name+' geöffnet.');return;}
+  if(b.dataset.tool){mode=b.dataset.tool;drawStart=null;preview=null;controls();renderScene();return;}
+  if(b.dataset.add){add(b.dataset.add);return;}
+  if(b.dataset.partner){const o=selected();if(!o)return;const before=snapshot(),id=b.dataset.partner,index=state.links.findIndex(p=>p.includes(o.id)&&p.includes(id));if(index<0)state.links.push([o.id,id]);else state.links.splice(index,1);commit('Kombination angepasst',before);return;}
+  const action=b.dataset.action,o=selected();
+  if(action==='newRoom'){const form=root.querySelector('.re-room-form');form.hidden=false;form.elements.areaName.focus();form.elements.areaName.select();return;}
+  if(action==='cancelRoom'){root.querySelector('.re-room-form').hidden=true;return;}
+  if(action==='createRoom'){createRoom();return;}
+  if(action==='clone'){cloneTable();return;}
+  if(action==='room'){choose('room');return;}
+  if(action==='undo'){if(history.length){state=history.pop();mode='select';drawStart=null;preview=null;render();persist();status('Letzte Änderung rückgängig gemacht.');}return;}
+  if(action&&o){const before=snapshot();if(action==='delete'){state.objects=state.objects.filter(x=>x.id!==o.id);state.links=state.links.filter(p=>!p.includes(o.id));state.selected='room';}
+   if(action==='plus')o.seats=Math.min(20,o.seats+1);if(action==='minus')o.seats=Math.max(1,o.seats-1);
+   if(action==='rotate'){o.angle=(o.angle+90)%360;if(!available(o)){state=before;status('Für diese Ausrichtung ist der Raum zu klein.',true);return;}fit(o);}
+   commit(action==='delete'?'Objekt entfernt':'Objekt angepasst',before);return;
+  }
+  if(floor.contains(b)&&mode==='select'){const id=b.closest('[data-id]')?.dataset.id;if(id)choose(id);}
+ });
+ function createRoom(){
+  const form=root.querySelector('.re-room-form');if(!form.reportValidity()||state.otherRooms.length>=7)return;
+  const name=form.elements.areaName.value.trim();if(!name){form.elements.areaName.focus();return;}
+  if(areas().some(a=>a.room.name.toLocaleLowerCase('de-DE')===name.toLocaleLowerCase('de-DE'))){status('Dieser Raumname ist schon vergeben. Bitte einen anderen Namen wählen.',true);return;}
+  const before=snapshot(),id='r'+(Math.max(...areas().map(a=>Number(a.room.id.slice(1))))+1),w=Math.round(Number(form.elements.areaWidth.value)*100),h=Math.round(Number(form.elements.areaHeight.value)*100);
+  const area={room:{id,name,kind:form.elements.areaKind.value,w,h,shape:w===h?'square':'rectangle',thickness:20},objects:[],links:[],nextId:1,selected:'room'};
+  state.otherRooms.push(area);activateRoom(id);if(commit(name+' erstellt',before))form.hidden=true;
+ }
+ root.querySelector('.re-room-form').addEventListener('submit',event=>{event.preventDefault();createRoom();});
+ root.querySelector('[name="areaKind"]').addEventListener('change',event=>{const field=root.querySelector('[name="areaName"]');if(['Nebenraum','Terrasse'].includes(field.value))field.value=event.target.value==='terrace'?'Terrasse':'Nebenraum';});
+ root.addEventListener('change',event=>{
+  const field=event.target.dataset.field;if(!field)return;
+  if(field==='selection'){choose(event.target.value);return;}
+  const before=snapshot(),o=selected(),r=state.room,raw=event.target.value,n=Number(raw);
+  if(event.target.type==='number'&&(raw.trim()===''||!Number.isFinite(n)||!event.target.checkValidity())){render();status('Bitte einen gültigen Wert innerhalb des angezeigten Bereichs eingeben.',true);return;}
+  if(field==='grid')state.grid=event.target.checked;
+  else if(field==='advanced')state.advanced=event.target.checked;
+  else if(field==='roomName'){const name=raw.trim().slice(0,30);if(!name||state.otherRooms.some(a=>a.room.name.toLocaleLowerCase('de-DE')===name.toLocaleLowerCase('de-DE'))){render();status('Bitte einen freien Raumnamen eingeben.',true);return;}r.name=name;}
+  else if(field==='roomKind')r.kind=raw;
+  else if(field==='roomShape'){r.shape=raw;if(raw==='square')r.h=r.w;}
+  else if(field==='roomW'){r.w=Math.round(n*100);if(r.shape==='square')r.h=r.w;}
+  else if(field==='roomH'){r.h=Math.round(n*100);if(r.shape==='square')r.w=r.h;}
+  else if(field==='roomThickness')r.thickness=n;
+  else if(o){
+   if(field==='name')o.name=raw.trim().slice(0,25)||o.name;if(field==='text')o.text=raw.trim().slice(0,60)||'Beschriftung';if(field==='seats')o.seats=clamp(Math.round(n),1,20);if(field==='font')o.font=n;
+   if(field==='shape'){o.shape=raw;o.w=120;o.h=raw==='round'?120:80;o.angle=0;}
+   if(field==='preset'){const size=tablePresets[o.shape].find(([w,h])=>w+'x'+h===raw);if(size)[o.w,o.h]=size;}
+   if(field==='headSide')o.headSide=raw;
+   if(field==='w'&&(o.type!=='table'||state.advanced)){o.w=n;if(o.shape==='round')o.h=n;}if(field==='h'&&(o.type!=='table'||state.advanced))o.h=n;
+   if(field==='length')o.length=n*100;if(field==='thickness')o.thickness=n;if(field==='angle')o.angle=n;if(field==='side')o.side=raw;if(field==='doorWidth')o.width=n;if(field==='offset')o.offset=n;
+  }
+  const tooLarge=state.objects.find(x=>!available(x));if(tooLarge){state=before;render();status('Raum oder Möbelmaß passt nicht: '+label(tooLarge)+' ist dafür zu groß.',true);return;}
+  let moved=0;state.objects.forEach(x=>{const old=JSON.stringify(x);fit(x);if(JSON.stringify(x)!==old)moved++;});
+  commit(field==='advanced'?(state.advanced?'Individuelle Tischmaße freigeschaltet':'Individuelle Tischmaße gesperrt'):field.startsWith('room')?'Raum angepasst'+(moved?' · '+moved+' Objekte an den Raum angepasst':''):'Eigenschaften angepasst',before);
+ });
+ floor.addEventListener('pointerdown',event=>{
+  if(event.button!==0||!event.isPrimary)return;
+  const p=point(event);
+  if(mode==='wall'){event.preventDefault();drag={type:'draw',pointerId:event.pointerId,start:drawStart||p,wasStarted:!!drawStart,startScreen:{x:event.clientX,y:event.clientY}};drawStart=drag.start;preview={a:drawStart,b:p};floor.setPointerCapture(event.pointerId);renderScene();return;}
+  const target=event.target.closest('[data-id]');if(!target){state.selected='room';inspector();renderScene();return;}
+  const o=state.objects.find(x=>x.id===target.dataset.id);if(!o)return;
+  event.preventDefault();state.selected=o.id;const endpoint=event.target.closest('[data-endpoint]')?.dataset.endpoint;
+  drag={type:endpoint===undefined?'move':'endpoint',endpoint:Number(endpoint),pointerId:event.pointerId,before:snapshot(),original:structuredClone(o),id:o.id,start:p,moved:false,startScreen:{x:event.clientX,y:event.clientY}};
+  floor.setPointerCapture(event.pointerId);inspector();renderScene();(endpoint===undefined?floor.querySelector(`[data-id="${o.id}"] button`):floor.querySelector(`[data-endpoint="${endpoint}"]`))?.focus({preventScroll:true});
+ });
+ floor.addEventListener('pointermove',event=>{
+  const p=point(event);
+  if(!drag){if(mode==='wall'&&drawStart){preview={a:drawStart,b:p};renderScene();}return;}
+  if(event.pointerId!==drag.pointerId)return;
+  if(drag.type==='draw'){preview={a:drag.start,b:p};renderScene();return;}
+  if(Math.hypot(event.clientX-drag.startScreen.x,event.clientY-drag.startScreen.y)<3&&!drag.moved)return;
+  drag.moved=true;const o=state.objects.find(x=>x.id===drag.id),original=drag.original,dx=p.x-drag.start.x,dy=p.y-drag.start.y;
+  if(drag.type==='endpoint'){const ends=endpoints(original);ends[drag.endpoint]=p;wallFromPoints(o,ends[0],ends[1]);if(o.length<20)o.length=20;fit(o);}
+  else if(o.type==='door'){const start=doorPoint(original);moveDoor(o,{x:start.x+dx,y:start.y+dy});}
+  else{o.x=original.x+dx;o.y=original.y+dy;fit(o);}
+  renderScene();
+ });
+ function endPointer(event){
+  if(!drag||event.pointerId!==drag.pointerId)return;const d=drag;drag=null;
+  if(floor.hasPointerCapture(event.pointerId))floor.releasePointerCapture(event.pointerId);ignoreClickUntil=Date.now()+180;
+  if(event.type==='pointercancel'){if(d.before)state=d.before;drawStart=null;preview=null;render();status('Bewegung abgebrochen.');return;}
+  if(d.type==='draw'){const p=point(event),moved=Math.hypot(event.clientX-d.startScreen.x,event.clientY-d.startScreen.y)>4;if(moved||d.wasStarted)finishWall(d.start,p);else{preview={a:d.start,b:d.start};renderScene();status('Jetzt den zweiten Wandpunkt setzen.');}return;}
+  if(d.moved)commit('Objekt verschoben',d.before);else{render();persist();}
+ }
+ floor.addEventListener('pointerup',endPointer);floor.addEventListener('pointercancel',endPointer);
+ root.addEventListener('keydown',event=>{
+  if(event.key==='Enter'&&root.querySelector('.re-room-form').contains(event.target)){event.preventDefault();createRoom();return;}
+  if(event.key==='Escape'){if(drag?.before)state=drag.before;drag=null;drawStart=null;preview=null;mode='select';render();status('Zeichnen oder Verschieben abgebrochen.');return;}
+  if(event.target.matches('input,select,textarea'))return;
+  if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='z'){event.preventDefault();root.querySelector('[data-action="undo"]').click();return;}
+  if(event.key==='Delete'&&selected()){event.preventDefault();root.querySelector('[data-action="delete"]').click();return;}
+  const delta={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]}[event.key];
+  if(!delta||!floor.contains(event.target)||!selected())return;event.preventDefault();const before=snapshot(),o=selected(),unit=event.shiftKey?1:(state.grid?10:5),endpoint=event.target.dataset.endpoint;
+  if(o.type==='wall'&&endpoint!==undefined){const ends=endpoints(o),p=ends[Number(endpoint)];p.x=clamp(p.x+delta[0]*unit,0,state.room.w);p.y=clamp(p.y+delta[1]*unit,0,state.room.h);wallFromPoints(o,ends[0],ends[1]);}
+  else if(o.type==='door'){const p=doorPoint(o);moveDoor(o,{x:p.x+delta[0]*unit,y:p.y+delta[1]*unit});}
+  else{o.x+=delta[0]*unit;o.y+=delta[1]*unit;}
+  fit(o);commit('Objekt verschoben',before);
+ });
+ restore(window.floorPlanPreview?.widgetState);render();new ResizeObserver(()=>layout()).observe(stage);
+})();
+</script>
+</main></body></html>

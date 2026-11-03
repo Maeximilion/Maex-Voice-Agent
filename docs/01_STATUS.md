@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 03.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.32
+> Status: 03.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.33
 
 ---
 
@@ -252,6 +252,12 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ---
 
 ## What's Next
+
+**T-3.11 design handover (03.11.2026):** Maxi approved the interactive multi-room
+floor plan. Use [the design specification](design/floor-plan/README.md) and
+[Ubuntu handover](design/floor-plan/handover.md) for implementation. T-3.11 (#496)
+and T-3.12 (#497) remain open; D6 and D28 remain in force. This capture is not a
+backend implementation and does not change the priority of unrelated work.
 
 ### In Claude Code (can start immediately, without vendor)
 0. **Block 2 (#8), finish it (handover 03.11.2026):** T-3.11 floor plan (#496, `high`, HTMX or React decided first), T-3.12 manual table reservations (#497, `xhigh`, after T-3.11), T-3.15 callback history (#516), T-3.16 parked review findings (#517), then T-3.5 operating test on the real tablet with Maxi (#44). Start from branch `docs/handover-t3-gui`.
@@ -572,6 +578,10 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 ## Done
 
+Handover 03.11.2026: the approved T-3.11 interactive design, rationale and Ubuntu
+prompt are preserved in `gui/mockups/floor-plan-editor.html` and
+`docs/design/floor-plan/`; production implementation and validation remain open.
+
 | Date | What |
 |---|---|
 | 03.11.2026 | **`POST /v1/calls/end` exists in dev and test only too (Maxi, 03.11.2026).** The voice layer ends its calls in its own process (`telephony/handler.py`), so outside dev and test nothing needs the route; a token holder who knew a call's id could end its log early. `add_local_routes` in `api/main.py` registers both call routes; tests: each is present in dev and test, absent with a 404 in production, prod and staging, and registered once in the app under test. Maxi also accepted the choices (b) to (h) of the default address at the team's mark as built |
@@ -762,6 +772,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.33 · 03.11.2026:** Handover: preserve the approved multi-room floor plan and Ubuntu implementation brief
 - **v2.14.32 · 03.11.2026:** POST /v1/calls/end exists in dev and test only (Maxi); #520 choices (b) to (h) accepted
 - **v2.14.31 · 03.11.2026:** Security audit fix: the default address moves at the team's mark In Kasse eingegeben, not at the guest's yes (#252 P2 no. 4)
 - **v2.14.30 · 03.11.2026:** Shadow with the recording question: a caller who hangs up before the team rang leaves a callback card (#252 P3 no. 9)
