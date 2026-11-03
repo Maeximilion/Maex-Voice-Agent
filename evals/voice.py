@@ -319,7 +319,11 @@ class _Core:
     def on_talked_over(self, session_id: str, text: str) -> None: ...
 
     def on_call_ended(
-        self, session_id: str, speech: SpeechUsage | None = None
+        self,
+        session_id: str,
+        speech: SpeechUsage | None = None,
+        *,
+        caller_hung_up: bool = False,
     ) -> None: ...
 
     def on_team_missed(self, session_id: str) -> bool:

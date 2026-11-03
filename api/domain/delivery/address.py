@@ -115,8 +115,9 @@ def keep(
     where: Place,
 ) -> tuple[Customer, Address]:
     """The rows the draft points at, with the zone on the address. Flushed:
-    the order needs their ids. Default and counters wait for `confirm`: a draft
-    nobody said yes to is no "letztes Mal"."""
+    the order needs their ids. Counters wait for `confirm`, the default for the
+    team's mark (`board.settle_default`): a draft nobody said yes to is no
+    "letztes Mal"."""
     customer = _customer(session, tenant_id, call_id, phone, where)
     address = where.stored or _address(session, tenant_id, customer, where.spoken)
     address.zone_id = where.zone.zone_id

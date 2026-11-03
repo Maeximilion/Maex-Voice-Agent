@@ -574,6 +574,44 @@ Lessons:
 - The Ubuntu Claude CLI goes through the Headroom proxy on port 8787 (a systemd user service). After a PC restart it was down until linger was enabled (`loginctl enable-linger`, done once on 03.11.2026); "ECONNREFUSED" in a terminal session means that service, not a firewall.
 - A throwaway test server for Maxi runs best from the worktree on its own database copy (`uxr2_tmp` pattern, port 8019); tell Maxi the port, he tests in parallel.
 
+## Handover 03.11.2026, 02:55 - audit fixes and Maxi's three decisions, paused for the PC shutdown
+Status: merged since the handover of 02.11.2026 evening: #491 (data subject
+        verification by own-line rows, with the Dependabot bumps #485 to #488
+        and one Dependabot PR per ecosystem), #504 (Kennzahlen lookup bounded,
+        265 ms to 59 ms), #506 (recording safeguards), #507 (two details on two
+        numbers need every number named), #508 (a contact moves only counted
+        customer rows), #510 (print bridge re-audit fixes). Re-audit of T-10.1
+        on 9808399: no P1, 1 P2, 7 P3, all fixed except migration 023 (comment
+        on #500). The other session's #503, #509, #513 and #515 are merged.
+Stack, Maxi's decisions of 03.11.2026:
+        1. #518 fix/calls-start-dev-only, POST /v1/calls/start only in dev
+           and test: merged into main.
+        2. #519 fix/shadow-recording-hangup-card, a callback card for a
+           caller who hangs up in shadow before the team rang (P3 no. 9):
+           merged into main (ec44e8c).
+        3. #520 fix/default-address-at-mark -> main, next to merge: the
+           default address moves at "In Kasse eingegeben", not at the yes
+           (P2 no. 4, option B, the register mark confirmed by Maxi in a
+           popup). origin/main ec44e8c is merged in; the head, CI, Codex,
+           suite and evals of that head are in the PR body. Codex's three
+           earlier rounds (all P2, fixed) landed in the same function, so a
+           fourth finding there goes to Maxi as a redesign question before
+           any patch.
+Next: #520 once CI and Codex are clean on its exact head and the evals ran
+        on it (it touches an xhigh trigger): merge with --match-head-commit.
+Then: the T-10.1 audit is due again (files changed since 9808399), before the
+        first call from outside; /v1/calls/end stays (it only closes a known
+        call, by an unguessable id; dev-only would be a small follow-up if
+        Maxi wants it).
+Rules learned today (Maxi): decisions go to a popup; parallel agents are fine,
+        only merge-ready PRs merge one by one; the other session's PRs merge
+        before this session's stack; every PR body keeps the template
+        checklist (CLAUDE.md section 8).
+Leftover: worktree agent-ac709ddead667d87c was locked by its process at the
+        last check; remove it with git worktree remove when unlocked.
+```
+
+```text
 ## Handover 02.11.2026, evening - security audit T-10.1 and its fixes, paused by Maxi
 Status: the scoped security audit of T-10.1 ran on a48d142 (105 exposed files
         since 52bf88c): 3 P1, 2 P2, 13 P3, none refuted; recorded in docs/09

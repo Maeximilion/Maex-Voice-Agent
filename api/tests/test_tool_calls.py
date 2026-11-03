@@ -3,13 +3,14 @@
 import uuid
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from api.config import settings
 from api.db import get_db
-from api.main import app
+from api.main import add_local_routes, app
 from scripts.seed import seed
 
 AUTH = {"Authorization": f"Bearer {settings.agent_api_token}"}
@@ -146,3 +147,41 @@ def test_unbekanntes_ergebnis_ist_invalid_input(client):
 
     assert r.json()["ok"] is False
     assert r.json()["error"]["code"] == "invalid_input"
+
+
+def _paths(target: FastAPI) -> list[str]:
+    return [getattr(route, "path", "") for route in target.routes]
+
+
+LOCAL_ONLY = ("/v1/calls/start", "/v1/calls/end")
+
+
+@pytest.mark.parametrize("env", ["dev", "test"])
+def test_the_call_routes_exist_in_dev_and_test(env):
+    target = FastAPI()
+    add_local_routes(target, env)
+    assert set(LOCAL_ONLY) <= set(_paths(target))
+
+
+@pytest.mark.parametrize("env", ["production", "prod", "staging"])
+@pytest.mark.parametrize("path", LOCAL_ONLY)
+def test_the_call_routes_are_absent_outside_dev_and_test(env, path):
+    """Recognition trusts `calls.caller_id`, so outside dev and test no token
+    holder may open a call with a caller ID of their choice (#252), nor end
+    one: the voice layer does both in its own process (Maxi, 03.11.2026)."""
+    target = FastAPI()
+    add_local_routes(target, env)
+    assert path not in _paths(target)
+    r = TestClient(target).post(
+        path,
+        json={"tenant_id": str(uuid.uuid4()), "external_session_id": "x"},
+        headers=AUTH,
+    )
+    assert r.status_code == 404
+
+
+@pytest.mark.parametrize("path", LOCAL_ONLY)
+def test_the_app_under_test_registers_each_call_route_once(path):
+    """The suite runs with ENV=test, so the app carries the routes, once."""
+    assert settings.env == "test"
+    assert _paths(app).count(path) == 1

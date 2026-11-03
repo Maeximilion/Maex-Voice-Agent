@@ -14,6 +14,7 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
 from api.domain.callbacks import create_callback, team_missed
+from api.domain.callbacks.transfer import SUMMARY_HUNG_UP
 from api.domain.calls import end_call
 from api.models import AuditLog, Call, Callback, OutboxEvent
 from api.schemas.callbacks import CreateCallbackRequest
@@ -149,6 +150,21 @@ def test_the_reason_of_the_transfer_names_the_card(
     assert task is not None
     assert task.reason == reason
     assert said in task.summary
+
+
+def test_a_call_the_team_never_rang_says_so_on_its_card(session, tenant_id):
+    """Mode shadow with the recording question: the caller hung up before the
+    line handed the call on (#252 no. 9). Nobody could have missed it."""
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="abandoned")
+
+    task = team_missed(session, tenant_id, "1760000000.1", rang=False, now=REPORTED)
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_HUNG_UP} Anliegen nicht bekannt."
+    assert "niemand abgenommen" not in task.summary
+    assert task.reason == "out_of_scope"
+    session.refresh(call)
+    assert call.outcome == "callback"
 
 
 def test_an_unknown_call_has_no_card(session, tenant_id):
