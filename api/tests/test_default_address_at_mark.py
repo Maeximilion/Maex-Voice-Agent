@@ -26,6 +26,7 @@ from api.domain.ordering.board import (
     version_of,
 )
 from api.domain.ordering.correction import (
+    AddressEdit,
     CorrectionRequest,
     RowEdit,
     apply_correction,
@@ -46,6 +47,8 @@ from api.tests.test_domain_draft_order import NOW, _call, _tenant
 from api.tests.test_register_mark import _wait_for_a_lock
 
 ELSEWHERE = {**HOME, "street": "Bahnhofstraße", "house_number": "3"}
+# What the guest really said, typed on the tablet (#525).
+CORRECTED = {**ELSEWHERE, "house_number": "31"}
 MARKED = NOW + timedelta(minutes=30)
 
 
@@ -105,6 +108,13 @@ def _correct(session, tenant_id, order) -> None:
         version=plan.version, rows=(RowEdit(order_item_id=row, quantity=3),)
     )
     apply_correction(session, tenant_id, order.id, req, "wrong_quantity", now=MARKED)
+
+
+def _move(session, tenant_id, order, address) -> None:
+    """The team types another address on the tablet (#525)."""
+    plan = preview_correction(session, tenant_id, order.id)
+    req = CorrectionRequest(version=plan.version, address=AddressEdit(**address))
+    apply_correction(session, tenant_id, order.id, req, "wrong_address", now=MARKED)
 
 
 def _defaults(session) -> list[uuid.UUID]:
@@ -224,7 +234,7 @@ def test_a_second_mark_changes_nothing(session, tenant_id, call_id):
 
 
 def test_a_correction_after_the_mark_keeps_the_default(session, tenant_id, call_id):
-    """A correction changes dishes, never the address: the default the mark
+    """A correction of the dishes leaves the address: the default the mark
     gave stays, and the new mark the new revision needs leaves one default."""
     known_customer(session, tenant_id)
     order = _said_yes(session, tenant_id, call_id, ELSEWHERE)
@@ -241,6 +251,46 @@ def test_a_correction_after_the_mark_keeps_the_default(session, tenant_id, call_
     assert _defaults(session) == [order.address_id]
 
 
+def test_a_corrected_address_before_the_mark_moves_no_default(
+    session, tenant_id, call_id
+):
+    """Nobody marked the order yet: the correction writes the row, and the
+    mark the order still needs makes it the default."""
+    _, home = known_customer(session, tenant_id)
+    order = _said_yes(session, tenant_id, call_id, ELSEWHERE)
+
+    _move(session, tenant_id, order, CORRECTED)
+
+    assert _defaults(session) == [home.id]
+
+    _typed_in(session, tenant_id, order)
+
+    session.refresh(order)
+    assert session.get_one(Address, order.address_id).house_number == "31"
+    assert _defaults(session) == [order.address_id]
+
+
+def test_a_corrected_address_after_the_mark_is_the_default_at_once(
+    session, tenant_id, call_id
+):
+    """The mark made the misheard address the default. The team's correction
+    is a person's step as well, and a known wrong address must not be the next
+    "letztes Mal" until the new revision is marked."""
+    known_customer(session, tenant_id)
+    order = _said_yes(session, tenant_id, call_id, ELSEWHERE)
+    _typed_in(session, tenant_id, order)
+    misheard = order.address_id
+
+    _move(session, tenant_id, order, CORRECTED)
+
+    session.refresh(order)
+    assert order.register_entered_at is None
+    assert order.address_id != misheard
+    assert _defaults(session) == [order.address_id]
+    match = find_customer(session, tenant_id, PHONE)
+    assert (match.address_id, match.say) == (order.address_id, SAY_SAME_ADDRESS)
+
+
 def test_a_mark_after_the_customer_was_erased(session, tenant_id, call_id):
     """The row went (erasure on request or the deletion job): the order keeps
     no customer and no address, the mark still holds and moves nothing."""
@@ -248,6 +298,8 @@ def test_a_mark_after_the_customer_was_erased(session, tenant_id, call_id):
     approve_order(session, tenant_id, order.id)
     session.execute(delete(Customer).where(Customer.id == order.customer_id))
     session.commit()
+    # The card the tablet shows now: its fingerprint holds no address (#525).
+    session.refresh(order)
 
     _mark(session, tenant_id, order)
 

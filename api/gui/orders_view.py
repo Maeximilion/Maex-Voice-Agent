@@ -21,6 +21,7 @@ from api.domain.ordering.correction import (
     NO_CHANGE,
     REASONS,
     AddEdit,
+    AddressEdit,
     Choice,
     CorrectionPlan,
     CorrectionRequest,
@@ -32,6 +33,17 @@ from api.domain.ordering.ticket import CANCELLED
 TYPE_LABELS = {"pickup": "Abholung", "delivery": "Lieferung"}
 UNKNOWN_NUMBER = "Nummer {number} gibt es nicht auf der Karte."
 BAD_STATE = "Die Korrektur ist durcheinander geraten. Bitte neu öffnen."
+ADDRESS_TAKEN = (
+    "Neue Adresse übernommen: bitte Summe prüfen und den Grund nochmal antippen."
+)
+# The fields of the address in the correction (#525): form name and label.
+ADDRESS_FIELDS = (
+    ("postal_code", "Postleitzahl"),
+    ("street", "Straße"),
+    ("house_number", "Hausnummer"),
+    ("city", "Ort"),
+    ("floor_note", "Hinweis (Etage, Klingel)"),
+)
 
 
 def euro(cents: int) -> str:
@@ -141,6 +153,8 @@ class EditState:
     added: list[dict]
     # Position, die gerade auf eine Nummer zum Tauschen wartet.
     swapping: int | None = None
+    # A delivery's address as typed, by form name; None while it stays.
+    address: dict[str, str] | None = None
 
     def dump(self) -> str:
         return json.dumps(
@@ -150,6 +164,7 @@ class EditState:
                 "r": self.rows,
                 "a": self.added,
                 "t": self.swapping,
+                "ad": self.address,
             },
             separators=(",", ":"),
         )
@@ -176,6 +191,7 @@ class EditState:
                 )
                 for a in self.added
             ),
+            address=AddressEdit(**self.address) if self.address is not None else None,
         )
 
 
@@ -203,7 +219,15 @@ def parse_state(raw: str) -> EditState:
             rows=list(data["r"]),
             added=list(data["a"]),
             swapping=data.get("t"),
+            address=data.get("ad"),
         )
+        address = state.address
+        if address is not None and (
+            type(address) is not dict
+            or set(address) != {name for name, _ in ADDRESS_FIELDS}
+            or not all(type(v) is str for v in address.values())
+        ):
+            raise ValueError(f"ad={address!r}")
         state.request()  # prueft Form und ids, wirft bei Unsinn
         # Die Position im Tauschen-Modus: None oder ein Index in rows. "0" als
         # Text oder ein Index ausserhalb liefe sonst erst beim naechsten Tap
@@ -214,6 +238,18 @@ def parse_state(raw: str) -> EditState:
     except (ValueError, KeyError, TypeError) as exc:
         raise InvalidInput(f"Korrekturstand unlesbar: {exc}", say=BAD_STATE) from exc
     return state
+
+
+def take_address(state: EditState, form: dict[str, str]) -> bool:
+    """The address fields as they stand on the tablet go into the state: what
+    is typed is the edit, whichever button is tapped next. True if the typing
+    changed it since the last tap."""
+    if state.address is None or ADDRESS_FIELDS[0][0] not in form:
+        return False
+    typed = {name: form.get(name, "") for name, _ in ADDRESS_FIELDS}
+    changed = typed != state.address
+    state.address = typed
+    return changed
 
 
 def apply_op(
@@ -271,6 +307,21 @@ def apply_op(
         if kind == "unswap":
             state.swapping = None
             return None
+        if kind == "address" and plan.where.delivery:
+            # "address" alone: the fields were taken (`take_address`), recalculate.
+            action = parts[1] if len(parts) > 1 else ""
+            if action == "open":
+                stored = plan.where.current
+                state.address = {
+                    name: (getattr(stored, name) or "") if stored else ""
+                    for name, _ in ADDRESS_FIELDS
+                }
+                return None
+            if action == "reset":
+                state.address = None
+                return None
+            if not action:
+                return None
         if kind == "opt":
             target = _target(state, parts[1], int(parts[2]))
             line = _line(plan, parts[1], int(parts[2]))
@@ -373,4 +424,22 @@ def edit_lines(plan: CorrectionPlan, state: EditState) -> dict:
         "reasons": plan.reasons,
         "swapping": state.swapping,
         "state": state.dump(),
+        **_address_view(plan, state),
+    }
+
+
+def _address_view(plan: CorrectionPlan, state: EditState) -> dict:
+    """The address of a delivery in the correction (#525)."""
+    where = plan.where
+    return {
+        "delivery": where.delivery,
+        "address": _address(where.current),
+        "floor_note": where.current.floor_note if where.current else None,
+        "address_edit": state.address,
+        "address_fields": ADDRESS_FIELDS,
+        "address_blocker": where.blocker,
+        # "Falsche Adresse" only with an address that can be saved.
+        "address_new": where.new is not None,
+        "fee": euro(plan.fee_cents),
+        "before_fee": euro(plan.before_fee_cents),
     }
