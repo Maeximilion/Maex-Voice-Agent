@@ -30,12 +30,15 @@ from api.agent.recording import (
     SAY_WHAT_CAN_I_DO,
 )
 from api.config import Settings, settings
+from api.domain.callbacks.transfer import SUMMARY_HUNG_UP
 from api.domain.calls import recordings
-from api.models import ConsentLog, Recording, Reservation, ServiceConfig
+from api.models import Callback, ConsentLog, Recording, Reservation, ServiceConfig
+from api.telephony import handler as handler_module
 from api.telephony.adapters.fake import FakeTelephony
 from api.telephony.handler import SAY_TO_THE_TEAM
 from api.tests import test_telephony
 from api.tests.test_telephony import (
+    CLOSED,
     NOW,
     TEAM_PHONE,
     BrokenLLM,
@@ -819,13 +822,164 @@ def test_shadow_a_question_that_cannot_be_said_rings_the_team(
 def test_a_caller_who_hangs_up_on_the_question_leaves_no_recording(
     session, tenant, shadow
 ):
+    """Decision (e) of T-11.3: nothing was answered, so no consent row."""
     port, handler = shadow_call(session, tenant)
 
-    handler.on_call_ended(SID)
+    handler.on_call_ended(SID, caller_hung_up=True)
 
     assert answers(session) == []
     assert the_recording(session) is None
     assert not port.team_leg_recorded(SID)
+
+
+# -- mode shadow: a caller who hangs up before the team rang (#252 no. 9) ------
+
+
+def cards(session) -> list[Callback]:
+    return list(session.scalars(select(Callback)))
+
+
+def test_shadow_a_caller_who_hangs_up_on_the_question_leaves_a_card(
+    session, tenant, shadow
+):
+    """The team never rang: the card is its only notice of the call."""
+    port, handler = shadow_call(session, tenant)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    [card] = cards(session)
+    assert card.phone == "+497215551234"
+    assert card.status == "open"
+    assert card.reason == "out_of_scope"
+    assert card.summary.startswith(SUMMARY_HUNG_UP)
+    assert the_call(session, SID).outcome == "callback"
+    assert not port.transfers(SID)
+
+
+def test_shadow_a_withheld_number_leaves_no_card(session, tenant, shadow):
+    """Nobody could call back: the call stays abandoned, as before."""
+    port = FakeTelephony()
+    port.open(SID, caller_id=None)
+    handler = handler_for(session, tenant, port, llm_factory=lambda _: NoLLM())
+    handler.on_call_started(SID)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert cards(session) == []
+    assert the_call(session, SID).outcome == "abandoned"
+
+
+@pytest.mark.parametrize("said", ["Ja, gerne.", "Nein."])
+def test_shadow_a_caller_who_answered_and_left_before_the_team_rang_leaves_a_card(
+    session, tenant, shadow, said
+):
+    """The answer is taken and the transfer asked for, but the line still plays
+    the sentences before it when the caller's leg goes: the team never rang."""
+    _, handler = shadow_call(session, tenant)
+    handler.on_user_turn(SID, said)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert len(cards(session)) == 1
+    assert the_call(session, SID).outcome == "callback"
+
+
+def test_shadow_a_call_that_ends_after_the_transfer_leaves_no_card(
+    session, tenant, shadow
+):
+    """The line took the transfer and the team rings; a leg nobody takes is the
+    dialplan's report (`on_team_missed`)."""
+    _, handler = shadow_call(session, tenant)
+    handler.on_user_turn(SID, "Nein.")
+
+    handler.on_call_ended(SID)
+
+    assert cards(session) == []
+    assert the_call(session, SID).outcome == "transferred"
+
+
+def test_shadow_a_hangup_reported_twice_leaves_one_card(session, tenant, shadow):
+    _, handler = shadow_call(session, tenant)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert len(cards(session)) == 1
+
+
+def test_shadow_a_hangup_outside_the_opening_hours_leaves_a_card_too(
+    session, tenant, shadow
+):
+    """Shadow rings the team at any hour (D25), so its card comes at any hour."""
+    _, handler = shadow_call(session, tenant, now=CLOSED)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert len(cards(session)) == 1
+
+
+def test_shadow_a_card_that_fails_costs_nothing_else(
+    session, tenant, shadow, monkeypatch
+):
+    def broken(*_args, **_kwargs):
+        raise RuntimeError("the database refuses the card")
+
+    monkeypatch.setattr(handler_module, "team_missed", broken)
+    _, handler = shadow_call(session, tenant)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert cards(session) == []
+    assert the_call(session, SID).outcome == "abandoned"
+
+
+def test_shadow_a_hangup_on_the_fake_line_leaves_a_card(session, tenant, shadow):
+    """The fake line reports a caller who hung up as the call session does."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, llm_factory=lambda _: NoLLM())
+    hangup = {"role": "customer", "hangup": True}
+
+    port.play(
+        {"session_id": SID, "caller_id": "+497215551234", "transcript": [hangup]},
+        handler,
+    )
+    port.play(
+        {
+            "session_id": "answered",
+            "caller_id": "+497215551234",
+            "transcript": [{"role": "customer", "text": "Nein."}],
+        },
+        handler,
+    )
+
+    assert [the_call(session, sid).outcome for sid in (SID, "answered")] == [
+        "callback",
+        "transferred",
+    ]
+
+
+@pytest.mark.parametrize("mode", ["primary", "overflow"])
+def test_a_call_the_ai_takes_leaves_no_card_on_a_hangup_at_the_question(
+    session, tenant, switched_on, mode
+):
+    set_mode(session, tenant.id, mode)
+    _, handler = on_the_phone(session, tenant)
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert cards(session) == []
+    assert the_call(session, SID).outcome == "abandoned"
+
+
+def test_shadow_without_the_setting_leaves_no_card(session, tenant):
+    """The team rings at once, before the caller could hang up on us."""
+    set_mode(session, tenant.id, "shadow")
+    port, handler = on_the_phone(session, tenant, llm_factory=lambda _: NoLLM())
+
+    handler.on_call_ended(SID, caller_hung_up=True)
+
+    assert port.transfers(SID) == [TEAM_PHONE]
+    assert cards(session) == []
 
 
 def test_paused_never_asks(session, tenant, switched_on):
