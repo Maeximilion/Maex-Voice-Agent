@@ -136,7 +136,9 @@ header.aus .top > .mode ~ .mode{opacity:.75}
 /* Card actions: the main action takes the free width, the rest sit beside it. */
 .cb-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:14px}
 .cb-actions > .primary,.cb-actions > .stop,.cb-actions > a.button{flex:1 1 auto}
-.betrieb button.quiet{border-color:transparent;background:transparent;color:var(--danger);text-decoration:underline;text-underline-offset:4px}
+.betrieb button.quiet{border-color:var(--danger);background:transparent;color:var(--danger)}
+/* Cancel stays apart from the main action: 24 px clear of "Passt". */
+.cb-actions > .quiet{margin-left:var(--s5)}
 .betrieb a.button{display:inline-flex;align-items:center;justify-content:center;min-height:var(--tap);min-width:var(--tap);padding:var(--s3) 18px;font-size:var(--fs-body);font-weight:600;border:2px solid var(--line-strong);border-radius:var(--r);background:var(--surface);color:var(--text);text-decoration:none}
 /* Key figures (T-8.4): four values side by side, the history below. */
 .kz-title{margin:0;font-size:var(--fs-h2)}
