@@ -48,11 +48,7 @@ from api.domain.customers.personal import (
     ORDER_GONE,
     thin_payload,
 )
-from api.domain.customers.phone import (
-    DEFAULT_COUNTRY_CODE,
-    normalize_phone,
-    number_or_none,
-)
+from api.domain.customers.phone import DEFAULT_COUNTRY_CODE, normalize_phone
 from api.domain.menu.numberwords import fold
 from api.domain.ordering.handover import SENT
 from api.domain.ordering.labels import current_labels_many, labels_for_rows
@@ -284,17 +280,11 @@ def _on_day(
 
 
 def _own_line(session: Session, model: Any, *where: Any) -> list:
-    """Rows of `model` whose number is the one their call came from. A call
-    without a caller ID, withheld or cleared, proves nothing."""
-    return [
-        row
-        for row, line in session.execute(
-            select(model, Call.caller_id)
-            .join(Call, Call.id == model.call_id)
-            .where(*where)
-        )
-        if row.phone == number_or_none(line)
-    ]
+    """Rows of `model` whose number is the one their call came from, as the
+    draft read it: the caller ID goes with its period, an objection or an
+    erasure, the booking keeps its name longer (#523). A withheld one proved
+    nothing then and proves nothing now."""
+    return list(session.scalars(select(model).where(model.booked_on_own_line, *where)))
 
 
 def _by_day(
