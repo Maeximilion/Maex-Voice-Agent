@@ -13,7 +13,11 @@ from api.core.errors import Conflict, InvalidInput
 from api.domain.confirm import confirm
 from api.domain.reservations import check_slot, create_reservation
 from api.domain.reservations import notice as notices
-from api.domain.reservations.slots import SAY_RESERVATIONS_OFF
+from api.domain.reservations.slots import (
+    ASK_OTHER_DAY,
+    ASK_OTHER_TIME,
+    SAY_RESERVATIONS_OFF,
+)
 from api.domain.status import config as status_config
 from api.models import (
     AuditLog,
@@ -30,6 +34,7 @@ from scripts.seed import seed
 BERLIN = ZoneInfo("Europe/Berlin")
 # Seed: closed on Monday, seats 17:00 to 22:00 with 40 guests, grid of 30 minutes.
 DIENSTAG = date(2026, 9, 15)
+SONNTAG = date(2026, 9, 20)  # the Monday after it is closed
 TUESDAY = 1
 SUNDAY = 6
 NOW = datetime(2026, 9, 15, 18, 0, tzinfo=BERLIN)
@@ -118,6 +123,8 @@ def test_inside_the_notice_a_full_evening_is_named_as_full(session, tenant_id, c
     assert slot.available is False
     assert "Laut unseren Reservierungen ist zu der Zeit leider alles belegt" in slot.say
     assert "noch Platz" not in slot.say
+    # Every later slot of the evening is full as well (#527).
+    assert slot.say.endswith(ASK_OTHER_DAY)
 
 
 def test_the_seats_are_named_for_this_party(session, tenant_id, call_id):
@@ -151,6 +158,76 @@ def test_the_alternatives_lie_outside_the_notice(session, tenant_id):
 
     assert slot.alternatives
     assert all(at >= berlin(19) for at in slot.alternatives)
+
+
+def test_a_notice_past_the_last_start_points_to_another_day(session, tenant_id):
+    """#527: 240 minutes from 19:00 reach past the last start at 21:30. Asked for
+    another time, the guest would hear the same refusal for every time that
+    evening, until the ladder escalates."""
+    set_notice(session, tenant_id, 240)
+
+    for wish in (berlin(20), berlin(21, 30)):
+        slot = check_slot(session, tenant_id, wish, 4, now=berlin(19))
+
+        assert slot.available is False
+        assert slot.alternatives == []
+        assert "noch Platz" in slot.say
+        assert slot.say.endswith(ASK_OTHER_DAY)
+        assert ASK_OTHER_TIME not in slot.say
+
+
+def test_the_one_slot_left_after_the_notice_is_offered(session, tenant_id):
+    set_notice(session, tenant_id, 135)
+
+    slot = check_slot(session, tenant_id, berlin(20), 4, now=berlin(19))
+
+    assert slot.alternatives == [berlin(21, 30)]
+    assert slot.say.endswith("Halb zehn ginge.")
+    assert ASK_OTHER_DAY not in slot.say
+
+
+@pytest.mark.parametrize(
+    ("minutes", "left", "ending"),
+    [(150, [berlin(21, 30)], "Halb zehn ginge."), (151, [], ASK_OTHER_DAY)],
+    ids=["on", "past"],
+)
+def test_a_notice_ending_on_the_last_start_leaves_that_start(
+    session, tenant_id, minutes, left, ending
+):
+    set_notice(session, tenant_id, minutes)
+
+    slot = check_slot(session, tenant_id, berlin(20), 4, now=berlin(19))
+
+    assert slot.alternatives == left
+    assert slot.say.endswith(ending)
+
+
+def test_before_a_closed_day_the_guest_is_not_sent_to_tomorrow(session, tenant_id):
+    """Sunday evening, Monday closed: the sentence names no day it has not checked."""
+    set_notice(session, tenant_id, 240, weekday=SUNDAY)
+
+    slot = check_slot(
+        session,
+        tenant_id,
+        datetime.combine(SONNTAG, time(20), tzinfo=BERLIN),
+        4,
+        now=datetime.combine(SONNTAG, time(19), tzinfo=BERLIN),
+    )
+
+    assert slot.alternatives == []
+    assert slot.say.endswith(ASK_OTHER_DAY)
+    assert "morgen" not in slot.say.lower()
+
+
+def test_lunch_inside_the_notice_still_asks_for_another_time(session, tenant_id):
+    """The notice hides the rest of lunch, not the evening: another day is wrong."""
+    set_notice(session, tenant_id, 240)
+
+    slot = check_slot(session, tenant_id, berlin(12, 30), 4, now=berlin(11))
+
+    assert slot.alternatives == []
+    assert slot.say.endswith(ASK_OTHER_TIME)
+    assert check_slot(session, tenant_id, berlin(18), 4, now=berlin(11)).available
 
 
 def test_a_wish_at_a_time_nobody_starts_offers_nothing_inside_the_notice(

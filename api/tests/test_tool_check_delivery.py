@@ -16,6 +16,7 @@ from api.domain.delivery import (
     SAY_OUT_OF_ZONE,
     SAY_POSTAL_CODE_NOT_UNDERSTOOD,
     check_delivery,
+    zones,
 )
 from api.main import app
 from api.models import Call, DeliveryZone
@@ -24,6 +25,8 @@ from scripts.seed import seed
 
 AUTH = {"Authorization": f"Bearer {settings.agent_api_token}"}
 POSTAL_CODE = "76530"
+# A Tuesday evening: pickup open by the seed's hours, so it is on offer.
+OPEN = datetime(2026, 9, 15, 16, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -105,7 +108,7 @@ def test_a_postal_code_outside_every_zone_offers_pickup(session, tenant_id):
     zone(session, tenant_id)
 
     with pytest.raises(OutOfZone) as refused:
-        check_delivery(session, tenant_id, "54321")
+        check_delivery(session, tenant_id, "54321", now=OPEN)
 
     assert refused.value.say == SAY_OUT_OF_ZONE
     assert "abholen" in SAY_OUT_OF_ZONE
@@ -238,8 +241,13 @@ def test_the_postal_code_alone_answers_a_question_about_the_area(
     assert response.json()["ok"] is True
 
 
-def test_the_tool_answers_out_of_zone_with_the_pickup_offer(client):
+def test_the_tool_answers_out_of_zone_with_the_pickup_offer(
+    client, session, tenant_id, monkeypatch
+):
+    """The answer stands in the log of the call, where a later refusal of
+    pickup reads it (#524)."""
     http, body = client
+    monkeypatch.setattr(zones, "utcnow", lambda: OPEN)
 
     response = http.post("/v1/tools/check_delivery", json=body, headers=AUTH)
 
@@ -248,6 +256,8 @@ def test_the_tool_answers_out_of_zone_with_the_pickup_offer(client):
     assert answer["ok"] is False
     assert answer["error"]["code"] == "out_of_zone"
     assert answer["say"] == SAY_OUT_OF_ZONE
+    call_id = uuid.UUID(body["call_id"])
+    assert zones.told_out_of_zone(session, tenant_id, call_id)
 
 
 def test_the_tool_refuses_a_request_without_a_postal_code(client):
