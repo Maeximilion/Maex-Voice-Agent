@@ -399,7 +399,7 @@ def bare_recording_answer(text: str) -> bool:
     """Does the sentence answer the recording question and say nothing more?
     A yes always does (`is_yes`). A no with a request in it ("Nein, nicht
     aufnehmen. Ich hätte gern einen Tisch") is logged as the no, and the
-    request still goes to the core."""
+    request still goes to the core (`after_recording_answer`)."""
     answer = recording_answer(text)
     return answer == "yes" or (
         answer == "no"
@@ -408,6 +408,30 @@ def bare_recording_answer(text: str) -> bool:
             or consent_answer(text, _RECORD_IT, refuse=_REFUSE) == "no"
         )
     )
+
+
+_CLAUSE_MARKS = ",.!?;:"
+
+
+def after_recording_answer(text: str) -> str:
+    """What a sentence holds besides its answer to the recording question:
+    "Nein, das Essen war kalt" goes on as "das Essen war kalt". The no answers
+    the question, and no reader of the turn may take it for a word of the
+    request, as the doubt of a complaint rule does (#526). The answer is the
+    longest start that is a bare answer of its own, cut at a punctuation mark
+    or behind the first word, as speech recognition may drop the comma. A
+    sentence without such a start, or with nothing behind it, stays whole."""
+    # shortcut: without punctuation only the first word is cut, so the rest of
+    # "Nein bitte nicht aufnehmen ..." stays and its "nicht" sends a complaint
+    # to the team; cut at more word ends when the call log shows such answers.
+    cuts = {at for at, char in enumerate(text) if char in _CLAUSE_MARKS}
+    if (first := _SPOKEN.search(text)) is not None:
+        cuts.add(first.end())
+    for cut in sorted(cuts, reverse=True):
+        rest = text[cut:].lstrip(_CLAUSE_MARKS + " \t\n")
+        if rest and bare_recording_answer(text[:cut]):
+            return rest
+    return text
 
 
 def _asks_back(words: list[str]) -> bool:

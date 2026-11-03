@@ -23,11 +23,19 @@ from api.agent.loop import (
     UNHEARD_TURNS,
     ConversationLoop,
 )
+from api.agent.recording import SAY_WHAT_CAN_I_DO
 from api.agent.state import Allergy, ConversationState
 from api.domain.callbacks import matching_rule
 from api.domain.callbacks.complaint_rules import ACTION_REMEDY_BOOKED
 from api.domain.callbacks.create import SAY_NOTED
-from api.models import AuditLog, Call, Callback, ComplaintRule
+from api.models import (
+    AuditLog,
+    Call,
+    Callback,
+    ComplaintRule,
+    ConsentLog,
+    Recording,
+)
 from scripts.seed import seed
 from sim.session import SimCall, resolve_tenant
 
@@ -449,6 +457,95 @@ def test_the_text_phone_closes_an_open_offer_with_its_call(session, tenant_id):
     assert call.finish().outcome == "callback"
 
 
+# -- after the recording question (#526) ------------------------------------------
+
+
+def asked(session, tenant_id) -> ConversationState:
+    """The first sentence of the phone line asked for the recording (L2)."""
+    return _state(session, tenant_id, recording="asked")
+
+
+def consents(session) -> list[str]:
+    return list(session.scalars(select(ConsentLog.answer)).all())
+
+
+@pytest.mark.parametrize(
+    ("answer", "logged"),
+    [
+        ("Nein,", "unclear"),
+        ("Ja,", "unclear"),
+        ("Nein danke, nicht aufnehmen.", "no"),
+        # Without its comma, as speech recognition may leave it.
+        ("Nein", "unclear"),
+    ],
+)
+def test_the_answer_to_the_recording_question_leaves_the_complaint_to_its_rule(
+    session, tenant_id, answer, logged
+):
+    """The same offer as without the question: the rules read what the
+    sentence holds besides the answer. More than the answer is no explicit
+    yes, so nothing is recorded."""
+    rule(session, tenant_id)
+    state = asked(session, tenant_id)
+
+    result = loop(session).run_turn(
+        state, f"{answer} ich bin unzufrieden, das Essen war kalt."
+    )
+
+    assert result.say == [OFFER]
+    assert state.remedy_offer.complaint == "ich bin unzufrieden, das Essen war kalt."
+    assert state.recording == "off"
+    assert session.scalars(select(Recording)).all() == []
+    assert consents(session) == [logged]
+
+
+def test_the_same_sentence_without_the_question_keeps_its_no_a_doubt(
+    session, tenant_id, state
+):
+    """Only the answer to the recording question is cut off: a no the core
+    cannot place still leaves the complaint with the team."""
+    rule(session, tenant_id)
+
+    result = loop(session).run_turn(
+        state, "Nein, ich bin unzufrieden, das Essen war kalt."
+    )
+
+    assert_went_to_the_team(result, session, state)
+
+
+def test_a_bare_no_is_answered_alone_and_the_complaint_comes_next(session, tenant_id):
+    rule(session, tenant_id)
+    state = asked(session, tenant_id)
+    agent = loop(session)  # no model turn prepared: it is not asked
+
+    assert agent.run_turn(state, "Nein.").say == [SAY_WHAT_CAN_I_DO]
+    assert state.remedy_offer is None
+    assert consents(session) == ["no"]
+
+    assert agent.run_turn(state, COMPLAINT).say == [OFFER]
+
+
+@pytest.mark.parametrize(
+    ("phrases", "offered"), [(["nicht warm"], True), (["warm"], False)]
+)
+def test_a_negation_of_the_complaint_stays_behind_the_answer(
+    session, tenant_id, phrases, offered
+):
+    """The no answers the question, the "nicht" belongs to the complaint: the
+    rules still read it, inside a phrase or as a doubt."""
+    rule(session, tenant_id, phrases=phrases)
+    state = asked(session, tenant_id)
+
+    result = loop(session).run_turn(
+        state, "Nein, ich bin unzufrieden, das Essen war nicht warm."
+    )
+
+    if offered:
+        assert result.say == [OFFER]
+    else:
+        assert_went_to_the_team(result, session, state)
+
+
 # -- no guessing ------------------------------------------------------------------
 
 
@@ -495,6 +592,9 @@ def test_no_part_of_a_word_is_a_match(session, tenant_id, said):
         "Das Essen war kalt und es gab keine Serviette.",
         "Wenn das Essen kalt ist, beschwere ich mich.",
         "Das Essen war vielleicht kalt.",
+        # A no the core cannot place: only the answer to the recording question
+        # is cut off before the rules read the sentence (#526).
+        "Nein, das Essen war kalt.",
     ],
 )
 def test_a_sentence_that_rules_something_out_or_only_supposes_is_no_match(
