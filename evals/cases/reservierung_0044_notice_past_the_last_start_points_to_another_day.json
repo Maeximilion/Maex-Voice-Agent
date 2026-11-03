@@ -1,0 +1,47 @@
+{
+  "id": "reservierung_0044",
+  "name": "A notice that reaches past the last start: the agent points to another day, not another time, and the guest is not escalated (#527)",
+  "tags": [
+    "reservierung",
+    "vorlauf",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "notices": {
+    "1": 240
+  },
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Einen Tisch fuer vier Personen heute um 20 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Dann um 21 Uhr."
+    },
+    {
+      "role": "customer",
+      "text": "Nein danke, das wars."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "confirmed": false,
+    "escalated": false,
+    "said": [
+      "so kurzfristig",
+      "Welcher andere Tag passt Ihnen?"
+    ],
+    "never_said": [
+      "Zu welcher anderen Uhrzeit passt es Ihnen?"
+    ]
+  }
+}
