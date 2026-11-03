@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 03.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.24
+> Status: 03.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.25
 
 ---
 
@@ -748,7 +748,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.14.24 · 02.11.2026:** T-3.8 panels as sheets, Gericht aus grouped by category
+- **v2.14.25 · 02.11.2026:** T-3.8 panels as sheets, Gericht aus grouped by category
+- **v2.14.24 · 03.11.2026:** Reconcile project history, dates and relationships; retain PR checklists and resolve maintenance review findings (#511).
 - **v2.14.23 · 03.11.2026:** Kennzahlen correction lookup bounded in time (#252 P3 no. 14), audit log row of the component audit
 - **v2.14.22 · 03.11.2026:** Print bridge re-audit fixes: claim answer of a cancellation, uninstall order and exit code, update stop phase, package only from main
 - **v2.14.21 · 02.11.2026:** Re-audit fix: a contact moves only recognized customer rows, a planted row keeps its 90 days
