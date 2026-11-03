@@ -17,7 +17,7 @@ from api.core.errors import (
     TeamDecides,
 )
 from api.core.time import utcnow
-from api.domain.customers.phone import normalize_phone
+from api.domain.customers.phone import normalize_phone, number_or_none
 from api.domain.reservations.capacity import lock_capacity_days
 from api.domain.reservations.slots import check_slot
 from api.domain.reservations.spoken import spoken_date, spoken_party_size, spoken_time
@@ -76,6 +76,8 @@ def create_reservation(
         status="draft",
         guest_name=guest_name,
         phone=phone,
+        # Read once: the call loses its caller ID before the table its name (#523).
+        booked_on_own_line=phone == number_or_none(call.caller_id),
         party_size=req.party_size,
         reserved_for=req.reserved_for,
         note=note,
