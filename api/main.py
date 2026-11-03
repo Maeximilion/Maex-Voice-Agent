@@ -84,24 +84,29 @@ def add_local_routes(target: FastAPI, env: str) -> None:
     `calls.caller_id`, so a token holder could open a call in the name of any
     guest. The voice layer opens its calls in its own process
     (`telephony/handler.py`), so outside dev and test nothing needs the route.
+    `/v1/calls/end` goes the same way (Maxi, 03.11.2026): it ends a call's log
+    early for whoever holds the token and the call's id.
     """
     if env in LOCAL_ENVS:
-        target.add_api_route(
-            "/v1/calls/start",
-            calls_start,
-            methods=["POST"],
-            dependencies=[Depends(require_token)],
-        )
+        for path, endpoint in (
+            ("/v1/calls/start", calls_start),
+            ("/v1/calls/end", calls_end),
+        ):
+            target.add_api_route(
+                path,
+                endpoint,
+                methods=["POST"],
+                dependencies=[Depends(require_token)],
+            )
 
 
-add_local_routes(app, settings.env)
-
-
-@app.post("/v1/calls/end", dependencies=[Depends(require_token)])
 def calls_end(body: EndCallRequest, session: Session = Depends(get_db)) -> JSONResponse:
     """Anruf-Log schließt (docs/04 §Endpunkte)."""
     result = end_call(session, body)
     return envelope.ok(result.model_dump(mode="json"))
+
+
+add_local_routes(app, settings.env)
 
 
 def _status(request: Request, status: int, gui_status: int) -> int:

@@ -599,7 +599,7 @@ With a rule of the catalogue that answers the guest's sentence, the conversation
 |---|---|
 | `GET /health` | Liveness für Monitoring und Compose |
 | `POST /v1/calls/start` | Opens the call log; exists in `ENV=dev` and `test` only (Maxi, 03.11.2026, #252): it takes any caller ID and recognition trusts it, while the voice layer opens its calls in its own process. Elsewhere the path answers 404 |
-| `POST /v1/calls/end` | Closes the call log of a call that exists |
+| `POST /v1/calls/end` | Closes the call log of a call that exists; like `start`, in `ENV=dev` and `test` only (Maxi, 03.11.2026): the voice layer ends its calls in its own process, and elsewhere a token holder with a call's id could end its log early. Elsewhere the path answers 404 |
 | `GET /v1/gui/...` | Daten für die Oberfläche |
 | `POST /v1/gui/orders/{id}/approve` | Freigabe im Überlauf-Betrieb |
 | `POST /internal/events/replay` | hängengebliebene Übergaben erneut senden |
