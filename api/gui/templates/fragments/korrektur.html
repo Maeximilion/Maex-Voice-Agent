@@ -71,8 +71,8 @@
     <button type="button" class="schliessen" data-schliessen>Abbrechen</button>
   </div>
   <div class="sheet-body">
-  {# With a state the message stands in the foot, in view next to the buttons. #}
-  {% if message and state is not defined %}<p class="banner warn">{{ message }}</p>{% endif %}
+  {# With a state the message stands at the number field, in coral: it is an error. #}
+  {% if message and state is not defined %}<p class="banner danger">{{ message }}</p>{% endif %}
   {% if state is defined %}
   {# Enter im Nummernfeld schickt die Nummer, nicht einen Grund. #}
   <form hx-post="/gui/bestellungen/{{ order_id }}/korrigieren/vorschau"
@@ -90,8 +90,8 @@
         <input type="text" id="number" name="number" inputmode="text" autocomplete="off">
         <button type="submit">Übernehmen</button>
       </div>
+      {% if message %}<p class="blocker" id="number-error" role="alert">{{ message }}</p>{% endif %}
       <div class="sheet-foot">
-      {% if message %}<p class="banner warn">{{ message }}</p>{% endif %}
       <div class="order-foot">
         <b>Summe {{ total }}</b>
         <span class="muted">vorher {{ before }}</span>

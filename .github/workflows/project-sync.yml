@@ -13,9 +13,14 @@ name: project-sync
 # pull requests the PROJECT_TOKEN secret, which pull_request would withhold.
 on:
   pull_request_target:
-    types: [opened, reopened, closed, edited, ready_for_review]
+    types: [opened, reopened, closed, edited, ready_for_review, labeled, unlabeled]
   issues:
-    types: [opened, reopened, closed, labeled, unlabeled]
+    types: [opened, reopened, closed, edited, labeled, unlabeled]
+  # Manual Development links have no Actions issue activity type. Repair status
+  # drift hourly as well; the daily run handles the full historical reconciliation.
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -33,6 +38,8 @@ jobs:
     # those are closed by outside-prs.yml, and the daily run catches the board.
     # Dependabot's branches live in this repository and still run.
     if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'issues' &&
         (!endsWith(github.event.action, 'labeled') || github.event.label.name == 'status: blocked')) ||
       github.event.pull_request.head.repo.full_name == github.repository
@@ -53,4 +60,4 @@ jobs:
           # the event; 30 seconds covered every run seen so far. An item it missed
           # is caught by the next event or the daily run.
           sleep 30
-          python3 scripts/project_report.py --fix | tee "$GITHUB_STEP_SUMMARY"
+          python3 scripts/project_report.py --fix ${{ github.event_name == 'schedule' && '--status-only' || '' }} | tee "$GITHUB_STEP_SUMMARY"

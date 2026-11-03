@@ -516,10 +516,12 @@ def test_storniert_asks_first_and_the_card_leaves(client, db, tenant_id):
     response = client.post(url, headers=HX)
     assert response.status_code == 200
     assert f'data-id="{order_id}"' not in response.text
-    # The card is gone: a line says what happened, until the next refresh.
-    assert "Bestellung A1: Storniert" in response.text
-    assert 'class="banner ok"' in response.text
-    assert "Storniert" not in client.get("/gui/fragments/bestellungen").text
+    # The card is gone: the text travels in an event, not in the fragment the
+    # refresh right after would replace.
+    assert json.loads(response.headers["HX-Trigger"]) == {
+        "order-notice": "Bestellung A1: Storniert"
+    }
+    assert "Storniert" not in response.text
     assert _fresh(db, order_id).status == "cancelled"
     # A second tablet with the old page: no error, the fresh column.
     again = client.post(url, headers=HX)
