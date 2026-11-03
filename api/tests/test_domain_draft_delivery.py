@@ -27,7 +27,7 @@ from api.domain.callbacks import create_callback, transfer_to_team
 from api.domain.confirm import confirm
 from api.domain.customers import SAY_SAME_ADDRESS, find_customer
 from api.domain.delivery.address import SAY_WHICH_NAME
-from api.domain.delivery.zones import SAY_OUT_OF_ZONE
+from api.domain.delivery.zones import SAY_OUT_OF_ZONE, SAY_OUT_OF_ZONE_NO_PICKUP
 from api.domain.ordering import draft_order
 from api.domain.ordering.confirm import confirm_order
 from api.domain.ordering.correction import (
@@ -880,6 +880,27 @@ def test_a_closed_pickup_offers_no_delivery_during_the_emergency_stop(
         draft_order(session, request(session, tenant_id, call_id), now=NOW)
 
     assert err.value.say == SAY_PICKUP_CLOSED
+
+
+def test_outside_the_zone_no_pickup_is_offered_with_its_switch_off(
+    engine, session, tenant_id, call_id
+):
+    """Codex #515: the guest would say yes and meet the next refusal."""
+    assert session.get(ServiceConfig, tenant_id).pickup_enabled is True
+    with Session(engine) as tablet:
+        status_config.set_pickup(tablet, tenant_id, False)
+
+    with pytest.raises(OutOfZone) as err:
+        draft_order(
+            session,
+            delivery(
+                session, tenant_id, call_id, address={**HOME, "postal_code": "54321"}
+            ),
+            now=NOW,
+        )
+
+    assert err.value.say == SAY_OUT_OF_ZONE_NO_PICKUP
+    assert "abholen" not in err.value.say
 
 
 def test_the_switch_leaves_a_pickup_alone(engine, session, tenant_id, call_id):
