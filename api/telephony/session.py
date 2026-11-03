@@ -713,7 +713,8 @@ class CallSession:
             logger.exception("the core could not be told that the voice failed")
         # Then, however it ended, the end of the leg: the core closes its call
         # log now, after the last sentence was played and the line has our
-        # hangup or transfer, not when it asked for them.
+        # hangup or transfer, not when it asked for them. `closed` is a caller
+        # gone before the line had either: nothing rings the team for it.
         try:
             self._events.on_call_ended(
                 self.session_id,
@@ -721,6 +722,7 @@ class CallSession:
                     heard_seconds=self._fed_bytes / (2 * self._sample_rate),
                     spoken_characters=self._spoken_characters,
                 ),
+                caller_hung_up=outcome == "closed",
             )
         except Exception:
             logger.exception("the core could not be told that the call ended")

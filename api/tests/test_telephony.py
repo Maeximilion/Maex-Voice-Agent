@@ -661,7 +661,7 @@ def test_fake_stops_feeding_turns_once_the_line_is_gone():
         def on_dtmf(self, session_id, digits):
             self.events.append(("dtmf", digits))
 
-        def on_call_ended(self, session_id, speech=None):
+        def on_call_ended(self, session_id, speech=None, **_):
             self.events.append(("end", session_id))
 
     port = FakeTelephony()
