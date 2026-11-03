@@ -25,6 +25,7 @@
   var ui = { grid: true, advanced: false };
 
   var TITLES = { table: "Tisch", counter: "Theke", door: "Eingang", wall: "Wand", label: "Beschriftung" };
+  var LABEL_TURN_TEXT = { 0: "Waagerecht", "-90": "Senkrecht, von unten zu lesen", 90: "Senkrecht, von oben zu lesen" };
   var NOT_SAVED = "Nicht gespeichert: keine Verbindung zum Server. Die Änderung bleibt auf diesem Gerät.";
 
   function fmt(n, d) { return new Intl.NumberFormat("de-DE", { maximumFractionDigits: d === undefined ? 2 : d }).format(n); }
@@ -189,7 +190,7 @@
     if (type === "table") o = { id: id, type: type, name: G.nextTableName(allTableNames()), x: x, y: y, w: 120, h: 80, angle: 0, shape: "rect", seats: 4, endSeat: "left" };
     if (type === "counter") o = { id: id, type: type, name: "Theke", x: x, y: y, w: 80, h: 220, angle: 0 };
     if (type === "door") o = { id: id, type: type, name: "Eingang", side: "bottom", offset: r.w * 0.7, width: 100 };
-    if (type === "label") o = { id: id, type: type, text: "Beschriftung", x: x, y: y, size: "normal" };
+    if (type === "label") o = { id: id, type: type, text: "Beschriftung", x: x, y: y, size: "normal", angle: 0 };
     if (!G.available(o, r)) { status("Für dieses Objekt ist der Raum zu klein.", true); return; }
     G.fit(o, r);
     area.objects.push(o);
@@ -371,12 +372,16 @@
       wrap.classList.add("re-label");
       b = node("button", "re-label-button", o.text);
       b.type = "button";
+      var labelTurn = G.readableTurn(o.angle);
       b.style.fontSize = (G.LABEL_PX[o.size] || 20) + "px";
+      b.style.setProperty("--re-label-turn", labelTurn + "deg");
       b.setAttribute("aria-label", "Beschriftung: " + o.text);
       b.setAttribute("aria-pressed", String(active));
       wrap.append(b);
       floor.append(wrap);
-      var lw = b.offsetWidth, lh = b.offsetHeight;
+      // A label turned upright takes its width as height on the plan.
+      var upright = labelTurn !== 0;
+      var lw = upright ? b.offsetHeight : b.offsetWidth, lh = upright ? b.offsetWidth : b.offsetHeight;
       wrap.style.left = G.clamp(o.x * scale, lw / 2 + 3, area.room.w * scale - lw / 2 - 3) + "px";
       wrap.style.top = G.clamp(o.y * scale, lh / 2 + 3, area.room.h * scale - lh / 2 - 3) + "px";
     }
@@ -533,7 +538,10 @@
           numberField("thickness", "Dicke (cm)", o.thickness, L.wallMin, L.wallMax, 1) +
           numberField("angle", "Winkel (°)", Number(o.angle.toFixed(1)), -180, 180, 0.1, true);
       }
-      if (o.type === "label") html += selectField("size", "Schriftgröße", o.size, [["small", "Klein"], ["normal", "Normal"], ["large", "Groß"], ["xlarge", "Sehr groß"]]);
+      if (o.type === "label") {
+        html += selectField("size", "Schriftgröße", o.size, [["small", "Klein"], ["normal", "Normal"], ["large", "Groß"], ["xlarge", "Sehr groß"]]);
+        html += '<button type="button" class="re-btn re-full" data-action="turnLabel">Drehen</button><p class="re-meta re-full">' + LABEL_TURN_TEXT[G.readableTurn(o.angle)] + "</p>";
+      }
       extra += '<button class="re-btn re-delete" type="button" data-action="delete">' + title + " entfernen</button>";
     }
     props.innerHTML = "<h3>" + title + '</h3><div class="re-field-grid">' + html + "</div>" + extra;
@@ -599,6 +607,13 @@
     if (action === "room") { selectedId = "room"; mode = "select"; render(); return; }
     if (action === "clone") { cloneTable(); return; }
     if (action === "delete" && o) { remove(o); return; }
+    if (action === "turnLabel" && o && o.type === "label") {
+      var turnedFrom = content(area);
+      o.angle = G.nextLabelTurn(o.angle);
+      G.fit(o, area.room);
+      commit("Text gedreht: " + LABEL_TURN_TEXT[G.readableTurn(o.angle)], turnedFrom);
+      return;
+    }
     if (action && o) {
       var prior = content(area);
       if (action === "plus") o.seats = Math.min(L.seatsMax, o.seats + 1);

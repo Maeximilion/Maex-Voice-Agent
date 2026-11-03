@@ -61,6 +61,22 @@
     return { turn: -(o.angle || 0), vertical: o.type === "counter" && size[1] > size[0] * 1.5 };
   }
 
+  // A free label turns with its quarter turn but never stands on its head:
+  // 180 reads as 0, 270 as -90 (from below). The result lies in (-90, 90].
+  function readableTurn(angle) {
+    var a = ((Math.round(angle || 0) % 360) + 360) % 360;
+    if (a > 90 && a < 270) a -= 180;
+    else if (a >= 270) a -= 360;
+    return a;
+  }
+
+  // "Drehen" on a label: across, then from below (along a left wall), then from above.
+  var LABEL_TURNS = [0, 270, 90];
+  function nextLabelTurn(angle) {
+    var i = LABEL_TURNS.indexOf((readableTurn(angle) + 360) % 360);
+    return LABEL_TURNS[(i + 1) % LABEL_TURNS.length];
+  }
+
   function endpoints(o) {
     var dx = Math.cos(rad(o.angle)) * o.length / 2;
     var dy = Math.sin(rad(o.angle)) * o.length / 2;
@@ -174,7 +190,7 @@
       else if (f.kind === "wall") objects.push({ id: f.id, type: "wall", name: f.name,
         x: f.x_cm, y: f.y_cm, length: f.length_cm, angle: f.angle, thickness: f.thickness_cm });
       else if (f.kind === "label") objects.push({ id: f.id, type: "label", text: f.text,
-        x: f.x_cm, y: f.y_cm, size: f.size });
+        x: f.x_cm, y: f.y_cm, size: f.size, angle: f.rotation || 0 });
     });
     return {
       room: { id: doc.id, name: doc.name, kind: doc.kind, shape: doc.shape,
@@ -203,7 +219,8 @@
         x_cm: round1(o.x), y_cm: round1(o.y), length_cm: round1(o.length), angle: round1(o.angle),
         thickness_cm: Math.round(o.thickness) });
       else if (o.type === "label") fixtures.push({ kind: "label", id: o.id, text: o.text,
-        x_cm: round1(o.x), y_cm: round1(o.y), size: o.size });
+        x_cm: round1(o.x), y_cm: round1(o.y), size: o.size,
+        rotation: ((Math.round((o.angle || 0) / 90) * 90) % 360 + 360) % 360 });
     });
     return {
       name: r.name, kind: r.kind, shape: r.shape, width_cm: Math.round(r.w),
@@ -216,7 +233,7 @@
   return {
     PRESETS: PRESETS, LABEL_PX: LABEL_PX, LIMITS: LIMITS, clamp: clamp,
     seatSides: seatSides, hasEndChoice: hasEndChoice, footprint: footprint,
-    labelTurn: labelTurn, endpoints: endpoints, wallFromPoints: wallFromPoints,
+    labelTurn: labelTurn, readableTurn: readableTurn, nextLabelTurn: nextLabelTurn, endpoints: endpoints, wallFromPoints: wallFromPoints,
     fit: fit, available: available, doorPoint: doorPoint, moveDoor: moveDoor,
     nextTableName: nextTableName, placeCopy: placeCopy, toClient: toClient,
     toServer: toServer

@@ -77,6 +77,8 @@ class Label(_Strict):
     x_cm: Coordinate
     y_cm: Coordinate
     size: Literal["small", "normal", "large", "xlarge"] = "normal"
+    # Drawn so it never stands on its head (raumplan-geometry.js, readableTurn).
+    rotation: Rotation = 0
 
 
 Fixture = Annotated[Counter | Door | Wall | Label, Field(discriminator="kind")]

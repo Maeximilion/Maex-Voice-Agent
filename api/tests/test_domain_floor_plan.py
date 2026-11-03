@@ -94,6 +94,7 @@ FIXTURES = [
         "x_cm": 200,
         "y_cm": 55,
         "size": "normal",
+        "rotation": 270,
     },
 ]
 

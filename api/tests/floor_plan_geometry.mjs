@@ -43,6 +43,16 @@ for (const angle of [0, 90, 180, 270]) {
   assert.equal(table.vertical, false)
 }
 
+// A free label turns but never stands on its head (Maxi, 03.11.2026).
+assert.deepEqual([0, 90, 180, 270, -90, 360].map(G.readableTurn), [0, 90, 0, -90, -90, 0])
+for (let a = -720; a <= 720; a += 90) {
+  const r = G.readableTurn(a)
+  assert.ok(r > -90 - 1e-9 && r <= 90, `readable at ${a}`)
+  assert.equal((((a - r) % 180) + 180) % 180, 0, `same line at ${a}`)
+}
+// "Drehen" goes across, from below, from above, and across again.
+assert.deepEqual([G.nextLabelTurn(0), G.nextLabelTurn(270), G.nextLabelTurn(90), G.nextLabelTurn(180)], [270, 90, 0, 270])
+
 // A turned table swaps width and depth as drawn.
 assert.deepEqual(G.footprint({ w: 200, h: 80, angle: 90 }).map(Math.round), [80, 200])
 
@@ -79,7 +89,7 @@ const doc = {
     { kind: 'counter', id: 'f1', name: 'Theke', x_cm: 880, y_cm: 450, width_cm: 80, depth_cm: 260, rotation: 0 },
     { kind: 'door', id: 'f2', name: 'Eingang', side: 'bottom', offset_cm: 150, width_cm: 110 },
     { kind: 'wall', id: 'f3', name: 'Wand', x_cm: 800, y_cm: 170, length_cm: 200, angle: 90, thickness_cm: 20 },
-    { kind: 'label', id: 'f4', text: 'Fenster', x_cm: 200, y_cm: 55, size: 'large' }
+    { kind: 'label', id: 'f4', text: 'Fenster', x_cm: 200, y_cm: 55, size: 'large', rotation: 270 }
   ],
   combinations: [['t1', 't2']]
 }
