@@ -52,7 +52,8 @@ MARKED = NOW + timedelta(minutes=30)
 @pytest.fixture
 def session(migrated_db_url):
     engine = create_engine(migrated_db_url)
-    with Session(engine) as s:
+    # As the app runs (api/db.py): nothing is flushed before a query by itself.
+    with Session(engine, autoflush=False, expire_on_commit=False) as s:
         yield s
     engine.dispose()
 
@@ -397,7 +398,7 @@ def test_two_marks_of_one_customer_at_once(
     outcome: list[BaseException | None] = []
 
     def tap() -> None:
-        with Session(engine) as tablet:
+        with Session(engine, autoflush=False, expire_on_commit=False) as tablet:
             try:
                 mark_entered(tablet, tenant_id, new.id, seen, now=MARKED)
                 outcome.append(None)
@@ -405,7 +406,7 @@ def test_two_marks_of_one_customer_at_once(
                 outcome.append(exc)
 
     try:
-        with Session(engine) as first:
+        with Session(engine, autoflush=False, expire_on_commit=False) as first:
             # The first tablet's mark of the older delivery, up to its commit.
             mine = first.get_one(Order, old.id)
             mine.register_entered_at = MARKED
@@ -438,7 +439,7 @@ def test_two_cancels_of_one_customer_at_once(
     outcome: list[BaseException | None] = []
 
     def tap() -> None:
-        with Session(engine) as tablet:
+        with Session(engine, autoflush=False, expire_on_commit=False) as tablet:
             try:
                 cancel_order(tablet, tenant_id, old.id, seen, now=MARKED)
                 outcome.append(None)
@@ -446,7 +447,7 @@ def test_two_cancels_of_one_customer_at_once(
                 outcome.append(exc)
 
     try:
-        with Session(engine) as first:
+        with Session(engine, autoflush=False, expire_on_commit=False) as first:
             # The first tablet's cancel of the newer delivery, up to its commit:
             # it falls back to the older one, not cancelled yet.
             mine = first.get_one(Order, new.id)

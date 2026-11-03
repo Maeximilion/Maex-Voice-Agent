@@ -594,6 +594,9 @@ def settle_default(session: Session, order: Order) -> None:
         or order.phone != line_of(session, order.tenant_id, order.call_id)
     ):
         return
+    # The app's sessions do not flush by themselves (api/db.py): the query
+    # below must see this mark or this cancel.
+    session.flush()
     session.execute(
         select(Customer.id).where(Customer.id == order.customer_id).with_for_update()
     )
