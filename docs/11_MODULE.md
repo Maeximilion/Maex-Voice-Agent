@@ -90,6 +90,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 - `slots.py` — verfügbar? bis zu zwei Alternativen, nahe am Wunsch
 - `create.py` — Entwurf mit `readback`
 - `notice.py` — the notice a table needs, per weekday, read and set on the tablet (T-3.13)
+- `floor_plan.py` — the floor plan the team draws (T-3.11): rooms and terraces, tables, which tables combine, the drawn fixtures; one room saved as a whole with its revision, refused when another tablet saved first, every change in `audit_log`. It books nothing (D28); T-3.12 seats reservations on its tables
 
 ### `domain/delivery/`
 - `zones.py` — PLZ-Match, später Polygon (`shapely`), ein Interface für beides
@@ -208,6 +209,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `dev.py` — router of the simulator console (`/gui/dev/console`), mounted by `mount_gui` only when `ENV=dev`; keeps the open calls in the process, the logic stays in `sim/session.py` (the one place where `gui` imports `sim`, because the console is the simulator page)
 - `templates/` — `base.html`, `betrieb/`, `admin/`, `fragments/`
 - `static/` — Pico.css, HTMX lokal, eigene Töne
+- `static/raumplan.js`, `raumplan-geometry.js`, `raumplan.css` — the floor plan editor (T-3.11): drag in the browser, each finished step saved through `/gui/raumplan/bereiche`; the geometry (seat rule, upright labels, copies, the conversion to the server document) has no page and is tested in node (`test_gui_floor_plan_geometry.py`)
 - `dev/console.html` — der Simulator als Webseite, nur in `ENV=dev`
 
 ### `sim/` – das Text-Telefon

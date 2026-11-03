@@ -120,7 +120,7 @@ Spec: `docs/09_OPERATIONS_LEGAL.md` §1, the row named in each task. Maxi's pape
 | T-3.8 | #493 | Panels as a sheet over the columns, "Gericht aus" grouped by category with its search (Maxi, 02.11.2026) | 06 §3 | T-4.8 | done 03.11.2026 (#503) |
 | T-3.9 | #494 | Type the wait time by hand, next to the stepper, same limits and `audit_log` (Maxi, 02.11.2026) | 06 §3 | T-3.6 | done 02.11.2026: `set_wait` in `domain/status/config.py`, field in `fragments/kopfzeile.html` |
 | T-3.10 | #495 | Switches for pickup and reservations like "Lieferung an/aus", through the agent path, migration and evals (Maxi, 02.11.2026) | 02, 04, 06 | T-3.2 | done 02.11.2026: migration 026, `validation.py`, `check_slot`, `confirm`, header |
-| T-3.11 | #496 | Floor plan editor: tables with size and seats, which tables combine, a few assets (Maxi, 02.11.2026) | 03, 06 | - | open |
+| T-3.11 | #496 | Floor plan editor: tables with size and seats, which tables combine, a few assets (Maxi, 02.11.2026) | 03, 06 | - | done |
 | T-3.12 | #497 | Manual table reservations, a reservation seated on tables or a combination (Maxi, 02.11.2026) | 03, 06 | T-3.11 | open |
 | T-3.13 | #499 | Reservation notice per weekday, set on the tablet: inside it the agent books nothing and may name the seats free right now (Maxi, 02.11.2026) | 03, 04, 05, 06 | T-1.5 | done 02.11.2026: `domain/reservations/notice.py`, `check_slot`, migration 025 |
 | T-3.14 | #505 | Standard wait per service, today's wait returns to it at 05:00 (Maxi, 02.11.2026) | 03, 06 §3 | T-3.9 | done 02.11.2026: `domain/status/waits.py`, migration 024 |
