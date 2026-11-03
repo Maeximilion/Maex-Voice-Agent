@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
 from api.core.time import business_day, business_day_bounds_utc, utcnow
+from api.domain.customers.contact import settle_default
 from api.domain.ordering.confirm import ACTION_CONFIRMED, ALREADY_CONFIRMED
 from api.domain.ordering.correction import STALE, order_version
 from api.domain.ordering.handover import withdraw_tickets
@@ -466,6 +467,10 @@ def mark_entered(
     refused, so a tablet with an old card never marks a state the register
     does not hold. Read under the order's row lock, which a correction takes
     too: a correction that commits while the mark waits is seen.
+
+    The first mark of a delivery makes its address the customer's default
+    (`contact.settle_default`, security audit 02.11.2026, P2 no. 4), not the
+    guest's yes: a caller ID can be spoofed, a person handles the mark (L18).
     """
     order = _locked(session, tenant_id, order_id)
     if order.register_entered_at is not None:
@@ -480,6 +485,8 @@ def mark_entered(
             say=CORRECTED_SINCE,
         )
     order.register_entered_at = now or utcnow()
+    # A person handled it: now its address may be the customer's "letztes Mal".
+    settle_default(session, order)
     session.add(
         AuditLog(
             tenant_id=tenant_id,
@@ -512,6 +519,8 @@ def cancel_order(
 
     An order already typed in keeps its mark: that the register still holds a
     sale is true, and the team cancels it there, which the question back says.
+    When its address is the customer's default, the default settles again
+    without it (`contact.settle_default`).
     """
     order = _locked(session, tenant_id, order_id)
     if order.status == CANCELLED:
@@ -527,6 +536,12 @@ def cancel_order(
         )
     slip = withdraw_tickets(session, order, now or utcnow())
     order.status = CANCELLED
+    if order.address_id is not None and session.scalar(
+        select(Address.is_default).where(Address.id == order.address_id)
+    ):
+        # The default its mark gave goes back, also when a correction cleared
+        # the mark since: a cancelled order is no "letztes Mal".
+        settle_default(session, order)
     order.handover_state = "pending" if slip else None
     session.add(
         AuditLog(

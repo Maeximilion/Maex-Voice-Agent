@@ -10,7 +10,11 @@ must not extend the period of the old record (L12).
 Only a booking under the line the call came from is a contact of the customers
 on that number. A number the guest only names, or a withheld line, moves nobody
 (security audit 02.11.2026): a stranger could keep someone's record alive, and a
-confirmed delivery would make the stranger's address that customer's default.
+delivery would make the stranger's address that customer's default.
+
+The default address moves at the team's mark, not at the yes (`settle_default`,
+security audit 02.11.2026, P2 no. 4; Maxi 03.11.2026): a caller ID can be
+spoofed, so a yes alone must not change the owner's "letztes Mal".
 
 And only a row that is someone's record moves: one with an order counted, or a
 blocked one, the rows `find_customer` recognizes. A row only a draft wrote, also
@@ -54,9 +58,8 @@ def note_contact(
 
 
 def note_order(session: Session, order: Order, at: datetime) -> None:
-    """A confirmed order. Its address becomes the default, the one and only
-    "letztes Mal" `find_customer` may ask about: the old one goes first, or the
-    unique index stops the second."""
+    """A confirmed order: its customer's counters and contact. The address
+    waits for the team's mark (`settle_default`)."""
     if order.customer_id is None:
         note_contact(
             session,
@@ -81,13 +84,44 @@ def note_order(session: Session, order: Order, at: datetime) -> None:
             order_count=Customer.order_count + 1,
         )
     )
-    if order.address_id is None:
+
+
+def settle_default(session: Session, order: Order) -> None:
+    """At the mark "In Kasse eingegeben" of a delivery and at its cancel: the
+    customer's default, the one and only "letztes Mal" `find_customer` may ask
+    about, is the address of their newest delivery the team marked and did not
+    cancel, none when no such delivery is left. The newest by creation, not by
+    mark: a card marked late does not bring back an address the guest replaced
+    since. The old default goes first, or the unique index stops the second."""
+    if order.customer_id is None or order.address_id is None:
         return
+    # A number the guest only named never makes a default (#489).
+    if order.phone != line_of(session, order.tenant_id, order.call_id):
+        return
+    # Two marks of one customer at once go one after the other: the second
+    # sees the first, and the unique index never stops it.
+    session.execute(
+        select(Customer.id).where(Customer.id == order.customer_id).with_for_update()
+    )
+    newest = session.scalar(
+        select(Order.address_id)
+        .where(
+            Order.tenant_id == order.tenant_id,
+            Order.customer_id == order.customer_id,
+            Order.address_id.is_not(None),
+            Order.register_entered_at.is_not(None),
+            Order.status != "cancelled",
+            Order.deleted_at.is_(None),
+        )
+        .order_by(Order.created_at.desc(), Order.id.desc())
+        .limit(1)
+    )
     session.execute(
         update(Address)
         .where(Address.customer_id == order.customer_id, Address.is_default.is_(True))
         .values(is_default=False)
     )
-    session.execute(
-        update(Address).where(Address.id == order.address_id).values(is_default=True)
-    )
+    if newest is not None:
+        session.execute(
+            update(Address).where(Address.id == newest).values(is_default=True)
+        )
