@@ -121,7 +121,9 @@ def _audits(session, action) -> list[AuditLog]:
 
 def test_a_saved_room_comes_back_as_it_was_sent(session, tenant_id):
     room = _room(session, tenant_id)
-    one, two = _table("T1"), _table("T2", x=500)
+    # T2's id sorts first: the audit names a pair in name order, not id order.
+    one = _table("T1", id=uuid.UUID(int=2**64 + 2))
+    two = _table("T2", x=500, id=uuid.UUID(int=2**64 + 1))
     saved = _save(
         session,
         tenant_id,

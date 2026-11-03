@@ -426,11 +426,11 @@ def _changes(before: dict, after: dict) -> dict:
     pairs_after = {tuple(p) for p in after["combinations"]}
     if added_pairs := pairs_after - pairs_before:
         changes["combinations_added"] = sorted(
-            [names[a], names[b]] for a, b in added_pairs
+            sorted([names[a], names[b]]) for a, b in added_pairs
         )
     if removed_pairs := pairs_before - pairs_after:
         changes["combinations_removed"] = sorted(
-            [names[a], names[b]] for a, b in removed_pairs
+            sorted([names[a], names[b]]) for a, b in removed_pairs
         )
     if sorted(before["fixtures"], key=lambda f: f["id"]) != sorted(
         after["fixtures"], key=lambda f: f["id"]
