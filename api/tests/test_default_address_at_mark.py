@@ -16,13 +16,13 @@ from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session
 
 from api.domain.customers import find_customer
-from api.domain.customers.contact import default_at_cancel, default_at_mark
 from api.domain.customers.lookup import SAY_SAME_ADDRESS
 from api.domain.ordering import draft_order
 from api.domain.ordering.board import (
     approve_order,
     cancel_order,
     mark_entered,
+    settle_default,
     version_of,
 )
 from api.domain.ordering.correction import (
@@ -318,6 +318,69 @@ def test_a_newer_draft_holds_no_default(session, tenant_id, call_id):
     assert _defaults(session) == [order.address_id]
 
 
+def test_a_newer_delivery_never_marked_holds_no_default(session, tenant_id, call_id):
+    """Codex #520, round 2: the older delivery was marked at the home address,
+    a newer one to it was only confirmed. Marking the delivery in between
+    makes its address the default: the newest one the team marked."""
+    first = _said_yes(session, tenant_id, call_id, HOME)
+    _typed_in(session, tenant_id, first)
+    call = _call(session, tenant_id, caller_id=PHONE)
+    middle = _said_yes(
+        session, tenant_id, call, ELSEWHERE, now=NOW + timedelta(hours=1)
+    )
+    call = _call(session, tenant_id, caller_id=PHONE)
+    last = _said_yes(session, tenant_id, call, HOME, now=NOW + timedelta(hours=2))
+    assert last.address_id == first.address_id
+
+    _typed_in(session, tenant_id, middle, MARKED + timedelta(hours=2))
+
+    assert _defaults(session) == [middle.address_id]
+
+
+def test_a_cancel_before_any_mark_keeps_a_default_from_before(
+    session, tenant_id, call_id
+):
+    """Codex #520, round 2: a default from before this change (set at a yes)
+    and a delivery to it the team cancels before its mark: that delivery
+    never moved the default, so its cancel does not remove it."""
+    _, home = known_customer(session, tenant_id)
+    draft = draft_order(session, _stored(session, tenant_id, call_id, home.id), now=NOW)
+    confirmed(session, tenant_id, call_id, draft.order_id)
+    order = session.get(Order, draft.order_id)
+
+    _cancel(session, tenant_id, order)
+
+    assert _defaults(session) == [home.id]
+
+
+def test_a_cancel_falls_back_to_a_delivery_a_correction_unmarked(
+    session, tenant_id, call_id
+):
+    """The fallback counts a delivery the team marked even while a correction
+    holds its mark back, so the guest's newer address comes back."""
+    oldest = _said_yes(session, tenant_id, call_id, HOME)
+    _typed_in(session, tenant_id, oldest)
+    call = _call(session, tenant_id, caller_id=PHONE)
+    corrected = _said_yes(
+        session, tenant_id, call, ELSEWHERE, now=NOW + timedelta(hours=1)
+    )
+    _typed_in(session, tenant_id, corrected, MARKED + timedelta(hours=1))
+    _correct(session, tenant_id, corrected)
+    call = _call(session, tenant_id, caller_id=PHONE)
+    newest = _said_yes(
+        session,
+        tenant_id,
+        call,
+        {**HOME, "house_number": "99"},
+        now=NOW + timedelta(hours=2),
+    )
+    _typed_in(session, tenant_id, newest, MARKED + timedelta(hours=2))
+
+    _cancel(session, tenant_id, newest)
+
+    assert _defaults(session) == [corrected.address_id]
+
+
 def test_two_marks_of_one_customer_at_once(
     session, tenant_id, call_id, migrated_db_url
 ):
@@ -346,7 +409,7 @@ def test_two_marks_of_one_customer_at_once(
             # The first tablet's mark of the older delivery, up to its commit.
             mine = first.get_one(Order, old.id)
             mine.register_entered_at = MARKED
-            default_at_mark(first, mine)
+            settle_default(first, mine)
             thread = threading.Thread(target=tap)
             thread.start()
             _wait_for_a_lock(session)
@@ -388,7 +451,7 @@ def test_two_cancels_of_one_customer_at_once(
             # it falls back to the older one, not cancelled yet.
             mine = first.get_one(Order, new.id)
             mine.status = "cancelled"
-            default_at_cancel(first, mine)
+            settle_default(first, mine)
             thread = threading.Thread(target=tap)
             thread.start()
             _wait_for_a_lock(session)

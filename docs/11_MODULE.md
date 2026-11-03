@@ -96,7 +96,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 ### `domain/customers/`
 - `phone.py` — E.164-Normalisierung deutscher Nummern, inkl. unterdrückter Nummer
 - `lookup.py` — Kunde und Adressen zur Nummer, `blocked` beachten
-- `contact.py` — `last_contact_at` and the counters at the yes, the default address at the team's mark „In Kasse eingegeben“
+- `contact.py` — `last_contact_at` and the counters at the yes; the default address follows the team's mark „In Kasse eingegeben“ (`ordering/board.py` `settle_default`)
 - `personal.py` — what a row loses when its personal data goes, shared by the deletion job and an erasure, so a store added to one reaches the other
 - `requests.py` — requests of data subjects (T-11.8, docs/09 §2): the log with its deadline, `verify` (a name with a date or the address, never a number alone), the access copy, `erase` and the objection; commits nothing, the job writes the ledger first
 - `retention.py` — Löschfristen setzen und anwenden
