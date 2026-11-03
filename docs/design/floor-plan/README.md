@@ -26,7 +26,7 @@ browser permits it; it is not a backup or production persistence.
   it does not replace D27's operations-board styling elsewhere.
   Superseded for the colours (Maxi, 03.11.2026, after the first production
   build): the editor wears the board's D27 palette and its one dark theme, the
-  plan drawn in neon, the selection in violet. Free labels also turn now
+  tables in neon, walls, counter and entrance in violet, the selection in white. Free labels also turn now
   (across, upright from below, upright from above). Layout and the rest of the
   behaviour stay as approved.
 - Maxi chose HTMX with native pointer events over introducing React for this
