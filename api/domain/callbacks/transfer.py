@@ -42,6 +42,9 @@ MISSED_WINDOW = timedelta(hours=2)
 # guest's concern as far as the transfer named it (the reason is the card's
 # label).
 SUMMARY_MISSED = "Ans Team weitergeleitet, dort hat niemand abgenommen."
+# Mode shadow with the recording question: the caller hung up before the line
+# handed the call on, and the team never rang (#252 no. 9).
+SUMMARY_HUNG_UP = "Aufgelegt, bevor das Team klingelte."
 SUMMARY_BY_REASON = {
     "cancellation": "Kunde wollte etwas stornieren.",
     None: "Anliegen nicht bekannt.",
@@ -98,10 +101,13 @@ def team_missed(
     phone: str | None = None,
     summary: str | None = None,
     now: datetime | None = None,
+    rang: bool = True,
 ) -> CallbackTask | None:
     """Nobody answered the team leg of a call: a callback card, the team's only
     notice of the call then (docs/20 §5, T-10.8). None when there is none to
-    write: the call is unknown, or there is no number to call back.
+    write: the call is unknown, or there is no number to call back. `rang`
+    False: there was no team leg, the caller hung up before the line handed
+    the call on (mode `shadow` with the recording question, #252 no. 9).
 
     `external_session_id` is the id the line gave the call; our leg and its log
     may be closed already. `phone` is a number the guest named in the call,
@@ -155,7 +161,10 @@ def team_missed(
             reason=_card_reason(reason),
             summary=" ".join(
                 part
-                for part in (SUMMARY_MISSED, summary or SUMMARY_BY_REASON.get(reason))
+                for part in (
+                    SUMMARY_MISSED if rang else SUMMARY_HUNG_UP,
+                    summary or SUMMARY_BY_REASON.get(reason),
+                )
                 if part
             ),
         ),

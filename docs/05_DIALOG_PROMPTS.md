@@ -577,6 +577,8 @@ Behind a yes (draft, U1 does not name the way to stop, L2 does), and then the la
 > „Sie können die Aufnahme jederzeit mit den Worten Aufnahme stoppen beenden."
 > „Was kann ich für Sie tun?" / „Ich verbinde Sie mit dem Restaurant."
 
+A caller who hangs up in mode `shadow` before the team rang, on the question or behind the answer, leaves a callback card under the caller id, so the team learns of the call (docs/20 §4, #252 no. 9).
+
 On „Aufnahme stoppen" (draft), then what the guest had not answered yet:
 > „Die Aufnahme ist gestoppt und gelöscht."
 

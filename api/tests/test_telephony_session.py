@@ -79,9 +79,10 @@ class Core:
     def on_talked_over(self, session_id: str, text: str) -> None:
         self.calls.append(("talked_over", text))
 
-    def on_call_ended(self, session_id: str, speech=None) -> None:
+    def on_call_ended(self, session_id: str, speech=None, *, caller_hung_up=False):
         self.calls.append(("ended",))
         self.speech = speech
+        self.hung_up = caller_hung_up
 
     def turns(self) -> list[str]:
         return [call[1] for call in self.calls if call[0] == "turn"]
@@ -253,6 +254,42 @@ def test_a_transfer_or_hangup_waits_for_the_end_of_the_last_sentence(
     assert action not in call.line.actions and call.s.outcome == "open"
     call.played(after=2.0)
     assert call.line.actions[-1] == action and call.s.outcome == outcome
+
+
+def test_a_caller_who_hangs_up_before_the_transfer_is_reported_as_such(call):
+    """The transfer waits for its sentence and the caller's leg goes first:
+    the line never got it and nothing rings the team. The core leaves a card
+    then (mode shadow with the recording question, #252 no. 9)."""
+    call.core.replies["Nein"] = [("say", "Ich verbinde Sie."), ("transfer", "+49")]
+    call.start(GREETING)
+    call.played()
+    call.said("Nein", after=1.0)
+    call.s.closed()
+    call.s.drain()
+
+    assert ("transfer", "+49") not in call.line.actions
+    assert call.s.outcome == "closed"
+    assert call.core.hung_up is True
+
+
+@pytest.mark.parametrize(
+    "ending", [("transfer", "+497215550000"), ("hangup",), ("crash",)]
+)
+def test_a_call_the_line_ended_for_us_is_no_caller_who_hung_up(call, ending):
+    """Handed on, hung up by us, or failed (the dialplan rings the team)."""
+    if ending == ("crash",):
+        call.core.crash_on = "Tschüss"
+    else:
+        call.core.replies["Tschüss"] = [("say", "Gut."), ending]
+    call.start(GREETING)
+    call.played()
+    call.said("Tschüss", after=1.0)
+    call.played(after=1.0)
+    call.s.closed()
+    call.s.drain()
+
+    assert call.core.count("ended") == 1
+    assert call.core.hung_up is False
 
 
 def test_a_hangup_the_line_refuses_ends_the_session_as_failed(call):

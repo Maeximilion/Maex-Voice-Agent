@@ -80,9 +80,11 @@ class FakeTelephony:
                 events.on_voice_failure(session_id)
             else:
                 events.on_user_turn(session_id, entry["text"])
+        # Still open: the caller hung up, the line never had our ending.
+        hung_up = session_id in self._open
         self._open.discard(session_id)
         # Text only: no ear and no mouth to pay for.
-        events.on_call_ended(session_id, SpeechUsage())
+        events.on_call_ended(session_id, SpeechUsage(), caller_hung_up=hung_up)
         return session_id
 
     # -- TelephonyPort -------------------------------------------------------------

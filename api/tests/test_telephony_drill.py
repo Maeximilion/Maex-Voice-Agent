@@ -184,6 +184,27 @@ def test_a_recording_on_a_silent_call_fails_the_drill(tmp_path):
     assert not drill.recording_silence(silence("no", "yes"))[0][1]
 
 
+def test_a_hangup_on_the_question_passes_only_with_a_card_and_no_ring(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(drill, "CARD_SECONDS", 0.0)
+
+    def hangup(card: str, *more: str) -> drill.Drill:
+        stage = Stage(tmp_path, {127: {"router": [*router(127, "answered"), *more]}})
+        stage.prints["callbacks b"] = card
+        return stage
+
+    stage = hangup("callback|1")
+    [(_, ok, detail)] = drill.recording_hangup(stage)
+    assert ok, detail
+    assert ("sql", "update service_config set call_mode = 'primary'") in stage.commands
+    assert not drill.recording_hangup(hangup(""))[0][1]
+    assert not drill.recording_hangup(hangup("abandoned|0"))[0][1]
+    assert not drill.recording_hangup(hangup("callback|1", TEAM_RINGS))[0][1]
+    dialplan = (drill.CONFIG_DIR / "drill" / "extensions.conf").read_text()
+    assert '"127"' in next(line for line in dialplan.splitlines() if "?leaves)" in line)
+
+
 def test_a_yes_passes_only_with_audio_on_the_file(tmp_path):
     def yes(size: int) -> Stage:
         stage = Stage(tmp_path, speaking(123, "yes"))
