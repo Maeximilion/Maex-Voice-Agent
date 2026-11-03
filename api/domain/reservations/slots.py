@@ -55,6 +55,11 @@ UNAMBIGUOUS = timedelta(hours=6)
 DINEIN = "dinein"
 Fit = Callable[[datetime, Window], bool]
 ASK_OTHER_TIME = "Zu welcher anderen Uhrzeit passt es Ihnen?"
+# Nothing later on the day can be reserved either: another time would be
+# refused the same way, every time, until the ladder escalates (#527).
+ASK_OTHER_DAY = (
+    "Auch später an dem Tag geht es leider nicht mehr. Welcher andere Tag passt Ihnen?"
+)
 SAY_RESERVATIONS_OFF = "Reservierungen nehmen wir gerade leider nicht an."
 
 
@@ -192,7 +197,10 @@ def check_slot(
         candidates.sort(key=lambda slot: (distance(slot), slot))
         chosen = candidates[:MAX_ALTERNATIVES]
         if startable(local, service) and inside_notice(local):
-            say = _say_too_soon(seats_free(local), local, chosen)
+            # Any service of the day, a later one included: lunch inside the
+            # notice can still leave the evening.
+            day_over = not chosen and not any(free_slots(other) for other in services)
+            say = _say_too_soon(seats_free(local), local, chosen, day_over)
         elif startable(local, service):
             say = _say_full(local, chosen)
         else:
@@ -310,7 +318,7 @@ def _say_team_decides_time(wish: datetime) -> str:
 
 
 def _say_too_soon(
-    seats_free: bool, wish: datetime, alternatives: list[datetime]
+    seats_free: bool, wish: datetime, alternatives: list[datetime], day_over: bool
 ) -> str:
     """Inside the notice nothing is booked. "Laut unseren Reservierungen": the
     database knows the bookings and not who walks in, and the guest hears no more
@@ -325,6 +333,8 @@ def _say_too_soon(
             "Laut unseren Reservierungen ist zu der Zeit leider alles belegt, "
             "und so kurzfristig kann ich keinen Tisch reservieren."
         )
+    if day_over:
+        return f"{lead_in} {ASK_OTHER_DAY}"
     return _say_with_options(lead_in, wish, alternatives)
 
 
