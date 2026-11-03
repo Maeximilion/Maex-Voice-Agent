@@ -538,6 +538,54 @@ Lessons: <learnings>
 ## 13. Handovers (newest first)
 
 ```text
+## Handover 03.11.2026, 02:55 - audit fixes and Maxi's three decisions, paused for the PC shutdown
+Status: merged since the handover of 02.11.2026 evening: #491 (data subject
+        verification by own-line rows, with the Dependabot bumps #485 to #488
+        and one Dependabot PR per ecosystem), #504 (Kennzahlen lookup bounded,
+        265 ms to 59 ms), #506 (recording safeguards), #507 (two details on two
+        numbers need every number named), #508 (a contact moves only counted
+        customer rows), #510 (print bridge re-audit fixes). Re-audit of T-10.1
+        on 9808399: no P1, 1 P2, 7 P3, all fixed except migration 023 (comment
+        on #500). The other session's #503, #509, #513 and #515 are merged.
+Open stack, Maxi's decisions of 03.11.2026, merge in this order:
+        1. #518 fix/calls-start-dev-only -> main, head 75b19bf: POST
+           /v1/calls/start only in dev and test. Codex clean, suite green on
+           75b19bf; conflicts with main (docs/01 version line), so CI test has
+           not run.
+        2. #519 fix/shadow-recording-hangup-card -> #518, head 7603afb: a
+           callback card for a caller who hangs up in shadow before the team
+           rang (P3 no. 9). CI green, Codex clean, suite, evals 87/87, drill
+           44/44.
+        3. #520 fix/default-address-at-mark -> #519: the default address moves
+           at "In Kasse eingegeben", not at the yes (P2 no. 4, option B, the
+           register mark confirmed by Maxi in a popup). State at the push of
+           this handover: the head is this handover commit (docs/00_PCF.md
+           only) on top of 0b831c9b. On 0b831c9b: CI green (6 of 6),
+           Codex clean after three fixed rounds (all P2, the third a real
+           bug: the app's sessions do not autoflush), full suite 7691
+           passed under the lock, latency 45 passed, evals 87/87, targets
+           1/23 and numbers 249/249, the same case by case as main
+           1b7770dd. Not yet run on the handover commit itself: CI and
+           Codex. Codex's three rounds landed in the same function, so a
+           fourth finding there goes to Maxi as a redesign question first.
+Next: for each PR in that order, when it is next: merge origin/main (docs/01:
+        keep every row, version one above main's), full suite under the lock,
+        push once, CI and Codex on that exact head, merge with
+        --match-head-commit, then PATCH the next PR's base to main. #520 and
+        #519 touch xhigh triggers: evals on the exact head.
+Then: the T-10.1 audit is due again (files changed since 9808399), before the
+        first call from outside; /v1/calls/end stays (it only closes a known
+        call, by an unguessable id; dev-only would be a small follow-up if
+        Maxi wants it).
+Rules learned today (Maxi): decisions go to a popup; parallel agents are fine,
+        only merge-ready PRs merge one by one; the other session's PRs merge
+        before this session's stack; every PR body keeps the template
+        checklist (CLAUDE.md section 8).
+Leftover: worktree agent-ac709ddead667d87c was locked by its process at the
+        last check; remove it with git worktree remove when unlocked.
+```
+
+```text
 ## Handover 02.11.2026, evening - security audit T-10.1 and its fixes, paused by Maxi
 Status: the scoped security audit of T-10.1 ran on a48d142 (105 exposed files
         since 52bf88c): 3 P1, 2 P2, 13 P3, none refuted; recorded in docs/09
