@@ -12,10 +12,19 @@ from sqlalchemy.orm import Session
 
 from api.db import get_db
 from api.domain.ordering import draft_order
-from api.domain.ordering.correction import RowEdit
+from api.domain.ordering.correction import ADDRESS_OUT_OF_ZONE, RowEdit
 from api.events.types import ORDER_CONFIRMED
+from api.gui.orders_view import ADDRESS_TAKEN
 from api.main import app
-from api.models import Address, Customer, ItemOption, Order, OrderItem, OutboxEvent
+from api.models import (
+    Address,
+    Customer,
+    DeliveryZone,
+    ItemOption,
+    Order,
+    OrderItem,
+    OutboxEvent,
+)
 from api.tests.conftest import p95_ms
 from api.tests.test_domain_confirm_order import _confirm, _mode
 from api.tests.test_domain_draft_order import NOW, _call, _tenant, item, request
@@ -92,6 +101,7 @@ def _delivery(db, tenant_id, order_id, floor_note=None, with_address=True, fee=2
         db.add(address)
         db.flush()
         order.address_id = address.id
+        order.customer_id = customer.id
     order.type = "delivery"
     order.pickup_code = None
     order.delivery_fee_cents = fee
@@ -378,6 +388,184 @@ def test_pickup_card_has_no_address_or_fee_line(client, db, tenant_id):
         and "Adresse fehlt" not in html
         and "Hauptstra" not in html
     )
+
+
+# --- Korrektur: die Adresse einer Lieferung (#525) ------------------------------
+
+# The postal code was misheard: Durlach instead of the city centre.
+DURLACH = {
+    "postal_code": "76227",
+    "city": "Karlsruhe",
+    "street": "Pfinztalstraße",
+    "house_number": "7",
+    "floor_note": "Hinterhaus",
+}
+
+
+def _zoned_delivery(db, tenant_id) -> uuid.UUID:
+    """A delivery to 76133 (fee 2,50) with a second zone for 76227 (fee 4,00)."""
+    order_id = _order(db, tenant_id)
+    _delivery(db, tenant_id, order_id)
+    for name, code, fee in (("Innenstadt", "76133", 250), ("Durlach", "76227", 400)):
+        db.add(
+            DeliveryZone(
+                tenant_id=tenant_id,
+                name=name,
+                match_type="postal_code",
+                postal_codes=[code],
+                fee_cents=fee,
+                min_order_cents=0,
+                eta_minutes=40,
+            )
+        )
+    db.commit()
+    return order_id
+
+
+def _disabled(html: str, reason: str) -> bool:
+    """Whether the button of `reason` carries the attribute `disabled`."""
+    match = re.search(rf"<button[^>]*\"reason\": \"{reason}\"[^>]*>", html)
+    assert match, html
+    return re.search(r"\sdisabled(?=[\s>])", match.group(0)) is not None
+
+
+def _open_address(client, base: str) -> str:
+    html = client.get(base).text
+    return client.post(
+        f"{base}/vorschau",
+        data={"state": _state(html), "op": "address:open"},
+        headers=HX,
+    ).text
+
+
+def test_korrektur_takes_a_new_address_with_the_fee_of_its_zone(client, db, tenant_id):
+    order_id = _zoned_delivery(db, tenant_id)
+    base = f"/gui/bestellungen/{order_id}/korrigieren"
+    html = client.get(base).text
+    assert "Hauptstraße 12a, 76133 Karlsruhe" in html and "Adresse ändern" in html
+    assert "Lieferpauschale 2,50 €" in html
+    assert _disabled(html, "wrong_address")
+
+    html = _open_address(client, base)
+    # The fields start with the address the order goes to now.
+    assert 'name="street" value="Hauptstraße"' in html
+    assert 'name="house_number" value="12a"' in html
+    assert "Noch nichts geändert." in html
+
+    html = client.post(
+        f"{base}/vorschau",
+        data={"state": _state(html), "op": "address", **DURLACH},
+        headers=HX,
+    ).text
+    assert "Lieferpauschale 4,00 €" in html and "vorher 2,50 €" in html
+    assert "Summe 17,80 €" in html
+    assert not _disabled(html, "wrong_address")
+
+    saved = client.post(
+        base,
+        data={"state": _state(html), "reason": "wrong_address", **DURLACH},
+        headers=HX,
+    )
+
+    assert saved.status_code == 200
+    assert saved.headers["HX-Trigger"] == "bestellungen-geaendert"
+    order = _fresh(db, order_id)
+    assert (order.delivery_fee_cents, order.total_cents) == (400, 1780)
+    card = client.get("/gui/fragments/bestellungen").text
+    assert "Pfinztalstraße 7, 76227 Karlsruhe" in card and "Hinterhaus" in card
+    assert "Korrigiert: falsche Adresse" in card
+    assert "Hauptstraße 12a" not in card
+
+
+def test_korrektur_shows_a_typed_address_before_it_saves_it(client, db, tenant_id):
+    """Typed, then a reason tapped at once: the team sees the new sum first."""
+    order_id = _zoned_delivery(db, tenant_id)
+    base = f"/gui/bestellungen/{order_id}/korrigieren"
+    html = _open_address(client, base)
+
+    shown = client.post(
+        base,
+        data={"state": _state(html), "reason": "wrong_address", **DURLACH},
+        headers=HX,
+    )
+
+    assert shown.status_code == 200 and "HX-Trigger" not in shown.headers
+    assert ADDRESS_TAKEN in shown.text and "Summe 17,80 €" in shown.text
+    assert _fresh(db, order_id).delivery_fee_cents == 250
+
+    saved = client.post(
+        base,
+        data={"state": _state(shown.text), "reason": "wrong_address", **DURLACH},
+        headers=HX,
+    )
+
+    assert saved.headers["HX-Trigger"] == "bestellungen-geaendert"
+    assert _fresh(db, order_id).delivery_fee_cents == 400
+
+
+def test_korrektur_a_tap_keeps_the_typed_address(client, db, tenant_id):
+    order_id = _zoned_delivery(db, tenant_id)
+    base = f"/gui/bestellungen/{order_id}/korrigieren"
+    html = _open_address(client, base)
+
+    html = client.post(
+        f"{base}/vorschau",
+        data={"state": _state(html), "op": "plus:r:0", **DURLACH},
+        headers=HX,
+    ).text
+
+    assert "3&times;" in html and 'name="street" value="Pfinztalstraße"' in html
+    assert "Summe 24,70 €" in html
+
+    html = client.post(
+        f"{base}/vorschau",
+        data={"state": _state(html), "op": "address:reset", **DURLACH},
+        headers=HX,
+    ).text
+
+    assert 'name="street"' not in html and "Summe 23,20 €" in html
+
+
+def test_korrektur_an_address_outside_the_zones_is_refused(client, db, tenant_id):
+    order_id = _zoned_delivery(db, tenant_id)
+    base = f"/gui/bestellungen/{order_id}/korrigieren"
+    html = _open_address(client, base)
+    nowhere = {**DURLACH, "postal_code": "10115", "city": "Berlin"}
+    refused = ADDRESS_OUT_OF_ZONE.format(postal_code="10115")
+
+    html = client.post(
+        f"{base}/vorschau",
+        data={"state": _state(html), "op": "address", **nowhere},
+        headers=HX,
+    ).text
+    saved = client.post(
+        base,
+        data={"state": _state(html), "reason": "wrong_address", **nowhere},
+        headers=HX,
+    )
+
+    assert refused in html
+    assert all(_disabled(html, r) for r in ("wrong_address", "other"))
+    assert saved.status_code == 422 and refused in saved.text
+    order = _fresh(db, order_id)
+    assert (order.delivery_fee_cents, order.total_cents) == (250, 1630)
+    assert db.get(Address, order.address_id).postal_code == "76133"
+
+
+def test_korrektur_of_a_pickup_offers_no_address(client, db, tenant_id):
+    order_id = _order(db, tenant_id)
+    base = f"/gui/bestellungen/{order_id}/korrigieren"
+    html = client.get(base).text
+
+    tap = client.post(
+        f"{base}/vorschau",
+        data={"state": _state(html), "op": "address:open"},
+        headers=HX,
+    )
+
+    assert "Adresse ändern" not in html and "Lieferadresse" not in html
+    assert 'id="korrektur-adresse"' not in html
+    assert tap.status_code == 422 and 'name="street"' not in tap.text
 
 
 def test_hinweis_zeile_faellt_nicht_mit_minus_weg(client, db, tenant_id):

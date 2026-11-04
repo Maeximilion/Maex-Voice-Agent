@@ -19,7 +19,6 @@ from api.models.tenants import _in
 AREA_KINDS = ("inside", "terrace")
 AREA_SHAPES = ("rectangle", "square")
 TABLE_SHAPES = ("rect", "round")
-TABLE_ROTATIONS = (0, 90, 180, 270)
 END_SEATS = ("left", "right")
 
 

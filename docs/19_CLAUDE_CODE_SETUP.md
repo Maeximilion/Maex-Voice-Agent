@@ -124,6 +124,13 @@ This is the shared part of `~/.claude/settings.json`. Merge it into the existing
 
 Claude cannot write this file: the edit is blocked as a change to its own configuration, on Windows and in Ubuntu alike. Claude edits the hook scripts and hands over one command for the settings entry.
 
+### Auto-mode rules and the Opus default (both systems)
+
+Two more keys of `~/.claude/settings.json`, set by Maxi, kept the same on Windows and Ubuntu:
+
+- `autoMode.allow` holds, after `"$defaults"`, one rule for `Bash(gh pr merge:*)` and one for `Bash(gh stack merge:*)` (added 2026-11-03). Each lets Claude merge without asking only when CI is complete and green, the PR is cleanly mergeable and its exact head commit has a review (Codex, Jules, or Claude's own in the session). The stack rule names the bottom PR of a stack, whose base is `main`, and the form `gh stack merge <number> --merge --yes`; the project hook `merge_gate.sh` checks the same before either command runs (CLAUDE.md §6). Copy the two rules from the Ubuntu file word for word; the backup before the stack rule is `~/.claude/settings.json.before-stack-merge-20261103.bak`.
+- `modelSettings.claude-opus-5-5.effortLevel` is `high` (since 2026-11-03, before `xhigh`): the default of the routing table in CLAUDE.md. `/task` asks for `xhigh` where a task needs it.
+
 ## 4. The scripts
 
 All three need `bash`, `git` and `jq` on the path. Git for Windows does not ship `jq`; it is installed separately.
