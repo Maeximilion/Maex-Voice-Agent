@@ -1,5 +1,10 @@
 Close out the current task.
 
+Apply `CLAUDE.md` section 6 "Working across Claude and Codex": review the complete
+diff yourself before opening the PR, then obtain the other AI's review after
+each push. For now, Claude reviews of Codex-authored work are initiated manually
+as described in docs/19 section 8. Keep all documentation and asset steps below.
+
 **Visible PR checklist:** Read `.github/PULL_REQUEST_TEMPLATE.md` before creating or updating the PR description. Keep its headings and every checklist item in the PR body, including when using `--body` or `--body-file`; a custom description must not bypass the template. Keep completed checks as `- [x]` only with evidence, open or untested checks as `- [ ]` with the reason, and explicitly explain `not applicable` items. Add task-specific checkboxes for separate deliverables or remaining work when useful. Update the existing PR after fixes and CI results, reopening any check whose evidence later changes invalidate. A summary in the chat is not a substitute.
 
 1. If the changes since the merge base with `origin/main`, uncommitted and untracked files included (`git diff --name-only $(git merge-base origin/main HEAD)` plus `git status --short`), contain anything other than `.md` files, run `/ponytail-review` (skill `ponytail:ponytail-review`) on that diff and apply the cuts that hold; if the skill is not installed in this session, skip it and say so in the report. If the diff touches one of the areas `CLAUDE.md` §6 "Reviews" names for it, also run `/security-review`, check each finding against the code and fix the confirmed ones as P1. The ponytail review only hunts complexity and is not a merge gate (`CLAUDE.md` §6); both run here, before the PR opens, so a fix does not move the head commit after its review.

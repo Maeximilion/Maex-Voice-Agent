@@ -1,5 +1,11 @@
 Drive pull request $ARGUMENTS (without a number: the current branch's) to its merge.
 
+First apply `CLAUDE.md` section 6 "Working across Claude and Codex". The Codex
+waiter in step 2 is for Claude-authored work. For Codex-authored work, obtain the
+manual Claude review described in docs/19 section 8 instead; a Codex bot result
+does not satisfy that review. The remaining CI, fix-round and merge steps still
+apply. No self-review or quota fallback replaces the other AI's review.
+
 0. With a number, work on that PR's branch, never on `main` or another PR's branch: in the worktree that has it checked out, or check it out with `gh pr checkout` and the number in a clean worktree of its own.
 1. `/done` step 7b in full: sync with `main`, `/ponytail-review`, status bump, push.
 2. Wait for CI first, one blocking wait in the background: `gh pr checks` with the PR's number written out, then `--watch --fail-fast`. Right after a push it can exit with "no checks reported" before GitHub has registered the runs: wait a minute and start it again, up to five times. Any other non-zero exit means a check failed: read its log (`gh run view` with the run id from the check's link, then `--log-failed`) and fix it before anything else, never go on waiting for the review. Then wait once for Codex, in the background: `python3 scripts/codex_review.py` with the PR's number and `--wait`. It exits 0 clean, 1 findings (listed with their comment ids), 3 stalled. Codex reviews every push by itself within seconds and is done in 4 to 8 minutes, so `@codex review` after a push only duplicates it. A run can hang silently: on #371 two did, both with thread replies posted within seconds of the push, so answer review threads before the push, not after it. Only "stalled" (running for more than 10 minutes, or no review of the head started within 10 minutes; measured runs took 1 to 7 minutes) gets one comment `@codex review`, never a second.

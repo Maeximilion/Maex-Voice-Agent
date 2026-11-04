@@ -925,50 +925,109 @@ review workflow was listed. This does not establish whether the separate
 managed Claude review service is installed. The `gh-stack` extension is absent
 from this cloud checkout; the native-stack commands need it installed here.
 
-### Required workflow
+### Current scope: rules and manual review only
 
-`CLAUDE.md` section 6 "Working across Claude and Codex" is the shared policy.
-Existing checks, confidentiality rules, status bumps, branch isolation and stack
-order still apply. A local self-review comes before the PR; the other AI reviews
-the pushed head in GitHub. Switching tools must preserve the branch and its
-verified test/review state. A quota failure keeps the PR open.
+Maxi, 04.11.2026: keep `CLAUDE.md` as the shared source, with the existing
+`AGENTS.md` entry point. No separate `codex.md`, duplicated documentation rules,
+new asset generator or alternate maintenance schedule is needed. Follow the
+existing task docs and `/done`, including docs/15's README and image triggers.
+The weekly routine, metric recording, SVG generation and PNG handling stay as
+specified there. Read the slash-command files when the host cannot invoke them.
 
-Recommended setup, pending the authentication choice and installation:
+Automatic Claude review and authentication setup are deferred while Maxi is
+away from the PC. The existing Claude subscription is the preferred later path.
+Do not use API credit, configure billing, enable separately billed Code Review,
+or create credentials now. Existing API credit is not permission for additional
+spending. No paid service was invoked for this preparation.
 
-1. Run the official Claude Code GitHub Action with the existing Claude
-   subscription, using `CLAUDE_CODE_OAUTH_TOKEN`. Generate the token locally with
-   `claude setup-token` and add it through GitHub's Actions-secret UI; never paste
-   it into chat or commit it. `/install-github-app` in local Claude Code is the
-   official guided setup. Review its generated workflow before merging it.
-2. Route by explicitly recorded implementation authorship, not by the GitHub
-   account: both tools can act as the same user. Run Claude for Codex work on PR
-   creation and every new head (`opened`, `reopened`, `synchronize` and
-   `ready_for_review`). Support an authorised manual review request without
-   starting a second review for the same head. Keep forks and outside authors
-   out of credential-bearing jobs, and use GitHub-hosted runners only.
-3. Keep the Codex bot for Claude work. Check its app settings before changing
-   routing: if automatic review covers all PRs, adding the Claude action alone
-   would still cause Codex to review its own work. Selective triggering or an
-   app-setting change must be verified, not assumed to follow from a PR label.
-4. Extend the merge check to require completed independent review evidence for
-   the current head and no unresolved blocking findings. A job that exits zero
-   after a skipped review must not count. Reject an older result after another
-   push, even if its review finishes later. Preserve CI and eval requirements.
-5. Validate both author directions, a second push, stale results, missing
-   credentials/quota, and an outside PR before calling the setup active.
+### Manual review procedure
 
-The subscription action uses Claude's subscription quota, so reserving some
-quota for reviews is necessary. The separate managed **Claude Code Review**
-service is for Team/Enterprise and has separate usage billing; do not enable it
-as an implicit substitute. Its `@claude review` command requests one review;
-`@claude review always` subscribes a supported PR to later pushes. Those command
-semantics are not automatically inherited by a custom GitHub Action.
+1. The implementing agent completes the existing pre-PR checks and its own diff
+   review, then commits and pushes. The handover identifies the PR, base branch,
+   full head SHA, which AI wrote the changes, test evidence and open findings.
+   Shared GitHub login or a branch name alone does not identify the implementing AI.
+2. For Codex-authored changes, ask a Claude session using the existing subscription
+   to review that PR. For Claude-authored changes, use the existing Codex Review
+   Bot and `scripts/codex_review.py` as `/ship` describes. A new Claude session is
+   still Claude: it cannot independently approve Claude-authored changes, and the
+   equivalent holds for a different Codex session. If both wrote parts of the
+   diff, each part needs the other AI's review; neither may certify its own part.
+3. The reviewer reads the current PR diff and relevant repository rules, checks
+   findings against the code and posts concrete findings inline where supported.
+   For manual Claude review, record the outcome in a PR comment. Only a completed
+   review with no unresolved blocking findings uses the existing `Merge gate: `
+   prefix followed by the full reviewed head SHA. A blocked, incomplete or failed
+   review uses an ordinary comment without that prefix: the current hook accepts
+   the prefix without understanding the verdict. Identify Claude as reviewer and
+   Codex as implementer, cite findings and unresolved items, and distinguish
+   completion from an interrupted or failed run. A finding-free result is stated
+   explicitly. If posting is unavailable, hand the review back
+   with its SHA for posting without changing the verdict. A request or reaction
+   alone does not prove that a review took place. `@claude` does not start a
+   reviewer unless a working integration is already present.
+4. Apply the existing finding-severity and fix-round rules. Batch the fixes, push,
+   then repeat the independent review on the new head. This also applies after
+   merging `main`. Before merging, verify that the reviewed SHA is still the PR
+   head and all existing CI, eval, status and sync requirements hold. Missing
+   quota, unavailable Claude access or an old review leaves the PR open.
 
-Official setup references:
-[Claude Code GitHub Actions](https://code.claude.com/docs/en/github-actions),
-[managed Code Review](https://code.claude.com/docs/en/code-review), and
-[review commands](https://code.claude.com/docs/en/code-review-pull-requests).
+The current `merge_gate.sh` accepts trusted `Merge gate:` comments but cannot
+verify which AI wrote or reviewed the changes. GitHub's current ruleset does not
+enforce that either. The agent must check independent review evidence explicitly;
+a passing hook or CI run alone is insufficient. This is a manual process, not a
+claim of automatic enforcement. Existing unsolicited Codex reviews of Codex work
+are not accepted as the independent review; app routing has not been changed.
 
-**State:** policy and setup notes only. No review workflow, secret, app setting,
-merge-hook implementation or ruleset was changed by this documentation update.
-It must not be reported as working automation.
+### Request to hand to Claude
+
+Use this text with the PR and full head SHA from the handover:
+
+> Review the Codex-authored PR identified in this handover. Read AGENTS.md,
+> CLAUDE.md and the relevant task documentation. Verify the current base and full
+> head SHA and review the complete diff without editing or pushing changes. Follow
+> the existing severity and evidence rules. Post concrete findings inline in
+> GitHub where supported. Report the reviewed SHA, findings and completion state;
+> only for a completed review with no unresolved blocking findings, use the
+> existing Merge gate: prefix with that SHA in a PR comment and identify Claude
+> as reviewer and Codex as implementer. For blocking findings or an incomplete review, use
+> an ordinary comment without that prefix. Never state that the head is clean
+> while a blocking finding remains. If the head changes,
+> your review applies only to the SHA you actually reviewed. If you authored any
+> of the changes, identify the coverage gap instead of approving your own work.
+
+### Later setup, not active
+
+If automation is resumed, first verify subscription authentication and selective
+routing so Codex work receives Claude reviews and Claude work receives Codex
+reviews on every push. Preserve all existing test and merge requirements and
+prove the new-head and quota-failure cases before calling it active. Do not assume
+that adding a label changes the existing Codex app's automatic review settings.
+
+Official reference for the preferred subscription integration:
+[Claude Code GitHub Actions](https://code.claude.com/docs/en/github-actions).
+The separately billed [managed Code Review](https://code.claude.com/docs/en/code-review)
+service is a different product and is outside the current scope.
+
+**State:** documentation and a manual review request only. No review workflow,
+secret, app setting, merge-hook implementation or ruleset was changed. No Claude
+review was run by this preparation, and self-checks do not count as that review.
+
+### Documentation checks, 04.11.2026
+
+Two self-checks were performed, not an independent Claude review:
+
+- Pass 1 compared the changes with `CLAUDE.md`, `/done`, `/ship` and docs/15.
+  It removed the contradictory self-review quota fallbacks and kept the existing
+  README and asset workflow. `pending --record` reported `nothing pending`;
+  no new dependency, product configuration, gate or doc file requires a README
+  update for this documentation change.
+- Pass 2 traced the manual-review cases: Codex work needs Claude, Claude work
+  needs Codex, a new head needs a new review, and missing quota or mixed authorship
+  must not turn into self-approval. It also checked the existing merge hook and
+  corrected the request template so a failed or blocked review never starts with
+  `Merge gate:`. Neither green CI nor an unsolicited review by the implementing
+  AI establishes independence.
+
+These are document and logic checks, not a live bot or billing test. The earlier
+`make lint` and `make test` attempts were blocked by Docker access; they are not
+reported as passing. The changes remain Markdown only.
