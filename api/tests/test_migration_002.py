@@ -37,6 +37,9 @@ LATER_TABLES = {
     "data_subject_requests",
     "recordings",
     "complaint_rules",
+    "floor_areas",
+    "dining_tables",
+    "table_combinations",
 }
 
 

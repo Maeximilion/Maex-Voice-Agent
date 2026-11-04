@@ -10,6 +10,7 @@ from api.models.customers import (
     DeliveryZone,
     RecognitionObjection,
 )
+from api.models.floor_plan import DiningTable, FloorArea, TableCombination
 from api.models.menu import ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.orders import Order, OrderItem
 from api.models.outbox import OutboxEvent
@@ -40,6 +41,8 @@ __all__ = [
     "Customer",
     "DataSubjectRequest",
     "DeliveryZone",
+    "DiningTable",
+    "FloorArea",
     "ItemAlias",
     "ItemAllergen",
     "ItemOption",
@@ -53,5 +56,6 @@ __all__ = [
     "Reservation",
     "ServiceConfig",
     "SpecialDay",
+    "TableCombination",
     "Tenant",
 ]

@@ -76,6 +76,7 @@
     {# Kachel "Gericht aus" (docs/06 §3): die Zahl nennt, wie viele heute aus sind. #}
     <button class="push" hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
     <a class="button" href="/gui/kennzahlen">Kennzahlen</a>
+    <a class="button" href="/gui/raumplan">Raumplan</a>
   </div>
   {% endif %}
 </header>

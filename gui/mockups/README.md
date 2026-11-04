@@ -5,6 +5,12 @@ Approved designs. They are the template for Jinja2 templates: layout, colors, sp
 | File | View | Approved |
 |---|---|---|
 | `admin-desktop.html` | Admin view on desktop, all seven areas, clickable | 2026-09-16 |
+| `floor-plan-editor.html` | Interactive multi-room floor plan with fixed property sidebar | 2026-11-03 |
+
+The floor plan is a standalone browser prototype with synthetic data. Its accepted
+behavior, rationale, limitations and Ubuntu implementation handover are in
+[`docs/design/floor-plan/`](../../docs/design/floor-plan/README.md). It is the
+reference for T-3.11, not a completed backend or reservation system.
 
 A mockup is a drawing, not the product. In `admin-desktop.html` only the tabs, expanding a row, search, the filter chips, "Annehmen" on an alias suggestion and the light/dark switch react; every other button does nothing. What runs today and what a restaurant needs: `README.md` and `docs/13_DEPLOYMENT.md` §0a.
 

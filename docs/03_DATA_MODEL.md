@@ -128,6 +128,47 @@ Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
 | slot_minutes | INT | Raster, Default 30, `> 0` (migration 006: a grid of zero minutes never ends) |
 | notice_minutes | INT, default 0, `>= 0` | how long before its time a table of this window can be reserved; 0 is no notice (T-3.13, migration 025) |
 
+### `floor_areas`
+The rooms and terraces of the floor plan the team draws on the tablet (T-3.11, migration 028, docs/06 §3 "Raumplan"). Nothing books against them yet: the agent counts seats in `capacity` until the manual seating of T-3.12 is in use (D28).
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| name | TEXT | 1 to 30 characters, unique per tenant whatever the case (`uq_floor_areas_name` on `lower(name)`) |
+| kind | TEXT | `inside` / `terrace`; a terrace is drawn with a dashed boundary instead of a wall |
+| shape | TEXT | `rectangle` / `square`; a square has equal sides (CHECK) |
+| width_cm / depth_cm | INT | 200 to 5000 (2 to 50 m, an assumption, not a limit agreed with a restaurant) |
+| wall_cm | INT, default 20 | thickness of the outer wall, 5 to 60 |
+| fixtures | JSONB, default `[]` | walls, entrances, counters and free labels, only drawn and never referred to; each element is checked by `schemas/floor_plan.py` and `domain/reservations/floor_plan.py` before it is stored |
+| revision | INT, default 0 | moves with every stored change; a save names the revision it started from and is refused when another tablet saved in between |
+
+### `dining_tables`
+One table of the plan. Soft deleted (`deleted_at`), so a later reservation on it (T-3.12) keeps its name.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | named by the browser, so an undo brings back the same row |
+| tenant_id | UUID FK | |
+| area_id | UUID FK `floor_areas` | a table never moves to another room |
+| name | TEXT | 1 to 25 characters; one live table of a name per tenant whatever the case (`uq_dining_tables_name` on `lower(name)` where `deleted_at IS NULL`): the team will seat a reservation on "T5" |
+| shape | TEXT | `rect` / `round`; a round table has one size (CHECK) |
+| seats | SMALLINT | 1 to 40; drawn by the rule of docs/design/floor-plan/README.md, booking nothing |
+| width_cm / depth_cm | INT | 30 to 600 |
+| x_cm / y_cm | INT | centre of the table from the room's top left corner, `>= 0`; the domain keeps the table inside its room |
+| rotation | SMALLINT, default 0 | 0, 90, 180 or 270 |
+| end_seat | TEXT, default `left` | `left` / `right`: the end of a rectangle with an odd number of seats below six that takes the one end seat |
+| deleted_at | TIMESTAMPTZ | |
+
+### `table_combinations`
+Two tables of one room the team may push together. One row per pair, the smaller id first (CHECK `table_a_id < table_b_id`, unique pair). A copied table does not copy its pairs; a removed table loses them.
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| table_a_id / table_b_id | UUID FK `dining_tables` | |
+
 ### `reservations`
 | Feld | Typ | Bemerkung |
 |---|---|---|
@@ -495,4 +536,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 025 | `capacity.notice_minutes`, default 0: how long before its time a table can be reserved (T-3.13, #499); the downgrade drops the notices |
 | 026 | `service_config.pickup_enabled`, `reservations_enabled`, default true: the switches next to `delivery_enabled` (T-3.10, #495); the downgrade drops them |
 | 027 | `orders.booked_on_own_line`, `reservations.booked_on_own_line`, default false: the draft notes whether the booking's number is the line its call came from (#523); the upgrade fills it from the caller IDs still there, a row whose caller ID is gone stays false; the downgrade drops both, and what a cleared caller ID said cannot be read back |
+| 028 | `floor_areas`, `dining_tables`, `table_combinations`: the floor plan of T-3.11 (#496); nothing existing changes and nothing reads them for a booking (D28); the downgrade drops the three with every room, table and pair the team drew |
 | planned, next free number | `eval_cases`, `eval_runs` |
