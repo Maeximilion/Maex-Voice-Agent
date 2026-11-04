@@ -554,6 +554,13 @@ since the last completed independent review, check unresolved findings and read
 related context as needed. Preserve a verifiable coverage chain and publish a
 new current-head result. Fall back to full PR review on an invalid baseline or
 uncertain impact; no equivalent hosted Codex scope control has been verified.
+The shared follow-up guidance now also lives in `AGENTS.md`, with a scoped manual
+`@codex review` request linked from `/ship`. No automatic trigger or authenticated
+Codex account setting was changed. Historical PR #357 contains 28 top-level bot
+inline findings over eight original revisions, including 23 P2 labels; this is
+evidence of review volume, not proof of invalid findings. The user chose to keep
+the flexible three-P2-round rule, including justified continuation for real
+in-scope defects; no fixed pause is introduced.
 The official action supports subscription OAuth, but no live review is verified.
 Branch `ci/claude-inline-review` is independent of `docs/cross-agent-review`;
 the latter waits. Next: approve the concrete design, implement and test on this

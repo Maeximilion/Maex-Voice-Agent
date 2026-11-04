@@ -99,13 +99,18 @@ Another session of the implementing model cannot supply independent review. For
 mixed work, both reviewers must cover the other model's changes. These rules
 override the older self-review fallback below.
 
-For the planned Claude action, the first review covers the complete PR diff.
+For both independent reviewers, the first review covers the complete PR diff.
 Follow-up reviews focus on every change since the last completed independent
 review, the affected files and unresolved findings, with related code read as
 needed to assess the fix. Do not rereview unchanged, unaffected files by default.
 Use a full PR review when prior coverage cannot be trusted or the impact is
 unclear; record the new reviewed head and the prior evidence it builds on.
-This policy does not claim control over the existing hosted Codex bot's scope.
+For a manual Codex follow-up, use `@codex review` with the scoped request from
+`docs/21_REVIEW_AUTOMATION.md`, the last completed review and the current head.
+The hosted bot follows review guidance, but its internal file reads and token
+usage cannot be restricted by a proven file-scope setting. Keep its automatic
+trigger as it is; do not post an extra manual request while an automatic review
+of that head is running. The existing stalled-run exception in `/ship` remains.
 
 The Claude action is currently planned, not installed or live-tested. A mention
 alone does not establish that a review ran. Setup, exact-head validation and

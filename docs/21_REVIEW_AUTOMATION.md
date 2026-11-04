@@ -152,10 +152,114 @@ A new current-head result is published after each completed follow-up; it
 explicitly states its scope and inherited coverage rather than pretending every
 file was read again. No scope-reduction claim is made for a failed/partial run.
 
-This is a requirement for the custom Claude action, including its input builder
-and prompt. A mention by itself cannot enforce it. The existing hosted Codex
-Review Bot remains unchanged: a comparable instruction can express a preference,
-but strict incremental execution and quota savings there have not been verified.
+This is the shared review policy for both model families. The custom Claude
+action implements it in the input builder and prompt. For the existing hosted
+Codex bot it is supplied through `AGENTS.md`, `CLAUDE.md` and a scoped manual
+request when one is actually needed. A mention by itself cannot enforce which
+files the service loads, and hosted Codex quota savings have not been verified.
+
+### Codex support, settings and manual request
+
+Official documentation checked on 04.11.2026 confirms `@codex review`, repository
+review instructions in `AGENTS.md`, and automatic-review settings at
+[Codex code review settings](https://chatgpt.com/settings/code-review).
+OpenAI also documents additional guidance after the review mention. No reviewed
+official source establishes a hard per-file execution limit or a guaranteed
+"changes since last review" switch for the hosted GitHub bot. Do not confuse
+local CLI commit review or the desktop review plugin with this integration.
+
+Repository rules and `.claude/commands/ship.md` can be updated here. The current
+account's Codex settings were not read or changed: GitHub repository access is
+not access to those authenticated ChatGPT settings. To inspect them, open the
+link above, select `Maeximilion/Maex-Voice-Agent` and inspect Automatic review
+and Review trigger under the applicable repository/personal settings. Keep the
+existing automatic behaviour; no new Codex GitHub Action is needed.
+
+The recommended first step is to keep the native bot and make its scope request
+explicit. Replacing it with a custom Codex action could control the submitted
+diff more directly, but would add another execution/authentication path and
+require separate billing and inline-publication validation. That larger change
+is deferred; a prompt-based request must not be presented as equivalent to it.
+
+When Claude actually needs to request a manual follow-up, start the comment with
+this text, then append the concrete context listed below:
+
+```text
+@codex review
+Perform a focused follow-up review using the completed review identified below.
+Check every change since that reviewed head, verify the reported fixes, and look
+for regressions caused by those changes. Read affected callers and contracts as
+needed. Follow AGENTS.md and CLAUDE.md. Do not repeat resolved root causes or
+reopen unrelated cosmetic work. Report concrete defects inline at valid lines;
+keep any completion summary brief. If prior coverage is invalid or the impact
+cannot be bounded, explain why a broader PR review is needed.
+```
+
+The requesting agent appends the actual previous review URL and full reviewed
+head SHA, current full head SHA, all changed paths since that baseline and the
+relevant finding IDs. It verifies those values from GitHub/git; a failed run or
+the previous push is not automatically the baseline. Without a valid completed
+baseline, request a full PR review. This is a review request, not a request for
+Codex to implement the fixes. Findings should be inline; a short status/coverage
+summary is still necessary and is not forbidden.
+
+Do not duplicate the automatic review on every push just to add this text. The
+existing `/ship` policy permits one manual request only after a stalled review.
+The automatic trigger remains unchanged when no mention is posted; repository
+guidance still applies. A future switch to manual-only triggers would be a
+separate decision, not an unnoticed side effect of scope instructions.
+
+### Avoiding repeated low-value fix rounds
+
+Existing rules already exclude style/speculation and repeated root causes,
+limit eligible P2 findings to three per review, batch a round's fixes into one
+push, and require a decision after three consecutive P2-only rounds. However,
+the last rule currently permits continued fixes for real in-scope defects, so
+it is not a fixed limit on automatic work. Retain the distinction: P2 can be
+a real bug; a small patch is not evidence of low impact.
+
+An inspection of historical bot inline comments on 04.11.2026 found:
+
+| PR | Top-level inline findings | Revisions carrying findings | Priority labels |
+|---|---:|---:|---|
+| [341](https://github.com/Maeximilion/Maex-Voice-Agent/pull/341) | 9 | 4 | 9 P2 |
+| [357](https://github.com/Maeximilion/Maex-Voice-Agent/pull/357) | 28 | 8 | 5 P1, 23 P2 |
+| [371](https://github.com/Maeximilion/Maex-Voice-Agent/pull/371) | 3 | 2 | 3 P2 |
+
+These counts exclude thread replies, use original reviewed commit IDs, and are
+not counts of all review runs or proof that any finding was unnecessary.
+The current OpenAI guide describes P0/P1-focused output, while this repository's
+history includes P2. Do not assume current service defaults erase that history
+or automatically implement the repository's desired loop policy.
+
+The user chose to keep the existing flexible three-round rule on 04.11.2026,
+rather than introduce a fixed decision pause. After three consecutive P2-only
+rounds, the working agent makes and records the existing evidence-based decision:
+continue for real in-scope defects, or use the existing triage/merge policy for
+cosmetic, speculative or outside-scope leftovers. This is not a three-round
+maximum and does not authorise blindly fixing every subsequent suggestion.
+P0/P1 still require fixes and reset the P2-only count. Use one completed review
+of a distinct head as one round, as `CLAUDE.md` already requires; duplicate
+comments are not extra rounds. Keep the existing policy for base-sync heads and
+do not invent exceptions to reset the count. A clean result ends the loop.
+
+Cosmetic/speculative or outside-scope findings follow the existing triage policy;
+worthwhile deferred work is tracked in the existing open issue #207 with its
+source review and rationale. Do not mark a real unfixed defect resolved just to
+clear a gate. Keep the existing earlier escalation for repeated findings in the
+same function, growing findings or contradictory requested fixes. A working
+agent's summary relays independent evidence; it never supplies a self-review.
+
+For each continuation after the threshold, record why the remaining defect
+belongs to this PR and its concrete failing scenario in the existing decision
+comment. Rejected cosmetic/speculative advice does not justify a code change or
+another push. Batch all accepted fixes of a round. These apply the existing
+rules; the priority definitions, P2 path/count limits and the rolling issue stay
+unchanged. No claim is made that a tighter prompt alone eliminates review loops.
+
+Do not add UI/UX/style specialists in this first version. Existing correctness,
+security and domain rules already cover functional UI defects. Visual preference
+reviews and a wider specialist matrix remain outside this change.
 
 The first version does not change the repository ruleset or enable automatic
 merging. The existing merge hook does not understand Claude bot reviews. A
@@ -316,3 +420,5 @@ measurement has been made during planning.
 - [GitHub workflow events](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
 - [Codex review rubric](https://github.com/openai/codex/blob/main/codex-rs/prompts/templates/review/rubric.md)
 - [Codex Action](https://github.com/openai/codex-action)
+- [Codex GitHub review configuration and repository guidance](https://learn.chatgpt.com/docs/third-party/github)
+- [OpenAI: additional guidance in review mentions](https://openai.com/index/introducing-upgrades-to-codex/)

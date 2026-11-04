@@ -10,13 +10,19 @@
 
 **Spec:** [GitHub Review Automation](../../21_REVIEW_AUTOMATION.md). Status: proposed implementation, not executed. Native execution in this session is the recommendation; the final independent GitHub review must come from Claude.
 
+**Planning update:** Focused follow-ups are now required for both reviewer families.
+Repository guidance and a concrete manual request can steer hosted Codex, but no
+hard execution-scope control is verified. The user chose to retain the existing
+flexible three-round rule; no fixed pause or blanket dismissal of P2 findings is
+introduced. No UI/UX reviewer or new Codex action is planned.
+
 ## Global Constraints
 
 - One reviewer first; specialists are a measured follow-up.
 - Subscription secret `CLAUDE_CODE_OAUTH_TOKEN` only; no API-key or managed-review billing fallback.
 - This constraint applies to the first rollout. The deferred stage uses API first within a shared USD 50 monthly review budget, then subscription OAuth; verify hard spending controls before implementing it.
 - Codex posts `@claude review` after PR creation and every push to an open PR, as persisted in `CLAUDE.md`. Preserve existing automatic Codex reviews of Claude changes. Coalesce duplicate push/comment triggers without restarting same-head inference.
-- First review: full PR diff. Follow-ups: all changes since the last completed independent review, affected files and unresolved findings; expand context as needed and fall back to the full PR when coverage or impact is uncertain. Do not assert this controls the hosted Codex bot.
+- First review: full PR diff. Follow-ups for both models: all changes since the last completed independent review, affected files and unresolved findings; expand context as needed and fall back to the full PR when coverage or impact is uncertain. Hosted Codex receives guidance, not a claimed hard file/token restriction.
 - English repository content. No implementation-author credit unless expressly requested.
 - `CLAUDE.md` and `AGENTS.md` remain the rule sources; no `codex.md` or competing review policy.
 - No self-hosted runner, fork secrets, `pull_request_target`, force push, protection bypass or automatic merge.
@@ -34,6 +40,17 @@
 - Bootstrap: the new workflow is absent from the default branch, and a secret can arrive after the first run; prove a PR-run rerun reads current commands in Task 4.
 
 ---
+
+### Task 0: Shared scope guidance and existing fix-round policy
+
+**Files:** Modify `AGENTS.md`, `CLAUDE.md`, `.claude/commands/ship.md` and `docs/21_REVIEW_AUTOMATION.md`.
+
+**Interfaces:** Keep the native `@codex review` trigger and existing automatic integration. Manual follow-ups name the actual completed review URL, its full head SHA, the current full head SHA, all changed paths and relevant finding IDs; `.claude/commands/ship.md` still requests manually only on a stalled automatic review. This is working-agent guidance, not a new automatic fix scheduler.
+
+- [x] Verify the documented Codex trigger and guidance against official sources. Persist the shared scope in `CLAUDE.md`, reference it under `AGENTS.md` Code Review Rules and link the concrete manual request from `/ship`. Keep implementation and review independent.
+- [x] Resolve the loop-policy choice: the user retains the flexible three-round rule. Preserve its evidence-based continuation for real in-scope defects, P0/P1 blockers, P2 limits and earlier structural-escalation rule; introduce no fixed pause.
+- [x] Walk through the policy cases before committing: one changed file out of five; two queued pushes; P2/P2/P2; P2/P1/P2; duplicate runs; cancelled runs; base-only sync; repeated root cause; and a finding requiring reversal of the previous fix. The first P2/P2/P2 sequence requires the existing explicit decision; P2/P1/P2 has one consecutive P2-only round after its reset. Count rounds by completed reviews of distinct heads, and leave base-sync review requirements unchanged. Do not add code-only test machinery for Markdown instructions.
+- [ ] Verify links, changed instruction precedence and `git diff --check`. Document that actual account settings and hosted scope enforcement are unverified; commit the shared instructions on the same automation branch.
 
 ### Task 1: Authorised selection and immutable review inputs
 
@@ -95,7 +112,7 @@
 - [ ] Have the account owner create the subscription token and repository secret through the documented UI; never request its value in chat. Keep paid extra usage disabled. An inability to configure the token keeps live acceptance pending.
 - [ ] Post the authorised `@claude review` request. Before the workflow is on `main`, rerun its PR-triggered Actions run after the secret and comment exist. Verify actual subscription authentication and the review's exact base/head SHAs.
 - [ ] Prove inline publication with a deterministic, harmless workflow fixture using a real changed line and an explicitly labelled transport-test comment; do not fabricate a security finding. This test is not independent review evidence. Remove any fixture scaffolding before the final head review.
-- [ ] Push a legitimate final documentation/status update and post the required new `@claude review` comment. Verify the push and comment produce one completed review of that new head, with no duplicate inference. Independently test the push-triggered safety net when the comment is delayed. Resolve findings, rerun applicable checks and obtain independent review of every resulting final head.
+- [ ] Push a legitimate final documentation/status update and post the required new `@claude review` comment. Verify the push and comment produce one completed review of that new head, with no duplicate inference. Independently test the push-triggered safety net when the comment is delayed. Resolve findings under the existing flexible loop limits, rerun applicable checks and obtain independent review of every resulting final head. After three consecutive P2-only rounds, record the existing decision and its evidence before any further accepted fixes.
 - [ ] Merge only after exact-head CI, current base, independent review and existing gates pass. Then resume the waiting documentation branch, bring it up to date normally and obtain its own new review.
 
 ## Plan self-review
@@ -107,3 +124,6 @@ superseded heads may be cancelled. The remaining uncertainties are live OAuth
 availability, CLI isolation and first-workflow execution; they are acceptance
 gates, not claims of completed functionality. No parallel-specialist scheduler,
 author-provenance tracker or branch-protection rewrite belongs in this PR.
+The shared Codex guidance requires a later live observation on a Claude-written
+PR before claiming scope adherence or savings. Do not request a Codex review of
+this implementation as a substitute for its required independent Claude review.

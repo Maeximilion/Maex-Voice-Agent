@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.45
+> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.46
 
 ---
 
@@ -23,10 +23,15 @@ of Claude changes continue. Duplicate push/comment events must not repeat model
 work. The design assumes explicit reviewer
 selection without implementation-author labels, and cancellation of superseded
 heads while requiring a completed independent review of the latest revision.
-Follow-up Claude reviews are planned to focus on all changes since the last
+Follow-up reviews for both model families are planned to focus on all changes since the last
 completed review and unresolved findings, with related context as needed and a
-full-PR fallback when prior coverage or impact is uncertain. The existing hosted
-Codex bot's incremental execution is not claimed or changed.
+full-PR fallback when prior coverage or impact is uncertain. `AGENTS.md` now
+references the shared scope, and `/ship` links the scoped manual Codex request
+without duplicating automatic reviews. Hosted Codex scope is instruction-based;
+hard execution restrictions and savings are not verified, and account settings
+were not changed. The user chose to keep the existing flexible three-P2-round
+rule; no fixed pause is added. Continuation still needs the existing decision
+based on concrete in-scope defects. No additional UI/UX reviewer is planned.
 
 **Pickup and reservations can be switched off, like delivery (T-3.10, #495, 02.11.2026).** Three buttons in the first row of the header say what holds, „Abholung an“ or „aus“, and a tap changes it at once. The switch reaches the whole agent path: `get_service_status` reports and says it, `draft_order` and `check_slot` refuse, also in the middle of a call, and `confirm` refuses a draft made before the tap. A closed service offers the other one only where its hours run and its switch is on: the delivery sentence offered a pickup by the hours alone before. A long-lived call session now reads the switches and the notice fresh in `check_slot`. Reservations off stops new tables only. Evals `reservierung_0043`, `abholung_0090`, `lieferung_0090`, stand-in only; no real model has run them, and the status sentence and the extra flag grew the prompt state by one key.
 
@@ -795,6 +800,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.46 · 04.11.2026:** Plan shared focused reviews for Claude and Codex while retaining flexible P2 loop limits
 - **v2.14.45 · 04.11.2026:** Plan focused follow-up reviews with verified prior coverage and full-review fallback
 - **v2.14.44 · 04.11.2026:** Persist per-push independent review requests and defer API-first review with a USD 50 monthly cap
 - **v2.14.43 · 04.11.2026:** Record the subscription inline-review design, setup prerequisites and staged implementation plan

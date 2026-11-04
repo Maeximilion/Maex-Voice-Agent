@@ -26,6 +26,14 @@ For an agent that changes files here, whatever tool it runs in:
 
 How to review:
 
+- Follow the shared follow-up scope in `CLAUDE.md` section 6, "Independent review
+  requests": use the last completed independent review as the baseline, check
+  every later change and still-open findings, and read related code as needed.
+  Missing or invalid prior coverage requires a full PR review. This applies to
+  Claude and Codex; it is review guidance, not a hosted-bot execution guarantee.
+- Keep inline findings tied to concrete defects and combine instances of the
+  same root cause into one finding. Do not restart a search for cosmetic changes
+  in unchanged, unaffected files after a fix; the existing severity rules remain.
 - Report a finding only when you can name a concrete failing input or sequence. No scenario, no finding.
 - Do not report style, naming, formatting or personal preference: `ruff` and the CI cover those.
 - A finding that was answered with a commit is not reported again in other words. If the same spot
