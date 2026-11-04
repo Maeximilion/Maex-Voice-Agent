@@ -575,6 +575,10 @@ PR, without another user command. `/ship` owns the waiting and gated completion;
 it only reuses `/done`'s helper steps to avoid recursion. No hook/background service
 was added, and no live command-to-merge test has run. Honour the existing pause
 on the waiting branch and the independent-review prerequisite for this rollout.
+The user requested this branch's PR now, with a manual Claude Code review.
+Self-review reconciled the legacy merge text with independent review and added
+the manual publishing procedure. No automation is claimed, and reviewers must
+not implement the plan or merge while reviewing this instructions-only PR.
 The official action supports subscription OAuth, but no live review is verified.
 Branch `ci/claude-inline-review` is independent of `docs/cross-agent-review`;
 the latter waits. Next: approve the concrete design, implement and test on this

@@ -10,6 +10,11 @@
 
 **Spec:** [GitHub Review Automation](../../21_REVIEW_AUTOMATION.md). Status: proposed implementation, not executed. Native execution in this session is the recommendation; the final independent GitHub review must come from Claude.
 
+**Current PR:** shared rules, command handoff and this plan only. The user has
+requested a manual Claude Code review before further work. Reviewers must not
+execute this plan as part of reviewing it. No action/controller is installed,
+and neither manual review nor a green documentation PR proves live automation.
+
 **Planning update:** Focused follow-ups are now required for both reviewer families.
 Repository guidance and a concrete manual request can steer hosted Codex, but no
 hard execution-scope control is verified. The user chose to retain the existing

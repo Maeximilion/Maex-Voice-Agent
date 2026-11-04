@@ -21,7 +21,7 @@ For mixed changes, both reviewers must cover the other model's contributions.
 If Claude starts fixing a selected PR, stop its selection and arrange Codex review
 of those fixes; Claude's existing review alone cannot clear the new head. Do not
 add author labels or implementation credits to implement routing. These user
-instructions override the older self-review fallback still present in `CLAUDE.md`.
+instructions replace the former self-review fallback in `CLAUDE.md`.
 
 The usual workflow remains Claude implementation followed by the existing
 automatic Codex Review Bot, including its inline comments and review after pushes.
@@ -37,6 +37,32 @@ This is one independent PR based on `main`. The prior documentation branch
 cherry-pick it, stack this PR above it, or merge it as part of installation.
 
 ## Evidence and alternatives
+
+### Current rollout: manual independent review
+
+The current PR delivers shared instructions and the plan, not the action or
+controller. A user-started Claude Code session can review it now using the
+existing subscription and that session's authorised GitHub account. No Actions
+OAuth secret is required for this manual route. An `@claude review` comment
+records the request but cannot start the not-yet-installed workflow.
+
+The reviewer reads the current PR diff and the applicable `AGENTS.md`/`CLAUDE.md`
+rules, captures both full base/head SHAs, and publishes a GitHub COMMENT review
+with the head as `commit_id` and genuine findings attached to valid diff lines.
+The brief review body identifies Claude as reviewer, the captured SHAs, scope,
+checks actually performed and any limitations. If there are no eligible findings,
+publish a completed summary without inventing an inline comment. Recheck the
+refs before publication; if they changed, review the new revision first.
+
+This is a read-only review of the branch: do not implement the plan, edit/push
+files, invoke `/done` or `/ship`, or merge. GitHub publishing is authorised as
+part of the requested review. A missing GitHub permission is reported; writing
+findings only in chat does not count as posting them. Manual review can assess
+these rules but does not demonstrate that the future action works. The current
+PR remains open for the user's review; the waiting documentation branch stays
+untouched. Do not add the machine marker reserved for the future action.
+
+### Automated options
 
 The removed `ai-pr-review` workflow was inspected at commit `162d25e9`; deletion
 commit `010800be` explains its removal. It used a self-hosted WSL runner and an
@@ -101,7 +127,7 @@ Approaches considered:
    One reviewer examines correctness and security together. Apply the existing
    model/effort routing; the initial default for workflow code is Opus at high.
 5. Claude returns a structured completion flag, summary and findings with
-   severity, path, exact diff line, side and concrete failing scenario. The
+   severity, title, path, exact diff line, side and concrete failing scenario. The
    controller validates the entire result before publishing a GitHub COMMENT
    review anchored to the reviewed head, with inline findings. Do not silently
    truncate an oversized diff, invent anchors, or turn partial output into clean.

@@ -15,8 +15,11 @@ permissions/credentials and the repository's existing approval/merge gates.
 
 Choose the independent reviewer under `CLAUDE.md` before waiting. The Codex
 waiting instructions below are for Claude-written work. Codex-written work
-requires completed Claude review; while that integration is unavailable, report
-the blocker and leave the PR open rather than accepting a Codex self-review.
+requires completed Claude review, from the action or the documented manual
+Claude Code procedure. If neither has reviewed the current head, report the
+blocker and leave the PR open rather than accepting a Codex self-review. For
+manual review, verify the GitHub review's recorded base/head and triage evidence;
+do not run the Codex waiter as a substitute.
 
 0. With a number, work on that PR's branch, never on `main` or another PR's branch: in the worktree that has it checked out, or check it out with `gh pr checkout` and the number in a clean worktree of its own.
 1. `/done` step 7b in full: sync with `main`, `/ponytail-review`, status bump, push.

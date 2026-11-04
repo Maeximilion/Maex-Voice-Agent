@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.49
+> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.50
 
 ---
 
@@ -47,6 +47,11 @@ fails rather than restating the suggestion. Sources and examples are in docs/21.
 drafts and missing prerequisites remain blockers, with no recursive handoff or
 background session startup. This command change is statically checked only;
 live Claude invocation remains part of rollout validation.
+The current PR is being prepared for a user-started manual Claude Code review.
+Self-review removed contradictory legacy self-review fallbacks and clarified
+that a completed manual review may supply independent evidence without an
+installed action. The workflow/controller remain unimplemented; this PR stays
+open for that review and does not resume the waiting documentation branch.
 
 **Pickup and reservations can be switched off, like delivery (T-3.10, #495, 02.11.2026).** Three buttons in the first row of the header say what holds, „Abholung an“ or „aus“, and a tap changes it at once. The switch reaches the whole agent path: `get_service_status` reports and says it, `draft_order` and `check_slot` refuse, also in the middle of a call, and `confirm` refuses a draft made before the tap. A closed service offers the other one only where its hours run and its switch is on: the delivery sentence offered a pickup by the hours alone before. A long-lived call session now reads the switches and the notice fresh in `check_slot`. Reservations off stops new tables only. Evals `reservierung_0043`, `abholung_0090`, `lieferung_0090`, stand-in only; no real model has run them, and the status sentence and the extra flag grew the prompt state by one key.
 
@@ -815,6 +820,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.50 · 04.11.2026:** Prepare manual independent review and reconcile review gates
 - **v2.14.49 · 04.11.2026:** Make done hand off its published PR to ship within the active session
 - **v2.14.48 · 04.11.2026:** Define concise English review findings and verifiable fix acceptance criteria
 - **v2.14.47 · 04.11.2026:** Clarify evidence-based review triage and justified thread resolution without code changes
