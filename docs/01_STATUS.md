@@ -1,11 +1,18 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.51
+> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.52
 
 ---
 
 ## Summary
+
+**Review authors should identify their bot (04.11.2026).** Maxi prefers Claude
+and Codex reviews and comments under their actual GitHub bot accounts. Hosted
+Codex already uses `chatgpt-codex-connector[bot]`. Manual Claude reviews currently
+use Maxi's account and must identify Claude in every comment. The shared rule
+and rollout plan now require verifying publication identity. Claude's bot
+publishing route remains an implementation prerequisite.
 
 **Subscription-based inline review is planned, not installed (04.11.2026).**
 The design and implementation sequence are in [docs/21_REVIEW_AUTOMATION.md](21_REVIEW_AUTOMATION.md).
@@ -835,6 +842,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.52 · 04.11.2026:** Record bot authorship preferences for Claude and Codex reviews
 - **v2.14.51 · 04.11.2026:** Handover: preserve PR #542 local-test hold and park draft-first CI idea for desktop continuation
 - **v2.14.50 · 04.11.2026:** Prepare manual independent review and reconcile review gates
 - **v2.14.49 · 04.11.2026:** Make done hand off its published PR to ship within the active session

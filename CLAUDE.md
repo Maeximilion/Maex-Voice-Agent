@@ -96,6 +96,15 @@ completed Claude review of the latest revision before merging. A push made befor
 a PR exists is followed by the request when the PR is created. Do not add AI implementation-author labels, author/co-author trailers or credits
 unless Maxi explicitly requests them for that work. Reviewer names and mentions
 are allowed; the agent deliberately chooses the other model.
+
+Maxi prefers reviews and review comments to use the reviewer's own GitHub bot
+identity (04.11.2026), so they are distinguishable from his comments. Prefer
+`claude[bot]` for Claude and retain the existing `chatgpt-codex-connector[bot]`
+identity for hosted Codex. The authenticated publishing account determines the
+author. When a manual review uses Maxi's account, identify the reviewer in each
+review body, inline comment and follow-up reply with `Claude review` or
+`Codex review`. Verify the published author before claiming bot attribution.
+
 Another session of the implementing model cannot supply independent review. For
 mixed work, both reviewers must cover the other model's changes. A self-review is useful before publication but never replaces this independent
 review, including when the external reviewer is out of quota.

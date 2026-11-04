@@ -13,6 +13,18 @@ existing Codex Review Bot for work requiring its independent review. A reviewer 
 implementation. Review mentions and reviewer names are allowed; implementation
 author credits are omitted unless explicitly requested.
 
+Maxi prefers the actual GitHub review and comment author to be the reviewer's
+bot (04.11.2026). Hosted Codex already publishes as
+`chatgpt-codex-connector[bot]`; Claude should use `claude[bot]` when an authorised
+GitHub App publishing route is available. GitHub attributes requests according
+to their authentication. Subscription OAuth authenticates Claude inference.
+A GitHub App installation token supplies the app's publishing identity.
+The manual Claude reviews on PR #542 used Maxi's GitHub account. Until a bot
+publishing route is verified, label every manual review body, inline comment
+and follow-up reply `Claude review` or `Codex review` as appropriate. Check the
+published `user.login` and `user.type` to establish the actual author.
+See [GitHub App authentication](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/about-authentication-with-a-github-app).
+
 Independence is between the implementing and reviewing model families, not just
 between sessions. Another Claude session cannot certify Claude-written changes.
 The requesting person or working agent selects the other reviewer deliberately;
@@ -85,8 +97,10 @@ Approaches considered:
 - **Selected:** the official action for inference, with a small Python controller
   for selection, immutable revision checks and publishing structured findings.
   This makes malformed results, stale heads and invalid inline locations testable
-  without paid model calls. Comments use `github-actions[bot]` and name Claude as
-  the reviewer; no extra GitHub App or personal GitHub token is required.
+  without paid model calls. Prefer a verified GitHub App publishing route for
+  `claude[bot]`. A workflow-token bootstrap publishes as `github-actions[bot]`
+  and labels each comment `Claude review`. The dedicated Claude identity and
+  its token handoff to the separate publisher remain to be validated.
 - The official generic review plugin can post inline, but its documented skip
   rules include already-commented and trivial PRs. Copying it does not establish
   the required review-after-every-push behaviour.
@@ -487,7 +501,10 @@ Once implementation is ready, the setup guide must give these exact locations:
    comments. Use the provided workflow token so no Claude-app validation requires
    an early merge. A permission or first-workflow limitation keeps the PR open;
    do not bypass protection or merge unreviewed to solve bootstrap.
-5. Verify an inline result and its exact SHA, then verify a second pushed head.
+5. Verify an inline result, its exact SHA and the actual GitHub author of the
+   review and each comment, then verify a second pushed head. Verify the chosen
+   app's token issuance for the separate publisher while keeping write
+   credentials out of the model step. Record any bootstrap fallback identity.
    Only after the installation PR is green and independently reviewed may it
    merge. Resume the waiting documentation branch afterwards, with a fresh review.
 

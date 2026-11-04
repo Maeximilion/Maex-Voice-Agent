@@ -537,6 +537,38 @@ Lessons: <learnings>
 
 ## 13. Handovers (newest first)
 
+## Handover 04.11.2026 - review author attribution
+
+Status: PR #542 remains Draft with auto-merge off. Maxi prefers review comments
+under the actual Claude and Codex bot accounts. The preference is recorded in
+`CLAUDE.md`, docs/21 and the implementation plan. Manual comments made through
+Maxi's account identify their reviewer in every body and reply.
+
+Artifacts: hosted Codex's observed author is `chatgpt-codex-connector[bot]`.
+The manual Claude follow-up on `ae1c903f1286dccb35a6fcfb6046faf9b5d77988` is
+[published](https://github.com/Maeximilion/Maex-Voice-Agent/pull/542#pullrequestreview-5776598015)
+under `Maeximilion`. It found no new eligible defects and kept the existing P1
+open. Bot publication for Claude has not been configured.
+
+Decisions: prefer authorised GitHub App publication for Claude. Verify the
+actual review/comment author. Keep the automation and staged-CI plans deferred.
+
+Gate: the local Docker run on that head passed lint and reported 8,054 passing
+tests, five failures and five setup errors due to absent checkout files in the
+container. Those ten tests passed in the full WSL checkout. This documentation
+update requires fresh current-head checks and independent review before merge.
+The focused WSL run of `python -m pytest -q api/tests/test_commands.py` passed
+all five tests, and `git diff --check` passed. Full Docker checks were not rerun
+for this documentation change while the recorded mount failures remain open.
+
+Open: fix the local Docker test failures and triage the existing merge-hook P1.
+The dedicated Claude publishing identity still needs implementation and live
+verification. `docs/cross-agent-review` remains parked.
+
+Lessons: a reviewer's name in the body identifies the model; GitHub chooses the
+visible author from the publishing credential. The current CLI is authenticated
+as Maxi, and its token cannot list GitHub App installations (HTTP 403).
+
 ## Handover 04.11.2026 - PR #542 desktop continuation
 
 Status: [PR #542](https://github.com/Maeximilion/Maex-Voice-Agent/pull/542)
