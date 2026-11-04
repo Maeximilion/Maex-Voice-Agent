@@ -185,12 +185,38 @@ Only one review gates a merge: a clean review of the exact head commit (Codex, o
 - `/security-review`: runs in `/done` before the PR opens, only when the diff touches auth in `core/`, `telephony/`, `deploy/`, or the agent token path. Its findings count as P1 once checked against the code.
 - Security audit (Maxi, 2026-10-15): not continuous. Due only at the triggers in `docs/09_OPERATIONS_LEGAL.md` section 5 (first call from outside the workbench, every gate from G1 on, a component becoming reachable from outside, or 30 days plus changes in the exposed areas). `/start` and `/gate` recommend it, Maxi decides, it runs on Opus 5.5 at `xhigh`.
 
+**Review comment format** (Maxi, 04.11.2026): use the same concise English format
+for Claude and Codex. Start with `[P0]`, `[P1]` or `[P2]` and a specific title
+(aim for at most 80 characters). Use one short paragraph, usually 2–4 sentences
+and about 40–100 words: the concrete trigger/input, the actual wrong behaviour
+and impact, then the required outcome and a useful verification case. These
+lengths are targets, not reasons to omit evidence or truncate a complex finding.
+One comment covers one root cause, anchored to the smallest useful diff range.
+Include a compact contract/code reference when the claim depends on it; do not
+repeat a file location already supplied by the inline anchor.
+
+State facts and assumptions separately. Do not claim a test ran unless it did.
+Give a minimal fix direction when useful, but allow any implementation that
+meets the required behaviour; code suggestions are optional and usually no more
+than three lines. Avoid vague demands such as "handle this properly", lectures,
+praise filler, personal criticism and optional style findings. Existing severity
+and scope rules decide what is reported; this adds no new reviewer categories.
+For a repeated finding, reference the earlier thread and name the still-failing
+scenario or new evidence instead of restating the original suggestion.
+
 **Evaluate feedback before changing code** (Maxi, 04.11.2026): a review comment,
 whether from a person or a model, is a claim to investigate, not an instruction
 to obey. Check the reported input/sequence, the current code, intended behaviour,
 callers and tests. Evaluate the proposed fix separately: it may break a contract,
 add unnecessary complexity or worsen performance. Prefer evidence over either
 the reviewer's confidence or the implementing agent's confidence.
+
+Before editing, read the whole thread and translate the claim into a checkable
+acceptance condition: given the reported input/state, what must happen instead?
+Verify that interpretation against the contract and code. If two materially
+different interpretations remain, ask one targeted question in the original
+thread before changing that behaviour. Test the failure mechanism and relevant
+boundary cases, not just the exact example or the suggested replacement line.
 
 - For a confirmed defect, choose a suitable fix and verify it with a regression
   test. The reviewer's proposed implementation need not be used.
@@ -211,6 +237,10 @@ Replies are concise, technical and in English. Revisit a rejection if new
 evidence invalidates it. No code change means no artificial commit/push just to
 acknowledge the thread. None of this replaces the completed independent review
 of the current head or the existing CI and merge requirements.
+For an accepted fix, reply with the corrected behaviour, the actual commit or
+test evidence and any remaining limitation; "done" alone is insufficient. For
+a rejection, state the contrary evidence. Keep replies to 1–3 sentences when
+that is enough, and preserve this context for the next reviewer.
 
 **Review loop limits** (Maxi, 2026-10-21): how long a PR stays in fix rounds. A round is one review of a new head.
 

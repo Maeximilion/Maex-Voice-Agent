@@ -565,6 +565,11 @@ Feedback handling is now explicit: verify each claim and its proposed fix
 separately; explain and resolve disproved/outdated/duplicate claims in their own
 threads without artificial code changes. Keep uncertain or real deferred defects
 truthfully tracked. Follow-up review context must preserve those explanations.
+Shared comment guidance now asks both reviewers for concise English findings
+with trigger, impact and a verifiable required outcome. Fix authors verify that
+outcome and reply with actual evidence; repeated findings explain the remaining
+failure. The 40–100-word target is editorial, not a hard limit. Sources and an
+illustrative example are in docs/21; no live effectiveness claim is made.
 The official action supports subscription OAuth, but no live review is verified.
 Branch `ci/claude-inline-review` is independent of `docs/cross-agent-review`;
 the latter waits. Next: approve the concrete design, implement and test on this

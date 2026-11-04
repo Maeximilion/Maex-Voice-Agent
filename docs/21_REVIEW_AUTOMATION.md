@@ -191,7 +191,10 @@ Check every change since that reviewed head, verify the reported fixes, and look
 for regressions caused by those changes. Read affected callers and contracts as
 needed. Follow AGENTS.md and CLAUDE.md. Do not repeat resolved root causes or
 reopen unrelated cosmetic work. Report concrete defects inline at valid lines;
-keep any completion summary brief. If prior coverage is invalid or the impact
+use the shared English comment format: trigger, impact and required behaviour
+with a verification case in one short paragraph. For a repeated finding, link
+the earlier thread and explain the still-failing case. Keep any completion
+summary brief. If prior coverage is invalid or the impact
 cannot be bounded, explain why a broader PR review is needed.
 ```
 
@@ -286,6 +289,70 @@ commit for an incorrect finding, do not treat the resolved flag as proof, and
 do not repeat a disproved root cause unless new code or evidence changes the
 assessment. New evidence can reopen a concern. The same head needs no artificial
 push to record this discussion; existing reviewed-head and merge-gate rules apply.
+
+### Concise comments that can be implemented and verified
+
+The shared format is defined in `CLAUDE.md` and referenced from `AGENTS.md` so
+the hosted Codex bot can consume it. The Claude action prompt uses the same
+format. It is a writing guideline, not a new parser or a claim of measured
+token savings. Hosted Codex may still add its own badges, footer or summary.
+
+The sources below support explaining the reason, making intent explicit and
+letting the author choose a sound implementation. Google's review standard
+also cautions against blocking progress for perfection. Conventional Comments
+offers useful explicit intent, but its full label catalogue is unnecessary
+here: keep the existing P0–P2 scheme and omit nits rather than adding another
+style channel. The public Codex rubric prefers short inline findings; it is
+not proof of the exact prompt deployed by the hosted service.
+
+For this repository, use a short priority title and one paragraph answering:
+
+1. What input, state or sequence triggers the defect?
+2. What goes wrong, why, and what is the concrete consequence?
+3. What behaviour would remove the defect, and what check demonstrates it?
+
+Usually 2–4 sentences and 40–100 words suffice. This is a local editorial target,
+not a universal senior-reviewer rule or an empirically proven optimum for models.
+A short unambiguous finding can be shorter; a concurrency or security sequence
+may need more detail. Never mechanically shorten the failing scenario, drop a
+critical assumption or invent evidence to fit the target. A terse command such
+as "make this atomic" is not enough when the failure mechanism is unstated.
+
+Illustrative finding only; this is not a newly verified repository defect:
+
+> **[P1] Preserve existing settings when saving fails**
+>
+> If saving fails after opening the settings file for writing, the previous
+> settings are already lost. Write and validate a temporary file before replacing
+> the original. Verify that a simulated write failure leaves the original file
+> unchanged, and that a successful save replaces it completely.
+
+The fix author first derives the expected behaviour from the comment, reads the
+thread and relevant contract, then verifies the reported failure. Add a regression
+test that exercises that failure mechanism, including meaningful nearby cases;
+do not merely implement the reviewer's preferred syntax. Ask a targeted question
+when the expected outcome is materially ambiguous. Do not seek confirmation of
+every routine implementation detail.
+
+Replies should normally be 1–3 sentences: disposition, reason or corrected
+behaviour, and real evidence. A fixed reply names the actual commit/test result;
+a no-change reply explains the contrary contract/code evidence. A bare "done"
+does not tell the next reviewer whether the intended outcome was verified.
+Do not fabricate those references; the examples and test suggestions here are
+not executed tests.
+
+When a concern returns, compare it with the earlier thread and fix. State the
+remaining input/sequence, the relevant current line and why the prior fix did
+not satisfy the agreed behaviour, or explain what new evidence changes a prior
+rejection. Do not introduce new requirements under the old finding. Preserve the
+existing escalation when a proposed fix contradicts an earlier one. Repeated
+comments in one file alone do not establish misunderstanding: PR #357's sampled
+comments included distinct backup, file-write and path-compatibility defects.
+
+Measure the change on subsequent real reviews: repeated-root-cause findings,
+clarification requests and fix rounds per PR, alongside missed defects and
+invalid findings. Shorter comments alone are not the success criterion. Use the
+existing review-load audit rather than building another metrics service.
 
 The first version does not change the repository ruleset or enable automatic
 merging. The existing merge hook does not understand Claude bot reviews. A
@@ -448,3 +515,8 @@ measurement has been made during planning.
 - [Codex Action](https://github.com/openai/codex-action)
 - [Codex GitHub review configuration and repository guidance](https://learn.chatgpt.com/docs/third-party/github)
 - [OpenAI: additional guidance in review mentions](https://openai.com/index/introducing-upgrades-to-codex/)
+- [Google: writing review comments](https://google.github.io/eng-practices/review/reviewer/comments.html)
+- [Google: the standard of code review](https://google.github.io/eng-practices/review/reviewer/standard.html)
+- [Google: handling reviewer comments](https://google.github.io/eng-practices/review/developer/handling-comments.html)
+- [Conventional Comments](https://conventionalcomments.org/)
+- [Public Codex review rubric](https://github.com/openai/codex/blob/main/codex-rs/prompts/templates/review/rubric.md)

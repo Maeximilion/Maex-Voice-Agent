@@ -25,6 +25,7 @@ introduced. No UI/UX reviewer or new Codex action is planned.
 - First review: full PR diff. Follow-ups for both models: all changes since the last completed independent review, affected files and unresolved findings; expand context as needed and fall back to the full PR when coverage or impact is uncertain. Hosted Codex receives guidance, not a claimed hard file/token restriction.
 - English repository content. No implementation-author credit unless expressly requested.
 - Verify review claims before changing code. Allow evidence-backed rejection and thread resolution without a fix commit; do not confuse a bad proposed fix with a false defect, or a resolved thread with proof. Keep deferred real defects truthfully tracked.
+- Follow the shared English comment format: priority/title, trigger, wrong outcome/impact and required behaviour with a verification case. Use a short paragraph, normally 40–100 words, as guidance only; never truncate findings or reject a valid one solely for length. The fix author verifies the acceptance condition rather than blindly copying suggested code.
 - `CLAUDE.md` and `AGENTS.md` remain the rule sources; no `codex.md` or competing review policy.
 - No self-hosted runner, fork secrets, `pull_request_target`, force push, protection bypass or automatic merge.
 - Run only on explicitly selected, trusted same-repository PRs. Another session of the same model is not independent review.
@@ -75,7 +76,7 @@ introduced. No UI/UX reviewer or new Codex action is planned.
 **Files:** Extend `scripts/claude_review.py` and `api/tests/test_claude_review.py`; create `.github/prompts/claude-review.md` and `.github/prompts/claude-review.schema.json`.
 
 **Interfaces:**
-- Result schema: `complete: boolean`, `summary: string`, `findings: [{priority: P0|P1|P2|P3, path: string, line: integer, side: LEFT|RIGHT, body: string}]`. The fixed prompt requires a concrete failing scenario in each finding and adherence to trusted repository rules.
+- Result schema: `complete: boolean`, `summary: string`, `findings: [{priority: P0|P1|P2|P3, title: string, path: string, line: integer, side: LEFT|RIGHT, body: string}]`. `title` is specific and excludes the priority prefix; the publisher prepends the validated priority. The fixed prompt follows the shared comment standard and requires a concrete failing scenario, impact and verifiable required behaviour. Word-count targets are not schema limits.
 - `publish(context: dict, result: dict, api: Callable) -> dict` returns a state and optional review ID. CLI `publish --context FILE --result FILE` exits nonzero on incomplete, stale, malformed or failed publication.
 - A completed COMMENT review includes `commit_id=head_sha`, valid inline comments and a marker `claude-review-state:v1` with both SHAs, verdict, mode and prior-review reference. Deduplication accepts only reviews from the expected workflow bot with matching revisions, trusted policy/prompt digest and marker, never a human-copied marker.
 
@@ -86,6 +87,17 @@ introduced. No UI/UX reviewer or new Codex action is planned.
 - [ ] Include relevant thread replies and no-change dispositions in follow-up context. Add `test_reasoned_no_change_resolution_is_preserved` and `test_new_evidence_can_reopen_rejected_finding`; verify a dismissed false claim needs no artificial fix commit, while resolution without evidence and a harmful suggested fix cannot erase a real unresolved defect. Evaluate the reasoning in review rather than accepting free-form disposition labels as authoritative.
 - [ ] Add `test_unfixed_prior_finding_blocks_clean_incremental_review` and `test_resolved_thread_is_not_fix_evidence`. In the prompt, require verification of the original defect and new defects in the delta; read affected callers/contracts as needed. If the model cannot bound impact, require a full-PR rerun before completed publication. Test `test_uncertain_impact_cannot_publish_partial_clean_result` and verify the rerun is bounded by the workflow timeout.
 - [ ] Run focused tests, Ruff and formatting checks on changed Python files. Commit the validated publisher, prompt and schema.
+
+Comment-quality acceptance for Task 2: inspect illustrative outputs for an
+unambiguous small defect, an ambiguous requested fix, a concurrency failure and
+a previously rejected finding. The first must be concise and actionable; the
+ambiguous case must identify what needs clarification rather than claim a
+confirmed defect; the concurrency case
+must retain the complete sequence; the repeated case must include new evidence
+or the still-failing scenario. Unit tests can validate title/body rendering and
+preservation of long valid content, but cannot prove semantic review quality.
+During real fix rounds, verify replies name the acceptance outcome and actual
+test/commit evidence. Retain the existing review-load audit for later comparison.
 
 ### Task 3: OAuth-only hosted workflow and execution isolation
 

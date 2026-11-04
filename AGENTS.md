@@ -26,6 +26,12 @@ For an agent that changes files here, whatever tool it runs in:
 
 How to review:
 
+- Use the shared English "Review comment format" in `CLAUDE.md`: a priority and
+  specific title, followed by one concise paragraph explaining the trigger,
+  wrong outcome/impact and required behaviour with a verification case. Aim for
+  roughly 40–100 words, but retain essential evidence. State the defect rather
+  than prescribing an unnecessary rewrite; a repeated finding must explain the
+  still-failing case and reference its earlier thread.
 - Follow the shared follow-up scope in `CLAUDE.md` section 6, "Independent review
   requests": use the last completed independent review as the baseline, check
   every later change and still-open findings, and read related code as needed.
