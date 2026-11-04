@@ -181,7 +181,19 @@
     save(area);
   }
 
+  // A cancelled drag puts back only the piece it moved, in the room it began
+  // in: a snapshot of the whole room would undo whatever replaced the room
+  // meanwhile, a conflict, an undo or another room (Codex on #535).
+  function cancelDrag(d) {
+    if (d && d.original) {
+      var i = d.area.objects.findIndex(function (x) { return x.id === d.id; });
+      if (i >= 0) d.area.objects[i] = clone(d.original);
+    }
+    drag = null; drawStart = null; preview = null;
+  }
+
   function activate(target) {
+    cancelDrag(drag);
     area = target;
     selectedId = "room";
     mode = "select";
@@ -741,7 +753,7 @@
     selectedId = o.id;
     var endpoint = event.target.closest("[data-endpoint]");
     drag = { type: endpoint ? "endpoint" : "move", endpoint: endpoint ? Number(endpoint.dataset.endpoint) : null, pointerId: event.pointerId,
-      before: content(area), original: clone(o), id: o.id, start: p, moved: false, startScreen: { x: event.clientX, y: event.clientY } };
+      before: content(area), area: area, original: clone(o), id: o.id, start: p, moved: false, startScreen: { x: event.clientX, y: event.clientY } };
     floor.setPointerCapture(event.pointerId);
     inspector();
     renderScene();
@@ -782,9 +794,7 @@
     if (floor.hasPointerCapture(event.pointerId)) floor.releasePointerCapture(event.pointerId);
     ignoreClickUntil = Date.now() + 180;
     if (event.type === "pointercancel") {
-      if (d.before) { var s = JSON.parse(d.before); area.room = s.room; area.objects = s.objects; area.links = s.links; }
-      drawStart = null;
-      preview = null;
+      cancelDrag(d);
       render();
       status("Bewegung abgebrochen.");
       return;
@@ -803,8 +813,8 @@
 
   root.addEventListener("keydown", function (event) {
     if (event.key === "Escape") {
-      if (drag && drag.before) { var s = JSON.parse(drag.before); area.room = s.room; area.objects = s.objects; area.links = s.links; }
-      drag = null; drawStart = null; preview = null; mode = "select";
+      cancelDrag(drag);
+      mode = "select";
       render();
       status("Zeichnen oder Verschieben abgebrochen.");
       return;
