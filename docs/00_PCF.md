@@ -543,6 +543,12 @@ Design and setup: [21_REVIEW_AUTOMATION.md](21_REVIEW_AUTOMATION.md), including
 the implementation plan and the deferred specialist-review experiment. One
 combined reviewer was selected. The old `ai-pr-review` workflow is disabled and
 removed; its self-hosted runner and API adapter cannot supply this integration.
+`CLAUDE.md` persists the requirement to comment `@claude review` after PR creation
+and every push of Codex work; the existing Codex review integration continues for
+Claude work. Push and comment triggers must not duplicate inference. The later
+specialist stage also introduces API-first authentication within a shared USD 50
+monthly review cap, followed by subscription OAuth. Credit eligibility and hard
+budget enforcement are still to be verified; no API is connected now.
 The official action supports subscription OAuth, but no live review is verified.
 Branch `ci/claude-inline-review` is independent of `docs/cross-agent-review`;
 the latter waits. Next: approve the concrete design, implement and test on this

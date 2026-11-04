@@ -14,6 +14,8 @@
 
 - One reviewer first; specialists are a measured follow-up.
 - Subscription secret `CLAUDE_CODE_OAUTH_TOKEN` only; no API-key or managed-review billing fallback.
+- This constraint applies to the first rollout. The deferred stage uses API first within a shared USD 50 monthly review budget, then subscription OAuth; verify hard spending controls before implementing it.
+- Codex posts `@claude review` after PR creation and every push to an open PR, as persisted in `CLAUDE.md`. Preserve existing automatic Codex reviews of Claude changes. Coalesce duplicate push/comment triggers without restarting same-head inference.
 - English repository content. No implementation-author credit unless expressly requested.
 - `CLAUDE.md` and `AGENTS.md` remain the rule sources; no `codex.md` or competing review policy.
 - No self-hosted runner, fork secrets, `pull_request_target`, force push, protection bypass or automatic merge.
@@ -44,7 +46,7 @@
 - [ ] Write failing tests for `test_latest_authorised_command`, `test_commands_across_pages`, `test_revoked_requester`, `test_bot_command_ignored`, `test_fork_rejected`, `test_outside_author_rejected`, `test_draft_skipped`, and `test_stop_command`. Assert exact first-line commands only; current write/maintain/admin permission; no model call for rejected inputs.
 - [ ] Run `python3 -m pytest api/tests/test_claude_review.py -q --noconftest`; verify the new cases fail because the controller does not exist.
 - [ ] Implement `prepare` using the existing `scripts/codex_review.py` API/error conventions. Fetch live PR data and all comment pages. Take diff and file data at captured revisions; reject incomplete pagination, unsupported/truncated patches or oversized input explicitly. Do not silently discard files.
-- [ ] Add deterministic `test_head_changes_during_snapshot` and `test_unavailable_complete_diff`: preparation must fail before model invocation. Read trusted policy files from the captured base.
+- [ ] Add deterministic `test_head_changes_during_snapshot` and `test_unavailable_complete_diff`: preparation must fail before model invocation. Add `test_push_and_command_same_head_coalesce` and `test_completed_while_queued_skips_inference`: duplicate triggers must not restart running inference or repeat a completed review. Read trusted policy files from the captured base.
 - [ ] Run the focused tests; require all passing. Commit the selection controller and tests.
 
 ### Task 2: Structured findings and exact inline publication
@@ -68,7 +70,7 @@
 
 **Interfaces:**
 - Events: `pull_request` types opened/reopened/synchronize/ready_for_review and `issue_comment` created. The comment path accepts top-level PR command comments only.
-- A credential-free selection job runs `prepare`. A selected review job uses concurrency keyed by repository and PR number, with cancellation of superseded runs; untrusted events never enter that group.
+- A credential-free selection job runs `prepare`. A selected review job uses concurrency keyed by repository and PR number, with cancellation of superseded heads; untrusted events never enter that group. A same-head command must not cancel running inference; queued runs recheck live selection, revisions and completion before spending quota.
 - The action receives `claude_code_oauth_token` and `github_token: ${{ github.token }}`. Only the publisher needs pull-request write permission. Missing OAuth on a selected run is a visible failure.
 - The fixed prompt and JSON schema produce the structured output consumed by `publish`. No free-form user instruction, arbitrary GitHub API tool, Bash, write tool, repository hook, plugin or MCP server is enabled for the model.
 
@@ -81,7 +83,7 @@
 
 ### Task 4: One PR, setup guide and live acceptance
 
-**Files:** Update `docs/21_REVIEW_AUTOMATION.md`, `scripts/README.md`, `docs/01_STATUS.md`, `docs/00_PCF.md` and README links as required. Keep this plan's checkboxes truthful.
+**Files:** Update `CLAUDE.md`, `docs/21_REVIEW_AUTOMATION.md`, `scripts/README.md`, `docs/01_STATUS.md`, `docs/00_PCF.md` and README links as required. Keep this plan's checkboxes truthful.
 
 - [ ] Replace future-tense setup with the implemented commands and exact UI paths. Explain token generation, GitHub Secret creation, `@claude review`, `@claude review stop`, the installation rerun and token renewal. State whether each check is mocked or live.
 - [ ] Run `make lint` and `make test` in the supported container environment; report infrastructure failures honestly and use CI for checks unavailable locally. Evals are required only if the final diff touches the conversation path. Record README measurements with `python3 scripts/readme_assets.py pending --record`; follow the scheduled asset policy.
@@ -89,7 +91,7 @@
 - [ ] Have the account owner create the subscription token and repository secret through the documented UI; never request its value in chat. Keep paid extra usage disabled. An inability to configure the token keeps live acceptance pending.
 - [ ] Post the authorised `@claude review` request. Before the workflow is on `main`, rerun its PR-triggered Actions run after the secret and comment exist. Verify actual subscription authentication and the review's exact base/head SHAs.
 - [ ] Prove inline publication with a deterministic, harmless workflow fixture using a real changed line and an explicitly labelled transport-test comment; do not fabricate a security finding. This test is not independent review evidence. Remove any fixture scaffolding before the final head review.
-- [ ] Push a legitimate final documentation/status update and verify automatic review of that new head without another request. Resolve findings, rerun applicable checks and obtain independent review of every resulting final head.
+- [ ] Push a legitimate final documentation/status update and post the required new `@claude review` comment. Verify the push and comment produce one completed review of that new head, with no duplicate inference. Independently test the push-triggered safety net when the comment is delayed. Resolve findings, rerun applicable checks and obtain independent review of every resulting final head.
 - [ ] Merge only after exact-head CI, current base, independent review and existing gates pass. Then resume the waiting documentation branch, bring it up to date normally and obtain its own new review.
 
 ## Plan self-review

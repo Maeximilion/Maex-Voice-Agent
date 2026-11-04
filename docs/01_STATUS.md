@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.43
+> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.44
 
 ---
 
@@ -14,7 +14,13 @@ measured follow-up. Branch `ci/claude-inline-review` starts from `main` and will
 carry one separate PR. The existing `docs/cross-agent-review` branch waits until
 real inline review and re-review after a push work. An OAuth token, isolated
 execution and live GitHub verification remain prerequisites; no paid API fallback
-or self-review fallback is authorised. The design assumes explicit reviewer
+or self-review fallback is authorised for the initial rollout. The later API stage
+is planned together with specialists: API first, a shared USD 50 monthly review
+cap, then subscription OAuth; credit eligibility and hard enforcement remain
+unverified. `CLAUDE.md` now requires Codex to post `@claude review` after PR
+creation and every push to an open PR, while the existing automatic Codex reviews
+of Claude changes continue. Duplicate push/comment events must not repeat model
+work. The design assumes explicit reviewer
 selection without implementation-author labels, and cancellation of superseded
 heads while requiring a completed independent review of the latest revision.
 
@@ -785,6 +791,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.44 · 04.11.2026:** Persist per-push independent review requests and defer API-first review with a USD 50 monthly cap
 - **v2.14.43 · 04.11.2026:** Record the subscription inline-review design, setup prerequisites and staged implementation plan
 - **v2.14.42 · 04.11.2026:** Violet of the software is the electric ultra violet #7B2FFF (Maxi)
 - **v2.14.41 · 04.11.2026:** T-3.11 floor plan editor: rooms, tables, combinations and fixtures at /gui/raumplan, migration 028

@@ -85,6 +85,27 @@ The layout is modular, organized by layers with fixed dependency direction. Full
 
 ## 6. How You Work
 
+### Independent review requests
+
+Claude-written changes continue through the existing automatic Codex Review Bot
+on PR creation and subsequent pushes. Do not replace that integration with a
+second Codex Actions reviewer. For Codex-written changes, the working agent posts
+a new top-level `@claude review` comment after creating the PR and after every
+subsequent push to that open PR, checks that posting succeeded, and obtains a
+completed Claude review of the latest revision before merging. A push made before
+a PR exists is followed by the request when the PR is created. No implementation
+author label or credit is needed; the agent deliberately chooses the other model.
+Another session of the implementing model cannot supply independent review. For
+mixed work, both reviewers must cover the other model's changes. These rules
+override the older self-review fallback below.
+
+The Claude action is currently planned, not installed or live-tested. A mention
+alone does not establish that a review ran. Setup, exact-head validation and
+duplicate-trigger handling are documented in [docs/21_REVIEW_AUTOMATION.md](docs/21_REVIEW_AUTOMATION.md).
+Start with subscription OAuth only. A later, separately configured stage uses
+API first within a shared USD 50 monthly review budget, then subscription OAuth;
+its budget enforcement and specialist experiment are documented there.
+
 ### Slash Commands (`.claude/commands/`)
 `/start` begin session · `/task T-x.y` build task · `/done` close out · `/ship <PR>` drive a PR through CI and review to its merge · `/bug "…"` error with a red eval case or test first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 

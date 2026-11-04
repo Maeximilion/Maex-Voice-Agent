@@ -8,8 +8,8 @@ are a measured follow-up, not part of the initial rollout.
 
 Request Claude review with an authorised PR comment, then review each new pushed
 head of that PR. Findings appear inline in GitHub. Use the existing Claude
-subscription, never an API-billing fallback. Keep the existing Codex Review Bot
-for work requiring its independent review. A reviewer does not certify its own
+subscription for the first version, with no API credential configured. Keep the
+existing Codex Review Bot for work requiring its independent review. A reviewer does not certify its own
 implementation. Review mentions and reviewer names are allowed; implementation
 author credits are omitted unless explicitly requested.
 
@@ -22,6 +22,15 @@ If Claude starts fixing a selected PR, stop its selection and arrange Codex revi
 of those fixes; Claude's existing review alone cannot clear the new head. Do not
 add author labels or implementation credits to implement routing. These user
 instructions override the older self-review fallback still present in `CLAUDE.md`.
+
+The usual workflow remains Claude implementation followed by the existing
+automatic Codex Review Bot, including its inline comments and review after pushes.
+This does not require a second Codex GitHub Actions integration. When Codex
+implements, it must post a new top-level `@claude review` comment after opening
+the PR and after every subsequent push to that open PR. This obligation lives
+in `CLAUDE.md`, not only in chat memory. A push before a PR exists cannot have a
+PR comment; opening that PR fulfils the pending request. Comment posting must
+succeed, or the working agent reports the failure and retries before merge.
 
 This is one independent PR based on `main`. The prior documentation branch
 `docs/cross-agent-review` stays separate until inline Claude review works. Do not
@@ -64,6 +73,12 @@ Approaches considered:
 1. An owner/collaborator with current write, maintain or admin permission posts
    `@claude review` as the complete first line of a new top-level PR comment.
    This project's command selects Claude now and for subsequent pushes.
+   Codex additionally posts the command after PR creation and each push, as
+   required above. Repeated commands and the matching push event must coalesce:
+   they do not request two model runs for the same base/head pair. A same-head
+   comment must not cancel and restart an already running review. Recheck for
+   a completed matching review immediately before starting inference, not just
+   when the event first arrives.
    `@claude review stop` removes that selection. Only these exact commands are
    interpreted; arbitrary comment text never becomes a model instruction.
 2. The latest authorised command decides. Inspect all comment pages and check
@@ -185,9 +200,42 @@ or verified review service. The live setup test is distinct from mocked tests.
 
 ## Deferred experiment: specialised reviewers
 
+### Future authentication order and budget
+
+The later API stage is explicitly wanted, but no API connection or spending is
+authorised for the first rollout. The user reports a monthly USD 100 allowance;
+its eligibility, expiry, covered API products and billing treatment still need
+verification when that account is connected. Do not assume it is cash credit
+or silently fall through to paid usage after it expires.
+
+The target is **API first, with at most USD 50 per month for the review workflow
+across all its reviewers, then subscription OAuth**. This replaces an earlier
+proposal of subscription first with an API fallback. Plan the API connection
+together with the specialist experiment in a later independent PR. Use the
+same review rules and independent model family through either authentication
+path. Reaching the API budget changes authentication, not reviewer independence.
+
+A hard cap requires verified provider spending controls and accounting for
+in-flight work, retries, parallel specialists, input/output and cache charges.
+Do not start a call merely because the reported spend is USD 49.99. Reserve a
+conservative maximum request cost before dispatch, reconcile actual usage and
+route to OAuth before a request could exceed the remaining budget. Prefer a
+dedicated API workspace/key and provider-enforced cap where available; billing
+data can lag. Specify the monthly reset timezone and credit treatment during
+that implementation. Unknown or unavailable accounting must choose OAuth,
+not permit unbounded API use. If an exact ceiling cannot be enforced, disclose
+that and keep API execution disabled until an acceptable limit is agreed.
+
+An interrupted review is incomplete. A fallback retry must be bounded and
+publish at most one completed result per revision. Exhaustion of both allowed
+routes leaves review pending; it must not approve the PR or exceed the budget.
+
+### Specialist experiment
+
 Preserve this idea here, linked from README, for a later independent task.
-Claude supports custom subagents and parallel sessions. Each consumes the same
-account's usage allowance; extra contexts can increase tokens even when wall
+Claude supports custom subagents and parallel sessions. Under subscription OAuth,
+each consumes the same account's usage allowance; API reviewers share the monthly
+review budget above. Extra contexts can increase tokens even when wall
 time falls. Job names such as `Claude Security` and `Claude Correctness` do not
 create different account identities. Separate bot identities are unnecessary.
 
