@@ -120,10 +120,11 @@ class BoardOrder:
     register_entered_at: datetime | None = None
     # Not marked, and from an earlier business day: the register may lack it.
     register_late: bool = False
-    # Fingerprint of the lines on the card (`correction.order_version`). The
-    # mark names the state the team typed, so a card older than a correction
-    # cannot mark the newer one. Taken from the very rows the card shows, not
-    # from a count of audit entries, which the deletion job removes.
+    # Fingerprint of the lines and the address on the card
+    # (`correction.order_version`). The mark names the state the team typed,
+    # so a card older than a correction cannot mark the newer one. Taken from
+    # the very rows the card shows, not from a count of audit entries, which
+    # the deletion job removes.
     version: str = ""
     # Delivery (T-6.6): the fee in cents, and the address as stored; None for a
     # pickup or a delivery whose address is missing.
@@ -252,7 +253,7 @@ def list_new(
             overdue=o.id in overdue,
             register_entered_at=o.register_entered_at,
             register_late=o.id in late,
-            version=order_version(items[o.id]),
+            version=order_version(items[o.id], o),
             delivery_fee_cents=o.delivery_fee_cents,
             address=addresses.get(o.address_id) if o.address_id else None,
         )
@@ -549,8 +550,7 @@ def cancel_order(
         )
     slip = withdraw_tickets(session, order, now or utcnow())
     order.status = CANCELLED
-    if session.scalar(select(Order.id).where(Order.id == order.id, _ever_marked())):
-        settle_default(session, order)
+    settle_default_if_marked(session, order)
     order.handover_state = "pending" if slip else None
     session.add(
         AuditLog(
@@ -625,6 +625,16 @@ def settle_default(session: Session, order: Order) -> None:
         )
 
 
+def settle_default_if_marked(session: Session, order: Order) -> None:
+    """After a cancel or a corrected address: a delivery the team marked, also
+    one whose mark a correction cleared since, may have made its address the
+    default, so the default settles again. One never marked never moved it and
+    leaves it alone: a default from before stays (fails closed only on what a
+    mark gave)."""
+    if session.scalar(select(Order.id).where(Order.id == order.id, _ever_marked())):
+        settle_default(session, order)
+
+
 def _ever_marked():
     """The order was marked "In Kasse eingegeben" once: a correction clears
     `register_entered_at` until the team marks the new revision, the audit
@@ -643,14 +653,15 @@ def _ever_marked():
 
 
 def version_of(session: Session, order: Order) -> str:
-    """The fingerprint of the order's lines now, in the order the card shows them."""
+    """The fingerprint of the order's lines now, in the order the card shows
+    them, and of its address."""
     rows = session.scalars(
         select(OrderItem)
         .where(OrderItem.tenant_id == order.tenant_id, OrderItem.order_id == order.id)
         .order_by(OrderItem.created_at, OrderItem.id)
         .execution_options(populate_existing=True)
     ).all()
-    return order_version(list(rows))
+    return order_version(list(rows), order)
 
 
 def unmarked_before(

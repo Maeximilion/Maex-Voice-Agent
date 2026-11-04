@@ -121,7 +121,7 @@ def keep(
     team's mark (`board.settle_default`): a draft nobody said yes to is no
     "letztes Mal"."""
     customer = _customer(session, tenant_id, call_id, phone, where)
-    address = where.stored or _address(session, tenant_id, customer, where.spoken)
+    address = where.stored or address_row(session, tenant_id, customer.id, where.spoken)
     address.zone_id = where.zone.zone_id
     session.flush()
     return customer, address
@@ -156,31 +156,42 @@ def _customer(
     return customer
 
 
-def _address(
+def address_row(
     session: Session,
     tenant_id: uuid.UUID,
-    customer: Customer,
+    customer_id: uuid.UUID,
     said: OrderAddress | None,
 ) -> Address:
-    """The same address said again, a second draft of the call or a later
-    order, is the same row."""
+    """The same address said again, a second draft of the call, a later order
+    or the team's correction on the tablet (#525), is the same row."""
     assert said is not None  # `place`: a stored address or a spoken one
-    wanted = Address(
+    wanted = _wanted(tenant_id, customer_id, said)
+    for row in session.scalars(
+        select(Address).where(Address.customer_id == customer_id)
+    ):
+        if _same(row) == _same(wanted):
+            return row
+    session.add(wanted)
+    return wanted
+
+
+def same_address(row: Address, said: OrderAddress) -> bool:
+    """Whether `said` is `row` again, as `address_row` would find it."""
+    return _same(row) == _same(_wanted(row.tenant_id, row.customer_id, said))
+
+
+def _wanted(
+    tenant_id: uuid.UUID, customer_id: uuid.UUID, said: OrderAddress
+) -> Address:
+    return Address(
         tenant_id=tenant_id,
-        customer_id=customer.id,
+        customer_id=customer_id,
         street=said.street.strip(),
         house_number=said.house_number.strip(),
         postal_code=postal_digits(said.postal_code),
         city=said.city.strip(),
         floor_note=(said.floor_note or "").strip() or None,
     )
-    for row in session.scalars(
-        select(Address).where(Address.customer_id == customer.id)
-    ):
-        if _same(row) == _same(wanted):
-            return row
-    session.add(wanted)
-    return wanted
 
 
 def _same(address: Address) -> tuple[str, ...]:

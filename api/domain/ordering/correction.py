@@ -17,6 +17,15 @@ A note on a position ("WICHTIG: Keine Erdnuesse. Grund: Allergie", E14) is
 never lost silently: a position with a note is only dropped with an explicit
 `drop_note`. "Falsches Gericht" is corrected by the team with a swap, then the
 note stays on the position.
+
+A delivery's address is corrected the same way (#525): the team types the
+address, the domain writes a row for the order's customer
+(`delivery.address.address_row`) and takes zone and fee of its postal code
+from the database (`check_delivery`). An address outside every zone is
+refused and nothing changes. "Falsche Adresse" is saved only with a new
+address: a slip with that reason names the address the driver goes to. The
+time the guest was told stays, and the minimum order binds the agent, not the
+team.
 """
 
 import hashlib
@@ -25,11 +34,20 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, InvalidInput, NotFound
+from api.core.errors import (
+    Conflict,
+    InvalidInput,
+    NotFound,
+    OutOfZone,
+    ServiceUnavailable,
+)
 from api.core.time import utcnow
+from api.domain.delivery.address import address_row, same_address
+from api.domain.delivery.zones import check_delivery, postal_digits
 from api.domain.menu.items import is_sold_out, option_groups, option_key
 
 # The same number lookup as search_menu ("7" finds "07", "23A" finds "23a").
@@ -39,11 +57,12 @@ from api.domain.ordering.handover import may_hold_a_slip
 from api.domain.ordering.labels import ACTION_CORRECTED, labels_for_rows
 from api.domain.ordering.pricing import row_cents
 from api.domain.ordering.ticket import send_ticket
-from api.models import AuditLog, MenuItem, Order, OrderItem
+from api.models import Address, AuditLog, Customer, MenuItem, Order, OrderItem
+from api.schemas.delivery import DeliveryCheck
 from api.schemas.menu import OptionGroup
 
 # The same upper limit as for the agent (draft_order).
-from api.schemas.orders import MAX_QUANTITY
+from api.schemas.orders import MAX_QUANTITY, OrderAddress
 
 ACTOR_TABLET = "gui:tablet"
 # Reasons from docs/06 §3. "Falsche Adresse" exists only for deliveries.
@@ -63,6 +82,21 @@ NO_POSITION = (
 MISSING_OPTION = "Bei {number} {name} fehlt noch: {groups}."
 STALE = "Die Bestellung wurde inzwischen geändert. Bitte nochmal prüfen."
 NOTE_KEPT = "Position mit Hinweis: bitte Tauschen statt Entfernen, oder den Hinweis ausdrücklich streichen."
+ADDRESS_INCOMPLETE = "Für die neue Adresse fehlen noch Angaben: Straße, Hausnummer, Postleitzahl und Ort."
+ADDRESS_TOO_LONG = "Die neue Adresse ist zu lang."
+ADDRESS_POSTAL_CODE = "Postleitzahl {postal_code} gibt es so nicht: bitte fünf Ziffern."
+ADDRESS_OUT_OF_ZONE = (
+    "Dorthin liefern wir nicht: {postal_code} liegt in keinem Liefergebiet."
+)
+ADDRESS_TWO_ZONES = (
+    "Postleitzahl {postal_code} steht in mehreren Liefergebieten: bitte die "
+    "Liefergebiete prüfen."
+)
+ADDRESS_NO_CUSTOMER = (
+    "Die Kundendaten dieser Bestellung sind gelöscht: die Adresse lässt sich "
+    "nicht ändern."
+)
+NEW_ADDRESS_NEEDED = "„Falsche Adresse“ geht nur mit einer neuen Adresse."
 
 
 @dataclass(frozen=True)
@@ -90,6 +124,17 @@ class AddEdit:
 
 
 @dataclass(frozen=True)
+class AddressEdit:
+    """The address of a delivery as the team typed it, unchecked."""
+
+    street: str
+    house_number: str
+    postal_code: str
+    city: str
+    floor_note: str = ""
+
+
+@dataclass(frozen=True)
 class CorrectionRequest:
     """Was das Tablet schickt. `version` ist der Stand, den das Team gesehen hat."""
 
@@ -97,6 +142,8 @@ class CorrectionRequest:
     rows: tuple[RowEdit, ...] = ()
     added: tuple[AddEdit, ...] = ()
     edit_id: str = ""
+    # Delivery only: the address the order goes to after saving.
+    address: AddressEdit | None = None
 
 
 @dataclass
@@ -122,6 +169,21 @@ class PlannedLine:
 
 
 @dataclass
+class AddressPlan:
+    """The address part of a correction plan."""
+
+    delivery: bool
+    # The address the delivery goes to now; None for a pickup or one gone.
+    current: Address | None = None
+    # The team typed another one. `new` and its `zone` only when it can be
+    # saved, `blocker` says why not.
+    changed: bool = False
+    new: OrderAddress | None = None
+    zone: DeliveryCheck | None = None
+    blocker: str | None = None
+
+
+@dataclass
 class CorrectionPlan:
     order_id: uuid.UUID
     version: str
@@ -134,15 +196,20 @@ class CorrectionPlan:
     # Why it cannot be saved, in words for the team.
     blockers: list[str]
     reasons: dict[str, str]
+    # The fee now and after saving: another zone, another fee.
+    before_fee_cents: int
+    fee_cents: int
+    where: AddressPlan
 
 
-def order_version(rows: list[OrderItem]) -> str:
-    """Fingerprint of the positions: the state a correction refers to.
+def order_version(rows: list[OrderItem], order: Order) -> str:
+    """Fingerprint of the positions, the address and the fee: the state a
+    correction and the register mark refer to.
 
     Not updated_at on purpose: handover and release change the row but not the
     positions; a correction would otherwise be stale for no reason.
     """
-    data = [
+    data: list = [
         [
             str(r.id),
             str(r.menu_item_id),
@@ -153,6 +220,11 @@ def order_version(rows: list[OrderItem]) -> str:
         ]
         for r in rows
     ]
+    if order.address_id is not None or order.delivery_fee_cents:
+        # The register holds address and fee too (#525): back at the first
+        # address the row is the same, the fee of today's zone need not be
+        # (Codex #537). A pickup's print stays as it was.
+        data.append([str(order.address_id), order.delivery_fee_cents])
     return hashlib.md5(
         json.dumps(data, sort_keys=True, ensure_ascii=False).encode()
     ).hexdigest()
@@ -184,8 +256,8 @@ def preview_correction(
         raise Conflict(f"Bestellung {order.id} ist {order.status}", say=STALE)
     rows = _rows(session, order)
     if req is None:
-        req = CorrectionRequest(version=order_version(rows))
-    elif req.version != order_version(rows):
+        req = CorrectionRequest(version=order_version(rows, order))
+    elif req.version != order_version(rows, order):
         raise Conflict(STALE)
     return _plan(session, order, rows, req, now or utcnow())
 
@@ -212,11 +284,17 @@ def apply_correction(
         raise InvalidInput(f"Grund {reason!r} unbekannt")
 
     rows = _rows(session, order)
-    if req.version != order_version(rows):
+    if req.version != order_version(rows, order):
         raise Conflict("Positionen seit dem Oeffnen geaendert", say=STALE)
     plan = _plan(session, order, rows, req, now)
     if plan.blockers:
         raise InvalidInput(plan.blockers[0], say=plan.blockers[0])
+    new = plan.where.new
+    if reason == "wrong_address" and new is None:
+        # The slip would say "falsche Adresse" over the old one (#525).
+        raise InvalidInput(
+            "wrong_address without a new address", say=NEW_ADDRESS_NEEDED
+        )
     _check_notes(rows, req)
 
     labels = labels_for_rows(session, order.id, rows)
@@ -255,6 +333,9 @@ def apply_correction(
     items_total = sum(
         row_cents(r.unit_price_cents, r.options) * r.quantity for r in after_rows
     )
+    before_fee = order.delivery_fee_cents
+    if new is not None:
+        _move(session, order, new, plan.where.zone)
     order.items_total_cents = items_total
     order.total_cents = items_total + order.delivery_fee_cents
     # Even with the same total: the event stream recognises the correction by this.
@@ -280,6 +361,10 @@ def apply_correction(
                 ],
                 "before_total_cents": plan.before_total_cents,
                 "after_total_cents": order.total_cents,
+                # Whether, not where: the address is the guest's, the log outlives it.
+                "address_changed": new is not None,
+                "before_fee_cents": before_fee,
+                "after_fee_cents": order.delivery_fee_cents,
                 "labels": after_labels,
                 "note_dropped": any(
                     e.drop_note and e.quantity == 0 and by_id[e.order_item_id].note
@@ -289,6 +374,14 @@ def apply_correction(
         )
     )
     session.flush()
+    if new is not None:
+        # The default is the address of the customer's newest marked delivery
+        # (`settle_default`): a marked order's misheard address must not stay
+        # their "letztes Mal". One never marked moves nothing. Imported here:
+        # board imports this module.
+        from api.domain.ordering.board import settle_default_if_marked
+
+        settle_default_if_marked(session, order)
     if order.handover_state is not None:
         # The new state goes to the kitchen (ticket.py). "KORREKTUR" if it
         # has a ticket or gets one (send_ticket drops the reason on a first
@@ -334,6 +427,26 @@ def _rows(session: Session, order: Order) -> list[OrderItem]:
             .execution_options(populate_existing=True)
         )
     )
+
+
+def _move(
+    session: Session, order: Order, said: OrderAddress, zone: DeliveryCheck | None
+) -> None:
+    """The order goes to `said`: its row of the customer, zone and fee of today.
+    The caller sets the total in the same flush (`ck_orders_total`)."""
+    assert order.customer_id is not None and zone is not None  # `_where`
+    # The customer row first, as `settle_default` takes it later: the new
+    # row's foreign key holds a share lock on it, and two corrections of one
+    # customer, each holding that share, deadlock on its FOR UPDATE (Codex #537).
+    session.execute(
+        select(Customer.id).where(Customer.id == order.customer_id).with_for_update()
+    )
+    row = address_row(session, order.tenant_id, order.customer_id, said)
+    row.zone_id = zone.zone_id
+    # The row's id, before the order points at it.
+    session.flush()
+    order.address_id = row.id
+    order.delivery_fee_cents = zone.fee_cents
 
 
 def _reasons(order: Order) -> dict[str, str]:
@@ -458,7 +571,13 @@ def _plan(
         line for line in planned_rows if line.kind != "removed"
     ] + planned_added
     items_total = sum(line.cents for line in remaining)
-    changed = bool(planned_added) or any(line.kind != "kept" for line in planned_rows)
+    where = _where(session, order, req.address)
+    fee = where.zone.fee_cents if where.zone else order.delivery_fee_cents
+    changed = (
+        bool(planned_added)
+        or any(line.kind != "kept" for line in planned_rows)
+        or where.changed
+    )
 
     blockers = []
     if not changed:
@@ -472,18 +591,75 @@ def _plan(
                     number=line.number, name=line.name, groups=", ".join(line.missing)
                 )
             )
+    if where.blocker:
+        blockers.append(where.blocker)
     return CorrectionPlan(
         order_id=order.id,
-        version=order_version(rows),
+        version=order_version(rows, order),
         rows=planned_rows,
         added=planned_added,
         before_total_cents=order.total_cents,
         items_total_cents=items_total,
-        total_cents=items_total + order.delivery_fee_cents,
+        total_cents=items_total + fee,
         changed=changed,
         blockers=blockers,
         reasons=_reasons(order),
+        before_fee_cents=order.delivery_fee_cents,
+        fee_cents=fee,
+        where=where,
     )
+
+
+def _where(session: Session, order: Order, edit: AddressEdit | None) -> AddressPlan:
+    """The address part of the plan. Reads only: zone and fee from the database."""
+    where = AddressPlan(delivery=order.type == "delivery")
+    current = where.current = (
+        session.get(Address, order.address_id)
+        if where.delivery and order.address_id
+        else None
+    )
+    if edit is None:
+        return where
+    if not where.delivery:
+        raise InvalidInput(f"a {order.type} has no address")
+    typed = [
+        value.strip()
+        for value in (edit.street, edit.house_number, edit.postal_code, edit.city)
+    ]
+    if not all(typed):
+        where.changed, where.blocker = True, ADDRESS_INCOMPLETE
+        return where
+    street, house_number, postal_code, city = typed
+    try:
+        said = OrderAddress(
+            street=street,
+            house_number=house_number,
+            postal_code=postal_code,
+            city=city,
+            floor_note=edit.floor_note.strip() or None,
+        )
+    except ValidationError:
+        # The limits of `OrderAddress`, the ones the agent's addresses meet.
+        where.changed, where.blocker = True, ADDRESS_TOO_LONG
+        return where
+    if current is not None and same_address(current, said):
+        return where
+    where.changed = True
+    code = postal_digits(postal_code)
+    if order.customer_id is None:
+        where.blocker = ADDRESS_NO_CUSTOMER
+        return where
+    try:
+        where.zone = check_delivery(session, order.tenant_id, code)
+    except OutOfZone:
+        where.blocker = ADDRESS_OUT_OF_ZONE.format(postal_code=code)
+    except InvalidInput:
+        where.blocker = ADDRESS_POSTAL_CODE.format(postal_code=code)
+    except ServiceUnavailable:
+        where.blocker = ADDRESS_TWO_ZONES.format(postal_code=code)
+    else:
+        where.new = said
+    return where
 
 
 def _choice_keys(options: list[dict]) -> list[tuple[str, str]]:
