@@ -185,11 +185,38 @@ Only one review gates a merge: a clean review of the exact head commit (Codex, o
 - `/security-review`: runs in `/done` before the PR opens, only when the diff touches auth in `core/`, `telephony/`, `deploy/`, or the agent token path. Its findings count as P1 once checked against the code.
 - Security audit (Maxi, 2026-10-15): not continuous. Due only at the triggers in `docs/09_OPERATIONS_LEGAL.md` section 5 (first call from outside the workbench, every gate from G1 on, a component becoming reachable from outside, or 30 days plus changes in the exposed areas). `/start` and `/gate` recommend it, Maxi decides, it runs on Opus 5.5 at `xhigh`.
 
+**Evaluate feedback before changing code** (Maxi, 04.11.2026): a review comment,
+whether from a person or a model, is a claim to investigate, not an instruction
+to obey. Check the reported input/sequence, the current code, intended behaviour,
+callers and tests. Evaluate the proposed fix separately: it may break a contract,
+add unnecessary complexity or worsen performance. Prefer evidence over either
+the reviewer's confidence or the implementing agent's confidence.
+
+- For a confirmed defect, choose a suitable fix and verify it with a regression
+  test. The reviewer's proposed implementation need not be used.
+- For a disproved, outdated or duplicate claim, or a suggestion that conflicts
+  with intended correct behaviour, reply in the original inline thread with the
+  reason and relevant code/contract/test evidence. State that no code change is
+  needed and why retaining the implementation is preferable; then resolve that
+  thread. Resolution means the concern was addressed, not necessarily fixed.
+- If a defect is real but the proposed fix is harmful, reject the fix with
+  evidence and address the underlying defect another way. Do not resolve the
+  defect merely because that proposed fix is unsuitable.
+- If the claim cannot yet be verified, say what is unknown and investigate or
+  ask a targeted question. Failure to reproduce once is not disproof. If real
+  work is deferred, link its tracking and reason under the existing P2 policy;
+  do not describe it as fixed or close it merely to clear the merge gate.
+
+Replies are concise, technical and in English. Revisit a rejection if new
+evidence invalidates it. No code change means no artificial commit/push just to
+acknowledge the thread. None of this replaces the completed independent review
+of the current head or the existing CI and merge requirements.
+
 **Review loop limits** (Maxi, 2026-10-21): how long a PR stays in fix rounds. A round is one review of a new head.
 
 - P0 and P1 are always fixed, however many rounds it takes. No merge while one is open.
 - A P2 in code that hits an `xhigh` trigger from the Model Routing table (allergens, a booking, prices, the fate of a call) counts as P1.
-- Any other P2 is fixed when it is a real defect or cheap to fix. One that stays unfixed gets no reply of its own: it is listed with a one-line reason in the `Merge gate:` comment below.
+- Any other P2 is assessed under the feedback rules above and fixed when it is a real defect or cheap to fix within the existing scope. Explain a rejected or deferred finding in its original thread; the `Merge gate:` comment below links the decision and summarises any remaining work. A cosmetic or speculative suggestion is not made actionable merely because its patch would be small.
 - After 3 consecutive rounds that each found only P2s (a round with a P0 or P1 resets the count), Claude stops and decides: keep fixing when a remaining P2 is a real defect inside the PR's scope; merge when the rest are cosmetic, speculative, or real defects outside the PR's scope, which go to #207 and do not block. Either way a PR comment that opens with `Merge gate: <full head sha>` states that no P0 or P1 is open and lists what is left and why; leftovers worth doing go to the rolling review issue #207. That comment counts as the clean review in the merge rule above. CI must still be green.
 - Stop patching and propose a structural redesign to Maxi when the findings per round grow after 3 rounds, when findings land in the same function 3 rounds in a row, or when a finding asks to undo an earlier fix of the same PR. Nothing else is pushed until Maxi approves it; a confirmed P0 or P1 is still fixed and pushed at once.
 - The fixes for one review go out in one push (Maxi, 2026-10-22): every push moves the head and costs a review round. For the same reason `origin/main` is merged into the branch only when the merge needs it (`/done` step 7b), never during fix rounds.

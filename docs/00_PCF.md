@@ -561,6 +561,10 @@ inline findings over eight original revisions, including 23 P2 labels; this is
 evidence of review volume, not proof of invalid findings. The user chose to keep
 the flexible three-P2-round rule, including justified continuation for real
 in-scope defects; no fixed pause is introduced.
+Feedback handling is now explicit: verify each claim and its proposed fix
+separately; explain and resolve disproved/outdated/duplicate claims in their own
+threads without artificial code changes. Keep uncertain or real deferred defects
+truthfully tracked. Follow-up review context must preserve those explanations.
 The official action supports subscription OAuth, but no live review is verified.
 Branch `ci/claude-inline-review` is independent of `docs/cross-agent-review`;
 the latter waits. Next: approve the concrete design, implement and test on this

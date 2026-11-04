@@ -35,6 +35,10 @@ How to review:
   same root cause into one finding. Do not restart a search for cosmetic changes
   in unchanged, unaffected files after a fix; the existing severity rules remain.
 - Report a finding only when you can name a concrete failing input or sequence. No scenario, no finding.
+- When processing feedback, follow `CLAUDE.md`'s evidence-based assessment rules.
+  A justified thread resolution may reject an incorrect suggestion without a
+  code change. Consider that explanation before repeating the finding; a
+  resolved flag alone proves neither a fix nor that the reviewer was wrong.
 - Do not report style, naming, formatting or personal preference: `ruff` and the CI cover those.
 - A finding that was answered with a commit is not reported again in other words. If the same spot
   produces a new finding after a fix, check whether the root cause was fixed before reporting.

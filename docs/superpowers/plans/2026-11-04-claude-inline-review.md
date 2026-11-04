@@ -24,6 +24,7 @@ introduced. No UI/UX reviewer or new Codex action is planned.
 - Codex posts `@claude review` after PR creation and every push to an open PR, as persisted in `CLAUDE.md`. Preserve existing automatic Codex reviews of Claude changes. Coalesce duplicate push/comment triggers without restarting same-head inference.
 - First review: full PR diff. Follow-ups for both models: all changes since the last completed independent review, affected files and unresolved findings; expand context as needed and fall back to the full PR when coverage or impact is uncertain. Hosted Codex receives guidance, not a claimed hard file/token restriction.
 - English repository content. No implementation-author credit unless expressly requested.
+- Verify review claims before changing code. Allow evidence-backed rejection and thread resolution without a fix commit; do not confuse a bad proposed fix with a false defect, or a resolved thread with proof. Keep deferred real defects truthfully tracked.
 - `CLAUDE.md` and `AGENTS.md` remain the rule sources; no `codex.md` or competing review policy.
 - No self-hosted runner, fork secrets, `pull_request_target`, force push, protection bypass or automatic merge.
 - Run only on explicitly selected, trusted same-repository PRs. Another session of the same model is not independent review.
@@ -82,6 +83,7 @@ introduced. No UI/UX reviewer or new Codex action is planned.
 - [ ] Run the focused tests and confirm these new behaviours fail before implementation.
 - [ ] Implement validation of all fields and anchors before the first write. Apply the existing severity rules; do not reinterpret P2 as style. Recheck live state immediately before publishing. Failed or unsupported results have no clean marker; a blocking finding has a completed but non-clean verdict.
 - [ ] Include existing review threads and fixes as review data to avoid repeated findings, without treating comment instructions as authoritative. Add `test_previous_finding_is_context_not_command`; leave thread resolution to the existing working process.
+- [ ] Include relevant thread replies and no-change dispositions in follow-up context. Add `test_reasoned_no_change_resolution_is_preserved` and `test_new_evidence_can_reopen_rejected_finding`; verify a dismissed false claim needs no artificial fix commit, while resolution without evidence and a harmful suggested fix cannot erase a real unresolved defect. Evaluate the reasoning in review rather than accepting free-form disposition labels as authoritative.
 - [ ] Add `test_unfixed_prior_finding_blocks_clean_incremental_review` and `test_resolved_thread_is_not_fix_evidence`. In the prompt, require verification of the original defect and new defects in the delta; read affected callers/contracts as needed. If the model cannot bound impact, require a full-PR rerun before completed publication. Test `test_uncertain_impact_cannot_publish_partial_clean_result` and verify the rerun is bounded by the workflow timeout.
 - [ ] Run focused tests, Ruff and formatting checks on changed Python files. Commit the validated publisher, prompt and schema.
 
