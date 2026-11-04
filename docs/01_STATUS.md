@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.15.2
+> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.15.3
 
 ---
 
@@ -23,6 +23,9 @@ Implementation authorship is passed privately. AI-author credits stay out of
 commit authorship/messages and PR titles/descriptions; `@claude`, `@codex review`,
 named reviewers and bot comments are explicitly allowed. No hidden review
 infrastructure is needed. Earlier pushed history has not been rewritten.
+AI co-authorship is permitted only on Maxi's explicit request for the relevant
+work, never by default. Both tools follow the unchanged English-language rule
+and its German product-content exceptions in `CLAUDE.md` section 8.
 
 **Pickup and reservations can be switched off, like delivery (T-3.10, #495, 02.11.2026).** Three buttons in the first row of the header say what holds, „Abholung an“ or „aus“, and a tap changes it at once. The switch reaches the whole agent path: `get_service_status` reports and says it, `draft_order` and `check_slot` refuse, also in the middle of a call, and `confirm` refuses a draft made before the tap. A closed service offers the other one only where its hours run and its switch is on: the delivery sentence offered a pickup by the hours alone before. A long-lived call session now reads the switches and the notice fresh in `check_slot`. Reservations off stops new tables only. Evals `reservierung_0043`, `abholung_0090`, `lieferung_0090`, stand-in only; no real model has run them, and the status sentence and the extra flag grew the prompt state by one key.
 
@@ -791,6 +794,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.15.3 · 04.11.2026:** Require explicit opt-in for AI co-authorship and retain the existing language rule.
 - **v2.15.2 · 04.11.2026:** Allow named review requests and bot comments while omitting AI implementation-author credits.
 - **v2.15.1 · 04.11.2026:** Keep shared project rules; prepare manual cross-agent review and defer paid automation.
 - **v2.15.0 · 04.11.2026:** Record shared Claude/Codex review policy; automation and authentication remain pending.

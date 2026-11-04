@@ -991,7 +991,8 @@ implementation authorship from the private handover:
 > GitHub where supported. Report the reviewed SHA, findings and completion state;
 > only for a completed review with no unresolved blocking findings, use the
 > existing Merge gate: prefix with that SHA in a PR comment. Naming yourself as
-> reviewer is allowed; do not add an implementation-author credit to the PR.
+> reviewer is allowed; add an AI co-author credit only if Maxi explicitly requests
+> it for this work. Otherwise do not add an implementation-author credit to the PR.
 > For blocking findings or an incomplete review, use
 > an ordinary comment without that prefix. Never state that the head is clean
 > while a blocking finding remains. If the head changes,
@@ -1007,9 +1008,12 @@ prove the new-head and quota-failure cases before calling it active. Do not assu
 that adding a label changes the existing Codex app's automatic review settings.
 
 Maxi clarified the presentation rule: `@claude`, `@codex review`, named reviewers
-and bot comments in the PR are welcome. Do not identify an AI as implementation
+and bot comments in the PR are welcome. By default, do not identify an AI as implementation
 author in commit author/co-author fields, commit messages, PR titles or PR
-descriptions. No hidden review infrastructure is required for this preference.
+descriptions. An AI co-author may be named only on Maxi's explicit request for
+that work; there is no automatic or standing opt-in. The English-language rule
+and its German product-content exceptions remain exactly as defined in
+`CLAUDE.md` section 8. No hidden review infrastructure is required for this preference.
 
 A possible later action can use an explicit review request from an authorised
 user to select the reviewer for that PR, then repeat the selected review on

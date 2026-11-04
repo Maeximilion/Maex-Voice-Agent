@@ -113,14 +113,19 @@ The manual procedure is in `docs/19_CLAUDE_CODE_SETUP.md` section 8.
   the initial PR and every later pushed head, including a merge from `main`.
   A review must identify the full head SHA; a comment requesting it, a reaction,
   a successful workflow alone, or an earlier review is not completion evidence.
-- Do not identify an AI as the author in code, commit author/co-author fields,
+- By default, do not identify an AI as the author in code, commit author/co-author fields,
   commit messages, PR titles or PR descriptions (Maxi, 04.11.2026). Mentions such
   as `@claude` and `@codex review`, named reviewers and bot review comments are
   explicitly allowed. Reviewer identity is not an implementation-author credit.
+  Add an AI co-author credit only when Maxi explicitly asks for it, and only for
+  the work covered by that request. Permission to review, implement or merge is
+  not permission to add a co-author. No request means no AI co-author credit.
   Keep implementation authorship in the private session handover; do not
   fabricate a human author or reviewer. GitHub login, labels and branch names
   alone do not prove authorship. If both agents contributed code, obtain independent coverage of
   each contribution; do not silently call either agent independent of all of it.
+- Apply section 8's existing English-language rule to both tools, including its
+  defined German product-content exceptions. Do not replace it with another rule.
 - A missing, failed, rate-limited or outdated independent review blocks merging.
   Do not replace it with the implementing agent's own `Merge gate:` comment.
   The existing severity and fix-round rules still apply, but a loop-limit decision

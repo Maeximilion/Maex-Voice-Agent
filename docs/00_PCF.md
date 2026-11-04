@@ -485,6 +485,9 @@ maex-voice-agent/
   do not enforce AI independence; check it explicitly.
 - Named reviewers, `@claude`, `@codex review` and bot comments are allowed. Omit
   AI implementation-author credits from commits and PR titles/descriptions.
+  Exception: add an AI co-author only on Maxi's explicit request for that work.
+  Both tools follow the existing English-language rule and German product-content
+  exceptions in `CLAUDE.md` section 8.
 - Earlier validation: `git diff --check` passed. `make lint` and `make test`
   could not reach Docker in the cloud sandbox; neither check ran. No application
   code changed since that attempt. Current documentation checks are recorded in
