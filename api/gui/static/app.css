@@ -10,7 +10,8 @@
   --bg:#0D0819; --surface:#17102B; --surface-2:#21183D;
   --text:#F1ECFF; --muted:#A89CCB; --line:#2B2148; --line-strong:#76699F;
   --accent:#E8FF2E; --accent-bg:#2B2148; --accent-text:#F1ECFF;
-  --warn:#C9B6FF; --warn-bg:#2C2057; --warn-line:#9D7BFF;
+  /* Violet is the electric ultra violet Maxi chose on 03.11.2026 (was #9D7BFF). */
+  --warn:#C7AEFF; --warn-bg:#24125A; --warn-line:#7B2FFF;
   --danger:#FF5277; --danger-bg:#3D1226;
   --ok:#E8FF2E; --ok-bg:#2A2E0A;
   /* type */
@@ -45,7 +46,8 @@ header{background:var(--surface);border-bottom:2px solid var(--line)}
    colour (docs/06 §1 rule 4); the text stands next to it as well. */
 .dot{width:14px;height:14px;border-radius:50%;background:var(--ok);flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--surface);font-size:12px;line-height:1;font-weight:700}
 .dot.ok{background:var(--ok)}
-.dot.warn{background:var(--warn-line);border-radius:3px}
+/* The light violet: the line tone reached only 2.8:1 on the violet chip of the mode. */
+.dot.warn{background:var(--warn);border-radius:3px}
 .dot.danger{background:var(--danger);border-radius:3px}
 .dot.ok::before{content:"\2713"}
 .dot.warn::before{content:"\25B2"}
@@ -201,7 +203,7 @@ header.aus .seg.services .on{background:transparent;color:var(--muted)}
 .order .lines li{padding:3px 0}
 /* A note on the order or a line (an allergy, for one): a framed callout with a
    glyph, never grey small print. */
-.order .note{margin:var(--s2) 0;padding:var(--s2) var(--s3);background:var(--warn-line);color:var(--bg);border:2px solid var(--warn-line);border-radius:10px;font-weight:600}
+.order .note{margin:var(--s2) 0;padding:var(--s2) var(--s3);background:var(--warn-line);color:var(--text);border:2px solid var(--warn-line);border-radius:10px;font-weight:600}
 .order .note::before{content:"\25B2\00a0"}
 .nr{color:var(--muted);font-weight:500}
 .opt{padding-left:1.4em;color:var(--muted)}
