@@ -448,6 +448,8 @@ def test_the_review_must_be_clean_on_the_head(gate):
     done = gate.run()
     assert done.returncode == 2
     assert f'"Merge gate: {gate.head}"' in done.stderr
+    assert "completed independent review" in done.stderr
+    assert "Claude's own review" not in done.stderr
 
     gate.comments(gate.codex(gate.head, open_findings=True))
     assert gate.run().returncode == 2
@@ -465,7 +467,7 @@ def test_the_review_must_be_clean_on_the_head(gate):
 
 
 def test_a_merge_gate_comment_counts_only_from_the_owner_or_a_collaborator(gate):
-    note = f"Merge gate: {gate.head}, own review: Codex is out of quota."
+    note = f"Merge gate: {gate.head}, completed independent review and triage."
     outsider = {
         "user": {"login": "someone"},
         "author_association": "NONE",

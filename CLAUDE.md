@@ -85,8 +85,73 @@ The layout is modular, organized by layers with fixed dependency direction. Full
 
 ## 6. How You Work
 
+### Independent review requests
+
+Claude-written changes continue through the existing automatic Codex Review Bot
+on PR creation and subsequent pushes. Do not replace that integration with a
+second Codex Actions reviewer. For Codex-written changes, the working agent posts
+a new top-level `@claude review` comment after creating the PR and after every
+subsequent push to that open PR, checks that posting succeeded, and obtains a
+completed Claude review of the latest revision before merging. A push made before
+a PR exists is followed by the request when the PR is created. Do not add AI implementation-author labels, author/co-author trailers or credits
+unless Maxi explicitly requests them for that work. Reviewer names and mentions
+are allowed; the agent deliberately chooses the other model.
+
+Maxi prefers findings, review summaries and replies made as the reviewer to use
+the reviewer's own GitHub bot identity (04.11.2026), so they are distinguishable
+from his comments. PR creation, implementation updates, replies as the
+implementer and review-request mentions may use Maxi's account. Prefer
+`claude[bot]` for Claude and retain the existing `chatgpt-codex-connector[bot]`
+identity for hosted Codex. The authenticated publishing account determines the
+author. When a manual review uses Maxi's account, identify the reviewer in each
+review body, inline finding and reply made as reviewer with `Claude review` or
+`Codex review`. Verify the published author before claiming bot attribution.
+
+Another session of the implementing model cannot supply independent review. For
+mixed work, both reviewers must cover the other model's changes. A self-review is useful before publication but never replaces this independent
+review, including when the external reviewer is out of quota.
+
+For both independent reviewers, the first review covers the complete PR diff.
+Follow-up reviews focus on every change since the last completed independent
+review, the affected files and unresolved findings, with related code read as
+needed to assess the fix. Do not rereview unchanged, unaffected files by default.
+Use a full PR review when prior coverage cannot be trusted or the impact is
+unclear; record the new reviewed head and the prior evidence it builds on.
+For a manual Codex follow-up, use `@codex review` with the scoped request from
+`docs/21_REVIEW_AUTOMATION.md`, the last completed review and the current head.
+The hosted bot follows review guidance, but its internal file reads and token
+usage cannot be restricted by a proven file-scope setting. Keep its automatic
+trigger as it is; do not post an extra manual request while an automatic review
+of that head is running. The existing stalled-run exception in `/ship` remains.
+
+The Claude action is currently planned, not installed or live-tested. A mention
+alone does not establish that a review ran. Setup, exact-head validation and
+duplicate-trigger handling are documented in [docs/21_REVIEW_AUTOMATION.md](docs/21_REVIEW_AUTOMATION.md).
+Start with subscription OAuth only. A later, separately configured stage uses
+API first within a shared USD 50 monthly review budget, then subscription OAuth;
+its budget enforcement and specialist experiment are documented there.
+
+Until the action is installed, a user-started Claude Code session can perform
+the independent review manually and publish it on GitHub using its authorised
+account. Record the full reviewed base/head SHAs and reviewer in a COMMENT
+review, with actual findings inline. Read the diff and applicable rules without
+changing the branch, running `/done` or `/ship`, implementing the planned action,
+or merging. A missing action does not invalidate a completed manual review;
+a bare mention without a completed review is insufficient. A later push still
+needs another independent review of the new head. The user decides when a manual
+review session starts; this instruction does not launch a paid session for them.
+
 ### Slash Commands (`.claude/commands/`)
 `/start` begin session · `/task T-x.y` build task · `/done` close out · `/ship <PR>` drive a PR through CI and review to its merge · `/bug "…"` error with a red eval case or test first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+
+After `/done` creates or updates its task's PR, the active session automatically
+continues with `/ship` for that PR. `/ship` owns CI/review waiting, fix rounds,
+merge and cleanup; the user need not invoke it separately. Respect explicit
+wait/draft instructions and missing prerequisites. `/ship` reuses `/done`'s
+pre-merge and cleanup steps only, never calls the complete command recursively,
+and does not start a second shipping operation for the same PR. This is an
+active-session handoff, not a service that restarts a closed or quota-exhausted
+session. The independent reviewer, checks and merge permissions stay mandatory.
 
 **Where a task runs:** a work package row with the note `Environment: Ubuntu (WSL) on the workbench` runs only in a session started in Ubuntu on Maxi's PC, never Windows-local and never in the cloud. `/task` checks this before it reads anything else. Start, kits and limits: `docs/12_CLAUDE_CODE_PLAYBOOKS.md` S10.
 
@@ -142,21 +207,78 @@ Ask closed questions (yes/no or A/B/C with marked recommendation), **one per int
 
 **Check for parallel work first** (Maxi, 2026-10-21): before a task or a fix starts, `gh pr list --state open --limit 200` and, after `git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'` (a single-branch clone fetches only its own branch otherwise; `--prune` drops a branch deleted on GitHub from the scan), the branches whose newest commit is less than 24 hours old (`git for-each-ref --sort=-committerdate refs/remotes/origin --format='%(committerdate:relative) %(refname:short)'`; git keeps no push time, so this is commit time) show whether another session already covers it. If one does, a finding goes there as a comment (above) instead of a second PR, and a branch with another session's commit from the last 24 hours gets no push without Maxi's word.
 
-**Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). **Merging a PR into `main`** (Maxi, 2026-10-06, replaces the rules of 2026-10-05 and 2026-10-06 morning): Claude merges a PR itself once CI is green on the exact head commit, the evals are green where the diff touches the conversation path (rule 4), and that head commit has a clean review: Codex, or Claude's own if Codex is out of quota, unless Maxi asks to wait for Codex on that PR. A PR whose diff hits an `xhigh` trigger from the Model Routing table (migrations; code that decides money, a booking or the fate of a call) is merged by Claude too once all of this holds and the evals ran on its exact head (Maxi, 2026-10-28, replaces the rule of 2026-10-19 that left it with Maxi); a migration also needs its up and down test, and a production migration still waits for Maxi (§10). A new commit after the review needs a new review before the merge. Before Claude merges a PR of its own work, `/done` has run on the branch (Maxi, 2026-10-20): `/ponytail-review` on a diff with non-`.md` files and `scripts/status_bump.py` (the number in the "Status version" line of `docs/01_STATUS.md` is higher than the one on `origin/main`); `/ponytail-review` is skipped only where the skill is not installed in the session, and the report says so. Merging straight after a fix round skipped both once (PR #339); when either is missing, run it first, push, and get CI and the review on the new head. The PR of the weekly README routine is exempt: it only carries generated files. The project hook `merge_gate.sh` (Maxi, 2026-10-21) blocks `gh pr merge` until CI, the sync with `main`, the status bump and a clean review hold on the head commit, and takes only `gh pr merge <n> --merge --match-head-commit <full sha>` (`--delete-branch` after it is allowed, a `cd` in front is not), or for a PR in a native stack, which GitHub refuses the first form for, `gh stack merge <n> --merge --yes` on the bottom PR (Maxi, 2026-11-03), into `main`, checked in the folder the command runs in: any other command that names it, a commit message or a search included, is blocked, so such text goes into a file or reads `gh pr merg[e]`; it cannot see `/ponytail-review`, the evals or the `xhigh` rule, so those stay Claude's to check. **Pulling is Claude's job, never Maxi's** (Maxi, 2026-10-12): the session start hook brings `main` up to date (and returns the main folder to `main` when the branch it was left on is finished), `/task` and `/bug` fetch again before they branch, and before every merge Claude fetches and merges `origin/main` into a branch that is behind, then gets CI and the review on that new head. **Stacked PRs** (Maxi, 2026-10-28, replaces the rule of 2026-10-22 that no task starts while a PR of the session is open): a PR that waits never stops the next task. The next PR branches from the waiting PR's branch and names it as its base (`gh pr create --base <branch>`), so its status bump sits on top and nothing conflicts; GitHub moves the base to `main` when the PR below merges. Every chain is also linked as a native GitHub stack (Maxi, 2026-11-02): `gh stack link <bottom PR> ... <top PR>`, or `gh stack link <stack number> <new PR>` to grow one, with the `gh-stack` extension (docs/19_CLAUDE_CODE_SETUP.md). No need to ask, and it holds for any open PR whose base is the branch of another open PR, also from another session; a PR based on `main` is not chained. A session may also stack PRs of its own on purpose, without asking (Maxi, 2026-11-03), when that is the better cut: separate behaviours that build on each other (a migration and the feature that uses it, a domain change and the screen on top), work that must not wait for a review round of the one below, or a fix that belongs to a PR still open. Each PR in the stack is still one coherent behaviour on its own, reviewed and merged on its own, bottom first; a stack is never a way to split one behaviour only to keep a diff small (§8 Git). PRs merge in stack order, and a conflict or a merge from `main` is dealt with only when a PR is the next to merge, never while it waits. The hook passes a head that lacks only `main`'s merge commit of the PR below it (merging `main` would change no file), but the ruleset on `main` keeps requiring an up-to-date branch (Maxi, 2026-10-28), so the next PR of a stack merges `main` in and gets one more review round before its merge. A hook warning that `main` could not be synced comes first (Maxi, 2026-10-14): Claude names the folder and the files that block it at the top of the reply and gets it fixed with Maxi before other work, never a one-line note at the end.
+**Make decisions with confidence** (Maxi, 2026-09-16): show plan, state recommendation, build. Wait only for matters of money, law, external impact, production data, or irreversibility (§10). **Merging a PR into `main`** (Maxi, 2026-10-06, replaces the rules of 2026-10-05 and 2026-10-06 morning): Claude merges a PR itself once CI is green on the exact head commit, the evals are green where the diff touches the conversation path (rule 4), and that head commit has a completed independent review under "Independent review requests" with all findings triaged under the existing rules. If the required reviewer is unavailable, the PR waits; self-review is not a fallback. A PR whose diff hits an `xhigh` trigger from the Model Routing table (migrations; code that decides money, a booking or the fate of a call) is merged by Claude too once all of this holds and the evals ran on its exact head (Maxi, 2026-10-28, replaces the rule of 2026-10-19 that left it with Maxi); a migration also needs its up and down test, and a production migration still waits for Maxi (§10). A new commit after the review needs a new review before the merge. Before Claude merges a PR of its own work, `/done` has run on the branch (Maxi, 2026-10-20): `/ponytail-review` on a diff with non-`.md` files and `scripts/status_bump.py` (the number in the "Status version" line of `docs/01_STATUS.md` is higher than the one on `origin/main`); `/ponytail-review` is skipped only where the skill is not installed in the session, and the report says so. Merging straight after a fix round skipped both once (PR #339); when either is missing, run it first, push, and get CI and the review on the new head. The PR of the weekly README routine is exempt: it only carries generated files. The project hook `merge_gate.sh` (Maxi, 2026-10-21) blocks `gh pr merge` until CI, the sync with `main`, the status bump and a clean review hold on the head commit, and takes only `gh pr merge <n> --merge --match-head-commit <full sha>` (`--delete-branch` after it is allowed, a `cd` in front is not), or for a PR in a native stack, which GitHub refuses the first form for, `gh stack merge <n> --merge --yes` on the bottom PR (Maxi, 2026-11-03), into `main`, checked in the folder the command runs in: any other command that names it, a commit message or a search included, is blocked, so such text goes into a file or reads `gh pr merg[e]`; it cannot see `/ponytail-review`, the evals or the `xhigh` rule, so those stay Claude's to check. **Pulling is Claude's job, never Maxi's** (Maxi, 2026-10-12): the session start hook brings `main` up to date (and returns the main folder to `main` when the branch it was left on is finished), `/task` and `/bug` fetch again before they branch, and before every merge Claude fetches and merges `origin/main` into a branch that is behind, then gets CI and the review on that new head. **Stacked PRs** (Maxi, 2026-10-28, replaces the rule of 2026-10-22 that no task starts while a PR of the session is open): a PR that waits never stops the next task. The next PR branches from the waiting PR's branch and names it as its base (`gh pr create --base <branch>`), so its status bump sits on top and nothing conflicts; GitHub moves the base to `main` when the PR below merges. Every chain is also linked as a native GitHub stack (Maxi, 2026-11-02): `gh stack link <bottom PR> ... <top PR>`, or `gh stack link <stack number> <new PR>` to grow one, with the `gh-stack` extension (docs/19_CLAUDE_CODE_SETUP.md). No need to ask, and it holds for any open PR whose base is the branch of another open PR, also from another session; a PR based on `main` is not chained. A session may also stack PRs of its own on purpose, without asking (Maxi, 2026-11-03), when that is the better cut: separate behaviours that build on each other (a migration and the feature that uses it, a domain change and the screen on top), work that must not wait for a review round of the one below, or a fix that belongs to a PR still open. Each PR in the stack is still one coherent behaviour on its own, reviewed and merged on its own, bottom first; a stack is never a way to split one behaviour only to keep a diff small (§8 Git). PRs merge in stack order, and a conflict or a merge from `main` is dealt with only when a PR is the next to merge, never while it waits. The hook passes a head that lacks only `main`'s merge commit of the PR below it (merging `main` would change no file), but the ruleset on `main` keeps requiring an up-to-date branch (Maxi, 2026-10-28), so the next PR of a stack merges `main` in and gets one more review round before its merge. A hook warning that `main` could not be synced comes first (Maxi, 2026-10-14): Claude names the folder and the files that block it at the top of the reply and gets it fixed with Maxi before other work, never a one-line note at the end.
 
 ### Reviews
-Only one review gates a merge: a clean review of the exact head commit (Codex, or Claude's own `/code-review` if Codex is out of quota, posted as a PR comment that opens with `Merge gate: <full head sha>`), repeated after every commit that moves the head, a merge from `main` included. Each finding on that head is checked against the code before anything changes: a confirmed one is fixed with a test (P2 within the review loop limits below), a wrong or outdated one is answered on the PR with the evidence. A severity label is the reviewer's claim, not proof. The rest is advisory (Maxi, 2026-10-06):
+An independent review of the exact head commit gates a merge: use the other model under "Independent review requests", with both reviewers covering the other model's contributions for mixed work. Review is repeated after every commit that moves the head, a merge from `main` included. A `Merge gate: <full head sha>` comment may relay verified external review and triage evidence; it cannot replace that review. Each finding on that head is checked against the code before anything changes: a confirmed one is fixed with a test (P2 within the review loop limits below), a wrong or outdated one is answered on the PR with the evidence. A severity label is the reviewer's claim, not proof. The rest is advisory (Maxi, 2026-10-06):
 
 - `/ponytail-review`: complexity only, no bugs or security. Runs once in `/done` before the PR opens, on diffs with non-`.md` files. `/simplify` is not run on top of it.
 - `/security-review`: runs in `/done` before the PR opens, only when the diff touches auth in `core/`, `telephony/`, `deploy/`, or the agent token path. Its findings count as P1 once checked against the code.
 - Security audit (Maxi, 2026-10-15): not continuous. Due only at the triggers in `docs/09_OPERATIONS_LEGAL.md` section 5 (first call from outside the workbench, every gate from G1 on, a component becoming reachable from outside, or 30 days plus changes in the exposed areas). `/start` and `/gate` recommend it, Maxi decides, it runs on Opus 5.5 at `xhigh`.
 
+**Review comment format** (Maxi, 04.11.2026): use the same concise English format
+for Claude and Codex. Start with `[P0]`, `[P1]` or `[P2]` and a specific title
+(aim for at most 80 characters). Use one short paragraph, usually 2–4 sentences
+and about 40–100 words: the concrete trigger/input, the actual wrong behaviour
+and impact, then the required outcome and a useful verification case. These
+lengths are targets, not reasons to omit evidence or truncate a complex finding.
+One comment covers one root cause, anchored to the smallest useful diff range.
+Include a compact contract/code reference when the claim depends on it; do not
+repeat a file location already supplied by the inline anchor.
+
+State facts and assumptions separately. Do not claim a test ran unless it did.
+Give a minimal fix direction when useful, but allow any implementation that
+meets the required behaviour; code suggestions are optional and usually no more
+than three lines. Avoid vague demands such as "handle this properly", lectures,
+praise filler, personal criticism and optional style findings. Existing severity
+and scope rules decide what is reported; this adds no new reviewer categories.
+For a repeated finding, reference the earlier thread and name the still-failing
+scenario or new evidence instead of restating the original suggestion.
+
+**Evaluate feedback before changing code** (Maxi, 04.11.2026): a review comment,
+whether from a person or a model, is a claim to investigate, not an instruction
+to obey. Check the reported input/sequence, the current code, intended behaviour,
+callers and tests. Evaluate the proposed fix separately: it may break a contract,
+add unnecessary complexity or worsen performance. Prefer evidence over either
+the reviewer's confidence or the implementing agent's confidence.
+
+Before editing, read the whole thread and translate the claim into a checkable
+acceptance condition: given the reported input/state, what must happen instead?
+Verify that interpretation against the contract and code. If two materially
+different interpretations remain, ask one targeted question in the original
+thread before changing that behaviour. Test the failure mechanism and relevant
+boundary cases, not just the exact example or the suggested replacement line.
+
+- For a confirmed defect, choose a suitable fix and verify it with a regression
+  test. The reviewer's proposed implementation need not be used.
+- For a disproved, outdated or duplicate claim, or a suggestion that conflicts
+  with intended correct behaviour, reply in the original inline thread with the
+  reason and relevant code/contract/test evidence. State that no code change is
+  needed and why retaining the implementation is preferable; then resolve that
+  thread. Resolution means the concern was addressed, not necessarily fixed.
+- If a defect is real but the proposed fix is harmful, reject the fix with
+  evidence and address the underlying defect another way. Do not resolve the
+  defect merely because that proposed fix is unsuitable.
+- If the claim cannot yet be verified, say what is unknown and investigate or
+  ask a targeted question. Failure to reproduce once is not disproof. If real
+  work is deferred, link its tracking and reason under the existing P2 policy;
+  do not describe it as fixed or close it merely to clear the merge gate.
+
+Replies are concise, technical and in English. Revisit a rejection if new
+evidence invalidates it. No code change means no artificial commit/push just to
+acknowledge the thread. None of this replaces the completed independent review
+of the current head or the existing CI and merge requirements.
+For an accepted fix, reply with the corrected behaviour, the actual commit or
+test evidence and any remaining limitation; "done" alone is insufficient. For
+a rejection, state the contrary evidence. Keep replies to 1–3 sentences when
+that is enough, and preserve this context for the next reviewer.
+
 **Review loop limits** (Maxi, 2026-10-21): how long a PR stays in fix rounds. A round is one review of a new head.
 
 - P0 and P1 are always fixed, however many rounds it takes. No merge while one is open.
 - A P2 in code that hits an `xhigh` trigger from the Model Routing table (allergens, a booking, prices, the fate of a call) counts as P1.
-- Any other P2 is fixed when it is a real defect or cheap to fix. One that stays unfixed gets no reply of its own: it is listed with a one-line reason in the `Merge gate:` comment below.
-- After 3 consecutive rounds that each found only P2s (a round with a P0 or P1 resets the count), Claude stops and decides: keep fixing when a remaining P2 is a real defect inside the PR's scope; merge when the rest are cosmetic, speculative, or real defects outside the PR's scope, which go to #207 and do not block. Either way a PR comment that opens with `Merge gate: <full head sha>` states that no P0 or P1 is open and lists what is left and why; leftovers worth doing go to the rolling review issue #207. That comment counts as the clean review in the merge rule above. CI must still be green.
+- Any other P2 is assessed under the feedback rules above and fixed when it is a real defect or cheap to fix within the existing scope. Explain a rejected or deferred finding in its original thread; the `Merge gate:` comment below links the decision and summarises any remaining work. A cosmetic or speculative suggestion is not made actionable merely because its patch would be small.
+- After 3 consecutive rounds that each found only P2s (a round with a P0 or P1 resets the count), Claude stops and decides: keep fixing when a remaining P2 is a real defect inside the PR's scope; merge when the rest are cosmetic, speculative, or real defects outside the PR's scope, which go to #207 and do not block. Either way a PR comment that opens with `Merge gate: <full head sha>` states that no P0 or P1 is open and lists what is left and why; leftovers worth doing go to the rolling review issue #207. That comment records the triage decision and links the completed independent review of this head; it is not a substitute review. CI must still be green.
 - Stop patching and propose a structural redesign to Maxi when the findings per round grow after 3 rounds, when findings land in the same function 3 rounds in a row, or when a finding asks to undo an earlier fix of the same PR. Nothing else is pushed until Maxi approves it; a confirmed P0 or P1 is still fixed and pushed at once.
 - The fixes for one review go out in one push (Maxi, 2026-10-22): every push moves the head and costs a review round. For the same reason `origin/main` is merged into the branch only when the merge needs it (`/done` step 7b), never during fix rounds.
 

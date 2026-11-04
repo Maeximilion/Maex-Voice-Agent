@@ -1,5 +1,22 @@
 Close out the current task.
 
+**Automatic handoff:** after step 7 publishes or updates this task's PR, finish
+the applicable reminder/stack steps, then continue with `/ship` for that exact
+PR without asking the user to type it. Invoke the `ship` command with the actual
+PR number through Claude Code's Skill tool. Do not just recommend the command
+and end the turn. Hand off before waiting for CI; `/ship` owns that wait, review
+processing, merge and cleanup. In another agent runtime without that command,
+follow `.claude/commands/ship.md` as the shared procedure within that runtime's
+permissions; do not assume a native `/ship` command is installed there.
+
+Do not hand off when PR creation failed, when the user explicitly asked to wait
+or leave the PR as a draft, or when a required permission, credential or approval
+is missing. Report the concrete blocker and leave the PR open. If a shipping
+operation for this PR is already active in this session, continue it once.
+Steps 7b and 8 are shared subroutines for `/ship`; after the handoff, do not run
+them again from the outer `/done`. A session that ends or exhausts quota cannot
+resume itself when GitHub checks finish; save the PR/head/blocker for resumption.
+
 **Visible PR checklist:** Read `.github/PULL_REQUEST_TEMPLATE.md` before creating or updating the PR description. Keep its headings and every checklist item in the PR body, including when using `--body` or `--body-file`; a custom description must not bypass the template. Keep completed checks as `- [x]` only with evidence, open or untested checks as `- [ ]` with the reason, and explicitly explain `not applicable` items. Add task-specific checkboxes for separate deliverables or remaining work when useful. Update the existing PR after fixes and CI results, reopening any check whose evidence later changes invalidate. A summary in the chat is not a substitute.
 
 1. If the changes since the merge base with `origin/main`, uncommitted and untracked files included (`git diff --name-only $(git merge-base origin/main HEAD)` plus `git status --short`), contain anything other than `.md` files, run `/ponytail-review` (skill `ponytail:ponytail-review`) on that diff and apply the cuts that hold; if the skill is not installed in this session, skip it and say so in the report. If the diff touches one of the areas `CLAUDE.md` §6 "Reviews" names for it, also run `/security-review`, check each finding against the code and fix the confirmed ones as P1. The ponytail review only hunts complexity and is not a merge gate (`CLAUDE.md` §6); both run here, before the PR opens, so a fix does not move the head commit after its review.
