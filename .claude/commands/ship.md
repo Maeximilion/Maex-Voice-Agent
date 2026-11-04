@@ -1,4 +1,22 @@
+---
+description: Finish an existing pull request through CI, independent review and merge. Continue here automatically after /done creates or updates the task's PR, unless the user asked to wait.
+argument-hint: "[PR number]"
+---
+
 Drive pull request $ARGUMENTS (without a number: the current branch's) to its merge.
+
+`/done` hands its task's PR here automatically after publication. Own the wait,
+review/fix loop, merge and cleanup once. Do not invoke the whole `/done` command
+from here: steps 7b and 8 below are shared subroutines, not recursive handoffs.
+If this session is already shipping this PR, resume that operation instead of
+starting another. If it is already merged, verify that result and run cleanup
+only. Respect an explicit pause, a draft intentionally kept for review, missing
+permissions/credentials and the repository's existing approval/merge gates.
+
+Choose the independent reviewer under `CLAUDE.md` before waiting. The Codex
+waiting instructions below are for Claude-written work. Codex-written work
+requires completed Claude review; while that integration is unavailable, report
+the blocker and leave the PR open rather than accepting a Codex self-review.
 
 0. With a number, work on that PR's branch, never on `main` or another PR's branch: in the worktree that has it checked out, or check it out with `gh pr checkout` and the number in a clean worktree of its own.
 1. `/done` step 7b in full: sync with `main`, `/ponytail-review`, status bump, push.

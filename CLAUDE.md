@@ -122,6 +122,15 @@ its budget enforcement and specialist experiment are documented there.
 ### Slash Commands (`.claude/commands/`)
 `/start` begin session · `/task T-x.y` build task · `/done` close out · `/ship <PR>` drive a PR through CI and review to its merge · `/bug "…"` error with a red eval case or test first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
+After `/done` creates or updates its task's PR, the active session automatically
+continues with `/ship` for that PR. `/ship` owns CI/review waiting, fix rounds,
+merge and cleanup; the user need not invoke it separately. Respect explicit
+wait/draft instructions and missing prerequisites. `/ship` reuses `/done`'s
+pre-merge and cleanup steps only, never calls the complete command recursively,
+and does not start a second shipping operation for the same PR. This is an
+active-session handoff, not a service that restarts a closed or quota-exhausted
+session. The independent reviewer, checks and merge permissions stay mandatory.
+
 **Where a task runs:** a work package row with the note `Environment: Ubuntu (WSL) on the workbench` runs only in a session started in Ubuntu on Maxi's PC, never Windows-local and never in the cloud. `/task` checks this before it reads anything else. Start, kits and limits: `docs/12_CLAUDE_CODE_PLAYBOOKS.md` S10.
 
 ### Model Routing

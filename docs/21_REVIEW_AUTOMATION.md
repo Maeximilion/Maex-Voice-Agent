@@ -378,6 +378,37 @@ and triggers review. The final gate checks both captured revisions.
 
 ## Implementation sequence
 
+### Automatic task handoff to shipping
+
+Inspection of the versioned command files, project hook configuration and the
+user-level hook backup found no explicit `/done` to `/ship` trigger. `/done`
+previously pointed to merge rules and contained pre-merge/cleanup steps, while
+`/ship` supplied the actual wait/review loop. The real personal Ubuntu settings
+were not available for inspection.
+
+The commands now define the missing handoff: once `/done` has published its PR
+and finished applicable reminders/stack linking, the active Claude session
+invokes `ship` through the Skill tool with the actual PR number. It starts before
+checks finish because `/ship` already owns that wait. No GitHub Action, shell
+command pretending to type `/ship`, new hook or background Claude process is
+added. The existing Markdown command remains the single procedure.
+
+Avoid recursion: `/ship` calls only the named `/done` helper steps, and the outer
+`/done` does not repeat them after handing off. An already active operation is
+resumed rather than duplicated. Failed PR creation, explicit wait/draft requests,
+missing credentials/permissions, required approvals and the chosen independent
+reviewer remain blockers. Codex work cannot use the native Codex review waiter
+as independent evidence; until Claude review is available it remains open.
+
+This is instruction-level automation within an active session. Closed sessions,
+quota exhaustion and unavailable command registration require a later resumption;
+GitHub finishing its checks alone does not wake Claude. Current checks were a
+static walkthrough, not a live Claude command invocation. First live acceptance
+must verify command discovery, one handoff, no duplicate push/review, CI waiting,
+pause handling, and cleanup after a gated merge. No PR was merged to test this.
+
+### Review action implementation
+
 The [implementation plan](superpowers/plans/2026-11-04-claude-inline-review.md)
 keeps the work in four testable stages in the same branch and eventual PR:
 
@@ -520,3 +551,4 @@ measurement has been made during planning.
 - [Google: handling reviewer comments](https://google.github.io/eng-practices/review/developer/handling-comments.html)
 - [Conventional Comments](https://conventionalcomments.org/)
 - [Public Codex review rubric](https://github.com/openai/codex/blob/main/codex-rs/prompts/templates/review/rubric.md)
+- [Claude Code: command compatibility and model-invoked skills](https://code.claude.com/docs/en/skills)

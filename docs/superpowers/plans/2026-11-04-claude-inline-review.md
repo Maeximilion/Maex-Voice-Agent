@@ -15,6 +15,9 @@ Repository guidance and a concrete manual request can steer hosted Codex, but no
 hard execution-scope control is verified. The user chose to retain the existing
 flexible three-round rule; no fixed pause or blanket dismissal of P2 findings is
 introduced. No UI/UX reviewer or new Codex action is planned.
+The prepared `/done` command now hands its published PR to `/ship` in the active
+session. Verify that handoff live during rollout; it does not add a GitHub-triggered
+session service or relax any review/merge gate.
 
 ## Global Constraints
 
@@ -46,6 +49,13 @@ introduced. No UI/UX reviewer or new Codex action is planned.
 ### Task 0: Shared scope guidance and existing fix-round policy
 
 **Files:** Modify `AGENTS.md`, `CLAUDE.md`, `.claude/commands/ship.md` and `docs/21_REVIEW_AUTOMATION.md`.
+
+Also update `.claude/commands/done.md` for one automatic handoff to `ship` after
+PR publication. `ship` owns waiting and reuses only the pre-merge/cleanup helper
+steps; the complete commands must not call one another recursively. Validate
+new/existing PR, failed creation, intentional draft/pause, already active ship,
+already merged PR, missing credentials and ended-session scenarios. Do not add
+a hook or background process for this instruction-level transition.
 
 **Interfaces:** Keep the native `@codex review` trigger and existing automatic integration. Manual follow-ups name the actual completed review URL, its full head SHA, the current full head SHA, all changed paths and relevant finding IDs; `.claude/commands/ship.md` still requests manually only on a stalled automatic review. This is working-agent guidance, not a new automatic fix scheduler.
 
@@ -124,6 +134,7 @@ test/commit evidence. Retain the existing review-load audit for later comparison
 - [ ] Run `make lint` and `make test` in the supported container environment; report infrastructure failures honestly and use CI for checks unavailable locally. Evals are required only if the final diff touches the conversation path. Record README measurements with `python3 scripts/readme_assets.py pending --record`; follow the scheduled asset policy.
 - [ ] Perform the required self-check and simplification review. Update status through `scripts/status_bump.py`; commit and push normally. Create one PR from `ci/claude-inline-review` to `main`, preserving every PR-template section and its actual validation status.
 - [ ] Have the account owner create the subscription token and repository secret through the documented UI; never request its value in chat. Keep paid extra usage disabled. An inability to configure the token keeps live acceptance pending.
+- [ ] In an active Claude session, verify `/done` invokes `ship` once for its published PR and waits for checks without another user command. Verify the project command is the one registered, pauses are respected, shared helpers do not recurse and cleanup runs once. Codex-written work without completed Claude review must remain unmerged. Record this separately from static documentation checks.
 - [ ] Post the authorised `@claude review` request. Before the workflow is on `main`, rerun its PR-triggered Actions run after the secret and comment exist. Verify actual subscription authentication and the review's exact base/head SHAs.
 - [ ] Prove inline publication with a deterministic, harmless workflow fixture using a real changed line and an explicitly labelled transport-test comment; do not fabricate a security finding. This test is not independent review evidence. Remove any fixture scaffolding before the final head review.
 - [ ] Push a legitimate final documentation/status update and post the required new `@claude review` comment. Verify the push and comment produce one completed review of that new head, with no duplicate inference. Independently test the push-triggered safety net when the comment is delayed. Resolve findings under the existing flexible loop limits, rerun applicable checks and obtain independent review of every resulting final head. After three consecutive P2-only rounds, record the existing decision and its evidence before any further accepted fixes.

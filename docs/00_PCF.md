@@ -570,6 +570,11 @@ with trigger, impact and a verifiable required outcome. Fix authors verify that
 outcome and reply with actual evidence; repeated findings explain the remaining
 failure. The 40–100-word target is editorial, not a hard limit. Sources and an
 illustrative example are in docs/21; no live effectiveness claim is made.
+`/done` now instructs the active session to invoke `/ship` after publishing its
+PR, without another user command. `/ship` owns the waiting and gated completion;
+it only reuses `/done`'s helper steps to avoid recursion. No hook/background service
+was added, and no live command-to-merge test has run. Honour the existing pause
+on the waiting branch and the independent-review prerequisite for this rollout.
 The official action supports subscription OAuth, but no live review is verified.
 Branch `ci/claude-inline-review` is independent of `docs/cross-agent-review`;
 the latter waits. Next: approve the concrete design, implement and test on this
