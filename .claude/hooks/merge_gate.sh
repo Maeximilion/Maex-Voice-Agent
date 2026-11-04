@@ -17,7 +17,7 @@
 #      changes are all generated (README.md, .github/assets/*.svg, png-sources.json),
 #   4. a review is clean: the Codex state comment names this head without open findings,
 #      or a comment by the owner or a collaborator opens with "Merge gate: <full head sha>"
-#      (Claude's own review when Codex is out of quota, or the review loop limits decision).
+#      (relaying completed independent review and its review-loop triage decision).
 # settings.json sets onFailure "block", so a timeout or a crash of this script blocks too.
 # Not checkable here: that /ponytail-review ran, green evals, the xhigh rule. Those stay
 # with /done and CLAUDE.md.
@@ -123,7 +123,7 @@ clean=$(jq -rs --arg h "$head" '
       | select(.created_at > $codex.t and (.body | test("^Merge gate: " + $h + "([^0-9a-f]|$)")))]
     | length > 0)' <<<"$comments")
 [ "$clean" = true ] ||
-  fail+="- no clean review on ${head:0:7}: wait for Codex on this head, or post Claude's own review or the review loop limits decision as a comment that opens with \"Merge gate: $head\" (the full sha)"$'\n'
+  fail+="- no clean review on ${head:0:7}: wait for the required independent reviewer on this head, or relay a completed independent review and its review-loop triage decision in a comment that opens with \"Merge gate: $head\" (the full sha); self-review cannot replace it"$'\n'
 
 [ -z "$fail" ] || block "$fail"
 exit 0

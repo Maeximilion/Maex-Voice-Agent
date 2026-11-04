@@ -537,6 +537,31 @@ Lessons: <learnings>
 
 ## 13. Handovers (newest first)
 
+## Handover 05.11.2026 - PR #542 review fixes
+
+Status: the confirmed P1 message and header now refer to independent review.
+The P2's stale PR-specific blocker entries were removed from current status.
+Docker mounts the three required tracked Claude files and README assets
+read-only. The mount guard permits those exact files and rejects broader paths.
+
+Artifacts: `api/tests/test_hooks_merge_gate.py` and
+`api/tests/test_compose_mounts.py` reproduced the defects before the fix.
+The focused WSL run including `test_commands.py` passed 59 tests after it.
+
+Decisions: existing merge-gate checks are preserved. Maxi asked to handle
+confirmed review findings and the remaining local checks autonomously.
+
+Gate: full current-head local Docker results and independent follow-up review
+are recorded on PR #542. It stays Draft until its required gates are satisfied.
+
+Open: run local lint/tests on the committed fixes, publish the evidence, reply
+to both review threads and request the independent follow-up. The Claude action
+and staged-CI plans remain deferred. The subscription secret is configured but
+has not yet been exercised by an automated review.
+
+Lessons: reading a completed review includes verifying and fixing its confirmed
+findings. Keep PR-specific gate state on the PR and historical evidence here.
+
 ## Handover 04.11.2026 - review author attribution
 
 Status: PR #542 remains Draft with auto-merge off. Maxi prefers findings, review
