@@ -480,8 +480,11 @@ maex-voice-agent/
 - Next: use docs/19 section 8's manual review procedure when this branch enters
   a PR. Automatic Claude review and credentials are deferred; prefer the existing
   subscription later, with no API or separately billed service enabled now.
-- This branch is authored by Codex and needs Claude review before any merge.
-  The hook and GitHub ruleset do not enforce AI independence; check it explicitly.
+- Independent review remains outstanding before any merge. Transfer implementation
+  authorship privately, not in this public handover. The hook and GitHub ruleset
+  do not enforce AI independence; check it explicitly.
+- Named reviewers, `@claude`, `@codex review` and bot comments are allowed. Omit
+  AI implementation-author credits from commits and PR titles/descriptions.
 - Earlier validation: `git diff --check` passed. `make lint` and `make test`
   could not reach Docker in the cloud sandbox; neither check ran. No application
   code changed since that attempt. Current documentation checks are recorded in

@@ -944,7 +944,8 @@ spending. No paid service was invoked for this preparation.
 
 1. The implementing agent completes the existing pre-PR checks and its own diff
    review, then commits and pushes. The handover identifies the PR, base branch,
-   full head SHA, which AI wrote the changes, test evidence and open findings.
+   full head SHA, test evidence and open findings. Which AI wrote the changes is
+   transferred privately, not in the repository or public PR metadata.
    Shared GitHub login or a branch name alone does not identify the implementing AI.
 2. For Codex-authored changes, ask a Claude session using the existing subscription
    to review that PR. For Claude-authored changes, use the existing Codex Review
@@ -958,8 +959,8 @@ spending. No paid service was invoked for this preparation.
    review with no unresolved blocking findings uses the existing `Merge gate: `
    prefix followed by the full reviewed head SHA. A blocked, incomplete or failed
    review uses an ordinary comment without that prefix: the current hook accepts
-   the prefix without understanding the verdict. Identify Claude as reviewer and
-   Codex as implementer, cite findings and unresolved items, and distinguish
+   the prefix without understanding the verdict. Cite findings and unresolved
+   items, name the reviewer if useful, and distinguish
    completion from an interrupted or failed run. A finding-free result is stated
    explicitly. If posting is unavailable, hand the review back
    with its SHA for posting without changing the verdict. A request or reaction
@@ -980,20 +981,22 @@ are not accepted as the independent review; app routing has not been changed.
 
 ### Request to hand to Claude
 
-Use this text with the PR and full head SHA from the handover:
+Use this text in the private reviewer session with the PR, full head SHA and
+implementation authorship from the private handover:
 
-> Review the Codex-authored PR identified in this handover. Read AGENTS.md,
+> Review the PR identified in this private handover. Read AGENTS.md,
 > CLAUDE.md and the relevant task documentation. Verify the current base and full
 > head SHA and review the complete diff without editing or pushing changes. Follow
 > the existing severity and evidence rules. Post concrete findings inline in
 > GitHub where supported. Report the reviewed SHA, findings and completion state;
 > only for a completed review with no unresolved blocking findings, use the
-> existing Merge gate: prefix with that SHA in a PR comment and identify Claude
-> as reviewer and Codex as implementer. For blocking findings or an incomplete review, use
+> existing Merge gate: prefix with that SHA in a PR comment. Naming yourself as
+> reviewer is allowed; do not add an implementation-author credit to the PR.
+> For blocking findings or an incomplete review, use
 > an ordinary comment without that prefix. Never state that the head is clean
 > while a blocking finding remains. If the head changes,
 > your review applies only to the SHA you actually reviewed. If you authored any
-> of the changes, identify the coverage gap instead of approving your own work.
+> of the changes, report the coverage gap privately instead of approving your own work.
 
 ### Later setup, not active
 
@@ -1002,6 +1005,24 @@ routing so Codex work receives Claude reviews and Claude work receives Codex
 reviews on every push. Preserve all existing test and merge requirements and
 prove the new-head and quota-failure cases before calling it active. Do not assume
 that adding a label changes the existing Codex app's automatic review settings.
+
+Maxi clarified the presentation rule: `@claude`, `@codex review`, named reviewers
+and bot comments in the PR are welcome. Do not identify an AI as implementation
+author in commit author/co-author fields, commit messages, PR titles or PR
+descriptions. No hidden review infrastructure is required for this preference.
+
+A possible later action can use an explicit review request from an authorised
+user to select the reviewer for that PR, then repeat the selected review on
+subsequent pushes. The implementing session requests the other AI; GitHub need
+not infer authorship from the code or PR author account. The requested reviewer
+can remain visible in the PR comments. A custom action must explicitly implement
+the request, authorisation and repeat-on-push behaviour; a bare mention does not
+create it. This remains a design option, not installed automation. Preserve
+current-head verification and avoid duplicate requests to an already automatic
+reviewer. Existing Codex app routing is unchanged.
+
+The current files no longer credit the implementing AI for this branch.
+Previously pushed revisions remain in Git history; no history rewrite was made.
 
 Official reference for the preferred subscription integration:
 [Claude Code GitHub Actions](https://code.claude.com/docs/en/github-actions).

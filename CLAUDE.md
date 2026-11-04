@@ -113,9 +113,13 @@ The manual procedure is in `docs/19_CLAUDE_CODE_SETUP.md` section 8.
   the initial PR and every later pushed head, including a merge from `main`.
   A review must identify the full head SHA; a comment requesting it, a reaction,
   a successful workflow alone, or an earlier review is not completion evidence.
-- Record which agent implemented the work when handing it over. GitHub login,
-  labels shared for project organisation, and branch names alone do not prove
-  authorship. If both agents contributed code, obtain independent coverage of
+- Do not identify an AI as the author in code, commit author/co-author fields,
+  commit messages, PR titles or PR descriptions (Maxi, 04.11.2026). Mentions such
+  as `@claude` and `@codex review`, named reviewers and bot review comments are
+  explicitly allowed. Reviewer identity is not an implementation-author credit.
+  Keep implementation authorship in the private session handover; do not
+  fabricate a human author or reviewer. GitHub login, labels and branch names
+  alone do not prove authorship. If both agents contributed code, obtain independent coverage of
   each contribution; do not silently call either agent independent of all of it.
 - A missing, failed, rate-limited or outdated independent review blocks merging.
   Do not replace it with the implementing agent's own `Merge gate:` comment.
@@ -132,8 +136,11 @@ The manual procedure is in `docs/19_CLAUDE_CODE_SETUP.md` section 8.
   `merge_gate.sh` recognises Codex results and self-review comments, not the new
   cross-agent rule; its passing result is insufficient by itself.
 - At a tool or quota handoff, commit and push the task branch and record its PR,
-  base, head SHA, implementation authorship, test results, review state and next
-  step. The receiving agent fetches and checks that state before continuing.
+  base, head SHA, test results, review state and next step. Transfer implementation
+  authorship privately. If that information is unavailable, clarify it privately
+  before accepting an independent review. The receiving agent fetches and checks
+  the state before continuing. Reviewers and review requests may be public;
+  concealing AI participation in reviews is not a requirement.
 
 ### Slash Commands (`.claude/commands/`)
 `/start` begin session · `/task T-x.y` build task · `/done` close out · `/ship <PR>` drive a PR through CI and review to its merge · `/bug "…"` error with a red eval case or test first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
