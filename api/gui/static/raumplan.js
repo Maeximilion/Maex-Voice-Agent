@@ -245,6 +245,9 @@
 
   function undo() {
     if (!area || !area.history.length) return;
+    // A drag in progress would bring the state before the undo back on
+    // Escape, unsaved (Codex on #535): the undo ends it.
+    drag = null;
     var s = JSON.parse(area.history.pop());
     area.room = s.room; area.objects = s.objects; area.links = s.links;
     mode = "select"; drawStart = null; preview = null;
@@ -716,6 +719,10 @@
 
   floor.addEventListener("pointerdown", function (event) {
     if (!area || event.button !== 0 || !event.isPrimary) return;
+    // The plan keeps the focus where it is (preventDefault below), so a field
+    // being typed into would be redrawn before its change counts: commit it first.
+    var typing = document.activeElement;
+    if (typing && props.contains(typing) && typing.blur) typing.blur();
     var p = point(event);
     if (mode === "wall") {
       event.preventDefault();
