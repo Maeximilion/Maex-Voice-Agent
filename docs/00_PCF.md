@@ -549,6 +549,11 @@ Claude work. Push and comment triggers must not duplicate inference. The later
 specialist stage also introduces API-first authentication within a shared USD 50
 monthly review cap, followed by subscription OAuth. Credit eligibility and hard
 budget enforcement are still to be verified; no API is connected now.
+The initial Claude action also plans focused follow-ups: review every change
+since the last completed independent review, check unresolved findings and read
+related context as needed. Preserve a verifiable coverage chain and publish a
+new current-head result. Fall back to full PR review on an invalid baseline or
+uncertain impact; no equivalent hosted Codex scope control has been verified.
 The official action supports subscription OAuth, but no live review is verified.
 Branch `ci/claude-inline-review` is independent of `docs/cross-agent-review`;
 the latter waits. Next: approve the concrete design, implement and test on this

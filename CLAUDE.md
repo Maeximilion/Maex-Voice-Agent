@@ -99,6 +99,14 @@ Another session of the implementing model cannot supply independent review. For
 mixed work, both reviewers must cover the other model's changes. These rules
 override the older self-review fallback below.
 
+For the planned Claude action, the first review covers the complete PR diff.
+Follow-up reviews focus on every change since the last completed independent
+review, the affected files and unresolved findings, with related code read as
+needed to assess the fix. Do not rereview unchanged, unaffected files by default.
+Use a full PR review when prior coverage cannot be trusted or the impact is
+unclear; record the new reviewed head and the prior evidence it builds on.
+This policy does not claim control over the existing hosted Codex bot's scope.
+
 The Claude action is currently planned, not installed or live-tested. A mention
 alone does not establish that a review ran. Setup, exact-head validation and
 duplicate-trigger handling are documented in [docs/21_REVIEW_AUTOMATION.md](docs/21_REVIEW_AUTOMATION.md).

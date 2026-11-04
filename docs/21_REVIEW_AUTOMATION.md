@@ -93,7 +93,10 @@ Approaches considered:
    revision that can no longer be merged. A stop command cancels pending work;
    the publisher also checks the current selection before writing.
 4. Snapshot the base and head SHAs and the full PR diff, plus current trusted
-   `AGENTS.md` and `CLAUDE.md`. Give Claude read-only access to relevant code and
+   `AGENTS.md` and `CLAUDE.md`. The first review uses the full PR diff; follow-ups
+   send the complete delta since the last completed review as described below.
+   Keep the current full PR diff for inline-anchor validation in the controller.
+   Give Claude read-only access to relevant code and
    a fixed review prompt. No repository hooks, code execution, fixes or pushes.
    One reviewer examines correctness and security together. Apply the existing
    model/effort routing; the initial default for workflow code is Opus at high.
@@ -114,6 +117,45 @@ Approaches considered:
    findings or publication failure leave the PR unmergeable under the working
    rules. An unselected PR is explicitly skipped, never called reviewed.
    Existing CI, evals, sync and status-bump requirements remain in force.
+
+### Focused follow-up reviews
+
+`@claude review` requests the appropriate scope automatically; the user does not
+need to name a file. The first completed review covers all PR changes, not the
+entire repository. On subsequent pushes, compare the last completed independent
+review's head with the current head. Include every intervening change, even if
+several pushes happened while a run was cancelled or failed. The last pushed
+commit alone is not a reliable baseline.
+
+If five files were reviewed and a fix changes only one, the next model input
+focuses on that file's delta, the original finding and enough surrounding code
+to check the correction. The reviewer checks both whether the defect is fixed
+and whether the fix introduces another defect. Unchanged files are read only
+where callers, contracts, shared configuration or other dependencies make them
+relevant. The scope is based on what changed, not only on where comments existed:
+an unrelated new change in a second file must also be reviewed.
+
+Use only authentic completed review records for the same PR and reviewer family,
+with a matching base and trusted policy/prompt version, and an ancestor head.
+Record `mode` (`full` or `incremental`), `previous_review_id`, the delta's starting
+SHA and current base/head in each result. A completed review with findings may
+be the baseline, but unresolved findings stay open and block a clean verdict
+where required by existing rules. Clicking Resolve on a thread is not proof
+that its defect was fixed. Review coverage must trace back to a complete initial
+review; an old review alone never certifies the current head.
+
+Fall back to the full current PR diff when the baseline or coverage chain is
+missing, incomplete or untrusted, the base/policy/reviewer changes, ancestry
+cannot be established, or the reviewer cannot bound the impact. Broad interface,
+security or configuration changes can require related files or the full PR.
+A new current-head result is published after each completed follow-up; it
+explicitly states its scope and inherited coverage rather than pretending every
+file was read again. No scope-reduction claim is made for a failed/partial run.
+
+This is a requirement for the custom Claude action, including its input builder
+and prompt. A mention by itself cannot enforce it. The existing hosted Codex
+Review Bot remains unchanged: a comparable instruction can express a preference,
+but strict incremental execution and quota savings there have not been verified.
 
 The first version does not change the repository ruleset or enable automatic
 merging. The existing merge hook does not understand Claude bot reviews. A
@@ -247,11 +289,11 @@ estimates are not proof of subscription-quota savings. Accept a specialised
 design only after the comparison shows a meaningful benefit without lost coverage.
 
 A previously clean security review does not justify skipping security forever:
-a bug fix can introduce a permission flaw. A future incremental design needs a
-small whole-change risk pass after every push, invalidation on affected files and
-dependencies, rechecks of fixes, and a whole-PR fallback when impact is uncertain.
-Never treat a result from an old SHA as review of the current one. Start by
-measuring a focused single-reviewer recheck before adding a matrix or scheduler.
+a bug fix can introduce a permission flaw. The first version's focused follow-up
+review therefore still checks the new changes for both correctness and security,
+and expands its scope when needed. Measure that single-reviewer approach before
+adding a specialist matrix or scheduler. A specialist's old clean result is not
+automatically valid for a newer head.
 
 The existing Codex GitHub review integration remains unchanged. Its service and
 `openai/codex-action` have different authentication and billing arrangements;
