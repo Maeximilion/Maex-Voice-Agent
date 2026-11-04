@@ -316,17 +316,20 @@ def _apply(
         setattr(area, field, getattr(wanted, field))
     area.fixtures = [f.model_dump(mode="json") for f in wanted.fixtures]
 
-    kept = {t.id for t in wanted.tables}
+    names = {t.id: t.name for t in wanted.tables}
     now = clock.utcnow()
     live = session.scalars(
         select(DiningTable).where(
             DiningTable.area_id == area.id, DiningTable.deleted_at.is_(None)
         )
     ).all()
+    # Names leave before they arrive: a removed table and every renamed one
+    # step out of the unique index first, so a swap or a ring of renames in one
+    # save (T1 to X, T2 to T1, X to T2 after a resend) never meets its own old
+    # name; a renamed table is live again below.
     for row in live:
-        if row.id not in kept:
+        if names.get(row.id) != row.name:
             row.deleted_at = now
-    # Names leave before they arrive: a table renamed to a removed one's name.
     session.flush()
     for table in wanted.tables:
         stored_row = rows.get(table.id)

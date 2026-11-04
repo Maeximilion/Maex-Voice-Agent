@@ -1219,12 +1219,14 @@ def _plan_write(session: Session, write: Callable[[uuid.UUID], dict]) -> JSONRes
         return JSONResponse(fail_body("invalid_input", "plan", PLAN_INVALID), 422)
     except AppError as exc:
         session.rollback()
-        logger.info("Raumplan nicht gespeichert: %s", exc.message)
+        logger.info("floor plan not saved: %s", exc.message)
         return _plan_error(exc, exc.status if exc.status >= 400 else 422)
 
 
 @router.get("/raumplan", response_class=HTMLResponse, include_in_schema=False)
-def raumplan(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+def floor_plan_page(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
     """The floor plan editor; its data comes from /gui/raumplan/plan."""
     tenant = _tenant(session)
     context: dict = {"tenant": tenant} if tenant else {"problem": NO_TENANT}
@@ -1234,7 +1236,7 @@ def raumplan(request: Request, session: Session = Depends(get_db)) -> HTMLRespon
 
 
 @router.get("/raumplan/plan", include_in_schema=False)
-def raumplan_daten(session: Session = Depends(get_db)) -> JSONResponse:
+def floor_plan_data(session: Session = Depends(get_db)) -> JSONResponse:
     tenant = _tenant(session)
     if tenant is None:
         return JSONResponse(fail_body("not_found", "no tenant", NO_TENANT), 503)
@@ -1247,7 +1249,7 @@ def raumplan_daten(session: Session = Depends(get_db)) -> JSONResponse:
 @router.post(
     "/raumplan/bereiche", include_in_schema=False, dependencies=[Depends(_require_htmx)]
 )
-def raumplan_neuer_bereich(
+def floor_plan_new_area(
     body: bytes = Depends(_body), session: Session = Depends(get_db)
 ) -> JSONResponse:
     return _plan_write(
@@ -1263,7 +1265,7 @@ def raumplan_neuer_bereich(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def raumplan_speichern(
+def floor_plan_save(
     area_id: uuid.UUID,
     body: bytes = Depends(_body),
     session: Session = Depends(get_db),
