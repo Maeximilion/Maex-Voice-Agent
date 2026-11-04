@@ -73,6 +73,9 @@
 
 .re-object { position: absolute; z-index: 2; }
 .re-object.re-selected { z-index: 5; }
+/* app.css gives every button of the board 60 px and padding; furniture, walls
+   and end points are drawn to scale, their touch area comes from the plan. */
+.re .re-floor .re-piece, .re .re-floor .re-wall-hit, .re .re-floor .re-endpoint { min-width: 0; min-height: 0; padding: 0; }
 .re-object button { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
 .re-object button:active { cursor: grabbing; }
 .re-furniture { transform: translate(-50%, -50%) rotate(var(--re-angle)); }
