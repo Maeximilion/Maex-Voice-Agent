@@ -235,6 +235,7 @@ The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `
 | `docs/18_MODEL_SELECTION.md` | Operation model, local test model, setup script, parallel calls |
 | `docs/19_CLAUDE_CODE_SETUP.md` | Personal Claude Code setup: user-level hooks, settings block, restore steps |
 | `docs/20_VOICE_LAYER.md` | Own voice layer: components, access, call session rules, outage map, cost model (decided 07.10.2026, not built) |
+| [docs/21_REVIEW_AUTOMATION.md](docs/21_REVIEW_AUTOMATION.md) | Planned subscription-based inline reviews: setup, independent reviewers, validation and deferred specialist experiment |
 | `docs/metrics/` | Dated measurements behind the README images: eval runs on real models and voice layer measurements |
 
 ## Contributing

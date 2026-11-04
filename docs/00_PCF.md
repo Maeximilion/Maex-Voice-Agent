@@ -537,6 +537,18 @@ Lessons: <learnings>
 
 ## 13. Handovers (newest first)
 
+## Handover 04.11.2026 - subscription inline-review design
+
+Design and setup: [21_REVIEW_AUTOMATION.md](21_REVIEW_AUTOMATION.md), including
+the implementation plan and the deferred specialist-review experiment. One
+combined reviewer was selected. The old `ai-pr-review` workflow is disabled and
+removed; its self-hosted runner and API adapter cannot supply this integration.
+The official action supports subscription OAuth, but no live review is verified.
+Branch `ci/claude-inline-review` is independent of `docs/cross-agent-review`;
+the latter waits. Next: approve the concrete design, implement and test on this
+branch, open one PR, configure `CLAUDE_CODE_OAUTH_TOKEN` through GitHub Secrets,
+then verify real inline findings and a second pushed head before merging.
+
 ```text
 ## Handover 03.11.2026 - T-3.8 to T-3.14 merged, next the rest of Block 2 (#8): T-3.11, T-3.12, T-3.15, T-3.16, T-3.5
 

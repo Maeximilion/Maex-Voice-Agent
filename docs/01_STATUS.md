@@ -1,11 +1,22 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.42
+> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.43
 
 ---
 
 ## Summary
+
+**Subscription-based inline review is planned, not installed (04.11.2026).**
+The design and implementation sequence are in [docs/21_REVIEW_AUTOMATION.md](21_REVIEW_AUTOMATION.md).
+One combined Claude reviewer comes first; specialist reviewers are a documented,
+measured follow-up. Branch `ci/claude-inline-review` starts from `main` and will
+carry one separate PR. The existing `docs/cross-agent-review` branch waits until
+real inline review and re-review after a push work. An OAuth token, isolated
+execution and live GitHub verification remain prerequisites; no paid API fallback
+or self-review fallback is authorised. The design assumes explicit reviewer
+selection without implementation-author labels, and cancellation of superseded
+heads while requiring a completed independent review of the latest revision.
 
 **Pickup and reservations can be switched off, like delivery (T-3.10, #495, 02.11.2026).** Three buttons in the first row of the header say what holds, „Abholung an“ or „aus“, and a tap changes it at once. The switch reaches the whole agent path: `get_service_status` reports and says it, `draft_order` and `check_slot` refuse, also in the middle of a call, and `confirm` refuses a draft made before the tap. A closed service offers the other one only where its hours run and its switch is on: the delivery sentence offered a pickup by the hours alone before. A long-lived call session now reads the switches and the notice fresh in `check_slot`. Reservations off stops new tables only. Evals `reservierung_0043`, `abholung_0090`, `lieferung_0090`, stand-in only; no real model has run them, and the status sentence and the extra flag grew the prompt state by one key.
 
@@ -774,6 +785,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.43 · 04.11.2026:** Record the subscription inline-review design, setup prerequisites and staged implementation plan
 - **v2.14.42 · 04.11.2026:** Violet of the software is the electric ultra violet #7B2FFF (Maxi)
 - **v2.14.41 · 04.11.2026:** T-3.11 floor plan editor: rooms, tables, combinations and fixtures at /gui/raumplan, migration 028
 - **v2.14.40 · 03.11.2026:** Handover: preserve the approved multi-room floor plan and Ubuntu implementation brief
