@@ -425,23 +425,36 @@ def test_two_tablets_cannot_both_take_one_table_name(migrated_db_url, tenant_id)
         engine.dispose()
 
 
-def test_two_names_swapped_in_one_save_are_refused_and_nothing_is_stored(
-    session, tenant_id
-):
+def test_names_swapped_or_turned_in_a_ring_in_one_save_are_stored(session, tenant_id):
+    """A resend after a lost connection can carry several renames at once; the
+    unique name index is checked row by row, whatever order the rows go in."""
     room = _room(session, tenant_id)
-    one, two = _table("T1"), _table("T2", x=500)
-    saved = _save(session, tenant_id, room, tables=[one, two])
+    one, two, three = _table("T1"), _table("T2", x=500), _table("T3", x=800)
+    saved = _save(session, tenant_id, room, tables=[one, two, three])
 
-    with pytest.raises(InvalidInput) as refused:
-        _save(
-            session,
-            tenant_id,
-            saved,
-            tables=[{**one, "name": "T2"}, {**two, "name": "T1"}],
+    swapped = _save(
+        session,
+        tenant_id,
+        saved,
+        tables=[{**one, "name": "T2"}, {**two, "name": "T1"}, three],
+    )
+    ring = _save(
+        session,
+        tenant_id,
+        swapped,
+        tables=[{**one, "name": "T3"}, {**two, "name": "T2"}, {**three, "name": "T1"}],
+    )
+
+    by_id = {t["id"]: t["name"] for t in ring["tables"]}
+    assert by_id == {one["id"]: "T3", two["id"]: "T2", three["id"]: "T1"}
+    assert (
+        session.scalar(
+            select(func.count())
+            .select_from(DiningTable)
+            .where(DiningTable.deleted_at.is_not(None))
         )
-
-    assert refused.value.status == 422
-    assert floor_plan.plan(session, tenant_id) == [saved]
+        == 0
+    )
 
 
 def test_the_answer_names_the_revision_this_save_wrote(migrated_db_url, tenant_id):

@@ -900,8 +900,9 @@ def _correction_panel(
     edit: orders_view.EditState | None,
     message: str | None = None,
     status: int = 200,
+    note: str | None = None,
 ) -> HTMLResponse:
-    context: dict = {"order_id": str(order_id), "message": message}
+    context: dict = {"order_id": str(order_id), "message": message, "note": note}
     if plan is not None and edit is not None:
         try:
             context.update(orders_view.edit_lines(plan, edit))
@@ -952,6 +953,7 @@ def correction_preview(
     op, number = form.get("op", ""), form.get("number", "")
     try:
         edit = orders_view.parse_state(form.get("state", ""))
+        orders_view.take_address(edit, form)
         before = correction.preview_correction(
             session, tenant.id, order_id, edit.request()
         )
@@ -1004,6 +1006,19 @@ def correction_save(
         edit = orders_view.parse_state(form.get("state", ""))
     except AppError as exc:
         return _correction_panel(request, order_id, None, None, exc.say, 409)
+    if orders_view.take_address(edit, form):
+        # Typed after the last tap: the team sees zone, fee and sum first.
+        try:
+            plan = correction.preview_correction(
+                session, tenant.id, order_id, edit.request()
+            )
+        except AppError as exc:
+            return _correction_panel(
+                request, order_id, None, None, exc.say or ORDER_FAILED, 409
+            )
+        return _correction_panel(
+            request, order_id, plan, edit, note=orders_view.ADDRESS_TAKEN
+        )
     try:
         correction.apply_correction(
             session, tenant.id, order_id, edit.request(), form.get("reason", "")
@@ -1219,12 +1234,14 @@ def _plan_write(session: Session, write: Callable[[uuid.UUID], dict]) -> JSONRes
         return JSONResponse(fail_body("invalid_input", "plan", PLAN_INVALID), 422)
     except AppError as exc:
         session.rollback()
-        logger.info("Raumplan nicht gespeichert: %s", exc.message)
+        logger.info("floor plan not saved: %s", exc.message)
         return _plan_error(exc, exc.status if exc.status >= 400 else 422)
 
 
 @router.get("/raumplan", response_class=HTMLResponse, include_in_schema=False)
-def raumplan(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+def floor_plan_page(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
     """The floor plan editor; its data comes from /gui/raumplan/plan."""
     tenant = _tenant(session)
     context: dict = {"tenant": tenant} if tenant else {"problem": NO_TENANT}
@@ -1234,7 +1251,7 @@ def raumplan(request: Request, session: Session = Depends(get_db)) -> HTMLRespon
 
 
 @router.get("/raumplan/plan", include_in_schema=False)
-def raumplan_daten(session: Session = Depends(get_db)) -> JSONResponse:
+def floor_plan_data(session: Session = Depends(get_db)) -> JSONResponse:
     tenant = _tenant(session)
     if tenant is None:
         return JSONResponse(fail_body("not_found", "no tenant", NO_TENANT), 503)
@@ -1247,7 +1264,7 @@ def raumplan_daten(session: Session = Depends(get_db)) -> JSONResponse:
 @router.post(
     "/raumplan/bereiche", include_in_schema=False, dependencies=[Depends(_require_htmx)]
 )
-def raumplan_neuer_bereich(
+def floor_plan_new_area(
     body: bytes = Depends(_body), session: Session = Depends(get_db)
 ) -> JSONResponse:
     return _plan_write(
@@ -1263,7 +1280,7 @@ def raumplan_neuer_bereich(
     include_in_schema=False,
     dependencies=[Depends(_require_htmx)],
 )
-def raumplan_speichern(
+def floor_plan_save(
     area_id: uuid.UUID,
     body: bytes = Depends(_body),
     session: Session = Depends(get_db),

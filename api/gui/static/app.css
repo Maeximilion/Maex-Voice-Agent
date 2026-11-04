@@ -46,7 +46,8 @@ header{background:var(--surface);border-bottom:2px solid var(--line)}
    colour (docs/06 §1 rule 4); the text stands next to it as well. */
 .dot{width:14px;height:14px;border-radius:50%;background:var(--ok);flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--surface);font-size:12px;line-height:1;font-weight:700}
 .dot.ok{background:var(--ok)}
-.dot.warn{background:var(--warn-line);border-radius:3px}
+/* The light violet: the line tone reached only 2.8:1 on the violet chip of the mode. */
+.dot.warn{background:var(--warn);border-radius:3px}
 .dot.danger{background:var(--danger);border-radius:3px}
 .dot.ok::before{content:"\2713"}
 .dot.warn::before{content:"\25B2"}
@@ -258,6 +259,13 @@ header.aus .seg.services .on{background:transparent;color:var(--muted)}
 .betrieb button.picked{background:var(--accent-bg);border:3px solid var(--accent);color:var(--accent-text);font-weight:700}
 .nummer{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0}
 .betrieb .nummer input{height:var(--tap);min-width:140px;font-size:var(--fs-h2)}
+/* The address of a delivery in the correction (#525). */
+.adresse{border-top:2px solid var(--line);margin:14px 0;padding-top:var(--s3)}
+.adresse h3{margin:0 0 var(--s2);font-size:var(--fs-h2)}
+.adresse p{margin:var(--s2) 0}
+.adresse-felder{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.adresse-felder label{display:flex;flex-direction:column;gap:4px;font-weight:600}
+.betrieb .adresse-felder input{height:var(--tap);font-size:var(--fs-h2);width:100%}
 .blocker{color:var(--danger);font-weight:600;margin:var(--s2) 0}
 .hint{margin:var(--s2) 0 0}
 .betrieb .banner{font-size:var(--fs-body)}
