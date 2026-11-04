@@ -46,7 +46,8 @@ header{background:var(--surface);border-bottom:2px solid var(--line)}
    colour (docs/06 §1 rule 4); the text stands next to it as well. */
 .dot{width:14px;height:14px;border-radius:50%;background:var(--ok);flex:none;display:inline-flex;align-items:center;justify-content:center;color:var(--surface);font-size:12px;line-height:1;font-weight:700}
 .dot.ok{background:var(--ok)}
-.dot.warn{background:var(--warn-line);border-radius:3px}
+/* The light violet: the line tone reached only 2.8:1 on the violet chip of the mode. */
+.dot.warn{background:var(--warn);border-radius:3px}
 .dot.danger{background:var(--danger);border-radius:3px}
 .dot.ok::before{content:"\2713"}
 .dot.warn::before{content:"\25B2"}
