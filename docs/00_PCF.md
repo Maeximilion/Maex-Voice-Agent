@@ -467,6 +467,25 @@ maex-voice-agent/
 
 ## 12. Handover Block (Template for Each Chat End)
 
+### Handover 04.11.2026: shared Claude/Codex workflow
+
+- Status: documentation prepared on `docs/cross-agent-review`, based on
+  `b81a0a8489c510e9c2354c1283cd51de520d9816`. No application code changed.
+- Request: Codex work gets Claude's GitHub review, Claude work gets Codex's,
+  after every push; both tools retain the existing test, merge and stack rules.
+- Evidence: the GitHub account has repository admin rights, but the integration
+  cannot list Actions secrets (403). No open PRs at the audit. The historical
+  `ai-pr-review` workflow is disabled; PR #538 has a clean Codex bot result.
+- Next: settle Claude authentication (the existing subscription action is
+  recommended), install its secret/app, implement routing and the independent
+  merge check, and verify both directions plus another push. See docs/19 section 8.
+- This branch is authored by Codex and needs Claude review before any merge.
+  Documentation is not proof that the requested automation is active.
+- Validation: `git diff --check` passed. `make lint` and `make test` were attempted
+  but could not reach the Docker socket in the cloud sandbox; neither check ran.
+  This documentation-only branch has no PR yet, following section 8's rule that
+  setup notes ride with the implementation PR. No CI or Claude review is claimed.
+
 ```text
 ## Handover 02.11.2026 - T-6.3, T-6.9, T-11.9, T-3.7, T-6.5, T-11.8, paused for a restart of Claude
 

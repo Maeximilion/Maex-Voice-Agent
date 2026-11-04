@@ -85,6 +85,49 @@ The layout is modular, organized by layers with fixed dependency direction. Full
 
 ## 6. How You Work
 
+### Working across Claude and Codex
+
+Maxi, 04.11.2026: these working rules apply to both Claude Code and Codex. This
+section supersedes the older same-agent review fallbacks below and in the slash
+commands. It defines the required process; it does not mean that the automation
+described in `docs/19_CLAUDE_CODE_SETUP.md` section 8 is already installed.
+
+- Before opening a PR, the implementing agent reviews its own complete diff and
+  runs the applicable tests, lint and evals. Use the risk levels in Model Routing:
+  at least medium for routine changes, high for core logic, and xhigh for the
+  listed critical paths. Use the host's available equivalent; do not claim a
+  model or effort switch that the host cannot perform. The pre-PR self-review
+  does not satisfy the independent review required after a push.
+- Codex-authored work requires Claude's review in GitHub; Claude-authored work
+  requires the Codex Review Bot. Findings belong inline where possible. Review
+  the initial PR and every later pushed head, including a merge from `main`.
+  A review must identify the full head SHA; a comment requesting it, a reaction,
+  a successful workflow alone, or an earlier review is not completion evidence.
+- Record which agent implemented the work when handing it over. GitHub login,
+  labels shared for project organisation, and branch names alone do not prove
+  authorship. If both agents contributed code, obtain independent coverage of
+  each contribution; do not silently call either agent independent of all of it.
+- A missing, failed, rate-limited or outdated independent review blocks merging.
+  Do not replace it with the implementing agent's own `Merge gate:` comment.
+  The existing severity and fix-round rules still apply, but a loop-limit decision
+  does not waive the independent review. An exception needs Maxi's explicit word.
+- Both agents may create issues and PRs, push their task branches, and merge once
+  all existing merge conditions and the independent review hold on the exact
+  current head. This grants no permission to bypass branch protection or expand
+  an app's credentials. Production and money decisions still follow section 10.
+- Preserve the existing stack rules below: stack coherent changes that depend
+  on each other, using the predecessor's branch as the next PR's base and linking
+  the native GitHub stack. Merge bottom first. Matching labels alone are not a
+  dependency, and an independent PR based on `main` needs no artificial stack.
+- Claude's `.claude/settings.json`, hooks, slash commands and user-level setup
+  are not Codex configuration. Codex follows their documented checks explicitly
+  until an equivalent integration is verified. In particular, the current
+  `merge_gate.sh` recognises Codex results and self-review comments, not the new
+  cross-agent rule; its passing result is insufficient by itself.
+- At a tool or quota handoff, commit and push the task branch and record its PR,
+  base, head SHA, implementation authorship, test results, review state and next
+  step. The receiving agent fetches and checks that state before continuing.
+
 ### Slash Commands (`.claude/commands/`)
 `/start` begin session · `/task T-x.y` build task · `/done` close out · `/ship <PR>` drive a PR through CI and review to its merge · `/bug "…"` error with a red eval case or test first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 

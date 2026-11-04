@@ -3,6 +3,8 @@
 > The personal Claude Code setup behind this repository: three user-level hooks, the usage gate, the settings that wire them, and how to restore both on Windows and in Ubuntu (WSL). It lives outside the repository in `~/.claude`, so this file is its only backup.
 > Version 1.2 · 21.10.2026
 
+For the shared Claude/Codex workflow and the unfinished review setup, see section 8.
+
 ---
 
 ## 1. What this covers
@@ -897,3 +899,76 @@ What the run of 2026-10-20 showed about the hook in the desktop app:
 ## 7. Keeping this file true
 
 The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 19.10.2026 (`sync-main.sh`, Windows and Ubuntu), 21.10.2026 (`claude-rc`, hands a refreshed login back when Claude exits; `usage_gate`, backed up with the fixed installer), 06.10.2026 (the others).
+
+## 8. Continuing in Codex and independent PR reviews
+
+### Verified on 04.11.2026
+
+The connected GitHub account is `Maeximilion`; repository metadata and the
+collaborator endpoint report admin permission. This is the user's repository
+role, not proof that the integration has every API permission. Reading Actions
+secret names returns HTTP 403, so secret availability is unknown. No credential
+values were read, no app permissions changed, and no write was made merely to
+probe access. The managed cloud environment reports no configured secrets.
+
+The live `main` ruleset requires `test`, `docker-smoke`, `title` and
+`dependency-review`, an up-to-date branch and a PR, with no bypass actors. It
+requires zero approving reviews and does not require review-thread resolution.
+Consequently it does not enforce the independent AI review on its own. The
+Claude-only merge hook cannot supply that enforcement for other clients.
+
+The Codex Review Bot posted a completed, clean result on PR #538. The current
+scripts and `/ship` document automatic reviews on PR creation and new pushes;
+the external app's complete settings were not inspected. The historical
+`ai-pr-review` Actions workflow is manually disabled, and no active Claude
+review workflow was listed. This does not establish whether the separate
+managed Claude review service is installed. The `gh-stack` extension is absent
+from this cloud checkout; the native-stack commands need it installed here.
+
+### Required workflow
+
+`CLAUDE.md` section 6 "Working across Claude and Codex" is the shared policy.
+Existing checks, confidentiality rules, status bumps, branch isolation and stack
+order still apply. A local self-review comes before the PR; the other AI reviews
+the pushed head in GitHub. Switching tools must preserve the branch and its
+verified test/review state. A quota failure keeps the PR open.
+
+Recommended setup, pending the authentication choice and installation:
+
+1. Run the official Claude Code GitHub Action with the existing Claude
+   subscription, using `CLAUDE_CODE_OAUTH_TOKEN`. Generate the token locally with
+   `claude setup-token` and add it through GitHub's Actions-secret UI; never paste
+   it into chat or commit it. `/install-github-app` in local Claude Code is the
+   official guided setup. Review its generated workflow before merging it.
+2. Route by explicitly recorded implementation authorship, not by the GitHub
+   account: both tools can act as the same user. Run Claude for Codex work on PR
+   creation and every new head (`opened`, `reopened`, `synchronize` and
+   `ready_for_review`). Support an authorised manual review request without
+   starting a second review for the same head. Keep forks and outside authors
+   out of credential-bearing jobs, and use GitHub-hosted runners only.
+3. Keep the Codex bot for Claude work. Check its app settings before changing
+   routing: if automatic review covers all PRs, adding the Claude action alone
+   would still cause Codex to review its own work. Selective triggering or an
+   app-setting change must be verified, not assumed to follow from a PR label.
+4. Extend the merge check to require completed independent review evidence for
+   the current head and no unresolved blocking findings. A job that exits zero
+   after a skipped review must not count. Reject an older result after another
+   push, even if its review finishes later. Preserve CI and eval requirements.
+5. Validate both author directions, a second push, stale results, missing
+   credentials/quota, and an outside PR before calling the setup active.
+
+The subscription action uses Claude's subscription quota, so reserving some
+quota for reviews is necessary. The separate managed **Claude Code Review**
+service is for Team/Enterprise and has separate usage billing; do not enable it
+as an implicit substitute. Its `@claude review` command requests one review;
+`@claude review always` subscribes a supported PR to later pushes. Those command
+semantics are not automatically inherited by a custom GitHub Action.
+
+Official setup references:
+[Claude Code GitHub Actions](https://code.claude.com/docs/en/github-actions),
+[managed Code Review](https://code.claude.com/docs/en/code-review), and
+[review commands](https://code.claude.com/docs/en/code-review-pull-requests).
+
+**State:** policy and setup notes only. No review workflow, secret, app setting,
+merge-hook implementation or ruleset was changed by this documentation update.
+It must not be reported as working automation.

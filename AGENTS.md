@@ -1,8 +1,10 @@
 # AGENTS.md
 
 Instructions for automated agents that review or change this repository. The working rules for
-Claude Code are in `CLAUDE.md`; this file is what a reviewer needs. Where the two differ,
-`CLAUDE.md` wins.
+Claude Code and Codex are in `CLAUDE.md`; this file also contains the review rules.
+Where the two differ, `CLAUDE.md` wins. Read its section 6, including "Working across
+Claude and Codex", before changing files or merging. Claude-specific hooks and model
+settings do not automatically run in another agent's environment.
 
 ## Working in this repository
 

@@ -1,11 +1,21 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.42
+> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.15.0
 
 ---
 
 ## Summary
+
+**Shared Claude/Codex review policy recorded (04.11.2026; automation pending).**
+Both tools follow the project rules, may create issues and PRs and merge only
+after the existing checks and the other AI's review of the current head. A
+pre-PR self-review is additional, not a quota fallback. Stacks remain dependency
+chains, independent of labels. The setup audit and remaining installation steps
+are in docs/19 section 8. The current integration cannot list Actions secrets
+(HTTP 403), and no active Claude review workflow was found. No review automation
+or repository protection was changed; the Claude authentication choice and the
+implementation of cross-agent routing and merge checks remain open.
 
 **Pickup and reservations can be switched off, like delivery (T-3.10, #495, 02.11.2026).** Three buttons in the first row of the header say what holds, „Abholung an“ or „aus“, and a tap changes it at once. The switch reaches the whole agent path: `get_service_status` reports and says it, `draft_order` and `check_slot` refuse, also in the middle of a call, and `confirm` refuses a draft made before the tap. A closed service offers the other one only where its hours run and its switch is on: the delivery sentence offered a pickup by the hours alone before. A long-lived call session now reads the switches and the notice fresh in `check_slot`. Reservations off stops new tables only. Evals `reservierung_0043`, `abholung_0090`, `lieferung_0090`, stand-in only; no real model has run them, and the status sentence and the extra flag grew the prompt state by one key.
 
@@ -774,6 +784,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.15.0 · 04.11.2026:** Record shared Claude/Codex review policy; automation and authentication remain pending.
 - **v2.14.42 · 04.11.2026:** Violet of the software is the electric ultra violet #7B2FFF (Maxi)
 - **v2.14.41 · 04.11.2026:** T-3.11 floor plan editor: rooms, tables, combinations and fixtures at /gui/raumplan, migration 028
 - **v2.14.40 · 03.11.2026:** Handover: preserve the approved multi-room floor plan and Ubuntu implementation brief
