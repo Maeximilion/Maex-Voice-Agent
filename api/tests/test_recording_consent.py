@@ -17,6 +17,7 @@ from sqlalchemy import select
 
 from api.agent import recording
 from api.agent.consent import (
+    after_recording_answer,
     is_yes,
     only_stops_recording,
     recording_answer,
@@ -188,6 +189,48 @@ def test_a_no_is_a_no(said):
 )
 def test_anything_else_is_unclear_and_no_consent(said):
     assert recording_answer(said) == "unclear"
+
+
+@pytest.mark.parametrize(
+    ("said", "rest"),
+    [
+        (
+            "Nein, ich bin unzufrieden, das Essen war kalt.",
+            "ich bin unzufrieden, das Essen war kalt.",
+        ),
+        ("Ja, ich hätte gern einen Tisch.", "ich hätte gern einen Tisch."),
+        (f"Nein danke, nicht aufnehmen. {A_TABLE}", A_TABLE),
+        ("Nein, bitte nicht aufnehmen, das Essen war kalt.", "das Essen war kalt."),
+        ("Ich will keine Aufnahme. Das Essen war kalt.", "Das Essen war kalt."),
+        # The comma dropped by the recognizer: the first word is the answer.
+        ("Nein ich bin unzufrieden", "ich bin unzufrieden"),
+        # A no of the request behind the answer stays with the request.
+        ("Nein, das Essen war nicht warm.", "das Essen war nicht warm."),
+        ("Nein, 2 Pizzen bitte.", "2 Pizzen bitte."),
+        ("Nee nee das Essen war kalt", "das Essen war kalt"),
+        # Codex PR #532: a stop never takes a number of the request with it, and
+        # a negation that may belong to the request stays in front of it.
+        (
+            "Nicht aufnehmen. Ich nehme 3, bitte die Margherita.",
+            "Ich nehme 3, bitte die Margherita.",
+        ),
+        (
+            "Nicht kalt, sondern versalzen. Ich bin unzufrieden.",
+            "Nicht kalt, sondern versalzen. Ich bin unzufrieden.",
+        ),
+        ("Nein, nicht gut, das Essen war kalt.", "nicht gut, das Essen war kalt."),
+        ("Lieber nicht. Das Essen war kalt.", "Lieber nicht. Das Essen war kalt."),
+        # No answer in front, or nothing behind it: the sentence stays whole.
+        (A_TABLE, A_TABLE),
+        ("Ja?", "Ja?"),
+        ("Wie bitte?", "Wie bitte?"),
+        ("Bin ich damit einverstanden", "Bin ich damit einverstanden"),
+        ("", ""),
+    ],
+)
+def test_what_follows_the_answer_goes_on_without_it(said, rest):
+    """Issue #526: the leading answer is no word of what the guest called for."""
+    assert after_recording_answer(said) == rest
 
 
 @pytest.mark.parametrize(

@@ -900,8 +900,9 @@ def _correction_panel(
     edit: orders_view.EditState | None,
     message: str | None = None,
     status: int = 200,
+    note: str | None = None,
 ) -> HTMLResponse:
-    context: dict = {"order_id": str(order_id), "message": message}
+    context: dict = {"order_id": str(order_id), "message": message, "note": note}
     if plan is not None and edit is not None:
         try:
             context.update(orders_view.edit_lines(plan, edit))
@@ -952,6 +953,7 @@ def correction_preview(
     op, number = form.get("op", ""), form.get("number", "")
     try:
         edit = orders_view.parse_state(form.get("state", ""))
+        orders_view.take_address(edit, form)
         before = correction.preview_correction(
             session, tenant.id, order_id, edit.request()
         )
@@ -1004,6 +1006,19 @@ def correction_save(
         edit = orders_view.parse_state(form.get("state", ""))
     except AppError as exc:
         return _correction_panel(request, order_id, None, None, exc.say, 409)
+    if orders_view.take_address(edit, form):
+        # Typed after the last tap: the team sees zone, fee and sum first.
+        try:
+            plan = correction.preview_correction(
+                session, tenant.id, order_id, edit.request()
+            )
+        except AppError as exc:
+            return _correction_panel(
+                request, order_id, None, None, exc.say or ORDER_FAILED, 409
+            )
+        return _correction_panel(
+            request, order_id, plan, edit, note=orders_view.ADDRESS_TAKEN
+        )
     try:
         correction.apply_correction(
             session, tenant.id, order_id, edit.request(), form.get("reason", "")

@@ -74,13 +74,16 @@
   {# With a state the message stands at the number field, in coral: it is an error. #}
   {% if message and state is not defined %}<p class="banner danger">{{ message }}</p>{% endif %}
   {% if state is defined %}
-  {# Enter im Nummernfeld schickt die Nummer, nicht einen Grund. #}
-  <form hx-post="/gui/bestellungen/{{ order_id }}/korrigieren/vorschau"
+  {# Enter im Nummernfeld schickt die Nummer, nicht einen Grund. Every tap
+     carries the typed address along (hx-include), so a tap never drops it. #}
+  <form id="korrektur-form"
+        hx-post="/gui/bestellungen/{{ order_id }}/korrigieren/vorschau"
         hx-target="#korrektur" hx-swap="innerHTML"
         hx-vals='{"op": "number"}'
+        hx-include="#korrektur-adresse"
         hx-sync="this:drop" hx-disabled-elt="find fieldset">
     <fieldset>
-      <input type="hidden" name="state" value="{{ state }}">
+      <input type="hidden" id="korrektur-stand" name="state" value="{{ state }}">
       <ul class="cards">
         {% for l in rows %}{{ line_view(l) }}{% endfor %}
         {% for l in added %}{{ line_view(l) }}{% endfor %}
@@ -91,6 +94,36 @@
         <button type="submit">Übernehmen</button>
       </div>
       {% if message %}<p class="blocker" id="number-error" role="alert">{{ message }}</p>{% endif %}
+      {% if delivery %}
+      {# The address of a delivery (#525). Its fields belong to the form after
+         this one (the `form` attribute): Enter in them takes the address, not
+         a number. #}
+      <div class="adresse">
+        <h3>Lieferadresse</h3>
+        {% if address_edit is not none %}
+        <div class="adresse-felder">
+          {% for name, label in address_fields %}
+          <label>{{ label }}
+            <input type="text" name="{{ name }}" value="{{ address_edit[name] }}"
+                   form="korrektur-adresse" autocomplete="off"
+                   {% if name == "postal_code" %}inputmode="numeric"{% endif %}>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="edit-actions">
+          <button type="submit" form="korrektur-adresse">Adresse übernehmen</button>
+          {{ tap("address:reset", "Alte Adresse behalten") }}
+        </div>
+        {% if address_blocker %}<p class="blocker" role="alert">{{ address_blocker }}</p>{% endif %}
+        {% if note %}<p class="state-note" role="status">{{ note }}</p>{% endif %}
+        {% else %}
+        <p>{% if address %}{{ address }}{% if floor_note %} <span class="muted">&middot; {{ floor_note }}</span>{% endif %}
+          {% else %}<span class="badge danger">Adresse fehlt</span>{% endif %}</p>
+        <div class="edit-actions">{{ tap("address:open", "Adresse ändern") }}</div>
+        {% endif %}
+        <p>Lieferpauschale {{ fee }}{% if fee != before_fee %} <span class="muted">vorher {{ before_fee }}</span>{% endif %}</p>
+      </div>
+      {% endif %}
       <div class="sheet-foot">
       <div class="order-foot">
         <b>Summe {{ total }}</b>
@@ -104,12 +137,22 @@
                 hx-post="/gui/bestellungen/{{ order_id }}/korrigieren"
                 hx-vals='{"reason": {{ key|tojson }}}'
                 hx-sync="closest form:drop" hx-disabled-elt="closest fieldset"
-                {% if blockers %}disabled{% endif %}>{{ label }}</button>
+                {% if blockers or (key == "wrong_address" and not address_new) %}disabled{% endif %}>{{ label }}</button>
         {% endfor %}
       </div>
       </div>
     </fieldset>
   </form>
+  {% if delivery %}
+  {# The address fields' own form: Enter or "Adresse übernehmen" recalculates
+     with them. It queues behind the taps of the form above. #}
+  <form id="korrektur-adresse"
+        hx-post="/gui/bestellungen/{{ order_id }}/korrigieren/vorschau"
+        hx-target="#korrektur" hx-swap="innerHTML"
+        hx-vals='{"op": "address"}'
+        hx-include="#korrektur-stand"
+        hx-sync="#korrektur-form:drop" hx-disabled-elt="#korrektur fieldset"></form>
+  {% endif %}
   {% endif %}
   </div>
 </section>
