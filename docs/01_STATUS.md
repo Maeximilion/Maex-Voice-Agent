@@ -8,9 +8,11 @@
 ## Summary
 
 **Review authors should identify their bot (04.11.2026).** Maxi prefers Claude
-and Codex reviews and comments under their actual GitHub bot accounts. Hosted
+and Codex findings, review summaries and reviewer replies under their actual
+GitHub bot accounts. PR creation, implementation updates and review-request
+mentions may use Maxi's account. Hosted
 Codex already uses `chatgpt-codex-connector[bot]`. Manual Claude reviews currently
-use Maxi's account and must identify Claude in every comment. The shared rule
+use Maxi's account and must identify Claude in every reviewer comment. The shared rule
 and rollout plan now require verifying publication identity. Claude's bot
 publishing route remains an implementation prerequisite.
 

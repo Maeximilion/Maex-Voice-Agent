@@ -539,10 +539,12 @@ Lessons: <learnings>
 
 ## Handover 04.11.2026 - review author attribution
 
-Status: PR #542 remains Draft with auto-merge off. Maxi prefers review comments
-under the actual Claude and Codex bot accounts. The preference is recorded in
+Status: PR #542 remains Draft with auto-merge off. Maxi prefers findings, review
+summaries and reviewer replies under the actual Claude and Codex bot accounts.
+PR creation, implementation comments and review-request mentions may use Maxi's
+account. The preference is recorded in
 `CLAUDE.md`, docs/21 and the implementation plan. Manual comments made through
-Maxi's account identify their reviewer in every body and reply.
+Maxi's account identify their reviewer in every review body and reviewer reply.
 
 Artifacts: hosted Codex's observed author is `chatgpt-codex-connector[bot]`.
 The manual Claude follow-up on `ae1c903f1286dccb35a6fcfb6046faf9b5d77988` is

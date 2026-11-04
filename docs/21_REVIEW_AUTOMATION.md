@@ -13,15 +13,17 @@ existing Codex Review Bot for work requiring its independent review. A reviewer 
 implementation. Review mentions and reviewer names are allowed; implementation
 author credits are omitted unless explicitly requested.
 
-Maxi prefers the actual GitHub review and comment author to be the reviewer's
-bot (04.11.2026). Hosted Codex already publishes as
+Maxi prefers findings, review summaries and replies made as reviewer to appear
+under that reviewer's GitHub bot (04.11.2026). PR creation, implementation
+updates, replies as the implementer and review-request mentions may use Maxi's
+account. Hosted Codex already publishes as
 `chatgpt-codex-connector[bot]`; Claude should use `claude[bot]` when an authorised
 GitHub App publishing route is available. GitHub attributes requests according
 to their authentication. Subscription OAuth authenticates Claude inference.
 A GitHub App installation token supplies the app's publishing identity.
 The manual Claude reviews on PR #542 used Maxi's GitHub account. Until a bot
-publishing route is verified, label every manual review body, inline comment
-and follow-up reply `Claude review` or `Codex review` as appropriate. Check the
+publishing route is verified, label every manual review body, inline finding
+and reply made as reviewer `Claude review` or `Codex review` as appropriate. Check the
 published `user.login` and `user.type` to establish the actual author.
 See [GitHub App authentication](https://docs.github.com/en/apps/creating-github-apps/authenticating-with-a-github-app/about-authentication-with-a-github-app).
 
