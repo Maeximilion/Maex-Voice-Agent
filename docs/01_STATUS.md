@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.50
+> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.51
 
 ---
 
@@ -10,8 +10,8 @@
 **Subscription-based inline review is planned, not installed (04.11.2026).**
 The design and implementation sequence are in [docs/21_REVIEW_AUTOMATION.md](21_REVIEW_AUTOMATION.md).
 One combined Claude reviewer comes first; specialist reviewers are a documented,
-measured follow-up. Branch `ci/claude-inline-review` starts from `main` and will
-carry one separate PR. The existing `docs/cross-agent-review` branch waits until
+measured follow-up. Branch `ci/claude-inline-review` starts from `main` and carries
+draft PR #542. The existing `docs/cross-agent-review` branch waits until
 real inline review and re-review after a push work. An OAuth token, isolated
 execution and live GitHub verification remain prerequisites; no paid API fallback
 or self-review fallback is authorised for the initial rollout. The later API stage
@@ -298,6 +298,14 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ---
 
 ## What's Next
+
+**Review-preparation handover (04.11.2026):** continue PR #542 on the PC from
+`ci/claude-inline-review`; see the newest handover in `docs/00_PCF.md` section 13.
+Keep it in Draft until local Docker-backed `make lint` and `make test` pass on
+the current head and their SHA/results are recorded in the PR. Obtain manual
+Claude inline review; the action is not installed. Keep `docs/cross-agent-review`
+parked. The draft-first/staged-CI suggestion is saved in docs/21 as an idea only;
+the owner explicitly requested no implementation.
 
 **T-3.11 floor plan built (03.11.2026), PR open for Maxi's merge:** the approved design (`docs/design/floor-plan/`) runs as `/gui/raumplan` with migration 028; T-3.12 (#497) seats reservations on its tables next. D6 and D28 remain in force.
 
@@ -611,6 +619,11 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 ## Blockers
 
+**PR #542 merge hold:** local `make lint` and `make test` remain unverified because
+cloud Docker access was blocked. Draft state and disabled auto-merge preserve the
+hold; green GitHub CI alone cannot release it. See the current PR and newest PCF
+handover for the exact-head evidence required.
+
 | Blocker | Blocks | Resolution |
 |---|---|---|
 | Duties of the legal check open (questions answered 20.10.2026) | every real customer call (privacy notice, record of processing, DSFA, DPAs, allergy consent; the deletion job is built since T-11.2, 26.10.2026); processing of real call recordings (C7 / T-7.x) | the table in `docs/09_OPERATIONS_LEGAL.md` §1: Maxi's paper duties under "In Chat", the code in T-11.1 to T-11.8 |
@@ -621,6 +634,8 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 ---
 
 ## Done
+
+Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge hold; both branch states and manual review steps are in `docs/00_PCF.md`, and the unapproved draft/CI idea is saved in `docs/21_REVIEW_AUTOMATION.md`.
 
 | Date | What |
 |---|---|
@@ -820,6 +835,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.51 · 04.11.2026:** Handover: preserve PR #542 local-test hold and park draft-first CI idea for desktop continuation
 - **v2.14.50 · 04.11.2026:** Prepare manual independent review and reconcile review gates
 - **v2.14.49 · 04.11.2026:** Make done hand off its published PR to ship within the active session
 - **v2.14.48 · 04.11.2026:** Define concise English review findings and verifiable fix acceptance criteria

@@ -537,6 +537,57 @@ Lessons: <learnings>
 
 ## 13. Handovers (newest first)
 
+## Handover 04.11.2026 - PR #542 desktop continuation
+
+Status: [PR #542](https://github.com/Maeximilion/Maex-Voice-Agent/pull/542)
+is open in Draft with auto-merge disabled. This is an instructions/design PR;
+no Claude review action is installed. Local `make lint` and `make test` were
+blocked by Docker socket access in the cloud and have not passed there. GitHub
+CI does not replace the owner's required local runs.
+
+Artifacts: active branch `ci/claude-inline-review`, based directly on `main`.
+Read `CLAUDE.md`, `AGENTS.md`, `docs/01_STATUS.md`, `docs/21_REVIEW_AUTOMATION.md`
+and `docs/superpowers/plans/2026-11-04-claude-inline-review.md`. The last head
+before this documentation handover was `da31d8ba8a2ab79b37556080bd1f2da23352aaff`;
+fetch the current remote head rather than testing that old revision. The separate
+branch `docs/cross-agent-review` remains parked at
+`bc4580079ea60cebb26e3a16542ff9c374b8f9b7`; do not combine, merge or resume it
+until real Claude inline review and follow-up review work.
+
+Decisions: use the existing shared rules, with independent cross-model reviews
+and English repository text. Do not add implementation-author credits or
+co-author trailers unless explicitly requested; reviewer names are allowed.
+Preserve focused follow-ups, evidence-based triage and the flexible three-P2-round
+rule. Start with one Claude reviewer and subscription authentication; later API
+budget/fallback and specialists remain proposals. The draft-first/staged-CI idea
+is saved in docs/21 as explicitly deferred; do not implement it. Continue locally
+on the PC, preferably in the existing Ubuntu/WSL project environment for Docker.
+
+Gate: keep PR #542 in Draft and do not merge or mark ready until `make lint` and
+`make test` both pass locally on its current head, with the full SHA, environment
+and actual results recorded in the PR. A later commit invalidates that evidence.
+All other CI and independent-review gates remain mandatory. The explicit hold
+overrides `/done`'s automatic `/ship` handoff.
+
+Open: first inspect the PC checkout and worktrees without resetting or stashing
+other work, fetch the remote branches, and open a separate worktree for
+`ci/claude-inline-review` (or reuse its existing clean worktree). Read this handover
+and current PR metadata. Start/verify the local project Docker environment and
+run the two required commands on the current head. The user starts a manual
+Claude Code session for the independent review; that session reads the diff,
+posts concise English inline findings in a COMMENT review with full base/head
+SHAs, and leaves code and PR state unchanged. If inline publishing fails, report
+the actual error and a short summary; never claim publication or a clean review
+without evidence. A mention alone does not launch Claude with the current setup.
+Do not implement the automation plan just because it exists.
+
+Lessons: cloud and PC files are separate; committed, pushed branches plus this
+handover transfer the work, not credentials, containers or the full conversation.
+Recheck GitHub access and local tool availability. Every new push needs a fresh
+independent review; Codex requests it with `@claude review`. Existing automatic
+Codex review of Claude work stays unchanged. No force push or merge is part of
+this transfer.
+
 ## Handover 04.11.2026 - subscription inline-review design
 
 Design and setup: [21_REVIEW_AUTOMATION.md](21_REVIEW_AUTOMATION.md), including
@@ -581,9 +632,10 @@ the manual publishing procedure. No automation is claimed, and reviewers must
 not implement the plan or merge while reviewing this instructions-only PR.
 The official action supports subscription OAuth, but no live review is verified.
 Branch `ci/claude-inline-review` is independent of `docs/cross-agent-review`;
-the latter waits. Next: approve the concrete design, implement and test on this
-branch, open one PR, configure `CLAUDE_CODE_OAUTH_TOKEN` through GitHub Secrets,
-then verify real inline findings and a second pushed head before merging.
+the latter waits. Superseded next step: PR #542 now exists as an instructions-only
+draft. Follow the newer desktop-continuation handover above for the local-test
+hold and manual review; action implementation and credential setup remain later
+work, not prerequisites to opening a PR that already exists.
 
 ```text
 ## Handover 03.11.2026 - T-3.8 to T-3.14 merged, next the rest of Block 2 (#8): T-3.11, T-3.12, T-3.15, T-3.16, T-3.5

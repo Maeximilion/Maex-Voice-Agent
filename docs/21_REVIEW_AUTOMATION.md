@@ -494,6 +494,32 @@ Once implementation is ready, the setup guide must give these exact locations:
 The initial PR can be created before the secret exists, but it is not an enabled
 or verified review service. The live setup test is distinct from mocked tests.
 
+## Deferred idea: draft-first reviews and staged CI
+
+Recorded on 04.11.2026 at the owner's request; **not approved for implementation**.
+Keep the current PR creation, review triggers and CI behaviour unchanged.
+
+The idea is to open drafts, run quick lint and relevant tests alongside independent
+review, then run the full required checks when marking the PR ready. Potentially
+defer expensive Docker/build jobs, not all deterministic checks: discovering a
+test failure only after a clean review could start another review/fix cycle.
+
+A draft is already a pushed PR. It blocks merging but does not inherently skip CI
+or prevent inline reviews. The current `ci.yml`, dependency review and title
+workflows have no draft exclusion. The main CI uses default `pull_request`
+activities (`opened`, `synchronize`, `reopened`); marking ready alone does not
+start it. Any future staged design must explicitly handle `ready_for_review`
+and ensure skipped draft jobs cannot satisfy the final merge gate without the
+required checks actually running on the current head.
+
+Manual Claude Code review can publish inline on a draft. Automatic hosted Codex
+review on every draft push has not been verified for this account, and the
+planned Claude action currently excludes drafts. Both trigger paths would need
+verification or adjustment before adopting this idea. Measure actual CI time and
+review usage before deciding whether the extra workflow complexity is worthwhile.
+PR #542's temporary draft/test hold is a specific owner instruction, not adoption
+of this proposal.
+
 ## Deferred experiment: specialised reviewers
 
 ### Future authentication order and budget
