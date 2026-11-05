@@ -344,7 +344,9 @@ def _names_on_calls(
         .where(Order.tenant_id == tenant_id, Order.customer_name != "")
         .union_all(
             select(Reservation.call_id, Reservation.guest_name).where(
-                Reservation.tenant_id == tenant_id, Reservation.guest_name != ""
+                Reservation.tenant_id == tenant_id,
+                Reservation.guest_name != "",
+                Reservation.call_id.is_not(None),
             )
         )
     ).all()
@@ -373,7 +375,8 @@ def _calls_and_callbacks(
     guest's name is not on offer at all."""
     names_on = _names_on_calls(session, tenant_id)
     own_calls = {order.call_id for order in orders}
-    own_calls |= {table.call_id for table in tables}
+    # A table the team entered by hand has no call (T-3.12).
+    own_calls |= {table.call_id for table in tables if table.call_id is not None}
     own_names = {_folded(order.customer_name) for order in orders} | {
         _folded(table.guest_name) for table in tables
     }

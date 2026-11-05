@@ -11,6 +11,11 @@ seats and hangs up at the read-back keeps them for good, and the tablet, which
 lists confirmed tables only, shows nothing (#250). Because a draft can lose its
 seats before the yes, `confirm` asks `has_room` again under the day lock.
 A call's own drafts never count against that call (#207, `booked_guests`).
+
+A reservation the team enters on the tablet has no call (T-3.12, D30). Once
+confirmed it counts like the agent's; as a draft it holds nothing, because no
+call ends it and a sheet closed halfway would keep its seats: `confirm_tablet`
+checks them again under the day lock.
 """
 
 import uuid
@@ -116,6 +121,7 @@ def booked_guests(
         return {}
     live_draft = and_(
         Reservation.status == "draft",
+        Reservation.call_id.is_not(None),
         Call.ended_at.is_(None),
         Reservation.created_at > now - draft_lifetime,
     )
@@ -123,7 +129,8 @@ def booked_guests(
         live_draft = and_(live_draft, Reservation.call_id != call_id)
     query = (
         select(Reservation.reserved_for, Reservation.party_size)
-        .join(Call, Call.id == Reservation.call_id)
+        # Outer: a confirmed table of the tablet has no call and still counts.
+        .outerjoin(Call, Call.id == Reservation.call_id)
         .where(
             Reservation.tenant_id == tenant_id,
             or_(Reservation.status == "confirmed", live_draft),
@@ -158,22 +165,46 @@ def has_room(
     read-back must not turn a yes into "too late". The caller holds
     `lock_capacity_days`.
     """
-    day = reservation.reserved_for.astimezone(zone).date()
-    # Same two days and the same order as check_slot, so both pick the same window.
-    windows = [
-        window
-        for d in (day - timedelta(days=1), day)
-        for window in capacity_windows(session, reservation.tenant_id, d, zone)
-    ]
-    window = next((w for w in windows if w.contains(reservation.reserved_for)), None)
-    if window is None:
-        return False
-    booked = booked_guests(
+    window, booked = window_load(
         session,
         reservation.tenant_id,
-        windows,
+        reservation.reserved_for,
+        zone,
         now=now,
         draft_lifetime=draft_lifetime,
         call_id=reservation.call_id,
     )
-    return booked[window] + reservation.party_size <= window.max_guests
+    return window is not None and booked + reservation.party_size <= window.max_guests
+
+
+def window_load(
+    session: Session,
+    tenant_id: uuid.UUID,
+    at: datetime,
+    zone: ZoneInfo,
+    *,
+    now: datetime,
+    draft_lifetime: timedelta,
+    call_id: uuid.UUID | None = None,
+) -> tuple[CapacityWindow | None, int]:
+    """The window `at` falls in and the guests it holds, by the rules of
+    `booked_guests`; None and 0 outside every window."""
+    day = at.astimezone(zone).date()
+    # Same two days and the same order as check_slot, so both pick the same window.
+    windows = [
+        window
+        for d in (day - timedelta(days=1), day)
+        for window in capacity_windows(session, tenant_id, d, zone)
+    ]
+    window = next((w for w in windows if w.contains(at)), None)
+    if window is None:
+        return None, 0
+    booked = booked_guests(
+        session,
+        tenant_id,
+        windows,
+        now=now,
+        draft_lifetime=draft_lifetime,
+        call_id=call_id,
+    )
+    return window, booked[window]

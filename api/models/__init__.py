@@ -14,7 +14,7 @@ from api.models.floor_plan import DiningTable, FloorArea, TableCombination
 from api.models.menu import ItemAlias, ItemAllergen, ItemOption, MenuItem
 from api.models.orders import Order, OrderItem
 from api.models.outbox import OutboxEvent
-from api.models.reservations import Reservation
+from api.models.reservations import Reservation, ReservationTable
 from api.models.tenants import (
     BridgeHeartbeat,
     CallLimitWindow,
@@ -54,6 +54,7 @@ __all__ = [
     "RecognitionObjection",
     "Recording",
     "Reservation",
+    "ReservationTable",
     "ServiceConfig",
     "SpecialDay",
     "TableCombination",

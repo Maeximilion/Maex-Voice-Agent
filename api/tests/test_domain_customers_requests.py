@@ -385,6 +385,40 @@ def test_a_name_with_the_date_of_a_reservation_verifies_the_person(session, tena
     assert person.reservations == [reservation]
 
 
+def test_a_table_the_team_entered_by_hand_joins_a_verified_person_only(
+    session, tenant_id
+):
+    """A tablet reservation (T-3.12) has no line to prove its guest: alone it
+    verifies nobody, it joins the person another row of its number verified,
+    and its empty call stands for no call of theirs."""
+    tablet = Reservation(
+        tenant_id=tenant_id,
+        call_id=None,
+        source="tablet",
+        status="confirmed",
+        guest_name="Müller",
+        phone=PHONE,
+        party_size=2,
+        reserved_for=PAST - timedelta(days=3),
+        idempotency_key=uuid.uuid4().hex,
+    )
+    session.add(tablet)
+    session.flush()
+    alone = Details(name="Müller", days=(date(2026, 10, 9),))
+    with pytest.raises(NotFound):
+        verify(session, tenant_id, alone, ZONE, NOW)
+
+    agent = _reservation(session, tenant_id)
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+
+    assert {r.id for r in person.reservations} == {tablet.id, agent.id}
+    assert [c.id for c in person.calls] == [agent.call_id]
+    tablet_id = tablet.id
+    erase(session, _request(session, tenant_id), person)
+    session.expire_all()
+    assert session.get(Reservation, tablet_id) is None
+
+
 def test_the_umlaut_spelling_of_the_name_makes_no_difference(session, tenant_id):
     order = _order(session, tenant_id)
     details = Details(name="  MUELLER ", days=MUELLER.days)

@@ -15,7 +15,14 @@ from api.config import settings
 from api.domain.status import bridge
 from api.events.outbox import MAX_ATTEMPTS, mark_attempt_failed
 from api.jobs import monitor
-from api.models import AuditLog, Call, OpeningHours, OutboxEvent, Recording
+from api.models import (
+    AuditLog,
+    Call,
+    OpeningHours,
+    OutboxEvent,
+    Recording,
+    Reservation,
+)
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -320,6 +327,40 @@ def test_the_day_report_names_yesterday_once(session, tenant_id, monkeypatch):
     assert "0.50 EUR plus 1 calls of unknown cost" in text
     assert priority == "normal"
     assert again.sent == []
+
+
+def test_the_day_report_counts_the_agents_tables_only(session, tenant_id, monkeypatch):
+    """A table the team entered by hand took no call (T-3.12)."""
+    monkeypatch.setattr(settings, "monitor_report_hour", 8)
+    yesterday = NOW - timedelta(days=1)
+    agent_call = Call(
+        tenant_id=tenant_id,
+        external_session_id=uuid.uuid4().hex,
+        started_at=yesterday,
+        delete_after=yesterday.date(),
+    )
+    session.add(agent_call)
+    session.flush()
+    for call_id, source in ((agent_call.id, "agent"), (None, "tablet")):
+        session.add(
+            Reservation(
+                tenant_id=tenant_id,
+                call_id=call_id,
+                source=source,
+                status="confirmed",
+                guest_name="Müller",
+                phone="",
+                party_size=2,
+                reserved_for=NOW + timedelta(days=1),
+                idempotency_key=uuid.uuid4().hex,
+                created_at=yesterday,
+            )
+        )
+    session.commit()
+
+    [(_, text, _)] = run(session).sent
+
+    assert "1 reservations" in text
 
 
 def test_no_day_report_before_its_hour(session, tenant_id, monkeypatch):

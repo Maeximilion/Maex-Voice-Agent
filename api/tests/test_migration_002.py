@@ -40,6 +40,7 @@ LATER_TABLES = {
     "floor_areas",
     "dining_tables",
     "table_combinations",
+    "reservation_tables",
 }
 
 

@@ -311,7 +311,7 @@ A task is complete when **all** of these are true:
 - Prices **always** as integer cents. No float for money, anywhere.
 - Phone numbers in E.164 format (`+4972215551234`), normalized at entry.
 - Store times in UTC, display in `Europe/Berlin`.
-- Every transaction carries a `call_id`. No write without `call_id`.
+- Every transaction carries a `call_id`. No write without `call_id`. The one exception is a reservation the team enters on the tablet (D30, Maxi 05.11.2026): `source = tablet`, no call, its actor in `audit_log`.
 - Write tools are idempotent: same `idempotency_key` → same result, no duplicate transaction.
 - Errors return structured JSON, never stack trace to the agent.
 - Everything written for the repo is English (Maxi, 04.10.2026): identifiers, comments, docstrings, error and log messages, docs, commit messages, PR titles and descriptions, review replies. German only where it is product content: what the agent says to callers (`say` texts, prompts), caller sentences in `evals/`, caller sentences as test input in `api/tests/` for code that parses German speech (Maxi, 06.10.2026: escalation keywords, the yes detector, number words and the stand-in model only react to German, an English sentence would test nothing), and what the team reads on the tablet: labels, messages and banners of `api/gui/`, with the assertions on them in tests (Maxi, 30.10.2026: the team works in German, identifiers and comments around that text stay English). Test names, docstrings and comments around that input stay English. Existing German text stays until its file is translated; new text in such a file is English.

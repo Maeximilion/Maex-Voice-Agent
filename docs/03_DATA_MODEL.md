@@ -129,7 +129,7 @@ Tischkapazität je Zeitfenster, Grundlage für `check_slot`.
 | notice_minutes | INT, default 0, `>= 0` | how long before its time a table of this window can be reserved; 0 is no notice (T-3.13, migration 025) |
 
 ### `floor_areas`
-The rooms and terraces of the floor plan the team draws on the tablet (T-3.11, migration 028, docs/06 §3 "Raumplan"). Nothing books against them yet: the agent counts seats in `capacity` until the manual seating of T-3.12 is in use (D28).
+The rooms and terraces of the floor plan the team draws on the tablet (T-3.11, migration 028, docs/06 §3 "Raumplan"). A reservation the team enters by hand can sit on one of its tables or a combination (T-3.12, `reservation_tables`); the agent still counts seats in `capacity` (D28).
 
 | Feld | Typ | Bemerkung |
 |---|---|---|
@@ -174,15 +174,25 @@ Two tables of one room the team may push together. One row per pair, the smaller
 |---|---|---|
 | id | UUID PK | |
 | tenant_id | UUID FK | |
-| call_id | UUID FK | Pflicht |
+| call_id | UUID FK | the call of an agent's reservation; empty for one the team entered on the tablet (migration 029, D30) |
+| source | TEXT, default `agent` | `agent` / `tablet`: who took the reservation (T-3.12, migration 029). CHECK `ck_reservations_call_source`: an `agent` row has its `call_id`, a `tablet` row has none. A tablet row is a draft until the team's confirming tap (`confirm_tablet`, docs/04 §confirm), the same step as the agent's |
 | status | TEXT | `draft` / `confirmed` / `cancelled` |
 | guest_name | TEXT | |
-| phone | TEXT | E.164 |
+| phone | TEXT | E.164; empty when the team entered a table without a number, and after the deletion period |
 | booked_on_own_line | BOOL | `phone` is the line the call came from, read once by `create_reservation` (#523, migration 027): a data subject request opens the table by it after the call's caller ID is gone (90 days, objection, erasure); a withheld caller ID or a number the guest only named is false |
 | party_size | INT | `> 0` (migration 006) |
 | reserved_for | TIMESTAMPTZ | |
 | note | TEXT | Kinderstuhl, Allergie, Anlass |
 | idempotency_key | TEXT UNIQUE | |
+
+### `reservation_tables`
+The table, or the two tables of a combination, a reservation the team entered sits on (T-3.12, migration 029). An agent's reservation has none: it books seats of a window, not a table (D28). A table is taken for the capacity window of its reservation, the turn; outside every window only the same start time collides (assumption, docs/01).
+
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| reservation_id | UUID FK `reservations`, PK | goes with its reservation (`ON DELETE CASCADE`) |
+| table_id | UUID FK `dining_tables`, PK | soft deleted tables keep their name on the reservation |
+| tenant_id | UUID FK | |
 
 ### `calls`
 Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
@@ -537,4 +547,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 026 | `service_config.pickup_enabled`, `reservations_enabled`, default true: the switches next to `delivery_enabled` (T-3.10, #495); the downgrade drops them |
 | 027 | `orders.booked_on_own_line`, `reservations.booked_on_own_line`, default false: the draft notes whether the booking's number is the line its call came from (#523); the upgrade fills it from the caller IDs still there, a row whose caller ID is gone stays false; the downgrade drops both, and what a cleared caller ID said cannot be read back |
 | 028 | `floor_areas`, `dining_tables`, `table_combinations`: the floor plan of T-3.11 (#496); nothing existing changes and nothing reads them for a booking (D28); the downgrade drops the three with every room, table and pair the team drew |
+| 029 | `reservations.call_id` nullable, `reservations.source` (`agent` / `tablet`, default `agent`) with the CHECK that an agent's row has its call and a tablet's none, and `reservation_tables`: reservations the team enters by hand, seated on the floor plan (T-3.12, #497, D30); existing rows stay the agent's; the downgrade deletes every tablet reservation with its seating (backup first) |
 | planned, next free number | `eval_cases`, `eval_runs` |
