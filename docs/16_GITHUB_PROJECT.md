@@ -251,7 +251,20 @@ additions and a reason. All original PR branch diffs were inspected by path;
 shared merge commits are not used as a substitute for each PR's own scope. The
 only reviewed removal is the conflicting `chore` type on documentation issue #324;
 its `docs` label and all unrelated metadata stay. Supporting labels are additive.
-#554 tracks delivery and final live verification.
+#554 tracks delivery and final live verification. During application the existing
+metadata workflow inherited `priority: high` from privacy-retention issue #64
+onto PR #460. The live-state guard stopped that group before writing; the reviewed
+plan was corrected to preserve this evidenced priority, then resumed. No manual
+priority was overwritten.
+
+Execution verified on 05.11.2026: 544 historical entries changed; the second
+read-only reconciliation against a fresh paginated GitHub snapshot found zero
+remaining additions/removals across all 549 audited entries. Including the two
+new delivery PRs, all 551 current entries had a valid single priority, compatible
+primary type and an evidenced area. All 18 closed unmerged PRs retained their
+state, assignees and milestone identity. The catalog held 46 labels, 12 newly
+added. This verifies the live backfill; the workflow changes still need their PR
+review and merge before becoming the default automation.
 
 With an authorized token in `GITHUB_TOKEN` and the target repository in
 `GITHUB_REPOSITORY`, from the repository root:
