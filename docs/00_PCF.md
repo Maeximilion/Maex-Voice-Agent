@@ -537,6 +537,19 @@ Lessons: <learnings>
 
 ## 13. Handovers (newest first)
 
+## Handover 05.11.2026, morning - T-3.12 part 1 merged (#544), next the tablet sheet
+
+Status: #544 merged 05.11.2026 (`4821a36`, merge commit): migration 029 (`reservations.source`, nullable `call_id` with `ck_reservations_call_source`, `reservation_tables`), `domain/reservations/manual.py` (`create_tablet_reservation`, `seating`, `taken_tables`, `describe`, `WindowFull`), `confirm_tablet` in `domain/confirm.py`, outer join in `capacity.booked_guests`, `window_load`. Codex round 1 found two P1 (late tap on a past time, pair removed between taps), both fixed in `8e406e4`; round 2 clean. Evals on the exact head equal to `main` (94/94, targets 1/23, numbers 249/249). The workbench database is not migrated to 029 yet: `make migrate` in the main folder, backup first (`bash scripts/backup.sh --label before_migration_029`). This handover rides on branch `docs/handover-t3-12-part2` (pushed, no PR); T-3.12 part 2 branches from it and its PR is based on `main`. T-3.12 stays "in progress" in docs/07; #497 stays open until part 2.
+Decisions (Maxi, 05.11.2026): D30 "draft, then confirm" for a reservation without a call (docs/01); run `/done`, `/ship` and every other next command myself instead of suggesting them (memory updated); pause after the merge of #544 for the day.
+Open:
+1. T-3.12 part 2 (Opus 5.5 `xhigh` stays sensible: the GUI wires the confirming tap; the table routes `gui/` to Sonnet `medium`, the mixed rule takes the higher). The sheet "Reservierung eintragen" from the column "Heute", in the pattern of the notice sheet (`fragments/vorlauf.html`, `GET`/`POST /gui/vorlauf`, `<div id="vorlauf">` in `betrieb/index.html`, `_form`, `_require_htmx`, CSRF): date (today by default), time, persons, name, phone (optional), note, a select "Ohne Tisch" / each live table / each pair of `table_combinations`; a hidden `idempotency_key` per opened sheet. `POST` calls `create_tablet_reservation` and shows the summary with the window's load (`TabletDraft.booked_guests`, `max_guests`); "Eintragen" calls `confirm_tablet`; with `needs_override` or a `WindowFull` answer the button reads "Trotzdem eintragen" behind `hx-confirm` and sends `override`. `AppError.say` goes to the sheet; a `NotFound`/`InvalidInput`/`Conflict` rolls the session back. The list "Heute" refreshes by itself (SSE on `today_change_token`). Add the table names to `TodayReservation` and `_today_rows` (one query), hide an empty phone in `fragments/heute.html`. Tests in the style of `test_gui_router.py` (`client`, `TYPED` headers, `feste_uhr`). Close #497 with that PR; docs/06 §3 gets the sheet; docs/07 T-3.12 done.
+2. Maxi's word on the T-3.12 assumptions (a) to (h) in docs/01 "Made Assumptions", above all (a) the agent's limits do not stop the team, (b) a table is taken for its capacity window, (e) no check of the party against the table's seats.
+3. Ultrareview candidate for #544 (migration and booking, `xhigh`): `/code-review ultra 544`, Maxi's call.
+Lessons:
+- `make lint` and `make test` run inside the main folder's stack; from a worktree run `ruff`, `mypy` and `pytest` with the shared venv `~/Maex-Voice-Agent/.venv` against a throwaway Postgres (`t312-db`, 127.0.0.1:55433, stop with `docker rm -f t312-db`), environment set in a script file: the worktree guard refuses `ENV=... cmd` inline.
+- mypy caught the one caller the new nullable `call_id` broke (`customers/requests.py`); a data request is never verified by a tablet reservation alone (no line), by the rule of the security audit of 02.11.2026.
+- The guard also refuses `powershell.exe`: Docker Desktop has to be started by Maxi from a worktree session.
+
 ## Handover 05.11.2026 - PR #542 review fixes
 
 Status: the confirmed P1 message and header now refer to independent review.
