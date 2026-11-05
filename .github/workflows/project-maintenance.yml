@@ -91,7 +91,9 @@ jobs:
         continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python scripts/pr_metadata.py --findings-json "$RUNNER_TEMP/metadata.json"
+        run: |
+          python scripts/pr_metadata.py --sync-labels
+          python scripts/pr_metadata.py --findings-json "$RUNNER_TEMP/metadata.json"
 
       - name: Maintain the decision issue
         # What the maintenance cannot decide itself lands in exactly one issue.

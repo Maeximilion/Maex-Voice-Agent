@@ -1,0 +1,235 @@
+{
+  "version": 1,
+  "labels": [
+    {
+      "name": "accessibility",
+      "color": "f143ab",
+      "description": "Barrier affecting people with disabilities"
+    },
+    {
+      "name": "area: backend",
+      "color": "c5def5",
+      "description": "API, application and domain logic"
+    },
+    {
+      "name": "area: ci",
+      "color": "c5def5",
+      "description": "CI, repository automation and developer tooling"
+    },
+    {
+      "name": "area: data",
+      "color": "c5def5",
+      "description": "Database schema, persistence, imports and data lifecycle"
+    },
+    {
+      "name": "area: deployment",
+      "color": "c5def5",
+      "description": "Containers, hosting, backup and operational setup"
+    },
+    {
+      "name": "area: frontend",
+      "color": "c5def5",
+      "description": "Browser interfaces, templates, accessibility and client interactions"
+    },
+    {
+      "name": "area: security",
+      "color": "c5def5",
+      "description": "Authentication, secrets, access control and security hardening"
+    },
+    {
+      "name": "area: voice",
+      "color": "c5def5",
+      "description": "Telephony, speech engines and call-session processing"
+    },
+    {
+      "name": "block",
+      "color": "5319e7",
+      "description": "Group issue collecting related work packages"
+    },
+    {
+      "name": "bug",
+      "color": "d73a4a",
+      "description": "A reproducible defect in existing behavior"
+    },
+    {
+      "name": "chore",
+      "color": "fef2c0",
+      "description": "Repository, dependency or operational maintenance"
+    },
+    {
+      "name": "code-review",
+      "color": "d4c5f9",
+      "description": "Review findings or review tracking"
+    },
+    {
+      "name": "dependencies",
+      "color": "0366d6",
+      "description": "Pull requests that update a dependency file"
+    },
+    {
+      "name": "deployment",
+      "color": "ededed",
+      "description": "Deployment or operational configuration"
+    },
+    {
+      "name": "docker",
+      "color": "21ceff",
+      "description": "Docker images, build or runtime configuration"
+    },
+    {
+      "name": "docker_compose",
+      "color": "E5F2FC",
+      "description": "Docker Compose service configuration"
+    },
+    {
+      "name": "docs",
+      "color": "0075ca",
+      "description": "Project documentation or guidance"
+    },
+    {
+      "name": "documentation",
+      "color": "0075ca",
+      "description": "Documentation (compatible legacy alias of docs)"
+    },
+    {
+      "name": "duplicate",
+      "color": "cfd3d7",
+      "description": "This issue or pull request already exists"
+    },
+    {
+      "name": "enhancement",
+      "color": "a2eeef",
+      "description": "Feature or product improvement (compatible legacy alias of feature)"
+    },
+    {
+      "name": "feature",
+      "color": "a2eeef",
+      "description": "New product capability"
+    },
+    {
+      "name": "github_actions",
+      "color": "000000",
+      "description": "GitHub Actions workflows and action dependencies"
+    },
+    {
+      "name": "good first issue",
+      "color": "7057ff",
+      "description": "Good for newcomers"
+    },
+    {
+      "name": "help wanted",
+      "color": "008672",
+      "description": "Extra attention is needed"
+    },
+    {
+      "name": "invalid",
+      "color": "e4e669",
+      "description": "This doesn't seem right"
+    },
+    {
+      "name": "javascript",
+      "color": "f1e05a",
+      "description": "JavaScript browser code or tooling"
+    },
+    {
+      "name": "performance",
+      "color": "d4c5f9",
+      "description": "Latency, throughput, memory or resource-use measurement and improvement"
+    },
+    {
+      "name": "priority: high",
+      "color": "b60205",
+      "description": "Concrete security, data-loss, call-fallback or release blocker; history records original impact"
+    },
+    {
+      "name": "priority: low",
+      "color": "0e8a16",
+      "description": "Deferred research, documentation, cosmetic or routine maintenance work"
+    },
+    {
+      "name": "priority: medium",
+      "color": "fbca04",
+      "description": "Functional, correctness, typing or planned capability work; history records original scope"
+    },
+    {
+      "name": "projektpflege",
+      "color": "bfdadc",
+      "description": "Repository and GitHub Project maintenance"
+    },
+    {
+      "name": "python",
+      "color": "2b67c6",
+      "description": "Python code, dependencies or type checking"
+    },
+    {
+      "name": "question",
+      "color": "d876e3",
+      "description": "Further information is requested"
+    },
+    {
+      "name": "refactor",
+      "color": "c2e0c6",
+      "description": "Restructure existing code without intended behavior changes"
+    },
+    {
+      "name": "research",
+      "color": "5319e7",
+      "description": "Investigate evidence or make a documented decision before implementation"
+    },
+    {
+      "name": "status: blocked",
+      "color": "d93f0b",
+      "description": "Work cannot start until its documented dependency or decision gate is released"
+    },
+    {
+      "name": "stufe-0",
+      "color": "1d76db",
+      "description": "Work associated with project stage 0 (not a progress status)"
+    },
+    {
+      "name": "stufe-1",
+      "color": "1d76db",
+      "description": "Work associated with project stage 1 (not a progress status)"
+    },
+    {
+      "name": "stufe-2",
+      "color": "1d76db",
+      "description": "Work associated with project stage 2 (not a progress status)"
+    },
+    {
+      "name": "stufe-3",
+      "color": "1d76db",
+      "description": "Work associated with project stage 3 (not a progress status)"
+    },
+    {
+      "name": "stufe-4",
+      "color": "1d76db",
+      "description": "Work associated with project stage 4 (not a progress status)"
+    },
+    {
+      "name": "stufe-5",
+      "color": "1d76db",
+      "description": "Work associated with project stage 5 (not a progress status)"
+    },
+    {
+      "name": "test",
+      "color": "bfd4f2",
+      "description": "Tests, evaluations or test infrastructure"
+    },
+    {
+      "name": "typescript",
+      "color": "3178c6",
+      "description": "TypeScript browser code, tooling or strategy"
+    },
+    {
+      "name": "typing",
+      "color": "bfdadc",
+      "description": "Static typing and checked contracts"
+    },
+    {
+      "name": "wontfix",
+      "color": "ffffff",
+      "description": "This will not be worked on"
+    }
+  ]
+}

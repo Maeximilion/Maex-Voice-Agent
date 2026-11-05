@@ -1,11 +1,19 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.16.2
+> Status: 05.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.16.3
 
 ---
 
 ## Summary
+
+**Repository labels (05.11.2026).** #554 tracks the compatible label catalog,
+targeted event reconciliation and reviewed history backfill. The existing
+priority and stage names stay; research, performance, typing and component areas
+add useful context. The audit keeps before-labels and scope fingerprints; writes
+are resumable and never mark closed unmerged PRs Done. See docs/16 section 6.
+No language migration or review service is installed by this change.
+
 
 **Language decisions and review signals (05.11.2026).** [Docs/22](22_LANGUAGE_AND_PERFORMANCE.md)
 records the inspected Python/native-engine boundaries and TypeScript alternatives.
@@ -857,6 +865,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.16.3 · 05.11.2026:** Version compatible repository labels and reconcile historical metadata safely.
 - **v2.16.2 · 05.11.2026:** Document language strategy, blocked performance research and shared reviewer signals.
 - **v2.16.1 · 05.11.2026:** A PR inherits stage and priority of the issue it closes
 - **v2.16.0 · 05.11.2026:** Ultrareview ledger #546, quota settled, D31 MaexSocial points

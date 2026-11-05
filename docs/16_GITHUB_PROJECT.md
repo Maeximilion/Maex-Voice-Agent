@@ -187,3 +187,108 @@ The connection between work and board arises through keywords and branch names, 
 | `scripts/pr_metadata.py` | Assignees, missing types and milestones, including history |
 | `.github/workflows/project-maintenance.yml` | The daily run |
 | `.claude/skills/github-project/SKILL.md` | The same rule for Claude Code |
+
+
+## 6. Compatible label catalog and safe reconciliation
+
+The versioned catalog is `scripts/labels.json`, next to the metadata entry point
+(and available in the development container's existing scripts mount). Keep the
+Voice names: `priority: high/medium/low`, `stufe-N`, and the existing types.
+MaexSocial supplies the idea of explicit priority/type/area metadata, not a second
+`priority:pN`, `gate:gN` or status taxonomy. Project status remains the field;
+`status: blocked` remains its documented exception.
+
+Every issue and PR should have exactly one priority and one compatible primary
+type. `documentation` and `docs` are aliases, as are `enhancement` and `feature`;
+existing aliases stay. `research` marks investigation/decisions. `performance`,
+`typing`, `python`, `javascript`, `typescript`, dependencies and other established
+labels are supporting topics. Use the evidenced `area: frontend/backend/voice/data/ci/deployment/security`
+labels; multiple areas are justified by affected components, not by label count.
+
+| Priority | Meaning |
+|---|---|
+| high | Concrete security, data-loss, call-fallback or release blocker |
+| medium | Functional work, correctness, typing or a planned capability without that blocker |
+| low | Deferred research, documentation, cosmetic work or routine maintenance |
+
+For closed entries priority describes their original scope, not current urgency.
+Issue priority is not review severity P0–P3. A historic P2 review title does not by
+itself decide scheduling priority. Preserve explicit owner priorities unless a
+separate evidence-based decision changes them.
+
+### Event and daily behavior
+
+The existing `pr-metadata` workflow reconciles only the event's live issue/PR on
+open, reopen, edit and label changes, and PR pushes/closure. It fetches the current
+API state; the event payload is only the identifier. Privileged PR events check
+out the trusted default branch with no persisted credentials. PR text and file
+paths remain data: no checkout, import or shell execution from a candidate branch,
+including forks. Only `contents: read`, `issues: write` and `pull-requests: write`
+are needed; no extra paid service or model classifier.
+
+Missing types come from Conventional Commit titles, stage/priority from local
+closing references outside code examples, and areas from exact known scopes.
+The PR event also reads changed paths for areas and language topics. Manual labels
+are retained; conflicting priorities or types are reported rather than overwritten.
+No inferred priority means a decision is needed, not an automatic low priority.
+The daily run synchronizes the catalog and catches missed metadata events, sending
+remaining priority/type/area questions to the existing decision issue (#136).
+Some path-specific enrichment can wait for a later PR event or a reviewed audit;
+the daily run reports missing evidence instead of fetching every historical diff.
+
+Closed, unmerged PRs are a **label-only** exception to historical metadata
+reconciliation: they receive evidenced missing labels, never an assignee, milestone,
+reopening or Done state through this exception. Open/merged PR and issue milestone
+and assignee behavior stays as documented above. Label writes do not certify work
+as completed. Standard GitHub-token writes do not recursively trigger new Actions;
+the daily and hourly reconciliation remain the recovery paths.
+
+### Historical audit and recovery
+
+The 05.11.2026 audit is `.github/label-backfill-2026-11-05.json`: 549 entries
+(145 issues, 404 PRs), each with original labels, a title/body fingerprint, reviewed
+additions and a reason. All original PR branch diffs were inspected by path;
+shared merge commits are not used as a substitute for each PR's own scope. The
+only reviewed removal is the conflicting `chore` type on documentation issue #324;
+its `docs` label and all unrelated metadata stay. Supporting labels are additive.
+#554 tracks delivery and final live verification. During application the existing
+metadata workflow inherited `priority: high` from privacy-retention issue #64
+onto PR #460. The live-state guard stopped that group before writing; the reviewed
+plan was corrected to preserve this evidenced priority, then resumed. No manual
+priority was overwritten.
+
+Execution verified on 05.11.2026: 544 historical entries changed; the second
+read-only reconciliation against a fresh paginated GitHub snapshot found zero
+remaining additions/removals across all 549 audited entries. Including the two
+new delivery PRs, all 551 current entries had a valid single priority, compatible
+primary type and an evidenced area. All 18 closed unmerged PRs retained their
+state, assignees and milestone identity. The catalog held 46 labels, 12 newly
+added. This verifies the live backfill; the workflow changes still need their PR
+review and merge before becoming the default automation.
+
+With an authorized token in `GITHUB_TOKEN` and the target repository in
+`GITHUB_REPOSITORY`, from the repository root:
+
+```sh
+python3 scripts/pr_metadata.py --sync-labels --dry-run
+python3 scripts/pr_metadata.py --sync-labels
+python3 scripts/pr_metadata.py --apply-label-plan .github/label-backfill-2026-11-05.json --dry-run
+python3 scripts/pr_metadata.py --apply-label-plan .github/label-backfill-2026-11-05.json
+python3 scripts/pr_metadata.py --apply-label-plan .github/label-backfill-2026-11-05.json --dry-run
+```
+
+Review the first dry run before applying. Each item is reread immediately before
+writing; a changed title/body or unexpected label set stops the run. The writer
+uses additive endpoints and only explicitly reviewed primary-type removals,
+pauses between writes, then rereads the result. Re-running accepts the plan's
+partially applied state and skips finished entries, so a failed request does not
+require rolling back good changes. Never replace all labels with the snapshot.
+
+The last dry run must report zero changes. If the scope or manual labels changed,
+inspect the live item and make a new reviewed plan; do not weaken the fingerprint
+check to force the old plan through. Keep the original audit for traceability.
+For an erroneous assignment, compare original and live labels, remove only the
+specific added label and restore an explicitly removed type if appropriate;
+retain subsequent manual changes. There is no automatic bulk rollback that can
+safely infer later human intent. New items after this snapshot use normal event
+reconciliation and are not silently treated as audited history.

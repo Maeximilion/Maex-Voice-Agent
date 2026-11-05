@@ -140,7 +140,10 @@ def test_unknown_type_is_reported_without_a_guessed_label(monkeypatch, tmp_path)
     assert pr_metadata.main() == 0
     assert not calls
     findings = json.loads(output.read_text())["Repository metadata"]
-    assert len(findings) == 1 and "Type label needs a decision" in findings[0]["label"]
+    assert len(findings) == 1
+    assert "Primary type needs a decision" in findings[0]["label"]
+    assert "Priority needs a decision" in findings[0]["label"]
+    assert "Area needs evidence" in findings[0]["label"]
 
 
 def test_relationship_failure_does_not_publish_an_empty_success_report(
