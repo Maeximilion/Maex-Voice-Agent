@@ -143,15 +143,15 @@ def test_closed_issues_are_included_in_the_metadata_run(monkeypatch) -> None:
 @pytest.mark.parametrize(
     ("kind", "state", "merged_at", "labels", "expected_finding", "expected_writes"),
     [
-        ("issue", "open", None, ["code-review"], False, 1),
-        ("issue", "closed", None, ["code-review"], False, 1),
+        ("issue", "open", None, ["code-review"], True, 1),
+        ("issue", "closed", None, ["code-review"], True, 1),
         ("issue", "closed", None, [], True, 1),
-        ("pull", "closed", None, [], False, 0),
+        ("pull", "closed", None, [], True, 0),
         ("pull", "closed", "2026-09-23T10:00:00Z", [], True, 1),
         ("pull", "open", None, [], True, 1),
     ],
 )
-def test_metadata_findings_ignore_review_parents_and_rejected_prs(
+def test_metadata_findings_include_history_without_assigning_rejected_prs(
     monkeypatch,
     tmp_path,
     kind,
@@ -372,3 +372,295 @@ def test_the_real_task_list_is_parsed() -> None:
     tasks = pr_metadata.task_issues(pr_metadata.WORKPACKAGES.read_text("utf-8"))
     assert tasks["T-10.1"] == 396
     assert tasks["T-10.4"] == 394
+
+
+def test_documentation_and_research_are_compatible_primary_types():
+    for name in ("documentation", "research"):
+        assert (
+            pr_metadata.missing(
+                pull("docs: investigate", labels=[name], assignees=[EIGENTUEMER]),
+                EIGENTUEMER,
+            )
+            == {}
+        )
+
+
+def test_evidence_uses_exact_scopes_and_paths_not_arbitrary_keywords():
+    assert pr_metadata.area_labels("fix(gui): repair interaction") == ["area: frontend"]
+    assert pr_metadata.area_labels("fix: a voice in the documentation") == []
+    assert pr_metadata.area_labels("feat: feature", ["api/telephony/session.py"]) == [
+        "area: voice",
+        "python",
+    ]
+    assert pr_metadata.area_labels("feat: feature", ["ui/app.ts"]) == ["typescript"]
+
+
+def test_priority_conflicts_are_reported_not_overwritten():
+    item = pull("fix: example", labels=["bug", "priority: low", "priority: high"])
+    assert "priority" in pr_metadata.label_problems(item)[0].lower()
+    assert "labels" not in pr_metadata.missing(item, EIGENTUEMER)
+
+
+def test_closing_examples_and_missing_references_do_not_supply_priority():
+    item = _closing("```text\nCloses #7\n```\nCloses #999", labels=["feature"])
+    assert pr_metadata.missing(item, EIGENTUEMER, {7: issue("priority: high")}) == {}
+
+
+def test_history_plan_preserves_manual_labels_and_can_resume_after_partial_apply():
+    before = {
+        **pull("docs: explain", labels=["documentation", "custom"]),
+        "body": "text",
+    }
+    entry = {
+        "number": 1,
+        "before": ["custom", "documentation"],
+        "fingerprint": pr_metadata.content_fingerprint(before),
+        "add": ["priority: low", "area: ci"],
+        "reason": "Documentation of repository automation.",
+    }
+    assert pr_metadata.planned_labels(before, entry) == ["area: ci", "priority: low"]
+    partly = {**before, "labels": before["labels"] + [{"name": "area: ci"}]}
+    assert pr_metadata.planned_labels(partly, entry) == ["priority: low"]
+    done = {**partly, "labels": partly["labels"] + [{"name": "priority: low"}]}
+    assert pr_metadata.planned_labels(done, entry) == []
+    changed = {**before, "labels": before["labels"] + [{"name": "priority: high"}]}
+    with pytest.raises(pr_metadata.MetadataError, match="changed"):
+        pr_metadata.planned_labels(changed, entry)
+    with pytest.raises(pr_metadata.MetadataError, match="changed"):
+        pr_metadata.planned_labels({**before, "body": "new scope"}, entry)
+
+
+def test_history_apply_only_writes_labels_even_for_closed_unmerged_pr(
+    monkeypatch, tmp_path
+):
+    item = {**pull("docs: clarify", labels=["docs"]), "state": "closed", "body": ""}
+    entry = {
+        "number": 1,
+        "before": ["docs"],
+        "add": ["priority: low"],
+        "fingerprint": pr_metadata.content_fingerprint(item),
+        "reason": "Documentation only.",
+    }
+    plan = {"version": 1, "repository": "o/r", "items": [entry]}
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps(plan))
+    calls = []
+
+    def rest(method, endpoint, token, payload=None):
+        calls.append((method, endpoint, payload))
+        if method == "GET":
+            return item
+        item["labels"].extend({"name": x} for x in payload["labels"])
+
+    monkeypatch.setattr(pr_metadata, "rest", rest)
+    monkeypatch.setattr(pr_metadata.time, "sleep", lambda _: None)
+    assert pr_metadata.apply_label_plan(path, "o/r", "t", dry_run=True) == 0
+    assert all(c[0] == "GET" for c in calls)
+    assert pr_metadata.apply_label_plan(path, "o/r", "t", dry_run=False) == 0
+    assert [c[1] for c in calls if c[0] != "GET"] == ["/repos/o/r/issues/1/labels"]
+    calls.clear()
+    assert pr_metadata.apply_label_plan(path, "o/r", "t", dry_run=False) == 0
+    assert all(c[0] == "GET" for c in calls)
+
+
+def test_history_apply_rejects_wrong_repo_before_any_write(monkeypatch, tmp_path):
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps({"version": 1, "repository": "wrong/repo", "items": []}))
+    monkeypatch.setattr(
+        pr_metadata, "rest", lambda *a: pytest.fail("No request expected")
+    )
+    with pytest.raises(pr_metadata.MetadataError, match="repository"):
+        pr_metadata.apply_label_plan(path, "o/r", "t", dry_run=False)
+
+
+def test_event_mode_fetches_current_target_and_never_executes_fork_content(
+    monkeypatch, tmp_path
+):
+    event = tmp_path / "event.json"
+    event.write_text(
+        json.dumps(
+            {
+                "number": 4,
+                "pull_request": {
+                    "number": 4,
+                    "title": "stale",
+                    "head": {"repo": {"full_name": "fork/untrusted"}},
+                },
+            }
+        )
+    )
+    current = {
+        **pull(
+            "feat(gui): improve interaction",
+            labels=["feature", "priority: medium"],
+            assignees=["o"],
+        ),
+        "number": 4,
+        "body": "",
+        "state": "open",
+    }
+    calls = []
+
+    def rest(method, path, token, payload=None):
+        calls.append((method, path, payload))
+        if path.endswith("/files?per_page=100&page=1"):
+            return [{"filename": "api/gui/static/app.js"}]
+        return current
+
+    monkeypatch.setattr(pr_metadata, "rest", rest)
+    monkeypatch.setattr(pr_metadata.time, "sleep", lambda _: None)
+    assert pr_metadata.reconcile_event(event, "o/r", "t", dry_run=False) == 0
+    writes = [c for c in calls if c[0] == "POST"]
+    assert writes == [
+        (
+            "POST",
+            "/repos/o/r/issues/4/labels",
+            {"labels": ["area: frontend", "javascript"]},
+        )
+    ]
+    assert all("fork" not in c[1] for c in calls)
+
+
+def test_pagination_supports_paths_without_query_string(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        pr_metadata, "rest", lambda method, path, token: seen.append(path) or []
+    )
+    assert pr_metadata.pages("/repos/o/r/pulls/4/files", "t") == []
+    assert seen == ["/repos/o/r/pulls/4/files?per_page=100&page=1"]
+
+
+def test_history_plan_can_remove_only_a_reviewed_conflicting_type(
+    monkeypatch, tmp_path
+):
+    item = {
+        **pull("English documentation sweep", labels=["docs", "chore", "custom"]),
+        "body": "",
+    }
+    entry = {
+        "number": 1,
+        "before": ["docs", "chore", "custom"],
+        "remove": ["chore"],
+        "add": ["priority: low"],
+        "fingerprint": pr_metadata.content_fingerprint(item),
+        "reason": "Documentation is the primary type; retain custom metadata.",
+    }
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps({"version": 1, "repository": "o/r", "items": [entry]}))
+    calls = []
+
+    def rest(method, endpoint, token, payload=None):
+        calls.append((method, endpoint))
+        if method == "POST":
+            item["labels"].extend({"name": x} for x in payload["labels"])
+        if method == "DELETE":
+            item["labels"] = [x for x in item["labels"] if x["name"] != "chore"]
+        return item
+
+    monkeypatch.setattr(pr_metadata, "rest", rest)
+    monkeypatch.setattr(pr_metadata.time, "sleep", lambda _: None)
+    assert pr_metadata.apply_label_plan(path, "o/r", "t", dry_run=False) == 0
+    assert ("DELETE", "/repos/o/r/issues/1/labels/chore") in calls
+    assert {x["name"] for x in item["labels"]} == {"docs", "custom", "priority: low"}
+    calls.clear()
+    assert pr_metadata.apply_label_plan(path, "o/r", "t", dry_run=False) == 0
+    assert all(method == "GET" for method, _ in calls)
+
+
+def test_failed_history_write_is_resumable_without_duplicate_changes(
+    monkeypatch, tmp_path
+):
+    items = {
+        n: {**pull("docs: explain", labels=["docs"]), "number": n, "body": ""}
+        for n in (1, 2)
+    }
+    path = tmp_path / "plan.json"
+    path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "repository": "o/r",
+                "items": [
+                    {
+                        "number": n,
+                        "before": ["docs"],
+                        "add": ["priority: low"],
+                        "fingerprint": pr_metadata.content_fingerprint(i),
+                        "reason": "Documentation only.",
+                    }
+                    for n, i in items.items()
+                ],
+            }
+        )
+    )
+    failing = True
+    writes = []
+
+    def rest(method, endpoint, token, payload=None):
+        number = int(endpoint.split("/")[5])
+        if method == "POST":
+            if number == 2 and failing:
+                raise pr_metadata.MetadataError("temporary failure")
+            writes.append(number)
+            items[number]["labels"].extend({"name": x} for x in payload["labels"])
+        return items[number]
+
+    monkeypatch.setattr(pr_metadata, "rest", rest)
+    monkeypatch.setattr(pr_metadata.time, "sleep", lambda _: None)
+    with pytest.raises(pr_metadata.MetadataError, match="temporary failure"):
+        pr_metadata.apply_label_plan(path, "o/r", "t", dry_run=False)
+    failing = False
+    assert pr_metadata.apply_label_plan(path, "o/r", "t", dry_run=False) == 0
+    assert writes == [1, 2]
+
+
+def test_repeated_event_is_a_noop_and_missing_reference_is_not_a_priority(
+    monkeypatch, tmp_path
+):
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"pull_request": {"number": 4}}))
+    item = {
+        **pull("fix(gui): repair control", assignees=["o"]),
+        "number": 4,
+        "body": "Closes #999",
+        "state": "open",
+    }
+    writes = []
+
+    def rest(method, path, token, payload=None):
+        if path == "/repos/o/r/issues/999":
+            raise pr_metadata.MetadataError(
+                "GET /repos/o/r/issues/999 -> 404: Not Found"
+            )
+        if "/files?" in path:
+            return []
+        if method == "POST":
+            writes.append(payload)
+            item["labels"].extend({"name": name} for name in payload["labels"])
+        return item
+
+    monkeypatch.setattr(pr_metadata, "rest", rest)
+    monkeypatch.setattr(pr_metadata.time, "sleep", lambda _: None)
+    for _ in range(2):
+        assert pr_metadata.reconcile_event(event, "o/r", "t", dry_run=False) == 0
+    assert writes == [{"labels": ["area: frontend", "bug"]}]
+
+
+def test_catalog_sync_is_idempotent_and_keeps_unknown_manual_labels(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        pr_metadata,
+        "load_catalog",
+        lambda: [{"name": "research", "color": "5319e7", "description": "Investigate"}],
+    )
+    monkeypatch.setattr(
+        pr_metadata,
+        "pages",
+        lambda *a: [
+            {"name": "research", "color": "5319e7", "description": "Investigate"},
+            {"name": "custom", "color": "ffffff", "description": "Manual"},
+        ],
+    )
+    monkeypatch.setattr(pr_metadata, "rest", lambda *a: calls.append(a))
+    assert pr_metadata.sync_catalog("o/r", "t", dry_run=False) == 0
+    assert calls == []

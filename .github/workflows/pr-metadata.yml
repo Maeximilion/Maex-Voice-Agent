@@ -10,18 +10,19 @@ name: pr-metadata
 # pull_request_target also gives Dependabot's pull requests a token that may write.
 on:
   pull_request_target:
-    types: [opened, reopened]
+    types: [opened, reopened, edited, labeled, unlabeled, synchronize, closed]
   issues:
-    types: [opened, reopened]
+    types: [opened, reopened, edited, labeled, unlabeled]
 
 permissions:
+  contents: read
   issues: write
   # Assignee and label go through the issue interface, but GitHub additionally
   # requires this permission for pull requests.
   pull-requests: write
 
 concurrency:
-  group: pr-metadata
+  group: pr-metadata-${{ github.event.pull_request.number || github.event.issue.number }}
   cancel-in-progress: false
 
 jobs:
@@ -31,8 +32,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Fill in assignee and label
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: python3 scripts/pr_metadata.py
+        run: python3 scripts/pr_metadata.py --event "$GITHUB_EVENT_PATH"
