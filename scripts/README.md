@@ -18,4 +18,5 @@
 | `printbridge_smoke.py` | Runs a built print bridge program without a real printer or our server: `--help`, `--once`, the test slip's bytes, the Windows printer path, with `--tls-url` a https check; `.github/workflows/printbridge.yml` calls it, tests in `api/tests/test_printbridge_program.py` | T-9.6 |
 | `printbridge_install_check.ps1` | CI only, refuses elsewhere because it deletes the bridge settings: installs, updates and removes the bridge on the Windows runner and checks the task, the hidden start and the restart | T-9.6 |
 | `status_bump.py` | Auto-advance version, date, changelog line in `docs/01_STATUS.md` | – (Meta/Tooling) |
+| `ultrareview_ledger.py` | The rolling issue "Ultrareview candidates": `add` a candidate (`/done`), tick it with `done --level ultra\|max --findings <issues>` after its review, `list` the open ones (`/start`, `/gate`) | – (Meta/Tooling, CLAUDE.md "Ultrareview ledger") |
 | `codex_review.py` | Where Codex's review of a pull request's head stands: clean, findings (listed), running, not started or stalled; `--wait` polls until done. Never comments; `/ship` step 2 | – (Meta/Tooling) |
