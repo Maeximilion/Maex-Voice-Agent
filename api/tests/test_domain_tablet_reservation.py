@@ -2,6 +2,7 @@
 call, confirmed by the team's tap, counted against the agent's seats (D28),
 seated on a table or a combination of the floor plan."""
 
+import threading
 import uuid
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
@@ -286,6 +287,46 @@ def test_two_drafts_on_one_table_the_second_confirmation_is_refused(
             session, tenant_id, second.reservation_id, override=True, now=NOW
         )
     assert session.get(Reservation, second.reservation_id).status == "draft"
+
+
+def test_two_tablets_confirming_one_table_at_once_book_it_once(
+    session, tenant_id, tables, migrated_db_url
+):
+    """Without the day lock both taps would see the table free."""
+    drafts = [
+        enter(session, tenant_id, reserved_for=berlin(h), table_ids=[tables["T1"]])
+        for h in (18, 20)
+    ]
+    engine = create_engine(migrated_db_url)
+    start = threading.Barrier(2)
+    results: list[object] = []
+    lock = threading.Lock()
+
+    def run(reservation_id: uuid.UUID) -> None:
+        start.wait(timeout=10)
+        with Session(engine) as own:
+            try:
+                confirm_tablet(own, tenant_id, reservation_id, override=True, now=NOW)
+                outcome: object = "ok"
+            except Conflict:
+                own.rollback()
+                outcome = "refused"
+            except Exception as exc:  # noqa: BLE001 - every other error must show
+                outcome = exc
+        with lock:
+            results.append(outcome)
+
+    threads = [threading.Thread(target=run, args=(d.reservation_id,)) for d in drafts]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    engine.dispose()
+
+    assert sorted(map(str, results)) == ["ok", "refused"], results
+    session.expire_all()
+    statuses = sorted(session.get(Reservation, d.reservation_id).status for d in drafts)
+    assert statuses == ["confirmed", "draft"]
 
 
 def test_a_combination_of_the_plan_seats_one_party_on_two_tables(
