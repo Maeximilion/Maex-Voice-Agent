@@ -79,6 +79,7 @@ The layout is modular, organized by layers with fixed dependency direction. Full
 | `docs/18_MODEL_SELECTION.md` | Requirements on the model, operation shortlist, local test model, setup script, parallel calls | before work on `agent/llm.py`, before T-5.3 |
 | `docs/16_GITHUB_PROJECT.md` | **The board is a derivation: one project, hands-off during work, daily maintenance** | before any `gh project` call, before opening an issue or PR |
 | `docs/19_CLAUDE_CODE_SETUP.md` | User-level hooks and settings outside the repository, backed up with restore steps for Windows and Ubuntu | before changing a hook or setting up a machine |
+| `docs/22_LANGUAGE_AND_PERFORMANCE.md` | Language assessment, latency evidence gate, typing and TypeScript UI decisions | before performance or language changes |
 | `docs/20_VOICE_LAYER.md` | **Own voice layer: decisions, components, access, call session rules, outage map, cost model, measurement log** | before work on `telephony/`, before any T-10.x |
 
 ---
@@ -140,6 +141,25 @@ or merging. A missing action does not invalidate a completed manual review;
 a bare mention without a completed review is insufficient. A later push still
 needs another independent review of the new head. The user decides when a manual
 review session starts; this instruction does not launch a paid session for them.
+
+### Performance and language review signals
+
+Both Claude Code and Codex reviewers inspect affected code for evidenced latency,
+CPU/concurrency, memory, serialization, typing and runtime/library constraints.
+Separate Python CPU from model/native-engine time, audio buffering, SQL and network
+waits. Start with the root cause and a fix within the current architecture; a
+language preference or hypothetical speedup is not an inline defect. Apply the
+existing severity, concrete-scenario and finding-count rules unchanged.
+
+The working agent collects credible unmeasured signals in measurement issue #550
+(location, triggering workload and proposed measurement), rather than creating an
+issue or full audit after every push. A measured Python limitation may justify a
+targeted comparison only through the blocked task #551 and the evidence/owner
+release gate in `docs/22_LANGUAGE_AND_PERFORMANCE.md`. Closing #550 alone does not
+release it. TypeScript UI strategy (#553) and gradual mypy hardening (#552) are
+separate decisions, not an instruction to rewrite Python. Follow-up review scope
+and the flexible three-round rule stay unchanged. Hosted review instructions
+cannot guarantee what a bot executes internally.
 
 ### Slash Commands (`.claude/commands/`)
 `/start` begin session · `/task T-x.y` build task · `/done` close out · `/ship <PR>` drive a PR through CI and review to its merge · `/bug "…"` error with a red eval case or test first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
