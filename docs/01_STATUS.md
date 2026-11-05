@@ -314,6 +314,8 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 ## What's Next
 
+**T-3.12 part 2 next (05.11.2026):** part 1 merged (#544, migration 029, D30); the sheet "Reservierung eintragen" on the tablet follows, plan in the handover of 05.11.2026, morning (`docs/00_PCF.md` §13). The workbench database still waits for `make migrate` to 029, backup first.
+
 **Review preparation (04.11.2026):** PR #542 records the shared review rules and
 local verification evidence. Its live review, test and Draft state are tracked
 on the PR. Claude automation remains planned, and `docs/cross-agent-review`
