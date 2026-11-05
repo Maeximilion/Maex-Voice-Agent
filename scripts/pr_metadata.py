@@ -4,6 +4,8 @@
 Zweck : Jeder Pull Request bekommt den Repo-Eigentuemer als Assignee und ein
         Typ-Label aus seinem Titel (Conventional Commits: feat -> feature,
         fix -> bug, ...). Das deckt auch alte Pull Requests und solche von Bots ab.
+        It also takes the stufe-N and priority label of the issues it closes,
+        where it has none of that kind (docs/16 section 5).
         Gesetzt wird nur, was fehlt; vorhandene Labels bleiben, ein zweiter Lauf
         aendert nichts.
         Every issue, open or closed, gets the owner alongside existing assignees.
@@ -55,6 +57,9 @@ GATE_TITLE = re.compile(r"^G(?P<stage>\d+)\b")
 WORKPACKAGES = Path(__file__).resolve().parent.parent / "docs/07_WORKPACKAGES.md"
 TASK_ROW = re.compile(r"^\| (?P<task>T-\d+\.\d+) \| (?:#(?P<issue>\d+)|-) \|")
 GROUP_ISSUE = re.compile(r"^## .*(?:Sammel-Issue|group issue) #(?P<issue>\d+)")
+# What a pull request takes over from the issues it closes, one label each.
+INHERITED_PREFIXES = ("stufe-", "priority: ")
+PRIORITY_RANK = {"priority: high": 0, "priority: medium": 1, "priority: low": 2}
 CLOSING = re.compile(r"(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)")
 TASK_IN_TITLE = re.compile(r"\bT-\d+\.\d+\b")
 TASK_BRANCH = re.compile(r"^task/(?:T-)?(?P<block>\d+)[-.](?P<task>\d+)\b")
@@ -76,16 +81,40 @@ def derive_label(title: str) -> str | None:
     return TYPE_LABELS.get(match.group("type")) if match else None
 
 
-def missing(pull: dict, owner: str) -> dict[str, list[str]]:
-    """Was an einem Pull Request fehlt. Leer, wenn nichts zu tun ist."""
+def missing(
+    pull: dict, owner: str, issues: dict[int, dict] | None = None
+) -> dict[str, list[str]]:
+    """Was an einem Pull Request fehlt. Leer, wenn nichts zu tun ist.
+
+    `issues` by number: a pull request also takes the stage and the priority
+    of the issues it closes, where it has none of that kind (as in MaexSocial,
+    Maxi 2026-11-05)."""
     change: dict[str, list[str]] = {}
     if owner.casefold() not in {
         assignee["login"].casefold() for assignee in pull.get("assignees", [])
     }:
         change["assignees"] = [owner]
     labels = {label["name"] for label in pull.get("labels", [])}
+    new = []
     if not labels & KNOWN_TYPES and (label := derive_label(pull["title"])):
-        change["labels"] = [label]
+        new.append(label)
+    closed = [int(number) for number in CLOSING.findall(pull.get("body") or "")]
+    for prefix in INHERITED_PREFIXES:
+        if any(name.startswith(prefix) for name in labels):
+            continue
+        # The earliest stage and the highest priority come first.
+        found = sorted(
+            (
+                label["name"]
+                for number in closed
+                for label in (issues or {}).get(number, {}).get("labels", [])
+                if label["name"].startswith(prefix)
+            ),
+            key=lambda name: (PRIORITY_RANK.get(name, 0), name),
+        )
+        new += found[:1]
+    if new:
+        change["labels"] = new
     return change
 
 
@@ -220,13 +249,16 @@ def main() -> int:
 
     try:
         issues = all_issues(repo, token)
+        by_number = {issue["number"]: issue for issue in issues}
         pulls = [
             pull
             for pull in all_pulls(repo, token)
             if pull.get("state") != "closed" or pull.get("merged_at")
         ]
         changes = [
-            (pull, change) for pull in pulls if (change := missing(pull, owner))
+            (pull, change)
+            for pull in pulls
+            if (change := missing(pull, owner, by_number))
         ] + [
             (issue, change)
             for issue in issues

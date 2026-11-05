@@ -223,6 +223,41 @@ def issue(*labels: str, milestone=None) -> dict:
     return {"labels": [{"name": n} for n in labels], "milestone": milestone}
 
 
+def _closing(body: str, **kwargs) -> dict:
+    return {**pull("feat(x): y", assignees=[EIGENTUEMER], **kwargs), "body": body}
+
+
+def test_a_pull_request_takes_stage_and_priority_of_the_issue_it_closes() -> None:
+    """MaexSocial's inheritance, with this repo's names (Maxi, 2026-11-05)."""
+    issues = {497: issue("feature", "stufe-1", "priority: medium")}
+
+    change = pr_metadata.missing(_closing("Closes #497"), EIGENTUEMER, issues)
+
+    assert change == {"labels": ["feature", "stufe-1", "priority: medium"]}
+
+
+def test_labels_the_pull_request_has_stay_and_the_highest_priority_wins() -> None:
+    issues = {
+        1: issue("stufe-2", "priority: low"),
+        2: issue("stufe-1", "priority: medium"),
+    }
+    own = _closing("Fixes #1, closes #2", labels=["feature", "stufe-3"])
+
+    assert pr_metadata.missing(own, EIGENTUEMER, issues) == {
+        "labels": ["priority: medium"]
+    }
+
+
+def test_no_closing_reference_or_an_unknown_issue_inherits_nothing() -> None:
+    issues = {497: issue("stufe-1", "priority: high")}
+
+    for body in ("Part of #497", "Closes #999", ""):
+        change = pr_metadata.missing(
+            _closing(body, labels=["feature"]), EIGENTUEMER, issues
+        )
+        assert change == {}
+
+
 def test_gates_are_matched_by_their_title_only() -> None:
     assert sorted(GATES) == ["stufe-0", "stufe-1"]
 
