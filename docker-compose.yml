@@ -157,12 +157,16 @@ services:
       # FileNotFoundError aus, obwohl der Code in Ordnung ist.
       - ./Makefile:/app/Makefile:ro
       - ./deploy:/app/deploy:ro
-      # Nur commands/, nicht ganz .claude/: dort liegen im Haupt-Checkout die
-      # Worktrees mit ihren eigenen .env-Dateien, die im Container nichts zu
-      # suchen haben (CLAUDE.md §8). Der Test liest ohnehin nur die Befehle.
+      # Only the commands and these tracked files: other .claude paths can hold
+      # worktrees and credentials. The tests read command links and hook registration.
       - ./.claude/commands:/app/.claude/commands:ro
+      - ./.claude/hooks/sync_main.sh:/app/.claude/hooks/sync_main.sh:ro
+      - ./.claude/hooks/merge_gate.sh:/app/.claude/hooks/merge_gate.sh:ro
+      - ./.claude/settings.json:/app/.claude/settings.json:ro
       # /done references the PR template; test_commands.py checks that path too.
       - ./.github/PULL_REQUEST_TEMPLATE.md:/app/.github/PULL_REQUEST_TEMPLATE.md:ro
+      # README tests read the committed images and their source hashes.
+      - ./.github/assets:/app/.github/assets:ro
       - ./CLAUDE.md:/app/CLAUDE.md:ro
       - ./README.md:/app/README.md:ro
       - ./CHANGELOG.md:/app/CHANGELOG.md:ro

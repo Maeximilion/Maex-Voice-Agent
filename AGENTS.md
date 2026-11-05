@@ -26,7 +26,25 @@ For an agent that changes files here, whatever tool it runs in:
 
 How to review:
 
+- Use the shared English "Review comment format" in `CLAUDE.md`: a priority and
+  specific title, followed by one concise paragraph explaining the trigger,
+  wrong outcome/impact and required behaviour with a verification case. Aim for
+  roughly 40–100 words, but retain essential evidence. State the defect rather
+  than prescribing an unnecessary rewrite; a repeated finding must explain the
+  still-failing case and reference its earlier thread.
+- Follow the shared follow-up scope in `CLAUDE.md` section 6, "Independent review
+  requests": use the last completed independent review as the baseline, check
+  every later change and still-open findings, and read related code as needed.
+  Missing or invalid prior coverage requires a full PR review. This applies to
+  Claude and Codex; it is review guidance, not a hosted-bot execution guarantee.
+- Keep inline findings tied to concrete defects and combine instances of the
+  same root cause into one finding. Do not restart a search for cosmetic changes
+  in unchanged, unaffected files after a fix; the existing severity rules remain.
 - Report a finding only when you can name a concrete failing input or sequence. No scenario, no finding.
+- When processing feedback, follow `CLAUDE.md`'s evidence-based assessment rules.
+  A justified thread resolution may reject an incorrect suggestion without a
+  code change. Consider that explanation before repeating the finding; a
+  resolved flag alone proves neither a fix nor that the reviewer was wrong.
 - Do not report style, naming, formatting or personal preference: `ruff` and the CI cover those.
 - A finding that was answered with a commit is not reported again in other words. If the same spot
   produces a new finding after a fix, check whether the root cause was fixed before reporting.

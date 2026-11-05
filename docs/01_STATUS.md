@@ -1,11 +1,72 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 04.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.42
+> Status: 05.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.53
 
 ---
 
 ## Summary
+
+**Review follow-up fixes (05.11.2026).** The merge hook's blocked message points
+to completed independent review and triage evidence. The local API container
+exposes the specific tracked hook/config files and README assets read by tests,
+all read-only. Broad `.claude` mounts and local settings remain rejected by the
+mount guard. PR #542 carries the current validation and review evidence.
+
+**Review authors should identify their bot (04.11.2026).** Maxi prefers Claude
+and Codex findings, review summaries and reviewer replies under their actual
+GitHub bot accounts. PR creation, implementation updates and review-request
+mentions may use Maxi's account. Hosted
+Codex already uses `chatgpt-codex-connector[bot]`. Manual Claude reviews currently
+use Maxi's account and must identify Claude in every reviewer comment. The shared rule
+and rollout plan now require verifying publication identity. Claude's bot
+publishing route remains an implementation prerequisite.
+
+**Subscription-based inline review is planned, not installed (04.11.2026).**
+The design and implementation sequence are in [docs/21_REVIEW_AUTOMATION.md](21_REVIEW_AUTOMATION.md).
+One combined Claude reviewer comes first; specialist reviewers are a documented,
+measured follow-up. Branch `ci/claude-inline-review` starts from `main` and carries
+draft PR #542. The existing `docs/cross-agent-review` branch waits until
+real inline review and re-review after a push work. An OAuth token, isolated
+execution and live GitHub verification remain prerequisites; no paid API fallback
+or self-review fallback is authorised for the initial rollout. The later API stage
+is planned together with specialists: API first, a shared USD 50 monthly review
+cap, then subscription OAuth; credit eligibility and hard enforcement remain
+unverified. `CLAUDE.md` now requires Codex to post `@claude review` after PR
+creation and every push to an open PR, while the existing automatic Codex reviews
+of Claude changes continue. Duplicate push/comment events must not repeat model
+work. The design assumes explicit reviewer
+selection without implementation-author labels, and cancellation of superseded
+heads while requiring a completed independent review of the latest revision.
+Follow-up reviews for both model families are planned to focus on all changes since the last
+completed review and unresolved findings, with related context as needed and a
+full-PR fallback when prior coverage or impact is uncertain. `AGENTS.md` now
+references the shared scope, and `/ship` links the scoped manual Codex request
+without duplicating automatic reviews. Hosted Codex scope is instruction-based;
+hard execution restrictions and savings are not verified, and account settings
+were not changed. The user chose to keep the existing flexible three-P2-round
+rule; no fixed pause is added. Continuation still needs the existing decision
+based on concrete in-scope defects. No additional UI/UX reviewer is planned.
+Review feedback must be verified before any fix. Shared rules now explicitly
+allow an evidence-backed reply and thread resolution without a code change for
+an incorrect, outdated or duplicate claim. A bad proposed fix does not dismiss
+a real defect, and deferred real work remains truthfully tracked. The plan carries
+these dispositions into follow-up review context without trusting resolved flags.
+Both reviewers now have a shared English comment standard: a specific priority
+title and a short paragraph with the trigger, impact and verifiable required
+behaviour. The usual 40–100-word target is guidance, not truncation. Fix authors
+derive and verify the acceptance condition; repeated findings explain what still
+fails rather than restating the suggestion. Sources and examples are in docs/21.
+`/done` now explicitly hands a published task PR to `/ship` in the active session;
+`/ship` owns CI/review waiting, fixes, gated merge and cleanup. Explicit pauses,
+drafts and missing prerequisites remain blockers, with no recursive handoff or
+background session startup. This command change is statically checked only;
+live Claude invocation remains part of rollout validation.
+The current PR is being prepared for a user-started manual Claude Code review.
+Self-review removed contradictory legacy self-review fallbacks and clarified
+that a completed manual review may supply independent evidence without an
+installed action. The workflow/controller remain unimplemented; this PR stays
+open for that review and does not resume the waiting documentation branch.
 
 **Pickup and reservations can be switched off, like delivery (T-3.10, #495, 02.11.2026).** Three buttons in the first row of the header say what holds, „Abholung an“ or „aus“, and a tap changes it at once. The switch reaches the whole agent path: `get_service_status` reports and says it, `draft_order` and `check_slot` refuse, also in the middle of a call, and `confirm` refuses a draft made before the tap. A closed service offers the other one only where its hours run and its switch is on: the delivery sentence offered a pickup by the hours alone before. A long-lived call session now reads the switches and the notice fresh in `check_slot`. Reservations off stops new tables only. Evals `reservierung_0043`, `abholung_0090`, `lieferung_0090`, stand-in only; no real model has run them, and the status sentence and the extra flag grew the prompt state by one key.
 
@@ -252,6 +313,12 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ---
 
 ## What's Next
+
+**Review preparation (04.11.2026):** PR #542 records the shared review rules and
+local verification evidence. Its live review, test and Draft state are tracked
+on the PR. Claude automation remains planned, and `docs/cross-agent-review`
+waits for working inline reviews. The deferred draft-first/staged-CI idea is in
+docs/21. Historical session details are in `docs/00_PCF.md` section 13.
 
 **T-3.11 floor plan built (03.11.2026), PR open for Maxi's merge:** the approved design (`docs/design/floor-plan/`) runs as `/gui/raumplan` with migration 028; T-3.12 (#497) seats reservations on its tables next. D6 and D28 remain in force.
 
@@ -576,6 +643,8 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 ## Done
 
+Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge hold; both branch states and manual review steps are in `docs/00_PCF.md`, and the unapproved draft/CI idea is saved in `docs/21_REVIEW_AUTOMATION.md`.
+
 | Date | What |
 |---|---|
 | 03.11.2026 | **The violet of the software is the electric ultra violet `#7B2FFF` (Maxi, 03.11.2026).** Chosen from three ultra violets on screenshots of the board and the floor plan (Pantone `#5F4B8B`, electric `#7B2FFF`, bright `#8F5BFF`); `--warn-line`, `--warn` and `--warn-bg` in `api/gui/static/app.css`, the note of an order in white on it (4.9:1, dark text would be 3.5:1). Meanings unchanged; neon unchanged (Maxi: keep the board as it is). The README and its images keep `#9D7BFF` until the brand palette is decided. One commit, one revert |
@@ -774,6 +843,17 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.53 · 05.11.2026:** Fix review handoff guidance and local Docker test inputs
+- **v2.14.52 · 04.11.2026:** Record bot authorship preferences for Claude and Codex reviews
+- **v2.14.51 · 04.11.2026:** Handover: preserve PR #542 local-test hold and park draft-first CI idea for desktop continuation
+- **v2.14.50 · 04.11.2026:** Prepare manual independent review and reconcile review gates
+- **v2.14.49 · 04.11.2026:** Make done hand off its published PR to ship within the active session
+- **v2.14.48 · 04.11.2026:** Define concise English review findings and verifiable fix acceptance criteria
+- **v2.14.47 · 04.11.2026:** Clarify evidence-based review triage and justified thread resolution without code changes
+- **v2.14.46 · 04.11.2026:** Plan shared focused reviews for Claude and Codex while retaining flexible P2 loop limits
+- **v2.14.45 · 04.11.2026:** Plan focused follow-up reviews with verified prior coverage and full-review fallback
+- **v2.14.44 · 04.11.2026:** Persist per-push independent review requests and defer API-first review with a USD 50 monthly cap
+- **v2.14.43 · 04.11.2026:** Record the subscription inline-review design, setup prerequisites and staged implementation plan
 - **v2.14.42 · 04.11.2026:** Violet of the software is the electric ultra violet #7B2FFF (Maxi)
 - **v2.14.41 · 04.11.2026:** T-3.11 floor plan editor: rooms, tables, combinations and fixtures at /gui/raumplan, migration 028
 - **v2.14.40 · 03.11.2026:** Handover: preserve the approved multi-room floor plan and Ubuntu implementation brief

@@ -537,6 +537,165 @@ Lessons: <learnings>
 
 ## 13. Handovers (newest first)
 
+## Handover 05.11.2026 - PR #542 review fixes
+
+Status: the confirmed P1 message and header now refer to independent review.
+The P2's stale PR-specific blocker entries were removed from current status.
+Docker mounts the three required tracked Claude files and README assets
+read-only. The mount guard permits those exact files and rejects broader paths.
+
+Artifacts: `api/tests/test_hooks_merge_gate.py` and
+`api/tests/test_compose_mounts.py` reproduced the defects before the fix.
+The focused WSL run including `test_commands.py` passed 59 tests after it.
+
+Decisions: existing merge-gate checks are preserved. Maxi asked to handle
+confirmed review findings and the remaining local checks autonomously.
+
+Gate: full current-head local Docker results and independent follow-up review
+are recorded on PR #542. It stays Draft until its required gates are satisfied.
+
+Open: run local lint/tests on the committed fixes, publish the evidence, reply
+to both review threads and request the independent follow-up. The Claude action
+and staged-CI plans remain deferred. The subscription secret is configured but
+has not yet been exercised by an automated review.
+
+Lessons: reading a completed review includes verifying and fixing its confirmed
+findings. Keep PR-specific gate state on the PR and historical evidence here.
+
+## Handover 04.11.2026 - review author attribution
+
+Status: PR #542 remains Draft with auto-merge off. Maxi prefers findings, review
+summaries and reviewer replies under the actual Claude and Codex bot accounts.
+PR creation, implementation comments and review-request mentions may use Maxi's
+account. The preference is recorded in
+`CLAUDE.md`, docs/21 and the implementation plan. Manual comments made through
+Maxi's account identify their reviewer in every review body and reviewer reply.
+
+Artifacts: hosted Codex's observed author is `chatgpt-codex-connector[bot]`.
+The manual Claude follow-up on `ae1c903f1286dccb35a6fcfb6046faf9b5d77988` is
+[published](https://github.com/Maeximilion/Maex-Voice-Agent/pull/542#pullrequestreview-5776598015)
+under `Maeximilion`. It found no new eligible defects and kept the existing P1
+open. Bot publication for Claude has not been configured.
+
+Decisions: prefer authorised GitHub App publication for Claude. Verify the
+actual review/comment author. Keep the automation and staged-CI plans deferred.
+
+Gate: the local Docker run on that head passed lint and reported 8,054 passing
+tests, five failures and five setup errors due to absent checkout files in the
+container. Those ten tests passed in the full WSL checkout. This documentation
+update requires fresh current-head checks and independent review before merge.
+The focused WSL run of `python -m pytest -q api/tests/test_commands.py` passed
+all five tests, and `git diff --check` passed. Full Docker checks were not rerun
+for this documentation change while the recorded mount failures remain open.
+
+Open: fix the local Docker test failures and triage the existing merge-hook P1.
+The dedicated Claude publishing identity still needs implementation and live
+verification. `docs/cross-agent-review` remains parked.
+
+Lessons: a reviewer's name in the body identifies the model; GitHub chooses the
+visible author from the publishing credential. The current CLI is authenticated
+as Maxi, and its token cannot list GitHub App installations (HTTP 403).
+
+## Handover 04.11.2026 - PR #542 desktop continuation
+
+Status: [PR #542](https://github.com/Maeximilion/Maex-Voice-Agent/pull/542)
+is open in Draft with auto-merge disabled. This is an instructions/design PR;
+no Claude review action is installed. Local `make lint` and `make test` were
+blocked by Docker socket access in the cloud and have not passed there. GitHub
+CI does not replace the owner's required local runs.
+
+Artifacts: active branch `ci/claude-inline-review`, based directly on `main`.
+Read `CLAUDE.md`, `AGENTS.md`, `docs/01_STATUS.md`, `docs/21_REVIEW_AUTOMATION.md`
+and `docs/superpowers/plans/2026-11-04-claude-inline-review.md`. The last head
+before this documentation handover was `da31d8ba8a2ab79b37556080bd1f2da23352aaff`;
+fetch the current remote head rather than testing that old revision. The separate
+branch `docs/cross-agent-review` remains parked at
+`bc4580079ea60cebb26e3a16542ff9c374b8f9b7`; do not combine, merge or resume it
+until real Claude inline review and follow-up review work.
+
+Decisions: use the existing shared rules, with independent cross-model reviews
+and English repository text. Do not add implementation-author credits or
+co-author trailers unless explicitly requested; reviewer names are allowed.
+Preserve focused follow-ups, evidence-based triage and the flexible three-P2-round
+rule. Start with one Claude reviewer and subscription authentication; later API
+budget/fallback and specialists remain proposals. The draft-first/staged-CI idea
+is saved in docs/21 as explicitly deferred; do not implement it. Continue locally
+on the PC, preferably in the existing Ubuntu/WSL project environment for Docker.
+
+Gate: keep PR #542 in Draft and do not merge or mark ready until `make lint` and
+`make test` both pass locally on its current head, with the full SHA, environment
+and actual results recorded in the PR. A later commit invalidates that evidence.
+All other CI and independent-review gates remain mandatory. The explicit hold
+overrides `/done`'s automatic `/ship` handoff.
+
+Open: first inspect the PC checkout and worktrees without resetting or stashing
+other work, fetch the remote branches, and open a separate worktree for
+`ci/claude-inline-review` (or reuse its existing clean worktree). Read this handover
+and current PR metadata. Start/verify the local project Docker environment and
+run the two required commands on the current head. The user starts a manual
+Claude Code session for the independent review; that session reads the diff,
+posts concise English inline findings in a COMMENT review with full base/head
+SHAs, and leaves code and PR state unchanged. If inline publishing fails, report
+the actual error and a short summary; never claim publication or a clean review
+without evidence. A mention alone does not launch Claude with the current setup.
+Do not implement the automation plan just because it exists.
+
+Lessons: cloud and PC files are separate; committed, pushed branches plus this
+handover transfer the work, not credentials, containers or the full conversation.
+Recheck GitHub access and local tool availability. Every new push needs a fresh
+independent review; Codex requests it with `@claude review`. Existing automatic
+Codex review of Claude work stays unchanged. No force push or merge is part of
+this transfer.
+
+## Handover 04.11.2026 - subscription inline-review design
+
+Design and setup: [21_REVIEW_AUTOMATION.md](21_REVIEW_AUTOMATION.md), including
+the implementation plan and the deferred specialist-review experiment. One
+combined reviewer was selected. The old `ai-pr-review` workflow is disabled and
+removed; its self-hosted runner and API adapter cannot supply this integration.
+`CLAUDE.md` persists the requirement to comment `@claude review` after PR creation
+and every push of Codex work; the existing Codex review integration continues for
+Claude work. Push and comment triggers must not duplicate inference. The later
+specialist stage also introduces API-first authentication within a shared USD 50
+monthly review cap, followed by subscription OAuth. Credit eligibility and hard
+budget enforcement are still to be verified; no API is connected now.
+The initial Claude action also plans focused follow-ups: review every change
+since the last completed independent review, check unresolved findings and read
+related context as needed. Preserve a verifiable coverage chain and publish a
+new current-head result. Fall back to full PR review on an invalid baseline or
+uncertain impact; no equivalent hosted Codex scope control has been verified.
+The shared follow-up guidance now also lives in `AGENTS.md`, with a scoped manual
+`@codex review` request linked from `/ship`. No automatic trigger or authenticated
+Codex account setting was changed. Historical PR #357 contains 28 top-level bot
+inline findings over eight original revisions, including 23 P2 labels; this is
+evidence of review volume, not proof of invalid findings. The user chose to keep
+the flexible three-P2-round rule, including justified continuation for real
+in-scope defects; no fixed pause is introduced.
+Feedback handling is now explicit: verify each claim and its proposed fix
+separately; explain and resolve disproved/outdated/duplicate claims in their own
+threads without artificial code changes. Keep uncertain or real deferred defects
+truthfully tracked. Follow-up review context must preserve those explanations.
+Shared comment guidance now asks both reviewers for concise English findings
+with trigger, impact and a verifiable required outcome. Fix authors verify that
+outcome and reply with actual evidence; repeated findings explain the remaining
+failure. The 40–100-word target is editorial, not a hard limit. Sources and an
+illustrative example are in docs/21; no live effectiveness claim is made.
+`/done` now instructs the active session to invoke `/ship` after publishing its
+PR, without another user command. `/ship` owns the waiting and gated completion;
+it only reuses `/done`'s helper steps to avoid recursion. No hook/background service
+was added, and no live command-to-merge test has run. Honour the existing pause
+on the waiting branch and the independent-review prerequisite for this rollout.
+The user requested this branch's PR now, with a manual Claude Code review.
+Self-review reconciled the legacy merge text with independent review and added
+the manual publishing procedure. No automation is claimed, and reviewers must
+not implement the plan or merge while reviewing this instructions-only PR.
+The official action supports subscription OAuth, but no live review is verified.
+Branch `ci/claude-inline-review` is independent of `docs/cross-agent-review`;
+the latter waits. Superseded next step: PR #542 now exists as an instructions-only
+draft. Follow the newer desktop-continuation handover above for the local-test
+hold and manual review; action implementation and credential setup remain later
+work, not prerequisites to opening a PR that already exists.
+
 ```text
 ## Handover 03.11.2026, night - T-3.11 floor plan built (#535), violet is ultra violet (#538), next T-3.12 manual reservations
 

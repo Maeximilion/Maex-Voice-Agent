@@ -50,18 +50,11 @@ GESCHUETZT = (".env", ".claude")
 # statt stillzuhalten. Kommt ein weiteres Feld dieser Art dazu, gehoert es hierher.
 UNPRUEFBAR_JE_DIENST = ("extends", "volumes_from")
 UNPRUEFBAR_OBEN = ("include",)
-# Read only on a full checkout, never inside the container: the sync hook test needs
-# git, which the api image does not have, and skips there. Mounting `.claude/hooks`
-# for it would widen the one exception under `.claude/` (see GESCHUETZT) for nothing.
-# `/done` names the hook too: Claude runs it on the host after a merge, never in the
-# container. The routing hook test needs jq, which the image lacks as well, and the
-# merge gate test needs both; `/ship` names that hook for the host. The saved
-# workflows are run by Claude Code on the host; their test skips in the container.
+# These host-only tests require jq or node and skip in the API image. The command
+# link tests still read sync_main.sh and merge_gate.sh, so those files are mounted.
 CHECKOUT_ONLY = frozenset(
     {
-        ".claude/hooks/sync_main.sh",
         ".claude/hooks/route_advice.sh",
-        ".claude/hooks/merge_gate.sh",
         ".claude/workflows",
     }
 )
@@ -197,6 +190,21 @@ def _is_mounted(ref: str, mounts: set[str]) -> bool:
     return any("/".join(parts[:tiefe]) in mounts for tiefe in range(1, len(parts) + 1))
 
 
+def test_checkout_files_needed_by_container_tests_are_read_only():
+    required = (
+        ".claude/hooks/sync_main.sh",
+        ".claude/hooks/merge_gate.sh",
+        ".claude/settings.json",
+        ".github/assets",
+    )
+    volumes = _compose()["services"]["api"]["volumes"]
+    for path in required:
+        assert f"./{path}:/app/{path}:ro" in volumes
+        assert not _traegt_geheimnisse(path)
+    for path in (".claude", ".claude/hooks", ".claude/settings.local.json"):
+        assert _traegt_geheimnisse(path)
+
+
 def _refs_aus_befehlen() -> set[str]:
     refs: set[str] = set()
     for path in _command_files():
@@ -288,7 +296,7 @@ def _traegt_geheimnisse(mount: str) -> bool:
     beide Richtungen, nicht die Gleichheit: `.claude/worktrees` zeigt hinein,
     `.` umfasst alles, und beides traegt dieselben Geheimnisse herein.
 
-    Einzige Ausnahme ist `.claude/commands`, das die Testsuite wirklich liest.
+    Exceptions are `.claude/commands` and the individually allowed test files.
     Was aus dem Repo herauszeigt, ist ohnehin tabu: dort liegen die
     Nachbar-Checkouts, und absolute Pfade sind von hier aus nicht pruefbar.
     """
@@ -296,6 +304,12 @@ def _traegt_geheimnisse(mount: str) -> bool:
         return True
     if PurePosixPath(mount).name.casefold() == ".env":  # auch tiefer liegende .env
         return True
+    if mount in {
+        ".claude/hooks/sync_main.sh",
+        ".claude/hooks/merge_gate.sh",
+        ".claude/settings.json",
+    }:
+        return False
     if _ist_unter(mount, ".claude/commands"):  # nach der .env-Pruefung, nicht davor
         return False
     return any(_beruehrt(mount, pfad) for pfad in GESCHUETZT)
