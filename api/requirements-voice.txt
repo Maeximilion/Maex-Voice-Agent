@@ -204,10 +204,9 @@ numpy==2.5.4 \
     # via
     #   ctranslate2
     #   onnxruntime
-nvidia-cublas-cu12==12.9.2.10 \
-    --hash=sha256:5572131a59c3eebeeb1c4c8144f772d49372c20124916e072a0e3fc30df421d5 \
-    --hash=sha256:623f43027d40d44ceadf0043f002bd25cf353e8f13ce90b9a87057019f560661 \
-    --hash=sha256:e4f53a8ca8c5d6e8c492d0d0a3d565ecb59a751b19cfdaa4f6da0ab2104c1702
+nvidia-cublas-cu12==12.9.3.13 \
+    --hash=sha256:918a8781956115d34b1db49e0e7b7befba8d101661c4b560ed4d42e0e17bebc3 \
+    --hash=sha256:d7d51055f161b317c7105ddaae90e71eda059026074ffef93cf7cde2886bfe72
     # via
     #   -r requirements-voice.in
     #   nvidia-cudnn-cu12
