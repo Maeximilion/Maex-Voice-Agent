@@ -1,11 +1,19 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.16.1
+> Status: 05.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.16.2
 
 ---
 
 ## Summary
+
+**Language decisions and review signals (05.11.2026).** [Docs/22](22_LANGUAGE_AND_PERFORMANCE.md)
+records the inspected Python/native-engine boundaries and TypeScript alternatives.
+#550 measures end-to-end latency; low-priority #551 remains blocked until measured
+Python limitations and Maxi's release decision justify a targeted comparison.
+#552 tracks incremental mypy hardening; #553 leaves the UI rollout decision open.
+Both reviewers use the same evidence-based performance signals. No language or
+runtime migration, new latency target or review automation was installed.
 
 **Review follow-up fixes (05.11.2026).** The merge hook's blocked message points
 to completed independent review and triage evidence. The local API container
@@ -849,6 +857,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.16.2 · 05.11.2026:** Document language strategy, blocked performance research and shared reviewer signals.
 - **v2.16.1 · 05.11.2026:** A PR inherits stage and priority of the issue it closes
 - **v2.16.0 · 05.11.2026:** Ultrareview ledger #546, quota settled, D31 MaexSocial points
 - **v2.15.0 · 05.11.2026:** T-3.12 part 1: reservations the team enters by hand (D30, migration 029)
