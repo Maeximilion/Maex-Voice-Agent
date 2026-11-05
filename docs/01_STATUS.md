@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.53
+> Status: 05.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.14.54
 
 ---
 
@@ -843,6 +843,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.14.54 · 05.11.2026:** Bump nvidia-cublas-cu12 to 12.9.3.13 in the voice image (Dependabot PR 543)
 - **v2.14.53 · 05.11.2026:** Fix review handoff guidance and local Docker test inputs
 - **v2.14.52 · 04.11.2026:** Record bot authorship preferences for Claude and Codex reviews
 - **v2.14.51 · 04.11.2026:** Handover: preserve PR #542 local-test hold and park draft-first CI idea for desktop continuation

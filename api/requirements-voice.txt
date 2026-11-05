@@ -206,8 +206,6 @@ numpy==2.5.4 \
     #   onnxruntime
 nvidia-cublas-cu12==12.9.3.13 \
     --hash=sha256:918a8781956115d34b1db49e0e7b7befba8d101661c4b560ed4d42e0e17bebc3 \
-    --hash=sha256:918a8781956115d34b1db49e0e7b7befba8d101661c4b560ed4d42e0e17bebc3 \
-    --hash=sha256:d7d51055f161b317c7105ddaae90e71eda059026074ffef93cf7cde2886bfe72 \
     --hash=sha256:d7d51055f161b317c7105ddaae90e71eda059026074ffef93cf7cde2886bfe72
     # via
     #   -r requirements-voice.in
