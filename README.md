@@ -237,6 +237,7 @@ The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `
 | `docs/20_VOICE_LAYER.md` | Own voice layer: components, access, call session rules, outage map, cost model (decided 07.10.2026, not built) |
 | [docs/21_REVIEW_AUTOMATION.md](docs/21_REVIEW_AUTOMATION.md) | Planned subscription-based inline reviews: setup, independent reviewers, validation and deferred specialist experiment |
 | `docs/metrics/` | Dated measurements behind the README images: eval runs on real models and voice layer measurements |
+| [docs/22_LANGUAGE_AND_PERFORMANCE.md](docs/22_LANGUAGE_AND_PERFORMANCE.md) | Python/TypeScript assessment, measured latency gate and UI/type-checking decisions |
 
 ## Contributing
 
