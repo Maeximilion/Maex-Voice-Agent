@@ -105,20 +105,12 @@ def _gh(*args: str, stdin: str | None = None) -> str:
 
 def load() -> tuple[int | None, str]:
     """The ledger issue's number and body; None and a fresh body before the first add."""
+    # The label list, not `--search`: the search index lags a new issue by
+    # seconds, and a second `add` in that time would open a duplicate.
     out = _gh(
-        "issue",
-        "list",
-        "--state",
-        "all",
-        "--label",
-        LABELS[1],
-        "--search",
-        f'"{TITLE}" in:title',
-        "--json",
-        "number,title,body",
-        "--limit",
-        "20",
-    )
+        "issue", "list", "--state", "all", "--label", LABELS[1],
+        "--json", "number,title,body", "--limit", "200",
+    )  # fmt: skip
     for issue in json.loads(out):
         if MARKER in (issue.get("body") or ""):
             return issue["number"], issue["body"]
