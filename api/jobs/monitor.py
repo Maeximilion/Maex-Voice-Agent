@@ -373,6 +373,8 @@ def _day_report(session: Session, tenant: Tenant, day: date) -> Alarm:
         .where(
             Reservation.tenant_id == tenant.id,
             Reservation.status == "confirmed",
+            # The agent's day: a table the team entered by hand took no call (T-3.12).
+            Reservation.source == "agent",
             Reservation.created_at >= start,
             Reservation.created_at < end,
         )

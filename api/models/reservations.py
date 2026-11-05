@@ -18,19 +18,28 @@ from api.models.base import Base, SoftDelete, TenantScoped, Timestamps, UUIDPrim
 from api.models.tenants import _in
 
 RESERVATION_STATUSES = ("draft", "confirmed", "cancelled")
+# Who took the reservation: the agent on a call, or the team on the tablet (T-3.12).
+RESERVATION_SOURCES = ("agent", "tablet")
 
 
 class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     __tablename__ = "reservations"
     __table_args__ = (
         _in("status", RESERVATION_STATUSES, "ck_reservations_status"),
+        _in("source", RESERVATION_SOURCES, "ck_reservations_source"),
+        # An agent's table hangs on its call; the team's has none (D30).
+        CheckConstraint(
+            "(source = 'agent') = (call_id IS NOT NULL)",
+            name="ck_reservations_call_source",
+        ),
         CheckConstraint("party_size > 0", name="ck_reservations_party_size"),
         Index("ix_reservations_tenant_reserved_for", "tenant_id", "reserved_for"),
     )
 
-    call_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("calls.id", ondelete="RESTRICT"), nullable=False
+    call_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("calls.id", ondelete="RESTRICT")
     )
+    source: Mapped[str] = mapped_column(Text, nullable=False, server_default="agent")
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="draft")
     guest_name: Mapped[str] = mapped_column(Text, nullable=False)
     phone: Mapped[str] = mapped_column(Text, nullable=False)
@@ -45,3 +54,18 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     )
     note: Mapped[str | None] = mapped_column(Text)
     idempotency_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+
+
+class ReservationTable(TenantScoped, Base):
+    """The table, or the two tables of a combination, a reservation sits on (T-3.12)."""
+
+    __tablename__ = "reservation_tables"
+
+    reservation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("reservations.id", ondelete="CASCADE"), primary_key=True
+    )
+    table_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("dining_tables.id", ondelete="RESTRICT"),
+        primary_key=True,
+        index=True,
+    )

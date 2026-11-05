@@ -70,3 +70,37 @@ class ReservationDraft(BaseModel):
     phone: str
     note: str | None = None
     readback: str
+
+
+class TabletReservationRequest(BaseModel):
+    """A table the team enters by hand (T-3.12): no call, the phone optional."""
+
+    tenant_id: uuid.UUID
+    idempotency_key: str = Field(min_length=1, max_length=128)
+    guest_name: str = Field(min_length=1, max_length=200)
+    phone: str | None = Field(default=None, max_length=40)
+    party_size: int = Field(ge=1)
+    reserved_for: ReservedFor
+    note: str | None = Field(default=None, max_length=RESERVATION_NOTE_MAX)
+    # None, one table, or the two tables of a combination of the floor plan.
+    table_ids: list[uuid.UUID] = Field(default_factory=list, max_length=2)
+
+
+class TabletDraft(BaseModel):
+    """The entry before the team's confirming tap, with what the tap must know."""
+
+    reservation_id: uuid.UUID
+    status: ReservationStatus
+    reserved_for: datetime
+    party_size: int
+    guest_name: str
+    phone: str
+    note: str | None = None
+    tables: list[str] = Field(default_factory=list)
+    # The capacity window of the time and the guests it already holds; both
+    # None outside every window. A full window or none needs the team's word.
+    window_start: datetime | None = None
+    window_end: datetime | None = None
+    booked_guests: int = 0
+    max_guests: int | None = None
+    needs_override: bool = False
