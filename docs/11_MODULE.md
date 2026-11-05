@@ -89,6 +89,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 - `capacity.py` — freie Plätze je Fenster
 - `slots.py` — verfügbar? bis zu zwei Alternativen, nahe am Wunsch
 - `create.py` — Entwurf mit `readback`
+- `manual.py` — a reservation the team enters on the tablet (T-3.12, D30): a draft without a call, seated on a table or a combination of the plan; `confirm_tablet` in `domain/confirm.py` is the team's confirming tap
 - `notice.py` — the notice a table needs, per weekday, read and set on the tablet (T-3.13)
 - `floor_plan.py` — the floor plan the team draws (T-3.11): rooms and terraces, tables, which tables combine, the drawn fixtures; one room saved as a whole with its revision, refused when another tablet saved first, every change in `audit_log`. It books nothing (D28); T-3.12 seats reservations on its tables
 
