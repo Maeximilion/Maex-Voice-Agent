@@ -8,7 +8,7 @@ from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, delete, select
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, InvalidInput, NotFound
@@ -381,9 +381,42 @@ def test_a_table_removed_between_the_taps_stops_the_confirmation(
     session.get(DiningTable, tables["T3"]).deleted_at = NOW
     session.commit()
 
-    with pytest.raises(Conflict) as refused:
+    with pytest.raises(NotFound) as refused:
         confirm_tablet(session, tenant_id, draft.reservation_id, now=NOW)
-    assert refused.value.say == "Tisch T3 ist nicht mehr im Raumplan."
+    assert refused.value.say == "Diesen Tisch gibt es im Raumplan nicht mehr."
+    assert_not_booked(session, draft.reservation_id)
+
+
+def test_a_pair_the_plan_no_longer_combines_stops_the_confirmation(
+    session, tenant_id, tables
+):
+    """Codex #544: both tables stay, only the combination goes."""
+    draft = enter(session, tenant_id, table_ids=[tables["T1"], tables["T2"]])
+    session.execute(delete(TableCombination))
+    session.commit()
+
+    with pytest.raises(InvalidInput) as refused:
+        confirm_tablet(session, tenant_id, draft.reservation_id, now=NOW)
+    assert refused.value.say == "Diese beiden Tische sind im Raumplan nicht kombiniert."
+    assert_not_booked(session, draft.reservation_id)
+
+
+def test_a_draft_left_open_past_its_time_books_nothing(session, tenant_id):
+    """Codex #544: yesterday's open entry is no booking today."""
+    draft = enter(session, tenant_id, reserved_for=berlin(18, 30))
+
+    with pytest.raises(Conflict) as refused:
+        confirm_tablet(
+            session, tenant_id, draft.reservation_id, override=True, now=berlin(18, 30)
+        )
+    assert refused.value.say == "Dieser Zeitpunkt ist schon vorbei."
+    assert_not_booked(session, draft.reservation_id)
+
+
+def assert_not_booked(session, reservation_id) -> None:
+    session.rollback()
+    assert session.get(Reservation, reservation_id).status == "draft"
+    assert session.scalars(select(OutboxEvent)).all() == []
 
 
 def test_the_tablet_and_the_agent_never_confirm_each_others_drafts(session, tenant_id):

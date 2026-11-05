@@ -87,7 +87,7 @@ def create_tablet_reservation(
     note = (req.note or "").strip() or None
     if req.reserved_for <= now:
         raise InvalidInput("Zeitpunkt liegt in der Vergangenheit", say=SAY_PAST)
-    tables = _seating(session, req.tenant_id, req.table_ids)
+    tables = seating(session, req.tenant_id, req.table_ids)
     # Told now, so the team picks another table before it reads the summary;
     # `confirm_tablet` asks again under the lock.
     window, _ = window_load(
@@ -269,21 +269,27 @@ def draft_lifetime(session: Session, tenant_id: uuid.UUID) -> timedelta:
     return timedelta(seconds=seconds)
 
 
-def _seating(
+def seating(
     session: Session, tenant_id: uuid.UUID, table_ids: list[uuid.UUID]
 ) -> list[DiningTable]:
-    """One live table of the plan, or two that the plan combines."""
+    """One live table of the plan, or two that the plan combines. Asked when
+    the draft is made and again at the confirming tap: the plan may lose the
+    table or the pair in between. The rows stay locked for share to the end
+    of the transaction, so a save of the plan waits for the booking."""
     if len(set(table_ids)) != len(table_ids):
         raise InvalidInput("same table twice", say=SAY_SAME_TABLE)
     if not table_ids:
         return []
     tables = list(
         session.scalars(
-            select(DiningTable).where(
+            select(DiningTable)
+            .where(
                 DiningTable.id.in_(table_ids),
                 DiningTable.tenant_id == tenant_id,
                 DiningTable.deleted_at.is_(None),
             )
+            .with_for_update(read=True),
+            execution_options={"populate_existing": True},
         )
     )
     if len(tables) != len(table_ids):
@@ -292,11 +298,13 @@ def _seating(
         # The pair is stored with the smaller id first (ck_table_combinations_order).
         low, high = sorted(table_ids)
         pair = session.scalar(
-            select(TableCombination.id).where(
+            select(TableCombination.id)
+            .where(
                 TableCombination.tenant_id == tenant_id,
                 TableCombination.table_a_id == low,
                 TableCombination.table_b_id == high,
             )
+            .with_for_update(read=True)
         )
         if pair is None:
             raise InvalidInput("tables not combined", say=SAY_NOT_COMBINED)

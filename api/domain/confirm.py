@@ -21,6 +21,7 @@ from api.domain.reservations.capacity import (
     window_load,
 )
 from api.domain.reservations.manual import (
+    SAY_PAST,
     SOURCE_TABLET,
     WindowFull,
     draft_lifetime,
@@ -28,6 +29,7 @@ from api.domain.reservations.manual import (
     say_full,
     say_taken,
     seated_on,
+    seating,
     taken_tables,
 )
 from api.domain.reservations.slots import ASK_OTHER_TIME, SAY_RESERVATIONS_OFF
@@ -163,7 +165,8 @@ def confirm_tablet(
 
     `override` books a window that is full or a time outside every window,
     after the team was asked (`WindowFull`). A table another reservation holds
-    in the same window is refused either way.
+    in the same window is refused either way, and so are a time that has
+    passed and a table or pair the plan no longer has.
     """
     tenant = session.get(Tenant, tenant_id)
     if tenant is None:
@@ -186,17 +189,19 @@ def confirm_tablet(
     if reservation.status == "confirmed":
         session.commit()
         return CONFIRMED
+    # A draft left open past its time books nothing (Codex #544): the team
+    # enters the table anew if the guest still comes.
+    if reservation.reserved_for <= now:
+        raise Conflict("time passed", say=SAY_PAST)
 
     zone = ZoneInfo(tenant.timezone)
     lock_capacity_days(
         session, tenant_id, reservation.reserved_for.astimezone(zone).date()
     )
-    tables = seated_on(session, reservation.id)
-    gone = [t.name for t in tables if t.deleted_at is not None]
-    if gone:
-        raise Conflict(
-            "table removed", say=f"Tisch {gone[0]} ist nicht mehr im Raumplan."
-        )
+    # The plan may have lost the table or the pair since the draft (Codex #544).
+    tables = seating(
+        session, tenant_id, [t.id for t in seated_on(session, reservation.id)]
+    )
     window, booked = window_load(
         session,
         tenant_id,
