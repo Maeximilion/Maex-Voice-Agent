@@ -6,7 +6,7 @@ oben, danach der älteste zuerst: wer am längsten wartet, wird zuerst angerufen
 
 import uuid
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import Text, case, cast, func, literal, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
@@ -136,5 +136,105 @@ def mark_done(
             )
         )
     # Auch ohne Aenderung: commit gibt die Sperre frei.
+    session.commit()
+    return callback
+
+
+# How far back "Verlauf" reaches (T-3.15, #516). Short on purpose: the list
+# shows numbers of finished callbacks again, a second use of the data (L8), so
+# it covers a mistaken "Erledigt" and nothing more.
+HISTORY_DAYS = 7
+ACTION_REOPENED = "callback.reopened"
+
+
+@dataclass(frozen=True)
+class DoneCallback(OpenCallback):
+    done_at: datetime | None  # never None here: the history filters on it
+    done_by: str | None
+
+
+def _history_filters(tenant_id: uuid.UUID, now: datetime) -> tuple:
+    return (
+        Callback.tenant_id == tenant_id,
+        Callback.status == DONE,
+        Callback.deleted_at.is_(None),
+        Callback.done_at >= now - timedelta(days=HISTORY_DAYS),
+    )
+
+
+def list_history(
+    session: Session, tenant_id: uuid.UUID, now: datetime | None = None
+) -> list[DoneCallback]:
+    """Callbacks marked done in the last HISTORY_DAYS, the newest mark first.
+
+    A number the deletion job removed (T-11.2) stays empty here; the screen
+    says so instead of offering a call.
+    """
+    rows = session.execute(
+        select(
+            Callback.id,
+            Callback.created_at,
+            Callback.phone,
+            Callback.reason,
+            Callback.summary,
+            Call.caller_id,
+            Callback.done_at,
+            Callback.done_by,
+        )
+        .join(Call, Call.id == Callback.call_id)
+        .where(*_history_filters(tenant_id, now or utcnow()))
+        .order_by(Callback.done_at.desc(), Callback.id)
+    ).all()
+    return [DoneCallback(*row) for row in rows]
+
+
+def reopen(
+    session: Session,
+    tenant_id: uuid.UUID,
+    callback_id: uuid.UUID,
+    actor: str = ACTOR_TABLET,
+    now: datetime | None = None,
+) -> Callback:
+    """Bring a callback marked done back to the column (T-3.15).
+
+    Only one the history shows: a mark older than HISTORY_DAYS or a card that
+    is open already changes nothing, so a stale sheet or a second tablet
+    cannot reopen it twice. Clearing done_at hands the deletion period back to
+    the creation date (jobs/retention.py): a card created more than
+    RETENTION_CALLBACK_DAYS ago loses its number on the next run, as any open
+    card of that age does.
+    """
+    callback = session.scalars(
+        select(Callback)
+        .where(
+            Callback.id == callback_id,
+            Callback.tenant_id == tenant_id,
+            Callback.deleted_at.is_(None),
+        )
+        .with_for_update()
+    ).first()
+    if callback is None:
+        raise NotFound(f"Callback {callback_id} not found")
+    cutoff = (now or utcnow()) - timedelta(days=HISTORY_DAYS)
+    if callback.status == DONE and callback.done_at and callback.done_at >= cutoff:
+        session.add(
+            AuditLog(
+                tenant_id=tenant_id,
+                actor=actor,
+                action=ACTION_REOPENED,
+                entity="callback",
+                entity_id=callback.id,
+                payload={
+                    "call_id": str(callback.call_id),
+                    "reason": callback.reason,
+                    "done_at": callback.done_at.isoformat(),
+                    "done_by": callback.done_by,
+                },
+            )
+        )
+        callback.status = OPEN
+        callback.done_by = None
+        callback.done_at = None
+    # Commit also without a change: it releases the row lock.
     session.commit()
     return callback
