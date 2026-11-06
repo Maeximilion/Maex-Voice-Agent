@@ -551,7 +551,7 @@ Open:
 1. T-3.15 (#516), callback history of the last 7 days with "Anrufen" and "Wieder öffnen", Spec 03, 06, docs/09 L8: GUI plus `domain/callbacks/` plus the deletion period of a callback's number, so Opus 5.5 at `high` (no `xhigh` trigger unless reopening a callback changes who is rung); start with `/task T-3.15` in a new session on that setting, branch from `origin/docs/handover-t3-15`.
 2. T-3.16 (#517), parked UI/UX findings, Sonnet 5.5 `medium`; then T-3.5 operating test on the real tablet (floor plan and the new sheet included).
 3. Workbench database still at 028: `make migrate` in the main folder, backup first (`bash scripts/backup.sh --label before_migration_029`).
-4. Maxi's word: T-3.12 assumptions (a) to (h) in docs/01 "Made Assumptions", D31, and which of the 35 open lines of #546 get a `/code-review max` (#544 and #558 are the T-3.12 ones).
+4. Maxi's word: T-3.12 assumptions (a) to (h) in docs/01 "Made Assumptions", D31, and which of the 36 open lines of #546 get a `/code-review max` (#544 and #558 are the T-3.12 ones).
 
 Lessons:
 - A checklist line "... closes #497" in a PR body closes the issue on merge like `Closes #497` in the Issue section: #544 closed #497 a PR too early. Write "finishes" or name the issue without the keyword.
