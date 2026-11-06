@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.18.0
+> Status: 06.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.18.1
 
 ---
 
@@ -854,6 +854,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.18.1 · 06.11.2026:** docs/19: the Ubuntu shell exports the Headroom proxy address; expected headroom doctor warnings recorded
 - **v2.18.0 · 06.11.2026:** Split routing on trial: usage per task in docs/metrics/routing_history.csv
 - **v2.17.1 · 06.11.2026:** T-3.15 done: callback history with reopen
 - **v2.17.0 · 06.11.2026:** T-3.12 done: the sheet Reservierung eintragen on the tablet
