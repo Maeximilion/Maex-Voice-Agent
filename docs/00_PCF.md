@@ -537,6 +537,20 @@ Lessons: <learnings>
 
 ## 13. Handovers (newest first)
 
+## Handover 06.11.2026 (afternoon) - T-3.15 done (#559), split routing on trial (#561), next T-3.16
+
+**Status:** both PRs merged with CI green and Codex clean on their exact heads. T-3.15: "Verlauf" in the callbacks column opens a sheet with the callbacks done in the last 7 days, "Anrufen" and "Wieder öffnen" (`domain/callbacks/board.py` `list_history`, `reopen`; audit `callback.reopened`). Split routing: `CLAUDE.md` "Split routing", `/task` step 3a asks, `/start` marks candidates, `/done` records usage with `scripts/session_usage.py` in `docs/metrics/routing_history.csv`. Nothing running; the throwaway test containers are removed.
+
+**Artifacts:** #559 (merge `7a50e6c`), #561 (merge `a8c53e4`); this handover on `docs/handover-t3-15-split`, pushed without a PR, to ride in the next feature PR.
+
+**Decisions:** T-3.15 ran on Opus `high`, not `xhigh`: no migration, and a reopen only puts a card back on the team's list (Maxi chose it). A reopened card counts its deletion period from its creation again (docs/03, assumption in docs/01). Usage weights follow the API price structure within one model (one-hour cache writes 2, five-minute 1.25), an assumption; the weighting of the usage limit is not published.
+
+**Gate:** G0 unchanged.
+
+**Open:** 1. T-3.16 (#517, parked UI findings): pure GUI, Sonnet 5.5 `medium`; start that session on Sonnet so nothing is read on Opus first, and record its usage with `--split no` (one model, nothing to split). 2. T-3.5 operating test with Maxi on the real tablet. 3. Maxi's idea, proposed, not built: a block plan in `/start` that groups the pieces of a block's open tasks by model and runs one session per model in dependency order; it needs about five recorded tasks before its estimate says anything.
+
+**Lessons:** a worktree-isolated session refuses compound shell commands, `git -C` and `$PWD` in docker runs: one plain command per call, helpers in the scratchpad. Editing a PR body restarts the `title` and `sync` checks, so the merge gate blocks until they pass again. `CLAUDE_CODE_SUBAGENT_MODEL` is already Sonnet here. The biggest token lever measured is a small main context (the T-3.12 session read 120M cache tokens over 399 calls), more than the cheaper model.
+
 ## Handover 06.11.2026 - T-3.12 done (#544, #558), ultrareview ledger (#547), next T-3.15
 
 Status: merged on `main`: #544 (T-3.12 part 1, migration 029, `confirm_tablet`, D30), #547 (ultrareview ledger, issue #546), #548 (a PR inherits `stufe-N` and `priority: ...` from the issue it closes), #558 (T-3.12 part 2, the sheet "Reservierung eintragen", merge `8331e52`, closed #497). #558 took two Codex rounds: a time the spring clock change skips is refused, and a renamed seated table redraws "Heute". Nothing of this session is open or uncommitted; this handover rides on branch `docs/handover-t3-15` (pushed, no PR), and the next task's branch starts from it with its PR based on `main`.
