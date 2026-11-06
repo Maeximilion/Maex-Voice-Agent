@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.17.2
+> Status: 06.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.18.1
 
 ---
 
@@ -315,6 +315,8 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ## What's Next
 
 **T-3.15 done (06.11.2026):** a mistaken "Erledigt" can be undone. "Verlauf" in the heading of the callbacks column opens a sheet with the callbacks marked done in the last 7 days (`HISTORY_DAYS`), with "Anrufen" and "Wieder öffnen"; the reopen stands in `audit_log` (`callback.reopened`) and works only inside the window. No migration. Assumption (L8): a reopened card counts its deletion period from its creation again, so one created more than 90 days ago loses its number on the next run, as any open card of that age does. First trial of splitting a task by model (Maxi, 06.11.2026): the domain on Opus `high`, the sheet, its tests and the browser check on a Sonnet `medium` subagent; the split-routing rule follows as its own PR. Next in Block 2 (#8): T-3.16 (#517), then T-3.5.
+
+**Split routing on trial (Maxi, 06.11.2026):** `CLAUDE.md` "Split routing" lets a large, self-contained chunk on a cheaper row of the Model Routing table run on a subagent with that row's model; `/task` asks once with an estimate, `/start` marks candidates, `/done` records every task's usage per model in `docs/metrics/routing_history.csv` (`scripts/session_usage.py`). First rows: T-3.12 (not split, one long session) and T-3.15 (split; 17 % of the weighted volume on Sonnet; the row also holds the calls of the PR that adds the rule, up to its first commit). The main session writes its cache for an hour (2 times an input token on the API), the subagents for five minutes (1.25), so the weights tell the two apart. The two tasks differ in size, so they compare nothing yet. Assumption: the weights follow the API price structure within one model; the weighting of the usage limit is not published. Maxi decides after about five recorded tasks whether the rule stays.
 
 **T-3.12 done (06.11.2026):** the team enters a table by hand on the tablet (#544 domain and migration 029, the sheet in its successor). Next in Block 2 (#8): T-3.15 (#516), T-3.16 (#517), then T-3.5 operating test on the real tablet, which also covers the floor plan and the sheet. The workbench database still waits for `make migrate` to 029, backup first.
 
@@ -852,7 +854,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.17.2 · 06.11.2026:** docs/19: the Ubuntu shell exports the Headroom proxy address; expected headroom doctor warnings recorded
+- **v2.18.1 · 06.11.2026:** docs/19: the Ubuntu shell exports the Headroom proxy address; expected headroom doctor warnings recorded
+- **v2.18.0 · 06.11.2026:** Split routing on trial: usage per task in docs/metrics/routing_history.csv
 - **v2.17.1 · 06.11.2026:** T-3.15 done: callback history with reopen
 - **v2.17.0 · 06.11.2026:** T-3.12 done: the sheet Reservierung eintragen on the tablet
 - **v2.16.1 · 05.11.2026:** A PR inherits stage and priority of the issue it closes
