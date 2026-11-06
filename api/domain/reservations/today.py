@@ -93,4 +93,14 @@ def today_change_token(
             *_filters(tenant_id, start, end)
         )
     ).one()
-    return f"{count}:{newest.isoformat() if newest else '-'}"
+    # The cards name their tables (T-3.12): a renamed table redraws the column,
+    # though no reservation changed (Codex #558).
+    tables = session.scalar(
+        select(func.max(DiningTable.updated_at))
+        .join(ReservationTable, ReservationTable.table_id == DiningTable.id)
+        .join(Reservation, Reservation.id == ReservationTable.reservation_id)
+        .where(*_filters(tenant_id, start, end))
+    )
+    return ":".join(
+        [str(count), *(t.isoformat() if t else "-" for t in (newest, tables))]
+    )

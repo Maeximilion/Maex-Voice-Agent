@@ -211,6 +211,7 @@ def test_a_full_window_is_entered_only_after_trotzdem(client, engine, tenant_id)
         ({"name": "   "}, "Bitte einen Namen eintragen."),
         ({"telefon": "keine Nummer"}, None),
         ({"datum": "2020-01-01"}, "Dieser Zeitpunkt ist schon vorbei."),
+        ({"datum": "0001-01-01", "uhrzeit": "00:30"}, "Bitte Datum, Uhrzeit"),
         ({"tisch": "kein-tisch"}, "Bitte Datum, Uhrzeit, Personen und Namen prüfen."),
     ],
 )
@@ -224,6 +225,21 @@ def test_what_the_form_refuses_writes_nothing_and_keeps_the_values(
         assert say in body.text
     if "name" not in overrides:
         assert 'value="Freundin von Anna"' in body.text
+    assert drafts(engine) == []
+
+
+def test_a_time_the_clock_change_skips_is_refused(client, engine, tenant_id):
+    """Codex #558: 02:30 on the last Sunday of March does not exist in Berlin; it
+    would be stored as 03:30, a time the team never read."""
+    body = client.post(
+        "/gui/reservierung",
+        content=entry(datum="2027-03-28", uhrzeit="02:30"),
+        headers=TYPED,
+    )
+
+    assert body.status_code == 409
+    assert "Diese Uhrzeit gibt es an dem Tag nicht (Zeitumstellung)." in body.text
+    assert 'value="02:30"' in body.text
     assert drafts(engine) == []
 
 

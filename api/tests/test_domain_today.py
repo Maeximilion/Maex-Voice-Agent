@@ -173,3 +173,33 @@ def test_a_reservation_without_tables_has_none(session, tenant_id, call_id):
     add(session, tenant_id, call_id, berlin(DIENSTAG, 19, 0))
 
     assert [r.tables for r in list_today(session, tenant_id, TZ, now=NOW)] == [[]]
+
+
+def test_renaming_a_seated_table_changes_the_fingerprint(session, tenant_id):
+    """Codex #558: the card names its table, so a rename must redraw the column."""
+    area = FloorArea(tenant_id=tenant_id, name="Gastraum", width_cm=1000, depth_cm=700)
+    session.add(area)
+    session.flush()
+    table = DiningTable(
+        tenant_id=tenant_id,
+        area_id=area.id,
+        name="T1",
+        seats=4,
+        width_cm=120,
+        depth_cm=80,
+        x_cm=200,
+        y_cm=200,
+    )
+    session.add(table)
+    session.flush()
+    row = add(session, tenant_id, None, berlin(DIENSTAG, 19, 0), source="tablet")
+    session.add(
+        ReservationTable(tenant_id=tenant_id, reservation_id=row.id, table_id=table.id)
+    )
+    session.commit()
+    before = today_change_token(session, tenant_id, TZ, now=NOW)
+
+    table.name = "T7"
+    session.commit()
+
+    assert today_change_token(session, tenant_id, TZ, now=NOW) != before

@@ -12,7 +12,7 @@ import json
 import secrets
 import uuid
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from datetime import time as dt_time
 from pathlib import Path
 from typing import Any
@@ -1154,6 +1154,7 @@ def vorlauf_speichern(
 RESERVATION_ENTERED = "reservierung-eingetragen"
 ENTRY_INVALID = "Bitte Datum, Uhrzeit, Personen und Namen prüfen."
 ENTRY_FAILED = "Das hat nicht geklappt. Bitte nochmal tippen."
+ENTRY_NO_SUCH_TIME = "Diese Uhrzeit gibt es an dem Tag nicht (Zeitumstellung)."
 ENTRY_FIELDS = ("datum", "uhrzeit", "personen", "name", "telefon", "hinweis", "tisch")
 
 
@@ -1180,13 +1181,22 @@ def _entry_request(tenant: Tenant, form: dict[str, str]) -> TabletReservationReq
     try:
         day = date.fromisoformat(form.get("datum", "").strip())
         at = dt_time.fromisoformat(form.get("uhrzeit", "").strip())
+        local = datetime.combine(day, at, tzinfo=ZoneInfo(tenant.timezone))
+        # A time the spring clock change skips would be stored an hour later
+        # than the summary shows (Codex #558): it must read back the same.
+        exists = local.astimezone(UTC).astimezone(local.tzinfo).time() == at
+    except (ValueError, OverflowError) as exc:  # year 1 cannot move to UTC
+        raise InvalidInput(f"entry form unreadable: {exc}", say=ENTRY_INVALID) from exc
+    if not exists:
+        raise InvalidInput("local time does not exist", say=ENTRY_NO_SUCH_TIME)
+    try:
         return TabletReservationRequest(
             tenant_id=tenant.id,
             idempotency_key=form.get("schluessel", ""),
             guest_name=form.get("name", ""),
             phone=form.get("telefon") or None,
             party_size=int(form.get("personen", "").strip()),
-            reserved_for=datetime.combine(day, at, tzinfo=ZoneInfo(tenant.timezone)),
+            reserved_for=local,
             note=form.get("hinweis") or None,
             table_ids=[uuid.UUID(v) for v in form.get("tisch", "").split("+") if v],
         )
