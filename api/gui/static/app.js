@@ -224,7 +224,8 @@
   var dishBox = document.getElementById("gericht-aus");
   var noticeBox = document.getElementById("vorlauf");
   var waitBox = document.getElementById("wartezeit");
-  var sheets = [correctionBox, dishBox, noticeBox, waitBox].filter(Boolean);
+  var entryBox = document.getElementById("reservierung");
+  var sheets = [correctionBox, dishBox, noticeBox, waitBox, entryBox].filter(Boolean);
   var board = document.querySelector(".board");
   var opener = null;
   var idleTimer = null;
@@ -301,6 +302,12 @@
   // The text a cancel tap sends in its HX-Trigger: the refresh that follows
   // would remove a line inside the column.
   document.body.addEventListener("order-notice", function (e) {
+    showBoardNote(e.detail.value, "ok", 6000);
+  });
+  // A table the team entered (T-3.12): the sheet closes, the board says so; the
+  // column "Heute" follows on its own through the event stream.
+  document.body.addEventListener("reservierung-eingetragen", function (e) {
+    closeSheet(entryBox);
     showBoardNote(e.detail.value, "ok", 6000);
   });
   function syncBoard() {

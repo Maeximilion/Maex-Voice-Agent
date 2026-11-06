@@ -12,9 +12,12 @@ import json
 import secrets
 import uuid
 from collections.abc import Callable
+from datetime import date, datetime
+from datetime import time as dt_time
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
@@ -27,18 +30,20 @@ from api.config import LOCAL_ENVS, settings
 from api.core import time as clock
 from api.core.auth import require_gui_proxy
 from api.core.envelope import fail_body
-from api.core.errors import AppError
+from api.core.errors import AppError, InvalidInput
 from api.core.logging import get_logger
 from api.core.time import business_day, to_local
 from api.db import SessionLocal, get_db
 from api.domain.callbacks import list_open, mark_done
 from api.domain.callbacks.board import NUMBER_OTHER, NUMBER_WITHHELD
+from api.domain.confirm import confirm_tablet
 from api.domain.menu import price_check
 from api.domain.menu import sold_out as dishes
 from api.domain.ordering import board as order_board
 from api.domain.ordering import correction
-from api.domain.reservations import floor_plan, list_today
+from api.domain.reservations import create_tablet_reservation, floor_plan, list_today
 from api.domain.reservations import notice as reservation_notice
+from api.domain.reservations.manual import SOURCE_TABLET, WindowFull, describe
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status import bridge
 from api.domain.status import config as switches
@@ -47,8 +52,9 @@ from api.domain.status.mode import CAUTION, mode_at
 from api.domain.status.waits import current_wait, standard_wait
 from api.gui import figures_view, orders_view
 from api.gui.sse import today_event_stream
-from api.models import ServiceConfig, Tenant
+from api.models import Reservation, ServiceConfig, Tenant
 from api.schemas.floor_plan import NewArea, SaveArea
+from api.schemas.reservations import TabletDraft, TabletReservationRequest
 
 TEMPLATES = Path(__file__).parent / "templates"
 STATIC = Path(__file__).parent / "static"
@@ -117,6 +123,7 @@ def _today_rows(session: Session, tenant: Tenant) -> list[dict]:
             "guest_name": row.guest_name,
             "phone": row.phone,
             "note": row.note,
+            "tables": row.tables,
         }
         for row in list_today(session, tenant.id, tenant.timezone)
     ]
@@ -1139,6 +1146,188 @@ def vorlauf_speichern(
             status=409,
         )
     return _notice_sheet(request, session, tenant, "Gespeichert.", "ok")
+
+
+# --- "Reservierung eintragen" (T-3.12, D30) --------------------------------------
+
+# The sheet closes on this event and the board says what was entered.
+RESERVATION_ENTERED = "reservierung-eingetragen"
+ENTRY_INVALID = "Bitte Datum, Uhrzeit, Personen und Namen prüfen."
+ENTRY_FAILED = "Das hat nicht geklappt. Bitte nochmal tippen."
+ENTRY_FIELDS = ("datum", "uhrzeit", "personen", "name", "telefon", "hinweis", "tisch")
+
+
+def _seating_choices(session: Session, tenant_id: uuid.UUID) -> list[tuple[str, str]]:
+    """Each live table and each pair of the floor plan as (value, label); a pair's
+    value is both ids, the smaller first, as the plan stores it."""
+    choices = []
+    for area in floor_plan.plan(session, tenant_id):
+        by_id = {t["id"]: t for t in area["tables"]}
+        choices += [
+            (t["id"], f"{t['name']} ({t['seats']} Plätze)") for t in by_id.values()
+        ]
+        for a, b in area["combinations"]:
+            first, second = sorted((by_id[a], by_id[b]), key=lambda t: t["name"])
+            seats = first["seats"] + second["seats"]
+            choices.append(
+                (f"{a}+{b}", f"{first['name']} + {second['name']} ({seats} Plätze)")
+            )
+    return choices
+
+
+def _entry_request(tenant: Tenant, form: dict[str, str]) -> TabletReservationRequest:
+    """The typed form as the domain's request; anything unreadable is one sentence."""
+    try:
+        day = date.fromisoformat(form.get("datum", "").strip())
+        at = dt_time.fromisoformat(form.get("uhrzeit", "").strip())
+        return TabletReservationRequest(
+            tenant_id=tenant.id,
+            idempotency_key=form.get("schluessel", ""),
+            guest_name=form.get("name", ""),
+            phone=form.get("telefon") or None,
+            party_size=int(form.get("personen", "").strip()),
+            reserved_for=datetime.combine(day, at, tzinfo=ZoneInfo(tenant.timezone)),
+            note=form.get("hinweis") or None,
+            table_ids=[uuid.UUID(v) for v in form.get("tisch", "").split("+") if v],
+        )
+    except ValueError as exc:  # pydantic's ValidationError is one too
+        raise InvalidInput(f"entry form unreadable: {exc}", say=ENTRY_INVALID) from exc
+
+
+def _entry_sheet(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    values: dict[str, str],
+    message: str | None = None,
+    status: int = 200,
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "fragments/reservierung.html",
+        {
+            "values": values,
+            "choices": _seating_choices(session, tenant.id),
+            "message": message,
+        },
+        status,
+    )
+
+
+def _entry_summary(
+    request: Request,
+    tenant: Tenant,
+    draft: TabletDraft,
+    message: str | None = None,
+    status: int = 200,
+    blocked: bool = False,
+) -> HTMLResponse:
+    tz = tenant.timezone
+    local = to_local(draft.reserved_for, tz)
+    if draft.window_start is None or draft.window_end is None:
+        load = "Zu dieser Zeit gibt es kein Reservierungsfenster."
+    else:
+        load = (
+            f"Fenster {orders_view.clock(draft.window_start, tz)} bis "
+            f"{orders_view.clock(draft.window_end, tz)} Uhr: {draft.booked_guests} "
+            f"von {draft.max_guests} Plätzen belegt."
+        )
+    return templates.TemplateResponse(
+        request,
+        "fragments/reservierung.html",
+        {
+            "draft": draft,
+            "when": f"{WEEKDAYS[local.weekday()]}, {local:%d.%m.%Y}, {local:%H:%M} Uhr",
+            "load": load,
+            "message": message,
+            "blocked": blocked,
+        },
+        status,
+    )
+
+
+@router.get("/reservierung", response_class=HTMLResponse, include_in_schema=False)
+def reservierung(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
+    """The empty sheet: today, a new key per opened sheet (T-3.12)."""
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    values = {
+        "schluessel": uuid.uuid4().hex,
+        "datum": business_day(tz_name=tenant.timezone).isoformat(),
+    }
+    return _entry_sheet(request, session, tenant, values)
+
+
+@router.post(
+    "/reservierung",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def reservierung_pruefen(
+    request: Request,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The draft and its summary; a refusal keeps what was typed, and the key."""
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    values = {f: form.get(f, "") for f in ("schluessel", *ENTRY_FIELDS)}
+    try:
+        draft = create_tablet_reservation(session, _entry_request(tenant, form))
+    except AppError as exc:
+        session.rollback()
+        logger.info("Reservierung nicht angelegt: %s", exc.message)
+        return _entry_sheet(
+            request, session, tenant, values, exc.say or ENTRY_FAILED, 409
+        )
+    return _entry_summary(request, tenant, draft)
+
+
+@router.post(
+    "/reservierung/{reservation_id}/eintragen",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def reservierung_eintragen(
+    request: Request,
+    reservation_id: uuid.UUID,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The team's confirming tap (`confirm_tablet`); "trotzdem" is the word for a
+    full window, asked on the button. Any refusal shows the summary again."""
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    row = session.get(Reservation, reservation_id)
+    if row is None or row.tenant_id != tenant.id or row.source != SOURCE_TABLET:
+        raise HTTPException(status_code=404)
+    name = row.guest_name
+    try:
+        confirm_tablet(
+            session, tenant.id, reservation_id, override=form.get("trotzdem") == "1"
+        )
+    except AppError as exc:
+        session.rollback()
+        logger.info("Reservierung nicht eingetragen: %s", exc.message)
+        draft = describe(session, row, ZoneInfo(tenant.timezone), clock.utcnow())
+        return _entry_summary(
+            request,
+            tenant,
+            draft,
+            exc.say or ENTRY_FAILED,
+            409,
+            blocked=not isinstance(exc, WindowFull),
+        )
+    response = HTMLResponse("")
+    response.headers["HX-Trigger"] = json.dumps(
+        {RESERVATION_ENTERED: f"Reservierung für {name} eingetragen."}
+    )
+    return response
 
 
 @router.get("/gericht-aus", response_class=HTMLResponse, include_in_schema=False)

@@ -9,7 +9,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from api.domain.reservations import list_today, today_change_token
-from api.models import Call, Reservation
+from api.models import Call, DiningTable, FloorArea, Reservation, ReservationTable
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -135,3 +135,41 @@ def test_fingerabdruck_aendert_sich_nur_bei_aenderung(session, tenant_id, call_i
     row.status = "cancelled"
     session.commit()
     assert today_change_token(session, tenant_id, TZ, now=NOW) == leer
+
+
+def test_a_table_the_team_seated_shows_its_tables_and_no_call(session, tenant_id):
+    """T-3.12: a tablet reservation has no call, and names its tables by name."""
+    area = FloorArea(tenant_id=tenant_id, name="Gastraum", width_cm=1000, depth_cm=700)
+    session.add(area)
+    session.flush()
+    tables = [
+        DiningTable(
+            tenant_id=tenant_id,
+            area_id=area.id,
+            name=name,
+            seats=4,
+            width_cm=120,
+            depth_cm=80,
+            x_cm=200 + 200 * i,
+            y_cm=200,
+        )
+        for i, name in enumerate(("T2", "T1"))
+    ]
+    session.add_all(tables)
+    session.flush()
+    row = add(session, tenant_id, None, berlin(DIENSTAG, 19, 0), source="tablet")
+    session.add_all(
+        ReservationTable(tenant_id=tenant_id, reservation_id=row.id, table_id=t.id)
+        for t in tables
+    )
+    session.commit()
+
+    [shown] = list_today(session, tenant_id, TZ, now=NOW)
+
+    assert shown.tables == ["T1", "T2"]
+
+
+def test_a_reservation_without_tables_has_none(session, tenant_id, call_id):
+    add(session, tenant_id, call_id, berlin(DIENSTAG, 19, 0))
+
+    assert [r.tables for r in list_today(session, tenant_id, TZ, now=NOW)] == [[]]

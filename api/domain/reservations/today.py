@@ -16,7 +16,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.core.time import business_day, business_day_bounds_utc
-from api.models import Reservation
+from api.models import DiningTable, Reservation, ReservationTable
 from api.schemas.gui import TodayReservation
 
 CONFIRMED: Final = "confirmed"
@@ -49,6 +49,15 @@ def list_today(
         .where(*_filters(tenant_id, start, end))
         .order_by(Reservation.reserved_for, Reservation.created_at)
     ).all()
+    # One query for the tables of all rows (T-3.12), by name within a reservation.
+    seated: dict[uuid.UUID, list[str]] = {}
+    for reservation_id, name in session.execute(
+        select(ReservationTable.reservation_id, DiningTable.name)
+        .join(DiningTable, DiningTable.id == ReservationTable.table_id)
+        .where(ReservationTable.reservation_id.in_([row.id for row in rows]))
+        .order_by(DiningTable.name)
+    ):
+        seated.setdefault(reservation_id, []).append(name)
     return [
         TodayReservation(
             reservation_id=row.id,
@@ -58,6 +67,7 @@ def list_today(
             guest_name=row.guest_name,
             phone=row.phone,
             note=row.note,
+            tables=seated.get(row.id, []),
         )
         for row in rows
     ]

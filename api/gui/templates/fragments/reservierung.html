@@ -1,0 +1,63 @@
+{# A table the team enters by hand (T-3.12, D30, docs/06 §3): first the form, then
+   the summary with the window's load. "Weiter" writes a draft, which books
+   nothing; "Eintragen" on the summary is the confirming tap. A full window or a
+   time outside every window needs "Trotzdem eintragen", asked on the button. A
+   refusal keeps what was typed; the answer stands above the buttons. #}
+<section class="sheet reservierung" role="dialog" aria-labelledby="reservierung-titel">
+  <div class="sheet-head">
+    <h2 id="reservierung-titel" tabindex="-1">Reservierung eintragen</h2>
+    <button type="button" class="schliessen" data-schliessen>Schließen</button>
+  </div>
+  {% if draft %}
+  <div class="sheet-body">
+    <dl class="entry-summary">
+      <dt>Wann</dt><dd>{{ when }}</dd>
+      <dt>Personen</dt><dd>{{ draft.party_size }} {{ "Person" if draft.party_size == 1 else "Personen" }}</dd>
+      <dt>Name</dt><dd>{{ draft.guest_name }}</dd>
+      {% if draft.phone %}<dt>Telefon</dt><dd>{{ draft.phone }}</dd>{% endif %}
+      {% if draft.note %}<dt>Hinweis</dt><dd>{{ draft.note }}</dd>{% endif %}
+      <dt>Tisch</dt><dd>{% if draft.tables %}Tisch {{ draft.tables|join(" + ") }}{% else %}Ohne Tisch{% endif %}</dd>
+    </dl>
+    <p class="badge {{ 'warn' if draft.needs_override else 'ok' }}">{{ load }}</p>
+    <div class="sheet-foot">
+      {% if message %}<p class="badge danger">{{ message }}</p>{% endif %}
+      {% if not blocked %}
+      <form hx-post="/gui/reservierung/{{ draft.reservation_id }}/eintragen" hx-target="#reservierung" hx-swap="innerHTML"
+            {% if draft.needs_override %}hx-confirm="Laut Reservierungen ist dafür kein Platz frei. Trotzdem eintragen?"{% endif %}>
+        {% if draft.needs_override %}<input type="hidden" name="trotzdem" value="1">{% endif %}
+        <button type="submit" class="primary">{{ "Trotzdem eintragen" if draft.needs_override else "Eintragen" }}</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+  {% else %}
+  <form class="sheet-body" novalidate hx-post="/gui/reservierung" hx-target="#reservierung" hx-swap="innerHTML">
+    <input type="hidden" name="schluessel" value="{{ values.schluessel }}">
+    <div class="entry-fields">
+      <label for="res-datum">Datum</label>
+      <input type="date" id="res-datum" name="datum" value="{{ values.datum }}" required>
+      <label for="res-uhrzeit">Uhrzeit</label>
+      <input type="time" id="res-uhrzeit" name="uhrzeit" value="{{ values.uhrzeit }}" step="900" required>
+      <label for="res-personen">Personen</label>
+      <input type="number" id="res-personen" name="personen" inputmode="numeric" min="1" value="{{ values.personen }}" required>
+      <label for="res-name">Name</label>
+      <input type="text" id="res-name" name="name" maxlength="200" value="{{ values.name }}" required>
+      <label for="res-telefon">Telefon</label>
+      <input type="tel" id="res-telefon" name="telefon" maxlength="40" value="{{ values.telefon }}" placeholder="freiwillig">
+      <label for="res-hinweis">Hinweis</label>
+      <input type="text" id="res-hinweis" name="hinweis" maxlength="500" value="{{ values.hinweis }}">
+      <label for="res-tisch">Tisch</label>
+      <select id="res-tisch" name="tisch">
+        <option value="">Ohne Tisch</option>
+        {% for value, label in choices %}
+        <option value="{{ value }}"{% if values.tisch == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="sheet-foot">
+      {% if message %}<p class="badge danger">{{ message }}</p>{% endif %}
+      <button type="submit" class="primary">Weiter</button>
+    </div>
+  </form>
+  {% endif %}
+</section>
