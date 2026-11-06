@@ -369,6 +369,15 @@ jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", a
 
 Remote Control refuses to start while `ANTHROPIC_BASE_URL` points anywhere but `api.anthropic.com`, and the `env` block of the Ubuntu settings points it at Headroom (`http://127.0.0.1:8787`). A shell variable does not help: the settings file wins over it (checked 15.10.2026), and `--settings` before `remote-control` is refused. So `claude-rc` runs Claude with its own config folder `~/.claude-rc`: login, hooks, plugins, skills, memory and history are links into `~/.claude`, `settings.json` is rebuilt from the Ubuntu settings without `ANTHROPIC_BASE_URL` and without an API key (Remote Control takes only the claude.ai login) at every start, and the daemon and caches stay apart. Session transcripts and memory live under the linked `projects` folder on purpose, so history and memory carry over between both launchers; each session writes its own transcript file. The launcher refuses to run when `~/.claude-rc` is a link or resolves to `~/.claude`, because its settings rewrite would then replace the real `~/.claude/settings.json`. Sessions started through it run without Headroom, so they cost the uncompressed tokens.
 
+Since 06.11.2026 `~/.bashrc` also exports the proxy address, so tools started from a shell use Headroom too and the `shell env` check of `headroom doctor` passes. `claude-rc` unsets the variable before Claude starts, so Remote Control is unaffected. Restore by adding these lines after the Headroom telemetry opt-outs in `~/.bashrc`:
+
+```bash
+# Headroom: tools started from this shell use the local proxy too (claude-rc unsets it)
+export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+```
+
+The three warnings `headroom doctor` still shows are expected: `codex` (no Codex CLI in Ubuntu, Codex reviews run as the hosted bot), `budget` (none, Maxi 06.11.2026: the subscription login already limits usage, and a proxy budget answers 429 in the middle of a session) and `claude remote control` (Claude Code's own gate, handled by this launcher).
+
 ```bash
 #!/usr/bin/env bash
 # Claude Code with Remote Control, without the Headroom proxy.

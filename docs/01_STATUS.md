@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.17.0
+> Status: 06.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.17.1
 
 ---
 
@@ -850,6 +850,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.17.1 · 06.11.2026:** docs/19: the Ubuntu shell exports the Headroom proxy address; expected headroom doctor warnings recorded
 - **v2.17.0 · 06.11.2026:** T-3.12 done: the sheet Reservierung eintragen on the tablet
 - **v2.16.1 · 05.11.2026:** A PR inherits stage and priority of the issue it closes
 - **v2.16.0 · 05.11.2026:** Ultrareview ledger #546, quota settled, D31 MaexSocial points
