@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.17.1
+> Status: 06.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.17.2
 
 ---
 
@@ -313,6 +313,8 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ---
 
 ## What's Next
+
+**T-3.15 done (06.11.2026):** a mistaken "Erledigt" can be undone. "Verlauf" in the heading of the callbacks column opens a sheet with the callbacks marked done in the last 7 days (`HISTORY_DAYS`), with "Anrufen" and "Wieder öffnen"; the reopen stands in `audit_log` (`callback.reopened`) and works only inside the window. No migration. Assumption (L8): a reopened card counts its deletion period from its creation again, so one created more than 90 days ago loses its number on the next run, as any open card of that age does. First trial of splitting a task by model (Maxi, 06.11.2026): the domain on Opus `high`, the sheet, its tests and the browser check on a Sonnet `medium` subagent; the split-routing rule follows as its own PR. Next in Block 2 (#8): T-3.16 (#517), then T-3.5.
 
 **T-3.12 done (06.11.2026):** the team enters a table by hand on the tablet (#544 domain and migration 029, the sheet in its successor). Next in Block 2 (#8): T-3.15 (#516), T-3.16 (#517), then T-3.5 operating test on the real tablet, which also covers the floor plan and the sheet. The workbench database still waits for `make migrate` to 029, backup first.
 
@@ -850,7 +852,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.17.1 · 06.11.2026:** docs/19: the Ubuntu shell exports the Headroom proxy address; expected headroom doctor warnings recorded
+- **v2.17.2 · 06.11.2026:** docs/19: the Ubuntu shell exports the Headroom proxy address; expected headroom doctor warnings recorded
+- **v2.17.1 · 06.11.2026:** T-3.15 done: callback history with reopen
 - **v2.17.0 · 06.11.2026:** T-3.12 done: the sheet Reservierung eintragen on the tablet
 - **v2.16.1 · 05.11.2026:** A PR inherits stage and priority of the issue it closes
 - **v2.16.0 · 05.11.2026:** Ultrareview ledger #546, quota settled, D31 MaexSocial points
