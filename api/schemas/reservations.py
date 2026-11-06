@@ -79,7 +79,9 @@ class TabletReservationRequest(BaseModel):
     idempotency_key: str = Field(min_length=1, max_length=128)
     guest_name: str = Field(min_length=1, max_length=200)
     phone: str | None = Field(default=None, max_length=40)
-    party_size: int = Field(ge=1)
+    # An upper bound, so a typo answers with a sentence and not with the INTEGER
+    # column refusing it (assumption: no restaurant seats a thousand by hand).
+    party_size: int = Field(ge=1, le=1000)
     reserved_for: ReservedFor
     note: str | None = Field(default=None, max_length=RESERVATION_NOTE_MAX)
     # None, one table, or the two tables of a combination of the floor plan.

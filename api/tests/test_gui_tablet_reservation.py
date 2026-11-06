@@ -203,6 +203,10 @@ def test_a_full_window_is_entered_only_after_trotzdem(client, engine, tenant_id)
         ({"uhrzeit": ""}, "Bitte Datum, Uhrzeit, Personen und Namen prüfen."),
         ({"personen": "abc"}, "Bitte Datum, Uhrzeit, Personen und Namen prüfen."),
         ({"personen": "0"}, "Bitte Datum, Uhrzeit, Personen und Namen prüfen."),
+        (
+            {"personen": "99999999999"},
+            "Bitte Datum, Uhrzeit, Personen und Namen prüfen.",
+        ),
         ({"name": ""}, "Bitte Datum, Uhrzeit, Personen und Namen prüfen."),
         ({"name": "   "}, "Bitte einen Namen eintragen."),
         ({"telefon": "keine Nummer"}, None),
