@@ -225,7 +225,8 @@
   var noticeBox = document.getElementById("vorlauf");
   var waitBox = document.getElementById("wartezeit");
   var entryBox = document.getElementById("reservierung");
-  var sheets = [correctionBox, dishBox, noticeBox, waitBox, entryBox].filter(Boolean);
+  var historyBox = document.getElementById("rueckruf-verlauf");
+  var sheets = [correctionBox, dishBox, noticeBox, waitBox, entryBox, historyBox].filter(Boolean);
   var board = document.querySelector(".board");
   var opener = null;
   var idleTimer = null;

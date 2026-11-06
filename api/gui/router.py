@@ -34,8 +34,8 @@ from api.core.errors import AppError, InvalidInput
 from api.core.logging import get_logger
 from api.core.time import business_day, to_local
 from api.db import SessionLocal, get_db
-from api.domain.callbacks import list_open, mark_done
-from api.domain.callbacks.board import NUMBER_OTHER, NUMBER_WITHHELD
+from api.domain.callbacks import list_history, list_open, mark_done, reopen
+from api.domain.callbacks.board import HISTORY_DAYS, NUMBER_OTHER, NUMBER_WITHHELD
 from api.domain.confirm import confirm_tablet
 from api.domain.menu import price_check
 from api.domain.menu import sold_out as dishes
@@ -146,25 +146,32 @@ CALLBACK_NUMBER_NOTES = {
 }
 
 
+def _callback_row(cb, tz_name: str) -> dict:
+    tone, label = CALLBACK_LABELS.get(cb.reason, ("accent", "Rückruf"))
+    origin = cb.number_origin
+    return {
+        "id": str(cb.callback_id),
+        "time": orders_view.clock(cb.created_at, tz_name),
+        "phone": cb.phone,
+        "number_note": CALLBACK_NUMBER_NOTES.get(origin),
+        "caller_id": cb.caller_id if origin == NUMBER_OTHER else None,
+        "reason": cb.reason,
+        "summary": cb.summary,
+        "tone": tone,
+        "label": label,
+    }
+
+
 def _callback_rows(session: Session, tenant: Tenant) -> list[dict]:
-    rows = []
-    for cb in list_open(session, tenant.id):
-        tone, label = CALLBACK_LABELS.get(cb.reason, ("accent", "Rückruf"))
-        origin = cb.number_origin
-        rows.append(
-            {
-                "id": str(cb.callback_id),
-                "time": orders_view.clock(cb.created_at, tenant.timezone),
-                "phone": cb.phone,
-                "number_note": CALLBACK_NUMBER_NOTES.get(origin),
-                "caller_id": cb.caller_id if origin == NUMBER_OTHER else None,
-                "reason": cb.reason,
-                "summary": cb.summary,
-                "tone": tone,
-                "label": label,
-            }
-        )
-    return rows
+    return [_callback_row(cb, tenant.timezone) for cb in list_open(session, tenant.id)]
+
+
+def _done_when(done_at, tz_name: str) -> str:
+    """ "Erledigt 18:42", with the date when it was not today (local time)."""
+    local = to_local(done_at, tz_name)
+    if local.date() == to_local(clock.utcnow(), tz_name).date():
+        return f"Erledigt {local:%H:%M}"
+    return f"Erledigt {local:%d.%m.} {local:%H:%M}"
 
 
 def _holiday_rows(session: Session, tenant: Tenant) -> list[dict]:
@@ -512,6 +519,60 @@ def rueckruf_erledigt(
         "fragments/rueckrufe.html",
         {"callbacks": _callback_rows(session, tenant)},
     )
+
+
+# --- History of done callbacks (T-3.15, #516) ------------------------------------
+
+
+def _history_sheet(request: Request, session: Session, tenant: Tenant) -> HTMLResponse:
+    rows = [
+        {
+            **_callback_row(cb, tenant.timezone),
+            "done": _done_when(cb.done_at, tenant.timezone),
+        }
+        for cb in list_history(session, tenant.id)
+    ]
+    return templates.TemplateResponse(
+        request,
+        "fragments/rueckruf_verlauf.html",
+        {"callbacks": rows, "days": HISTORY_DAYS},
+    )
+
+
+@router.get("/rueckrufe/verlauf", response_class=HTMLResponse, include_in_schema=False)
+def rueckrufe_verlauf(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """The sheet with the callbacks done in the last days, to undo a wrong tap."""
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    return _history_sheet(request, session, tenant)
+
+
+@router.post(
+    "/rueckrufe/{callback_id}/wieder-offen",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def rueckruf_wieder_offen(
+    request: Request, callback_id: uuid.UUID, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Bring a card back; the column follows through the event stream.
+
+    Like "Erledigt", an unknown or already open callback is no error for the
+    team: the redrawn sheet shows the truth.
+    """
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    try:
+        reopen(session, tenant.id, callback_id)
+    except AppError as exc:
+        session.rollback()
+        logger.info("Rueckruf nicht wieder geoeffnet: %s", exc.message)
+    return _history_sheet(request, session, tenant)
 
 
 # --- Holiday suggestions (T-9.5) -----------------------------------------------------
