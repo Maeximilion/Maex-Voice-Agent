@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TodayReservation(BaseModel):
@@ -17,3 +17,5 @@ class TodayReservation(BaseModel):
     guest_name: str
     phone: str
     note: str | None = None
+    # The tables of the floor plan the team seated it on, by name (T-3.12).
+    tables: list[str] = Field(default_factory=list)

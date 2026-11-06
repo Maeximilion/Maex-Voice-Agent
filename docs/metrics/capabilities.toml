@@ -63,6 +63,10 @@ works = '''Operations view for the tablet at `/gui/` (`api/gui/`): header with m
 tasks = ["T-3.1", "T-3.2", "T-3.3", "T-3.4"]
 
 [[capability]]
+works = '''Reservations the team takes by hand, for a guest who asked an employee directly: the sheet "Reservierung eintragen" in the column "Heute" writes a draft without a call, shows the load of the capacity window and books it at the team's tap, on one table or a combined pair of the floor plan (`/gui/raumplan`). It counts against the same seats as the agent; a full window needs "Trotzdem eintragen", a table taken that evening is refused'''
+tasks = ["T-3.11", "T-3.12"]
+
+[[capability]]
 works = '''`make test` and `make lint` run in container against real Postgres, ruff clean'''
 tasks = ["T-0.4"]
 
