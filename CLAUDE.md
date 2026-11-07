@@ -145,8 +145,9 @@ review session starts; this instruction does not launch a paid session for them.
 `/start` begin session · `/task T-x.y` build task · `/done` close out · `/ship <PR>` drive a PR through CI and review to its merge · `/bug "…"` error with a red eval case or test first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` handover block. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
 After `/done` creates or updates its task's PR, the active session automatically
-continues with `/ship` for that PR. `/ship` owns CI/review waiting, fix rounds,
-merge and cleanup; the user need not invoke it separately. Respect explicit
+continues with `/ship` for that PR, except for the model hand-off in "Cache-friendly
+sessions" below (Maxi, 2026-11-07), which amends this. `/ship` owns CI/review waiting,
+fix rounds, merge and cleanup; the user need not invoke it separately. Respect explicit
 wait/draft instructions and missing prerequisites. `/ship` reuses `/done`'s
 pre-merge and cleanup steps only, never calls the complete command recursively,
 and does not start a second shipping operation for the same PR. This is an
@@ -290,6 +291,15 @@ that is enough, and preserve this context for the next reviewer.
 Update `docs/01_STATUS.md`: completed tasks, new insights, next step. Add a handover block per `docs/00_PCF.md` section 12.
 
 **Hand over before compression** (Maxi, 2026-10-21): a session never runs into context compression. When the context fills up (long tool output, many iterations), Claude finishes the current step at a clean point, writes the `/handover` block, commits and pushes everything including the handover edits, and tells Maxi to continue in a new session with it, instead of starting the next large step.
+
+### Cache-friendly sessions
+
+(Maxi, 2026-11-07, from a read-only analysis of all transcripts at Ponytail prices: Opus 5.5 cache read 0.20 USD/M, 1h cache write 8 USD/M, 5m write 5 USD/M.) Cost is driven by cache writes, not by tokens: session ddc39224 was 98.7 % cache reads and cost 16.2 USD per merged PR, while Opus `xhigh` agents that waited over 5 minutes (pytest, evals, CI) rebuilt their 5-minute cache each time and cost 217 USD on 02.11.2026. A break over 1 hour rewrites the whole main context: 3 to 7.5 USD at 350k to 940k tokens. The measure for any change here is USD per merged PR (Ponytail), not agent hours.
+
+1. **Agents build and stop.** A subagent or thread returns when its build is done; the main thread waits for CI, Codex and long test or eval runs. No agent idles on a wait.
+2. **`/ship` hand-off.** The Opus session that built the PR waits for the first independent review itself. If that review has no P0 or P1 (a P2 in code that hits an `xhigh` trigger counts as P1, "Review loop limits"), it stops and suggests a fresh Sonnet session for `/ship <PR>`, giving the `cd` path, the start command and the first message. With a P1 it stays on Opus until fixed. A P1 that appears later in the Sonnet session goes back to Opus the same way. A model switch rewrites the whole context (each model has its own cache): 2.40 USD at 600k on Sonnet, break-even after about 29 replies, while a fresh session from a handover costs about 0.5 to 0.65 USD. So a switch happens only with a fresh session, never mid-task.
+3. **Handover in the chat** (a copy-paste block per `/handover`, no extra file), with everything pushed: automatically when a PR is merged and the context is over 600k tokens (250k once #562 is fixed), and before a break. "PC shuts down at <time>": finish or park everything 15 minutes before, write the handover, push all work. "Pause": ask how long; over 45 minutes, write the handover.
+4. **Idle check-in.** When a turn ends waiting for Maxi, schedule a one-shot `CronCreate` check-in 45 minutes later (a pinned minute, not :00 or :30) and delete it with `CronDelete` at Maxi's next message. When it fires: write the handover in the chat and push everything. While a background task or workflow runs longer than an hour, chain one-shot check-ins every 45 minutes. Each check-in costs about 0.10 USD (a cache read) against up to 4.80 USD for a rewrite. No recurring cron: its jitter (up to 30 minutes late) can miss the 1-hour cache. Where `CronCreate` is not available (tested to fire on time in the desktop app on 07.11.2026, not yet in the Ubuntu terminal), skip the check-in and say so in one line.
 
 ---
 

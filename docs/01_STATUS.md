@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 06.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.18.1
+> Status: 07.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.18.2
 
 ---
 
@@ -313,6 +313,8 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ---
 
 ## What's Next
+
+**Cache-friendly session rules (Maxi, 07.11.2026):** `CLAUDE.md` section 6 "Cache-friendly sessions" (agents build and stop, Sonnet `/ship` hand-off after a clean first review, handover at 600k tokens after a merge or before a break, one-shot idle check-ins every 45 minutes) with the matching steps in `/done` and `/ship`; numbers in the section. Not yet tested: `CronCreate` in the Ubuntu terminal (fired on time in the desktop app, 07.11.2026). Option only, no issue: trim `CLAUDE.md` (about 25k characters) by moving review details to docs/21, merge and stack details that `/ship` and `/done` repeat, the ultrareview ledger history, the 38 date tags, the stale "Version 1.1" header and the slash-command paragraph; the hard rules stay. Decided against: a 1-hour cache setting for subagents (short agents would pay more). Context growth is tracked in #562 (this file is 624 KB); the 600k handover threshold drops to 250k once it is fixed.
 
 **T-3.15 done (06.11.2026):** a mistaken "Erledigt" can be undone. "Verlauf" in the heading of the callbacks column opens a sheet with the callbacks marked done in the last 7 days (`HISTORY_DAYS`), with "Anrufen" and "Wieder öffnen"; the reopen stands in `audit_log` (`callback.reopened`) and works only inside the window. No migration. Assumption (L8): a reopened card counts its deletion period from its creation again, so one created more than 90 days ago loses its number on the next run, as any open card of that age does. First trial of splitting a task by model (Maxi, 06.11.2026): the domain on Opus `high`, the sheet, its tests and the browser check on a Sonnet `medium` subagent; the split-routing rule follows as its own PR. Next in Block 2 (#8): T-3.16 (#517), then T-3.5.
 
@@ -854,6 +856,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.18.2 · 07.11.2026:** Rules for cache-friendly sessions, Sonnet /ship hand-off and idle handovers
 - **v2.18.1 · 06.11.2026:** docs/19: the Ubuntu shell exports the Headroom proxy address; expected headroom doctor warnings recorded
 - **v2.18.0 · 06.11.2026:** Split routing on trial: usage per task in docs/metrics/routing_history.csv
 - **v2.17.1 · 06.11.2026:** T-3.15 done: callback history with reopen
