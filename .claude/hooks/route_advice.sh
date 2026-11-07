@@ -141,7 +141,7 @@ else
   if grep -qiE "$search" <<<"$lower" \
     && ! sed -E 's/\b(where|which|that|wherever) ([a-z_]+ ){1,3}(write|update|change|add|create|edit|remove|delete|build)s?\b//g' <<<"$lower" \
       | grep -qiE "$change"; then
-    want=claude-haiku-4-5 effort=none
+    want=claude-haiku-5-5 effort=none
   # Docs-only: no code path and no implementation area (domain, agent/, code, logic,
   # matching, ...); a mixed docs and code task takes the higher setting below.
   # The topic of a doc ("the telephony docs") and a typo fix in it are not code work.
