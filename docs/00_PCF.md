@@ -537,6 +537,29 @@ Lessons: <learnings>
 
 ## 13. Handovers (newest first)
 
+## Handover 06.11.2026 - T-3.12 done (#544, #558), ultrareview ledger (#547), next T-3.15
+
+Status: merged on `main`: #544 (T-3.12 part 1, migration 029, `confirm_tablet`, D30), #547 (ultrareview ledger, issue #546), #548 (a PR inherits `stufe-N` and `priority: ...` from the issue it closes), #558 (T-3.12 part 2, the sheet "Reservierung eintragen", merge `8331e52`, closed #497). #558 took two Codex rounds: a time the spring clock change skips is refused, and a renamed seated table redraws "Heute". Nothing of this session is open or uncommitted; this handover rides on branch `docs/handover-t3-15` (pushed, no PR), and the next task's branch starts from it with its PR based on `main`.
+
+Artifacts: `api/gui/templates/fragments/reservierung.html`, routes `/gui/reservierung` in `api/gui/router.py`, `api/tests/test_gui_tablet_reservation.py`; `scripts/ultrareview_ledger.py`; screenshots of the sheet in `C:\Users\Maxi\Downloads\t312-tablet-sheet`.
+
+Decisions (Maxi, 05.11.2026): D30 draft, then confirm, for a reservation without a call; Claude runs `/done`, `/ship` and every next command itself; every ultrareview candidate goes into #546; the three free ultrareviews are used up, so the candidate's review is a local `/code-review max <PR>` on Maxi's word. D31 (MaexSocial mechanics) waits for Maxi.
+
+Gate: G0 open, unchanged. Block 2 (#8) belongs to G1.
+
+Open:
+1. T-3.15 (#516), callback history of the last 7 days with "Anrufen" and "Wieder öffnen", Spec 03, 06, docs/09 L8: GUI plus `domain/callbacks/` plus the deletion period of a callback's number, so Opus 5.5 at `high` (no `xhigh` trigger unless reopening a callback changes who is rung); start with `/task T-3.15` in a new session on that setting, branch from `origin/docs/handover-t3-15`.
+2. T-3.16 (#517), parked UI/UX findings, Sonnet 5.5 `medium`; then T-3.5 operating test on the real tablet (floor plan and the new sheet included).
+3. Workbench database migrated 06.11.2026 from 026 to 029 (backup `before_migration_029`, `api` and dispatcher restarted); the recipe is in docs/13 §4.
+4. Maxi's word: T-3.12 assumptions (a) to (h) in docs/01 "Made Assumptions", D31, and which of the 36 open lines of #546 get a `/code-review max` (#544 and #558 are the T-3.12 ones).
+
+Lessons:
+- A checklist line "... closes #497" in a PR body closes the issue on merge like `Closes #497` in the Issue section: #544 closed #497 a PR too early. Write "finishes" or name the issue without the keyword.
+- `pytest -n` refuses a parametrize id built from `uuid4()`: every worker collects a different name. Use a fixed UUID.
+- `gh stack merge` rebases the next PR of the stack onto `main` itself; take the remote branch (`git reset --keep origin/<branch>`) instead of pushing a local merge.
+- A browser walk on port 8019 (Playwright from `/usr/lib/node_modules/clawdbot/node_modules/playwright-core`, Chromium under `~/.cache/ms-playwright/chromium-1248/chrome-linux64/`) found two layout defects the tests could not: a second button in a narrow column heading, and a sheet taller than the screen.
+- Docker Desktop has to be started by Maxi from a worktree session; the guard refuses `powershell.exe`.
+
 ## Handover 05.11.2026, morning - T-3.12 part 1 merged (#544), next the tablet sheet
 
 Status: #544 merged 05.11.2026 (`4821a36`, merge commit): migration 029 (`reservations.source`, nullable `call_id` with `ck_reservations_call_source`, `reservation_tables`), `domain/reservations/manual.py` (`create_tablet_reservation`, `seating`, `taken_tables`, `describe`, `WindowFull`), `confirm_tablet` in `domain/confirm.py`, outer join in `capacity.booked_guests`, `window_load`. Codex round 1 found two P1 (late tap on a past time, pair removed between taps), both fixed in `8e406e4`; round 2 clean. Evals on the exact head equal to `main` (94/94, targets 1/23, numbers 249/249). The workbench database is not migrated to 029 yet: `make migrate` in the main folder, backup first (`bash scripts/backup.sh --label before_migration_029`). This handover rides on branch `docs/handover-t3-12-part2` (pushed, no PR); T-3.12 part 2 branches from it and its PR is based on `main`. T-3.12 stays "in progress" in docs/07; #497 stays open until part 2.

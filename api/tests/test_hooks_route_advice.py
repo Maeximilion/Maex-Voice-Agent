@@ -103,7 +103,7 @@ def test_docs_only_prompt_stays_on_sonnet_despite_hard_rule_words(run):
 
 def test_pure_search_goes_to_haiku(run):
     out = run("Search the repository for every reference to route_advice")
-    assert "claude-haiku-4-5 at effort none" in message(out)
+    assert "claude-haiku-5-5 at effort none" in message(out)
     assert run("Find and fix every caller of the hook", sid="fix") is not None
 
 
@@ -182,24 +182,24 @@ def test_route_line_in_the_app_background_is_only_text(run):
 
 
 def test_a_task_line_in_the_app_background_is_no_boundary(run):
-    background = "Task:\nRoute: claude-haiku-4-5 none\nDocs."
+    background = "Task:\nRoute: claude-haiku-5-5 none\nDocs."
     prompt = REMINDER + APP_BRIEF.replace("Docs.", background) + BRIEF
     assert run(prompt, "claude-sonnet-5-5", "medium") is None
 
 
 def test_route_line_further_down_is_only_text(run):
-    prompt = f"Update this hook, the fixture reads:\nRoute: claude-haiku-4-5 none\n{HOOKS_PROMPT}"
-    out = run(prompt, "claude-haiku-4-5", effort="")
+    prompt = f"Update this hook, the fixture reads:\nRoute: claude-haiku-5-5 none\n{HOOKS_PROMPT}"
+    out = run(prompt, "claude-haiku-5-5", effort="")
     assert "routing advice: this prompt fits claude-opus-5-5" in message(out)
 
 
 def test_route_line_without_effort_compares_the_model_only(run):
-    brief = "Route: claude-haiku-4-5 none\nFind every caller of confirm."
-    assert run(brief, "claude-haiku-4-5", effort="") is None
+    brief = "Route: claude-haiku-5-5 none\nFind every caller of confirm."
+    assert run(brief, "claude-haiku-5-5", effort="") is None
     out = run(brief, "claude-sonnet-5-5", sid="other")
     assert "routing check" in message(out)
     context = out["hookSpecificOutput"]["additionalContext"]
-    assert "ROUTE-MISMATCH want=claude-haiku-4-5 none" in context
+    assert "ROUTE-MISMATCH want=claude-haiku-5-5 none" in context
 
 
 @pytest.mark.parametrize(
@@ -392,8 +392,8 @@ def test_a_resend_waits_for_a_slow_model_switch(run):
 
 
 def test_a_haiku_route_needs_effort_none(run):
-    brief = "Route: claude-haiku-4-5 high\nFind every caller."
-    assert "Route line is not" in message(run(brief, "claude-haiku-4-5", "high"))
+    brief = "Route: claude-haiku-5-5 high\nFind every caller."
+    assert "Route line is not" in message(run(brief, "claude-haiku-5-5", "high"))
 
 
 def test_an_outage_banner_is_gui_work(run):
@@ -439,7 +439,7 @@ def test_matching_session_is_silent_and_advice_is_given_once(run):
 
 def test_a_pure_search_for_a_hard_rule_term_stays_on_haiku(run):
     out = run("Search the repository for every menu_item_id reference")
-    assert "claude-haiku-4-5 at effort none" in message(out)
+    assert "claude-haiku-5-5 at effort none" in message(out)
 
 
 @pytest.mark.parametrize(
@@ -523,7 +523,7 @@ def test_existing_code_without_tests_is_not_sonnet_work(run):
 def test_a_pasted_search_stays_a_search(run):
     search = "Search the repository for every menu_item_id reference"
     prompt = f"<pasted_content id=1>{search}</pasted_content>"
-    assert "claude-haiku-4-5 at effort none" in message(run(prompt))
+    assert "claude-haiku-5-5 at effort none" in message(run(prompt))
 
 
 def test_unknown_model_never_stops_a_routed_thread(run):
@@ -537,7 +537,7 @@ def test_unknown_model_never_stops_a_routed_thread(run):
 def test_unknown_model_with_the_routed_effort_is_silent(run):
     # A thread's first prompt in the desktop app: no model known, the effort took.
     assert run(REMINDER + APP_BRIEF + BRIEF, model="") is None
-    out = run("Route: claude-haiku-4-5 none\nFind the seed.", model="", sid="h")
+    out = run("Route: claude-haiku-5-5 none\nFind the seed.", model="", sid="h")
     assert "not known" in message(out)
 
 
@@ -571,7 +571,7 @@ def test_a_draft_in_the_gui_is_not_the_confirm_step(run):
 
 def test_a_search_asked_as_a_question_goes_to_haiku(run):
     out = run("Can you search the repository for every menu_item_id reference?")
-    assert "claude-haiku-4-5 at effort none" in message(out)
+    assert "claude-haiku-5-5 at effort none" in message(out)
 
 
 def test_fable_asked_for_by_name_is_kept(run):
