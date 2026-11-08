@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 05.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.16.3
+> Status: 08.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.19.1
 
 ---
 
@@ -330,7 +330,13 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 ## What's Next
 
-**T-3.12 part 2 next (05.11.2026):** part 1 merged (#544, migration 029, D30); the sheet "Reservierung eintragen" on the tablet follows, plan in the handover of 05.11.2026, morning (`docs/00_PCF.md` §13). The workbench database still waits for `make migrate` to 029, backup first.
+**Cache-friendly session rules (Maxi, 07.11.2026):** `CLAUDE.md` section 6 "Cache-friendly sessions" (agents build and stop, Sonnet `/ship` hand-off after a clean first review, handover at 600k tokens after a merge or before a break, one-shot idle check-ins every 45 minutes) with the matching steps in `/done` and `/ship`; numbers in the section. Not yet tested: `CronCreate` in the Ubuntu terminal (fired on time in the desktop app, 07.11.2026). Option only, no issue: trim `CLAUDE.md` (about 25k characters) by moving review details to docs/21, merge and stack details that `/ship` and `/done` repeat, the ultrareview ledger history, the 38 date tags, the stale "Version 1.1" header and the slash-command paragraph; the hard rules stay. Decided against: a 1-hour cache setting for subagents (short agents would pay more). Context growth is tracked in #562 (this file is 624 KB); the 600k handover threshold drops to 250k once it is fixed.
+
+**T-3.15 done (06.11.2026):** a mistaken "Erledigt" can be undone. "Verlauf" in the heading of the callbacks column opens a sheet with the callbacks marked done in the last 7 days (`HISTORY_DAYS`), with "Anrufen" and "Wieder öffnen"; the reopen stands in `audit_log` (`callback.reopened`) and works only inside the window. No migration. Assumption (L8): a reopened card counts its deletion period from its creation again, so one created more than 90 days ago loses its number on the next run, as any open card of that age does. First trial of splitting a task by model (Maxi, 06.11.2026): the domain on Opus `high`, the sheet, its tests and the browser check on a Sonnet `medium` subagent; the split-routing rule follows as its own PR. Next in Block 2 (#8): T-3.16 (#517), then T-3.5.
+
+**Split routing on trial (Maxi, 06.11.2026):** `CLAUDE.md` "Split routing" lets a large, self-contained chunk on a cheaper row of the Model Routing table run on a subagent with that row's model; `/task` asks once with an estimate, `/start` marks candidates, `/done` records every task's usage per model in `docs/metrics/routing_history.csv` (`scripts/session_usage.py`). First rows: T-3.12 (not split, one long session) and T-3.15 (split; 17 % of the weighted volume on Sonnet; the row also holds the calls of the PR that adds the rule, up to its first commit). The main session writes its cache for an hour (2 times an input token on the API), the subagents for five minutes (1.25), so the weights tell the two apart. The two tasks differ in size, so they compare nothing yet. Assumption: the weights follow the API price structure within one model; the weighting of the usage limit is not published. Maxi decides after about five recorded tasks whether the rule stays.
+
+**T-3.12 done (06.11.2026):** the team enters a table by hand on the tablet (#544 domain and migration 029, the sheet in its successor). Next in Block 2 (#8): T-3.15 (#516), T-3.16 (#517), then T-3.5 operating test on the real tablet, which also covers the floor plan and the sheet. The workbench database still waits for `make migrate` to 029, backup first.
 
 **Review preparation (04.11.2026):** PR #542 records the shared review rules and
 local verification evidence. Its live review, test and Draft state are tracked
@@ -667,6 +673,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 06.11.2026 | **T-3.12 part 2 (#497): the sheet „Reservierung eintragen“ on the tablet.** A button in the heading of the column „Heute“ opens it: date (today by default), time, persons, name, optional phone, note and „Tisch“ with every live table and every combined pair of the floor plan. „Weiter“ writes the draft (`create_tablet_reservation`) and shows the summary with the load of the capacity window; „Eintragen“ is the confirming tap (`confirm_tablet`), „Trotzdem eintragen“ with a question where the window is full or none. A refusal keeps what was typed and the sheet's key. The cards of „Heute“ name their tables and hide a missing number (`list_today` reads the tables in one query). Routes `GET`/`POST /gui/reservierung`, `POST /gui/reservierung/<id>/eintragen`; template `fragments/reservierung.html`. Tests first: `test_gui_tablet_reservation.py`, two in `test_domain_today.py`. docs/06 §3 synced; T-3.12 done |
 | 05.11.2026 | **Ultrareview candidates are kept in one ledger (Maxi, 05.11.2026).** `scripts/ultrareview_ledger.py` keeps the rolling issue #546 "Ultrareview candidates": `/done` adds each candidate, `/start` and `/gate` list the open ones, a review ticks its line with the level and the issues of the findings not fixed at once. Seeded from every session up to 05.11.2026: 45 candidates, 11 reviewed (ten as ultra, #445 with `/code-review max`), 34 open, all merged. The quota is settled: three free ultrareviews per account, once (docs and the sessions: #222, #282, #423, refused 30.10.2026 for #445), then usage credits; the fallback is a local `/code-review max <PR>` on Maxi's word. The one finding of an ultrareview still unfixed, a call left open when its process dies during the goodbye (#298), is issue #545 now and leaves "Open Points from Reviews". Tests in `api/tests/test_ultrareview_ledger.py` |
 | 05.11.2026 | **T-3.12 part 1 (#497): reservations the team enters by hand, in the data model and the domain (D30).** Migration 029: `reservations.call_id` nullable, `source` (`agent` / `tablet`) with the CHECK that an agent's row has its call and a tablet's none, `reservation_tables` for one table or a combination of the floor plan; up and down tested. `domain/reservations/manual.py` writes the tablet's draft (actor `gui:tablet`), `confirm_tablet` in `domain/confirm.py` is the team's confirming tap, the same step from draft to confirmed as the agent's, with its audit row and `reservation.confirmed` event. A confirmed tablet table counts against the agent's seats (D28, `booked_guests` joins the call outer now); a full window or a time outside every window needs "Trotzdem eintragen", a table held in the same window is refused. The day report counts the agent's tables only. Tests first: `test_domain_tablet_reservation.py`, `test_migration_029.py`, one in `test_jobs_monitor.py`. Part 2, the sheet on the tablet, stacks on this PR. Readings under Made Assumptions |
 | 03.11.2026 | **The violet of the software is the electric ultra violet `#7B2FFF` (Maxi, 03.11.2026).** Chosen from three ultra violets on screenshots of the board and the floor plan (Pantone `#5F4B8B`, electric `#7B2FFF`, bright `#8F5BFF`); `--warn-line`, `--warn` and `--warn-bg` in `api/gui/static/app.css`, the note of an order in white on it (4.9:1, dark text would be 3.5:1). Meanings unchanged; neon unchanged (Maxi: keep the board as it is). The README and its images keep `#9D7BFF` until the brand palette is decided. One commit, one revert |
@@ -865,8 +872,14 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.16.3 · 05.11.2026:** Version compatible repository labels and reconcile historical metadata safely.
-- **v2.16.2 · 05.11.2026:** Document language strategy, blocked performance research and shared reviewer signals.
+- **v2.19.1 · 08.11.2026:** Version compatible repository labels and reconcile historical metadata safely.
+- **v2.19.0 · 08.11.2026:** Document language strategy, blocked performance research and shared reviewer signals.
+- **v2.18.3 · 07.11.2026:** Model Routing: Haiku 5.5 for search and read agents, Haiku in workflow scan stages
+- **v2.18.2 · 07.11.2026:** Rules for cache-friendly sessions, Sonnet /ship hand-off and idle handovers
+- **v2.18.1 · 06.11.2026:** docs/19: the Ubuntu shell exports the Headroom proxy address; expected headroom doctor warnings recorded
+- **v2.18.0 · 06.11.2026:** Split routing on trial: usage per task in docs/metrics/routing_history.csv
+- **v2.17.1 · 06.11.2026:** T-3.15 done: callback history with reopen
+- **v2.17.0 · 06.11.2026:** T-3.12 done: the sheet Reservierung eintragen on the tablet
 - **v2.16.1 · 05.11.2026:** A PR inherits stage and priority of the issue it closes
 - **v2.16.0 · 05.11.2026:** Ultrareview ledger #546, quota settled, D31 MaexSocial points
 - **v2.15.0 · 05.11.2026:** T-3.12 part 1: reservations the team enters by hand (D30, migration 029)

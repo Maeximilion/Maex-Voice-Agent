@@ -190,6 +190,20 @@ header.aus .seg.services .on{background:transparent;color:var(--muted)}
 .notices input::-webkit-inner-spin-button,.notices input::-webkit-outer-spin-button{appearance:none;margin:0}
 .vorlauf .sheet-foot{display:flex;align-items:center;gap:var(--s3)}
 .betrieb .vorlauf .sheet-foot button{flex:0 0 40%}
+/* Reservation by hand (T-3.12): label and field side by side, every field one
+   tap high. Full height, unlike the notice: the fields scroll, the buttons stay. */
+.tafel #reservierung{right:auto;width:800px;max-width:100%}
+/* History of done callbacks (T-3.15): the same width as the entry sheet. */
+.tafel #rueckruf-verlauf{right:auto;width:800px;max-width:100%}
+.betrieb .entry-open{width:100%;margin:0 0 var(--s3)}
+.entry-fields{display:grid;grid-template-columns:7em 1fr;gap:var(--s2) var(--s3);align-items:center}
+.entry-fields label{font-weight:600}
+.entry-fields input,.entry-fields select{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);min-height:var(--tap);padding:0 var(--s2);margin:0}
+.entry-summary{display:grid;grid-template-columns:7em 1fr;gap:var(--s1) var(--s3);margin:0 0 var(--s3)}
+.entry-summary dt{font-weight:600}
+.entry-summary dd{margin:0}
+.reservierung .sheet-foot{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3)}
+.betrieb .reservierung .sheet-foot button{flex:0 0 40%}
 .res .time{font-size:var(--fs-time);font-weight:700;line-height:1.1}
 .res .name{font-weight:600}
 
@@ -233,8 +247,8 @@ header.aus .seg.services .on{background:transparent;color:var(--muted)}
    columns, which stay live underneath. Title and close button stay in view
    (.sheet-head), the content scrolls (.sheet-body), the tools (search) and the
    foot (save buttons) stay put. */
-#korrektur,#gericht-aus,#vorlauf,#wartezeit{position:absolute;inset:0;z-index:5;display:flex;padding:var(--s2) var(--s4) var(--s4);background:var(--bg)}
-#korrektur:empty,#gericht-aus:empty,#vorlauf:empty,#wartezeit:empty{display:none}
+#korrektur,#gericht-aus,#vorlauf,#wartezeit,#reservierung,#rueckruf-verlauf{position:absolute;inset:0;z-index:5;display:flex;padding:var(--s2) var(--s4) var(--s4);background:var(--bg)}
+#korrektur:empty,#gericht-aus:empty,#vorlauf:empty,#wartezeit:empty,#reservierung:empty,#rueckruf-verlauf:empty{display:none}
 .sheet{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--surface);border:3px solid var(--accent);border-radius:var(--r-lg);box-shadow:0 8px 32px rgba(0,0,0,.6)}
 .sheet-head{flex:none;display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s4);border-bottom:2px solid var(--line)}
 .sheet-head h2{margin:0;font-size:var(--fs-h2)}

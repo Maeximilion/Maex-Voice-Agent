@@ -233,6 +233,17 @@ bash scripts/restore.sh <file> --replace <database> # the real restore
 
 **Cron:** `deploy/backup.cron` runs the backup daily at 03:00 and appends to `backups/backup.log`. A good run writes `backup.done` into `audit_log`; the monitor pushes "Backup overdue" when none is newer than `ALARM_BACKUP_HOURS` (26, 0 switches it off), so a failed night and a cron line that never ran both count (T-8.3). A monitor on a stack that takes no backups (the workbench) reports it once a day in its log.
 
+**Migrating the workbench (Ubuntu, WSL), as done on 06.11.2026 from 026 to 029:** in the main folder, one command at a time, each only after the one before succeeded:
+
+```
+cd ~/Maex-Voice-Agent
+BACKUP_DOCKER_NETWORK=maex-voice-agent_backend BACKUP_PASSPHRASE_FILE=/home/maeximilion/.config/maex-voice-agent/backup.passphrase bash scripts/backup.sh --label before_migration_<NNN>
+make migrate
+docker compose restart api dispatcher
+```
+
+The passphrase file exists since 29.10.2026 (mode 600). Without `BACKUP_PASSPHRASE_FILE` the script writes nothing; without `BACKUP_DOCKER_NETWORK` its client container cannot resolve `db` (only the `backend` network holds the database). Both can stand in the workbench's `.env` instead, with full paths (`~` is not expanded there). `make migrate` mounts the main folder's code, so that folder has to be on the `main` that holds the migration; the restart lets `api` and the dispatcher load the new models. Check: `docker exec maex-voice-agent-db-1 psql -U maex -d maex_agent -tAc "select version_num from alembic_version"`.
+
 **Rehearsed 04.10.2026** on a throwaway Postgres 16 with schema revision 005, the seed and the eval menu (17 tables): backup 2.7 s and 48 kB, then the menu deleted and a table dropped, `--check` 6.5 s, `--replace` 8.0 s, row counts of all 17 tables identical to the state before. The same once through a Docker network with the host name `db`, as on the server. **Rehearsed with separate roles 13.10.2026** on a throwaway Compose stack in the production layout (17 tables, the seed): an existing single-user volume moved over, a fresh volume set up role first, a migration down and up through `scripts/migrate.sh`, a backup, a changed row, `--replace`, and the operations view answering from the restored database as the application's role. Known limits: roles are not part of a dump, so a new server needs `scripts/db_role.sh` before a restore; without a local client on Linux, a database published on `127.0.0.1` only is not reachable from the client container (install a client or use the Compose network). The second storage is decided (Scaleway Object Storage, D3 of 07.10.2026) and is ordered together with the server. Still open: the rehearsal on the production server once it exists (T-8.6).
 
 ---

@@ -21,6 +21,8 @@ blocker and leave the PR open rather than accepting a Codex self-review. For
 manual review, verify the GitHub review's recorded base/head and triage evidence;
 do not run the Codex waiter as a substitute.
 
+**Cache-friendly hand-off** (`CLAUDE.md` §6 "Cache-friendly sessions"): no agent idles on a wait; this session does the waiting in step 2. If this session is the Opus session that built the PR, it waits for CI and the first independent review itself (steps 1 and 2). When that review has no P0 or P1 (a P2 in code hitting an `xhigh` trigger counts as P1), stop and suggest a fresh Sonnet session for `/ship <PR>` with the `cd` path of the worktree, the start command with model and effort flags, and the first message; end the turn with the handover block. With a P1, stay on Opus until it is fixed. In the Sonnet session, a new P1 goes back to a fresh Opus session the same way. Never switch the model in a running session.
+
 0. With a number, work on that PR's branch, never on `main` or another PR's branch: in the worktree that has it checked out, or check it out with `gh pr checkout` and the number in a clean worktree of its own.
 1. `/done` step 7b in full: sync with `main`, `/ponytail-review`, status bump, push.
    For a manual Codex follow-up under the stalled-run exception below, use the

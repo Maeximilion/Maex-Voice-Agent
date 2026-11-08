@@ -1,0 +1,43 @@
+{# Callbacks marked done in the last days (T-3.15, docs/06 §3): a sheet to undo a
+   wrong tap on "Erledigt". Same rows as the open column, plus when it was done.
+   "Wieder öffnen" redraws the sheet; the column follows through the event stream. #}
+<section class="sheet rueckruf-verlauf" role="dialog" aria-labelledby="verlauf-titel">
+  <div class="sheet-head">
+    <h2 id="verlauf-titel" tabindex="-1">Erledigte R&uuml;ckrufe</h2>
+    <button type="button" class="schliessen" data-schliessen>Schlie&szlig;en</button>
+  </div>
+  <div class="sheet-body">
+    {% if not callbacks %}
+    <p class="empty">Keine erledigten R&uuml;ckrufe in den letzten {{ days }} Tagen.</p>
+    {% else %}
+    <ul class="cards">
+      {% for c in callbacks %}
+      <li class="card cb" data-id="{{ c.id }}">
+        <div class="res-head">
+          <span class="when"><span class="muted">Annahme</span> <b class="time">{{ c.time }}</b></span>
+          <span class="badge {{ c.tone }}">{{ c.label }}</span>
+          <span class="muted">{{ c.done }}</span>
+        </div>
+        {% if c.phone %}
+        <div class="phone">{{ c.phone }}</div>
+        {% if c.number_note %}
+        <div class="cb-note">
+          <span class="badge warn">{{ c.number_note }}</span>
+          {% if c.caller_id %}<span class="muted">Anruf kam von {{ c.caller_id }}</span>{% endif %}
+        </div>
+        {% endif %}
+        {% if c.summary %}<p class="summary">&bdquo;{{ c.summary }}&ldquo;</p>{% endif %}
+        {% else %}
+        <div class="muted">Nummer nach der L&ouml;schfrist entfernt</div>
+        {% endif %}
+        <div class="cb-actions">
+          {% if c.phone %}<a class="button" href="tel:{{ c.phone }}">Anrufen</a>{% endif %}
+          <button type="button" class="primary" hx-post="/gui/rueckrufe/{{ c.id }}/wieder-offen"
+                  hx-target="#rueckruf-verlauf" hx-swap="innerHTML">Wieder &ouml;ffnen</button>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </div>
+</section>
