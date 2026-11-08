@@ -234,3 +234,10 @@ a script on the page could read a token in the page just the same. Every state-c
 mismatched tokens return 403 before any change. Page reloads reuse the cookie so
 other open tabs remain usable. Fragments do not issue cookies. Caddy authentication
 and the application's `GUI_PROXY_SECRET` check remain required outside dev/test.
+
+## Language and performance decisions
+
+See [22 – Language choices and measured performance](22_LANGUAGE_AND_PERFORMANCE.md)
+for the current Python/native-engine boundaries, measurement gate (#550/#551),
+gradual mypy hardening (#552) and the two open TypeScript UI strategies (#553).
+No runtime or interface migration has been approved by this assessment.

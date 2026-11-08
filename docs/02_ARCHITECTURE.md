@@ -188,3 +188,10 @@ We build our own loop: text in, tool calls, text out. It runs in operation too (
 ## 10. Module
 
 Schichten, Abhängigkeitsrichtung und Bauplan je Modul: `docs/11_MODULE.md`.
+
+## Language and performance decisions
+
+See [22 – Language choices and measured performance](22_LANGUAGE_AND_PERFORMANCE.md)
+for the current Python/native-engine boundaries, measurement gate (#550/#551),
+gradual mypy hardening (#552) and the two open TypeScript UI strategies (#553).
+No runtime or interface migration has been approved by this assessment.

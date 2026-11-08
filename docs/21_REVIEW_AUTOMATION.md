@@ -233,7 +233,9 @@ Check every change since that reviewed head, verify the reported fixes, and look
 for regressions caused by those changes. Read affected callers and contracts as
 needed. Follow AGENTS.md and CLAUDE.md. Do not repeat resolved root causes or
 reopen unrelated cosmetic work. Report concrete defects inline at valid lines;
-use the shared English comment format: trigger, impact and required behaviour
+Apply CLAUDE.md's performance/language signals to affected code; distinguish
+measured runtime limits from model, SQL, network or audio waits. Speculative
+rewrites are not findings. Use the shared English comment format: trigger, impact and required behaviour
 with a verification case in one short paragraph. For a repeated finding, link
 the earlier thread and explain the still-failing case. Keep any completion
 summary brief. If prior coverage is invalid or the impact
@@ -331,6 +333,15 @@ commit for an incorrect finding, do not treat the resolved flag as proof, and
 do not repeat a disproved root cause unless new code or evidence changes the
 assessment. New evidence can reopen a concern. The same head needs no artificial
 push to record this discussion; existing reviewed-head and merge-gate rules apply.
+
+### Performance and language signals
+
+Both the manual Claude reviewer and hosted Codex reviewer follow `CLAUDE.md`'s
+"Performance and language review signals" and [22](22_LANGUAGE_AND_PERFORMANCE.md).
+Include that rule in manual Claude requests and any future fixed action prompt.
+The working agent records credible unmeasured signals in #550; concrete defects
+remain subject to the existing inline severity/cap rules. No new specialist,
+full-repository audit, rewrite mandate or review loop is introduced.
 
 ### Concise comments that can be implemented and verified
 

@@ -1,11 +1,19 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 07.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.18.3
+> Status: 08.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.19.0
 
 ---
 
 ## Summary
+
+**Language decisions and review signals (05.11.2026).** [Docs/22](22_LANGUAGE_AND_PERFORMANCE.md)
+records the inspected Python/native-engine boundaries and TypeScript alternatives.
+#550 measures end-to-end latency; low-priority #551 remains blocked until measured
+Python limitations and Maxi's release decision justify a targeted comparison.
+#552 tracks incremental mypy hardening; #553 leaves the UI rollout decision open.
+Both reviewers use the same evidence-based performance signals. No language or
+runtime migration, new latency target or review automation was installed.
 
 **Review follow-up fixes (05.11.2026).** The merge hook's blocked message points
 to completed independent review and triage evidence. The local API container
@@ -856,6 +864,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.19.0 · 08.11.2026:** Document language strategy, blocked performance research and shared reviewer signals.
 - **v2.18.3 · 07.11.2026:** Model Routing: Haiku 5.5 for search and read agents, Haiku in workflow scan stages
 - **v2.18.2 · 07.11.2026:** Rules for cache-friendly sessions, Sonnet /ship hand-off and idle handovers
 - **v2.18.1 · 06.11.2026:** docs/19: the Ubuntu shell exports the Headroom proxy address; expected headroom doctor warnings recorded

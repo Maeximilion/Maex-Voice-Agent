@@ -26,6 +26,13 @@ For an agent that changes files here, whatever tool it runs in:
 
 How to review:
 
+- Follow `CLAUDE.md` section 6, "Performance and language review signals", for
+  evidence of CPU, latency, concurrency, memory, typing or runtime limitations.
+  Distinguish Python work from model/SQL/network/audio delays. An unmeasured
+  language-change hypothesis is a measurement candidate for #550, not an inline
+  defect or permission to start blocked task #551. Existing severity and scope
+  limits apply to both reviewers.
+
 - Use the shared English "Review comment format" in `CLAUDE.md`: a priority and
   specific title, followed by one concise paragraph explaining the trigger,
   wrong outcome/impact and required behaviour with a verification case. Aim for
