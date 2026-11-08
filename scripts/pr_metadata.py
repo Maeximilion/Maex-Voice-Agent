@@ -472,12 +472,17 @@ def reconcile_event(path: Path, repo: str, token: str, *, dry_run: bool) -> int:
             if "pull_request" not in linked:
                 issues[int(reference)] = linked
     change = missing(item, repo.split("/")[0], issues)
-    if is_pull:
+    if event.get("action") in {"labeled", "unlabeled"}:
+        # A label event is the team's own edit: report gaps, never undo it.
+        change.pop("labels", None)
+    elif is_pull:
         paths = [x["filename"] for x in pages(f"{base}/pulls/{number}/files", token)]
         existing = {x["name"] for x in item.get("labels", [])}
-        added = set(change.get("labels", [])) | (
-            set(area_labels(item["title"], paths)) - existing
-        )
+        found = set(area_labels(item["title"], paths)) - existing
+        if any(name.startswith("area: ") for name in existing):
+            # An area set by hand stays the only one, as in missing().
+            found = {name for name in found if not name.startswith("area: ")}
+        added = set(change.get("labels", [])) | found
         if added:
             change["labels"] = sorted(added)
         if item.get("state") == "closed" and not item.get("merged_at"):

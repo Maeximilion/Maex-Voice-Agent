@@ -664,3 +664,52 @@ def test_catalog_sync_is_idempotent_and_keeps_unknown_manual_labels(monkeypatch)
     monkeypatch.setattr(pr_metadata, "rest", lambda *a: calls.append(a))
     assert pr_metadata.sync_catalog("o/r", "t", dry_run=False) == 0
     assert calls == []
+
+
+def _event_run(monkeypatch, tmp_path, action, labels, files):
+    """Run event mode for PR 4 and return the label payloads it wrote."""
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"action": action, "pull_request": {"number": 4}}))
+    item = {
+        **pull("feat: add helper", labels=labels, assignees=["o"]),
+        "number": 4,
+        "body": "",
+        "state": "open",
+    }
+    writes = []
+
+    def rest(method, path, token, payload=None):
+        if "/files?" in path:
+            return [{"filename": name} for name in files]
+        if method == "POST":
+            writes.append(payload)
+        return item
+
+    monkeypatch.setattr(pr_metadata, "rest", rest)
+    monkeypatch.setattr(pr_metadata.time, "sleep", lambda _: None)
+    assert pr_metadata.reconcile_event(event, "o/r", "t", dry_run=False) == 0
+    return writes
+
+
+def test_event_adds_no_path_area_next_to_an_area_set_by_hand(monkeypatch, tmp_path):
+    labels = ["feature", "priority: medium", "area: backend"]
+    writes = _event_run(monkeypatch, tmp_path, "synchronize", labels, ["scripts/x.py"])
+    assert writes == [{"labels": ["python"]}]
+
+
+@pytest.mark.parametrize("action", ["unlabeled", "labeled"])
+def test_a_label_event_never_undoes_the_team_s_label_edit(
+    monkeypatch, tmp_path, action
+):
+    # The team removed `python`, `area: ci` and the type: nothing comes back.
+    writes = _event_run(
+        monkeypatch, tmp_path, action, ["priority: medium"], ["scripts/x.py"]
+    )
+    assert writes == []
+
+
+def test_an_opened_pr_without_area_still_gets_its_path_area(monkeypatch, tmp_path):
+    writes = _event_run(
+        monkeypatch, tmp_path, "opened", ["priority: medium"], ["scripts/x.py"]
+    )
+    assert writes == [{"labels": ["area: ci", "feature", "python"]}]

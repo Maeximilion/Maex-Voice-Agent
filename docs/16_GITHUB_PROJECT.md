@@ -228,8 +228,11 @@ are needed; no extra paid service or model classifier.
 
 Missing types come from Conventional Commit titles, stage/priority from local
 closing references outside code examples, and areas from exact known scopes.
-The PR event also reads changed paths for areas and language topics. Manual labels
-are retained; conflicting priorities or types are reported rather than overwritten.
+The PR event also reads changed paths for areas and language topics; a path area
+is added only while the PR has no area at all. Manual labels are retained: a
+`labeled` or `unlabeled` event writes no label and only reports gaps, so a label
+the team removed is not added back by that event. Conflicting priorities or types
+are reported rather than overwritten.
 No inferred priority means a decision is needed, not an automatic low priority.
 The daily run synchronizes the catalog and catches missed metadata events, sending
 remaining priority/type/area questions to the existing decision issue (#136).
