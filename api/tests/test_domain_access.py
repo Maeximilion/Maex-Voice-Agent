@@ -333,7 +333,7 @@ def test_retention_drops_old_sessions_and_spent_addresses(session, tenant_id, re
 def test_the_attempt_is_counted_before_the_slow_check_and_holds_no_transaction(
     session, tenant_id, ready, migrated_db_url, monkeypatch
 ):
-    """A burst of parallel guesses meets the wait from its fifth on, and the
+    """A burst of parallel guesses meets the wait from its third on, and the
     hash runs with no row lock and no pooled connection held, so a burst of
     sign-ins cannot starve the agent's tools of connections."""
     from api.domain.access import sessions as module

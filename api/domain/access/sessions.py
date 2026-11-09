@@ -97,7 +97,7 @@ def sign_in(
     hashes are stored. Raises SignInRefused, with the minutes to wait while a
     wait runs. The attempt is counted as a failure before the password is
     checked, in a transaction of its own: a burst of parallel guesses meets the
-    wait from its fifth on, and no row lock or pooled connection is held during
+    wait from its third on, and no row lock or pooled connection is held during
     the slow hash. A right password takes the count back. Commits."""
     stored, trusted = _count_attempt(session, tenant_id, address, device_token, now)
     if not verify_secret(password, stored):

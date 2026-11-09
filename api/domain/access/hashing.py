@@ -1,4 +1,5 @@
-"""Hashes for the restaurant's password and team PIN, and the rules they follow.
+"""The hash of the restaurant's password, token hashes, and the rules for a new
+password and PIN (the PINs are stored readable, migration 031).
 
 scrypt from the standard library with the parameters of docs/23 §5 (n=2^15,
 r=8, p=1, 16-byte salt): about 32 MiB and a few dozen milliseconds per check,

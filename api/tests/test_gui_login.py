@@ -469,7 +469,16 @@ def test_a_wrong_admin_pin_says_so_and_the_team_pin_opens_nothing(client, engine
 
 
 @pytest.mark.parametrize(
-    "back", ["https://evil.example/", "//evil.example/x", "/elsewhere", "/gui/\\x"]
+    "back",
+    [
+        "https://evil.example/",
+        "//evil.example/x",
+        "/elsewhere",
+        "/gui/\\x",
+        # The owner pages themselves lead nowhere useful (review of #587).
+        "/gui/inhaber",
+        "/gui/inhaber/schliessen",
+    ],
 )
 def test_the_way_back_stays_on_the_view(client, engine, back):
     _set_up_and_sign_in(client, engine)
