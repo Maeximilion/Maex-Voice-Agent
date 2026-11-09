@@ -7,3 +7,5 @@
 # Measurements are appended by a run on any branch: a merge keeps the rows of both
 # sides, and `readme_assets.py render` drops a row that came in twice.
 docs/metrics/*.csv merge=union
+# Archive of docs/01_STATUS.md: entries are only added, so a merge keeps both sides.
+docs/HISTORY.md merge=union
