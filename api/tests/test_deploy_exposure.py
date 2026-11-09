@@ -369,3 +369,17 @@ def test_n8n_sends_no_usage_data_and_keeps_its_own_key():
     assert environment["N8N_ENCRYPTION_KEY"] is None
     example = (REPO_ROOT / ".env.example").read_text()
     assert "# N8N_ENCRYPTION_KEY=\n" in example
+
+
+def test_n8n_owns_its_cache_after_a_restart():
+    """#590. n8n runs as `node` (uid 1000 in the image) on a read-only root and
+    creates ~/.cache/n8n at every start. A plain tmpfs comes back owned by root
+    when the same container restarts, n8n exits with EACCES and loops; the owner
+    on the entry keeps it startable (checked with 2.45.7, docker restart)."""
+    tmpfs = _merged("n8n")["tmpfs"]
+    cache = [entry for entry in tmpfs if entry.split(":")[0] == "/home/node/.cache"]
+    assert len(cache) == 1, tmpfs
+    _, _, raw = cache[0].partition(":")
+    options = dict(option.partition("=")[::2] for option in raw.split(",") if option)
+    assert options.get("uid") == "1000", cache[0]
+    assert options.get("gid") == "1000", cache[0]
