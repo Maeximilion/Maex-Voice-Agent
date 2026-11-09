@@ -57,6 +57,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 - `mode.py` — which call mode holds now: the team's choice, weekly windows, the emergency stop (T-8.1)
 - `bridge.py` — the print bridge's sign of life: `note_poll` from the claim, `silence` for the alarm and the header (T-8.3)
 - `holidays.py` — the statewide statutory holidays of the 16 states (Easter by the Gregorian formula), suggested in `special_days` and answered by the team: like Sunday, closed, or the weekday's hours (T-9.5). A suggestion counts for nothing until then
+- `staff_changes.py` — the staff's changes without the owner's PIN (#570 b): today's team number among the dialable ones (`team_phone_at` is its one reader), a date's hours that hold at once or wait for the owner, and the check cards the owner keeps or undoes
 - Tests: Mitternacht, Sondertag schlägt Wochentag, Sommerzeit-Umstellung
 
 ### `domain/menu/`

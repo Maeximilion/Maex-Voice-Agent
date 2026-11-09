@@ -21,7 +21,7 @@ from api.domain.access.sessions import IDLE, stack_tenant_id
 from api.domain.access.setup import issue_link, use_link
 from api.gui.router import router as gui_router
 from api.main import app
-from api.models import GuiLoginFailure, GuiSession
+from api.models import GuiLoginFailure, GuiSession, StaffChange
 from scripts.seed import seed
 
 pytestmark = pytest.mark.gui_login
@@ -536,6 +536,30 @@ def test_the_admin_pin_unlocks_a_locked_device(client, engine):
     assert client.post("/gui/kopfzeile/ki-pausieren", headers=HX).status_code == 200
 
 
-def test_the_header_names_the_device_list(client, engine):
+def test_the_settings_sheet_names_the_device_list(client, engine):
     _set_up_and_sign_in(client, engine)
-    assert 'href="/gui/geraete"' in client.get("/gui/", headers=HTML).text
+    assert 'hx-get="/gui/einstellungen"' in client.get("/gui/", headers=HTML).text
+    assert 'href="/gui/geraete"' in client.get("/gui/einstellungen", headers=HX).text
+
+
+def test_a_check_card_answer_without_the_admin_pin_goes_to_the_pin_page(
+    client, engine, monkeypatch
+):
+    """Staff change the team number without a PIN; keeping it needs the owner."""
+    monkeypatch.setattr(settings, "transfer_targets", "+497215551234")
+    _set_up_and_sign_in(client, engine)
+    changed = client.post(
+        "/gui/teamnummer", data={"nummer": "+497215551234"}, headers=HX
+    )
+    assert changed.status_code == 200
+    with Session(engine) as session:
+        card_id = session.scalars(select(StaffChange.id)).one()
+    answer = client.post(
+        f"/gui/pruefen/{card_id}/uebernehmen",
+        headers={**HX, "HX-Current-URL": "http://testserver/gui/"},
+    )
+    assert answer.status_code == 401
+    assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/"
+    assert _owner(client, back="/gui/").headers["location"] == "/gui/"
+    kept = client.post(f"/gui/pruefen/{card_id}/uebernehmen", headers=HX)
+    assert kept.status_code == 200

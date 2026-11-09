@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     tenant_name: str = "Pilotbetrieb"
     tenant_timezone: str = "Europe/Berlin"
     team_phone: str = "+49000000000"
+    # The other numbers the dialplan transfers to (deploy/asterisk/render.sh),
+    # comma-separated: the only ones the staff may set as today's team number
+    # (#570 b), since the dialplan dials no other (T-10.13).
+    transfer_targets: str = ""
     max_call_seconds: int = 420
     # Written into a new tenant by the seed (service_config.privacy_notice_address,
     # docs/09 L4). Empty: none, and the greeting leaves the sentence out.

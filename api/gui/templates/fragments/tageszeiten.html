@@ -1,0 +1,30 @@
+{# A date's hours (#570 part b, D34 point 4): the staff close a date, give it
+   other hours or return it to the weekly hours. Today's change and a shorter
+   one hold at once; longer or extra hours for a later date wait for the
+   owner's PIN on a check card. Each button sends its choice (`art`). #}
+<section class="sheet tageszeiten" role="dialog" aria-labelledby="tageszeiten-titel">
+  <div class="sheet-head">
+    <h2 id="tageszeiten-titel" tabindex="-1">Öffnungszeit für einen Tag</h2>
+    <button type="button" class="schliessen" data-schliessen>Schließen</button>
+  </div>
+  <form class="sheet-body" novalidate hx-post="/gui/tageszeiten" hx-target="#einstellungen" hx-swap="innerHTML">
+    <div class="entry-fields">
+      <label for="datum">Tag</label>
+      <input type="date" id="datum" name="datum" value="{{ day }}" min="{{ today }}" required
+             hx-get="/gui/tageszeiten" hx-trigger="change" hx-include="this" hx-target="#einstellungen" hx-swap="innerHTML">
+      <span>Gilt jetzt</span>
+      <b>{{ holding }}</b>
+      <label for="von">Von</label>
+      <input type="time" id="von" name="von" value="{{ opens }}" step="900">
+      <label for="bis">Bis</label>
+      <input type="time" id="bis" name="bis" value="{{ closes }}" step="900">
+    </div>
+    <p class="muted">Heute und kürzere Zeiten gelten sofort. Längere oder zusätzliche Zeiten an einem späteren Tag gelten erst, wenn der Inhaber sie übernimmt.</p>
+    <div class="sheet-foot">
+      <button type="submit" name="art" value="zeiten" class="primary">Diese Zeiten</button>
+      <button type="submit" name="art" value="geschlossen">Geschlossen</button>
+      <button type="submit" name="art" value="normal">Normale Zeiten</button>
+      {% if message %}<span class="badge {{ tone }}" role="status">{{ message }}</span>{% endif %}
+    </div>
+  </form>
+</section>

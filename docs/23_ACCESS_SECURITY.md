@@ -179,20 +179,29 @@ the second builds against.
 - **Devices:** each session is a device with its first and last use and the browser's name. In (a)
   the operator lists and signs them out on the stack (`python -m api.jobs.gui_access devices`,
   `sign-out <id>` or `--all`), until the dashboard has it (#571). The owner's device list
-  (`/gui/geraete`, "Geräte" in the header) has "Gerät abmelden" behind the admin PIN (#570 b).
+  (`/gui/geraete`, under "Einstellungen" in the header) has "Gerät abmelden" behind the admin PIN (#570 b).
 - **Two levels in the admin area (D34 point 3, the admin PIN built in (b)):** staff with the shared login, no PIN: call
   mode, team number and the hours of a given date (a special day). The owner, with an admin PIN
   asked when a protected part is first opened and then unlocked on that device for 60 minutes:
   delivery zones, fees and minimum order, the standard weekly hours, the device list. Built: the
   device list; the other pages do not exist yet and take `require_admin` (`gui/session.py`) when
   they come.
-- **Staff changes are temporary and reviewed (D34 point 4, (b)):** a staff change to a date's hours
+- **Staff changes are temporary and reviewed (D34 point 4, built in (b) except the push):** a staff change to a date's hours
   expires with that date. Today's changes hold at once; for a later date the restrictive direction
   (closed, shorter hours) holds at once, while longer or extra hours beyond today wait for the
   owner's PIN. A team number changed by staff holds at once and returns to the standard number after
   the end of the day unless the owner keeps it. Every staff change pushes to the owner and to `ops`
   (T12) and shows a check card on the board until the owner chooses "Als Standard übernehmen" or
-  "Zurücknehmen" with the PIN.
+  "Zurücknehmen" with the PIN. Built (`domain/status/staff_changes.py`, migration 033): the
+  team number is today's (`service_config.team_phone_today`) until the end of the business day, and
+  the staff choose it only among the numbers the dialplan dials (`TEAM_PHONE` and
+  `TRANSFER_TARGETS`, T-10.13), so the tablet can never name a number that would not ring; the
+  transfer and the call routing read it. A date's hours: today's and shorter ones hold at once, and so
+  does a return to what held before the staff came (the staff take their own change back); longer
+  or extra hours for a later date wait on the card. One open card per kind and date: a second
+  change moves its "after" and keeps the "before" of the first, so "Zurücknehmen" always returns to
+  what held before the staff came. The holiday answers of T-9.5 stay as they are (Maxi 09.11.2026).
+  The call mode gets the push but no card (Maxi 09.11.2026). The push itself follows (#588).
 - **Password reset (D34 point 5):** a one-time setup link made by the operator, valid 24 hours,
   shown once, stored hashed; a newer link replaces an older one, and setting the password signs out
   every other device. Until the dashboard exists (#571) the operator makes it on the stack:

@@ -263,7 +263,8 @@ on the old configuration: `100 Trying`, `200 OK`). Now:
 
 - The dialplan dials only numbers on a list from the environment: `TEAM_PHONE` and the optional
   `TRANSFER_TARGETS` (comma-separated, compared exactly as written, so `service_config.team_phone`
-  has to appear there in the same form). Any other number, from a database row somebody changed or
+  has to appear there in the same form; the api reads the same list, and the staff choose today's
+  team number only from it, #570 b). Any other number, from a database row somebody changed or
   a `voice` that is no longer ours, is never dialled; the team rings at `TEAM_PHONE` instead, and
   the log says "transfer to a number not on the list", without the number.
 - A leg at another number of the list that nobody takes is followed by one at `TEAM_PHONE`: busy,

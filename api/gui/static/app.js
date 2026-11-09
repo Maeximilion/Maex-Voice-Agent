@@ -77,6 +77,12 @@
     });
   }
 
+  function reloadChecks() {
+    window.htmx.ajax("GET", "/gui/fragments/pruefen", {
+      target: "#pruefen-liste",
+    });
+  }
+
   function reloadPrices() {
     window.htmx.ajax("GET", "/gui/fragments/preise", {
       target: "#preise-liste",
@@ -579,6 +585,12 @@
   strom.addEventListener("prices", function () {
     offline(false);
     reloadPrices();
+  });
+  // The staff changed a team number or a date's hours, or the owner decided
+  // a card on another tablet (#570 b).
+  strom.addEventListener("checks", function () {
+    offline(false);
+    reloadChecks();
   });
   strom.addEventListener("today", function () {
     offline(false);

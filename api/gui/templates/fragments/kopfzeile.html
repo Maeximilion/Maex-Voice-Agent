@@ -77,7 +77,7 @@
     <button class="push" hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
     <a class="button" href="/gui/kennzahlen">Kennzahlen</a>
     <a class="button" href="/gui/raumplan">Raumplan</a>
-    <a class="button" href="/gui/geraete">Geräte</a>
+    <button hx-get="/gui/einstellungen" hx-target="#einstellungen">Einstellungen</button>
   </div>
   {% endif %}
 </header>

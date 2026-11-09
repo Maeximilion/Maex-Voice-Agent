@@ -1,0 +1,14 @@
+{# The staff's settings (#570 part b): one button in the header, so the command
+   bar keeps its rows (D26). Team number and a date's hours need no PIN; the
+   device list asks the owner's admin PIN. Each choice opens in this sheet. #}
+<section class="sheet einstellungen" role="dialog" aria-labelledby="einstellungen-titel">
+  <div class="sheet-head">
+    <h2 id="einstellungen-titel" tabindex="-1">Einstellungen</h2>
+    <button type="button" class="schliessen" data-schliessen>Schließen</button>
+  </div>
+  <div class="sheet-body choices">
+    <button hx-get="/gui/teamnummer" hx-target="#einstellungen" hx-swap="innerHTML">Teamnummer für heute</button>
+    <button hx-get="/gui/tageszeiten" hx-target="#einstellungen" hx-swap="innerHTML">Öffnungszeit für einen Tag</button>
+    <a class="button" href="/gui/geraete">Geräte (Inhaber-PIN)</a>
+  </div>
+</section>

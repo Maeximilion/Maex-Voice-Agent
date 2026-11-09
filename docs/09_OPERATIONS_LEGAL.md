@@ -105,7 +105,7 @@ A signed-in tablet shows the board to whoever holds it, until it is signed out (
 
 Team PIN forgotten, or to be changed after staff left: `python -m api.jobs.gui_access pin` shows it, `pin --set <4 to 6 digits>` changes it; signed-in devices stay signed in and unlock with the new one. The owner's admin PIN the same way with `pin --admin` and `pin --admin --set <digits>`; it never equals the team PIN.
 
-Every step stands in the restaurant's `audit_log` (`gui.session_ended` with the reason, `gui.setup_link_issued`, `gui.password_set`, `gui.team_pin_shown`, `gui.team_pin_set`, `gui.admin_pin_shown`, `gui.admin_pin_set`, `gui.admin_unlocked`, `gui.admin_pin_wrong`, never the PIN itself). The owner signs out one device on the tablet too: "Geräte" in the header, then the admin PIN, then "Gerät abmelden".
+Every step stands in the restaurant's `audit_log` (`gui.session_ended` with the reason, `gui.setup_link_issued`, `gui.password_set`, `gui.team_pin_shown`, `gui.team_pin_set`, `gui.admin_pin_shown`, `gui.admin_pin_set`, `gui.admin_unlocked`, `gui.admin_pin_wrong`, never the PIN itself). The owner signs out one device on the tablet too: "Einstellungen" in the header, "Geräte", the admin PIN, then "Gerät abmelden".
 
 ### Menüänderung
 1. Adminansicht → Menü → ändern

@@ -30,6 +30,7 @@ from api.models.tenants import (
     OpeningHours,
     ServiceConfig,
     SpecialDay,
+    StaffChange,
     Tenant,
 )
 
@@ -69,6 +70,7 @@ __all__ = [
     "ReservationTable",
     "ServiceConfig",
     "SpecialDay",
+    "StaffChange",
     "TableCombination",
     "Tenant",
 ]

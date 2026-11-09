@@ -25,6 +25,7 @@ from api.domain.callbacks.create import create_callback
 from api.domain.customers.contact import note_contact
 from api.domain.customers.phone import number_or_none
 from api.domain.status.hours import load_hours, open_window_at
+from api.domain.status.staff_changes import team_phone_at
 from api.models import AuditLog, Call, Callback, ServiceConfig, Tenant
 from api.models.tenants import SERVICES
 from api.schemas.callbacks import CallbackReason, CallbackTask, CreateCallbackRequest
@@ -90,7 +91,7 @@ def transfer_to_team(
         if req.reason == "complaint" and (number := number_or_none(call.caller_id)):
             note_contact(session, req.tenant_id, call.id, number, now)
     session.commit()
-    return TransferResult(transfer_to=config.team_phone, available=available)
+    return TransferResult(transfer_to=team_phone_at(config, now), available=available)
 
 
 def team_missed(
