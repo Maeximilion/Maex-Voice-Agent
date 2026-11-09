@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.0
+> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.1
 
 ---
 
@@ -894,6 +894,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.27.1 · 09.11.2026:** #573 part two: a new customer's stack in one command behind the shared Caddy
 - **v2.27.0 · 09.11.2026:** #573 part one: a new customer's tenant in one command (migration 035)
 - **v2.26.3 · 09.11.2026:** #590 done: n8n cache tmpfs owned by node, n8n starts after a container restart
 - **v2.26.2 · 09.11.2026:** #588 push of staff and call-mode changes to owner and ops

@@ -154,6 +154,13 @@ def test_wrong_input_exits_2_and_a_dry_run_writes_nothing(tmp_path, capsys):
         == 2
     )
     assert new_stack.main([str(CUSTOMER), "--domain", "A_B", "--root", str(root)]) == 2
+    bad.write_text(json.dumps({"key": "pilot", "name": "x\nENV=dev"}))
+    assert (
+        new_stack.main([str(bad), "--domain", "a.example.org", "--root", str(root)])
+        == 2
+    )
+    trailing = [str(CUSTOMER), "--domain", "a.example.org\n", "--root", str(root)]
+    assert new_stack.main(trailing) == 2
     argv = [
         str(CUSTOMER),
         "--domain",

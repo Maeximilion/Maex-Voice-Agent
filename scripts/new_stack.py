@@ -252,10 +252,12 @@ def read_customer(path: Path) -> dict:
     except (OSError, ValueError) as error:
         raise BadInput(f"customer file {path}: {error}") from None
     key = spec.get("key") if isinstance(spec, dict) else None
-    if not isinstance(key, str) or not CUSTOMER_KEY.match(key) or len(key) > 32:
+    if not isinstance(key, str) or not CUSTOMER_KEY.fullmatch(key) or len(key) > 32:
         raise BadInput("customer file: key must look like `pilot` or `pizza-nord`")
-    if not isinstance(spec.get("name"), str) or not spec["name"].strip():
-        raise BadInput("customer file: name is missing")
+    name = spec.get("name")
+    if not isinstance(name, str) or not name.strip() or not name.isprintable():
+        # A line break would end the .env line and start another variable.
+        raise BadInput("customer file: name is missing or has a control character")
     return spec
 
 
@@ -277,7 +279,7 @@ def caddy(root: Path, *args: str) -> tuple[list[str], dict[str, str]]:
 
 def create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     spec = read_customer(spec_path)
-    if not DOMAIN.match(domain):
+    if not DOMAIN.fullmatch(domain):
         raise BadInput(f"domain {domain!r}: lower-case host name like example.org")
     key = spec["key"]
     stack = root / key
