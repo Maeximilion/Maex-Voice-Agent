@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.19.2
+> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.20.0
 
 ---
 
@@ -874,6 +874,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.20.0 · 09.11.2026:** Review rules: repeated findings become rules at the source, file-and-line evidence and a counted summary for reviewers; no separate REVIEW.md
 - **v2.19.2 · 09.11.2026:** T-3.16 partly done: swap field under its line, in-page question, Ton an button
 - **v2.19.1 · 08.11.2026:** Version compatible repository labels and reconcile historical metadata safely.
 - **v2.19.0 · 08.11.2026:** Document language strategy, blocked performance research and shared reviewer signals.

@@ -108,7 +108,11 @@ Approaches considered:
   the required review-after-every-push behaviour.
 - The managed Claude Code Review service needs separate activation and billing.
   It is outside scope. Parallel specialists are possible but have no proven
-  quota saving for this repository, so they are deferred.
+  quota saving for this repository, so they are deferred. It is also the only
+  reviewer that reads a `REVIEW.md`; the local `/code-review` command reads
+  `CLAUDE.md` only, and Codex reads `AGENTS.md` (Claude Code docs "Customize
+  Code Review", read 09.11.2026). Review-only rules therefore stay in
+  `AGENTS.md` "Code Review Rules", and no `REVIEW.md` is kept.
 
 ## First-version behaviour
 

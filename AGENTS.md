@@ -48,6 +48,9 @@ How to review:
   same root cause into one finding. Do not restart a search for cosmetic changes
   in unchanged, unaffected files after a fix; the existing severity rules remain.
 - Report a finding only when you can name a concrete failing input or sequence. No scenario, no finding.
+- Back every claim about behaviour with the file and line that shows it; never infer behaviour from
+  a name alone. Open the review summary with the number of findings, and say plainly when there is
+  nothing to fix.
 - When processing feedback, follow `CLAUDE.md`'s evidence-based assessment rules.
   A justified thread resolution may reject an incorrect suggestion without a
   code change. Consider that explanation before repeating the finding; a
