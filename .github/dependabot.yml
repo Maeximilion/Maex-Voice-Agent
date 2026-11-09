@@ -82,6 +82,7 @@ updates:
       - /
       - /deploy
       - /deploy/asterisk
+      - /deploy/caddy
     schedule:
       interval: monthly
     # One PR for all compose images of a run instead of one per image.

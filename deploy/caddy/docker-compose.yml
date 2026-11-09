@@ -1,0 +1,40 @@
+# The one Caddy in front of every customer's stack (D32, docs/23 §7 and §8).
+# Started and reloaded by scripts/new_stack.py, never by hand:
+#   docker compose -p maex-caddy -f deploy/caddy/docker-compose.yml \
+#     -f <root>/caddy/networks.json up -d
+# networks.json (written by the script) puts it on each stack's `edge` network;
+# each stack's site file in <root>/caddy/sites names that stack's containers.
+name: maex-caddy
+
+services:
+  caddy:
+    # The same pin as deploy/docker-compose.prod.yml (api/tests/test_new_stack.py).
+    image: caddy:2.11.7-alpine
+    restart: always
+    logging:
+      driver: journald
+    # Certificates; the stacks' networks are internal and come from networks.json.
+    networks: [public]
+    # The site files are mode 640 and owned by the deploy user, and without
+    # capabilities root reads only what its groups may.
+    group_add: ["${MAEX_SITES_GID:?set by scripts/new_stack.py}"]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    read_only: true
+    tmpfs: [/tmp]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ${MAEX_SITES:?set by scripts/new_stack.py}:/etc/caddy/sites:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+networks:
+  public:
+
+volumes:
+  caddy_data:
+  caddy_config:

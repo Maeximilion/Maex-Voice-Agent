@@ -1,0 +1,19 @@
+# One customer's stack behind the shared Caddy (D32, docs/13 §8, #573):
+#   COMPOSE_FILE=docker-compose.yml:deploy/docker-compose.prod.yml:deploy/docker-compose.customer.yml
+# scripts/new_stack.py writes that line and COMPOSE_PROJECT_NAME into the stack's
+# .env. The single-customer layout of the two files before it stays unchanged.
+services:
+  # Several stacks on one server cannot each publish 80 and 443: the shared
+  # Caddy of deploy/caddy serves every customer's names and reaches each stack
+  # over its `edge` network. A profile nobody activates keeps this one off.
+  caddy:
+    profiles: [single]
+
+  # The operator dashboard (#571) joins this network from outside to read the
+  # ops API; nothing else of the stack stands on it (docs/23 §8).
+  api:
+    networks: [ops]
+
+networks:
+  ops:
+    internal: true
