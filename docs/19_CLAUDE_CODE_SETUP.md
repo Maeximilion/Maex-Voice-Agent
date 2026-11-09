@@ -131,6 +131,12 @@ Two more keys of `~/.claude/settings.json`, set by Maxi, kept the same on Window
 - `autoMode.allow` holds, after `"$defaults"`, one rule for `Bash(gh pr merge:*)` and one for `Bash(gh stack merge:*)` (added 2026-11-03). Each lets Claude merge without asking only when CI is complete and green, the PR is cleanly mergeable and its exact head commit has a review (Codex, Jules, or Claude's own in the session). The stack rule names the bottom PR of a stack, whose base is `main`, and the form `gh stack merge <number> --merge --yes`; the project hook `merge_gate.sh` checks the same before either command runs (CLAUDE.md §6). Copy the two rules from the Ubuntu file word for word; the backup before the stack rule is `~/.claude/settings.json.before-stack-merge-20261103.bak`.
 - `modelSettings.claude-opus-5-5.effortLevel` is `high` (since 2026-11-03, before `xhigh`): the default of the routing table in CLAUDE.md. `/task` asks for `xhigh` where a task needs it.
 
+### claude.ai connectors off in the Ubuntu terminal (Ubuntu only)
+
+Since 2026-11-07 Maxi's Ubuntu `~/.bashrc` ends with `export ENABLE_CLAUDEAI_MCP_SERVERS=false` (with a comment line above it). Claude Code in the Ubuntu terminal then does not load the seven claude.ai connectors (Gmail, Google Calendar, Google Drive, Docs, Sheets, Slides, Claude Docs); local MCP servers such as Headroom are not affected (`claude mcp list` shows only `headroom`). Claude chat and Cowork keep the connectors. For one session with them: `ENABLE_CLAUDEAI_MCP_SERVERS=true claude`. The desktop app's Code tab does not read `~/.bashrc` and is not affected (#562).
+
+Restore on a new machine: add the export line to the end of `~/.bashrc` and open a new terminal.
+
 ## 4. The scripts
 
 All three need `bash`, `git` and `jq` on the path. Git for Windows does not ship `jq`; it is installed separately.
