@@ -117,7 +117,7 @@ Anruf-Log, nicht Gesprächsführung — das bleibt `agent/`. Eigenes Modul statt
 von `callbacks/`, weil es kein Eskalationspfad ist, sondern der Rahmen um jeden
 Anruf, ganz gleich wie er ausgeht.
 - `start.py` — `calls`-Zeile anlegen, Rufnummer normalisieren, Löschfrist setzen; Zustands-Idempotenz über `external_session_id`
-- `end.py` — Dauer und Ergebnis schreiben, Zustands-Idempotenz wie `domain/confirm.py`
+- `end.py` — Dauer und Ergebnis schreiben, Zustands-Idempotenz wie `domain/confirm.py`; `close_left_open_calls` closes as `error` every call open longer than its tenant's `max_call_seconds` plus `LEFT_OPEN_GRACE` (10 minutes), the log of a call whose `voice` process ended before the line reported the end of the leg (#545); duration and cost stay empty, and a late end of the leg keeps the `error`
 - `routing.py` — whether the agent answers a call (only in `overflow` and `primary`), the team extension and the tenant name for the greeting; the mode is read fresh, so the emergency stop holds for the next call (T-1.13); `tenant_named`, the one tenant of a name, which the service `voice` serves (T-1.11); `call_limit`, the limit of concurrent AI calls at the restaurant's local time (the lowest window of `call_limit_windows`, else `max_concurrent_calls`), and `takes_call`, whether the agent takes a call with that many of its own open (T-10.9)
 - `consent.py` — `record_consent`: one `consent_log` row per answer to a consent question of the agent (call, time, question, answer), committed before anything is stored on the strength of it (T-11.1, L13)
 - `recordings.py` — the `recordings` row of a call and where its file lies: written before a byte is recorded, marked on a withdrawal, deleted by `jobs/retention.py` (T-11.3, L2)
@@ -212,7 +212,7 @@ Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht 
 Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebucht und die GUI zeigt sie. Das Ereignis wartet, bis n8n zurück ist. Kein Vorgang geht verloren, keiner wird doppelt gesendet.
 
 ### `jobs/`
-- `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
+- `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss. Also runs `close_left_open_calls` (`domain/calls/end.py`, #545) in a thread of its own every five minutes
 - `retention.py` — deletion job after docs/03 "Löschkonzept" (T-11.2): `purge(session, now)` strips the personal fields whose period is over and logs one line per pass; `cold_path.py` runs it in a thread of its own every `RETENTION_INTERVAL_SECONDS`, `python -m api.jobs.retention` runs one pass by hand
 - `data_requests.py` — requests of data subjects by hand on the server (T-11.8, docs/09 §2): `python -m api.jobs.data_requests log|open|extend|find|erase|object|answer`; stdout is the copy or the lines of the erasure ledger, written before the commit
 - `provision.py` — a new customer's tenant in its stack (#573): `python -m api.jobs.provision create <customer.json> [--dry-run]` prints one JSON report with the setup link, `check` lists what is still missing
