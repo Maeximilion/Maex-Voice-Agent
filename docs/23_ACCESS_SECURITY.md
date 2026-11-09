@@ -113,9 +113,9 @@ viewing personal data of a customer, rotating or showing a token, changing a cal
 number, creating or deleting a customer, changing operator factors.
 
 **Brute force:** failed attempts counted per account and per client address in the operator
-database (survives a restart; production runs one uvicorn worker, but memory would reset). From the
-fifth failure a growing delay (1, 2, 4 ... up to 15 minutes) instead of a hard lock, so an attacker
-cannot lock Maxi out for good. Error text is the same for unknown user, wrong password and wrong
+database (survives a restart; production runs one uvicorn worker, but memory would reset). One or
+two wrong attempts cost nothing; every third in a row brings a wait one minute longer than the last,
+1, 2, 3, 4, then 5 minutes at most (Maxi 09.11.2026, the same rule as §6), instead of a hard lock. Error text is the same for unknown user, wrong password and wrong
 factor. The client address comes from Caddy's `X-Forwarded-For`, trusted only from Caddy.
 
 **Audit:** logins, failures, factor changes and every action in the dashboard go to the operator
@@ -143,10 +143,17 @@ staff changes and the check card. (a) is in; the lines marked (b) are the design
   though D32 makes it redundant, so a later shared stack (docs/13 §8 "Reassess") does not start
   without the check. `api/tests/test_gui_login.py` walks every route of the view and expects a
   refusal without a session.
-- **Hashes:** `hashlib.scrypt` as in §5 for the password and the team PIN. Password at least 12
-  characters, at most 128, not on a short list of common ones. The PIN has 4 to 6 digits and is
-  **one team PIN per restaurant**, set with the password (assumption, `docs/01_STATUS.md`): staff
-  share the tablet, so a PIN chosen per device would be known only to whoever signed it in.
+- **Password and PINs:** the password as a `hashlib.scrypt` hash as in §5, at least 12 characters,
+  at most 128, not on a short list of common ones; the operator never sees it and replaces it only
+  through a setup link. The PIN has 4 to 6 digits and is **one team PIN per restaurant**, set with
+  the password (assumption, `docs/01_STATUS.md`): staff share the tablet, so a PIN chosen per device
+  would be known only to whoever signed it in. **The operator sees and changes the team PIN, and the
+  admin PIN of (b)** (Maxi 09.11.2026): until the dashboard has it (#571) with
+  `python -m api.jobs.gui_access pin` and `pin --set <digits>`, each look and change in `audit_log`
+  without the value. So the PINs are stored readable (migration 031): a hash of 4 to 6 digits held
+  nobody with the database back anyway, since a million guesses take an afternoon offline, and
+  whoever holds the database can change everything else too. Devices stay signed in when a PIN
+  changes.
 - **Sessions per device:** cookie `__Host-session` (`Secure`, `HttpOnly`, `SameSite=Lax`, path `/`;
   `maex_session` without `Secure` in dev and test, which run over plain HTTP), a random 32-byte
   token whose SHA-256 is the server-side row (`gui_sessions`). The session slides for 30 days on use
@@ -182,14 +189,15 @@ staff changes and the check card. (a) is in; the lines marked (b) are the design
 - **Lost tablet (D34 point 6, T8):** the owner signs out one device in the admin area (b); the
   operator removes a device (today with `gui_access sign-out`) and makes a new setup link, which
   changes the password and signs out every device.
-- **Brute force** as in §5: counters per account (on its row) and per client address
-  (`gui_login_failures`) in the customer's database, from the fifth failure in a row a growing wait
-  of 1, 2, 4, 8, then 15 minutes, during which no password is checked; a day without a failure
+- **Brute force** (Maxi 09.11.2026): counters per account (on its row) and per client address
+  (`gui_login_failures`) in the customer's database. One or two wrong passwords cost nothing; every
+  third in a row brings a wait one minute longer than the last, 1, 2, 3, 4, then 5 minutes at most,
+  during which no password is checked; a day without a failure
   starts the count again, and the deletion job drops an address a day after its last failure. Each
   attempt is counted before the slow hash, so a parallel burst meets the wait. Same error text for
   every wrong password.
 - **Device cookies (review of #585):** the per-account wait alone let anyone keep every sign-in out
-  with one wrong password per 15 minutes. A browser that signed in once gets a second cookie,
+  with a few wrong passwords per wait. A browser that signed in once gets a second cookie,
   `__Host-device` (random, only its hash stored in `gui_devices`, forgotten after 400 days unused);
   its attempts count on that device alone and skip the account's and the address's waits, so the
   restaurant's own tablets still get in. The cookie opens nothing by itself: it still needs the

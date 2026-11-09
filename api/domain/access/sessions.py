@@ -5,15 +5,17 @@ slides for 30 days on use. Fifteen minutes after the last sign-in, PIN or change
 the session is locked: the board keeps showing, the next change asks the team
 PIN, and five wrong PINs end the session (D34, Maxi 09.11.2026).
 
-Failed sign-ins are counted per account and per client address. From the fifth
-in a row each one adds a growing wait (1, 2, 4, 8, then 15 minutes) instead of a
-hard lock, and while a wait runs no password is even checked (docs/23 §5, §6). A
+Failed sign-ins are counted per account and per client address. One or two
+wrong passwords cost nothing; every third one in a row brings a wait that grows
+by a minute each time, 1, 2, 3, 4, then 5 minutes at most (Maxi, 09.11.2026),
+instead of a hard lock, and while a wait runs no password is even checked. A
 day without a failure starts the count again. A browser that signed in before
 brings its device cookie: its attempts count on that device alone, so a guesser
 who keeps the account's wait running cannot keep the restaurant's own tablets
 out (OWASP device cookies; review of #585).
 """
 
+import hmac
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -38,8 +40,9 @@ from api.models import (
 SESSION_DAYS = 30
 IDLE = timedelta(minutes=15)
 PIN_TRIES = 5
-DELAY_FROM = 5
-DELAY_MAX_MINUTES = 15
+# Every third wrong password in a row waits, one minute longer each time.
+WAIT_EVERY = 3
+WAIT_MAX_MINUTES = 5
 FAILURES_FORGOTTEN = timedelta(days=1)
 # last_seen and last_active move at most once a minute, not on every request.
 TOUCH_EVERY = timedelta(minutes=1)
@@ -264,42 +267,26 @@ def unlock(
     """Check the team PIN on a locked device.
 
     None when it was right (the device is unlocked); otherwise the tries left,
-    0 when the fifth wrong PIN ended the session. The try is counted before the
-    PIN is checked, as in `sign_in`, so parallel tries cannot pass five.
-    Commits."""
+    0 when the fifth wrong PIN ended the session. The session row stays locked
+    for the check, so parallel tries cannot pass five. Commits."""
     row = session.get(
         GuiSession, session_id, with_for_update=True, populate_existing=True
     )
-    if row is None or row.pin_failures >= PIN_TRIES:
+    if row is None:
         session.rollback()
         return 0
     account = session.get(GuiAccount, row.account_id)
-    stored = account.team_pin_hash if account else None
-    row.pin_failures += 1
-    tries = row.pin_failures
-    session.commit()
-
-    if verify_secret(pin, stored):
-        result = cast(
-            CursorResult,
-            session.execute(
-                update(GuiSession)
-                .where(GuiSession.id == session_id)
-                .values(pin_failures=0, last_active_at=now)
-            ),
-        )
+    stored = account.team_pin if account else None
+    if stored and hmac.compare_digest(pin.encode(), stored.encode()):
+        row.pin_failures, row.last_active_at = 0, now
         session.commit()
-        # Ended meanwhile by a fifth wrong PIN in parallel: stays signed out.
-        return None if result.rowcount else 0
-    if tries < PIN_TRIES:
-        return PIN_TRIES - tries
-    row = session.get(
-        GuiSession, session_id, with_for_update=True, populate_existing=True
-    )
-    if row is not None:
+        return None
+    row.pin_failures += 1
+    left = max(PIN_TRIES - row.pin_failures, 0)
+    if not left:
         _end(session, row, "gui:tablet", "pin_failures")
     session.commit()
-    return 0
+    return left
 
 
 def end_sessions(
@@ -349,9 +336,9 @@ def _count(
     if last_failed_at is None or now - last_failed_at >= FAILURES_FORGOTTEN:
         failures = 0
     failures += 1
-    if failures < DELAY_FROM:
+    if failures % WAIT_EVERY:
         return failures, None
-    minutes = min(2 ** (failures - DELAY_FROM), DELAY_MAX_MINUTES)
+    minutes = min(failures // WAIT_EVERY, WAIT_MAX_MINUTES)
     return failures, now + timedelta(minutes=minutes)
 
 

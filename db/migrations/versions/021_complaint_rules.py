@@ -7,7 +7,9 @@ seeds it: the catalogue is Maxi's, and with an empty one every complaint goes to
 the team as before. A new row is off until someone switches it on.
 
 No personal data, nothing backfilled. The downgrade drops the table with every
-rule; the remedies booked stay on their callback cards and in `audit_log`.
+rule; the remedies booked stay on their callback cards and in `audit_log`. On a
+database that holds a restaurant's rules, take a backup first with
+`bash scripts/backup.sh --label before_migration_021` (CLAUDE.md §8, docs/13 §4).
 
 Number 021 with its parent 019: 020 is taken by the open T-4.9 PR (#476). The
 later of the two PRs sets its parent to the other one.

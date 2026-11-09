@@ -88,3 +88,20 @@ def test_sign_out_ends_one_device_by_its_id_or_all(engine, tenant_id, capsys):
 def test_without_a_tenant_nothing_happens(engine, capsys):
     assert gui_access.main(["link"]) == 2
     assert "No tenant" in capsys.readouterr().err
+
+
+def test_pin_shows_and_sets_the_team_pin(engine, tenant_id, capsys):
+    """Maxi, 09.11.2026: the dev sees and changes the team PIN."""
+    assert gui_access.main(["pin"]) == 1
+    assert "No team PIN set." in capsys.readouterr().out
+    code = _link(capsys).split("#")[1]
+    with Session(engine) as session:
+        use_link(session, tenant_id, code, PASSWORD, "4711", "Tablet", T0)
+    assert gui_access.main(["pin"]) == 0
+    assert capsys.readouterr().out.strip() == "4711"
+    assert gui_access.main(["pin", "--set", "12"]) == 1
+    assert "4 bis 6 Ziffern" in capsys.readouterr().err
+    assert gui_access.main(["pin", "--set", "908172"]) == 0
+    capsys.readouterr()
+    assert gui_access.main(["pin"]) == 0
+    assert capsys.readouterr().out.strip() == "908172"
