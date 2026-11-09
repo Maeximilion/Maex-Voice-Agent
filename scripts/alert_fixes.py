@@ -57,7 +57,11 @@ def _blocks(alert: dict) -> bool:
 def gh_api(path: str) -> list:
     """Every item of a REST list, all pages."""
     res = subprocess.run(
-        ["gh", "api", "--paginate", path, "--jq", ".[]"], capture_output=True, text=True
+        ["gh", "api", "--paginate", path, "--jq", ".[]"],
+        capture_output=True,
+        text=True,
+        # gh prints UTF-8; the locale codepage (cp1252 on Windows) breaks on emojis.
+        encoding="utf-8",
     )
     if res.returncode != 0:
         raise GhError(
