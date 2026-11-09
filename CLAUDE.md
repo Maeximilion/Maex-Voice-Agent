@@ -80,6 +80,7 @@ The layout is modular, organized by layers with fixed dependency direction. Full
 | `docs/16_GITHUB_PROJECT.md` | **The board is a derivation: one project, hands-off during work, daily maintenance** | before any `gh project` call, before opening an issue or PR |
 | `docs/19_CLAUDE_CODE_SETUP.md` | User-level hooks and settings outside the repository, backed up with restore steps for Windows and Ubuntu | before changing a hook or setting up a machine |
 | `docs/22_LANGUAGE_AND_PERFORMANCE.md` | Language assessment, latency evidence gate, typing and TypeScript UI decisions | before performance or language changes |
+| `docs/23_ACCESS_SECURITY.md` | Threat model and access design for several customers: operator dashboard, customer logins, tokens, ops read path, uploads | before work on logins, the dashboard, provisioning or uploads (#570 to #576) |
 | `docs/20_VOICE_LAYER.md` | **Own voice layer: decisions, components, access, call session rules, outage map, cost model, measurement log** | before work on `telephony/`, before any T-10.x |
 
 ---

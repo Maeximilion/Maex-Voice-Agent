@@ -239,6 +239,7 @@ The project is set up for Claude Code. `CLAUDE.md` contains work instructions, `
 | [docs/21_REVIEW_AUTOMATION.md](docs/21_REVIEW_AUTOMATION.md) | Planned subscription-based inline reviews: setup, independent reviewers, validation and deferred specialist experiment |
 | `docs/metrics/` | Dated measurements behind the README images: eval runs on real models and voice layer measurements |
 | [docs/22_LANGUAGE_AND_PERFORMANCE.md](docs/22_LANGUAGE_AND_PERFORMANCE.md) | Python/TypeScript assessment, measured latency gate and UI/type-checking decisions |
+| [docs/23_ACCESS_SECURITY.md](docs/23_ACCESS_SECURITY.md) | Threat model and access design for several customers: operator dashboard, customer logins, tokens, uploads (designed, not built) |
 
 ## Contributing
 

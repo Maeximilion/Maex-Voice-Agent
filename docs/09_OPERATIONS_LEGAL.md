@@ -179,7 +179,7 @@ A deliberate read of the code and configuration that face the outside, done at f
 |---|---|---|
 | Before the first call that comes in from outside the workbench (T-10.1 step 2 against the pilot's router, at the latest before G1) | component, on that path | `/task` step 0c, `/start` step 5c |
 | Before every gate from G1 on, when exposed files changed since the baseline | scoped if the baseline is younger than 30 days, else full | `/gate` step 1b |
-| Before a component becomes reachable from outside the host: the production server with Caddy (T-9.2), the SIP trunk (T-10.12), a new public path behind Caddy, n8n webhooks, a new published port in `deploy/` | component, on that component | `/task` step 0c, `/start` step 5c |
+| Before a component becomes reachable from outside the host: the production server with Caddy (T-9.2), the SIP trunk (T-10.12), a new public path behind Caddy (the operator dashboard and a customer login, docs/23 §11), n8n webhooks, a new published port in `deploy/` | component, on that component | `/task` step 0c, `/start` step 5c |
 | 30 days or more since the baseline, and exposed files changed since its commit | scoped | `/start` step 5c |
 
 Nothing else triggers an audit, and an audit never starts by itself: `/start` and `/gate` recommend it in one line and Maxi decides. A trigger that is not taken stays due and is named again at the next `/start`. A gate does not pass while an audit finding of severity P1 is open.
