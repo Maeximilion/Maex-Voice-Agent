@@ -12,8 +12,9 @@ Wrong admin PINs count on the account like wrong passwords: every third in a row
 brings a wait one minute longer than the last, up to five, during which no PIN
 is checked. They never end the session, the team PIN's rule: the board stays
 usable for the team, the admin PIN guards the owner's settings only, and a
-lost tablet is signed out by the operator (Maxi, 09.11.2026, review of #587). Stored readable like the team PIN (Maxi
-09.11.2026): the operator sees and sets it. It never equals the team PIN.
+lost tablet is signed out by the operator (Maxi, 09.11.2026, review of #587).
+Stored readable like the team PIN (Maxi 09.11.2026): the operator sees and
+sets it. It never equals the team PIN.
 """
 
 import hmac
