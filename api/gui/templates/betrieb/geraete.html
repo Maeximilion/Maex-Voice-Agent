@@ -1,0 +1,31 @@
+{# The owner's device list (#570 part b, D34 point 6, docs/23 §6): every
+   signed-in device with its first and last use; "Gerät abmelden" is the lost
+   tablet. Behind the admin PIN (`require_admin`). #}
+{% extends "base.html" %}
+{% block title %}Geräte{% endblock %}
+{% block body_class %}betrieb{% endblock %}
+
+{% block header %}
+<header>
+  <div class="top">
+    <a class="button" href="/gui">Zurück</a>
+    <h1 class="kz-title">Angemeldete Geräte</h1>
+    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
+  </div>
+</header>
+{% endblock %}
+
+{% block main %}
+{% if tenant %}
+<section class="card">
+  <p class="note">Ein verlorenes Tablet hier abmelden. Danach braucht es das Passwort. Wer das Passwort kennen könnte: beim Betreiber einen neuen Link anfordern, der meldet alle Geräte ab.</p>
+  {% include "fragments/geraete.html" %}
+  <form method="post" action="/gui/inhaber/schliessen">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Inhaber-Bereich schließen</button>
+  </form>
+</section>
+{% else %}
+<p class="badge danger" role="alert">{{ problem }}</p>
+{% endif %}
+{% endblock %}

@@ -301,6 +301,8 @@ The restaurant's login to the operations view (#570, D34): one row per tenant, m
 | tenant_id | UUID FK, UNIQUE | one login per restaurant |
 | password_hash | TEXT | scrypt (`domain/access/hashing.py`), empty until the first setup link is used |
 | team_pin | TEXT, CHECK 4 to 6 digits | readable for the operator, who sees and sets it (Maxi 09.11.2026, migration 031); unlocks a signed-in device, never a login |
+| admin_pin | TEXT, CHECK 4 to 6 digits, CHECK `admin_pin <> team_pin` | the owner's admin PIN, readable for the operator (#570 b, D34 points 3 and 8, migration 032); opens the owner's part of the admin area on one device for 60 minutes |
+| admin_failures / admin_last_failed_at / admin_blocked_until | INT / TIMESTAMPTZ / TIMESTAMPTZ | wrong admin PINs in a row, with the waits of a wrong password |
 | failures / last_failed_at / blocked_until | INT / TIMESTAMPTZ / TIMESTAMPTZ | failures in a row; every third brings a wait one minute longer, 1 to 5 minutes; a day without one starts again |
 | created_at / updated_at | TIMESTAMPTZ | |
 
@@ -316,6 +318,7 @@ One row per signed-in device; the browser keeps a random token, the row only its
 | created_at / last_seen_at | TIMESTAMPTZ | the 30 days slide from `last_seen_at` |
 | last_active_at | TIMESTAMPTZ | sign-in, PIN or change; 15 minutes after it the next change asks the PIN |
 | pin_failures | INT | five wrong PINs in a row delete the row |
+| admin_until | TIMESTAMPTZ | owner rights on this device end here, 60 minutes after the admin PIN; the idle lock and the team PIN end them earlier (migration 032) |
 
 ### `gui_setup_links`
 The operator's one-time link that sets password and PIN (24 hours, a newer one replaces it).
@@ -600,4 +603,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 029 | `reservations.call_id` nullable, `reservations.source` (`agent` / `tablet`, default `agent`) with the CHECK that an agent's row has its call and a tablet's none, and `reservation_tables`: reservations the team enters by hand, seated on the floor plan (T-3.12, #497, D30); existing rows stay the agent's; the downgrade deletes every tablet reservation with its seating (backup first) |
 | 030 | `gui_accounts`, `gui_sessions`, `gui_setup_links`, `gui_devices`, `gui_login_failures`: the restaurant's login to the operations view (#570, D34); new tables only; the downgrade drops them, which signs out every device and needs a new setup link |
 | 031 | `gui_accounts.team_pin` readable (CHECK 4 to 6 digits) instead of `team_pin_hash`: the operator sees and sets the team PIN (Maxi 09.11.2026); a hash cannot become the PIN, so the upgrade empties every team PIN and the operator sets it again (`gui_access pin --set`), and the downgrade drops them the same way |
+| 032 | `gui_accounts.admin_pin` readable (CHECK 4 to 6 digits, never the team PIN) with `admin_failures`, `admin_last_failed_at`, `admin_blocked_until`, and `gui_sessions.admin_until`: the owner's admin PIN (#570 part b, D34 points 3 and 8); new columns only; the downgrade drops them, so every admin PIN is gone (backup first) |
 | planned, next free number | `eval_cases`, `eval_runs` |

@@ -129,7 +129,7 @@ make test
 
 API then runs at `http://localhost:8000`, the operations view at `http://localhost:8000/gui/`, n8n at `http://localhost:5678`, the push server at `http://localhost:8090` (closed until users are set in `.env`). `/health` responds with `{"status": "ok", "env": "dev"}`. These ports are bound to `127.0.0.1` (`docker-compose.override.yml`), so they are reachable from this machine only; the production stack publishes none of them (`docs/13_DEPLOYMENT.md` §3).
 
-The operations view asks for the restaurant's password, in development too (#570). Make the one-time setup link once per database, open it and set a password and team PIN: `docker compose exec api python -m api.jobs.gui_access link --base-url http://localhost:8000`.
+The operations view asks for the restaurant's password, in development too (#570). Make the one-time setup link once per database, open it and set a password, the team PIN and the owner's admin PIN: `docker compose exec api python -m api.jobs.gui_access link --base-url http://localhost:8000`.
 
 Tests and lint from a local Python environment. Database tests need reachable Postgres, e.g. from `make up`; `DATABASE_URL` then points to `localhost` instead of container name `db`:
 

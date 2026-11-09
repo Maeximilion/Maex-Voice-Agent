@@ -1,0 +1,20 @@
+{# The owner's admin PIN (#570 part b, D34 point 3): opens the owner's part of
+   the admin area on this device for 60 minutes, or until 15 minutes without a
+   change lock it. Wrong PINs wait as wrong passwords do. #}
+{% extends "base.html" %}
+{% block title %}Inhaber-PIN{% endblock %}
+{% block body_class %}betrieb zugang{% endblock %}
+
+{% block main %}
+<form class="card zugang-form" method="post" action="/gui/inhaber">
+  <h1>Inhaber-PIN</h1>
+  <p>Dieser Bereich ist für den Inhaber. Die PIN gilt auf diesem Gerät 60 Minuten, nach 15 Minuten ohne Eingabe endet sie früher.</p>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="weiter" value="{{ back }}">
+  <label for="pin">Inhaber-PIN</label>
+  <input type="password" id="pin" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" autocomplete="off" required autofocus>
+  {% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
+  <button type="submit" class="primary">Öffnen</button>
+  <a class="button" href="/gui/">Zurück zur Übersicht</a>
+</form>
+{% endblock %}

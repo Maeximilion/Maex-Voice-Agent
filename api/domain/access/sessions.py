@@ -57,6 +57,8 @@ DEVICE_DAYS = 400
 class Access:
     session_id: uuid.UUID
     locked: bool
+    # The owner's admin PIN holds on this device (`domain/access/admin.py`).
+    admin: bool = False
 
 
 class SignInRefused(Unauthorized):
@@ -164,10 +166,10 @@ def _count_attempt(
     waits = [row.blocked_until for row in counters if row.blocked_until is not None]
     if waits and max(waits) > now:
         session.rollback()
-        raise SignInRefused(_minutes(max(waits) - now))
+        raise SignInRefused(minutes_left(max(waits) - now))
     for row in counters:
         previous = row.last_failed_at if row.failures else None
-        row.failures, row.blocked_until = _count(row.failures, previous, now)
+        row.failures, row.blocked_until = count_failure(row.failures, previous, now)
         row.last_failed_at = now
     stored = account.password_hash if account else None
     session.commit()
@@ -240,7 +242,10 @@ def resolve(
     if now - row.last_seen_at >= TOUCH_EVERY:
         row.last_seen_at = now
         session.commit()
-    return Access(row.id, locked=now - row.last_active_at >= IDLE)
+    locked = now - row.last_active_at >= IDLE
+    # The idle lock closes owner rights too: after the team PIN, staff rights only.
+    admin = not locked and row.admin_until is not None and row.admin_until > now
+    return Access(row.id, locked=locked, admin=admin)
 
 
 def mark_active(session: Session, session_id: uuid.UUID, now: datetime) -> None:
@@ -278,7 +283,8 @@ def unlock(
     account = session.get(GuiAccount, row.account_id)
     stored = account.team_pin if account else None
     if stored and hmac.compare_digest(pin.encode(), stored.encode()):
-        row.pin_failures, row.last_active_at = 0, now
+        # The team PIN opens staff rights: an owner's hour left open ends here.
+        row.pin_failures, row.last_active_at, row.admin_until = 0, now, None
         session.commit()
         return None
     row.pin_failures += 1
@@ -329,7 +335,7 @@ def _end(session: Session, row: GuiSession, actor: str, reason: str) -> None:
     session.delete(row)
 
 
-def _count(
+def count_failure(
     failures: int, last_failed_at: datetime | None, now: datetime
 ) -> tuple[int, datetime | None]:
     """The failure count after one more, and the wait it brings."""
@@ -342,7 +348,7 @@ def _count(
     return failures, now + timedelta(minutes=minutes)
 
 
-def _minutes(left: timedelta) -> int:
+def minutes_left(left: timedelta) -> int:
     return max(1, -(-int(left.total_seconds()) // 60))
 
 

@@ -1,4 +1,5 @@
-"""Sign-in, setup link and PIN unlock pages of the operations view (#570, D34).
+"""Sign-in, setup link, PIN unlock and admin PIN pages of the operations view
+(#570, D34).
 
 Plain forms, no HTMX: each answer is a redirect or the page again with one
 sentence. Every post must come from this site and carry the page's CSRF token
@@ -6,6 +7,7 @@ in a hidden field, the sign-in too (login CSRF, docs/23 §6). The checks
 themselves live in `domain/access/`.
 """
 
+import re
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -16,6 +18,7 @@ from api.core import time as clock
 from api.core.auth import require_gui_proxy
 from api.core.errors import InvalidInput
 from api.db import get_db
+from api.domain.access.admin import AdminRefused, close_admin, unlock_admin
 from api.domain.access.sessions import (
     SignInRefused,
     resolve,
@@ -44,6 +47,10 @@ WAIT = "Zu viele Versuche. Bitte in {minutes} Minuten nochmal."
 DIFFERENT = "Die beiden Eingaben sind nicht gleich."
 WRONG_PIN = "Die PIN stimmt nicht. Noch {left} Versuche."
 PIN_ENDED = "Fünfmal die falsche PIN: das Gerät ist abgemeldet. Bitte mit dem Passwort anmelden."
+WRONG_ADMIN_PIN = "Die Inhaber-PIN stimmt nicht."
+NO_ADMIN_PIN = "Noch keine Inhaber-PIN. Der Betreiber setzt sie."
+# Where the admin PIN page may lead back to: a path of the view, nothing else.
+BACK = re.compile(r"/gui/[a-z0-9/-]*")
 
 
 def _checked(request: Request, form: dict[str, str]) -> None:
@@ -123,7 +130,12 @@ def setup_post(
     code = form.get("code", "")
     again = {"code": code}
     password, pin = form.get("passwort", ""), form.get("pin", "")
-    if password != form.get("passwort2") or pin != form.get("pin2"):
+    admin_pin = form.get("admin_pin", "")
+    if (
+        password != form.get("passwort2")
+        or pin != form.get("pin2")
+        or admin_pin != form.get("admin_pin2")
+    ):
         return _page_response(
             request, "zugang/einrichten.html", {**again, "message": DIFFERENT}, 422
         )
@@ -140,6 +152,7 @@ def setup_post(
             _device(request),
             clock.utcnow(),
             device_token=device_token(request),
+            admin_pin=admin_pin,
         )
     except InvalidInput as refused:
         return _page_response(
@@ -184,3 +197,64 @@ def unlock_post(
         {"message": WRONG_PIN.format(left=left)},
         401,
     )
+
+
+# --- The owner's admin PIN (#570 part b, D34 point 3) ---------------------------
+
+
+def _back(value: str) -> str:
+    return value if BACK.fullmatch(value) else BOARD
+
+
+@router.get("/inhaber", response_class=HTMLResponse, include_in_schema=False)
+def owner_page(
+    request: Request, weiter: str = "", db: Session = Depends(get_db)
+) -> Response:
+    access = resolve(db, session_token(request), stack_tenant_id(db), clock.utcnow())
+    if access is None:
+        return RedirectResponse(LOGIN, status_code=303)
+    if access.admin:
+        return RedirectResponse(_back(weiter), status_code=303)
+    return _page_response(request, "zugang/inhaber.html", {"back": _back(weiter)})
+
+
+@router.post("/inhaber", response_class=HTMLResponse, include_in_schema=False)
+def owner_post(
+    request: Request,
+    form: dict[str, str] = Depends(_form),
+    db: Session = Depends(get_db),
+) -> Response:
+    _checked(request, form)
+    now = clock.utcnow()
+    access = resolve(db, session_token(request), stack_tenant_id(db), now)
+    if access is None:
+        return RedirectResponse(LOGIN, status_code=303)
+    back = _back(form.get("weiter", ""))
+    try:
+        unlock_admin(db, access.session_id, form.get("pin", ""), now)
+    except AdminRefused as refused:
+        message = (
+            NO_ADMIN_PIN
+            if refused.missing
+            else WAIT.format(minutes=refused.wait_minutes)
+            if refused.wait_minutes
+            else WRONG_ADMIN_PIN
+        )
+        return _page_response(
+            request, "zugang/inhaber.html", {"back": back, "message": message}, 401
+        )
+    return RedirectResponse(back, status_code=303)
+
+
+@router.post("/inhaber/schliessen", include_in_schema=False)
+def owner_close(
+    request: Request,
+    form: dict[str, str] = Depends(_form),
+    db: Session = Depends(get_db),
+) -> Response:
+    """The owner is done before the hour ends: staff rights on this device."""
+    _checked(request, form)
+    access = resolve(db, session_token(request), stack_tenant_id(db), clock.utcnow())
+    if access is not None:
+        close_admin(db, access.session_id)
+    return RedirectResponse(BOARD, status_code=303)

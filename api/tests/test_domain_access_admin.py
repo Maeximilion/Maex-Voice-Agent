@@ -1,0 +1,199 @@
+"""The owner's admin PIN (#570 part b, D34 points 3 and 8): owner rights on one
+device for 60 minutes, closed early by the idle lock, waits after wrong PINs,
+never the team PIN, readable and settable by the operator."""
+
+import uuid
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
+
+from api.core.errors import InvalidInput
+from api.domain.access.admin import (
+    ADMIN_FOR,
+    AdminRefused,
+    admin_pin,
+    close_admin,
+    set_admin_pin,
+    unlock_admin,
+)
+from api.domain.access.sessions import IDLE, mark_active, resolve, unlock
+from api.domain.access.setup import issue_link, set_team_pin, use_link
+from api.models import AuditLog, GuiAccount, Tenant
+
+T0 = datetime(2026, 11, 9, 10, 0, tzinfo=UTC)
+PASSWORD = "Kuechentablet-2026"
+PIN = "4711"
+ADMIN = "080815"
+
+
+@pytest.fixture
+def session(migrated_db_url):
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as s:
+        yield s
+    engine.dispose()
+
+
+@pytest.fixture
+def tenant_id(session) -> uuid.UUID:
+    tenant = Tenant(name="Testbetrieb")
+    session.add(tenant)
+    session.commit()
+    return tenant.id
+
+
+@pytest.fixture
+def token(session, tenant_id) -> str:
+    """Set up with password, team PIN and admin PIN; returns that device's token."""
+    code, _ = issue_link(session, tenant_id, "operator:test", T0)
+    return use_link(
+        session, tenant_id, code, PASSWORD, PIN, "Tablet", T0, admin_pin=ADMIN
+    ).token
+
+
+def _access(session, tenant_id, token, at):
+    access = resolve(session, token, tenant_id, at)
+    assert access is not None
+    return access
+
+
+def _refused(session, session_id, pin, at) -> AdminRefused:
+    with pytest.raises(AdminRefused) as refused:
+        unlock_admin(session, session_id, pin, at)
+    return refused.value
+
+
+def test_the_admin_pin_opens_owner_rights_for_60_minutes(session, tenant_id, token):
+    access = _access(session, tenant_id, token, T0)
+    assert not access.admin
+    unlock_admin(session, access.session_id, ADMIN, T0)
+    assert _access(session, tenant_id, token, T0).admin
+    # Changes keep the device unlocked; the owner's hour does not slide with them.
+    for minutes in range(10, 60, 10):
+        mark_active(session, access.session_id, T0 + timedelta(minutes=minutes))
+    assert _access(
+        session, tenant_id, token, T0 + ADMIN_FOR - timedelta(seconds=1)
+    ).admin
+    assert not _access(session, tenant_id, token, T0 + ADMIN_FOR).admin
+    entry = session.scalars(
+        select(AuditLog).where(AuditLog.action == "gui.admin_unlocked")
+    ).one()
+    assert ADMIN not in str(entry.payload)
+
+
+def test_the_idle_lock_closes_owner_rights_and_the_team_pin_does_not_reopen_them(
+    session, tenant_id, token
+):
+    access = _access(session, tenant_id, token, T0)
+    unlock_admin(session, access.session_id, ADMIN, T0)
+    later = T0 + IDLE
+    locked = _access(session, tenant_id, token, later)
+    assert locked.locked and not locked.admin
+    # Staff unlock the device with the team PIN: staff rights only.
+    assert unlock(session, access.session_id, PIN, later) is None
+    assert not _access(session, tenant_id, token, later).admin
+
+
+def test_the_admin_pin_unlocks_a_locked_device_too(session, tenant_id, token):
+    access = _access(session, tenant_id, token, T0)
+    later = T0 + IDLE + timedelta(minutes=5)
+    assert _access(session, tenant_id, token, later).locked
+    unlock_admin(session, access.session_id, ADMIN, later)
+    opened = _access(session, tenant_id, token, later)
+    assert not opened.locked and opened.admin
+
+
+def test_every_third_wrong_admin_pin_waits_a_minute_longer(session, tenant_id, token):
+    access = _access(session, tenant_id, token, T0)
+    assert _refused(session, access.session_id, "0000", T0).wait_minutes is None
+    assert _refused(session, access.session_id, "0001", T0).wait_minutes is None
+    assert _refused(session, access.session_id, "0002", T0).wait_minutes == 1
+    # While the wait runs, not even the right PIN is checked.
+    assert _refused(session, access.session_id, ADMIN, T0).wait_minutes == 1
+    assert not _access(session, tenant_id, token, T0).admin
+    after = T0 + timedelta(minutes=1)
+    for _ in range(2):
+        _refused(session, access.session_id, "0003", after)
+    assert _refused(session, access.session_id, "0004", after).wait_minutes == 2
+    # The right PIN after the wait opens and starts the count again.
+    done = after + timedelta(minutes=2)
+    unlock_admin(session, access.session_id, ADMIN, done)
+    account = session.scalars(select(GuiAccount)).one()
+    assert (account.admin_failures, account.admin_blocked_until) == (0, None)
+    # A wrong admin PIN is no wrong team PIN: the device stays signed in.
+    assert _access(session, tenant_id, token, done).admin
+
+
+def test_without_an_admin_pin_nothing_opens_and_nothing_counts(session, tenant_id):
+    code, _ = issue_link(session, tenant_id, "operator:test", T0)
+    token = use_link(session, tenant_id, code, PASSWORD, PIN, "Tablet", T0).token
+    access = _access(session, tenant_id, token, T0)
+    for _ in range(4):
+        assert _refused(session, access.session_id, ADMIN, T0).missing
+    assert session.scalars(select(GuiAccount)).one().admin_failures == 0
+
+
+def test_closing_ends_owner_rights_at_once(session, tenant_id, token):
+    access = _access(session, tenant_id, token, T0)
+    unlock_admin(session, access.session_id, ADMIN, T0)
+    close_admin(session, access.session_id)
+    assert not _access(session, tenant_id, token, T0).admin
+
+
+def test_the_admin_pin_never_equals_the_team_pin(session, tenant_id, token):
+    with pytest.raises(InvalidInput):
+        set_admin_pin(session, tenant_id, PIN, "operator:test")
+    with pytest.raises(InvalidInput):
+        set_team_pin(session, tenant_id, ADMIN, "operator:test")
+    code, _ = issue_link(session, tenant_id, "operator:test", T0)
+    with pytest.raises(InvalidInput):
+        use_link(session, tenant_id, code, PASSWORD, "1234", "x", T0, admin_pin="1234")
+    # The refusals spent nothing: the link still sets new, different PINs.
+    use_link(session, tenant_id, code, PASSWORD, "1234", "x", T0, admin_pin="5678")
+    account = session.scalars(select(GuiAccount)).one()
+    assert (account.team_pin, account.admin_pin) == ("1234", "5678")
+
+
+def test_a_link_without_an_admin_pin_keeps_the_owners_one(session, tenant_id, token):
+    code, _ = issue_link(session, tenant_id, "operator:test", T0)
+    use_link(session, tenant_id, code, PASSWORD, "2468", "x", T0)
+    assert session.scalars(select(GuiAccount)).one().admin_pin == ADMIN
+    code, _ = issue_link(session, tenant_id, "operator:test", T0)
+    with pytest.raises(InvalidInput):
+        use_link(session, tenant_id, code, PASSWORD, "2468", "x", T0, admin_pin="12")
+    # Without a new admin PIN, the team PIN still may not take the owner's.
+    with pytest.raises(InvalidInput) as same:
+        use_link(session, tenant_id, code, PASSWORD, ADMIN, "x", T0)
+    assert "unterscheiden" in (same.value.say or "")
+    # Neither refusal spent the link.
+    assert use_link(session, tenant_id, code, PASSWORD, "1357", "x", T0)
+
+
+def test_the_operator_reads_and_sets_the_admin_pin(session, tenant_id, token):
+    assert admin_pin(session, tenant_id, "operator:test") == ADMIN
+    set_admin_pin(session, tenant_id, "135790", "operator:test")
+    assert admin_pin(session, tenant_id, "operator:test") == "135790"
+    with pytest.raises(InvalidInput):
+        set_admin_pin(session, tenant_id, "12a4", "operator:test")
+    actions = session.scalars(
+        select(AuditLog.action).where(AuditLog.action.like("gui.admin_pin%"))
+    ).all()
+    # The setup link of the fixture set it first.
+    assert sorted(actions) == [
+        "gui.admin_pin_set",
+        "gui.admin_pin_set",
+        "gui.admin_pin_shown",
+        "gui.admin_pin_shown",
+    ]
+    payloads = session.scalars(
+        select(AuditLog.payload).where(AuditLog.action.like("gui.admin_pin%"))
+    ).all()
+    assert all("135790" not in str(p) and ADMIN not in str(p) for p in payloads)
+
+
+def test_no_admin_pin_before_the_first_link(session, tenant_id):
+    assert admin_pin(session, tenant_id, "operator:test") is None
+    with pytest.raises(InvalidInput):
+        set_admin_pin(session, tenant_id, ADMIN, "operator:test")

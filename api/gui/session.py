@@ -4,11 +4,13 @@ Every route of the view depends on `require_gui_session`, in every environment:
 without a session a page goes to the sign-in, an HTMX or script request gets 401
 with `HX-Redirect`. A locked session (15 minutes without a change) still reads
 the board, which stays live (Maxi, 09.11.2026), and its next change goes to the
-PIN page. Every change must also come from the view's own origin.
+PIN page. Every change must also come from the view's own origin. The owner's
+part of the admin area also needs the admin PIN on this device
+(`require_admin`, #570 part b).
 """
 
 from datetime import timedelta
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 from fastapi import Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
@@ -26,6 +28,7 @@ from api.domain.access.sessions import (
 
 LOGIN = "/gui/anmelden"
 UNLOCK = "/gui/entsperren"
+OWNER = "/gui/inhaber"
 WRITES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 # The server decides when a session ends (30 days without use); the cookie only
 # carries the token, so it may outlive it. 400 days is the most a browser keeps.
@@ -108,6 +111,21 @@ def _checked_access(request: Request, db: Session) -> Access:
         if access.locked:
             raise _away(request, UNLOCK)
         mark_active(db, access.session_id, now)
+    return access
+
+
+def require_admin(
+    request: Request, access: Access = Depends(require_gui_session)
+) -> Access:
+    """The owner's part of the admin area: the device list now, zones, fees and
+    weekly hours when their pages come (D34 point 3). Without the admin PIN on
+    this device it goes to the PIN page, which leads back here."""
+    if not access.admin:
+        back = request.url.path
+        if request.method != "GET":
+            # A write returns to the page it came from, not to its own path.
+            back = urlsplit(request.headers.get("hx-current-url", "")).path
+        raise _away(request, f"{OWNER}?weiter={quote(back, safe='/')}")
     return access
 
 

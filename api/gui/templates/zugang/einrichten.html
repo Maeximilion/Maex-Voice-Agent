@@ -1,5 +1,5 @@
 {# The operator's setup link (#570, D34 point 5): the restaurant sets its
-   password and the team PIN. The code arrives in the link's fragment, which
+   password, the team PIN and the owner's admin PIN (#570 part b). The code arrives in the link's fragment, which
    base.js copies into the hidden field; the server never sees it in a URL. #}
 {% extends "base.html" %}
 {% block title %}Zugang einrichten{% endblock %}
@@ -8,7 +8,7 @@
 {% block main %}
 <form class="card zugang-form" method="post" action="/gui/einrichten">
   <h1>Zugang einrichten</h1>
-  <p>Das Passwort meldet ein Gerät an, einmal je Gerät. Die PIN entsperrt ein angemeldetes Gerät nach 15 Minuten Pause. Alle anderen Geräte werden dabei abgemeldet.</p>
+  <p>Das Passwort meldet ein Gerät an, einmal je Gerät. Die PIN entsperrt ein angemeldetes Gerät nach 15 Minuten Pause. Die Inhaber-PIN öffnet den Bereich für den Inhaber, etwa die Geräteliste. Alle anderen Geräte werden dabei abgemeldet.</p>
   <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
   <input type="hidden" name="code" value="{{ code }}" data-setup-code>
   <label for="passwort">Neues Passwort, mindestens 12 Zeichen</label>
@@ -19,6 +19,10 @@
   <input type="password" id="pin" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" autocomplete="off" required>
   <label for="pin2">PIN noch einmal</label>
   <input type="password" id="pin2" name="pin2" inputmode="numeric" pattern="[0-9]{4,6}" autocomplete="off" required>
+  <label for="admin_pin">Inhaber-PIN, 4 bis 6 Ziffern, nicht die PIN des Teams</label>
+  <input type="password" id="admin_pin" name="admin_pin" inputmode="numeric" pattern="[0-9]{4,6}" autocomplete="off" required>
+  <label for="admin_pin2">Inhaber-PIN noch einmal</label>
+  <input type="password" id="admin_pin2" name="admin_pin2" inputmode="numeric" pattern="[0-9]{4,6}" autocomplete="off" required>
   {% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
   <button type="submit" class="primary">Speichern und anmelden</button>
 </form>
