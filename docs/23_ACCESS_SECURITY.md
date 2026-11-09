@@ -130,7 +130,9 @@ writes real rows; a demo customer is a stack of its own with invented data.
 
 **D34 (Maxi 09.11.2026): one login per restaurant**, not per staff member. Built in two pull
 requests: (a) accounts, sessions, PIN unlock, devices, setup link; (b) the admin PIN, the temporary
-staff changes and the check card. (a) is in; the lines marked (b) are the design it builds against.
+staff changes and the check card. (a) is in; (b) is built as a stack of two: the admin PIN with the
+device list first, then the staff changes with the check card. Lines still marked (b) are the design
+the second builds against.
 
 - **Replaces Basic-Auth** on the customer's site (done in (a): `deploy/Caddyfile` has none for
   `/gui`). `GUI_PROXY_SECRET` stays: it keeps requests from inside the Docker networks out of the
@@ -148,12 +150,22 @@ staff changes and the check card. (a) is in; the lines marked (b) are the design
   through a setup link. The PIN has 4 to 6 digits and is **one team PIN per restaurant**, set with
   the password (assumption, `docs/01_STATUS.md`): staff share the tablet, so a PIN chosen per device
   would be known only to whoever signed it in. **The operator sees and changes the team PIN, and the
-  admin PIN of (b)** (Maxi 09.11.2026): until the dashboard has it (#571) with
-  `python -m api.jobs.gui_access pin` and `pin --set <digits>`, each look and change in `audit_log`
-  without the value. So the PINs are stored readable (migration 031): a hash of 4 to 6 digits held
+  admin PIN** (Maxi 09.11.2026): until the dashboard has it (#571) with
+  `python -m api.jobs.gui_access pin` and `pin --set <digits>`, `--admin` for the admin PIN, each
+  look and change in `audit_log` without the value. So the PINs are stored readable (migration 031): a hash of 4 to 6 digits held
   nobody with the database back anyway, since a million guesses take an afternoon offline, and
   whoever holds the database can change everything else too. Devices stay signed in when a PIN
   changes.
+- **Admin PIN (#570 b, built):** 4 to 6 digits, never the team PIN (the staff know that one; a
+  CHECK in the database too). The owner sets it on the setup page with password and team PIN; a
+  setup link used without one keeps it. Right, it holds owner rights on that device for 60 minutes
+  (`gui_sessions.admin_until`) and unlocks a locked device as well. The idle lock ends them early:
+  after 15 minutes without a change the device is locked, and the team PIN that unlocks it opens
+  staff rights only, so an owner who walks away leaves nothing open; "Inhaber-Bereich schließen"
+  ends them at once. Wrong admin PINs count on the account with the waits of a wrong password (every
+  third in a row, 1 to 5 minutes, no check while one runs), not with the team PIN's five tries:
+  the staff could sign in again at will, so ending the session would cost a guesser nothing. Each
+  right and wrong admin PIN stands in `audit_log` (`gui.admin_unlocked`, `gui.admin_pin_wrong`).
 - **Sessions per device:** cookie `__Host-session` (`Secure`, `HttpOnly`, `SameSite=Lax`, path `/`;
   `maex_session` without `Secure` in dev and test, which run over plain HTTP), a random 32-byte
   token whose SHA-256 is the server-side row (`gui_sessions`). The session slides for 30 days on use
@@ -166,12 +178,14 @@ staff changes and the check card. (a) is in; the lines marked (b) are the design
   The PIN is never a login: it only unlocks a session that already exists.
 - **Devices:** each session is a device with its first and last use and the browser's name. In (a)
   the operator lists and signs them out on the stack (`python -m api.jobs.gui_access devices`,
-  `sign-out <id>` or `--all`), until the dashboard has it (#571). (b): the owner's device list in the
-  admin area with "Gerät abmelden" behind the admin PIN.
-- **Two levels in the admin area (D34 point 3, (b)):** staff with the shared login, no PIN: call
+  `sign-out <id>` or `--all`), until the dashboard has it (#571). The owner's device list
+  (`/gui/geraete`, "Geräte" in the header) has "Gerät abmelden" behind the admin PIN (#570 b).
+- **Two levels in the admin area (D34 point 3, the admin PIN built in (b)):** staff with the shared login, no PIN: call
   mode, team number and the hours of a given date (a special day). The owner, with an admin PIN
   asked when a protected part is first opened and then unlocked on that device for 60 minutes:
-  delivery zones, fees and minimum order, the standard weekly hours, the device list.
+  delivery zones, fees and minimum order, the standard weekly hours, the device list. Built: the
+  device list; the other pages do not exist yet and take `require_admin` (`gui/session.py`) when
+  they come.
 - **Staff changes are temporary and reviewed (D34 point 4, (b)):** a staff change to a date's hours
   expires with that date. Today's changes hold at once; for a later date the restrictive direction
   (closed, shorter hours) holds at once, while longer or extra hours beyond today wait for the
@@ -186,7 +200,7 @@ staff changes and the check card. (a) is in; the lines marked (b) are the design
   browser sends, so no access log or proxy sees it; the page's script puts it into the form. An
   e-mail reset link is decided too but waits for Maxi's choice of the mail service (provider, cost,
   data processing agreement): issue #584. No security questions.
-- **Lost tablet (D34 point 6, T8):** the owner signs out one device in the admin area (b); the
+- **Lost tablet (D34 point 6, T8):** the owner signs out one device in the admin area; the
   operator removes a device (today with `gui_access sign-out`) and makes a new setup link, which
   changes the password and signs out every device.
 - **Brute force** (Maxi 09.11.2026): counters per account (on its row) and per client address

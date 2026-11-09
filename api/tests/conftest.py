@@ -2,6 +2,7 @@
 
 import os
 import time
+import uuid
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
@@ -48,12 +49,18 @@ def _gui_signed_in(request):
     if request.node.get_closest_marker("gui_login"):
         yield
         return
-    from api.gui.session import require_gui_session
+    from api.domain.access.sessions import Access
+    from api.gui.session import require_admin, require_gui_session
     from api.main import app
 
     app.dependency_overrides[require_gui_session] = lambda: None
+    # With the admin PIN, too; no real device has this id.
+    app.dependency_overrides[require_admin] = lambda: Access(
+        uuid.UUID(int=0), locked=False, admin=True
+    )
     yield
     app.dependency_overrides.pop(require_gui_session, None)
+    app.dependency_overrides.pop(require_admin, None)
 
 
 @pytest.fixture(autouse=True)

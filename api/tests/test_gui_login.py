@@ -1,4 +1,5 @@
-"""The restaurant's login on the operations view over HTTP (#570, D34, docs/23 §6).
+"""The restaurant's login on the operations view over HTTP (#570, D34, docs/23 §6),
+with the owner's admin PIN and device list (#570 part b).
 
 These tests switch off the signed-in device every other GUI test acts as
 (conftest `_gui_signed_in`), so they meet the view as a browser does."""
@@ -27,6 +28,7 @@ pytestmark = pytest.mark.gui_login
 
 PASSWORD = "Kuechentablet-2026"
 PIN = "4711"
+ADMIN_PIN = "080815"
 HTML = {"Accept": "text/html,application/xhtml+xml"}
 HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
 PROXY = "p" * 32
@@ -81,6 +83,8 @@ def _set_up_and_sign_in(client, engine) -> None:
             "passwort2": PASSWORD,
             "pin": PIN,
             "pin2": PIN,
+            "admin_pin": ADMIN_PIN,
+            "admin_pin2": ADMIN_PIN,
         },
     )
     assert answer.status_code == 303 and answer.headers["location"] == "/gui/"
@@ -147,6 +151,8 @@ def test_setup_refuses_two_different_entries_and_a_spent_link(client, engine):
         "passwort2": PASSWORD + "x",
         "pin": PIN,
         "pin2": PIN,
+        "admin_pin": ADMIN_PIN,
+        "admin_pin2": ADMIN_PIN,
     }
     answer = client.post("/gui/einrichten", data=form)
     assert answer.status_code == 422 and "nicht gleich" in answer.text
@@ -393,3 +399,143 @@ def test_the_device_cookie_gets_a_known_browser_past_a_guessers_wait(client, eng
         "/gui/anmelden", data={"csrf_token": "testtoken", "passwort": PASSWORD}
     )
     assert back.status_code == 303 and back.headers["location"] == "/gui/"
+
+
+# --- the owner's part of the admin area (#570 part b, D34 points 3 and 6) -------
+
+DEVICES = "/gui/geraete"
+
+
+def _owner(client, pin=ADMIN_PIN, back=DEVICES):
+    return client.post(
+        "/gui/inhaber",
+        data={"csrf_token": "testtoken", "pin": pin, "weiter": back},
+    )
+
+
+def _second_device(engine):
+    other = _client(engine)
+    answer = other.post(
+        "/gui/anmelden", data={"csrf_token": "testtoken", "passwort": PASSWORD}
+    )
+    assert answer.status_code == 303
+    return other
+
+
+def _sessions(engine) -> list[GuiSession]:
+    with Session(engine) as session:
+        return list(session.scalars(select(GuiSession)))
+
+
+def test_the_device_list_asks_the_admin_pin_first(client, engine):
+    _set_up_and_sign_in(client, engine)
+    page = client.get(DEVICES, headers=HTML)
+    assert page.status_code == 303
+    assert page.headers["location"] == "/gui/inhaber?weiter=/gui/geraete"
+    form = client.get(page.headers["location"])
+    assert form.status_code == 200 and 'name="weiter" value="/gui/geraete"' in form.text
+
+    answer = _owner(client)
+    assert answer.status_code == 303 and answer.headers["location"] == DEVICES
+    listed = client.get(DEVICES, headers=HTML)
+    assert listed.status_code == 200 and "Gerät abmelden" in listed.text
+    # Open, the admin PIN page leads straight on.
+    assert client.get("/gui/inhaber?weiter=/gui/geraete").headers["location"] == (
+        DEVICES
+    )
+
+
+def test_a_write_of_the_owner_without_the_pin_goes_to_the_pin_page(client, engine):
+    _set_up_and_sign_in(client, engine)
+    session_id = _sessions(engine)[0].id
+    answer = client.post(
+        f"{DEVICES}/{session_id}/abmelden",
+        headers={**HX, "HX-Current-URL": "http://testserver/gui/geraete"},
+    )
+    assert answer.status_code == 401
+    assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/geraete"
+    assert len(_sessions(engine)) == 1
+
+
+def test_a_wrong_admin_pin_says_so_and_the_team_pin_opens_nothing(client, engine):
+    _set_up_and_sign_in(client, engine)
+    for pin in ("0000", PIN):
+        answer = _owner(client, pin=pin)
+        assert answer.status_code == 401 and "stimmt nicht" in answer.text
+    assert _owner(client, pin="1111").status_code == 401
+    waits = _owner(client)
+    assert waits.status_code == 401 and "Zu viele Versuche" in waits.text
+    assert client.get(DEVICES, headers=HTML).status_code == 303
+
+
+@pytest.mark.parametrize(
+    "back", ["https://evil.example/", "//evil.example/x", "/elsewhere", "/gui/\\x"]
+)
+def test_the_way_back_stays_on_the_view(client, engine, back):
+    _set_up_and_sign_in(client, engine)
+    answer = _owner(client, back=back)
+    assert answer.status_code == 303 and answer.headers["location"] == "/gui/"
+
+
+def test_the_admin_pin_form_needs_its_csrf_token_and_this_site(client, engine):
+    _set_up_and_sign_in(client, engine)
+    bare = client.post("/gui/inhaber", data={"pin": ADMIN_PIN, "weiter": DEVICES})
+    assert bare.status_code == 403
+    foreign = client.post(
+        "/gui/inhaber",
+        data={"csrf_token": "testtoken", "pin": ADMIN_PIN},
+        headers={"Origin": "https://evil.example"},
+    )
+    assert foreign.status_code == 403
+    assert client.get(DEVICES, headers=HTML).status_code == 303
+
+
+def test_without_a_session_the_admin_pin_page_goes_to_the_sign_in(client):
+    assert client.get("/gui/inhaber").headers["location"] == "/gui/anmelden"
+    assert _owner(client).headers["location"] == "/gui/anmelden"
+
+
+def test_the_owner_signs_out_another_device(client, engine):
+    _set_up_and_sign_in(client, engine)
+    other = _second_device(engine)
+    assert _owner(client).status_code == 303
+    own, theirs = sorted(_sessions(engine), key=lambda row: row.created_at)
+    listed = client.get(DEVICES, headers=HTML).text
+    assert "Dieses Gerät" in listed and f"/gui/geraete/{theirs.id}/abmelden" in listed
+
+    answer = client.post(f"{DEVICES}/{theirs.id}/abmelden", headers=HX)
+    assert answer.status_code == 200 and str(theirs.id) not in answer.text
+    assert [row.id for row in _sessions(engine)] == [own.id]
+    assert other.get("/gui/", headers=HTML).status_code == 303
+
+
+def test_signing_out_this_device_goes_to_the_sign_in(client, engine):
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client).status_code == 303
+    own = _sessions(engine)[0]
+    answer = client.post(f"{DEVICES}/{own.id}/abmelden", headers=HX)
+    assert answer.headers["HX-Redirect"] == "/gui/anmelden"
+    assert _sessions(engine) == []
+
+
+def test_closing_the_owner_part_leaves_staff_rights(client, engine):
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client).status_code == 303
+    closed = client.post("/gui/inhaber/schliessen", data={"csrf_token": "testtoken"})
+    assert closed.status_code == 303 and closed.headers["location"] == "/gui/"
+    assert client.get(DEVICES, headers=HTML).status_code == 303
+    assert client.get("/gui/", headers=HTML).status_code == 200
+
+
+def test_the_admin_pin_unlocks_a_locked_device(client, engine):
+    _set_up_and_sign_in(client, engine)
+    _lock(engine)
+    assert client.get(DEVICES, headers=HTML).status_code == 303
+    assert _owner(client).status_code == 303
+    assert client.get(DEVICES, headers=HTML).status_code == 200
+    assert client.post("/gui/kopfzeile/ki-pausieren", headers=HX).status_code == 200
+
+
+def test_the_header_names_the_device_list(client, engine):
+    _set_up_and_sign_in(client, engine)
+    assert 'href="/gui/geraete"' in client.get("/gui/", headers=HTML).text

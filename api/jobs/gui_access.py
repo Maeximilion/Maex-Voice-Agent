@@ -7,6 +7,7 @@ Call, in the stack's api container:
     python -m api.jobs.gui_access sign-out --all
     python -m api.jobs.gui_access pin
     python -m api.jobs.gui_access pin --set 4711
+    python -m api.jobs.gui_access pin --admin [--set 080815]
 
 `link` makes the one-time setup link (24 hours, D34 point 5): the restaurant
 opens it, sets its password and team PIN, and every other device is signed out.
@@ -15,6 +16,8 @@ stored only as a hash; a newer link replaces an older one. Without
 `--base-url` it uses `https://$AGENT_DOMAIN`, or prints the path alone.
 `sign-out` is the lost tablet (T8): one device, or all of them. `pin` shows the
 team PIN, `pin --set` changes it; devices stay signed in (Maxi, 09.11.2026).
+With `--admin` both work on the owner's admin PIN instead (#570 part b), which
+never equals the team PIN.
 
 The stack's restaurant is its oldest tenant, as in the operations view (D32).
 Exit code: 0 done, 1 nothing matched or refused, 2 no tenant.
@@ -29,6 +32,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import InvalidInput
 from api.core.time import to_local, utcnow
 from api.db import SessionLocal
+from api.domain.access.admin import admin_pin, set_admin_pin
 from api.domain.access.sessions import devices, end_sessions, stack_tenant_id
 from api.domain.access.setup import issue_link, set_team_pin, team_pin
 from api.models import Tenant
@@ -79,16 +83,21 @@ def _sign_out(session: Session, tenant: Tenant, args: argparse.Namespace) -> int
 
 
 def _pin(session: Session, tenant: Tenant, args: argparse.Namespace) -> int:
+    name, show, change = (
+        ("admin", admin_pin, set_admin_pin)
+        if args.admin
+        else ("team", team_pin, set_team_pin)
+    )
     if args.set is None:
-        pin = team_pin(session, tenant.id, ACTOR)
-        print(pin or "No team PIN set.")
+        pin = show(session, tenant.id, ACTOR)
+        print(pin or f"No {name} PIN set.")
         return 0 if pin else 1
     try:
-        set_team_pin(session, tenant.id, args.set, ACTOR)
+        change(session, tenant.id, args.set, ACTOR)
     except InvalidInput as refused:
         print(refused.say, file=sys.stderr)
         return 1
-    print("Team PIN changed.", file=sys.stderr)
+    print(f"{name.capitalize()} PIN changed.", file=sys.stderr)
     return 0
 
 
@@ -106,6 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     sign_out.set_defaults(run=_sign_out)
     pin = commands.add_parser("pin", help="show the team PIN, or --set a new one")
     pin.add_argument("--set", metavar="DIGITS")
+    pin.add_argument("--admin", action="store_true", help="the owner's admin PIN")
     pin.set_defaults(run=_pin)
     args = parser.parse_args(argv)
 

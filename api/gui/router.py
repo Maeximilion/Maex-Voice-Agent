@@ -33,6 +33,7 @@ from api.core.errors import AppError, InvalidInput
 from api.core.logging import get_logger
 from api.core.time import business_day, to_local
 from api.db import SessionLocal, get_db
+from api.domain.access.sessions import Access, devices, end_sessions
 from api.domain.callbacks import list_history, list_open, mark_done, reopen
 from api.domain.callbacks.board import HISTORY_DAYS, NUMBER_OTHER, NUMBER_WITHHELD
 from api.domain.confirm import confirm_tablet
@@ -50,7 +51,7 @@ from api.domain.status import holidays as holiday_days
 from api.domain.status.mode import CAUTION, mode_at
 from api.domain.status.waits import current_wait, standard_wait
 from api.gui import figures_view, orders_view
-from api.gui.session import require_gui_session
+from api.gui.session import LOGIN, require_admin, require_gui_session
 from api.gui.sse import today_event_stream
 from api.models import Reservation, ServiceConfig, Tenant
 from api.schemas.floor_plan import NewArea, SaveArea
@@ -1554,6 +1555,68 @@ def floor_plan_save(
         lambda tenant_id: floor_plan.save_area(
             session, tenant_id, area_id, SaveArea.model_validate_json(body)
         ),
+    )
+
+
+# --- The owner's device list (#570 part b, D34 point 6) ---------------------------
+
+
+def _device_rows(session: Session, tenant: Tenant, own: uuid.UUID) -> list[dict]:
+    shown = "%d.%m.%Y %H:%M"
+    return [
+        {
+            "id": row.id,
+            "name": row.device or "Unbekannter Browser",
+            "since": to_local(row.created_at, tenant.timezone).strftime(shown),
+            "seen": to_local(row.last_seen_at, tenant.timezone).strftime(shown),
+            "this": row.id == own,
+        }
+        for row in devices(session, tenant.id)
+    ]
+
+
+@router.get("/geraete", response_class=HTMLResponse, include_in_schema=False)
+def devices_page(
+    request: Request,
+    access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    tenant = _tenant(session)
+    if tenant is None:
+        return _page_response(
+            request, "betrieb/geraete.html", {"problem": NO_TENANT}, 503
+        )
+    rows = _device_rows(session, tenant, access.session_id)
+    return _page_response(
+        request, "betrieb/geraete.html", {"tenant": tenant, "devices": rows}
+    )
+
+
+@router.post(
+    "/geraete/{session_id}/abmelden",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def device_sign_out(
+    request: Request,
+    session_id: uuid.UUID,
+    access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The lost tablet: one device signed out; it needs the password again.
+    A device gone already is no error, the fresh list is the answer."""
+    tenant = _tenant(session)
+    if tenant is None:
+        return HTMLResponse(NO_TENANT, status_code=503)
+    end_sessions(session, tenant.id, "gui:owner", "owner", session_id)
+    session.commit()
+    if session_id == access.session_id:
+        return HTMLResponse("", headers={"HX-Redirect": LOGIN})
+    return templates.TemplateResponse(
+        request,
+        "fragments/geraete.html",
+        {"devices": _device_rows(session, tenant, access.session_id)},
     )
 
 

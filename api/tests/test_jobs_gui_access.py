@@ -105,3 +105,22 @@ def test_pin_shows_and_sets_the_team_pin(engine, tenant_id, capsys):
     capsys.readouterr()
     assert gui_access.main(["pin"]) == 0
     assert capsys.readouterr().out.strip() == "908172"
+
+
+def test_pin_admin_shows_and_sets_the_owners_pin(engine, tenant_id, capsys):
+    """Maxi, 09.11.2026 (D34 point 8): the dev sees and changes the admin PIN too."""
+    code = _link(capsys).split("#")[1]
+    with Session(engine) as session:
+        use_link(session, tenant_id, code, PASSWORD, "4711", "Tablet", T0)
+    assert gui_access.main(["pin", "--admin"]) == 1
+    assert "No admin PIN set." in capsys.readouterr().out
+    # Never the team PIN: the staff know it.
+    assert gui_access.main(["pin", "--admin", "--set", "4711"]) == 1
+    assert "Team-PIN" in capsys.readouterr().err
+    assert gui_access.main(["pin", "--admin", "--set", "080815"]) == 0
+    capsys.readouterr()
+    assert gui_access.main(["pin", "--admin"]) == 0
+    assert capsys.readouterr().out.strip() == "080815"
+    # The team PIN stays as it was.
+    assert gui_access.main(["pin"]) == 0
+    assert capsys.readouterr().out.strip() == "4711"

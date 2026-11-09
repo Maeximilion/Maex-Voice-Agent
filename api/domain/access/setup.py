@@ -1,10 +1,11 @@
 """The operator's one-time setup link (#570, D34 point 5, docs/23 §6).
 
-The operator makes a link; the restaurant opens it and sets its password and
-team PIN. The link is valid 24 hours, shown once, stored only as a hash, and a
-newer link replaces an older one. Setting the password signs out every device,
-because a reset usually means a lost tablet or a password that got around, and
-signs in the device that used the link.
+The operator makes a link; the restaurant opens it and sets its password, the
+team PIN and the owner's admin PIN (#570 part b; without one the admin PIN
+stays as it was). The link is valid 24 hours, shown once, stored only as a
+hash, and a newer link replaces an older one. Setting the password signs out
+every device, because a reset usually means a lost tablet or a password that
+got around, and signs in the device that used the link.
 """
 
 import secrets
@@ -16,6 +17,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput
+from api.domain.access.admin import NO_LOGIN, SAME_AS_TEAM, refuse_same_pins
 from api.domain.access.hashing import (
     hash_secret,
     password_problem,
@@ -35,6 +37,7 @@ from api.models import GuiAccount, GuiSetupLink
 
 LINK_HOURS = 24
 LINK_GONE = "Dieser Link gilt nicht mehr. Bitte beim Betreiber einen neuen anfordern."
+ADMIN_PIN_DIGITS = "Die Inhaber-PIN hat 4 bis 6 Ziffern."
 
 
 def issue_link(
@@ -84,10 +87,12 @@ def use_link(
     device: str,
     now: datetime,
     device_token: str = "",
+    admin_pin: str | None = None,
 ) -> Signed:
-    """Set the password and team PIN through a setup link; returns the cookies
-    of this device. Raises InvalidInput with the sentence for the page. The
-    link is spent only when both values are taken. Commits.
+    """Set the password, the team PIN and, when given, the admin PIN through a
+    setup link; returns the cookies of this device. Raises InvalidInput with
+    the sentence for the page. The link is spent only when every value is
+    taken. Commits.
 
     The slow hash runs before any lock, and the account is locked before
     its link, as in `issue_link`: a link replaced meanwhile is refused cleanly
@@ -97,6 +102,11 @@ def use_link(
         raise InvalidInput("setup link invalid", say=LINK_GONE)
     session.rollback()
     problem = password_problem(password) or pin_problem(pin)
+    if not problem and admin_pin is not None:
+        if pin_problem(admin_pin):
+            problem = ADMIN_PIN_DIGITS
+        elif admin_pin == pin:
+            problem = SAME_AS_TEAM
     if problem:
         raise InvalidInput("setup values refused", say=problem)
     password_hash = hash_secret(password)
@@ -106,7 +116,12 @@ def use_link(
         session.rollback()
         raise InvalidInput("setup link replaced or expired", say=LINK_GONE)
     account, link = found
+    refuse_same_pins(session, account, pin, admin_pin or account.admin_pin)
     account.password_hash, account.team_pin = password_hash, pin
+    if admin_pin is not None:
+        account.admin_pin, account.admin_failures = admin_pin, 0
+        account.admin_blocked_until = account.admin_last_failed_at = None
+        audit(session, tenant_id, "gui:setup", "gui.admin_pin_set", account.id, {})
     account.failures, account.blocked_until, account.last_failed_at = 0, None, None
     session.delete(link)
     end_sessions(session, tenant_id, "gui:setup", "password_set")
@@ -161,9 +176,8 @@ def set_team_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) -
     account = locked_account(session, tenant_id)
     if account is None:
         session.rollback()
-        raise InvalidInput(
-            "no login yet", say="Noch kein Zugang: erst einen Link machen."
-        )
+        raise InvalidInput("no login yet", say=NO_LOGIN)
+    refuse_same_pins(session, account, pin, account.admin_pin)
     account.team_pin = pin
     audit(session, tenant_id, actor, "gui.team_pin_set", account.id, {})
     session.commit()

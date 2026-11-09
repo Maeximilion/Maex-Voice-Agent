@@ -1,7 +1,8 @@
 """The restaurant's login to the operations view (#570, D34, docs/23 §6).
 
-One login per restaurant: `gui_accounts` holds its password as a scrypt hash
-and the team PIN readable for the operator (migration 031). Each signed-in
+One login per restaurant: `gui_accounts` holds its password as a scrypt hash,
+the team PIN readable for the operator (migration 031) and the owner's admin
+PIN, readable too, with a failure count of its own (migration 032). Each signed-in
 device is a row of `gui_sessions`; the browser keeps only a random token, the
 row only its SHA-256. A setup link made by the operator sets the password; it
 is stored hashed too. Failed sign-ins are
@@ -21,6 +22,11 @@ class GuiAccount(UUIDPrimaryKey, Timestamps, Base):
     __tablename__ = "gui_accounts"
     __table_args__ = (
         CheckConstraint("team_pin ~ '^[0-9]{4,6}$'", name="ck_gui_accounts_team_pin"),
+        CheckConstraint("admin_pin ~ '^[0-9]{4,6}$'", name="ck_gui_accounts_admin_pin"),
+        # The staff know the team PIN, so it never opens owner rights.
+        CheckConstraint(
+            "admin_pin <> team_pin", name="ck_gui_accounts_admin_pin_not_team_pin"
+        ),
     )
 
     # One login per restaurant (D34): unique, not just indexed.
@@ -35,6 +41,19 @@ class GuiAccount(UUIDPrimaryKey, Timestamps, Base):
     failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The owner's PIN for the protected part of the admin area (#570 b, D34
+    # point 3), readable for the operator like the team PIN; wrong ones wait
+    # as wrong passwords do (`domain/access/admin.py`).
+    admin_pin: Mapped[str | None] = mapped_column(Text)
+    admin_failures: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0"
+    )
+    admin_last_failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
+    admin_blocked_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
 
 class GuiSession(UUIDPrimaryKey, Base):
@@ -63,6 +82,9 @@ class GuiSession(UUIDPrimaryKey, Base):
     pin_failures: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )
+    # The owner's rights on this device end here, 60 minutes after the admin
+    # PIN; the idle lock and the team PIN end them earlier.
+    admin_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class GuiSetupLink(UUIDPrimaryKey, Base):

@@ -1,0 +1,21 @@
+{# The rows of the device list (#570 part b); the page and every sign-out swap it. #}
+<table class="tbl" id="geraete">
+  <thead>
+    <tr><th>Gerät</th><th>Angemeldet seit</th><th>Zuletzt benutzt</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for row in devices %}
+    <tr>
+      <td>{% if row.this %}<span class="badge ok">Dieses Gerät</span> {% endif %}<span class="muted">{{ row.name }}</span></td>
+      <td>{{ row.since }}</td>
+      <td>{{ row.seen }}</td>
+      <td>
+        <button hx-post="/gui/geraete/{{ row.id }}/abmelden" hx-target="#geraete" hx-swap="outerHTML"
+                hx-confirm="{% if row.this %}Dieses Gerät abmelden? Danach braucht es das Passwort.{% else %}Dieses Gerät abmelden?{% endif %}">Gerät abmelden</button>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="4">Kein Gerät angemeldet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
