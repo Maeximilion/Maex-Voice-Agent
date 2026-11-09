@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput
@@ -18,7 +18,7 @@ from api.domain.access.admin import (
     set_admin_pin,
     unlock_admin,
 )
-from api.domain.access.sessions import IDLE, mark_active, resolve, unlock
+from api.domain.access.sessions import IDLE, mark_active, resolve, sign_in, unlock
 from api.domain.access.setup import issue_link, set_team_pin, use_link
 from api.models import AuditLog, GuiAccount, Tenant
 
@@ -126,6 +126,26 @@ def test_every_third_wrong_admin_pin_waits_a_minute_longer(session, tenant_id, t
     assert _access(session, tenant_id, token, done).admin
 
 
+def test_a_wait_ended_meanwhile_still_answers_the_wait(
+    session, tenant_id, token, monkeypatch
+):
+    """The rollback expires the account row; a parallel right PIN that clears
+    the wait just then must not turn this answer into a crash (review of #587)."""
+    access = _access(session, tenant_id, token, T0)
+    for pin in ("0000", "0001", "0002"):
+        _refused(session, access.session_id, pin, T0)
+    rollback = session.rollback
+
+    def rollback_while_the_wait_is_cleared() -> None:
+        rollback()
+        with Session(session.get_bind()) as other:
+            other.execute(update(GuiAccount).values(admin_blocked_until=None))
+            other.commit()
+
+    monkeypatch.setattr(session, "rollback", rollback_while_the_wait_is_cleared)
+    assert _refused(session, access.session_id, ADMIN, T0).wait_minutes == 1
+
+
 def test_without_an_admin_pin_nothing_opens_and_nothing_counts(session, tenant_id):
     code, _ = issue_link(session, tenant_id, "operator:test", T0)
     token = use_link(session, tenant_id, code, PASSWORD, PIN, "Tablet", T0).token
@@ -169,6 +189,36 @@ def test_a_link_without_an_admin_pin_keeps_the_owners_one(session, tenant_id, to
     assert "unterscheiden" in (same.value.say or "")
     # Neither refusal spent the link.
     assert use_link(session, tenant_id, code, PASSWORD, "1357", "x", T0)
+
+
+def test_a_new_admin_pin_starts_without_a_wait_and_closes_owner_rights(
+    session, tenant_id, token
+):
+    """A new PIN is often one that leaked: the old hour and the old wait end."""
+    access = _access(session, tenant_id, token, T0)
+    unlock_admin(session, access.session_id, ADMIN, T0)
+    other = sign_in(session, tenant_id, PASSWORD, "10.0.0.2", "Handy", T0).token
+    other_id = _access(session, tenant_id, other, T0).session_id
+    for pin in ("0000", "0001", "0002"):
+        _refused(session, other_id, pin, T0)
+    set_admin_pin(session, tenant_id, "135790", "operator:test")
+    assert not _access(session, tenant_id, token, T0).admin
+    account = session.scalars(select(GuiAccount)).one()
+    assert (account.admin_failures, account.admin_blocked_until) == (0, None)
+    unlock_admin(session, other_id, "135790", T0)
+    assert _access(session, tenant_id, other, T0).admin
+
+
+def test_a_new_team_pin_forgets_the_devices_wrong_tries(session, tenant_id, token):
+    """Four wrong tries, then the operator's new team PIN: one typo must not
+    end the session (review of #586)."""
+    access = _access(session, tenant_id, token, T0)
+    later = T0 + IDLE + timedelta(minutes=5)
+    for pin in ("0000", "0001", "0002", "0003"):
+        unlock(session, access.session_id, pin, later)
+    set_team_pin(session, tenant_id, "2468", "operator:test")
+    assert unlock(session, access.session_id, "0004", later) == 4
+    assert resolve(session, token, tenant_id, later) is not None
 
 
 def test_the_operator_reads_and_sets_the_admin_pin(session, tenant_id, token):

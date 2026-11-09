@@ -120,8 +120,8 @@ def up(args: argparse.Namespace, build: bool) -> None:
     base = f"http://{args.bind}:{args.port}"
     run(compose("exec", "-T", "api", *ACCESS, "--base-url", base), args.dry_run)
     print(
-        f"Tablet: open the link above once, set any password and PIN, then the board "
-        f"is at {base}/gui/; stack `{PROJECT}`"
+        "Tablet: open the link above once, set any password, team PIN and admin PIN, "
+        f"then the board is at {base}/gui/; stack `{PROJECT}`"
     )
     if args.bind != LOOPBACK:
         print(

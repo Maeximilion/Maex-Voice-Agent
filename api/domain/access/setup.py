@@ -12,7 +12,7 @@ import secrets
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -33,7 +33,7 @@ from api.domain.access.sessions import (
     open_session,
     trust_device,
 )
-from api.models import GuiAccount, GuiSetupLink
+from api.models import GuiAccount, GuiSession, GuiSetupLink
 
 LINK_HOURS = 24
 LINK_GONE = "Dieser Link gilt nicht mehr. Bitte beim Betreiber einen neuen anfordern."
@@ -169,7 +169,8 @@ def team_pin(session: Session, tenant_id: uuid.UUID, actor: str) -> str | None:
 
 def set_team_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) -> None:
     """The operator sets the team PIN; signed-in devices stay signed in and
-    unlock with the new one. Raises InvalidInput. Commits."""
+    unlock with the new one, their wrong tries forgotten (review of #586).
+    Raises InvalidInput. Commits."""
     problem = pin_problem(pin)
     if problem:
         raise InvalidInput("team pin refused", say=problem)
@@ -179,5 +180,10 @@ def set_team_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) -
         raise InvalidInput("no login yet", say=NO_LOGIN)
     refuse_same_pins(session, account, pin, account.admin_pin)
     account.team_pin = pin
+    session.execute(
+        update(GuiSession)
+        .where(GuiSession.tenant_id == tenant_id)
+        .values(pin_failures=0)
+    )
     audit(session, tenant_id, actor, "gui.team_pin_set", account.id, {})
     session.commit()

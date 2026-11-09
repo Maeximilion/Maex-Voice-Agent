@@ -49,8 +49,9 @@ WRONG_PIN = "Die PIN stimmt nicht. Noch {left} Versuche."
 PIN_ENDED = "Fünfmal die falsche PIN: das Gerät ist abgemeldet. Bitte mit dem Passwort anmelden."
 WRONG_ADMIN_PIN = "Die Inhaber-PIN stimmt nicht."
 NO_ADMIN_PIN = "Noch keine Inhaber-PIN. Der Betreiber setzt sie."
-# Where the admin PIN page may lead back to: a path of the view, nothing else.
-BACK = re.compile(r"/gui/[a-z0-9/-]*")
+# Where the admin PIN page may lead back to: a path of the view, nothing else,
+# and not the owner pages themselves (review of #587).
+BACK = re.compile(r"/gui/(?!inhaber)[a-z0-9/-]*")
 
 
 def _checked(request: Request, form: dict[str, str]) -> None:

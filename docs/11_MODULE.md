@@ -129,11 +129,11 @@ braucht.
 
 ### `domain/access/`
 The restaurant's login to the operations view (#570, D34, docs/23 §6). Answers: *may this device see and change the view?*
-- `hashing.py` — scrypt hashes of password and team PIN, SHA-256 of tokens, the rules for a new password and PIN
+- `hashing.py` — the scrypt hash of the password (the PINs are stored readable, migration 031), SHA-256 of tokens, the rules for a new password and PIN
 - `sessions.py` — sign-in with the growing wait per account and per address, or per device cookie for a browser that signed in before, the device session (30 days sliding, locked 15 minutes after the last change), the team PIN, signing devices out; the stack's tenant is the oldest (D32)
 - `setup.py` — the operator's one-time setup link: password, team PIN and admin PIN set, every other device signed out
 - `admin.py` — the owner's admin PIN (#570 b): owner rights on one device for 60 minutes, closed by the idle lock and by the team PIN, waits after wrong PINs, never equal to the team PIN, read and set by the operator
-- Tests: the wait from the fifth failure, a session of another tenant, the idle lock, five wrong PINs, a spent or replaced link, the owner's hour and its early end
+- Tests: the wait from the third failure, a session of another tenant, the idle lock, five wrong PINs, a spent or replaced link, the owner's hour and its early end
 
 ### `domain/provision.py`
 A new customer's tenant inside its own stack (#573, D32, docs/13 §8). Answers: *is this stack's restaurant set up, and what does it still lack?*
