@@ -157,7 +157,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # Every database here is thrown away after its test, so durability only costs
-      # time: the suite ran in 220 s instead of 505 s on four cores (#609).
+      # time. It saved 56 % locally (Docker Desktop) but about 5 % on the runner (#609).
       - name: Test database without durability
         run: >-
           docker exec ${{ job.services.db.id }} psql -U maex -d maex_test
