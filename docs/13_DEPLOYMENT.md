@@ -384,7 +384,7 @@ EUR; isolation and the unchanged code decide it.
   check of docs/23 §8; `--check-sites` runs it alone) and lets the shared Caddy (`deploy/caddy`,
   project `maex-caddy`, the only one publishing 80 and 443) join the stack's `edge` network and
   reload. Joining a new network recreates the shared Caddy, so every customer's site is
-  away for a second or two: add a customer outside service hours. The setup link of the first login is printed once. An existing `.env` is never
+  away for a second or two: add a customer outside service hours. A `team_phone` in the customer file must be E.164 there, since it becomes `TEAM_PHONE` as written; anything else is refused before the first step. The setup link of the first login is printed once. An existing `.env` is never
   rewritten, so a rerun keeps every token and only renders the site file again, for example after
   `N8N_EDITOR_AUTH_USER` and `_HASH` were set (both empty: the editor answers 401). Still by hand: the push server's users and `MONITOR_PUSH_TOKEN` (§3, #595), the voice profile and the trunk.
 - #570 logins are per stack; the GUI's tenant choice may stay as it is.

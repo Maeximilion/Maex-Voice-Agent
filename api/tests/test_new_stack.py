@@ -12,6 +12,7 @@ import stat
 
 import pytest
 
+from api.domain.customers.phone import E164
 from api.models.tenants import CUSTOMER_KEY
 from api.tests.test_commands import REPO_ROOT
 from api.tests.test_compose_ports import _load, _services
@@ -143,6 +144,24 @@ def test_the_shared_caddy_matches_the_stacks_caddy():
 
 def test_the_key_rule_is_the_databases():
     assert new_stack.CUSTOMER_KEY.pattern == CUSTOMER_KEY
+    assert new_stack.E164.pattern == E164.pattern
+
+
+@pytest.mark.parametrize(
+    "phone", ["0721 5551234", "+49 721 5551234", "+4972215551234\n"]
+)
+def test_a_team_number_not_in_e164_is_refused_before_anything_starts(tmp_path, phone):
+    spec = json.loads(CUSTOMER.read_text()) | {"team_phone": phone}
+    path = tmp_path / "customer.json"
+    path.write_text(json.dumps(spec))
+    argv = [str(path), "--domain", "a.example.org", "--root", str(tmp_path / "srv")]
+    assert new_stack.main(argv) == 2
+    assert not (tmp_path / "srv").exists()
+
+
+def test_an_e164_team_number_becomes_team_phone():
+    spec = {"key": "pilot", "name": "x", "team_phone": "+4972215551234"}
+    assert new_stack.fresh_env(spec, "a.example.org")["TEAM_PHONE"] == "+4972215551234"
 
 
 def test_wrong_input_exits_2_and_a_dry_run_writes_nothing(tmp_path, capsys):

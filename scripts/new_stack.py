@@ -41,6 +41,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # api/models/tenants.py CUSTOMER_KEY; the host needs no package of the API.
 CUSTOMER_KEY = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
+# api/domain/customers/phone.py E164.
+E164 = re.compile(r"^\+[1-9]\d{6,14}$")
 DOMAIN = re.compile(r"^(?=.{1,200}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
 COMPOSE_FILES = "docker-compose.yml:deploy/docker-compose.prod.yml:deploy/docker-compose.customer.yml"
 CADDY_PROJECT = "maex-caddy"
@@ -258,6 +260,11 @@ def read_customer(path: Path) -> dict:
     if not isinstance(name, str) or not name.strip() or not name.isprintable():
         # A line break would end the .env line and start another variable.
         raise BadInput("customer file: name is missing or has a control character")
+    phone = spec.get("team_phone")
+    if phone and not (isinstance(phone, str) and E164.fullmatch(phone)):
+        # It becomes TEAM_PHONE as written, and provisioning compares the
+        # normalized number with it exactly: only E.164 reads the same both ways.
+        raise BadInput("customer file: team_phone must be E.164, like +4972215551234")
     return spec
 
 
