@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from api.config import LOCAL_ENVS, settings
 from api.core import time as clock
+from api.core.origin import same_origin
 from api.db import get_db
 from api.domain.access.sessions import (
     Access,
@@ -76,18 +77,6 @@ def client_address(request: Request) -> str:
     if forwarded and secure():
         return forwarded.rsplit(",", 1)[-1].strip()
     return request.client.host if request.client else ""
-
-
-def same_origin(request: Request) -> bool:
-    """A change comes from a page of this site (docs/23 §6, T9).
-
-    A browser names the page's origin on every cross-site write; "null" and any
-    other host are refused. A client that sends neither header is no browser,
-    so no cross-site request; the CSRF token still applies to it."""
-    origin = request.headers.get("origin")
-    if origin is not None:
-        return urlsplit(origin).netloc == request.headers.get("host", "")
-    return request.headers.get("sec-fetch-site") in (None, "same-origin", "none")
 
 
 def require_gui_session(request: Request, db: Session = Depends(get_db)) -> Access:
