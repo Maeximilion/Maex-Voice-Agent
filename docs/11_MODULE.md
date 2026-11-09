@@ -135,6 +135,12 @@ The restaurant's login to the operations view (#570, D34, docs/23 §6). Answers:
 - `admin.py` — the owner's admin PIN (#570 b): owner rights on one device for 60 minutes, closed by the idle lock and by the team PIN, waits after wrong PINs, never equal to the team PIN, read and set by the operator
 - Tests: the wait from the fifth failure, a session of another tenant, the idle lock, five wrong PINs, a spent or replaced link, the owner's hour and its early end
 
+### `domain/provision.py`
+A new customer's tenant inside its own stack (#573, D32, docs/13 §8). Answers: *is this stack's restaurant set up, and what does it still lack?*
+- `create_tenant` — from the customer file (`schemas/provision.py`, `deploy/customer.example.json`): tenant with its key, `service_config` in `shadow` with a dialable team number, weekly hours, seats and the first setup link, in one transaction; the same key again changes nothing, any other tenant in the database refuses (one customer per stack); a dry run counts and rolls back
+- `missing` — what the tenant lacks before it takes calls: hours, seats, zones, menu, print bridge, login, privacy notice
+- Tests: the whole tenant, rerun, a second customer refused, a failed last step leaves nothing, two runs at once, the file's checks (overlaps, past midnight, duplicates, offsets)
+
 ### `agent/` – der Gesprächs-Kern
 Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | Datei | Verantwortung |
@@ -209,6 +215,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
 - `retention.py` — deletion job after docs/03 "Löschkonzept" (T-11.2): `purge(session, now)` strips the personal fields whose period is over and logs one line per pass; `cold_path.py` runs it in a thread of its own every `RETENTION_INTERVAL_SECONDS`, `python -m api.jobs.retention` runs one pass by hand
 - `data_requests.py` — requests of data subjects by hand on the server (T-11.8, docs/09 §2): `python -m api.jobs.data_requests log|open|extend|find|erase|object|answer`; stdout is the copy or the lines of the erasure ledger, written before the commit
+- `provision.py` — a new customer's tenant in its stack (#573): `python -m api.jobs.provision create <customer.json> [--dry-run]` prints one JSON report with the setup link, `check` lists what is still missing
 - `gui_access.py` — the operator's side of the restaurant's login until the dashboard has it (#570, #571): `python -m api.jobs.gui_access link|devices|sign-out|pin [--admin]`
 - `price_check.py` — Abgleich Kasse gegen Agent-DB (T-4.9)
 - `daily_report.py` — daily report as an outbox event `daily.report`. Built with T-11.6: from `REGISTER_REPORT_HOUR` local time, once per business day, how many orders of earlier days nobody marked „In Kasse eingegeben“ (L18), none when all are marked, and again an hour after one the dispatcher gave up on; `cold_path.py` runs it in a thread of its own every five minutes. The day's key figures follow with T-8.3
