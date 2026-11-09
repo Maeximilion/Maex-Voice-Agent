@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.26.0
+> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.26.1
 
 ---
 
@@ -683,6 +683,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 09.11.2026 | **Handover after #587 and #589 (#570 closed).** #570 part (b) merged in two PRs: the owner's admin PIN with the device list (#587, migration 032) and the staff changes with check cards (#589, migration 033); #589 also makes the api read `TRANSFER_TARGETS` and puts team number, a date's hours and the devices under one "Einstellungen" button. Next: #588 (push of staff and call-mode changes to owner and `ops`) on branch `task/588-staff-change-push`, Opus 5.5 `xhigh`. Workbench DB still needs `make migrate` to 033 (backup first). |
 | 09.11.2026 | **Staff changes and their check cards (#570 part b, D34 point 4).** Migration 033: `service_config.team_phone_today` with its end and `staff_changes`. Staff choose today's team number among the dialable ones (`TEAM_PHONE`, `TRANSFER_TARGETS`, now read by the api too) and change a date's hours (under "Einstellungen" in the header); today's and shorter hours hold at once, longer ones for a later date wait; a check card above the callbacks waits for the owner's keep or undo behind the admin PIN, live on every tablet (event `checks`). `transfer_to_team` and the call routing read today's number. Tests: the business-day end, keep and undo, the waiting and the withdrawn request, a holiday row's name, the dialable list, the sheets and the cards over HTTP, the PIN refusal, migration 033 up and down. Next: the push to owner and `ops`. |
 | 09.11.2026 | **The owner's admin PIN and device list (#570 part b, first of two stacked PRs; D34 points 3, 6 and 8).** Migration 032: `gui_accounts.admin_pin` readable for the operator, never the team PIN, with a failure count of its own, and `gui_sessions.admin_until`. The owner sets it on the setup page, the operator with `gui_access pin --admin [--set]`. Right, it opens the owner's part on that device for 60 minutes (`require_admin`, `/gui/inhaber`); the idle lock and the team PIN end it earlier, wrong ones wait 1 to 5 minutes after every third. First protected page: the device list with "Gerät abmelden" (`/gui/geraete`, "Geräte" in the header). Tests: owner hour and its early end, waits, never the team PIN, operator read and set, the pages over HTTP, migration up and down. Next: the staff changes and the check card. |
 | 09.11.2026 | **Restaurant login (#570 part a) and its follow-up merged (#585, #586; D34 points 1 to 9).** One login per restaurant replaces Caddy's Basic-Auth: the operator's setup link (`python -m api.jobs.gui_access link`) sets password and team PIN, each device signs in once and keeps a session for 30 days of use, the board stays live after 15 minutes idle and the next change asks the PIN, five wrong PINs sign the device out, a browser that signed in once counts its failed sign-ins on its own device cookie. Waits: every third wrong password, 1 to 5 minutes. The operator sees and sets the team PIN (`gui_access pin`), stored readable since migration 031. Migrations 030 and 031; a test now requires every data-deleting migration to name its backup. Reviews: Codex P1 and P2 on #585, Codex P1 on #586 and a local ultra review (2 of 5 findings real) all fixed. Handover 09.11.2026: next #570 part (b) on branch `task/570-b-admin-pin`. |
@@ -887,6 +888,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.26.1 · 09.11.2026:** Handover: #570 part b merged as #587 (admin PIN, device list) and #589 (staff changes, check cards); next #588 on task/588-staff-change-push
 - **v2.26.0 · 09.11.2026:** #570 part b2: staff changes and their check cards (migration 033)
 - **v2.25.0 · 09.11.2026:** #570 part b1: owner's admin PIN and device list (migration 032)
 - **v2.24.1 · 09.11.2026:** Handover: #570 part a and its follow-up merged (#585, #586), next #570 part b on task/570-b-admin-pin
