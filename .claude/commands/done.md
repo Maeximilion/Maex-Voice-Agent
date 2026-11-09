@@ -9,7 +9,7 @@ processing, merge and cleanup. In another agent runtime without that command,
 follow `.claude/commands/ship.md` as the shared procedure within that runtime's
 permissions; do not assume a native `/ship` command is installed there.
 
-**Model hand-off** (`CLAUDE.md` §6 "Cache-friendly sessions", Maxi 2026-11-07): the handoff to `/ship` stays in this session until the first independent review of the head is in. If it has no P0 or P1 (a P2 in code hitting an `xhigh` trigger counts as P1), `/ship` stops and suggests a fresh Sonnet session for the rest; a docs-only or Sonnet-routed task is already on that row and just continues. After a merge with the context over 300k tokens, write the handover block in the chat and push everything.
+**Model hand-off** (`CLAUDE.md` §6 "Cache-friendly sessions", Maxi 2026-11-07): the handoff to `/ship` stays in this session until the first independent review of the head is in. If it has no P0 or P1 (a P2 in code hitting an `xhigh` trigger counts as P1), `/ship` stops and suggests a fresh Sonnet session for the rest; a docs-only or Sonnet-routed task is already on that row and just continues. After every merge, write the handover block in the chat and push everything.
 
 Do not hand off when PR creation failed, when the user explicitly asked to wait
 or leave the PR as a draft, or when a required permission, credential or approval

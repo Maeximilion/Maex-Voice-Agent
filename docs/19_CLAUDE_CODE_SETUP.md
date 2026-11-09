@@ -320,7 +320,7 @@ jq -n --arg m "$model" --arg p "$prompt" '{decision: "block", reason:
 #!/usr/bin/env bash
 # Session title: tells Claude when the session's title should change, because a
 # hook cannot rename a session itself. Called by Claude Code on UserPromptSubmit.
-#   repo with a "Next gate" in docs/01_STATUS.md -> "<gate> - <task ID or topic> - <branch>"
+#   repo with a "Next gate" in docs/01_STATUS.md -> "<gate> · <task ID or topic> · <branch>"
 #   task ID readable from the branch (task/9-3-x, task/T-2.4-x) -> that exact title
 #   anywhere else -> one reminder if the first title is still there after $after prompts
 # Speaks once per wanted title and is silent everywhere else.
@@ -351,12 +351,12 @@ task=
 
 if [ -n "$branch" ] && [ -n "$gate$task" ]; then
   if [ -n "$task" ]; then
-    want="${gate:+$gate - }$task - $branch"
+    want="${gate:+$gate · }$task · $branch"
     [ "$current" != "$want" ] || exit 0
     msg="Session title check: this session is on branch $branch, so its title should be \"$want\", but it is \"$current\". $how"
   else
-    case "$current" in "$gate - "*" - $branch") exit 0 ;; esac
-    want="$gate - <task ID or topic> - $branch"
+    case "$current" in "$gate · "*" · $branch") exit 0 ;; esac
+    want="$gate · <task ID or topic> · $branch"
     msg="Session title check: the title should have the form \"$want\", but it is \"$current\". Use the task ID (T-x.y) if this session works on a task from docs/07_WORKPACKAGES.md, otherwise two to four words for the topic. If the topic is not clear yet, do it as soon as it is. $how"
   fi
   [ "$(cat "$state/$sid.asked" 2>/dev/null)" != "$want" ] || exit 0
