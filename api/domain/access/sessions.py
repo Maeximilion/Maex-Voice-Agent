@@ -40,7 +40,6 @@ TOKEN_BYTES = 32
 @dataclass(frozen=True)
 class Access:
     session_id: uuid.UUID
-    tenant_id: uuid.UUID
     locked: bool
 
 
@@ -175,7 +174,7 @@ def resolve(
     if now - row.last_seen_at >= TOUCH_EVERY:
         row.last_seen_at = now
         session.commit()
-    return Access(row.id, row.tenant_id, locked=now - row.last_active_at >= IDLE)
+    return Access(row.id, locked=now - row.last_active_at >= IDLE)
 
 
 def mark_active(session: Session, session_id: uuid.UUID, now: datetime) -> None:

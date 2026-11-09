@@ -37,7 +37,6 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.UUID(), nullable=False),
         sa.Column("password_hash", sa.Text(), nullable=True),
         sa.Column("team_pin_hash", sa.Text(), nullable=True),
-        sa.Column("password_set_at", TZ, nullable=True),
         sa.Column("failed_logins", sa.Integer(), server_default="0", nullable=False),
         sa.Column("last_failed_at", TZ, nullable=True),
         sa.Column("blocked_until", TZ, nullable=True),

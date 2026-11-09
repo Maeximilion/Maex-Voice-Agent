@@ -62,11 +62,6 @@ def _device(request: Request) -> str:
     return request.headers.get("user-agent", "")
 
 
-def _signed_in(response: RedirectResponse, token: str) -> RedirectResponse:
-    set_session_cookie(response, token)
-    return response
-
-
 @router.get("/anmelden", response_class=HTMLResponse, include_in_schema=False)
 def sign_in_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
     if resolve(db, session_token(request), stack_tenant_id(db), clock.utcnow()):
@@ -104,7 +99,9 @@ def sign_in_post(
         return _page_response(
             request, "zugang/anmelden.html", {"message": message}, 401
         )
-    return _signed_in(RedirectResponse(BOARD, status_code=303), token)
+    response = RedirectResponse(BOARD, status_code=303)
+    set_session_cookie(response, token)
+    return response
 
 
 @router.get("/einrichten", response_class=HTMLResponse, include_in_schema=False)
@@ -139,7 +136,9 @@ def setup_post(
         return _page_response(
             request, "zugang/einrichten.html", {**again, "message": refused.say}, 422
         )
-    return _signed_in(RedirectResponse(BOARD, status_code=303), token)
+    response = RedirectResponse(BOARD, status_code=303)
+    set_session_cookie(response, token)
+    return response
 
 
 @router.get("/entsperren", response_class=HTMLResponse, include_in_schema=False)

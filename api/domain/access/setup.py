@@ -97,7 +97,6 @@ def use_link(
 
     account.password_hash = hash_secret(password)
     account.team_pin_hash = hash_secret(pin)
-    account.password_set_at = now
     account.failed_logins, account.blocked_until = 0, None
     session.delete(link)
     end_sessions(session, tenant_id, "gui:setup", "password_set")

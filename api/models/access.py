@@ -26,7 +26,6 @@ class GuiAccount(UUIDPrimaryKey, Timestamps, Base):
     # Empty until the first setup link is used.
     password_hash: Mapped[str | None] = mapped_column(Text)
     team_pin_hash: Mapped[str | None] = mapped_column(Text)
-    password_set_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     failed_logins: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )

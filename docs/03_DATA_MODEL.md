@@ -301,7 +301,6 @@ The restaurant's login to the operations view (#570, D34): one row per tenant, m
 | tenant_id | UUID FK, UNIQUE | one login per restaurant |
 | password_hash | TEXT | scrypt (`domain/access/hashing.py`), empty until the first setup link is used |
 | team_pin_hash | TEXT | scrypt of the team PIN, 4 to 6 digits; unlocks a signed-in device, never a login |
-| password_set_at | TIMESTAMPTZ | |
 | failed_logins / last_failed_at / blocked_until | INT / TIMESTAMPTZ / TIMESTAMPTZ | failures in a row; from the fifth a growing wait (1, 2, 4, 8, 15 minutes); a day without one starts again |
 | created_at / updated_at | TIMESTAMPTZ | |
 
