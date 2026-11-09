@@ -66,8 +66,8 @@ def test_link_takes_the_domain_of_the_stack_or_prints_the_path(
 def test_sign_out_ends_one_device_by_its_id_or_all(engine, tenant_id, capsys):
     code = _link(capsys).split("#")[1]
     with Session(engine) as session:
-        first = use_link(session, tenant_id, code, PASSWORD, "4711", "Tablet", T0)
-        second = sign_in(session, tenant_id, PASSWORD, "192.0.2.1", "Handy", T0)
+        first = use_link(session, tenant_id, code, PASSWORD, "4711", "Tablet", T0).token
+        second = sign_in(session, tenant_id, PASSWORD, "192.0.2.1", "Handy", T0).token
         one = resolve(session, second, tenant_id, T0).session_id
 
     assert gui_access.main(["devices"]) == 0

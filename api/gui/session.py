@@ -16,7 +16,13 @@ from sqlalchemy.orm import Session
 from api.config import LOCAL_ENVS, settings
 from api.core import time as clock
 from api.db import get_db
-from api.domain.access.sessions import Access, mark_active, resolve, stack_tenant_id
+from api.domain.access.sessions import (
+    Access,
+    Signed,
+    mark_active,
+    resolve,
+    stack_tenant_id,
+)
 
 LOGIN = "/gui/anmelden"
 UNLOCK = "/gui/entsperren"
@@ -30,26 +36,33 @@ def secure() -> bool:
     return settings.env not in LOCAL_ENVS
 
 
-def cookie_name() -> str:
+def cookie_name(kind: str = "session") -> str:
     # `__Host-` makes the browser refuse the cookie unless it is Secure, for
     # this host only and for path /; dev and test run over plain HTTP.
-    return "__Host-session" if secure() else "maex_session"
+    return f"__Host-{kind}" if secure() else f"maex_{kind}"
 
 
 def session_token(request: Request) -> str:
     return request.cookies.get(cookie_name(), "")
 
 
-def set_session_cookie(response: Response, token: str) -> None:
-    response.set_cookie(
-        cookie_name(),
-        token,
-        max_age=int(timedelta(days=COOKIE_DAYS).total_seconds()),
-        path="/",
-        httponly=True,
-        samesite="lax",
-        secure=secure(),
-    )
+def device_token(request: Request) -> str:
+    return request.cookies.get(cookie_name("device"), "")
+
+
+def set_access_cookies(response: Response, signed: Signed) -> None:
+    """The session, and the device cookie that keeps the device's own count of
+    failed sign-ins (`domain/access/sessions.py`)."""
+    for kind, value in (("session", signed.token), ("device", signed.device_token)):
+        response.set_cookie(
+            cookie_name(kind),
+            value,
+            max_age=int(timedelta(days=COOKIE_DAYS).total_seconds()),
+            path="/",
+            httponly=True,
+            samesite="lax",
+            secure=secure(),
+        )
 
 
 def client_address(request: Request) -> str:

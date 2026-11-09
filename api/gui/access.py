@@ -28,9 +28,10 @@ from api.gui.router import NO_TENANT, _form, _page_response
 from api.gui.session import (
     LOGIN,
     client_address,
+    device_token,
     same_origin,
     session_token,
-    set_session_cookie,
+    set_access_cookies,
 )
 
 router = APIRouter(
@@ -82,13 +83,14 @@ def sign_in_post(
             request, "zugang/anmelden.html", {"message": NO_TENANT}, 503
         )
     try:
-        token = sign_in(
+        signed = sign_in(
             db,
             tenant_id,
             form.get("passwort", ""),
             client_address(request),
             _device(request),
             clock.utcnow(),
+            device_token=device_token(request),
         )
     except SignInRefused as refused:
         message = (
@@ -100,7 +102,7 @@ def sign_in_post(
             request, "zugang/anmelden.html", {"message": message}, 401
         )
     response = RedirectResponse(BOARD, status_code=303)
-    set_session_cookie(response, token)
+    set_access_cookies(response, signed)
     return response
 
 
@@ -129,15 +131,22 @@ def setup_post(
     try:
         if tenant_id is None:
             raise InvalidInput("no tenant", say=NO_TENANT)
-        token = use_link(
-            db, tenant_id, code, password, pin, _device(request), clock.utcnow()
+        signed = use_link(
+            db,
+            tenant_id,
+            code,
+            password,
+            pin,
+            _device(request),
+            clock.utcnow(),
+            device_token=device_token(request),
         )
     except InvalidInput as refused:
         return _page_response(
             request, "zugang/einrichten.html", {**again, "message": refused.say}, 422
         )
     response = RedirectResponse(BOARD, status_code=303)
-    set_session_cookie(response, token)
+    set_access_cookies(response, signed)
     return response
 
 

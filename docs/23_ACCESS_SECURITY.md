@@ -185,8 +185,16 @@ staff changes and the check card. (a) is in; the lines marked (b) are the design
 - **Brute force** as in §5: counters per account (on its row) and per client address
   (`gui_login_failures`) in the customer's database, from the fifth failure in a row a growing wait
   of 1, 2, 4, 8, then 15 minutes, during which no password is checked; a day without a failure
-  starts the count again, and the deletion job drops an address a day after its last failure. Same
-  error text for every wrong password. The client address is the last entry of Caddy's
+  starts the count again, and the deletion job drops an address a day after its last failure. Each
+  attempt is counted before the slow hash, so a parallel burst meets the wait. Same error text for
+  every wrong password.
+- **Device cookies (review of #585):** the per-account wait alone let anyone keep every sign-in out
+  with one wrong password per 15 minutes. A browser that signed in once gets a second cookie,
+  `__Host-device` (random, only its hash stored in `gui_devices`, forgotten after 400 days unused);
+  its attempts count on that device alone and skip the account's and the address's waits, so the
+  restaurant's own tablets still get in. The cookie opens nothing by itself: it still needs the
+  password, and a stolen one gets the device's own wait, as a single address does (OWASP "Slow
+  Down Online Guessing Attacks with Device Cookies"). A new browser during such an attack waits. The client address is the last entry of Caddy's
   `X-Forwarded-For`, trusted only outside dev and test, where only Caddy reaches the view.
 - **CSRF** as today (docs/06 §9) plus a check on every write that `Origin` (or, without it,
   `Sec-Fetch-Site`) names this site; a browser sends one of them on every cross-site write, and

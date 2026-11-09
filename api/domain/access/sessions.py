@@ -7,16 +7,18 @@ PIN, and five wrong PINs end the session (D34, Maxi 09.11.2026).
 
 Failed sign-ins are counted per account and per client address. From the fifth
 in a row each one adds a growing wait (1, 2, 4, 8, then 15 minutes) instead of a
-hard lock, so a guesser cannot lock the restaurant out for good, and while a
-wait runs no password is even checked (docs/23 §5, §6). A day without a failure
-starts the count again.
+hard lock, and while a wait runs no password is even checked (docs/23 §5, §6). A
+day without a failure starts the count again. A browser that signed in before
+brings its device cookie: its attempts count on that device alone, so a guesser
+who keeps the account's wait running cannot keep the restaurant's own tablets
+out (OWASP device cookies; review of #585).
 """
 
 import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import cast
+from typing import NamedTuple, cast
 
 from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -24,7 +26,14 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import Unauthorized
 from api.domain.access.hashing import token_hash, verify_secret
-from api.models import AuditLog, GuiAccount, GuiLoginFailure, GuiSession, Tenant
+from api.models import (
+    AuditLog,
+    GuiAccount,
+    GuiDevice,
+    GuiLoginFailure,
+    GuiSession,
+    Tenant,
+)
 
 SESSION_DAYS = 30
 IDLE = timedelta(minutes=15)
@@ -36,6 +45,9 @@ FAILURES_FORGOTTEN = timedelta(days=1)
 TOUCH_EVERY = timedelta(minutes=1)
 DEVICE_CHARS = 120
 TOKEN_BYTES = 32
+# A device cookie nobody signed in with for this long is forgotten (the most a
+# browser keeps a cookie).
+DEVICE_DAYS = 400
 
 
 @dataclass(frozen=True)
@@ -58,6 +70,13 @@ def stack_tenant_id(session: Session) -> uuid.UUID | None:
     return session.scalars(select(Tenant.id).order_by(Tenant.created_at)).first()
 
 
+class Signed(NamedTuple):
+    """The two cookies of a signed-in browser."""
+
+    token: str
+    device_token: str
+
+
 def sign_in(
     session: Session,
     tenant_id: uuid.UUID,
@@ -65,73 +84,116 @@ def sign_in(
     address: str,
     device: str,
     now: datetime,
-) -> str:
+    device_token: str = "",
+) -> Signed:
     """Check the restaurant's password and open a session for this device.
 
-    Returns the session token for the cookie; only its hash is stored. Raises
-    SignInRefused, with the minutes to wait while a wait runs. The attempt is
-    counted as a failure before the password is checked, in a transaction of
-    its own: a burst of parallel guesses meets the wait from its fifth on, and
-    no row lock or pooled connection is held during the slow hash. A right
-    password takes the count back. Commits."""
-    stored = _count_attempt(session, tenant_id, address, now)
+    Returns the session token and the device token for the cookies; only their
+    hashes are stored. Raises SignInRefused, with the minutes to wait while a
+    wait runs. The attempt is counted as a failure before the password is
+    checked, in a transaction of its own: a burst of parallel guesses meets the
+    wait from its fifth on, and no row lock or pooled connection is held during
+    the slow hash. A right password takes the count back. Commits."""
+    stored, trusted = _count_attempt(session, tenant_id, address, device_token, now)
     if not verify_secret(password, stored):
         raise SignInRefused()
-    account = session.scalars(
-        select(GuiAccount)
-        .where(GuiAccount.tenant_id == tenant_id)
-        .with_for_update()
-        .execution_options(populate_existing=True)
-    ).one()
-    account.failed_logins, account.blocked_until = 0, None
-    account.last_failed_at = None
-    session.execute(delete(GuiLoginFailure).where(GuiLoginFailure.address == address))
+    account = locked_account(session, tenant_id)
+    # A new password set while this one was checked: the old one opens nothing.
+    if account is None or account.password_hash != stored:
+        session.rollback()
+        raise SignInRefused()
+    if not trusted:
+        account.failures, account.blocked_until, account.last_failed_at = 0, None, None
+        session.execute(
+            delete(GuiLoginFailure).where(GuiLoginFailure.address == address)
+        )
+    device_token = trust_device(session, account, device_token, now)
     token = open_session(session, account, device, now)
     audit(session, account.tenant_id, "gui:tablet", "gui.signed_in", account.id, {})
     session.commit()
-    return token
+    return Signed(token, device_token)
+
+
+def trust_device(
+    session: Session, account: GuiAccount, device_token: str, now: datetime
+) -> str:
+    """The device cookie of a browser that just signed in: the one it brought
+    when it belongs to this account, else a new one. Clears that device's
+    count. The caller commits."""
+    row = _device(session, account, device_token)
+    if row is None:
+        device_token = secrets.token_urlsafe(TOKEN_BYTES)
+        row = GuiDevice(
+            account_id=account.id, token_hash=token_hash(device_token), created_at=now
+        )
+        session.add(row)
+    row.failures, row.blocked_until, row.last_failed_at = 0, None, None
+    row.last_used_at = now
+    return device_token
 
 
 def _count_attempt(
-    session: Session, tenant_id: uuid.UUID, address: str, now: datetime
-) -> str | None:
-    """Refuse while a wait runs, otherwise count one more failure for the
-    account and the address and return the stored hash. Commits."""
-    account = session.scalars(
+    session: Session,
+    tenant_id: uuid.UUID,
+    address: str,
+    device_token: str,
+    now: datetime,
+) -> tuple[str | None, bool]:
+    """Refuse while a wait runs, otherwise count one more failure and return
+    the stored hash and whether a known device was counted. A known device is
+    counted alone, anything else per account and per address. Commits."""
+    account = locked_account(session, tenant_id)
+    device = _device(session, account, device_token) if account else None
+    counters: list[GuiAccount | GuiDevice | GuiLoginFailure]
+    if device is not None:
+        counters = [device]
+    else:
+        # Two failures from a new address at once must not collide on the insert.
+        session.execute(
+            insert(GuiLoginFailure)
+            .values(address=address, failures=0, last_failed_at=now)
+            .on_conflict_do_nothing(index_elements=["address"])
+        )
+        known = session.get(
+            GuiLoginFailure, address, with_for_update=True, populate_existing=True
+        )
+        counters = [row for row in (account, known) if row is not None]
+    waits = [row.blocked_until for row in counters if row.blocked_until is not None]
+    if waits and max(waits) > now:
+        session.rollback()
+        raise SignInRefused(_minutes(max(waits) - now))
+    for row in counters:
+        previous = row.last_failed_at if row.failures else None
+        row.failures, row.blocked_until = _count(row.failures, previous, now)
+        row.last_failed_at = now
+    stored = account.password_hash if account else None
+    session.commit()
+    return stored, device is not None
+
+
+def locked_account(session: Session, tenant_id: uuid.UUID) -> GuiAccount | None:
+    return session.scalars(
         select(GuiAccount)
         .where(GuiAccount.tenant_id == tenant_id)
         .with_for_update()
         .execution_options(populate_existing=True)
     ).first()
-    # Two failures from a new address at once must not collide on the insert.
-    session.execute(
-        insert(GuiLoginFailure)
-        .values(address=address, failures=0, last_failed_at=now)
-        .on_conflict_do_nothing(index_elements=["address"])
-    )
-    known = session.get(
-        GuiLoginFailure, address, with_for_update=True, populate_existing=True
-    )
-    assert known is not None
-    waits = [
-        row.blocked_until
-        for row in (account, known)
-        if row is not None and row.blocked_until is not None
-    ]
-    if waits and max(waits) > now:
-        session.rollback()
-        raise SignInRefused(_minutes(max(waits) - now))
-    if account is not None:
-        account.failed_logins, account.blocked_until = _count(
-            account.failed_logins, account.last_failed_at, now
+
+
+def _device(
+    session: Session, account: GuiAccount, device_token: str
+) -> GuiDevice | None:
+    if not device_token:
+        return None
+    return session.scalars(
+        select(GuiDevice)
+        .where(
+            GuiDevice.account_id == account.id,
+            GuiDevice.token_hash == token_hash(device_token),
         )
-        account.last_failed_at = now
-    previous = known.last_failed_at if known.failures else None
-    known.failures, known.blocked_until = _count(known.failures, previous, now)
-    known.last_failed_at = now
-    stored = account.password_hash if account else None
-    session.commit()
-    return stored
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).first()
 
 
 def open_session(

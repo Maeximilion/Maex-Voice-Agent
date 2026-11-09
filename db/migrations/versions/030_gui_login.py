@@ -3,10 +3,12 @@
 One account per restaurant (`gui_accounts`, unique per tenant) with the password
 and the team PIN as scrypt hashes; one row per signed-in device
 (`gui_sessions`, the token only as its SHA-256); the operator's one-time setup
-links (`gui_setup_links`, hashed too); failed sign-ins per client address
-(`gui_login_failures`). New tables only, nothing existing changes.
+links (`gui_setup_links`, hashed too); the device cookies of browsers that
+signed in before, each with a failure count of its own (`gui_devices`); failed
+sign-ins per client address (`gui_login_failures`). New tables only, nothing
+existing changes.
 
-The downgrade drops the four tables: every device is signed out and the
+The downgrade drops the five tables: every device is signed out and the
 password is gone, so the view needs a new setup link after the next upgrade.
 No guest data lives here.
 
@@ -37,7 +39,7 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.UUID(), nullable=False),
         sa.Column("password_hash", sa.Text(), nullable=True),
         sa.Column("team_pin_hash", sa.Text(), nullable=True),
-        sa.Column("failed_logins", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("failures", sa.Integer(), server_default="0", nullable=False),
         sa.Column("last_failed_at", TZ, nullable=True),
         sa.Column("blocked_until", TZ, nullable=True),
         sa.Column("created_at", TZ, server_default=sa.func.now(), nullable=False),
@@ -84,6 +86,25 @@ def upgrade() -> None:
     )
     op.create_index("ix_gui_setup_links_account_id", "gui_setup_links", ["account_id"])
     op.create_table(
+        "gui_devices",
+        sa.Column(
+            "id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False
+        ),
+        sa.Column("account_id", sa.UUID(), nullable=False),
+        sa.Column("token_hash", sa.Text(), nullable=False),
+        sa.Column("created_at", TZ, nullable=False),
+        sa.Column("last_used_at", TZ, nullable=False),
+        sa.Column("failures", sa.Integer(), server_default="0", nullable=False),
+        sa.Column("last_failed_at", TZ, nullable=True),
+        sa.Column("blocked_until", TZ, nullable=True),
+        sa.ForeignKeyConstraint(
+            ["account_id"], ["gui_accounts.id"], ondelete="CASCADE"
+        ),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("token_hash", name="uq_gui_devices_token_hash"),
+    )
+    op.create_index("ix_gui_devices_account_id", "gui_devices", ["account_id"])
+    op.create_table(
         "gui_login_failures",
         sa.Column("address", sa.Text(), nullable=False),
         sa.Column("failures", sa.Integer(), nullable=False),
@@ -95,6 +116,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("gui_login_failures")
+    op.drop_index("ix_gui_devices_account_id", table_name="gui_devices")
+    op.drop_table("gui_devices")
     op.drop_index("ix_gui_setup_links_account_id", table_name="gui_setup_links")
     op.drop_table("gui_setup_links")
     op.drop_index("ix_gui_sessions_account_id", table_name="gui_sessions")

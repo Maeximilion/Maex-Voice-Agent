@@ -44,6 +44,7 @@ LATER_TABLES = {
     "gui_accounts",
     "gui_sessions",
     "gui_setup_links",
+    "gui_devices",
     "gui_login_failures",
 }
 

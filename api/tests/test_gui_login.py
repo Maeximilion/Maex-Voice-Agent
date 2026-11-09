@@ -171,9 +171,11 @@ def test_sign_in_with_the_password_sets_an_httponly_session_cookie(client, engin
         "/gui/anmelden", data={"csrf_token": "testtoken", "passwort": PASSWORD}
     )
     assert answer.status_code == 303 and answer.headers["location"] == "/gui/"
-    cookie = answer.headers["set-cookie"]
-    assert cookie.startswith("maex_session=")
-    assert "HttpOnly" in cookie and "SameSite=lax" in cookie and "Path=/" in cookie
+    session_cookie, device_cookie = answer.headers.get_list("set-cookie")
+    assert session_cookie.startswith("maex_session=")
+    assert device_cookie.startswith("maex_device=")
+    for cookie in (session_cookie, device_cookie):
+        assert "HttpOnly" in cookie and "SameSite=lax" in cookie and "Path=/" in cookie
     assert client.get("/gui/", headers=HTML).status_code == 200
     # Signed in, the sign-in page leads to the board.
     assert client.get("/gui/anmelden").headers["location"] == "/gui/"
@@ -314,15 +316,19 @@ def test_in_production_the_cookie_is_host_bound_and_secure(production, engine):
     answer = production.post(
         "/gui/anmelden", data={"csrf_token": "testtoken", "passwort": PASSWORD}
     )
-    cookie = answer.headers["set-cookie"]
-    assert cookie.startswith("__Host-session=")
-    assert "Secure" in cookie and "HttpOnly" in cookie and "Path=/" in cookie
-    assert "Domain" not in cookie
+    cookies = answer.headers.get_list("set-cookie")
+    assert [c.split("=")[0] for c in cookies] == ["__Host-session", "__Host-device"]
+    for cookie in cookies:
+        assert "Secure" in cookie and "HttpOnly" in cookie and "Path=/" in cookie
+        assert "Domain" not in cookie
     assert production.get("/gui/", headers=HTML).status_code == 200
 
 
 def test_in_production_failures_count_for_the_address_caddy_saw(production, engine):
     _set_up_and_sign_in(production, engine)
+    # A stranger: no device cookie, so the failure counts per address.
+    production.cookies.clear()
+    production.cookies.set("csrf_token", "testtoken")
     production.post(
         "/gui/anmelden",
         data={"csrf_token": "testtoken", "passwort": "falsch-falsch"},
@@ -350,7 +356,7 @@ def test_the_check_leaves_no_transaction_open_for_the_event_stream(engine):
         )
         token = use_link(
             session, stack_tenant_id(session), code, PASSWORD, PIN, "x", clock.utcnow()
-        )
+        ).token
     scope = {
         "type": "http",
         "method": "GET",
@@ -363,3 +369,27 @@ def test_the_check_leaves_no_transaction_open_for_the_event_stream(engine):
         with pytest.raises(HTTPException):
             require_gui_session(Request({**scope, "headers": []}), session)
         assert not session.in_transaction()
+
+
+def test_the_device_cookie_gets_a_known_browser_past_a_guessers_wait(client, engine):
+    """Review of #585: someone else's wrong passwords keep the account waiting;
+    the browser that signed in before still gets in with the password."""
+    _set_up_and_sign_in(client, engine)
+    device = client.cookies.get("maex_device")
+    assert device
+    stranger = _client(engine)
+    for _ in range(5):
+        stranger.post(
+            "/gui/anmelden",
+            data={"csrf_token": "testtoken", "passwort": "falsch-falsch"},
+        )
+    waits = stranger.post(
+        "/gui/anmelden", data={"csrf_token": "testtoken", "passwort": PASSWORD}
+    )
+    assert waits.status_code == 401 and "Zu viele Versuche" in waits.text
+
+    client.cookies.delete("maex_session")
+    back = client.post(
+        "/gui/anmelden", data={"csrf_token": "testtoken", "passwort": PASSWORD}
+    )
+    assert back.status_code == 303 and back.headers["location"] == "/gui/"

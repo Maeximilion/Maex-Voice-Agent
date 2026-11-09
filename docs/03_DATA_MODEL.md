@@ -301,7 +301,7 @@ The restaurant's login to the operations view (#570, D34): one row per tenant, m
 | tenant_id | UUID FK, UNIQUE | one login per restaurant |
 | password_hash | TEXT | scrypt (`domain/access/hashing.py`), empty until the first setup link is used |
 | team_pin_hash | TEXT | scrypt of the team PIN, 4 to 6 digits; unlocks a signed-in device, never a login |
-| failed_logins / last_failed_at / blocked_until | INT / TIMESTAMPTZ / TIMESTAMPTZ | failures in a row; from the fifth a growing wait (1, 2, 4, 8, 15 minutes); a day without one starts again |
+| failures / last_failed_at / blocked_until | INT / TIMESTAMPTZ / TIMESTAMPTZ | failures in a row; from the fifth a growing wait (1, 2, 4, 8, 15 minutes); a day without one starts again |
 | created_at / updated_at | TIMESTAMPTZ | |
 
 ### `gui_sessions`
@@ -325,6 +325,16 @@ The operator's one-time link that sets password and PIN (24 hours, a newer one r
 | account_id | UUID FK → gui_accounts, ON DELETE CASCADE | |
 | token_hash | TEXT UNIQUE | SHA-256 of the code; the row goes when the link is used |
 | created_at / expires_at | TIMESTAMPTZ | |
+
+### `gui_devices`
+A browser that signed in once; its device cookie lets it try the password on a count of its own (review of #585, docs/23 §6).
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| account_id | UUID FK → gui_accounts, ON DELETE CASCADE | |
+| token_hash | TEXT UNIQUE | SHA-256 of the device cookie |
+| created_at / last_used_at | TIMESTAMPTZ | `last_used_at` is the last sign-in with the cookie |
+| failures / last_failed_at / blocked_until | INT / TIMESTAMPTZ / TIMESTAMPTZ | as on `gui_accounts`, for this device only |
 
 ### `gui_login_failures`
 | Feld | Typ | Bemerkung |
@@ -550,7 +560,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | Backups | rolling 30 days | retention of `scripts/backup.sh` (labelled dumps included) and a lifecycle rule on the storage; the `_before_restore_` copy of a restore is dropped by hand within `BACKUP_KEEP_DAYS` (docs/13 §4); an erasure ledger outside the database and its backups is replayed after a restore (T-9.3) |
 | `audit_log` | 12 months, `RETENTION_AUDIT_LOG_DAYS` (365) | daily job deletes the entries; they carry no names, phone numbers or notes |
 | Request log of data subjects (`docs/09_OPERATIONS_LEGAL.md` §1 U2) | Accepted 02.11.2026 under Maxi's delegation (docs/09 §1): `verification_note` is stripped 3 months after the request is answered, `RETENTION_REQUEST_DETAILS_MONTHS` (1 to 12); the row without it stays until the end of the third calendar year after the year of the answer, `RETENTION_REQUEST_LOG_YEARS` (1 to 10), then the row is deleted. Reasoning: the details are needed only to answer and to defend the answer if the requester complains; the thin row is the proof of the one-month deadline (Art. 12(3), accountability Art. 5(2)) for as long as a claim can arise (regular limitation of 3 years, § 195 BGB, which under § 199(1) BGB starts at the end of the year in which the claim arose). A request nobody answered keeps everything: its deadline is still running | table `data_subject_requests`; daily job (steps `request_details` and `request_rows`, T-11.8). `delete_after` is fixed at the answer, so a changed year setting holds for requests answered after it, and it is read on the tenant's calendar. The erasure ledger (U7) is a separate list of row ids without personal data and is not touched by this period |
-| Device sessions of the operations view (`gui_sessions`, a browser's user agent) and failed sign-ins per client address (`gui_login_failures`) | a session 30 days after its last use (`SESSION_DAYS`), an address one day after its last failure once no wait runs (#570) | daily job deletes the rows; a signed-out device's row goes at once |
+| Device sessions of the operations view (`gui_sessions`, a browser's user agent), device cookies (`gui_devices`, no personal data) and failed sign-ins per client address (`gui_login_failures`) | a session 30 days after its last use (`SESSION_DAYS`), a device cookie 400 days after its last sign-in (`DEVICE_DAYS`), an address one day after its last failure once no wait runs (#570) | daily job deletes the rows; a signed-out device's session row goes at once |
 | Order rows without personal fields | as long as the tax adviser asks (L18); the register is the master | kept |
 
 ---
@@ -588,5 +598,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 027 | `orders.booked_on_own_line`, `reservations.booked_on_own_line`, default false: the draft notes whether the booking's number is the line its call came from (#523); the upgrade fills it from the caller IDs still there, a row whose caller ID is gone stays false; the downgrade drops both, and what a cleared caller ID said cannot be read back |
 | 028 | `floor_areas`, `dining_tables`, `table_combinations`: the floor plan of T-3.11 (#496); nothing existing changes and nothing reads them for a booking (D28); the downgrade drops the three with every room, table and pair the team drew |
 | 029 | `reservations.call_id` nullable, `reservations.source` (`agent` / `tablet`, default `agent`) with the CHECK that an agent's row has its call and a tablet's none, and `reservation_tables`: reservations the team enters by hand, seated on the floor plan (T-3.12, #497, D30); existing rows stay the agent's; the downgrade deletes every tablet reservation with its seating (backup first) |
-| 030 | `gui_accounts`, `gui_sessions`, `gui_setup_links`, `gui_login_failures`: the restaurant's login to the operations view (#570, D34); new tables only; the downgrade drops them, which signs out every device and needs a new setup link |
+| 030 | `gui_accounts`, `gui_sessions`, `gui_setup_links`, `gui_devices`, `gui_login_failures`: the restaurant's login to the operations view (#570, D34); new tables only; the downgrade drops them, which signs out every device and needs a new setup link |
 | planned, next free number | `eval_cases`, `eval_runs` |

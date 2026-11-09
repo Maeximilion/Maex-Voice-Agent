@@ -26,9 +26,7 @@ class GuiAccount(UUIDPrimaryKey, Timestamps, Base):
     # Empty until the first setup link is used.
     password_hash: Mapped[str | None] = mapped_column(Text)
     team_pin_hash: Mapped[str | None] = mapped_column(Text)
-    failed_logins: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default="0"
-    )
+    failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
@@ -74,6 +72,29 @@ class GuiSetupLink(UUIDPrimaryKey, Base):
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False
     )
+
+
+class GuiDevice(UUIDPrimaryKey, Base):
+    """A browser that signed in once: its device cookie lets it try the password
+    on a count of its own, so guesses from elsewhere cannot keep it out (OWASP
+    device cookies, #570). It opens nothing by itself."""
+
+    __tablename__ = "gui_devices"
+
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("gui_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    # The last sign-in with this cookie; the deletion job goes by it.
+    last_used_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    last_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class GuiLoginFailure(Base):

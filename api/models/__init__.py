@@ -1,6 +1,12 @@
 """SQLAlchemy-Modelle. Alle Tabellen importieren, damit Base.metadata vollständig ist."""
 
-from api.models.access import GuiAccount, GuiLoginFailure, GuiSession, GuiSetupLink
+from api.models.access import (
+    GuiAccount,
+    GuiDevice,
+    GuiLoginFailure,
+    GuiSession,
+    GuiSetupLink,
+)
 from api.models.audit import AuditLog
 from api.models.base import Base
 from api.models.calls import Call, Callback, ComplaintRule, ConsentLog, Recording
@@ -45,6 +51,7 @@ __all__ = [
     "DiningTable",
     "FloorArea",
     "GuiAccount",
+    "GuiDevice",
     "GuiLoginFailure",
     "GuiSession",
     "GuiSetupLink",

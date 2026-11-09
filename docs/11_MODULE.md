@@ -129,7 +129,7 @@ braucht.
 ### `domain/access/`
 The restaurant's login to the operations view (#570, D34, docs/23 §6). Answers: *may this device see and change the view?*
 - `hashing.py` — scrypt hashes of password and team PIN, SHA-256 of tokens, the rules for a new password and PIN
-- `sessions.py` — sign-in with the growing wait per account and per address, the device session (30 days sliding, locked 15 minutes after the last change), the team PIN, signing devices out; the stack's tenant is the oldest (D32)
+- `sessions.py` — sign-in with the growing wait per account and per address, or per device cookie for a browser that signed in before, the device session (30 days sliding, locked 15 minutes after the last change), the team PIN, signing devices out; the stack's tenant is the oldest (D32)
 - `setup.py` — the operator's one-time setup link: password and PIN set, every other device signed out
 - Tests: the wait from the fifth failure, a session of another tenant, the idle lock, five wrong PINs, a spent or replaced link
 

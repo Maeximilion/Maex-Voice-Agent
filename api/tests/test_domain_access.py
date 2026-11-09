@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import InvalidInput
 from api.domain.access import hashing
 from api.domain.access.sessions import (
+    DEVICE_DAYS,
     IDLE,
     SESSION_DAYS,
     SignInRefused,
@@ -24,7 +25,14 @@ from api.domain.access.sessions import (
 )
 from api.domain.access.setup import LINK_GONE, issue_link, use_link
 from api.jobs.retention import purge
-from api.models import AuditLog, GuiAccount, GuiLoginFailure, GuiSession, Tenant
+from api.models import (
+    AuditLog,
+    GuiAccount,
+    GuiDevice,
+    GuiLoginFailure,
+    GuiSession,
+    Tenant,
+)
 
 T0 = datetime(2026, 11, 9, 10, 0, tzinfo=UTC)
 PASSWORD = "Kuechentablet-2026"
@@ -52,7 +60,7 @@ def tenant_id(session) -> uuid.UUID:
 def ready(session, tenant_id) -> str:
     """The restaurant has set its password and PIN; returns that device's token."""
     code, _ = issue_link(session, tenant_id, "operator:test", T0)
-    return use_link(session, tenant_id, code, PASSWORD, PIN, "Tablet", T0)
+    return use_link(session, tenant_id, code, PASSWORD, PIN, "Tablet", T0).token
 
 
 def _refused(session, tenant_id, password="falsch-falsch-1", address=ADDRESS, at=T0):
@@ -143,9 +151,11 @@ def test_a_refused_value_does_not_spend_the_link(session, tenant_id):
 
 
 def test_a_new_password_signs_out_every_other_device(session, tenant_id, ready):
-    other = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Handy", T0)
+    other = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Handy", T0).token
     code, _ = issue_link(session, tenant_id, "operator:test", T0)
-    fresh = use_link(session, tenant_id, code, "Neues-Passwort-99", "9876", "PC", T0)
+    fresh = use_link(
+        session, tenant_id, code, "Neues-Passwort-99", "9876", "PC", T0
+    ).token
 
     assert resolve(session, ready, tenant_id, T0) is None
     assert resolve(session, other, tenant_id, T0) is None
@@ -166,7 +176,7 @@ def test_a_link_of_another_tenant_is_refused(session, tenant_id):
 
 
 def test_sign_in_with_the_password_opens_a_session(session, tenant_id, ready):
-    token = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Tablet Küche", T0)
+    token = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Tablet Küche", T0).token
     access = resolve(session, token, tenant_id, T0)
     assert access is not None and not access.locked
     row = session.get(GuiSession, access.session_id)
@@ -197,7 +207,7 @@ def test_the_fifth_failure_brings_a_wait_that_grows_to_15_minutes(
     assert waits == [1, 2, 4, 8, 15, 15]
     sign_in(session, tenant_id, PASSWORD, ADDRESS, "x", at)
     account = session.scalars(select(GuiAccount)).one()
-    assert account.failed_logins == 0 and account.blocked_until is None
+    assert account.failures == 0 and account.blocked_until is None
     assert session.get(GuiLoginFailure, ADDRESS) is None
 
 
@@ -276,7 +286,7 @@ def test_the_team_pin_unlocks_and_five_wrong_ones_end_the_session(
 
 
 def test_sign_out_one_device_or_all(session, tenant_id, ready):
-    second = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Handy", T0)
+    second = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Handy", T0).token
     one = resolve(session, second, tenant_id, T0).session_id
     assert end_sessions(session, tenant_id, "operator:test", "lost", one) == 1
     session.commit()
@@ -325,7 +335,7 @@ def test_the_attempt_is_counted_before_the_slow_check_and_holds_no_transaction(
     def check(secret, stored):
         seen.append(session.in_transaction())
         with Session(other) as look:
-            seen.append(look.scalars(select(GuiAccount.failed_logins)).one())
+            seen.append(look.scalars(select(GuiAccount.failures)).one())
         return hashing.verify_secret(secret, stored)
 
     monkeypatch.setattr(module, "verify_secret", check)
@@ -333,7 +343,7 @@ def test_the_attempt_is_counted_before_the_slow_check_and_holds_no_transaction(
     sign_in(session, tenant_id, PASSWORD, ADDRESS, "x", T0)
     other.dispose()
     assert seen == [False, 1, False, 2]
-    assert session.scalars(select(GuiAccount.failed_logins)).one() == 0
+    assert session.scalars(select(GuiAccount.failures)).one() == 0
 
 
 def test_the_pin_try_is_counted_before_the_check_too(
@@ -380,3 +390,208 @@ def test_at_most_two_hashes_run_at_once(monkeypatch):
     for thread in threads:
         thread.join()
     assert peak[0] == 2
+
+
+# --- review of #585: device cookies, a reset during a sign-in, lock order ----
+
+
+def test_a_known_device_signs_in_while_a_guesser_keeps_the_account_waiting(
+    session, tenant_id
+):
+    """Ultra review finding 1: one wrong password every 15 minutes kept every
+    sign-in out. A browser that signed in before counts on its own."""
+    code, _ = issue_link(session, tenant_id, "operator:test", T0)
+    tablet = use_link(session, tenant_id, code, PASSWORD, PIN, "Tablet", T0)
+    at = last = T0
+    for _ in range(9):
+        _refused(session, tenant_id, address="198.51.100.9", at=at)
+        last = at
+        at = session.scalars(select(GuiAccount.blocked_until)).one() or at
+    # While the guesser's last wait runs, the right password from a new
+    # browser waits too ...
+    at = last + timedelta(minutes=1)
+    assert _refused(session, tenant_id, PASSWORD, ADDRESS, at=at).wait_minutes
+    # ... but the tablet, whose session ended (five wrong PINs, say), gets in.
+    end_sessions(session, tenant_id, "operator:test", "test")
+    session.commit()
+    again = sign_in(
+        session,
+        tenant_id,
+        PASSWORD,
+        ADDRESS,
+        "Tablet",
+        at,
+        device_token=tablet.device_token,
+    )
+    assert again.device_token == tablet.device_token
+    assert resolve(session, again.token, tenant_id, at) is not None
+    # The guesser's wait stands.
+    assert session.scalars(select(GuiAccount.blocked_until)).one() > at
+
+
+def test_a_known_device_has_its_own_wait_and_leaves_the_account_count(
+    session, tenant_id, ready
+):
+    device = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Tablet", T0).device_token
+    for _ in range(4):
+        _refused_with(session, tenant_id, device)
+    assert _refused_with(session, tenant_id, device).wait_minutes is None
+    assert _refused_with(session, tenant_id, device).wait_minutes == 1
+    assert session.scalars(select(GuiAccount.failures)).one() == 0
+    assert session.get(GuiLoginFailure, ADDRESS) is None
+
+
+@pytest.mark.parametrize("token", ["", "forged", "other tenant"])
+def test_an_unknown_device_cookie_counts_like_any_stranger(
+    session, tenant_id, ready, token
+):
+    if token == "other tenant":
+        other = Tenant(name="Anderer Betrieb")
+        session.add(other)
+        session.commit()
+        code, _ = issue_link(session, other.id, "operator:test", T0)
+        token = use_link(session, other.id, code, PASSWORD, PIN, "x", T0).device_token
+    _refused_with(session, tenant_id, token)
+    assert (
+        session.scalars(
+            select(GuiAccount.failures).where(GuiAccount.tenant_id == tenant_id)
+        ).one()
+        == 1
+    )
+    assert session.get(GuiLoginFailure, ADDRESS).failures == 1
+
+
+def test_the_device_cookie_is_kept_across_sign_ins(session, tenant_id, ready):
+    first = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Tablet", T0)
+    second = sign_in(
+        session,
+        tenant_id,
+        PASSWORD,
+        ADDRESS,
+        "Tablet",
+        T0,
+        device_token=first.device_token,
+    )
+    assert second.device_token == first.device_token
+    assert second.token != first.token
+    assert session.execute(select(func.count()).select_from(GuiDevice)).scalar() == 2
+
+
+def test_a_password_set_during_the_check_opens_nothing(
+    session, tenant_id, ready, migrated_db_url, monkeypatch
+):
+    """Codex P1 on #585: the old password, checked while a setup link set a new
+    one, must not open a session after the reset signed every device out."""
+    from api.domain.access import sessions as module
+
+    other = create_engine(migrated_db_url)
+
+    def reset_meanwhile(secret, stored):
+        with Session(other) as second:
+            code, _ = issue_link(second, tenant_id, "operator:test", T0)
+            use_link(second, tenant_id, code, "Neues-Passwort-99", "9876", "PC", T0)
+        return hashing.verify_secret(secret, stored)
+
+    monkeypatch.setattr(module, "verify_secret", reset_meanwhile)
+    with pytest.raises(SignInRefused):
+        sign_in(session, tenant_id, PASSWORD, ADDRESS, "x", T0)
+    other.dispose()
+    assert [row.device for row in devices(session, tenant_id)] == ["PC"]
+
+
+def test_a_link_replaced_while_it_is_used_is_refused_without_a_deadlock(
+    session, tenant_id, migrated_db_url
+):
+    """Codex P2 on #585: use_link locks the account before its link, as
+    issue_link does, so a replacement in between ends in LINK_GONE."""
+    import threading
+    import time
+
+    from sqlalchemy import text
+
+    code, _ = issue_link(session, tenant_id, "operator:test", T0)
+    engine = create_engine(migrated_db_url)
+    holder = engine.connect()
+    holder.begin()
+    holder.execute(
+        text("SELECT id FROM gui_accounts WHERE tenant_id = :t FOR UPDATE"),
+        {"t": tenant_id},
+    )
+    outcome = []
+
+    def use():
+        with Session(engine) as user:
+            try:
+                use_link(user, tenant_id, code, PASSWORD, PIN, "x", T0)
+                outcome.append("used")
+            except InvalidInput as refused:
+                outcome.append(refused.say)
+
+    thread = threading.Thread(target=use)
+    thread.start()
+    for _ in range(200):  # until the use waits for the account lock
+        # The statistics views keep one snapshot per transaction otherwise.
+        holder.execute(text("SELECT pg_stat_clear_snapshot()"))
+        waiting = holder.execute(
+            text(
+                "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock'"
+                " AND datname = current_database()"
+            )
+        ).scalar()
+        if waiting:
+            break
+        time.sleep(0.05)
+    assert waiting, "use_link never waited for the account"
+    # It holds no lock on the link: the replacement takes it at once.
+    holder.execute(
+        text("DELETE FROM gui_setup_links WHERE token_hash = :h"),
+        {"h": hashing.token_hash(code)},
+    )
+    holder.commit()
+    thread.join(timeout=10)
+    holder.close()
+    engine.dispose()
+    assert outcome == [LINK_GONE]
+
+
+def test_two_first_links_at_once_make_one_account(session, tenant_id, migrated_db_url):
+    """Ultra review finding 4: both first calls insert the account; the second
+    waits for the first and then takes its row."""
+    import threading
+
+    engine = create_engine(migrated_db_url)
+    codes = []
+
+    def link():
+        with Session(engine) as own:
+            codes.append(issue_link(own, tenant_id, "operator:test", T0)[0])
+
+    threads = [threading.Thread(target=link) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+    engine.dispose()
+    assert len(codes) == 4
+    assert session.execute(select(func.count()).select_from(GuiAccount)).scalar() == 1
+
+
+def test_retention_forgets_a_device_unused_for_400_days(session, tenant_id, ready):
+    purge(session, T0 + timedelta(days=DEVICE_DAYS - 1))
+    assert session.execute(select(func.count()).select_from(GuiDevice)).scalar() == 1
+    purge(session, T0 + timedelta(days=DEVICE_DAYS))
+    assert session.execute(select(func.count()).select_from(GuiDevice)).scalar() == 0
+
+
+def _refused_with(session, tenant_id, device_token):
+    with pytest.raises(SignInRefused) as refused:
+        sign_in(
+            session,
+            tenant_id,
+            "falsch-falsch-1",
+            ADDRESS,
+            "x",
+            T0,
+            device_token=device_token,
+        )
+    return refused.value

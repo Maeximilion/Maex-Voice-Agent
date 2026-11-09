@@ -7,7 +7,13 @@ from sqlalchemy.exc import IntegrityError
 
 from api.tests.conftest import alembic_config as _config
 
-TABLES = {"gui_accounts", "gui_sessions", "gui_setup_links", "gui_login_failures"}
+TABLES = {
+    "gui_accounts",
+    "gui_sessions",
+    "gui_setup_links",
+    "gui_devices",
+    "gui_login_failures",
+}
 
 
 @pytest.fixture
@@ -18,7 +24,7 @@ def engine(scratch_db_url):
     engine.dispose()
 
 
-def test_up_adds_the_four_tables_and_down_removes_them(engine, scratch_db_url):
+def test_up_adds_the_five_tables_and_down_removes_them(engine, scratch_db_url):
     with engine.begin() as conn:
         tenant = conn.execute(
             text("INSERT INTO tenants (name) VALUES ('T') RETURNING id")
