@@ -3,6 +3,7 @@
 import os
 import time
 import uuid
+import zlib
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
@@ -38,6 +39,27 @@ def pytest_configure(config):
         "gui_login: the real sign-in of the operations view, not the signed-in "
         "device every other test acts as (#570)",
     )
+
+
+def in_shard(nodeid: str, spec: str) -> bool:
+    """`spec` "i/n" (0 <= i < n): true for about one test id in n, the same
+    one on every run and every xdist worker, so n jobs together run each test once."""
+    index, total = (int(part) for part in spec.split("/"))
+    if not 0 <= index < total:
+        raise ValueError(f"PYTEST_SHARD {spec!r}: want i/n with 0 <= i < n")
+    return zlib.crc32(nodeid.encode()) % total == index
+
+
+def pytest_collection_modifyitems(config, items):
+    """CI splits the suite over parallel jobs with `PYTEST_SHARD` (#609)."""
+    spec = os.environ.get("PYTEST_SHARD")
+    if not spec:
+        return
+    keep, drop = [], []
+    for item in items:
+        (keep if in_shard(item.nodeid, spec) else drop).append(item)
+    config.hook.pytest_deselected(items=drop)
+    items[:] = keep
 
 
 @pytest.fixture(autouse=True)
