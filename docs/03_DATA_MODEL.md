@@ -24,6 +24,7 @@
 | id | UUID PK | |
 | name | TEXT | „<Firmenname>" |
 | timezone | TEXT | `Europe/Berlin` |
+| customer_key | TEXT NULL, unique | the key provisioning created the tenant with and the name of the customer's stack (#573, D32, migration 035): lower case words joined by single hyphens, at most 32 characters (CHECK); empty on tenants made before, which provisioning never touches (`domain/provision.py`) |
 
 ### `service_config`
 Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
@@ -620,4 +621,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 031 | `gui_accounts.team_pin` readable (CHECK 4 to 6 digits) instead of `team_pin_hash`: the operator sees and sets the team PIN (Maxi 09.11.2026); a hash cannot become the PIN, so the upgrade empties every team PIN and the operator sets it again (`gui_access pin --set`), and the downgrade drops them the same way |
 | 032 | `gui_accounts.admin_pin` readable (CHECK 4 to 6 digits, never the team PIN) with `admin_failures`, `admin_last_failed_at`, `admin_blocked_until`, and `gui_sessions.admin_until`: the owner's admin PIN (#570 part b, D34 points 3 and 8); new columns only; the downgrade drops them, so every admin PIN is gone (backup first) |
 | 033 | `service_config.team_phone_today` and `team_phone_today_until` (CHECK both or neither), `staff_changes` with a partial unique index on open cards: staff changes and their check cards (#570 b, D34 point 4); new columns and a new table; the downgrade drops them, a staff number for today and every card are gone, hours written stay (backup first) |
+| 035 | `tenants.customer_key` (CHECK on the form, unique): the customer's key, by which provisioning finds the tenant it created (#573); a new column only; the downgrade drops it, after which a rerun of provisioning refuses because the stack already holds a tenant |
 | planned, next free number | `eval_cases`, `eval_runs` |

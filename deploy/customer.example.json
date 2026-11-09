@@ -1,0 +1,36 @@
+{
+  "key": "pilot",
+  "name": "<Pilotbetrieb>",
+  "timezone": "Europe/Berlin",
+  "holiday_region": "BW",
+  "privacy_notice_address": "example.com/datenschutz",
+  "hours": [
+    {
+      "days": ["tue", "wed", "thu", "fri", "sat", "sun"],
+      "services": ["dinein", "pickup", "delivery"],
+      "opens": "11:30",
+      "closes": "14:00"
+    },
+    {
+      "days": ["tue", "wed", "thu", "fri", "sat", "sun"],
+      "services": ["dinein", "pickup", "delivery"],
+      "opens": "17:00",
+      "closes": "22:00"
+    }
+  ],
+  "seats": [
+    {
+      "days": ["tue", "wed", "thu", "fri", "sat", "sun"],
+      "start": "11:30",
+      "end": "14:00",
+      "guests": 30
+    },
+    {
+      "days": ["tue", "wed", "thu", "fri", "sat", "sun"],
+      "start": "17:00",
+      "end": "22:00",
+      "guests": 40,
+      "slot_minutes": 30
+    }
+  ]
+}

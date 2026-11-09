@@ -360,6 +360,16 @@ EUR; isolation and the unchanged code decide it.
 
 - #573 provisioning creates a stack (folder, `.env` with fresh tokens, Compose project, Caddy
   site, database seed) plus the tenant row inside it, not a second tenant in a shared database.
+  The database part is built (09.11.2026): in the new stack's api container after its migrations,
+  `python -m api.jobs.provision create <customer.json> --dry-run`, then without `--dry-run`,
+  writes the tenant with its key, `service_config` in `shadow`, the weekly hours, the seats and the
+  first setup link in one transaction, from a customer file shaped like
+  `deploy/customer.example.json` (kept with the stack on the server, never in the repository). The
+  same file again changes nothing; a database that holds another tenant refuses, so a command run
+  in the wrong stack writes nothing. The team number must be `TEAM_PHONE` or on
+  `TRANSFER_TARGETS`. Menu and delivery zones keep their importers (docs/14,
+  `scripts/seed_zones.py`); `python -m api.jobs.provision check` lists what is still missing. The
+  stack around it (folder, `.env` with fresh tokens, Caddy site, `ops` network) is the next part.
 - #570 logins are per stack; the GUI's tenant choice may stay as it is.
 - #571 operator dashboard reads several stacks over an ops API per stack on an internal `ops`
   network (docs/23 §8).

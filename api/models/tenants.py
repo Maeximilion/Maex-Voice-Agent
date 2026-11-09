@@ -14,6 +14,7 @@ from sqlalchemy import (
     SmallInteger,
     Text,
     Time,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -22,6 +23,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from api.models.base import Base, TenantScoped, Timestamps, UUIDPrimaryKey
 
 CALL_MODES = ("shadow", "overflow", "primary", "paused")
+# A customer's key: lower case words joined by single hyphens, safe in a host,
+# file and Compose project name (#573, migration 035), at most 32 characters.
+CUSTOMER_KEY = "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
 # What a window of `call_mode_windows` may hold: the emergency stop is a button
 # with its own way back, never a plan (T-8.1). The order matters: from the mode
 # in which the agent does the least to the one in which it does the most, which
@@ -50,11 +54,21 @@ def _in(column: str, values: tuple[str, ...], name: str) -> CheckConstraint:
 
 class Tenant(UUIDPrimaryKey, Timestamps, Base):
     __tablename__ = "tenants"
+    __table_args__ = (
+        CheckConstraint(
+            rf"customer_key ~ '{CUSTOMER_KEY}' AND length(customer_key) <= 32",
+            name="ck_tenants_customer_key",
+        ),
+        UniqueConstraint("customer_key", name="uq_tenants_customer_key"),
+    )
 
     name: Mapped[str] = mapped_column(Text, nullable=False)
     timezone: Mapped[str] = mapped_column(
         Text, nullable=False, server_default="Europe/Berlin"
     )
+    # The key provisioning created the tenant with, and the name of the
+    # customer's stack (#573, D32, migration 035). Empty on older rows.
+    customer_key: Mapped[str | None] = mapped_column(Text)
 
 
 class ServiceConfig(Timestamps, Base):

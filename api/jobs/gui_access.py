@@ -41,15 +41,21 @@ ACTOR = "operator:cli"
 SETUP_PATH = "/gui/einrichten#"
 
 
-def _link(session: Session, tenant: Tenant, args: argparse.Namespace) -> int:
-    token, expires_at = issue_link(session, tenant.id, ACTOR, utcnow())
-    base = args.base_url or (
+def setup_url(token: str, base_url: str = "") -> str:
+    """The setup link for `token`: under `base_url`, else `https://$AGENT_DOMAIN`,
+    else the path alone."""
+    base = base_url or (
         f"https://{os.environ['AGENT_DOMAIN']}"
         if os.environ.get("AGENT_DOMAIN")
         else ""
     )
+    return f"{base.rstrip('/')}{SETUP_PATH}{token}"
+
+
+def _link(session: Session, tenant: Tenant, args: argparse.Namespace) -> int:
+    token, expires_at = issue_link(session, tenant.id, ACTOR, utcnow())
     until = to_local(expires_at, tenant.timezone).strftime("%d.%m.%Y %H:%M")
-    print(f"{base.rstrip('/')}{SETUP_PATH}{token}")
+    print(setup_url(token, args.base_url))
     print(f"Valid until {until}, once. Shown only now.", file=sys.stderr)
     return 0
 
