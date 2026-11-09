@@ -116,7 +116,13 @@ def up(args: argparse.Namespace, build: bool) -> None:
         args.dry_run,
     )
     run(compose("exec", "-T", "api", *INNER, "fill"), args.dry_run)
-    print(f"Tablet: http://{args.bind}:{args.port}/ (reload it); stack `{PROJECT}`")
+    # The view needs the restaurant's login (#570), and the fresh volume has none.
+    base = f"http://{args.bind}:{args.port}"
+    run(compose("exec", "-T", "api", *ACCESS, "--base-url", base), args.dry_run)
+    print(
+        f"Tablet: open the link above once, set any password and PIN, then the board "
+        f"is at {base}/gui/; stack `{PROJECT}`"
+    )
     if args.bind != LOOPBACK:
         print(
             f"Note: bound to {args.bind}; the stack runs ENV=dev (no proxy secret) and is "
@@ -126,6 +132,7 @@ def up(args: argparse.Namespace, build: bool) -> None:
 
 # The data layer needs the project's dependencies, so it runs in the api container.
 INNER = ["python", "-m", "scripts.bedientest_data"]
+ACCESS = ["python", "-m", "api.jobs.gui_access", "link"]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -137,14 +144,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--allow-lan",
         action="store_true",
-        help="needed for a --bind other than loopback (the tablet): ENV=dev has no login",
+        help="needed for a --bind other than loopback (the tablet): ENV=dev has no proxy",
     )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
     if args.bind != LOOPBACK and not args.allow_lan:
         parser.error(
-            f"--bind {args.bind} would open the stack, which runs ENV=dev without a "
-            "login, to that network (AGENTS.md: dev ports are loopback only); "
+            f"--bind {args.bind} would open the stack, which runs ENV=dev without the "
+            "proxy check, to that network (AGENTS.md: dev ports are loopback only); "
             "add --allow-lan to do it on purpose"
         )
 

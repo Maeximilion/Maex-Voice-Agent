@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.db import get_db
 from api.gui import dev, mount_gui
+from api.gui.session import require_gui_session
 from api.models import Call, Tenant
 from api.tests.test_domain_draft_order import _tenant
 from sim.session import Turn
@@ -48,6 +49,8 @@ def client(engine, monkeypatch):
     app = FastAPI()
     mount_gui(app)
     app.dependency_overrides[get_db] = override_get_db
+    # A signed-in device, as on the global app (conftest `_gui_signed_in`).
+    app.dependency_overrides[require_gui_session] = lambda: None
     try:
         client = TestClient(app)
         client.cookies.set("csrf_token", "testtoken")
@@ -385,3 +388,12 @@ def test_console_rejects_missing_csrf_token(client, db, tenant_id):
     response = client.post(f"{BASE}/call", headers={"HX-Request": "true"})
     assert response.status_code == 403
     assert db.scalar(select(func.count()).select_from(Call)) == 0
+
+
+def test_the_console_needs_a_signed_in_device(client):
+    """#570: the console writes real rows like the view, so it needs the same
+    device session; without one it sends the browser to the sign-in."""
+    del client.app.dependency_overrides[require_gui_session]
+    answer = client.get("/gui/dev/console", headers={"HX-Request": "true"})
+    assert answer.status_code == 401
+    assert answer.headers["HX-Redirect"] == "/gui/anmelden"

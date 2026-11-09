@@ -1,0 +1,18 @@
+{# Unlock a signed-in device with the team PIN after 15 minutes without a
+   change (#570, D34). Five wrong PINs sign the device out. #}
+{% extends "base.html" %}
+{% block title %}Entsperren{% endblock %}
+{% block body_class %}betrieb zugang{% endblock %}
+
+{% block main %}
+<form class="card zugang-form" method="post" action="/gui/entsperren">
+  <h1>PIN eingeben</h1>
+  <p>15 Minuten ohne Eingabe: zum Ändern bitte die PIN des Teams.</p>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="pin">PIN</label>
+  <input type="password" id="pin" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" autocomplete="off" required autofocus>
+  {% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
+  <button type="submit" class="primary">Entsperren</button>
+  <a class="button" href="/gui/">Zurück zur Übersicht</a>
+</form>
+{% endblock %}

@@ -340,3 +340,12 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 .frage button{min-height:var(--tap);font-size:var(--fs-body);font-weight:600}
 .betrieb button.ton-an{width:100%;background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:700;border-radius:0}
 .ton-an[hidden]{display:none}
+/* Sign-in, setup link and PIN (#570): one card, every field and button 60 px, text 18 px or more. */
+.zugang main{display:grid;place-items:center;min-height:100vh;padding:var(--s4)}
+.zugang-form{width:min(32rem,100%);display:grid;gap:var(--s3);font-size:var(--fs-body)}
+.zugang-form h1{margin:0;font-size:var(--fs-h2)}
+.zugang-form p{margin:0}
+.zugang-form label{font-weight:600}
+.zugang-form input{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);min-height:var(--tap);padding:0 var(--s3)}
+.zugang-form .badge{font-size:var(--fs-body);white-space:normal;padding:var(--s2) var(--s3)}
+.zugang-form a.button{display:flex;align-items:center;justify-content:center;min-height:var(--tap)}

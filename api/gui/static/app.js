@@ -591,7 +591,20 @@
     offline(false);
   };
   // Der Browser verbindet nach dem Abbruch von selbst neu (retry im Strom).
+  // Not after an answer that is no stream: a 401 once the device is signed out
+  // (#570) or an error page of the proxy. Then a small request asks every 15
+  // seconds: signed out goes to the sign-in, a server that answers again
+  // reloads the page and its stream, anything else asks again.
+  function probe() {
+    fetch("/gui/fragments/heute", { headers: { "HX-Request": "true" }, credentials: "same-origin" }).then(function (res) {
+      var away = res.status === 401 && res.headers.get("HX-Redirect");
+      if (away) location.href = away;
+      else if (res.ok) location.reload();
+      else setTimeout(probe, 15000);
+    }, function () { setTimeout(probe, 15000); });
+  }
   strom.onerror = function () {
     offline(true);
+    if (strom.readyState === EventSource.CLOSED) setTimeout(probe, 15000);
   };
 })();

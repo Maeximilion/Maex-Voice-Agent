@@ -17,9 +17,13 @@ from api.core.errors import AppError
 from api.core.logging import get_logger
 from api.db import SessionLocal
 from api.gui.router import _form, _page_response, _require_htmx, templates
+from api.gui.session import require_gui_session
 from sim.session import SimCall, Turn, resolve_tenant
 
-router = APIRouter(prefix="/gui/dev", tags=["gui-dev"])
+# Dev only, but it writes real rows like the view: the same device session (#570).
+router = APIRouter(
+    prefix="/gui/dev", tags=["gui-dev"], dependencies=[Depends(require_gui_session)]
+)
 logger = get_logger("api.gui.dev")
 
 TURN_FAILED = "Der Zug ist fehlgeschlagen, der Anruf wurde beendet. Bitte einen neuen Anruf starten."

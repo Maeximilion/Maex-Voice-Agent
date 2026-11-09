@@ -1,0 +1,25 @@
+{# The operator's setup link (#570, D34 point 5): the restaurant sets its
+   password and the team PIN. The code arrives in the link's fragment, which
+   base.js copies into the hidden field; the server never sees it in a URL. #}
+{% extends "base.html" %}
+{% block title %}Zugang einrichten{% endblock %}
+{% block body_class %}betrieb zugang{% endblock %}
+
+{% block main %}
+<form class="card zugang-form" method="post" action="/gui/einrichten">
+  <h1>Zugang einrichten</h1>
+  <p>Das Passwort meldet ein Gerät an, einmal je Gerät. Die PIN entsperrt ein angemeldetes Gerät nach 15 Minuten Pause. Alle anderen Geräte werden dabei abgemeldet.</p>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <input type="hidden" name="code" value="{{ code }}" data-setup-code>
+  <label for="passwort">Neues Passwort, mindestens 12 Zeichen</label>
+  <input type="password" id="passwort" name="passwort" autocomplete="new-password" minlength="12" maxlength="128" required>
+  <label for="passwort2">Passwort noch einmal</label>
+  <input type="password" id="passwort2" name="passwort2" autocomplete="new-password" required>
+  <label for="pin">PIN für das Team, 4 bis 6 Ziffern</label>
+  <input type="password" id="pin" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" autocomplete="off" required>
+  <label for="pin2">PIN noch einmal</label>
+  <input type="password" id="pin2" name="pin2" inputmode="numeric" pattern="[0-9]{4,6}" autocomplete="off" required>
+  {% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
+  <button type="submit" class="primary">Speichern und anmelden</button>
+</form>
+{% endblock %}

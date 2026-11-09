@@ -8,7 +8,7 @@
 # there too, never to a file (api/tests/test_log_periods.py).
 (transport) {
     # A browser that reached the site once never falls back to plain HTTP,
-    # where the shared access of the tablet could be read off the line.
+    # where the tablet's session cookie could be read off the line.
     header Strict-Transport-Security "max-age=31536000"
 }
 
@@ -16,15 +16,12 @@
     import transport
     encode gzip
 
-    # Die Betriebsansicht zeigt Gastnamen, Telefonnummern und Notizen. Die
-    # Anwendung selbst kennt keinen Browser-Zugang (docs/06 §6: ein gemeinsamer
-    # Zugang je Gerät), deshalb steht er hier davor. Benutzer und Hash kommen
-    # aus der Umgebung, nie aus dem Repo (CLAUDE.md §8).
-    # Hash erzeugen: docker run --rm caddy:2-alpine caddy hash-password --plaintext '<PASSWORT>'
+    # The operations view shows guest names, phone numbers and notes. The
+    # application signs each device in with the restaurant's password and keeps
+    # a session per device (#570, docs/23 §6); it replaced the shared Basic-Auth
+    # that stood here. The security audit of docs/09 §5 comes before this site
+    # is reachable from outside.
     @gui path /gui /gui/*
-    basic_auth @gui {
-        {$GUI_BASIC_AUTH_USER} {$GUI_BASIC_AUTH_HASH}
-    }
     # No browser guesses a type from content, and no address of the view, which
     # can carry an order or call id, leaves in a Referer header.
     header X-Content-Type-Options "nosniff"
@@ -47,7 +44,7 @@
             max_size 256KB
         }
         # The view answers only requests that carry this secret, so a container
-        # on the Docker network cannot reach it around the Basic-Auth above
+        # on the Docker network cannot reach it around this proxy
         # (api/core/auth.py). Set here, it replaces a header a client sent.
         reverse_proxy api:8000 {
             header_up X-Maex-Proxy-Secret "{env.GUI_PROXY_SECRET}"

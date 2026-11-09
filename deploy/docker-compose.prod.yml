@@ -109,15 +109,11 @@ services:
     # Never on `backend`: the proxy sees what it passes on, not the database.
     networks: [public, edge]
     environment:
-      # Zugang zur Betriebsansicht. Ohne diese Werte startet Caddy zwar,
-      # lässt aber niemanden auf /gui/* durch - das ist die sichere Seite.
-      GUI_BASIC_AUTH_USER: ${GUI_BASIC_AUTH_USER}
-      GUI_BASIC_AUTH_HASH: ${GUI_BASIC_AUTH_HASH}
       # Sent to the API with every request (deploy/Caddyfile). Empty: the API
       # answers no request to the view, the safe side again.
       GUI_PROXY_SECRET: ${GUI_PROXY_SECRET:-}
-      # Access to the n8n editor, its own user: the tablet's shared access must
-      # not open it. Empty closes the editor for everyone, like the view above.
+      # Access to the n8n editor, its own user: the tablet's login must not
+      # open it. Empty closes the editor for everyone.
       N8N_EDITOR_AUTH_USER: ${N8N_EDITOR_AUTH_USER:-}
       N8N_EDITOR_AUTH_HASH: ${N8N_EDITOR_AUTH_HASH:-}
       # The names Caddy answers to and gets certificates for (deploy/Caddyfile).

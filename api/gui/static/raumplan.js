@@ -63,6 +63,9 @@
       headers: { "Content-Type": "application/json", "HX-Request": "true", "X-CSRF-Token": m ? m[1] : "" },
       body: body === undefined ? undefined : JSON.stringify(body)
     }).then(function (res) {
+      // Signed out, or locked after 15 minutes: the sign-in or the PIN first (#570).
+      var away = res.status === 401 && res.headers.get("HX-Redirect");
+      if (away) { location.href = away; return new Promise(function () {}); }
       return res.json().catch(function () { return {}; }).then(function (data) { return { status: res.status, data: data }; });
     });
   }

@@ -194,6 +194,8 @@ def test_dry_run_runs_nothing(monkeypatch, capsys):
     assert not called
     out = capsys.readouterr().out
     assert "dispatcher" not in out and "-p bedientest" in out
+    # The fresh volume has no login: `up` makes the setup link for the tablet (#570).
+    assert "api.jobs.gui_access link --base-url http://127.0.0.1:18000" in out
 
 
 def test_a_lan_bind_is_refused_unless_asked_for_twice(monkeypatch, capsys):

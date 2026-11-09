@@ -3,9 +3,8 @@
 Die GUI ist eine Eingangsschicht: sie darf `domain/` benutzen, enthält aber selbst
 keine Fachlogik (docs/11 §1). Was hier steht, ist Auswahl und Darstellung.
 
-Zugang: in Stufe 1 schützt der Reverse-Proxy den Pfad `/gui/*` (Basic-Auth oder
-VPN, docs/13 §Caddy), nicht die Anwendung. Deshalb hängt hier bewusst keine
-Token-Abhängigkeit - ein Browser schickt keinen Bearer-Kopf mit.
+Access: every route needs the restaurant's device session (`gui/session.py`,
+#570), behind the proxy check; the sign-in pages are in `gui/access.py`.
 """
 
 import json
@@ -51,6 +50,7 @@ from api.domain.status import holidays as holiday_days
 from api.domain.status.mode import CAUTION, mode_at
 from api.domain.status.waits import current_wait, standard_wait
 from api.gui import figures_view, orders_view
+from api.gui.session import require_gui_session
 from api.gui.sse import today_event_stream
 from api.models import Reservation, ServiceConfig, Tenant
 from api.schemas.floor_plan import NewArea, SaveArea
@@ -60,9 +60,12 @@ TEMPLATES = Path(__file__).parent / "templates"
 STATIC = Path(__file__).parent / "static"
 
 templates = Jinja2Templates(directory=str(TEMPLATES))
-# Every page, fragment and the event stream: only what came through Caddy (outside dev).
+# Every page, fragment and the event stream: only what came through Caddy (outside
+# dev), and only for a signed-in device (#570).
 router = APIRouter(
-    prefix="/gui", tags=["gui"], dependencies=[Depends(require_gui_proxy)]
+    prefix="/gui",
+    tags=["gui"],
+    dependencies=[Depends(require_gui_proxy), Depends(require_gui_session)],
 )
 logger = get_logger("api.gui.router")
 
@@ -289,8 +292,9 @@ def _page_response(
     if not token or not token.isascii():
         # A token _require_htmx can never accept would lock every tap out.
         token = secrets.token_urlsafe(32)
+    # The sign-in forms post it as a field (gui/access.py), HTMX as a header.
     response = templates.TemplateResponse(
-        request, template, context, status_code=status_code
+        request, template, {**context, "csrf_token": token}, status_code=status_code
     )
     response.set_cookie(
         "csrf_token",

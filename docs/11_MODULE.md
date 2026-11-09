@@ -126,6 +126,13 @@ Regeln) kommt nicht von hier: `core/tool_log.py` schreibt sie generisch für jed
 `/v1/tools/*`-Aufruf, damit kein einzelnes Tool-Modul dafür Fachlogik-fremden Code
 braucht.
 
+### `domain/access/`
+The restaurant's login to the operations view (#570, D34, docs/23 §6). Answers: *may this device see and change the view?*
+- `hashing.py` — scrypt hashes of password and team PIN, SHA-256 of tokens, the rules for a new password and PIN
+- `sessions.py` — sign-in with the growing wait per account and per address, the device session (30 days sliding, locked 15 minutes after the last change), the team PIN, signing devices out; the stack's tenant is the oldest (D32)
+- `setup.py` — the operator's one-time setup link: password and PIN set, every other device signed out
+- Tests: the wait from the fifth failure, a session of another tenant, the idle lock, five wrong PINs, a spent or replaced link
+
 ### `agent/` – der Gesprächs-Kern
 Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | Datei | Verantwortung |
@@ -200,6 +207,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
 - `retention.py` — deletion job after docs/03 "Löschkonzept" (T-11.2): `purge(session, now)` strips the personal fields whose period is over and logs one line per pass; `cold_path.py` runs it in a thread of its own every `RETENTION_INTERVAL_SECONDS`, `python -m api.jobs.retention` runs one pass by hand
 - `data_requests.py` — requests of data subjects by hand on the server (T-11.8, docs/09 §2): `python -m api.jobs.data_requests log|open|extend|find|erase|object|answer`; stdout is the copy or the lines of the erasure ledger, written before the commit
+- `gui_access.py` — the operator's side of the restaurant's login until the dashboard has it (#570, #571): `python -m api.jobs.gui_access link|devices|sign-out`
 - `price_check.py` — Abgleich Kasse gegen Agent-DB (T-4.9)
 - `daily_report.py` — daily report as an outbox event `daily.report`. Built with T-11.6: from `REGISTER_REPORT_HOUR` local time, once per business day, how many orders of earlier days nobody marked „In Kasse eingegeben“ (L18), none when all are marked, and again an hour after one the dispatcher gave up on; `cold_path.py` runs it in a thread of its own every five minutes. The day's key figures follow with T-8.3
 - `monitor.py` — alarms and the day report for the operator (T-8.3, docs/13 §5): every 5 minutes in `cold_path.py`, per tenant, the model cost of the business day above `ALARM_COST_PER_DAY_CENTS`, at least `ALARM_ERROR_CALLS_PER_HOUR` error calls in the last hour, events to n8n that failed in the last hour (kitchen slips go to the print bridge and are left out), `voice` not answering and Asterisk not registered (with `VOICE_URL`), the print bridge silent, no `backup.done` for `ALARM_BACKUP_HOURS`, and from `MONITOR_REPORT_HOUR` the previous business day in one line. Posted straight to the push server, topic `ops`, not through n8n (n8n down is one of the outages it reports); the audit log (`monitor.alarm`) remembers what was sent, a failed post goes out on the next pass
@@ -208,6 +216,8 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 ### `gui/`
 - `router.py` — Seiten und HTMX-Fragmente
 - `sse.py` — Ereignisstrom für Live-Updates (neue Bestellung, Rückruf, Modus)
+- `session.py` — `require_gui_session`, a dependency of every route of the view and the console: no session goes to the sign-in, a locked one may read and goes to the PIN page on a change, every change must come from this site; the session cookie
+- `access.py` — the sign-in, setup link and PIN pages (`/gui/anmelden`, `/gui/einrichten`, `/gui/entsperren`), plain forms with the CSRF token as a field
 - `dev.py` — router of the simulator console (`/gui/dev/console`), mounted by `mount_gui` only when `ENV=dev`; keeps the open calls in the process, the logic stays in `sim/session.py` (the one place where `gui` imports `sim`, because the console is the simulator page)
 - `templates/` — `base.html`, `betrieb/`, `admin/`, `fragments/`
 - `static/` — Pico.css, HTMX lokal, eigene Töne

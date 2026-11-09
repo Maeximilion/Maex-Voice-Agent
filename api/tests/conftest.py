@@ -32,6 +32,28 @@ def pytest_configure(config):
         "latency: misst das Latenzbudget mit echter Uhr; läuft in CI seriell, "
         "nicht unter xdist (docs/13 §6)",
     )
+    config.addinivalue_line(
+        "markers",
+        "gui_login: the real sign-in of the operations view, not the signed-in "
+        "device every other test acts as (#570)",
+    )
+
+
+@pytest.fixture(autouse=True)
+def _gui_signed_in(request):
+    """Every test of the operations view acts as a signed-in, unlocked device.
+
+    The login itself is tested with the marker `gui_login`
+    (test_gui_login.py), including that every route refuses without it."""
+    if request.node.get_closest_marker("gui_login"):
+        yield
+        return
+    from api.gui.session import require_gui_session
+    from api.main import app
+
+    app.dependency_overrides[require_gui_session] = lambda: None
+    yield
+    app.dependency_overrides.pop(require_gui_session, None)
 
 
 @pytest.fixture(autouse=True)
