@@ -235,6 +235,10 @@ def change_day_hours(
         or day == today
         or _within(session, tenant_id, day, hours, holding, zone)
     )
+    if hours == shown and held == card.held:
+        # The request that waits already, sent again: nothing changes.
+        session.commit()
+        return None
     if held and hours != holding:
         _write(session, tenant_id, day, hours)
     _audit(

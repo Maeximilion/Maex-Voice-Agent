@@ -461,6 +461,30 @@ def test_a_tap_that_changes_nothing_pushes_nothing(session, tenant_id):
     assert len(_events(session, tenant_id)) == 1
 
 
+def test_a_waiting_request_sent_again_pushes_and_writes_nothing(session, tenant_id):
+    """Codex on #591: the same longer hours twice before the owner looked."""
+    longer = DayHours(opens=time(11), closes=time(23))
+    first = staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW)
+    assert staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW) is None
+    assert len(_events(session, tenant_id)) == 1
+    entries = session.scalars(
+        select(AuditLog).where(AuditLog.action == "staff_change.day_hours")
+    ).all()
+    assert len(entries) == 1
+    assert not _cards(session, tenant_id)[0].held and first.status == "open"
+
+
+def test_a_waiting_request_sent_again_on_its_day_holds_and_pushes(session, tenant_id):
+    """The same request, once its date is today, holds at once: a change."""
+    longer = DayHours(opens=time(11), closes=time(23))
+    staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW)
+    on_the_day = datetime.combine(SATURDAY, time(10), BERLIN)
+    card = staff.change_day_hours(session, tenant_id, SATURDAY, longer, on_the_day)
+    assert card is not None and card.held
+    assert _windows(session, tenant_id, SATURDAY) == [("11:00", "23:00")]
+    assert [p["held"] for _, p in _events(session, tenant_id)] == [False, True]
+
+
 def test_the_owners_answer_pushes_nothing(session, tenant_id):
     """The owner decides with the PIN: nothing to tell the owner about."""
     card = staff.change_team_phone(session, tenant_id, NUMBER, NOW)
