@@ -128,6 +128,18 @@ def test_betriebsansicht_zeigt_reservierung(client, engine, tenant_id):
     assert "KI hört mit" in body and "Lieferung an" in body
 
 
+def test_page_offers_the_sound_button_and_the_in_page_question(client, tenant_id):
+    """T-3.16: "Ton an" is on the page (hidden until app.js needs it), and
+    app.js answers htmx's confirm event instead of the browser's confirm()."""
+    body = client.get("/gui/").text
+    assert 'id="ton-an"' in body
+    script = client.get("/gui/static/app.js").text
+    assert 'addEventListener("htmx:confirm"' in script
+    assert "window.confirm(" not in script
+    # The board behind the question is inert, so no key reaches it (Codex, #565).
+    assert "el.inert = true" in script and 'k.key !== "Tab"' in script
+
+
 def test_kopfzeile_folgt_dem_modus(client, engine, tenant_id):
     with Session(engine) as s:
         config = s.get(ServiceConfig, tenant_id)

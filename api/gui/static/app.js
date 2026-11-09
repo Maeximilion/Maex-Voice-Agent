@@ -102,7 +102,12 @@
       still.start(0);
     }
     if (audio.state === "suspended") audio.resume();
+    if (tonAn) tonAn.hidden = true;
   }
+  // Until the first tap the browser keeps the tone off (docs/06 §8): say so
+  // and let one tap on the button end it (T-3.16).
+  var tonAn = document.getElementById("ton-an");
+  if (tonAn && Ctx) tonAn.hidden = false;
   document.addEventListener("touchstart", freischalten, { passive: true });
   document.addEventListener("click", freischalten);
 
@@ -300,6 +305,7 @@
     }
   }
   var ABANDONED = "Korrektur abgebrochen, nichts gespeichert.";
+  var RELOADED = "Die Liste hat sich geändert, nichts passiert. Bitte nochmal tippen.";
   // The text a cancel tap sends in its HX-Trigger: the refresh that follows
   // would remove a line inside the column.
   document.body.addEventListener("order-notice", function (e) {
@@ -341,6 +347,68 @@
       closeSheet(waitBox);
     }
   });
+  // In-page question instead of the browser's confirm() (T-3.16, docs/06 §1
+  // rule 6): the dialog is small and its buttons are 60 px targets. htmx asks
+  // through htmx:confirm; the request goes out only on "Ja".
+  function closeQuestion() {
+    var open = document.querySelector(".frage-grund");
+    if (open) open.remove();
+    // Only what the question made inert: a sheet keeps its own inert board.
+    madeInert.forEach(function (el) {
+      el.inert = false;
+    });
+    madeInert = [];
+    return !!open;
+  }
+  var madeInert = [];
+  document.body.addEventListener("htmx:confirm", function (e) {
+    if (!e.detail.question) return;
+    e.preventDefault();
+    var issue = e.detail.issueRequest;
+    var back = document.createElement("div");
+    back.className = "frage-grund";
+    var box = document.createElement("div");
+    box.className = "frage";
+    box.setAttribute("role", "alertdialog");
+    box.setAttribute("aria-modal", "true");
+    var text = document.createElement("p");
+    text.textContent = e.detail.question;
+    var no = document.createElement("button");
+    no.type = "button";
+    no.textContent = "Nein";
+    var yes = document.createElement("button");
+    yes.type = "button";
+    yes.className = "primary";
+    yes.textContent = "Ja";
+    // The board stays reachable by keyboard behind an overlay: make everything
+    // else inert while the question stands, and keep Tab between its buttons.
+    Array.prototype.forEach.call(document.body.children, function (el) {
+      if (el === back || el.tagName === "SCRIPT" || el.inert) return;
+      el.inert = true;
+      madeInert.push(el);
+    });
+    box.addEventListener("keydown", function (k) {
+      if (k.key !== "Tab") return;
+      k.preventDefault();
+      (document.activeElement === no ? yes : no).focus();
+    });
+    no.addEventListener("click", closeQuestion);
+    yes.addEventListener("click", function () {
+      closeQuestion();
+      // A live update may have replaced the card while the question stood
+      // (confirm() used to freeze the page): htmx drops a request from a
+      // detached button, so say so instead of looking as if it had worked.
+      if (!e.detail.elt.isConnected) {
+        showBoardNote(RELOADED, "warn");
+        return;
+      }
+      issue(true);
+    });
+    box.append(text, no, yes);
+    back.append(box);
+    document.body.append(back);
+    no.focus();
+  });
   function closeCorrection() {
     closeSheet(correctionBox);
   }
@@ -366,7 +434,8 @@
     correctionBox.addEventListener("input", armIdleTimer);
   }
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") sheets.forEach(closeSheet);
+    if (e.key !== "Escape") return;
+    if (!closeQuestion()) sheets.forEach(closeSheet);
   });
   // Only opening takes the focus: after a tap inside the sheet it stays put.
   var wasOpen = false;

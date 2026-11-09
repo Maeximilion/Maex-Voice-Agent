@@ -6,6 +6,8 @@
 {% endblock %}
 
 {% block main %}
+{# Shown by app.js until the first tap: the browser plays no tone before it (T-3.16). #}
+<button type="button" id="ton-an" class="ton-an" hidden>Ton an: einmal tippen, dann klingelt es bei neuen Bestellungen</button>
 {# Target of "Korrigieren": sheet over the columns, which stay live underneath (docs/06 §3). #}
 <div id="korrektur"></div>
 {# Target of "Gericht aus" (T-4.8): sheet like the correction. #}

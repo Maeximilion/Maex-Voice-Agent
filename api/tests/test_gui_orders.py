@@ -612,6 +612,24 @@ def test_spalte_antwortet_schnell(client, db, tenant_id):
     assert p95 < 300, p95
 
 
+def test_swap_field_stands_under_its_line(client, db, tenant_id):
+    """T-3.16: the number field of a swap sits inside the swapped line, once."""
+    order_id = _order(db, tenant_id)
+    base = f"/gui/bestellungen/{order_id}/korrigieren"
+    plain = client.get(base).text
+    # No swap open: "Gericht dazu" at the bottom, one field.
+    assert plain.count('id="number"') == 1 and "Gericht dazu, Nummer" in plain
+
+    html = client.post(
+        f"{base}/vorschau", data={"state": _state(plain), "op": "swap:0"}, headers=HX
+    ).text
+    assert html.count('id="number"') == 1
+    assert "Gericht dazu, Nummer" not in html
+    line_end = html.index("</li>", html.index("edit-line"))
+    assert html.index("Tauschen gegen Nummer") < line_end
+    assert html.index('id="number"') < line_end
+
+
 @pytest.mark.parametrize("swapping", ['"0"', "5", "-1", "true"])
 def test_kaputter_tauschen_index_meldet_statt_500(client, db, tenant_id, swapping):
     order_id = _order(db, tenant_id)
