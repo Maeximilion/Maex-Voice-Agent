@@ -1,7 +1,8 @@
 """Cold-path process: the dispatcher towards n8n, the watchdog for the kitchen slip,
 the deletion job (api/jobs/retention.py), the daily report
-(api/jobs/daily_report.py), the operator's alarms (api/jobs/monitor.py) and the
-holiday suggestions (api/jobs/holidays.py).
+(api/jobs/daily_report.py), the operator's alarms (api/jobs/monitor.py), the
+holiday suggestions (api/jobs/holidays.py) and the closing of calls a dead
+`voice` process left open (`domain/calls/end.py`, #545).
 
 `python -m api.jobs.cold_path` (docker-compose, service `dispatcher`). The watchdog
 belongs to the domain logic (domain/ordering/handover.py), the dispatcher to events/;
@@ -10,8 +11,8 @@ both are wired together here so that events/ does not have to know the domain lo
 The watchdog runs in its own thread with its own cadence. If n8n hangs, one pass of
 the dispatcher takes up to 20 x 10 s of timeout - on the same cadence the card would
 have stayed green for minutes during exactly a second outage (Codex PR #143).
-The deletion job, the daily report and the alarms have a thread of their own
-each for the same reason.
+The deletion job, the daily report, the alarms and the closing of open calls
+have a thread of their own each for the same reason.
 """
 
 import logging
@@ -25,12 +26,16 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core.logging import configure_logging, error_text, get_logger, log
 from api.db import SessionLocal
+from api.domain.calls import close_left_open_calls
 from api.domain.ordering.handover import sweep
 from api.events.dispatcher import run_forever, send_to_n8n
 from api.jobs import daily_report, holidays, monitor
 from api.jobs.retention import purge
 
 logger = get_logger("api.jobs.cold_path")
+
+# A call left open is closed within this of passing its limit (#545).
+OPEN_CALLS_INTERVAL_SECONDS = 300.0
 
 
 class Stop(Protocol):
@@ -95,6 +100,13 @@ if __name__ == "__main__":
         args=(threading.Event(), holidays.INTERVAL_SECONDS),
         kwargs={"job": holidays.suggest_all, "label": "Holidays"},
         name="holidays",
+        daemon=True,
+    ).start()
+    threading.Thread(
+        target=watch_forever,
+        args=(threading.Event(), OPEN_CALLS_INTERVAL_SECONDS),
+        kwargs={"job": close_left_open_calls, "label": "Open calls"},
+        name="open-calls",
         daemon=True,
     ).start()
     run_forever(send_to_n8n)

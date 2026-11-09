@@ -338,7 +338,7 @@ every table, so a later move to one shared stack stays possible.
 | Tokens (`AGENT_API_TOKEN`, `GUI_PROXY_SECRET`, `VOICE_MEDIA_TOKEN`, `MONITOR_PUSH_TOKEN`) | one per stack |
 | Uniques | `orders.idempotency_key` and `reservations.idempotency_key` are unique across all tenants |
 
-Jobs (`monitor`, `daily_report`, `retention`, `holidays`) and the outbox dispatcher already loop
+Jobs (`monitor`, `daily_report`, `retention`, `holidays`, the closing of calls left open) and the outbox dispatcher already loop
 over all tenants, and the agent tools take `tenant_id` from the call state, not from the model.
 
 ### Numbers
