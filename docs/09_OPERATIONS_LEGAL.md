@@ -95,6 +95,10 @@ When the register PC is lost or was used by someone else, the token was seen or 
 3. On the register PC, in Command Prompt (`cmd`), not PowerShell: `setx MAEX_KITCHEN_TOKEN "<new value>"`.
 4. Sign out of Windows and in again: the task starts the bridge with the new value. Check its log (`printbridge/README.md`, step 6) and print a test order.
 
+### Ops token leaked (#571)
+
+Whoever holds a stack's `OPS_TOKEN` and reaches its `ops` network reads that restaurant's state (counts, times, menu status; no guest data so far). Replace it: on the server `openssl rand -hex 32` becomes `OPS_TOKEN` in the stack's `.env` (distinct from every other token, or the API does not start), then `docker compose up -d api` in the stack's folder. The dashboard gets the new value with its registry (#571). Suspected dashboard compromise: every stack's token, one by one.
+
 ### Tablet lost, or the restaurant's password got around (#570, D34)
 
 A signed-in tablet shows the board to whoever holds it, until it is signed out (docs/23 T8). In the stack's api container (docs/13 §3 "Access to the operations view"):
