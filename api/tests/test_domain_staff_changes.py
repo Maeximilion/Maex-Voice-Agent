@@ -353,3 +353,18 @@ def test_the_same_request_again_writes_nothing(session, tenant_id):
         select(AuditLog).where(AuditLog.action == "staff_change.day_hours")
     ).all()
     assert len(entries) == 1
+
+
+def test_a_card_of_a_past_day_changes_nothing_today(session, tenant_id):
+    """Codex on #589: a stale tablet answers yesterday's card after 05:00; today's
+    number and its card must stay."""
+    yesterday = NOW - timedelta(days=1)
+    old = staff.change_team_phone(session, tenant_id, "+4972215550000", yesterday)
+    today = staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    assert old.id != today.id
+    for keep in (False, True):
+        staff.decide(session, tenant_id, old.id, keep=keep, now=NOW)
+    config = _config(session, tenant_id)
+    assert staff.team_phone_at(config, NOW) == NUMBER
+    assert config.team_phone == settings.team_phone
+    assert [c.status for c in _cards(session, tenant_id)] == ["open", "open"]

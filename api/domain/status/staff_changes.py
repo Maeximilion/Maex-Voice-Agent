@@ -239,9 +239,10 @@ def decide(
     """The owner's answer on a card, behind the admin PIN. Keep: a team
     number becomes the standard, waiting hours hold. Undo: back to what held
     before the staff came. A card decided already, on another tablet, is no
-    error. Commits."""
+    error, and neither is one of a day that has passed (a stale tablet): its
+    change ended with that day, and today's must stay as it is. Commits."""
     now = now or clock.utcnow()
-    config, _zone = _locked(session, tenant_id)
+    config, zone = _locked(session, tenant_id)
     card = session.scalars(
         select(StaffChange)
         .where(StaffChange.id == card_id, StaffChange.tenant_id == tenant_id)
@@ -251,7 +252,7 @@ def decide(
     if card is None:
         session.rollback()
         raise NotFound(f"Staff change {card_id} not found")
-    if card.status != OPEN:
+    if card.status != OPEN or card.day < clock.business_day(now, zone):
         session.commit()
         return
     if card.kind == TEAM_PHONE:
