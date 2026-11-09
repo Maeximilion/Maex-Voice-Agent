@@ -189,7 +189,7 @@ def test_eigene_dateien_werden_ausgeliefert(client):
 
 def test_the_view_can_go_on_the_home_screen(client):
     """T-3.7: the manifest and its icons are served, and every page links the
-    manifest with credentials, which Caddy's Basic-Auth needs."""
+    manifest with credentials, which a browser would otherwise leave out."""
     manifest = client.get("/gui/static/manifest.json").json()
 
     assert manifest["start_url"] == "/gui/" and manifest["display"] == "fullscreen"
@@ -211,20 +211,16 @@ def test_fragment_bleibt_schnell(client, engine, tenant_id):
     assert p95_ms(lambda: client.get("/gui/fragments/heute")) < 300
 
 
-def test_caddy_schuetzt_die_gui():
-    """Befund Codex P1: `/gui/*` zeigt Gastnamen und Telefonnummern.
-
-    Die Anwendung selbst kennt keinen Browser-Zugang (docs/13 §Caddy), also muss
-    der Reverse-Proxy im eingecheckten Produktionsstapel wirklich davorstehen -
-    sonst liegen personenbezogene Daten offen im Netz.
-    """
+def test_the_view_has_its_own_login_not_caddys_basic_auth():
+    """#570: the application signs each device in (gui/session.py), Caddy
+    passes the view on with its proxy secret. A Basic-Auth in front would ask a
+    second shared password and hide the sign-in page behind it."""
     caddyfile = Path(__file__).resolve().parents[2] / "deploy" / "Caddyfile"
-    text = caddyfile.read_text()
+    site = caddyfile.read_text().split("{$N8N_DOMAIN")[0]
 
-    assert "basic_auth" in text
-    assert "/gui" in text
-    # Kein Zugang im Repo: Benutzer und Hash kommen aus der Umgebung (CLAUDE.md §8).
-    assert "{$GUI_BASIC_AUTH_USER}" in text and "{$GUI_BASIC_AUTH_HASH}" in text
+    assert "basic_auth" not in site
+    assert "@public path /gui /gui/*" in site
+    assert "GUI_BASIC_AUTH" not in (caddyfile.parents[1] / ".env.example").read_text()
 
 
 # --- Kopfzeile: Knoepfe (T-3.2) ---------------------------------------------

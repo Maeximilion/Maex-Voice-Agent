@@ -1,0 +1,17 @@
+{# Sign-in of a device with the restaurant's password (#570, D34). One field,
+   a plain form: the answer is the board or this page with one sentence. #}
+{% extends "base.html" %}
+{% block title %}Anmelden{% endblock %}
+{% block body_class %}betrieb zugang{% endblock %}
+
+{% block main %}
+<form class="card zugang-form" method="post" action="/gui/anmelden">
+  <h1>Anmelden</h1>
+  <p>Das Passwort des Betriebs, einmal je Gerät.</p>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <label for="passwort">Passwort</label>
+  <input type="password" id="passwort" name="passwort" autocomplete="current-password" required autofocus>
+  {% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
+  <button type="submit" class="primary">Anmelden</button>
+</form>
+{% endblock %}

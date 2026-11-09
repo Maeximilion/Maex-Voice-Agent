@@ -129,6 +129,8 @@ make test
 
 API then runs at `http://localhost:8000`, the operations view at `http://localhost:8000/gui/`, n8n at `http://localhost:5678`, the push server at `http://localhost:8090` (closed until users are set in `.env`). `/health` responds with `{"status": "ok", "env": "dev"}`. These ports are bound to `127.0.0.1` (`docker-compose.override.yml`), so they are reachable from this machine only; the production stack publishes none of them (`docs/13_DEPLOYMENT.md` §3).
 
+The operations view asks for the restaurant's password, in development too (#570). Make the one-time setup link once per database, open it and set a password and team PIN: `docker compose exec api python -m api.jobs.gui_access link --base-url http://localhost:8000`.
+
 Tests and lint from a local Python environment. Database tests need reachable Postgres, e.g. from `make up`; `DATABASE_URL` then points to `localhost` instead of container name `db`:
 
 ```bash
@@ -168,7 +170,6 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | `PRIVACY_NOTICE_ADDRESS` | Where the privacy notice is, as a caller should hear it; a new tenant is seeded with it, and the phone greeting names the tenant's own value (`service_config.privacy_notice_address`). Empty: the greeting leaves the sentence out. Set before the first real call |
 | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | Language model of the conversation core, any server with the chat completions API. Empty by default: the text phone and the evals then run on the scripted stand-in. A local model is for the workbench with invented test data only (`docs/13_DEPLOYMENT.md` §0) |
 | `BACKUP_PASSPHRASE_FILE` | File with the passphrase for database dumps, outside the repo. Without it `make backup` writes nothing (`docs/13_DEPLOYMENT.md` §4) |
-| `GUI_BASIC_AUTH_USER`, `GUI_BASIC_AUTH_HASH` | Access to the operations view. Only in production: Caddy guards `/gui/*` with it (`deploy/Caddyfile`), the application checks no browser login itself. Hash with `docker run --rm caddy:2-alpine caddy hash-password --plaintext '<password>'`. Set both or neither: one without the other stops Caddy from starting |
 
 </details>
 

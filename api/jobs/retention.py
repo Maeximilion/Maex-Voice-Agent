@@ -33,6 +33,7 @@ from api.config import settings
 from api.core.logging import configure_logging, error_text, get_logger, log
 from api.core.time import business_day, business_day_bounds_utc, to_local, tz, utcnow
 from api.db import SessionLocal
+from api.domain.access.sessions import DEVICE_DAYS, FAILURES_FORGOTTEN, SESSION_DAYS
 from api.domain.calls.recordings import delete_file
 from api.domain.customers.personal import (
     CALLBACK_GONE,
@@ -47,6 +48,9 @@ from api.models import (
     ConsentLog,
     Customer,
     DataSubjectRequest,
+    GuiDevice,
+    GuiLoginFailure,
+    GuiSession,
     Order,
     OrderItem,
     OutboxEvent,
@@ -158,6 +162,31 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
             .values(verification_note=None),
         ),
         "request_rows": lambda: _request_rows(session, now),
+        # The login of the view (#570): a session nobody used for 30 days is
+        # over anyway, and a client address is kept only while it may still
+        # count towards a wait.
+        "gui_sessions": lambda: _run(
+            session,
+            delete(GuiSession).where(
+                GuiSession.last_seen_at <= now - timedelta(days=SESSION_DAYS)
+            ),
+        ),
+        "gui_devices": lambda: _run(
+            session,
+            delete(GuiDevice).where(
+                GuiDevice.last_used_at <= now - timedelta(days=DEVICE_DAYS)
+            ),
+        ),
+        "login_addresses": lambda: _run(
+            session,
+            delete(GuiLoginFailure).where(
+                GuiLoginFailure.last_failed_at <= now - FAILURES_FORGOTTEN,
+                or_(
+                    GuiLoginFailure.blocked_until.is_(None),
+                    GuiLoginFailure.blocked_until <= now,
+                ),
+            ),
+        ),
     }
     counts: dict[str, int] = {}
     failed: list[str] = []

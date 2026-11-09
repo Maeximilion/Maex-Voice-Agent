@@ -13,8 +13,10 @@ def mount_gui(app: FastAPI) -> None:
     Name `router`, der das Modul `api.gui.router` verdeckt.
     """
     from api.config import settings
+    from api.gui.access import router as access_router
     from api.gui.router import STATIC, router
 
+    app.include_router(access_router)
     app.include_router(router)
     if settings.env == "dev":
         from api.gui.dev import router as dev_router

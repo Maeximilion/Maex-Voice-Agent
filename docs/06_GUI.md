@@ -155,6 +155,8 @@ The page `/gui/raumplan` (button „Raumplan“ in the header, next to „Kennza
 
 ## 4. Adminansicht (PC)
 
+**Access levels (D34, Maxi 09.11.2026, docs/23 §6):** the staff, signed in with the restaurant's login and no PIN, change the call mode, the team number and the hours of a given date (a special day). The owner's admin PIN, asked when a protected part is first opened and then valid on that device for 60 minutes, opens the delivery zones, fees and minimum order, the standard weekly hours and the device list with "Gerät abmelden". A staff change is temporary and reviewed: a date's hours end with that date; today's changes hold at once, for a later date closing or shorter hours hold at once while longer or extra hours wait for the owner's PIN; a team number changed by staff returns to the standard after the end of the day unless the owner keeps it. Every staff change pushes to the owner and to the operator and shows a check card on the board until the owner chooses "Als Standard übernehmen" or "Zurücknehmen" with the PIN. Built in the second pull request of #570; the sign-in, the device sessions and the team PIN are in since the first.
+
 **Immer sichtbar, in jedem Bereich:** vier Kennzahlen der letzten 7 Tage — Genauigkeit, Kosten je Bestellung, Anteil an das Team übergeben, verpasste Anrufe. Der Bereich „Kennzahlen" zeigt dann den Verlauf. Bereiche als Reiter, keine Seitenleiste.
 
 **Stand T-8.4 (02.11.2026):** gebaut ist die Seite `/gui/kennzahlen` (Knopf „Kennzahlen“ in der Kopfzeile der Betriebsansicht): oben die vier Werte der letzten 7 Tage, darunter der Verlauf je Betriebstag (14 Tage). Die Leiste in jedem Bereich folgt mit den übrigen Reitern; bis dahin gibt es nur diese Seite. Rechnung in `domain/calls/figures.py`: Genauigkeit = angenommene Bestellungen ohne Korrektur durch das Team, Kosten je Bestellung = Modellkosten der Anrufe durch angenommene Bestellungen, übergeben = Anrufe mit Ergebnis `transferred` oder `callback`, verpasst = `abandoned` oder `error`. Ein Strich heißt: nichts, wodurch geteilt werden könnte.
@@ -189,7 +191,7 @@ The page `/gui/raumplan` (button „Raumplan“ in the header, next to „Kennza
 
 - Keine Zahlungsabwicklung (bezahlt wird vor Ort oder an der Tür)
 - Keine Tourenplanung für die Fahrer in Stufe 1 bis 6
-- Keine Nutzerverwaltung mit Rollen. Ein gemeinsamer Zugang je Gerät, PIN für den Adminbereich. Erweiterbar, wenn nötig.
+- No user management with roles: one login per restaurant (D34, Maxi 09.11.2026). Each device signs in once with the restaurant's password and stays signed in for 30 days of use; after 15 minutes without a change the board stays live and the next change asks the team PIN; the owner's admin PIN opens the protected part of the admin area (§4, docs/23 §6).
 - Kein Chat mit dem Agenten, keine Live-Mithörfunktion
 
 ---
@@ -232,8 +234,15 @@ and copies it into `X-CSRF-Token`, so every tab sends the cookie the browser hol
 a script on the page could read a token in the page just the same. Every state-changing operations route requires both
 `HX-Request: true` and a matching cookie/header pair; missing, malformed or
 mismatched tokens return 403 before any change. Page reloads reuse the cookie so
-other open tabs remain usable. Fragments do not issue cookies. Caddy authentication
-and the application's `GUI_PROXY_SECRET` check remain required outside dev/test.
+other open tabs remain usable. Fragments do not issue cookies. The device session
+(#570, docs/23 §6) is required on every route in every environment, the
+`GUI_PROXY_SECRET` check outside dev/test. Every write must also come from this
+site: an `Origin` naming another host, or `null`, is refused with 403, and so is
+a `Sec-Fetch-Site` other than `same-origin` when no `Origin` is sent. The
+sign-in, setup and PIN forms are plain forms and send the token as a hidden
+field instead of the header. A write from a device locked after 15 minutes
+answers 401 with `HX-Redirect: /gui/entsperren`; without a session it is
+`/gui/anmelden` (a page load gets a 303 there instead).
 
 ## Language and performance decisions
 

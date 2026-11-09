@@ -11,3 +11,12 @@ document.addEventListener("htmx:configRequest", function (e) {
 document.addEventListener("click", function (e) {
   if (e.target.closest("[data-neu-laden]")) location.reload();
 });
+
+// The setup link carries its code after "#", which no request sends (#570): copy
+// it into the form, then drop it from the address bar and the history.
+(function () {
+  var code = document.querySelector("[data-setup-code]");
+  if (!code || location.hash.length < 2) return;
+  code.value = decodeURIComponent(location.hash.slice(1));
+  history.replaceState(null, "", location.pathname);
+})();

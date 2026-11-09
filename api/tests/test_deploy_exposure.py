@@ -319,7 +319,7 @@ def test_the_example_gives_each_access_its_user_and_hash_together():
         for line in (REPO_ROOT / ".env.example").read_text().splitlines()
         if "=" in line and not line.startswith("#")
     )
-    for prefix in ("GUI_BASIC_AUTH", "N8N_EDITOR_AUTH"):
+    for prefix in ("N8N_EDITOR_AUTH",):
         user, password_hash = example[f"{prefix}_USER"], example[f"{prefix}_HASH"]
         assert bool(user) == bool(password_hash), prefix
 

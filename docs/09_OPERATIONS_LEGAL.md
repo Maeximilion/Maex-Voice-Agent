@@ -95,6 +95,16 @@ When the register PC is lost or was used by someone else, the token was seen or 
 3. On the register PC, in Command Prompt (`cmd`), not PowerShell: `setx MAEX_KITCHEN_TOKEN "<new value>"`.
 4. Sign out of Windows and in again: the task starts the bridge with the new value. Check its log (`printbridge/README.md`, step 6) and print a test order.
 
+### Tablet lost, or the restaurant's password got around (#570, D34)
+
+A signed-in tablet shows the board to whoever holds it, until it is signed out (docs/23 T8). In the stack's api container (docs/13 §3 "Access to the operations view"):
+
+1. `python -m api.jobs.gui_access devices` lists the signed-in devices with their last use.
+2. `python -m api.jobs.gui_access sign-out <the first 8 characters of its id>` ends that device at once; `--all` ends every device.
+3. If the password may be known to someone who should not have it: `python -m api.jobs.gui_access link` makes a new setup link (24 hours, shown once). Setting the new password and PIN signs out every other device; give the link to the owner by a channel only they read.
+
+Every step stands in the restaurant's `audit_log` (`gui.session_ended` with the reason, `gui.setup_link_issued`, `gui.password_set`). The owner's own "Gerät abmelden" in the admin area comes with the second pull request of #570.
+
 ### Menüänderung
 1. Adminansicht → Menü → ändern
 2. Aliase für neue Gerichte ergänzen (mindestens zwei umgangssprachliche)
