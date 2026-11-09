@@ -9,7 +9,7 @@ name: maex-caddy
 services:
   caddy:
     # The same pin as deploy/docker-compose.prod.yml (api/tests/test_new_stack.py).
-    image: caddy:2.11.7-alpine
+    image: caddy:2.11.9-alpine
     restart: always
     logging:
       driver: journald

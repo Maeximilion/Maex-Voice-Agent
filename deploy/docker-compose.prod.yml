@@ -104,7 +104,7 @@ services:
   caddy:
     logging: *journald
     # Pinned like n8n and ntfy: a floating tag changes the proxy on the next pull. Dependabot proposes updates.
-    image: caddy:2.11.7-alpine
+    image: caddy:2.11.9-alpine
     restart: always
     # Never on `backend`: the proxy sees what it passes on, not the database.
     networks: [public, edge]
