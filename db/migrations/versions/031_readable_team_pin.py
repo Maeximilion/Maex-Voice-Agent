@@ -8,7 +8,10 @@ the database back anyway: a million guesses are an afternoon offline.
 A stored hash cannot become the PIN: the upgrade empties every team PIN, and
 the operator sets it again with `gui_access pin --set <digits>` or a new setup
 link. Until then a locked device signs in again with the password. The
-downgrade drops the readable PINs the same way.
+downgrade drops the readable PINs the same way. Both directions delete data,
+so on a database a restaurant signs in to take a backup first with
+`bash scripts/backup.sh --label before_migration_031` (CLAUDE.md §8, docs/13
+§4); restoring it brings the hashes back, setting a new PIN does not.
 
 Revision: 031
 Revises: 030

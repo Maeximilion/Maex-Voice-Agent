@@ -10,7 +10,9 @@ existing changes.
 
 The downgrade drops the five tables: every device is signed out and the
 password is gone, so the view needs a new setup link after the next upgrade.
-No guest data lives here.
+No guest data lives here. On a database a restaurant signs in to, take a backup
+first with `bash scripts/backup.sh --label before_migration_030` (CLAUDE.md §8,
+docs/13 §4).
 
 Revision: 030
 Revises: 029
