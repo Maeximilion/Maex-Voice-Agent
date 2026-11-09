@@ -290,6 +290,52 @@ def test_a_reply_without_a_thread_of_its_own_is_no_clean_result(capsys):
     assert codex_review.main(["371"], gh=gh, gq=lambda pr: []) == 2
 
 
+def _run_as_on_windows(raw: bytes, seen: dict):
+    """A subprocess.run stand-in that decodes like text mode on a Windows host:
+    the locale codepage (cp1252) unless an encoding is passed."""
+
+    def run(args, **kwargs):
+        seen["kwargs"] = kwargs
+
+        class Done:
+            returncode = 0
+            stdout = raw.decode(kwargs.get("encoding") or "cp1252")
+            stderr = ""
+
+        return Done()
+
+    return run
+
+
+def test_gh_output_with_an_emoji_is_read_as_utf8(monkeypatch):
+    """PR #566 on Windows: Codex's summary comment holds emojis, and decoding gh's
+    UTF-8 output with cp1252 crashed the waiter (byte 0x9d). Both gh calls read
+    UTF-8 whatever the locale."""
+    seen = {}
+    body = {"id": 1, "body": "\U0001f4dd Code Review: \U0001f504 Running"}
+    raw = (json.dumps(body, ensure_ascii=False) + "\n").encode("utf-8")
+    monkeypatch.setattr(codex_review.subprocess, "run", _run_as_on_windows(raw, seen))
+    assert codex_review.gh_api("repos/x/issues/566/comments") == [body]
+    assert seen["kwargs"]["encoding"] == "utf-8"
+
+    thread = {
+        "isResolved": False,
+        "comments": {
+            "nodes": [
+                {
+                    "databaseId": 7,
+                    "author": {"login": "chatgpt-codex-connector"},
+                    "body": "\U0001f4dd P1 \U0001f504",
+                }
+            ]
+        },
+    }
+    raw = (json.dumps(thread, ensure_ascii=False) + "\n").encode("utf-8")
+    monkeypatch.setattr(codex_review.subprocess, "run", _run_as_on_windows(raw, seen))
+    assert [c["databaseId"] for c in codex_review.gh_threads(566)] == [7]
+    assert seen["kwargs"]["encoding"] == "utf-8"
+
+
 def test_threads_are_read_over_every_page(monkeypatch):
     """Codex PR #373 (P1): past 100 threads a new finding must still be seen.
     gh pages through them (--paginate with the end cursor) and --jq prints one

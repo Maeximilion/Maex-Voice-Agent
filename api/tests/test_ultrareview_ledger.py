@@ -107,3 +107,23 @@ def test_a_failing_gh_is_reported_not_raised(monkeypatch, capsys):
 
     assert ledger.main(["list"]) == 1
     assert "not readable" in capsys.readouterr().err
+
+
+def test_gh_talks_utf8_whatever_the_locale(monkeypatch):
+    """The ledger body goes to gh and back as UTF-8; on Windows text mode would
+    use cp1252 and fail on an emoji (UTF-8 byte 0x9d)."""
+    seen = {}
+
+    def run(args, **kwargs):
+        seen.update(kwargs)
+        encoding = kwargs.get("encoding") or "cp1252"
+        kwargs["input"].encode(encoding)
+        out = "\U0001f4dd body\n".encode().decode(encoding)
+        return subprocess.CompletedProcess(args, 0, stdout=out, stderr="")
+
+    monkeypatch.setattr(ledger.subprocess, "run", run)
+    assert (
+        ledger._gh("issue", "edit", stdin="- [ ] #566 \U0001f4dd")
+        == "\U0001f4dd body\n"
+    )
+    assert seen["encoding"] == "utf-8"

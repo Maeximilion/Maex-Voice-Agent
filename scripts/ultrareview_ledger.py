@@ -99,7 +99,13 @@ def open_items(body: str) -> list[str]:
 
 def _gh(*args: str, stdin: str | None = None) -> str:
     return subprocess.run(
-        ["gh", *args], input=stdin, capture_output=True, text=True, check=True
+        ["gh", *args],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        # gh reads and prints UTF-8, whatever the locale codepage (cp1252 on Windows).
+        encoding="utf-8",
+        check=True,
     ).stdout
 
 

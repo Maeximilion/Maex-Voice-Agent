@@ -104,6 +104,8 @@ def gh_api(path: str) -> list:
         ],
         capture_output=True,
         text=True,
+        # gh prints UTF-8; the locale codepage (cp1252 on Windows) crashed on Codex's emojis.
+        encoding="utf-8",
     )
     if res.returncode != 0:
         raise GhError(res.stderr.strip() or f"gh api {path} exited {res.returncode}")
@@ -133,6 +135,7 @@ def gh_threads(pr: int) -> list[dict]:
         ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     if res.returncode != 0:
         raise GhError(res.stderr.strip() or f"gh api graphql exited {res.returncode}")

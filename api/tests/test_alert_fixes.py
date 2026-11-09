@@ -273,3 +273,22 @@ def test_each_pull_request_is_fetched_once():
     assert lines[0].endswith("candidates, not confirmed as the fix: #350")
     assert lines[1].endswith("fixed by #350")
     assert len(calls) == len(set(calls))
+
+
+def test_gh_output_is_read_as_utf8(monkeypatch):
+    """On Windows text mode decodes with cp1252 unless told otherwise; an alert
+    text with an emoji (UTF-8 byte 0x9d) crashed codex_review.py the same way."""
+    raw = '{"summary": "\U0001f4dd fix"}\n'.encode()
+
+    class Done:
+        returncode = 0
+        stderr = ""
+
+    def run(args, **kwargs):
+        Done.stdout = raw.decode(kwargs.get("encoding") or "cp1252")
+        return Done()
+
+    monkeypatch.setattr(alert_fixes.subprocess, "run", run)
+    assert alert_fixes.gh_api("repos/x/dependabot/alerts") == [
+        {"summary": "\U0001f4dd fix"}
+    ]
