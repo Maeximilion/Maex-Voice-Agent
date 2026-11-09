@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.20.4
+> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.21.0
 
 ---
 
@@ -329,6 +329,8 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 ---
 
 ## What's Next
+
+**New customers, epic #567 (09.11.2026):** the tenancy question #568 is decided (D32): one Docker stack and database per customer behind one shared Caddy, facts and numbers in docs/13 §8. Next in the epic: #569 threat model and access design (Opus `high`), then #570 per-customer login (Opus `high`, needs Maxi's choice of one login per restaurant or per staff member), #573 provisioning of a stack (Opus `xhigh`), #572 menu intake from pictures (Opus `xhigh`, needs Maxi's choice of the vision model).
 
 **Cache-friendly session rules (Maxi, 07.11.2026):** `CLAUDE.md` section 6 "Cache-friendly sessions" (agents build and stop, Sonnet `/ship` hand-off after a clean first review, handover at 600k tokens after a merge or before a break, one-shot idle check-ins every 45 minutes) with the matching steps in `/done` and `/ship`; numbers in the section. Not yet tested: `CronCreate` in the Ubuntu terminal (fired on time in the desktop app, 07.11.2026). Option only, no issue: trim `CLAUDE.md` (about 25k characters) by moving review details to docs/21, merge and stack details that `/ship` and `/done` repeat, the ultrareview ledger history, the 38 date tags, the stale "Version 1.1" header and the slash-command paragraph; the hard rules stay. Decided against: a 1-hour cache setting for subagents (short agents would pay more). Context growth is tracked in #562 (this file is 624 KB); the 600k handover threshold drops to 250k once it is fixed.
 
@@ -676,6 +678,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 09.11.2026 | **Tenancy decided (#568, D32): one stack per customer.** Maxi chose one Docker stack and database per customer behind one shared Caddy on the host. docs/13 §8 lists where the code picks one tenant per stack (GUI oldest tenant, voice by `TENANT_NAME`, kitchen token bound to one tenant, n8n without tenants, global `idempotency_key` uniques), the measured idle memory (about 0.65 GB for api, dispatcher, n8n, push and db; voice and Asterisk not measured), about 3 EUR a month of server per customer, what follows for #570, #571, #573 and #576, and when a shared stack is reassessed |
 | 09.11.2026 | **Routing hook leaves prompts without a task of their own alone (issue #578).** `route_advice.sh` no longer classifies a prompt by keyword when it carries a pasted handover block (a `## Handover` heading), names a task id (`T-3.5`) or mentions `/task` (`/task` and the work package row decide), or is a question about model, effort or routing that asks for no change. The table default (Opus 5.5 `high`) now needs a verb that asks for work instead of any line of four words. Ten new cases in `api/tests/test_hooks_route_advice.py`, docs/19 §1 synced |
 | 06.11.2026 | **T-3.12 part 2 (#497): the sheet „Reservierung eintragen“ on the tablet.** A button in the heading of the column „Heute“ opens it: date (today by default), time, persons, name, optional phone, note and „Tisch“ with every live table and every combined pair of the floor plan. „Weiter“ writes the draft (`create_tablet_reservation`) and shows the summary with the load of the capacity window; „Eintragen“ is the confirming tap (`confirm_tablet`), „Trotzdem eintragen“ with a question where the window is full or none. A refusal keeps what was typed and the sheet's key. The cards of „Heute“ name their tables and hide a missing number (`list_today` reads the tables in one query). Routes `GET`/`POST /gui/reservierung`, `POST /gui/reservierung/<id>/eintragen`; template `fragments/reservierung.html`. Tests first: `test_gui_tablet_reservation.py`, two in `test_domain_today.py`. docs/06 §3 synced; T-3.12 done |
 | 05.11.2026 | **Ultrareview candidates are kept in one ledger (Maxi, 05.11.2026).** `scripts/ultrareview_ledger.py` keeps the rolling issue #546 "Ultrareview candidates": `/done` adds each candidate, `/start` and `/gate` list the open ones, a review ticks its line with the level and the issues of the findings not fixed at once. Seeded from every session up to 05.11.2026: 45 candidates, 11 reviewed (ten as ultra, #445 with `/code-review max`), 34 open, all merged. The quota is settled: three free ultrareviews per account, once (docs and the sessions: #222, #282, #423, refused 30.10.2026 for #445), then usage credits; the fallback is a local `/code-review max <PR>` on Maxi's word. The one finding of an ultrareview still unfixed, a call left open when its process dies during the goodbye (#298), is issue #545 now and leaves "Open Points from Reviews". Tests in `api/tests/test_ultrareview_ledger.py` |
@@ -876,6 +879,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.21.0 · 09.11.2026:** Tenancy decided: one stack per customer (D32, #568)
 - **v2.20.4 · 09.11.2026:** PR checklists keep only the items that matter; no open boxes after merge except remaining work linked to an issue (CLAUDE.md, done.md, PR template)
 - **v2.20.3 · 09.11.2026:** T-3.5 setup built: scripts/bedientest_fixture.py and bedientest_data.py make the throwaway stack, invented data and live arrivals; the two tablet passes stay open
 - **v2.20.2 · 09.11.2026:** route_advice.sh skips handover blocks, task ids and routing questions; the default needs a work verb (issue #578)
