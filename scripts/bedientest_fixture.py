@@ -20,7 +20,7 @@ stack. Invented data only. The dev `reset` keeps the images; `up` rebuilds the a
 """
 
 import argparse
-import secrets
+import os
 import subprocess
 import sys
 import tempfile
@@ -32,6 +32,7 @@ REPO = Path(__file__).resolve().parent.parent
 WORK_DIR = Path(tempfile.gettempdir()) / PROJECT
 # Not 8000 and 5432: the working stack on the same PC keeps those.
 DEFAULT_PORT = 18000
+LOOPBACK = "127.0.0.1"
 
 # --- on the host: the throwaway Compose project --------------------------------------
 
@@ -46,8 +47,9 @@ def compose(*args: str) -> list[str]:
         PROJECT,
         "--project-directory",
         str(REPO),
+        # Not the checkout's `.env`: the values come from STACK_ENV below.
         "--env-file",
-        str(WORK_DIR / "env"),
+        "/dev/null",
         "-f",
         str(REPO / "docker-compose.yml"),
         "-f",
@@ -58,34 +60,49 @@ def compose(*args: str) -> list[str]:
 
 def write_config(bind: str, port: int) -> None:
     WORK_DIR.mkdir(mode=0o700, exist_ok=True)
-    password = secrets.token_hex(12)
-    env = {
-        "POSTGRES_USER": "maex",
-        "POSTGRES_PASSWORD": password,
-        "POSTGRES_DB": "maex_agent",
-        "DATABASE_URL": f"postgresql+psycopg://maex:{password}@db:5432/maex_agent",
-        "AGENT_API_TOKEN": secrets.token_hex(24),
-        "ENV": "dev",
-        "TENANT_NAME": TENANT,
-        "TENANT_TIMEZONE": "Europe/Berlin",
-        "KITCHEN_BRIDGE_TENANT_ID": "",
-    }
-    path = WORK_DIR / "env"
-    path.touch(mode=0o600)
-    path.write_text("".join(f"{k}={v}\n" for k, v in env.items()))
     (WORK_DIR / "override.yml").write_text(
         f'services:\n  api:\n    ports:\n      - "{bind}:{port}:8000"\n'
     )
 
 
+# Handed to Compose through the process environment, never written to a file. Fixed and
+# not secret: the database is not published, the stack holds invented data only, and
+# `ENV=dev` takes a known token (api/config.py LOCAL_ENVS).
+STACK_ENV = {
+    "POSTGRES_USER": "maex",
+    "POSTGRES_PASSWORD": "bedientest",
+    "POSTGRES_DB": "maex_agent",
+    "DATABASE_URL": "postgresql+psycopg://maex:bedientest@db:5432/maex_agent",
+    "AGENT_API_TOKEN": "bedientest-token",
+    "ENV": "dev",
+    "TENANT_NAME": TENANT,
+    "TENANT_TIMEZONE": "Europe/Berlin",
+    "KITCHEN_BRIDGE_TENANT_ID": "",
+}
+
+
 def run(cmd: list[str], dry_run: bool) -> None:
     print("+", " ".join(cmd))
     if not dry_run:
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, env={**docker_environment(), **STACK_ENV})
+
+
+def docker_environment() -> dict[str, str]:
+    """Only what the docker client needs. Anything else exported in the caller's shell
+    (DATABASE_URL, N8N_WEBHOOK_URL, COMPOSE_FILE ...) would reach the stack, because
+    Compose reads the shell before it reads a file, and could point it at the working
+    stack."""
+    keep = ("PATH", "HOME", "USER", "LANG", "XDG_RUNTIME_DIR", "XDG_CONFIG_HOME")
+    return {
+        k: v
+        for k, v in os.environ.items()
+        if k in keep or k.startswith("DOCKER_") or k.lower().endswith("_proxy")
+    }
 
 
 def up(args: argparse.Namespace, build: bool) -> None:
-    if not args.dry_run:
+    # `reset` keeps the bind and port of the last `up`.
+    if not args.dry_run and (build or not (WORK_DIR / "override.yml").exists()):
         write_config(args.bind, args.port)
     run(compose("down", "-v", "--remove-orphans"), args.dry_run)
     run(
@@ -100,7 +117,7 @@ def up(args: argparse.Namespace, build: bool) -> None:
     )
     run(compose("exec", "-T", "api", *INNER, "fill"), args.dry_run)
     print(f"Tablet: http://{args.bind}:{args.port}/ (reload it); stack `{PROJECT}`")
-    if args.bind != "127.0.0.1":
+    if args.bind != LOOPBACK:
         print(
             f"Note: bound to {args.bind}; the stack runs ENV=dev (no proxy secret) and is "
             "reachable from that network. Invented data only; run `down` when done."
@@ -115,10 +132,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("command", choices=["up", "reset", "down", "arrive"])
     parser.add_argument("what", nargs="?", choices=["a", "e", "callback"])
-    parser.add_argument("--bind", default="127.0.0.1")
+    parser.add_argument("--bind", default=LOOPBACK)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument(
+        "--allow-lan",
+        action="store_true",
+        help="needed for a --bind other than loopback (the tablet): ENV=dev has no login",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+    if args.bind != LOOPBACK and not args.allow_lan:
+        parser.error(
+            f"--bind {args.bind} would open the stack, which runs ENV=dev without a "
+            "login, to that network (AGENTS.md: dev ports are loopback only); "
+            "add --allow-lan to do it on purpose"
+        )
 
     if args.command == "arrive":
         if args.what is None:

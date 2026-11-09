@@ -124,21 +124,23 @@ def _order(
     call_id = _call(session, tenant_id, now)
     draft = draft_order(
         session,
-        DraftOrderRequest(
-            call_id=call_id,
-            tenant_id=tenant_id,
-            idempotency_key=uuid.uuid4().hex,
-            type="pickup",
-            customer={"name": who, "phone": phone},
-            items=[
-                {
-                    "menu_item_id": _item(session, tenant_id, line["number"]),
-                    "quantity": line.get("quantity", 1),
-                    "options": line.get("options", []),
-                    "note": line.get("note"),
-                }
-                for line in lines
-            ],
+        DraftOrderRequest.model_validate(
+            {
+                "call_id": call_id,
+                "tenant_id": tenant_id,
+                "idempotency_key": uuid.uuid4().hex,
+                "type": "pickup",
+                "customer": {"name": who, "phone": phone},
+                "items": [
+                    {
+                        "menu_item_id": _item(session, tenant_id, line["number"]),
+                        "quantity": line.get("quantity", 1),
+                        "options": line.get("options", []),
+                        "note": line.get("note"),
+                    }
+                    for line in lines
+                ],
+            }
         ),
     )
     done = confirm(
@@ -168,7 +170,7 @@ def _callback(session: Session, tenant_id: uuid.UUID, summary: str) -> uuid.UUID
     return task.callback_id
 
 
-def fill(session: Session) -> dict:
+def fill(session: Session, now: datetime | None = None) -> dict:
     """The start state of section 0. Refuses a stack that already holds orders, because
     `reset` (a fresh volume) is how the protocol rebuilds, never a patch on top."""
     result = seed(session, tenant_name=TENANT, timezone="Europe/Berlin")
@@ -262,11 +264,12 @@ def fill(session: Session) -> dict:
     )
 
     zone = ZoneInfo("Europe/Berlin")
-    at = utcnow() + RESERVATION_AHEAD
+    now = now or utcnow()
+    at = now + RESERVATION_AHEAD
     at = (at + timedelta(minutes=-at.minute % SLOT_MINUTES)).replace(
         second=0, microsecond=0
     )
-    if at.astimezone(zone).date() != utcnow().astimezone(zone).date():
+    if at.astimezone(zone).date() != now.astimezone(zone).date():
         raise SystemExit(
             "too late in the day: the reservation would not fall on today's board"
         )
@@ -279,8 +282,9 @@ def fill(session: Session) -> dict:
             party_size=4,
             reserved_for=at,
         ),
+        now=now,
     )
-    confirm_tablet(session, tenant_id, draft.reservation_id)
+    confirm_tablet(session, tenant_id, draft.reservation_id, now=now)
 
     return {
         "pickup_codes": {"B": b, "C": c, "D": d, "red": red},
@@ -296,9 +300,11 @@ def fill(session: Session) -> dict:
             "pickup_wait": WAIT_PICKUP,
             "delivery_wait": WAIT_DELIVERY,
             "order_approval_above_cents": APPROVAL_ABOVE_CENTS,
-            "order_approval_overdue_minutes": session.get(
-                ServiceConfig, tenant_id
-            ).order_approval_overdue_minutes,
+            "order_approval_overdue_minutes": session.scalars(
+                select(ServiceConfig.order_approval_overdue_minutes).where(
+                    ServiceConfig.tenant_id == tenant_id
+                )
+            ).one(),
         },
     }
 

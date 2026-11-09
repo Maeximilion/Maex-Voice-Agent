@@ -1,5 +1,8 @@
 """scripts/bedientest_fixture: the start state of the operating test (T-3.5, protocol section 0)."""
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
@@ -26,9 +29,15 @@ def session(migrated_db_url):
     engine.dispose()
 
 
+# A fixed late morning, so the tests do not depend on the hour they run at: the
+# reservation of `fill` must land on the same local day (see the late-evening test).
+MORNING = datetime(2026, 9, 15, 10, 0, tzinfo=ZoneInfo("Europe/Berlin"))
+LATE = datetime(2026, 9, 15, 23, 0, tzinfo=ZoneInfo("Europe/Berlin"))
+
+
 @pytest.fixture
 def filled(session):
-    return data.fill(session)
+    return data.fill(session, now=MORNING)
 
 
 def _order_by_code(session, code):
@@ -159,9 +168,21 @@ def test_default_port_is_not_the_working_stacks(tmp_path, monkeypatch):
     fx.write_config("127.0.0.1", fx.DEFAULT_PORT)
     override = (tmp_path / "w" / "override.yml").read_text()
     assert ":18000:8000" in override and ":8000:8000" not in override
-    env = (tmp_path / "w" / "env").read_text()
-    assert "KITCHEN_BRIDGE_TENANT_ID=\n" in env and "ENV=dev\n" in env
-    assert oct((tmp_path / "w" / "env").stat().st_mode & 0o777) == "0o600"
+    assert list((tmp_path / "w").iterdir()) == [tmp_path / "w" / "override.yml"], (
+        "no file holds the stack's credentials"
+    )
+
+
+def test_the_stack_gets_its_settings_from_the_process_not_the_checkout(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(
+        fx.subprocess, "run", lambda cmd, **kw: seen.update(cmd=cmd, env=kw["env"])
+    )
+    fx.run(fx.compose("ps"), dry_run=False)
+    assert seen["cmd"][seen["cmd"].index("--env-file") + 1] == "/dev/null"
+    assert seen["env"]["ENV"] == "dev"
+    assert seen["env"]["KITCHEN_BRIDGE_TENANT_ID"] == ""
+    assert seen["env"]["DATABASE_URL"].endswith("@db:5432/maex_agent")
 
 
 def test_dry_run_runs_nothing(monkeypatch, capsys):
@@ -175,9 +196,45 @@ def test_dry_run_runs_nothing(monkeypatch, capsys):
     assert "dispatcher" not in out and "-p bedientest" in out
 
 
-def test_a_lan_bind_is_warned_about(monkeypatch, capsys):
+def test_a_lan_bind_is_refused_unless_asked_for_twice(monkeypatch, capsys):
     monkeypatch.setattr(fx.subprocess, "run", lambda *a, **k: None)
-    fx.main(["up", "--dry-run", "--bind", "0.0.0.0"])
+    with pytest.raises(SystemExit) as refused:
+        fx.main(["up", "--dry-run", "--bind", "0.0.0.0"])
+    assert refused.value.code == 2 and "--allow-lan" in capsys.readouterr().err
+    fx.main(["up", "--dry-run", "--bind", "0.0.0.0", "--allow-lan"])
     assert "ENV=dev" in capsys.readouterr().out
     fx.main(["up", "--dry-run"])
     assert "Note:" not in capsys.readouterr().out
+
+
+def test_reset_keeps_the_bind_of_the_last_up(tmp_path, monkeypatch):
+    monkeypatch.setattr(fx, "WORK_DIR", tmp_path)
+    monkeypatch.setattr(fx.subprocess, "run", lambda *a, **k: None)
+    fx.main(["up", "--bind", "0.0.0.0", "--allow-lan"])
+    fx.main(["reset"])
+    assert "0.0.0.0:18000:8000" in (tmp_path / "override.yml").read_text()
+
+
+def test_the_shell_of_the_caller_cannot_redirect_the_stack(monkeypatch):
+    for name, value in {
+        "DATABASE_URL": "postgresql://working/db",
+        "N8N_WEBHOOK_URL": "https://example.com/hook",
+        "COMPOSE_FILE": "other.yml",
+        "COMPOSE_PROJECT_NAME": "maex-voice-agent",
+        "DOCKER_HOST": "unix:///run/docker.sock",
+    }.items():
+        monkeypatch.setenv(name, value)
+    seen = {}
+    monkeypatch.setattr(fx.subprocess, "run", lambda cmd, **kw: seen.update(kw))
+    fx.run(fx.compose("ps"), dry_run=False)
+    env = seen["env"]
+    assert env["DATABASE_URL"] == fx.STACK_ENV["DATABASE_URL"]
+    assert not {"N8N_WEBHOOK_URL", "COMPOSE_FILE", "COMPOSE_PROJECT_NAME"} & set(env)
+    assert env["DOCKER_HOST"] == "unix:///run/docker.sock", (
+        "the docker client still finds its daemon"
+    )
+
+
+def test_a_late_evening_start_is_refused_not_misdated(session):
+    with pytest.raises(SystemExit, match="too late"):
+        data.fill(session, now=LATE)
