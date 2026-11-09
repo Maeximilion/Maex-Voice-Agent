@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.5
+> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.6
 
 ---
 
@@ -309,6 +309,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 09.11.2026 | **No AI attribution in commits or descriptions (#609, request from the #562 session).** The required check `title` (`pr-title.yml`) now also runs `scripts/attribution_check.py` over the pull request's own commits (`HEAD^1..HEAD^2` of its merge commit) and its description: a line that starts with a co-author trailer or a "Generated with" badge fails it with the commit named. It covers every author and machine, unlike a local hook. The label `attribution-approved` lets credit through that Maxi asked for. `docs/13` §6. |
 | 09.11.2026 | **CI split into parallel jobs (#609).** One `test` job had grown to a median of 572 s (12 green runs), 500 s of it `pytest -n auto` over 8,465 tests on four cores. Now `checks` (guards, ruff, mypy, latency tests, speech kit), `pytest` in three shards by a hash of the test id (`PYTEST_SHARD`, `api/tests/conftest.py`) on a Postgres without durability, and a summary job that keeps the required name `test` and runs with `always()`. Locally the suite on four cores fell from 505 s to 220 s without durability, one shard takes about 90 s. `changes` (`scripts/ci_changes.py`) skips `docker-smoke` and `voice-image` when a pull request changes only `docs/`, `.claude/`, `scripts/` or top-level Markdown; the tests never skip by path, since 34 test files read the docs, hooks and commands. `voice-image` (about 165 s) is now the longest job. `docs/13` §6. |
 | 09.11.2026 | **STATUS split, archive in `docs/HISTORY.md` (#562).** This file went from 624 KB to about 160 KB: the Summary paragraphs, all but the newest 5 Done rows and 15 Changelog lines, and the settled assumptions moved to `docs/HISTORY.md` (`union` merge driver in `.gitattributes`, entries only added; every original line checked present with `comm`). `CLAUDE.md` gets a "Reading docs" rule (grep a heading, read a range, never a whole large doc) and `/start` names the new size. `status_bump.py`, the merge gate and CI are unchanged, so the version still rises per PR. Open: the further cut to about 40 KB needs the "Open Points from Reviews" table (55 KB) and the open assumptions (33 KB) triaged by hand, and the version-per-gate part of D22; item 4 of the issue (Windows-side skill and MCP listings) needs a Windows session |
 | 09.11.2026 | **A call left open by a dead `voice` process is closed (#545).** Since PR #298 the call log is written when the line reports the end of the leg; a process that ended before that (watchdog, deploy, out of memory) left the `calls` row without `ended_at`, outcome and cost, so the error alarm and the figures missed it. `domain/calls/end.py` `close_left_open_calls` closes, in one `UPDATE`, every call open longer than its tenant's `max_call_seconds` plus `LEFT_OPEN_GRACE` (10 minutes) as `error`, with `ended_at` the time of the pass and duration and cost empty; the dispatcher runs it every five minutes (`jobs/cold_path.py`). A row `end_call` holds is waited for and left alone; a late end of the leg keeps the `error`. Six tests in `api/tests/test_domain_calls.py` (closed past the limit, open at the limit, ended call untouched, each tenant by its own limit, late end, the race with `end_call`); full suite 8465 passed. docs/02, 03, 11, 13 and 20 §5 synced. No migration |
@@ -337,6 +338,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.27.6 · 09.11.2026:** Required check title also fails AI attribution in commits and descriptions (#609)
 - **v2.27.5 · 09.11.2026:** CI split into checks, three pytest shards and a summary test job; Docker jobs skip for docs-only pull requests (#609)
 - **v2.27.4 · 09.11.2026:** #562: STATUS split, archive in docs/HISTORY.md
 - **v2.27.3 · 09.11.2026:** #545 done: calls left open by a dead voice process are closed as error
