@@ -243,6 +243,8 @@ An independent review of the exact head commit gates a merge: use the other mode
 - `/security-review`: runs in `/done` before the PR opens, only when the diff touches auth in `core/`, `telephony/`, `deploy/`, or the agent token path. Its findings count as P1 once checked against the code.
 - Security audit (Maxi, 2026-10-15): not continuous. Due only at the triggers in `docs/09_OPERATIONS_LEGAL.md` section 5 (first call from outside the workbench, every gate from G1 on, a component becoming reachable from outside, or 30 days plus changes in the exposed areas). `/start` and `/gate` recommend it, Maxi decides, it runs on Opus 5.5 at `xhigh`.
 
+**Repeated findings become rules** (Maxi, 2026-11-09, adapted from the Claude Code team's review practice): when a confirmed finding of the same kind turns up on a second PR, the PR that fixes it also fixes the cause at the source: a test, lint rule or hook where the check is mechanical, otherwise one short line in `AGENTS.md` "Code Review Rules". If that source fix is larger than the PR, it gets an issue instead. `AGENTS.md` "Code Review Rules" is this repository's `REVIEW.md`; there is no separate file, because only the managed Code Review service reads one, and that service is out of scope (`docs/21_REVIEW_AUTOMATION.md`).
+
 **Review comment format** (Maxi, 04.11.2026): use the same concise English format
 for Claude and Codex. Start with `[P0]`, `[P1]` or `[P2]` and a specific title
 (aim for at most 80 characters). Use one short paragraph, usually 2–4 sentences
