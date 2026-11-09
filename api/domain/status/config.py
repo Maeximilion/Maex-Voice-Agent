@@ -27,6 +27,8 @@ from api.domain.status.waits import (
     holds_today,
     standard_wait,
 )
+from api.events import enqueue
+from api.events.types import CALL_MODE_CHANGED
 from api.models import AuditLog, ServiceConfig, Tenant
 
 ACTOR_TABLET = "gui:tablet"
@@ -73,6 +75,27 @@ def _audit(
     )
 
 
+def _tenant(session: Session, tenant_id: uuid.UUID) -> Tenant:
+    tenant = session.get(Tenant, tenant_id)
+    if tenant is None:
+        raise NotFound(f"Tenant {tenant_id} unknown")
+    return tenant
+
+
+def _push_mode(
+    session: Session, config: ServiceConfig, before: str, after: str
+) -> None:
+    """The push to the owner and ops (#588, docs/23 T12), in the change's
+    transaction. It names the modes that answer calls (`mode_at`), which a
+    window can hold against the stored switch the audit entry records."""
+    enqueue(
+        session,
+        tenant_id=config.tenant_id,
+        event_type=CALL_MODE_CHANGED,
+        payload={"from": before, "to": after},
+    )
+
+
 def _mode_before_pause(session: Session, tenant_id: uuid.UUID) -> str:
     """Letzter Modus vor der jüngsten Pause, aus dem audit_log.
 
@@ -96,11 +119,15 @@ def _mode_before_pause(session: Session, tenant_id: uuid.UUID) -> str:
 
 
 def pause_ai(
-    session: Session, tenant_id: uuid.UUID, actor: str = ACTOR_TABLET
+    session: Session,
+    tenant_id: uuid.UUID,
+    actor: str = ACTOR_TABLET,
+    now: datetime | None = None,
 ) -> ServiceConfig:
     """Not-Aus: ab dem nächsten Anruf nimmt die KI nicht mehr ab. Ohne Rückfrage."""
     config = _locked(session, tenant_id)
     if config.call_mode != PAUSED:
+        holding = mode_at(session, _tenant(session, tenant_id), config, now).mode
         _audit(
             session,
             config,
@@ -109,13 +136,17 @@ def pause_ai(
             {"from": config.call_mode, "to": PAUSED},
         )
         config.call_mode = PAUSED
+        _push_mode(session, config, holding, PAUSED)
     # Auch ohne Aenderung: commit gibt die Sperre frei.
     session.commit()
     return config
 
 
 def resume_ai(
-    session: Session, tenant_id: uuid.UUID, actor: str = ACTOR_TABLET
+    session: Session,
+    tenant_id: uuid.UUID,
+    actor: str = ACTOR_TABLET,
+    now: datetime | None = None,
 ) -> ServiceConfig:
     """Hebt die Pause auf und stellt den Modus von davor wieder her."""
     config = _locked(session, tenant_id)
@@ -123,6 +154,8 @@ def resume_ai(
         target = _mode_before_pause(session, tenant_id)
         _audit(session, config, ACTION_MODE, actor, {"from": PAUSED, "to": target})
         config.call_mode = target
+        holding = mode_at(session, _tenant(session, tenant_id), config, now).mode
+        _push_mode(session, config, PAUSED, holding)
     session.commit()
     return config
 
@@ -144,13 +177,11 @@ def set_mode(
     config = _locked(session, tenant_id)
     if config.call_mode == PAUSED:
         raise InvalidInput("The agent is paused; only switching it on ends that")
-    tenant = session.get(Tenant, tenant_id)
-    if tenant is None:
-        raise NotFound(f"Tenant {tenant_id} unknown")
     now = now or clock.utcnow()
-    holding = mode_at(session, tenant, config, now).mode
+    holding = mode_at(session, _tenant(session, tenant_id), config, now).mode
     if holding != mode:
         _audit(session, config, ACTION_MODE, actor, {"from": holding, "to": mode})
+        _push_mode(session, config, holding, mode)
         config.call_mode = mode
         config.call_mode_chosen_at = now
     session.commit()

@@ -2,6 +2,8 @@
 
 import threading
 import uuid
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -11,7 +13,8 @@ from api.core.errors import InvalidInput, NotFound
 from api.core.time import utcnow
 from api.domain.status import config as switches
 from api.domain.status.waits import current_wait
-from api.models import AuditLog, ServiceConfig
+from api.events.types import CALL_MODE_CHANGED
+from api.models import AuditLog, CallModeWindow, OutboxEvent, ServiceConfig
 from scripts.seed import seed
 
 
@@ -394,3 +397,77 @@ def test_token_sieht_auch_direkte_aenderungen_in_der_db(session, tenant_id):
     session.commit()
 
     assert switches.config_change_token(session, tenant_id) != vorher
+
+
+# --- the push of a call-mode change to the owner and ops (#588, T12) ----------
+
+
+def events(session, tenant_id) -> list[tuple[str, dict]]:
+    rows = session.scalars(
+        select(OutboxEvent)
+        .where(OutboxEvent.tenant_id == tenant_id)
+        .order_by(OutboxEvent.created_at)
+    )
+    return [(row.event_type, row.payload) for row in rows]
+
+
+def test_every_call_mode_change_pushes_once_to_the_owner_and_ops(session, tenant_id):
+    set_mode(session, tenant_id, "shadow")
+    switches.set_mode(session, tenant_id, "overflow")
+    switches.pause_ai(session, tenant_id)
+    switches.resume_ai(session, tenant_id)
+    assert events(session, tenant_id) == [
+        (CALL_MODE_CHANGED, {"from": "shadow", "to": "overflow"}),
+        (CALL_MODE_CHANGED, {"from": "overflow", "to": "paused"}),
+        (CALL_MODE_CHANGED, {"from": "paused", "to": "overflow"}),
+    ]
+
+
+def test_a_mode_tap_that_changes_nothing_pushes_nothing(session, tenant_id):
+    set_mode(session, tenant_id, "primary")
+    switches.set_mode(session, tenant_id, "primary")
+    switches.resume_ai(session, tenant_id)
+    switches.pause_ai(session, tenant_id)
+    switches.pause_ai(session, tenant_id)
+    with pytest.raises(InvalidInput):
+        switches.set_mode(session, tenant_id, "primary")
+    session.rollback()
+    assert events(session, tenant_id) == [
+        (CALL_MODE_CHANGED, {"from": "primary", "to": "paused"})
+    ]
+
+
+def test_other_switches_push_nothing(session, tenant_id):
+    """Only the call mode decides whether the agent answers (Maxi, 09.11.2026)."""
+    switches.set_delivery(session, tenant_id, False)
+    switches.change_wait(session, tenant_id, "pickup", 15)
+    assert events(session, tenant_id) == []
+
+
+def test_pause_and_switch_on_push_the_mode_that_holds_under_a_window(
+    session, tenant_id
+):
+    """Codex on #591: the switch stores `shadow`, a window holds `primary`.
+    The push names the mode that answers calls; the audit keeps the stored
+    one, which switching on restores."""
+    now = datetime(2026, 10, 30, 18, 0, tzinfo=ZoneInfo("Europe/Berlin"))
+    session.add(
+        CallModeWindow(
+            tenant_id=tenant_id,
+            weekday=now.weekday(),
+            starts_at=time(17),
+            ends_at=time(22),
+            call_mode="primary",
+        )
+    )
+    set_mode(session, tenant_id, "shadow")
+    switches.pause_ai(session, tenant_id, now=now)
+    switches.resume_ai(session, tenant_id, now=now)
+    assert events(session, tenant_id) == [
+        (CALL_MODE_CHANGED, {"from": "primary", "to": "paused"}),
+        (CALL_MODE_CHANGED, {"from": "paused", "to": "primary"}),
+    ]
+    assert [e.payload for e in audit(session, tenant_id)] == [
+        {"from": "shadow", "to": "paused"},
+        {"from": "paused", "to": "shadow"},
+    ]

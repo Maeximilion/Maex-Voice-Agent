@@ -188,7 +188,7 @@ Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `doma
 ### `events/` – der kalte Pfad
 - `outbox.py` — Ereignis schreiben (in derselben Transaktion wie der Fachvorgang)
 - `dispatcher.py` — alle paar Sekunden: `pending` lesen, an n8n senden, `sent` oder Wiederholung mit Backoff, nach N Versuchen `failed` plus Alarm
-- `types.py` — `order.confirmed`, `reservation.confirmed`, `callback.created`, `order.handover_failed`, `daily.report`; `KITCHEN` nennt die Ereignisse, die die Druckbrücke abholt statt n8n (T-4.6)
+- `types.py` — `order.confirmed`, `reservation.confirmed`, `callback.created`, `order.handover_failed`, `daily.report`, and the pushes to owner and `ops` `team_phone.changed`, `day_hours.changed`, `call_mode.changed` (#588); `KITCHEN` nennt die Ereignisse, die die Druckbrücke abholt statt n8n (T-4.6)
 
 ### `kitchen/` – Eingang der Druckbrücke (T-4.6)
 - `router.py` — `POST /v1/kitchen/claim` und `/ack`, eigenes Token `KITCHEN_BRIDGE_TOKEN`, dünne Hülle um `domain/ordering/handover.py` (Abholen, Rückmeldung, Wächter)

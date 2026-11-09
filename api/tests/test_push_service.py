@@ -10,11 +10,14 @@ import re
 import subprocess
 from urllib.parse import urlparse
 
+import pytest
+
 from api.config import Settings
+from api.events import types
 from api.jobs import monitor
 from api.tests.test_commands import REPO_ROOT
 from api.tests.test_compose_ports import _load
-from api.tests.test_n8n_workflow import _channel
+from api.tests.test_n8n_workflow import _branches, _channels, _topics
 
 COMPOSE = REPO_ROOT / "docker-compose.yml"
 PROD = REPO_ROOT / "deploy" / "docker-compose.prod.yml"
@@ -26,7 +29,7 @@ DEV = REPO_ROOT / "docker-compose.override.yml"
 SERVICE = "push"
 PUBLISHER = "n8n"
 SUBSCRIBER = "team"
-TOPIC_RE = re.compile(r"topic:\s*'([^']+)'")
+OWNER = "owner"
 TOKEN_RE = re.compile(r"tk_[a-z0-9]{29}")
 HASH_RE = re.compile(r"\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}")
 
@@ -64,9 +67,9 @@ def _access(users: str) -> set[tuple[str, ...]]:
     return {tuple(rule.split(":")) for rule in rules.split(",") if rule}
 
 
-def _topic() -> str:
-    (topic,) = TOPIC_RE.findall(_channel()["parameters"]["jsonBody"])
-    return topic
+def _published() -> set[str]:
+    """Every topic the workflow publishes to."""
+    return set().union(*(_topics(event_type) for event_type in _branches()))
 
 
 def test_image_is_pinned_to_a_version() -> None:
@@ -97,11 +100,25 @@ TEAM_USERS = "team:<hash>:user,n8n:<hash>:user"
 
 
 def test_publisher_may_only_write_and_the_team_only_read() -> None:
-    topic = _topic()
+    assert _topics(types.CALLBACK_CREATED) == {SUBSCRIBER}
     assert _access(TEAM_USERS) == {
-        (PUBLISHER, topic, "wo"),
-        (SUBSCRIBER, topic, "ro"),
+        (PUBLISHER, SUBSCRIBER, "wo"),
+        (SUBSCRIBER, SUBSCRIBER, "ro"),
+        (PUBLISHER, OWNER, "wo"),
+        (PUBLISHER, monitor.TOPIC, "wo"),
     }
+    # n8n may write to exactly the topics the workflow publishes to.
+    assert {t for user, t, _ in _access(TEAM_USERS) if user == PUBLISHER} == (
+        _published()
+    )
+
+
+def test_the_owner_reads_only_the_owner_topic_once_that_user_exists() -> None:
+    """Changes made without the owner's PIN and of the call mode (#588, T12)."""
+    team = _access(TEAM_USERS)
+    assert _access(f"{TEAM_USERS},owner:<hash>:user") == team | {(OWNER, OWNER, "ro")}
+    # A user whose name only ends in "owner" is not the owner.
+    assert _access(f"{TEAM_USERS},xowner:<hash>:user") == team
 
 
 def test_the_operator_topic_opens_only_with_both_of_its_users() -> None:
@@ -124,7 +141,10 @@ def test_the_alarms_go_to_the_service_in_the_stack() -> None:
         None,
         "/",
     )
-    assert _topic() != monitor.TOPIC
+    # The team never reads the operator's topic; the workflow's `ops` is the
+    # one the operator subscribes to for the alarms.
+    assert _topics(types.CALLBACK_CREATED) == {SUBSCRIBER} != {monitor.TOPIC}
+    assert monitor.TOPIC in _topics(types.CALL_MODE_CHANGED)
 
 
 def test_rules_are_only_set_when_users_exist() -> None:
@@ -137,8 +157,8 @@ def test_rules_are_only_set_when_users_exist() -> None:
     assert "NTFY_AUTH_ACCESS" not in _environment()
 
 
-def test_workflow_publishes_to_the_service_in_the_stack() -> None:
-    channel = _channel()
+@pytest.mark.parametrize("channel", _channels(), ids=lambda c: c["name"])
+def test_workflow_publishes_to_the_service_in_the_stack(channel) -> None:
     params = channel["parameters"]
     assert channel["type"] == "n8n-nodes-base.httpRequest"
     assert params["method"] == "POST"
@@ -163,7 +183,8 @@ def test_channel_gives_up_before_the_dispatcher() -> None:
     # Otherwise the dispatcher times out first and sends the event again while
     # this run is still waiting for the push server.
     dispatcher_ms = Settings.model_fields["n8n_timeout_seconds"].default * 1000
-    assert 0 < _channel()["parameters"]["options"]["timeout"] < dispatcher_ms
+    for channel in _channels():
+        assert 0 < channel["parameters"]["options"]["timeout"] < dispatcher_ms
 
 
 def test_host_port_is_loopback_only() -> None:

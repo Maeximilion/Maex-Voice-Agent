@@ -1573,14 +1573,7 @@ CHECK_ANSWERS = {"uebernehmen": True, "zuruecknehmen": False}
 
 
 def _hours_text(data: dict) -> str:
-    hours = staff.DayHours.of(data)
-    if hours.closed:
-        return "geschlossen"
-    if hours.opens is not None and hours.closes is not None:
-        return f"{hours.opens:%H:%M} bis {hours.closes:%H:%M} Uhr"
-    if hours.like_weekday is not None:
-        return f"wie {WEEKDAYS[hours.like_weekday]}"
-    return "normale Zeiten der Woche"
+    return staff.DayHours.of(data).text()
 
 
 def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
