@@ -101,7 +101,7 @@ A signed-in tablet shows the board to whoever holds it, until it is signed out (
 
 1. `python -m api.jobs.gui_access devices` lists the signed-in devices with their last use.
 2. `python -m api.jobs.gui_access sign-out <the first 8 characters of its id>` ends that device at once; `--all` ends every device.
-3. If the password may be known to someone who should not have it: `python -m api.jobs.gui_access link` makes a new setup link (24 hours, shown once). Setting the new password and PIN signs out every other device; give the link to the owner by a channel only they read.
+3. If the password may be known to someone who should not have it: `python -m api.jobs.gui_access link` makes a new setup link (24 hours, shown once). Setting the new password and PINs signs out every other device; give the link to the owner by a channel only they read.
 
 Team PIN forgotten, or to be changed after staff left: `python -m api.jobs.gui_access pin` shows it, `pin --set <4 to 6 digits>` changes it; signed-in devices stay signed in and unlock with the new one. The owner's admin PIN the same way with `pin --admin` and `pin --admin --set <digits>`; it never equals the team PIN.
 

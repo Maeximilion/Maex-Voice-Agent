@@ -164,8 +164,12 @@ the second builds against.
   staff rights only, so an owner who walks away leaves nothing open; "Inhaber-Bereich schließen"
   ends them at once. Wrong admin PINs count on the account with the waits of a wrong password (every
   third in a row, 1 to 5 minutes, no check while one runs), not with the team PIN's five tries:
-  the staff could sign in again at will, so ending the session would cost a guesser nothing. Each
-  right and wrong admin PIN stands in `audit_log` (`gui.admin_unlocked`, `gui.admin_pin_wrong`).
+  the staff could sign in again at will, so ending the session would cost a guesser nothing. Nor
+  do they end it on a lost tablet (Maxi 09.11.2026, review of #587): the board stays usable for the
+  team, the admin PIN guards the owner's settings only, and a lost tablet is signed out by the
+  operator (T8). A new admin PIN from the operator starts without a wait and ends owner rights still
+  open on any device. Each right and wrong admin PIN stands in `audit_log` (`gui.admin_unlocked`,
+  `gui.admin_pin_wrong`).
 - **Sessions per device:** cookie `__Host-session` (`Secure`, `HttpOnly`, `SameSite=Lax`, path `/`;
   `maex_session` without `Secure` in dev and test, which run over plain HTTP), a random 32-byte
   token whose SHA-256 is the server-side row (`gui_sessions`). The session slides for 30 days on use

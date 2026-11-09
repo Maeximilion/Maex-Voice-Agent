@@ -10,7 +10,8 @@ Call, in the stack's api container:
     python -m api.jobs.gui_access pin --admin [--set 080815]
 
 `link` makes the one-time setup link (24 hours, D34 point 5): the restaurant
-opens it, sets its password and team PIN, and every other device is signed out.
+opens it, sets its password, team PIN and the owner's admin PIN, and every other
+device is signed out.
 It creates the restaurant's login the first time. The link is printed once and
 stored only as a hash; a newer link replaces an older one. Without
 `--base-url` it uses `https://$AGENT_DOMAIN`, or prints the path alone.
@@ -119,7 +120,9 @@ def main(argv: list[str] | None = None) -> int:
     target.add_argument("device", nargs="?")
     target.add_argument("--all", action="store_true")
     sign_out.set_defaults(run=_sign_out)
-    pin = commands.add_parser("pin", help="show the team PIN, or --set a new one")
+    pin = commands.add_parser(
+        "pin", help="show the team PIN (--admin: the owner's), or --set a new one"
+    )
     pin.add_argument("--set", metavar="DIGITS")
     pin.add_argument("--admin", action="store_true", help="the owner's admin PIN")
     pin.set_defaults(run=_pin)

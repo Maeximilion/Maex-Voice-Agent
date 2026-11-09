@@ -10,8 +10,9 @@ device, as the stronger of the two.
 
 Wrong admin PINs count on the account like wrong passwords: every third in a row
 brings a wait one minute longer than the last, up to five, during which no PIN
-is checked. Ending the session, the team PIN's rule, would cost a guesser
-nothing: the staff know the password. Stored readable like the team PIN (Maxi
+is checked. They never end the session, the team PIN's rule: the board stays
+usable for the team, the admin PIN guards the owner's settings only, and a
+lost tablet is signed out by the operator (Maxi, 09.11.2026, review of #587). Stored readable like the team PIN (Maxi
 09.11.2026): the operator sees and sets it. It never equals the team PIN.
 """
 
@@ -19,6 +20,7 @@ import hmac
 import uuid
 from datetime import datetime, timedelta
 
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, Unauthorized
@@ -65,9 +67,11 @@ def unlock_admin(
     if not account.admin_pin:
         session.rollback()
         raise AdminRefused(missing=True)
-    if account.admin_blocked_until is not None and account.admin_blocked_until > now:
+    # Read before the rollback, which expires the row (review of #587).
+    blocked = account.admin_blocked_until
+    if blocked is not None and blocked > now:
         session.rollback()
-        raise AdminRefused(minutes_left(account.admin_blocked_until - now))
+        raise AdminRefused(minutes_left(blocked - now))
     if hmac.compare_digest(pin.encode(), account.admin_pin.encode()):
         account.admin_failures = 0
         account.admin_blocked_until = account.admin_last_failed_at = None
@@ -123,8 +127,9 @@ def admin_pin(session: Session, tenant_id: uuid.UUID, actor: str) -> str | None:
 
 
 def set_admin_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) -> None:
-    """The operator sets the admin PIN; owner rights open on a device stay
-    until their hour ends. Raises InvalidInput. Commits."""
+    """The operator sets the admin PIN. A new PIN is often one that leaked: it
+    starts with no wait, and owner rights still open on any device end (review
+    of #587). Raises InvalidInput. Commits."""
     problem = pin_problem(pin)
     if problem:
         raise InvalidInput("admin pin refused", say=problem)
@@ -133,7 +138,13 @@ def set_admin_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) 
         session.rollback()
         raise InvalidInput("no login yet", say=NO_LOGIN)
     refuse_same_pins(session, account, account.team_pin, pin)
-    account.admin_pin = pin
+    account.admin_pin, account.admin_failures = pin, 0
+    account.admin_blocked_until = account.admin_last_failed_at = None
+    session.execute(
+        update(GuiSession)
+        .where(GuiSession.tenant_id == tenant_id)
+        .values(admin_until=None)
+    )
     audit(session, tenant_id, actor, "gui.admin_pin_set", account.id, {})
     session.commit()
 

@@ -337,7 +337,7 @@ One row per signed-in device; the browser keeps a random token, the row only its
 | admin_until | TIMESTAMPTZ | owner rights on this device end here, 60 minutes after the admin PIN; the idle lock and the team PIN end them earlier (migration 032) |
 
 ### `gui_setup_links`
-The operator's one-time link that sets password and PIN (24 hours, a newer one replaces it).
+The operator's one-time link that sets password, team PIN and admin PIN (24 hours, a newer one replaces it).
 | Feld | Typ | Bemerkung |
 |---|---|---|
 | id | UUID PK | |
