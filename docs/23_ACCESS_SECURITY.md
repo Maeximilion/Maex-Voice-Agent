@@ -291,6 +291,9 @@ guest's data.
 - **Default answers carry no personal data:** health, call mode, last call, counts of calls and
   orders today, print bridge heartbeat, backup age, open alerts, the four figures of docs/06 §4,
   menu status (items, price differences, missing allergens).
+  Built (#571, first part): `GET /v1/ops/status` (docs/04 §Ops API), `OPS_TOKEN` in
+  `.env.example` and from `scripts/new_stack.py`; open alerts are the monitor's pushes of the last
+  24 hours.
 - **Personal data only with a reason:** a route that returns guest data (one call, one order, one
   customer record) requires `X-Ops-Reason` (a short category and a ticket or issue reference, no
   guest names) and `X-Ops-Actor`, and writes the customer's `audit_log` with actor

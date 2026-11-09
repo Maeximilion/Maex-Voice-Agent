@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.8
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.9
 
 ---
 
@@ -306,6 +306,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 10.11.2026 | **The ops API of a stack, first part of the operator dashboard (#571).** `GET /v1/ops/status` (`api/ops/router.py`, docs/04 §Ops API) answers the dashboard with counts, times and codes only: the restaurant's name and key, the call mode that holds now, the last call, today's figures of docs/06 §4, the print bridge (set up, last poll, silent), the last good backup, the monitor's pushes of the last 24 hours per kind (the day report left out) and the menu status (active dishes, open price differences, dishes without a confirmed allergen). One reader, `domain/status/overview.py`. Own token `OPS_TOKEN`: empty closes the route, outside dev and test a weak one or one equal to any other token of the stack stops the API at start; `scripts/new_stack.py` makes it with the other secrets, Compose hands it to `api` only, and Caddy never offers `/v1/ops` (both kept by `test_deploy_exposure.py`). Measured p95 13.4 ms with local DB. Runbook "Ops token leaked" in docs/09 §2. Next of #571: the operator stack with its login (docs/23 §5), then the customer list on this route; #572 after it (Maxi 10.11.2026). |
 | 09.11.2026 | **STATUS cut, part 2 (#562).** "Open Points from Reviews" went from 55 KB to 25 KB (one first sentence per row; the duplicate `_synthesize` row, the closed PR #120 row and the decided lunch-menu row removed) and the open "Made Assumptions" from 33 KB to 21 KB (one short clause per lettered choice, all still awaiting Maxi). The full text of every changed row is in `docs/HISTORY.md` (checked: no original line of STATUS or HISTORY is lost). `.claude/commands/handover.md` now carries the exact start form of a handover. What's Next (39 KB) and Open Decisions (21 KB) are not cut yet. |
 | 09.11.2026 | **No AI attribution in commits or descriptions (#609, request from the #562 session).** The required check `title` (`pr-title.yml`) now also runs `scripts/attribution_check.py` over the pull request's own commits (`HEAD^1..HEAD^2` of its merge commit) and its description: a line that starts with a co-author trailer or a "Generated with" badge fails it with the commit named. It covers every author and machine, unlike a local hook. The label `attribution-approved` lets credit through that Maxi asked for. `docs/13` §6. |
 | 09.11.2026 | **CI split into parallel jobs (#609).** One `test` job had grown to a median of 572 s (12 green runs), 500 s of it `pytest -n auto` over 8,465 tests on four cores. Now `checks` (guards, ruff, mypy, latency tests, speech kit), `pytest` in three shards by a hash of the test id (`PYTEST_SHARD`, `api/tests/conftest.py`) on a Postgres without durability, and a summary job that keeps the required name `test` and runs with `always()`. First CI run (#611): 208 s wall against a median of 572 s; durability off saved 56 % locally but about 5 % on the runner, so the gain is the split. `changes` (`scripts/ci_changes.py`) skips `docker-smoke` and `voice-image` when a pull request changes only `docs/`, `.claude/`, `scripts/` or top-level Markdown; the tests never skip by path, since 34 test files read the docs, hooks and commands. `voice-image` (about 165 s) is now the longest job. `docs/13` §6. |
@@ -336,7 +337,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.27.8 · 10.11.2026:** #562 part 3: What's Next and Open Decisions shortened to one sentence per row, full rows archived in HISTORY.md
+- **v2.27.9 · 10.11.2026:** #562 part 3: What's Next and Open Decisions shortened to one sentence per row, full rows archived in HISTORY.md
+- **v2.27.8 · 10.11.2026:** #571 first part: ops status route of a stack
 - **v2.27.7 · 09.11.2026:** #562: cut Open Points from Reviews and open assumptions, handover start form in handover.md, no-AI-attribution rule
 - **v2.27.6 · 09.11.2026:** Required check title also fails AI attribution in commits and descriptions (#609)
 - **v2.27.5 · 09.11.2026:** CI split into checks, three pytest shards and a summary test job; Docker jobs skip for docs-only pull requests (#609)

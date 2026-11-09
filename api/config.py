@@ -63,6 +63,8 @@ class Settings(BaseSettings):
     dispatcher_batch: int = 20
     # Druckbruecke im Lokal (T-4.6): leer heisst, /v1/kitchen/* ist zu.
     kitchen_bridge_token: str = ""
+    # The operator dashboard reads /v1/ops/* with it (#571, docs/23 §8). Empty: closed.
+    ops_token: str = ""
     # Betrieb, fuer den das Token gilt; ohne ihn ist /v1/kitchen/* zu. Jeder
     # andere tenant_id wird abgelehnt: ein Token oeffnet nie die Bons aller.
     kitchen_bridge_tenant_id: str = ""
@@ -251,6 +253,19 @@ class Settings(BaseSettings):
             raise ValueError(f"KITCHEN_BRIDGE_TOKEN {rule}")
         if kitchen == self.agent_api_token:
             raise ValueError("KITCHEN_BRIDGE_TOKEN must differ from AGENT_API_TOKEN")
+        ops = self.ops_token
+        if ops and not valid_production_token(ops):
+            raise ValueError(f"OPS_TOKEN {rule}")
+        others = (
+            self.agent_api_token,
+            kitchen,
+            self.gui_proxy_secret,
+            self.voice_media_token,
+            self.monitor_push_token,
+        )
+        # The dashboard holds every stack's ops token: none may open anything else.
+        if ops and ops in others:
+            raise ValueError("OPS_TOKEN must differ from every other token")
         return self
 
 

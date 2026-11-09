@@ -58,6 +58,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 - `bridge.py` — the print bridge's sign of life: `note_poll` from the claim, `silence` for the alarm and the header (T-8.3)
 - `holidays.py` — the statewide statutory holidays of the 16 states (Easter by the Gregorian formula), suggested in `special_days` and answered by the team: like Sunday, closed, or the weekday's hours (T-9.5). A suggestion counts for nothing until then
 - `staff_changes.py` — the staff's changes without the owner's PIN (#570 b): today's team number among the dialable ones (`team_phone_at` is its one reader), a date's hours that hold at once or wait for the owner, and the check cards the owner keeps or undoes
+- `overview.py` — the stack's state at a glance for the operator dashboard (#571): mode, last call, today's figures, print bridge, backup, the alarms of the last day, menu status; counts and times only, never guest data
 - Tests: Mitternacht, Sondertag schlägt Wochentag, Sommerzeit-Umstellung
 
 ### `domain/menu/`
@@ -198,6 +199,9 @@ Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `doma
 
 ### `kitchen/` – Eingang der Druckbrücke (T-4.6)
 - `router.py` — `POST /v1/kitchen/claim` und `/ack`, eigenes Token `KITCHEN_BRIDGE_TOKEN`, dünne Hülle um `domain/ordering/handover.py` (Abholen, Rückmeldung, Wächter)
+
+### `ops/` – Eingang des Operator-Dashboards (#571)
+- `router.py` — `GET /v1/ops/status`, own token `OPS_TOKEN`, reached only over the stack's internal `ops` network; thin shell around `domain/status/overview.py`
 
 ### `printbridge/` – die Druckbrücke im Lokal (T-4.6)
 Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht mit dem Server nur über HTTPS. Läuft auf einem Rechner im Lokal (`printbridge/README.md`).

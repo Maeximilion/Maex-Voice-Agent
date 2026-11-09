@@ -129,6 +129,8 @@ services:
       # Checked here, sent by Caddy (deploy/Caddyfile).
       GUI_PROXY_SECRET:
       KITCHEN_BRIDGE_TOKEN:
+      # Read by the operator dashboard over the `ops` network (docs/23 §8).
+      OPS_TOKEN:
       # For the eval runner and the text phone in this container (`make
       # eval`); the production file blanks it, the server's API calls no model.
       LLM_API_KEY:

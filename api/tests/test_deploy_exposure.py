@@ -91,7 +91,9 @@ def test_only_view_bridge_and_health_reach_the_api():
 
 def test_the_public_paths_leave_the_tools_inside():
     for path in PUBLIC_PATHS:
-        assert not path.startswith(("/v1/tools", "/v1/calls", "/docs", "/openapi"))
+        assert not path.startswith(
+            ("/v1/tools", "/v1/calls", "/v1/ops", "/docs", "/openapi")
+        )
         assert path != "/*" and path != "/v1/*"
 
 
@@ -250,6 +252,7 @@ def test_each_secret_reaches_only_the_services_that_read_it():
         "AGENT_API_TOKEN": set(OWN_CODE),
         "GUI_PROXY_SECRET": {"api"},
         "KITCHEN_BRIDGE_TOKEN": {"api"},
+        "OPS_TOKEN": {"api"},
         "N8N_BASIC_AUTH_PASSWORD": {"dispatcher"},
         "MONITOR_PUSH_TOKEN": {"dispatcher"},
         "VOICE_MEDIA_TOKEN": {"voice"},
