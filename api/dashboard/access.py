@@ -121,12 +121,20 @@ def sign_in(
             delete(OperatorLoginFailure).where(OperatorLoginFailure.address == address)
         )
     device_token = _trust_device(db, account, device_token, now)
-    if previous_token:
-        db.execute(
-            delete(OperatorSession).where(
-                OperatorSession.token_hash == token_hash(previous_token)
+    # The browser's own session, and every ended one of the account that no
+    # browser came back for: otherwise their rows would stay for good.
+    db.execute(
+        delete(OperatorSession).where(
+            (OperatorSession.token_hash == token_hash(previous_token))
+            | (
+                (OperatorSession.account_id == account.id)
+                & (
+                    (OperatorSession.last_seen_at <= now - SESSION_IDLE)
+                    | (OperatorSession.created_at <= now - SESSION_MAX)
+                )
             )
         )
+    )
     token = secrets.token_urlsafe(TOKEN_BYTES)
     db.add(
         OperatorSession(

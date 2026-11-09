@@ -19,7 +19,12 @@ from api.dashboard import access, cli, totp
 from api.dashboard import app as web
 from api.dashboard.config import DashboardSettings, settings
 from api.dashboard.db import get_db
-from api.dashboard.models import OperatorAccount, OperatorAudit
+from api.dashboard.models import (
+    OperatorAccount,
+    OperatorAudit,
+    OperatorLoginFailure,
+    OperatorSession,
+)
 from evals.scratch_db import create_scratch_db, drop_scratch_db
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -207,6 +212,41 @@ def test_every_third_failure_brings_a_wait_even_for_the_right_input(
     assert web.WAIT.format(minutes=1) in answer.text
     clock.at += timedelta(minutes=1, seconds=1)
     assert _sign_in(client, _code(factors.totp_secret, clock.at)).status_code == 303
+
+
+def test_an_address_waits_on_its_own_and_is_forgotten_after_a_day(
+    client, sessions, clock
+):
+    # Unknown names have no account count: only the address brings the wait.
+    for name in ("anna", "bert", "carl"):
+        assert _sign_in(client, "000001", name=name).status_code == 401
+    assert web.WAIT.format(minutes=1) in _sign_in(client, "000001", name="dora").text
+    with sessions() as db:
+        db.add(
+            OperatorLoginFailure(
+                address="198.51.100.7", failures=2, last_failed_at=clock.at
+            )
+        )
+        db.commit()
+    clock.at += timedelta(days=1, minutes=1)
+    _sign_in(client, "000001", name="emil")
+    with sessions() as db:
+        left = {
+            row.address: row.failures
+            for row in db.scalars(select(OperatorLoginFailure))
+        }
+    # The old address is gone; this one starts again from one.
+    assert left == {"testclient": 1}
+
+
+def test_ended_sessions_go_with_the_next_sign_in(client, factors, clock, sessions):
+    _sign_in(client, _code(factors.totp_secret, clock.at))
+    client.cookies.clear()
+    clock.at += timedelta(minutes=31)
+    _sign_in(client, _code(factors.totp_secret, clock.at))
+    with sessions() as db:
+        rows = db.scalars(select(OperatorSession)).all()
+    assert len(rows) == 1 and rows[0].created_at == clock.at
 
 
 def test_a_browser_that_signed_in_before_gets_past_the_account_wait(
