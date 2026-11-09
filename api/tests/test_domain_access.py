@@ -23,7 +23,13 @@ from api.domain.access.sessions import (
     stack_tenant_id,
     unlock,
 )
-from api.domain.access.setup import LINK_GONE, issue_link, use_link
+from api.domain.access.setup import (
+    LINK_GONE,
+    issue_link,
+    set_team_pin,
+    team_pin,
+    use_link,
+)
 from api.jobs.retention import purge
 from api.models import (
     AuditLog,
@@ -121,7 +127,7 @@ def test_pin_has_four_to_six_ascii_digits(pin, ok):
 def test_the_setup_link_sets_password_and_pin_and_signs_in(session, tenant_id, ready):
     account = session.scalars(select(GuiAccount)).one()
     assert hashing.verify_secret(PASSWORD, account.password_hash)
-    assert hashing.verify_secret(PIN, account.team_pin_hash)
+    assert account.team_pin == PIN
     assert resolve(session, ready, tenant_id, T0) is not None
 
 
@@ -190,21 +196,24 @@ def test_before_the_setup_no_password_signs_in(session, tenant_id):
     assert _refused(session, tenant_id, PASSWORD).wait_minutes is None
 
 
-def test_the_fifth_failure_brings_a_wait_that_grows_to_15_minutes(
+def test_every_third_failure_waits_a_minute_longer_up_to_five(
     session, tenant_id, ready
 ):
+    """Maxi, 09.11.2026: one or two wrong passwords lock nothing, the third
+    waits a minute, every third after it a minute longer, at most five."""
     waits = []
     at = T0
-    for _ in range(4):
+    for failure in range(1, 19):
         assert _refused(session, tenant_id, at=at).wait_minutes is None
-    for _ in range(6):
-        _refused(session, tenant_id, at=at)
-        account = session.scalars(select(GuiAccount)).one()
-        waits.append(round((account.blocked_until - at).total_seconds() / 60))
+        blocked = session.scalars(select(GuiAccount.blocked_until)).one()
+        if failure % 3:
+            assert blocked is None, failure
+            continue
+        waits.append(round((blocked - at).total_seconds() / 60))
         # While it runs, even the right password is not checked.
         assert _refused(session, tenant_id, PASSWORD, at=at).wait_minutes == waits[-1]
-        at = account.blocked_until
-    assert waits == [1, 2, 4, 8, 15, 15]
+        at = blocked
+    assert waits == [1, 2, 3, 4, 5, 5]
     sign_in(session, tenant_id, PASSWORD, ADDRESS, "x", at)
     account = session.scalars(select(GuiAccount)).one()
     assert account.failures == 0 and account.blocked_until is None
@@ -215,24 +224,24 @@ def test_an_address_keeps_its_count_when_the_restaurant_signs_in(
     session, tenant_id, ready
 ):
     guesser = "198.51.100.1"
-    for _ in range(4):
+    for _ in range(2):
         _refused(session, tenant_id, address=guesser)
     # The restaurant signs in from its own address: the account's count starts
-    # again, the guessing address keeps its four ...
+    # again, the guessing address keeps its two ...
     sign_in(session, tenant_id, PASSWORD, ADDRESS, "x", T0)
     _refused(session, tenant_id, address=guesser)
-    # ... so its fifth brings the wait to that address only.
+    # ... so its third brings the wait to that address only.
     assert _refused(session, tenant_id, PASSWORD, guesser).wait_minutes == 1
     assert sign_in(session, tenant_id, PASSWORD, ADDRESS, "x", T0)
 
 
 def test_a_day_without_a_failure_starts_the_count_again(session, tenant_id, ready):
-    for _ in range(4):
+    for _ in range(2):
         _refused(session, tenant_id)
     later = T0 + timedelta(days=1)
-    for _ in range(4):
+    for _ in range(2):
         assert _refused(session, tenant_id, at=later).wait_minutes is None
-    assert session.get(GuiLoginFailure, ADDRESS).failures == 4
+    assert session.get(GuiLoginFailure, ADDRESS).failures == 2
 
 
 # --- the session -------------------------------------------------------------
@@ -346,22 +355,29 @@ def test_the_attempt_is_counted_before_the_slow_check_and_holds_no_transaction(
     assert session.scalars(select(GuiAccount.failures)).one() == 0
 
 
-def test_the_pin_try_is_counted_before_the_check_too(
-    session, tenant_id, ready, monkeypatch
-):
-    from api.domain.access import sessions as module
+def test_the_operator_reads_and_sets_the_team_pin(session, tenant_id, ready):
+    """Maxi, 09.11.2026: the dev sees and changes the team PIN; devices stay
+    signed in and unlock with the new one. The audit names the look and the
+    change, never the PIN."""
+    assert team_pin(session, tenant_id, "operator:test") == PIN
+    set_team_pin(session, tenant_id, "123456", "operator:test")
+    late = T0 + IDLE
+    access = resolve(session, ready, tenant_id, late)
+    assert unlock(session, access.session_id, PIN, late) == 4
+    assert unlock(session, access.session_id, "123456", late) is None
+    with pytest.raises(InvalidInput):
+        set_team_pin(session, tenant_id, "12", "operator:test")
+    rows = session.scalars(
+        select(AuditLog).where(AuditLog.action.like("gui.team_pin_%"))
+    ).all()
+    assert [row.action for row in rows] == ["gui.team_pin_shown", "gui.team_pin_set"]
+    assert all(row.payload == {} for row in rows)
 
-    access = resolve(session, ready, tenant_id, T0 + IDLE)
-    seen = []
 
-    def check(secret, stored):
-        seen.append(session.in_transaction())
-        return hashing.verify_secret(secret, stored)
-
-    monkeypatch.setattr(module, "verify_secret", check)
-    assert unlock(session, access.session_id, "0000", T0 + IDLE) == 4
-    assert seen == [False]
-    assert session.get(GuiSession, access.session_id).pin_failures == 1
+def test_no_team_pin_before_the_first_link(session, tenant_id):
+    assert team_pin(session, tenant_id, "operator:test") is None
+    with pytest.raises(InvalidInput):
+        set_team_pin(session, tenant_id, "4711", "operator:test")
 
 
 def test_at_most_two_hashes_run_at_once(monkeypatch):
@@ -433,9 +449,8 @@ def test_a_known_device_has_its_own_wait_and_leaves_the_account_count(
     session, tenant_id, ready
 ):
     device = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Tablet", T0).device_token
-    for _ in range(4):
-        _refused_with(session, tenant_id, device)
-    assert _refused_with(session, tenant_id, device).wait_minutes is None
+    for _ in range(3):
+        assert _refused_with(session, tenant_id, device).wait_minutes is None
     assert _refused_with(session, tenant_id, device).wait_minutes == 1
     assert session.scalars(select(GuiAccount.failures)).one() == 0
     assert session.get(GuiLoginFailure, ADDRESS) is None

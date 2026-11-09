@@ -1,16 +1,17 @@
 """The restaurant's login to the operations view (#570, D34, docs/23 §6).
 
-One login per restaurant: `gui_accounts` holds its password and the team PIN,
-both as scrypt hashes. Each signed-in device is a row of `gui_sessions`; the
-browser keeps only a random token, the row only its SHA-256. A setup link made
-by the operator sets the password; it is stored hashed too. Failed sign-ins are
+One login per restaurant: `gui_accounts` holds its password as a scrypt hash
+and the team PIN readable for the operator (migration 031). Each signed-in
+device is a row of `gui_sessions`; the browser keeps only a random token, the
+row only its SHA-256. A setup link made by the operator sets the password; it
+is stored hashed too. Failed sign-ins are
 counted per account (on its row) and per client address (`gui_login_failures`).
 """
 
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import Base, Timestamps, UUIDPrimaryKey
@@ -18,6 +19,9 @@ from api.models.base import Base, Timestamps, UUIDPrimaryKey
 
 class GuiAccount(UUIDPrimaryKey, Timestamps, Base):
     __tablename__ = "gui_accounts"
+    __table_args__ = (
+        CheckConstraint("team_pin ~ '^[0-9]{4,6}$'", name="ck_gui_accounts_team_pin"),
+    )
 
     # One login per restaurant (D34): unique, not just indexed.
     tenant_id: Mapped[uuid.UUID] = mapped_column(
@@ -25,7 +29,9 @@ class GuiAccount(UUIDPrimaryKey, Timestamps, Base):
     )
     # Empty until the first setup link is used.
     password_hash: Mapped[str | None] = mapped_column(Text)
-    team_pin_hash: Mapped[str | None] = mapped_column(Text)
+    # Readable on purpose: the operator sees and sets it (Maxi, 09.11.2026). A
+    # hash of 4 to 6 digits held nobody with the database back anyway.
+    team_pin: Mapped[str | None] = mapped_column(Text)
     failures: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     last_failed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

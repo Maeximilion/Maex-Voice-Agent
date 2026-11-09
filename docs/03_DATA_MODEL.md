@@ -300,8 +300,8 @@ The restaurant's login to the operations view (#570, D34): one row per tenant, m
 | id | UUID PK | |
 | tenant_id | UUID FK, UNIQUE | one login per restaurant |
 | password_hash | TEXT | scrypt (`domain/access/hashing.py`), empty until the first setup link is used |
-| team_pin_hash | TEXT | scrypt of the team PIN, 4 to 6 digits; unlocks a signed-in device, never a login |
-| failures / last_failed_at / blocked_until | INT / TIMESTAMPTZ / TIMESTAMPTZ | failures in a row; from the fifth a growing wait (1, 2, 4, 8, 15 minutes); a day without one starts again |
+| team_pin | TEXT, CHECK 4 to 6 digits | readable for the operator, who sees and sets it (Maxi 09.11.2026, migration 031); unlocks a signed-in device, never a login |
+| failures / last_failed_at / blocked_until | INT / TIMESTAMPTZ / TIMESTAMPTZ | failures in a row; every third brings a wait one minute longer, 1 to 5 minutes; a day without one starts again |
 | created_at / updated_at | TIMESTAMPTZ | |
 
 ### `gui_sessions`
@@ -599,4 +599,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 028 | `floor_areas`, `dining_tables`, `table_combinations`: the floor plan of T-3.11 (#496); nothing existing changes and nothing reads them for a booking (D28); the downgrade drops the three with every room, table and pair the team drew |
 | 029 | `reservations.call_id` nullable, `reservations.source` (`agent` / `tablet`, default `agent`) with the CHECK that an agent's row has its call and a tablet's none, and `reservation_tables`: reservations the team enters by hand, seated on the floor plan (T-3.12, #497, D30); existing rows stay the agent's; the downgrade deletes every tablet reservation with its seating (backup first) |
 | 030 | `gui_accounts`, `gui_sessions`, `gui_setup_links`, `gui_devices`, `gui_login_failures`: the restaurant's login to the operations view (#570, D34); new tables only; the downgrade drops them, which signs out every device and needs a new setup link |
+| 031 | `gui_accounts.team_pin` readable (CHECK 4 to 6 digits) instead of `team_pin_hash`: the operator sees and sets the team PIN (Maxi 09.11.2026); a hash cannot become the PIN, so the upgrade empties every team PIN and the operator sets it again (`gui_access pin --set`), and the downgrade drops them the same way |
 | planned, next free number | `eval_cases`, `eval_runs` |

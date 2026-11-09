@@ -5,16 +5,19 @@ Call, in the stack's api container:
     python -m api.jobs.gui_access devices
     python -m api.jobs.gui_access sign-out <device id or its first 8 characters>
     python -m api.jobs.gui_access sign-out --all
+    python -m api.jobs.gui_access pin
+    python -m api.jobs.gui_access pin --set 4711
 
 `link` makes the one-time setup link (24 hours, D34 point 5): the restaurant
 opens it, sets its password and team PIN, and every other device is signed out.
 It creates the restaurant's login the first time. The link is printed once and
 stored only as a hash; a newer link replaces an older one. Without
 `--base-url` it uses `https://$AGENT_DOMAIN`, or prints the path alone.
-`sign-out` is the lost tablet (T8): one device, or all of them.
+`sign-out` is the lost tablet (T8): one device, or all of them. `pin` shows the
+team PIN, `pin --set` changes it; devices stay signed in (Maxi, 09.11.2026).
 
 The stack's restaurant is its oldest tenant, as in the operations view (D32).
-Exit code: 0 done, 1 nothing matched, 2 no tenant.
+Exit code: 0 done, 1 nothing matched or refused, 2 no tenant.
 """
 
 import argparse
@@ -23,10 +26,11 @@ import sys
 
 from sqlalchemy.orm import Session
 
+from api.core.errors import InvalidInput
 from api.core.time import to_local, utcnow
 from api.db import SessionLocal
 from api.domain.access.sessions import devices, end_sessions, stack_tenant_id
-from api.domain.access.setup import issue_link
+from api.domain.access.setup import issue_link, set_team_pin, team_pin
 from api.models import Tenant
 
 ACTOR = "operator:cli"
@@ -74,6 +78,20 @@ def _sign_out(session: Session, tenant: Tenant, args: argparse.Namespace) -> int
     return 0 if ended else 1
 
 
+def _pin(session: Session, tenant: Tenant, args: argparse.Namespace) -> int:
+    if args.set is None:
+        pin = team_pin(session, tenant.id, ACTOR)
+        print(pin or "No team PIN set.")
+        return 0 if pin else 1
+    try:
+        set_team_pin(session, tenant.id, args.set, ACTOR)
+    except InvalidInput as refused:
+        print(refused.say, file=sys.stderr)
+        return 1
+    print("Team PIN changed.", file=sys.stderr)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     commands = parser.add_subparsers(dest="command", required=True)
@@ -86,6 +104,9 @@ def main(argv: list[str] | None = None) -> int:
     target.add_argument("device", nargs="?")
     target.add_argument("--all", action="store_true")
     sign_out.set_defaults(run=_sign_out)
+    pin = commands.add_parser("pin", help="show the team PIN, or --set a new one")
+    pin.add_argument("--set", metavar="DIGITS")
+    pin.set_defaults(run=_pin)
     args = parser.parse_args(argv)
 
     session = SessionLocal()

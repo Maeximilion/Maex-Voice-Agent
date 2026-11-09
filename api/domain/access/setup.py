@@ -89,7 +89,7 @@ def use_link(
     of this device. Raises InvalidInput with the sentence for the page. The
     link is spent only when both values are taken. Commits.
 
-    The two slow hashes run before any lock, and the account is locked before
+    The slow hash runs before any lock, and the account is locked before
     its link, as in `issue_link`: a link replaced meanwhile is refused cleanly
     instead of the two transactions waiting on each other (review of #585)."""
     if _open_link(session, tenant_id, token, now, lock=False) is None:
@@ -99,14 +99,14 @@ def use_link(
     problem = password_problem(password) or pin_problem(pin)
     if problem:
         raise InvalidInput("setup values refused", say=problem)
-    password_hash, pin_hash = hash_secret(password), hash_secret(pin)
+    password_hash = hash_secret(password)
 
     found = _open_link(session, tenant_id, token, now, lock=True)
     if found is None:
         session.rollback()
         raise InvalidInput("setup link replaced or expired", say=LINK_GONE)
     account, link = found
-    account.password_hash, account.team_pin_hash = password_hash, pin_hash
+    account.password_hash, account.team_pin = password_hash, pin
     account.failures, account.blocked_until, account.last_failed_at = 0, None, None
     session.delete(link)
     end_sessions(session, tenant_id, "gui:setup", "password_set")
@@ -138,3 +138,32 @@ def _open_link(
         query = query.with_for_update().execution_options(populate_existing=True)
     link = session.scalars(query).first()
     return (account, link) if link is not None else None
+
+
+def team_pin(session: Session, tenant_id: uuid.UUID, actor: str) -> str | None:
+    """The restaurant's team PIN for the operator, or None. The look is
+    audited, never the value. Commits."""
+    account = locked_account(session, tenant_id)
+    if account is None:
+        session.rollback()
+        return None
+    audit(session, tenant_id, actor, "gui.team_pin_shown", account.id, {})
+    session.commit()
+    return account.team_pin
+
+
+def set_team_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) -> None:
+    """The operator sets the team PIN; signed-in devices stay signed in and
+    unlock with the new one. Raises InvalidInput. Commits."""
+    problem = pin_problem(pin)
+    if problem:
+        raise InvalidInput("team pin refused", say=problem)
+    account = locked_account(session, tenant_id)
+    if account is None:
+        session.rollback()
+        raise InvalidInput(
+            "no login yet", say="Noch kein Zugang: erst einen Link machen."
+        )
+    account.team_pin = pin
+    audit(session, tenant_id, actor, "gui.team_pin_set", account.id, {})
+    session.commit()
