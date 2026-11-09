@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.24.0
+> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.24.1
 
 ---
 
@@ -681,6 +681,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 09.11.2026 | **Restaurant login (#570 part a) and its follow-up merged (#585, #586; D34 points 1 to 9).** One login per restaurant replaces Caddy's Basic-Auth: the operator's setup link (`python -m api.jobs.gui_access link`) sets password and team PIN, each device signs in once and keeps a session for 30 days of use, the board stays live after 15 minutes idle and the next change asks the PIN, five wrong PINs sign the device out, a browser that signed in once counts its failed sign-ins on its own device cookie. Waits: every third wrong password, 1 to 5 minutes. The operator sees and sets the team PIN (`gui_access pin`), stored readable since migration 031. Migrations 030 and 031; a test now requires every data-deleting migration to name its backup. Reviews: Codex P1 and P2 on #585, Codex P1 on #586 and a local ultra review (2 of 5 findings real) all fixed. Handover 09.11.2026: next #570 part (b) on branch `task/570-b-admin-pin`. |
 | 09.11.2026 | **Tenancy decided (#568, D32): one stack per customer.** Maxi chose one Docker stack and database per customer behind one shared Caddy on the host. docs/13 §8 lists where the code picks one tenant per stack (GUI oldest tenant, voice by `TENANT_NAME`, kitchen token bound to one tenant, n8n without tenants, global `idempotency_key` uniques), the measured idle memory (about 0.65 GB for api, dispatcher, n8n, push and db; voice and Asterisk not measured), about 3 EUR a month of server per customer, what follows for #570, #571, #573 and #576, and when a shared stack is reassessed |
 | 09.11.2026 | **Routing hook leaves prompts without a task of their own alone (issue #578).** `route_advice.sh` no longer classifies a prompt by keyword when it carries a pasted handover block (a `## Handover` heading), names a task id (`T-3.5`) or mentions `/task` (`/task` and the work package row decide), or is a question about model, effort or routing that asks for no change. The table default (Opus 5.5 `high`) now needs a verb that asks for work instead of any line of four words. Ten new cases in `api/tests/test_hooks_route_advice.py`, docs/19 §1 synced |
 | 06.11.2026 | **T-3.12 part 2 (#497): the sheet „Reservierung eintragen“ on the tablet.** A button in the heading of the column „Heute“ opens it: date (today by default), time, persons, name, optional phone, note and „Tisch“ with every live table and every combined pair of the floor plan. „Weiter“ writes the draft (`create_tablet_reservation`) and shows the summary with the load of the capacity window; „Eintragen“ is the confirming tap (`confirm_tablet`), „Trotzdem eintragen“ with a question where the window is full or none. A refusal keeps what was typed and the sheet's key. The cards of „Heute“ name their tables and hide a missing number (`list_today` reads the tables in one query). Routes `GET`/`POST /gui/reservierung`, `POST /gui/reservierung/<id>/eintragen`; template `fragments/reservierung.html`. Tests first: `test_gui_tablet_reservation.py`, two in `test_domain_today.py`. docs/06 §3 synced; T-3.12 done |
@@ -882,6 +883,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.24.1 · 09.11.2026:** Handover: #570 part a and its follow-up merged (#585, #586), next #570 part b on task/570-b-admin-pin
 - **v2.24.0 · 09.11.2026:** D34 points 7 to 9: gentler sign-in waits, operator sees and sets the team PIN
 - **v2.23.0 · 09.11.2026:** #570 part a: restaurant login replaces Basic-Auth, D34 recorded
 - **v2.22.0 · 09.11.2026:** #569 threat model and access design (docs/23), D33
