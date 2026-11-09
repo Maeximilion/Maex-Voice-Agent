@@ -100,6 +100,11 @@ def up(args: argparse.Namespace, build: bool) -> None:
     )
     run(compose("exec", "-T", "api", *INNER, "fill"), args.dry_run)
     print(f"Tablet: http://{args.bind}:{args.port}/ (reload it); stack `{PROJECT}`")
+    if args.bind != "127.0.0.1":
+        print(
+            f"Note: bound to {args.bind}; the stack runs ENV=dev (no proxy secret) and is "
+            "reachable from that network. Invented data only; run `down` when done."
+        )
 
 
 # The data layer needs the project's dependencies, so it runs in the api container.

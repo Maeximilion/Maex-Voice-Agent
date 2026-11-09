@@ -173,3 +173,11 @@ def test_dry_run_runs_nothing(monkeypatch, capsys):
     assert not called
     out = capsys.readouterr().out
     assert "dispatcher" not in out and "-p bedientest" in out
+
+
+def test_a_lan_bind_is_warned_about(monkeypatch, capsys):
+    monkeypatch.setattr(fx.subprocess, "run", lambda *a, **k: None)
+    fx.main(["up", "--dry-run", "--bind", "0.0.0.0"])
+    assert "ENV=dev" in capsys.readouterr().out
+    fx.main(["up", "--dry-run"])
+    assert "Note:" not in capsys.readouterr().out
