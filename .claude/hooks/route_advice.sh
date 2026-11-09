@@ -44,6 +44,11 @@ code_clause() {
 # Pure lookups go to Haiku: a search verb and no verb that changes anything.
 search='^(please |(can|could|would) you (please )?)?(search|find|locate|grep|list|where (is|are|does)|look up|read (the )?([a-z]+ )?logs?|inspect|show|tail|suche|finde|wo (ist|sind|wird))\b'
 change='\b(fix|change|update|add|build|write|implement|edit|refactor|remove|delete|rename|create|correct|modify|adjust|replace|move|patch|rewrite|migrate|repair|clean|improve|ändere|baue|schreibe|behebe|füge|lösche|erstelle|korrigiere|ersetze|run|execute|deploy|release|ship|optimi[sz]e|speed up|tune|harden|ausführen|starte|verschiebe|why|warum|debug|investigate|find out|figure out)\b'
+# Work asked for in other words; the table's default needs one of these or a $change verb.
+work='\b(work on|arbeite an|review|prüfe)\b'
+# A question about the setting itself: Claude answers it, there is no task to place.
+routeq='\?$|^(please )?(is|are|which|what|should|does|do|can|could|would|check|welche[rs]?|ist|soll)\b'
+routeabout='\b(models?|modell|effort|routing)\b'
 # Answers that carry no task.
 ack='^(ja|yes|y|ok(ay)?|nein|no|n|weiter|continue|go( on| ahead( with it)?)?|proceed|sounds good|leg los|mach weiter|danke|thanks|passt|mach( das)?|do it|stop|fertig|done)[.! ]*$'
 
@@ -125,6 +130,14 @@ else
   # One line without paste wrappers, so ^ and $ below mean the start and end of the prompt.
   lower=$(sed -E 's#</?pasted_content[^>]*>##g' <<<"$lower" | tr '\n' ' ' | sed -E 's/^ +//; s/ +$//')
   grep -qiE "$ack" <<<"$lower" && exit 0
+  # The table routes by task, not by words. A pasted handover or status block describes
+  # state; a task id or a /task mention leaves the check to /task and the work package row.
+  grep -qiE '^ *#+ *hand(over|off)\b' <<<"$prompt" && exit 0
+  grep -qiE '\bt-[0-9]+\.[0-9]+\b|(^|[^a-z])/task\b' <<<"$lower" && exit 0
+  # A question about model, effort or routing that asks for no work of its own.
+  grep -qiE "$routeq" <<<"$lower" \
+    && sed -E 's/model.?router|(data|domain).?models?//g' <<<"$lower" | grep -qiE "$routeabout" \
+    && ! sed -E 's/\b(why|warum)\b//g' <<<"$lower" | grep -qiE "$change" && exit 0
   # What status, review or existing-test work is about is its subject, not work of its own:
   # "update the project status after the migration" is a status update.
   # ponytail: only a subject of up to three words that ends the prompt, so "... after the
@@ -170,8 +183,8 @@ else
       | grep -qiE "$codepath|$impl" && ! code_clause "$topic"; then
     want=claude-sonnet-5-5 effort=medium
   else
-    # No keyword: the table's default, but not for a short line that names no work.
-    [ "$(wc -w <<<"$lower")" -ge 4 ] || grep -qiE "$change" <<<"$lower" || exit 0
+    # No keyword: the table's default, only for a prompt that asks for work.
+    grep -qiE "$change|$work" <<<"$lower" || exit 0
     want=claude-opus-5-5 effort=high
   fi
 fi

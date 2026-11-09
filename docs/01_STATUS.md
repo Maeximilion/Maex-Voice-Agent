@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.20.1
+> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.20.2
 
 ---
 
@@ -675,6 +675,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 09.11.2026 | **Routing hook leaves prompts without a task of their own alone (issue #578).** `route_advice.sh` no longer classifies a prompt by keyword when it carries a pasted handover block (a `## Handover` heading), names a task id (`T-3.5`) or mentions `/task` (`/task` and the work package row decide), or is a question about model, effort or routing that asks for no change. The table default (Opus 5.5 `high`) now needs a verb that asks for work instead of any line of four words. Ten new cases in `api/tests/test_hooks_route_advice.py`, docs/19 §1 synced |
 | 06.11.2026 | **T-3.12 part 2 (#497): the sheet „Reservierung eintragen“ on the tablet.** A button in the heading of the column „Heute“ opens it: date (today by default), time, persons, name, optional phone, note and „Tisch“ with every live table and every combined pair of the floor plan. „Weiter“ writes the draft (`create_tablet_reservation`) and shows the summary with the load of the capacity window; „Eintragen“ is the confirming tap (`confirm_tablet`), „Trotzdem eintragen“ with a question where the window is full or none. A refusal keeps what was typed and the sheet's key. The cards of „Heute“ name their tables and hide a missing number (`list_today` reads the tables in one query). Routes `GET`/`POST /gui/reservierung`, `POST /gui/reservierung/<id>/eintragen`; template `fragments/reservierung.html`. Tests first: `test_gui_tablet_reservation.py`, two in `test_domain_today.py`. docs/06 §3 synced; T-3.12 done |
 | 05.11.2026 | **Ultrareview candidates are kept in one ledger (Maxi, 05.11.2026).** `scripts/ultrareview_ledger.py` keeps the rolling issue #546 "Ultrareview candidates": `/done` adds each candidate, `/start` and `/gate` list the open ones, a review ticks its line with the level and the issues of the findings not fixed at once. Seeded from every session up to 05.11.2026: 45 candidates, 11 reviewed (ten as ultra, #445 with `/code-review max`), 34 open, all merged. The quota is settled: three free ultrareviews per account, once (docs and the sessions: #222, #282, #423, refused 30.10.2026 for #445), then usage credits; the fallback is a local `/code-review max <PR>` on Maxi's word. The one finding of an ultrareview still unfixed, a call left open when its process dies during the goodbye (#298), is issue #545 now and leaves "Open Points from Reviews". Tests in `api/tests/test_ultrareview_ledger.py` |
 | 05.11.2026 | **T-3.12 part 1 (#497): reservations the team enters by hand, in the data model and the domain (D30).** Migration 029: `reservations.call_id` nullable, `source` (`agent` / `tablet`) with the CHECK that an agent's row has its call and a tablet's none, `reservation_tables` for one table or a combination of the floor plan; up and down tested. `domain/reservations/manual.py` writes the tablet's draft (actor `gui:tablet`), `confirm_tablet` in `domain/confirm.py` is the team's confirming tap, the same step from draft to confirmed as the agent's, with its audit row and `reservation.confirmed` event. A confirmed tablet table counts against the agent's seats (D28, `booked_guests` joins the call outer now); a full window or a time outside every window needs "Trotzdem eintragen", a table held in the same window is refused. The day report counts the agent's tables only. Tests first: `test_domain_tablet_reservation.py`, `test_migration_029.py`, one in `test_jobs_monitor.py`. Part 2, the sheet on the tablet, stacks on this PR. Readings under Made Assumptions |
@@ -874,6 +875,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.20.2 · 09.11.2026:** route_advice.sh skips handover blocks, task ids and routing questions; the default needs a work verb (issue #578)
 - **v2.20.1 · 09.11.2026:** Review and alert scripts read gh output as UTF-8, so they no longer crash on emojis on Windows
 - **v2.20.0 · 09.11.2026:** Review rules: repeated findings become rules at the source, file-and-line evidence and a counted summary for reviewers; no separate REVIEW.md
 - **v2.19.2 · 09.11.2026:** T-3.16 partly done: swap field under its line, in-page question, Ton an button
