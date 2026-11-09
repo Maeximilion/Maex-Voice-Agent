@@ -386,7 +386,7 @@ EUR; isolation and the unchanged code decide it.
   reload. Joining a new network recreates the shared Caddy, so every customer's site is
   away for a second or two: add a customer outside service hours. A `team_phone` in the customer file must be E.164 there, since it becomes `TEAM_PHONE` as written; anything else is refused before the first step. The setup link of the first login is printed once. An existing `.env` is never
   rewritten, so a rerun keeps every token and only renders the site file again, for example after
-  `N8N_EDITOR_AUTH_USER` and `_HASH` were set (both empty: the editor answers 401). Still by hand: the push server's users and `MONITOR_PUSH_TOKEN` (§3, #595), the voice profile and the trunk.
+  `N8N_EDITOR_AUTH_USER` and `_HASH` were set (both empty: the editor answers 401). The push server gets its five users (#595): `team`, `owner` and `ops`, whose passwords are printed once and kept only as bcrypt hashes in `NTFY_AUTH_USERS` (hashed inside the stack's own pinned `push` image, the passwords over stdin), and `n8n` and `monitor` with fresh `tk_` tokens in `NTFY_AUTH_TOKENS`, the monitor's also as `MONITOR_PUSH_TOKEN`. The n8n token still goes into n8n's credential by hand (n8n/README.md). To issue new push passwords, empty `NTFY_AUTH_USERS` and run the script again. Still by hand: the voice profile and the trunk.
 - #570 logins are per stack; the GUI's tenant choice may stay as it is.
 - #571 operator dashboard reads several stacks over an ops API per stack on an internal `ops`
   network (docs/23 §8).
