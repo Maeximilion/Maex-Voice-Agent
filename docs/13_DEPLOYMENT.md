@@ -361,8 +361,8 @@ EUR; isolation and the unchanged code decide it.
 - #573 provisioning creates a stack (folder, `.env` with fresh tokens, Compose project, Caddy
   site, database seed) plus the tenant row inside it, not a second tenant in a shared database.
 - #570 logins are per stack; the GUI's tenant choice may stay as it is.
-- #571 operator dashboard reads several stacks, so it needs a read path per stack (to be designed
-  in #569).
+- #571 operator dashboard reads several stacks over an ops API per stack on an internal `ops`
+  network (docs/23 §8).
 - #576 offboarding is export, then removal of the stack and its volumes.
 
 ### Reassess
