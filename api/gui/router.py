@@ -48,6 +48,7 @@ from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status import bridge
 from api.domain.status import config as switches
 from api.domain.status import holidays as holiday_days
+from api.domain.status import staff_changes as staff
 from api.domain.status.mode import CAUTION, mode_at
 from api.domain.status.waits import current_wait, standard_wait
 from api.gui import figures_view, orders_view
@@ -367,6 +368,7 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
             "orders": _order_rows(session, tenant),
             "holidays": _holiday_rows(session, tenant),
             "prices": _price_rows(session, tenant),
+            "checks": _check_rows(session, tenant),
             **_header(session, tenant),
         }
     return _page_response(
@@ -1556,6 +1558,264 @@ def floor_plan_save(
             session, tenant_id, area_id, SaveArea.model_validate_json(body)
         ),
     )
+
+
+# --- Staff changes and their check cards (#570 part b, D34 point 4) ------------
+
+NO_CHANGE = "Keine Änderung."
+PHONE_HELD = "Gilt bis Betriebsschluss. Der Inhaber sieht es auf der Übersicht."
+HOURS_HELD = "Gilt sofort. Der Inhaber sieht es auf der Übersicht."
+HOURS_WAIT = "Wartet auf den Inhaber: die Karte steht auf der Übersicht."
+NO_DATE = "Bitte einen Tag wählen."
+NO_TIME = "Bitte Beginn und Ende als Uhrzeit angeben."
+# The buttons of a check card -> keep or undo (`domain/status/staff_changes.py`).
+CHECK_ANSWERS = {"uebernehmen": True, "zuruecknehmen": False}
+
+
+def _hours_text(data: dict) -> str:
+    hours = staff.DayHours.of(data)
+    if hours.closed:
+        return "geschlossen"
+    if hours.opens is not None and hours.closes is not None:
+        return f"{hours.opens:%H:%M} bis {hours.closes:%H:%M} Uhr"
+    if hours.like_weekday is not None:
+        return f"wie {WEEKDAYS[hours.like_weekday]}"
+    return "normale Zeiten der Woche"
+
+
+def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
+    """The staff changes the owner has not decided, from today on, by date."""
+    rows = []
+    for card in staff.open_cards(
+        session, tenant.id, business_day(tz_name=tenant.timezone)
+    ):
+        if card.kind == staff.TEAM_PHONE:
+            title, keep = "Teamnummer heute", "Als Standard übernehmen"
+            before, after = card.before["number"], card.after["number"]
+            holding = after
+        else:
+            title = f"Öffnungszeit {WEEKDAYS[card.day.weekday()]}, {card.day:%d.%m.}"
+            keep = "Übernehmen"
+            before, after = _hours_text(card.before), _hours_text(card.after)
+            holding = _hours_text(
+                staff.day_hours(session, tenant.id, card.day).as_dict()
+            )
+        rows.append(
+            {
+                "id": card.id,
+                "title": title,
+                "keep": keep,
+                "before": before,
+                "after": after,
+                "now": holding,
+                "waiting": not card.held,
+            }
+        )
+    return rows
+
+
+def _checks_fragment(request: Request, session: Session) -> HTMLResponse:
+    tenant = _tenant(session)
+    if tenant is None:
+        return templates.TemplateResponse(
+            request, "fragments/pruefen.html", {"checks_problem": NO_TENANT}, 503
+        )
+    return templates.TemplateResponse(
+        request, "fragments/pruefen.html", {"checks": _check_rows(session, tenant)}
+    )
+
+
+@router.get("/fragments/pruefen", response_class=HTMLResponse, include_in_schema=False)
+def checks_fragment(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    """Only the check cards: the page fetches them after each event."""
+    return _checks_fragment(request, session)
+
+
+@router.post(
+    "/pruefen/{card_id}/{choice}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx), Depends(require_admin)],
+)
+def check_answer(
+    request: Request,
+    card_id: uuid.UUID,
+    choice: str,
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The owner's answer, behind the admin PIN. A card another tablet
+    decided first is no error: the fresh list is the answer."""
+    if choice not in CHECK_ANSWERS:
+        raise HTTPException(status_code=404)
+    tenant = _tenant(session)
+    if tenant is not None:
+        try:
+            staff.decide(session, tenant.id, card_id, keep=CHECK_ANSWERS[choice])
+        except AppError as exc:
+            session.rollback()
+            logger.info("Check card not decided: %s", exc.message)
+    return _checks_fragment(request, session)
+
+
+def _phone_sheet(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    message: str | None = None,
+    tone: str = "danger",
+    status: int = 200,
+) -> HTMLResponse:
+    config = session.get_one(ServiceConfig, tenant.id, populate_existing=True)
+    holding = staff.team_phone_at(config, clock.utcnow())
+    return templates.TemplateResponse(
+        request,
+        "fragments/teamnummer.html",
+        {
+            "holding": holding,
+            "standard": config.team_phone,
+            "choices": [n for n in staff.dialable_numbers() if n != holding],
+            "message": message,
+            "tone": tone,
+        },
+        status,
+    )
+
+
+@router.get("/einstellungen", response_class=HTMLResponse, include_in_schema=False)
+def settings_sheet(request: Request) -> HTMLResponse:
+    """One header button for the staff's settings, so the bar keeps its rows."""
+    return templates.TemplateResponse(request, "fragments/einstellungen.html", {})
+
+
+@router.get("/teamnummer", response_class=HTMLResponse, include_in_schema=False)
+def team_phone_sheet(
+    request: Request, session: Session = Depends(get_db)
+) -> HTMLResponse:
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    return _phone_sheet(request, session, tenant)
+
+
+@router.post(
+    "/teamnummer",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def team_phone_change(
+    request: Request,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Staff, no PIN: today's number, with a check card for the owner."""
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    try:
+        card = staff.change_team_phone(session, tenant.id, form.get("nummer", ""))
+    except AppError as exc:
+        session.rollback()
+        return _phone_sheet(
+            request, session, tenant, exc.say or SWITCH_FAILED, status=409
+        )
+    message = PHONE_HELD if card is not None else NO_CHANGE
+    return _phone_sheet(request, session, tenant, message, "ok")
+
+
+def _hours_sheet(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    day: date | None = None,
+    message: str | None = None,
+    tone: str = "danger",
+    status: int = 200,
+) -> HTMLResponse:
+    today = business_day(tz_name=tenant.timezone)
+    day = day if day is not None and day >= today else today
+    holding = staff.day_hours(session, tenant.id, day)
+    choice = (
+        "geschlossen"
+        if holding.closed
+        else "zeiten"
+        if holding.opens is not None
+        else "normal"
+    )
+    return templates.TemplateResponse(
+        request,
+        "fragments/tageszeiten.html",
+        {
+            "day": day.isoformat(),
+            "today": today.isoformat(),
+            "holding": _hours_text(holding.as_dict()),
+            "choice": choice,
+            "opens": f"{holding.opens:%H:%M}" if holding.opens else "",
+            "closes": f"{holding.closes:%H:%M}" if holding.closes else "",
+            "message": message,
+            "tone": tone,
+        },
+        status,
+    )
+
+
+def _typed_day(text: str) -> date | None:
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return None
+
+
+@router.get("/tageszeiten", response_class=HTMLResponse, include_in_schema=False)
+def day_hours_sheet(
+    request: Request, datum: str = "", session: Session = Depends(get_db)
+) -> HTMLResponse:
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    return _hours_sheet(request, session, tenant, _typed_day(datum))
+
+
+@router.post(
+    "/tageszeiten",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def day_hours_change(
+    request: Request,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Staff, no PIN: a date's hours; longer ones for a later date wait."""
+    tenant = _tenant(session)
+    if tenant is None:
+        raise HTTPException(status_code=503)
+    day = _typed_day(form.get("datum", ""))
+    choice = form.get("art", "")
+    if day is None or choice not in ("geschlossen", "zeiten", "normal"):
+        return _hours_sheet(request, session, tenant, day, NO_DATE, status=422)
+    hours = staff.DayHours(closed=choice == "geschlossen")
+    if choice == "zeiten":
+        try:
+            opens = dt_time.fromisoformat(form.get("von", ""))
+            closes = dt_time.fromisoformat(form.get("bis", ""))
+        except ValueError:
+            return _hours_sheet(request, session, tenant, day, NO_TIME, status=422)
+        hours = staff.DayHours(opens=opens, closes=closes)
+    try:
+        card = staff.change_day_hours(session, tenant.id, day, hours)
+    except AppError as exc:
+        session.rollback()
+        return _hours_sheet(
+            request, session, tenant, day, exc.say or SWITCH_FAILED, status=409
+        )
+    if card is None:
+        return _hours_sheet(request, session, tenant, day, NO_CHANGE, "ok")
+    message = HOURS_HELD if card.held else HOURS_WAIT
+    return _hours_sheet(request, session, tenant, day, message, "ok")
 
 
 # --- The owner's device list (#570 part b, D34 point 6) ---------------------------

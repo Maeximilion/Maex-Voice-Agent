@@ -77,6 +77,12 @@
     });
   }
 
+  function reloadChecks() {
+    window.htmx.ajax("GET", "/gui/fragments/pruefen", {
+      target: "#pruefen-liste",
+    });
+  }
+
   function reloadPrices() {
     window.htmx.ajax("GET", "/gui/fragments/preise", {
       target: "#preise-liste",
@@ -231,7 +237,8 @@
   var waitBox = document.getElementById("wartezeit");
   var entryBox = document.getElementById("reservierung");
   var historyBox = document.getElementById("rueckruf-verlauf");
-  var sheets = [correctionBox, dishBox, noticeBox, waitBox, entryBox, historyBox].filter(Boolean);
+  var settingsBox = document.getElementById("einstellungen");
+  var sheets = [correctionBox, dishBox, noticeBox, waitBox, entryBox, historyBox, settingsBox].filter(Boolean);
   var board = document.querySelector(".board");
   var opener = null;
   var idleTimer = null;
@@ -579,6 +586,12 @@
   strom.addEventListener("prices", function () {
     offline(false);
     reloadPrices();
+  });
+  // The staff changed a team number or a date's hours, or the owner decided
+  // a card on another tablet (#570 b).
+  strom.addEventListener("checks", function () {
+    offline(false);
+    reloadChecks();
   });
   strom.addEventListener("today", function () {
     offline(false);

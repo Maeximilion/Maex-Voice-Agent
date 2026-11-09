@@ -40,7 +40,8 @@ Eine Zeile je Mandant. Der Live-Schalter des Betriebs.
 | delivery_wait_standard_minutes | INT, default 60 | standard wait for delivery; a restart keeps it (T-3.14) |
 | pickup_wait_today_minutes, delivery_wait_today_minutes | INT, NULL | today's wait, set by the stepper or the typed field; read only through `domain/status/waits.py` |
 | pickup_wait_today_until, delivery_wait_today_until | TIMESTAMPTZ, NULL | when today's wait ends, the end of the business day; past it the standard holds and nothing has to run; a check keeps value and end together |
-| team_phone | TEXT | Durchwahl für `transfer_to_team` |
+| team_phone | TEXT | Durchwahl für `transfer_to_team`, the standard |
+| team_phone_today / team_phone_today_until | TEXT / TIMESTAMPTZ, NULL | a number the staff set for today and the end of the business day it holds to (#570 b, migration 033); a check keeps both together; read only through `domain/status/staff_changes.py` `team_phone_at` |
 | max_call_seconds | INT | Kostenbremse, Default 420. The phone line reads it with the routing at the start of every call, the text phone, the dev phone and the evals when their session starts, and each ends the call by it (`domain/calls/routing.py`, `telephony/handler.py`, `sim/session.py`); a change applies from the next call. The setting `MAX_CALL_SECONDS` is only what the seed writes here. Also how long a reservation draft holds its seats without a confirmation (`domain/reservations/capacity.py`) |
 | reservation_lead_minutes | INT ≥ 0 | frühester Reservierungsbeginn nach Öffnung eines Service, Default 15 (D12, Migration 005) |
 | reservation_last_start_minutes | INT ≥ 0 | spätester Reservierungsbeginn vor Schluss eines Service, Default 30 (D12, Migration 005) |
@@ -292,6 +293,20 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | action | TEXT | `order.confirm`, `config.update`, … |
 | entity / entity_id | TEXT / UUID | |
 | payload | JSONB | vorher/nachher bei Änderungen |
+
+### `staff_changes`
+A change the staff made without the owner's PIN, shown as a check card until the owner decides (#570 b, D34 point 4, migration 033).
+| Feld | Typ | Bemerkung |
+|---|---|---|
+| id | UUID PK | |
+| tenant_id | UUID FK | |
+| kind | TEXT CHECK | `team_phone` / `day_hours` |
+| day | DATE | the date whose hours changed, or the business day a team number holds for; a card of a past day is not shown |
+| before / after | JSONB | what held before the staff came, and what they asked for last |
+| held | BOOL | whether `after` holds; longer or extra hours for a later date wait for the owner |
+| status | TEXT CHECK, default `open` | `open` / `kept` / `undone`; one open card per tenant, kind and day (partial unique index) |
+| decided_at | TIMESTAMPTZ NULL | |
+| created_at / updated_at | TIMESTAMPTZ | |
 
 ### `gui_accounts`
 The restaurant's login to the operations view (#570, D34): one row per tenant, migration 030.
@@ -604,4 +619,5 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 030 | `gui_accounts`, `gui_sessions`, `gui_setup_links`, `gui_devices`, `gui_login_failures`: the restaurant's login to the operations view (#570, D34); new tables only; the downgrade drops them, which signs out every device and needs a new setup link |
 | 031 | `gui_accounts.team_pin` readable (CHECK 4 to 6 digits) instead of `team_pin_hash`: the operator sees and sets the team PIN (Maxi 09.11.2026); a hash cannot become the PIN, so the upgrade empties every team PIN and the operator sets it again (`gui_access pin --set`), and the downgrade drops them the same way |
 | 032 | `gui_accounts.admin_pin` readable (CHECK 4 to 6 digits, never the team PIN) with `admin_failures`, `admin_last_failed_at`, `admin_blocked_until`, and `gui_sessions.admin_until`: the owner's admin PIN (#570 part b, D34 points 3 and 8); new columns only; the downgrade drops them, so every admin PIN is gone (backup first) |
+| 033 | `service_config.team_phone_today` and `team_phone_today_until` (CHECK both or neither), `staff_changes` with a partial unique index on open cards: staff changes and their check cards (#570 b, D34 point 4); new columns and a new table; the downgrade drops them, a staff number for today and every card are gone, hours written stay (backup first) |
 | planned, next free number | `eval_cases`, `eval_runs` |

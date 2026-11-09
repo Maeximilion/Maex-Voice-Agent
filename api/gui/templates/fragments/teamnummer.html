@@ -1,0 +1,25 @@
+{# The team number for today (#570 part b, D34 point 4): the staff pick one of
+   the numbers the telephone system dials (TEAM_PHONE and TRANSFER_TARGETS,
+   T-10.13), without the owner's PIN. It holds to the end of the business day
+   and shows a check card until the owner keeps it as the standard or undoes it. #}
+<section class="sheet teamnummer" role="dialog" aria-labelledby="teamnummer-titel">
+  <div class="sheet-head">
+    <h2 id="teamnummer-titel" tabindex="-1">Teamnummer</h2>
+    <button type="button" class="schliessen" data-schliessen>Schließen</button>
+  </div>
+  <div class="sheet-tools">
+    <p>Hierhin gibt die KI Anrufe weiter. Gilt jetzt: <b>{{ holding }}</b></p>
+    <p class="muted">Standard: {{ standard }}. Eine Änderung gilt bis Betriebsschluss, dann wieder der Standard, außer der Inhaber übernimmt sie.</p>
+  </div>
+  <div class="sheet-body">
+    {% for number in choices %}
+    <button class="primary" hx-post="/gui/teamnummer" hx-vals='{"nummer": "{{ number }}"}'
+            hx-target="#einstellungen" hx-swap="innerHTML">Heute: {{ number }}</button>
+    {% else %}
+    <p>Keine andere Nummer möglich. Weitere Nummern gibt der Betreiber frei.</p>
+    {% endfor %}
+    <div class="sheet-foot">
+      {% if message %}<span class="badge {{ tone }}" role="status">{{ message }}</span>{% endif %}
+    </div>
+  </div>
+</section>

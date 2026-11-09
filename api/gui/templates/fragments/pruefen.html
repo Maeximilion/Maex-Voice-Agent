@@ -1,0 +1,27 @@
+{# Check cards of staff changes (#570 part b, D34 point 4, docs/06 §4): a team
+   number or a date's hours the staff changed without the owner's PIN. Each
+   card stays until the owner keeps or undoes it; both buttons ask the admin PIN
+   first (`require_admin`). Replaced as a whole; empty when nothing is open. #}
+{% if checks_problem %}
+<p class="empty">{{ checks_problem }}</p>
+{% elif checks %}
+<ul class="cards">
+  {% for c in checks %}
+  <li class="card check" data-id="{{ c.id }}">
+    <div class="res-head">
+      <b>{{ c.title }}</b>
+      {% if c.waiting %}<span class="badge warn">Wartet auf den Inhaber</span>{% else %}<span class="badge">Vom Team geändert</span>{% endif %}
+    </div>
+    <p>Vorher: {{ c.before }}</p>
+    <p>{% if c.waiting %}Beantragt{% else %}Jetzt{% endif %}: <b>{{ c.after }}</b></p>
+    {% if c.waiting and c.now != c.before %}<p class="muted">Gilt bis dahin: {{ c.now }}</p>{% endif %}
+    <div class="cb-actions">
+      <button class="primary" hx-post="/gui/pruefen/{{ c.id }}/uebernehmen"
+              hx-target="#pruefen-liste" hx-swap="innerHTML">{{ c.keep }}</button>
+      <button hx-post="/gui/pruefen/{{ c.id }}/zuruecknehmen"
+              hx-target="#pruefen-liste" hx-swap="innerHTML">Zurücknehmen</button>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

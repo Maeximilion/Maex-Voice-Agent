@@ -30,6 +30,8 @@ x-settings: &settings
   TENANT_NAME:
   TENANT_TIMEZONE:
   TEAM_PHONE:
+  # The dialplan's other transfer numbers; the api offers them to the staff (#570 b).
+  TRANSFER_TARGETS:
   MAX_CALL_SECONDS:
   PRIVACY_NOTICE_ADDRESS:
   N8N_WEBHOOK_URL:

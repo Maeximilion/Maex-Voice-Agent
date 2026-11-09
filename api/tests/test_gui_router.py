@@ -1169,3 +1169,21 @@ def test_eine_unbekannte_antwort_ist_404_und_ein_alter_vorschlag_kein_fehler(
 
     assert unknown.status_code == 200
     assert "Allerheiligen" in unknown.text
+
+
+def test_every_sheet_container_of_the_board_closes_by_button_and_escape():
+    """Codex on #589: a container missing from app.js's `sheets` list keeps its
+    sheet open, since "Schließen" and Escape only reach the listed ones."""
+    import re
+
+    gui = Path(__file__).parents[1] / "gui"
+    page = (gui / "templates/betrieb/index.html").read_text(encoding="utf-8")
+    script = (gui / "static/app.js").read_text(encoding="utf-8")
+    containers = re.findall(r'^<div id="([a-z-]+)"></div>$', page, re.MULTILINE)
+    listed = re.search(r"var sheets = \[([^\]]*)\]", script).group(1)
+    names = dict(
+        re.findall(r'var (\w+) = document.getElementById\("([a-z-]+)"\)', script)
+    )
+    registered = {names[var.strip()] for var in listed.split(",")}
+    assert "einstellungen" in containers
+    assert set(containers) <= registered

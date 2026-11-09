@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import NotFound
 from api.core.time import to_local, utcnow
 from api.domain.status.mode import mode_at
+from api.domain.status.staff_changes import team_phone_at
 from api.models import CallLimitWindow, ServiceConfig, Tenant
 
 # `shadow`: the team takes every call, the agent only listens later (stage 4).
@@ -78,7 +79,8 @@ def call_routing(
             if ai_answers
             else config.max_concurrent_calls
         ),
-        team_phone=config.team_phone,
+        # Today's number while the staff's change holds (#570 b).
+        team_phone=team_phone_at(config, now),
         tenant_name=tenant.name,
         max_call_seconds=config.max_call_seconds,
         turn_deadline_seconds=config.turn_deadline_seconds,

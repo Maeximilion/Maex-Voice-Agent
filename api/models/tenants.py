@@ -16,6 +16,7 @@ from sqlalchemy import (
     Time,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.models.base import Base, TenantScoped, Timestamps, UUIDPrimaryKey
@@ -31,6 +32,10 @@ SERVICES = ("dinein", "pickup", "delivery")
 # `suggested`; the team's answer on the tablet turns it into `set`, or into
 # `dismissed`, which keeps the job from suggesting that date again (T-9.5).
 SPECIAL_DAY_STATUSES = ("set", "suggested", "dismissed")
+# What the staff change without the owner's PIN, and how the owner decided
+# (#570 part b, D34 point 4, `domain/status/staff_changes.py`).
+STAFF_CHANGE_KINDS = ("team_phone", "day_hours")
+STAFF_CHANGE_STATUSES = ("open", "kept", "undone")
 # German states by their ISO 3166-2 code without "DE-" (T-9.5, migration 015).
 HOLIDAY_REGIONS = (
     *("BB", "BE", "BW", "BY", "HB", "HE", "HH", "MV"),
@@ -105,6 +110,10 @@ class ServiceConfig(Timestamps, Base):
             r"privacy_notice_address ~ '\S'",
             name="ck_service_config_privacy_notice_address",
         ),
+        CheckConstraint(
+            "(team_phone_today IS NULL) = (team_phone_today_until IS NULL)",
+            name="ck_service_config_team_phone_today",
+        ),
         _in("holiday_region", HOLIDAY_REGIONS, "ck_service_config_holiday_region"),
     )
 
@@ -139,6 +148,13 @@ class ServiceConfig(Timestamps, Base):
         DateTime(timezone=True)
     )
     team_phone: Mapped[str] = mapped_column(Text, nullable=False)
+    # A team number the staff set for today (#570 b, D34 point 4): it holds to
+    # the end of the business day, then `team_phone` again, unless the owner
+    # keeps it. Read through `domain/status/staff_changes.py` (migration 033).
+    team_phone_today: Mapped[str | None] = mapped_column(Text)
+    team_phone_today_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
     max_call_seconds: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="420"
     )
@@ -343,3 +359,35 @@ class Capacity(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     notice_minutes: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0"
     )
+
+
+class StaffChange(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
+    """A change the staff made without the owner's PIN, as a check card on the
+    board until the owner keeps or undoes it (#570 b, D34 point 4, migration
+    033). One open card per kind and day: a second change of the same thing
+    moves its `after` and keeps the `before` of the first."""
+
+    __tablename__ = "staff_changes"
+    __table_args__ = (
+        _in("kind", STAFF_CHANGE_KINDS, "ck_staff_changes_kind"),
+        _in("status", STAFF_CHANGE_STATUSES, "ck_staff_changes_status"),
+        Index(
+            "uq_staff_changes_open",
+            "tenant_id",
+            "kind",
+            "day",
+            unique=True,
+            postgresql_where=text("status = 'open'"),
+        ),
+    )
+
+    kind: Mapped[str] = mapped_column(Text, nullable=False)
+    # The date whose hours changed, or the business day a team number holds for.
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    # What held before the staff touched it, and what they asked for last.
+    before: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    after: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    # Whether `after` holds; longer hours for a later date wait for the owner.
+    held: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="open")
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
