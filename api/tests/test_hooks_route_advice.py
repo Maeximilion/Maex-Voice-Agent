@@ -844,3 +844,49 @@ def test_hard_rule_work_next_to_sonnet_work_keeps_xhigh(run):
     # Writing findings is the review itself, not a fix of existing feedback.
     out = run("Write review findings on migration", sid="write")
     assert "effort xhigh" in message(out)
+
+
+HANDOVER = """Check Model and Effort if it is right for the handover:
+
+## Handover 09.11.2026 - T-3.5
+
+Status: the callback list is merged; migrate the dispatcher next. Escalation unchanged.
+Open: seed script for the usability test.
+"""
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        HANDOVER,
+        "<pasted_content>\n" + HANDOVER + "</pasted_content>",
+        "create an issue for the hook, then work on /task 3.5 in a fresh session "
+        "with a handover",
+        "Fix the migration downgrade for T-6.3 before the release",
+        "Is Sonnet medium the right model and effort for this?",
+        "Which model fits the gate review",
+        "warum ist das effort so hoch?",
+    ],
+)
+def test_prompts_without_a_task_of_their_own_get_no_advice(run, prompt):
+    # Issue #578: state text, task ids and routing questions are no task to classify.
+    assert run(prompt, "claude-sonnet-5-5", "medium") is None
+
+
+def test_a_routing_question_that_asks_for_work_is_still_routed(run):
+    out = run("Which model? Fix the migration downgrade first")
+    assert "effort xhigh" in message(out)
+    out = run("Why does the model router fail in the hooks?", sid="router")
+    assert "claude-opus-5-5 at effort high" in message(out)
+    out = run(
+        "Does the data model in docs/03 cover allergens?", sid="data", effort="high"
+    )
+    assert "claude-sonnet-5-5 at effort medium" in message(out)
+
+
+def test_the_default_needs_a_prompt_that_asks_for_work(run):
+    assert run("the session from yesterday looked fine to me") is None
+    out = run("Review the diff of the last pull request", sid="review")
+    assert "claude-opus-5-5 at effort high" in message(out)
+    out = run("Please work on issue 578 now", sid="work")
+    assert "claude-opus-5-5 at effort high" in message(out)
