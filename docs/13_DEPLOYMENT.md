@@ -315,3 +315,58 @@ for every Dependabot pull request, and new languages added by hand.
 | Test-Mandant | ja | ja, für Rauchtests nach Deploy |
 | Telephone access | test number via the pilot's router (docs/20 §3) | real number |
 | Löschjob | an (since T-11.2: the test calls of the workbench carry real caller numbers too) | an |
+
+---
+
+## 8. Several customers (D32, #568)
+
+**Decided 09.11.2026 (Maxi): one Docker stack and one database per customer.** One Caddy on the
+host terminates TLS for every customer's host name and forwards to that customer's stack; each
+stack keeps its own `db`, `api`, `dispatcher`, `voice`, `asterisk`, `n8n` and `push`, its own
+`.env` with its own tokens, and its own Compose project name. The schema keeps `tenant_id` on
+every table, so a later move to one shared stack stays possible.
+
+### Why: the code serves one tenant per stack (checked 09.11.2026)
+
+| Place | How the tenant is chosen today |
+|---|---|
+| GUI, every route | `_tenant()` in `api/gui/router.py`: the oldest tenant by `created_at` |
+| Voice, every call | `api/telephony/app.py`: `tenant_named(TENANT_NAME)` once at startup, one handler per tenant; the Asterisk dialplan sends any dialed number to the same context |
+| Print bridge, kitchen API | one `KITCHEN_BRIDGE_TOKEN`, bound to `KITCHEN_BRIDGE_TENANT_ID` |
+| n8n | one `N8N_WEBHOOK_URL`; the workflow export has no tenant handling |
+| Scripts (`seed`, `import_menu`, `seed_zones`, `price_check`, `data_requests`) | by tenant name, which is not unique (`tenants.name`) |
+| Tokens (`AGENT_API_TOKEN`, `GUI_PROXY_SECRET`, `VOICE_MEDIA_TOKEN`, `MONITOR_PUSH_TOKEN`) | one per stack |
+| Uniques | `orders.idempotency_key` and `reservations.idempotency_key` are unique across all tenants |
+
+Jobs (`monitor`, `daily_report`, `retention`, `holidays`) and the outbox dispatcher already loop
+over all tenants, and the agent tools take `tenant_id` from the call state, not from the model.
+
+### Numbers
+
+| | One stack per customer | All customers in one stack |
+|---|---|---|
+| App changes before customer 2 | none (deploy tooling only) | every row of the table above that picks one tenant |
+| Memory per customer | about 0.65 GB idle measured for api, dispatcher, n8n, push and db (09.11.2026, `docker stats`, workbench); voice and Asterisk not measured, so about 1 GB assumed | shared, a few hundred MB per customer |
+| Server cost per customer | about 3 EUR a month (VPS of D3: 8 GB, about 17 EUR, roughly 6 stacks) | below 1 EUR |
+| Speech, model and line | 45 to 85 EUR a month (docs/20 §9), the same either way | same |
+| Blast radius of a bug or a bad migration | one customer | every customer; a missing `tenant_id` filter shows one customer's data to another |
+| Backup, restore, offboarding (#576) | per stack: one dump, one volume to delete | one customer out of a shared dump, delete by `tenant_id` across all tables |
+| Upgrades | N stacks, each migrated in turn (needs a loop script) | one |
+
+The server difference is a few euros a month per customer against a per-customer line of 45 to 85
+EUR; isolation and the unchanged code decide it.
+
+### What this means for the other issues of #567
+
+- #573 provisioning creates a stack (folder, `.env` with fresh tokens, Compose project, Caddy
+  site, database seed) plus the tenant row inside it, not a second tenant in a shared database.
+- #570 logins are per stack; the GUI's tenant choice may stay as it is.
+- #571 operator dashboard reads several stacks, so it needs a read path per stack (to be designed
+  in #569).
+- #576 offboarding is export, then removal of the stack and its volumes.
+
+### Reassess
+
+With numbers again when the stacks no longer fit one server (memory above about 80 % of the VPS)
+or an upgrade across all stacks takes longer than one evening. Measure voice and Asterisk memory
+during the first real calls and correct the figure above.
