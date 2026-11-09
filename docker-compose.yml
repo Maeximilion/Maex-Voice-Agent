@@ -376,9 +376,11 @@ services:
       - ./n8n:/workflows
     <<: *hardened
     # It writes its database and key into the volume and its compiled
-    # assets into ~/.cache, which it creates at every start.
+    # assets into ~/.cache, which it creates at every start. The cache is
+    # owned by `node` (uid 1000): a plain tmpfs comes back owned by root when
+    # the same container restarts, and n8n then exits with EACCES in a loop (#590).
     read_only: true
-    tmpfs: [/tmp, /home/node/.cache]
+    tmpfs: [/tmp, "/home/node/.cache:uid=1000,gid=1000"]
 
   push:
     # Push server for team notifications (D13, n8n/README.md): the n8n workflow
