@@ -9,7 +9,7 @@ themselves live in `domain/access/`.
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 
 from api.core import time as clock
@@ -63,7 +63,7 @@ def _device(request: Request) -> str:
 
 
 @router.get("/anmelden", response_class=HTMLResponse, include_in_schema=False)
-def sign_in_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def sign_in_page(request: Request, db: Session = Depends(get_db)) -> Response:
     if resolve(db, session_token(request), stack_tenant_id(db), clock.utcnow()):
         return RedirectResponse(BOARD, status_code=303)
     return _page_response(request, "zugang/anmelden.html", {})
@@ -74,7 +74,7 @@ def sign_in_post(
     request: Request,
     form: dict[str, str] = Depends(_form),
     db: Session = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     _checked(request, form)
     tenant_id = stack_tenant_id(db)
     if tenant_id is None:
@@ -105,7 +105,7 @@ def sign_in_post(
 
 
 @router.get("/einrichten", response_class=HTMLResponse, include_in_schema=False)
-def setup_page(request: Request) -> HTMLResponse:
+def setup_page(request: Request) -> Response:
     """The code is in the link's fragment (`#...`), which the browser never
     sends: no access log and no proxy sees it. base.js puts it in the form."""
     return _page_response(request, "zugang/einrichten.html", {"code": ""})
@@ -116,7 +116,7 @@ def setup_post(
     request: Request,
     form: dict[str, str] = Depends(_form),
     db: Session = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     _checked(request, form)
     code = form.get("code", "")
     again = {"code": code}
@@ -142,7 +142,7 @@ def setup_post(
 
 
 @router.get("/entsperren", response_class=HTMLResponse, include_in_schema=False)
-def unlock_page(request: Request, db: Session = Depends(get_db)) -> HTMLResponse:
+def unlock_page(request: Request, db: Session = Depends(get_db)) -> Response:
     access = resolve(db, session_token(request), stack_tenant_id(db), clock.utcnow())
     if access is None:
         return RedirectResponse(LOGIN, status_code=303)
@@ -156,7 +156,7 @@ def unlock_post(
     request: Request,
     form: dict[str, str] = Depends(_form),
     db: Session = Depends(get_db),
-) -> HTMLResponse:
+) -> Response:
     _checked(request, form)
     now = clock.utcnow()
     access = resolve(db, session_token(request), stack_tenant_id(db), now)

@@ -64,9 +64,9 @@ def client(engine):
 
 def _setup(engine) -> str:
     with Session(engine) as session:
-        code, _ = issue_link(
-            session, stack_tenant_id(session), "operator:test", clock.utcnow()
-        )
+        tenant_id = stack_tenant_id(session)
+        assert tenant_id is not None
+        code, _ = issue_link(session, tenant_id, "operator:test", clock.utcnow())
     return code
 
 

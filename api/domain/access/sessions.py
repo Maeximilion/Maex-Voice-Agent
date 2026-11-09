@@ -16,8 +16,9 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import cast
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -179,13 +180,17 @@ def resolve(
 
 def mark_active(session: Session, session_id: uuid.UUID, now: datetime) -> None:
     """A change on an unlocked device: the 15 minutes start again."""
-    result = session.execute(
-        update(GuiSession)
-        .where(
-            GuiSession.id == session_id,
-            GuiSession.last_active_at <= now - TOUCH_EVERY,
-        )
-        .values(last_active_at=now)
+    # An UPDATE answers a CursorResult, the one that carries rowcount.
+    result = cast(
+        CursorResult,
+        session.execute(
+            update(GuiSession)
+            .where(
+                GuiSession.id == session_id,
+                GuiSession.last_active_at <= now - TOUCH_EVERY,
+            )
+            .values(last_active_at=now)
+        ),
     )
     if result.rowcount:
         session.commit()
@@ -213,10 +218,13 @@ def unlock(
     session.commit()
 
     if verify_secret(pin, stored):
-        result = session.execute(
-            update(GuiSession)
-            .where(GuiSession.id == session_id)
-            .values(pin_failures=0, last_active_at=now)
+        result = cast(
+            CursorResult,
+            session.execute(
+                update(GuiSession)
+                .where(GuiSession.id == session_id)
+                .values(pin_failures=0, last_active_at=now)
+            ),
         )
         session.commit()
         # Ended meanwhile by a fifth wrong PIN in parallel: stays signed out.
