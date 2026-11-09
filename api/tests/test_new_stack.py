@@ -217,3 +217,50 @@ def test_a_rerun_with_another_domain_is_refused_before_anything_starts(tmp_path)
     argv = [str(CUSTOMER), "--domain", "b.example.org", "--root", str(tmp_path)]
     assert new_stack.main(argv) == 2
     assert not (tmp_path / "caddy").exists()
+
+
+def _fake_hashes(passwords: list[str]) -> list[str]:
+    return [f"$2a$10${index:053d}" for index, _ in enumerate(passwords)]
+
+
+def test_the_push_server_gets_every_user_its_start_command_asks_for():
+    values, sign_in = new_stack.push_env(_fake_hashes)
+    users = [entry.split(":")[0] for entry in values["NTFY_AUTH_USERS"].split(",")]
+    assert users == ["team", "owner", "ops", "n8n", "monitor"]
+    # docker-compose.yml `push` grants owner, ops and monitor only when listed.
+    command = _services(_load(REPO_ROOT / "docker-compose.yml"))["push"]["command"][0]
+    for user in ("owner", "monitor", "ops"):
+        assert f"*,{user}:*" in command
+    tokens = dict(
+        entry.split(":")[:2] for entry in values["NTFY_AUTH_TOKENS"].split(",")
+    )
+    assert set(tokens) == {"n8n", "monitor"}
+    assert values["MONITOR_PUSH_TOKEN"] == tokens["monitor"]
+    assert all(
+        len(token) == 32 and token.startswith("tk_") for token in tokens.values()
+    )
+    # People sign in; the passwords of n8n and monitor stay unknown to everyone.
+    assert set(sign_in) == {"team", "owner", "ops"}
+    assert len(set(sign_in.values())) == 3
+
+
+def test_push_tokens_and_passwords_differ_between_stacks():
+    first, first_sign_in = new_stack.push_env(_fake_hashes)
+    second, second_sign_in = new_stack.push_env(_fake_hashes)
+    assert first["NTFY_AUTH_TOKENS"] != second["NTFY_AUTH_TOKENS"]
+    assert not set(first_sign_in.values()) & set(second_sign_in.values())
+
+
+def test_a_failed_hashing_stops_before_anything_is_written():
+    with pytest.raises(new_stack.Refused, match="hashing"):
+        new_stack.push_env(lambda passwords: ["$2a$10$x"])
+    with pytest.raises(new_stack.Refused, match="hashing"):
+        new_stack.push_env(lambda passwords: ["plain"] * len(passwords))
+
+
+def test_push_values_survive_the_env_round_trip(tmp_path):
+    values, _ = new_stack.push_env(_fake_hashes)
+    path = tmp_path / ".env"
+    path.write_text(new_stack.env_text(EXAMPLE, values))
+    read = new_stack.read_env(path)
+    assert {name: read[name] for name in values} == values

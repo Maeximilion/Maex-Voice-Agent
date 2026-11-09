@@ -34,6 +34,7 @@ import json
 import os
 import re
 import secrets
+import string
 import subprocess
 import sys
 from pathlib import Path
@@ -70,6 +71,42 @@ class BadInput(Refused):
 
 def project(key: str) -> str:
     return f"maex-{key}"
+
+
+# The push server's users (docker-compose.yml `push`): people sign in with the
+# first three, n8n and the dispatcher with their tokens.
+PUSH_USERS = ("team", "owner", "ops", "n8n", "monitor")
+PUSH_SIGN_IN = ("team", "owner", "ops")
+# Reads one password per line and prints its bcrypt hash, inside the stack's own
+# pinned push image: no password on a command line, no hash library on the host.
+HASH_SCRIPT = 'while read -r p; do printf "%s\\n%s\\n" "$p" "$p" | ntfy user hash; done'
+
+
+def push_token() -> str:
+    """An access token in ntfy's own form: tk_ and 29 lower-case letters or digits."""
+    alphabet = string.ascii_lowercase + string.digits
+    return "tk_" + "".join(secrets.choice(alphabet) for _ in range(29))
+
+
+def push_env(hash_passwords) -> tuple[dict[str, str], dict[str, str]]:
+    """The push server's users and tokens for .env, and the passwords of the
+    users people sign in with, to print once (only their hashes are kept)."""
+    passwords = {user: secrets.token_hex(16) for user in PUSH_USERS}
+    hashes = hash_passwords(list(passwords.values()))
+    if len(hashes) != len(PUSH_USERS) or not all(h.startswith("$2") for h in hashes):
+        raise Refused("hashing the push server's passwords failed")
+    tokens = {user: push_token() for user in ("n8n", "monitor")}
+    values = {
+        "NTFY_AUTH_USERS": ",".join(
+            f"{user}:{hashed}:user"
+            for user, hashed in zip(PUSH_USERS, hashes, strict=True)
+        ),
+        "NTFY_AUTH_TOKENS": (
+            f"n8n:{tokens['n8n']}:n8n workflow,monitor:{tokens['monitor']}:monitor"
+        ),
+        "MONITOR_PUSH_TOKEN": tokens["monitor"],
+    }
+    return values, {user: passwords[user] for user in PUSH_SIGN_IN}
 
 
 def fresh_env(spec: dict, domain: str) -> dict[str, str]:
@@ -321,6 +358,25 @@ def create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
         raise BadInput(
             f"{env_path} serves {env.get('AGENT_DOMAIN')}, not agent.{domain}"
         )
+    sign_in: dict[str, str] = {}
+    if not env.get("NTFY_AUTH_USERS"):
+
+        def hash_passwords(passwords: list[str]) -> list[str]:
+            hashed = run(
+                [
+                    *("docker", "compose", "run", "--rm", "-T", "--no-deps"),
+                    *("--entrypoint", "sh", "push", "-c", HASH_SCRIPT),
+                ],
+                stack,
+                input="\n".join(passwords) + "\n",
+                stdout=subprocess.PIPE,
+            ).stdout
+            return [word for word in hashed.split() if word.startswith("$2")]
+
+        push, sign_in = push_env(hash_passwords)
+        current = env_path.read_text(encoding="utf-8")
+        write_private(env_path, env_text(current, push), 0o600)
+        print(f"wrote {env_path}: " + ", ".join(push), file=sys.stderr)
     # Checked before anything starts: a refused site leaves no stack behind.
     caddyfile = (stack / "deploy" / "Caddyfile").read_text(encoding="utf-8")
     sites = {**others, key: site_text(caddyfile, key, env)}
@@ -362,6 +418,9 @@ def create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     print(f"Stack {project(key)} runs, tenant {report['tenant_id']}.")
     if report.get("setup_link"):
         print(f"First login, once: {report['setup_link']}")
+    for user, password in sign_in.items():
+        # Shown once like the setup link; .env keeps only the hash.
+        print(f"Push server user {user}, password once: {password}")
     for gap in report.get("missing", []):
         print(f"still missing: {gap}")
 
