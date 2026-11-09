@@ -27,6 +27,8 @@ from api.domain.status.waits import (
     holds_today,
     standard_wait,
 )
+from api.events import enqueue
+from api.events.types import CALL_MODE_CHANGED
 from api.models import AuditLog, ServiceConfig, Tenant
 
 ACTOR_TABLET = "gui:tablet"
@@ -73,6 +75,20 @@ def _audit(
     )
 
 
+def _mode_changed(
+    session: Session, config: ServiceConfig, actor: str, before: str, after: str
+) -> None:
+    """Audit entry and the push to the owner and ops (#588, docs/23 T12), in
+    the change's transaction: the mode decides whether the agent answers."""
+    _audit(session, config, ACTION_MODE, actor, {"from": before, "to": after})
+    enqueue(
+        session,
+        tenant_id=config.tenant_id,
+        event_type=CALL_MODE_CHANGED,
+        payload={"from": before, "to": after},
+    )
+
+
 def _mode_before_pause(session: Session, tenant_id: uuid.UUID) -> str:
     """Letzter Modus vor der jüngsten Pause, aus dem audit_log.
 
@@ -101,13 +117,7 @@ def pause_ai(
     """Not-Aus: ab dem nächsten Anruf nimmt die KI nicht mehr ab. Ohne Rückfrage."""
     config = _locked(session, tenant_id)
     if config.call_mode != PAUSED:
-        _audit(
-            session,
-            config,
-            ACTION_MODE,
-            actor,
-            {"from": config.call_mode, "to": PAUSED},
-        )
+        _mode_changed(session, config, actor, config.call_mode, PAUSED)
         config.call_mode = PAUSED
     # Auch ohne Aenderung: commit gibt die Sperre frei.
     session.commit()
@@ -121,7 +131,7 @@ def resume_ai(
     config = _locked(session, tenant_id)
     if config.call_mode == PAUSED:
         target = _mode_before_pause(session, tenant_id)
-        _audit(session, config, ACTION_MODE, actor, {"from": PAUSED, "to": target})
+        _mode_changed(session, config, actor, PAUSED, target)
         config.call_mode = target
     session.commit()
     return config
@@ -150,7 +160,7 @@ def set_mode(
     now = now or clock.utcnow()
     holding = mode_at(session, tenant, config, now).mode
     if holding != mode:
-        _audit(session, config, ACTION_MODE, actor, {"from": holding, "to": mode})
+        _mode_changed(session, config, actor, holding, mode)
         config.call_mode = mode
         config.call_mode_chosen_at = now
     session.commit()

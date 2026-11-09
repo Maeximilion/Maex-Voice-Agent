@@ -18,10 +18,12 @@ from api.domain.calls.routing import call_routing
 from api.domain.status import staff_changes as staff
 from api.domain.status.hours import load_hours, windows_for_day
 from api.domain.status.staff_changes import DayHours
+from api.events.types import DAY_HOURS_CHANGED, TEAM_PHONE_CHANGED
 from api.models import (
     AuditLog,
     Call,
     OpeningHours,
+    OutboxEvent,
     ServiceConfig,
     SpecialDay,
     StaffChange,
@@ -368,3 +370,112 @@ def test_a_card_of_a_past_day_changes_nothing_today(session, tenant_id):
     assert staff.team_phone_at(config, NOW) == NUMBER
     assert config.team_phone == settings.team_phone
     assert [c.status for c in _cards(session, tenant_id)] == ["open", "open"]
+
+
+# --- the push to the owner and ops (#588, D34 point 4, T12) ----------------------
+
+
+def _events(session, tenant_id) -> list[tuple[str, dict]]:
+    rows = session.scalars(
+        select(OutboxEvent)
+        .where(OutboxEvent.tenant_id == tenant_id)
+        .order_by(OutboxEvent.created_at)
+    )
+    return [(row.event_type, row.payload) for row in rows]
+
+
+def test_each_team_number_change_pushes_once(session, tenant_id):
+    standard = _config(session, tenant_id).team_phone
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    staff.change_team_phone(session, tenant_id, "+4972215550000", NOW)
+    staff.change_team_phone(session, tenant_id, standard, NOW)
+    day = TUESDAY.isoformat()
+    # Nothing but the day and the numbers: no device, no name.
+    assert _events(session, tenant_id) == [
+        (TEAM_PHONE_CHANGED, {"day": day, "from": standard, "to": NUMBER}),
+        (TEAM_PHONE_CHANGED, {"day": day, "from": NUMBER, "to": "+4972215550000"}),
+        (TEAM_PHONE_CHANGED, {"day": day, "from": "+4972215550000", "to": standard}),
+    ]
+
+
+def test_a_date_change_pushes_in_the_tablets_words_and_says_when_it_waits(
+    session, tenant_id
+):
+    staff.change_day_hours(session, tenant_id, TUESDAY, DayHours(closed=True), NOW)
+    longer = DayHours(opens=time(11), closes=time(23))
+    staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW)
+    assert _events(session, tenant_id) == [
+        (
+            DAY_HOURS_CHANGED,
+            {
+                "day": TUESDAY.isoformat(),
+                "from": "normale Zeiten der Woche",
+                "to": "geschlossen",
+                "held": True,
+            },
+        ),
+        (
+            DAY_HOURS_CHANGED,
+            {
+                "day": SATURDAY.isoformat(),
+                "from": "normale Zeiten der Woche",
+                "to": "11:00 bis 23:00 Uhr",
+                "held": False,
+            },
+        ),
+    ]
+
+
+def test_a_withdrawn_request_pushes_from_the_request_not_from_what_held(
+    session, tenant_id
+):
+    """Otherwise the owner reads 'geschlossen, vorher geschlossen'."""
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    longer = DayHours(opens=time(10), closes=time(23))
+    staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW)
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    last = _events(session, tenant_id)[-1]
+    assert last == (
+        DAY_HOURS_CHANGED,
+        {
+            "day": SATURDAY.isoformat(),
+            "from": "10:00 bis 23:00 Uhr",
+            "to": "geschlossen",
+            "held": True,
+        },
+    )
+
+
+def test_a_tap_that_changes_nothing_pushes_nothing(session, tenant_id):
+    standard = _config(session, tenant_id).team_phone
+    staff.change_team_phone(session, tenant_id, standard, NOW)
+    with pytest.raises(InvalidInput):
+        staff.change_team_phone(session, tenant_id, "+4930123456", NOW)
+    with pytest.raises(InvalidInput):
+        staff.change_day_hours(
+            session, tenant_id, TUESDAY - timedelta(days=1), DayHours(closed=True), NOW
+        )
+    closed = DayHours(closed=True)
+    staff.change_day_hours(session, tenant_id, SATURDAY, closed, NOW)
+    staff.change_day_hours(session, tenant_id, SATURDAY, closed, NOW)
+    assert len(_events(session, tenant_id)) == 1
+
+
+def test_the_owners_answer_pushes_nothing(session, tenant_id):
+    """The owner decides with the PIN: nothing to tell the owner about."""
+    card = staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
+    assert [kind for kind, _ in _events(session, tenant_id)] == [TEAM_PHONE_CHANGED]
+
+
+@pytest.mark.parametrize(
+    ("hours", "text"),
+    [
+        (DayHours(), "normale Zeiten der Woche"),
+        (DayHours(closed=True, note="Neujahr"), "geschlossen"),
+        (DayHours(opens=time(9, 5), closes=time(14)), "09:05 bis 14:00 Uhr"),
+        (DayHours(like_weekday=6), "wie Sonntag"),
+    ],
+)
+def test_day_hours_read_as_on_the_tablet(hours, text):
+    assert hours.text() == text

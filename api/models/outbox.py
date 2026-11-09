@@ -15,6 +15,9 @@ EVENT_TYPES = (
     "callback.created",
     "order.handover_failed",
     "daily.report",
+    "team_phone.changed",
+    "day_hours.changed",
+    "call_mode.changed",
 )
 OUTBOX_STATUSES = ("pending", "sent", "failed")
 

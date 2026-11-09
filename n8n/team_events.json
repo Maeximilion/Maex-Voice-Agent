@@ -182,6 +182,78 @@
               },
               "renameOutput": true,
               "outputKey": "daily.report"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "8dac0672-7f9b-5528-88d2-3bb859cac053",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "team_phone.changed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "team_phone.changed"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "374494ea-3cf5-54b5-88ff-b21fb295aaa2",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "day_hours.changed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "day_hours.changed"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "834309ef-30ac-5825-989e-21d50b1d7310",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "call_mode.changed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "call_mode.changed"
             }
           ]
         },
@@ -415,6 +487,151 @@
     },
     {
       "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "334810ec-ca0d-5b6c-b1ad-356aab15b916",
+              "name": "title",
+              "value": "Teamnummer geändert",
+              "type": "string"
+            },
+            {
+              "id": "3cecc03a-da5e-5841-a074-11e415f9f15c",
+              "name": "text",
+              "value": "=Anrufe an das Team gehen heute an {{ $json.payload.to }}, vorher an {{ $json.payload.from }}. Bitte am Tablet prüfen.",
+              "type": "string"
+            },
+            {
+              "id": "3fb889cf-8c8f-59b6-9ff0-327272c15348",
+              "name": "priority",
+              "value": "normal",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "23108ae3-c95a-5690-8ee6-0c0dbc0177ec",
+      "name": "Message: team number changed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        1040
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "89fb2057-a987-535d-9927-3cbc04401042",
+              "name": "title",
+              "value": "={{ $json.payload.held ? 'Öffnungszeit geändert' : 'Öffnungszeit wartet auf Freigabe' }}",
+              "type": "string"
+            },
+            {
+              "id": "79b8c69a-038b-5efb-b617-b1f4955c5502",
+              "name": "text",
+              "value": "=Am {{ DateTime.fromISO($json.payload.day).toFormat('dd.MM.') }}: {{ $json.payload.to }}, vorher {{ $json.payload.from }}. {{ $json.payload.held ? 'Bitte am Tablet prüfen.' : 'Gilt erst, wenn es am Tablet mit der Admin-PIN übernommen wird.' }}",
+              "type": "string"
+            },
+            {
+              "id": "3fb889cf-8c8f-59b6-9ff0-327272c15348",
+              "name": "priority",
+              "value": "normal",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "083a3722-162f-5f88-86c4-e0a6eeb86b8c",
+      "name": "Message: day hours changed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "3863cced-fdee-5e31-963e-fda18f9e2ba6",
+              "name": "title",
+              "value": "Anrufmodus geändert",
+              "type": "string"
+            },
+            {
+              "id": "610cf18e-0ad8-5d48-934d-34ebb493d571",
+              "name": "text",
+              "value": "={{ ({ primary: 'KI nimmt an', overflow: 'KI springt ein', paused: 'KI ist aus', shadow: 'KI hört mit' })[$json.payload.to] ?? $json.payload.to }}, vorher {{ ({ primary: 'KI nimmt an', overflow: 'KI springt ein', paused: 'KI ist aus', shadow: 'KI hört mit' })[$json.payload.from] ?? $json.payload.from }}.",
+              "type": "string"
+            },
+            {
+              "id": "c4500071-b7f3-5530-b5c9-42a5cc06e378",
+              "name": "priority",
+              "value": "={{ $json.payload.to === 'paused' ? 'high' : 'normal' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "241c8d01-fcab-51a7-84e8-e51608efa13f",
+      "name": "Message: call mode changed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        1360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One message, two readers: the owner of the restaurant and the\n// operator (docs/23_ACCESS_SECURITY.md, T12). The channel node sends\n// one push per item and fails the run if either fails.\nconst { title, text, priority } = $input.first().json;\nreturn ['owner', 'ops'].map((topic) => ({\n  json: { topic, title, text, priority },\n}));\n"
+      },
+      "id": "72680f16-d25c-5234-98c1-f9a20f589adc",
+      "name": "To owner and ops",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1160,
+        1200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://push/",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ topic: $json.topic, title: $json.title, message: $json.text, priority: $json.priority === 'high' ? 4 : 3 }) }}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "9d9cc0ff-0892-50cb-9300-dddb56db352b",
+      "name": "Send push to owner and ops",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1400,
+        1200
+      ],
+      "notes": "Publishes each item to its topic, owner or ops. Fails when sending fails.",
+      "notesInFlow": true
+    },
+    {
+      "parameters": {
         "content": "## Team channel\n\n**Send push to team** publishes `title`, `text` and `priority` to the topic `team` on the push server of the Compose stack (`http://push/`).\n\nIt needs a \"Header Auth\" credential: name `Authorization`, value `Bearer <token of the user n8n>`. The credential lives in n8n, never in the repo.\n\nThe node must fail when sending fails: no \"Continue on Fail\".\n\nDetails: `n8n/README.md`\n",
         "height": 280,
         "width": 380,
@@ -427,6 +644,22 @@
       "position": [
         1080,
         60
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Owner and ops channel\n\nA staff change and a change of the call mode go to the owner and to the operator (T12). **To owner and ops** turns the message into two items, and **Send push to owner and ops** publishes each to its topic, `owner` or `ops`, with the same credential as the team channel.\n\nNo \"Continue on Fail\": a failed push sends the event again, so the owner may get one twice.\n\nDetails: `n8n/README.md`\n",
+        "height": 280,
+        "width": 380,
+        "color": 3
+      },
+      "id": "7b183d09-6b6a-52e8-b3a8-4499538bb3f6",
+      "name": "Note: owner and ops channel",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        1460
       ]
     }
   ],
@@ -503,6 +736,27 @@
         ],
         [
           {
+            "node": "Message: team number changed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message: day hours changed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message: call mode changed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Respond: unknown event type",
             "type": "main",
             "index": 0
@@ -570,6 +824,61 @@
         [
           {
             "node": "Send push to team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message: team number changed": {
+      "main": [
+        [
+          {
+            "node": "To owner and ops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message: day hours changed": {
+      "main": [
+        [
+          {
+            "node": "To owner and ops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message: call mode changed": {
+      "main": [
+        [
+          {
+            "node": "To owner and ops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "To owner and ops": {
+      "main": [
+        [
+          {
+            "node": "Send push to owner and ops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send push to owner and ops": {
+      "main": [
+        [
+          {
+            "node": "Remember event id",
             "type": "main",
             "index": 0
           }

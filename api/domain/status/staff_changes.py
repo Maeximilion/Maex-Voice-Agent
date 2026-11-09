@@ -17,6 +17,11 @@ of the same thing moves the card's `after` and keeps the `before` of the first,
 so undo always returns to what held before the staff came. A card for a day
 that has passed is no longer shown: its change ended with that day.
 
+Every staff change also pushes to the owner and to the operator's `ops`
+topic (T12): an outbox event in the same transaction, sent by n8n
+(`n8n/team_events.json`). A tap that changes nothing pushes nothing, nor does
+the owner's own answer on a card.
+
 Holiday answers (T-9.5) stay as they are (Maxi, 09.11.2026): the system
 suggested the date, the staff only confirm it.
 """
@@ -34,7 +39,10 @@ from api.config import settings
 from api.core import time as clock
 from api.core.errors import InvalidInput, NotFound
 from api.domain.customers.phone import normalize_phone
+from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.hours import HoursData, Window, load_hours, windows_for_day
+from api.events import enqueue
+from api.events.types import DAY_HOURS_CHANGED, TEAM_PHONE_CHANGED
 from api.models import (
     AuditLog,
     ServiceConfig,
@@ -70,6 +78,16 @@ class DayHours:
     @property
     def normal(self) -> bool:
         return not self.closed and self.opens is None and self.like_weekday is None
+
+    def text(self) -> str:
+        """As the tablet and the push say it."""
+        if self.closed:
+            return "geschlossen"
+        if self.opens is not None and self.closes is not None:
+            return f"{self.opens:%H:%M} bis {self.closes:%H:%M} Uhr"
+        if self.like_weekday is not None:
+            return f"wie {WEEKDAYS[self.like_weekday]}"
+        return "normale Zeiten der Woche"
 
     def as_dict(self) -> dict:
         data = asdict(self)
@@ -158,6 +176,12 @@ def change_team_phone(
         session, tenant_id, TEAM_PHONE, today, {"number": holding}
     )
     _audit(session, tenant_id, actor, "staff_change.team_phone", card, holding, number)
+    enqueue(
+        session,
+        tenant_id=tenant_id,
+        event_type=TEAM_PHONE_CHANGED,
+        payload={"day": today.isoformat(), "from": holding, "to": number},
+    )
     card.after, card.held = {"number": number}, True
     if card.after == card.before:
         _close(card, UNDONE, now)
@@ -203,6 +227,8 @@ def change_day_hours(
         return None
     if card is None:
         card = _new_card(session, tenant_id, DAY_HOURS, day, holding.as_dict())
+    # What the card showed until now: what held, or the request that waited.
+    shown = DayHours.of(card.after)
     origin = DayHours.of(card.before)
     held = (
         hours in (holding, origin)
@@ -222,6 +248,17 @@ def change_day_hours(
         held=held,
     )
     card.after, card.held = hours.as_dict(), held
+    enqueue(
+        session,
+        tenant_id=tenant_id,
+        event_type=DAY_HOURS_CHANGED,
+        payload={
+            "day": day.isoformat(),
+            "from": shown.text(),
+            "to": hours.text(),
+            "held": held,
+        },
+    )
     if held and hours == origin:
         _close(card, UNDONE, now)
     session.commit()

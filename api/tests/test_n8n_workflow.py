@@ -17,8 +17,9 @@ from typing import get_args
 from urllib.parse import urlparse
 
 from api.config import Settings
+from api.domain.status.mode import CAUTION, PAUSED
 from api.events import types
-from api.gui.router import CALLBACK_LABELS
+from api.gui.router import CALLBACK_LABELS, MODE_LABELS
 from api.schemas.callbacks import CallbackReason
 from api.tests.test_commands import REPO_ROOT
 
@@ -42,6 +43,13 @@ SECRET_URL_RE = re.compile(
     re.IGNORECASE,
 )
 PHONE_RE = re.compile(r"\+\d{7,}")
+FIXED_TOPIC_RE = re.compile(r"topic:\s*'([^']+)'")
+ITEM_TOPICS_RE = re.compile(r"return\s*\[([^\]]*)\]\.map\(\(topic\)")
+# Who hears of what: the team of the guests' business, the owner and the
+# operator of a change made without the owner's PIN or of the call mode (T12).
+TEAM_TOPIC = "team"
+OWNER_TOPICS = {"owner", "ops"}
+TO_OWNER = {types.TEAM_PHONE_CHANGED, types.DAY_HOURS_CHANGED, types.CALL_MODE_CHANGED}
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.\w+")
 
 
@@ -85,12 +93,30 @@ def _branches() -> dict[str, str]:
     return branches
 
 
-def _channel() -> dict:
-    """The one node every message runs into."""
-    successors = {tuple(_targets(node)[0]) for node in _branches().values()}
-    assert len(successors) == 1, "every branch leads into the same channel node"
-    ((name,),) = successors
+def _channel_of(event_type: str) -> dict:
+    """The node that sends an event's message: the one its message node leads
+    to, past a code node that addresses the message to several topics."""
+    (name,) = _targets(_branches()[event_type])[0]
+    if _nodes()[name]["type"] == "n8n-nodes-base.code":
+        (name,) = _targets(name)[0]
     return _nodes()[name]
+
+
+def _channels() -> list[dict]:
+    names = sorted({_channel_of(event_type)["name"] for event_type in _branches()})
+    return [_nodes()[name] for name in names]
+
+
+def _topics(event_type: str) -> set[str]:
+    """The topics a message of this event type is published to."""
+    body = _channel_of(event_type)["parameters"]["jsonBody"]
+    fixed = FIXED_TOPIC_RE.findall(body)
+    if fixed:
+        return set(fixed)
+    assert "topic: $json.topic" in body, event_type
+    (address,) = _targets(_branches()[event_type])[0]
+    (listed,) = ITEM_TOPICS_RE.findall(_nodes()[address]["parameters"]["jsCode"])
+    return {topic.strip(" '") for topic in listed.split(",")}
 
 
 def _assignment(node: dict, field: str) -> str:
@@ -230,16 +256,33 @@ def test_every_branch_builds_a_message_for_the_channel() -> None:
 
 
 def test_channel_node_stops_the_run_when_it_fails() -> None:
-    channel = _channel()
-    if channel["name"].startswith(PLACEHOLDER_PREFIX):
-        # Until the real channel is built, no event may count as delivered.
-        assert channel["type"] == "n8n-nodes-base.stopAndError"
-    # A channel that does nothing or carries on after an error lets the run
-    # reach "delivered" although nobody was notified.
-    assert channel["type"] != "n8n-nodes-base.noOp"
-    assert not channel.get("continueOnFail", False)
-    assert channel.get("onError", "stopWorkflow") == "stopWorkflow"
-    assert not channel.get("disabled", False)
+    for channel in _channels():
+        if channel["name"].startswith(PLACEHOLDER_PREFIX):
+            # Until the real channel is built, no event may count as delivered.
+            assert channel["type"] == "n8n-nodes-base.stopAndError"
+        # A channel that does nothing or carries on after an error lets the run
+        # reach "delivered" although nobody was notified.
+        assert channel["type"] != "n8n-nodes-base.noOp", channel["name"]
+        assert not channel.get("continueOnFail", False), channel["name"]
+        assert channel.get("onError", "stopWorkflow") == "stopWorkflow"
+        assert not channel.get("disabled", False), channel["name"]
+
+
+def test_each_event_reaches_exactly_its_readers() -> None:
+    assert len(_channels()) == 2
+    for event_type in _branches():
+        expected = OWNER_TOPICS if event_type in TO_OWNER else {TEAM_TOPIC}
+        assert _topics(event_type) == expected, event_type
+
+
+def test_only_the_message_is_addressed_to_the_owner_and_ops() -> None:
+    """The node between message and channel passes title, text and priority
+    on, never the event's payload."""
+    for event_type in TO_OWNER:
+        (address,) = _targets(_branches()[event_type])[0]
+        code = _nodes()[address]["parameters"]["jsCode"]
+        assert "payload" not in code and "$json" not in code, event_type
+        assert "{ topic, title, text, priority }" in code
 
 
 def test_event_id_is_remembered_only_after_the_channel() -> None:
@@ -251,7 +294,8 @@ def test_event_id_is_remembered_only_after_the_channel() -> None:
     ]
     # Marked before the channel, a failed notification would make the retry a
     # duplicate and the team would never hear of the event.
-    assert writers == _targets(_channel()["name"])[0]
+    for channel in _channels():
+        assert writers == _targets(channel["name"])[0], channel["name"]
     (after_webhook,) = _targets(_of_type("webhook")[0]["name"])[0]
     check = nodes[after_webhook]["parameters"]["jsCode"]
     assert "x-idempotency-key" in check
@@ -266,6 +310,19 @@ def test_callback_labels_are_the_ones_on_the_tablet() -> None:
     assert set(get_args(CallbackReason)) == set(CALLBACK_LABELS)
     for reason, (_tone, label) in CALLBACK_LABELS.items():
         assert f"{reason}: '{label}'" in text, reason
+
+
+def test_call_modes_read_as_in_the_tablets_header() -> None:
+    node = _nodes()[_branches()[types.CALL_MODE_CHANGED]]
+    text = _assignment(node, "text")
+    assert set(MODE_LABELS) == {*CAUTION, PAUSED}
+    for mode, (_tone, label) in MODE_LABELS.items():
+        # Once for the mode now, once for the one before.
+        assert text.count(f"{mode}: '{label}'") == 2, mode
+    # The emergency stop rings louder: the agent answers no call.
+    assert _assignment(node, "priority") == (
+        f"={{{{ $json.payload.to === '{PAUSED}' ? 'high' : 'normal' }}}}"
+    )
 
 
 def test_no_secrets_or_personal_data_in_the_export() -> None:

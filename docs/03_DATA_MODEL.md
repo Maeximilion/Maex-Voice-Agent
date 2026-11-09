@@ -275,7 +275,7 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 |---|---|---|
 | id | UUID PK | dient n8n als Idempotenz-Schlüssel; `order.confirmed` holt die Druckbrücke ab, nicht der Dispatcher (T-4.6) |
 | tenant_id | UUID FK | |
-| event_type | TEXT | `order.confirmed` / `reservation.confirmed` / `callback.created` / `order.handover_failed` / `daily.report` |
+| event_type | TEXT | `order.confirmed` / `reservation.confirmed` / `callback.created` / `order.handover_failed` / `daily.report` / `team_phone.changed` / `day_hours.changed` / `call_mode.changed` (the last three since migration 034, #588) |
 | payload | JSONB | vollständiger Vorgang, damit n8n nicht zurückfragen muss |
 | status | TEXT | `pending` / `sent` / `failed` |
 | attempts | INT | |

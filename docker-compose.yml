@@ -390,14 +390,19 @@ services:
     # The server refuses to start with an empty user list, and with access
     # rules for users it does not know. So the rules are set only when users
     # exist; without users it starts closed for everyone instead of not at all.
-    # n8n may only write to the topic, the team may only read it. The topic
-    # `ops` of the operator's alarms (T-8.3) is opened only when both of its
-    # users exist, so a stack without them still starts.
+    # n8n may only write: to `team`, and to `owner` and `ops` for staff and
+    # call-mode changes (#588, T12); the team may only read `team`. The owner
+    # reads `owner` once that user exists. The operator's alarms (T-8.3) on
+    # `ops` open only when both of their users exist, so a stack without them
+    # still starts.
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         if [ -n "$$NTFY_AUTH_USERS" ]; then
-          export NTFY_AUTH_ACCESS="n8n:team:wo,team:team:ro"
+          export NTFY_AUTH_ACCESS="n8n:team:wo,team:team:ro,n8n:owner:wo,n8n:ops:wo"
+          case ",$$NTFY_AUTH_USERS" in *,owner:*)
+            export NTFY_AUTH_ACCESS="$$NTFY_AUTH_ACCESS,owner:owner:ro";;
+          esac
           case ",$$NTFY_AUTH_USERS" in *,monitor:*)
             case ",$$NTFY_AUTH_USERS" in *,ops:*)
               export NTFY_AUTH_ACCESS="$$NTFY_AUTH_ACCESS,monitor:ops:wo,ops:ops:ro";;

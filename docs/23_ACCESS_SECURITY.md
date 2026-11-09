@@ -80,7 +80,7 @@ medium is accepted with the named limit, low is noise.
 | T9 | Cross-site request | a page in the tablet's browser posts to the view | existing CSRF double submit plus `HX-Request`, plus an `Origin` check on writes; `__Host-` cookies, `SameSite=Lax` (§6) | low |
 | T10 | Pivot from a taken-over container | Asterisk or n8n reaches the API or another stack | networks of docs/13 §3 unchanged; the `ops` network holds only the dashboard and one api; Caddy is the only container on several stacks' networks and routes by host name only (§8) | low |
 | T11 | Operator dashboard taken over | a bug in the dashboard, its session or its libraries | it holds every stack's ops token, so this equals T1. Limited by the ops API: no raw SQL, no bulk export, personal data only with a recorded reason, every write audited in the customer's own `audit_log` (§8) | medium |
-| T12 | Silent change to the fate of a call | an operator or customer session switches the call mode or the team number | step-up re-authentication, audit entry with actor, a push to the `ops` topic and to the team on every change of mode or team number (§5, §8) | low |
+| T12 | Silent change to the fate of a call | an operator or customer session switches the call mode or the team number | step-up re-authentication, audit entry with actor, a push to the `owner` and `ops` topics on every change of mode, team number or a date's hours (§5, §6, §8; built for the tablet in #588) | low |
 
 ## 5. Operator login and dashboard (#571)
 
@@ -186,7 +186,7 @@ the second builds against.
   delivery zones, fees and minimum order, the standard weekly hours, the device list. Built: the
   device list; the other pages do not exist yet and take `require_admin` (`gui/session.py`) when
   they come.
-- **Staff changes are temporary and reviewed (D34 point 4, built in (b) except the push):** a staff change to a date's hours
+- **Staff changes are temporary and reviewed (D34 point 4, built in (b), the push in #588):** a staff change to a date's hours
   expires with that date. Today's changes hold at once; for a later date the restrictive direction
   (closed, shorter hours) holds at once, while longer or extra hours beyond today wait for the
   owner's PIN. A team number changed by staff holds at once and returns to the standard number after
@@ -201,7 +201,11 @@ the second builds against.
   or extra hours for a later date wait on the card. One open card per kind and date: a second
   change moves its "after" and keeps the "before" of the first, so "Zurücknehmen" always returns to
   what held before the staff came. The holiday answers of T-9.5 stay as they are (Maxi 09.11.2026).
-  The call mode gets the push but no card (Maxi 09.11.2026). The push itself follows (#588).
+  The call mode gets the push but no card (Maxi 09.11.2026). The push (#588): an outbox event in
+  the same transaction as the change (`team_phone.changed`, `day_hours.changed`,
+  `call_mode.changed`, migration 034), which n8n publishes to the topics `owner` and `ops`
+  (`n8n/team_events.json`). It carries the day and the change only, the team number the one number;
+  a tap that changes nothing and the owner's own answer on a card push nothing.
 - **Password reset (D34 point 5):** a one-time setup link made by the operator, valid 24 hours,
   shown once, stored hashed; a newer link replaces an older one, and setting the password signs out
   every other device. Until the dashboard exists (#571) the operator makes it on the stack:
@@ -288,7 +292,8 @@ guest's data.
   `operator:<account>` and the reason before it answers. No bulk export over this API; an export is
   a data subject request (docs/09 §2) or offboarding (#576).
 - **Writes** (settings, call mode, tokens) are separate routes, each writing `audit_log` with the
-  operator as actor; changing the call mode or team number also pushes to the team (T12).
+  operator as actor; changing the call mode or team number also pushes to `owner` and `ops` (T12),
+  through the domain functions the tablet uses (`domain/status/config.py`, `staff_changes.py`).
 - The actor header is trusted only because only the dashboard holds `OPS_TOKEN`; the dashboard sets
   it from the session, never from user input.
 
