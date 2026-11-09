@@ -332,3 +332,11 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 .sheet-alert{position:absolute;top:var(--s2);left:var(--s4);right:var(--s4);z-index:6}
 .betrieb button.sheet-alert{background:var(--accent);border-color:var(--accent);color:var(--surface);font-size:var(--fs-h2);font-weight:700}
 .tafel main.alert-on > [id]{top:calc(var(--tap) + var(--s2)) !important}
+
+/* In-page question (T-3.16): replaces the browser confirm(). */
+.frage-grund{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.6);padding:var(--s4)}
+.frage{background:var(--surface);border:3px solid var(--accent);border-radius:var(--r-lg);padding:var(--s4);max-width:34rem;display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
+.frage p{grid-column:1 / -1;margin:0;font-size:var(--fs-lg)}
+.frage button{min-height:var(--tap);font-size:var(--fs-body);font-weight:600}
+.betrieb button.ton-an{width:100%;background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:700;border-radius:0}
+.ton-an[hidden]{display:none}
