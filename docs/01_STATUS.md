@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.26.2
+> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.26.3
 
 ---
 
@@ -671,7 +671,6 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 | Blocker | Blocks | Resolution |
 |---|---|---|
-| n8n does not start again after a restart of its container (#590, found 09.11.2026): the tmpfs `/home/node/.cache` comes back owned by root | every push through n8n (team, owner, `ops`) on the workbench now, and in production after a host reboot | fix in #590 (tmpfs owned by uid 1000, checked in a throwaway stack); until then `docker compose up -d --force-recreate n8n` brings it back |
 | Duties of the legal check open (questions answered 20.10.2026) | every real customer call (privacy notice, record of processing, DSFA, DPAs, allergy consent; the deletion job is built since T-11.2, 26.10.2026); processing of real call recordings (C7 / T-7.x) | the table in `docs/09_OPERATIONS_LEGAL.md` §1: Maxi's paper duties under "In Chat", the code in T-11.1 to T-11.8 |
 | Own voice layer not built (decided 07.10.2026 instead of a vendor) | real test calls, G0 (waits for T-10.1 and T-10.2), G1 | Block 1c in `docs/07_WORKPACKAGES.md`; step 2 of T-10.1 needs access to the pilot's router |
 | Menu data not structured | Stage 2 complete | converter built (T-4.11, 26.09.2026); the card number format takes `25G` and sushi `S12` since T-4.12 (50 dishes); the first real import with `--allergens-confirmed-by` is still open |
@@ -685,6 +684,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 09.11.2026 | **n8n starts again after a restart of its container (#590).** The tmpfs `/home/node/.cache` of the `n8n` service is now owned by `node` (`uid=1000,gid=1000`): a plain tmpfs came back owned by root on `docker restart`, n8n exited with `EACCES` and looped (RestartCount 1854 on the workbench). Checked in two throwaway containers of n8n 2.45.7: without the owner `EACCES` and exited after the restart, with it the editor came back and the cache was `1000:1000`. A static test in `api/tests/test_deploy_exposure.py` pins the owner, the runbook row "Events not delivered" in `docs/09` names `docker compose up -d --force-recreate n8n` for a stack without the fix. The workbench takes the fix with `docker compose up -d n8n` after the merge (the changed tmpfs recreates the container). Found on the way: a flaky order of outbox events written in one transaction (#592). |
 | 09.11.2026 | **Push of staff changes and call-mode changes to the owner and `ops` (#588, T12).** Three outbox events, `team_phone.changed`, `day_hours.changed` and `call_mode.changed` (migration 034, the outbox check names them), written in the same transaction as the change in `domain/status/staff_changes.py` and `domain/status/config.py`; payload only the day and the change, the team number the one number. `n8n/team_events.json` gets three message branches that publish each message to `owner` and `ops`; the push server lets `n8n` write there and the optional user `owner` read `owner` (`docker-compose.yml`, `n8n/README.md`). Checked live in a throwaway stack (n8n 2.45.7, push server 2.35.0). Found on the way: n8n does not start again after a restart of its container (#590, the workbench n8n loops). |
 | 09.11.2026 | **Handover after #587 and #589 (#570 closed).** #570 part (b) merged in two PRs: the owner's admin PIN with the device list (#587, migration 032) and the staff changes with check cards (#589, migration 033); #589 also makes the api read `TRANSFER_TARGETS` and puts team number, a date's hours and the devices under one "Einstellungen" button. Next: #588 (push of staff and call-mode changes to owner and `ops`) on branch `task/588-staff-change-push`, Opus 5.5 `xhigh`. Workbench DB still needs `make migrate` to 033 (backup first). |
 | 09.11.2026 | **Staff changes and their check cards (#570 part b, D34 point 4).** Migration 033: `service_config.team_phone_today` with its end and `staff_changes`. Staff choose today's team number among the dialable ones (`TEAM_PHONE`, `TRANSFER_TARGETS`, now read by the api too) and change a date's hours (under "Einstellungen" in the header); today's and shorter hours hold at once, longer ones for a later date wait; a check card above the callbacks waits for the owner's keep or undo behind the admin PIN, live on every tablet (event `checks`). `transfer_to_team` and the call routing read today's number. Tests: the business-day end, keep and undo, the waiting and the withdrawn request, a holiday row's name, the dialable list, the sheets and the cards over HTTP, the PIN refusal, migration 033 up and down. Next: the push to owner and `ops`. |
@@ -891,6 +891,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.26.3 · 09.11.2026:** #590 done: n8n cache tmpfs owned by node, n8n starts after a container restart
 - **v2.26.2 · 09.11.2026:** #588 push of staff and call-mode changes to owner and ops
 - **v2.26.1 · 09.11.2026:** Handover: #570 part b merged as #587 (admin PIN, device list) and #589 (staff changes, check cards); next #588 on task/588-staff-change-push
 - **v2.26.0 · 09.11.2026:** #570 part b2: staff changes and their check cards (migration 033)
