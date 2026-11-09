@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.9
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.10
 
 ---
 
@@ -46,7 +46,7 @@ Older summary paragraphs: `docs/HISTORY.md` section "Summary (archive)". Current
 
 **New customers, epic #567 (09.11.2026):** the tenancy question #568 is decided (D32): one Docker stack and database per customer behind one shared Caddy, facts and numbers in docs/13 §8. (full text: docs/HISTORY.md)
 
-**Cache-friendly session rules (Maxi, 07.11.2026):** `CLAUDE.md` section 6 "Cache-friendly sessions" (agents build and stop, Sonnet `/ship` hand-off after a clean first review, handover at 300k tokens (was 600k, lowered 09.11.2026, #562) after a merge or before a break, one-shot idle check-ins every 45 minutes) with the matching steps in `/done` (full text: docs/HISTORY.md)
+**Cache-friendly session rules (Maxi, 07.11.2026):** `CLAUDE.md` section 6 "Cache-friendly sessions" (agents build and stop, Sonnet `/ship` hand-off after a clean first review, handover after every merge (no token threshold since 10.11.2026) or before a break, one-shot idle check-ins every 45 minutes) with the matching steps in `/done` (full text: docs/HISTORY.md)
 
 **T-3.16 partly done (09.11.2026):** three of the five parked findings (#517) are built, the other two stay open on the issue. Done: the number field of "Tauschen" stands under the line it swaps (`korrektur.html`, one field at any time) (full text: docs/HISTORY.md)
 
@@ -337,6 +337,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.27.10 · 10.11.2026:** Handover: handover command is the single source for handover rules, session title uses middle dots, no token threshold
 - **v2.27.9 · 10.11.2026:** #562 part 3: What's Next and Open Decisions shortened to one sentence per row, full rows archived in HISTORY.md
 - **v2.27.8 · 10.11.2026:** #571 first part: ops status route of a stack
 - **v2.27.7 · 09.11.2026:** #562: cut Open Points from Reviews and open assumptions, handover start form in handover.md, no-AI-attribution rule
