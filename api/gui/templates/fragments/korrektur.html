@@ -14,6 +14,14 @@
         {% if confirm %}hx-confirm="{{ confirm }}"{% endif %}
         {% if disabled %}disabled{% endif %}>{{ label }}</button>
 {%- endmacro %}
+{% macro number_field(label, message) -%}
+<div class="nummer">
+  <label for="number">{{ label }}</label>
+  <input type="text" id="number" name="number" inputmode="text" autocomplete="off">
+  <button type="submit">Übernehmen</button>
+</div>
+{% if message %}<p class="blocker" id="number-error" role="alert">{{ message }}</p>{% endif %}
+{%- endmacro %}
 {% macro line_view(l) -%}
 <li class="edit-line {{ l.kind }}">
   <div class="edit-head">
@@ -61,7 +69,8 @@
     {% endif %}
   </div>
   {% if l.where == "r" and swapping == l.index %}
-  <p class="hint">Neue Nummer unten eingeben. Menge und Hinweis bleiben.</p>
+  <p class="hint">Menge und Hinweis bleiben.</p>
+  {{ number_field("Tauschen gegen Nummer", message) }}
   {% endif %}
 </li>
 {%- endmacro %}
@@ -88,12 +97,9 @@
         {% for l in rows %}{{ line_view(l) }}{% endfor %}
         {% for l in added %}{{ line_view(l) }}{% endfor %}
       </ul>
-      <div class="nummer">
-        <label for="number">{{ "Tauschen gegen Nummer" if swapping is not none else "Gericht dazu, Nummer" }}</label>
-        <input type="text" id="number" name="number" inputmode="text" autocomplete="off">
-        <button type="submit">Übernehmen</button>
-      </div>
-      {% if message %}<p class="blocker" id="number-error" role="alert">{{ message }}</p>{% endif %}
+      {# The field of a swap stands under the line it swaps (T-3.16); only when no
+         swap is open does "Gericht dazu" take the bottom. #}
+      {% if swapping is none or swapping not in rows|map(attribute="index")|list %}{{ number_field("Tauschen gegen Nummer" if swapping is not none else "Gericht dazu, Nummer", message) }}{% endif %}
       {% if delivery %}
       {# The address of a delivery (#525). Its fields belong to the form after
          this one (the `form` attribute): Enter in them takes the address, not
