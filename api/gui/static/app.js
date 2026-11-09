@@ -350,6 +350,17 @@
   // In-page question instead of the browser's confirm() (T-3.16, docs/06 §1
   // rule 6): the dialog is small and its buttons are 60 px targets. htmx asks
   // through htmx:confirm; the request goes out only on "Ja".
+  function closeQuestion() {
+    var open = document.querySelector(".frage-grund");
+    if (open) open.remove();
+    // Only what the question made inert: a sheet keeps its own inert board.
+    madeInert.forEach(function (el) {
+      el.inert = false;
+    });
+    madeInert = [];
+    return !!open;
+  }
+  var madeInert = [];
   document.body.addEventListener("htmx:confirm", function (e) {
     if (!e.detail.question) return;
     e.preventDefault();
@@ -369,11 +380,21 @@
     yes.type = "button";
     yes.className = "primary";
     yes.textContent = "Ja";
-    no.addEventListener("click", function () {
-      back.remove();
+    // The board stays reachable by keyboard behind an overlay: make everything
+    // else inert while the question stands, and keep Tab between its buttons.
+    Array.prototype.forEach.call(document.body.children, function (el) {
+      if (el === back || el.tagName === "SCRIPT" || el.inert) return;
+      el.inert = true;
+      madeInert.push(el);
     });
+    box.addEventListener("keydown", function (k) {
+      if (k.key !== "Tab") return;
+      k.preventDefault();
+      (document.activeElement === no ? yes : no).focus();
+    });
+    no.addEventListener("click", closeQuestion);
     yes.addEventListener("click", function () {
-      back.remove();
+      closeQuestion();
       // A live update may have replaced the card while the question stood
       // (confirm() used to freeze the page): htmx drops a request from a
       // detached button, so say so instead of looking as if it had worked.
@@ -414,9 +435,7 @@
   }
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
-    var frage = document.querySelector(".frage-grund");
-    if (frage) frage.remove();
-    else sheets.forEach(closeSheet);
+    if (!closeQuestion()) sheets.forEach(closeSheet);
   });
   // Only opening takes the focus: after a tap inside the sheet it stays put.
   var wasOpen = false;
