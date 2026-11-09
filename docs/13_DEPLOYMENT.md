@@ -368,8 +368,24 @@ EUR; isolation and the unchanged code decide it.
   same file again changes nothing; a database that holds another tenant refuses, so a command run
   in the wrong stack writes nothing. The team number must be `TEAM_PHONE` or on
   `TRANSFER_TARGETS`. Menu and delivery zones keep their importers (docs/14,
-  `scripts/seed_zones.py`); `python -m api.jobs.provision check` lists what is still missing. The
-  stack around it (folder, `.env` with fresh tokens, Caddy site, `ops` network) is the next part.
+  `scripts/seed_zones.py`); `python -m api.jobs.provision check` lists what is still missing.
+  **The stack around it is built too (#573, second part):** on the host, as the deploy user,
+  `python3 scripts/new_stack.py <customer.json> --domain <domain> [--root /srv/maex] [--dry-run]`
+  clones the checkout to `<root>/<key>`, writes its `.env` (mode 600) from `.env.example` with a
+  fresh `secrets.token_hex(32)` for every secret, none alike, the database role's own password,
+  `ENV=prod`, the names `agent.`, `n8n.` and `push.<domain>`, the Compose project `maex-<key>` and
+  the customer layout (`deploy/docker-compose.customer.yml`: no Caddy of the stack's own, `api` on an
+  internal `ops` network for the dashboard of #571). Then it starts the database, runs
+  `db_role.sh`, the migrations and `api.jobs.provision create` with the customer file, writes
+  `KITCHEN_BRIDGE_TENANT_ID` from its report, starts the stack, renders `deploy/Caddyfile` for this
+  stack into `<root>/caddy/sites/<key>.caddy` (mode 640: its host names, its containers
+  `maex-<key>-api-1` and so on, its proxy secret and editor access written in), checks every site
+  file against every other (each proxies only to its own stack, no secret or host name twice, the
+  check of docs/23 §8; `--check-sites` runs it alone) and lets the shared Caddy (`deploy/caddy`,
+  project `maex-caddy`, the only one publishing 80 and 443) join the stack's `edge` network and
+  reload. The setup link of the first login is printed once. An existing `.env` is never
+  rewritten, so a rerun keeps every token and only renders the site file again, for example after
+  `N8N_EDITOR_AUTH_USER` and `_HASH` were set (both empty: the editor answers 401). Still by hand: the push server's users and `MONITOR_PUSH_TOKEN` (§3, #595), the voice profile and the trunk.
 - #570 logins are per stack; the GUI's tenant choice may stay as it is.
 - #571 operator dashboard reads several stacks over an ops API per stack on an internal `ops`
   network (docs/23 §8).

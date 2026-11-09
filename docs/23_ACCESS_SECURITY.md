@@ -258,7 +258,8 @@ Rules:
   ones.
 - **Files:** each stack's `.env` mode 600, owned by the deploy user. The shared Caddy needs each
   stack's `GUI_PROXY_SECRET`: provisioning writes one site file per customer
-  (`/etc/caddy/sites/<customer>.caddy`, mode 640, group of the Caddy container) that the main
+  (`<root>/caddy/sites/<key>.caddy`, mode 640, read by the Caddy container through the deploy
+  user's group, built by `scripts/new_stack.py`) that the main
   Caddyfile imports. Nothing of this is in the repository; the repository keeps templates with
   placeholders.
 - **Never in logs, URLs or error answers:** the existing rule (docs/09 §5 checklist). Provisioning
@@ -309,7 +310,10 @@ Rejected:
 site to its own stack's `api` with that stack's `GUI_PROXY_SECRET`. A test in the repo renders the
 site template for two customers and fails when a site points at another stack's service name or
 carries another stack's secret; provisioning runs the same check on the real site files after every
-change.
+change (`check_sites` in `scripts/new_stack.py`, tested in `api/tests/test_new_stack.py`; also
+`python3 scripts/new_stack.py --check-sites`). The shared Caddy also resolves the bare names `api`,
+`n8n` and `push` on every stack's `edge` network, so a site file must never use them; the check
+refuses one that does.
 
 ## 9. Uploads (#572)
 

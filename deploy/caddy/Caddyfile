@@ -1,0 +1,4 @@
+# Every customer's site, one file each, rendered from deploy/Caddyfile by
+# scripts/new_stack.py with that stack's names, containers and proxy secret.
+# Nothing else is served: a name without a site file gets no certificate.
+import sites/*.caddy
