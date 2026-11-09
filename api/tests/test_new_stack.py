@@ -33,8 +33,8 @@ def _site(key: str, domain: str) -> str:
 
 def test_every_secret_is_fresh_and_none_repeats():
     first, second = _env("alpha", "a.example.org"), _env("beta", "b.example.org")
-    made = [first[name] for name in new_stack.SECRETS]
-    made += [second[name] for name in new_stack.SECRETS]
+    made = [first[name] for name in new_stack.FRESH_VARIABLES]
+    made += [second[name] for name in new_stack.FRESH_VARIABLES]
     assert all(len(value) == 64 for value in made)
     assert len(set(made)) == len(made)
     assert first["DATABASE_URL"].startswith("postgresql+psycopg://maex_app:")

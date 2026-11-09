@@ -48,7 +48,7 @@ COMPOSE_FILES = "docker-compose.yml:deploy/docker-compose.prod.yml:deploy/docker
 CADDY_PROJECT = "maex-caddy"
 # What deploy/Caddyfile names, and what a site of one stack becomes.
 UPSTREAMS = {"api:8000", "n8n:5678", "push:80"}
-SECRETS = (
+FRESH_VARIABLES = (
     "POSTGRES_PASSWORD",
     "AGENT_API_TOKEN",
     "GUI_PROXY_SECRET",
@@ -74,7 +74,7 @@ def project(key: str) -> str:
 
 def fresh_env(spec: dict, domain: str) -> dict[str, str]:
     """Every value the new stack's .env sets, secrets freshly made."""
-    made = {name: secrets.token_hex(32) for name in SECRETS}
+    made = {name: secrets.token_hex(32) for name in FRESH_VARIABLES}
     app_password = secrets.token_hex(32)
     key = spec["key"]
     values = {
@@ -183,21 +183,21 @@ def site_text(caddyfile: str, key: str, env: dict[str, str]) -> str:
 def _site_facts(text: str) -> tuple[set[str], set[str], set[str]]:
     code = "\n".join(line.split("#", 1)[0] for line in text.splitlines())
     upstreams = set(re.findall(r"reverse_proxy\s+(\S+)", code))
-    secret = set(re.findall(r'X-Maex-Proxy-Secret\s+"([^"]*)"', code))
+    header = set(re.findall(r'X-Maex-Proxy-Secret\s+"([^"]*)"', code))
     names = set(re.findall(r"^(\S+)\s*\{\s*$", code, re.MULTILINE)) - set(
         re.findall(r"^(\(\S+\))", code, re.MULTILINE)
     )
-    return upstreams, secret, names
+    return upstreams, header, names
 
 
 def check_sites(sites: dict[str, str]) -> list[str]:
     """Each site file reaches only its own stack's containers and carries a
     secret and host names no other file has (docs/23 §8). Key -> text."""
     problems = []
-    seen_secrets: dict[str, str] = {}
+    seen_headers: dict[str, str] = {}
     seen_names: dict[str, str] = {}
     for key, text in sorted(sites.items()):
-        upstreams, secret, names = _site_facts(text)
+        upstreams, header, names = _site_facts(text)
         own = rf"^{re.escape(project(key))}-(api|n8n|push)-1:\d+$"
         problems += [
             f"{key}: proxies to {u}, not to its own stack"
@@ -206,12 +206,12 @@ def check_sites(sites: dict[str, str]) -> list[str]:
         ]
         if len(upstreams) != len(UPSTREAMS):
             problems.append(f"{key}: {len(upstreams)} upstreams, expected 3")
-        if len(secret) != 1 or len(next(iter(secret), "")) < 32:
+        if len(header) != 1 or len(next(iter(header), "")) < 32:
             problems.append(f"{key}: no single proxy secret of 32 characters or more")
-        for value in secret:
-            if value in seen_secrets:
-                problems.append(f"{key}: same proxy secret as {seen_secrets[value]}")
-            seen_secrets[value] = key
+        for value in header:
+            if value in seen_headers:
+                problems.append(f"{key}: same proxy secret as {seen_headers[value]}")
+            seen_headers[value] = key
         for name in names:
             if name in seen_names:
                 problems.append(f"{key}: host {name} is also {seen_names[name]}'s")
@@ -299,7 +299,9 @@ def create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
             raise BadInput(f"agent.{domain} is already {other}'s site")
     if dry_run:
         print(f"would create stack {stack} (project {project(key)})")
-        print(f"would write .env with fresh {', '.join(SECRETS)} and the database role")
+        print(
+            f"would write .env with fresh {', '.join(FRESH_VARIABLES)} and the database role"
+        )
         print(f"would write {sites_dir / (key + '.caddy')} for agent.{domain}")
         return
 
@@ -310,7 +312,7 @@ def create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     if not env_path.exists():
         example = (stack / ".env.example").read_text(encoding="utf-8")
         write_private(env_path, env_text(example, fresh_env(spec, domain)), 0o600)
-        print(f"wrote {env_path}: " + ", ".join(SECRETS), file=sys.stderr)
+        print(f"wrote {env_path}: " + ", ".join(FRESH_VARIABLES), file=sys.stderr)
     env = read_env(env_path)
     if env.get("COMPOSE_PROJECT_NAME") != project(key):
         raise Refused(f"{env_path} belongs to another project, not {project(key)}")
