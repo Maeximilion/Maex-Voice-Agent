@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.21.0
+> Status: 09.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.22.0
 
 ---
 
@@ -880,6 +880,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.22.0 · 09.11.2026:** #569 threat model and access design (docs/23), D33
 - **v2.21.0 · 09.11.2026:** Tenancy decided: one stack per customer (D32, #568)
 - **v2.20.4 · 09.11.2026:** PR checklists keep only the items that matter; no open boxes after merge except remaining work linked to an issue (CLAUDE.md, done.md, PR template)
 - **v2.20.3 · 09.11.2026:** T-3.5 setup built: scripts/bedientest_fixture.py and bedientest_data.py make the throwaway stack, invented data and live arrivals; the two tablet passes stay open
