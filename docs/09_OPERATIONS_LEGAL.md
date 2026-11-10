@@ -99,6 +99,10 @@ When the register PC is lost or was used by someone else, the token was seen or 
 
 Whoever holds a stack's `OPS_TOKEN` and reaches its `ops` network reads that restaurant's state (counts, times, menu status; no guest data so far). Replace it: on the server `openssl rand -hex 32` becomes `OPS_TOKEN` in the stack's `.env` (distinct from every other token, or the API does not start), then `docker compose up -d api` in the stack's folder. The dashboard gets the new value with its registry (#571). Suspected dashboard compromise: every stack's token, one by one.
 
+### Operator phone lost, or the operator password got around (#571)
+
+The operator login needs the password and a second factor (docs/23 §5). One lost factor: sign in with a recovery code; the dashboard shows how many are left. Every factor lost, or a takeover suspected (an unknown `operator.signed_in` or an `operator.sign_in_failed` with `reason` `factor` in `operator_audit`, which means the password is known): on the operator host, in the dashboard's container, `python -m api.dashboard.cli reset <name>`. It asks a new password twice, prints a new TOTP link and ten new recovery codes once, ends every session and forgets every device of the account; old codes open nothing. Add the link to the authenticator app at once and keep the codes offline. The reset stands in `operator_audit` as `operator.factors_reset`.
+
 ### Tablet lost, or the restaurant's password got around (#570, D34)
 
 A signed-in tablet shows the board to whoever holds it, until it is signed out (docs/23 T8). In the stack's api container (docs/13 §3 "Access to the operations view"):

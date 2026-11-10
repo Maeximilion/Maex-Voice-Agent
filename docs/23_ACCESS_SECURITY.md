@@ -126,6 +126,25 @@ customer is also written to that customer's `audit_log` with actor `operator:<ac
 of one call by `call_id`. The simulator console stays `ENV=dev` only, because a simulated call
 writes real rows; a demo customer is a stack of its own with invented data.
 
+**Built (#571, second part), not reachable from outside yet:** the app `api/dashboard/` (Maxi
+10.11.2026: the API's image, an app of its own, its own database `OPERATOR_DATABASE_URL` and
+migrations `db/dashboard/`; docs/11). Sign-in with name, password and a TOTP code or a recovery
+code in one form, one answer for every refusal; the waits per account, per address and per known
+browser (a device cookie, as in §6, so a guesser cannot keep the operator out); sessions
+`__Host-ops_session` (`SameSite=Strict`) with the 30 minutes and 12 hours; the audit table; the
+first account and the break glass with `python -m api.dashboard.cli add|reset <name>`, which
+asks the password twice and prints the TOTP link and ten recovery codes once. A failure on a
+known account is audited with whether the password or the factor was wrong (a right password
+with a wrong factor means the password is known); one on an unknown name is not, so a spray of
+names cannot fill the table, and an address is forgotten a day after its last failure. Every
+request but `/health` needs `OPERATOR_PROXY_SECRET` from Caddy outside dev and test (as
+`GUI_PROXY_SECRET`, T10): every customer's `api` shares an `ops` network with the dashboard. The
+TOTP secret is stored readable, because the code is an HMAC of it; the operator database and its
+encrypted backups stay on the operator host (T7). Still to come: passkeys (`py_webauthn`, the
+dashboard's own image target), the push to `ops` on a new factor or a used recovery code, step-up
+before dangerous actions, the operator stack's Compose file and the Caddy site `ops.<domain>`
+with its headers, then the customer list over the ops API (§8).
+
 ## 6. Customer login (#570)
 
 **D34 (Maxi 09.11.2026): one login per restaurant**, not per staff member. Built in two pull

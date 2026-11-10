@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.13
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.14
 
 ---
 
@@ -117,6 +117,7 @@ Decided D1 to D30: same archive section.
 ---
 
 ## Made Assumptions (subject to change)
+- **Operator login (#571 second part, 10.11.2026), Claude's choices, awaiting Maxi:** (a) the dashboard's pages are English (CLAUDE.md §8 keeps German for callers and the team only); (b) the package is `api/dashboard/` and `db/dashboard/`, not `operator`, which is a standard-library module name; (c) the sign-in is one form (name, password, code), not two steps, so there is no half-signed-in state; (d) a device cookie as on the restaurant's login, so a guesser cannot keep the operator out; (e) passkeys, the push to `ops`, step-up, the dashboard's image target and its Compose file follow in the next pull request of the stack.
 - **Calls left open (#545, 09.11.2026), Claude's choices, awaiting Maxi:** (a) the grace past `max_call_seconds` is 10 minutes: the core checks the limit only between turns, and the last utterance (up to 60 s), the turn, the ... (b) A tenant that lowers `max_call_seconds` by more than 10 minutes during a call can have that call closed as `error` early; the setting is read at ... (c) `ended_at` is the time of the pass and `duration_seconds` stays empty: when the leg really ended is not known. (d) Outcome `error` also over a `callback` that `team_missed` set before: an error wins, as in `end_call`.
 - **Restaurant login, first part (#570 a, 09.11.2026), Claude's choices, awaiting Maxi:** (a) one team PIN per restaurant, set with the password by the setup link and by the operator, not one per device: staff share the tablet, and a PIN ... (b) the login holds in every environment, dev and test included, so a stack started with the wrong `ENV` is never open; the dev quickstart and the ... (c) only a change moves the 15 minutes: reading, opening a sheet and the event stream do not, so a tablet that only shows the board locks; (d) until the dashboard exists (#571) the operator makes the setup link and signs devices out on the stack with `python -m api.jobs.gui_access`, and ... (e) a new password signs out every device, also when it is set only because the owner forgot it; (f) the sign-in waits are per account and per client address, and a browser that signed in before counts on its own device cookie (review of #585): a ... (g) Caddy's Basic-Auth is gone with this part (docs/23 §11 item 1); nothing is reachable from outside yet, and the security audit of docs/09 §5 comes ...
 - **Pushes of staff and call-mode changes (#588, 09.11.2026), Claude's choices, awaiting Maxi:** (a) the push texts are German for the owner's phone: "Teamnummer geändert", "Öffnungszeit geändert" or "Öffnungszeit wartet auf Freigabe" with the ... (b) the owner's answer on a check card pushes nothing, nor does a call-mode window that begins by itself (no session changed anything); (c) a withdrawn request for longer hours pushes "vorher" with the request, not with the hours that held throughout; (d) the user `owner` on the push server is optional like `ops`: without it the pushes to `owner` wait unread; (e) `n8n` may now write to `ops` as well, so the operator's topic carries these changes next to the alarms of `monitor`. (f) The call-mode push names the mode that answers calls, a window's included (`mode_at`), while the audit entry keeps the stored switch that ...
@@ -259,6 +260,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 10.11.2026 | **Operator login, second part of the operator dashboard (#571).** `api/dashboard/` signs the operator in with password plus a TOTP code or a recovery code, against its own database and migrations (`db/dashboard/`); not reachable from outside yet (docs/23 §5 "Built"). |
 | 10.11.2026 | **STATUS upkeep rule (#562 closed).** A weekly sweep archives done and decided rows older than one month to `docs/HISTORY.md` (findable by ID with `grep -n`), `/done` archives what its task finishes, and `/start` suggests the sweep when none ran in 7 days or the file passes 80 KB; open and doubtful rows stay. |
 | 10.11.2026 | **STATUS cut, part 5 (#562).** Twenty finished What's Next items and the 26 decided rows D1 to D30 of Open Decisions went to `docs/HISTORY.md` (83.2 KB to 70.5 KB, every line checked present with `comm`); open items, assumptions awaiting Maxi and Open Points stay, by Maxi's rule to keep active rows. |
 | 10.11.2026 | **STATUS cut, part 4 (#562).** Thirteen long rows in Roadmap, Gates, Blockers and Done went to one sentence each (90.9 KB to 83.2 KB), full text in `docs/HISTORY.md`, every original line checked present with `comm`; the five sections hold only 15 KB, so the 40 KB target needs the other sections, left for Maxi's decision. |
@@ -293,6 +295,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.27.14 · 10.11.2026:** #571 second part: operator login with password, TOTP and recovery codes
 - **v2.27.13 · 10.11.2026:** STATUS upkeep rule: /done archives finished rows, /start flags size above 80 KB
 - **v2.27.12 · 10.11.2026:** #562 part 5: finished What's Next items and decided D1 to D30 archived
 - **v2.27.11 · 10.11.2026:** Handover: handover command is the single source for handover rules, session title uses middle dots, no token threshold
