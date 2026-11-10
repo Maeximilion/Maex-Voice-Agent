@@ -15,8 +15,8 @@ DASHBOARD = GUI.parent / "dashboard"
 NOT_YET_MIGRATED: set[str] = set()
 # Third-party code, shipped as its author built it.
 VENDORED = {"htmx.min.js"}
-# The simulator console, dev only (#626 decides whether it moves).
-INLINE_SCRIPT_ALLOWED = {"dev/console.html"}
+# Empty since #626: the simulator console loads a compiled file too.
+INLINE_SCRIPT_ALLOWED: set[str] = set()
 
 
 def _compiled() -> set[str]:
