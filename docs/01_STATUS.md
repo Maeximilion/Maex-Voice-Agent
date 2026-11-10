@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.14
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.15
 
 ---
 
@@ -295,6 +295,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.27.15 · 10.11.2026:** chore(deps): bump types-pyyaml to 6.0.12.20261103 (#606)
 - **v2.27.14 · 10.11.2026:** #571 second part: operator login with password, TOTP and recovery codes
 - **v2.27.13 · 10.11.2026:** STATUS upkeep rule: /done archives finished rows, /start flags size above 80 KB
 - **v2.27.12 · 10.11.2026:** #562 part 5: finished What's Next items and decided D1 to D30 archived
