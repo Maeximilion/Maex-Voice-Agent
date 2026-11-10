@@ -342,7 +342,7 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 .frage{background:var(--surface);border:3px solid var(--accent);border-radius:var(--r-lg);padding:var(--s4);max-width:34rem;display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
 .frage p{grid-column:1 / -1;margin:0;font-size:var(--fs-lg)}
 .frage button{min-height:var(--tap);font-size:var(--fs-body);font-weight:600}
-.betrieb button.ton-an{width:100%;background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:700;border-radius:0}
+.betrieb button.ton-an{width:100%;margin-bottom:var(--s3);background:var(--accent);border-color:var(--accent);color:var(--surface);font-weight:700;border-radius:0}
 .ton-an[hidden]{display:none}
 /* Sign-in, setup link and PIN (#570): one card, every field and button 60 px, text 18 px or more. */
 .zugang main{display:grid;place-items:center;min-height:100vh;padding:var(--s4)}
