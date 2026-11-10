@@ -191,11 +191,32 @@ jobs:
           README_BLOCKLIST: ${{ secrets.README_BLOCKLIST }}
         run: python scripts/readme_check.py
 
+  # The browser code written in TypeScript (docs/22, #553): it passes the type check,
+  # and the JavaScript committed in api/gui/static/ is exactly what the sources compile
+  # to, so a hand edit of the output or a forgotten build fails here. The server image
+  # carries no Node; this job is the only place the compiler runs outside a developer's
+  # machine. Part of the required check `test`.
+  browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # --intent-to-add: an output file that was never committed shows up in the diff too.
+      - run: git add --intent-to-add api/gui/static
+      - name: Compiled JavaScript matches its TypeScript sources
+        run: git diff --exit-code -- api/gui/static
+
   # The required check `test` (ruleset on main) stands for the checks and every shard.
   # `always()`: a job skipped after a failed or cancelled need would count as passed.
   test:
     if: ${{ always() }}
-    needs: [changes, checks, pytest, readme]
+    needs: [changes, checks, pytest, readme, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

@@ -6,11 +6,14 @@
 // here, and a room another tablet changed meanwhile is loaded as it stands.
 // The page is drawn through the DOM, never through style attributes in markup:
 // the proxy's Content-Security-Policy refuses those (docs/13 §3).
+// Loaded as a module (raumplan.html): the geometry is compiled from
+// api/gui/ts/raumplan-geometry.ts (docs/22).
+import * as G from "./raumplan-geometry.js";
+
 (function () {
   "use strict";
-  var G = window.FloorGeometry;
   var root = document.getElementById("raumplan");
-  if (!root || !G) return;
+  if (!root) return;
   var floor = root.querySelector(".re-floor");
   var stage = root.querySelector(".re-stage");
   var props = root.querySelector(".re-properties");

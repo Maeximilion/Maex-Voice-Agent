@@ -248,6 +248,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `templates/` — `base.html`, `betrieb/`, `admin/`, `fragments/`
 - `static/` — Pico.css, HTMX lokal, eigene Töne
 - `static/raumplan.js`, `raumplan-geometry.js`, `raumplan.css` — the floor plan editor (T-3.11): drag in the browser, each finished step saved through `/gui/raumplan/bereiche`; the geometry (seat rule, upright labels, copies, the conversion to the server document) has no page and is tested in node (`test_gui_floor_plan_geometry.py`)
+- `ts/` — TypeScript sources of the browser code (docs/22 "Browser code in TypeScript"): `npm run build` compiles `ts/<name>.ts` to `static/<name>.js`, which is committed and never edited by hand; so far `raumplan-geometry`
 - `dev/console.html` — der Simulator als Webseite, nur in `ENV=dev`
 
 ### `sim/` – das Text-Telefon

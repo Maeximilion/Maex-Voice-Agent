@@ -37,6 +37,18 @@ updates:
       prefix: chore
       include: scope
 
+  # The TypeScript compiler for the browser code of api/gui (docs/22). A build tool
+  # only: it never reaches the server, the compiled JavaScript is committed. A bump
+  # can change that output; CI's job `browser` then fails until `npm run build` ran.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

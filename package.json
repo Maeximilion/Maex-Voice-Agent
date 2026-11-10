@@ -1,0 +1,13 @@
+{
+  "name": "maex-voice-agent-browser",
+  "private": true,
+  "description": "Build tooling for the browser code of api/gui only (docs/22). Nothing here ships to the server: the compiled JavaScript in api/gui/static/ is committed.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

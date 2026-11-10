@@ -1,0 +1,24 @@
+{
+  // Browser code of the operations view (docs/22 "Browser code in TypeScript").
+  // `npm run build` compiles api/gui/ts/*.ts to api/gui/static/*.js, one file
+  // each, as ES modules without a bundler. The output is committed; CI fails
+  // when it differs from what the sources produce.
+  "compilerOptions": {
+    "rootDir": "api/gui/ts",
+    "outDir": "api/gui/static",
+    "module": "es2020",
+    // The oldest syntax the output uses: a browser of 2020 or later reads it.
+    "target": "es2020",
+    "lib": ["es2020", "dom"],
+    "types": [],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "noEmitOnError": true,
+    "newLine": "lf",
+    "skipLibCheck": true
+  },
+  "include": ["api/gui/ts"]
+}

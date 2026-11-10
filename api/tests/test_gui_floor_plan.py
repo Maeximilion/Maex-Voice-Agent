@@ -105,13 +105,27 @@ def test_the_page_loads_its_scripts_and_issues_the_csrf_cookie(client, tenant_id
     res = client.get("/gui/raumplan")
 
     assert res.status_code == 200
-    assert "/gui/static/raumplan.js" in res.text
-    assert "/gui/static/raumplan-geometry.js" in res.text
+    # One module script; it imports the geometry itself (docs/22).
+    assert '<script type="module" src="/gui/static/raumplan.js"></script>' in res.text
+    assert "/gui/static/raumplan-geometry.js" not in res.text
     assert "/gui/static/raumplan.css" in res.text
     # The proxy's CSP refuses inline style attributes and inline scripts.
     assert "style=" not in res.text
     assert "<script>" not in res.text
     assert res.cookies.get("csrf_token")
+
+
+def test_the_editor_modules_reach_the_browser_as_javascript(client, tenant_id):
+    """A browser runs a module script only under a JavaScript MIME type, unlike a
+    classic script, and follows the import by its relative URL (docs/22)."""
+    for name in ("raumplan.js", "raumplan-geometry.js"):
+        res = client.get(f"/gui/static/{name}")
+        assert res.status_code == 200
+        assert res.headers["content-type"].split(";")[0] in (
+            "text/javascript",
+            "application/javascript",
+        )
+    assert 'from "./raumplan-geometry.js"' in client.get("/gui/static/raumplan.js").text
 
 
 def test_the_operations_header_links_to_the_floor_plan(client, db):

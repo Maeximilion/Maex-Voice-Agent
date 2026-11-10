@@ -2,14 +2,15 @@
 
 Assessment of `fbbdadd90249cf23e35d35ccc327b6f9027d44a0` (05.11.2026). This is
 source inspection, not a new latency benchmark. Python remains the backend default.
-TypeScript is the requested direction for future browser interfaces; its rollout
-is a decision still to make with Maxi and Claude (#553).
+TypeScript is the direction for browser code: Maxi chose the gradual path on
+09.11.2026 (#553), and the toolchain exists since 10.11.2026 (section "Browser
+code in TypeScript" below).
 
 ## What this repository actually runs
 
 Python 3.12 coordinates FastAPI, SQLAlchemy, the conversation loop and the voice
 session. Jinja/HTMX render the UI; handwritten JavaScript handles browser events,
-including the floor plan. There is no TypeScript toolchain yet. Python does not
+including the floor plan; it moves to TypeScript file by file (#626). Python does not
 execute those interactions in the browser.
 
 The expensive engines are not all Python: llama.cpp serves the model separately;
@@ -100,20 +101,56 @@ annotations and stricter module-level checking in small changes. Do not hide the
 baseline with blanket `Any`, ignores or missing-import suppression. Keep runtime
 validation and regression tests. Medium priority, absent a concrete severe bug.
 
-[Issue #553](https://github.com/Maeximilion/Maex-Voice-Agent/issues/553), T-3.17,
-keeps both approaches available for Maxi and Claude:
+## Browser code in TypeScript
 
-| Option | Benefit | Cost / decision needed |
-|---|---|---|
-| New browser logic in TypeScript; gradually migrate handwritten JS while retaining Jinja/HTMX | Smaller migration, keeps server rendering and existing deployment | Adds build/type checking, temporary mixed code, boundaries still validated |
-| Separate TypeScript UI, gradually replacing templates | Component tooling and complex client state can be easier to manage | API/auth/SSE contracts, accessibility, deployment, migration and rollback work |
+**Decision (Maxi, 09.11.2026, [#553](https://github.com/Maeximilion/Maex-Voice-Agent/issues/553), T-3.17):**
+the gradual path. New browser logic is written in TypeScript and the handwritten
+JavaScript is migrated file by file; Jinja2, HTMX and SSE stay, and the backend
+stays Python. A separate TypeScript interface that replaces the templates was not
+chosen; it can be looked at again with a measured need. TypeScript adds static
+checks and compiles to JavaScript: it does not make the same code run faster, and
+`any` or a type assertion switches a check off.
 
-A third option may emerge during that decision. No framework is selected and no
-backend rewrite is implied. TypeScript supplements JavaScript with static checks
-and compiles to JavaScript; `strict` helps catch mistakes but assertions and `any`
-can bypass it. It does not make identical JavaScript execute faster. Compare
-customer/tablet needs, responsiveness, browser support, accessibility, maintenance
-and rollout cost before choosing a pilot. Current GUI behavior stays unchanged.
+**Toolchain (built 10.11.2026):**
+
+| Part | How |
+|---|---|
+| Sources | `api/gui/ts/<name>.ts`, one file per script |
+| Compiler | `typescript` pinned to an exact version in `package.json` and `package-lock.json`; no bundler, no framework, no other package |
+| Build | `npm ci` once, then `npm run build` (`tsc`, settings in `tsconfig.json`) writes `api/gui/static/<name>.js`; `npm run check` only checks types |
+| Output | ES modules for `target` ES2020, loaded by `<script type="module">`; one module imports another by its relative URL (`./raumplan-geometry.js`) |
+| Committed output | The compiled `.js` is in git. The server image carries no Node, so `make up`, the Dockerfile and the deployment did not change, and a developer who does not touch browser code needs no Node |
+| CI | Job `browser` (part of the required check `test`) runs `npm ci` and `npm run build` and fails on a type error or when the committed output differs from a fresh build |
+| Strictness | `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`: the set `tsc --init` writes |
+| Updates | Dependabot, ecosystem `npm`, monthly; a compiler bump that changes the output fails CI until `npm run build` ran |
+
+**The rule at the boundaries.** A type describes only what the compiler was told.
+Data that comes from outside the program (JSON from `fetch`, SSE payloads, `data-*`
+attributes, cookies) enters typed code as `unknown` and passes a small hand-written
+check that names what is wrong; no validation library. What cannot be read is
+refused whole instead of being drawn from `undefined`. The first case is `toClient`
+in `raumplan-geometry.ts`: it reads the server's room document field by field and
+refuses a fixture of an unknown kind, which the next save would otherwise delete on
+the server. Prices, confirmations and permissions stay decided on the server
+(hard rules 1 and 3); a check in the browser never replaces the server's.
+
+**Migrating a file:** move it to `api/gui/ts/`, type it, build, load it as a module
+in its template, add its output to `.gitattributes`, and keep the behaviour: a pure
+part runs against the old file on random input before the old file goes (done for
+the geometry on 10.11.2026: 20,000 rounds over every exported function, identical).
+
+| File | State |
+|---|---|
+| `raumplan-geometry` | TypeScript since 10.11.2026 |
+| `raumplan.js` | JavaScript, already a module that imports the compiled geometry (#626) |
+| `base.js`, `app.js` | JavaScript, classic scripts (#626) |
+
+**Claude's choices, 10.11.2026** (Maxi asked for the most reliable way): the output
+is committed instead of built in a Node stage of the Dockerfile, which would put
+Node on every developer's machine because the dev stack mounts the checkout; ES
+modules instead of globals, so files import each other without a bundler; ES2020
+as the oldest syntax the output uses, so the tablet's browser must be from 2020
+or later (to confirm on the pilot's tablet in T-3.5).
 
 ## Review signals for both reviewers
 
