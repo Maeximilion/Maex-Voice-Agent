@@ -43,6 +43,22 @@ def require_kitchen_token(authorization: str = Header(default="")) -> None:
         raise Unauthorized("unauthorized")
 
 
+def require_ops_token(authorization: str = Header(default="")) -> None:
+    """Token of the operator dashboard (/v1/ops/*, #571, docs/23 §8).
+
+    Only the dashboard holds it, over the stack's internal `ops` network; the
+    proxy answers 404 for the path. Empty closes the route, and outside dev and
+    test a weak one does too, as for the agent token.
+    """
+    token = settings.ops_token
+    if (
+        not token
+        or (settings.env not in LOCAL_ENVS and not valid_production_token(token))
+        or not hmac.compare_digest(authorization.encode(), f"Bearer {token}".encode())
+    ):
+        raise Unauthorized("unauthorized")
+
+
 def require_gui_proxy(x_maex_proxy_secret: str = Header(default="")) -> None:
     """The operations view answers only requests that came through Caddy.
 

@@ -24,6 +24,7 @@ from api.db import engine, get_db, refuse_a_superuser_role
 from api.domain.calls import end_call, start_call
 from api.gui import mount_gui
 from api.kitchen.router import router as kitchen_router
+from api.ops.router import router as ops_router
 from api.schemas.calls import EndCallRequest, StartCallRequest
 from api.tools.router import router as tools_router
 
@@ -54,6 +55,7 @@ app.middleware("http")(tool_call_log_middleware)
 app.middleware("http")(request_context_middleware)
 app.include_router(tools_router)
 app.include_router(kitchen_router)
+app.include_router(ops_router)
 mount_gui(app)
 
 

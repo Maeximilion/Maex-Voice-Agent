@@ -45,7 +45,7 @@ from api.config import settings
 from api.core.logging import error_text, get_logger, log
 from api.core.time import business_day, business_day_bounds_utc, to_local
 from api.domain.calls.figures import ORDERS_TAKEN
-from api.domain.status import bridge
+from api.domain.status import bridge, overview
 from api.events.types import KITCHEN
 from api.models import (
     AuditLog,
@@ -62,9 +62,9 @@ logger = get_logger("api.jobs.monitor")
 INTERVAL_SECONDS = 300.0
 TOPIC = "ops"
 ACTOR = "monitor"
-ACTION = "monitor.alarm"
-# Written by scripts/backup.sh after a good run.
-BACKUP_DONE = "backup.done"
+# The ops API reads both (domain/status/overview.py).
+ACTION = overview.ALARM_ACTION
+BACKUP_DONE = overview.BACKUP_DONE
 # Its healthcheck runs every 10 s: this long without one is not a hiccup.
 ASTERISK_SILENT_SECONDS = 120.0
 PRIORITIES = {"normal": 3, "high": 4}
@@ -388,7 +388,7 @@ def _day_report(session: Session, tenant: Tenant, day: date) -> Alarm:
         f"{orders} orders, {reservations} reservations."
     )
     return (
-        "day_report",
+        overview.DAY_REPORT,
         day.isoformat(),
         f"Day report {day.isoformat()}",
         text,
