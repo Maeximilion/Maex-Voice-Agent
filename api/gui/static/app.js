@@ -1,623 +1,705 @@
 // Live-Aktualisierung der Betriebsansicht (docs/06 §1 Regel 5).
 // Der Server schickt nur ein Signal, die Seite holt das Fragment - so bleibt die
 // Darstellung im Jinja2-Template und es gibt keine zweite Wahrheit im Browser.
-(function () {
-  "use strict";
-  var banner = document.getElementById("verbindung");
-  var liste = document.getElementById("heute-liste");
-
-  var stoerung = document.getElementById("stoerung");
-
-  // Ein Tap, der am Server scheitert, liefert trotzdem die Kopfzeile mit der
-  // roten Leiste. htmx tauscht bei 4xx/5xx sonst nichts aus, und der Knopf
-  // saehe aus, als haette er nichts getan. Getauscht wird aber nur HTML: andere
-  // Fehler (HTTPException, unbehandelte Ausnahmen) kommen aus main.py als
-  // JSON-Huelle, die an die Stelle der Knoepfe oder der Liste zu setzen waere
-  // schlimmer als der Fehler selbst. Dann bleibt die Ansicht stehen und die
-  // rote Leiste oben meldet es (docs/06 §5).
-  document.body.addEventListener("htmx:beforeSwap", function (e) {
-    var xhr = e.detail.xhr;
-    if (xhr.status < 400) {
-      if (stoerung) stoerung.hidden = true;
-      return;
-    }
-    var typ = xhr.getResponseHeader("Content-Type") || "";
-    if (typ.indexOf("text/html") === 0 && xhr.responseText) {
-      e.detail.shouldSwap = true;
-      e.detail.isError = false;
-    } else {
-      e.detail.shouldSwap = false;
-      if (stoerung) stoerung.hidden = false;
-    }
-  });
-  // Server nicht erreichbar: gelbe Leiste statt stiller Knopf (docs/06 §5).
-  document.body.addEventListener("htmx:sendError", function () {
-    offline(true);
-  });
-
-  // The holiday strip is replaced with its list after every answer; keep it open
-  // while the team works through the suggestions, or each tap would fold it.
-  var feiertageOffen = false;
-  document.addEventListener("toggle", function (e) {
-    if (e.target.id === "feiertage-fold") feiertageOffen = e.target.open;
-  }, true);
-  document.body.addEventListener("htmx:afterSwap", function () {
-    var fold = document.getElementById("feiertage-fold");
-    if (fold && feiertageOffen) fold.open = true;
-  });
-
-  if (!liste || !window.EventSource) return;
-
-  function offline(yes) {
-    if (banner) banner.hidden = !yes;
-  }
-
-  function nachladen() {
-    // htmx ersetzt den Inhalt des Ziels; faellt der Aufruf aus, bleibt die
-    // zuletzt gezeigte Liste stehen statt zu leeren.
-    window.htmx.ajax("GET", "/gui/fragments/heute", { target: "#heute-liste" });
-  }
-
-  function kopfzeile() {
-    window.htmx.ajax("GET", "/gui/fragments/kopfzeile", {
-      target: "#kopfzeile",
-      swap: "outerHTML",
-    });
-  }
-
-  function rueckrufe() {
-    window.htmx.ajax("GET", "/gui/fragments/rueckrufe", {
-      target: "#rueckrufe-liste",
-    });
-  }
-
-  function feiertage() {
-    window.htmx.ajax("GET", "/gui/fragments/feiertage", {
-      target: "#feiertage-liste",
-    });
-  }
-
-  function reloadChecks() {
-    window.htmx.ajax("GET", "/gui/fragments/pruefen", {
-      target: "#pruefen-liste",
-    });
-  }
-
-  function reloadPrices() {
-    window.htmx.ajax("GET", "/gui/fragments/preise", {
-      target: "#preise-liste",
-    });
-  }
-
-  // Ton bei neuen Rueckrufen (docs/06 §1 Regel 5), Beschwerden mit eigenem Ton
-  // (§3). Erzeugt statt Audiodatei: nichts nachzuladen, laeuft ohne Internet.
-  // Browser spielen erst nach dem ersten Tap auf die Seite Ton ab; am Tablet
-  // ist das nach dem ersten Handgriff der Fall.
-  var audio = null;
-  var Ctx = window.AudioContext || window.webkitAudioContext;
-  // Safari auf dem Tablet schaltet Web Audio nur innerhalb einer Geste frei:
-  // der Kontext entsteht deshalb im Tap, nicht erst beim ersten Rueckruf, und
-  // ein stiller Puffer spielt einmal an. Ohne das bliebe das Tablet stumm.
-  function freischalten() {
-    if (!Ctx) return;
-    if (!audio) {
-      audio = new Ctx();
-      var still = audio.createBufferSource();
-      still.buffer = audio.createBuffer(1, 1, 22050);
-      still.connect(audio.destination);
-      still.start(0);
-    }
-    if (audio.state === "suspended") audio.resume();
-    if (tonAn) tonAn.hidden = true;
-  }
-  // Until the first tap the browser keeps the tone off (docs/06 §8): say so
-  // and let one tap on the button end it (T-3.16).
-  var tonAn = document.getElementById("ton-an");
-  if (tonAn && Ctx) tonAn.hidden = false;
-  document.addEventListener("touchstart", freischalten, { passive: true });
-  document.addEventListener("click", freischalten);
-
-  function ton(folge) {
-    // Noch kein Tap auf die Seite: kein Kontext, kein Ton (Browserregel).
-    if (!audio) return;
-    var t = audio.currentTime;
-    folge.forEach(function (hz, i) {
-      var osc = audio.createOscillator();
-      var gain = audio.createGain();
-      osc.frequency.value = hz;
-      gain.gain.setValueAtTime(0.3, t + i * 0.25);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.25 + 0.22);
-      osc.connect(gain).connect(audio.destination);
-      osc.start(t + i * 0.25);
-      osc.stop(t + i * 0.25 + 0.23);
-    });
-  }
-  function karten(liste) {
-    var ids = {};
-    document.querySelectorAll("#" + liste + " [data-id]").forEach(function (el) {
-      ids[el.getAttribute("data-id")] = el.getAttribute("data-reason");
-    });
-    return ids;
-  }
-  // Orders that wait for "Passt" longer than the restaurant allows (data-overdue).
-  function overdueOrders() {
-    var ids = {};
-    document
-      .querySelectorAll("#bestellungen-liste [data-overdue]")
-      .forEach(function (el) {
-        ids[el.getAttribute("data-id")] = true;
-      });
-    return ids;
-  }
-  // Was beim Laden schon da war, klingelt nicht.
-  var bekannt = karten("rueckrufe-liste");
-  var knownOrders = karten("bestellungen-liste");
-  var knownOverdue = overdueOrders();
-  function newIds(vorher, jetzt) {
-    return Object.keys(jetzt).filter(function (id) {
-      return !(id in vorher);
-    });
-  }
-  document.body.addEventListener("htmx:afterSwap", function (e) {
-    var ziel = e.detail.target && e.detail.target.id;
-    if (ziel === "bestellungen-liste") {
-      var currentOrders = karten("bestellungen-liste");
-      var newOrders = newIds(knownOrders, currentOrders);
-      knownOrders = currentOrders;
-      // A card that turned red since the last look: nobody has tapped "Passt",
-      // so nobody is looking. The alarm of a complaint, once per card.
-      var currentOverdue = overdueOrders();
-      var turnedRed = newIds(knownOverdue, currentOverdue);
-      knownOverdue = currentOverdue;
-      if (turnedRed.length) {
-        ton([660, 440, 660, 440]);
-        var red = document.querySelector(
-          '#bestellungen-liste [data-id="' + turnedRed[0] + '"]'
-        );
-        if (red) red.scrollIntoView({ block: "nearest", behavior: "smooth" });
-      }
-      if (!newOrders.length) return;
-      // A sheet covers the columns: say so on the sheet, a tap shows the card.
-      notifySheet(
-        "Neue Bestellung \u00b7 ansehen",
-        '#bestellungen-liste [data-id="' + newOrders[0] + '"]'
-      );
-      // Eigener Ton fuer Bestellungen, dazu kurzes Blinken (docs/06 §3).
-      // Die erste neue Karte rollt ins Bild: steht sie unten, saehe sonst
-      // niemand das Blinken. A card that turned red in the same redraw keeps
-      // the sound and the view: the new cards still blink.
-      if (!turnedRed.length) ton([523, 659, 784]);
-      newOrders.forEach(function (id, i) {
-        var el = document.querySelector('#bestellungen-liste [data-id="' + id + '"]');
-        if (!el) return;
-        el.classList.add("neu");
-        if (i === 0 && !turnedRed.length) {
-          el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+//
+// Source: api/gui/ts/app.ts. The file of the same name in api/gui/static/ is its
+// compiled output (`npm run build`, docs/22); edit the source, never the output.
+// Loaded as a module by betrieb/index.html, after htmx.
+// Marks the file as a module, so the declaration below can extend `Window`.
+export {};
+function record(value) {
+    return typeof value === "object" && value !== null ? value : {};
+}
+// htmx hands its data over in the event's detail, and the server's HX-Trigger
+// values arrive the same way. Nothing types that object for us: it is the
+// object htmx reads back (shouldSwap), and each field is checked where it is read.
+function detail(event) {
+    return record(event instanceof CustomEvent ? event.detail : null);
+}
+(() => {
+    const banner = document.getElementById("verbindung");
+    const liste = document.getElementById("heute-liste");
+    const stoerung = document.getElementById("stoerung");
+    // Ein Tap, der am Server scheitert, liefert trotzdem die Kopfzeile mit der
+    // roten Leiste. htmx tauscht bei 4xx/5xx sonst nichts aus, und der Knopf
+    // saehe aus, als haette er nichts getan. Getauscht wird aber nur HTML: andere
+    // Fehler (HTTPException, unbehandelte Ausnahmen) kommen aus main.py als
+    // JSON-Huelle, die an die Stelle der Knoepfe oder der Liste zu setzen waere
+    // schlimmer als der Fehler selbst. Dann bleibt die Ansicht stehen und die
+    // rote Leiste oben meldet es (docs/06 §5).
+    document.body.addEventListener("htmx:beforeSwap", (e) => {
+        const d = detail(e);
+        const xhr = d.xhr;
+        if (!(xhr instanceof XMLHttpRequest))
+            return;
+        if (xhr.status < 400) {
+            if (stoerung)
+                stoerung.hidden = true;
+            return;
         }
-      });
-      return;
-    }
-    if (ziel !== "rueckrufe-liste") return;
-    var jetzt = karten("rueckrufe-liste");
-    var neu = newIds(bekannt, jetzt);
-    bekannt = jetzt;
-    if (!neu.length) return;
-    var beschwerde = neu.some(function (id) {
-      return jetzt[id] === "complaint";
+        const typ = xhr.getResponseHeader("Content-Type") || "";
+        if (typ.indexOf("text/html") === 0 && xhr.responseText) {
+            d.shouldSwap = true;
+            d.isError = false;
+        }
+        else {
+            d.shouldSwap = false;
+            if (stoerung)
+                stoerung.hidden = false;
+        }
     });
-    if (beschwerde) {
-      notifySheet(
-        "Neue Beschwerde \u00b7 ansehen",
-        '#rueckrufe-liste [data-id="' +
-          neu.filter(function (id) {
-            return jetzt[id] === "complaint";
-          })[0] +
-          '"]'
-      );
-    }
-    ton(beschwerde ? [660, 440, 660, 440] : [880, 1175]);
-  });
-
-  function reloadOrders() {
-    window.htmx.ajax("GET", "/gui/fragments/bestellungen", {
-      target: "#bestellungen-liste",
+    // Server nicht erreichbar: gelbe Leiste statt stiller Knopf (docs/06 §5).
+    document.body.addEventListener("htmx:sendError", () => {
+        offline(true);
     });
-  }
-
-  // Sheet (T-3.8): "Korrigieren" and "Gericht aus" open the same way, as a
-  // sheet over the columns, which stay live underneath. The sheet takes the
-  // focus, the columns below are inert meanwhile, and on close the focus goes
-  // back to the button that opened it. Escape closes. The correction also
-  // closes after saving (event from the server) and after 90 seconds without a
-  // tap: whoever walks off to the ringing phone would leave a half-done
-  // correction open.
-  var correctionBox = document.getElementById("korrektur");
-  var dishBox = document.getElementById("gericht-aus");
-  var noticeBox = document.getElementById("vorlauf");
-  var waitBox = document.getElementById("wartezeit");
-  var entryBox = document.getElementById("reservierung");
-  var historyBox = document.getElementById("rueckruf-verlauf");
-  var settingsBox = document.getElementById("einstellungen");
-  var sheets = [correctionBox, dishBox, noticeBox, waitBox, entryBox, historyBox, settingsBox].filter(Boolean);
-  var board = document.querySelector(".board");
-  var opener = null;
-  var idleTimer = null;
-  var IDLE_MS = 90000;
-  function sheetOpen() {
-    return sheets.some(function (b) { return b.firstElementChild; });
-  }
-  // A new order or complaint while a sheet covers the columns: a strip above
-  // the sheet, a tap closes the sheets and brings the card into view. It reads
-  // `sheets`, so every sheet added to the array gets it.
-  var alertBtn = null;
-  var alertTarget = null;
-  function hideAlert() {
-    if (alertBtn) alertBtn.remove();
-    alertBtn = null;
-    alertTarget = null;
-    var main = document.querySelector(".tafel main");
-    if (main) main.classList.remove("alert-on");
-  }
-  function notifySheet(text, selector) {
-    var main = document.querySelector(".tafel main");
-    if (!main || !sheetOpen()) return;
-    if (!alertBtn) {
-      alertBtn = document.createElement("button");
-      alertBtn.type = "button";
-      alertBtn.className = "sheet-alert";
-      alertBtn.addEventListener("click", function () {
-        var target = alertTarget ? document.querySelector(alertTarget) : null;
-        // A correction with changes (the foot shows no "nothing changed" state)
-        // is dropped: say so.
-        var dirty =
-          correctionBox &&
-          correctionBox.querySelector(".sheet-foot") &&
-          !correctionBox.querySelector(".sheet-foot .state-note");
-        sheets.forEach(closeSheet);
-        if (dirty) showBoardNote(ABANDONED, "warn");
-        hideAlert();
-        if (target) target.scrollIntoView({ block: "nearest" });
-      });
-      main.appendChild(alertBtn);
-    }
-    alertBtn.textContent = text;
-    alertTarget = selector;
-    main.classList.add("alert-on");
-  }
-  // One line above the columns, in view whatever the scroll position: it goes
-  // with the next tap, or after `ms` when a time is given. A new one replaces
-  // the old.
-  var boardNote = null;
-  var boardNoteTimer = null;
-  function dropBoardNote() {
-    if (boardNote) boardNote.remove();
-    boardNote = null;
-    if (boardNoteTimer) window.clearTimeout(boardNoteTimer);
-    boardNoteTimer = null;
-  }
-  function showBoardNote(text, tone, ms) {
-    var main = document.querySelector(".tafel main");
-    if (!main || !board) return;
-    dropBoardNote();
-    var note = document.createElement("div");
-    note.className = "banner " + tone + " board-note";
-    note.setAttribute("role", "status");
-    note.textContent = text;
-    main.insertBefore(note, board);
-    boardNote = note;
-    if (ms) {
-      boardNoteTimer = window.setTimeout(dropBoardNote, ms);
-    } else {
-      document.addEventListener("click", function () { if (boardNote === note) dropBoardNote(); }, { capture: true, once: true });
-    }
-  }
-  var ABANDONED = "Korrektur abgebrochen, nichts gespeichert.";
-  var RELOADED = "Die Liste hat sich geändert, nichts passiert. Bitte nochmal tippen.";
-  // The text a cancel tap sends in its HX-Trigger: the refresh that follows
-  // would remove a line inside the column.
-  document.body.addEventListener("order-notice", function (e) {
-    showBoardNote(e.detail.value, "ok", 6000);
-  });
-  // A table the team entered (T-3.12): the sheet closes, the board says so; the
-  // column "Heute" follows on its own through the event stream.
-  document.body.addEventListener("reservierung-eingetragen", function (e) {
-    closeSheet(entryBox);
-    showBoardNote(e.detail.value, "ok", 6000);
-  });
-  function syncBoard() {
-    var open = sheetOpen();
-    if (board) board.inert = open;
-    if (!open) hideAlert();
-  }
-  // Empties a sheet and, if it is the correction, stops its idle timer: a timer
-  // left running would close the next correction early.
-  function dropSheet(box) {
-    box.innerHTML = "";
-    if (box === dishBox) openCats = {};
-    if (box === correctionBox && idleTimer) {
-      window.clearTimeout(idleTimer);
-      idleTimer = null;
-    }
-  }
-  function closeSheet(box) {
-    if (!box || !box.firstElementChild) return;
-    dropSheet(box);
-    syncBoard();
-    if (opener && document.contains(opener)) opener.focus();
-    opener = null;
-  }
-  // A wait that was taken closes its sheet; a refused one stays, with the
-  // sentence in the header (T-3.9).
-  document.body.addEventListener("htmx:afterRequest", function (e) {
-    if (e.detail.xhr.status < 300 && waitBox && waitBox.contains(e.detail.elt) &&
-        e.detail.requestConfig.verb === "post") {
-      closeSheet(waitBox);
-    }
-  });
-  // In-page question instead of the browser's confirm() (T-3.16, docs/06 §1
-  // rule 6): the dialog is small and its buttons are 60 px targets. htmx asks
-  // through htmx:confirm; the request goes out only on "Ja".
-  function closeQuestion() {
-    var open = document.querySelector(".frage-grund");
-    if (open) open.remove();
-    // Only what the question made inert: a sheet keeps its own inert board.
-    madeInert.forEach(function (el) {
-      el.inert = false;
+    // The holiday strip is replaced with its list after every answer; keep it open
+    // while the team works through the suggestions, or each tap would fold it.
+    let feiertageOffen = false;
+    document.addEventListener("toggle", (e) => {
+        const t = e.target;
+        if (t instanceof HTMLDetailsElement && t.id === "feiertage-fold")
+            feiertageOffen = t.open;
+    }, true);
+    document.body.addEventListener("htmx:afterSwap", () => {
+        const fold = document.getElementById("feiertage-fold");
+        if (fold instanceof HTMLDetailsElement && feiertageOffen)
+            fold.open = true;
     });
-    madeInert = [];
-    return !!open;
-  }
-  var madeInert = [];
-  document.body.addEventListener("htmx:confirm", function (e) {
-    if (!e.detail.question) return;
-    e.preventDefault();
-    var issue = e.detail.issueRequest;
-    var back = document.createElement("div");
-    back.className = "frage-grund";
-    var box = document.createElement("div");
-    box.className = "frage";
-    box.setAttribute("role", "alertdialog");
-    box.setAttribute("aria-modal", "true");
-    var text = document.createElement("p");
-    text.textContent = e.detail.question;
-    var no = document.createElement("button");
-    no.type = "button";
-    no.textContent = "Nein";
-    var yes = document.createElement("button");
-    yes.type = "button";
-    yes.className = "primary";
-    yes.textContent = "Ja";
-    // The board stays reachable by keyboard behind an overlay: make everything
-    // else inert while the question stands, and keep Tab between its buttons.
-    Array.prototype.forEach.call(document.body.children, function (el) {
-      if (el === back || el.tagName === "SCRIPT" || el.inert) return;
-      el.inert = true;
-      madeInert.push(el);
-    });
-    box.addEventListener("keydown", function (k) {
-      if (k.key !== "Tab") return;
-      k.preventDefault();
-      (document.activeElement === no ? yes : no).focus();
-    });
-    no.addEventListener("click", closeQuestion);
-    yes.addEventListener("click", function () {
-      closeQuestion();
-      // A live update may have replaced the card while the question stood
-      // (confirm() used to freeze the page): htmx drops a request from a
-      // detached button, so say so instead of looking as if it had worked.
-      if (!e.detail.elt.isConnected) {
-        showBoardNote(RELOADED, "warn");
+    if (!liste || !("EventSource" in window))
         return;
-      }
-      issue(true);
-    });
-    box.append(text, no, yes);
-    back.append(box);
-    document.body.append(back);
-    no.focus();
-  });
-  function closeCorrection() {
-    closeSheet(correctionBox);
-  }
-  function armIdleTimer() {
-    if (idleTimer) window.clearTimeout(idleTimer);
-    idleTimer = window.setTimeout(function () {
-      var open = correctionBox && correctionBox.firstElementChild;
-      closeCorrection();
-      if (open) showBoardNote(ABANDONED, "warn");
-    }, IDLE_MS);
-  }
-  sheets.forEach(function (box) {
-    box.addEventListener("click", function (e) {
-      if (e.target.closest("[data-schliessen]")) {
-        closeSheet(box);
-        return;
-      }
-      if (box === correctionBox) armIdleTimer();
-    });
-  });
-  if (correctionBox) {
-    // Tippen im Nummernfeld zaehlt auch als Taetigkeit, nicht nur Tippen auf Knoepfe.
-    correctionBox.addEventListener("input", armIdleTimer);
-  }
-  document.addEventListener("keydown", function (e) {
-    if (e.key !== "Escape") return;
-    if (!closeQuestion()) sheets.forEach(closeSheet);
-  });
-  // Only opening takes the focus: after a tap inside the sheet it stays put.
-  var wasOpen = false;
-  document.body.addEventListener("htmx:beforeRequest", function (e) {
-    var t = e.detail.target;
-    if (sheets.indexOf(t) >= 0 && !t.firstElementChild) opener = e.detail.elt;
-  });
-  // A tap inside the sheet redraws it whole: keep the scroll position, or a
-  // tap on a line far down would throw the view back to the top. A search
-  // (GET) starts at the top on purpose.
-  var scrollWas = 0;
-  function scroller(t) {
-    return t.classList.contains("sheet-body") ? t : t.querySelector(".sheet-body");
-  }
-  document.body.addEventListener("htmx:beforeSwap", function (e) {
-    var t = e.detail.target;
-    wasOpen = !!t.firstElementChild;
-    var sc = scroller(t);
-    var cfg = e.detail.requestConfig || {};
-    scrollWas = wasOpen && cfg.verb === "post" && sc ? sc.scrollTop : 0;
-  });
-  document.body.addEventListener("htmx:afterSwap", function (e) {
-    var t = e.detail.target;
-    // A dish row was replaced in place: its button is new, keep the focus on it.
-    if (t.tagName === "LI" && t.id.indexOf("dish-") === 0) {
-      var row = document.getElementById(t.id);
-      var btn = row && row.querySelector("button");
-      if (btn && document.activeElement === document.body) btn.focus({ preventScroll: true });
-      return;
+    function offline(yes) {
+        if (banner)
+            banner.hidden = !yes;
     }
-    var inList = t.id === "gericht-liste";
-    if (!inList && sheets.indexOf(t) < 0) return;
-    if (inList) applyOpenCats(t);
-    var sc = scroller(t);
-    if (sc) sc.scrollTop = scrollWas;
-    // Only if the swap removed the focused element (focus fell back to body): focus elsewhere, e.g. the wait field in the header, stays.
-    var box = inList ? t.closest("#gericht-aus") : t;
-    if (wasOpen && box && document.activeElement === document.body) {
-      var title = box.querySelector(".sheet-head h2");
-      if (title) title.focus({ preventScroll: true });
+    function nachladen() {
+        // htmx ersetzt den Inhalt des Ziels; faellt der Aufruf aus, bleibt die
+        // zuletzt gezeigte Liste stehen statt zu leeren.
+        window.htmx.ajax("GET", "/gui/fragments/heute", { target: "#heute-liste" });
     }
-  });
-  document.body.addEventListener("htmx:afterSwap", function (e) {
-    var box = e.detail.target;
-    if (sheets.indexOf(box) < 0 || !box.firstElementChild) return;
-    sheets.forEach(function (other) {
-      if (other !== box) dropSheet(other);
-    });
-    syncBoard();
-    if (box === correctionBox) armIdleTimer();
-    var refused = box.querySelector("#number-error");
-    if (refused) {
-      // The sticky foot covers the bottom of the list: the sentence must stand above it.
-      var body = box.querySelector(".sheet-body");
-      var foot = box.querySelector(".sheet-foot");
-      var gap = foot ? body.getBoundingClientRect().bottom - foot.getBoundingClientRect().top : 0;
-      var over = refused.getBoundingClientRect().bottom - (body.getBoundingClientRect().bottom - gap) + 12;
-      if (over > 0) body.scrollTop += over;
+    function kopfzeile() {
+        window.htmx.ajax("GET", "/gui/fragments/kopfzeile", {
+            target: "#kopfzeile",
+            swap: "outerHTML",
+        });
     }
-    var title = box.querySelector(".sheet-head h2");
-    if (!wasOpen && title) title.focus();
-  });
-  document.body.addEventListener("htmx:afterSwap", function (e) {
-    if (e.detail.target !== waitBox) return;
-    var field = waitBox.querySelector("input");
-    if (field) field.select();
-  });
-  // Which categories of "Gericht aus" the team opened, by name, so a search
-  // that is cleared brings them back. Reset when the sheet
-  // closes. A search shows its hits open and does not count as the team's choice.
-  var openCats = {};
-  function searching() {
-    var s = document.getElementById("gericht-suche");
-    return !!(s && s.value.trim());
-  }
-  // toggle does not bubble: listen in the capture phase.
-  document.addEventListener(
-    "toggle",
-    function (e) {
-      var d = e.target;
-      if (!d.matches || !d.matches("#gericht-liste details[data-cat]") || searching()) return;
-      var cat = d.getAttribute("data-cat");
-      // Opened by the team (not restored by a redraw): heading to the top, or
-      // the dishes of a group at the bottom would hide below the fold.
-      var fresh = d.open && !openCats[cat];
-      if (d.open) openCats[cat] = true;
-      else delete openCats[cat];
-      if (fresh) {
-        var sc = d.closest(".sheet-body");
-        if (sc) sc.scrollTop += d.getBoundingClientRect().top - sc.getBoundingClientRect().top - 12;
-      }
-    },
-    true
-  );
-  function applyOpenCats(list) {
-    if (searching()) return;
-    list.querySelectorAll("details[data-cat]").forEach(function (d) {
-      if (openCats[d.getAttribute("data-cat")]) d.open = true;
+    function rueckrufe() {
+        window.htmx.ajax("GET", "/gui/fragments/rueckrufe", {
+            target: "#rueckrufe-liste",
+        });
+    }
+    function feiertage() {
+        window.htmx.ajax("GET", "/gui/fragments/feiertage", {
+            target: "#feiertage-liste",
+        });
+    }
+    function reloadChecks() {
+        window.htmx.ajax("GET", "/gui/fragments/pruefen", {
+            target: "#pruefen-liste",
+        });
+    }
+    function reloadPrices() {
+        window.htmx.ajax("GET", "/gui/fragments/preise", {
+            target: "#preise-liste",
+        });
+    }
+    // Ton bei neuen Rueckrufen (docs/06 §1 Regel 5), Beschwerden mit eigenem Ton
+    // (§3). Erzeugt statt Audiodatei: nichts nachzuladen, laeuft ohne Internet.
+    // Browser spielen erst nach dem ersten Tap auf die Seite Ton ab; am Tablet
+    // ist das nach dem ersten Handgriff der Fall.
+    let audio = null;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    // Safari auf dem Tablet schaltet Web Audio nur innerhalb einer Geste frei:
+    // der Kontext entsteht deshalb im Tap, nicht erst beim ersten Rueckruf, und
+    // ein stiller Puffer spielt einmal an. Ohne das bliebe das Tablet stumm.
+    function freischalten() {
+        if (!Ctx)
+            return;
+        if (!audio) {
+            audio = new Ctx();
+            const still = audio.createBufferSource();
+            still.buffer = audio.createBuffer(1, 1, 22050);
+            still.connect(audio.destination);
+            still.start(0);
+        }
+        if (audio.state === "suspended")
+            audio.resume();
+        if (tonAn)
+            tonAn.hidden = true;
+    }
+    // Until the first tap the browser keeps the tone off (docs/06 §8): say so
+    // and let one tap on the button end it (T-3.16).
+    const tonAn = document.getElementById("ton-an");
+    if (tonAn && Ctx)
+        tonAn.hidden = false;
+    document.addEventListener("touchstart", freischalten, { passive: true });
+    document.addEventListener("click", freischalten);
+    function ton(folge) {
+        // Noch kein Tap auf die Seite: kein Kontext, kein Ton (Browserregel).
+        const ctx = audio;
+        if (!ctx)
+            return;
+        const t = ctx.currentTime;
+        folge.forEach((hz, i) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.frequency.value = hz;
+            gain.gain.setValueAtTime(0.3, t + i * 0.25);
+            gain.gain.exponentialRampToValueAtTime(0.001, t + i * 0.25 + 0.22);
+            osc.connect(gain).connect(ctx.destination);
+            osc.start(t + i * 0.25);
+            osc.stop(t + i * 0.25 + 0.23);
+        });
+    }
+    // The cards of a list by their id. A plain object on purpose: its keys come
+    // back in the order the old script announced new cards in.
+    function karten(liste) {
+        const ids = {};
+        document.querySelectorAll("#" + liste + " [data-id]").forEach((el) => {
+            const id = el.getAttribute("data-id");
+            if (id !== null)
+                ids[id] = el.getAttribute("data-reason");
+        });
+        return ids;
+    }
+    // Orders that wait for "Passt" longer than the restaurant allows (data-overdue).
+    function overdueOrders() {
+        const ids = {};
+        document
+            .querySelectorAll("#bestellungen-liste [data-overdue]")
+            .forEach((el) => {
+            const id = el.getAttribute("data-id");
+            if (id !== null)
+                ids[id] = "overdue";
+        });
+        return ids;
+    }
+    // Was beim Laden schon da war, klingelt nicht.
+    let bekannt = karten("rueckrufe-liste");
+    let knownOrders = karten("bestellungen-liste");
+    let knownOverdue = overdueOrders();
+    function newIds(vorher, jetzt) {
+        return Object.keys(jetzt).filter((id) => !(id in vorher));
+    }
+    document.body.addEventListener("htmx:afterSwap", (e) => {
+        const target = detail(e).target;
+        const ziel = target instanceof Element ? target.id : null;
+        if (ziel === "bestellungen-liste") {
+            const currentOrders = karten("bestellungen-liste");
+            const newOrders = newIds(knownOrders, currentOrders);
+            knownOrders = currentOrders;
+            // A card that turned red since the last look: nobody has tapped "Passt",
+            // so nobody is looking. The alarm of a complaint, once per card.
+            const currentOverdue = overdueOrders();
+            const turnedRed = newIds(knownOverdue, currentOverdue);
+            knownOverdue = currentOverdue;
+            if (turnedRed.length) {
+                ton([660, 440, 660, 440]);
+                const red = document.querySelector('#bestellungen-liste [data-id="' + turnedRed[0] + '"]');
+                if (red)
+                    red.scrollIntoView({ block: "nearest", behavior: "smooth" });
+            }
+            if (!newOrders.length)
+                return;
+            // A sheet covers the columns: say so on the sheet, a tap shows the card.
+            notifySheet("Neue Bestellung · ansehen", '#bestellungen-liste [data-id="' + newOrders[0] + '"]');
+            // Eigener Ton fuer Bestellungen, dazu kurzes Blinken (docs/06 §3).
+            // Die erste neue Karte rollt ins Bild: steht sie unten, saehe sonst
+            // niemand das Blinken. A card that turned red in the same redraw keeps
+            // the sound and the view: the new cards still blink.
+            if (!turnedRed.length)
+                ton([523, 659, 784]);
+            newOrders.forEach((id, i) => {
+                const el = document.querySelector('#bestellungen-liste [data-id="' + id + '"]');
+                if (!el)
+                    return;
+                el.classList.add("neu");
+                if (i === 0 && !turnedRed.length) {
+                    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                }
+            });
+            return;
+        }
+        if (ziel !== "rueckrufe-liste")
+            return;
+        const jetzt = karten("rueckrufe-liste");
+        const neu = newIds(bekannt, jetzt);
+        bekannt = jetzt;
+        if (!neu.length)
+            return;
+        const beschwerde = neu.some((id) => jetzt[id] === "complaint");
+        if (beschwerde) {
+            notifySheet("Neue Beschwerde · ansehen", '#rueckrufe-liste [data-id="' +
+                neu.filter((id) => jetzt[id] === "complaint")[0] +
+                '"]');
+        }
+        ton(beschwerde ? [660, 440, 660, 440] : [880, 1175]);
     });
-  }
-  document.body.addEventListener("gerichte-geaendert", function () {
-    kopfzeile();
-  });
-
-  document.body.addEventListener("bestellungen-geaendert", function () {
-    closeCorrection();
-    reloadOrders();
-  });
-
-  var strom = new EventSource("/gui/events");
-  // Laedt auch, waehrend jemand korrigiert: der Kasten liegt ausserhalb der
-  // Liste und bleibt stehen (Design-Review T-4.7).
-  strom.addEventListener("orders", function () {
-    offline(false);
-    reloadOrders();
-  });
-  strom.addEventListener("callbacks", function () {
-    offline(false);
-    rueckrufe();
-  });
-  // Umgeschaltet an einem anderen Tablet oder direkt in der Datenbank: jedes
-  // Geraet zeigt denselben Stand.
-  strom.addEventListener("header", function () {
-    offline(false);
-    kopfzeile();
-  });
-  // Another tablet switched a dish, or a switch ran out in the morning: the
-  // tile shows it. An open list is not redrawn (a dish would slide away under
-  // the finger); every button sets a state, so a stale row does no harm, and
-  // the list is fresh the next time the sheet opens.
-  strom.addEventListener("dishes", function () {
-    offline(false);
-    kopfzeile();
-  });
-  // The job wrote a suggestion, or another tablet answered one (#207).
-  strom.addEventListener("holidays", function () {
-    offline(false);
-    feiertage();
-  });
-  // The price check found a difference, or another tablet answered one (T-4.9).
-  strom.addEventListener("prices", function () {
-    offline(false);
-    reloadPrices();
-  });
-  // The staff changed a team number or a date's hours, or the owner decided
-  // a card on another tablet (#570 b).
-  strom.addEventListener("checks", function () {
-    offline(false);
-    reloadChecks();
-  });
-  strom.addEventListener("today", function () {
-    offline(false);
-    nachladen();
-  });
-  strom.addEventListener("problem", function () {
-    offline(true);
-  });
-  strom.onopen = function () {
-    offline(false);
-  };
-  // Der Browser verbindet nach dem Abbruch von selbst neu (retry im Strom).
-  // Not after an answer that is no stream: a 401 once the device is signed out
-  // (#570) or an error page of the proxy. Then a small request asks every 15
-  // seconds: signed out goes to the sign-in, a server that answers again
-  // reloads the page and its stream, anything else asks again.
-  function probe() {
-    fetch("/gui/fragments/heute", { headers: { "HX-Request": "true" }, credentials: "same-origin" }).then(function (res) {
-      var away = res.status === 401 && res.headers.get("HX-Redirect");
-      if (away) location.href = away;
-      else if (res.ok) location.reload();
-      else setTimeout(probe, 15000);
-    }, function () { setTimeout(probe, 15000); });
-  }
-  strom.onerror = function () {
-    offline(true);
-    if (strom.readyState === EventSource.CLOSED) setTimeout(probe, 15000);
-  };
+    function reloadOrders() {
+        window.htmx.ajax("GET", "/gui/fragments/bestellungen", {
+            target: "#bestellungen-liste",
+        });
+    }
+    // Sheet (T-3.8): "Korrigieren" and "Gericht aus" open the same way, as a
+    // sheet over the columns, which stay live underneath. The sheet takes the
+    // focus, the columns below are inert meanwhile, and on close the focus goes
+    // back to the button that opened it. Escape closes. The correction also
+    // closes after saving (event from the server) and after 90 seconds without a
+    // tap: whoever walks off to the ringing phone would leave a half-done
+    // correction open.
+    const correctionBox = document.getElementById("korrektur");
+    const dishBox = document.getElementById("gericht-aus");
+    const noticeBox = document.getElementById("vorlauf");
+    const waitBox = document.getElementById("wartezeit");
+    const entryBox = document.getElementById("reservierung");
+    const historyBox = document.getElementById("rueckruf-verlauf");
+    const settingsBox = document.getElementById("einstellungen");
+    const sheets = [correctionBox, dishBox, noticeBox, waitBox, entryBox, historyBox, settingsBox].filter((b) => b !== null);
+    const board = document.querySelector(".board");
+    let opener = null;
+    let idleTimer = null;
+    const IDLE_MS = 90000;
+    function sheetOpen() {
+        return sheets.some((b) => b.firstElementChild);
+    }
+    // A new order or complaint while a sheet covers the columns: a strip above
+    // the sheet, a tap closes the sheets and brings the card into view. It reads
+    // `sheets`, so every sheet added to the array gets it.
+    let alertBtn = null;
+    let alertTarget = null;
+    function hideAlert() {
+        if (alertBtn)
+            alertBtn.remove();
+        alertBtn = null;
+        alertTarget = null;
+        const main = document.querySelector(".tafel main");
+        if (main)
+            main.classList.remove("alert-on");
+    }
+    function notifySheet(text, selector) {
+        const main = document.querySelector(".tafel main");
+        if (!main || !sheetOpen())
+            return;
+        if (!alertBtn) {
+            alertBtn = document.createElement("button");
+            alertBtn.type = "button";
+            alertBtn.className = "sheet-alert";
+            alertBtn.addEventListener("click", () => {
+                const target = alertTarget ? document.querySelector(alertTarget) : null;
+                // A correction with changes (the foot shows no "nothing changed" state)
+                // is dropped: say so.
+                const dirty = correctionBox &&
+                    correctionBox.querySelector(".sheet-foot") &&
+                    !correctionBox.querySelector(".sheet-foot .state-note");
+                sheets.forEach(closeSheet);
+                if (dirty)
+                    showBoardNote(ABANDONED, "warn");
+                hideAlert();
+                if (target)
+                    target.scrollIntoView({ block: "nearest" });
+            });
+            main.appendChild(alertBtn);
+        }
+        alertBtn.textContent = text;
+        alertTarget = selector;
+        main.classList.add("alert-on");
+    }
+    // One line above the columns, in view whatever the scroll position: it goes
+    // with the next tap, or after `ms` when a time is given. A new one replaces
+    // the old.
+    let boardNote = null;
+    let boardNoteTimer = null;
+    function dropBoardNote() {
+        if (boardNote)
+            boardNote.remove();
+        boardNote = null;
+        if (boardNoteTimer)
+            window.clearTimeout(boardNoteTimer);
+        boardNoteTimer = null;
+    }
+    function showBoardNote(text, tone, ms) {
+        const main = document.querySelector(".tafel main");
+        if (!main || !board)
+            return;
+        dropBoardNote();
+        const note = document.createElement("div");
+        note.className = "banner " + tone + " board-note";
+        note.setAttribute("role", "status");
+        note.textContent = text;
+        main.insertBefore(note, board);
+        boardNote = note;
+        if (ms) {
+            boardNoteTimer = window.setTimeout(dropBoardNote, ms);
+        }
+        else {
+            document.addEventListener("click", () => { if (boardNote === note)
+                dropBoardNote(); }, { capture: true, once: true });
+        }
+    }
+    const ABANDONED = "Korrektur abgebrochen, nichts gespeichert.";
+    const RELOADED = "Die Liste hat sich geändert, nichts passiert. Bitte nochmal tippen.";
+    // The text a cancel tap sends in its HX-Trigger: the refresh that follows
+    // would remove a line inside the column. A value that is no text is not shown.
+    document.body.addEventListener("order-notice", (e) => {
+        const value = detail(e).value;
+        if (typeof value === "string")
+            showBoardNote(value, "ok", 6000);
+    });
+    // A table the team entered (T-3.12): the sheet closes, the board says so; the
+    // column "Heute" follows on its own through the event stream.
+    document.body.addEventListener("reservierung-eingetragen", (e) => {
+        closeSheet(entryBox);
+        const value = detail(e).value;
+        if (typeof value === "string")
+            showBoardNote(value, "ok", 6000);
+    });
+    function syncBoard() {
+        const open = sheetOpen();
+        if (board)
+            board.inert = open;
+        if (!open)
+            hideAlert();
+    }
+    // Empties a sheet and, if it is the correction, stops its idle timer: a timer
+    // left running would close the next correction early.
+    function dropSheet(box) {
+        box.innerHTML = "";
+        if (box === dishBox)
+            openCats = {};
+        if (box === correctionBox && idleTimer) {
+            window.clearTimeout(idleTimer);
+            idleTimer = null;
+        }
+    }
+    function closeSheet(box) {
+        if (!box || !box.firstElementChild)
+            return;
+        dropSheet(box);
+        syncBoard();
+        if (opener && document.contains(opener))
+            opener.focus();
+        opener = null;
+    }
+    // A wait that was taken closes its sheet; a refused one stays, with the
+    // sentence in the header (T-3.9).
+    document.body.addEventListener("htmx:afterRequest", (e) => {
+        const d = detail(e);
+        const xhr = d.xhr;
+        const elt = d.elt;
+        if (xhr instanceof XMLHttpRequest && xhr.status < 300 && waitBox && elt instanceof Node &&
+            waitBox.contains(elt) && record(d.requestConfig).verb === "post") {
+            closeSheet(waitBox);
+        }
+    });
+    // In-page question instead of the browser's confirm() (T-3.16, docs/06 §1
+    // rule 6): the dialog is small and its buttons are 60 px targets. htmx asks
+    // through htmx:confirm; the request goes out only on "Ja".
+    function closeQuestion() {
+        const open = document.querySelector(".frage-grund");
+        if (open)
+            open.remove();
+        // Only what the question made inert: a sheet keeps its own inert board.
+        madeInert.forEach((el) => {
+            el.inert = false;
+        });
+        madeInert = [];
+        return !!open;
+    }
+    let madeInert = [];
+    document.body.addEventListener("htmx:confirm", (e) => {
+        const d = detail(e);
+        const question = d.question;
+        if (typeof question !== "string" || !question)
+            return;
+        e.preventDefault();
+        const issue = d.issueRequest;
+        const elt = d.elt;
+        // Without the request to release, a "Ja" could do nothing: the red bar says
+        // so, and nothing is sent.
+        if (typeof issue !== "function" || !(elt instanceof Element)) {
+            if (stoerung)
+                stoerung.hidden = false;
+            return;
+        }
+        const back = document.createElement("div");
+        back.className = "frage-grund";
+        const box = document.createElement("div");
+        box.className = "frage";
+        box.setAttribute("role", "alertdialog");
+        box.setAttribute("aria-modal", "true");
+        const text = document.createElement("p");
+        text.textContent = question;
+        const no = document.createElement("button");
+        no.type = "button";
+        no.textContent = "Nein";
+        const yes = document.createElement("button");
+        yes.type = "button";
+        yes.className = "primary";
+        yes.textContent = "Ja";
+        // The board stays reachable by keyboard behind an overlay: make everything
+        // else inert while the question stands, and keep Tab between its buttons.
+        Array.from(document.body.children).forEach((el) => {
+            if (!(el instanceof HTMLElement) || el.tagName === "SCRIPT" || el.inert)
+                return;
+            el.inert = true;
+            madeInert.push(el);
+        });
+        box.addEventListener("keydown", (k) => {
+            if (k.key !== "Tab")
+                return;
+            k.preventDefault();
+            (document.activeElement === no ? yes : no).focus();
+        });
+        no.addEventListener("click", closeQuestion);
+        yes.addEventListener("click", () => {
+            closeQuestion();
+            // A live update may have replaced the card while the question stood
+            // (confirm() used to freeze the page): htmx drops a request from a
+            // detached button, so say so instead of looking as if it had worked.
+            if (!elt.isConnected) {
+                showBoardNote(RELOADED, "warn");
+                return;
+            }
+            issue(true);
+        });
+        box.append(text, no, yes);
+        back.append(box);
+        document.body.append(back);
+        no.focus();
+    });
+    function closeCorrection() {
+        closeSheet(correctionBox);
+    }
+    function armIdleTimer() {
+        if (idleTimer)
+            window.clearTimeout(idleTimer);
+        idleTimer = window.setTimeout(() => {
+            const open = correctionBox && correctionBox.firstElementChild;
+            closeCorrection();
+            if (open)
+                showBoardNote(ABANDONED, "warn");
+        }, IDLE_MS);
+    }
+    sheets.forEach((box) => {
+        box.addEventListener("click", (e) => {
+            if (e.target instanceof Element && e.target.closest("[data-schliessen]")) {
+                closeSheet(box);
+                return;
+            }
+            if (box === correctionBox)
+                armIdleTimer();
+        });
+    });
+    if (correctionBox) {
+        // Tippen im Nummernfeld zaehlt auch als Taetigkeit, nicht nur Tippen auf Knoepfe.
+        correctionBox.addEventListener("input", armIdleTimer);
+    }
+    document.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape")
+            return;
+        if (!closeQuestion())
+            sheets.forEach(closeSheet);
+    });
+    // Only opening takes the focus: after a tap inside the sheet it stays put.
+    let wasOpen = false;
+    document.body.addEventListener("htmx:beforeRequest", (e) => {
+        const d = detail(e);
+        const t = d.target;
+        const elt = d.elt;
+        if (t instanceof HTMLElement && sheets.indexOf(t) >= 0 && !t.firstElementChild) {
+            opener = elt instanceof HTMLElement ? elt : null;
+        }
+    });
+    // A tap inside the sheet redraws it whole: keep the scroll position, or a
+    // tap on a line far down would throw the view back to the top. A search
+    // (GET) starts at the top on purpose.
+    let scrollWas = 0;
+    function scroller(t) {
+        return t.classList.contains("sheet-body") ? t : t.querySelector(".sheet-body");
+    }
+    document.body.addEventListener("htmx:beforeSwap", (e) => {
+        const d = detail(e);
+        const t = d.target;
+        if (!(t instanceof Element))
+            return;
+        wasOpen = !!t.firstElementChild;
+        const sc = scroller(t);
+        scrollWas = wasOpen && record(d.requestConfig).verb === "post" && sc ? sc.scrollTop : 0;
+    });
+    document.body.addEventListener("htmx:afterSwap", (e) => {
+        const t = detail(e).target;
+        if (!(t instanceof HTMLElement))
+            return;
+        // A dish row was replaced in place: its button is new, keep the focus on it.
+        if (t.tagName === "LI" && t.id.indexOf("dish-") === 0) {
+            const row = document.getElementById(t.id);
+            const btn = row && row.querySelector("button");
+            if (btn && document.activeElement === document.body)
+                btn.focus({ preventScroll: true });
+            return;
+        }
+        const inList = t.id === "gericht-liste";
+        if (!inList && sheets.indexOf(t) < 0)
+            return;
+        if (inList)
+            applyOpenCats(t);
+        const sc = scroller(t);
+        if (sc)
+            sc.scrollTop = scrollWas;
+        // Only if the swap removed the focused element (focus fell back to body): focus elsewhere, e.g. the wait field in the header, stays.
+        const box = inList ? t.closest("#gericht-aus") : t;
+        if (wasOpen && box && document.activeElement === document.body) {
+            const title = box.querySelector(".sheet-head h2");
+            if (title)
+                title.focus({ preventScroll: true });
+        }
+    });
+    document.body.addEventListener("htmx:afterSwap", (e) => {
+        const box = detail(e).target;
+        if (!(box instanceof HTMLElement) || sheets.indexOf(box) < 0 || !box.firstElementChild)
+            return;
+        sheets.forEach((other) => {
+            if (other !== box)
+                dropSheet(other);
+        });
+        syncBoard();
+        if (box === correctionBox)
+            armIdleTimer();
+        const refused = box.querySelector("#number-error");
+        const body = box.querySelector(".sheet-body");
+        if (refused && body) {
+            // The sticky foot covers the bottom of the list: the sentence must stand above it.
+            const foot = box.querySelector(".sheet-foot");
+            const gap = foot ? body.getBoundingClientRect().bottom - foot.getBoundingClientRect().top : 0;
+            const over = refused.getBoundingClientRect().bottom - (body.getBoundingClientRect().bottom - gap) + 12;
+            if (over > 0)
+                body.scrollTop += over;
+        }
+        const title = box.querySelector(".sheet-head h2");
+        if (!wasOpen && title)
+            title.focus();
+    });
+    document.body.addEventListener("htmx:afterSwap", (e) => {
+        if (!waitBox || detail(e).target !== waitBox)
+            return;
+        const field = waitBox.querySelector("input");
+        if (field)
+            field.select();
+    });
+    // Which categories of "Gericht aus" the team opened, by name, so a search
+    // that is cleared brings them back. Reset when the sheet
+    // closes. A search shows its hits open and does not count as the team's choice.
+    let openCats = {};
+    function searching() {
+        const s = document.getElementById("gericht-suche");
+        return s instanceof HTMLInputElement && !!s.value.trim();
+    }
+    // toggle does not bubble: listen in the capture phase.
+    document.addEventListener("toggle", (e) => {
+        const d = e.target;
+        if (!(d instanceof HTMLDetailsElement) || !d.matches("#gericht-liste details[data-cat]") || searching())
+            return;
+        const cat = d.getAttribute("data-cat");
+        if (cat === null)
+            return;
+        // Opened by the team (not restored by a redraw): heading to the top, or
+        // the dishes of a group at the bottom would hide below the fold.
+        const fresh = d.open && !openCats[cat];
+        if (d.open)
+            openCats[cat] = true;
+        else
+            delete openCats[cat];
+        if (fresh) {
+            const sc = d.closest(".sheet-body");
+            if (sc)
+                sc.scrollTop += d.getBoundingClientRect().top - sc.getBoundingClientRect().top - 12;
+        }
+    }, true);
+    function applyOpenCats(list) {
+        if (searching())
+            return;
+        list.querySelectorAll("details[data-cat]").forEach((d) => {
+            const cat = d.getAttribute("data-cat");
+            if (cat !== null && openCats[cat])
+                d.open = true;
+        });
+    }
+    document.body.addEventListener("gerichte-geaendert", () => {
+        kopfzeile();
+    });
+    document.body.addEventListener("bestellungen-geaendert", () => {
+        closeCorrection();
+        reloadOrders();
+    });
+    const strom = new EventSource("/gui/events");
+    // Laedt auch, waehrend jemand korrigiert: der Kasten liegt ausserhalb der
+    // Liste und bleibt stehen (Design-Review T-4.7).
+    strom.addEventListener("orders", () => {
+        offline(false);
+        reloadOrders();
+    });
+    strom.addEventListener("callbacks", () => {
+        offline(false);
+        rueckrufe();
+    });
+    // Umgeschaltet an einem anderen Tablet oder direkt in der Datenbank: jedes
+    // Geraet zeigt denselben Stand.
+    strom.addEventListener("header", () => {
+        offline(false);
+        kopfzeile();
+    });
+    // Another tablet switched a dish, or a switch ran out in the morning: the
+    // tile shows it. An open list is not redrawn (a dish would slide away under
+    // the finger); every button sets a state, so a stale row does no harm, and
+    // the list is fresh the next time the sheet opens.
+    strom.addEventListener("dishes", () => {
+        offline(false);
+        kopfzeile();
+    });
+    // The job wrote a suggestion, or another tablet answered one (#207).
+    strom.addEventListener("holidays", () => {
+        offline(false);
+        feiertage();
+    });
+    // The price check found a difference, or another tablet answered one (T-4.9).
+    strom.addEventListener("prices", () => {
+        offline(false);
+        reloadPrices();
+    });
+    // The staff changed a team number or a date's hours, or the owner decided
+    // a card on another tablet (#570 b).
+    strom.addEventListener("checks", () => {
+        offline(false);
+        reloadChecks();
+    });
+    strom.addEventListener("today", () => {
+        offline(false);
+        nachladen();
+    });
+    strom.addEventListener("problem", () => {
+        offline(true);
+    });
+    strom.onopen = () => {
+        offline(false);
+    };
+    // Der Browser verbindet nach dem Abbruch von selbst neu (retry im Strom).
+    // Not after an answer that is no stream: a 401 once the device is signed out
+    // (#570) or an error page of the proxy. Then a small request asks every 15
+    // seconds: signed out goes to the sign-in, a server that answers again
+    // reloads the page and its stream, anything else asks again.
+    function probe() {
+        fetch("/gui/fragments/heute", { headers: { "HX-Request": "true" }, credentials: "same-origin" }).then((res) => {
+            const away = res.status === 401 && res.headers.get("HX-Redirect");
+            if (away)
+                location.href = away;
+            else if (res.ok)
+                location.reload();
+            else
+                setTimeout(probe, 15000);
+        }, () => { setTimeout(probe, 15000); });
+    }
+    strom.onerror = () => {
+        offline(true);
+        if (strom.readyState === EventSource.CLOSED)
+            setTimeout(probe, 15000);
+    };
 })();
