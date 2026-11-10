@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.13
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.14
 
 ---
 
@@ -261,6 +261,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 | Date | What |
 |---|---|
 | 10.11.2026 | **Operator login, second part of the operator dashboard (#571).** `api/dashboard/` signs the operator in with password plus a TOTP code or a recovery code, against its own database and migrations (`db/dashboard/`); not reachable from outside yet (docs/23 §5 "Built"). |
+| 10.11.2026 | **STATUS upkeep rule (#562 closed).** A weekly sweep archives done and decided rows older than one month to `docs/HISTORY.md` (findable by ID with `grep -n`), `/done` archives what its task finishes, and `/start` suggests the sweep when none ran in 7 days or the file passes 80 KB; open and doubtful rows stay. |
 | 10.11.2026 | **STATUS cut, part 5 (#562).** Twenty finished What's Next items and the 26 decided rows D1 to D30 of Open Decisions went to `docs/HISTORY.md` (83.2 KB to 70.5 KB, every line checked present with `comm`); open items, assumptions awaiting Maxi and Open Points stay, by Maxi's rule to keep active rows. |
 | 10.11.2026 | **STATUS cut, part 4 (#562).** Thirteen long rows in Roadmap, Gates, Blockers and Done went to one sentence each (90.9 KB to 83.2 KB), full text in `docs/HISTORY.md`, every original line checked present with `comm`; the five sections hold only 15 KB, so the 40 KB target needs the other sections, left for Maxi's decision. |
 | 10.11.2026 | **The ops API of a stack, first part of the operator dashboard (#571).** `GET /v1/ops/status` answers the dashboard with counts, times and codes only, behind its own `OPS_TOKEN` and never offered by Caddy; the operator stack with its login and the customer list follow. |
@@ -294,7 +295,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.27.13 · 10.11.2026:** #571 second part: operator login with password, TOTP and recovery codes
+- **v2.27.14 · 10.11.2026:** #571 second part: operator login with password, TOTP and recovery codes
+- **v2.27.13 · 10.11.2026:** STATUS upkeep rule: /done archives finished rows, /start flags size above 80 KB
 - **v2.27.12 · 10.11.2026:** #562 part 5: finished What's Next items and decided D1 to D30 archived
 - **v2.27.11 · 10.11.2026:** Handover: handover command is the single source for handover rules, session title uses middle dots, no token threshold
 - **v2.27.10 · 10.11.2026:** #562 part 4: long rows of Roadmap, Gates, Blockers and Done cut to one sentence
