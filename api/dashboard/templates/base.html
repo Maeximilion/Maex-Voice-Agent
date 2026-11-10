@@ -1,0 +1,15 @@
+{# Frame of the operator dashboard (#571). The stylesheet of the operations view;
+   no script at all, so the CSP of ops.<domain> holds without exceptions. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>{% block title %}Operator{% endblock %} - Maex</title>
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body class="betrieb zugang">
+<main>{% block main %}{% endblock %}</main>
+</body>
+</html>
