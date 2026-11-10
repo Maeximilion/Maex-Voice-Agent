@@ -46,6 +46,8 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 | `auth.py` | Token-Prüfung als FastAPI-Dependency |
 | `ids.py` | Idempotenz-Schlüssel, Abholcode („A17") |
 | `time.py` | UTC ↔ `Europe/Berlin`, „heute" im Sinne des Betriebstags |
+| `tokens.py` | the rule every token meets outside dev and test (`valid_production_token`, `LOCAL_ENVS`); reads no settings, so the operator dashboard uses it too |
+| `origin.py` | `same_origin`: a browser write comes from a page of this site (docs/23 §6, T9); shared by `gui/` and `dashboard/` |
 
 **Regel:** Fachcode wirft `core.errors`, nie `HTTPException`. Die Übersetzung passiert einmal, in `tools/`.
 
@@ -203,6 +205,17 @@ Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `doma
 ### `ops/` – Eingang des Operator-Dashboards (#571)
 - `router.py` — `GET /v1/ops/status`, own token `OPS_TOKEN`, reached only over the stack's internal `ops` network; thin shell around `domain/status/overview.py`
 
+### `dashboard/` – the operator dashboard, an app of its own (#571, docs/23 §5)
+Run from the API's image as `uvicorn api.dashboard.app:app`, with its own database (`OPERATOR_DATABASE_URL`) and migrations (`db/dashboard/`). It never imports `api.config` or `api.db`, which build a customer stack's settings and connection (`api/tests/test_dashboard_login.py` checks it); from the customer side it uses only `core/` helpers that read no settings and `domain/access/hashing.py` and the wait rule of `domain/access/sessions.py`.
+- `config.py` — its settings: `ENV`, `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET` (refused at start outside dev and test when weak)
+- `db.py` — engine and request session of the operator database
+- `models.py` — accounts, recovery codes, sessions, devices, failures per address, the operator's own audit
+- `totp.py` — RFC 6238 codes, standard library, a code never taken twice
+- `access.py` — sign-in (password plus TOTP or recovery code), waits, sessions (30 minutes idle, 12 hours), account creation and the break-glass reset; no FastAPI
+- `app.py` — the pages: `/login`, `/logout`, `/`, `/health`; CSRF, cookies, the proxy check
+- `cli.py` — `python -m api.dashboard.cli add|reset <name>` on the operator host
+- `templates/` — the pages, no script
+
 ### `printbridge/` – die Druckbrücke im Lokal (T-4.6)
 Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht mit dem Server nur über HTTPS. Läuft auf einem Rechner im Lokal (`printbridge/README.md`).
 - `bridge.py` — Durchlauf: abholen, drucken, ins Protokoll, zurückmelden; `--test` für einen Probebon
@@ -289,6 +302,7 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 | `agent/` | mit Fake-LLM (vorgegebene Antworten), prüft Loop und Dispatch | fertig |
 | `events/` | Outbox schreiben, Dispatcher gegen Fake-n8n, Retry-Verhalten | offen |
 | `telephony/adapters` | against the fake adapter; later against recorded media events and fake speech engines (docs/20) | fertig |
+| `dashboard/` | `totp.py` against the RFC 6238 test values without a database; the login, CLI and migration against a scratch operator database (`api/tests/test_dashboard_*.py`) | fertig |
 | Ende-zu-Ende | `sim/replay` gegen echte API mit Test-DB | offen |
 
 **Ziel:** Die schnellen Tests laufen bei jedem Speichern, die DB-Tests vor jedem Commit, die Evals vor jedem Merge.

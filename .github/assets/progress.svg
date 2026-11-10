@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="774" viewBox="0 0 1200 774" role="img" aria-labelledby="t d">
 <title id="t">Build progress</title>
-<desc id="d">89 of 114 tasks done, 4 in progress, 7 blocked, as of 2026-11-06. block 0 Scaffold 11 of 12; block 1 Reservations 14 of 14; block 1b Conversation core 5 of 5; block 1c Own voice layer 7 of 15; block 1d Block 1d 9 of 9; block 2 Tablet GUI 13 of 17; block 3 Pickup 14 of 15; block 4 Delivery 8 of 9; block 5 Learning 0 of 5; block 5b Deployment 3 of 7; block 6 Operations 5 of 6. Gates: P passed, G0 open, G1 open, G2 open, G3 open, G4 open, G5 open.</desc>
+<desc id="d">89 of 114 tasks done, 5 in progress, 7 blocked, as of 2026-11-06. block 0 Scaffold 11 of 12; block 1 Reservations 14 of 14; block 1b Conversation core 5 of 5; block 1c Own voice layer 7 of 15; block 1d Block 1d 9 of 9; block 2 Tablet GUI 13 of 17; block 3 Pickup 14 of 15; block 4 Delivery 8 of 9; block 5 Learning 0 of 5; block 5b Deployment 3 of 7; block 6 Operations 5 of 6. Gates: P passed, G0 open, G1 open, G2 open, G3 open, G4 open, G5 open.</desc>
 <style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace}</style>
 <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="774"><feGaussianBlur stdDeviation="6"/></filter><filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1200" height="774"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
 <rect width="1200" height="774" rx="24" fill="#0D0819"/>
@@ -72,8 +72,8 @@
 <line x1="64" y1="94" x2="1136" y2="94" stroke="#2B2148" stroke-dasharray="4 6"/>
 <text x="64" y="132" font-size="40" fill="#E8FF2E" font-weight="700">89/114</text>
 <text x="224" y="132" font-size="18" fill="#F1ECFF">tasks done · 78 %</text>
-<text x="1136" y="132" font-size="15" fill="#A89CCB" text-anchor="end">4 in progress · 7 blocked · 14 open</text>
-<rect x="64" y="152" width="1072" height="18" rx="9" fill="#0D0819"/><rect x="64" y="152" width="834.9" height="18" rx="9" fill="#E8FF2E"/><rect x="900.9" y="152" width="35.6" height="18" rx="9" fill="#9D7BFF"/><rect x="938.5" y="152" width="63.8" height="18" rx="9" fill="#FF5277"/>
+<text x="1136" y="132" font-size="15" fill="#A89CCB" text-anchor="end">5 in progress · 7 blocked · 13 open</text>
+<rect x="64" y="152" width="1072" height="18" rx="9" fill="#0D0819"/><rect x="64" y="152" width="834.9" height="18" rx="9" fill="#E8FF2E"/><rect x="900.9" y="152" width="45" height="18" rx="9" fill="#9D7BFF"/><rect x="947.9" y="152" width="63.8" height="18" rx="9" fill="#FF5277"/>
 <text x="64" y="229" font-size="15" fill="#A89CCB" font-weight="700">0</text>
 <text x="110" y="229" font-size="15" fill="#F1ECFF">Scaffold</text>
 <rect x="330" y="218" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="218" width="639.7" height="12" rx="6" fill="#E8FF2E"/>
@@ -96,7 +96,7 @@
 <text x="1136" y="365" font-size="15" fill="#F1ECFF" text-anchor="end">9/9</text>
 <text x="64" y="399" font-size="15" fill="#A89CCB" font-weight="700">2</text>
 <text x="110" y="399" font-size="15" fill="#F1ECFF">Tablet GUI</text>
-<rect x="330" y="388" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="388" width="533.3" height="12" rx="6" fill="#E8FF2E"/>
+<rect x="330" y="388" width="700" height="12" rx="6" fill="#0D0819"/><rect x="330" y="388" width="533.3" height="12" rx="6" fill="#E8FF2E"/><rect x="865.3" y="388" width="39.2" height="12" rx="6" fill="#9D7BFF"/>
 <text x="1136" y="399" font-size="15" fill="#F1ECFF" text-anchor="end">13/17</text>
 <text x="64" y="433" font-size="15" fill="#A89CCB" font-weight="700">3</text>
 <text x="110" y="433" font-size="15" fill="#F1ECFF">Pickup</text>
