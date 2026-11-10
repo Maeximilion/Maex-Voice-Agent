@@ -2338,34 +2338,74 @@ def asset_divider() -> str:
 
 
 def asset_social() -> str:
-    """Logo, name and one line only: the PNG made from it is uploaded by hand and
-    CI cannot check it, so it carries nothing that goes stale."""
+    """The banner's example call at the size of a link preview. The PNG made from it
+    is uploaded by hand and CI cannot check it, so it carries no measured number."""
     width, height = 1280, 640
-    parts = [dot_grid(width, height)]
-    parts.append(
-        '<defs><radialGradient id="sg" cx="0.5" cy="0.4" r="0.6">'
-        f'<stop offset="0" stop-color="{TOKENS["violet"]}" stop-opacity="0.25"/>'
-        f'<stop offset="1" stop-color="{TOKENS["violet"]}" stop-opacity="0"/></radialGradient></defs>'
-        f'<rect width="{width}" height="{height}" fill="url(#sg)"/>'
+    glow = (
+        '<radialGradient id="g1" cx="0.15" cy="0.6" r="0.5">'
+        f'<stop offset="0" stop-color="{TOKENS["neon"]}" stop-opacity="0.13"/>'
+        f'<stop offset="1" stop-color="{TOKENS["neon"]}" stop-opacity="0"/></radialGradient>'
+        '<radialGradient id="g2" cx="0.88" cy="0.55" r="0.55">'
+        f'<stop offset="0" stop-color="{TOKENS["violet"]}" stop-opacity="0.22"/>'
+        f'<stop offset="1" stop-color="{TOKENS["violet"]}" stop-opacity="0"/></radialGradient>'
     )
-    _, w = wordmark(0, 0, 150)
-    body, _ = wordmark((width - w) / 2, 150, 150)
-    parts.append(body)
+    parts = [
+        f"<defs>{glow}</defs>",
+        dot_grid(width, height),
+        f'<rect width="{width}" height="{height}" fill="url(#g1)"/>',
+        f'<rect width="{width}" height="{height}" fill="url(#g2)"/>',
+        text(72, 108, "Maex Voice Agent", 46, "ink", weight=700),
+        text(
+            72,
+            150,
+            "AI phone agent for restaurants: reservations, pickups, deliveries",
+            23,
+            "muted",
+        ),
+        text(72, 262, "the caller says", 19, "muted"),
+        # Only the order itself: a link preview is read in a second.
+        text(72, 300, EXAMPLE_SAID[-1], 28, "ink"),
+        neon(wave_points(72, 420, 392, 40, 6, 140), 6, "neon"),
+    ]
+    mark, logo_width = wordmark(440, 322, 140)
+    parts.append(mark)
+    arrow = 440 + logo_width + 18
     parts.append(
-        text(width / 2, 400, "Maex Voice Agent", 40, "ink", anchor="middle", weight=700)
+        f'<path d="M{f(arrow)} 392 L{f(arrow + 34)} 392" fill="none" '
+        f'stroke="{TOKENS["violet"]}" stroke-width="3.5" stroke-dasharray="6 6"/>'
+        f'<path d="M{f(arrow + 28)} 382 L{f(arrow + 42)} 392 L{f(arrow + 28)} 402" '
+        f'fill="none" stroke="{TOKENS["violet"]}" stroke-width="3.5" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
     )
+    sx, sy, sw, sh = 948, 250, 268, 270
+    header, when, item, dish = EXAMPLE_SLIP
+    parts.append(slip(sx, sy, sw, sh, header, when))
+    parts.append(text(sx + 24, sy + 100, item, 24, "ink", weight=700))
+    parts.append(text(sx + 24, sy + 132, dish, 19, "muted"))
+    parts.append(
+        f'<line x1="{sx + 24}" y1="{sy + 160}" x2="{sx + sw - 24}" y2="{sy + 160}" '
+        f'stroke="{TOKENS["grid"]}" stroke-dasharray="4 6"/>'
+    )
+    parts.append(text(sx + 24, sy + 204, "after the yes", 18, "muted"))
+    parts.append(text(sx + 24, sy + 242, "confirmed", 30, "neon", weight=700))
     parts.append(
         text(
             width / 2,
-            446,
-            "AI phone agent for restaurants: reservations, pickups, deliveries",
-            22,
-            "muted",
+            590,
+            "The AI understands. The code decides.",
+            24,
+            "neon",
             anchor="middle",
         )
     )
     svg = document(
-        width, height, "MÆX social preview", "MÆX, Maex Voice Agent.", "\n".join(parts)
+        width,
+        height,
+        "MÆX social preview",
+        "MÆX, Maex Voice Agent, an AI phone agent for restaurants. An example call: "
+        "the caller orders dish 25 twice, the neon sign MÆX, and the order slip, "
+        "confirmed after the caller's yes.",
+        "\n".join(parts),
     )
     # Full bleed: link previews crop the corners themselves.
     return svg.replace(f'height="{height}" rx="24" fill=', f'height="{height}" fill=')
@@ -3122,10 +3162,12 @@ def chromium() -> str | None:
     )
     if shells:
         return str(shells[-1])
-    for name in ("chromium", "chromium-browser", "google-chrome"):
+    for name in ("chromium", "chromium-browser", "google-chrome", "chrome"):
         if found := shutil.which(name):
             return found
-    return None
+    # Windows keeps Chrome off the PATH.
+    windows = Path("C:/Program Files/Google/Chrome/Application/chrome.exe")
+    return str(windows) if windows.is_file() else None
 
 
 def to_png(svg: Path, out: Path, width: int, height: int) -> None:

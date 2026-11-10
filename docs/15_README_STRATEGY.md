@@ -127,7 +127,7 @@ Checked with the colour validator of the `dataviz` skill against `surface` (14.1
 | `voice-bench.svg` | Voice layer measurements with limit and verdict | `docs/metrics/voice_history.csv` |
 | `rules.svg` | The six hard rules of `CLAUDE.md` §2 | `HARD_RULES` in the script |
 | `logo-mark.svg`, `logo-wordmark.svg`, `divider.svg` | Logo and divider | the script |
-| `social-preview.png`, `logo-mark-512.png` | Link preview and avatar, uploaded by hand in the repository settings. They carry no number, because CI cannot check a PNG | `render --png` |
+| `social-preview.png`, `logo-mark-512.png` | Link preview and avatar, uploaded by hand in the repository settings. The link preview is the banner's example call at 1280 by 640 (Maxi, 2026-11-10, #623). Neither carries a measured number, because CI cannot check a PNG | `render --png` |
 
 ### Rules for every image
 
