@@ -11,8 +11,8 @@ from pathlib import Path
 GUI = Path(__file__).resolve().parents[1] / "gui"
 DASHBOARD = GUI.parent / "dashboard"
 
-# Written by hand before the rule; each moves to TypeScript with #626.
-NOT_YET_MIGRATED = {"app.js", "base.js", "raumplan.js"}
+# Written by hand before the rule. Empty since #626: every script is compiled.
+NOT_YET_MIGRATED: set[str] = set()
 # Third-party code, shipped as its author built it.
 VENDORED = {"htmx.min.js"}
 # The simulator console, dev only (#626 decides whether it moves).

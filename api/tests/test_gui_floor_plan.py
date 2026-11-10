@@ -129,7 +129,7 @@ def test_the_editor_modules_reach_the_browser_as_javascript(client, tenant_id):
             "application/javascript",
         )
     script = client.get("/gui/static/raumplan.js?v=2")
-    assert 'from "./raumplan-geometry.js?v=2"' in script.text
+    assert 'from "./raumplan-geometry.js"' in script.text
     assert client.get("/gui/static/raumplan-geometry.js?v=2").status_code == 200
 
 
