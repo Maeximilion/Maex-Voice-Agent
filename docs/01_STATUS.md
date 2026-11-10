@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.2
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.3
 
 ---
 
@@ -263,6 +263,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 10.11.2026 | **`base.js` migrated to TypeScript (#626, T-3.18 first of three files).** `api/gui/ts/base.ts` compiles to the committed `api/gui/static/base.js`; `base.html` loads it as a module. The htmx event's `detail.headers` is checked before the CSRF header is set (the old file threw on a null detail), and a setup code with invalid percent-encoding is left in the address bar instead of throwing. `raumplan.js` and `app.js` are left, one PR each. Not tried in the pilot's tablet browser. |
 | 10.11.2026 | **TypeScript toolchain for the browser code (#553, T-3.17 done).** `package.json` pins `typescript` 7.0.2 as the only package, `tsconfig.json` compiles `api/gui/ts/*.ts` to committed ES modules in `api/gui/static/`, CI's new job `browser` (in the required check `test`) fails on a type error or a stale output, Dependabot watches npm. First file: `raumplan-geometry.ts`, identical to the old build on 20,000 random rounds over every exported function; `toClient` now checks the server's room document at run time. `raumplan.js` is loaded as a module and imports it. Rule and migration steps: docs/22; remaining files: T-3.18, #626. |
 | 10.11.2026 | **README front page rebuilt inside the Night Service brand (#622).** New order: the banner as one example call, the demo recording, the call flow as a transcript with a station rail, the capability table by area, the roadmap as a line of stages, the architecture as two paths; local badges instead of an image service. `python -m scripts.readme_demo` records the demo from a real replay (`scripts/demo/pickup_call.json`, caller ID from the range reserved for media productions). `scripts/readme_check.py` checks links, anchors, SVG safety, image sizes and blocked terms in the CI job `readme`, which the required check `test` now stands for. `docs/15_README_STRATEGY.md`: section order, the rules every image keeps, four variants for a new image with Maxi's pick, when the demo is recorded again. Assumption: the full capability lists stay in the README, folded under the table, instead of moving into this file, which its upkeep rule keeps small. Left with Maxi: the Actions secret `README_BLOCKLIST`, the About text and topics of the repository, a new social preview, the profile README draft. |
 | 10.11.2026 | **Operator login, second part of the operator dashboard (#571).** `api/dashboard/` signs the operator in with password plus a TOTP code or a recovery code, against its own database and migrations (`db/dashboard/`); not reachable from outside yet (docs/23 §5 "Built"). |
@@ -300,6 +301,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.29.3 · 10.11.2026:** T-3.18 base.js migrated to TypeScript
 - **v2.29.2 · 10.11.2026:** Standing rule: browser logic is TypeScript, no language moves back (CLAUDE.md §8, guard test)
 - **v2.29.1 · 10.11.2026:** Static files of the view are revalidated (no-cache); before/after browser session on #627 identical
 - **v2.29.0 · 10.11.2026:** TypeScript toolchain for the browser code: committed ES modules, CI job browser, raumplan-geometry migrated (#553, T-3.17 done; rest T-3.18, #626)
