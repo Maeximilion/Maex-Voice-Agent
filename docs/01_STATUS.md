@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.17
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.18
 
 ---
 
@@ -295,6 +295,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.27.18 · 10.11.2026:** chore(deps): bump compose-images group with 3 updates (#603)
 - **v2.27.17 · 10.11.2026:** chore(deps): bump python-minor-patch group in /api with 5 updates (#605)
 - **v2.27.16 · 10.11.2026:** chore(deps): bump amannn/action-semantic-pull-request to 6.1.2 (#604)
 - **v2.27.15 · 10.11.2026:** chore(deps): bump types-pyyaml to 6.0.12.20261103 (#606)
