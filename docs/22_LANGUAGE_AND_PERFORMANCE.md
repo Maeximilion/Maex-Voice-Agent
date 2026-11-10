@@ -154,7 +154,12 @@ the geometry on 10.11.2026: 20,000 rounds over every exported function, identica
 | `raumplan-geometry` | TypeScript since 10.11.2026 |
 | `base` | TypeScript since 10.11.2026 (#626), loaded as a module by `base.html` |
 | `raumplan` | TypeScript since 10.11.2026 (#626), loaded as a module that imports the compiled geometry |
-| `app.js` | JavaScript, classic script (#626) |
+| `app` | TypeScript since 10.11.2026 (#626), loaded as a module by `betrieb/index.html`. What htmx and the server's `HX-Trigger` hand over in an event's detail is read as `unknown` and checked field by field; a notice that is no text is not shown, and a question whose request cannot be released sends nothing and shows the red bar. Old and new file ran the same 47-step session in a headless browser against a mocked server: page, focus, scroll positions and tones identical in the 45 steps with real events; the two steps with a deliberately empty detail differ as intended (the old file threw and drew an empty note) |
+
+No handwritten script is left in `api/gui/static/`; the list in
+`api/tests/test_browser_code_language.py` is empty. The inline script of the dev
+console (`dev/console.html`, `ENV=dev` only) is the one exception still named
+there; it moves in a pull request of its own (Maxi, 10.11.2026, #626).
 
 **Claude's choices, 10.11.2026** (Maxi asked for the most reliable way): the output
 is committed instead of built in a Node stage of the Dockerfile, which would put

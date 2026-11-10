@@ -133,7 +133,11 @@ def test_page_offers_the_sound_button_and_the_in_page_question(client, tenant_id
     app.js answers htmx's confirm event instead of the browser's confirm()."""
     body = client.get("/gui/").text
     assert 'id="ton-an"' in body
+    # Compiled from api/gui/ts/app.ts as a module: a classic script tag would
+    # stop at its `export`.
+    assert '<script type="module" src="/gui/static/app.js"></script>' in body
     script = client.get("/gui/static/app.js").text
+    assert "export {};" in script
     assert 'addEventListener("htmx:confirm"' in script
     assert "window.confirm(" not in script
     # The board behind the question is inert, so no key reaches it (Codex, #565).
@@ -887,7 +891,7 @@ def test_ton_wird_im_tap_freigeschaltet():
     js = (Path(__file__).resolve().parents[1] / "gui" / "static" / "app.js").read_text(
         encoding="utf-8"
     )
-    handler = js.split("function freischalten()")[1].split("\n  }\n")[0]
+    handler = js.split("function freischalten()")[1].split("\n    }\n")[0]
 
     assert "new Ctx()" in handler and "resume()" in handler
     assert 'addEventListener("touchstart", freischalten' in js
@@ -1180,9 +1184,9 @@ def test_every_sheet_container_of_the_board_closes_by_button_and_escape():
     page = (gui / "templates/betrieb/index.html").read_text(encoding="utf-8")
     script = (gui / "static/app.js").read_text(encoding="utf-8")
     containers = re.findall(r'^<div id="([a-z-]+)"></div>$', page, re.MULTILINE)
-    listed = re.search(r"var sheets = \[([^\]]*)\]", script).group(1)
+    listed = re.search(r"const sheets = \[([^\]]*)\]", script).group(1)
     names = dict(
-        re.findall(r'var (\w+) = document.getElementById\("([a-z-]+)"\)', script)
+        re.findall(r'const (\w+) = document.getElementById\("([a-z-]+)"\)', script)
     )
     registered = {names[var.strip()] for var in listed.split(",")}
     assert "einstellungen" in containers
