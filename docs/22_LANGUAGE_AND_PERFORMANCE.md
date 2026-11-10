@@ -111,6 +111,15 @@ chosen; it can be looked at again with a measured need. TypeScript adds static
 checks and compiles to JavaScript: it does not make the same code run faster, and
 `any` or a type assertion switches a check off.
 
+**Standing rule (Maxi, 10.11.2026):** what runs in the browser is TypeScript from
+now on, and no language moves back. A task that needs or uses controls writes
+their logic in `api/gui/ts/`; no new handwritten `.js` file, no new inline script.
+New logic in a file not migrated yet migrates that file first or in the same pull
+request; a small fix may stay JavaScript. Jinja2 and HTMX keep rendering the
+pages, the backend stays Python. The convention is `CLAUDE.md` section 8, the
+check is `api/tests/test_browser_code_language.py`, whose list of JavaScript
+files not yet migrated only shrinks.
+
 **Toolchain (built 10.11.2026):**
 
 | Part | How |

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.1
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.2
 
 ---
 
@@ -60,7 +60,7 @@ on the PR. Claude automation remains planned, and `docs/cross-agent-review`
 waits for working inline reviews. The deferred draft-first/staged-CI idea is in
 docs/21. Historical session details are in `docs/00_PCF.md` section 13.
 
-**Browser code in TypeScript (10.11.2026, #553 done):** the toolchain is built and `raumplan-geometry` is the first migrated file (docs/22 "Browser code in TypeScript"). Next: `base.js`, `raumplan.js`, `app.js`, one pull request each (T-3.18, #626). Editing browser code needs Node on the host (`npm ci && npm run build`); the server and `make up` do not.
+**Browser code in TypeScript (10.11.2026, #553 done):** standing rule (Maxi, 10.11.2026): browser logic is TypeScript from now on and no language moves back (`CLAUDE.md` §8, check in `api/tests/test_browser_code_language.py`). The toolchain is built and `raumplan-geometry` is the first migrated file (docs/22 "Browser code in TypeScript"). Next: `base.js`, `raumplan.js`, `app.js`, one pull request each (T-3.18, #626). Editing browser code needs Node on the host (`npm ci && npm run build`); the server and `make up` do not.
 
 ### In Claude Code (can start immediately, without vendor)
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026). Protocol ready 16.10.2026: `docs/vorlagen/bedientest_protokoll.md`, method in docs/06 section 8; Maxi runs it with two different team members, one after the other, and records both verdicts here (full text: docs/HISTORY.md)
@@ -300,6 +300,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.29.2 · 10.11.2026:** Standing rule: browser logic is TypeScript, no language moves back (CLAUDE.md §8, guard test)
 - **v2.29.1 · 10.11.2026:** Static files of the view are revalidated (no-cache); before/after browser session on #627 identical
 - **v2.29.0 · 10.11.2026:** TypeScript toolchain for the browser code: committed ES modules, CI job browser, raumplan-geometry migrated (#553, T-3.17 done; rest T-3.18, #626)
 - **v2.28.1 · 10.11.2026:** Social preview redrawn as the banner's example call; upload in the repository settings still open (#623)
