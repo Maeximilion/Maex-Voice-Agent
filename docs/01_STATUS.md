@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.5
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.6
 
 ---
 
@@ -60,7 +60,7 @@ on the PR. Claude automation remains planned, and `docs/cross-agent-review`
 waits for working inline reviews. The deferred draft-first/staged-CI idea is in
 docs/21. Historical session details are in `docs/00_PCF.md` section 13.
 
-**Browser code in TypeScript (10.11.2026, #553 done):** standing rule (Maxi, 10.11.2026): browser logic is TypeScript from now on and no language moves back (`CLAUDE.md` §8, check in `api/tests/test_browser_code_language.py`). The toolchain is built and `raumplan-geometry` is the first migrated file (docs/22 "Browser code in TypeScript"). `base.js` and `raumplan.js` are migrated; left: `app.js`, its own pull request (T-3.18, #626). Editing browser code needs Node on the host (`npm ci && npm run build`); the server and `make up` do not.
+**Browser code in TypeScript (10.11.2026, #553 done):** standing rule (Maxi, 10.11.2026): browser logic is TypeScript from now on and no language moves back (`CLAUDE.md` §8, check in `api/tests/test_browser_code_language.py`). The toolchain is built and `raumplan-geometry` is the first migrated file (docs/22 "Browser code in TypeScript"). `base.js`, `raumplan.js` and `app.js` are migrated (10.11.2026), so no handwritten script is left in `api/gui/static/`; left (T-3.18, #626): the inline script of the dev console (`dev/console.html`, `ENV=dev` only) moves too (Maxi, 10.11.2026), its own pull request. Editing browser code needs Node on the host (`npm ci && npm run build`); the server and `make up` do not.
 
 ### In Claude Code (can start immediately, without vendor)
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026). Protocol ready 16.10.2026: `docs/vorlagen/bedientest_protokoll.md`, method in docs/06 section 8; Maxi runs it with two different team members, one after the other, and records both verdicts here (full text: docs/HISTORY.md)
@@ -264,6 +264,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 | Date | What |
 |---|---|
 | 10.11.2026 | **Four medium CodeQL alerts fixed (#14, #15, #20, #21).** `api/gui/access.py` `_back` rebuilds the owner page's way back behind the constant `/gui/` prefix after the allowlist match, so CodeQL sees the redirect as sanitised (behaviour unchanged, covered by the existing redirect tests). `scripts/readme_demo.py` strips CR and LF from every header the README demo proxy forwards, with a test. Dependabot had no open alert at this point. |
+| 10.11.2026 | **`app.js` migrated to TypeScript (#626, T-3.18 third of three files).** `api/gui/ts/app.ts` compiles to the committed `api/gui/static/app.js`; `betrieb/index.html` loads it as a module. What htmx and the server's `HX-Trigger` hand over in an event's detail is read as `unknown` and checked field by field: a notice that is no text is not shown, and a question whose request cannot be released sends nothing and shows the red bar. Compared in a headless browser against the old file on a mocked server: a session of 47 steps (new and overdue orders, callbacks and complaints, the five sheets, the in-page question, error answers, the dish list, the idle timer, the stream going away), page, focus, scroll positions and tones identical in the 45 steps with real events; the two steps with a deliberately empty detail differ as intended. Not run against the real stack in a browser. The list of handwritten scripts in `api/tests/test_browser_code_language.py` is empty. |
 | 10.11.2026 | **`raumplan.js` migrated to TypeScript (#626, T-3.18 second of three files).** `api/gui/ts/raumplan.ts` compiles to the committed `api/gui/static/raumplan.js`; markup, CSS and behaviour are unchanged. Compared in a browser against the old file on a mocked server: 63 steps (add, edit, delete, undo, arrow keys, room switch, refused and conflicting saves) gave identical editor HTML and identical save bodies, plus one real drag. Data from the server enters as `unknown` and passes `toClient`; the import of the geometry no longer carries `?v=2` (TypeScript cannot resolve a query), only the page's address of `raumplan.js` does. `app.js` is left. Not tried in the pilot's tablet browser. |
 | 10.11.2026 | **`base.js` migrated to TypeScript (#626, T-3.18 first of three files).** `api/gui/ts/base.ts` compiles to the committed `api/gui/static/base.js`; `base.html` loads it as a module. The htmx event's `detail.headers` is checked before the CSRF header is set (the old file threw on a null detail), and a setup code with invalid percent-encoding is left in the address bar instead of throwing. `raumplan.js` and `app.js` are left, one PR each. Not tried in the pilot's tablet browser. |
 | 10.11.2026 | **TypeScript toolchain for the browser code (#553, T-3.17 done).** `package.json` pins `typescript` 7.0.2 as the only package, `tsconfig.json` compiles `api/gui/ts/*.ts` to committed ES modules in `api/gui/static/`, CI's new job `browser` (in the required check `test`) fails on a type error or a stale output, Dependabot watches npm. First file: `raumplan-geometry.ts`, identical to the old build on 20,000 random rounds over every exported function; `toClient` now checks the server's room document at run time. `raumplan.js` is loaded as a module and imports it. Rule and migration steps: docs/22; remaining files: T-3.18, #626. |
@@ -273,15 +274,6 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 | 10.11.2026 | **STATUS cut, part 5 (#562).** Twenty finished What's Next items and the 26 decided rows D1 to D30 of Open Decisions went to `docs/HISTORY.md` (83.2 KB to 70.5 KB, every line checked present with `comm`); open items, assumptions awaiting Maxi and Open Points stay, by Maxi's rule to keep active rows. |
 | 10.11.2026 | **STATUS cut, part 4 (#562).** Thirteen long rows in Roadmap, Gates, Blockers and Done went to one sentence each (90.9 KB to 83.2 KB), full text in `docs/HISTORY.md`, every original line checked present with `comm`; the five sections hold only 15 KB, so the 40 KB target needs the other sections, left for Maxi's decision. |
 | 10.11.2026 | **The ops API of a stack, first part of the operator dashboard (#571).** `GET /v1/ops/status` answers the dashboard with counts, times and codes only, behind its own `OPS_TOKEN` and never offered by Caddy; the operator stack with its login and the customer list follow. |
-| 09.11.2026 | **STATUS cut, part 2 (#562).** "Open Points from Reviews" went from 55 KB to 25 KB and the open assumptions from 33 KB to 21 KB, full rows in `docs/HISTORY.md`. |
-| 09.11.2026 | **No AI attribution in commits or descriptions (#609).** The required check `title` now also fails a co-author trailer or "Generated with" badge in a pull request's commits or description; the label `attribution-approved` lets approved credit through. |
-| 09.11.2026 | **CI split into parallel jobs (#609).** `checks`, three `pytest` shards and a summary job named `test` cut the median from 572 s to 208 s; Docker jobs skip for docs-only pull requests, tests never skip by path. |
-| 09.11.2026 | **STATUS split, archive in `docs/HISTORY.md` (#562).** This file went from 624 KB to about 160 KB, older text moved to the archive with every original line checked present; `CLAUDE.md` gets a "Reading docs" rule. |
-| 09.11.2026 | **A call left open by a dead `voice` process is closed (#545).** `close_left_open_calls` closes such a call as `error` after the tenant's `max_call_seconds` plus 10 minutes, run by the dispatcher every five minutes; no migration. |
-| 09.11.2026 | **A new customer's stack in one command (#573, second part).** `scripts/new_stack.py` creates the folder, `.env` with fresh secrets, database, tenant and a Caddy site behind the shared Caddy, rehearsed on the workbench with two stacks; the same PR closes #595 (push server users and tokens). |
-| 09.11.2026 | **Review batch 0 (#546): `/code-review max` on #586, #587 and #589.** Confirmed findings fixed in one PR; the rest grouped in #596, #597, #598, with #599 and #600 as own issues. |
-| 09.11.2026 | **A new customer's tenant in one command (#573, first part).** Migration 035 adds `tenants.customer_key`; `create_tenant` writes tenant, hours, seats and the first setup link from one customer file in one transaction, idempotent per key. |
-| 09.11.2026 | **Handover after #593 (#590 closed).** n8n survives a container restart; next are #573 tenant provisioning, then #572 menu intake (needs Maxi's choice of the vision model). |
 
 Older rows: `docs/HISTORY.md` section "Done (archive)".
 
@@ -303,7 +295,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.29.5 · 10.11.2026:** Four medium CodeQL alerts fixed: owner page redirect and README demo proxy headers
+- **v2.29.6 · 10.11.2026:** Four medium CodeQL alerts fixed: owner page redirect and README demo proxy headers
+- **v2.29.5 · 10.11.2026:** T-3.18 app.js migrated to TypeScript
 - **v2.29.4 · 10.11.2026:** T-3.18 raumplan.js migrated to TypeScript
 - **v2.29.3 · 10.11.2026:** T-3.18 base.js migrated to TypeScript
 - **v2.29.2 · 10.11.2026:** Standing rule: browser logic is TypeScript, no language moves back (CLAUDE.md §8, guard test)

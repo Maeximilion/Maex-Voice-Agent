@@ -9,6 +9,7 @@
 api/gui/static/raumplan-geometry.js linguist-generated=true text eol=lf
 api/gui/static/base.js linguist-generated=true text eol=lf
 api/gui/static/raumplan.js linguist-generated=true text eol=lf
+api/gui/static/app.js linguist-generated=true text eol=lf
 api/gui/ts/*.ts text eol=lf
 # Measurements are appended by a run on any branch: a merge keeps the rows of both
 # sides, and `readme_assets.py render` drops a row that came in twice.
