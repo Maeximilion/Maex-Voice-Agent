@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.6
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.7
 
 ---
 
@@ -263,6 +263,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 10.11.2026 | **n8n 2.46.6 to 2.47.2 (#628, Dependabot).** One pin in `docker-compose.yml`; the 2.47.0 to 2.47.2 release notes name no breaking change. |
 | 10.11.2026 | **Four medium CodeQL alerts fixed (#14, #15, #20, #21).** `api/gui/access.py` `_back` rebuilds the owner page's way back behind the constant `/gui/` prefix after the allowlist match, so CodeQL sees the redirect as sanitised (behaviour unchanged, covered by the existing redirect tests). `scripts/readme_demo.py` strips CR and LF from every header the README demo proxy forwards, with a test. Dependabot had no open alert at this point. |
 | 10.11.2026 | **`app.js` migrated to TypeScript (#626, T-3.18 third of three files).** `api/gui/ts/app.ts` compiles to the committed `api/gui/static/app.js`; `betrieb/index.html` loads it as a module. What htmx and the server's `HX-Trigger` hand over in an event's detail is read as `unknown` and checked field by field: a notice that is no text is not shown, and a question whose request cannot be released sends nothing and shows the red bar. Compared in a headless browser against the old file on a mocked server: a session of 47 steps (new and overdue orders, callbacks and complaints, the five sheets, the in-page question, error answers, the dish list, the idle timer, the stream going away), page, focus, scroll positions and tones identical in the 45 steps with real events; the two steps with a deliberately empty detail differ as intended. Not run against the real stack in a browser. The list of handwritten scripts in `api/tests/test_browser_code_language.py` is empty. |
 | 10.11.2026 | **`raumplan.js` migrated to TypeScript (#626, T-3.18 second of three files).** `api/gui/ts/raumplan.ts` compiles to the committed `api/gui/static/raumplan.js`; markup, CSS and behaviour are unchanged. Compared in a browser against the old file on a mocked server: 63 steps (add, edit, delete, undo, arrow keys, room switch, refused and conflicting saves) gave identical editor HTML and identical save bodies, plus one real drag. Data from the server enters as `unknown` and passes `toClient`; the import of the geometry no longer carries `?v=2` (TypeScript cannot resolve a query), only the page's address of `raumplan.js` does. `app.js` is left. Not tried in the pilot's tablet browser. |
@@ -295,6 +296,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.29.7 · 10.11.2026:** n8n 2.46.6 to 2.47.2 (#628)
 - **v2.29.6 · 10.11.2026:** Four medium CodeQL alerts fixed: owner page redirect and README demo proxy headers
 - **v2.29.5 · 10.11.2026:** T-3.18 app.js migrated to TypeScript
 - **v2.29.4 · 10.11.2026:** T-3.18 raumplan.js migrated to TypeScript
