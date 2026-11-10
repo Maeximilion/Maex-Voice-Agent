@@ -92,7 +92,7 @@ LOGO_STYLE = "split"
 LOGO_STYLES = ("neon", "wave", "split", "stamp")
 REPO_TITLE = "MÆX"
 
-# The call flow as the code runs it (api/telephony, api/agent/loop.py, api/domain):
+# The call path as the code runs it (api/telephony, api/agent/loop.py, api/domain):
 # Asterisk, our own exchange, hands the audio to the service `voice`; its ear turns
 # speech into text; the conversation core asks the LLM, which answers with one
 # sentence or one tool call; the core checks the call and runs the domain function,
@@ -101,154 +101,87 @@ REPO_TITLE = "MÆX"
 #
 # One node per component, with the tasks that build it. A node is "built" when all
 # of its tasks are done, "in progress" when any has started, and "planned"
-# otherwise. A new component is one new entry here and its links.
+# otherwise. A new component is one new entry here, its links and its place in
+# ARCH_AT; the call flow's station rail names nodes from here as well.
 #
 # `covers` names what a node stands for: tools of `api/agent/dispatch.TOOLS`,
 # services of docker-compose.yml and adapters under `api/telephony/adapters/`
 # (patterns allowed). A test fails when one of them is neither covered nor in
 # NOT_DRAWN, so a new component cannot be forgotten here.
 FLOW_NODES: dict[str, dict] = {
-    "caller": {"label": ["Caller"], "x": 52, "y": 300, "tasks": [], "kind": "person"},
-    "access": {
-        "label": ["Access", "router, SIP"],
-        "x": 160,
-        "y": 300,
-        "w": 104,
-        "h": 64,
-        "tasks": ["T-10.1", "T-10.2"],
-    },
+    "caller": {"label": ["Caller"], "tasks": [], "kind": "person"},
+    "access": {"label": ["Access", "router, SIP"], "tasks": ["T-10.1", "T-10.2"]},
     "asterisk": {
         "label": ["Asterisk", "our exchange"],
-        "x": 285,
-        "y": 300,
-        "w": 108,
-        "h": 64,
         "tasks": ["T-1.11"],
         "covers": ["service:asterisk", "adapter:asterisk"],
     },
     "ear": {
         "label": ["Ear", "speech to text"],
-        "x": 425,
-        "y": 215,
-        "w": 128,
-        "h": 60,
         "tasks": ["T-10.5", "T-1.11"],
         "covers": ["service:voice", "adapter:stt_*"],
     },
     "mouth": {
         "label": ["Mouth", "text to speech"],
-        "x": 425,
-        "y": 385,
-        "w": 128,
-        "h": 60,
         "tasks": ["T-10.5", "T-1.11"],
         "covers": ["service:voice", "adapter:tts_*"],
     },
     "core": {
         "label": ["Conversation", "core, guards"],
-        "x": 575,
-        "y": 300,
-        "w": 128,
-        "h": 72,
+        "chip": "Core",
         "tasks": ["T-2.1", "T-2.2"],
         "covers": ["service:api"],
     },
-    "llm": {
-        "label": ["LLM", "understands"],
-        "x": 575,
-        "y": 150,
-        "w": 128,
-        "h": 60,
-        "tasks": ["T-2.4"],
-    },
+    "llm": {"label": ["LLM", "understands"], "tasks": ["T-2.4"]},
     "status": {
         "label": ["Open now?", "get_service_status"],
-        "x": 750,
-        "y": 170,
-        "w": 150,
-        "h": 56,
         "tasks": ["T-1.3"],
         "covers": ["tool:get_service_status"],
         "code": True,
     },
     "menu": {
         "label": ["Menu", "search_menu"],
-        "x": 750,
-        "y": 250,
-        "w": 150,
-        "h": 56,
         "tasks": ["T-4.3", "T-4.4"],
         "covers": ["tool:search_menu"],
         "code": True,
     },
     "draft": {
         "label": ["Order draft", "draft_order"],
-        "x": 750,
-        "y": 330,
-        "w": 150,
-        "h": 56,
         "tasks": ["T-4.5"],
         "covers": ["tool:draft_order"],
         "code": True,
     },
     "confirm": {
         "label": ["Confirm", "confirm"],
-        "x": 750,
-        "y": 410,
-        "w": 150,
-        "h": 56,
         "tasks": ["T-1.6"],
         "covers": ["tool:confirm"],
         "code": True,
     },
     "postgres": {
         "label": ["Postgres", "the facts"],
-        "x": 900,
-        "y": 290,
-        "w": 92,
-        "h": 112,
         "tasks": ["T-1.1", "T-4.1"],
         "covers": ["service:db"],
         "kind": "db",
     },
-    "slip": {
-        "label": ["Order slip", "print bridge"],
-        "x": 1048,
-        "y": 175,
-        "w": 110,
-        "h": 56,
-        "tasks": ["T-4.6"],
-    },
+    "slip": {"label": ["Order slip", "print bridge"], "tasks": ["T-4.6"]},
     "tablet": {
         "label": ["Tablet", "approval"],
-        "x": 1048,
-        "y": 275,
-        "w": 110,
-        "h": 56,
         "tasks": ["T-3.1", "T-3.4", "T-4.7"],
         "covers": ["tool:create_callback"],
     },
     "push": {
         "label": ["Push", "outbox, n8n"],
-        "x": 1048,
-        "y": 375,
-        "w": 110,
-        "h": 56,
         "tasks": ["T-1.12"],
         "covers": ["service:push", "service:dispatcher", "service:n8n"],
     },
     "teamphone": {
         "label": ["Team phone"],
-        "x": 1048,
-        "y": 500,
-        "w": 110,
-        "h": 56,
         "tasks": ["T-1.8", "T-1.11"],
         "covers": ["tool:transfer_to_team"],
     },
-    "team": {"label": ["Team"], "x": 1163, "y": 330, "tasks": [], "kind": "person"},
+    "team": {"label": ["Team"], "tasks": [], "kind": "person"},
 }
-# What the picture leaves out on purpose, each with its reason.
+# What the pictures leave out on purpose, each with its reason.
 NOT_DRAWN: dict[str, str] = {
     "tool:check_delivery": "a delivery takes the same hop through the core; the picture follows a pickup call",
     "tool:find_customer": "a delivery takes the same hop through the core; the picture follows a pickup call",
@@ -258,8 +191,9 @@ NOT_DRAWN: dict[str, str] = {
     "adapter:fake": "plays calls from files for the tests and the text phone, never on a call",
     "adapter:fake_speech": "the ear and mouth of the drills and the tests, never on a real call",
 }
-# Static lines. "in" and "out" are the two wires of the telephone and voice lanes
-# (the caller's words in, the spoken reply out); "both" carries dots either way.
+# The wires of the architecture. "in" and "out" are the two directions of the
+# telephone and voice lanes (the caller's words in, the spoken reply out); "both"
+# carries either way. The architecture draws one wire per pair of nodes.
 FLOW_LINKS: list[tuple[str, str, str]] = [
     ("caller", "access", "in"),
     ("access", "asterisk", "in"),
@@ -287,129 +221,6 @@ FLOW_LINKS: list[tuple[str, str, str]] = [
     ("push", "team", "both"),
     ("teamphone", "team", "both"),
 ]
-
-
-def _hop(tool: str) -> list[tuple[str, str, str]]:
-    """One tool hop: the LLM asks for the tool, the core runs it against Postgres
-    and hands the result back to the LLM."""
-    return [
-        ("core", "llm", "neon"),
-        ("llm", "core", "neon"),
-        ("core", tool, "neon"),
-        (tool, "postgres", "neon"),
-        ("postgres", tool, "neon"),
-        (tool, "core", "neon"),
-    ]
-
-
-def _together(*chains: list[tuple[str, str, str]]) -> list[tuple]:
-    """Chains that run at the same time: their n-th steps share one slot."""
-    return [
-        tuple(step for step in slot if step is not None)
-        for slot in itertools.zip_longest(*chains)
-    ]
-
-
-WORDS_IN = [
-    ("caller", "access", "neon"),
-    ("access", "asterisk", "neon"),
-    ("asterisk", "ear", "neon"),
-    ("ear", "core", "neon"),
-]
-# The story the dots tell: two turns of one order. A phase is a caption and its
-# steps in order; a tuple of steps inside a phase runs at the same time.
-FLOW_STORY: list[tuple[str, list]] = [
-    ("1  The caller orders.", WORDS_IN),
-    (
-        "2  The LLM understands, the code looks up: one tool per hop, at most six.",
-        _hop("status") + _hop("menu") + _hop("draft"),
-    ),
-    (
-        "3  The read-back goes out through the mouth.",
-        [
-            ("core", "llm", "neon"),
-            ("llm", "core", "violet"),
-            ("core", "mouth", "violet"),
-            ("mouth", "asterisk", "violet"),
-            ("asterisk", "access", "violet"),
-            ("access", "caller", "violet"),
-        ],
-    ),
-    (
-        "4  The caller says yes. Only now the core confirms.",
-        [
-            *WORDS_IN,
-            ("core", "llm", "neon"),
-            ("llm", "core", "neon"),
-            ("core", "confirm", "neon"),
-            ("confirm", "postgres", "neon"),
-        ],
-    ),
-    (
-        # Once confirm commits, two things run at the same time: the result goes
-        # back through the loop to the caller, and the tablet (polling Postgres)
-        # shows the order. A held order prints after the team's approval; in
-        # primary mode under the amount limit the slip is due at once
-        # (api/domain/ordering/confirm.py, board.py, api/agent/loop.py).
-        "5  In parallel: the reply goes out; the order on the tablet, the slip after approval (primary mode: at once).",
-        _together(
-            [
-                ("postgres", "confirm", "neon"),
-                ("confirm", "core", "neon"),
-                ("core", "llm", "neon"),
-                ("llm", "core", "violet"),
-                ("core", "mouth", "violet"),
-                ("mouth", "asterisk", "violet"),
-                ("asterisk", "access", "violet"),
-                ("access", "caller", "violet"),
-            ],
-            [
-                ("postgres", "tablet", "neon"),
-                ("tablet", "team", "neon"),
-                ("team", "tablet", "neon"),
-                ("tablet", "postgres", "neon"),
-                ("postgres", "slip", "neon"),
-                ("slip", "team", "neon"),
-            ],
-        ),
-    ),
-]
-FLOW_SEGMENT = 0.3
-FLOW_PAUSE = 0.25
-FLOW_HOLD = 1.5
-
-
-@dataclass(frozen=True)
-class FlowStep:
-    a: str
-    b: str
-    t0: float
-    t1: float
-    color: str
-
-
-def flow_timeline() -> tuple[list[FlowStep], list[tuple[float, float, str]], float]:
-    """Steps with their times, the captions with theirs, and the loop length."""
-    steps: list[FlowStep] = []
-    captions: list[tuple[float, float, str]] = []
-    t = 0.0
-    for caption, items in FLOW_STORY:
-        start = t
-        for item in items:
-            group = item if isinstance(item[0], tuple) else (item,)
-            for a, b, color in group:
-                steps.append(FlowStep(a, b, t, t + FLOW_SEGMENT, color))
-            t += FLOW_SEGMENT
-        captions.append((start, t + FLOW_PAUSE, caption))
-        t += FLOW_PAUSE
-    loop = round(t + FLOW_HOLD, 2)
-    # The last caption stays up through the hold, until the story starts again.
-    last_start, _end, last_words = captions[-1]
-    captions[-1] = (last_start, loop, last_words)
-    return steps, captions, loop
-
-
-FLOW_STEPS, FLOW_CAPTIONS, FLOW_LOOP = flow_timeline()
 
 BLOCK_NAMES = {
     "0": "Scaffold",
@@ -1260,11 +1071,32 @@ def concept_sheet() -> str:
 # --------------------------------------------------------------------------- banner
 
 
-# One example call, the same in the banner and in the call flow: what the caller
-# says, and what stands on the slip once the caller has said yes. Invented test
-# data; the dish number and the time are an example, not a measurement.
-EXAMPLE_SAID = ["„Zweimal die 25 zum Abholen,", "um halb sieben.“"]
-EXAMPLE_SLIP = ("Pickup", "18:30", "2 x  No. 25", "fried noodles")
+# One example call, the same in the banner, the call flow and the demo: the
+# recorded replay of scripts/demo/pickup_call.json against the test menu
+# (evals/menu/). Every sentence is quoted as the replay has it, only wrapped into
+# lines or cut with an ellipsis, never reworded; the caller's lines are ASCII as
+# in the call file, the agent's carry the product's umlauts.
+EXAMPLE_SAID = [
+    "„Guten Tag, ich moechte etwas",
+    "zum Abholen bestellen.“",
+    "„Zweimal die 25.“",
+]
+EXAMPLE_SLIP = ("Pickup", "in 30 min", "2 x  No. 25", "Papaya-Salat")
+EXAMPLE_CALL: dict[str, list[str]] = {
+    "order": EXAMPLE_SAID,
+    "name": ["„Auf den Namen Mueller.“"],
+    "readback": [
+        "„Zweimal Nummer 25 Papaya-Salat.",
+        "Macht 15 Euro 80, abholbereit in",
+        "etwa 30 Minuten, auf den Namen",
+        "Mueller. Passt das so?“",
+    ],
+    "yes": ["„Ja, passt so.“"],
+    "confirmed": ["„Ihre Bestellung auf den Namen", "Mueller ist aufgegeben. …“"],
+    # Not in the replay: the caller's sentence of the eval case
+    # evals/cases/eskalation_0001_beschwerde.json, which escalates.
+    "complaint": ["„Ich moechte mich beschweren,", "die letzte Lieferung war kalt.“"],
+}
 
 
 def asset_banner() -> str:
@@ -1293,10 +1125,12 @@ def asset_banner() -> str:
             15,
             "muted",
         ),
-        text(64, 166, "the caller says", 14, "muted"),
+        text(64, 152, "the caller says", 14, "muted"),
     ]
+    # Bottom-aligned above the wave, however many lines the example has.
+    first = 236 - (len(EXAMPLE_SAID) - 1) * 26
     for i, line in enumerate(EXAMPLE_SAID):
-        parts.append(text(64, 196 + i * 26, line, 19, "ink"))
+        parts.append(text(64, first + i * 26, line, 19, "ink"))
     # The voice runs into the sign: the wave ends where the logo's own crossbar,
     # a waveform too, takes over.
     parts.append(neon(wave_points(64, 436, 290, 30, 7, 140), 4.5, "neon"))
@@ -1347,9 +1181,9 @@ def asset_banner() -> str:
     )
     desc = (
         "MÆX, Maex Voice Agent, an AI phone agent for restaurants. An example call "
-        "from left to right: the caller orders dish 25 twice for pickup at half past "
-        "six, the neon sign MÆX stands in the middle, and on the right lies the "
-        "order slip, read back, confirmed by the caller's yes."
+        "from left to right: the caller orders dish 25 twice for pickup, the neon "
+        "sign MÆX stands in the middle, and on the right lies the order slip, ready "
+        "in about 30 minutes, read back, confirmed by the caller's yes."
     )
     return document(width, height, "MÆX banner", desc, "\n".join(parts), css)
 
@@ -1785,55 +1619,39 @@ def asset_progress(facts: Facts) -> str:
 
 # ------------------------------------------------------------------------ call flow
 
-CHANNEL_OFFSET = {"in": -8.0, "out": 8.0, "both": 0.0}
-# Lanes: x range and label. The caller stands outside them, the team inside the last.
-FLOW_LANES = [
-    (100, 345, "telephone"),
-    (352, 495, "service voice"),
-    (503, 653, "AI understands"),
-    (661, 960, "code decides"),
-    (968, 1192, "team"),
-]
-# The two ways a call leaves the AI for a person, drawn under the lanes.
-ESCALATION_ROUTE = [
-    (530.0, 336.0),
-    (530.0, 560.0),
-    (954.0, 560.0),
-    (954.0, 492.0),
-    (993.0, 492.0),
-]
-OUTAGE_ROUTE = [
-    (236.0, 332.0),
-    (236.0, 600.0),
-    (976.0, 600.0),
-    (976.0, 510.0),
-    (993.0, 510.0),
-]
+# A node's edge, and a rail chip's, shows its build state; the dashes keep the
+# state readable without its colour.
+STATE_STROKE = {
+    "built": ("neon", ""),
+    "progress": ("violet", ' stroke-dasharray="2 3"'),
+    "planned": ("plum", ' stroke-dasharray="6 4"'),
+}
+STATE_NAMES = {"built": "built", "progress": "in progress", "planned": "planned"}
 
 
-def _node_box(key: str) -> tuple[float, float, float, float]:
-    node = FLOW_NODES[key]
-    if node.get("kind") == "person":
-        return node["x"] - 30, node["y"] - 30, 60, 60
-    w, h = node["w"], node["h"]
-    return node["x"] - w / 2, node["y"] - h / 2, w, h
+def _legend(right: float, y: float) -> list[str]:
+    """The three build states, right-aligned at `right`."""
+    widths = [44 + 8 * len(name) for name in STATE_NAMES.values()]
+    x = right - sum(widths) + 8
+    parts = []
+    for (state, name), w in zip(STATE_NAMES.items(), widths, strict=True):
+        color, dash = STATE_STROKE[state]
+        parts.append(
+            f'<rect x="{f(x)}" y="{f(y - 12)}" width="22" height="16" rx="5" '
+            f'fill="{TOKENS["surface_hi"]}" stroke="{TOKENS[color]}" stroke-width="2"{dash}/>'
+        )
+        parts.append(text(x + 30, y + 1, name, 13, "muted"))
+        x += w
+    return parts
 
 
-def _edge_path(a: str, b: str, offset: float = 0.0) -> list[tuple[float, float]]:
-    """Orthogonal route from a's side to b's side with one elbow, shifted by the
-    channel offset so the in and out wires of a lane run side by side."""
-    ax, ay, aw, ah = _node_box(a)
-    bx, by, bw, bh = _node_box(b)
-    acx, acy = ax + aw / 2, ay + ah / 2 + offset
-    bcx, bcy = bx + bw / 2, by + bh / 2 + offset
-    if abs(acx - bcx) < 5:
-        # Vertical: from a's edge facing b to b's edge facing a.
-        if bcy > acy:
-            return [(acx, ay + ah), (bcx, by)]
-        return [(acx, ay), (bcx, by + bh)]
-    sx, ex = (ax + aw, bx) if bcx > acx else (ax, bx + bw)
-    mid = (sx + ex) / 2
-    return [(sx, acy), (mid, acy), (mid, bcy), (ex, bcy)]
+def _person(cx: float, cy: float, color: str) -> str:
+    c = TOKENS[color]
+    return (
+        f'<circle cx="{f(cx)}" cy="{f(cy - 10)}" r="10" fill="none" stroke="{c}" stroke-width="3"/>'
+        f'<path d="M{f(cx - 18)} {f(cy + 21)} Q{f(cx - 18)} {f(cy + 3)} {f(cx)} {f(cy + 3)} '
+        f'Q{f(cx + 18)} {f(cy + 3)} {f(cx + 18)} {f(cy + 21)}" fill="none" stroke="{c}" stroke-width="3" stroke-linecap="round"/>'
+    )
 
 
 def _rounded(points: list[tuple[float, float]], r: float = 12) -> str:
@@ -1855,15 +1673,6 @@ def _rounded(points: list[tuple[float, float]], r: float = 12) -> str:
     return out
 
 
-def _person(cx: float, cy: float, color: str) -> str:
-    c = TOKENS[color]
-    return (
-        f'<circle cx="{f(cx)}" cy="{f(cy - 10)}" r="10" fill="none" stroke="{c}" stroke-width="3"/>'
-        f'<path d="M{f(cx - 18)} {f(cy + 21)} Q{f(cx - 18)} {f(cy + 3)} {f(cx)} {f(cy + 3)} '
-        f'Q{f(cx + 18)} {f(cy + 3)} {f(cx + 18)} {f(cy + 21)}" fill="none" stroke="{c}" stroke-width="3" stroke-linecap="round"/>'
-    )
-
-
 def _cylinder(x: float, y: float, w: float, h: float, stroke: str) -> str:
     """A database drum: top ellipse, body, front of the bottom ellipse."""
     rx, ry = w / 2, 10
@@ -1880,216 +1689,465 @@ def _cylinder(x: float, y: float, w: float, h: float, stroke: str) -> str:
     return body + top
 
 
-def _timing(start: float, end: float) -> tuple[str, str]:
-    """keyTimes for a dot that waits, travels from start to end, then hides."""
-    a, b = start / FLOW_LOOP, min(end / FLOW_LOOP, 0.999)
-    return f"0;{a:.3f};{b:.3f};1", f"0;{a:.3f};{b:.3f}"
-
-
-def _link_for(a: str, b: str) -> tuple[tuple[str, str, str], bool]:
-    """The static link a step runs on, and whether the step runs against it."""
-    for link in FLOW_LINKS:
-        if (link[0], link[1]) == (a, b):
-            return link, False
-    for link in FLOW_LINKS:
-        if (link[1], link[0]) == (a, b) and link[2] == "both":
-            return link, True
-    raise KeyError(f"no link for the step {a} -> {b}")
-
-
-def _dot(path: str, step: FlowStep, reverse: bool) -> str:
-    kt, kt3 = _timing(step.t0, step.t1)
-    points = "1;1;0;0" if reverse else "0;0;1;1"
-    motion = (
-        f'<animateMotion dur="{FLOW_LOOP:g}s" repeatCount="indefinite" path="{path}" '
-        f'keyPoints="{points}" keyTimes="{kt}" calcMode="linear"/>'
-        f'<animate attributeName="opacity" dur="{FLOW_LOOP:g}s" repeatCount="indefinite" '
-        f'values="0;1;0" keyTimes="{kt3}" calcMode="discrete"/>'
-    )
-    core = TOKENS["neon_core" if step.color == "neon" else "violet_core"]
+def _arrow(x1: float, x2: float, y: float, color: str, dash: str = "") -> str:
+    """A horizontal arrow from x1 to x2, its head at x2."""
+    c, s = TOKENS[color], 1 if x2 > x1 else -1
     return (
-        f'<circle class="dot" r="7" fill="{TOKENS[step.color]}" filter="url(#soft)" opacity="0">{motion}</circle>'
-        f'<circle class="dot" r="3.5" fill="{core}" opacity="0">{motion}</circle>'
+        f'<path d="M{f(x1)} {f(y)} H{f(x2)}" fill="none" stroke="{c}" stroke-width="1.8"{dash}/>'
+        f'<path d="M{f(x2 - s * 6)} {f(y - 4.5)} L{f(x2)} {f(y)} L{f(x2 - s * 6)} {f(y + 4.5)}" '
+        f'fill="none" stroke="{c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>'
     )
 
 
-def _caption(start: float, end: float, words: str) -> str:
-    a, b = start / FLOW_LOOP, min(end / FLOW_LOOP, 0.999)
-    values, times = ("1;0", f"0;{b:.3f}") if a == 0 else ("0;1;0", f"0;{a:.3f};{b:.3f}")
-    anim = (
-        f'<animate attributeName="opacity" dur="{FLOW_LOOP:g}s" repeatCount="indefinite" '
-        f'values="{values}" keyTimes="{times}" calcMode="discrete"/>'
-    )
-    return text(40, 84, words, 16, "neon", extra='class="caption" opacity="0"').replace(
-        "</text>", anim + "</text>"
-    )
+# The station rail of the call flow: the nodes a sentence passes on its way in
+# (the caller's words) and out (the agent's reply). A station keeps its slot from
+# row to row, so ear and mouth share one and the rail reads as columns.
+FLOW_RAIL_IN = ["access", "asterisk", "ear", "core", "llm"]
+FLOW_RAIL_OUT = ["llm", "core", "mouth", "asterisk", "access"]
+RAIL_SLOT = {"access": 0, "asterisk": 1, "ear": 2, "mouth": 2, "core": 3, "llm": 4}
+RAIL_WIDTH = (60, 74, 54, 48, 42)
+RAIL_X, RAIL_GAP = 408.0, 16.5
+BUBBLE_X, BUBBLE_W = 40.0, 330.0
+CODE_X, CODE_W = 776.0, 384.0
+ROW_COLOR = {"caller": "neon", "agent": "violet", "outage": "coral"}
 
 
+def _slot(key: str) -> tuple[float, float]:
+    """Left edge and width of a station's chip."""
+    i = RAIL_SLOT[key]
+    return RAIL_X + sum(RAIL_WIDTH[:i]) + i * RAIL_GAP, RAIL_WIDTH[i]
+
+
+@dataclass(frozen=True)
+class CallRow:
+    """One row of the call flow: who speaks and what, the stations the sentence
+    passes, the tools the code runs on it and what they establish."""
+
+    who: str
+    said: list[str]
+    rail: list[str]
+    tools: list[str]
+    does: list[str]
+    tone: str = ""
+    apart: bool = False
+
+
+# The pickup call of EXAMPLE_CALL as the code runs it (api/agent/loop.py,
+# api/agent/guards.py, api/domain/ordering/confirm.py, docs/02 §3 and §5).
+FLOW_ROWS: list[CallRow] = [
+    CallRow(
+        "caller",
+        EXAMPLE_CALL["order"],
+        FLOW_RAIL_IN,
+        ["get_service_status, search_menu"],
+        # loop.MAX_TOOL_HOPS; the LLM's only link is the core (FLOW_LINKS).
+        [
+            "one tool per hop, at most six; the core runs",
+            "each against Postgres. The LLM has no line",
+            "to a tool or the database.",
+        ],
+    ),
+    CallRow(
+        "caller",
+        EXAMPLE_CALL["name"],
+        FLOW_RAIL_IN,
+        ["draft_order"],
+        # guards.py rule 2 for the guest; prices only from the database (rule 1).
+        [
+            "the name as the caller said it; every",
+            "price from Postgres, never from the model",
+        ],
+    ),
+    CallRow(
+        "agent",
+        EXAMPLE_CALL["readback"],
+        FLOW_RAIL_OUT,
+        ["readback of draft_order"],
+        # guards.py: the guest heard the draft's own sentence (`note_said`).
+        ["read out word for word; the core notes", "that the caller heard it"],
+    ),
+    CallRow(
+        "caller",
+        EXAMPLE_CALL["yes"],
+        FLOW_RAIL_IN,
+        ["confirm"],
+        # guards.py rule 3: confirm only on an explicit yes to the read-back.
+        ["only now, on a clear yes to the read-back:", "the draft becomes confirmed"],
+    ),
+    CallRow(
+        "agent",
+        EXAMPLE_CALL["confirmed"],
+        FLOW_RAIL_OUT,
+        ["tablet, order slip"],
+        # The tablet reads Postgres and does not wait for the spoken reply. A slip
+        # waits for "Passt" unless confirm.py `_waits_for` lets it go at once.
+        [
+            "meanwhile the order shows on the tablet;",
+            "the slip prints after the team's approval,",
+            "primary mode: at once, up to the amount limit",
+        ],
+    ),
+    CallRow(
+        "caller",
+        EXAMPLE_CALL["complaint"],
+        FLOW_RAIL_IN,
+        ["transfer_to_team"],
+        # loop.py `_handoff`; transfer.py counts the team as reachable while a
+        # service is open; a complaint a rule covers gets its remedy (D19).
+        [
+            "unsure, a complaint no rule covers or a",
+            "model failure: the team phone rings while",
+            "open; after hours, number known: a callback",
+            "on the tablet",
+        ],
+        tone="violet",
+        apart=True,
+    ),
+    CallRow(
+        "outage",
+        ["the service voice fails"],
+        ["access", "asterisk"],
+        ["Asterisk dialplan"],
+        # deploy/asterisk/conf/extensions.conf: `voice` unreached dials TEAM_PHONE.
+        ["the exchange rings the team phone", "(extension unreached, TEAM_PHONE)"],
+        tone="coral",
+    ),
+]
 FLOW_STILL = (
-    "Words in (yellow), reply out (violet). One tool per hop. Confirm only after a yes."
+    "What is said, the stations it passes, what the code does. "
+    "Nothing is confirmed before the yes."
 )
+# Reveal timing in seconds: one row after the other, then everything holds.
+REVEAL_FADE = 0.35
+REVEAL_HOLD = 3.0
+
+
+def _row_height(row: CallRow) -> float:
+    bubble = 46 + 19 * len(row.said)
+    code = 32 + 18 * len(row.tools) + 17 * len(row.does)
+    return max(bubble, code)
+
+
+def _bubble(row: CallRow, y: float, h: float) -> str:
+    color = ROW_COLOR[row.who]
+    x = BUBBLE_X + (24 if row.who == "agent" else 0)
+    dash = ' stroke-dasharray="5 4"' if row.who == "outage" else ""
+    top = y + h / 2 - (18 + 19 * len(row.said)) / 2
+    out = (
+        f'<rect x="{f(x)}" y="{f(y)}" width="{f(BUBBLE_W)}" height="{f(h)}" rx="14" '
+        f'fill="{TOKENS["surface"]}" stroke="{TOKENS[color]}" stroke-width="1.6"{dash}/>'
+    )
+    out += text(x + 18, top + 12, row.who, 12, color, weight=700)
+    for i, line in enumerate(row.said):
+        out += text(x + 18, top + 33 + 19 * i, line, 14, "ink")
+    return out
+
+
+def _code_box(row: CallRow, y: float, h: float) -> str:
+    stroke = TOKENS[row.tone] if row.tone else TOKENS["grid"]
+    top = y + h / 2 - (4 + 18 * len(row.tools) + 17 * len(row.does)) / 2
+    out = (
+        f'<rect x="{f(CODE_X)}" y="{f(y)}" width="{f(CODE_W)}" height="{f(h)}" rx="10" '
+        f'fill="{TOKENS["surface"]}" stroke="{stroke}" stroke-width="1.6"/>'
+    )
+    for i, line in enumerate(row.tools):
+        out += text(
+            CODE_X + 20, top + 13 + 18 * i, line, 14, row.tone or "neon", weight=700
+        )
+    first = top + 13 + 18 * (len(row.tools) - 1) + 22
+    for i, line in enumerate(row.does):
+        out += text(CODE_X + 20, first + 17 * i, line, 12.5, "muted")
+    return out
+
+
+def _chip(key: str, mid: float, states: dict[str, str]) -> str:
+    x, w = _slot(key)
+    node = FLOW_NODES[key]
+    color, dash = STATE_STROKE[node_state(node["tasks"], states)]
+    return (
+        f'<rect x="{f(x)}" y="{f(mid - 13)}" width="{f(w)}" height="26" rx="8" '
+        f'fill="{TOKENS["surface_hi"]}" stroke="{TOKENS[color]}" stroke-width="2"{dash}/>'
+        + text(
+            x + w / 2,
+            mid + 4.5,
+            node.get("chip", node["label"][0]),
+            12,
+            "ink",
+            "middle",
+            700,
+        )
+    )
 
 
 def asset_call_flow(facts: Facts, animated: bool = True) -> str:
-    width, height = 1200, 680
+    """The example call as a transcript: each sentence on the phone, the
+    stations it passes, and what the code does with it. Animated, the rows
+    appear in the order the call runs, with CSS only."""
     states = facts.states
-    parts = [dot_grid(width, height)]
-    parts.append(text(40, 48, "HOW A CALL FLOWS", 14, "muted", spacing=2.4, weight=700))
-    # Legend: node edges show build state, travelling dots show what moves.
-    lx = 560
-    for label, color, dash in (
-        ("built", "neon", ""),
-        ("in progress", "violet", ""),
-        ("planned", "plum", ' stroke-dasharray="4 3"'),
-    ):
-        parts.append(
-            f'<rect x="{lx}" y="36" width="22" height="16" rx="5" fill="{TOKENS["surface_hi"]}" stroke="{TOKENS[color]}" stroke-width="2"{dash}/>'
-        )
-        parts.append(text(lx + 30, 49, label, 14, "muted"))
-        lx += 52 + 8 * len(label)
-    for label, color in (("words, order", "neon"), ("reply", "violet")):
-        parts.append(f'<circle cx="{lx + 6}" cy="44" r="5" fill="{TOKENS[color]}"/>')
-        parts.append(text(lx + 18, 49, label, 14, "muted"))
-        lx += 32 + 8 * len(label)
-    if animated:
-        parts += [_caption(s, e, words) for s, e, words in FLOW_CAPTIONS]
-        parts.append(text(40, 84, FLOW_STILL, 16, "neon", extra='class="still"'))
-    else:
-        parts.append(text(40, 84, FLOW_STILL, 16, "neon"))
-    for x0, x1, label in FLOW_LANES:
-        parts.append(
-            f'<rect x="{x0}" y="102" width="{x1 - x0}" height="548" rx="16" fill="{TOKENS["surface"]}" opacity="0.45"/>'
-        )
-        parts.append(
-            text(
-                (x0 + x1) / 2,
-                640,
-                label.upper(),
-                13,
-                "muted",
-                anchor="middle",
-                spacing=2,
+    width = 1200
+    parts = [
+        text(40, 50, "HOW A CALL FLOWS", 14, "muted", spacing=2.4, weight=700),
+        *_legend(1160, 48),
+        text(40, 82, FLOW_STILL, 15, "neon"),
+        text(BUBBLE_X, 126, "on the phone", 13, "muted"),
+        text(RAIL_X, 126, "stations on the way", 13, "muted"),
+        text(CODE_X, 126, "in the code", 13, "muted"),
+    ]
+    starts: list[float] = []
+    clock = 0.0
+
+    def reveal(content: str, then: float) -> None:
+        nonlocal clock
+        if animated:
+            parts.append(f'<g class="s k{len(starts)}">{content}</g>')
+            starts.append(clock)
+        else:
+            parts.append(content)
+        clock += then
+
+    y = 140.0
+    for row in FLOW_ROWS:
+        h = _row_height(row)
+        head = ""
+        if row.apart:
+            head = (
+                f'<line x1="40" y1="{f(y + 6)}" x2="1160" y2="{f(y + 6)}" '
+                f'stroke="{TOKENS["grid"]}" stroke-width="1.5" stroke-dasharray="4 6"/>'
+                + text(40, y + 32, "the ways to the team", 13, "muted")
             )
+            y += 44
+        color = ROW_COLOR[row.who]
+        mid = y + h / 2
+        out = row.who == "agent"
+        bubble_edge = BUBBLE_X + BUBBLE_W + (24 if out else 0)
+        # Each piece arrives with the arrow that leads into it.
+        pieces: list[str] = []
+        edge = CODE_X - 4 if out else bubble_edge + 4
+        for key in row.rail:
+            x, w = _slot(key)
+            near, far = (x + w + 3, x) if out else (x - 3, x + w)
+            pieces.append(_arrow(edge, near, mid, color) + _chip(key, mid, states))
+            edge = far - 4 if out else far + 4
+        if out:
+            pieces.append(
+                _arrow(edge, bubble_edge + 3, mid, color) + _bubble(row, y, h)
+            )
+            pieces.insert(0, head + _code_box(row, y, h))
+        else:
+            dash = ' stroke-dasharray="4 4"' if row.who == "outage" else ""
+            pieces.append(
+                _arrow(edge, CODE_X - 3, mid, color, dash) + _code_box(row, y, h)
+            )
+            pieces.insert(0, head + _bubble(row, y, h))
+        for i, piece in enumerate(pieces):
+            last, first = i == len(pieces) - 1, i == 0
+            reveal(piece, 0.9 if last else 0.55 if first else 0.22)
+        y += h + 12
+    height = int(y + 16)
+    css = ""
+    if animated:
+        loop = clock + REVEAL_HOLD
+        end = 100 * (loop - REVEAL_FADE) / loop
+        css = f".s{{animation-duration:{loop:.2f}s;animation-iteration-count:infinite;animation-timing-function:linear}}"
+        for n, start in enumerate(starts):
+            a, b = 100 * start / loop, 100 * (start + REVEAL_FADE) / loop
+            css += (
+                f".k{n}{{animation-name:k{n}}}"
+                f"@keyframes k{n}{{0%,{a:.1f}%{{opacity:0}}{b:.1f}%,{end:.1f}%{{opacity:1}}100%{{opacity:0}}}}"
+            )
+        css += "@media (prefers-reduced-motion:reduce){.s{animation:none}}"
+    body = dot_grid(width, height) + "\n" + "\n".join(parts)
+    desc = (
+        "One pickup call as a transcript, in three columns: what is said on the phone, "
+        "the stations the sentence passes, and what the code does with it. The caller's "
+        "words pass the access, Asterisk, the ear, the conversation core and the LLM; the "
+        "agent's reply passes the LLM, the core, the mouth, Asterisk and the access. The "
+        "caller orders: get_service_status and search_menu, one tool per hop, at most "
+        "six, each run by the core against Postgres; the LLM has no line to a tool or the "
+        "database. With the caller's name the core runs draft_order, every price from "
+        "Postgres. The agent reads the draft back word for word. Only after the "
+        "caller's yes does the core run confirm. The agent confirms; meanwhile the order "
+        "shows on the tablet, and the slip prints after the team's approval, in primary "
+        "mode up to the amount limit at once. Set apart, the ways to the team: when the AI "
+        "is unsure, hears a complaint no rule covers or the model fails, the team phone "
+        "rings while the restaurant is open; after hours, when the caller's number is "
+        "known, a callback waits on the tablet. When the service voice fails, the exchange "
+        "rings the team phone. Each station's edge shows whether it is built, in progress "
+        "or planned."
+    )
+    return document(width, height, "How a call flows", desc, body, css)
+
+
+# --------------------------------------------------------------------- architecture
+
+# Where each node of FLOW_NODES stands in the architecture: x, y, width, height.
+# A person is a 60 by 60 box around its circle.
+ARCH_AT: dict[str, tuple[float, float, float, float]] = {
+    "caller": (62, 260, 60, 60),
+    "access": (140, 262, 104, 56),
+    "asterisk": (268, 262, 112, 56),
+    "ear": (404, 210, 132, 52),
+    "mouth": (404, 318, 132, 52),
+    "core": (562, 258, 132, 64),
+    "llm": (562, 156, 132, 48),
+    "status": (730, 176, 176, 48),
+    "menu": (730, 236, 176, 48),
+    "draft": (730, 296, 176, 48),
+    "confirm": (730, 356, 176, 48),
+    "postgres": (950, 222, 100, 136),
+    "teamphone": (254, 544, 140, 44),
+    "team": (590, 536, 60, 60),
+    "tablet": (760, 488, 160, 44),
+    "slip": (760, 544, 160, 44),
+    "push": (760, 600, 160, 44),
+}
+# The bands: hot while the caller is on the line, cold after the yes (docs/02 §2).
+HOT_BAND = (40.0, 104.0, 1120.0, 316.0)
+COLD_BAND = (40.0, 460.0, 1120.0, 220.0)
+# The one wire the architecture adds to FLOW_LINKS: the exchange rings the team
+# phone on a transfer and when `voice` is not reached (docs/02 §5).
+ARCH_RING = ("asterisk", "teamphone")
+HOT_SENTENCE = (
+    "The caller waits: core and tools run in the voice process, no HTTP; "
+    "each tool has a 300 ms budget (p95, local database)."
+)
+COLD_SENTENCE = (
+    "Seconds are fine here: the dispatcher retries a failed delivery with backoff, "
+    "then raises an alarm. The print bridge fetches the slip."
+)
+
+
+def _wire(a: str, b: str) -> list[tuple[float, float]]:
+    """Route between two nodes: straight when they share a column, down and then
+    across into a band below, otherwise across with one elbow."""
+    ax, ay, aw, ah = ARCH_AT[a]
+    bx, by, bw, bh = ARCH_AT[b]
+    acx, acy, bcx, bcy = ax + aw / 2, ay + ah / 2, bx + bw / 2, by + bh / 2
+    if abs(acx - bcx) < 5:
+        return [(acx, ay + ah), (bcx, by)] if bcy > acy else [(acx, ay), (bcx, by + bh)]
+    if by > ay + ah + 40:
+        return [(acx, ay + ah), (acx, bcy), (bx + bw if bcx < acx else bx, bcy)]
+    sx, ex = (ax + aw, bx) if bcx > acx else (ax, bx + bw)
+    mid = (sx + ex) / 2
+    return [(sx, acy), (mid, acy), (mid, bcy), (ex, bcy)]
+
+
+def _in_band(key: str) -> tuple[float, float, float, float]:
+    return HOT_BAND if ARCH_AT[key][1] < COLD_BAND[1] else COLD_BAND
+
+
+def _band(box: tuple[float, float, float, float], label: str) -> str:
+    x, y, w, h = box
+    return (
+        f'<rect x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" rx="14" '
+        f'fill="{TOKENS["surface"]}" opacity="0.55" stroke="{TOKENS["grid"]}"/>'
+        + text(x + 16, y + 28, label, 12, "muted", spacing=2, weight=700)
+    )
+
+
+def _arch_node(key: str, states: dict[str, str]) -> str:
+    x, y, w, h = ARCH_AT[key]
+    node = FLOW_NODES[key]
+    cx, cy = x + w / 2, y + h / 2
+    if node.get("kind") == "person":
+        return (
+            f'<circle cx="{f(cx)}" cy="{f(cy)}" r="28" fill="{TOKENS["surface"]}" '
+            f'stroke="{TOKENS["grid"]}" stroke-width="2"/>'
+            + _person(cx, cy - 2, "ink")
+            + text(cx, cy + 50, node["label"][0], 14, "ink", "middle", 700)
         )
-    # The two ways to a person: drawn first, so nodes sit on top of them.
-    parts.append(
-        f'<path d="{_rounded(ESCALATION_ROUTE, 14)}" fill="none" stroke="{TOKENS["violet"]}" '
-        'stroke-width="1.5" stroke-dasharray="3 6" opacity="0.8"/>'
-    )
-    # transfer_to_team counts the team as reachable while a service is open;
-    # otherwise the core leaves a callback for the tablet (api/agent/loop.py).
-    parts.append(
-        text(546, 534, "unsure, complaint or model failure: team phone,", 13, "violet")
-    )
-    parts.append(
+    color, dash = STATE_STROKE[node_state(node["tasks"], states)]
+    if node.get("kind") == "db":
+        shape = _cylinder(x, y, w, h, TOKENS[color])
+        cy += 6
+    else:
+        shape = (
+            f'<rect x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" rx="10" '
+            f'fill="{TOKENS["surface_hi"]}" stroke="{TOKENS[color]}" stroke-width="2"{dash}/>'
+        )
+    lines = node["label"]
+    base = cy + 5 - 9 * (len(lines) - 1)
+    for i, line in enumerate(lines):
+        code = node.get("code") and i == 1
+        shape += text(
+            cx,
+            base + 18 * i,
+            line,
+            14 if i == 0 else 12.5,
+            "neon" if code else "ink" if i == 0 else "muted",
+            "middle",
+            700 if i == 0 else 400,
+        )
+    return shape
+
+
+def asset_architecture(facts: Facts) -> str:
+    """Every component of FLOW_NODES in two bands: the hot path while the caller
+    waits, the cold path after the yes, and confirm as the hinge between them."""
+    states = facts.states
+    width, height = 1200, 704
+    hx, hy, _, hh = HOT_BAND
+    cx, cy, _, ch = COLD_BAND
+    parts = [
+        dot_grid(width, height),
+        text(40, 50, "ARCHITECTURE", 14, "muted", spacing=2.4, weight=700),
+        *_legend(1160, 48),
         text(
-            546,
-            552,
-            "after hours, number known: a callback on the tablet",
-            13,
-            "violet",
-        )
-    )
-    parts.append(
-        f'<path d="{_rounded(OUTAGE_ROUTE, 14)}" fill="none" stroke="{TOKENS["coral"]}" '
-        'stroke-width="1.5" stroke-dasharray="3 6" opacity="0.8"/>'
-    )
-    parts.append(
-        text(
-            252,
-            592,
-            "the service voice fails: the exchange rings the team phone",
-            13,
-            "coral",
-        )
-    )
-    paths: dict[tuple[str, str, str], str] = {}
-    for link in FLOW_LINKS:
-        a, b, channel = link
-        d = _rounded(_edge_path(a, b, CHANNEL_OFFSET[channel]))
-        paths[link] = d
+            40,
+            82,
+            "Hot path while the caller is on the line, cold path after the yes.",
+            15,
+            "neon",
+        ),
+        _band(HOT_BAND, "HOT PATH"),
+        text(hx + 136, hy + 28, HOT_SENTENCE, 13, "muted"),
+        _band(COLD_BAND, "COLD PATH"),
+        text(cx + 20, cy + ch - 16, COLD_SENTENCE, 13, "muted"),
+    ]
+    seen: set[frozenset[str]] = set()
+    for a, b, _channel in FLOW_LINKS:
+        if frozenset((a, b)) in seen:
+            continue
+        seen.add(frozenset((a, b)))
         planned = "planned" in (
             node_state(FLOW_NODES[a]["tasks"], states),
             node_state(FLOW_NODES[b]["tasks"], states),
         )
-        dash = ' stroke-dasharray="5 6"' if planned else ""
-        stroke = "#3B2E66" if channel == "out" else TOKENS["grid"]
+        # The hinge: confirm writes the order, and the cold path picks it up.
+        hinge = _in_band(a) != _in_band(b)
+        color = "violet" if hinge else "plum"
+        dash = ' stroke-dasharray="5 5"' if hinge or planned else ""
         parts.append(
-            f'<path d="{d}" fill="none" stroke="{stroke}" stroke-width="2"{dash}/>'
+            f'<path d="{_rounded(_wire(a, b))}" fill="none" stroke="{TOKENS[color]}" '
+            f'stroke-width="2"{dash}/>'
         )
-    for key, node in FLOW_NODES.items():
-        x, y, w, h = _node_box(key)
-        state = node_state(node["tasks"], states)
-        edge = {
-            "built": TOKENS["neon"],
-            "progress": TOKENS["violet"],
-            "planned": TOKENS["plum"],
-        }[state]
-        if node.get("kind") == "person":
-            parts.append(
-                f'<circle cx="{f(x + w / 2)}" cy="{f(y + h / 2)}" r="30" fill="{TOKENS["surface"]}" stroke="{TOKENS["grid"]}" stroke-width="2"/>'
-            )
-            parts.append(_person(x + w / 2, y + h / 2, "ink"))
-            parts.append(
-                text(
-                    x + w / 2,
-                    y + h + 22,
-                    node["label"][0],
-                    15,
-                    "ink",
-                    anchor="middle",
-                    weight=700,
-                )
-            )
-            continue
-        dash = ' stroke-dasharray="6 5"' if state == "planned" else ""
-        if node.get("kind") == "db":
-            parts.append(_cylinder(x, y, w, h, edge))
-        else:
-            parts.append(
-                f'<rect x="{f(x)}" y="{f(y)}" width="{f(w)}" height="{f(h)}" rx="12" '
-                f'fill="{TOKENS["surface_hi"]}" stroke="{edge}" stroke-width="2"{dash}/>'
-            )
-        lines = node["label"]
-        base = (
-            y
-            + h / 2
-            - (len(lines) - 1) * 9
-            + 5
-            + (6 if node.get("kind") == "db" else 0)
-        )
-        for i, line in enumerate(lines):
-            code = node.get("code") and i == 1
-            parts.append(
-                text(
-                    x + w / 2,
-                    base + i * 18,
-                    line,
-                    14 if i == 0 else 13,
-                    "neon" if code else "ink",
-                    anchor="middle",
-                    weight=700 if i == 0 else 400,
-                )
-            )
-        tag = {"built": "built", "progress": "in progress", "planned": "planned"}[state]
-        parts.append(text(x + w / 2, y + h + 15, tag, 13, "muted", anchor="middle"))
-        if animated:
-            pulse = _pulse(key)
-            if pulse:
-                parts.append(
-                    f'<rect class="pulse" x="{f(x - 3)}" y="{f(y - 3)}" width="{f(w + 6)}" height="{f(h + 6)}" rx="14" '
-                    f'fill="none" stroke="{edge}" stroke-width="3" opacity="0" filter="url(#soft)">'
-                    + pulse
-                    + "</rect>"
-                )
-    if animated:
-        for step in FLOW_STEPS:
-            link, reverse = _link_for(step.a, step.b)
-            parts.append(_dot(paths[link], step, reverse))
-    css = (
-        ".still{display:none}"
-        "@media (prefers-reduced-motion:reduce){.dot,.pulse,.caption{display:none}.still{display:inline}}"
+    ring = _rounded(_wire(*ARCH_RING))
+    parts.append(
+        f'<path d="{ring}" fill="none" stroke="{TOKENS["violet"]}" stroke-width="2" '
+        'stroke-dasharray="5 5"/>'
     )
+    ax, _, aw, _ = ARCH_AT["asterisk"]
+    parts.append(
+        text(
+            ax + aw / 2 + 12,
+            hy + hh + 26,
+            "the exchange rings the team phone: transfer or voice outage",
+            12.5,
+            "violet",
+        )
+    )
+    px, _, pw, _ = ARCH_AT["postgres"]
+    parts.append(
+        text(
+            px + pw / 2 - 12,
+            hy + hh + 26,
+            "confirm writes the order",
+            12.5,
+            "violet",
+            "end",
+        )
+    )
+    parts += [_arch_node(key, states) for key in FLOW_NODES]
     built = [
         k
         for k, n in FLOW_NODES.items()
@@ -2101,47 +2159,23 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
         if n["tasks"] and node_state(n["tasks"], states) != "built"
     ]
     desc = (
-        "One call as the code runs it. The caller reaches the access, router or SIP trunk, and "
-        "Asterisk, our own exchange, which hands the audio to the service voice. Its ear turns speech "
-        "into text for the conversation core. The core asks the language model, which answers with one "
-        "sentence or one tool call; the core checks the call and runs the tool, get_service_status, "
-        "search_menu or draft_order, against Postgres, and hands the result back to the model, one tool "
-        "per hop. The model never reads the database. The read-back goes out through the mouth. Only "
-        "after the caller's yes does the core run confirm, and the model tells the caller; at the same "
-        "time the order shows on the tablet; the slip prints at the register once the team approves it, in primary "
-        "mode under the amount limit at once. When the AI is unsure, hears a complaint or the model "
-        "fails, the call goes to the team phone; after opening hours, when the caller's number is "
-        "known, it leaves a callback on the tablet; when the service voice itself fails, the exchange rings the team phone. Built: "
+        "The architecture in two bands. The hot path, while the caller is on the line: "
+        "the caller reaches the access, router or SIP trunk, and Asterisk, our own "
+        "exchange; the ear turns speech into text for the conversation core, the mouth "
+        "speaks its reply. The core asks the LLM, which connects to the core only, and "
+        "runs the tools get_service_status, search_menu, draft_order and confirm against "
+        "Postgres, in the voice process without HTTP, each within a 300 ms budget at p95 "
+        "with a local database. confirm writes the order, the hinge to the cold path after "
+        "the yes: the tablet shows it, the print bridge fetches the order slip, and the "
+        "outbox carries events through the dispatcher to n8n and the push, retried with "
+        "backoff and then an alarm. The exchange rings the team phone on a transfer or "
+        "when the service voice is down. Built: "
         + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in built)
         + ". Not finished: "
-        + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in unfinished)
+        + (", ".join(" ".join(FLOW_NODES[k]["label"]) for k in unfinished) or "none")
         + "."
     )
-    return document(width, height, "How a call flows", desc, "\n".join(parts), css)
-
-
-def _pulse(key: str) -> str:
-    """The node glows while a dot arrives at it."""
-    arrivals = sorted({s.t1 for s in FLOW_STEPS if s.b == key})
-    if not arrivals:
-        return ""
-    times, values = ["0"], ["0"]
-    for t in arrivals:
-        start, peak, end = (
-            t / FLOW_LOOP,
-            (t + 0.12) / FLOW_LOOP,
-            min((t + 0.45) / FLOW_LOOP, 0.999),
-        )
-        if float(times[-1]) >= start:
-            continue
-        times += [f"{start:.3f}", f"{peak:.3f}", f"{end:.3f}"]
-        values += ["0", "0.9", "0"]
-    times.append("1")
-    values.append("0")
-    return (
-        f'<animate attributeName="opacity" dur="{FLOW_LOOP:g}s" repeatCount="indefinite" '
-        f'values="{";".join(values)}" keyTimes="{";".join(times)}"/>'
-    )
+    return document(width, height, "Architecture", desc, "\n".join(parts))
 
 
 # ---------------------------------------------------------------------- voice bench
@@ -2303,14 +2337,43 @@ class Capability:
     tasks: list[str]
     missing: str = ""
     waits_for: str = ""
+    area: str = ""
 
     def done(self, states: dict[str, str]) -> bool:
         return not self.waits_for and all(states.get(t) == "done" for t in self.tasks)
 
 
+@dataclass
+class Area:
+    """One row of the table under "What works": several capabilities read as one."""
+
+    name: str
+    summary: str
+
+
 def read_capabilities(path: Path = CAPABILITIES) -> list[Capability]:
     with path.open("rb") as fh:
         return [Capability(**entry) for entry in tomllib.load(fh)["capability"]]
+
+
+def read_areas(path: Path = CAPABILITIES) -> list[Area]:
+    with path.open("rb") as fh:
+        return [Area(**entry) for entry in tomllib.load(fh).get("area", [])]
+
+
+def area_state(
+    area: str, capabilities: list[Capability], states: dict[str, str]
+) -> str:
+    """built when every capability of the area is done, open when none is and no
+    task of theirs has started, partly otherwise."""
+    own = [c for c in capabilities if c.area == area]
+    if own and all(c.done(states) for c in own):
+        return "built"
+    started = any(
+        c.done(states) or any(states.get(t) in ("done", "progress") for t in c.tasks)
+        for c in own
+    )
+    return "partly" if started else "open"
 
 
 def status_region(facts: Facts) -> str:
@@ -2336,19 +2399,42 @@ def status_region(facts: Facts) -> str:
     )
 
 
-def capabilities_region(facts: Facts, capabilities: list[Capability]) -> str:
+def capabilities_region(
+    facts: Facts, capabilities: list[Capability], areas: list[Area] | None = None
+) -> str:
+    """The table by area, and under it, folded, the two full lists."""
     states = facts.states
     works = [c.works for c in capabilities if c.done(states)]
     missing = [c.missing or c.works for c in capabilities if not c.done(states)]
+    lists = [
+        "**What works:**",
+        "",
+        *(f"- {s}" for s in works),
+        "",
+        "**Not yet working:**",
+        "",
+        *(f"- {s}" for s in missing),
+    ]
+    if not areas:
+        return "\n".join(lists)
     return "\n".join(
         [
-            "**What works:**",
+            "Built means: it runs on the workbench and in CI with invented test data. "
+            "Nothing here has taken a real call yet.",
             "",
-            *(f"- {s}" for s in works),
+            "| Capability | State | What it is |",
+            "|---|---|---|",
+            *(
+                f"| {a.name} | {area_state(a.name, capabilities, states)} | {a.summary} |"
+                for a in areas
+            ),
             "",
-            "**Not yet working:**",
+            "<details>",
+            "<summary>Every capability in full</summary>",
             "",
-            *(f"- {s}" for s in missing),
+            *lists,
+            "",
+            "</details>",
         ]
     )
 
@@ -2367,7 +2453,9 @@ def readme_text(facts: Facts, current: str) -> str:
         current,
         {
             "status": status_region(facts),
-            "capabilities": capabilities_region(facts, read_capabilities()),
+            "capabilities": capabilities_region(
+                facts, read_capabilities(), read_areas()
+            ),
         },
     )
 
@@ -2506,6 +2594,53 @@ def asset_roadmap(facts: Facts) -> str:
     return document(width, height, "Roadmap", desc, "\n".join(parts))
 
 
+# --------------------------------------------------------------------------- badges
+# Local files in the palette instead of an image service: the README loads nothing
+# from outside but GitHub's own CI badge. The two versions are checked against the
+# Dockerfile and the Compose file by a test.
+PYTHON_VERSION = "3.12"
+POSTGRES_VERSION = "16"
+
+
+def badge(label: str, value: str, color: str = "violet") -> str:
+    advance = 6.7  # of one character of the 11 px monospace face
+    left, right = len(label) * advance + 16, len(value) * advance + 16
+    width = round(left + right)
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="20" '
+        f'viewBox="0 0 {width} 20" role="img" aria-labelledby="t d">\n'
+        f'<title id="t">{escape(label)}: {escape(value)}</title>\n'
+        f'<desc id="d">Badge: {escape(label)}, {escape(value)}.</desc>\n'
+        f"<style>text{{font-family:{FONT};font-size:11px}}</style>\n"
+        f'<rect width="{width}" height="20" rx="4" fill="{TOKENS["surface"]}"/>'
+        f'<path d="M{f(left)} 0H{width - 4}a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4H{f(left)}z" '
+        f'fill="{TOKENS[color]}"/>'
+        f'<text x="{f(left / 2)}" y="14" text-anchor="middle" fill="{TOKENS["ink"]}">'
+        f"{escape(label)}</text>"
+        f'<text x="{f(left + right / 2)}" y="14" text-anchor="middle" '
+        f'fill="{TOKENS["bg"]}" font-weight="700">{escape(value)}</text>\n</svg>\n'
+    )
+
+
+def badges(facts: Facts) -> dict[str, str]:
+    stage = facts.stage.replace("Stage ", "").replace(" (", " ").rstrip(")")
+    cases = facts.latest("cases")
+    return {
+        "badge-python.svg": badge("python", PYTHON_VERSION),
+        "badge-postgres.svg": badge("postgresql", POSTGRES_VERSION),
+        "badge-license.svg": badge("license", "proprietary", "neon"),
+        "badge-stage.svg": badge("stage", stage, "neon"),
+        # A measured number never stands without its date.
+        "badge-evals.svg": badge(
+            "eval, real model",
+            f"{cases.passed}/{cases.total} on {de(cases.date)}"
+            if cases
+            else "no run yet",
+            "neon" if cases else "plum",
+        ),
+    }
+
+
 def build(facts: Facts) -> dict[str, str]:
     return {
         "logo-mark.svg": asset_logo_mark(),
@@ -2513,6 +2648,7 @@ def build(facts: Facts) -> dict[str, str]:
         "banner.svg": asset_banner(),
         "call-flow.svg": asset_call_flow(facts),
         "call-flow-static.svg": asset_call_flow(facts, animated=False),
+        "architecture.svg": asset_architecture(facts),
         "eval-latest.svg": asset_eval_latest(facts),
         "eval-trend.svg": asset_eval_trend(facts),
         "progress.svg": asset_progress(facts),
@@ -2521,6 +2657,7 @@ def build(facts: Facts) -> dict[str, str]:
         "rules.svg": asset_rules(),
         "divider.svg": asset_divider(),
         "social-preview.svg": asset_social(),
+        **badges(facts),
     }
 
 

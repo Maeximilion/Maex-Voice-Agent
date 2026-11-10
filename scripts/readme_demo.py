@@ -392,7 +392,7 @@ def sign_in(stack: Stack) -> dict[str, str]:
         headers={"Origin": stack.base},
     )
     opener.open(request).read()
-    cookies = {c.name: c.value for c in jar}
+    cookies = {c.name: c.value or "" for c in jar}
     if not any("session" in name for name in cookies):
         raise SystemExit("sign-in gave no session cookie")
     return cookies
