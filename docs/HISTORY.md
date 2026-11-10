@@ -298,6 +298,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 | Date | What |
 |---|---|
+| 10.11.2026 | **The ops API of a stack, first part of the operator dashboard (#571).** `GET /v1/ops/status` answers the dashboard with counts, times and codes only, behind its own `OPS_TOKEN` and never offered by Caddy; the operator stack with its login and the customer list follow. |
 | 09.11.2026 | **STATUS cut, part 2 (#562).** "Open Points from Reviews" went from 55 KB to 25 KB and the open assumptions from 33 KB to 21 KB, full rows in `docs/HISTORY.md`. |
 | 09.11.2026 | **No AI attribution in commits or descriptions (#609).** The required check `title` now also fails a co-author trailer or "Generated with" badge in a pull request's commits or description; the label `attribution-approved` lets approved credit through. |
 | 09.11.2026 | **CI split into parallel jobs (#609).** `checks`, three `pytest` shards and a summary job named `test` cut the median from 572 s to 208 s; Docker jobs skip for docs-only pull requests, tests never skip by path. |
