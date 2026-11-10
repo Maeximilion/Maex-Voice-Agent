@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="99" height="20" viewBox="0 0 99 20" role="img" aria-labelledby="t d">
+<title id="t">python: 3.12</title>
+<desc id="d">Badge: python, 3.12.</desc>
+<style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace;font-size:11px}</style>
+<rect width="99" height="20" rx="4" fill="#17102B"/><path d="M56.2 0H95a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4H56.2z" fill="#9D7BFF"/><text x="28.1" y="14" text-anchor="middle" fill="#F1ECFF">python</text><text x="77.6" y="14" text-anchor="middle" fill="#0D0819" font-weight="700">3.12</text>
+</svg>

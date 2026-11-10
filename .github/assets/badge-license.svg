@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="153" height="20" viewBox="0 0 153 20" role="img" aria-labelledby="t d">
+<title id="t">license: proprietary</title>
+<desc id="d">Badge: license, proprietary.</desc>
+<style>text{font-family:ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'DejaVu Sans Mono', monospace;font-size:11px}</style>
+<rect width="153" height="20" rx="4" fill="#17102B"/><path d="M62.9 0H149a4 4 0 0 1 4 4v12a4 4 0 0 1-4 4H62.9z" fill="#E8FF2E"/><text x="31.4" y="14" text-anchor="middle" fill="#F1ECFF">license</text><text x="107.8" y="14" text-anchor="middle" fill="#0D0819" font-weight="700">proprietary</text>
+</svg>

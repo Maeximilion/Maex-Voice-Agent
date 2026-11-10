@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate seed test lint fmt eval eval-targets eval-nummern eval-voice eval-record readme-assets backup lock
+.PHONY: up down logs migrate seed test lint fmt eval eval-targets eval-nummern eval-voice eval-record readme-assets readme-check backup lock
 
 up:       ## Container starten
 	docker compose up -d --build
@@ -60,6 +60,10 @@ eval-record: ## Record an eval report by hand and redraw (SUITE=targets, REPORT=
 
 readme-assets: ## Redraw the README images in .github/assets/ (docs/15 §Assets and design)
 	$(PYTHON) scripts/readme_assets.py render
+
+readme-check: ## README links, anchors, image safety and size, blocked terms; then images up to date with their data
+	$(PYTHON) scripts/readme_check.py
+	$(PYTHON) scripts/readme_assets.py render --check
 
 backup:
 	bash scripts/backup.sh

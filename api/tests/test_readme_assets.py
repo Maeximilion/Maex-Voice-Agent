@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import csv
 import itertools
+import re
 import threading
 import xml.dom.minidom
 from datetime import date, datetime
 from fnmatch import fnmatch
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 import pytest
 import yaml
@@ -136,10 +138,18 @@ def test_every_flow_node_names_tasks_that_exist() -> None:
     for key, node in ra.FLOW_NODES.items():
         missing = [t for t in node["tasks"] if t not in known]
         assert not missing, f"{key} names unknown tasks {missing}"
-    for a, b, _channel in ra.FLOW_LINKS:
+    for a, b in ra.FLOW_LINKS:
         assert a in ra.FLOW_NODES and b in ra.FLOW_NODES
-    for step in ra.FLOW_STEPS:
-        ra._link_for(step.a, step.b)  # raises when a step has no line to run on
+    # One wire per pair: the architecture draws each link as it stands.
+    pairs = [frozenset(link) for link in ra.FLOW_LINKS]
+    assert len(pairs) == len(set(pairs))
+    assert set(ra.ARCH_AT) == set(ra.FLOW_NODES)
+
+
+def test_every_rail_station_is_a_node() -> None:
+    for row in ra.FLOW_ROWS:
+        for key in row.rail:
+            assert key in ra.FLOW_NODES and key in ra.RAIL_SLOT, (row.who, key)
 
 
 def test_read_status_finds_stage_and_gates() -> None:
@@ -223,8 +233,9 @@ def test_every_asset_is_valid_svg_and_dated() -> None:
         assert "<title" in content and "<desc" in content, name
     latest = facts.latest("cases")
     assert latest is not None
-    for name in ("banner.svg", "eval-latest.svg"):
-        assert latest.date.isoformat() in assets[name], name
+    assert latest.date.isoformat() in assets["eval-latest.svg"]
+    # The banner shows an example call and no measured number, so it carries no date.
+    assert latest.date.isoformat() not in assets["banner.svg"]
     assert facts.progress_date is not None
     assert facts.progress_date.isoformat() in assets["progress.svg"]
 
@@ -241,16 +252,47 @@ def test_rendering_is_deterministic() -> None:
     assert ra.build(ra.gather()) == ra.build(ra.gather())
 
 
-def test_animation_hides_under_reduced_motion() -> None:
-    flow = ra.build(ra.gather())["call-flow.svg"]
-    assert "animateMotion" in flow
-    assert "prefers-reduced-motion" in flow
-    static = ra.build(ra.gather())["call-flow-static.svg"]
-    assert "animateMotion" not in static
+def test_the_call_flow_moves_with_css_only_and_stops_under_reduced_motion() -> None:
+    assets = ra.build(ra.gather())
+    flow, static = assets["call-flow.svg"], assets["call-flow-static.svg"]
+    assert "@keyframes" in flow
+    assert "@media (prefers-reduced-motion:reduce){.s{animation:none}}" in flow
+    # No SMIL: it ignores prefers-reduced-motion, CSS keyframes stop under it.
+    assert "<animate" not in flow and "<set" not in flow
+    # Without animation support every row stays visible: only keyframes hide one.
+    assert 'class="s k0"' in flow and 'opacity="0"' not in flow
+    # The first row's sentence stands from the first frame, outside any group.
+    assert escape(ra.EXAMPLE_CALL["order"][0]) in flow.split('<g class="s', 1)[0]
+    # The reveal is quick and the finished picture holds at least as long.
+    duration = re.search(r"animation-duration:([\d.]+)s", flow)
+    assert duration is not None
+    loop = float(duration.group(1))
+    shown = [float(p) for p in re.findall(r"([\d.]+)%,[\d.]+%\{opacity:1\}", flow)]
+    assert loop <= 24 and max(shown) / 100 * loop <= 11
+    hold_from = max(shown) / 100 * loop
+    assert loop - hold_from >= hold_from - 0.5
+    assert "animation" not in static and "@keyframes" not in static
+    assert 'class="s' not in static
 
 
+def test_the_new_pictures_pass_the_readme_image_check(tmp_path: Path) -> None:
+    from scripts import readme_check
+
+    assets = ra.build(ra.gather())
+    for name in ("call-flow.svg", "call-flow-static.svg", "architecture.svg"):
+        path = tmp_path / name
+        path.write_text(assets[name], encoding="utf-8")
+        assert readme_check.check_svg(path, name) == [], name
+
+
+@pytest.mark.parametrize(
+    "stale", ["progress.svg", "badge-evals.svg", "roadmap.svg", "readme:capabilities"]
+)
 def test_check_reports_a_stale_asset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    stale: str,
 ) -> None:
     real = ra.ASSETS
     for name in (*ra.PNGS, ra.PNG_SOURCES):
@@ -263,8 +305,19 @@ def test_check_reports_a_stale_asset(
     monkeypatch.setattr(ra, "README", readme)
     assert ra.render() == 0
     assert ra.render(check=True) == 0
-    (tmp_path / "progress.svg").write_text("<svg/>", encoding="utf-8")
+    capsys.readouterr()
+    if stale.startswith("readme:"):
+        pattern = ra.REGION_RE.format(name=stale.split(":", 1)[1])
+        text = readme.read_text(encoding="utf-8")
+        old = re.sub(pattern, r"\1- a line nobody generated\2", text, flags=re.S)
+        assert old != text
+        readme.write_text(old, encoding="utf-8")
+        name = "README.md"
+    else:
+        (tmp_path / stale).write_text("<svg/>", encoding="utf-8")
+        name = stale
     assert ra.render(check=True) == 1
+    assert name in capsys.readouterr().err
 
 
 # --- recording guards (Codex on 73a0005) -----------------------------------------
@@ -489,133 +542,261 @@ def test_a_missing_or_changed_png_is_stale(
 
 # --- the call flow follows the code (Maxi, 14.10.2026) ---------------------------
 
-TOOLS = ("status", "menu", "draft", "confirm")
+
+def _row(tool: str) -> int:
+    """Index of the first call flow row whose code names `tool`."""
+    return next(
+        i
+        for i, row in enumerate(ra.FLOW_ROWS)
+        if any(tool in line for line in row.tools)
+    )
 
 
-def _steps(a: str, b: str) -> list:
-    return [s for s in ra.FLOW_STEPS if (s.a, s.b) == (a, b)]
+def _pictures() -> dict[str, str]:
+    assets = ra.build(ra.gather())
+    return {
+        name: assets[name]
+        for name in ("call-flow.svg", "call-flow-static.svg", "architecture.svg")
+    }
 
 
 def test_the_llm_talks_to_the_core_and_nothing_else() -> None:
     """Hard rule 1 in the picture: the model never reaches a tool or the database."""
-    llm_links = {frozenset((a, b)) for a, b, _c in ra.FLOW_LINKS if "llm" in (a, b)}
+    llm_links = {frozenset((a, b)) for a, b in ra.FLOW_LINKS if "llm" in (a, b)}
     assert llm_links == {frozenset(("core", "llm"))}
-    for step in ra.FLOW_STEPS:
-        if "llm" in (step.a, step.b):
-            assert {step.a, step.b} == {"core", "llm"}
+    assert "llm" not in ra.ARCH_RING
+    # On the rail the LLM is no station: a spur of the core, in rows that pass
+    # the core, and the core is the station next to the code column.
+    for row in ra.FLOW_ROWS:
+        assert "llm" not in row.rail
+        if row.llm:
+            assert "core" in row.rail
+        if "core" in row.rail:
+            assert row.rail[-1 if row.who == "caller" else 0] == "core"
+    flow = _pictures()["call-flow-static.svg"]
+    spurs = sum(row.llm for row in ra.FLOW_ROWS)
+    assert flow.count(">LLM</text>") == spurs
 
 
-def test_one_thing_moves_at_a_time_inside_a_turn() -> None:
-    """One tool per hop: the steps through core, LLM, tools and Postgres never overlap."""
-    inner = {"core", "llm", "postgres", *TOOLS}
-    steps = sorted(
-        (s for s in ra.FLOW_STEPS if s.a in inner and s.b in inner), key=lambda s: s.t0
+def test_the_core_says_the_booking_itself() -> None:
+    """loop.py: "Booked: the core says so itself"; the model is not asked."""
+    from api.agent.loop import SAY_FOR_NAME, SAY_ORDER_PLACED
+
+    row = next(r for r in ra.FLOW_ROWS if r.said == ra.EXAMPLE_CALL["confirmed"])
+    assert not row.llm and "llm" not in row.rail
+    assert row.rail == ["core", "mouth", "asterisk", "access"]
+    assert " ".join(row.does).startswith("the core says the booking itself")
+    # The quoted sentence is the core's own: SAY_FOR_NAME in SAY_ORDER_PLACED.
+    booked = SAY_ORDER_PLACED.replace(
+        "Ihre Bestellung ist", SAY_FOR_NAME.format(name="Mueller"), 1
     )
-    assert steps
-    for before, after in itertools.pairwise(steps):
-        assert after.t0 >= before.t1 - 1e-9, (before, after)
+    quoted = " ".join(row.said).strip("„“").removesuffix(" …")
+    assert booked.startswith(quoted)
 
 
-def test_every_tool_hop_returns_to_the_llm_before_the_next_tool() -> None:
-    seq = [(s.a, s.b) for s in sorted(ra.FLOW_STEPS, key=lambda s: s.t0)]
-    for tool in ("status", "menu", "draft"):
-        i = seq.index(("core", tool))
-        assert seq[i - 2 : i] == [("core", "llm"), ("llm", "core")]
-        assert seq[i + 1 : i + 4] == [
-            (tool, "postgres"),
-            ("postgres", tool),
-            (tool, "core"),
-        ]
+def test_the_complaint_is_read_before_the_model() -> None:
+    """The row draws no LLM because the guest turn runs `escalation.check`
+    itself and only then hands over to `_converse`, the one place that asks
+    the model; and the check takes the example sentence as a complaint."""
+    import inspect
+
+    from api.agent import escalation
+    from api.agent.loop import ConversationLoop
+
+    row = next(r for r in ra.FLOW_ROWS if r.said == ra.EXAMPLE_CALL["complaint"])
+    assert not row.llm
+    spoken = " ".join(row.said).strip("„“")
+    assert escalation.check(spoken) == "complaint"
+    turn = inspect.getsource(ConversationLoop._guest_turn)
+    assert "self._llm" not in turn
+    assert turn.index("escalation.check(") < turn.index("self._converse(")
+    assert "self._llm" in inspect.getsource(ConversationLoop._converse)
+
+
+def test_one_tool_per_hop_at_most_six_as_the_loop_counts() -> None:
+    from api.agent.loop import MAX_TOOL_HOPS
+
+    order = ra.FLOW_ROWS[_row("search_menu")]
+    assert MAX_TOOL_HOPS == 6
+    assert "one tool per hop, at most six" in " ".join(order.does)
+    assert "The LLM has no line" in " ".join(order.does)
+    tools = " ".join(order.tools)
+    assert tools.index("get_service_status") < tools.index("search_menu")
+    # The draft needs the caller's name, so it comes with a later sentence.
+    assert _row("search_menu") < _row("draft_order")
+    assert ra.FLOW_ROWS[_row("draft_order")].said == ra.EXAMPLE_CALL["name"]
+
+
+def test_the_caller_s_sentences_are_the_recorded_ones() -> None:
+    """The quoted caller lines are the demo's call file and one eval case, word
+    for word; only the agent's sentences come from the replay's output."""
+    import json
+
+    def said(path: str) -> list[str]:
+        data = json.loads((ra.ROOT / path).read_text(encoding="utf-8"))
+        return [t["text"] for t in data["transcript"] if t["role"] == "customer"]
+
+    recorded = said("scripts/demo/pickup_call.json") + said(
+        "evals/cases/eskalation_0001_beschwerde.json"
+    )
+    for key in ("order", "name", "yes", "complaint"):
+        spoken = " ".join(ra.EXAMPLE_CALL[key]).replace("“ „", "“„")
+        for sentence in re.findall(r"„([^“]*)“", spoken):
+            assert sentence in recorded, (key, sentence)
 
 
 def test_confirm_comes_only_after_the_read_back_and_the_yes() -> None:
-    readback_heard, confirmation_heard = sorted(
-        _steps("access", "caller"), key=lambda s: s.t0
+    rows = ra.FLOW_ROWS
+    readback, confirm = _row("readback"), _row("confirm")
+    assert rows[readback].who == "agent"
+    assert (
+        rows[confirm].who == "caller" and rows[confirm].said == ra.EXAMPLE_CALL["yes"]
     )
-    (confirm,) = _steps("core", "confirm")
-    words_in = sorted(s.t0 for s in _steps("caller", "access"))
-    assert len(words_in) == 2, "the order and the yes"
-    assert readback_heard.t1 <= words_in[1] < confirm.t0
-    (stored,) = _steps("confirm", "postgres")
-    for target in ("slip", "tablet"):
-        (handover,) = _steps("postgres", target)
-        assert handover.t0 >= stored.t1
-    # The result of confirm goes back through the loop: the caller hears it.
-    (back,) = _steps("confirm", "core")
-    assert stored.t1 <= back.t0 < confirmation_heard.t0
+    assert _row("draft_order") < readback < confirm
+    # The reply, the tablet and the slip come after confirm, never before it.
+    assert confirm < _row("confirm result")
+
+
+def test_the_guard_lets_confirm_through_only_on_the_heard_read_back_and_a_yes() -> None:
+    """guards.py rule 3, with the picture's own sentences: confirm passes on
+    the example's yes to a draft whose read-back was heard, and on nothing else."""
+    import uuid
+
+    from api.agent import guards
+    from api.agent.llm import ToolCall
+    from api.agent.state import ConversationState
+
+    draft = uuid.uuid4()
+    yes = " ".join(ra.EXAMPLE_CALL["yes"]).strip("„“")
+    order = " ".join(ra.EXAMPLE_CALL["name"]).strip("„“")
+    call = ToolCall("confirm", {"entity_id": str(draft)})
+
+    def may(heard: bool, said: str) -> bool:
+        state = ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4())
+        state.stage = "readback_pending"
+        state.order_id = draft
+        state.readback = "Zweimal Nummer 25 Papaya-Salat. Passt das so?"
+        state.readback_heard = heard
+        return guards._may_confirm(state, guards.begin_turn(state), said, call)
+
+    assert may(heard=True, said=yes)
+    assert not may(heard=False, said=yes)
+    assert not may(heard=True, said=order)
 
 
 def test_the_slip_waits_for_the_approval_on_the_tablet() -> None:
-    (shown,) = _steps("postgres", "tablet")
-    (approved,) = _steps("team", "tablet")
-    (stored,) = _steps("tablet", "postgres")
-    (printed,) = _steps("postgres", "slip")
-    assert shown.t1 <= approved.t0 < stored.t0 < printed.t0
+    """confirm.py `_waits_for` decides it: the example order (the read-back's
+    total) goes at once in primary mode up to the limit, above it or in any
+    other mode it waits for the team."""
+    from api.domain.ordering.confirm import _waits_for
+    from api.domain.ordering.readback import spoken_euro
+    from api.models import Order, ServiceConfig
+
+    total = 1580
+    assert spoken_euro(total) in " ".join(ra.EXAMPLE_CALL["readback"])
+    config = ServiceConfig(
+        order_approval_above_cents=15000, overflow_needs_approval=True
+    )
+    assert _waits_for(Order(total_cents=total), "primary", config) is None
+    assert _waits_for(Order(total_cents=15001), "primary", config) == "amount"
+    assert _waits_for(Order(total_cents=total), "overflow", config) == "mode"
+    assert _waits_for(Order(total_cents=total), "shadow", config) == "mode"
 
 
 def test_flow_labels_are_english() -> None:
     """Repository text is English (CLAUDE.md §8); the tablet's German button
-    text stays in the product, not in the diagram."""
+    text stays in the product, not in the diagram. Only the example call's
+    sentences are German."""
     words = {w for node in ra.FLOW_NODES.values() for w in node["label"]}
     assert "Passt" not in words
+    german = {line for lines in ra.EXAMPLE_CALL.values() for line in lines}
+    for name, svg in _pictures().items():
+        body = svg.split("</desc>", 1)[1]
+        for line in re.findall(r"<text[^>]*>([^<]*)</text>", body):
+            line = line.replace("&amp;", "&")
+            if line in german:
+                continue
+            assert line.isascii() and "Passt" not in line, (name, line)
 
 
 def test_a_person_is_reached_by_phone_not_by_the_tablet() -> None:
-    def ends_at_box(route: list[tuple[float, float]], key: str) -> bool:
-        x, y, w, h = ra._node_box(key)
-        ex, ey = route[-1]
-        return x - 1 <= ex <= x + w + 1 and y - 1 <= ey <= y + h + 1
-
-    assert ends_at_box(ra.ESCALATION_ROUTE, "teamphone")
-    assert ends_at_box(ra.OUTAGE_ROUTE, "teamphone")
-    ax, ay, aw, ah = ra._node_box("asterisk")
-    sx, sy = ra.OUTAGE_ROUTE[0]
-    assert ax <= sx <= ax + aw and sy >= ay + ah - 1, (
-        "the outage starts at the exchange"
-    )
-    cx, cy, cw, ch = ra._node_box("core")
-    sx, sy = ra.ESCALATION_ROUTE[0]
-    assert cx <= sx <= cx + cw and sy >= cy + ch - 1, "the handover starts at the core"
+    escalation, outage = ra.FLOW_ROWS[-2], ra.FLOW_ROWS[-1]
+    assert escalation.apart and escalation.tools == ["transfer_to_team"]
+    assert "the team phone rings" in " ".join(escalation.does)
+    # The outage never reaches the voice service: it ends at the exchange.
+    assert outage.rail == ["access", "asterisk"]
+    assert "the exchange rings the team phone" in " ".join(outage.does)
+    # In the architecture the exchange is what rings the team phone, and the
+    # phone in the cold band says that it is rung during the call.
+    assert ra.ARCH_RING == ("asterisk", "teamphone")
+    assert ra.FLOW_NODES["teamphone"]["label"] == ["Team phone", "rung during the call"]
 
 
-def test_words_go_in_on_one_wire_and_the_reply_comes_back_on_the_other() -> None:
-    for step in ra.FLOW_STEPS:
-        link, _reverse = ra._link_for(step.a, step.b)
-        if link[2] == "in":
-            assert step.color == "neon"
-        if link[2] == "out":
-            assert step.color == "violet"
+def test_words_go_in_on_one_way_and_the_reply_comes_back_on_the_other() -> None:
+    mirrored = [{"ear": "mouth"}.get(k, k) for k in reversed(ra.FLOW_RAIL_IN)]
+    assert ra.FLOW_RAIL_IN[-1] == "core" == ra.FLOW_RAIL_OUT[0]
+    assert mirrored == ra.FLOW_RAIL_OUT
+    for row in ra.FLOW_ROWS:
+        if row.who == "caller":
+            assert row.rail == ra.FLOW_RAIL_IN
+        if row.who == "agent":
+            assert row.rail == ra.FLOW_RAIL_OUT
+    assert {(row.who, ra.ROW_COLOR[row.who]) for row in ra.FLOW_ROWS} == {
+        ("caller", "neon"),
+        ("agent", "violet"),
+        ("outage", "coral"),
+    }
 
 
-def test_every_caption_is_shown_and_the_last_holds_to_the_loop_end() -> None:
-    flow = ra.build(ra.gather())["call-flow.svg"]
-    for _start, _end, words in ra.FLOW_CAPTIONS:
-        assert words in flow
-    assert ra.FLOW_CAPTIONS[-1][1] == ra.FLOW_LOOP
-    assert ra.FLOW_STILL in ra.build(ra.gather())["call-flow-static.svg"]
+def test_the_head_line_stands_in_both_call_flows() -> None:
+    pictures = _pictures()
+    assert ra.FLOW_STILL in pictures["call-flow.svg"]
+    assert ra.FLOW_STILL in pictures["call-flow-static.svg"]
 
 
 def test_the_picture_names_the_direct_print_and_the_voice_failure_exactly() -> None:
-    flow = ra.build(ra.gather())["call-flow.svg"]
-    assert "primary mode: at once" in ra.FLOW_CAPTIONS[-1][2]
-    # Only a failure of the service voice is the exchange's fallback; a model
-    # failure in the core takes the handover path (api/agent/loop.py _too_slow).
-    assert "any failure" not in flow
-    assert "the service voice fails" in flow
-    assert "model failure" in flow
-    # A callback needs the caller's number; without one the call ends with the
-    # honest "nobody reachable" sentence (api/agent/loop.py _handoff).
-    assert "number known" in flow
+    for name in ("call-flow.svg", "call-flow-static.svg"):
+        flow = _pictures()[name]
+        assert "primary mode: at once" in flow
+        # Only a failure of the service voice is the exchange's fallback; a model
+        # failure in the core takes the handover path (api/agent/loop.py _too_slow).
+        assert "any failure" not in flow
+        assert "the service voice fails" in flow
+        assert "model failure" in flow
+        # A callback needs the caller's number; without one the call ends with the
+        # honest "nobody reachable" sentence (api/agent/loop.py _handoff).
+        assert "number known" in flow
 
 
-def test_tablet_and_reply_start_together_when_confirm_commits() -> None:
-    """The tablet polls Postgres; it does not wait for the spoken reply."""
-    (stored,) = _steps("confirm", "postgres")
-    (shown,) = _steps("postgres", "tablet")
-    (back,) = _steps("postgres", "confirm")
-    assert shown.t0 == back.t0
-    # Right after the commit, at most the short pause between two captions.
-    assert stored.t1 <= shown.t0 <= stored.t1 + ra.FLOW_PAUSE + 1e-9
+def test_the_example_call_is_the_banner_s_call() -> None:
+    assert ra.EXAMPLE_CALL["order"] == ra.EXAMPLE_SAID
+    flow = _pictures()["call-flow.svg"]
+    for lines in ra.EXAMPLE_CALL.values():
+        for line in lines:
+            assert escape(line) in flow
+
+
+def test_every_component_stands_in_the_architecture() -> None:
+    arch = _pictures()["architecture.svg"]
+    for key, node in ra.FLOW_NODES.items():
+        for line in node["label"]:
+            assert f">{escape(line)}</text>" in arch, (key, line)
+
+
+def test_the_architecture_boxes_do_not_overlap_and_stay_in_their_band() -> None:
+    boxes = ra.ARCH_AT
+    for (a, (ax, ay, aw, ah)), (b, (bx, by, bw, bh)) in itertools.combinations(
+        boxes.items(), 2
+    ):
+        apart = ax + aw <= bx or bx + bw <= ax or ay + ah <= by or by + bh <= ay
+        assert apart, (a, b)
+    for key, (x, y, w, h) in boxes.items():
+        bx, by, bw, bh = ra._in_band(key)
+        assert bx <= x and x + w <= bx + bw and by <= y and y + h <= by + bh, key
+    hot = {k for k in boxes if ra._in_band(k) == ra.HOT_BAND}
+    assert {"caller", "access", "asterisk", "ear", "mouth", "core", "llm"} <= hot
+    assert {"status", "menu", "draft", "confirm", "postgres"} <= hot
+    assert set(boxes) - hot == {"push", "tablet", "slip", "teamphone", "team"}
 
 
 # --- measurements record themselves (T-0.9) -------------------------------------
@@ -1390,3 +1571,86 @@ def test_mark_uploaded_refuses_main(
     (assets / ra.UPLOADED).unlink(missing_ok=True)
     assert ra.main(["mark-uploaded"]) == 1
     assert not (assets / ra.UPLOADED).exists()
+
+
+# --- roadmap ----------------------------------------------------------------------
+
+
+def test_every_block_feeds_exactly_one_stage_of_the_roadmap() -> None:
+    """A new block in docs/07 must get a stage, or its tasks vanish from the bars."""
+    keys = [key for _name, _goal, blocks in ra.STAGES for key in blocks]
+    assert sorted(keys) == sorted(block.key for block in ra.gather().blocks)
+    assert len(keys) == len(set(keys))
+
+
+def test_the_roadmap_has_one_station_per_stage_of_the_status_table() -> None:
+    table = ra.STATUS.read_text(encoding="utf-8").split("## Roadmap", 1)[1]
+    table = table.split("\n## ", 1)[0]
+    stages = re.findall(r"^\| \**(\d) [A-Z]", table, re.M)
+    assert [int(n) for n in stages] == list(range(len(ra.STAGES)))
+
+
+def test_the_roadmap_is_dated_and_lights_the_running_stage() -> None:
+    facts = ra.gather()
+    roadmap = ra.build(facts)["roadmap.svg"]
+    assert facts.progress_date is not None
+    assert facts.progress_date.isoformat() in roadmap
+    assert roadmap.count("we are here") == 1
+    facts.stage = "Stage 2 (Pickup)"
+    assert ra.current_stage(facts) == 2
+    assert "Stage 2 of 6" in ra.asset_roadmap(facts)
+
+
+# --- the table under "What works" and the badges ---------------------------------
+
+
+def test_every_capability_belongs_to_a_listed_area() -> None:
+    areas = [area.name for area in ra.read_areas()]
+    assert len(areas) == len(set(areas))
+    assert {c.area for c in ra.read_capabilities()} == set(areas)
+
+
+def test_the_capability_table_has_one_row_per_area_and_keeps_both_lists() -> None:
+    region = ra.capabilities_region(
+        ra.gather(), ra.read_capabilities(), ra.read_areas()
+    )
+    rows = [
+        line
+        for line in region.splitlines()
+        if line.startswith("| ") and not line.startswith("| Capability")
+    ]
+    assert len(rows) == len(ra.read_areas())
+    assert all(row.split(" | ")[1] in ("built", "partly", "open") for row in rows)
+    assert "**What works:**" in region and "**Not yet working:**" in region
+
+
+def test_an_area_is_built_only_when_every_capability_is_done() -> None:
+    caps = [
+        ra.Capability("a", ["T-1.1"], area="X"),
+        ra.Capability("b", ["T-1.2"], area="X"),
+        ra.Capability("c", ["T-1.3"], area="Y"),
+        # Its tasks are done, but it waits for something outside the task list.
+        ra.Capability("d", [], waits_for="the capture", area="Z"),
+    ]
+    assert ra.area_state("X", caps, {"T-1.1": "done", "T-1.2": "done"}) == "built"
+    assert ra.area_state("X", caps, {"T-1.1": "done", "T-1.2": "open"}) == "partly"
+    assert ra.area_state("X", caps, {"T-1.1": "open", "T-1.2": "progress"}) == "partly"
+    assert ra.area_state("Y", caps, {"T-1.3": "open"}) == "open"
+    assert ra.area_state("Z", caps, {}) == "open"
+
+
+def test_the_badges_carry_the_versions_the_stack_really_uses() -> None:
+    dockerfile = (ra.ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
+    compose = (ra.ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    assert f"FROM python:{ra.PYTHON_VERSION}-" in dockerfile
+    assert f"image: postgres:{ra.POSTGRES_VERSION}-" in compose
+
+
+def test_the_eval_badge_names_the_date_of_its_run() -> None:
+    facts = ra.gather()
+    latest = facts.latest("cases")
+    assert latest is not None
+    wanted = f"{latest.passed}/{latest.total} on {latest.date.isoformat()}"
+    assert wanted in ra.badges(facts)["badge-evals.svg"]
+    facts.runs = []
+    assert "no run yet" in ra.badges(facts)["badge-evals.svg"]
