@@ -606,6 +606,7 @@ With a rule of the catalogue that answers the guest's sentence, the conversation
 | `POST /v1/gui/orders/{id}/approve` | Freigabe im Überlauf-Betrieb |
 | `POST /internal/events/replay` | hängengebliebene Übergaben erneut senden |
 | `POST /v1/kitchen/claim` · `/ack` | Küchenbon für die Druckbrücke im Lokal (T-4.6, §Küchenbon) |
+| `GET /v1/ops/status` | A stack's state for the operator dashboard, own token `OPS_TOKEN`, never through the proxy (#571, §Ops API) |
 
 ## Küchenbon (Druckbrücke, T-4.6)
 
@@ -628,3 +629,25 @@ Nur für die Druckbrücke (`printbridge/`), mit eigenem Token `KITCHEN_BRIDGE_TO
 - Wiederholte Rückmeldung für einen erledigten Bon ändert nichts. Unbekannter oder fremder Bon: `not_found`.
 
 **Wächter** (eigener Faden im Dispatcher-Prozess, `python -m api.jobs.cold_path`, unabhängig davon, wie lange ein Versand an n8n hängt): liegt ein fälliger Bon 60 s unabgeholt, wird die Karte rot wie oben. Ein Bon ohne Versuche mehr wird `failed`, ein überholter stattdessen still erledigt. Er sperrt erst die Bestellung, dann den Bon, wie das Tablet: „Nochmal senden" während eines Durchlaufs legt keinen zweiten Bon an und wird nicht gleich wieder rot.
+
+## Ops API (operator dashboard, #571)
+
+Only for the operator dashboard, which reaches each customer's `api` over that stack's internal
+`ops` network (docs/23 §8). Own token `OPS_TOKEN` (`Authorization: Bearer ...`, constant-time
+compare); empty closes the route, and outside dev and test the API refuses to start on a weak one or
+one equal to any other token of the stack. Caddy answers 404 for `/v1/ops/*`
+(`api/tests/test_deploy_exposure.py`).
+
+**`GET /v1/ops/status`** → `{"tenant": {"key", "name"}, "call_mode", "last_call_at", "business_day", "today": {...}, "print_bridge": {"configured", "last_poll_at", "silent"}, "backup_at", "alarms": [{"kind", "last_at", "count"}], "menu": {"items", "price_differences", "without_allergen_information"}}`
+
+- Counts, times (UTC) and codes only, no guest data: the route records no reason, so it has none to
+  give. Guest data comes later on routes of their own with `X-Ops-Reason` (docs/23 §8).
+- `call_mode` is the mode that holds now (`domain/status/mode.py`), `null` before provisioning.
+- `today` is the business day's figures of docs/06 §4 (`span_figures`): calls, orders, corrected,
+  handed over, missed, cost, and the three derived values.
+- `alarms`: what the monitor pushed to `ops` in the last 24 hours, one line per kind with its last
+  time and count (`audit_log` `monitor.alarm`); it repeats one that still holds every hour or day.
+- `menu.without_allergen_information`: active dishes without one confirmed allergen value, for
+  which the agent says "no information".
+- No restaurant in the stack yet: `not_found`.
+- Measured: p95 13.4 ms with local DB (20 rounds, busy day of the test).

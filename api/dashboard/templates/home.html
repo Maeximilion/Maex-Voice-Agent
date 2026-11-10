@@ -1,0 +1,20 @@
+{# Start page after the sign-in. The customer list follows (#571, part 3). #}
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+
+{% block main %}
+<section class="card zugang-form">
+  <h1>Operator dashboard</h1>
+  <p>Signed in as <strong>{{ operator.name }}</strong>.</p>
+  {% if recovery_left <= 3 %}
+  <p class="badge danger" role="alert">{{ recovery_left }} recovery codes left. New ones come with <code>python -m api.dashboard.cli reset {{ operator.name }}</code> on the operator host, which renews the password and the TOTP secret too.</p>
+  {% else %}
+  <p>{{ recovery_left }} recovery codes left.</p>
+  {% endif %}
+  <p>The customer list follows.</p>
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Sign out</button>
+  </form>
+</section>
+{% endblock %}

@@ -2,17 +2,18 @@
 
 import threading
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
 from api.config import settings
 from api.core.errors import InvalidInput, NotFound
-from api.domain.calls import end_call, start_call
+from api.domain.calls import close_left_open_calls, end_call, start_call
+from api.domain.calls.end import LEFT_OPEN_GRACE
 from api.domain.calls.start import _delete_after
-from api.models import Call
+from api.models import Call, ServiceConfig
 from api.schemas.calls import EndCallRequest, StartCallRequest
 from scripts.seed import seed
 
@@ -240,3 +241,127 @@ def test_caller_number_period_is_90_days_from_the_setting(start_date, expected):
 def test_caller_number_period_follows_a_changed_setting(monkeypatch):
     monkeypatch.setattr(settings, "retention_caller_id_days", 30)
     assert _delete_after(NOW) == date(2026, 10, 15)
+
+
+# -- calls a process left open (#545) -------------------------------------------
+
+
+def _limit(session, tenant_id) -> timedelta:
+    """How long a call of this tenant may stay open before the job closes it."""
+    seconds = session.scalar(
+        select(ServiceConfig.max_call_seconds).where(
+            ServiceConfig.tenant_id == tenant_id
+        )
+    )
+    return timedelta(seconds=seconds) + LEFT_OPEN_GRACE
+
+
+def test_a_call_left_open_past_its_limit_is_closed_as_error(session, tenant_id):
+    started = start_call(session, start_request(tenant_id), now=NOW)
+    later = NOW + _limit(session, tenant_id) + timedelta(seconds=1)
+
+    assert close_left_open_calls(session, later) == 1
+
+    call = session.get(Call, started.call_id)
+    assert call.ended_at == later
+    assert call.outcome == "error"
+    # Nobody knows when the leg really ended or what it cost.
+    assert call.duration_seconds is None
+    assert call.cost_cents is None
+
+
+def test_a_call_within_its_limit_stays_open(session, tenant_id):
+    started = start_call(session, start_request(tenant_id), now=NOW)
+
+    assert close_left_open_calls(session, NOW + _limit(session, tenant_id)) == 0
+
+    assert session.get(Call, started.call_id).ended_at is None
+
+
+def test_an_ended_call_keeps_its_log(session, tenant_id):
+    started = start_call(session, start_request(tenant_id), now=NOW)
+    ended_at = NOW + timedelta(minutes=2)
+    end_call(session, end_request(started.call_id, tenant_id), now=ended_at)
+
+    assert close_left_open_calls(session, NOW + timedelta(days=1)) == 0
+
+    call = session.get(Call, started.call_id)
+    assert (call.ended_at, call.outcome) == (ended_at, "completed")
+
+
+def test_each_tenant_is_measured_by_its_own_limit(session, tenant_id):
+    other = uuid.UUID(
+        seed(session, tenant_name="Langbetrieb", timezone="Europe/Berlin").tenant_id
+    )
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == other)
+        .values(max_call_seconds=3600)
+    )
+    session.commit()
+    short = start_call(session, start_request(tenant_id), now=NOW)
+    long = start_call(
+        session, start_request(other, external_session_id="ext-2"), now=NOW
+    )
+
+    later = NOW + _limit(session, tenant_id) + timedelta(seconds=1)
+    assert close_left_open_calls(session, later) == 1
+
+    assert session.get(Call, short.call_id).outcome == "error"
+    assert session.get(Call, long.call_id).ended_at is None
+
+
+def test_a_late_end_of_the_leg_keeps_the_error(session, tenant_id):
+    """A process that was only slow, not dead, reports the end after the job:
+    the log stays as the job wrote it (end_call's state idempotency)."""
+    started = start_call(session, start_request(tenant_id), now=NOW)
+    later = NOW + _limit(session, tenant_id) + timedelta(seconds=1)
+    close_left_open_calls(session, later)
+
+    ended = end_call(
+        session,
+        end_request(started.call_id, tenant_id),
+        now=later + timedelta(minutes=1),
+    )
+
+    assert ended.outcome == "error"
+
+
+def test_the_close_never_overwrites_an_end_that_commits_first(migrated_db_url):
+    """end_call holds the row lock while the job runs: the job waits for it and
+    then finds the call ended, instead of writing over a correct outcome."""
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as s:
+        tenant = uuid.UUID(
+            seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
+        )
+        call_id = start_call(s, start_request(tenant), now=NOW).call_id
+        later = NOW + _limit(s, tenant) + timedelta(seconds=1)
+
+    closed: list[object] = []
+
+    def sweep() -> None:
+        with Session(engine) as own:
+            try:
+                closed.append(close_left_open_calls(own, later))
+            except Exception as exc:  # noqa: BLE001 - every error must show
+                closed.append(exc)
+
+    with Session(engine) as ending:
+        call = ending.execute(
+            select(Call).where(Call.id == call_id).with_for_update()
+        ).scalar_one()
+        call.ended_at = later
+        call.outcome = "completed"
+        ending.flush()
+        worker = threading.Thread(target=sweep)
+        worker.start()
+        worker.join(timeout=1)
+        assert worker.is_alive(), "the job must wait for the row lock"
+        ending.commit()
+    worker.join(timeout=10)
+
+    assert closed == [0]
+    with Session(engine) as s:
+        assert s.get(Call, call_id).outcome == "completed"
+    engine.dispose()

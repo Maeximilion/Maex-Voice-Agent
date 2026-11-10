@@ -46,6 +46,8 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 | `auth.py` | Token-Prüfung als FastAPI-Dependency |
 | `ids.py` | Idempotenz-Schlüssel, Abholcode („A17") |
 | `time.py` | UTC ↔ `Europe/Berlin`, „heute" im Sinne des Betriebstags |
+| `tokens.py` | the rule every token meets outside dev and test (`valid_production_token`, `LOCAL_ENVS`); reads no settings, so the operator dashboard uses it too |
+| `origin.py` | `same_origin`: a browser write comes from a page of this site (docs/23 §6, T9); shared by `gui/` and `dashboard/` |
 
 **Regel:** Fachcode wirft `core.errors`, nie `HTTPException`. Die Übersetzung passiert einmal, in `tools/`.
 
@@ -58,6 +60,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 - `bridge.py` — the print bridge's sign of life: `note_poll` from the claim, `silence` for the alarm and the header (T-8.3)
 - `holidays.py` — the statewide statutory holidays of the 16 states (Easter by the Gregorian formula), suggested in `special_days` and answered by the team: like Sunday, closed, or the weekday's hours (T-9.5). A suggestion counts for nothing until then
 - `staff_changes.py` — the staff's changes without the owner's PIN (#570 b): today's team number among the dialable ones (`team_phone_at` is its one reader), a date's hours that hold at once or wait for the owner, and the check cards the owner keeps or undoes
+- `overview.py` — the stack's state at a glance for the operator dashboard (#571): mode, last call, today's figures, print bridge, backup, the alarms of the last day, menu status; counts and times only, never guest data
 - Tests: Mitternacht, Sondertag schlägt Wochentag, Sommerzeit-Umstellung
 
 ### `domain/menu/`
@@ -117,7 +120,7 @@ Anruf-Log, nicht Gesprächsführung — das bleibt `agent/`. Eigenes Modul statt
 von `callbacks/`, weil es kein Eskalationspfad ist, sondern der Rahmen um jeden
 Anruf, ganz gleich wie er ausgeht.
 - `start.py` — `calls`-Zeile anlegen, Rufnummer normalisieren, Löschfrist setzen; Zustands-Idempotenz über `external_session_id`
-- `end.py` — Dauer und Ergebnis schreiben, Zustands-Idempotenz wie `domain/confirm.py`
+- `end.py` — Dauer und Ergebnis schreiben, Zustands-Idempotenz wie `domain/confirm.py`; `close_left_open_calls` closes as `error` every call open longer than its tenant's `max_call_seconds` plus `LEFT_OPEN_GRACE` (10 minutes), the log of a call whose `voice` process ended before the line reported the end of the leg (#545); duration and cost stay empty, and a late end of the leg keeps the `error`
 - `routing.py` — whether the agent answers a call (only in `overflow` and `primary`), the team extension and the tenant name for the greeting; the mode is read fresh, so the emergency stop holds for the next call (T-1.13); `tenant_named`, the one tenant of a name, which the service `voice` serves (T-1.11); `call_limit`, the limit of concurrent AI calls at the restaurant's local time (the lowest window of `call_limit_windows`, else `max_concurrent_calls`), and `takes_call`, whether the agent takes a call with that many of its own open (T-10.9)
 - `consent.py` — `record_consent`: one `consent_log` row per answer to a consent question of the agent (call, time, question, answer), committed before anything is stored on the strength of it (T-11.1, L13)
 - `recordings.py` — the `recordings` row of a call and where its file lies: written before a byte is recorded, marked on a withdrawal, deleted by `jobs/retention.py` (T-11.3, L2)
@@ -199,6 +202,20 @@ Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `doma
 ### `kitchen/` – Eingang der Druckbrücke (T-4.6)
 - `router.py` — `POST /v1/kitchen/claim` und `/ack`, eigenes Token `KITCHEN_BRIDGE_TOKEN`, dünne Hülle um `domain/ordering/handover.py` (Abholen, Rückmeldung, Wächter)
 
+### `ops/` – Eingang des Operator-Dashboards (#571)
+- `router.py` — `GET /v1/ops/status`, own token `OPS_TOKEN`, reached only over the stack's internal `ops` network; thin shell around `domain/status/overview.py`
+
+### `dashboard/` – the operator dashboard, an app of its own (#571, docs/23 §5)
+Run from the API's image as `uvicorn api.dashboard.app:app`, with its own database (`OPERATOR_DATABASE_URL`) and migrations (`db/dashboard/`). It never imports `api.config` or `api.db`, which build a customer stack's settings and connection (`api/tests/test_dashboard_login.py` checks it); from the customer side it uses only `core/` helpers that read no settings and `domain/access/hashing.py` and the wait rule of `domain/access/sessions.py`.
+- `config.py` — its settings: `ENV`, `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET` (refused at start outside dev and test when weak)
+- `db.py` — engine and request session of the operator database
+- `models.py` — accounts, recovery codes, sessions, devices, failures per address, the operator's own audit
+- `totp.py` — RFC 6238 codes, standard library, a code never taken twice
+- `access.py` — sign-in (password plus TOTP or recovery code), waits, sessions (30 minutes idle, 12 hours), account creation and the break-glass reset; no FastAPI
+- `app.py` — the pages: `/login`, `/logout`, `/`, `/health`; CSRF, cookies, the proxy check
+- `cli.py` — `python -m api.dashboard.cli add|reset <name>` on the operator host
+- `templates/` — the pages, no script
+
 ### `printbridge/` – die Druckbrücke im Lokal (T-4.6)
 Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht mit dem Server nur über HTTPS. Läuft auf einem Rechner im Lokal (`printbridge/README.md`).
 - `bridge.py` — Durchlauf: abholen, drucken, ins Protokoll, zurückmelden; `--test` für einen Probebon
@@ -212,7 +229,7 @@ Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht 
 Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebucht und die GUI zeigt sie. Das Ereignis wartet, bis n8n zurück ist. Kein Vorgang geht verloren, keiner wird doppelt gesendet.
 
 ### `jobs/`
-- `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss
+- `cold_path.py` — Prozess des Dienstes `dispatcher`: Dispatcher Richtung n8n plus Wächter für den Küchenbon in eigenem Faden (T-4.6), damit ein hängendes n8n die rote Karte nicht verzögert; steckt beide zusammen, damit `events/` die Fachlogik nicht kennen muss. Also runs `close_left_open_calls` (`domain/calls/end.py`, #545) in a thread of its own every five minutes
 - `retention.py` — deletion job after docs/03 "Löschkonzept" (T-11.2): `purge(session, now)` strips the personal fields whose period is over and logs one line per pass; `cold_path.py` runs it in a thread of its own every `RETENTION_INTERVAL_SECONDS`, `python -m api.jobs.retention` runs one pass by hand
 - `data_requests.py` — requests of data subjects by hand on the server (T-11.8, docs/09 §2): `python -m api.jobs.data_requests log|open|extend|find|erase|object|answer`; stdout is the copy or the lines of the erasure ledger, written before the commit
 - `provision.py` — a new customer's tenant in its stack (#573): `python -m api.jobs.provision create <customer.json> [--dry-run]` prints one JSON report with the setup link, `check` lists what is still missing
@@ -285,6 +302,7 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 | `agent/` | mit Fake-LLM (vorgegebene Antworten), prüft Loop und Dispatch | fertig |
 | `events/` | Outbox schreiben, Dispatcher gegen Fake-n8n, Retry-Verhalten | offen |
 | `telephony/adapters` | against the fake adapter; later against recorded media events and fake speech engines (docs/20) | fertig |
+| `dashboard/` | `totp.py` against the RFC 6238 test values without a database; the login, CLI and migration against a scratch operator database (`api/tests/test_dashboard_*.py`) | fertig |
 | Ende-zu-Ende | `sim/replay` gegen echte API mit Test-DB | offen |
 
 **Ziel:** Die schnellen Tests laufen bei jedem Speichern, die DB-Tests vor jedem Commit, die Evals vor jedem Merge.

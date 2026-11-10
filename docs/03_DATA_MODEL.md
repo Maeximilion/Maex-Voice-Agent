@@ -208,7 +208,7 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | started_at / ended_at | TIMESTAMPTZ | |
 | duration_seconds | INT | |
 | intent | TEXT | `reservation` / `pickup` / `delivery` / `info` / `complaint` / `unknown` |
-| outcome | TEXT | `completed` / `transferred` / `callback` / `abandoned` / `error`. A transferred call whose team leg nobody answered becomes `callback` once its card is written, also when that comes before the log of our leg; `error` stays, logged before or after the card (T-10.8) |
+| outcome | TEXT | `completed` / `transferred` / `callback` / `abandoned` / `error`. A transferred call whose team leg nobody answered becomes `callback` once its card is written, also when that comes before the log of our leg; `error` stays, logged before or after the card (T-10.8). A call still open `max_call_seconds` plus 10 minutes after `started_at` is closed as `error` by the dispatcher (`close_left_open_calls`, #545): its `voice` process ended before the line reported the end of the leg. `ended_at` is then the time of that pass, `duration_seconds` and `cost_cents` stay empty |
 | transfer_reason | TEXT NULL | |
 | cost_cents | INT NULL | von der Plattform, sobald verfügbar. From the own core (text phone, T-2.4): the model cost of the call in whole cents, rounded up, from the counted tokens and the prices in `.env`; empty when no real model ran, a price is missing or the tokens of one request are unknown, never 0 for unknown. The exact tokens are in the log line "model usage", not in this table |
 | model | TEXT NULL | welches Modell lief |
@@ -623,3 +623,11 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 033 | `service_config.team_phone_today` and `team_phone_today_until` (CHECK both or neither), `staff_changes` with a partial unique index on open cards: staff changes and their check cards (#570 b, D34 point 4); new columns and a new table; the downgrade drops them, a staff number for today and every card are gone, hours written stay (backup first) |
 | 035 | `tenants.customer_key` (CHECK on the form, unique): the customer's key, by which provisioning finds the tenant it created (#573); a new column only; the downgrade drops it, after which a rerun of provisioning refuses because the stack already holds a tenant |
 | planned, next free number | `eval_cases`, `eval_runs` |
+
+### Operator database (#571, docs/23 §5)
+
+Not a customer's database: the operator stack's own, migrated with `alembic -c db/dashboard/alembic.ini` from `OPERATOR_DATABASE_URL`, revisions `op001` on (`db/dashboard/migrations/`). It holds no guest data.
+
+| Migration | Content |
+|---|---|
+| op001 | `operator_accounts` (name unique, CHECK `^[a-z0-9._-]{2,40}$`; scrypt `password_hash`; `totp_secret` readable, `totp_last_step`; `failures`, `last_failed_at`, `blocked_until`), `operator_recovery_codes` (SHA-256 of a single-use code), `operator_sessions` (SHA-256 of the cookie token, `created_at`, `last_seen_at`), `operator_devices` (SHA-256 of the device cookie with its own failure count), `operator_login_failures` (per client address), `operator_audit` (`at`, `actor`, `action`, `target`, `detail`); the downgrade drops every table and with them every operator account |

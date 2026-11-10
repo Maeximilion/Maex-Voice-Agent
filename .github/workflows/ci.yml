@@ -19,10 +19,34 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  # Which paths a pull request changes (#609). The Docker jobs build ./api only, so a
+  # pull request that changes nothing but docs/, .claude/, scripts/ or Markdown at the
+  # top level skips them; a skipped job counts as passed for a required check. The
+  # tests always run: they read docs, CLAUDE.md, README, the hooks, commands and scripts.
+  changes:
     runs-on: ubuntu-latest
-    # A green run takes about three minutes; without a limit a hanging test holds
-    # the runner for GitHub's default of six hours.
+    timeout-minutes: 5
+    outputs:
+      image: ${{ steps.diff.outputs.image }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      # A pull request checks out its merge commit, whose first parent is the base branch.
+      - id: diff
+        run: |
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            git diff --no-renames --name-only HEAD^1 HEAD | tee "$RUNNER_TEMP/files"
+            python3 scripts/ci_changes.py < "$RUNNER_TEMP/files" | tee -a "$GITHUB_OUTPUT"
+          else
+            echo "image=true" | tee -a "$GITHUB_OUTPUT"
+          fi
+
+  # Guards, lint, types, the latency budget and the speech kit; the rest of the
+  # suite runs in the shards of `pytest`.
+  checks:
+    runs-on: ubuntu-latest
+    # Without a limit a hanging test holds the runner for GitHub's default of six hours.
     timeout-minutes: 15
     services:
       db:
@@ -87,10 +111,8 @@ jobs:
       - run: ruff format --check api scripts evals printbridge sim db
       # Types, non-strict. Paths and settings: pyproject.toml, [tool.mypy].
       - run: mypy
-      # Parallel auf allen Kernen des Runners; jeder Test hat seine eigene Datenbank.
-      # Latenztests nicht: unter parallelen Workern messen sie die Last, nicht den Code.
-      - run: pytest -q -n auto -m "not latency"
-      # Latenzbudget < 300 ms (CLAUDE.md §7) seriell auf dem ruhigen Runner.
+      # Latency budget < 300 ms (CLAUDE.md §7), serially on a quiet runner and against
+      # a database that keeps its durability, as production does.
       - name: Latenztests seriell
         run: pytest -q -m latency
       # The telephone line of the speech kit needs numpy, which the production
@@ -106,7 +128,66 @@ jobs:
           pytest -q -rs api/tests/test_telephony_speech_bench.py | tee "$RUNNER_TEMP/bench.txt"
           ! grep -q skipped "$RUNNER_TEMP/bench.txt"
 
+  # The suite without the latency tests, split over parallel jobs by a hash of the
+  # test id (`PYTEST_SHARD`, api/tests/conftest.py); one more shard is one more
+  # entry in `shard`. Inside a job on all cores, every test on its own database.
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    services:
+      db:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: maex
+          POSTGRES_PASSWORD: maex
+          POSTGRES_DB: maex_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U maex -d maex_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://maex:maex@localhost:5432/maex_test
+      AGENT_API_TOKEN: ci-token
+      ENV: test
+      PYTEST_SHARD: ${{ strategy.job-index }}/${{ strategy.job-total }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Every database here is thrown away after its test, so durability only costs
+      # time. It saved 56 % locally (Docker Desktop) but about 5 % on the runner (#609).
+      - name: Test database without durability
+        run: >-
+          docker exec ${{ job.services.db.id }} psql -U maex -d maex_test
+          -c "ALTER SYSTEM SET fsync = off"
+          -c "ALTER SYSTEM SET synchronous_commit = off"
+          -c "ALTER SYSTEM SET full_page_writes = off"
+          -c "SELECT pg_reload_conf()"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install --require-hashes -r api/requirements.txt
+      - run: pytest -q -n auto -m "not latency"
+
+  # The required check `test` (ruleset on main) stands for the checks and every shard.
+  # `always()`: a job skipped after a failed or cancelled need would count as passed.
+  test:
+    if: ${{ always() }}
+    needs: [changes, checks, pytest]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: |
+          for result in ${{ join(needs.*.result, ' ') }}; do
+            [ "$result" = success ] || { echo "::error::a job this check stands for ended $result"; exit 1; }
+          done
+
   docker-smoke:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.image != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -174,6 +255,8 @@ jobs:
   # its pinned packages install, and an ear or mouth without its model files is
   # refused. The test job runs in the API's image, which has no engines.
   voice-image:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.image != 'false' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

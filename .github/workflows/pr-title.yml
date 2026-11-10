@@ -1,10 +1,12 @@
 name: pr-title
 
 # The pull request title becomes the squash commit message on main, so it has to follow
-# Conventional Commits (CLAUDE.md section 8).
+# Conventional Commits (CLAUDE.md section 8). The same required check fails a pull request
+# whose commits or description credit an AI author (#609); `labeled` and `unlabeled`
+# rerun it for its escape label.
 on:
   pull_request:
-    types: [opened, edited, synchronize, reopened]
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
 
 # Opening a pull request and editing its text right away fires two events; only the
 # newest run counts.
@@ -13,6 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  contents: read
   pull-requests: read
 
 jobs:
@@ -34,3 +37,11 @@ jobs:
             perf
             build
             revert
+      # The merge commit of the pull request: its first parent is the base, its second
+      # the pull request's head, so HEAD^1..HEAD^2 are the pull request's own commits.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: No AI attribution in commits or description
+        run: python3 scripts/attribution_check.py --event "$GITHUB_EVENT_PATH" HEAD^1..HEAD^2
