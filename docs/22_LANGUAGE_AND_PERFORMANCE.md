@@ -131,7 +131,7 @@ files not yet migrated only shrinks.
 | Committed output | The compiled `.js` is in git. The server image carries no Node, so `make up`, the Dockerfile and the deployment did not change, and a developer who does not touch browser code needs no Node |
 | CI | Job `browser` (part of the required check `test`) runs `npm ci` and `npm run build` and fails on a type error or when the committed output differs from a fresh build |
 | Strictness | `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`: the set `tsc --init` writes |
-| Caching | `/gui/static/` answers with `Cache-Control: no-cache` (`api/gui/__init__.py`): the browser asks again on every use and gets a 304 while the file is unchanged, so a page never runs the script of an older build. `raumplan.js` and `raumplan-geometry.js` carry `?v=2` once, because copies cached before this header existed would have been run as modules |
+| Caching | `/gui/static/` answers with `Cache-Control: no-cache` (`api/gui/__init__.py`): the browser asks again on every use and gets a 304 while the file is unchanged, so a page never runs the script of an older build. the page's address of `raumplan.js` carries `?v=2` once, because a copy cached before this header existed would have been run as a module; the import of the geometry inside it names no number, since TypeScript cannot resolve a specifier with a query (nothing is deployed outside the workbench, so no browser holds an older copy) |
 | Updates | Dependabot, ecosystem `npm`, monthly; a compiler bump that changes the output fails CI until `npm run build` ran |
 
 **The rule at the boundaries.** A type describes only what the compiler was told.
@@ -153,7 +153,7 @@ the geometry on 10.11.2026: 20,000 rounds over every exported function, identica
 |---|---|
 | `raumplan-geometry` | TypeScript since 10.11.2026 |
 | `base` | TypeScript since 10.11.2026 (#626), loaded as a module by `base.html` |
-| `raumplan.js` | JavaScript, already a module that imports the compiled geometry (#626) |
+| `raumplan` | TypeScript since 10.11.2026 (#626), loaded as a module that imports the compiled geometry |
 | `app.js` | JavaScript, classic script (#626) |
 
 **Claude's choices, 10.11.2026** (Maxi asked for the most reliable way): the output

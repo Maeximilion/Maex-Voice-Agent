@@ -12,7 +12,7 @@ GUI = Path(__file__).resolve().parents[1] / "gui"
 DASHBOARD = GUI.parent / "dashboard"
 
 # Written by hand before the rule; each moves to TypeScript with #626.
-NOT_YET_MIGRATED = {"app.js", "raumplan.js"}
+NOT_YET_MIGRATED = {"app.js"}
 # Third-party code, shipped as its author built it.
 VENDORED = {"htmx.min.js"}
 # The simulator console, dev only (#626 decides whether it moves).
