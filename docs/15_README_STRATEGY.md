@@ -6,12 +6,14 @@ The README is the shop window of the repo. It describes the current state for so
 
 | Trigger | What changes | Who |
 |---|---|---|
-| Sunday, 23:00 Europe/Berlin | Images, status table, "As of", "What works" and "Not yet working" | The routine "Weekly README update" (see "Keeping them current") |
+| Sunday, 23:00 Europe/Berlin | Images, badges, status table, "As of" and the "What works" table with its two lists | The routine "Weekly README update" (see "Keeping them current") |
 | Gate passed (G0 to G5) | Status, version, "What works", next steps | Claude Code via `/gate` |
 | New dependency or new service (Docker image, vendor, library) | Requirements, Quick Start | Claude Code in the same task |
 | Change to the Quick Start (new command, new environment variable) | Quick Start, Configuration | Claude Code in the same task |
 | Known issue that users will run into | Known Issues | Claude Code via `/bug` or `/done` |
 | New doc file under `docs/` | Documentation | Claude Code in the same task |
+| Visible change to the text phone's output or to the operations view | The demo recording | Claude Code in the same task: `/done` proposes it, `python -m scripts.readme_demo` records it (see "The demo recording") |
+| A new image or a redesign of one | Four variants, Maxi picks one | Claude Code, before anything is committed (see "New and redesigned images") |
 
 Not with every commit. Nobody reads a README that changes daily: the generated parts move once a week, late on Sunday (Maxi, 2026-10-19).
 
@@ -36,19 +38,21 @@ Between gates: patch versions (0.2.1, 0.2.2) for fixes that go to `main`.
 
 ## Mandatory sections
 
-The README always contains, in this order:
+The README always contains, in this order (Maxi, 2026-11-10, #622). The first screen answers three questions: what it is, for whom, and where it stands.
 
-1. Title and one paragraph: what the project does and for whom
-2. Status: current version, current stage, next gate, date
-3. What works / what does not (one list each, honest)
-4. Requirements
-5. Quick Start (copyable, tested)
-6. Configuration (the most important environment variables, pointer to `.env.example`)
-7. Project Structure (short form, pointer to `docs/11_MODULE.md`)
-8. Development (tests, lint, evals, slash commands)
-9. Documentation (table of the `docs/` files)
-10. Known Issues
-11. License and Contact
+1. Banner and one paragraph: what the project does and for whom, and that it is not live yet
+2. Badges: CI, Python, PostgreSQL, license, stage, latest eval run
+3. Navigation line
+4. Demo: the recording and two sentences on what it shows and where it comes from
+5. How a call flows: the transcript image, one paragraph, the six rules
+6. What works: the table by capability, the full lists folded below it
+7. Status: the status table, the roadmap image, the latest eval run; the other measurements folded
+8. Quick start (requirements in its first paragraph, copyable, tested)
+9. Architecture: the image and one paragraph; the project structure folded, pointer to `docs/11_MODULE.md`
+10. Configuration, Development, Documentation: one or two sentences each, the tables and command lists folded
+11. Contributing, Known issues, License and contact
+
+A folded block (`<details>`) holds what a first-time reader does not need: long tables, command lists, the measurements behind the headline image. A heading never sits inside a folded block, so every anchor of the navigation line stays reachable.
 
 What does not belong in it: marketing text, emojis, feature promises, screenshots of mockups, change history.
 
@@ -71,11 +75,11 @@ What does not belong in it: marketing text, emojis, feature promises, screenshot
 - Commands in code blocks, exactly as they are typed
 - If something does not work, it is listed under "Known Issues", not in a subordinate clause
 - No emojis, no badges that measure nothing
-- Badges in the palette below (`labelColor=17102B`, value colour `9D7BFF` or `E8FF2E`); the CI badge stays GitHub's own, because it is the only one that works on a private repository
+- Badges are local files in the palette below, written by the generator (`badge-*.svg`); no badge comes from an outside image service. The CI badge stays GitHub's own, because only GitHub knows the state of a run
 
 ## Assets and design
 
-The README carries images in `.github/assets/`. All of them are written by `scripts/readme_assets.py` from data in the repository; none is drawn by hand, and none shows a number that is not in a file with a date.
+The README carries images in `.github/assets/`. The SVG files are written by `scripts/readme_assets.py` from data in the repository, and the demo recording is made by `scripts/readme_demo.py` from a real run of the code. None is drawn by hand, and none shows a measured number that is not in a file with a date. The banner and the call flow show one example call with invented test data; an example is not a measurement and carries no date.
 
 ### The concept: "Night Service"
 
@@ -110,9 +114,13 @@ Checked with the colour validator of the `dataviz` skill against `surface` (14.1
 
 | File | Shows | Source |
 |---|---|---|
-| `banner.svg` | Logo, one line, the state slip: latest real-model eval, version, stage, test functions in `api/tests` (rounded down to the hundred; parametrized cases make the run larger), next gate | all sources below |
-| `call-flow.svg` | One call in two turns as the code runs it: words in through access, Asterisk and the ear; the core asks the LLM and runs one tool per hop against Postgres (the LLM has no line to a tool or the database); the read-back out through the mouth; `confirm` only after the yes, then the spoken reply and the order on the tablet at the same time; the slip after the team's approval (primary mode: at once); escalation to the team phone or, after hours and with the caller's number, a callback on the tablet; a failure of the service `voice` rings the team phone. Each node is built, in progress or planned from its tasks; the tests in `api/tests/test_readme_assets.py` hold the story to the code | `FLOW_NODES`, `FLOW_LINKS`, `FLOW_STORY` in the script, `docs/07_WORKPACKAGES.md` |
+| `banner.svg` | One example call from left to right: the caller's sentence as a waveform, the logo, the order slip that is read back and confirmed by the caller's yes. No measured number, so it never goes stale | `EXAMPLE_SAID`, `EXAMPLE_SLIP` in the script |
+| `badge-python.svg`, `badge-postgres.svg`, `badge-license.svg`, `badge-stage.svg`, `badge-evals.svg` | The badge row: three fixed facts, the running stage and the latest real-model eval run with its date in the title | the script, `docs/01_STATUS.md`, `docs/metrics/eval_history.csv` |
+| `roadmap.svg` | The stages 0 to 6 as stations on one line, the gates between them, the running stage lit, and under each station how many of its tasks are built | `STAGES` in the script, `docs/01_STATUS.md`, `docs/07_WORKPACKAGES.md` |
+| `demo.gif` | The recording: the text phone replays one pickup call on the left, the operations view shows the order arriving on the right | `scripts/readme_demo.py`, `scripts/demo/pickup_call.json` |
+| `call-flow.svg` | One pickup call as a transcript in three columns: what is said on the phone, the stations each sentence passes (access, Asterisk, ear, core and LLM on the way in; LLM, core, mouth, Asterisk and access on the way out), and what the code does with it. The sentences are the recorded demo call's own; `confirm` stands only after the yes; set apart below, the ways to the team: the handover to the team phone, the callback after hours, and the exchange ringing the team phone when the service `voice` fails. Each station is built, in progress or planned from its tasks. The rows reveal in order (CSS only) | `FLOW_ROWS`, `EXAMPLE_CALL`, `FLOW_NODES` in the script, `scripts/demo/pickup_call.json`, `docs/07_WORKPACKAGES.md` |
 | `call-flow-static.svg` | The same without motion | as above |
+| `architecture.svg` | Two paths: the hot path while the caller is on the line (access, Asterisk, ear and mouth, core, LLM, the tools, Postgres) and the cold path after the yes (tablet, order slip, push, team phone), with the hinge between them. Every component of `FLOW_NODES` stands in it, built, in progress or planned; the tests in `api/tests/test_readme_assets.py` hold it to the code | `FLOW_NODES`, `FLOW_LINKS`, `ARCH_AT` in the script, `docs/07_WORKPACKAGES.md` |
 | `progress.svg` | Tasks done, one bar per block, the gates | `docs/07_WORKPACKAGES.md`, `docs/01_STATUS.md` |
 | `eval-latest.svg` | The latest real-model run per suite | `docs/metrics/eval_history.csv` |
 | `eval-trend.svg` | Pass rate per suite over time, against the target of 99 % | `docs/metrics/eval_history.csv` |
@@ -120,6 +128,28 @@ Checked with the colour validator of the `dataviz` skill against `surface` (14.1
 | `rules.svg` | The six hard rules of `CLAUDE.md` §2 | `HARD_RULES` in the script |
 | `logo-mark.svg`, `logo-wordmark.svg`, `divider.svg` | Logo and divider | the script |
 | `social-preview.png`, `logo-mark-512.png` | Link preview and avatar, uploaded by hand in the repository settings. They carry no number, because CI cannot check a PNG | `render --png` |
+
+### Rules for every image
+
+`scripts/readme_check.py` holds the mechanical ones in CI (job `readme`, `make readme-check`); the others are for whoever makes the image.
+
+- It lives in `.github/assets/` and nowhere else, and the README refers to it by a relative path. No image, badge or statistic is loaded from an outside service.
+- An SVG carries no script, no `foreignObject`, no event handler and no reference outside its own file, and stays under 150 KB. A GIF stays under 3 MB, a PNG under 1 MB.
+- One file serves both GitHub themes: every image sits on its own midnight card. There is no light and dark pair.
+- Motion is CSS only, shows the whole picture where animation is not supported, and stops under `prefers-reduced-motion`.
+- Invented test data only: the repository's test menu, no real name, no address. A phone number may show only where the product itself shows one, and then only a number from the range the Bundesnetzagentur reserves for media productions (030 23125 000 to 999 and its sister ranges, Amtsblatt-Mitteilung 148/2021), which is assigned to nobody.
+- What an image may not show: a promise, a mockup, a measured number without a date, a provider name outside the voice layer's own row.
+
+### New and redesigned images
+
+A new image, and a redesign of an existing one, starts as four variants (Maxi, 2026-11-10):
+
+1. Four static drafts A to D that differ in structure, weighting or idea, not only in colour, all inside the tokens above.
+2. They are drawn into `.preview/`, which git ignores, and shown side by side on one local page on a light and a dark background. For a recording, the four variants are storyboards of four to six stills.
+3. Maxi picks one in a closed question with a recommendation; "B, with this change" is an answer too. The choice is noted in the issue with the date.
+4. Only the chosen variant is built out: animation, the description for screen readers, tests, the generator. The other three are never committed.
+
+Small parts derived from a chosen style (a badge, a divider, an icon) need no variants.
 
 ### Keeping them current
 
@@ -133,15 +163,20 @@ Every manual step around the README is either automatic or ends up somewhere it 
 | The SVGs in `.github/assets/` and the generated README regions | the weekly routine | A Claude Code cloud routine, "Weekly README update" (Sonnet 5.5, Sunday 23:00 Europe/Berlin), branches `chore/readme-weekly-<date>` from `main`, runs `make readme-assets`, opens a PR and merges it after green CI and a clean Codex review. A task PR does not have to redraw: a record may redraw on its branch, and CI runs `render --check` as an advisory step only, a stale image is a warning there, not a failure. The routine's prompt is in "The weekly routine" below |
 | `social-preview.png`, `logo-mark-512.png` | by hand, issue | `render --png` needs Chromium, so CI cannot draw them: it records the digest of their source SVGs in `.github/assets/png-sources.json`, and `--check` fails when a source SVG changed without new PNGs. GitHub has no API for the social preview: Maxi uploads it in the repository settings, then `python scripts/readme_assets.py mark-uploaded` records its digest in `.github/assets/social-preview.uploaded` (its own file, because `render --png` rewrites `png-sources.json` as a whole), committed in the next PR. Until the two digests match, the maintenance run reports "Social preview changed: upload .github/assets/social-preview.png in Settings, then run python scripts/readme_assets.py mark-uploaded" in the decision issue |
 | README status table (region `readme:status`) | itself, CI check | `render` writes stage and next gate from `docs/01_STATUS.md` (the first gate not passed, with its content from "Gates in Detail") and "As of", the date of the last finished task in `docs/07_WORKPACKAGES.md`. The version stays manual: `/gate` edits its row, and `render` keeps what it finds there |
-| README "What works" and "Not yet working" (region `readme:capabilities`) | itself, CI check; the sentences by hand | `render` writes both lists from `docs/metrics/capabilities.toml`: one sentence and the task IDs per capability. A capability moves to "What works" by itself once all its tasks are done; until then its `missing` sentence stands under "Not yet working". One that waits for something outside the task list (C1, a decision, a setup step) names it in `waits_for` and stays until that line is removed by hand. A new capability or a new wording is an edit of that file, never of the README |
-| A node of the call flow | by hand, in the PR that builds the component; a test | `api/tests/test_readme_assets.py` fails when a tool of `api/agent/dispatch.TOOLS`, a service of `docker-compose.yml` or an adapter under `api/telephony/adapters/` has no node that `covers` it and is not in `NOT_DRAWN` with a one-line reason. See the last rule below |
+| README "What works": the table and, folded under it, the lists "What works" and "Not yet working" (region `readme:capabilities`) | itself, CI check; the sentences by hand | `render` writes all three from `docs/metrics/capabilities.toml`. The table has one row per `[[area]]`: its state is built when every capability of the area is done, open when none is and none of their tasks has started, partly otherwise; the area's summary says what it is, never where it stands. The lists carry one sentence and the task IDs per capability. A capability moves to "What works" by itself once all its tasks are done; until then its `missing` sentence stands under "Not yet working". One that waits for something outside the task list (C1, a decision, a setup step) names it in `waits_for` and stays until that line is removed by hand. A new capability or a new wording is an edit of that file, never of the README |
+| A node of the architecture and a station of the call flow | by hand, in the PR that builds the component; a test | `api/tests/test_readme_assets.py` fails when a tool of `api/agent/dispatch.TOOLS`, a service of `docker-compose.yml` or an adapter under `api/telephony/adapters/` has no node that `covers` it and is not in `NOT_DRAWN` with a one-line reason. See the last rule below |
 
 - Every date in an image comes from the data (the run, the last finished task), never from the day of rendering, so the same data always gives the same file. A recorded measurement carries the day it was recorded.
 - `docs/metrics/*.csv` merge by union (`.gitattributes`): two branches that each appended a row keep both after a merge, and `render` reads a row that came in twice once (eval rows by report name, voice rows by run_at, date, package, metric, value and unit). The voice chart shows the latest row of each quantity.
 - The fix for a stale image is the weekly run; by hand it is `make readme-assets` and a commit of `.github/assets/`; on a merge conflict in a generated file, take either side and render again.
 - **The maintenance bot reports, it never commits.** Since 2026-10-19 it no longer reports a stale SVG, the weekly routine redraws those; it reports what needs Maxi: stale PNGs and a social preview not yet uploaded. History of the rule: The image check of the daily run (`readme_assets.py findings`) needs no `PROJECT_TOKEN` and runs first, so its findings reach the decision issue even when the board steps fail; a missing findings file makes `decision_issue.py` keep the other sections and never close the issue. Its findings are keyed by asset name and digest: the same stale state is mentioned once, a new one again, and the issue closes itself when nothing is open. No new token, no write right beyond `issues: write`, no commit on `main`. Why not a bot PR or a direct push: events of the `GITHUB_TOKEN` start no CI, so such a PR could never be merged under `CLAUDE.md` §6; every commit on `main` costs each open PR a merge and a new review; and a stale `main` already turns CI red. The upgrade path, Maxi's call: a bot PR on `bot/readme-assets` with a GitHub App token, whose events do start CI.
-- **A new component a call passes through gets its node in `FLOW_NODES` and its lines in `FLOW_LINKS` in the same PR that builds it**, with the task IDs that build it, what it `covers` (tool, service or adapter) and a step in `FLOW_STORY` where a call passes it; one that is left out on purpose gets a line in `NOT_DRAWN` with its reason instead; it then turns from planned to built on its own when those tasks are done. A new measured quantity gets a column or a chart in the same PR, never a number typed into the README.
-- What an image may not show: a promise, a mockup, a number without a date, a provider name outside the voice layer's own row.
+- **A new component a call passes through gets its node in `FLOW_NODES`, its place in `ARCH_AT` and its lines in `FLOW_LINKS` in the same PR that builds it**, with the task IDs that build it and what it `covers` (tool, service or adapter); where a caller's sentence passes it, it also gets its station in `FLOW_ROWS`. One that is left out on purpose gets a line in `NOT_DRAWN` with its reason instead; it then turns from planned to built on its own when those tasks are done. A new measured quantity gets a column or a chart in the same PR, never a number typed into the README.
+
+### The demo recording
+
+`python -m scripts.readme_demo` records `.github/assets/demo.gif` in one run: it starts a throwaway stack of the checkout, loads the test menu, replays `scripts/demo/pickup_call.json` in the text phone and takes screenshots of the real operations view at the matching moments. Nothing in it is staged; a line too long for its pane is cut, never rewritten. It needs Docker, a Chromium-family browser and ffmpeg on the machine, so CI does not record it and the weekly routine never touches it.
+
+It is recorded again when what it shows has changed: the lines the text phone prints for a turn, or the board, the order card or the header of the operations view. `/done` proposes it when the task's diff touches `sim/`, `api/gui/templates/` or `api/gui/static/`; whoever runs it looks at the result before committing it.
 
 ### The weekly routine
 
