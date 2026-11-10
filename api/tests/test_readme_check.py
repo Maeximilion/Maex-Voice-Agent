@@ -209,3 +209,9 @@ def test_without_a_list_the_scan_is_skipped_and_says_so(
     root = make_tree(tmp_path, "# T\n\nMusterdorf\n")
     assert rc.main(["--root", str(root)]) == 0
     assert "scan skipped" in capsys.readouterr().err
+
+
+def test_an_svg_that_points_at_a_local_file_is_refused(tmp_path: Path) -> None:
+    svg = CLEAN_SVG.replace("</svg>", '<image href="file:///C:/x.png"/></svg>')
+    root = make_tree(tmp_path, "# T\n", **{".github__assets__a.svg": svg})
+    assert any("a.svg" in message for message in rc.run(root))

@@ -30,7 +30,7 @@ summary = '''Understanding ladder, guards and escalation; a whole call runs in t
 
 [[area]]
 name = "Tablet view for the team"
-summary = '''Mode, wait times and switches in the header, today's reservations, orders and callbacks, live without reloading; an admin view for the owner.'''
+summary = '''Mode, wait times and switches in the header, today's reservations, orders and callbacks, live without reloading; pages for the owner behind an admin PIN.'''
 
 [[area]]
 name = "Kitchen slip"
@@ -38,7 +38,7 @@ summary = '''A print bridge in the restaurant fetches confirmed orders and print
 
 [[area]]
 name = "Team notifications"
-summary = '''Events leave through an outbox with retries and reach the team's devices as push messages.'''
+summary = '''Events leave through an outbox with retries, for push messages to the team's devices.'''
 
 [[area]]
 name = "Phone line and voice"
@@ -154,9 +154,9 @@ tasks = ["T-1.11", "T-10.1", "T-10.2", "T-10.7"]
 [[capability]]
 area = "Tablet view for the team"
 works = '''The admin view (`docs/06_GUI.md` §4) runs in the browser'''
-missing = '''The admin view (`docs/06_GUI.md` §4) is still only a mockup'''
+missing = '''The admin view (`docs/06_GUI.md` §4) is built in parts: the key figures, the device list and the owner's settings behind the admin PIN run in the browser; the tabs for menu, delivery and calls are still only a mockup'''
 tasks = []
-waits_for = '''a task for the admin view'''
+waits_for = '''tasks for the remaining tabs of the admin view'''
 
 [[capability]]
 area = "Pickup and delivery orders"
@@ -180,7 +180,7 @@ waits_for = '''C1, the capture of the real operation'''
 [[capability]]
 area = "Language model"
 works = '''A real model passes the eval suites on target (`docs/08_EVALS.md`)'''
-missing = '''The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`) by default and in CI. A real model can be switched in for the text phone and the evals with `--model <name>` (T-2.4). The first full runs on a local model (`qwen3.6-35b-a3b`, 13./14.10.2026) pass 26 of 41 regular cases and 2 of 27 target cases, far from the target of 99 % ("Measured state" above)'''
+missing = '''The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`) by default and in CI. A real model can be switched in for the text phone and the evals with `--model <name>` (T-2.4). No real model passes the suites on target yet; the latest run with its date is the eval image under Status'''
 tasks = ["T-2.4", "T-5.3"]
 waits_for = '''the evals on target (G2)'''
 

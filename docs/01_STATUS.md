@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.18
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.28.0
 
 ---
 
@@ -260,6 +260,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 10.11.2026 | **README front page rebuilt inside the Night Service brand (#622).** New order: the banner as one example call, the demo recording, the call flow as a transcript with a station rail, the capability table by area, the roadmap as a line of stages, the architecture as two paths; local badges instead of an image service. `python -m scripts.readme_demo` records the demo from a real replay (`scripts/demo/pickup_call.json`, caller ID from the range reserved for media productions). `scripts/readme_check.py` checks links, anchors, SVG safety, image sizes and blocked terms in the CI job `readme`, which the required check `test` now stands for. `docs/15_README_STRATEGY.md`: section order, the rules every image keeps, four variants for a new image with Maxi's pick, when the demo is recorded again. Assumption: the full capability lists stay in the README, folded under the table, instead of moving into this file, which its upkeep rule keeps small. Left with Maxi: the Actions secret `README_BLOCKLIST`, the About text and topics of the repository, a new social preview, the profile README draft. |
 | 10.11.2026 | **Operator login, second part of the operator dashboard (#571).** `api/dashboard/` signs the operator in with password plus a TOTP code or a recovery code, against its own database and migrations (`db/dashboard/`); not reachable from outside yet (docs/23 §5 "Built"). |
 | 10.11.2026 | **STATUS upkeep rule (#562 closed).** A weekly sweep archives done and decided rows older than one month to `docs/HISTORY.md` (findable by ID with `grep -n`), `/done` archives what its task finishes, and `/start` suggests the sweep when none ran in 7 days or the file passes 80 KB; open and doubtful rows stay. |
 | 10.11.2026 | **STATUS cut, part 5 (#562).** Twenty finished What's Next items and the 26 decided rows D1 to D30 of Open Decisions went to `docs/HISTORY.md` (83.2 KB to 70.5 KB, every line checked present with `comm`); open items, assumptions awaiting Maxi and Open Points stay, by Maxi's rule to keep active rows. |
@@ -295,6 +296,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.28.0 · 10.11.2026:** README front page rebuilt: example-call banner, demo recording, transcript call flow, two-path architecture, roadmap line, local badges; README job in the required check (#622)
 - **v2.27.18 · 10.11.2026:** chore(deps): bump compose-images group with 3 updates (#603)
 - **v2.27.17 · 10.11.2026:** chore(deps): bump python-minor-patch group in /api with 5 updates (#605)
 - **v2.27.16 · 10.11.2026:** chore(deps): bump amannn/action-semantic-pull-request to 6.1.2 (#604)

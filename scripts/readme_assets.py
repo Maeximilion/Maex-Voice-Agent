@@ -175,7 +175,9 @@ FLOW_NODES: dict[str, dict] = {
         "covers": ["service:push", "service:dispatcher", "service:n8n"],
     },
     "teamphone": {
-        "label": ["Team phone"],
+        # It stands in the cold band of the architecture but is rung while the
+        # caller is on the line: a transfer, or the exchange when `voice` fails.
+        "label": ["Team phone", "rung during the call"],
         "tasks": ["T-1.8", "T-1.11"],
         "covers": ["tool:transfer_to_team"],
     },
@@ -1700,13 +1702,16 @@ def _arrow(x1: float, x2: float, y: float, color: str, dash: str = "") -> str:
 
 
 # The station rail of the call flow: the nodes a sentence passes on its way in
-# (the caller's words) and out (the agent's reply). A station keeps its slot from
-# row to row, so ear and mouth share one and the rail reads as columns.
-FLOW_RAIL_IN = ["access", "asterisk", "ear", "core", "llm"]
-FLOW_RAIL_OUT = ["llm", "core", "mouth", "asterisk", "access"]
-RAIL_SLOT = {"access": 0, "asterisk": 1, "ear": 2, "mouth": 2, "core": 3, "llm": 4}
-RAIL_WIDTH = (60, 74, 54, 48, 42)
-RAIL_X, RAIL_GAP = 408.0, 16.5
+# (the caller's words) and out (the agent's reply). The core is the station next
+# to the code column: it runs every tool. The LLM is no station on the way; where
+# the core asks it, it hangs above the core as a spur, joined to the core only.
+# A station keeps its slot from row to row, so ear and mouth share one.
+FLOW_RAIL_IN = ["access", "asterisk", "ear", "core"]
+FLOW_RAIL_OUT = ["core", "mouth", "asterisk", "access"]
+RAIL_SLOT = {"access": 0, "asterisk": 1, "ear": 2, "mouth": 2, "core": 3}
+RAIL_WIDTH = (60, 74, 54, 48)
+RAIL_X, RAIL_GAP = 408.0, 36.0
+LLM_W = 42.0
 BUBBLE_X, BUBBLE_W = 40.0, 330.0
 CODE_X, CODE_W = 776.0, 384.0
 ROW_COLOR = {"caller": "neon", "agent": "violet", "outage": "coral"}
@@ -1721,13 +1726,15 @@ def _slot(key: str) -> tuple[float, float]:
 @dataclass(frozen=True)
 class CallRow:
     """One row of the call flow: who speaks and what, the stations the sentence
-    passes, the tools the code runs on it and what they establish."""
+    passes, whether the core asks the LLM on the way, the tools the code runs
+    and what they establish."""
 
     who: str
     said: list[str]
     rail: list[str]
     tools: list[str]
     does: list[str]
+    llm: bool = False
     tone: str = ""
     apart: bool = False
 
@@ -1746,6 +1753,7 @@ FLOW_ROWS: list[CallRow] = [
             "each against Postgres. The LLM has no line",
             "to a tool or the database.",
         ],
+        llm=True,
     ),
     CallRow(
         "caller",
@@ -1757,14 +1765,20 @@ FLOW_ROWS: list[CallRow] = [
             "the name as the caller said it; every",
             "price from Postgres, never from the model",
         ],
+        llm=True,
     ),
     CallRow(
         "agent",
         EXAMPLE_CALL["readback"],
         FLOW_RAIL_OUT,
         ["readback of draft_order"],
-        # guards.py: the guest heard the draft's own sentence (`note_said`).
-        ["read out word for word; the core notes", "that the caller heard it"],
+        # The model speaks it; guards.py checks it was the draft's own sentence
+        # (`note_said`, `read_out`) and refuses confirm otherwise (HINT_CONFIRM).
+        [
+            "the LLM must read it out word for word;",
+            "the core checks that the caller heard it",
+        ],
+        llm=True,
     ),
     CallRow(
         "caller",
@@ -1773,18 +1787,23 @@ FLOW_ROWS: list[CallRow] = [
         ["confirm"],
         # guards.py rule 3: confirm only on an explicit yes to the read-back.
         ["only now, on a clear yes to the read-back:", "the draft becomes confirmed"],
+        llm=True,
     ),
     CallRow(
         "agent",
         EXAMPLE_CALL["confirmed"],
         FLOW_RAIL_OUT,
-        ["tablet, order slip"],
-        # The tablet reads Postgres and does not wait for the spoken reply. A slip
-        # waits for "Passt" unless confirm.py `_waits_for` lets it go at once.
+        ["confirm result"],
+        # loop.py: "Booked: the core says so itself" (`_booked_say`, no model).
+        # "aufgegeben" is SAY_ORDER_PLACED, said when the slip is not held back;
+        # a held one is "aufgenommen" (confirm.py `_waits_for`). The tablet
+        # reads Postgres and does not wait for the spoken reply.
         [
-            "meanwhile the order shows on the tablet;",
-            "the slip prints after the team's approval,",
-            "primary mode: at once, up to the amount limit",
+            "the core says the booking itself from the",
+            "result, not the model; meanwhile the",
+            "tablet shows the order. The slip waits for",
+            "the team's approval; primary mode: at once,",
+            "up to the amount limit, as in this call",
         ],
     ),
     CallRow(
@@ -1792,13 +1811,14 @@ FLOW_ROWS: list[CallRow] = [
         EXAMPLE_CALL["complaint"],
         FLOW_RAIL_IN,
         ["transfer_to_team"],
-        # loop.py `_handoff`; transfer.py counts the team as reachable while a
+        # loop.py: escalation.check() reads the complaint before the model;
+        # `_handoff` transfers, transfer.py counts the team as reachable while a
         # service is open; a complaint a rule covers gets its remedy (D19).
         [
-            "unsure, a complaint no rule covers or a",
-            "model failure: the team phone rings while",
-            "open; after hours, number known: a callback",
-            "on the tablet",
+            "checked before the model; a complaint no",
+            "rule covers, unsure or a model failure:",
+            "the team phone rings while open; after",
+            "hours, number known: a callback on the tablet",
         ],
         tone="violet",
         apart=True,
@@ -1817,9 +1837,11 @@ FLOW_STILL = (
     "What is said, the stations it passes, what the code does. "
     "Nothing is confirmed before the yes."
 )
-# Reveal timing in seconds: one row after the other, then everything holds.
-REVEAL_FADE = 0.35
-REVEAL_HOLD = 3.0
+# Reveal timing in seconds: the rows appear quickly, one after the other, and the
+# finished picture then holds at least as long as the reveal took.
+REVEAL_FADE = 0.3
+REVEAL_OUT = 0.4
+REVEAL_STEP = {"first": 0.3, "chip": 0.12, "spur": 0.15, "last": 0.45}
 
 
 def _row_height(row: CallRow) -> float:
@@ -1860,16 +1882,17 @@ def _code_box(row: CallRow, y: float, h: float) -> str:
     return out
 
 
-def _chip(key: str, mid: float, states: dict[str, str]) -> str:
-    x, w = _slot(key)
+def _chip(
+    key: str, x: float, w: float, cy: float, h: float, states: dict[str, str]
+) -> str:
     node = FLOW_NODES[key]
     color, dash = STATE_STROKE[node_state(node["tasks"], states)]
     return (
-        f'<rect x="{f(x)}" y="{f(mid - 13)}" width="{f(w)}" height="26" rx="8" '
+        f'<rect x="{f(x)}" y="{f(cy - h / 2)}" width="{f(w)}" height="{f(h)}" rx="8" '
         f'fill="{TOKENS["surface_hi"]}" stroke="{TOKENS[color]}" stroke-width="2"{dash}/>'
         + text(
             x + w / 2,
-            mid + 4.5,
+            cy + 4.5,
             node.get("chip", node["label"][0]),
             12,
             "ink",
@@ -1879,10 +1902,30 @@ def _chip(key: str, mid: float, states: dict[str, str]) -> str:
     )
 
 
+def _spur(cy: float, color: str, states: dict[str, str]) -> str:
+    """The LLM above the core, joined to it by a two-way line: the core asks,
+    the LLM answers. It touches nothing else on the rail."""
+    x, w = _slot("core")
+    cx = x + w / 2
+    top, bottom = cy - 40 + 11, cy - 13
+    c = TOKENS[color]
+    lines = ""
+    for lx, y1, y2 in ((cx - 6, bottom, top), (cx + 6, top, bottom)):
+        s = 1 if y2 > y1 else -1
+        lines += (
+            f'<path d="M{f(lx)} {f(y1)} V{f(y2)}" stroke="{c}" stroke-width="1.6"/>'
+            f'<path d="M{f(lx - 3.5)} {f(y2 - s * 4.5)} L{f(lx)} {f(y2)} '
+            f'L{f(lx + 3.5)} {f(y2 - s * 4.5)}" fill="none" stroke="{c}" '
+            'stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'
+        )
+    return lines + _chip("llm", cx - LLM_W / 2, LLM_W, cy - 40, 22, states)
+
+
 def asset_call_flow(facts: Facts, animated: bool = True) -> str:
     """The example call as a transcript: each sentence on the phone, the
     stations it passes, and what the code does with it. Animated, the rows
-    appear in the order the call runs, with CSS only."""
+    appear in the order the call runs, with CSS only, and the finished picture
+    holds; the first row stands from the first frame."""
     states = facts.states
     width = 1200
     parts = [
@@ -1898,7 +1941,8 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
 
     def reveal(content: str, then: float) -> None:
         nonlocal clock
-        if animated:
+        # The first piece never hides, so the picture is never empty.
+        if animated and clock > 0:
             parts.append(f'<g class="s k{len(starts)}">{content}</g>')
             starts.append(clock)
         else:
@@ -1917,37 +1961,44 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
             )
             y += 44
         color = ROW_COLOR[row.who]
-        mid = y + h / 2
+        # With the LLM above the core, the rail sits a little lower in its row.
+        cy = y + h / 2 + (14 if row.llm else 0)
         out = row.who == "agent"
         bubble_edge = BUBBLE_X + BUBBLE_W + (24 if out else 0)
         # Each piece arrives with the arrow that leads into it.
-        pieces: list[str] = []
+        pieces: list[tuple[str, str]] = []
         edge = CODE_X - 4 if out else bubble_edge + 4
         for key in row.rail:
             x, w = _slot(key)
             near, far = (x + w + 3, x) if out else (x - 3, x + w)
-            pieces.append(_arrow(edge, near, mid, color) + _chip(key, mid, states))
+            chip = _chip(key, x, w, cy, 26, states)
+            pieces.append(("chip", _arrow(edge, near, cy, color) + chip))
             edge = far - 4 if out else far + 4
+            if key == "core" and row.llm:
+                pieces.append(("spur", _spur(cy, color, states)))
         if out:
             pieces.append(
-                _arrow(edge, bubble_edge + 3, mid, color) + _bubble(row, y, h)
+                ("last", _arrow(edge, bubble_edge + 3, cy, color) + _bubble(row, y, h))
             )
-            pieces.insert(0, head + _code_box(row, y, h))
+            pieces.insert(0, ("first", head + _code_box(row, y, h)))
         else:
             dash = ' stroke-dasharray="4 4"' if row.who == "outage" else ""
             pieces.append(
-                _arrow(edge, CODE_X - 3, mid, color, dash) + _code_box(row, y, h)
+                (
+                    "last",
+                    _arrow(edge, CODE_X - 3, cy, color, dash) + _code_box(row, y, h),
+                )
             )
-            pieces.insert(0, head + _bubble(row, y, h))
-        for i, piece in enumerate(pieces):
-            last, first = i == len(pieces) - 1, i == 0
-            reveal(piece, 0.9 if last else 0.55 if first else 0.22)
+            pieces.insert(0, ("first", head + _bubble(row, y, h)))
+        for kind, piece in pieces:
+            reveal(piece, REVEAL_STEP[kind])
         y += h + 12
     height = int(y + 16)
     css = ""
     if animated:
-        loop = clock + REVEAL_HOLD
-        end = 100 * (loop - REVEAL_FADE) / loop
+        # Hold the whole picture at least as long as the reveal took.
+        loop = 2 * clock + REVEAL_OUT
+        end = 100 * (loop - REVEAL_OUT) / loop
         css = f".s{{animation-duration:{loop:.2f}s;animation-iteration-count:infinite;animation-timing-function:linear}}"
         for n, start in enumerate(starts):
             a, b = 100 * start / loop, 100 * (start + REVEAL_FADE) / loop
@@ -1960,20 +2011,23 @@ def asset_call_flow(facts: Facts, animated: bool = True) -> str:
     desc = (
         "One pickup call as a transcript, in three columns: what is said on the phone, "
         "the stations the sentence passes, and what the code does with it. The caller's "
-        "words pass the access, Asterisk, the ear, the conversation core and the LLM; the "
-        "agent's reply passes the LLM, the core, the mouth, Asterisk and the access. The "
-        "caller orders: get_service_status and search_menu, one tool per hop, at most "
-        "six, each run by the core against Postgres; the LLM has no line to a tool or the "
-        "database. With the caller's name the core runs draft_order, every price from "
-        "Postgres. The agent reads the draft back word for word. Only after the "
-        "caller's yes does the core run confirm. The agent confirms; meanwhile the order "
-        "shows on the tablet, and the slip prints after the team's approval, in primary "
-        "mode up to the amount limit at once. Set apart, the ways to the team: when the AI "
-        "is unsure, hears a complaint no rule covers or the model fails, the team phone "
-        "rings while the restaurant is open; after hours, when the caller's number is "
-        "known, a callback waits on the tablet. When the service voice fails, the exchange "
-        "rings the team phone. Each station's edge shows whether it is built, in progress "
-        "or planned."
+        "words pass the access, Asterisk, the ear and the conversation core; the agent's "
+        "reply goes from the core through the mouth, Asterisk and the access. The core "
+        "is the only station that reaches the code; where it asks the LLM, the LLM hangs "
+        "above the core, linked to it alone. The caller orders: get_service_status and "
+        "search_menu, one tool per hop, at most six, each run by the core against "
+        "Postgres; the LLM has no line to a tool or the database. With the caller's name "
+        "the core runs draft_order, every price from Postgres. The LLM reads the draft "
+        "back word for word, and the core checks that the caller heard it. Only after "
+        "the caller's yes does the core run confirm. The core says the booking itself "
+        "from confirm's result, not the model; meanwhile the tablet shows the order. "
+        "The slip waits for the team's approval, in primary mode up to the amount limit "
+        "it is due at once, as in this call. Set apart, the ways to the team: the core "
+        "checks for a complaint before the model; for a complaint no rule covers, when "
+        "the AI is unsure or the model fails, the team phone rings while the restaurant "
+        "is open; after hours, when the caller's number is known, a callback waits on "
+        "the tablet. When the service voice fails, the exchange rings the team phone. "
+        "Each station's edge shows whether it is built, in progress or planned."
     )
     return document(width, height, "How a call flows", desc, body, css)
 
@@ -1995,7 +2049,7 @@ ARCH_AT: dict[str, tuple[float, float, float, float]] = {
     "draft": (730, 296, 176, 48),
     "confirm": (730, 356, 176, 48),
     "postgres": (950, 222, 100, 136),
-    "teamphone": (254, 544, 140, 44),
+    "teamphone": (244, 544, 160, 44),
     "team": (590, 536, 60, 60),
     "tablet": (760, 488, 160, 44),
     "slip": (760, 544, 160, 44),
@@ -2168,8 +2222,9 @@ def asset_architecture(facts: Facts) -> str:
         "with a local database. confirm writes the order, the hinge to the cold path after "
         "the yes: the tablet shows it, the print bridge fetches the order slip, and the "
         "outbox carries events through the dispatcher to n8n and the push, retried with "
-        "backoff and then an alarm. The exchange rings the team phone on a transfer or "
-        "when the service voice is down. Built: "
+        "backoff and then an alarm. The team phone stands in the cold band but is rung "
+        "during the call: the exchange rings it on a transfer or when the service voice "
+        "is down. Built: "
         + ", ".join(" ".join(FLOW_NODES[k]["label"]) for k in built)
         + ". Not finished: "
         + (", ".join(" ".join(FLOW_NODES[k]["label"]) for k in unfinished) or "none")

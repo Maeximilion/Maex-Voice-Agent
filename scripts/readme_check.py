@@ -43,7 +43,7 @@ SAFE_DATA_PREFIXES = (
     "data:image/webp",
 )
 # Prefixes that make an SVG reference external or executable.
-UNSAFE_REF_PREFIXES = ("http:", "https:", "//", "javascript:", "vbscript:")
+UNSAFE_REF_PREFIXES = ("http:", "https:", "//", "file:", "javascript:", "vbscript:")
 
 _ATTR_RE = re.compile(r"""\b(src|srcset|href)\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.I)
 # Matches from the closing bracket so a linked image `[![a](b)](c)` yields both targets.
@@ -237,10 +237,16 @@ def blocked_terms(root: Path, env: Mapping[str, str] | None = None) -> list[str]
 
 
 def check_blocklist(root: Path, terms: list[str]) -> list[str]:
-    """README and SVG text, compared without case. A finding names the place and the
+    """The README, what it is generated from, the SVG text and the demo call, compared
+    without case. It cannot read pixels. A finding names the place and the
     entry's number, never the term: the log of a public repository is public."""
     findings = []
-    files = [root / "README.md", *sorted((root / ".github" / "assets").glob("*.svg"))]
+    files = [
+        root / "README.md",
+        root / "docs" / "metrics" / "capabilities.toml",
+        *sorted((root / ".github" / "assets").glob("*.svg")),
+        *sorted((root / "scripts" / "demo").glob("*.json")),
+    ]
     for path in files:
         if not path.is_file():
             continue

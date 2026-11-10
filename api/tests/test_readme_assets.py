@@ -258,6 +258,16 @@ def test_the_call_flow_moves_with_css_only_and_stops_under_reduced_motion() -> N
     assert "<animate" not in flow and "<set" not in flow
     # Without animation support every row stays visible: only keyframes hide one.
     assert 'class="s k0"' in flow and 'opacity="0"' not in flow
+    # The first row's sentence stands from the first frame, outside any group.
+    assert escape(ra.EXAMPLE_CALL["order"][0]) in flow.split('<g class="s', 1)[0]
+    # The reveal is quick and the finished picture holds at least as long.
+    duration = re.search(r"animation-duration:([\d.]+)s", flow)
+    assert duration is not None
+    loop = float(duration.group(1))
+    shown = [float(p) for p in re.findall(r"([\d.]+)%,[\d.]+%\{opacity:1\}", flow)]
+    assert loop <= 24 and max(shown) / 100 * loop <= 11
+    hold_from = max(shown) / 100 * loop
+    assert loop - hold_from >= hold_from - 0.5
     assert "animation" not in static and "@keyframes" not in static
     assert 'class="s' not in static
 
@@ -272,8 +282,14 @@ def test_the_new_pictures_pass_the_readme_image_check(tmp_path: Path) -> None:
         assert readme_check.check_svg(path, name) == [], name
 
 
+@pytest.mark.parametrize(
+    "stale", ["progress.svg", "badge-evals.svg", "roadmap.svg", "readme:capabilities"]
+)
 def test_check_reports_a_stale_asset(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    stale: str,
 ) -> None:
     real = ra.ASSETS
     for name in (*ra.PNGS, ra.PNG_SOURCES):
@@ -286,8 +302,19 @@ def test_check_reports_a_stale_asset(
     monkeypatch.setattr(ra, "README", readme)
     assert ra.render() == 0
     assert ra.render(check=True) == 0
-    (tmp_path / "progress.svg").write_text("<svg/>", encoding="utf-8")
+    capsys.readouterr()
+    if stale.startswith("readme:"):
+        pattern = ra.REGION_RE.format(name=stale.split(":", 1)[1])
+        text = readme.read_text(encoding="utf-8")
+        old = re.sub(pattern, r"\1- a line nobody generated\2", text, flags=re.S)
+        assert old != text
+        readme.write_text(old, encoding="utf-8")
+        name = "README.md"
+    else:
+        (tmp_path / stale).write_text("<svg/>", encoding="utf-8")
+        name = stale
     assert ra.render(check=True) == 1
+    assert name in capsys.readouterr().err
 
 
 # --- recording guards (Codex on 73a0005) -----------------------------------------
@@ -535,13 +562,38 @@ def test_the_llm_talks_to_the_core_and_nothing_else() -> None:
     llm_links = {frozenset((a, b)) for a, b, _c in ra.FLOW_LINKS if "llm" in (a, b)}
     assert llm_links == {frozenset(("core", "llm"))}
     assert "llm" not in ra.ARCH_RING
-    # On the rail the LLM sits at the end, next to the core and nothing else.
+    # On the rail the LLM is no station: a spur of the core, in rows that pass
+    # the core, and the core is the station next to the code column.
     for row in ra.FLOW_ROWS:
-        if "llm" in row.rail:
-            i = row.rail.index("llm")
-            assert {row.rail[j] for j in (i - 1, i + 1) if 0 <= j < len(row.rail)} == {
-                "core"
-            }
+        assert "llm" not in row.rail
+        if row.llm:
+            assert "core" in row.rail
+        if "core" in row.rail:
+            assert row.rail[-1 if row.who == "caller" else 0] == "core"
+    flow = _pictures()["call-flow-static.svg"]
+    spurs = sum(row.llm for row in ra.FLOW_ROWS)
+    assert flow.count(">LLM</text>") == spurs
+
+
+def test_the_core_says_the_booking_itself() -> None:
+    """loop.py: "Booked: the core says so itself"; the model is not asked."""
+    from api.agent.loop import SAY_FOR_NAME, SAY_ORDER_PLACED
+
+    row = next(r for r in ra.FLOW_ROWS if r.said == ra.EXAMPLE_CALL["confirmed"])
+    assert not row.llm and "llm" not in row.rail
+    assert row.rail == ["core", "mouth", "asterisk", "access"]
+    assert " ".join(row.does).startswith("the core says the booking itself")
+    # The quoted sentence is the core's own: SAY_FOR_NAME in SAY_ORDER_PLACED.
+    booked = SAY_ORDER_PLACED.replace(
+        "Ihre Bestellung ist", SAY_FOR_NAME.format(name="Mueller"), 1
+    )
+    quoted = " ".join(row.said).strip("„“").removesuffix(" …")
+    assert booked.startswith(quoted)
+
+
+def test_the_complaint_is_read_before_the_model() -> None:
+    row = next(r for r in ra.FLOW_ROWS if r.said == ra.EXAMPLE_CALL["complaint"])
+    assert not row.llm and row.does[0].startswith("checked before the model")
 
 
 def test_one_tool_per_hop_at_most_six_as_the_loop_counts() -> None:
@@ -585,21 +637,21 @@ def test_confirm_comes_only_after_the_read_back_and_the_yes() -> None:
     )
     assert _row("draft_order") < readback < confirm
     # The reply, the tablet and the slip come after confirm, never before it.
-    assert confirm < _row("tablet")
+    assert confirm < _row("confirm result")
     assert "only now" in " ".join(rows[confirm].does)
 
 
 def test_the_slip_waits_for_the_approval_on_the_tablet() -> None:
-    does = " ".join(ra.FLOW_ROWS[_row("tablet")].does)
-    assert "the slip prints after the team's approval" in does
+    does = " ".join(ra.FLOW_ROWS[_row("confirm result")].does)
+    assert "The slip waits for the team's approval" in does
     assert "primary mode: at once, up to the amount limit" in does
 
 
 def test_tablet_and_reply_go_out_together_when_confirm_commits() -> None:
     """The tablet reads Postgres; it does not wait for the spoken reply."""
-    row = ra.FLOW_ROWS[_row("tablet")]
+    row = ra.FLOW_ROWS[_row("confirm result")]
     assert row.who == "agent" and row.said == ra.EXAMPLE_CALL["confirmed"]
-    assert row.does[0].startswith("meanwhile the order shows on the tablet")
+    assert "meanwhile the tablet shows the order" in " ".join(row.does)
 
 
 def test_flow_labels_are_english() -> None:
@@ -625,12 +677,15 @@ def test_a_person_is_reached_by_phone_not_by_the_tablet() -> None:
     # The outage never reaches the voice service: it ends at the exchange.
     assert outage.rail == ["access", "asterisk"]
     assert "the exchange rings the team phone" in " ".join(outage.does)
-    # In the architecture the exchange is what rings the team phone.
+    # In the architecture the exchange is what rings the team phone, and the
+    # phone in the cold band says that it is rung during the call.
     assert ra.ARCH_RING == ("asterisk", "teamphone")
+    assert ra.FLOW_NODES["teamphone"]["label"] == ["Team phone", "rung during the call"]
 
 
 def test_words_go_in_on_one_way_and_the_reply_comes_back_on_the_other() -> None:
     mirrored = [{"ear": "mouth"}.get(k, k) for k in reversed(ra.FLOW_RAIL_IN)]
+    assert ra.FLOW_RAIL_IN[-1] == "core" == ra.FLOW_RAIL_OUT[0]
     assert mirrored == ra.FLOW_RAIL_OUT
     for row in ra.FLOW_ROWS:
         if row.who == "caller":

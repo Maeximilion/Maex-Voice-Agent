@@ -20,7 +20,8 @@ view is the product's own setup link (`python -m api.jobs.gui_access link`), use
 over HTTP; a small local proxy adds the session cookie for the headless browser, which
 cannot be handed one on its command line.
 
-Only the standard library plus `scripts.readme_assets` (colours and font).
+Only the standard library plus `scripts.readme_assets` (colours and font) and
+`scripts.readme_check` (the size limit).
 """
 
 from __future__ import annotations
@@ -47,13 +48,14 @@ from html import escape
 from pathlib import Path
 
 from scripts.readme_assets import FONT, TOKENS
+from scripts.readme_check import MAX_GIF_BYTES
 
 REPO = Path(__file__).resolve().parent.parent
 PROJECT = "readmedemo"
 LOOPBACK = "127.0.0.1"
 CALL_FILE = "scripts/demo/pickup_call.json"
 OUT = REPO / ".github" / "assets" / "demo.gif"
-MAX_BYTES = 3_000_000
+MAX_BYTES = MAX_GIF_BYTES  # the limit the CI check holds the file to
 MARKER = "@@END-OF-TURN"
 
 # The caller ID of the demo call (scripts/demo/pickup_call.json) is +493023125042: Berlin
@@ -541,9 +543,13 @@ def record(out: Path, keep: bool) -> None:
             frames.append(
                 (render_frame(exe, work, html, f"frame{i:02d}"), hold_seconds(event))
             )
+        # Into the work folder first: a failed or oversized encode must not
+        # replace the committed recording.
+        fresh = work / out.name
+        encode(ffmpeg, frames, fresh, work)
+        check_size(fresh.stat().st_size)
         out.parent.mkdir(parents=True, exist_ok=True)
-        encode(ffmpeg, frames, out, work)
-        check_size(out.stat().st_size)
+        shutil.move(fresh, out)
         print(f"{out}: {out.stat().st_size} bytes, {len(frames)} steps")
     finally:
         if proxy:

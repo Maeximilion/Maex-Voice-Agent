@@ -30,18 +30,18 @@ It is built for one pilot restaurant first and is not live yet: the conversation
 ## Demo
 
 <p align="center">
-  <img src=".github/assets/demo.gif" width="100%" alt="Screen recording in two panes. Left, the text phone replays one pickup call: the caller orders, the agent reads the order back, the caller says yes. Right, the operations view on the tablet: the board stays empty during the read-back, and the order card appears by itself after the yes.">
+  <img src=".github/assets/demo.gif" width="100%" alt="Screen recording in two panes. Left, the text phone replays one pickup call: the caller orders, the agent reads the order back, the caller says yes. Right, the operations view on the tablet: the board stays empty during the read-back, and the order card is there after the yes.">
 </p>
 
-One replayed pickup call in the text phone on the left, the tablet's operations view on the right: nothing is booked during the read-back, and the order appears on the tablet by itself after the caller's yes. The recording comes from a real run of the code with the test menu, made by `python -m scripts.readme_demo`; the caller's number on the card is from the range the Bundesnetzagentur reserves for media productions and belongs to nobody.
+One replayed pickup call in the text phone on the left, the tablet's operations view on the right: nothing is booked during the read-back, and the order is on the tablet after the caller's yes. The recording comes from a real run of the code with the test menu, made by `python -m scripts.readme_demo` (Python 3.12 or newer, Docker, a Chromium-family browser and ffmpeg); the tablet is shot after each turn, so the live update of the real view is not what it shows; the caller's number on the card is from the range the Bundesnetzagentur reserves for media productions and belongs to nobody.
 
 ## How a call flows
 
 <p align="center">
-  <img src=".github/assets/call-flow.svg" width="100%" alt="One pickup call as a transcript. Left, what is said on the phone; right, what the code does with it; between them, the stations each sentence passes: access, Asterisk, ear, conversation core and language model on the way in, language model, core, mouth, Asterisk and access on the way out. The caller orders dish 25 twice, and the core runs get_service_status and search_menu against Postgres, one tool per hop, at most six. The caller gives a name, and the core runs draft_order with every price from the database. The agent reads the order back word for word. The caller says yes, and only now the core runs confirm. The agent confirms, the order shows on the tablet and the slip prints after the team's approval, in primary mode up to the amount limit at once. Set apart below, the ways to the team: when the AI is unsure, hears a complaint no rule covers or the model fails, the team phone rings while the restaurant is open, and after hours it becomes a callback on the tablet when the caller's number is known; when the service voice fails, the exchange rings the team phone. Each station is marked built, in progress or planned from the task list.">
+  <img src=".github/assets/call-flow.svg" width="100%" alt="One pickup call as a transcript in three columns. Left, what is said on the phone; right, what the code does with it; between them, the stations each sentence passes: access, Asterisk, ear and conversation core on the way in, core, mouth, Asterisk and access on the way out. The language model hangs off the core and touches nothing else. The caller orders dish 25 twice, and the core runs get_service_status and search_menu against Postgres, one tool per hop, at most six. The caller gives a name, and the core runs draft_order with every price from the database. The model reads the order back word for word, and the core checks that the caller heard it. The caller says yes, and only now the core runs confirm. The core says the booking itself from the result, without the model; the order shows on the tablet and the slip prints after the team's approval, in primary mode up to the amount limit at once. Set apart below, the ways to the team: a complaint is caught before the model, and with it, when the AI is unsure or the model fails, the team phone rings while the restaurant is open; after hours it becomes a callback on the tablet when the caller's number is known. When the service voice fails, the exchange rings the team phone. Each station is marked built, in progress or planned from the task list.">
 </p>
 
-There is no hosted voice platform. Asterisk, our own exchange, takes the call and hands the audio to our service `voice`, which turns speech into text and the reply back into speech. In each turn the language model answers with one sentence or asks for one tool; the conversation core checks that request against the rules, runs it against Postgres and gives the result back, at most six hops. The model only understands what the caller wants. Whether a dish exists, what it costs, whether a table is free and whether an order is final is decided by code against the database, and nothing is confirmed before the read-back and the caller's yes.
+There is no hosted voice platform. Asterisk, our own exchange, takes the call and hands the audio to our service `voice`, which turns speech into text and the reply back into speech. In each turn the language model answers with one sentence or asks for one tool; the conversation core checks that request against the rules, runs it against Postgres and gives the result back, at most six hops. The sentence that an order is booked is the core's own, built from what `confirm` returned, never the model's. The model only understands what the caller wants. Whether a dish exists, what it costs, whether a table is free and whether an order is final is decided by code against the database, and nothing is confirmed before the read-back and the caller's yes.
 
 Six rules hold everywhere in the code; the full text is in [`CLAUDE.md`](CLAUDE.md):
 
@@ -59,9 +59,9 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 | Reservations | built | Check a slot against hours and capacity, offer alternatives, book after the caller's yes; the team can enter one by hand on a table of the floor plan. |
 | Pickup and delivery orders | built | Search the menu, take the order, check zone, fee and minimum order for a delivery, read back, confirm. |
 | Conversation core | built | Understanding ladder, guards and escalation; a whole call runs in the text phone and in the evals without any telephony. |
-| Tablet view for the team | partly | Mode, wait times and switches in the header, today's reservations, orders and callbacks, live without reloading; an admin view for the owner. |
+| Tablet view for the team | partly | Mode, wait times and switches in the header, today's reservations, orders and callbacks, live without reloading; pages for the owner behind an admin PIN. |
 | Kitchen slip | built | A print bridge in the restaurant fetches confirmed orders and prints them; a lost acknowledgement never prints a second slip. |
-| Team notifications | partly | Events leave through an outbox with retries and reach the team's devices as push messages. |
+| Team notifications | partly | Events leave through an outbox with retries, for push messages to the team's devices. |
 | Phone line and voice | partly | Our own voice layer: Asterisk, the service voice with its speech engines, and outage drills in which every failure ends at the team phone. |
 | Language model | partly | The core runs on a scripted stand-in by default and on any chat-completions server by a switch; the eval suites measure a real model against the targets. |
 | Privacy by design | built | A call log without recording, deletion periods enforced every hour, a caller's allergy passed on only after explicit consent. |
@@ -96,9 +96,9 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 **Not yet working:**
 
 - No phone line yet. The own voice layer (`docs/20_VOICE_LAYER.md`) is built up to the speech engines: the call session (T-10.4), the AI telephone as Compose services `asterisk` and `voice` behind the profile `voice` (T-1.11), and outage drills on the workbench, `python3 -m scripts.voice_drill`, in which every way the AI telephone can fail ends at the team telephone. The speech engines run inside `voice` since T-1.11 part 2 (Whisper and Piper, the model files of the speech kit). Missing: the test at the pilot's router (T-10.1 step 2, T-10.2) and real voices (T-10.7)
-- The admin view (`docs/06_GUI.md` §4) is still only a mockup
+- The admin view (`docs/06_GUI.md` §4) is built in parts: the key figures, the device list and the owner's settings behind the admin PIN run in the browser; the tabs for menu, delivery and calls are still only a mockup
 - No real menu data yet: the CSVs come from the chat digitization (C1)
-- The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`) by default and in CI. A real model can be switched in for the text phone and the evals with `--model <name>` (T-2.4). The first full runs on a local model (`qwen3.6-35b-a3b`, 13./14.10.2026) pass 26 of 41 regular cases and 2 of 27 target cases, far from the target of 99 % ("Measured state" above)
+- The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`) by default and in CI. A real model can be switched in for the text phone and the evals with `--model <name>` (T-2.4). No real model passes the suites on target yet; the latest run with its date is the eval image under Status
 - Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured and not planned: the team's devices are Android devices or the web page on the tablet (D14)
 - Test config from `make seed` (hours, capacity) is placeholder until actual ops capture arrives
 
@@ -170,11 +170,11 @@ The API then runs at `http://localhost:8000`, the operations view at `http://loc
 
 The operations view asks for the restaurant's password, in development too (#570). Make the one-time setup link once per database, open it and set a password, the team PIN and the owner's admin PIN: `docker compose exec api python -m api.jobs.gui_access link --base-url http://localhost:8000`.
 
-A call without a telephone:
+A call without a telephone, in the running container:
 
 ```bash
-python -m sim.cli                                   # a conversation in the terminal
-python -m sim.replay evals/cases/<case>.json        # replay a transcript
+docker compose exec api python -m sim.cli                              # a conversation in the terminal
+docker compose exec api python -m sim.replay evals/cases/<case>.json   # replay a transcript
 ```
 
 <details>
@@ -202,7 +202,7 @@ ruff check api scripts evals printbridge sim db && ruff format --check api scrip
 ## Architecture
 
 <p align="center">
-  <img src=".github/assets/architecture.svg" width="100%" alt="The architecture as two paths. The hot path runs while the caller is on the line: caller, access, Asterisk, ear and mouth of the service voice, the conversation core with the language model beside it, the tools and Postgres. The cold path runs after the yes: confirm writes the order to Postgres, from where the tablet, the order slip fetched by the print bridge and the push notifications reach the team; the exchange rings the team phone on a transfer or when the service voice fails. Each component is marked built, in progress or planned from the task list.">
+  <img src=".github/assets/architecture.svg" width="100%" alt="The architecture as two paths. The hot path runs while the caller is on the line: caller, access, Asterisk, ear and mouth of the service voice, the conversation core with the language model beside it, the tools and Postgres. The cold path runs after the yes: confirm writes the order to Postgres, from where the tablet, the order slip fetched by the print bridge and the push notifications reach the team. The team phone stands with the team but is rung during the call: the exchange rings it on a transfer or when the service voice fails. Each component is marked built, in progress or planned from the task list.">
 </p>
 
 Two paths with different rules. On the hot path the caller is waiting: the conversation core and the tools run in one process without HTTP between them, and each tool has a budget of 300 ms (p95 with a local database, `docs/04_API_TOOLS.md`). Everything else, the kitchen slip, the tablet and the notifications, runs on the cold path from what `confirm` wrote to the database: the dispatcher retries a failed delivery with backoff and then raises an alarm, and the print bridge fetches the slip itself. Inside the code the layers depend in one direction only, entry points to agent to domain to models, and the domain knows no HTTP and no provider ([`docs/11_MODULE.md`](docs/11_MODULE.md), [`docs/02_ARCHITECTURE.md`](docs/02_ARCHITECTURE.md)).
@@ -266,9 +266,10 @@ make eval        # the regular cases (level 1-2) on a throwaway DB, optional TAG
 make eval-targets  # the target cases (level 3-5, known gaps), not in CI, red allowed until the real model passes them (T-2.4, T-6.8)
 make eval-record  # record the newest real-model run in docs/metrics/; after make eval-targets: make eval-record SUITE=targets
 make eval-voice   # the cases spoken and heard by the service's ear on the graphics card (docs/08 §8), optional MODEL=, LIMIT=, VOICE=; needs make up and the speech kit's model files
-make readme-assets  # redraw the README images from docs/metrics/, the task list and the status
-make readme-check   # README links, anchors and image safety; images up to date with their data
+make readme-assets  # redraw the README images from docs/metrics/, the task list and the status (Python 3.12 or newer)
+make readme-check   # README links, anchors, image safety and blocked terms; then images up to date with their data
 
+# in the api container (docker compose exec api ...) or a local environment with DATABASE_URL on localhost:
 python -m sim.cli                                   # conversation in the terminal
 python -m sim.cli --model qwen3:14b                 # the same on a local model (LLM_* in .env, docs/18 §5)
 python -m sim.replay evals/cases/<case>.json        # replay a transcript
