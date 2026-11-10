@@ -152,8 +152,9 @@ the geometry on 10.11.2026: 20,000 rounds over every exported function, identica
 | File | State |
 |---|---|
 | `raumplan-geometry` | TypeScript since 10.11.2026 |
+| `base` | TypeScript since 10.11.2026 (#626), loaded as a module by `base.html` |
 | `raumplan.js` | JavaScript, already a module that imports the compiled geometry (#626) |
-| `base.js`, `app.js` | JavaScript, classic scripts (#626) |
+| `app.js` | JavaScript, classic script (#626) |
 
 **Claude's choices, 10.11.2026** (Maxi asked for the most reliable way): the output
 is committed instead of built in a Node stage of the Dockerfile, which would put

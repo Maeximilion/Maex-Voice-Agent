@@ -16,7 +16,7 @@
 {# The proxy's CSP refuses the style element htmx inserts for indicators; none is used. #}
 <meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
 <script src="/gui/static/htmx.min.js" defer></script>
-<script src="/gui/static/base.js" defer></script>
+<script type="module" src="/gui/static/base.js"></script>
 {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">

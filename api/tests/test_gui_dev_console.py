@@ -369,9 +369,9 @@ def test_console_page_issues_csrf_token(client, tenant_id):
     assert token and len(token) >= 32
     # The console loads no app.js; base.html must send the header there too.
     # From a file: the proxy's CSP refuses inline scripts (#252 finding 11).
-    assert '<script src="/gui/static/base.js" defer>' in page.text
+    assert '<script type="module" src="/gui/static/base.js">' in page.text
     hook = client.get("/gui/static/base.js").text
-    assert 'e.detail.headers["X-CSRF-Token"]' in hook
+    assert 'headers["X-CSRF-Token"]' in hook
     assert (
         client.post(
             f"{BASE}/call",
