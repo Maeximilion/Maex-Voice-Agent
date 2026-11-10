@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.3
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.4
 
 ---
 
@@ -60,7 +60,7 @@ on the PR. Claude automation remains planned, and `docs/cross-agent-review`
 waits for working inline reviews. The deferred draft-first/staged-CI idea is in
 docs/21. Historical session details are in `docs/00_PCF.md` section 13.
 
-**Browser code in TypeScript (10.11.2026, #553 done):** standing rule (Maxi, 10.11.2026): browser logic is TypeScript from now on and no language moves back (`CLAUDE.md` §8, check in `api/tests/test_browser_code_language.py`). The toolchain is built and `raumplan-geometry` is the first migrated file (docs/22 "Browser code in TypeScript"). Next: `base.js`, `raumplan.js`, `app.js`, one pull request each (T-3.18, #626). Editing browser code needs Node on the host (`npm ci && npm run build`); the server and `make up` do not.
+**Browser code in TypeScript (10.11.2026, #553 done):** standing rule (Maxi, 10.11.2026): browser logic is TypeScript from now on and no language moves back (`CLAUDE.md` §8, check in `api/tests/test_browser_code_language.py`). The toolchain is built and `raumplan-geometry` is the first migrated file (docs/22 "Browser code in TypeScript"). `base.js` and `raumplan.js` are migrated; left: `app.js`, its own pull request (T-3.18, #626). Editing browser code needs Node on the host (`npm ci && npm run build`); the server and `make up` do not.
 
 ### In Claude Code (can start immediately, without vendor)
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026). Protocol ready 16.10.2026: `docs/vorlagen/bedientest_protokoll.md`, method in docs/06 section 8; Maxi runs it with two different team members, one after the other, and records both verdicts here (full text: docs/HISTORY.md)
@@ -263,6 +263,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 10.11.2026 | **`raumplan.js` migrated to TypeScript (#626, T-3.18 second of three files).** `api/gui/ts/raumplan.ts` compiles to the committed `api/gui/static/raumplan.js`; markup, CSS and behaviour are unchanged. Compared in a browser against the old file on a mocked server: 63 steps (add, edit, delete, undo, arrow keys, room switch, refused and conflicting saves) gave identical editor HTML and identical save bodies, plus one real drag. Data from the server enters as `unknown` and passes `toClient`; the import of the geometry no longer carries `?v=2` (TypeScript cannot resolve a query), only the page's address of `raumplan.js` does. `app.js` is left. Not tried in the pilot's tablet browser. |
 | 10.11.2026 | **`base.js` migrated to TypeScript (#626, T-3.18 first of three files).** `api/gui/ts/base.ts` compiles to the committed `api/gui/static/base.js`; `base.html` loads it as a module. The htmx event's `detail.headers` is checked before the CSRF header is set (the old file threw on a null detail), and a setup code with invalid percent-encoding is left in the address bar instead of throwing. `raumplan.js` and `app.js` are left, one PR each. Not tried in the pilot's tablet browser. |
 | 10.11.2026 | **TypeScript toolchain for the browser code (#553, T-3.17 done).** `package.json` pins `typescript` 7.0.2 as the only package, `tsconfig.json` compiles `api/gui/ts/*.ts` to committed ES modules in `api/gui/static/`, CI's new job `browser` (in the required check `test`) fails on a type error or a stale output, Dependabot watches npm. First file: `raumplan-geometry.ts`, identical to the old build on 20,000 random rounds over every exported function; `toClient` now checks the server's room document at run time. `raumplan.js` is loaded as a module and imports it. Rule and migration steps: docs/22; remaining files: T-3.18, #626. |
 | 10.11.2026 | **README front page rebuilt inside the Night Service brand (#622).** New order: the banner as one example call, the demo recording, the call flow as a transcript with a station rail, the capability table by area, the roadmap as a line of stages, the architecture as two paths; local badges instead of an image service. `python -m scripts.readme_demo` records the demo from a real replay (`scripts/demo/pickup_call.json`, caller ID from the range reserved for media productions). `scripts/readme_check.py` checks links, anchors, SVG safety, image sizes and blocked terms in the CI job `readme`, which the required check `test` now stands for. `docs/15_README_STRATEGY.md`: section order, the rules every image keeps, four variants for a new image with Maxi's pick, when the demo is recorded again. Assumption: the full capability lists stay in the README, folded under the table, instead of moving into this file, which its upkeep rule keeps small. Left with Maxi: the Actions secret `README_BLOCKLIST`, the About text and topics of the repository, a new social preview, the profile README draft. |
@@ -301,6 +302,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.29.4 · 10.11.2026:** T-3.18 raumplan.js migrated to TypeScript
 - **v2.29.3 · 10.11.2026:** T-3.18 base.js migrated to TypeScript
 - **v2.29.2 · 10.11.2026:** Standing rule: browser logic is TypeScript, no language moves back (CLAUDE.md §8, guard test)
 - **v2.29.1 · 10.11.2026:** Static files of the view are revalidated (no-cache); before/after browser session on #627 identical
