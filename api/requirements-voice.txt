@@ -215,10 +215,10 @@ nvidia-cuda-nvrtc-cu12==12.9.86 \
     --hash=sha256:210cf05005a447e29214e9ce50851e83fc5f4358df8b453155d5e1918094dcb4 \
     --hash=sha256:72972ebdcf504d69462d3bcd67e7b81edd25d0fb85a2c46d3ea3517666636349
     # via nvidia-cublas-cu12
-nvidia-cudnn-cu12==9.27.0.42 \
-    --hash=sha256:06e9b0026f3bad97d2b58666330fabec04fe1672f776661ecb0ce0029c27f142 \
-    --hash=sha256:0a4aa3a7d2264256506c6857fc41fc0c499982f78d70195b1cfcc9055c1957cd \
-    --hash=sha256:5bc22243563107ea06aa60f9116ad800063d5f4617cc75bc6670d5db78d9f336
+nvidia-cudnn-cu12==9.28.1.4 \
+    --hash=sha256:3467aafa9b260e6adf5fbbfc0e21d180133305b42032aa1160be2d3142bb8b09 \
+    --hash=sha256:cbcf6f33c77fef3aa61d3fec36f2e89b07eb27d65b9f369c1adf3cfee08c2c21 \
+    --hash=sha256:ef24078b4d2f45e80b5ce425f9e4a190bc48806e8c9ea1467496f85ed9b0a1fe
     # via -r requirements-voice.in
 onnxruntime==1.31.0 \
     --hash=sha256:09d56445c1753e66e0912de69d3f0184016ad9a191dcd6925bf5dd570d2bfbe5 \
