@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.12
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.27.13
 
 ---
 
@@ -44,17 +44,15 @@ Older summary paragraphs: `docs/HISTORY.md` section "Summary (archive)". Current
 
 ## What's Next
 
+Finished items: `docs/HISTORY.md` section "What's Next and Open Decisions (archive, finished rows, 10.11.2026)".
+
 **New customers, epic #567 (09.11.2026):** the tenancy question #568 is decided (D32): one Docker stack and database per customer behind one shared Caddy, facts and numbers in docs/13 §8. (full text: docs/HISTORY.md)
 
 **Cache-friendly session rules (Maxi, 07.11.2026):** `CLAUDE.md` section 6 "Cache-friendly sessions" (agents build and stop, Sonnet `/ship` hand-off after a clean first review, handover after every merge (no token threshold since 10.11.2026) or before a break, one-shot idle check-ins every 45 minutes) with the matching steps in `/done` (full text: docs/HISTORY.md)
 
 **T-3.16 partly done (09.11.2026):** three of the five parked findings (#517) are built, the other two stay open on the issue. Done: the number field of "Tauschen" stands under the line it swaps (`korrektur.html`, one field at any time) (full text: docs/HISTORY.md)
 
-**T-3.15 done (06.11.2026):** a mistaken "Erledigt" can be undone. "Verlauf" in the heading of the callbacks column opens a sheet with the callbacks marked done in the last 7 days (`HISTORY_DAYS`), with "Anrufen" and "Wieder öffnen"; the reopen stands in `audit_log` (`callback.reopened`) and works only inside the window. No migration. (full text: docs/HISTORY.md)
-
 **Split routing on trial (Maxi, 06.11.2026):** `CLAUDE.md` "Split routing" lets a large, self-contained chunk on a cheaper row of the Model Routing table run on a subagent with that row's model (full text: docs/HISTORY.md)
-
-**T-3.12 done (06.11.2026):** the team enters a table by hand on the tablet (#544 domain and migration 029, the sheet in its successor). Next in Block 2 (#8): T-3.15 (#516), T-3.16 (#517), then T-3.5 operating test on the real tablet, which also covers the floor plan and the sheet. The workbench database still waits for `make migrate` to 029, backup first.
 
 **Review preparation (04.11.2026):** PR #542 records the shared review rules and
 local verification evidence. Its live review, test and Draft state are tracked
@@ -62,21 +60,7 @@ on the PR. Claude automation remains planned, and `docs/cross-agent-review`
 waits for working inline reviews. The deferred draft-first/staged-CI idea is in
 docs/21. Historical session details are in `docs/00_PCF.md` section 13.
 
-**T-3.11 floor plan built (03.11.2026), PR open for Maxi's merge:** the approved design (`docs/design/floor-plan/`) runs as `/gui/raumplan` with migration 028; T-3.12 (#497) seats reservations on its tables next. D6 and D28 remain in force.
-
 ### In Claude Code (can start immediately, without vendor)
-0. **Block 2 (#8), finish it:** T-3.11 floor plan (#496) built 03.11.2026, its PR waits for Maxi's merge; next T-3.12 manual table reservations (#497, `xhigh`: a manual booking has no call, and every write carries a `call_id` today, so the data model answers that first), T-3.15 callback history (#516), T-3.16 parked review findings (#517), then (full text: docs/HISTORY.md)
-1. **First input slip on paper: done 06.10.2026** (T-4.6, PR #231). The test slip prints on the main receipt printer at the register (`EPSON TM-T20II Receipt`, port ESDPRT001, RAW) and reads correctly: umlauts, 48 characters, partial cut. (full text: docs/HISTORY.md)
-2. **T-1.14 done 27.09.2026** (docs/04 §check_slot): alternatives only within the same service, earliest and latest start from the DB (D12); nothing left to build
-3. **First real import from the register - done 12.10.2026 in the workbench database (stack of `~/Maex-Voice-Agent`, invented customers only): 173 dishes, 797 options, no aliases** (full text: docs/HISTORY.md)
-   1. Backup first, before anything changes the database (CLAUDE.md §8): `bash scripts/backup.sh --label before_menu_import`, with the same `DATABASE_URL` as the import and `BACKUP_PASSPHRASE_FILE` set (T-9.3, docs/13 §4). The script reads the dump back before it reports it as written; `bash scripts/restore.sh <file> --check` rehearses the restore without touching the database
-   2. Target database at migration 005 (`pos_code` is migration 004; the local stack on port 5432 was at 003 on 04.10.2026): `alembic -c db/alembic.ini upgrade head` on the workbench with its single database user. (full text: docs/HISTORY.md)
-   3. Fresh copies in `imports/kasse/`, then `python -m scripts.kasse_to_csv imports/kasse --out imports --allergens-confirmed-by Maxi` (Maxi confirmed the five entries on 13.10.2026; without the switch the converter writes empty rows and the import deletes all five). Then set the three corrected rows in `imports/item_allergens.csv` again (`13;D,N;Maxi`, `35a;A,C,F;Maxi`, `15c;B,G,O;Maxi`) before step 4
-   4. `python -m scripts.import_menu imports --dry-run --apply-price-changes --deactivate-missing`, read the report
-   5. The same line without `--dry-run`
-   6. The line from step 4 again, with `--dry-run`: the report must say "Keine Änderung"
-
-   Restore: `bash scripts/restore.sh <file> --replace <database>` with `api` and `dispatcher` stopped; the state from before the restore stays as `<database>_before_restore_<time>`. The dump is the state before step 2: afterwards the schema is back at the old migration, so step 2 comes again before the next import. (full text: docs/HISTORY.md)
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026). Protocol ready 16.10.2026: `docs/vorlagen/bedientest_protokoll.md`, method in docs/06 section 8; Maxi runs it with two different team members, one after the other, and records both verdicts here (full text: docs/HISTORY.md)
 5. **T-2.4** `agent/llm.py` against a real model with token counting. Parts 1 to 3 and the core guards built 06.10.2026 (the client, tokens and cost per call, the model switch for text phone and evals, summary above). The cart in the conversation state built 07.10.2026, so a real model keeps the order across turns (summary above). (full text: docs/HISTORY.md)
    - **Required before T-2.4 closes (Maxi, 06.10.2026): `.env.example` documents every `LLM_*` setting the core reads.** PR #208 added `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_OUTPUT_TOKENS` and the two price lines and was merged on 06.10.2026 without the rest (full text: docs/HISTORY.md)
@@ -84,10 +68,7 @@ docs/21. Historical session details are in `docs/00_PCF.md` section 13.
 7. **Next sessions, one worktree and chat each** (handover 04.10.2026, text phone allergy guard, `docs/00_PCF.md` §13): the translation sweep (`docs/english-code-comments`, running, no PR yet). Built since: backup and restore scripts, daily cron and a rehearsed restore (04.10.2026), enough for the backup before the real import in item 3 (full text: docs/HISTORY.md)
 8. **Demo of the operations view without a phone** (handover 05.10.2026, `docs/00_PCF.md` §13, carried over from the closed PR #191): steps for a local run with `make up`, the test menu and `sim.cli`; proposal `make demo` (test menu plus replayed calls in one command) waits for Maxi's yes
 9. **By hand, Maxi, after the AI review workflow is gone** (PR #217): stop and remove the runner service `ghrunner-wsl` on the WSL machine, remove the runner under Settings, Actions, Runners, and delete the secret `ZAI_API_KEY` and the variables `ZAI_API_BASE` and `REVIEW_MODEL` if they were set. Also open: the Codex review quota, see the changelog row of 06.10.2026
-10. **Local test model on the workbench, set up 06.10.2026** (docs/18 §5 "GPU numbers"): both models pass the test sentence. `mistral-small` runs 17 % on the CPU next to the Windows desktop's GPU share, warm 5.3 s; `qwen3:14b` runs fully on the GPU, warm 1.1 s, cold 14 s. The workbench `.env` uses `qwen3:14b`. (full text: docs/HISTORY.md)
-11. **Own voice layer: T-10.1 step 1 done 11.10.2026, T-10.3 measured for the local engines 12.10.2026, T-10.4 and T-10.5 done, T-1.11 part 1 done 14.10.2026 (summary above). T-1.11 part 2 done 14.10.2026: the engines in `voice`, its image and watchdog, the call log on the line's report, a database timeout (summary above).** (full text: docs/HISTORY.md)
 12. **T-11.1 done 25.10.2026 (two PRs, #368 and the L17 PR):** left with it, each a decision or a run, not code: the real-model targets `allergie_0001`, `allergie_0019`, `abholung_0066`, `lieferung_0013` and `reservierung_0038` on the local llama-server (GPU, Maxi names the start), and Maxi's word on the assumptions under "Consent to the allergy note". The allergen list on the website (L17) stays Maxi's
-13. Anytime in parallel: nothing open in Block 0 - T-0.7 (slash commands and CI) and T-0.8 (number words) are done
 14. **Follow-ups of the security audit (#252), decided by Maxi on 12.10.2026. Built 13.10.2026: the reservation limits with their migration (first bullet). Not built: the rest.** One pull request each, routed by the table in CLAUDE.md §6; the values go into `service_config`, never into code (rule 1). (full text: docs/HISTORY.md)
     - **Reservations by phone (built 13.10.2026, summary above):** up to 90 days ahead. Up to 8 guests the agent books itself; above 8, and on the same day above 5, it takes the wish and the team calls back to confirm and talk it through. Once the team has confirmed, the guest hears it by a call from a person (full text: docs/HISTORY.md)
     - **Orders (built 13.10.2026, summary above, branch `feat/252-order-approval-threshold`):** above 150 euros the order waits for the team's approval on the tablet before a slip prints, whatever the mode.
@@ -99,8 +80,6 @@ docs/21. Historical session details are in `docs/00_PCF.md` section 13.
     - Left in #252 for later: `USER` in the Dockerfile (PR #359 left it: the dev container writes into the mounted checkout); the installer and the Ollama archive are checked by SHA-256 since PR #360; with T-1.11 the lock per call and the call limit for a silent caller; with #64 the deletion of outbox payloads and caller numbers (full text: docs/HISTORY.md)
     - The handover's steps by hand (13.10.2026): the ruleset on `main` is applied, four required checks next to the pull request rule (docs/13 §6; its name on GitHub is still `t-4.6-probebo`, because a disabled ruleset called `Main` blocks the name of the file). (full text: docs/HISTORY.md)
 14. **T-11.1 done 27.10.2026** (#368, #369 on main). Real-model run on main 18a725f (qwen3.6-35b-a3b): cases 33/56, targets 2/29. It showed the model looking up allergens when the guest only named an allergy, which ended the order with the team in 11 of 15 allergy cases (full text: docs/HISTORY.md)
-15. **Open issues, triaged 28.10.2026 (64 open, oldest first):** done but still open: #320 closed (option B built in 66caa7b, networks are T-9.8 #410); ticked as done: #344 point 1 and the deletion item of #252 (both in `api/jobs/retention.py`). (full text: docs/HISTORY.md)
-
 18. **Maxi's order of 02.11.2026: work through every open issue that needs no money and no hardware.** State and order: `docs/00_PCF.md` §13, handover of 02.11.2026. Next: the GPU result for #472, then #472, then T-6.8, T-11.3, T-10.11, then T-9.6, T-4.9, T-9.8 from their branches. T-6.4 stays unbuilt while D5 needs no polygon.
 
 Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order.
@@ -108,8 +87,6 @@ Sequence of first seven sessions: `docs/07_WORKPACKAGES.md` § recommended order
 Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: nine group issues per block (#5 through #13), 68 work packages as sub-issues, labels per stage. Status maintained here in docs, mirror follows.
 
 16. **Handover 30.10.2026 (`docs/00_PCF.md` §13):** #441 is merged (migration 017, `uq_special_days_set`). The workbench is at migration 018 since 01.11.2026 (backup `before_migration_018`, `api` and `dispatcher` rebuilt, 173 dishes and 11 allergen rows unchanged); `holiday_region = 'BW'` waits for Maxi's word. Open for Maxi: the T-9.5 assumptions under Made Assumptions
-
-17. **Audits of the allergen path, 31.10.2026:** the audit on `52bf88c` found no P1, nine P2 and three P3 (#252), and #449 closed them by reading an allergy question by the sentence again. (full text: docs/HISTORY.md)
 
 ### In Chat (Maxi)
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
@@ -124,38 +101,14 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 
 ## Open Decisions
 
+Decided D1 to D30: same archive section.
+
 | # | Question | Who | When needed |
 |---|---|---|---|
-| D1 | ~~Voice platform~~ **decided 07.10.2026 (Maxi): none, the voice layer is built in-house** (E1 flipped, E15, E16; `docs/20_VOICE_LAYER.md`). A hosted platform is the last resort (docs/20 §13) | Maxi | done; build in Block 1c |
-| D2 | ~~Handoff path to register~~ **decided 26.09.2026 (Maxi): receipt and kitchen ticket come only from the register** (<POS System>, TSE). An order is fed into the register, the register books it and sends receipt and kitchen ticket to its own printers. (full text: docs/HISTORY.md) | Maxi | done; bridge changes open in T-4.6 |
-| D3 | ~~Hosting provider in the EU~~ **decided 07.10.2026 (Maxi), in two stages:** test phase on the workbench (Maxi's PC, Ubuntu in WSL) with invented data and own test calls only; operation on a netcup VPS 1000 in Nuremberg (4 vCPU / 8 GB, about 17 EUR a month on a 12-month term) with Scaleway Object Storage as the encrypted off-site backup target (full text: docs/HISTORY.md) | Maxi | done; order at the trigger |
 | D4 | Voice: natural or audibly synthetic. **12.10.2026:** Maxi heard the test-phase voice (Piper `thorsten`) and finds it not clean, also before the telephone line; it stays for building and testing only. His idea, kept for later: his own voice, synthesized. (full text: docs/HISTORY.md) | Maxi | Stage 1, dialog test |
-| D5 | ~~Delivery zones: postal code list or polygons~~ **decided 02.11.2026 (Maxi): postal code list; polygons stay T-6.4** | Maxi | done |
-| D6 | ~~GUI tech: HTMX or React~~ **decided 17.09.2026: Jinja2 + HTMX** (docs/06 §2) | Maxi | done |
-| D8 | ~~Wishes the menu does not know ("Nudeln statt Reis" without an option)~~ **decided 24.09.2026: no offer on the phone.** The agent offers only what is stored on the menu; surcharges come from `item_options` (e.g. a side-dish group "Reis 0 €, Nudeln +3 €"), the reason for a surcharge only from the menu data. (full text: docs/HISTORY.md) | Maxi | done |
-| D7 | ~~Does our own conversation core (`agent/`) also run in operations, or does the platform run its own loop?~~ **decided 07.10.2026 with D1: our own core runs in operation**, so test and operation are the same code | Maxi | done |
-| D9 | ~~Appoint a data protection officer~~ **decided 20.10.2026 (Maxi, in the legal check): Maxi himself**, against the recommendation below and of the Claude round. Recorded risk: the CJEU sees a conflict of interest where the officer decides purposes and means (C-453/21, Art. 38(6)) (full text: docs/HISTORY.md) | Maxi | before `shadow` with recording |
-| D10 | ~~Deletion period for the call log CSV~~ **decided 24.09.2026: 90 days** (`CALL_LOG_RETENTION_DAYS=90`, weekly `scripts/call_log.py --frist-tage 90 --loeschen`, docs/03 deletion concept) | Maxi | done |
-| D11 | ~~Register fields for the import~~ **decided 26.09.2026 (Maxi):** phone price is `VK1_PREIS` (regular; `VK2` pickup and `VK3` restaurant are optional and today equal) · `A_PREIS*` are promotion prices, not used · `GROESSE` is the dish size (soups small and large, different prices) · `DETAILS` (long description) is not used · allergen legend is the (full text: docs/HISTORY.md) | Maxi | done |
-| D13 | ~~Channel for team notifications from n8n (`n8n/team_events.json`): push or SMS~~ **decided 04.10.2026 (Maxi): a self-hosted push service on the EU server.** No per-message cost, no external account, message texts stay on our server; the team needs an app on the phones or the tablet. (full text: docs/HISTORY.md) | Maxi | done |
-| D14 | ~~Which devices receive the team push~~ **decided 19.10.2026 (Maxi, option A on #188): Android devices or the web page of the push server on the tablet.** Nothing to change: Android keeps its own connection to our server and nothing leaves it. No relay for iPhones and iPads and no web push of the browser maker (full text: docs/HISTORY.md) | Maxi | done; the devices subscribe once the push server is set up on the server (`n8n/README.md`) |
-| D12 | ~~Last reservable start before closing~~ **decided 27.09.2026 (Maxi):** earliest start opening + 15 min, latest start closing - 30 min, both bookable, values in `service_config` (migration 005) · lunch 11-14 and evening 17-22 give 11:30-13:30 and 17:30-21:30 on the 30-minute grid · outside opening (15:00, 23:00) the guest hears "closed" plus a (full text: docs/HISTORY.md) | Maxi | done |
 | D15 | Operation model: which of the shortlist (Mistral Small, Claude Haiku 4.5, Gemini Flash via Vertex EU) goes into operation, and the vendor's DPA. Shortlist decided 06.10.2026 (Maxi); the pick is the smallest model with all hard eval metrics at 0 and latency in budget (`docs/18_MODEL_SELECTION.md` §3) | T-5.3 measures, Maxi decides | before G1 |
-| D16 | ~~Number of parallel AI calls~~ **decided 06.10.2026 (Maxi): schedule plus overflow**, weekdays 1, Friday to Sunday evenings up to 3, a call above the limit rings the team. Depends on the line capacity; built as T-10.9. (full text: docs/HISTORY.md) | Maxi | done; built as T-10.9 on 28.10.2026 (migration 011, limit 1, no window yet) |
-| D17 | ~~Budget~~ **decided 07.10.2026 (Maxi): at most 100 EUR a month and 300 EUR once for technology** (model, speech services, server and backup, telephone access). Each piece costs only from the day it is switched on; the test phase is meant to cost nothing. Legal advice is a line of its own. Cost model: `docs/20_VOICE_LAYER.md` §9 | Maxi | done |
-| D18 | ~~Speech engines and telephone access for the test~~ **decided 07.10.2026 (Maxi):** test phase with free, open speech models on the workbench and the pilot's router as the entry (the software is one more IP telephone on one of the three numbers). For operation: EU speech services chosen by measurement (T-10.3, T-10.10) and a SIP trunk. (full text: docs/HISTORY.md) | Maxi | test phase done; trunk before operation |
-| D19 | ~~What the AI does with a complaint~~ **decided 07.10.2026 (Maxi): it resolves the complaint itself by fixed rules from the database; what the rules do not resolve is recorded and the team calls back.** Replaces E8 for complaints. Open: the rule catalogue (which remedy in which case, with limits) (full text: docs/HISTORY.md) | Maxi | done; the mechanism is built (T-10.11), the catalogue is the open part |
-| D20 | ~~Who reviews the legal check~~ **decided 07.10.2026 (Maxi): the checklist is worked through by putting the same question catalogue to two AI models independently (Gemini and Claude) and comparing the answers until every point is settled** (full text: docs/HISTORY.md) | Maxi | done; check answered 20.10.2026, the duties are open |
-| D21 | ~~Does live audio that is streamed to a speech service without being stored fall under the rules for recordings (E11)?~~ **answered 20.10.2026 (legal check L6, both rounds agree): no**, when the service keeps audio and transcript only for the request, stores nothing afterwards and does not train on it. It stays processing under Art. (full text: docs/HISTORY.md) | part of the check (D20) | done; the conditions before the first real call on a speech service |
 | D22 | Status and history layout (Claude setup audit, 19.10.2026). `/start` now reads only the current sections of this file (about 49 KB instead of 476 KB). Done in #562: the Summary, older Done rows, older Changelog lines and settled assumptions moved into `docs/HISTORY.md`, merged with git's built-in `union` driver (tested: two parallel entries merge (full text: docs/HISTORY.md) | Maxi | before the status is restructured |
 | D23 | A `deny` rule for `.env` in `.claude/settings.json` (Claude setup audit, 19.10.2026). Since 19.10.2026 an `ask` rule makes Claude ask before its Read tool opens a `.env`; tested headless, the Grep tool and `cat .env` still read it. (full text: docs/HISTORY.md) | Maxi | after the next gates (Maxi, 19.10.2026) |
-| D24 | ~~How far the agent handles the guest's own allergy~~ **decided 19.10.2026 (Maxi, in the review of PR #330):** the kitchen note keeps the fixed wording "WICHTIG: Keine <Zutat>. Grund: Allergie" (E14 stays). It goes on the dish when the guest ties the allergy to that dish, otherwise on the whole order; when that is unclear, on the whole order. (full text: docs/HISTORY.md) | Maxi | done; built as T-11.1 before G1 |
-| D25 | ~~Ring the team outside the opening hours?~~ **decided 20.10.2026 (Maxi, T-10.8):** no. Outside the opening hours a handover by the agent becomes a callback card at once and nobody's telephone rings at night (full text: docs/HISTORY.md)
-| D26 | ~~Replace the approved look of the operations view (docs/06 §7)?~~ **decided 02.11.2026 (Maxi, after a design critique and an accessibility review of the screens):** yes, with the direction of `gui/mockups/betrieb-tablet.html`: a two-row command bar that stays, columns that scroll on their own, one main action per card, holiday suggestions folded (full text: docs/HISTORY.md)
-| D27 | ~~Which colours does the operations view wear?~~ **decided 02.11.2026 (Maxi):** the brand palette of the README (docs/15), with its meanings, kept clear and easy to use. One dark theme. **Changed 03.11.2026 (Maxi):** the violet of the software is the electric ultra violet `#7B2FFF` (docs/06 §7); the README keeps `#9D7BFF` until the brand palette is decided. |
-| D28 | ~~Do tables replace seats as the capacity of a reservation?~~ **decided 02.11.2026 (Maxi):** not yet. First the plan and manual seating (T-3.11, T-3.12); the agent stays on seats until the plan is in use. |
-| D29 | ~~Which call modes stay~~ **decided 02.11.2026 (Maxi): all three stay, `shadow`, `overflow` and `primary`.** `overflow` needs the router to ring the team first and hand the call to the agent only when nobody answers; that is not tested on the real line | Maxi | before the first `overflow` call on the real line |
-| D30 | ~~How is a reservation without a call stored, the one the team enters on the tablet (T-3.12)?~~ **decided 05.11.2026 (Maxi): draft, then confirm.** The tablet writes a draft with `source = tablet` and no `call_id` (full text: docs/HISTORY.md) | Maxi | decided |
 | D31 | Which further mechanics of MaexSocial's labels and gates are taken over (Maxi asked 05.11.2026 to look; names stay this repo's)? Already the same here: assignee, type label and milestone per PR and issue, project status sync, daily maintenance. (full text: docs/HISTORY.md) | Maxi | open |
 | D32 | ~~How do several customers run: one stack per customer, or all in one stack with `tenant_id` isolation (#568)?~~ **decided 09.11.2026 (Maxi): one Docker stack and database per customer**, with one shared Caddy on the host in front of them. (full text: docs/HISTORY.md) | Maxi | decided |
 | D33 | ~~How are the operator dashboard and menu uploads protected (#569)?~~ **decided 09.11.2026 (Maxi):** (a) the dashboard is public on its own host name behind a strong login, not VPN-only; (b) the operator's second factor is a passkey with TOTP as backup, plus recovery codes (full text: docs/HISTORY.md) | Maxi | decided |
@@ -308,6 +261,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 | Date | What |
 |---|---|
 | 10.11.2026 | **Operator login, second part of the operator dashboard (#571).** `api/dashboard/` signs the operator in with password plus a TOTP code or a recovery code, against its own database and migrations (`db/dashboard/`); not reachable from outside yet (docs/23 §5 "Built"). |
+| 10.11.2026 | **STATUS cut, part 5 (#562).** Twenty finished What's Next items and the 26 decided rows D1 to D30 of Open Decisions went to `docs/HISTORY.md` (83.2 KB to 70.5 KB, every line checked present with `comm`); open items, assumptions awaiting Maxi and Open Points stay, by Maxi's rule to keep active rows. |
 | 10.11.2026 | **STATUS cut, part 4 (#562).** Thirteen long rows in Roadmap, Gates, Blockers and Done went to one sentence each (90.9 KB to 83.2 KB), full text in `docs/HISTORY.md`, every original line checked present with `comm`; the five sections hold only 15 KB, so the 40 KB target needs the other sections, left for Maxi's decision. |
 | 10.11.2026 | **The ops API of a stack, first part of the operator dashboard (#571).** `GET /v1/ops/status` answers the dashboard with counts, times and codes only, behind its own `OPS_TOKEN` and never offered by Caddy; the operator stack with its login and the customer list follow. |
 | 09.11.2026 | **STATUS cut, part 2 (#562).** "Open Points from Reviews" went from 55 KB to 25 KB and the open assumptions from 33 KB to 21 KB, full rows in `docs/HISTORY.md`. |
@@ -340,7 +294,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.27.12 · 10.11.2026:** #571 second part: operator login with password, TOTP and recovery codes
+- **v2.27.13 · 10.11.2026:** #571 second part: operator login with password, TOTP and recovery codes
+- **v2.27.12 · 10.11.2026:** #562 part 5: finished What's Next items and decided D1 to D30 archived
 - **v2.27.11 · 10.11.2026:** Handover: handover command is the single source for handover rules, session title uses middle dots, no token threshold
 - **v2.27.10 · 10.11.2026:** #562 part 4: long rows of Roadmap, Gates, Blockers and Done cut to one sentence
 - **v2.27.9 · 10.11.2026:** #562 part 3: What's Next and Open Decisions shortened to one sentence per row, full rows archived in HISTORY.md
