@@ -1,0 +1,12 @@
+{
+  "id": "readme_demo_pickup",
+  "name": "README demo: pickup order, two of dish 25 for half past six",
+  "caller_id": "+493023125042",
+  "transcript": [
+    {"role": "customer", "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."},
+    {"role": "customer", "text": "Zweimal die 25."},
+    {"role": "customer", "text": "Nein, das wars."},
+    {"role": "customer", "text": "Auf den Namen Mueller."},
+    {"role": "customer", "text": "Ja, passt so."}
+  ]
+}
