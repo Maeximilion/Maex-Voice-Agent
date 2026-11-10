@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.4
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.5
 
 ---
 
@@ -263,6 +263,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 10.11.2026 | **Four medium CodeQL alerts fixed (#14, #15, #20, #21).** `api/gui/access.py` `_back` rebuilds the owner page's way back behind the constant `/gui/` prefix after the allowlist match, so CodeQL sees the redirect as sanitised (behaviour unchanged, covered by the existing redirect tests). `scripts/readme_demo.py` strips CR and LF from every header the README demo proxy forwards, with a test. Dependabot had no open alert at this point. |
 | 10.11.2026 | **`raumplan.js` migrated to TypeScript (#626, T-3.18 second of three files).** `api/gui/ts/raumplan.ts` compiles to the committed `api/gui/static/raumplan.js`; markup, CSS and behaviour are unchanged. Compared in a browser against the old file on a mocked server: 63 steps (add, edit, delete, undo, arrow keys, room switch, refused and conflicting saves) gave identical editor HTML and identical save bodies, plus one real drag. Data from the server enters as `unknown` and passes `toClient`; the import of the geometry no longer carries `?v=2` (TypeScript cannot resolve a query), only the page's address of `raumplan.js` does. `app.js` is left. Not tried in the pilot's tablet browser. |
 | 10.11.2026 | **`base.js` migrated to TypeScript (#626, T-3.18 first of three files).** `api/gui/ts/base.ts` compiles to the committed `api/gui/static/base.js`; `base.html` loads it as a module. The htmx event's `detail.headers` is checked before the CSRF header is set (the old file threw on a null detail), and a setup code with invalid percent-encoding is left in the address bar instead of throwing. `raumplan.js` and `app.js` are left, one PR each. Not tried in the pilot's tablet browser. |
 | 10.11.2026 | **TypeScript toolchain for the browser code (#553, T-3.17 done).** `package.json` pins `typescript` 7.0.2 as the only package, `tsconfig.json` compiles `api/gui/ts/*.ts` to committed ES modules in `api/gui/static/`, CI's new job `browser` (in the required check `test`) fails on a type error or a stale output, Dependabot watches npm. First file: `raumplan-geometry.ts`, identical to the old build on 20,000 random rounds over every exported function; `toClient` now checks the server's room document at run time. `raumplan.js` is loaded as a module and imports it. Rule and migration steps: docs/22; remaining files: T-3.18, #626. |
@@ -302,6 +303,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.29.5 · 10.11.2026:** Four medium CodeQL alerts fixed: owner page redirect and README demo proxy headers
 - **v2.29.4 · 10.11.2026:** T-3.18 raumplan.js migrated to TypeScript
 - **v2.29.3 · 10.11.2026:** T-3.18 base.js migrated to TypeScript
 - **v2.29.2 · 10.11.2026:** Standing rule: browser logic is TypeScript, no language moves back (CLAUDE.md §8, guard test)

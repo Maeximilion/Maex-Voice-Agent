@@ -408,6 +408,11 @@ def sign_in(stack: Stack) -> dict[str, str]:
     return cookies
 
 
+def _one_line(text: str) -> str:
+    """Drops line breaks so a forwarded header cannot split the response."""
+    return text.replace("\r", "").replace("\n", "")
+
+
 class CookieProxy(http.server.ThreadingHTTPServer):
     """Forwards GETs to the api with the session cookie added."""
 
@@ -428,7 +433,7 @@ class CookieProxy(http.server.ThreadingHTTPServer):
                         "connection",
                         "content-length",
                     ):
-                        self.send_header(key, value)
+                        self.send_header(_one_line(key), _one_line(value))
                 self.end_headers()
                 with contextlib.suppress(OSError, http.client.HTTPException):
                     while chunk := response.read1(8192):
