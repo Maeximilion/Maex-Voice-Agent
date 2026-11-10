@@ -7,8 +7,12 @@
 // The page is drawn through the DOM, never through style attributes in markup:
 // the proxy's Content-Security-Policy refuses those (docs/13 §3).
 // Loaded as a module (raumplan.html): the geometry is compiled from
-// api/gui/ts/raumplan-geometry.ts (docs/22).
-import * as G from "./raumplan-geometry.js";
+// api/gui/ts/raumplan-geometry.ts (docs/22). `?v=2`, here and in the page, is a
+// new address for the two files that turned from classic scripts into modules:
+// a browser still holding the old ones would run them as modules and show an
+// empty editor. Static files are asked for again on every use since then
+// (api/gui/__init__.py), so a later change needs no new number.
+import * as G from "./raumplan-geometry.js?v=2";
 
 (function () {
   "use strict";

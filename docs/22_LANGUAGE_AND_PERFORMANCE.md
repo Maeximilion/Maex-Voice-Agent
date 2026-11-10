@@ -122,6 +122,7 @@ checks and compiles to JavaScript: it does not make the same code run faster, an
 | Committed output | The compiled `.js` is in git. The server image carries no Node, so `make up`, the Dockerfile and the deployment did not change, and a developer who does not touch browser code needs no Node |
 | CI | Job `browser` (part of the required check `test`) runs `npm ci` and `npm run build` and fails on a type error or when the committed output differs from a fresh build |
 | Strictness | `strict`, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`: the set `tsc --init` writes |
+| Caching | `/gui/static/` answers with `Cache-Control: no-cache` (`api/gui/__init__.py`): the browser asks again on every use and gets a 304 while the file is unchanged, so a page never runs the script of an older build. `raumplan.js` and `raumplan-geometry.js` carry `?v=2` once, because copies cached before this header existed would have been run as modules |
 | Updates | Dependabot, ecosystem `npm`, monthly; a compiler bump that changes the output fails CI until `npm run build` ran |
 
 **The rule at the boundaries.** A type describes only what the compiler was told.
