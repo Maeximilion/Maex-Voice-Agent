@@ -11,16 +11,5 @@
           hx-post="/gui/dev/console/call" hx-target="#anruf" hx-swap="innerHTML">Neuer Anruf</button>
 </div>
 {% endblock %}
-{% block scripts %}<script>
-  {# This page does not load app.js: show the red bar of base.html when a tap
-     fails for real (5xx, no network), or the form looks like it did nothing. #}
-  ["htmx:responseError", "htmx:sendError"].forEach(function (name) {
-    document.body.addEventListener(name, function () {
-      document.getElementById("stoerung").hidden = false;
-    });
-  });
-  // A tap that works again clears the bar of the failed one before it.
-  document.body.addEventListener("htmx:afterRequest", function (e) {
-    if (e.detail.successful) document.getElementById("stoerung").hidden = true;
-  });
-</script>{% endblock %}
+{# The red bar for a failed tap (api/gui/ts/dev-console.ts): this page does not load app.js. #}
+{% block scripts %}<script type="module" src="/gui/static/dev-console.js"></script>{% endblock %}

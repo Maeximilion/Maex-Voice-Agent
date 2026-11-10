@@ -333,9 +333,14 @@ def test_failed_hang_up_after_a_closing_turn_retries_only_the_hang_up(
 def test_page_shows_a_failed_tap(client):
     page = client.get(BASE)
 
-    assert "htmx:responseError" in page.text
     assert 'id="stoerung"' in page.text
-    assert "htmx:afterRequest" in page.text  # a working tap clears the bar again
+    # From a file compiled from api/gui/ts/dev-console.ts, not inline (docs/22).
+    assert (
+        '<script type="module" src="/gui/static/dev-console.js"></script>' in page.text
+    )
+    script = client.get("/gui/static/dev-console.js").text
+    assert "htmx:responseError" in script and "htmx:sendError" in script
+    assert "htmx:afterRequest" in script  # a working tap clears the bar again
 
 
 def test_send_and_hang_up_cannot_overlap(client, tenant_id):
