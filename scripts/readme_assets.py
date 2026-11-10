@@ -193,35 +193,31 @@ NOT_DRAWN: dict[str, str] = {
     "adapter:fake": "plays calls from files for the tests and the text phone, never on a call",
     "adapter:fake_speech": "the ear and mouth of the drills and the tests, never on a real call",
 }
-# The wires of the architecture. "in" and "out" are the two directions of the
-# telephone and voice lanes (the caller's words in, the spoken reply out); "both"
-# carries either way. The architecture draws one wire per pair of nodes.
-FLOW_LINKS: list[tuple[str, str, str]] = [
-    ("caller", "access", "in"),
-    ("access", "asterisk", "in"),
-    ("asterisk", "ear", "in"),
-    ("ear", "core", "in"),
-    ("core", "mouth", "out"),
-    ("mouth", "asterisk", "out"),
-    ("asterisk", "access", "out"),
-    ("access", "caller", "out"),
+# The wires of the architecture, one per pair of nodes.
+FLOW_LINKS: list[tuple[str, str]] = [
+    ("caller", "access"),
+    ("access", "asterisk"),
+    ("asterisk", "ear"),
+    ("ear", "core"),
+    ("core", "mouth"),
+    ("mouth", "asterisk"),
     # The LLM talks to the core and to nothing else: it never reads Postgres.
-    ("core", "llm", "both"),
-    ("core", "status", "both"),
-    ("core", "menu", "both"),
-    ("core", "draft", "both"),
-    ("core", "confirm", "both"),
-    ("status", "postgres", "both"),
-    ("menu", "postgres", "both"),
-    ("draft", "postgres", "both"),
-    ("confirm", "postgres", "both"),
-    ("postgres", "slip", "both"),
-    ("postgres", "tablet", "both"),
-    ("postgres", "push", "both"),
-    ("slip", "team", "both"),
-    ("tablet", "team", "both"),
-    ("push", "team", "both"),
-    ("teamphone", "team", "both"),
+    ("core", "llm"),
+    ("core", "status"),
+    ("core", "menu"),
+    ("core", "draft"),
+    ("core", "confirm"),
+    ("status", "postgres"),
+    ("menu", "postgres"),
+    ("draft", "postgres"),
+    ("confirm", "postgres"),
+    ("postgres", "slip"),
+    ("postgres", "tablet"),
+    ("postgres", "push"),
+    ("slip", "team"),
+    ("tablet", "team"),
+    ("push", "team"),
+    ("teamphone", "team"),
 ]
 
 BLOCK_NAMES = {
@@ -2158,11 +2154,7 @@ def asset_architecture(facts: Facts) -> str:
         _band(COLD_BAND, "COLD PATH"),
         text(cx + 20, cy + ch - 16, COLD_SENTENCE, 13, "muted"),
     ]
-    seen: set[frozenset[str]] = set()
-    for a, b, _channel in FLOW_LINKS:
-        if frozenset((a, b)) in seen:
-            continue
-        seen.add(frozenset((a, b)))
+    for a, b in FLOW_LINKS:
         planned = "planned" in (
             node_state(FLOW_NODES[a]["tasks"], states),
             node_state(FLOW_NODES[b]["tasks"], states),

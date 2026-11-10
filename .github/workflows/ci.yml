@@ -173,9 +173,9 @@ jobs:
       - run: pytest -q -n auto -m "not latency"
 
   # README structure (stdlib only, no path filter: it runs on every push and pull request,
-  # so it could become a required check without ever staying pending). Links, anchors and
-  # image safety fail the job; a stale generated image stays a warning, like the step in
-  # `checks`. Part of the required check `test` (Maxi, 2026-11-10, #622).
+  # so it never stays pending). Links, anchors, image safety and blocked terms fail the
+  # job. Whether a generated image is stale is the advisory step in `checks`, not here.
+  # Part of the required check `test` (Maxi, 2026-11-10, #622).
   readme:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -190,9 +190,6 @@ jobs:
         env:
           README_BLOCKLIST: ${{ secrets.README_BLOCKLIST }}
         run: python scripts/readme_check.py
-      - name: README images match their data (advisory)
-        continue-on-error: true
-        run: python scripts/readme_assets.py render --check
 
   # The required check `test` (ruleset on main) stands for the checks and every shard.
   # `always()`: a job skipped after a failed or cancelled need would count as passed.

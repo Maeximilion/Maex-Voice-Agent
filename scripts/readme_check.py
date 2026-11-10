@@ -47,7 +47,15 @@ UNSAFE_REF_PREFIXES = ("http:", "https:", "//", "file:", "javascript:", "vbscrip
 
 _ATTR_RE = re.compile(r"""\b(src|srcset|href)\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.I)
 # Matches from the closing bracket so a linked image `[![a](b)](c)` yields both targets.
-_MD_LINK_RE = re.compile(r"""\]\(\s*<?([^)\s>]+)>?(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)""")
+# An angle-bracket target may hold spaces: `[f](<docs/with space.md>)`.
+_MD_LINK_RE = re.compile(
+    r"""\]\(\s*(?:<([^>\n]+)>|([^)\s>]+))(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)"""
+)
+# Reference-style definition: `[ref]: docs/page.md "title"`.
+_REF_DEF_RE = re.compile(r"""^ {0,3}\[[^\]\n]+\]:[ \t]*(?:<([^>\n]+)>|(\S+))""", re.M)
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
+# SMIL can set an href or a script URL from outside the attribute; the generator uses CSS only.
+SMIL_TAGS = ("set", "animate", "animatemotion", "animatetransform")
 _HEADING_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.+?)[ \t]*#*[ \t]*$")
 _ID_RE = re.compile(r"""\b(?:id|name)\s*=\s*(?:"([^"]*)"|'([^']*)')""", re.I)
 _URL_FN_RE = re.compile(r"""url\(\s*['"]?\s*([^)'"\s]*)""", re.I)
@@ -61,24 +69,34 @@ def _blank(text: str, pattern: str, flags: int = 0) -> str:
     )
 
 
-def _strip_code(text: str) -> str:
-    """Drop fenced blocks, inline code and HTML comments: links inside are not links."""
+def _strip_fences(text: str) -> str:
+    """Drop fenced blocks and HTML comments. A fence closes only on a line of the same
+    character, at least as long, with nothing else on it (CommonMark)."""
     out: list[str] = []
     fence = ""
     for line in text.split("\n"):
-        marker = line.lstrip()[:3]
+        m = _FENCE_RE.match(line)
         if fence:
-            if marker == fence:
+            if (
+                m
+                and m.group(1)[0] == fence[0]
+                and len(m.group(1)) >= len(fence)
+                and not m.group(2).strip()
+            ):
                 fence = ""
             out.append("")
-        elif marker in ("```", "~~~"):
-            fence = marker
+        elif m and not (m.group(1)[0] == "`" and "`" in m.group(2)):
+            fence = m.group(1)
             out.append("")
         else:
             out.append(line)
-    cleaned = "\n".join(out)
-    cleaned = _blank(cleaned, r"<!--.*?-->", re.S)
-    return _blank(cleaned, r"`[^`\n]*`")
+    return _blank("\n".join(out), r"<!--.*?-->", re.S)
+
+
+def _strip_code(text: str) -> str:
+    """Also drop inline code: a link inside it is not a link. Headings keep their inline
+    code (GitHub slugs it as text), so `anchors_of` uses `_strip_fences` only."""
+    return _blank(_strip_fences(text), r"`[^`\n]*`")
 
 
 def slugify(heading: str) -> str:
@@ -94,7 +112,7 @@ def anchors_of(text: str) -> set[str]:
     """All anchors a Markdown text offers: heading slugs and explicit HTML ids or names."""
     found: set[str] = set()
     seen: dict[str, int] = {}
-    cleaned = _strip_code(text)
+    cleaned = _strip_fences(text)
     for line in cleaned.split("\n"):
         m = _HEADING_RE.match(line)
         if m:
@@ -123,7 +141,9 @@ def _targets(text: str) -> Iterator[tuple[int, str]]:
         else:
             yield _line(cleaned, m.start()), value.strip()
     for m in _MD_LINK_RE.finditer(cleaned):
-        yield _line(cleaned, m.start()), m.group(1)
+        yield _line(cleaned, m.start()), m.group(1) or m.group(2)
+    for m in _REF_DEF_RE.finditer(cleaned):
+        yield _line(cleaned, m.start()), m.group(1) or m.group(2)
 
 
 def check_links(root: Path, readme: Path) -> list[str]:
@@ -154,7 +174,8 @@ def check_links(root: Path, readme: Path) -> list[str]:
 
 
 def _unsafe_ref(value: str) -> bool:
-    v = value.strip().lower()
+    # Browsers drop tabs, newlines and spaces inside a scheme (`java&#9;script:`).
+    v = re.sub(r"[\x00-\x20]", "", value).lower()
     if not v or v.startswith("#"):
         return False
     if v.startswith("data:"):
@@ -190,6 +211,10 @@ def check_svg(path: Path, rel: str) -> list[str]:
         tag = el.tag.rsplit("}", 1)[-1].lower() if isinstance(el.tag, str) else ""
         if tag == "script":
             findings.append(f"{rel}:{at('<script')}: <script> in SVG")
+        elif tag in SMIL_TAGS:
+            findings.append(
+                f"{rel}:{at('<' + tag)}: <{tag}> in SVG (SMIL can set links)"
+            )
         elif tag == "foreignobject":
             findings.append(f"{rel}:{at('<foreignObject')}: <foreignObject> in SVG")
         elif tag == "style" and el.text:

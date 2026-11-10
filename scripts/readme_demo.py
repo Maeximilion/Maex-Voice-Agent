@@ -329,11 +329,19 @@ class Stack:
         ]  # fmt: skip
 
     def run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+        """Run docker compose. A failing checked command stops the run with what it
+        said: the `finally` of `record` removes the stack and with it the evidence."""
         print("+ docker compose", *args, flush=True)
-        return subprocess.run(
-            self.compose(*args), check=check, env=stack_environment(),
+        done = subprocess.run(
+            self.compose(*args), check=False, env=stack_environment(),
             capture_output=True, text=True, encoding="utf-8",
         )  # fmt: skip
+        if check and done.returncode != 0:
+            said = (done.stderr or done.stdout or "").strip()[-2000:]
+            raise SystemExit(
+                f"docker compose {' '.join(args)} failed ({done.returncode}):\n{said}"
+            )
+        return done
 
     def exec(self, *cmd: str) -> str:
         return self.run("exec", "-T", "api", *cmd).stdout
@@ -485,6 +493,13 @@ def encode(
 # --- the whole run --------------------------------------------------------------------
 
 
+def check_replay(code: int | None, lines: list[str]) -> None:
+    """A replay that failed after its last marker must not yield a GIF without its end."""
+    if code != 0:
+        tail = "\n".join(lines[-15:])
+        raise SystemExit(f"paced replay exited with {code}; its last lines:\n{tail}")
+
+
 def read_turn(proc: subprocess.Popen[str]) -> list[str]:
     """Output of the replay up to the next end-of-turn marker (or its end)."""
     assert proc.stdout is not None
@@ -526,7 +541,7 @@ def record(out: Path, keep: bool) -> None:
             look()
             call.stdin.write("\n")
             call.stdin.flush()
-        call.wait(timeout=60)
+        check_replay(call.wait(timeout=60), turn_lines)
         # The last turn ended the call: its marker was answered above, the rest is the tail.
         output = "\n".join(turn_lines)
         turns, tail = parse_turns(output)

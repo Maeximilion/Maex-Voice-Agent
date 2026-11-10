@@ -215,3 +215,65 @@ def test_an_svg_that_points_at_a_local_file_is_refused(tmp_path: Path) -> None:
     svg = CLEAN_SVG.replace("</svg>", '<image href="file:///C:/x.png"/></svg>')
     root = make_tree(tmp_path, "# T\n", **{".github__assets__a.svg": svg})
     assert any("a.svg" in message for message in rc.run(root))
+
+
+def test_heading_with_inline_code_keeps_its_text_in_the_slug(tmp_path: Path) -> None:
+    """GitHub slugs `## The `confirm` step` as the-confirm-step; a wrong anchor still fails."""
+    readme = "# T\n\n## The `confirm` step\n\n[ok](#the-confirm-step) [bad](#the-----------step)\n"
+    root = make_tree(tmp_path, readme)
+    assert rc.run(root) == ["README.md:5: broken anchor #the-----------step"]
+
+
+def test_heading_that_is_only_inline_code_in_another_file(tmp_path: Path) -> None:
+    root = make_tree(
+        tmp_path,
+        "# T\n\n[ok](docs/x.md#tenants) [bad](docs/x.md#tenant)\n",
+        **{"docs__x.md": "### `tenants`\n"},
+    )
+    assert rc.run(root) == ["README.md:3: broken anchor #tenant in docs/x.md"]
+
+
+def test_reference_style_definition_is_checked(tmp_path: Path) -> None:
+    readme = (
+        '# T\n\n[a][ok] [b][gone]\n\n[ok]: docs/x.md\n[gone]: docs/missing.md "Title"\n'
+    )
+    root = make_tree(tmp_path, readme, **{"docs__x.md": "# X\n"})
+    assert rc.run(root) == ["README.md:6: missing file docs/missing.md"]
+
+
+def test_angle_bracket_target_with_space_is_checked(tmp_path: Path) -> None:
+    readme = "# T\n\n[ok](<docs/with space.md>) [bad](<docs/no space.md>)\n"
+    root = make_tree(tmp_path, readme, **{"docs__with space.md": "# X\n"})
+    assert rc.run(root) == ["README.md:3: missing file docs/no space.md"]
+
+
+def test_four_backtick_fence_may_show_an_inner_fence(tmp_path: Path) -> None:
+    """The inner three-backtick line must not close the outer block."""
+    readme = "# T\n\n````md\n```\ntext\n```\n[x](gone.md)\n````\n\n[y](gone2.md)\n"
+    root = make_tree(tmp_path, readme)
+    assert rc.run(root) == ["README.md:10: missing file gone2.md"]
+
+
+def test_svg_smil_set_is_refused(tmp_path: Path) -> None:
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg"><a><set attributeName="href" '
+        'to="javascript:alert(1)"/></a></svg>'
+    )
+    root = make_tree(tmp_path, "# T\n", **{".github__assets__a.svg": svg})
+    assert any("<set> in SVG" in m for m in rc.run(root))
+
+
+def test_svg_scheme_split_by_whitespace_is_refused(tmp_path: Path) -> None:
+    svg = '<svg xmlns="http://www.w3.org/2000/svg"><a href="java&#9;script:alert(1)"/></svg>'
+    root = make_tree(tmp_path, "# T\n", **{".github__assets__a.svg": svg})
+    assert any("external href" in m for m in rc.run(root))
+
+
+def test_svg_with_css_keyframes_passes(tmp_path: Path) -> None:
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg"><style>'
+        "@keyframes spin { from { opacity: 0 } to { opacity: 1 } }"
+        '.a { animation: spin 2s infinite }</style><rect class="a"/></svg>'
+    )
+    root = make_tree(tmp_path, "# T\n", **{".github__assets__a.svg": svg})
+    assert rc.run(root) == []

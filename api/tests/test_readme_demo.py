@@ -5,7 +5,11 @@ No Docker, browser or ffmpeg is needed here; the recording itself is run by hand
 
 from __future__ import annotations
 
+import http.server
 import json
+import subprocess
+import threading
+import urllib.request
 from pathlib import Path
 
 import pytest
@@ -167,3 +171,53 @@ def test_stack_environment_does_not_pass_the_callers_shell(
     assert env["DATABASE_URL"] == rd.STACK_ENV["DATABASE_URL"]
     assert "LLM_BASE_URL" not in env
     assert env["ENV"] == "dev"
+
+
+def test_a_failing_compose_command_says_what_it_printed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    def fake_run(cmd: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert kwargs["check"] is False
+        return subprocess.CompletedProcess(cmd, 3, "", "boom: image build failed")
+
+    monkeypatch.setattr(rd.subprocess, "run", fake_run)
+    stack = rd.Stack(tmp_path, 12345)
+    with pytest.raises(SystemExit) as failed:
+        stack.run("up", "-d", "--build")
+    assert "up -d --build" in str(failed.value)
+    assert "boom: image build failed" in str(failed.value)
+    assert stack.run("down", check=False).returncode == 3  # unchecked stays silent
+
+
+def test_a_failed_replay_stops_before_anything_is_encoded() -> None:
+    rd.check_replay(0, ["Anruf beendet: completed, 5 s"])
+    with pytest.raises(SystemExit, match="Traceback line"):
+        rd.check_replay(1, ["Kunde: a", "Traceback line"])
+
+
+def test_cookie_proxy_forwards_the_cookie_and_the_body() -> None:
+    seen: list[str | None] = []
+
+    class Upstream(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            seen.append(self.headers.get("Cookie"))
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"board")
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    upstream = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Upstream)
+    proxy = rd.CookieProxy(upstream.server_address[1], {"maex_session": "abc"})
+    for server in (upstream, proxy):
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        assert proxy.server_address[0] == "127.0.0.1"
+        url = f"http://127.0.0.1:{proxy.server_address[1]}/gui/"
+        assert urllib.request.urlopen(url, timeout=10).read() == b"board"
+        assert seen == ["maex_session=abc"]
+    finally:
+        for server in (upstream, proxy):
+            server.shutdown()
+            server.server_close()

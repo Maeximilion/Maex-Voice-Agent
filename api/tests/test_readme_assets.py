@@ -138,8 +138,11 @@ def test_every_flow_node_names_tasks_that_exist() -> None:
     for key, node in ra.FLOW_NODES.items():
         missing = [t for t in node["tasks"] if t not in known]
         assert not missing, f"{key} names unknown tasks {missing}"
-    for a, b, _channel in ra.FLOW_LINKS:
+    for a, b in ra.FLOW_LINKS:
         assert a in ra.FLOW_NODES and b in ra.FLOW_NODES
+    # One wire per pair: the architecture draws each link as it stands.
+    pairs = [frozenset(link) for link in ra.FLOW_LINKS]
+    assert len(pairs) == len(set(pairs))
     assert set(ra.ARCH_AT) == set(ra.FLOW_NODES)
 
 
@@ -559,7 +562,7 @@ def _pictures() -> dict[str, str]:
 
 def test_the_llm_talks_to_the_core_and_nothing_else() -> None:
     """Hard rule 1 in the picture: the model never reaches a tool or the database."""
-    llm_links = {frozenset((a, b)) for a, b, _c in ra.FLOW_LINKS if "llm" in (a, b)}
+    llm_links = {frozenset((a, b)) for a, b in ra.FLOW_LINKS if "llm" in (a, b)}
     assert llm_links == {frozenset(("core", "llm"))}
     assert "llm" not in ra.ARCH_RING
     # On the rail the LLM is no station: a spur of the core, in rows that pass
@@ -592,8 +595,22 @@ def test_the_core_says_the_booking_itself() -> None:
 
 
 def test_the_complaint_is_read_before_the_model() -> None:
+    """The row draws no LLM because the guest turn runs `escalation.check`
+    itself and only then hands over to `_converse`, the one place that asks
+    the model; and the check takes the example sentence as a complaint."""
+    import inspect
+
+    from api.agent import escalation
+    from api.agent.loop import ConversationLoop
+
     row = next(r for r in ra.FLOW_ROWS if r.said == ra.EXAMPLE_CALL["complaint"])
-    assert not row.llm and row.does[0].startswith("checked before the model")
+    assert not row.llm
+    spoken = " ".join(row.said).strip("„“")
+    assert escalation.check(spoken) == "complaint"
+    turn = inspect.getsource(ConversationLoop._guest_turn)
+    assert "self._llm" not in turn
+    assert turn.index("escalation.check(") < turn.index("self._converse(")
+    assert "self._llm" in inspect.getsource(ConversationLoop._converse)
 
 
 def test_one_tool_per_hop_at_most_six_as_the_loop_counts() -> None:
@@ -638,20 +655,52 @@ def test_confirm_comes_only_after_the_read_back_and_the_yes() -> None:
     assert _row("draft_order") < readback < confirm
     # The reply, the tablet and the slip come after confirm, never before it.
     assert confirm < _row("confirm result")
-    assert "only now" in " ".join(rows[confirm].does)
+
+
+def test_the_guard_lets_confirm_through_only_on_the_heard_read_back_and_a_yes() -> None:
+    """guards.py rule 3, with the picture's own sentences: confirm passes on
+    the example's yes to a draft whose read-back was heard, and on nothing else."""
+    import uuid
+
+    from api.agent import guards
+    from api.agent.llm import ToolCall
+    from api.agent.state import ConversationState
+
+    draft = uuid.uuid4()
+    yes = " ".join(ra.EXAMPLE_CALL["yes"]).strip("„“")
+    order = " ".join(ra.EXAMPLE_CALL["name"]).strip("„“")
+    call = ToolCall("confirm", {"entity_id": str(draft)})
+
+    def may(heard: bool, said: str) -> bool:
+        state = ConversationState(call_id=uuid.uuid4(), tenant_id=uuid.uuid4())
+        state.stage = "readback_pending"
+        state.order_id = draft
+        state.readback = "Zweimal Nummer 25 Papaya-Salat. Passt das so?"
+        state.readback_heard = heard
+        return guards._may_confirm(state, guards.begin_turn(state), said, call)
+
+    assert may(heard=True, said=yes)
+    assert not may(heard=False, said=yes)
+    assert not may(heard=True, said=order)
 
 
 def test_the_slip_waits_for_the_approval_on_the_tablet() -> None:
-    does = " ".join(ra.FLOW_ROWS[_row("confirm result")].does)
-    assert "The slip waits for the team's approval" in does
-    assert "primary mode: at once, up to the amount limit" in does
+    """confirm.py `_waits_for` decides it: the example order (the read-back's
+    total) goes at once in primary mode up to the limit, above it or in any
+    other mode it waits for the team."""
+    from api.domain.ordering.confirm import _waits_for
+    from api.domain.ordering.readback import spoken_euro
+    from api.models import Order, ServiceConfig
 
-
-def test_tablet_and_reply_go_out_together_when_confirm_commits() -> None:
-    """The tablet reads Postgres; it does not wait for the spoken reply."""
-    row = ra.FLOW_ROWS[_row("confirm result")]
-    assert row.who == "agent" and row.said == ra.EXAMPLE_CALL["confirmed"]
-    assert "meanwhile the tablet shows the order" in " ".join(row.does)
+    total = 1580
+    assert spoken_euro(total) in " ".join(ra.EXAMPLE_CALL["readback"])
+    config = ServiceConfig(
+        order_approval_above_cents=15000, overflow_needs_approval=True
+    )
+    assert _waits_for(Order(total_cents=total), "primary", config) is None
+    assert _waits_for(Order(total_cents=15001), "primary", config) == "amount"
+    assert _waits_for(Order(total_cents=total), "overflow", config) == "mode"
+    assert _waits_for(Order(total_cents=total), "shadow", config) == "mode"
 
 
 def test_flow_labels_are_english() -> None:
