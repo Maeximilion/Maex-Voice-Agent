@@ -221,3 +221,15 @@ def test_cookie_proxy_forwards_the_cookie_and_the_body() -> None:
         for server in (upstream, proxy):
             server.shutdown()
             server.server_close()
+
+
+@pytest.mark.parametrize(
+    ("raw", "sent"),
+    [
+        ("text/html", "text/html"),
+        ("a\r\nSet-Cookie: x=1", "aSet-Cookie: x=1"),
+        ("a\nb\rc", "abc"),
+    ],
+)
+def test_a_forwarded_header_is_one_line(raw: str, sent: str) -> None:
+    assert rd._one_line(raw) == sent

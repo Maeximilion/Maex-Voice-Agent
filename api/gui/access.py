@@ -51,7 +51,7 @@ WRONG_ADMIN_PIN = "Die Inhaber-PIN stimmt nicht."
 NO_ADMIN_PIN = "Noch keine Inhaber-PIN. Der Betreiber setzt sie."
 # Where the admin PIN page may lead back to: a path of the view, nothing else,
 # and not the owner pages themselves (review of #587).
-BACK = re.compile(r"/gui/(?!inhaber)[a-z0-9/-]*")
+BACK = re.compile(r"/gui/((?!inhaber)[a-z0-9/-]*)")
 
 
 def _checked(request: Request, form: dict[str, str]) -> None:
@@ -204,7 +204,9 @@ def unlock_post(
 
 
 def _back(value: str) -> str:
-    return value if BACK.fullmatch(value) else BOARD
+    # Rebuilt behind a constant prefix: the allowlist alone is not visible to CodeQL.
+    match = BACK.fullmatch(value)
+    return "/gui/" + match.group(1) if match else BOARD
 
 
 @router.get("/inhaber", response_class=HTMLResponse, include_in_schema=False)
