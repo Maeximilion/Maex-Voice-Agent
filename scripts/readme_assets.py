@@ -1260,86 +1260,96 @@ def concept_sheet() -> str:
 # --------------------------------------------------------------------------- banner
 
 
-def asset_banner(facts: Facts) -> str:
+# One example call, the same in the banner and in the call flow: what the caller
+# says, and what stands on the slip once the caller has said yes. Invented test
+# data; the dish number and the time are an example, not a measurement.
+EXAMPLE_SAID = ["„Zweimal die 25 zum Abholen,", "um halb sieben.“"]
+EXAMPLE_SLIP = ("Pickup", "18:30", "2 x  No. 25", "fried noodles")
+
+
+def asset_banner() -> str:
+    """One call from left to right: a spoken sentence goes in, a confirmed slip
+    comes out. No measured number stands here, so the banner never goes stale;
+    stage and eval result are badges below it."""
     width, height = 1200, 440
-    cases = facts.latest("cases")
     glow = (
-        '<radialGradient id="g1" cx="0.22" cy="0.38" r="0.5">'
+        '<radialGradient id="g1" cx="0.15" cy="0.6" r="0.5">'
         f'<stop offset="0" stop-color="{TOKENS["neon"]}" stop-opacity="0.13"/>'
         f'<stop offset="1" stop-color="{TOKENS["neon"]}" stop-opacity="0"/></radialGradient>'
-        '<radialGradient id="g2" cx="0.85" cy="0.7" r="0.55">'
+        '<radialGradient id="g2" cx="0.88" cy="0.55" r="0.55">'
         f'<stop offset="0" stop-color="{TOKENS["violet"]}" stop-opacity="0.22"/>'
         f'<stop offset="1" stop-color="{TOKENS["violet"]}" stop-opacity="0"/></radialGradient>'
-        '<linearGradient id="fade" x1="0" x2="1">'
-        f'<stop offset="0" stop-color="{TOKENS["neon"]}" stop-opacity="0"/>'
-        f'<stop offset="0.25" stop-color="{TOKENS["neon"]}"/>'
-        f'<stop offset="0.75" stop-color="{TOKENS["violet"]}"/>'
-        f'<stop offset="1" stop-color="{TOKENS["violet"]}" stop-opacity="0"/></linearGradient>'
     )
     parts = [
         f"<defs>{glow}</defs>",
         dot_grid(width, height),
         f'<rect width="{width}" height="{height}" rx="24" fill="url(#g1)"/>',
         f'<rect width="{width}" height="{height}" rx="24" fill="url(#g2)"/>',
+        text(64, 70, "Maex Voice Agent", 24, "ink", weight=700),
+        text(
+            64,
+            100,
+            "An AI phone agent for restaurants: reservations, pickups, deliveries.",
+            15,
+            "muted",
+        ),
+        text(64, 166, "the caller says", 14, "muted"),
     ]
-    mark, _ = wordmark(72, 78, 104)
+    for i, line in enumerate(EXAMPLE_SAID):
+        parts.append(text(64, 196 + i * 26, line, 19, "ink"))
+    # The voice runs into the sign: the wave ends where the logo's own crossbar,
+    # a waveform too, takes over.
+    parts.append(neon(wave_points(64, 436, 290, 30, 7, 140), 4.5, "neon"))
+    _, logo_width = wordmark(0, 0, 96)
+    mark, _ = wordmark(600 - logo_width / 2, 242, 96)
     parts.append(mark)
-    parts.append(text(74, 252, "Maex Voice Agent", 30, "ink", weight=700))
-    parts.append(text(74, 288, "An AI phone agent for restaurants:", 18, "muted"))
-    parts.append(text(74, 314, "reservations, pickups and deliveries.", 18, "muted"))
-    parts.append(text(74, 340, "The AI understands. The code decides.", 18, "neon"))
-    # The voice line runs under everything, from the logo into the slip.
-    line = wave_points(40, 760, 392, 16, 9, 160)
     parts.append(
-        f'<path class="wave" d="{path_of(line)}" fill="none" stroke="url(#fade)" '
-        'stroke-width="2.5" stroke-linecap="round"/>'
-    )
-    # The state slip.
-    sx, sy, sw, sh = 780, 64, 360, 312
-    parts.append(slip(sx, sy, sw, sh, "State", de(cases.date if cases else None)))
-    items = [
-        ("version", facts.version),
-        ("stage", facts.stage.replace("Stage ", "")),
-        ("test functions", f"{thousands(facts.tests // 100 * 100)}+"),
-    ]
-    if cases:
-        items.insert(0, ("eval, real model", f"{cases.passed}/{cases.total}"))
-    next_gate = next((g.key for g in facts.gates if not g.passed), "none")
-    items.append(("next gate", next_gate))
-    for i, (label, value) in enumerate(items):
-        yy = sy + 92 + i * 40
-        parts.append(text(sx + 24, yy, label, 16, "muted"))
-        big = i == 0 and cases is not None
-        parts.append(
-            text(
-                sx + sw - 24,
-                yy,
-                value,
-                22 if big else 17,
-                "neon" if big else "ink",
-                anchor="end",
-                weight=700,
-            )
+        text(
+            600,
+            384,
+            "The AI understands. The code decides.",
+            15,
+            "neon",
+            anchor="middle",
         )
+    )
     parts.append(
-        f'<line x1="{sx + 24}" y1="{sy + sh - 52}" x2="{sx + sw - 24}" y2="{sy + sh - 52}" '
+        f'<path class="wire" d="M764 290 L806 290" fill="none" stroke="{TOKENS["violet"]}" '
+        'stroke-width="2.5" stroke-dasharray="5 5"/>'
+        f'<path d="M800 282 L812 290 L800 298" fill="none" stroke="{TOKENS["violet"]}" '
+        'stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'
+    )
+    sx, sy, sw, sh = 826, 140, 314, 268
+    header, when, item, dish = EXAMPLE_SLIP
+    parts.append(slip(sx, sy, sw, sh, header, when))
+    parts.append(text(sx + 24, sy + 90, item, 18, "ink", weight=700))
+    parts.append(text(sx + 24, sy + 114, dish, 15, "muted"))
+    rule = (
+        '<line x1="{x1}" y1="{y}" x2="{x2}" y2="{y}" '
         f'stroke="{TOKENS["grid"]}" stroke-dasharray="4 6"/>'
     )
-    model = cases.model if cases else "no real-model run yet"
-    parts.append(text(sx + 24, sy + sh - 22, model, 14, "muted"))
+    parts.append(rule.format(x1=sx + 24, x2=sx + sw - 24, y=sy + 134))
+    for i, (label, value) in enumerate(
+        [("read back", "heard"), ("caller's yes", "given")]
+    ):
+        yy = sy + 164 + i * 28
+        parts.append(text(sx + 24, yy, label, 15, "muted"))
+        parts.append(text(sx + sw - 24, yy, value, 15, "ink", anchor="end"))
+    parts.append(rule.format(x1=sx + 24, x2=sx + sw - 24, y=sy + 208))
+    parts.append(text(sx + 24, sy + 242, "order", 15, "muted"))
+    parts.append(
+        text(sx + sw - 24, sy + 244, "confirmed", 21, "neon", anchor="end", weight=700)
+    )
     css = (
-        ".wave{stroke-dasharray:14 10;animation:flow 3s linear infinite}"
-        "@keyframes flow{to{stroke-dashoffset:-48}}"
-        "@media (prefers-reduced-motion:reduce){.wave{animation:none}}"
+        ".wire{animation:flow 1.2s linear infinite}"
+        "@keyframes flow{to{stroke-dashoffset:-20}}"
+        "@media (prefers-reduced-motion:reduce){.wire{animation:none}}"
     )
     desc = (
-        f"MÆX, Maex Voice Agent, an AI phone agent for restaurants. Version {facts.version}, "
-        f"{facts.stage}, about {facts.tests // 100 * 100} tests"
-        + (
-            f", latest real-model eval {cases.passed} of {cases.total} on {de(cases.date)}."
-            if cases
-            else "."
-        )
+        "MÆX, Maex Voice Agent, an AI phone agent for restaurants. An example call "
+        "from left to right: the caller orders dish 25 twice for pickup at half past "
+        "six, the neon sign MÆX stands in the middle, and on the right lies the "
+        "order slip, read back, confirmed by the caller's yes."
     )
     return document(width, height, "MÆX banner", desc, "\n".join(parts), css)
 
@@ -2365,16 +2375,148 @@ def readme_text(facts: Facts, current: str) -> str:
 # --------------------------------------------------------------------------- render
 
 
+# ------------------------------------------------------------------------- roadmap
+# The stages of docs/01_STATUS.md "Roadmap" as stations on one line. Name and goal
+# are short forms of that table; the blocks of docs/07_WORKPACKAGES.md that build a
+# stage give its bar. Block 5b (deployment) is needed from stage 1 on, block 6
+# covers stages 5 and 6 and stands under 5. A test holds both lists to the docs.
+STAGES: list[tuple[str, list[str], list[str]]] = [
+    ("Foundation", ["facts, rights,", "budget"], ["0"]),
+    ("Reservation", ["one call,", "end to end"], ["1", "1b", "1c", "1d", "2", "5b"]),
+    ("Pickup", ["the menu,", "understood"], ["3"]),
+    ("Delivery", ["address", "and zone"], ["4"]),
+    ("Shadow run", ["real errors,", "measured"], ["5"]),
+    ("Overflow", ["AI answers", "when busy"], ["6"]),
+    ("Primary", ["AI answers", "first"], []),
+]
+
+
+def current_stage(facts: Facts) -> int:
+    m = re.search(r"\d+", facts.stage)
+    return int(m.group()) if m else 0
+
+
+def asset_roadmap(facts: Facts) -> str:
+    width, height = 1200, 390
+    here = current_stage(facts)
+    done = sum(b.count("done") for b in facts.blocks)
+    total = sum(b.total for b in facts.blocks)
+    next_gate = next((g.key for g in facts.gates if not g.passed), "none")
+    passed = {g.key for g in facts.gates if g.passed}
+    line_y = 200
+    xs = [100 + i * 166 for i in range(len(STAGES))]
+    parts = [
+        dot_grid(width, height),
+        text(40, 50, "ROADMAP", 14, "muted", spacing=2.4, weight=700),
+        text(1160, 50, de(facts.progress_date), 14, "muted", anchor="end"),
+        text(
+            40,
+            80,
+            f"Stage {here} of {len(STAGES) - 1}, next gate {next_gate}. "
+            f"Built ahead of the gates: {done} of {total} tasks done.",
+            15,
+            "neon",
+        ),
+        f'<path d="{path_of(wave_points(40, 1160, line_y, 5, 14, 200))}" fill="none" '
+        f'stroke="{TOKENS["plum"]}" stroke-width="2.5" stroke-linecap="round"/>',
+        # The lit part of the line: from the plan to the stage that is running.
+        neon(wave_points(40, xs[here], line_y, 5, 1 + here * 2, 30 + here * 30), 3.5),
+    ]
+    for i, (name, goal, keys) in enumerate(STAGES):
+        x = xs[i]
+        if i == here:
+            parts.append(
+                f'<circle cx="{x}" cy="{line_y}" r="26" fill="{TOKENS["neon"]}" opacity="0.18"/>'
+            )
+            parts.append(
+                text(
+                    x,
+                    line_y - 44,
+                    "we are here",
+                    13,
+                    "neon",
+                    anchor="middle",
+                    weight=700,
+                )
+            )
+        lit = i <= here
+        parts.append(
+            f'<circle cx="{x}" cy="{line_y}" r="17" '
+            f'fill="{TOKENS["neon"] if i == here else TOKENS["bg"]}" '
+            f'stroke="{TOKENS["neon"] if lit else TOKENS["plum"]}" stroke-width="2.5"/>'
+        )
+        parts.append(
+            text(
+                x,
+                line_y + 6,
+                str(i),
+                16,
+                "bg" if i == here else "neon" if lit else "muted",
+                anchor="middle",
+                weight=700,
+            )
+        )
+        parts.append(text(x, line_y + 56, name, 15, "ink", anchor="middle", weight=700))
+        for j, row in enumerate(goal):
+            parts.append(
+                text(x, line_y + 78 + j * 17, row, 12.5, "muted", anchor="middle")
+            )
+        blocks = [b for b in facts.blocks if b.key in keys]
+        b_done = sum(b.count("done") for b in blocks)
+        b_total = sum(b.total for b in blocks)
+        if b_total:
+            parts.append(
+                f'<rect x="{x - 55}" y="{line_y + 122}" width="110" height="6" rx="3" '
+                f'fill="{TOKENS["grid"]}"/>'
+                f'<rect x="{x - 55}" y="{line_y + 122}" width="{f(110 * b_done / b_total)}" '
+                f'height="6" rx="3" fill="{TOKENS["neon"]}"/>'
+            )
+            label = f"{b_done}/{b_total} built"
+        else:
+            label = "built with stage 5"
+        parts.append(text(x, line_y + 148, label, 12, "muted", anchor="middle"))
+        gate = f"G{i}"
+        if i < len(STAGES) - 1:
+            gx = x + 83
+            color = (
+                "neon" if gate in passed else "violet" if gate == next_gate else "plum"
+            )
+            parts.append(
+                f'<rect x="{gx - 8}" y="{line_y - 8}" width="16" height="16" '
+                f'transform="rotate(45 {gx} {line_y})" fill="{TOKENS["bg"]}" '
+                f'stroke="{TOKENS[color]}" stroke-width="2"/>'
+            )
+            parts.append(
+                text(
+                    gx,
+                    line_y - 20,
+                    gate,
+                    12.5,
+                    "muted" if color == "plum" else color,
+                    anchor="middle",
+                    weight=700,
+                )
+            )
+    desc = (
+        f"The roadmap as one line with a station per stage, 0 to {len(STAGES) - 1}, and "
+        f"a gate between two stages. Stage {here} is running, the next gate is "
+        f"{next_gate}. Under each station: how many of its tasks are built. "
+        f"{done} of {total} tasks are done as of {de(facts.progress_date)}."
+    )
+    return document(width, height, "Roadmap", desc, "\n".join(parts))
+
+
 def build(facts: Facts) -> dict[str, str]:
     return {
         "logo-mark.svg": asset_logo_mark(),
         "logo-wordmark.svg": asset_logo_wordmark(),
-        "banner.svg": asset_banner(facts),
+        "banner.svg": asset_banner(),
         "call-flow.svg": asset_call_flow(facts),
         "call-flow-static.svg": asset_call_flow(facts, animated=False),
         "eval-latest.svg": asset_eval_latest(facts),
         "eval-trend.svg": asset_eval_trend(facts),
         "progress.svg": asset_progress(facts),
+        "roadmap.svg": asset_roadmap(facts),
         "voice-bench.svg": asset_voice_bench(facts),
         "rules.svg": asset_rules(),
         "divider.svg": asset_divider(),

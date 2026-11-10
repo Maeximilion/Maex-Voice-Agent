@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import itertools
+import re
 import threading
 import xml.dom.minidom
 from datetime import date, datetime
@@ -223,8 +224,9 @@ def test_every_asset_is_valid_svg_and_dated() -> None:
         assert "<title" in content and "<desc" in content, name
     latest = facts.latest("cases")
     assert latest is not None
-    for name in ("banner.svg", "eval-latest.svg"):
-        assert latest.date.isoformat() in assets[name], name
+    assert latest.date.isoformat() in assets["eval-latest.svg"]
+    # The banner shows an example call and no measured number, so it carries no date.
+    assert latest.date.isoformat() not in assets["banner.svg"]
     assert facts.progress_date is not None
     assert facts.progress_date.isoformat() in assets["progress.svg"]
 
@@ -1390,3 +1392,31 @@ def test_mark_uploaded_refuses_main(
     (assets / ra.UPLOADED).unlink(missing_ok=True)
     assert ra.main(["mark-uploaded"]) == 1
     assert not (assets / ra.UPLOADED).exists()
+
+
+# --- roadmap ----------------------------------------------------------------------
+
+
+def test_every_block_feeds_exactly_one_stage_of_the_roadmap() -> None:
+    """A new block in docs/07 must get a stage, or its tasks vanish from the bars."""
+    keys = [key for _name, _goal, blocks in ra.STAGES for key in blocks]
+    assert sorted(keys) == sorted(block.key for block in ra.gather().blocks)
+    assert len(keys) == len(set(keys))
+
+
+def test_the_roadmap_has_one_station_per_stage_of_the_status_table() -> None:
+    table = ra.STATUS.read_text(encoding="utf-8").split("## Roadmap", 1)[1]
+    table = table.split("\n## ", 1)[0]
+    stages = re.findall(r"^\| \**(\d) [A-Z]", table, re.M)
+    assert [int(n) for n in stages] == list(range(len(ra.STAGES)))
+
+
+def test_the_roadmap_is_dated_and_lights_the_running_stage() -> None:
+    facts = ra.gather()
+    roadmap = ra.build(facts)["roadmap.svg"]
+    assert facts.progress_date is not None
+    assert facts.progress_date.isoformat() in roadmap
+    assert roadmap.count("we are here") == 1
+    facts.stage = "Stage 2 (Pickup)"
+    assert ra.current_stage(facts) == 2
+    assert "Stage 2 of 6" in ra.asset_roadmap(facts)
