@@ -37,3 +37,6 @@ deploy/asterisk/drill-run/
 
 # Spike T-10.3: model files, samples, results
 deploy/speech/run/
+
+# Draft variants of README images, shown locally and never committed (docs/15)
+.preview/
