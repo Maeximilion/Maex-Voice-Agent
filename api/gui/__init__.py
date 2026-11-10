@@ -6,6 +6,19 @@ from fastapi.staticfiles import StaticFiles
 __all__ = ["mount_gui"]
 
 
+class _RevalidatedStatic(StaticFiles):
+    """The view's own files, asked for again on every use (`no-cache`).
+
+    Without a cache header a browser keeps a script for hours by guesswork, and
+    a page from a newer build then runs the script of an older one. The ETag
+    turns the question into a 304 without a body."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def mount_gui(app: FastAPI) -> None:
     """Seiten unter /gui, eigene Dateien unter /gui/static (docs/13 §Caddy).
 
@@ -22,4 +35,6 @@ def mount_gui(app: FastAPI) -> None:
         from api.gui.dev import router as dev_router
 
         app.include_router(dev_router)
-    app.mount("/gui/static", StaticFiles(directory=str(STATIC)), name="gui-static")
+    app.mount(
+        "/gui/static", _RevalidatedStatic(directory=str(STATIC)), name="gui-static"
+    )

@@ -248,5 +248,7 @@ answers 401 with `HX-Redirect: /gui/entsperren`; without a session it is
 
 See [22 – Language choices and measured performance](22_LANGUAGE_AND_PERFORMANCE.md)
 for the current Python/native-engine boundaries, measurement gate (#550/#551),
-gradual mypy hardening (#552) and the two open TypeScript UI strategies (#553).
-No runtime or interface migration has been approved by this assessment.
+gradual mypy hardening (#552) and the TypeScript toolchain for the browser code
+(#553, decided 09.11.2026: the handwritten JavaScript moves to TypeScript file by
+file, #626; Jinja2, HTMX and SSE stay). No runtime migration and no separate
+interface has been approved.

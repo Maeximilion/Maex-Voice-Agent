@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.28.1
+> Status: 10.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.2
 
 ---
 
@@ -60,6 +60,8 @@ on the PR. Claude automation remains planned, and `docs/cross-agent-review`
 waits for working inline reviews. The deferred draft-first/staged-CI idea is in
 docs/21. Historical session details are in `docs/00_PCF.md` section 13.
 
+**Browser code in TypeScript (10.11.2026, #553 done):** standing rule (Maxi, 10.11.2026): browser logic is TypeScript from now on and no language moves back (`CLAUDE.md` §8, check in `api/tests/test_browser_code_language.py`). The toolchain is built and `raumplan-geometry` is the first migrated file (docs/22 "Browser code in TypeScript"). Next: `base.js`, `raumplan.js`, `app.js`, one pull request each (T-3.18, #626). Editing browser code needs Node on the host (`npm ci && npm run build`); the server and `make up` do not.
+
 ### In Claude Code (can start immediately, without vendor)
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026). Protocol ready 16.10.2026: `docs/vorlagen/bedientest_protokoll.md`, method in docs/06 section 8; Maxi runs it with two different team members, one after the other, and records both verdicts here (full text: docs/HISTORY.md)
 5. **T-2.4** `agent/llm.py` against a real model with token counting. Parts 1 to 3 and the core guards built 06.10.2026 (the client, tokens and cost per call, the model switch for text phone and evals, summary above). The cart in the conversation state built 07.10.2026, so a real model keeps the order across turns (summary above). (full text: docs/HISTORY.md)
@@ -117,6 +119,7 @@ Decided D1 to D30: same archive section.
 ---
 
 ## Made Assumptions (subject to change)
+- **TypeScript toolchain (#553, 10.11.2026), Claude's choices, awaiting Maxi** (Maxi: "do it the best way"): (a) the compiled JavaScript is committed and CI's job `browser` fails when it differs from a fresh build, instead of a Node stage in the Dockerfile; (b) ES modules without a bundler, pages load `<script type="module">`; (c) `target` ES2020 as the oldest browser syntax; (d) TypeScript 7.0.2 with `strict`, `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes`; (e) data from the server is checked at run time by hand-written functions, no library, and the floor plan editor now refuses a room document it cannot read, including a fixture of an unknown kind, instead of drawing it partly; (f) static files of the view answer with `Cache-Control: no-cache`, so a page never runs an older build's script, and the two editor files got the one-time address `?v=2` for copies cached before that.
 - **Operator login (#571 second part, 10.11.2026), Claude's choices, awaiting Maxi:** (a) the dashboard's pages are English (CLAUDE.md §8 keeps German for callers and the team only); (b) the package is `api/dashboard/` and `db/dashboard/`, not `operator`, which is a standard-library module name; (c) the sign-in is one form (name, password, code), not two steps, so there is no half-signed-in state; (d) a device cookie as on the restaurant's login, so a guesser cannot keep the operator out; (e) passkeys, the push to `ops`, step-up, the dashboard's image target and its Compose file follow in the next pull request of the stack.
 - **Calls left open (#545, 09.11.2026), Claude's choices, awaiting Maxi:** (a) the grace past `max_call_seconds` is 10 minutes: the core checks the limit only between turns, and the last utterance (up to 60 s), the turn, the ... (b) A tenant that lowers `max_call_seconds` by more than 10 minutes during a call can have that call closed as `error` early; the setting is read at ... (c) `ended_at` is the time of the pass and `duration_seconds` stays empty: when the leg really ended is not known. (d) Outcome `error` also over a `callback` that `team_missed` set before: an error wins, as in `end_call`.
 - **Restaurant login, first part (#570 a, 09.11.2026), Claude's choices, awaiting Maxi:** (a) one team PIN per restaurant, set with the password by the setup link and by the operator, not one per device: staff share the tablet, and a PIN ... (b) the login holds in every environment, dev and test included, so a stack started with the wrong `ENV` is never open; the dev quickstart and the ... (c) only a change moves the 15 minutes: reading, opening a sheet and the event stream do not, so a tablet that only shows the board locks; (d) until the dashboard exists (#571) the operator makes the setup link and signs devices out on the stack with `python -m api.jobs.gui_access`, and ... (e) a new password signs out every device, also when it is set only because the owner forgot it; (f) the sign-in waits are per account and per client address, and a browser that signed in before counts on its own device cookie (review of #585): a ... (g) Caddy's Basic-Auth is gone with this part (docs/23 §11 item 1); nothing is reachable from outside yet, and the security audit of docs/09 §5 comes ...
@@ -260,6 +263,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 10.11.2026 | **TypeScript toolchain for the browser code (#553, T-3.17 done).** `package.json` pins `typescript` 7.0.2 as the only package, `tsconfig.json` compiles `api/gui/ts/*.ts` to committed ES modules in `api/gui/static/`, CI's new job `browser` (in the required check `test`) fails on a type error or a stale output, Dependabot watches npm. First file: `raumplan-geometry.ts`, identical to the old build on 20,000 random rounds over every exported function; `toClient` now checks the server's room document at run time. `raumplan.js` is loaded as a module and imports it. Rule and migration steps: docs/22; remaining files: T-3.18, #626. |
 | 10.11.2026 | **README front page rebuilt inside the Night Service brand (#622).** New order: the banner as one example call, the demo recording, the call flow as a transcript with a station rail, the capability table by area, the roadmap as a line of stages, the architecture as two paths; local badges instead of an image service. `python -m scripts.readme_demo` records the demo from a real replay (`scripts/demo/pickup_call.json`, caller ID from the range reserved for media productions). `scripts/readme_check.py` checks links, anchors, SVG safety, image sizes and blocked terms in the CI job `readme`, which the required check `test` now stands for. `docs/15_README_STRATEGY.md`: section order, the rules every image keeps, four variants for a new image with Maxi's pick, when the demo is recorded again. Assumption: the full capability lists stay in the README, folded under the table, instead of moving into this file, which its upkeep rule keeps small. Left with Maxi: the Actions secret `README_BLOCKLIST`, the About text and topics of the repository, a new social preview, the profile README draft. |
 | 10.11.2026 | **Operator login, second part of the operator dashboard (#571).** `api/dashboard/` signs the operator in with password plus a TOTP code or a recovery code, against its own database and migrations (`db/dashboard/`); not reachable from outside yet (docs/23 §5 "Built"). |
 | 10.11.2026 | **STATUS upkeep rule (#562 closed).** A weekly sweep archives done and decided rows older than one month to `docs/HISTORY.md` (findable by ID with `grep -n`), `/done` archives what its task finishes, and `/start` suggests the sweep when none ran in 7 days or the file passes 80 KB; open and doubtful rows stay. |
@@ -296,6 +300,9 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.29.2 · 10.11.2026:** Standing rule: browser logic is TypeScript, no language moves back (CLAUDE.md §8, guard test)
+- **v2.29.1 · 10.11.2026:** Static files of the view are revalidated (no-cache); before/after browser session on #627 identical
+- **v2.29.0 · 10.11.2026:** TypeScript toolchain for the browser code: committed ES modules, CI job browser, raumplan-geometry migrated (#553, T-3.17 done; rest T-3.18, #626)
 - **v2.28.1 · 10.11.2026:** Social preview redrawn as the banner's example call; upload in the repository settings still open (#623)
 - **v2.28.0 · 10.11.2026:** README front page rebuilt: example-call banner, demo recording, transcript call flow, two-path architecture, roadmap line, local badges; README job in the required check (#622)
 - **v2.27.18 · 10.11.2026:** chore(deps): bump compose-images group with 3 updates (#603)

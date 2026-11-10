@@ -38,6 +38,9 @@ deploy/asterisk/drill-run/
 # Spike T-10.3: model files, samples, results
 deploy/speech/run/
 
+# The TypeScript compiler for the browser code (docs/22), installed by `npm ci`
+node_modules/
+
 # Draft variants of README images, shown locally and never committed (docs/15)
 .preview/
 

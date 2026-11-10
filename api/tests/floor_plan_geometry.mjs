@@ -2,10 +2,10 @@
 // Usage: node api/tests/floor_plan_geometry.mjs api/gui/static/raumplan-geometry.js
 // (test_gui_floor_plan_geometry.py runs it). Prints "ok" or throws.
 import assert from 'node:assert'
-import { createRequire } from 'node:module'
 import path from 'node:path'
+import { pathToFileURL } from 'node:url'
 
-const G = createRequire(import.meta.url)(path.resolve(process.argv[2]))
+const G = await import(pathToFileURL(path.resolve(process.argv[2])).href)
 
 // The accepted seat rule (docs/design/floor-plan/README.md): six seats are
 // 2 + 2 with both ends occupied, the second reported mistake.
@@ -104,5 +104,17 @@ assert.equal(state.revision, 3)
 const back = G.toServer(state)
 const { id, revision, ...content } = doc
 assert.deepEqual(back, content)
+
+// What the server sends is checked, not trusted (docs/22): a broken document is
+// refused whole instead of drawing a room from undefined values.
+assert.throws(() => G.toClient({ ...doc, tables: 'T1' }), /tables is not a list/)
+assert.throws(() => G.toClient({ ...doc, width_cm: '1000' }), /width_cm is not a number/)
+assert.throws(() => G.toClient({ ...doc, tables: [{ ...doc.tables[0], end_seat: 'middle' }] }), /end_seat/)
+assert.throws(() => G.toClient(null), /the room is not an object/)
+// An unknown fixture is refused as well: dropped, the next save would delete it.
+assert.throws(() => G.toClient({ ...doc, fixtures: [{ kind: 'plant', id: 'f9' }] }), /fixture kind plant is unknown/)
+// A label without a rotation lies across.
+const flat = G.toClient({ ...doc, fixtures: [{ kind: 'label', id: 'f4', text: 'Fenster', x_cm: 200, y_cm: 55, size: 'large' }] })
+assert.equal(flat.objects[1].angle, 0)
 
 console.log('ok')

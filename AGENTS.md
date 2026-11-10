@@ -115,6 +115,7 @@ How to review:
 - A provider name outside `api/telephony/adapters/` is P2; `port.py` and `handler.py` there stay provider-neutral.
 - n8n and external APIs are reached through the outbox, never directly from `domain/`.
 - Errors reach the agent as structured JSON, never as a stack trace.
+- New logic that runs in the browser is TypeScript in `api/gui/ts/` (`CLAUDE.md` section 8, `docs/22`); a new handwritten `.js` file, a new inline script, or new logic added to a not yet migrated JavaScript file without migrating it is P2. A compiled file in `api/gui/static/` is reviewed through its `.ts` source.
 
 ### Shell scripts and operations (`scripts/*.sh`, `deploy/`, `Makefile`)
 

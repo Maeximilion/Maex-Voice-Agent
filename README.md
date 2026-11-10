@@ -269,6 +269,9 @@ make eval-voice   # the cases spoken and heard by the service's ear on the graph
 make readme-assets  # redraw the README images from docs/metrics/, the task list and the status (Python 3.12 or newer)
 make readme-check   # README links, anchors, image safety and blocked terms; then images up to date with their data
 
+# only when editing the browser code in api/gui/ts/ (Node 24 or newer on the host, docs/22):
+npm ci && npm run build   # compile it to api/gui/static/; the result is committed, the server needs no Node
+
 # in the api container (docker compose exec api ...) or a local environment with DATABASE_URL on localhost:
 python -m sim.cli                                   # conversation in the terminal
 python -m sim.cli --model qwen3:14b                 # the same on a local model (LLM_* in .env, docs/18 §5)
