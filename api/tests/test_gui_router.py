@@ -144,6 +144,16 @@ def test_page_offers_the_sound_button_and_the_in_page_question(client, tenant_id
     assert "el.inert = true" in script and 'k.key !== "Tab"' in script
 
 
+def test_the_sound_hint_keeps_a_gap_to_the_columns_below():
+    """Maxi, 11.11.2026: the bar "Ton an" touched the column headings under it."""
+    css = (Path(__file__).resolve().parents[1] / "gui/static/app.css").read_text(
+        encoding="utf-8"
+    )
+    rule = css.split(".betrieb button.ton-an{")[1].split("}")[0]
+
+    assert "margin-bottom:var(--s3)" in rule
+
+
 def test_kopfzeile_folgt_dem_modus(client, engine, tenant_id):
     with Session(engine) as s:
         config = s.get(ServiceConfig, tenant_id)
