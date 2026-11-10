@@ -103,6 +103,15 @@ def _code(secret: str, at: datetime) -> str:
     return totp.code_at(secret, int(at.timestamp()) // totp.STEP_SECONDS)
 
 
+def _wrong(secret: str, at: datetime) -> str:
+    """A six-digit code none of the three accepted steps has."""
+    step = int(at.timestamp()) // totp.STEP_SECONDS
+    taken = {totp.code_at(secret, near) for near in (step - 1, step, step + 1)}
+    return next(
+        code for code in ("000000", "000001", "000002", "000003") if code not in taken
+    )
+
+
 def _sign_in(client, code: str, name: str = "maxi", password: str = PASSWORD):
     client.get("/login")
     return client.post(
@@ -138,7 +147,7 @@ def test_password_and_totp_open_the_dashboard(client, factors, clock, sessions):
     [
         ("nobody", PASSWORD, "right"),
         ("maxi", "falsches-passwort", "right"),
-        ("maxi", PASSWORD, "000000"),
+        ("maxi", PASSWORD, "wrong"),
         ("maxi", PASSWORD, ""),
         ("maxi", PASSWORD, "aaaa-bbbb-cccc-dddd"),
     ],
@@ -148,13 +157,33 @@ def test_every_wrong_input_gets_the_same_answer(
 ):
     if code == "right":
         code = _code(factors.totp_secret, clock.at)
-    elif code == "000000" and _code(factors.totp_secret, clock.at) == code:
-        pytest.skip("the real code happens to be 000000")
+    elif code == "wrong":
+        code = _wrong(factors.totp_secret, clock.at)
     answer = _sign_in(client, code, name=name, password=password)
     assert answer.status_code == 401
     assert web.FAILED in answer.text
     assert "ops_session" not in answer.cookies
     assert client.get("/", follow_redirects=False).headers["location"] == "/login"
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [
+        # 000000 is the code of the step before START (Codex on #619).
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAABA5XX",
+        # 000000 is the code of START itself.
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAF4PD",
+    ],
+)
+def test_a_wrong_code_is_wrong_for_every_secret_and_000000_can_be_right(
+    client, sessions, clock, monkeypatch, secret
+):
+    monkeypatch.setattr(totp, "new_secret", lambda: secret)
+    with sessions() as db:
+        access.create_account(db, "maxi", PASSWORD)
+    assert _wrong(secret, clock.at) != "000000"
+    assert _sign_in(client, _wrong(secret, clock.at)).status_code == 401
+    assert _sign_in(client, "000000").status_code == 303
 
 
 def test_a_right_password_with_a_wrong_factor_is_audited_as_such(
@@ -205,7 +234,8 @@ def test_every_third_failure_brings_a_wait_even_for_the_right_input(
     client, factors, clock
 ):
     for _ in range(3):
-        assert _sign_in(client, "000001").status_code == 401
+        wrong = _wrong(factors.totp_secret, clock.at)
+        assert _sign_in(client, wrong).status_code == 401
     right = _code(factors.totp_secret, clock.at)
     answer = _sign_in(client, right)
     assert answer.status_code == 401
@@ -465,9 +495,15 @@ def test_cli_refuses_a_weak_password_a_taken_name_and_an_unknown_one(
     sessions, monkeypatch, capsys
 ):
     monkeypatch.setattr(cli, "SessionLocal", sessions)
-    monkeypatch.setattr(cli, "getpass", lambda _prompt: "kurz")
-    assert cli.main(["add", "maxi"]) == 1
-    assert "mindestens" in capsys.readouterr().err
+    for weak, says in (
+        ("kurz", "12 to 128 characters"),
+        ("x" * 129, "12 to 128 characters"),
+        ("restaurant123", "too easy to guess"),
+        ("abababababab", "too easy to guess"),
+    ):
+        monkeypatch.setattr(cli, "getpass", lambda _prompt, weak=weak: weak)
+        assert cli.main(["add", "maxi"]) == 1
+        assert says in capsys.readouterr().err
     monkeypatch.setattr(cli, "getpass", lambda _prompt: PASSWORD)
     assert cli.main(["add", "Maxi Muster"]) == 1
     assert "2 to 40 characters" in capsys.readouterr().err

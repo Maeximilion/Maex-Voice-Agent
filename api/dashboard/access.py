@@ -37,6 +37,8 @@ from api.dashboard.models import (
     OperatorSession,
 )
 from api.domain.access.hashing import (
+    PASSWORD_MAX,
+    PASSWORD_MIN,
     hash_secret,
     password_problem,
     token_hash,
@@ -244,9 +246,14 @@ def _checked(name: str, password: str) -> str:
         raise ValueError(
             "The name has 2 to 40 characters: a to z, 0 to 9, dot, dash, underscore."
         )
-    problem = password_problem(password)
-    if problem:
-        raise ValueError(problem)
+    # The restaurant's rule; its messages are German for the team, these are
+    # the operator's.
+    if not PASSWORD_MIN <= len(password) <= PASSWORD_MAX:
+        raise ValueError(
+            f"The password has {PASSWORD_MIN} to {PASSWORD_MAX} characters."
+        )
+    if password_problem(password):
+        raise ValueError("This password is too easy to guess. Choose another one.")
     return name
 
 
