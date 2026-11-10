@@ -37,9 +37,10 @@ def main(argv: list[str] | None = None) -> int:
             print(problem, file=sys.stderr)
             return 1
     name = args.name.strip().lower()
-    print("Add this to the authenticator app (as a link or typed in):")
+    # The one place the secret is shown: inside the link (its `secret=` value is
+    # what an app without link import takes typed in).
+    print("Add this link to the authenticator app, or type in its secret= value:")
     print(f"  {totp.uri(factors.totp_secret, name)}")
-    print(f"  secret: {factors.totp_secret}")
     print("Recovery codes, each works once. Keep them offline:")
     for code in factors.recovery_codes:
         print(f"  {code}")
