@@ -175,7 +175,7 @@ jobs:
   # README structure (stdlib only, no path filter: it runs on every push and pull request,
   # so it could become a required check without ever staying pending). Links, anchors and
   # image safety fail the job; a stale generated image stays a warning, like the step in
-  # `checks`. Not part of `test` yet: whether it gates a merge is Maxi's decision (#622).
+  # `checks`. Part of the required check `test` (Maxi, 2026-11-10, #622).
   readme:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -184,7 +184,11 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: README links, anchors and images
+      - name: README links, anchors, images and blocked terms
+        # The secret holds one term per line; without it (a fork, Dependabot) the scan
+        # says so and passes.
+        env:
+          README_BLOCKLIST: ${{ secrets.README_BLOCKLIST }}
         run: python scripts/readme_check.py
       - name: README images match their data (advisory)
         continue-on-error: true
@@ -194,7 +198,7 @@ jobs:
   # `always()`: a job skipped after a failed or cancelled need would count as passed.
   test:
     if: ${{ always() }}
-    needs: [changes, checks, pytest]
+    needs: [changes, checks, pytest, readme]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

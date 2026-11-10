@@ -17,10 +17,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import sys
 import xml.etree.ElementTree as ET
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
@@ -28,6 +29,10 @@ from urllib.parse import unquote, urlsplit
 MAX_SVG_BYTES = 150 * 1024  # the largest generated SVG is about 59 KB
 MAX_GIF_BYTES = 3 * 1024 * 1024  # animated GIFs are the heavy kind
 MAX_PNG_BYTES = 1024 * 1024  # logo and social preview only
+# Terms that must never stand in the README or an image (the pilot's real names).
+# The list is not in the repository: a CI secret, or a git-ignored file per machine.
+BLOCKLIST_ENV = "README_BLOCKLIST"
+BLOCKLIST_FILE = ".readme_blocklist"
 # Schemes that never point at a repository file.
 EXTERNAL_SCHEMES = ("http", "https", "mailto", "tel")
 # Embedded images may stay inline in an SVG; any other data: URL could carry script.
@@ -221,11 +226,45 @@ def check_assets(root: Path) -> list[str]:
     return findings
 
 
+def blocked_terms(root: Path, env: Mapping[str, str] | None = None) -> list[str]:
+    """One term per line, from the secret and from the local file; `#` starts a comment."""
+    text = (os.environ if env is None else env).get(BLOCKLIST_ENV, "")
+    local = root / BLOCKLIST_FILE
+    if local.is_file():
+        text += "\n" + local.read_text(encoding="utf-8")
+    terms = (line.strip().casefold() for line in text.splitlines())
+    return [term for term in terms if term and not term.startswith("#")]
+
+
+def check_blocklist(root: Path, terms: list[str]) -> list[str]:
+    """README and SVG text, compared without case. A finding names the place and the
+    entry's number, never the term: the log of a public repository is public."""
+    findings = []
+    files = [root / "README.md", *sorted((root / ".github" / "assets").glob("*.svg"))]
+    for path in files:
+        if not path.is_file():
+            continue
+        rel = path.relative_to(root).as_posix()
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for number, line in enumerate(lines, 1):
+            folded = line.casefold()
+            findings += [
+                f"{rel}:{number}: a blocked term (entry {index} of the list)"
+                for index, term in enumerate(terms, 1)
+                if term in folded
+            ]
+    return findings
+
+
 def run(root: Path) -> list[str]:
     readme = root / "README.md"
     if not readme.is_file():
         return ["README.md:1: README.md not found"]
-    return [*check_links(root, readme), *check_assets(root)]
+    return [
+        *check_links(root, readme),
+        *check_assets(root),
+        *check_blocklist(root, blocked_terms(root)),
+    ]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -236,7 +275,13 @@ def main(argv: list[str] | None = None) -> int:
         "--root", type=Path, default=Path(__file__).resolve().parent.parent
     )
     args = parser.parse_args(argv)
-    findings = run(args.root.resolve())
+    root = args.root.resolve()
+    if not blocked_terms(root):
+        print(
+            f"blocklist: no list ({BLOCKLIST_ENV} or {BLOCKLIST_FILE}), scan skipped",
+            file=sys.stderr,
+        )
+    findings = run(root)
     for finding in findings:
         print(finding)
     return 1 if findings else 0

@@ -131,7 +131,7 @@ Checked with the colour validator of the `dataviz` skill against `surface` (14.1
 
 ### Rules for every image
 
-`scripts/readme_check.py` holds the mechanical ones in CI (job `readme`, `make readme-check`); the others are for whoever makes the image.
+`scripts/readme_check.py` holds the mechanical ones in CI (job `readme`, part of the required check `test` since 2026-11-10; `make readme-check`); the others are for whoever makes the image. A stale generated image stays a warning there, because two pull requests merged close together would otherwise turn every open one red; the weekly routine redraws.
 
 - It lives in `.github/assets/` and nowhere else, and the README refers to it by a relative path. No image, badge or statistic is loaded from an outside service.
 - An SVG carries no script, no `foreignObject`, no event handler and no reference outside its own file, and stays under 150 KB. A GIF stays under 3 MB, a PNG under 1 MB.
@@ -139,6 +139,7 @@ Checked with the colour validator of the `dataviz` skill against `surface` (14.1
 - Motion is CSS only, shows the whole picture where animation is not supported, and stops under `prefers-reduced-motion`.
 - Invented test data only: the repository's test menu, no real name, no address. A phone number may show only where the product itself shows one, and then only a number from the range the Bundesnetzagentur reserves for media productions (030 23125 000 to 999 and its sister ranges, Amtsblatt-Mitteilung 148/2021), which is assigned to nobody.
 - What an image may not show: a promise, a mockup, a measured number without a date, a provider name outside the voice layer's own row.
+- The pilot's real names never appear. `scripts/readme_check.py` scans the README and the text of every SVG for the terms of a list that is not in the repository: one term per line in the Actions secret `README_BLOCKLIST` (Settings, Secrets and variables, Actions; Maxi keeps it), and on a machine in the git-ignored file `.readme_blocklist` in the checkout. A finding names the place and the entry's number, never the term, because the log of a public repository is public. Without a list the scan says so and passes. It cannot read pixels: a recording or a PNG is looked at by whoever makes it.
 
 ### New and redesigned images
 

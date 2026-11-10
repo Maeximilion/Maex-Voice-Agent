@@ -40,3 +40,6 @@ deploy/speech/run/
 
 # Draft variants of README images, shown locally and never committed (docs/15)
 .preview/
+
+# Terms the README and its images must not contain, one per line (scripts/readme_check.py)
+.readme_blocklist

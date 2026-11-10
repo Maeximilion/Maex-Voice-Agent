@@ -164,3 +164,48 @@ def test_main_exit_codes(tmp_path: Path, capsys) -> None:
 
 def test_real_repository_passes() -> None:
     assert rc.run(REPO) == []
+
+
+# --- blocked terms ----------------------------------------------------------------
+
+
+def test_a_blocked_term_is_found_without_being_printed(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv(
+        rc.BLOCKLIST_ENV, "# real names\nGasthaus Beispiel\n\nMusterdorf\n"
+    )
+    root = make_tree(
+        tmp_path,
+        "# T\n\nWelcome to gasthaus beispiel.\n",
+        **{
+            ".github__assets__a.svg": CLEAN_SVG.replace(
+                "</svg>", "<text>MUSTERDORF</text></svg>"
+            )
+        },
+    )
+    messages = rc.run(root)
+    assert "README.md:3: a blocked term (entry 1 of the list)" in messages
+    assert any(
+        m.startswith(".github/assets/a.svg:") and "entry 2" in m for m in messages
+    )
+    assert not any(
+        "beispiel" in m.casefold() or "musterdorf" in m.casefold() for m in messages
+    )
+
+
+def test_the_local_list_counts_like_the_secret(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv(rc.BLOCKLIST_ENV, raising=False)
+    root = make_tree(
+        tmp_path, "# T\n\nMusterdorf\n", **{".readme_blocklist": "musterdorf\n"}
+    )
+    assert rc.run(root) == ["README.md:3: a blocked term (entry 1 of the list)"]
+
+
+def test_without_a_list_the_scan_is_skipped_and_says_so(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    monkeypatch.delenv(rc.BLOCKLIST_ENV, raising=False)
+    root = make_tree(tmp_path, "# T\n\nMusterdorf\n")
+    assert rc.main(["--root", str(root)]) == 0
+    assert "scan skipped" in capsys.readouterr().err
