@@ -80,6 +80,7 @@ header{background:var(--surface);border-bottom:2px solid var(--line)}
 .betrieb{font-size:var(--fs-body)}
 .betrieb button{min-height:var(--tap);min-width:var(--tap);font-size:var(--fs-body);font-weight:600;padding:var(--s3) 18px}
 .betrieb input[type=text]{min-height:var(--tap)}
+.betrieb select{height:auto;min-height:var(--tap);font-size:var(--fs-body);padding:var(--s3) 14px}
 .betrieb .mode{font-size:var(--fs-body);padding:10px 16px}
 .betrieb .dot{width:28px;height:28px;font-size:16px}
 .betrieb main{padding:var(--s4) var(--s4) 40px}
