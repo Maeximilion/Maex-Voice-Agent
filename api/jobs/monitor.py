@@ -6,6 +6,10 @@ looks at each tenant and pushes to the operator, never to the team:
 - the model cost of the business day above ALARM_COST_PER_DAY_CENTS, once a day;
 - at least ALARM_ERROR_CALLS_PER_HOUR calls with outcome `error` in the last
   hour, at most once a clock hour;
+- the last ALARM_NO_AUDIO_CALLS calls all without any audio of the caller
+  (`calls.line_note`), the newest in the last hour, at most once a clock
+  hour: each of them ended as a silent call does, without the team, and a row
+  of them is one-way audio on our side, not muted telephones (#651);
 - events to n8n that failed in the last hour, at most once a clock hour
   (kitchen slips go to the print bridge, not to n8n, and are left out).
   n8n down shows up here first, so this push does not go through n8n;
@@ -209,6 +213,20 @@ def _due(
             )
         )
 
+    if _no_caller_audio(session, tenant, since):
+        due.append(
+            (
+                "no_caller_audio",
+                hour,
+                "No audio from callers",
+                f"The last {settings.alarm_no_audio_calls} calls brought no audio "
+                "from the caller and were ended as silent calls; the team was "
+                "not rung. One-way audio on our side? Check the access (tunnel, "
+                "router, firewall).",
+                "high",
+            )
+        )
+
     failed = session.scalar(
         select(func.count())
         .select_from(OutboxEvent)
@@ -283,6 +301,29 @@ def _due(
     if to_local(now, tenant.timezone).time() >= time(settings.monitor_report_hour):
         due.append(_day_report(session, tenant, day - timedelta(days=1)))
     return due
+
+
+def _no_caller_audio(session: Session, tenant: Tenant, since: datetime) -> bool:
+    """True when the newest ALARM_NO_AUDIO_CALLS calls that ended all carry
+    the note, and the newest of them ended after `since`: a row from hours
+    ago, with no call after it, is not reported again and again."""
+    # shortcut: every ended call counts, so one the team took before the AI
+    # listened (overflow, paused) ends the row; count only calls the AI
+    # answered once the call log knows which those are.
+    limit = settings.alarm_no_audio_calls
+    if not limit:
+        return False
+    newest = session.execute(
+        select(Call.line_note, Call.ended_at)
+        .where(Call.tenant_id == tenant.id, Call.ended_at.is_not(None))
+        .order_by(Call.ended_at.desc())
+        .limit(limit)
+    ).all()
+    return (
+        len(newest) == limit
+        and all(note == "no_caller_audio" for note, _ in newest)
+        and newest[0].ended_at > since
+    )
 
 
 def _voice_layer(hour: str, probe: Callable[[], float | None]) -> list[Alarm]:

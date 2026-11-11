@@ -266,6 +266,24 @@ def test_failure_in_the_agent_ends_with_the_outage_sentence_and_the_team(
     assert call.ended_at is not None
 
 
+@pytest.mark.parametrize("silent", [True, False])
+def test_a_call_without_caller_audio_is_marked_in_the_call_log(session, tenant, silent):
+    """#651 (Maxi, 11.11.2026): the call ends as a silent one, the team is not
+    rung, and the call log carries the note."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+
+    handler.on_call_ended(
+        "s-1", SpeechUsage(no_caller_audio=silent), caller_hung_up=True
+    )
+
+    note = the_call(session, "s-1").line_note
+    assert note == ("no_caller_audio" if silent else None)
+    assert not port.transfers("s-1")
+
+
 def test_a_model_outage_with_nobody_to_reach_and_a_withheld_number_leaves_a_card(
     session, tenant
 ):

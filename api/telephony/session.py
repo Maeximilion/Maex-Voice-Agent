@@ -141,6 +141,11 @@ class CallSession:
         self._turn_thread: int | None = None
 
         self._answered = False
+        # For the note on a call nothing of the caller reached (#651): has
+        # any frame held more than digital zero, and how often did the
+        # caller's silence run out.
+        self._caller_sound = False
+        self._silences = 0
         self._mark = 0
         # One entry per sentence that is queued on the line and not reported as
         # played: may it be interrupted?
@@ -308,6 +313,9 @@ class CallSession:
         self._turn(lambda: self._events.on_call_started(self.session_id))
 
     def _on_audio(self, at: float, frame: bytes) -> None:
+        if not self._caller_sound and any(frame):
+            # Anything but digital zero: the caller's side reaches us.
+            self._caller_sound = True
         if self._tape is not None:
             self._taped(self._tape.caller, frame)
         listening = self._listening()
@@ -528,6 +536,7 @@ class CallSession:
         if self._digits_due is not None and now >= self._digits_due:
             self._hand_over_digits()
         if self._silence_due is not None and now >= self._silence_due:
+            self._silences += 1
             self._turn(lambda: self._events.on_silence(self.session_id))
 
     # -- pieces -------------------------------------------------------------------------
@@ -774,6 +783,9 @@ class CallSession:
                 SpeechUsage(
                     heard_seconds=self._fed_bytes / (2 * self._sample_rate),
                     spoken_characters=self._spoken_characters,
+                    # Only once a silence passed: a call handed on or gone
+                    # within moments is too short to say that nothing came.
+                    no_caller_audio=self._silences > 0 and not self._caller_sound,
                 ),
                 caller_hung_up=outcome == "closed" and self._answered,
             )

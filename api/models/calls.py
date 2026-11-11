@@ -46,6 +46,8 @@ class Call(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     intent: Mapped[str | None] = mapped_column(Text)
     outcome: Mapped[str | None] = mapped_column(Text)
     transfer_reason: Mapped[str | None] = mapped_column(Text)
+    # What was wrong with the line, if anything (`schemas.calls.LineNote`).
+    line_note: Mapped[str | None] = mapped_column(Text)
     cost_cents: Mapped[int | None] = mapped_column(Integer)
     model: Mapped[str | None] = mapped_column(Text)
     tool_calls: Mapped[list[dict[str, Any]]] = mapped_column(
