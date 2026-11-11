@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 11.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.37.0
+> Status: 12.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.37.1
 
 ---
 
@@ -305,6 +305,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.37.1 · 12.11.2026:** Call list filter: selects on the board get the height, font and padding of the buttons, so their text is no longer cut
 - **v2.37.0 · 11.11.2026:** T-8.7 (#661): the call list /gui/anrufe in its first form, with the marked number of a call without caller audio (#651)
 - **v2.36.0 · 11.11.2026:** #651 points 1 and 2: calls.line_note marks a call without caller audio (migration 036), monitor alarm after ALARM_NO_AUDIO_CALLS in a row; T-8.7 (#661) call list
 - **v2.35.0 · 11.11.2026:** #652: an outage with nobody to reach asks a withheld caller for a number, a queued transfer survives a broken line, a leg closed before the answer is no hung-up caller; #651 decided (Maxi)
