@@ -110,7 +110,7 @@ def test_every_route_of_the_view_refuses_without_a_session(client, method, path)
 
 
 def test_a_page_load_goes_to_the_sign_in(client):
-    for path in ("/gui", "/gui/", "/gui/kennzahlen", "/gui/raumplan"):
+    for path in ("/gui", "/gui/", "/gui/kennzahlen", "/gui/anrufe", "/gui/raumplan"):
         answer = client.get(path, headers=HTML)
         assert answer.status_code == 303, path
         assert answer.headers["location"] == "/gui/anmelden"

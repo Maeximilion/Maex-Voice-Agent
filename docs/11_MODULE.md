@@ -124,6 +124,7 @@ Anruf, ganz gleich wie er ausgeht.
 - `routing.py` — whether the agent answers a call (only in `overflow` and `primary`), the team extension and the tenant name for the greeting; the mode is read fresh, so the emergency stop holds for the next call (T-1.13); `tenant_named`, the one tenant of a name, which the service `voice` serves (T-1.11); `call_limit`, the limit of concurrent AI calls at the restaurant's local time (the lowest window of `call_limit_windows`, else `max_concurrent_calls`), and `takes_call`, whether the agent takes a call with that many of its own open (T-10.9)
 - `consent.py` — `record_consent`: one `consent_log` row per answer to a consent question of the agent (call, time, question, answer), committed before anything is stored on the strength of it (T-11.1, L13)
 - `recordings.py` — the `recordings` row of a call and where its file lies: written before a byte is recorded, marked on a withdrawal, deleted by `jobs/retention.py` (T-11.3, L2)
+- `log.py` — `list_calls`: the calls of one business day as rows for the call list (T-8.7), read only, with the note about the line (`calls.line_note`, #651)
 
 Die Zeile pro einzelnem Tool-Aufruf (`calls.tool_calls`, docs/04 §Gemeinsame
 Regeln) kommt nicht von hier: `core/tool_log.py` schreibt sie generisch für jeden
@@ -245,6 +246,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `session.py` — `require_gui_session`, a dependency of every route of the view and the console: no session goes to the sign-in, a locked one may read and goes to the PIN page on a change, every change must come from this site; the session cookie; `require_admin` for the owner's part of the admin area (the admin PIN on this device, else its page)
 - `access.py` — the sign-in, setup link, PIN and admin PIN pages (`/gui/anmelden`, `/gui/einrichten`, `/gui/entsperren`, `/gui/inhaber`), plain forms with the CSRF token as a field
 - `dev.py` — router of the simulator console (`/gui/dev/console`), mounted by `mount_gui` only when `ENV=dev`; keeps the open calls in the process, the logic stays in `sim/session.py` (the one place where `gui` imports `sim`, because the console is the simulator page)
+- `calls_view.py` — the words and numbers of the call list `/gui/anrufe` (T-8.7): outcome, intent and line note in German, the number cut, the three filters; rows from `domain/calls/log.py`
 - `templates/` — `base.html`, `betrieb/`, `admin/`, `fragments/`
 - `static/` — Pico.css, HTMX lokal, eigene Töne; served with `Cache-Control: no-cache` (`__init__.py`), so the browser asks again on every use
 - `static/raumplan.js`, `raumplan-geometry.js`, `raumplan.css` — the floor plan editor (T-3.11): drag in the browser, each finished step saved through `/gui/raumplan/bereiche`; the geometry (seat rule, upright labels, copies, the conversion to the server document) has no page and is tested in node (`test_gui_floor_plan_geometry.py`)
