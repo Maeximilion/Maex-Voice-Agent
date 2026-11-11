@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 11.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.9
+> Status: 11.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.10
 
 ---
 
@@ -263,6 +263,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 11.11.2026 | **mypy checks every function body, strict flags on three packages (T-0.12 first step, #552).** Baseline on `main` ef1c4fc: the old setting 0 errors, `--check-untyped-defs` 544 in 75 test files only, `--strict` 9600 (about 282 outside tests); table in docs/22. `pyproject.toml` turns `check_untyped_defs` on everywhere and lists the 75 failing test modules as a baseline that only shrinks; `api.core`, `api.domain.calls` and `api.domain.delivery` get the per-module flags of `--strict` one by one, because `strict = true` in an override applied to the whole run. Only `api/core/tool_log.py` needed a change (three bare `dict`). No `Any`, no `type: ignore`. T-0.12 stays in progress: next the test baseline, then more strict packages. |
 | 11.11.2026 | **The bar "Ton an" keeps a gap to the columns.** The hint above the board touched the column headings under it (Maxi, 11.11.2026): `.betrieb button.ton-an` in `app.css` gets `margin-bottom: var(--s3)`. Measured on the board in a browser: 12 px between the bar and the columns, 0 before. |
 | 10.11.2026 | **n8n 2.46.6 to 2.47.2 (#628, Dependabot).** One pin in `docker-compose.yml`; the 2.47.0 to 2.47.2 release notes name no breaking change. |
 | 10.11.2026 | **The dev console's script is TypeScript (#626 closed, T-3.18 done).** The inline script of `dev/console.html` (the red bar for a failed tap, `ENV=dev` only) is `api/gui/ts/dev-console.ts`, loaded as a module (Maxi's word, 10.11.2026). Run in a headless browser with the real htmx: the bar shows on a 404 and on a send error and goes with the next answer that works. `api/tests/test_browser_code_language.py` allows no inline script and no handwritten script any more. |
@@ -272,7 +273,6 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 | 10.11.2026 | **`base.js` migrated to TypeScript (#626, T-3.18 first of three files).** `api/gui/ts/base.ts` compiles to the committed `api/gui/static/base.js`; `base.html` loads it as a module. The htmx event's `detail.headers` is checked before the CSRF header is set (the old file threw on a null detail), and a setup code with invalid percent-encoding is left in the address bar instead of throwing. `raumplan.js` and `app.js` are left, one PR each. Not tried in the pilot's tablet browser. |
 | 10.11.2026 | **TypeScript toolchain for the browser code (#553, T-3.17 done).** `package.json` pins `typescript` 7.0.2 as the only package, `tsconfig.json` compiles `api/gui/ts/*.ts` to committed ES modules in `api/gui/static/`, CI's new job `browser` (in the required check `test`) fails on a type error or a stale output, Dependabot watches npm. First file: `raumplan-geometry.ts`, identical to the old build on 20,000 random rounds over every exported function; `toClient` now checks the server's room document at run time. `raumplan.js` is loaded as a module and imports it. Rule and migration steps: docs/22; remaining files: T-3.18, #626. |
 | 10.11.2026 | **README front page rebuilt inside the Night Service brand (#622).** New order: the banner as one example call, the demo recording, the call flow as a transcript with a station rail, the capability table by area, the roadmap as a line of stages, the architecture as two paths; local badges instead of an image service. `python -m scripts.readme_demo` records the demo from a real replay (`scripts/demo/pickup_call.json`, caller ID from the range reserved for media productions). `scripts/readme_check.py` checks links, anchors, SVG safety, image sizes and blocked terms in the CI job `readme`, which the required check `test` now stands for. `docs/15_README_STRATEGY.md`: section order, the rules every image keeps, four variants for a new image with Maxi's pick, when the demo is recorded again. Assumption: the full capability lists stay in the README, folded under the table, instead of moving into this file, which its upkeep rule keeps small. Left with Maxi: the Actions secret `README_BLOCKLIST`, the About text and topics of the repository, a new social preview, the profile README draft. |
-| 10.11.2026 | **Operator login, second part of the operator dashboard (#571).** `api/dashboard/` signs the operator in with password plus a TOTP code or a recovery code, against its own database and migrations (`db/dashboard/`); not reachable from outside yet (docs/23 §5 "Built"). |
 
 Older rows: `docs/HISTORY.md` section "Done (archive)".
 
@@ -294,6 +294,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.29.10 · 11.11.2026:** T-0.12 first step: mypy checks every function body, strict flags on three packages
 - **v2.29.9 · 11.11.2026:** The bar Ton an keeps a gap to the columns below
 - **v2.29.8 · 10.11.2026:** n8n 2.46.6 to 2.47.2 (#628)
 - **v2.29.7 · 10.11.2026:** T-3.18 done: the dev console's script is TypeScript, #626 closed

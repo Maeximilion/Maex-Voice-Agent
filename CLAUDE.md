@@ -38,7 +38,7 @@ These six rules override any convenience. If a task violates them: **stop and as
 | GUI | FastAPI + Jinja2 + HTMX + SSE, Pico.css | Default, Alternative: React + Vite |
 | Automation (cold path) | n8n, self-hosted via Docker | Set |
 | Tests | pytest, httpx | Default |
-| Lint/Format | ruff (Format + Lint), mypy non-strict mode | Default |
+| Lint/Format | ruff (Format + Lint), mypy: untyped bodies checked, strict flags per package (T-0.12, docs/22) | Default |
 | Operations | Docker Compose, Hosting in EU | Set |
 | Voice layer | Own: Asterisk + service `voice`, speech engines behind ports (`docs/20_VOICE_LAYER.md`) | Set 07.10.2026, test phase on the workbench |
 
