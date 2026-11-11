@@ -123,6 +123,14 @@ def test_estimate_says_no_data_until_a_split_task_is_recorded(tmp_path):
     assert "5,000 split, 5,000 not split (1 task(s))" in line
 
 
+def test_a_fable_session_counts_as_the_main_model_of_a_split(tmp_path):
+    history = tmp_path / "routing_history.csv"
+    usage = {"claude-fable-5-2": _counts(out=600), SONNET: _counts(out=400)}
+    su.record(history, "T-1.3", "yes", "s3", usage, "2026-11-11")
+    line = su.estimate(su.read_history(history))
+    assert line.startswith("1 split task(s): 40% of the weighted volume")
+
+
 def test_a_missing_session_is_a_clear_error(tmp_path, capsys):
     code = su.main(["--session", "nope", "--projects-dir", str(tmp_path), "show"])
 

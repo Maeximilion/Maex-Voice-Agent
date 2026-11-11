@@ -64,8 +64,8 @@ WEIGHTS = {
     "cache_read": 0.1,
     "output": 5.0,
 }
-# The routed main model; every other model counts as handed off.
-MAIN_MODEL_PREFIX = "claude-opus"
+# The models a session builds on; every other model counts as handed off.
+MAIN_MODEL_PREFIX = ("claude-opus", "claude-fable")
 
 
 def project_folder(cwd: str) -> str:
