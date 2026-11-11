@@ -90,14 +90,18 @@ _BEYOND = re.compile(
 # An additive (§ 5 LMZDV, #638): the data model has no field for one and the
 # register's is not maintained (docs/14), so nothing a model says about it can
 # come from the database. The words are the register's legend and what guests
-# call them; sulphur and milk protein are allergens and read as such.
+# call them; sulphur and milk protein are allergens and read as such. The
+# word alone sends the call to the team, as "Spuren" does: a speech engine
+# drops the question mark, and a rule that told a question from a wish by its
+# word order missed "Sind da Konservierungsstoffe drin" (Codex PR #643).
+# "E-Nummer" only with its hyphen: "L, E, Nummer 12" spells a street.
 # shortcut: a closed word list, an additive it misses reaches the model. Add
 # the word when the call log shows it.
 _ADDITIVE = re.compile(
     r"zusatzstoff|geschmacksverst(?:ä|ae)rker|glutamat"
     r"|konservierungs(?:stoff|mittel)|farbstoff|antioxidationsmittel"
     r"|schw(?:ä|ae)rzungsmittel|phosphat|s(?:ü|ue)(?:ß|ss)(?:ungsmittel|stoff)"
-    r"|\be[- ]?nummern?\b"
+    r"|\be-nummern?\b"
 )
 
 
@@ -170,18 +174,11 @@ def asks_beyond_the_allergens(text: str) -> bool:
 
 
 def names_an_additive(text: str) -> bool:
-    """Does `text` name an additive ("Geschmacksverstärker", "Glutamat")?"""
+    """Does `text` name an additive ("Geschmacksverstärker", "Glutamat")? In
+    a guest's sentence that is for the team, a question ("Ist da Glutamat
+    drin") and a wish ("die 13 ohne Glutamat") alike: read back, the wish
+    would promise what no table holds."""
     return _ADDITIVE.search(text.lower()) is not None
-
-
-def asks_about_additives(text: str) -> bool:
-    """Does a sentence of the guest ask about an additive ("Ist da
-    Geschmacksverstärker drin?")? Only the team can answer it. A wish is none:
-    "die 13 ohne Glutamat" goes the way of any wish for the kitchen."""
-    return any(
-        is_question(sentence) and names_an_additive(sentence)
-        for sentence in SENTENCE.split(text)
-    )
 
 
 def only_a_complaint(text: str) -> bool:
@@ -284,6 +281,13 @@ _ADDRESSED_AS_A_PERSON = re.compile(
 def addresses_a_person(text: str) -> bool:
     """Does the guest address the agent as a person ("Danke, junge Frau")?"""
     return _ADDRESSED_AS_A_PERSON.search(text.lower()) is not None
+
+
+def takes_for_a_person(text: str) -> bool:
+    """Does the guest ask whether a person is on the line, ask for the
+    agent's name or address it as a person? Then the truthful sentence comes
+    first, in every turn and on every way out of it (docs/09 L1, #638)."""
+    return without_human_question(text) is not None or addresses_a_person(text)
 
 
 def without_human_question(text: str) -> str | None:

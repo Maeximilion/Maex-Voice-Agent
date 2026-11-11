@@ -388,6 +388,21 @@ def test_the_truthful_answer_comes_first_in_the_answer_turn(session, tenant_id, 
     assert_went_to_the_team(result, session, state)
 
 
+def test_addressed_as_a_person_in_the_answer_turn_hears_the_truth_first(
+    session, tenant_id, state
+):
+    """Codex PR #643: the answer to an offer leaves the turn before its own
+    check for a guest who takes the agent for a person (#638)."""
+    rule(session, tenant_id)
+    agent = loop(session)
+    agent.run_turn(state, COMPLAINT)
+
+    result = agent.run_turn(state, "Nein danke, junge Frau.")
+
+    assert result.say[0] == SAY_NOT_A_PERSON
+    assert_went_to_the_team(result, session, state)
+
+
 def test_a_card_that_cannot_be_written_books_nothing(session, tenant_id, state):
     """The guest's yes then moves no money, the audit row goes with the card,
     and the team takes the call."""

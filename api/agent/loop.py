@@ -336,7 +336,7 @@ class ConversationLoop:
         rest = escalation.without_human_question(user_text)
         # Addressed as a person ("Ja, junge Frau"): the truthful sentence
         # first as well, but no question, so the rest is read as it stands.
-        asks = rest is not None or escalation.addresses_a_person(user_text)
+        asks = escalation.takes_for_a_person(user_text)
         reason = escalation.check(user_text if rest is None else rest)
         # The offer stands while it is the last thing the guest heard: any
         # sentence after it, the phone line's "Sind Sie noch da?" too, takes
@@ -386,7 +386,7 @@ class ConversationLoop:
             escalated = self._allergens_to_team(
                 state, lead=SAY_ALLERGENS_BEYOND, table=open_table
             )
-        if escalated is None and escalation.asks_about_additives(user_text):
+        if escalated is None and escalation.names_an_additive(user_text):
             # The same way: the database holds no additive at all (#638).
             escalated = self._allergens_to_team(
                 state,
@@ -881,7 +881,7 @@ class ConversationLoop:
             f"{offer.complaint} {user_text}",
             summary=_remedy_card(SUMMARY_REMEDY_OPEN, offer),
         )
-        if escalation.without_human_question(user_text) is not None:
+        if escalation.takes_for_a_person(user_text):
             # The truthful answer first, in every turn (docs/09 L1).
             result.say.insert(0, SAY_NOT_A_PERSON)
         return result
@@ -1211,7 +1211,7 @@ class ConversationLoop:
             result = self._handoff(
                 state, SAY_ESCALATION, state.callback_reason, summary=summary
             )
-        if escalation.without_human_question(user_text) is not None:
+        if escalation.takes_for_a_person(user_text):
             # The truthful answer first, in every turn (docs/09 L1).
             result.say.insert(0, SAY_NOT_A_PERSON)
         return result

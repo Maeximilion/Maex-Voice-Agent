@@ -18,9 +18,9 @@ from sqlalchemy.orm import Session
 from api.agent import guards
 from api.agent.consent import ALLERGY_QUESTION
 from api.agent.escalation import (
-    asks_about_additives,
     asks_about_allergies,
     asks_beyond_the_allergens,
+    names_an_additive,
 )
 from api.agent.guards import note_said
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
@@ -1526,41 +1526,54 @@ def test_an_answer_to_wogegen_is_still_read(session, known_tenant, said, ingredi
     [
         "Ist da Geschmacksverstärker drin?",
         "Hallo, ist in der Pho Bo Geschmacksverstaerker drin?",
-        "Sind da Konservierungsstoffe drin?",
-        "Kochen Sie mit Glutamat?",
         "Welche Zusatzstoffe hat die 23?",
         "Sind da Süßungsmittel oder E-Nummern drin?",
-        # No mark from the speech engine: the word order asks.
-        "Ich hätte gern die 13. Ist da Farbstoff drin",
-        # A wish put as a question: only the kitchen can say.
-        "Können Sie das ohne Glutamat machen?",
+        # Codex PR #643: no mark from the speech engine, and a word order the
+        # yes detector does not know as a question.
+        "Sind da Konservierungsstoffe drin",
+        "Kochen Sie mit Glutamat",
+        # A wish names one as well: read back, it would promise what no table
+        # holds.
+        "Die 13 ohne Glutamat, bitte.",
+        "Können Sie das ohne Farbstoff machen",
     ],
 )
-def test_a_question_about_an_additive_is_read_as_one(said):
-    assert asks_about_additives(said)
+def test_a_sentence_that_names_an_additive_is_read_as_one(said):
+    assert names_an_additive(said)
 
 
 @pytest.mark.parametrize(
     "said",
     [
-        # A wish for the kitchen, like any other.
-        "Die 13 ohne Glutamat, bitte.",
-        "Ich nehme die 13 ohne Geschmacksverstärker.",
-        # A question that names no additive.
         "Haben Sie Süßkartoffeln?",
         "Ist in der Pho Bo Sellerie?",
         "Welche Nummer hat die Pho Bo?",
         "Meine Nummer ist 0721 5551234.",
+        "Einmal die 13 ohne Zwiebeln, bitte.",
+        # A street spelled out, its number behind the last letter.
+        "Mit L, E, Nummer 12.",
+        "mit l e nummer 12",
     ],
 )
-def test_other_sentences_ask_about_no_additive(said):
-    assert not asks_about_additives(said)
+def test_other_sentences_name_no_additive(said):
+    assert not names_an_additive(said)
 
 
-def test_an_additive_question_goes_to_the_team_before_the_model(session, known_tenant):
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ist in der Pho Bo Geschmacksverstärker drin?",
+        "Sind da Konservierungsstoffe drin",
+        "Kochen Sie mit Glutamat",
+        "Die 13 ohne Glutamat, bitte.",
+    ],
+)
+def test_a_sentence_about_an_additive_goes_to_the_team_before_the_model(
+    session, known_tenant, said
+):
     state = state_for(session, known_tenant, phone=CALLER)
 
-    result, llm = run(session, state, "Ist in der Pho Bo Geschmacksverstärker drin?")
+    result, llm = run(session, state, said)
 
     assert llm.calls == []
     assert result.ended and state.stage == "transferred"
@@ -1581,19 +1594,6 @@ def test_without_a_team_the_card_names_the_additive_question(session, known_tena
     assert callback.summary.startswith(SUMMARY_ADDITIVES)
 
 
-def test_a_wish_without_an_additive_stays_with_the_model(session, known_tenant):
-    state = state_for(session, known_tenant, phone=CALLER)
-    answer = "Das kann ich leider nicht anbieten."
-
-    result, llm = run(
-        session, state, "Die 13 ohne Glutamat, bitte.", LLMTurn(say=answer)
-    )
-
-    assert not result.ended
-    assert len(llm.calls) == 1
-    assert result.say == [answer]
-
-
 @pytest.mark.parametrize(
     "answer",
     [
@@ -1604,12 +1604,31 @@ def test_a_wish_without_an_additive_stays_with_the_model(session, known_tenant):
 def test_a_claim_of_the_model_about_an_additive_goes_to_the_team(
     session, known_tenant, answer
 ):
-    """What the word list of the question misses reaches the model. Its
-    claim that an additive is absent never reaches the guest."""
+    """A model that brings an additive up itself: its claim that one is
+    absent never reaches the guest."""
     state = state_for(session, known_tenant, phone=CALLER)
 
-    result, _ = run(session, state, "Die 13 ohne Glutamat, bitte.", LLMTurn(say=answer))
+    result, _ = run(
+        session, state, "Was ist denn in der Pho Bo alles drin?", LLMTurn(say=answer)
+    )
 
     assert result.ended
     assert result.say[0] == SAY_ALLERGENS_BEYOND
     assert answer not in result.say
+
+
+def test_addressed_as_a_person_with_the_number_pending_hears_the_truth_first(
+    session, known_tenant
+):
+    """Codex PR #643: the answer to the question for the number leaves the
+    turn before its own check, and only the question for a human was read
+    there."""
+    state = state_for(session, known_tenant)
+    run(session, state, "Sind da Spuren von Erdnüssen drin?", now=CLOSED)
+
+    result, _ = run(
+        session, state, "Moment, junge Frau, ich suche meine Nummer.", now=CLOSED
+    )
+
+    assert result.say == [SAY_NOT_A_PERSON, SAY_CALLBACK_NUMBER]
+    assert not result.ended
