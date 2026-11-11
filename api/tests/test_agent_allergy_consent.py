@@ -510,6 +510,7 @@ def test_a_held_draft_that_ends_after_a_limit_goes_to_the_team(session, state, l
     """Codex PR #368, P1: the draft carried out after the answer takes longer
     than the guest may wait. As after any slow tool, the call goes to the team
     instead of its read-back; the draft stays a draft."""
+    state.slots["phone"] = CALLER  # nobody to reach before opening: a card
     turn(
         session,
         state,
@@ -545,6 +546,7 @@ def test_a_held_draft_that_ends_after_a_limit_goes_to_the_team(session, state, l
 def test_the_call_limit_comes_before_the_question_is_put_again(session, state):
     """Codex PR #368, P1: past the call limit, a "Ja" to "Sind Sie noch da?"
     goes to the team instead of hearing the consent question again."""
+    state.slots["phone"] = CALLER  # nobody to reach before opening: a card
     turn(
         session,
         state,
@@ -981,6 +983,7 @@ def test_a_question_for_the_agent_right_after_the_question_is_no_answer(
 def test_the_truth_comes_first_also_when_the_held_draft_meets_the_limit(session, state):
     """#649: the timeout exit of the held draft left out the truthful
     sentence that every other way out of the turn says (docs/09 L1)."""
+    state.slots["phone"] = CALLER  # nobody to reach before opening: a card
     turn(
         session,
         state,

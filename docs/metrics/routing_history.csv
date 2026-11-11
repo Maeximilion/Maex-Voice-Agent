@@ -54,3 +54,4 @@ date,task,split,session,model,calls,input,cache_write,cache_write_1h,cache_read,
 2026-11-11,"Fable use 4 (code-review max, ledger #546 batch 1: 15 findings, 6 P1, #655 #656 #657)",no,f59389d0-b182-4755-a9eb-9ffb7e0e1357,claude-fable-5-2,58,118,1334969,126624,16422936,219961,4505896
 2026-11-11,"Fable use 4 (code-review max, ledger #546 batch 1: 15 findings, 6 P1, #655 #656 #657)",no,f59389d0-b182-4755-a9eb-9ffb7e0e1357,claude-opus-5-5,81,162,570099,0,17258134,130425,3090724
 2026-11-11,"#655 handovers carried out (Fable use 4, build on Maxi's word)",no,30907de6-bab3-44f3-83e9-e30ae8a3496a,claude-fable-5-2,68,136,290743,290743,19478370,83712,2948019
+2026-11-11,"#652 rule 5 review fixes (Fable use 4, build on Maxi's word)",no,56560873-8730-464b-8649-8eea62b8bc49,claude-fable-5-2,63,126,291609,291609,11496318,63023,2048091
