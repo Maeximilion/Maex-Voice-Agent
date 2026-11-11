@@ -937,6 +937,17 @@ def test_shadow_answers_the_question_for_a_human_truthfully(session, tenant, sha
     assert port.transfers(SID) == [TEAM_PHONE]
 
 
+def test_shadow_answers_an_address_as_a_person_truthfully(session, tenant, shadow):
+    """#649: the address ("junge Frau") is a cue as the question is (#638),
+    and this path read only the question."""
+    port, handler = shadow_call(session, tenant)
+
+    handler.on_user_turn(SID, "Ja, junge Frau.")
+
+    assert port.says(SID)[1] == SAY_NOT_A_PERSON
+    assert port.transfers(SID) == [TEAM_PHONE]
+
+
 def test_shadow_silence_rings_the_team_without(session, tenant, shadow):
     port, handler = shadow_call(session, tenant)
 

@@ -11,6 +11,8 @@ import pytest
 from api.agent.consent import is_yes
 from api.agent.dispatch import ToolResult
 from api.agent.guards import (
+    ADDITIVE_CLAIM,
+    ALLERGEN_CLAIM,
     HINT_CALLBACK_PHONE,
     HINT_CONFIRM,
     HINT_GUEST_PHONE,
@@ -977,7 +979,7 @@ def _found(name: str, number: str = "45"):
 def test_a_dish_name_the_search_found_is_no_claim(say):
     """The model repeats a name from the menu; the guest asked nothing about
     allergens. Before, the order went to the team."""
-    assert allergen_claim(_found("Nudeln (glutenfrei)"), say) is False
+    assert allergen_claim(_found("Nudeln (glutenfrei)"), say) is None
 
 
 def test_a_dish_name_with_an_additive_word_is_no_claim_but_a_sentence_about_one_is():
@@ -985,23 +987,52 @@ def test_a_dish_name_with_an_additive_word_is_no_claim_but_a_sentence_about_one_
     dish the menu calls "Cola (mit Farbstoff)" is menu data."""
     state = _found("Cola (mit Farbstoff)")
 
-    assert allergen_claim(state, "Gern, Nummer 45 Cola (mit Farbstoff).") is False
-    assert allergen_claim(state, "Die Cola (mit Farbstoff) ist ohne Süßstoff.") is True
-    assert allergen_claim(new_state(), "Die Cola ist mit Farbstoff.") is True
+    assert allergen_claim(state, "Gern, Nummer 45 Cola (mit Farbstoff).") is None
+    assert (
+        allergen_claim(state, "Die Cola (mit Farbstoff) ist ohne Süßstoff.")
+        is ADDITIVE_CLAIM
+    )
+    assert allergen_claim(new_state(), "Die Cola ist mit Farbstoff.") is ADDITIVE_CLAIM
+
+
+def test_a_name_without_its_brackets_is_no_claim_either():
+    """#649: only the verbatim name was left out of the claim."""
+    state = _found("Cola (mit Farbstoff)")
+
+    assert allergen_claim(state, "Gern, eine Cola mit Farbstoff.") is None
+    assert (
+        allergen_claim(state, "Die Cola mit Farbstoff ist ohne Süßstoff.")
+        is ADDITIVE_CLAIM
+    )
+
+
+def test_an_option_label_never_hides_a_claim_about_a_dish():
+    """Codex PR #650, P1: an option "glutenfrei" of one dish, left out of the
+    sentence like a dish name, let the model promise it for any other dish."""
+    state = _found("Ente knusprig", number="47")
+    state.seen_items[ENTE]["optional"] = [
+        {"group": "Beilage", "options": ["glutenfrei", "mit Farbstoff"]}
+    ]
+
+    assert allergen_claim(state, "Die Pho Bo ist glutenfrei.") is ALLERGEN_CLAIM
+    assert allergen_claim(state, "Die Pho Bo ist mit Farbstoff.") is ADDITIVE_CLAIM
 
 
 def test_an_offered_candidate_name_is_no_claim_either():
     state = new_state()
     state.offered_items[ENTE] = ("46", "Latte laktosefrei")
 
-    assert allergen_claim(state, "Meinen Sie Nummer 46 Latte laktosefrei?") is False
+    assert allergen_claim(state, "Meinen Sie Nummer 46 Latte laktosefrei?") is None
 
 
 def test_a_claim_next_to_the_dish_name_still_counts():
     state = _found("Nudeln (glutenfrei)")
 
-    assert allergen_claim(state, "Die Nudeln (glutenfrei) sind auch eifrei.") is True
-    assert allergen_claim(state, "Das Pho Bo ist glutenfrei.") is True
+    assert (
+        allergen_claim(state, "Die Nudeln (glutenfrei) sind auch eifrei.")
+        is ALLERGEN_CLAIM
+    )
+    assert allergen_claim(state, "Das Pho Bo ist glutenfrei.") is ALLERGEN_CLAIM
 
 
 @pytest.mark.parametrize(
@@ -1016,7 +1047,7 @@ def test_a_short_dish_name_never_hides_a_claim(name, say):
     state = _found(name)
     state.allergy_talk = True
 
-    assert allergen_claim(state, say) is True
+    assert allergen_claim(state, say) is ALLERGEN_CLAIM
 
 
 def test_a_safety_promise_about_a_frei_dish_still_counts():
@@ -1026,5 +1057,5 @@ def test_a_safety_promise_about_a_frei_dish_still_counts():
 
     assert (
         allergen_claim(state, "Die Nudeln (glutenfrei) werden getrennt zubereitet.")
-        is True
+        is ALLERGEN_CLAIM
     )

@@ -954,6 +954,56 @@ def test_a_human_question_while_the_question_waits_is_answered_first(session, st
     assert logged(session) == [(ALLERGY_QUESTION, "yes")]
 
 
+@pytest.mark.parametrize(
+    "asked", ["Sind Sie ein Mensch?", "Wie heißen Sie?", "Ja. Wie heißen Sie?"]
+)
+def test_a_question_for_the_agent_right_after_the_question_is_no_answer(
+    session, state, asked
+):
+    """#649: asked right after the consent question, the guest's own question
+    was logged as an unclear answer and dropped the held draft. Like after
+    "Wogegen?" (`allergies._asks_back`), it costs no answer: the draft stays
+    held, and the question is put again after a plain no to the offer."""
+    turn(
+        session,
+        state,
+        f"{TABLE}, ich habe eine Erdnussallergie",
+        LLMTurn(tool_call=table()),
+    )
+
+    assert turn(session, state, asked) == [SAY_HUMAN_ANSWER]
+    assert state.held_call is not None
+    assert logged(session) == []
+
+    assert turn(session, state, "Nein.") == [ALLERGY_QUESTION]
+
+
+def test_the_truth_comes_first_also_when_the_held_draft_meets_the_limit(session, state):
+    """#649: the timeout exit of the held draft left out the truthful
+    sentence that every other way out of the turn says (docs/09 L1)."""
+    turn(
+        session,
+        state,
+        f"{TABLE}, ich habe eine Erdnussallergie",
+        LLMTurn(tool_call=table()),
+    )
+    guards.note_said(state, "Sind Sie noch da?")
+    ticks = iter([0])
+    loop = ConversationLoop(
+        session,
+        FakeLLM([]),
+        "system",
+        now=NOW,
+        clock=lambda: next(ticks, 100),
+        max_call_seconds=10,
+    )
+
+    result = loop.run_turn(state, "Ja, junge Frau.")
+
+    assert result.ended
+    assert result.say[0] == SAY_NOT_A_PERSON
+
+
 def test_a_request_next_to_the_human_question_hears_the_truth_first(session, state):
     """The truthful sentence first, then the answer to the request: docs/09
     L1 holds in every turn. A request is more than a yes, so the model reads

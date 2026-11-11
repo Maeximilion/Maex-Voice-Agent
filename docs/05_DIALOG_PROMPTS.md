@@ -164,7 +164,7 @@ question with a request   → "Ich bin ein KI-Assistent, kein Mensch." and the m
 ```
 The AI Act asks for a truthful answer every time (docs/09 §1 L1), so the code gives it before the model, like the greeting (T-11.5, `agent/escalation.py` `without_human_question`, `agent/loop.py`). Only the question order counts, and a statement with "oder?" behind it ("Sind Sie ein Mensch?", "Spreche ich mit einer Maschine oder mit einem Menschen?", "Ist da ein Mensch?", "Sie sind ein Roboter, oder?"); a phrasing the list misses goes to the model, which says in its first sentence that it is an AI (the prompt has no room for more, `test_prompts_v3.py` budget). Greetings around the question ("Hallo, sagen Sie mal, ...") are no request; any other word or a digit is, and the model answers it after the truthful sentence. "Ich will mit einem Menschen sprechen" stays the wish of §4 and goes to the team at once. The triggers of §4 are read in the rest of the sentence, without the question's own words: a complaint, a cancellation or the wish for a human next to the question goes to the team as well, with the truthful sentence first. The offer stands while it is the last thing the guest heard: any sentence after it, the phone line's "Sind Sie noch da?" too, takes it back, and a "Ja" then answers that sentence. The question gets the answer only within the call limit; past `max_call_seconds` the truthful sentence comes before the handover of the timeout.
 
-**Taken for a person without asking (#638).** The Art. 50 guidelines (point 40) want the notice also where the exchange shows that the caller is misled about who speaks. A guest who asks for the agent's name ("Wie heißen Sie?", "Wie war Ihr Name?", "Mit wem spreche ich?") is read like the question above: the fixed sentence with the offer of the team when the sentence holds nothing else, the truthful sentence before the model's answer when it holds a request (`escalation._ASKS_ITS_NAME`, eval `eskalation_0019`). A guest who addresses it as a person ("junge Frau", "junger Mann", "Fräulein", "gute Frau", "guter Mann") asks nothing: the truthful sentence comes first and the model answers the sentence as it stands, with no offer, so a "Ja, junge Frau" still answers what the agent asked (`escalation.addresses_a_person`, eval `eskalation_0020`). Said every time such a cue comes, like the answer to the question, also in the answer to the question for the callback number and to an offer of the complaint catalogue (`escalation.takes_for_a_person`). A closed list of clear cues: another one ("Kochen Sie das selbst?", which also asks about the kitchen) reaches the model.
+**Taken for a person without asking (#638).** The Art. 50 guidelines (point 40) want the notice also where the exchange shows that the caller is misled about who speaks. A guest who asks for the agent's name ("Wie heißen Sie?", "Wie war Ihr Name?", "Mit wem spreche ich?") is read like the question above: the fixed sentence with the offer of the team when the sentence holds nothing else, the truthful sentence before the model's answer when it holds a request (`escalation._ASKS_ITS_NAME`, eval `eskalation_0019`). A guest who addresses it as a person ("junge Frau", "junger Mann", "Fräulein", "gute Frau", "guter Mann") asks nothing: the truthful sentence comes first and the model answers the sentence as it stands, with no offer, so a "Ja, junge Frau" still answers what the agent asked (`escalation.addresses_a_person`, eval `eskalation_0020`). Said every time such a cue comes, like the answer to the question, on every way out of the turn: also in the answer to the question for the callback number, to an offer of the complaint catalogue and past the call limit (`loop._guest_sentence`, one place since #649), and on the line in mode `shadow` (`escalation.takes_for_a_person`). A filler on either side of the name ("Wie ist Ihr Name, bitte?", "Wie war Ihr Name noch mal?") belongs to the question (#649). A sentence that only asks right after the consent question or "Wogegen?" answers neither: nothing is logged, the draft stays held and the question is put again after the answer to the offer (#649). A closed list of clear cues: another one ("Kochen Sie das selbst?", which also asks about the kitchen) reaches the model. "Wie heißen sie denn?" said of dishes reads the same and gets the fixed answer with the offer instead of the model's answer; a "Ja" to it hands the call to the team (#649).
 
 ### Allergie
 ```text
@@ -201,20 +201,27 @@ one can be right
    → the core, before the model: the same sentence and the same handover,
      the card says "Frage zu Zusatzstoffen, vor einer Bestellung zu klären."
      (`escalation.names_an_additive`, evals `allergie_0020`,
-     `allergie_0021`). The word alone decides, as for traces: a speech
+     `allergie_0021`, `allergie_0022`). The word alone decides, as for traces: a speech
      engine drops the question mark, and a wish read back would promise
      what no table holds, so a question and a wish go the same way (Codex
-     PR #643). The words are the register's legend (docs/14) and "Glutamat",
-     "Zusatzstoff", "Süßstoff", "E-Nummer"; an additive the list misses
-     reaches the model. A model's sentence that names an additive at all is
-     stopped like a claim about an allergen and hands over, whatever it
-     says about it ("glutamatfrei", "ohne Glutamat zubereitet", "ja, ist
-     drin"); a dish name of the menu that holds such a word is no claim
-     (`guards.allergen_claim`). A dish description from the database that
-     names an additive is not read out either: the call goes to the team,
-     the careful side. A complaint that names an additive gets no
-     offer of the catalogue and goes to the team
-     (`escalation.only_a_complaint`)
+     PR #643). The words are the register's legend (docs/14, "koffein" and
+     "chinin" included) and "Glutamat", "Zusatzstoff", "Süßstoff",
+     "E-Nummer"; an additive the list misses reaches the model. A model's
+     sentence that names an additive at all is stopped like a claim about
+     an allergen and hands over with the additive card, logged with the
+     code `additive` so the call log shows the word the list missed,
+     whatever it says about it ("glutamatfrei", "ohne Glutamat zubereitet",
+     "ja, ist drin"); a dish name of the menu that holds such a word is no
+     claim (`guards.allergen_claim`). A note of a draft that names one is
+     never read back: the draft goes to the team with the order or the
+     table on the card (#649). So does a draft that waited for the consent
+     question or "Wogegen?" when the answer names an additive or traces. A
+     dish description from the database that names an additive is not read
+     out either: the call goes to the team, the careful side. A complaint
+     that names an additive gets no offer of the catalogue and goes to the
+     team (`escalation.only_a_complaint`); one that names an illness or a
+     legal step goes as a complaint, its card quotes the guest unless the
+     sentence names an allergy (#649)
 
 An allergy note stays on the order whatever the dish contains (Maxi,
 27.10.2026): the kitchen works with it, also where the allergen is in no
