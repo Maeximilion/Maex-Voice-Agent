@@ -270,17 +270,14 @@ def without_menu_names(state: ConversationState, text: str) -> str:
     the model nor a question of the guest. "Nudeln (glutenfrei)" read back
     sent a plain order to the team (repo audit 27.10.2026). Only as a whole:
     a dish "Milch" must not cut "milchfrei" (Codex PR #388, P1). Also said
-    without its brackets ("Cola mit Farbstoff", #649).
+    without its brackets ("Cola mit Farbstoff", #649). Never an option name:
+    "glutenfrei" as the option of one dish would hide that promise about any
+    other (Codex PR #650, P1).
     shortcut: only names the search delivered in this call; a guest who names
-    such a dish before any search goes to the team, the careful side."""
+    such a dish before any search, or a sentence that names such an option,
+    goes to the team, the careful side."""
     names = [seen.get("name") for seen in state.seen_items.values()]
     names += [name for _, name in state.offered_items.values()]
-    names += [
-        option
-        for seen in state.seen_items.values()
-        for group in [*seen.get("required", []), *seen.get("optional", [])]
-        for option in group.get("options", [])
-    ]
     for name in names:
         if not isinstance(name, str) or not (
             _ALWAYS.search(name.lower()) or names_an_additive(name)

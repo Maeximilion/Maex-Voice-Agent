@@ -995,19 +995,27 @@ def test_a_dish_name_with_an_additive_word_is_no_claim_but_a_sentence_about_one_
     assert allergen_claim(new_state(), "Die Cola ist mit Farbstoff.") is ADDITIVE_CLAIM
 
 
-def test_a_name_without_its_brackets_and_an_option_name_are_no_claim_either():
+def test_a_name_without_its_brackets_is_no_claim_either():
     """#649: only the verbatim name was left out of the claim."""
     state = _found("Cola (mit Farbstoff)")
-    state.seen_items[ENTE]["optional"] = [
-        {"group": "Getränk", "options": ["Tonic (chininhaltig)"]}
-    ]
 
     assert allergen_claim(state, "Gern, eine Cola mit Farbstoff.") is None
-    assert allergen_claim(state, "Dazu ein Tonic (chininhaltig)?") is None
     assert (
         allergen_claim(state, "Die Cola mit Farbstoff ist ohne Süßstoff.")
         is ADDITIVE_CLAIM
     )
+
+
+def test_an_option_label_never_hides_a_claim_about_a_dish():
+    """Codex PR #650, P1: an option "glutenfrei" of one dish, left out of the
+    sentence like a dish name, let the model promise it for any other dish."""
+    state = _found("Ente knusprig", number="47")
+    state.seen_items[ENTE]["optional"] = [
+        {"group": "Beilage", "options": ["glutenfrei", "mit Farbstoff"]}
+    ]
+
+    assert allergen_claim(state, "Die Pho Bo ist glutenfrei.") is ALLERGEN_CLAIM
+    assert allergen_claim(state, "Die Pho Bo ist mit Farbstoff.") is ADDITIVE_CLAIM
 
 
 def test_an_offered_candidate_name_is_no_claim_either():
