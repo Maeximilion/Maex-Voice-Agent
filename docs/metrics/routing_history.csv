@@ -50,3 +50,4 @@ date,task,split,session,model,calls,input,cache_write,cache_write_1h,cache_read,
 2026-11-11,fable-checks,no,3cbf1b79-c46f-4037-8c0b-fa8019e16287,claude-fable-5-2,2,4,119852,0,113466,285,162591
 2026-11-11,fable-checks,no,3cbf1b79-c46f-4037-8c0b-fa8019e16287,claude-haiku-5-5,3,6,72640,0,126369,1608,111483
 2026-11-11,fable-checks,no,3cbf1b79-c46f-4037-8c0b-fa8019e16287,claude-opus-5-5,25,50,112918,112918,4159465,11402,698842
+2026-11-11,Fable use 4 (rule 5 review #651 #652),no,c2a79ea2-b8dc-459e-b513-01b0481f0179,claude-fable-5-2,21,42,218370,218370,4757113,43535,1130168

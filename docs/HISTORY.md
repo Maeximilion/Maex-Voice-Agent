@@ -298,6 +298,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 | Date | What |
 |---|---|
+| 11.11.2026 | **mypy checks every function body, strict flags on three packages (T-0.12 first step, #552).** Baseline on `main` ef1c4fc: the old setting 0 errors, `--check-untyped-defs` 544 in 75 test files only, `--strict` 9600 (about 282 outside tests); table in docs/22. `pyproject.toml` turns `check_untyped_defs` on everywhere and lists the 75 failing test modules as a baseline that only shrinks; `api.core`, `api.domain.calls` and `api.domain.delivery` get the per-module flags of `--strict` one by one, because `strict = true` in an override applied to the whole run. Only `api/core/tool_log.py` needed a change (three bare `dict`). No `Any`, no `type: ignore`. T-0.12 stays in progress: next the test baseline, then more strict packages. |
 | 11.11.2026 | **The bar "Ton an" keeps a gap to the columns.** The hint above the board touched the column headings under it (Maxi, 11.11.2026): `.betrieb button.ton-an` in `app.css` gets `margin-bottom: var(--s3)`. Measured on the board in a browser: 12 px between the bar and the columns, 0 before. |
 | 10.11.2026 | **n8n 2.46.6 to 2.47.2 (#628, Dependabot).** One pin in `docker-compose.yml`; the 2.47.0 to 2.47.2 release notes name no breaking change. |
 | 10.11.2026 | **The dev console's script is TypeScript (#626 closed, T-3.18 done).** The inline script of `dev/console.html` (the red bar for a failed tap, `ENV=dev` only) is `api/gui/ts/dev-console.ts`, loaded as a module (Maxi's word, 10.11.2026). Run in a headless browser with the real htmx: the bar shows on a 404 and on a send error and goes with the next answer that works. `api/tests/test_browser_code_language.py` allows no inline script and no handwritten script any more. |
@@ -1424,3 +1425,7 @@ Full text of every row shortened in docs/01_STATUS.md by #562 part 3. Search by 
 | D28 | ~~Do tables replace seats as the capacity of a reservation?~~ **decided 02.11.2026 (Maxi):** not yet. First the plan and manual seating (T-3.11, T-3.12); the agent stays on seats until the plan is in use. |
 | D29 | ~~Which call modes stay~~ **decided 02.11.2026 (Maxi): all three stay, `shadow`, `overflow` and `primary`.** `overflow` needs the router to ring the team first and hand the call to the agent only when nobody answers; that is not tested on the real line | Maxi | before the first `overflow` call on the real line |
 | D30 | ~~How is a reservation without a call stored, the one the team enters on the tablet (T-3.12)?~~ **decided 05.11.2026 (Maxi): draft, then confirm.** The tablet writes a draft with `source = tablet` and no `call_id` (full text: docs/HISTORY.md) | Maxi | decided |
+
+## What's Next and Open Decisions (archive, finished rows, 11.11.2026)
+
+  - **Register data, dry run 04.10.2026 (counts only, the lists are in the converter report):** size 6 now sits on 13 dishes, the `G` dishes pass since T-4.12; five allergen entries instead of four, one Sushi dish came in with T-4.12 (full text: docs/HISTORY.md)
