@@ -553,6 +553,7 @@ def test_a_stalled_gate_blocks_but_a_missing_script_does_not(gate, tmp_path):
         if "merge_gate.sh" in hook["command"]
     ]
     assert entry["onFailure"] == "block"
+    assert BASH is not None  # checked at the top of the gate fixture
     done = subprocess.run(
         [BASH, "-c", entry["command"]],
         input='{"tool_input": {"command": "gh pr merge 7 --merge"}}',

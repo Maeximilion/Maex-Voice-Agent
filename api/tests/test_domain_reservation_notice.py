@@ -110,7 +110,9 @@ def test_inside_the_notice_nothing_is_booked_and_the_seats_are_named(
 
     assert slot.available is False
     assert slot.team_callback is False
+    assert slot.say is not None
     assert "Laut unseren Reservierungen ist zu der Zeit noch Platz" in slot.say
+    assert slot.say is not None
     assert "so kurzfristig" in slot.say
 
 
@@ -121,9 +123,12 @@ def test_inside_the_notice_a_full_evening_is_named_as_full(session, tenant_id, c
     slot = check_slot(session, tenant_id, berlin(18, 30), 4, now=NOW)
 
     assert slot.available is False
+    assert slot.say is not None
     assert "Laut unseren Reservierungen ist zu der Zeit leider alles belegt" in slot.say
+    assert slot.say is not None
     assert "noch Platz" not in slot.say
     # Every later slot of the evening is full as well (#527).
+    assert slot.say is not None
     assert slot.say.endswith(ASK_OTHER_DAY)
 
 
@@ -132,10 +137,12 @@ def test_the_seats_are_named_for_this_party(session, tenant_id, call_id):
     set_notice(session, tenant_id, 60)
     book(session, tenant_id, call_id, 36)
 
-    assert (
-        "noch Platz" in check_slot(session, tenant_id, berlin(18, 30), 2, now=NOW).say
-    )
-    assert "belegt" in check_slot(session, tenant_id, berlin(18, 30), 6, now=NOW).say
+    two = check_slot(session, tenant_id, berlin(18, 30), 2, now=NOW)
+    six = check_slot(session, tenant_id, berlin(18, 30), 6, now=NOW)
+    assert two.say is not None
+    assert six.say is not None
+    assert "noch Platz" in two.say
+    assert "belegt" in six.say
 
 
 def test_a_table_right_on_the_notice_is_booked(session, tenant_id):
@@ -171,8 +178,11 @@ def test_a_notice_past_the_last_start_points_to_another_day(session, tenant_id):
 
         assert slot.available is False
         assert slot.alternatives == []
+        assert slot.say is not None
         assert "noch Platz" in slot.say
+        assert slot.say is not None
         assert slot.say.endswith(ASK_OTHER_DAY)
+        assert slot.say is not None
         assert ASK_OTHER_TIME not in slot.say
 
 
@@ -182,7 +192,9 @@ def test_the_one_slot_left_after_the_notice_is_offered(session, tenant_id):
     slot = check_slot(session, tenant_id, berlin(20), 4, now=berlin(19))
 
     assert slot.alternatives == [berlin(21, 30)]
+    assert slot.say is not None
     assert slot.say.endswith("Halb zehn ginge.")
+    assert slot.say is not None
     assert ASK_OTHER_DAY not in slot.say
 
 
@@ -199,6 +211,7 @@ def test_a_notice_ending_on_the_last_start_leaves_that_start(
     slot = check_slot(session, tenant_id, berlin(20), 4, now=berlin(19))
 
     assert slot.alternatives == left
+    assert slot.say is not None
     assert slot.say.endswith(ending)
 
 
@@ -215,7 +228,9 @@ def test_before_a_closed_day_the_guest_is_not_sent_to_tomorrow(session, tenant_i
     )
 
     assert slot.alternatives == []
+    assert slot.say is not None
     assert slot.say.endswith(ASK_OTHER_DAY)
+    assert slot.say is not None
     assert "morgen" not in slot.say.lower()
 
 
@@ -226,6 +241,7 @@ def test_lunch_inside_the_notice_still_asks_for_another_time(session, tenant_id)
     slot = check_slot(session, tenant_id, berlin(12, 30), 4, now=berlin(11))
 
     assert slot.alternatives == []
+    assert slot.say is not None
     assert slot.say.endswith(ASK_OTHER_TIME)
     assert check_slot(session, tenant_id, berlin(18), 4, now=berlin(11)).available
 
@@ -252,7 +268,9 @@ def test_a_notice_that_hides_every_slot_is_not_called_full(session, tenant_id):
 
     assert slot.available is False
     assert slot.alternatives == []
+    assert slot.say is not None
     assert "nichts mehr frei" not in slot.say
+    assert slot.say is not None
     assert "so kurzfristig" in slot.say
 
 
@@ -276,6 +294,7 @@ def test_a_full_day_before_opening_is_still_called_full(session, tenant_id, call
 
     slot = check_slot(session, tenant_id, berlin(11), 4, now=berlin(9))
 
+    assert slot.say is not None
     assert "nichts mehr frei" in slot.say
 
 
@@ -313,6 +332,7 @@ def test_a_closed_time_is_still_said_as_closed(session, tenant_id):
 
     slot = check_slot(session, tenant_id, berlin(23), 4, now=NOW)
 
+    assert slot.say is not None
     assert "so kurzfristig" not in slot.say
 
 
@@ -332,6 +352,7 @@ def test_a_draft_inside_the_notice_is_refused(session, tenant_id, call_id):
     with pytest.raises(Conflict) as refused:
         create_reservation(session, request, now=NOW)
 
+    assert refused.value.say is not None
     assert "so kurzfristig" in refused.value.say
     session.rollback()
     assert session.scalars(select(Reservation)).all() == []
@@ -395,6 +416,7 @@ def test_a_notice_outside_the_limits_changes_nothing(session, tenant_id, minutes
     with pytest.raises(InvalidInput) as refused:
         notices.set_notices(session, tenant_id, {TUESDAY: 45, SUNDAY: minutes})
 
+    assert refused.value.say is not None
     assert "0 bis 1440 Minuten" in refused.value.say
     session.rollback()
     assert notices.weekday_notices(session, tenant_id)[TUESDAY] == 0

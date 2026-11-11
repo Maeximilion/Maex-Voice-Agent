@@ -122,7 +122,9 @@ def test_reopening_returns_the_card_and_audits_once(client, engine, tenant_id):
     assert "Keine erledigten" in response.text
     assert PHONE in client.get("/gui/fragments/rueckrufe").text
     with Session(engine) as s:
-        assert s.get(Callback, cb_id).status == "open"
+        callback = s.get(Callback, cb_id)
+        assert callback is not None
+        assert callback.status == "open"
         count = s.scalar(
             select(func.count())
             .select_from(AuditLog)

@@ -6,6 +6,7 @@ reaches the dashboard without a reason, and this route has none to give.
 
 import uuid
 from datetime import date, datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -286,7 +287,7 @@ def test_http_status_under_300_ms(http, session, tenant):
 
 # --- Start check -------------------------------------------------------------
 
-STRONG = {
+STRONG: dict[str, Any] = {
     "env": "prod",
     "agent_api_token": "a" * 64,
     "kitchen_bridge_token": "b" * 64,

@@ -282,6 +282,7 @@ from api.domain.menu.numberwords import find_item_number_ref  # noqa: E402
 )
 def test_item_number_ref(text, value, card, marked):
     ref = find_item_number_ref(text)
+    assert ref is not None
     assert (ref.value, ref.text, ref.marked) == (value, card, marked)
 
 
@@ -882,7 +883,9 @@ def test_colloquial_n_is_not_a_prefix(text):
 
 
 def test_suffix_g_without_marker_is_a_number_for_the_ladder():
-    assert find_item_number_ref("die 25g bitte").cards == ("25g",)
+    ref = find_item_number_ref("die 25g bitte")
+    assert ref is not None
+    assert ref.cards == ("25g",)
 
 
 def test_card_format_is_hashable():

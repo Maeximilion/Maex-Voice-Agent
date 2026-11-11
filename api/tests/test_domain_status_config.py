@@ -140,6 +140,7 @@ def test_wartezeit_je_service_getrennt(session, tenant_id):
     assert wait_of(config, "pickup") == abholung
     eintrag = audit(session, tenant_id)[-1]
     assert eintrag.action == switches.ACTION_WAIT
+    assert eintrag.payload is not None
     assert eintrag.payload == {
         "service": "delivery",
         "step": 15,
@@ -321,6 +322,7 @@ def test_a_typed_wait_outside_the_limits_changes_nothing(session, tenant_id, min
     with pytest.raises(InvalidInput) as refused:
         switches.set_wait(session, tenant_id, "pickup", minutes)
 
+    assert refused.value.say is not None
     assert "10 bis 180 Minuten" in refused.value.say
     session.rollback()
     assert wait_of(session.get(ServiceConfig, tenant_id), "pickup") == before
@@ -341,7 +343,9 @@ def test_a_typed_wait_survives_a_restart(engine, session, tenant_id):
     switches.set_wait(session, tenant_id, "pickup", 15)
 
     with Session(engine) as restarted:
-        assert wait_of(restarted.get(ServiceConfig, tenant_id), "pickup") == 15
+        config = restarted.get(ServiceConfig, tenant_id)
+        assert config is not None
+        assert wait_of(config, "pickup") == 15
 
 
 def test_an_unknown_service_is_refused(session, tenant_id):

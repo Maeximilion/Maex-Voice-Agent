@@ -163,6 +163,7 @@ def test_voller_abend_ist_conflict_ohne_mittag(session, tenant_id, call_id):
     other = _other_call(session, tenant_id)
     with pytest.raises(Conflict) as exc:
         create_reservation(session, request(tenant_id, other, party_size=1), now=NOW)
+    assert exc.value.say is not None
     assert "halb sieben ist leider nichts frei" in exc.value.say
     assert session.scalar(select(func.count()).select_from(Reservation)) == 1
 
@@ -626,15 +627,15 @@ def test_sperre_gilt_fuer_das_ganze_fenster_ueber_mitternacht(migrated_db_url):
                 ),
             ]
         )
-        call = Call(
+        row = Call(
             tenant_id=tenant,
             external_session_id="ext",
             started_at=NOW,
             delete_after=DIENSTAG,
         )
-        s.add(call)
+        s.add(row)
         s.commit()
-        call = call.id
+        call = row.id
 
     with Session(engine) as a, Session(engine) as b:
         # A prueft gerade Montag 23:30, die Transaktion ist offen.
@@ -674,6 +675,7 @@ def test_beyond_the_limits_of_the_restaurant_nothing_is_drafted(
     )
     with pytest.raises(Conflict) as exc:
         create_reservation(session, wish, now=NOW)
+    assert exc.value.say is not None
     assert heard in exc.value.say
     # A table for the team is told apart from a wish nobody can book.
     assert isinstance(exc.value, TeamDecides) is ("Personen" in heard)

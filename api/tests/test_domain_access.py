@@ -150,6 +150,7 @@ def test_a_refused_value_does_not_spend_the_link(session, tenant_id):
     code, _ = issue_link(session, tenant_id, "operator:test", T0)
     with pytest.raises(InvalidInput) as weak:
         use_link(session, tenant_id, code, "kurz", PIN, "x", T0)
+    assert weak.value.say is not None
     assert "12 Zeichen" in weak.value.say
     with pytest.raises(InvalidInput):
         use_link(session, tenant_id, code, PASSWORD, "12", "x", T0)
@@ -264,15 +265,20 @@ def test_a_session_is_valid_for_its_own_tenant_only(session, tenant_id, ready):
 
 
 def test_15_minutes_without_a_change_lock_the_session(session, tenant_id, ready):
-    assert not resolve(
-        session, ready, tenant_id, T0 + IDLE - timedelta(seconds=1)
-    ).locked
+    just_before = resolve(session, ready, tenant_id, T0 + IDLE - timedelta(seconds=1))
+    assert just_before is not None
+    assert not just_before.locked
     locked = resolve(session, ready, tenant_id, T0 + IDLE)
+    assert locked is not None
     assert locked.locked
     # Reading does not unlock; a change on an unlocked device moves the 15 minutes.
-    assert resolve(session, ready, tenant_id, T0 + IDLE).locked
+    read_again = resolve(session, ready, tenant_id, T0 + IDLE)
+    assert read_again is not None
+    assert read_again.locked
     mark_active(session, locked.session_id, T0 + timedelta(minutes=10))
-    assert not resolve(session, ready, tenant_id, T0 + timedelta(minutes=24)).locked
+    moved = resolve(session, ready, tenant_id, T0 + timedelta(minutes=24))
+    assert moved is not None
+    assert not moved.locked
 
 
 def test_the_team_pin_unlocks_and_five_wrong_ones_end_the_session(
@@ -280,9 +286,12 @@ def test_the_team_pin_unlocks_and_five_wrong_ones_end_the_session(
 ):
     late = T0 + IDLE
     access = resolve(session, ready, tenant_id, late)
+    assert access is not None
     assert unlock(session, access.session_id, "0000", late) == 4
     assert unlock(session, access.session_id, PIN, late) is None
-    assert not resolve(session, ready, tenant_id, late).locked
+    unlocked = resolve(session, ready, tenant_id, late)
+    assert unlocked is not None
+    assert not unlocked.locked
 
     later = late + IDLE
     for left in (4, 3, 2, 1, 0):
@@ -296,7 +305,9 @@ def test_the_team_pin_unlocks_and_five_wrong_ones_end_the_session(
 
 def test_sign_out_one_device_or_all(session, tenant_id, ready):
     second = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Handy", T0).token
-    one = resolve(session, second, tenant_id, T0).session_id
+    second_access = resolve(session, second, tenant_id, T0)
+    assert second_access is not None
+    one = second_access.session_id
     assert end_sessions(session, tenant_id, "operator:test", "lost", one) == 1
     session.commit()
     assert resolve(session, second, tenant_id, T0) is None
@@ -363,6 +374,7 @@ def test_the_operator_reads_and_sets_the_team_pin(session, tenant_id, ready):
     set_team_pin(session, tenant_id, "123456", "operator:test")
     late = T0 + IDLE
     access = resolve(session, ready, tenant_id, late)
+    assert access is not None
     assert unlock(session, access.session_id, PIN, late) == 4
     assert unlock(session, access.session_id, "123456", late) is None
     with pytest.raises(InvalidInput):
@@ -532,7 +544,7 @@ def test_a_link_replaced_while_it_is_used_is_refused_without_a_deadlock(
         text("SELECT id FROM gui_accounts WHERE tenant_id = :t FOR UPDATE"),
         {"t": tenant_id},
     )
-    outcome = []
+    outcome: list[str | None] = []
 
     def use():
         with Session(engine) as user:

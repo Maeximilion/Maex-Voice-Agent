@@ -83,8 +83,10 @@ def test_create_writes_the_whole_tenant_in_shadow_with_a_usable_setup_link(engin
     assert done.created and done.opening_hours == 24 and done.seats == 6
     with Session(engine) as session:
         tenant = session.get(Tenant, done.tenant_id)
+        assert tenant is not None
         assert (tenant.customer_key, tenant.name) == ("pizzeria-sued", "Testbetrieb")
         config = session.get(ServiceConfig, tenant.id)
+        assert config is not None
         assert config.call_mode == "shadow" and config.team_phone == TEAM
         assert config.holiday_region == "BW"
         assert config.privacy_notice_address == "example.com/datenschutz"
@@ -99,6 +101,7 @@ def test_create_writes_the_whole_tenant_in_shadow_with_a_usable_setup_link(engin
         )
         actions = session.scalars(select(AuditLog.action)).all()
         assert "tenant.provisioned" in actions
+        assert done.setup_token is not None
         assert use_link(
             session, tenant.id, done.setup_token, "Kuechentablet-2026", "4711", "x", T0
         )
@@ -108,7 +111,9 @@ def test_a_rerun_changes_nothing_and_keeps_what_the_team_set(engine):
     with Session(engine) as session:
         first = create_tenant(session, _spec(), "operator:test", T0)
     with Session(engine) as session:
-        session.get(ServiceConfig, first.tenant_id).call_mode = "primary"
+        config = session.get(ServiceConfig, first.tenant_id)
+        assert config is not None
+        config.call_mode = "primary"
         session.commit()
     rows = _count(engine, OpeningHours), _count(engine, AuditLog)
 
@@ -121,8 +126,11 @@ def test_a_rerun_changes_nothing_and_keeps_what_the_team_set(engine):
     )
     assert (_count(engine, OpeningHours), _count(engine, AuditLog)) == rows
     with Session(engine) as session:
-        assert session.get(ServiceConfig, first.tenant_id).call_mode == "primary"
-        assert session.get(Tenant, first.tenant_id).name == "Testbetrieb"
+        config = session.get(ServiceConfig, first.tenant_id)
+        tenant = session.get(Tenant, first.tenant_id)
+        assert config is not None and tenant is not None
+        assert config.call_mode == "primary"
+        assert tenant.name == "Testbetrieb"
 
 
 def test_a_second_customer_in_the_same_stack_is_refused(engine):
@@ -174,7 +182,9 @@ def test_the_team_phone_must_be_one_the_dialplan_dials(engine, monkeypatch):
         done = create_tenant(
             session, _spec(team_phone="07221 555 0000"), "operator:test", T0
         )
-        assert session.get(ServiceConfig, done.tenant_id).team_phone == TEAM
+        config = session.get(ServiceConfig, done.tenant_id)
+        assert config is not None
+        assert config.team_phone == TEAM
 
 
 def test_an_empty_team_phone_of_the_stack_refuses(engine, monkeypatch):
@@ -343,6 +353,7 @@ def test_missing_names_what_the_new_tenant_lacks_until_it_is_there(engine):
     )
     with Session(engine) as session:
         tenant_id = create_tenant(session, spec, "operator:test", T0).tenant_id
+        assert tenant_id is not None
         gaps = missing(session, tenant_id)
     assert [gap.split(" (")[0].split(",")[0] for gap in gaps] == [
         "seats for reservations",
@@ -377,7 +388,9 @@ def test_missing_names_what_the_new_tenant_lacks_until_it_is_there(engine):
         )
         session.add(BridgeHeartbeat(tenant_id=tenant_id, seen_at=T0))
         session.execute(text("UPDATE gui_accounts SET password_hash = 'x'"))
-        session.get(ServiceConfig, tenant_id).privacy_notice_address = "example.com/d"
+        config = session.get(ServiceConfig, tenant_id)
+        assert config is not None
+        config.privacy_notice_address = "example.com/d"
         session.commit()
         assert missing(session, tenant_id) == []
 

@@ -55,7 +55,8 @@ def pytest_collection_modifyitems(config, items):
     spec = os.environ.get("PYTEST_SHARD")
     if not spec:
         return
-    keep, drop = [], []
+    keep: list[pytest.Item] = []
+    drop: list[pytest.Item] = []
     for item in items:
         (keep if in_shard(item.nodeid, spec) else drop).append(item)
     config.hook.pytest_deselected(items=drop)

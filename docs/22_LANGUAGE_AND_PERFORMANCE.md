@@ -122,8 +122,18 @@ both read:
   there needed only the three bare `dict` annotations of `api/core/tool_log.py`.
 - No `Any`, no `type: ignore` and no new missing-import suppression were added.
 
-Next steps, one reviewable change each: shrink the test baseline file by file,
-then add more packages to the strict list (`api.domain.access` and
+**Second step (11.11.2026): the test baseline is empty.** All 75 test modules
+pass `check_untyped_defs`, so its override section is gone and every path is
+checked. Most fixes narrow an Optional with `assert x is not None` where the test
+already relied on the value; test doubles now match the protocol or class they
+stand in for. One production annotation was wrong: `api.db.get_db` returns a
+`Generator`, not an `Iterator`. Six `type: ignore` with a named code and two
+`cast` were added, each where a test deliberately breaks a type: a bare string
+for a card number, a settings field named by a parameter, a method patched on an
+instance, an attribute set on a double, a stub call object that only carries
+`.state`.
+
+Next steps, one reviewable change each: add more packages to the strict list (`api.domain.access` and
 `api.domain.callbacks` have 2 strict errors each, `api.schemas` 1; `api.models`
 has 8 bare `dict` or `list` columns). Count the rest again with
 `mypy --strict` before each step.

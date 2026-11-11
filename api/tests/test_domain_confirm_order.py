@@ -14,7 +14,7 @@ from api.domain.confirm import confirm
 from api.domain.ordering import draft_order
 from api.events.types import ORDER_CONFIRMED
 from api.models import AuditLog, CallModeWindow, Order, OutboxEvent, ServiceConfig
-from api.schemas.confirm import ConfirmRequest
+from api.schemas.confirm import Confirmation, ConfirmRequest
 from api.tests.test_domain_draft_order import (
     BERLIN,
     DIENSTAG,
@@ -375,6 +375,7 @@ def test_stornierte_bestellung_ist_conflict(session, tenant_id, call_id):
     session.commit()
     with pytest.raises(Conflict) as err:
         _confirm(session, tenant_id, call_id, order_id)
+    assert err.value.say is not None
     assert "storniert" in err.value.say
 
 
@@ -471,7 +472,8 @@ def test_parallel_auf_verschiedene_bestellungen_verschiedene_codes(migrated_db_u
     )
     engine.dispose()
 
-    assert sorted(results) == sorted(f"A{n}" for n in range(1, 7)), results
+    codes = [code for code in results if isinstance(code, str)]
+    assert sorted(codes) == sorted(f"A{n}" for n in range(1, 7)), results
 
 
 def test_confirm_wartet_auf_laufenden_not_aus(migrated_db_url):
@@ -516,5 +518,6 @@ def test_confirm_wartet_auf_laufenden_not_aus(migrated_db_url):
 
     assert blocked, "confirm muss auf den laufenden Not-Aus warten"
     [result] = results
+    assert isinstance(result, Confirmation), result
     assert result.handover == "awaiting_approval", result
     assert events == 0

@@ -148,6 +148,7 @@ def test_the_same_number_again_is_no_change(session, tenant_id):
 
 def test_the_owner_keeps_the_number_as_the_standard(session, tenant_id):
     card = staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    assert card is not None
     staff.decide(session, tenant_id, card.id, keep=True, now=NOW)
     config = _config(session, tenant_id)
     assert (config.team_phone, config.team_phone_today) == (NUMBER, None)
@@ -158,6 +159,7 @@ def test_the_owner_keeps_the_number_as_the_standard(session, tenant_id):
 def test_the_owner_undoes_the_number(session, tenant_id):
     standard = _config(session, tenant_id).team_phone
     card = staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    assert card is not None
     staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
     config = _config(session, tenant_id)
     assert staff.team_phone_at(config, NOW) == standard
@@ -170,6 +172,7 @@ def test_the_owner_undoes_the_number(session, tenant_id):
 
 def test_a_decided_card_is_no_error_on_a_second_tablet(session, tenant_id):
     card = staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    assert card is not None
     staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
     staff.decide(session, tenant_id, card.id, keep=True, now=NOW)
     assert _cards(session, tenant_id)[0].status == "undone"
@@ -183,19 +186,23 @@ def test_today_closed_holds_at_once(session, tenant_id):
     card = staff.change_day_hours(
         session, tenant_id, TUESDAY, DayHours(closed=True), NOW
     )
+    assert card is not None
     assert card.held and card.after["closed"] is True
     assert _windows(session, tenant_id, TUESDAY) == []
 
 
 def test_today_longer_hours_hold_at_once(session, tenant_id):
     longer = DayHours(opens=time(10), closes=time(23))
-    assert staff.change_day_hours(session, tenant_id, TUESDAY, longer, NOW).held
+    card = staff.change_day_hours(session, tenant_id, TUESDAY, longer, NOW)
+    assert card is not None
+    assert card.held
     assert _windows(session, tenant_id, TUESDAY) == [("10:00", "23:00")]
 
 
 def test_shorter_hours_for_a_later_date_hold_at_once(session, tenant_id):
     shorter = DayHours(opens=time(12), closes=time(13, 30))
     card = staff.change_day_hours(session, tenant_id, SATURDAY, shorter, NOW)
+    assert card is not None
     assert card.held and card.before == DayHours().as_dict()
     assert _windows(session, tenant_id, SATURDAY) == [("12:00", "13:30")]
 
@@ -204,12 +211,14 @@ def test_longer_or_extra_hours_for_a_later_date_wait_for_the_owner(session, tena
     before = _windows(session, tenant_id, SATURDAY)
     longer = DayHours(opens=time(11), closes=time(23))
     card = staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW)
+    assert card is not None
     assert not card.held
     assert _windows(session, tenant_id, SATURDAY) == before
     # Monday is closed in the seed: any hours are extra.
     extra = staff.change_day_hours(
         session, tenant_id, MONDAY, DayHours(opens=time(17), closes=time(22)), NOW
     )
+    assert extra is not None
     assert not extra.held and _windows(session, tenant_id, MONDAY) == []
     staff.decide(session, tenant_id, card.id, keep=True, now=NOW)
     assert _windows(session, tenant_id, SATURDAY) == [("11:00", "23:00")]
@@ -222,6 +231,7 @@ def test_the_owner_undoes_a_held_change_back_to_what_held_before(session, tenant
     card = staff.change_day_hours(
         session, tenant_id, SATURDAY, DayHours(closed=True), NOW
     )
+    assert card is not None
     staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
     assert _windows(session, tenant_id, SATURDAY) == before
     assert session.scalars(select(SpecialDay)).all() == []
@@ -232,6 +242,7 @@ def test_staff_taking_back_their_own_change_needs_no_owner(session, tenant_id):
     staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
     # Normal again is longer than closed, but it is what held before the staff came.
     card = staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(), NOW)
+    assert card is not None
     assert card.held and card.status == "undone"
     assert _windows(session, tenant_id, SATURDAY) == before
     assert staff.open_cards(session, tenant_id, TUESDAY) == []
@@ -251,6 +262,7 @@ def test_a_holiday_row_keeps_its_name_and_comes_back_on_undo(session, tenant_id)
     card = staff.change_day_hours(
         session, tenant_id, SATURDAY, DayHours(opens=time(12), closes=time(14)), NOW
     )
+    assert card is not None
     assert not card.held  # closed before: any hours are extra
     staff.decide(session, tenant_id, card.id, keep=True, now=NOW)
     row = session.scalars(select(SpecialDay)).one()
@@ -258,6 +270,7 @@ def test_a_holiday_row_keeps_its_name_and_comes_back_on_undo(session, tenant_id)
     card = staff.change_day_hours(
         session, tenant_id, SATURDAY, DayHours(opens=time(12), closes=time(13)), NOW
     )
+    assert card is not None
     staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
     row = session.scalars(
         select(SpecialDay).execution_options(populate_existing=True)
@@ -302,10 +315,13 @@ def test_open_cards_by_date_from_today_on(session, tenant_id):
 def test_asking_for_what_holds_withdraws_a_waiting_request(session, tenant_id):
     staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
     longer = DayHours(opens=time(10), closes=time(23))
-    assert not staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW).held
+    withdrawn = staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW)
+    assert withdrawn is not None
+    assert not withdrawn.held
     card = staff.change_day_hours(
         session, tenant_id, SATURDAY, DayHours(closed=True), NOW
     )
+    assert card is not None
     # The closing still holds and still waits for the owner's look.
     assert card.held and card.status == "open" and card.after["closed"] is True
     assert _windows(session, tenant_id, SATURDAY) == []
@@ -343,7 +359,9 @@ def test_hours_a_service_never_had_wait_even_inside_another_services_hours(
         session.delete(row)
     session.commit()
     noon = DayHours(opens=time(12), closes=time(13))
-    assert not staff.change_day_hours(session, tenant_id, SATURDAY, noon, NOW).held
+    narrowed = staff.change_day_hours(session, tenant_id, SATURDAY, noon, NOW)
+    assert narrowed is not None
+    assert not narrowed.held
     assert _windows(session, tenant_id, SATURDAY, "delivery") == [("17:00", "22:00")]
 
 
@@ -362,7 +380,9 @@ def test_a_card_of_a_past_day_changes_nothing_today(session, tenant_id):
     number and its card must stay."""
     yesterday = NOW - timedelta(days=1)
     old = staff.change_team_phone(session, tenant_id, "+4972215550000", yesterday)
+    assert old is not None
     today = staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    assert today is not None
     assert old.id != today.id
     for keep in (False, True):
         staff.decide(session, tenant_id, old.id, keep=keep, now=NOW)
@@ -465,6 +485,7 @@ def test_a_waiting_request_sent_again_pushes_and_writes_nothing(session, tenant_
     """Codex on #591: the same longer hours twice before the owner looked."""
     longer = DayHours(opens=time(11), closes=time(23))
     first = staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW)
+    assert first is not None
     assert staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW) is None
     assert len(_events(session, tenant_id)) == 1
     entries = session.scalars(
@@ -488,6 +509,7 @@ def test_a_waiting_request_sent_again_on_its_day_holds_and_pushes(session, tenan
 def test_the_owners_answer_pushes_nothing(session, tenant_id):
     """The owner decides with the PIN: nothing to tell the owner about."""
     card = staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    assert card is not None
     staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
     assert [kind for kind, _ in _events(session, tenant_id)] == [TEAM_PHONE_CHANGED]
 

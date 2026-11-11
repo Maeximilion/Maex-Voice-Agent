@@ -12,7 +12,7 @@ from api.core.errors import InvalidInput, NotFound
 from api.domain.callbacks import create_callback
 from api.domain.callbacks.create import _lock_call
 from api.models import AuditLog, Call, Callback, OutboxEvent
-from api.schemas.callbacks import CreateCallbackRequest
+from api.schemas.callbacks import CallbackTask, CreateCallbackRequest
 from scripts.seed import seed
 
 NOW = datetime(2026, 9, 15, 18, 0, tzinfo=UTC)
@@ -201,7 +201,7 @@ def test_gleichzeitige_erstaufrufe_erzeugen_nur_einen_rueckruf(migrated_db_url):
         call_id = call.id
 
     start = threading.Barrier(6)
-    results: list[object] = []
+    results: list[CallbackTask | Exception] = []
     lock = threading.Lock()
 
     def run() -> None:
@@ -210,7 +210,7 @@ def test_gleichzeitige_erstaufrufe_erzeugen_nur_einen_rueckruf(migrated_db_url):
         try:
             start.wait(timeout=10)
             with Session(engine) as own:
-                outcome: object = create_callback(
+                outcome: CallbackTask | Exception = create_callback(
                     own, request(tenant, call_id), now=NOW
                 )
         except Exception as exc:  # noqa: BLE001 - im Test soll jeder Fehler auffallen
@@ -243,7 +243,7 @@ def test_gleichzeitige_erstaufrufe_erzeugen_nur_einen_rueckruf(migrated_db_url):
     assert callbacks == 1, f"erwartet ein Rückruf, bekam {callbacks}"
     assert events == 1, f"erwartet ein Ereignis, bekam {events}"
     assert audits == 1, f"erwartet ein Audit-Eintrag, bekam {audits}"
-    ids = {r.callback_id for r in results}
+    ids = {r.callback_id for r in results if isinstance(r, CallbackTask)}
     assert len(ids) == 1, f"alle Aufrufe sollen denselben Rückruf liefern, bekam {ids}"
 
 
@@ -271,7 +271,7 @@ def test_zweiter_aufruf_wartet_auf_die_sperre_und_liest_danach_den_ersten(
         s.commit()
         call_id = call.id
 
-    ergebnis: list[object] = []
+    ergebnis: list[CallbackTask | Exception] = []
 
     def spaeter() -> None:
         try:

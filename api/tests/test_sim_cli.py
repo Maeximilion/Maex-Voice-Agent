@@ -5,13 +5,13 @@ import random
 import pytest
 
 from sim.cli import _converse, build_parser
-from sim.session import Turn, render_turn
+from sim.session import SimCall, Turn, render_turn
 
 
-class FakeCall:
+class FakeCall(SimCall):
     """Nimmt Kundenzuege entgegen und endet, wenn der vorbereitete Vorrat leer ist."""
 
-    def __init__(self, enden_nach: int | None = None):
+    def __init__(self, enden_nach: int | None = None):  # no super(): needs no database
         self.gehoert: list[str] = []
         self._enden_nach = enden_nach
 

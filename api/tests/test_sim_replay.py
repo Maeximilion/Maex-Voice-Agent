@@ -21,6 +21,7 @@ from api.models import Call, Callback, Reservation
 from scripts.seed import seed
 from sim.replay import customer_lines, load_case, replay
 from sim.scripted_llm import ScriptedLLM
+from sim.scripted_order import MenuNumbers
 from sim.session import SimCall, make_llm, render_turn, resolve_tenant
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -494,10 +495,12 @@ def test_call_on_the_scripted_stand_in_logs_no_model_and_no_cost(
 
 def test_scripted_is_the_stand_in_and_any_other_name_a_model(monkeypatch):
     monkeypatch.setattr(settings, "llm_base_url", "http://model.test/v1")
-    wanted = {"now": NOW, "timezone": "Europe/Berlin", "menu": lambda: None}
 
-    assert isinstance(make_llm("scripted", **wanted), ScriptedLLM)
-    named = make_llm("qwen3:14b", **wanted)
+    def build(name: str):
+        return make_llm(name, now=NOW, timezone="Europe/Berlin", menu=MenuNumbers)
+
+    assert isinstance(build("scripted"), ScriptedLLM)
+    named = build("qwen3:14b")
     assert isinstance(named, ChatCompletionsLLM)
     assert named.usage.model == "qwen3:14b"
 
@@ -516,6 +519,7 @@ def test_call_names_its_usage_for_the_terminal(session, tenant, monkeypatch):
 
     line = call.usage_line()
 
+    assert line is not None
     assert "test-model" in line
     assert "1 request" in line
     assert "9000" in line and "400" in line

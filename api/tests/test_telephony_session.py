@@ -84,6 +84,14 @@ class Core:
         self.speech = speech
         self.hung_up = caller_hung_up
 
+    def on_recording_stopped(self, session_id: str) -> bool:
+        self.calls.append(("recording_stopped",))
+        return False
+
+    def on_team_missed(self, session_id: str) -> bool:
+        self.calls.append(("team_missed",))
+        return False
+
     def turns(self) -> list[str]:
         return [call[1] for call in self.calls if call[0] == "turn"]
 
@@ -122,7 +130,7 @@ def call():
         drain()
         assert session.over or session._until_next_timer() is not None
 
-    session.drain = drain_and_check
+    session.drain = drain_and_check  # type: ignore[method-assign]  # the test wraps drain on purpose
     c = SimpleNamespace(
         clock=clock, line=line, ear=ear, mouth=mouth, lines=lines, core=core, s=session
     )

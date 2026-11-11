@@ -9,6 +9,7 @@ import datetime as dt
 import os
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,10 @@ HEADER = "## 5. Security audit\n\n### Audit log\n\n| Date | Kind | Commit | Scop
 
 class Repo(tuple):
     """commit, log, due to unpack; git and run as attributes."""
+
+    git: Callable[..., str]
+    run: Callable[..., subprocess.CompletedProcess[str]]
+    tasks: Callable[[str], None]
 
 
 def day(days_ago: int) -> str:
@@ -85,6 +90,7 @@ def repo(tmp_path):
 
     def run(*args, main="HEAD"):
         git("update-ref", "refs/remotes/origin/main", main)
+        assert BASH is not None  # checked at the top of this fixture
         return subprocess.run(
             [BASH, str(root / "scripts" / "audit_due.sh"), *args],
             env=env,

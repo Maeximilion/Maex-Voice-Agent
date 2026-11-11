@@ -186,6 +186,7 @@ def test_an_address_change_alone_is_a_change(session, tenant_id, order):
     after = _fresh(session, order)
     assert after.delivery_fee_cents == FEE and after.total_cents == 1380 + FEE
     [audit] = _corrections(session, order)
+    assert audit.payload is not None
     assert audit.payload["reason"] == "wrong_address"
     assert audit.payload["address_changed"] is True
     assert audit.payload["before"] == audit.payload["after"]
@@ -215,6 +216,7 @@ def test_an_address_and_a_dish_change_together(session, tenant_id, order):
     assert after.total_cents == 2070 + FAR_FEE
     assert _address(session, order).postal_code == "54321"
     [audit] = _corrections(session, order)
+    assert audit.payload is not None
     assert audit.payload["after"][0]["quantity"] == 3
     assert audit.payload["before_fee_cents"] == FEE
     assert audit.payload["after_fee_cents"] == FAR_FEE

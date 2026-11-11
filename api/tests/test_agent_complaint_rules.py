@@ -415,7 +415,9 @@ def test_the_yes_keeps_what_the_guest_heard_when_the_row_changes(
     result = agent.run_turn(state, "Ja")
 
     assert result.say == [GRANTED]
-    assert booked(session)[0].payload["remedy_cents"] == 345
+    payload = booked(session)[0].payload
+    assert payload is not None
+    assert payload["remedy_cents"] == 345
 
 
 # -- a call that ends on the offer ------------------------------------------------
@@ -493,6 +495,7 @@ def test_the_answer_to_the_recording_question_leaves_the_complaint_to_its_rule(
     )
 
     assert result.say == [OFFER]
+    assert state.remedy_offer is not None
     assert state.remedy_offer.complaint == "ich bin unzufrieden, das Essen war kalt."
     assert state.recording == "off"
     assert session.scalars(select(Recording)).all() == []
@@ -573,13 +576,17 @@ def test_a_negation_of_the_complaint_stays_behind_the_answer(
 def test_a_phrase_matches_as_whole_words(session, tenant_id, said):
     row = rule(session, tenant_id)
 
-    assert matching_rule(session, tenant_id, said).id == row.id
+    found = matching_rule(session, tenant_id, said)
+    assert found is not None
+    assert found.id == row.id
 
 
 def test_a_rule_matches_on_any_of_its_phrases(session, tenant_id):
     row = rule(session, tenant_id, phrases=["kalt", "viel zu spät"])
 
-    assert matching_rule(session, tenant_id, "Das kam viel zu spät").id == row.id
+    found = matching_rule(session, tenant_id, "Das kam viel zu spät")
+    assert found is not None
+    assert found.id == row.id
 
 
 @pytest.mark.parametrize(
@@ -621,7 +628,9 @@ def test_a_sentence_that_rules_something_out_or_only_supposes_is_no_match(
 def test_a_negation_inside_the_phrase_of_the_row_counts(session, tenant_id):
     row = rule(session, tenant_id, phrases=["nicht warm"])
 
-    assert matching_rule(session, tenant_id, "Das war nicht warm").id == row.id
+    found = matching_rule(session, tenant_id, "Das war nicht warm")
+    assert found is not None
+    assert found.id == row.id
 
 
 def test_two_rules_that_match_are_a_doubt(session, tenant_id):
@@ -629,7 +638,9 @@ def test_two_rules_that_match_are_a_doubt(session, tenant_id):
     rule(session, tenant_id, name="Zwei", phrases=["spät"])
 
     assert matching_rule(session, tenant_id, "Kalt und spät") is None
-    assert matching_rule(session, tenant_id, "Viel zu spät").name == "Zwei"
+    found = matching_rule(session, tenant_id, "Viel zu spät")
+    assert found is not None
+    assert found.name == "Zwei"
 
 
 def test_a_rule_switched_off_does_not_match(session, tenant_id):

@@ -192,6 +192,7 @@ def test_reservations_off_are_said_while_the_restaurant_is_closed(session, tenan
 
     status = get_service_status(session, tenant_id, now=berlin(MONTAG, 18, 30))
 
+    assert status.say is not None
     assert status.say.startswith("Wir haben gerade geschlossen.")
     assert status.say.endswith("Reservierungen nehmen wir gerade nicht an.")
 

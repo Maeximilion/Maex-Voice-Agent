@@ -140,6 +140,7 @@ def test_a_saved_room_comes_back_as_it_was_sent(session, tenant_id):
     assert saved["combinations"] == [sorted([one["id"], two["id"]])]
     assert floor_plan.plan(session, tenant_id) == [saved]
     entry = _audits(session, floor_plan.ACTION_SAVED)[-1]
+    assert entry.payload is not None
     assert entry.payload["tables_added"] == ["T1", "T2"]
     assert entry.payload["combinations_added"] == [["T1", "T2"]]
     assert entry.payload["fixtures"] == [0, 4]
@@ -305,9 +306,9 @@ def test_a_removed_table_is_kept_and_an_undo_brings_it_back(session, tenant_id):
     removed = session.get(DiningTable, uuid.UUID(two["id"]))
     assert removed.deleted_at is not None
     assert session.scalar(select(func.count()).select_from(TableCombination)) == 0
-    assert _audits(session, floor_plan.ACTION_SAVED)[-1].payload["tables_removed"] == [
-        "T2"
-    ]
+    removed_payload = _audits(session, floor_plan.ACTION_SAVED)[-1].payload
+    assert removed_payload is not None
+    assert removed_payload["tables_removed"] == ["T2"]
 
     back = _save(
         session,
@@ -342,6 +343,7 @@ def test_a_changed_table_is_in_the_audit_log_with_before_and_after(session, tena
     _save(session, tenant_id, saved, tables=[{**table, "seats": 6, "x_cm": 300}])
 
     payload = _audits(session, floor_plan.ACTION_SAVED)[-1].payload
+    assert payload is not None
     assert payload["revision"] == 2
     assert payload["tables_changed"] == {"T1": {"seats": [4, 6], "x_cm": [200, 300]}}
 
@@ -387,6 +389,7 @@ def test_a_new_room_is_logged_and_starts_square_when_its_sides_are_equal(
 
     assert (room["shape"], room["revision"], room["tables"]) == ("square", 0, [])
     entry = _audits(session, floor_plan.ACTION_AREA_CREATED)[-1]
+    assert entry.payload is not None
     assert entry.payload["name"] == "Saal"
     assert entry.entity_id == uuid.UUID(room["id"])
 

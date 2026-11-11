@@ -8,6 +8,7 @@ auch einen mit unbekanntem Toolnamen -- in `calls.tool_calls` protokolliert
 import json
 import uuid
 from datetime import date, datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -37,6 +38,7 @@ from api.agent.loop import (
     SAY_TEAM_OFFER,
     SUMMARY_OPEN_ORDER,
     ConversationLoop,
+    TurnResult,
     _booked_say,
     _local_times,
     _order_lines,
@@ -488,7 +490,14 @@ def test_last_resort_never_promises_a_transfer(session, state, customer):
 class BrokenLLM:
     """A model that is unreachable or answers outside the contract (T-2.4)."""
 
-    def next_turn(self, system_prompt, state_json, input_text):
+    def next_turn(
+        self,
+        system_prompt: str,
+        state_json: dict[str, Any],
+        input_text: str,
+        *,
+        timeout: float | None = None,
+    ) -> LLMTurn:
         raise LLMError("model call failed: ReadTimeout")
 
 
@@ -536,7 +545,14 @@ def test_model_failure_after_a_tool_call_still_hands_over(session, state):
     """The model answers once, then drops out in the middle of the turn."""
 
     class DropsOut(FakeLLM):
-        def next_turn(self, system_prompt, state_json, input_text):
+        def next_turn(
+            self,
+            system_prompt: str,
+            state_json: dict[str, Any],
+            input_text: str,
+            *,
+            timeout: float | None = None,
+        ) -> LLMTurn:
             if not self._turns:
                 raise LLMError("model call failed: ConnectError")
             return super().next_turn(system_prompt, state_json, input_text)
@@ -689,7 +705,14 @@ def test_confirm_in_the_turn_of_the_draft_stays_a_draft(session, state):
 
         calls = 0
 
-        def next_turn(self, system_prompt, state_json, input_text):
+        def next_turn(
+            self,
+            system_prompt: str,
+            state_json: dict[str, Any],
+            input_text: str,
+            *,
+            timeout: float | None = None,
+        ) -> LLMTurn:
             self.calls += 1
             if self.calls == 1:
                 return LLMTurn(
@@ -1270,7 +1293,14 @@ def test_mangled_caller_id_books_nothing_and_the_number_in_the_state_does(
 
         calls = 0
 
-        def next_turn(self, system_prompt, state_json, input_text):
+        def next_turn(
+            self,
+            system_prompt: str,
+            state_json: dict[str, Any],
+            input_text: str,
+            *,
+            timeout: float | None = None,
+        ) -> LLMTurn:
             self.calls += 1
             if self.calls == 1:
                 return LLMTurn(
@@ -1325,7 +1355,14 @@ def test_reservation_goes_under_the_number_the_guest_chose(session, called_state
 
         calls = 0
 
-        def next_turn(self, system_prompt, state_json, input_text):
+        def next_turn(
+            self,
+            system_prompt: str,
+            state_json: dict[str, Any],
+            input_text: str,
+            *,
+            timeout: float | None = None,
+        ) -> LLMTurn:
             self.calls += 1
             if self.calls == 1:
                 return LLMTurn(
@@ -1868,7 +1905,7 @@ def test_a_number_that_never_comes_ends_the_call_on_the_ladder(
         session, FakeLLM(turns), "system", now=NOW, clock=clock_from([0])
     )
 
-    results = []
+    results: list[TurnResult] = []
     while not (results and results[-1].ended) and len(results) < 10:
         results.append(loop.run_turn(state, "... chhh ..."))
 

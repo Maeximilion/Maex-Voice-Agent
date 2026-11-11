@@ -27,7 +27,7 @@ def unprivileged(monkeypatch):
     it makes its temporary folders, and refuses one that is not its own."""
     seen = types.ModuleType("os")
     seen.__dict__.update(vars(os))
-    seen.getuid = lambda: 1000
+    seen.__dict__["getuid"] = lambda: 1000
     monkeypatch.setattr(kit, "os", seen)
 
 
@@ -317,6 +317,7 @@ def fake_containers(monkeypatch, verdicts: str):
             (Path(arg.split(":")[0]) for arg in command if arg.endswith(":/work")), None
         )
         if "measure" in command:
+            assert run_dir is not None
             plan = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
             said = [s for s in plan["sentences"] if s["kind"] == "number"]
             texts = {"r": "Nummer 23", "w": "Nummer 24", "e": ""}
@@ -590,11 +591,12 @@ def test_judge_only_judges_the_recorded_run_again_and_speaks_nothing(
 
     seen = []
     fake = kit.docker
-    monkeypatch.setattr(
-        kit,
-        "docker",
-        lambda command, dry, cwd=None: (seen.append(command), fake(command, dry, cwd)),
-    )
+
+    def recording(command, dry, cwd=None):
+        seen.append(command)
+        return fake(command, dry, cwd)
+
+    monkeypatch.setattr(kit, "docker", recording)
     assert kit.main(["--run-dir", str(tmp_path), "--judge-only"]) == 1
 
     assert not any("fetch" in c or "measure" in c for c in seen)
@@ -1225,6 +1227,7 @@ def test_a_run_of_orders_speaks_only_orders_and_judges_each_as_one(
             (Path(arg.split(":")[0]) for arg in command if arg.endswith(":/work")), None
         )
         if "measure" in command:
+            assert run_dir is not None
             plan = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
             assert {s["kind"] for s in plan["sentences"]} == {"order"}
             texts = [s["say"] for s in plan["sentences"]]

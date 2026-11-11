@@ -135,6 +135,7 @@ def test_menge_aendern_rechnet_neu_und_zaehlt_die_korrektur(
     assert (order.items_total_cents, order.total_cents) == (2070, 2070)
     assert _rows(session, order_id)[0].quantity == 3
     [audit] = _corrections(session, order_id)
+    assert audit.payload is not None
     assert audit.actor == "gui:tablet"
     assert audit.payload["reason"] == "wrong_quantity"
     assert audit.payload["before"][0]["quantity"] == 2
@@ -326,6 +327,7 @@ def test_position_mit_hinweis_faellt_nicht_still_weg(session, tenant_id, call_id
     )
     assert [r.note for r in _rows(session, order_id)] == [None]
     [audit] = _corrections(session, order_id)
+    assert audit.payload is not None
     assert audit.payload["note_dropped"] is True
     # audit_log bleibt laenger als die Bestellung: kein Hinweistext, keine Person.
     text = str(audit.payload)
@@ -414,7 +416,9 @@ def test_fremde_position_und_heute_aus(session, tenant_id, call_id):
 
 
 def test_nummer_wie_search_menu(session, tenant_id):
-    assert find_by_number(session, tenant_id, " 023 ").number == "23"
+    found = find_by_number(session, tenant_id, " 023 ")
+    assert found is not None
+    assert found.number == "23"
     assert find_by_number(session, tenant_id, "99") is None
     assert find_by_number(session, tenant_id, "50") is None  # inaktiv
     assert find_by_number(session, tenant_id, "") is None
@@ -669,6 +673,7 @@ def test_same_swap_next_to_a_real_change_leaves_its_row_alone(
     # 2 x (15,50 - 1,00 + 0,50) + 3 x 6,90
     assert _order_row(session, order_id).total_cents == 5070
     [audit] = _corrections(session, order_id)
+    assert audit.payload is not None
     assert audit.payload["labels"][0] == ["47", "Ente knusprig"]
 
 

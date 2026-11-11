@@ -60,6 +60,7 @@ def run(tmp_path, request):
         if lang is not None:
             env = {k: v for k, v in env.items() if not k.startswith("LC_")}
             env["LANG"] = lang
+        assert BASH is not None  # the module skips without bash
         out = subprocess.run(
             [BASH, str(HOOK)],
             input=json.dumps(payload),

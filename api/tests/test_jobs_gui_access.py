@@ -68,7 +68,9 @@ def test_sign_out_ends_one_device_by_its_id_or_all(engine, tenant_id, capsys):
     with Session(engine) as session:
         first = use_link(session, tenant_id, code, PASSWORD, "4711", "Tablet", T0).token
         second = sign_in(session, tenant_id, PASSWORD, "192.0.2.1", "Handy", T0).token
-        one = resolve(session, second, tenant_id, T0).session_id
+        second_access = resolve(session, second, tenant_id, T0)
+    assert second_access is not None
+    one = second_access.session_id
 
     assert gui_access.main(["devices"]) == 0
     listed = capsys.readouterr().out

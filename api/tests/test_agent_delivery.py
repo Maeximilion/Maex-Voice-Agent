@@ -271,6 +271,7 @@ def test_the_team_switch_reaches_a_call_in_progress(
     )
 
     assert result.error_code == "closed"
+    assert result.say is not None
     assert result.say.startswith(SAY_DELIVERY_CLOSED)
 
 
@@ -419,6 +420,7 @@ def test_a_recognized_customer_with_another_name_is_asked(session, tenant_id, ca
     result = dispatch(session, call_id, tenant_id, "draft_order", draft, now=NOW)
 
     assert result.error_code == "invalid_input"
+    assert result.say is not None
     assert "Rheinstraße" not in result.say
 
 
@@ -482,6 +484,7 @@ def test_below_the_minimum_reaches_the_model_with_its_sentence(
     )
 
     assert result.error_code == "below_minimum"
+    assert result.say is not None
     assert "6 Euro 20" in result.say
     assert session.scalar(select(Order.id)) is None
 
@@ -497,6 +500,7 @@ def test_out_of_zone_reaches_the_model_with_its_sentence(session, tenant_id, cal
     )
 
     assert result.error_code == "out_of_zone"
+    assert result.say is not None
     assert "abholen" in result.say
 
 

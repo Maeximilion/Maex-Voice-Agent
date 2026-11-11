@@ -95,7 +95,7 @@ def _routes():
         if not isinstance(route, APIRoute):
             continue
         path = re.sub(r"\{[^}]+\}", ANY_ID, route.path)
-        for method in route.methods:
+        for method in route.methods or ():
             yield method, path
 
 
@@ -357,11 +357,11 @@ def test_the_check_leaves_no_transaction_open_for_the_event_stream(engine):
     from api.gui.session import require_gui_session
 
     with Session(engine) as session:
-        code, _ = issue_link(
-            session, stack_tenant_id(session), "operator:test", clock.utcnow()
-        )
+        tenant_id = stack_tenant_id(session)
+        assert tenant_id is not None
+        code, _ = issue_link(session, tenant_id, "operator:test", clock.utcnow())
         token = use_link(
-            session, stack_tenant_id(session), code, PASSWORD, PIN, "x", clock.utcnow()
+            session, tenant_id, code, PASSWORD, PIN, "x", clock.utcnow()
         ).token
     scope = {
         "type": "http",
