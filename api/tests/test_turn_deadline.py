@@ -19,7 +19,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.agent.llm import ChatCompletionsLLM, LLMError, LLMTurn, ToolCall
-from api.agent.loop import ConversationLoop
+from api.agent.loop import SAY_CALLBACK_NUMBER, ConversationLoop
 from api.agent.state import ConversationState
 from api.core.envelope import SAY_ON_FAILURE
 from api.domain.calls import call_routing
@@ -223,6 +223,23 @@ def test_a_number_heard_in_the_late_answer_still_reaches_the_callback(session, s
     )
 
     assert result.ended is True and state.stage == "callback"
+    assert session.scalars(select(Callback)).one().phone == "+4972215551234"
+
+
+def test_a_slow_model_with_nobody_to_reach_and_no_number_asks_for_one(session, state):
+    """Nobody to transfer to, a withheld caller ID and no number said: the
+    core asks for one itself, and the next sentence is its answer, never a
+    second wait for the model (#652, rule 5)."""
+    clock = Clock()
+    model = SlowModel(clock, (11.0, LLMTurn(say="Gern, für wann?")))
+    loop = _loop(session, model, clock, now=CLOSED_NOW)
+
+    result = loop.run_turn(state, "Einen Tisch bitte")
+
+    assert result.ended is False and result.say == [SAY_CALLBACK_NUMBER]
+    result = loop.run_turn(state, "07221 5551234")
+    assert result.ended is True and state.stage == "callback"
+    assert len(model.given) == 1
     assert session.scalars(select(Callback)).one().phone == "+4972215551234"
 
 

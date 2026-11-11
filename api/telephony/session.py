@@ -32,10 +32,11 @@ older is waiting in the queue: a key, an answer or a report from the line that
 arrived in time is handled as in time, however late the worker gets to it.
 
 **What ends a session.** `outcome` says how: `hangup` (we ended the call),
-`transfer` (handed to `transfer_target`), `closed` (the caller hung up) or
-`failed`. Only `hangup` lets the dialplan end the call; after anything else it
-rings the team (docs/20 §5), so a crash here never leaves a caller on a dead
-line. A call whose voice failed is never hung up by us.
+`transfer` (handed to `transfer_target`), `closed` (the caller hung up, or the
+telephone system closed a leg we had not answered) or `failed`. Only `hangup`
+lets the dialplan end the call; after anything else it rings the team
+(docs/20 §5), so a crash here never leaves a caller on a dead line. A call
+whose voice failed is never hung up by us.
 
 **A recording** (T-11.3, docs/09 L2) runs from the caller's yes to the handover
 or the end of the call. A team leg is the telephone system's: with
@@ -698,6 +699,12 @@ class CallSession:
                 logger.exception("what was queued could not be dropped")
         self._failure_told = True
         self._turn(lambda: self._events.on_voice_failure(self.session_id))
+        if not self.over and self._ending is not None and not self._outstanding:
+            # A transfer that waited for a sentence the flush above dropped:
+            # nothing reports the end of that sentence any more, and the
+            # core's own transfer does not replace the first one
+            # (`_queue_ending`). The team is rung now (#652, rule 5).
+            self._perform_ending()
 
     def _queue_ending(self, ending: tuple[str, str | None]) -> None:
         if self._failed and ending[0] == "hangup":
@@ -757,6 +764,10 @@ class CallSession:
         # log now, after the last sentence was played and the line has our
         # hangup or transfer, not when it asked for them. `closed` is a caller
         # gone before the line had either: nothing rings the team for it.
+        # Unless we never answered: the dialplan closes a leg that says
+        # nothing for 10 s and rings the team, and a caller who gives up
+        # while it still rings looks the same from here. Neither is a caller
+        # who hung up on us (#652).
         try:
             self._events.on_call_ended(
                 self.session_id,
@@ -764,7 +775,7 @@ class CallSession:
                     heard_seconds=self._fed_bytes / (2 * self._sample_rate),
                     spoken_characters=self._spoken_characters,
                 ),
-                caller_hung_up=outcome == "closed",
+                caller_hung_up=outcome == "closed" and self._answered,
             )
         except Exception:
             logger.exception("the core could not be told that the call ended")
