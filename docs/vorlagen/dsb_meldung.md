@@ -1,6 +1,8 @@
 # Meldung des Datenschutzbeauftragten und Pflichtenliste (Entwurf)
 
-> Draft, not legal advice (limits of D20). Serves D9 (`docs/09_OPERATIONS_LEGAL.md` section 1): Maxi is his own data protection officer (decided 20.10.2026, against the recommendation; recorded risk: conflict of interest, CJEU C-453/21, Art. 38(6)). Part 1 says what to report and what to publish (Art. 37(7)); part 2 is the one-page checklist of every duty from docs/09 with the step it blocks. Maxi fills in, reports and publishes. Which authority is competent and how it takes the report (form, portal) is not in the repository: <offen: zuständige Aufsichtsbehörde und ihr Meldeweg>.
+> Draft, not legal advice (limits of D20). Serves D9 (`docs/09_OPERATIONS_LEGAL.md` section 1): Maxi is his own data protection officer (decided 20.10.2026, against the recommendation; recorded risk: conflict of interest, CJEU C-453/21, Art. 38(6)). Part 1 says what to report and what to publish (Art. 37(7)); part 2 is the one-page checklist of every duty from docs/09 with the step it blocks. Maxi fills in, reports and publishes. Competent is the data protection authority of the federal state where the controller has its seat; the state authorities take the report through an online form on their website, and the law names no fee and no deadline (check of 11.11.2026): <offen: Name der Aufsichtsbehörde und Adresse ihres Meldeformulars>.
+
+> **Check of 11.11.2026 (docs/09 section 1, D9): more than a risk.** An officer is mandatory here (§ 38(1) sentence 2 BDSG, because the DSFA is due). The authorities see a conflict of interest as the rule when the managing director or owner is named (Hessian authority citing C-453/21; DSK short paper 12), so the authority can reject this report, and the DSFA then lacks the officer's advice (L10). The route without that conflict is an external officer (Art. 37(6) GDPR); part 1 works for either, only the name changes.
 
 ## Teil 1: Meldung nach Art. 37 Abs. 7 DSGVO
 
@@ -31,12 +33,14 @@ Eine Pflicht, die als "erster echter Anruf" markiert ist, blockiert jeden echten
 | L10 DSFA fertigstellen, mit Rat des Beauftragten | Entwurf v0.1 liegt außerhalb des Repos | fertigstellen (Abwägung L12 als eine Seite) | erster echter Anruf in jedem Modus |
 | L11 Informationsblatt, Einwilligungen des Teams | `team_information.md` | austeilen, unterschreiben lassen, Kopien außerhalb des Repos | Informationsblatt: erster echter Anruf; Einwilligungen: Modus `shadow` mit Aufzeichnung |
 | L2 Einwilligungsfrage, Aufbewahrung, Stopp der Aufnahme | Abschnitt 4 des Hinweises | gebaut am 02.11.2026 (T-11.3), aus; einschalten erst nach den Einwilligungen des Teams (L11) | Modus `shadow` mit Aufzeichnung |
-| L1, N1 KI-Hinweis, Eval "Sind Sie ein Mensch?" | Abschnitt 2 des Hinweises | nichts; gebaut am 26.10.2026 (T-11.5); N1 bei den endgültigen Art.-50-Leitlinien neu prüfen | erster echter Anruf (erledigt im Code) |
+| L1 KI-Hinweis, Eval "Sind Sie ein Mensch?" | Abschnitt 2 des Hinweises | nichts; gebaut am 26.10.2026 (T-11.5); offen ist ein Eval für Anrufer, die den Assistenten für einen Menschen halten (#638) | erster echter Anruf (erledigt im Code) |
+| N1 Kennzeichnung der synthetischen Stimme (Art. 50 Abs. 2 KI-Verordnung, Leitlinien vom 05.11.2026) | keiner | nichts; Messung und Notiz sowie die Kennzeichnung gespeicherter Aufnahmen sind eine Aufgabe im Code (#637) | Notiz: erster echter Anruf; Kennzeichnung: Aufzeichnung |
+| N3 KI-Kompetenz des Teams (Art. 4 KI-Verordnung) | `team_einweisung.md` | Einweisung halten, Blatt unterschrieben außerhalb des Repos ablegen | erster echter Anruf |
 | L15 Hinweis auf das Anrufprotokoll | Abschnitt 5 des Hinweises | mit dem Hinweis veröffentlichen | Hinweis online |
 | L16 Piper-Lizenz | keiner | vor jeder Weitergabe einer Kopie entscheiden (E16) | Weitergabe einer Kopie |
-| L17 Allergenliste auf der Website | `allergenliste.md` | Werte aus der Datenbank erzeugen, veröffentlichen | erste echte Bestellung |
-| L18 Verfahrensdokumentation, Tagesbericht, Steuerberater | `verfahrensdokumentation_telefon.md` | ausfüllen, Dauer der Aufbewahrung erfragen | erste echte Bestellung |
-| N2 Lieferbedingungen, kein Widerrufsrecht | `lieferbedingungen.md` | ausfüllen, veröffentlichen | erste echte Lieferbestellung |
+| L17 Allergenliste mit Zusatzstoffen auf der Website und gedruckt bei jeder Lieferung | `allergenliste.md` | Werte aus der Datenbank erzeugen, Zusatzstoffe in der Kasse pflegen und eintragen, veröffentlichen, drucken | erste echte Bestellung |
+| L18 Verfahrensdokumentation, Tagesbericht, Steuerberater | `verfahrensdokumentation_telefon.md` | ausfüllen, die Frage aus Abschnitt 6 der Steuerberatung stellen | erste echte Bestellung |
+| N2 Lieferbedingungen, kein Widerrufsrecht, Bestätigung auf Papier (§ 312f Abs. 2 BGB) | `lieferbedingungen.md` | ausfüllen, veröffentlichen, gedruckt mit dem Kassenbeleg jeder Lieferung und jeder telefonisch bestellten Abholung beilegen | erste echte Bestellung |
 | D9 Beauftragter melden, Kontakt veröffentlichen | Teil 1 oben | melden (Art. 37 Abs. 7), Kontakt in den Hinweis | erster echter Anruf |
 | U2 Anfragen betroffener Personen | Ablauf in docs/09 Abschnitt 2 | Anfrageprotokoll als Datei außerhalb des Repos führen | erster echter Anruf |
 | U7 Sicherungen verschlüsselt, Hinweis zu Backups | Abschnitt 8 des Hinweises | Speicheranbieter mit Vertrag wählen | echte Daten auf dem Server |

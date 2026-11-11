@@ -12,7 +12,7 @@ Am Telefon des Restaurants nimmt ein KI-Assistent Reservierungen, Abholbestellun
 
 ### 2. Der Assistent nimmt keine Zahlung an
 
-Der Assistent nimmt kein Geld an, kennt keine Zahlungsart, erzeugt keine Quittung und hat keine Kassenfunktion. Er braucht deshalb keine eigene technische Sicherheitseinrichtung (TSE) (AEAO zu § 146a Nr. 1.2, als allgemeine Regel gelesen). Die Zahlung geschieht beim Abholen oder bei der Lieferung gegenüber dem Team. <offen: Zahlungsweise bei Lieferung eintragen>
+Der Assistent nimmt kein Geld an, kennt keine Zahlungsart, kann keine Zahlung als erfolgt vermerken, erzeugt keine Quittung und hat keine Kassenfunktion. Er braucht deshalb keine eigene technische Sicherheitseinrichtung (TSE): Eine Kassenfunktion hat nur ein System, das der Erfassung und Abwicklung von zumindest teilweise baren Zahlungsvorgängen dienen kann (AEAO zu § 146a Nr. 1.2), und ein Bestellsystem ohne Abrechnungsteil teilt die TSE der Kasse nur, wenn es mit ihr verbunden ist (Nr. 1.6); der Assistent ist es nicht. Die Zahlung geschieht beim Abholen oder bei der Lieferung gegenüber dem Team. <offen: Zahlungsweise bei Lieferung eintragen>
 
 ### 3. Die Kasse ist das einzige Buchungssystem
 
@@ -34,7 +34,7 @@ Eine Bestellung, die vom Vortag noch nicht als "In Kasse eingegeben" markiert is
 
 ### 6. Aufbewahrung
 
-- **Bestellzeilen ohne persönliche Angaben** (Positionen, Preise, Zeiten, `call_id`) werden so lange aufbewahrt, wie die Steuerberatung es verlangt (L18). <offen: Dauer; Maxi fragt nach. Gelöscht wird erst nach deren Wort.>
+- **Bestellzeilen ohne persönliche Angaben** (Positionen, Preise, Zeiten, `call_id`) werden so lange aufbewahrt, wie die Steuerberatung es verlangt (L18). <offen: Dauer. Frage an die Steuerberatung (Prüfung vom 11.11.2026): Sind die Bestellzeilen des Assistenten Aufzeichnungen eines Vorsystems (GoBD Rz. 20 und 132), und gelten 10, 8 oder 6 Jahre (§ 147 Abs. 3 AO)? Gelöscht wird erst nach deren Wort.>
 - **Name, Telefonnummer, Adresse und Notizen** an der Bestellung werden nach 90 Tagen entfernt, die Bestellzeile bleibt (docs/03 Löschkonzept; Art. 17 Abs. 3 lit. b DSGVO für die steuerlichen Zeilen).
 - **Papierzettel** (Eingabezettel): <offen: Wann sie vernichtet werden, legt Maxi fest; das Repo nennt keine Frist. Aufbewahrungspflichtig ist der Beleg der Kasse.>
 - Sicherungskopien der Datenbank laufen rollierend 30 Tage (docs/03). Die Kasse führt ihre eigene Aufbewahrung.

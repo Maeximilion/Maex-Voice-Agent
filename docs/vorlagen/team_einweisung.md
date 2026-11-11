@@ -2,6 +2,14 @@
 
 > For everyone who works at the counter or the kitchen. 15 minutes: Maxi reads it with the team once, with the tablet in hand, then it hangs next to the tablet. The words in quotes are the labels on the tablet. Translate the sheet into the team's working language before the briefing and keep the tablet labels as they are.
 
+## 0. What the AI is
+
+This briefing with its sign-off is also the restaurant's measure for Art. 4 of the EU AI Act (staff who work with an AI system know what it is), `docs/09_OPERATIONS_LEGAL.md` section 1, N3.
+
+- The AI is a computer program that understands speech and answers with an artificial voice. It tells every caller so in its first sentence, and again when asked. Never tell a guest it was a person.
+- It can mishear a dish, a name, a number or an address. That is why it reads every order back, why you look at every order, and why "KI pausieren" exists.
+- It knows prices, hours, delivery zones and allergens only from the restaurant's own data. What is not stored there it does not know, and it must not guess.
+
 ## 1. The one thing to remember
 
 **Something is wrong with the AI, a guest complains, or you are unsure: tap "KI pausieren" in the top bar.** One tap, no question asked. From that moment every call rings the team's telephones. Nothing is lost, nothing needs to be explained first. Look at the problem afterwards. To switch the AI on again, tap "KI einschalten" and confirm.
@@ -10,7 +18,7 @@
 
 | Text | Meaning |
 |---|---|
-| "KI hört mit" | The AI listens only. Every call rings the team as before. |
+| "KI hört mit" | The AI takes no call. Every call rings the team as before. Nothing is listened to or recorded unless recording is switched on, the caller said yes to it and you signed your consent. |
 | "KI springt ein" | Meant: the team's telephones ring first, the AI answers when nobody picks up. **Today the AI answers every call that reaches it exactly as in "KI nimmt an"; whether the team's telephones ring first is set at the router, not on the tablet.** The tablet switch alone only changes the orders: they wait for your "Passt". |
 | "KI nimmt an" | The AI answers first. The team is the fallback. |
 | "KI ist aus" | Emergency stop. Every call rings the team. |
@@ -25,7 +33,8 @@ The three mode buttons switch between the first three. A step towards more AI as
 - **The slip at the register says "NICHT IN KASSE".** Type the order into the register, then tap "In Kasse eingegeben". The register is the only place that books it.
 - **A red card needs you now:** an order waited too long for "Passt", or the slip did not reach the printer. Tap "Nochmal senden", check the printer (power, paper, lid).
 - **"Rückrufe":** a guest the AI could not help. Call back, then tap "Erledigt". A card with "Andere Nummer als der Anruf" or "Anruf ohne Rufnummer": the number shown is the one to call, or ask the guest.
-- **Allergies:** the AI never answers beyond what is stored for the dish. Any other question about allergens goes to you. Say what you know, or say you will check; never guess.
+- **Allergies:** the AI never answers beyond what is stored for the dish. Any other question about allergens or additives goes to you. Say what you know, or say you will check; never guess.
+- **Every delivery, and every pickup ordered by phone, leaves with three papers:** the register's receipt, the printed delivery terms and the printed allergen list.
 
 ## 4. Every morning, one minute
 

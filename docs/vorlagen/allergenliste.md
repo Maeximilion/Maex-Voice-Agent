@@ -1,6 +1,6 @@
 # Allergenliste, Seitenrahmen (Entwurf)
 
-> Draft, not legal advice (limits of D20). Serves L17 (`docs/09_OPERATIONS_LEGAL.md` section 1): the allergen list must be on the website before the first real order (LMIV). **No allergen value is written in this file** (hard rule 1): the values come from the database as maintained (`item_allergens`) and are filled into the table from there, or exported from it. Maxi publishes the page. Where a value is not maintained for a dish, the page says so and does not guess.
+> Draft, not legal advice (limits of D20). Serves L17 (`docs/09_OPERATIONS_LEGAL.md` section 1): the allergen list must be on the website before the first real order (LMIV). **No allergen value is written in this file** (hard rule 1): the values come from the database as maintained (`item_allergens`) and are filled into the table from there, or exported from it. Maxi publishes the page. Where a value is not maintained for a dish, the page says so and does not guess. **A printed copy goes with every delivery** (check of 11.11.2026): for food sold at a distance the information is due before the order and again at the moment of delivery (Art. 14(1) and (2) of Regulation (EU) No 1169/2011). Before the order the website alone is as a rule not enough for a guest who orders by phone; the assistant's spoken answer from the maintained values and the team cover that.
 
 ## Allergene in unseren Speisen
 
@@ -43,7 +43,13 @@ Bei einer Speise ohne gepflegte Angabe steht: "Allergene nicht gepflegt, bitte b
 
 ### Zusatzstoffe
 
-<offen: Das Repo führt keine Zusatzstoffe (Farbstoff, Konservierungsstoff usw.); Maxi prüft selbst, ob die Speisekarte sie kennzeichnen muss.>
+Kennzeichnungspflichtig nach § 5 LMZDV, auch bei telefonischer Bestellung (vor der Bestellung und bei der Lieferung, § 5 Abs. 2 Nr. 3 LMZDV): "mit Farbstoff", "mit Konservierungsstoff" oder "konserviert", "mit Antioxidationsmittel", "mit Geschmacksverstärker", "geschwärzt", "gewachst", "mit Phosphat", "mit Süßungsmittel(n)", "enthält eine Phenylalaninquelle", "kann bei übermäßigem Verzehr abführend wirken"; bei Pökelware "mit Nitritpökelsalz" oder "mit Nitrat".
+
+| Nr. | Speise | Zusatzstoffe |
+|---|---|---|
+| <Artikelnummer> | <Name> | <gepflegte Angaben aus der Kasse> |
+
+<offen: Die Datenbank führt keine Zusatzstoffe, und das Feld der Kasse ist nicht gepflegt (docs/14). Maxi pflegt sie in der Kasse und trägt sie hier ein; bis dahin sagt der Telefonassistent zu Zusatzstoffen nichts und gibt die Frage ans Team (#638). Eine leere Zelle bedeutet nie "ohne Zusatzstoffe".>
 
 ### Stand und Pflege
 
