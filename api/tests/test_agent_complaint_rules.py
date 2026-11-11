@@ -388,6 +388,21 @@ def test_the_truthful_answer_comes_first_in_the_answer_turn(session, tenant_id, 
     assert_went_to_the_team(result, session, state)
 
 
+def test_addressed_as_a_person_in_the_answer_turn_hears_the_truth_first(
+    session, tenant_id, state
+):
+    """Codex PR #643: the answer to an offer leaves the turn before its own
+    check for a guest who takes the agent for a person (#638)."""
+    rule(session, tenant_id)
+    agent = loop(session)
+    agent.run_turn(state, COMPLAINT)
+
+    result = agent.run_turn(state, "Nein danke, junge Frau.")
+
+    assert result.say[0] == SAY_NOT_A_PERSON
+    assert_went_to_the_team(result, session, state)
+
+
 def test_a_card_that_cannot_be_written_books_nothing(session, tenant_id, state):
     """The guest's yes then moves no money, the audit row goes with the card,
     and the team takes the call."""
@@ -782,6 +797,25 @@ def test_the_question_for_a_person_keeps_its_truthful_answer(session, tenant_id,
     )
 
     assert result.say[0] == SAY_NOT_A_PERSON
+    assert_went_to_the_team(result, session, state)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        f"{COMPLAINT} Sind da Konservierungsstoffe drin",
+        "Ich bin unzufrieden, das Essen war kalt und voller Glutamat.",
+    ],
+)
+def test_a_complaint_that_names_an_additive_gets_no_offer(
+    session, tenant_id, state, said
+):
+    """Codex PR #643: the offer came before the check for an additive, and a
+    "Ja" to it ended the call with the question about the additive open."""
+    rule(session, tenant_id)
+
+    result = loop(session).run_turn(state, said)
+
     assert_went_to_the_team(result, session, state)
 
 

@@ -41,7 +41,12 @@ from pydantic import ValidationError
 from api.agent.allergies import NOTED
 from api.agent.consent import is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
-from api.agent.escalation import SENTENCE, asks_about_allergies, is_question
+from api.agent.escalation import (
+    SENTENCE,
+    asks_about_allergies,
+    is_question,
+    names_an_additive,
+)
 from api.agent.guest_details import (
     asks_for_a_phone_number,
     e164,
@@ -256,7 +261,8 @@ def allergen_claim(state: ConversationState, say: str) -> bool:
     """Does the model's sentence claim about allergens what no database value
     answers, or say it cannot answer such a question? Safety words count in
     a call that speaks of allergies or a sentence that names an allergen,
-    absence only where the sentence names one, the fixed sentence anywhere;
+    absence only where the sentence names one, the fixed sentence and the
+    name of an additive anywhere;
     the core's own sentences (read-back, booking) and the names of the dishes
     the search delivered are left out of the claim, as in `false_booking`.
     The loop hands the call to the team instead of saying it (L17, redesign
@@ -271,15 +277,22 @@ def allergen_claim(state: ConversationState, say: str) -> bool:
     named = names_an_allergen(rest) or "allerg" in rest.lower()
     # A dish name the search delivered is menu data, not the model's claim:
     # "Nudeln (glutenfrei)" read back sent a plain order to the team (repo
-    # audit 27.10.2026). Only a name that itself says "...frei", and only as
-    # a whole: a dish "Milch" must not cut "milchfrei" (Codex PR #388, P1).
+    # audit 27.10.2026). Only a name that itself says "...frei" or names an
+    # additive, and only as a whole: a dish "Milch" must not cut "milchfrei"
+    # (Codex PR #388, P1).
     names = [seen.get("name") for seen in state.seen_items.values()]
     names += [name for _, name in state.offered_items.values()]
     for name in names:
-        if name and _ALWAYS.search(name.lower()):
+        if name and (_ALWAYS.search(name.lower()) or names_an_additive(name)):
             whole = rf"(?<!\w){re.escape(name)}(?!\w)"
             rest = re.sub(whole, " ", rest, flags=re.IGNORECASE)
     lowered = rest.lower()
+    # An additive at all (#638): no table holds one, and a guest's sentence
+    # that names one never reaches the model, so whatever a model says about
+    # one is its own. Absence has too many forms to list ("glutamatfrei",
+    # "ohne Glutamat zubereitet"; Codex PR #643).
+    if names_an_additive(lowered):
+        return True
     if _ALWAYS.search(lowered) or (named and _ABSENT.search(lowered)):
         return True
     return (state.allergy_talk or named) and _SAFE.search(lowered) is not None
