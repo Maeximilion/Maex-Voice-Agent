@@ -49,6 +49,7 @@ def tenant_id(session) -> uuid.UUID:
 def limits(monkeypatch):
     monkeypatch.setattr(settings, "alarm_cost_per_day_cents", 300)
     monkeypatch.setattr(settings, "alarm_error_calls_per_hour", 3)
+    monkeypatch.setattr(settings, "alarm_no_audio_calls", 3)
     # Off here: each group of tests below switches its own on.
     monkeypatch.setattr(settings, "voice_url", "")
     monkeypatch.setattr(settings, "alarm_backup_hours", 0)
@@ -74,7 +75,7 @@ class Pushes:
         return [title for title, _, _ in self.sent]
 
 
-def call(session, tenant_id, at, outcome="completed", cost=None) -> None:
+def call(session, tenant_id, at, outcome="completed", cost=None, note=None) -> None:
     session.add(
         Call(
             tenant_id=tenant_id,
@@ -83,6 +84,7 @@ def call(session, tenant_id, at, outcome="completed", cost=None) -> None:
             ended_at=at + timedelta(minutes=2),
             outcome=outcome,
             cost_cents=cost,
+            line_note=note,
             delete_after=date(2028, 10, 29),
         )
     )
@@ -147,6 +149,55 @@ def test_error_calls_in_the_last_hour_alarm(session, tenant_id):
 
     assert pushes.titles() == ["Calls with errors"]
     assert pushes.sent[0][2] == "high"
+
+
+def quiet_call(session, tenant_id, minutes: int) -> None:
+    at = NOW - timedelta(minutes=minutes)
+    call(session, tenant_id, at, outcome="abandoned", note="no_caller_audio")
+
+
+def test_calls_in_a_row_without_caller_audio_alarm(session, tenant_id):
+    """#651: each such call ends without the team; three in a row are no
+    muted telephones any more, but one-way audio on our side."""
+    call(session, tenant_id, NOW - timedelta(minutes=50))
+    for minutes in (40, 30, 10):
+        quiet_call(session, tenant_id, minutes)
+
+    pushes = run(session)
+
+    assert pushes.titles() == ["No audio from callers"]
+    assert pushes.sent[0][2] == "high"
+    # Once a clock hour, like the other alarms.
+    assert run(session).sent == []
+
+
+def test_a_call_with_audio_in_between_ends_the_row(session, tenant_id):
+    quiet_call(session, tenant_id, 40)
+    quiet_call(session, tenant_id, 30)
+    call(session, tenant_id, NOW - timedelta(minutes=20))
+    quiet_call(session, tenant_id, 10)
+
+    assert run(session).sent == []
+
+
+def test_fewer_calls_than_the_limit_or_an_old_row_stay_quiet(session, tenant_id):
+    quiet_call(session, tenant_id, 30)
+    quiet_call(session, tenant_id, 10)
+    assert run(session).sent == []
+
+    # A third one, and all of them hours ago: nobody has called since.
+    quiet_call(session, tenant_id, 50)
+    assert run(session, now=NOW + timedelta(hours=3)).sent == []
+
+
+def test_the_alarm_for_calls_without_audio_can_be_switched_off(
+    session, tenant_id, monkeypatch
+):
+    monkeypatch.setattr(settings, "alarm_no_audio_calls", 0)
+    for minutes in (40, 30, 10):
+        quiet_call(session, tenant_id, minutes)
+
+    assert run(session).sent == []
 
 
 def test_errors_below_the_limit_or_older_stay_quiet(session, tenant_id):

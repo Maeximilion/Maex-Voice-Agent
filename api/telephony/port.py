@@ -117,7 +117,10 @@ class CallEvents(Protocol):
         failure; the core closes its call log on it, with what the call cost
         the ear and the mouth (`speech`, None where not measured).
         `caller_hung_up`: the caller's leg was gone before the line had our
-        hangup or transfer, so nothing rings the team for this call."""
+        hangup or transfer, so nothing rings the team for this call. Only on
+        a call we answered: a leg closed before our first sentence is the
+        telephone system's answer timeout, after which the team rings, or a
+        caller who gave up while it still rang."""
         ...
 
     def on_team_missed(self, session_id: str) -> bool:

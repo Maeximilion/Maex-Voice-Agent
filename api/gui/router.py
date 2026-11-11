@@ -51,7 +51,7 @@ from api.domain.status import holidays as holiday_days
 from api.domain.status import staff_changes as staff
 from api.domain.status.mode import CAUTION, mode_at
 from api.domain.status.waits import current_wait, standard_wait
-from api.gui import figures_view, orders_view
+from api.gui import calls_view, figures_view, orders_view
 from api.gui.session import LOGIN, require_admin, require_gui_session
 from api.gui.sse import today_event_stream
 from api.models import Reservation, ServiceConfig, Tenant
@@ -385,6 +385,27 @@ def kennzahlen(request: Request, session: Session = Depends(get_db)) -> HTMLResp
         context = {"tenant": tenant, **figures_view.page(session, tenant)}
     return _page_response(
         request, "betrieb/kennzahlen.html", context, status_code=200 if tenant else 503
+    )
+
+
+@router.get("/anrufe", response_class=HTMLResponse, include_in_schema=False)
+def anrufe(
+    request: Request,
+    tag: str | None = None,
+    ergebnis: str | None = None,
+    anliegen: str | None = None,
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The call list of one business day, with its filters (T-8.7)."""
+    tenant = _tenant(session)
+    context: dict = {"problem": NO_TENANT}
+    if tenant is not None:
+        context = {
+            "tenant": tenant,
+            **calls_view.page(session, tenant, tag, ergebnis, anliegen),
+        }
+    return _page_response(
+        request, "betrieb/anrufe.html", context, status_code=200 if tenant else 503
     )
 
 

@@ -402,7 +402,7 @@ class ConversationLoop:
             if self._clock() - self._started > self._max_call_seconds:
                 # The answer keeps no call open past its limit: asked again
                 # and again, it would (Codex PR #372).
-                return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+                return self._outage(state, SAY_TIMEOUT, user_text)
             guards.note_said(state, SAY_HUMAN_ANSWER)
             return TurnResult(state=state, say=[SAY_HUMAN_ANSWER])
         if state.held_call is not None:
@@ -413,7 +413,7 @@ class ConversationLoop:
             # and the held draft with its old arguments is dropped; the
             # allergies stay in the state for the draft the model makes again.
             if self._clock() - self._started > self._max_call_seconds:
-                return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+                return self._outage(state, SAY_TIMEOUT, user_text)
             question = allergies.question(state)
             if question is not None and bare_answer(
                 user_text if rest is None else rest
@@ -481,7 +481,7 @@ class ConversationLoop:
         assert zone is not None  # `to_local` gives an aware time
         for _ in range(MAX_TOOL_HOPS):
             if self._clock() - self._started > self._max_call_seconds:
-                return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+                return self._outage(state, SAY_TIMEOUT, user_text)
             # The model calls and tools of one guest turn share one deadline:
             # each call alone may be quick and the guest still waits for all
             # of them. Time up: the model is not asked again.
@@ -524,7 +524,7 @@ class ConversationLoop:
                         call_id=str(state.call_id),
                         error=str(exc),
                     )
-                    return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
+                    return self._outage(state, SAY_ON_FAILURE, user_text)
             # Rule 3: a `confirm` on a yes for a draft the guest has not heard
             # last. The core puts the draft's question itself and ends the
             # turn (below, once the time limit is checked). Nothing that
@@ -544,7 +544,7 @@ class ConversationLoop:
             # sentence is what the callback of the handoff needs when the
             # team is not reachable (Codex PR #222, P1).
             if self._clock() - self._started > self._max_call_seconds:
-                return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+                return self._outage(state, SAY_TIMEOUT, user_text)
             # The same for the turn deadline: an answer that took too long is
             # neither spoken nor carried out: the guest has waited long enough
             # and goes to the team. What the model heard is kept, as above.
@@ -800,7 +800,7 @@ class ConversationLoop:
                 # it took the guest past a limit: then to the team, as any
                 # slow tool on the next hop would (Codex PR #368).
                 if self._clock() - self._started > self._max_call_seconds:
-                    return self._handoff(state, SAY_TIMEOUT, detail=user_text)
+                    return self._outage(state, SAY_TIMEOUT, user_text)
                 if (left := self._left_in_turn(turn_started)) is not None and left <= 0:
                     return self._too_slow(state, user_text)
                 guards.note_said(state, said)
@@ -820,7 +820,7 @@ class ConversationLoop:
                 # says so (`_handoff`), or the team books a second time.
                 late = None
                 if self._clock() - self._started > self._max_call_seconds:
-                    late = self._handoff(state, SAY_TIMEOUT, detail=user_text)
+                    late = self._outage(state, SAY_TIMEOUT, user_text)
                 elif (
                     left := self._left_in_turn(turn_started)
                 ) is not None and left <= 0:
@@ -863,7 +863,7 @@ class ConversationLoop:
                 read.add(turn.tool_call.name)
             pending_input = _tool_result_as_input(turn.tool_call.name, result, zone)
 
-        return self._handoff(state, SAY_STUCK, detail=user_text)
+        return self._outage(state, SAY_STUCK, user_text)
 
     def _offer_remedy(
         self, state: ConversationState, user_text: str
@@ -1061,7 +1061,22 @@ class ConversationLoop:
             call_id=str(state.call_id),
             deadline_seconds=self._turn_deadline,
         )
-        return self._handoff(state, SAY_ON_FAILURE, detail=user_text)
+        return self._outage(state, SAY_ON_FAILURE, user_text)
+
+    def _outage(self, state: ConversationState, say: str, user_text: str) -> TurnResult:
+        """A fault of ours ends the turn: the model is down, too slow or goes
+        in circles, or the call is past its limit. To the team like every
+        handover. With nobody to reach and no number known, the core asks for
+        one before it gives up: the question and its answer need no model
+        (`_callback_answered`), and the call ended with nobody rung and no
+        card (#652, rule 5). Not behind a booking: it stands, and the phone
+        line hangs up after its sentence (`outcome.CLOSING_STAGES`)."""
+        result = self._handoff(
+            state, say, detail=user_text, ask_number=state.stage != "confirmed"
+        )
+        if not result.ended:
+            guards.note_said(state, " ".join(result.say))
+        return result
 
     def _prompt_state(
         self,
@@ -1390,7 +1405,7 @@ class ConversationLoop:
                     state=state, say=[*lead, callback.say or fallback_say], ended=True
                 )
 
-        if ask_number and not phone and summary is not None:
+        if ask_number and not phone:
             state.callback_waits, state.callback_reason = head, reason
             return TurnResult(state=state, say=[*lead, SAY_CALLBACK_NUMBER])
         state.stage = "ended"

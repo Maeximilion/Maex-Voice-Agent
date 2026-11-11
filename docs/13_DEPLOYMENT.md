@@ -256,6 +256,7 @@ The passphrase file exists since 29.10.2026 (mode 600). Without `BACKUP_PASSPHRA
 - Outbox: Ereignisse mit Status `failed` → Alarm (built, T-8.3)
 - Kosten je Tag über Schwelle → Alarm (built, T-8.3: `ALARM_COST_PER_DAY_CENTS`, 300 unless set)
 - Calls ending with an error, from `ALARM_ERROR_CALLS_PER_HOUR` (3) within an hour → alarm (built, T-8.3)
+- The last `ALARM_NO_AUDIO_CALLS` (3) calls all without any audio of the caller (`calls.line_note`), the newest in the last hour: "No audio from callers", at most once a clock hour; 0 switches it off (#651). One such call is a muted telephone, a row of them one-way audio on our side (docs/20 §5)
 - Call recordings the deletion job could not take, a day past `RETENTION_RECORDING_DAYS` or two of its passes after a withdrawal: "Recordings not deleted", once a day (#252, audit of 02.11.2026). The volume `recordings` shares the host's disk with the database and has no cap; below `RECORDING_MIN_FREE_MB` (2048) free on it a yes records nothing and the call goes on (docs/20 §4)
 - Day report on the previous business day from `MONITOR_REPORT_HOUR` (8): calls by outcome, cost, orders, reservations; also on a day without a call (built, T-8.3)
 - Log-Rotation, 14 Tage lokal

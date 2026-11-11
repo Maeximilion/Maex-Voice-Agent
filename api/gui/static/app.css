@@ -163,6 +163,9 @@ header.aus .seg.services .on{background:transparent;color:var(--muted)}
 .kz{display:flex;flex-direction:column}
 .kz b{font-size:var(--fs-kpi);font-weight:700;line-height:1.2}
 .kz-history{margin-top:var(--s4);overflow-x:auto}
+/* The call list (T-8.7): its filters in one row, and the number of a call with a note about its line (#651). */
+.call-filter{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);margin-bottom:var(--s4)}
+.call-note{background:var(--warn-bg);color:var(--warn);font-weight:600}
 .betrieb .tbl{font-size:var(--fs-body)}
 .betrieb .tbl th{font-size:var(--fs-body)}
 @media (max-width:900px){ .kz-bar{grid-template-columns:1fr 1fr} }

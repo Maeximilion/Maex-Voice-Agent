@@ -300,6 +300,61 @@ def test_a_call_the_line_ended_for_us_is_no_caller_who_hung_up(call, ending):
     assert call.core.hung_up is False
 
 
+def _silent_call_ends(call, *frames: bytes) -> None:
+    """Answered, the frames arrive, one silence passes, the leg closes."""
+    call.start(GREETING)
+    call.played()
+    for frame in frames:
+        call.s.audio(frame)
+    call.wait(SILENCE)
+    assert call.core.count("silence") == 1
+    call.s.closed()
+    call.s.drain()
+
+
+@pytest.mark.parametrize("frames", [(), (b"\x00" * 640, b"\x00" * 640)])
+def test_a_silence_without_any_caller_audio_is_reported_with_the_call(call, frames):
+    """No frame at all, or only digital zero: nothing of the caller reached
+    us, which a muted telephone and one-way audio on our side have in common.
+    The call ends as a silent one does; the core marks it (#651)."""
+    _silent_call_ends(call, *frames)
+
+    assert call.core.speech.no_caller_audio is True
+
+
+def test_a_caller_who_sends_sound_and_says_nothing_is_no_line_without_audio(call):
+    """Room noise and no word: an ordinary silent guest, no mark."""
+    _silent_call_ends(call, b"\x00" * 640, b"\x00\x01" * 320)
+
+    assert call.core.speech.no_caller_audio is False
+
+
+def test_a_call_that_ends_before_a_silence_carries_no_mark(call):
+    """Handed on or hung up within moments: too short to say that nothing
+    came, and a streak of such calls must not raise the alarm (#651)."""
+    call.start(GREETING)
+    call.played()
+    call.s.closed()
+    call.s.drain()
+
+    assert call.core.speech.no_caller_audio is False
+
+
+def test_a_leg_closed_before_we_answered_is_no_caller_who_hung_up(call):
+    """Our first sentence was not on the line within the dialplan's 10 s: it
+    closes our leg and rings the team. The core wrote the card "hung up
+    before the team rang" for that call although the team rang (#652). A
+    caller who gives up while it still rings is the same to us, and an
+    unanswered call like any other: no card either."""
+    call.s.start()
+    call.s.closed()
+    call.s.drain()
+
+    assert call.line.actions == [] and call.s.outcome == "closed"
+    assert call.core.count("ended") == 1
+    assert call.core.hung_up is False
+
+
 def test_a_hangup_the_line_refuses_ends_the_session_as_failed(call):
     """A line that raises did not carry the hangup out, and nothing says what
     the dialplan will do: the session fails and the dialplan rings the team
@@ -881,6 +936,26 @@ def test_a_failure_drops_what_is_still_queued(call):
     call.s.audio(b"\x00")
     call.s.drain()
     assert call.line.kinds()[-2:] == ["flush", "play"]
+
+
+def test_a_failure_behind_a_queued_transfer_performs_it_at_once(call):
+    """The transfer waits for its sentence and the media connection breaks.
+    The flush drops the sentence, so nothing reports its end; the core's own
+    transfer does not replace the first, and the session sat on the line
+    without a timer (#652, rule 5). The core is still told: its log says the
+    voice failed."""
+    call.core.replies["Chef"] = [("say", "Ich verbinde Sie."), ("transfer", "+4930")]
+    call.core.on_failure = OUTAGE
+    call.start(GREETING)
+    call.played()
+    call.said("Chef", after=1.0)
+    call.s.broken()
+    call.s.drain()
+
+    assert call.core.count("voice_failure") == 1
+    assert call.s.outcome == "transfer"
+    assert call.line.actions[-1] == ("transfer", "+4930")
+    assert call.line.played()[-1] == "Ich verbinde Sie."  # no sentence behind it
 
 
 def test_speech_without_a_transcript_twice_is_a_failure_of_the_ear(call):

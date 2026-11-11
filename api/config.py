@@ -179,6 +179,10 @@ class Settings(BaseSettings):
     alarm_cost_per_day_cents: int = Field(default=300, ge=0)
     # Calls that ended with an error within an hour from which a push goes out.
     alarm_error_calls_per_hour: int = Field(default=3, ge=1)
+    # Calls in a row without any audio of the caller (`calls.line_note`) from
+    # which a push goes out: one is a muted telephone, a row of them one-way
+    # audio on our side (#651). 0 switches it off.
+    alarm_no_audio_calls: int = Field(default=3, ge=0)
     # Local hour from which the day report on the previous business day goes out.
     monitor_report_hour: int = Field(default=8, ge=5, le=23)
     # Where the monitor reaches `voice` (T-8.3); empty on a stack without it.

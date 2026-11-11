@@ -27,8 +27,13 @@ from sqlalchemy.exc import DBAPIError, OperationalError
 from sqlalchemy.orm import Session
 
 from api.agent.consent import ALLERGY_QUESTION
-from api.agent.llm import FakeLLM, LLMTurn, Usage
-from api.agent.loop import SAY_BOOKED_GOODBYE, SAY_TABLE_BOOKED, SUMMARY_ALLERGENS
+from api.agent.llm import FakeLLM, LLMError, LLMTurn, Usage
+from api.agent.loop import (
+    SAY_BOOKED_GOODBYE,
+    SAY_CALLBACK_NUMBER,
+    SAY_TABLE_BOOKED,
+    SUMMARY_ALLERGENS,
+)
 from api.agent.state import ConversationState
 from api.config import settings
 from api.domain.callbacks.create import SAY_NOTED
@@ -259,6 +264,62 @@ def test_failure_in_the_agent_ends_with_the_outage_sentence_and_the_team(
     call = the_call(session, sid)
     assert call.outcome == "error"
     assert call.ended_at is not None
+
+
+@pytest.mark.parametrize("silent", [True, False])
+def test_a_call_without_caller_audio_is_marked_in_the_call_log(session, tenant, silent):
+    """#651 (Maxi, 11.11.2026): the call ends as a silent one, the team is not
+    rung, and the call log carries the note."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+
+    handler.on_call_ended(
+        "s-1", SpeechUsage(no_caller_audio=silent), caller_hung_up=True
+    )
+
+    note = the_call(session, "s-1").line_note
+    assert note == ("no_caller_audio" if silent else None)
+    assert not port.transfers("s-1")
+
+
+def test_a_model_outage_with_nobody_to_reach_and_a_withheld_number_leaves_a_card(
+    session, tenant
+):
+    """#652 on the line: the model is down, no service is open and the caller
+    id is withheld. The line asks for a number, played to its end so the
+    digits behind it are that number, stays on the call for the answer, and
+    hangs up once the card is written. Before, it said to call again later
+    and hung up: nobody rang and nothing was on the tablet (rule 5)."""
+
+    class Down:
+        def next_turn(self, system_prompt, state_json, input_text, *, timeout=None):
+            raise LLMError("model call failed: ConnectError")
+
+    port = FakeTelephony()
+    handler = handler_for(
+        session, tenant, port, llm_factory=lambda s: Down(), now=CLOSED
+    )
+
+    sid = port.play(
+        {
+            "transcript": [
+                {"role": "customer", "text": "Einen Tisch für vier bitte"},
+                {"role": "customer", "text": "0721 5551234"},
+            ]
+        },
+        handler,
+    )
+
+    asked = [a for a in port.actions if a.value == SAY_CALLBACK_NUMBER]
+    assert len(asked) == 1 and asked[0].interruptible is False
+    assert not port.transfers(sid) and port.hangups(sid)
+    assert port.says(sid)[-2:] == [SAY_NOTED, FAREWELL]
+    card = session.scalars(select(Callback)).one()
+    assert card.phone == "+497215551234"
+    assert "Einen Tisch für vier bitte" in card.summary
+    assert the_call(session, sid).outcome == "callback"
 
 
 def test_database_down_at_call_start_still_reaches_the_team(session, tenant):

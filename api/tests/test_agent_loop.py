@@ -310,22 +310,47 @@ def test_max_call_seconds_ohne_erreichbares_team_legt_rueckruf_an(session, state
     assert state.stage == "callback"
 
 
-def test_max_call_seconds_ohne_telefon_bleibt_beim_ehrlichen_fallback_satz(
-    session, state
-):
-    """Ohne bekannte Rufnummer kann kein Rückruf angelegt werden -- raten statt
-    dessen wäre CLAUDE.md §2 Regel 2 (nie raten)."""
+def test_the_call_limit_without_team_or_number_asks_for_a_number(session, state):
+    """Past its limit, outside the opening hours, the caller id withheld: the
+    call ended on the last resort, with nobody rung and nothing on the tablet.
+    The question for the number runs without the model, so the core asks it
+    before it gives up (#652, rule 5). No number is guessed (rule 2)."""
     llm = FakeLLM([])
     loop = ConversationLoop(
         session, llm, "system", now=NOW, max_call_seconds=10, clock=clock_from([0, 100])
     )
 
-    result = loop.run_turn(state, "Hallo")
+    result = loop.run_turn(state, "Ich möchte einen Tisch reservieren")
 
-    assert result.ended is True
-    # Nobody was reached: the sentence must not promise the team (Codex PR #208).
+    assert result.ended is False and result.say == [SAY_CALLBACK_NUMBER]
+    result = loop.run_turn(state, "0721 5551234")
+    assert result.ended is True and state.stage == "callback"
+    assert llm.calls == []
+    card = session.scalars(select(Callback)).one()
+    assert card.phone == "+497215551234"
+    assert "Ich möchte einen Tisch reservieren" in card.summary
+
+
+def test_a_guest_who_gives_no_number_past_the_call_limit_hears_the_last_resort(
+    session, state
+):
+    """The question does not keep a call open: a no ends it, and the sentence
+    does not promise the team (Codex PR #208)."""
+    loop = ConversationLoop(
+        session,
+        FakeLLM([]),
+        "system",
+        now=NOW,
+        max_call_seconds=10,
+        clock=clock_from([0, 100]),
+    )
+
+    loop.run_turn(state, "Hallo")
+    result = loop.run_turn(state, "Nein")
+
+    assert result.ended is True and state.stage == "ended"
     assert result.say == [SAY_NOBODY_REACHABLE]
-    assert state.stage == "ended"
+    assert session.scalars(select(Callback)).all() == []
 
 
 def test_beschwerde_eskaliert_sofort_ohne_modellaufruf(session, state):
@@ -512,24 +537,23 @@ def test_zu_viele_tool_hops_brechen_sauber_ab(session, state):
 
     result = loop.run_turn(state, "Hallo")
 
-    assert result.ended is True
-    assert result.say == [SAY_NOBODY_REACHABLE]
+    # A model that goes in circles is a fault of ours like one that is down:
+    # with nobody to reach and no number, the core asks for one (#652).
+    assert result.ended is False
+    assert result.say == [SAY_CALLBACK_NUMBER]
     assert len(llm.calls) == MAX_TOOL_HOPS
-    assert state.stage == "ended"
+    assert state.callback_waits is not None
 
 
-@pytest.mark.parametrize(
-    "customer", ["Ich möchte mich beschweren!", "Einen Tisch für vier bitte"]
-)
-def test_last_resort_never_promises_a_transfer(session, state, customer):
+def test_last_resort_never_promises_a_transfer(session, state):
     """Team not reachable and no number for a callback: the call ends, and the
     guest hears that, not "Ich verbinde Sie" or "Ich gebe an das Team weiter"
-    (Codex PR #208, P1). Holds for an escalation as for a model outage."""
+    (Codex PR #208, P1)."""
     loop = ConversationLoop(
         session, BrokenLLM(), "system", now=NOW, clock=clock_from([0, 0])
     )
 
-    result = loop.run_turn(state, customer)
+    result = loop.run_turn(state, "Ich möchte mich beschweren!")
 
     assert result.ended is True
     assert state.stage == "ended"
@@ -580,16 +604,24 @@ def test_model_failure_without_a_reachable_team_creates_a_callback(session, stat
     assert "Einen Tisch für vier bitte" in callback.summary
 
 
-def test_model_failure_without_a_phone_number_says_so_honestly(session, state):
+def test_model_failure_without_team_or_number_asks_for_a_number(session, state):
+    """The model is down, no service is open and the caller id is withheld:
+    the guest is asked for a number and the card is written, without the
+    model (#652). Before, the call ended with nobody rung and no card."""
     loop = ConversationLoop(
         session, BrokenLLM(), "system", now=NOW, clock=clock_from([0, 0])
     )
 
-    result = loop.run_turn(state, "Hallo")
+    result = loop.run_turn(state, "Einen Tisch für vier bitte")
 
-    assert result.ended is True
-    assert result.say == [SAY_NOBODY_REACHABLE]
-    assert state.stage == "ended"
+    assert result.ended is False and result.say == [SAY_CALLBACK_NUMBER]
+    # The question is what the guest heard last: a "Ja" confirms nothing.
+    assert state.last_say == SAY_CALLBACK_NUMBER
+    result = loop.run_turn(state, "0721 5551234")
+    assert result.ended is True and state.stage == "callback"
+    card = session.scalars(select(Callback)).one()
+    assert card.phone == "+497215551234"
+    assert "Einen Tisch für vier bitte" in card.summary
 
 
 def test_model_failure_after_a_tool_call_still_hands_over(session, state):
@@ -803,6 +835,7 @@ def test_model_that_insists_on_confirm_ends_with_the_team(session, state):
     """A refused call costs a tool hop: a model that keeps trying runs into the
     hop limit and the handoff (rule 5), never into a booking."""
     reservation = read_back_reservation(session, state)
+    state.slots["phone"] = CALLER  # nobody to reach before opening: a card
     one = confirming(state)._turns[0]
     llm = FakeLLM([one] * MAX_TOOL_HOPS)
     loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
@@ -865,6 +898,7 @@ def test_slot_that_no_guest_can_name_is_not_taken(session, state):
 def test_answer_that_arrives_after_the_limit_is_not_spoken(session, state):
     """The limit is read before the model is asked and again when it has
     answered: 5 s before, 500 s after, with 10 s allowed."""
+    state.slots["phone"] = CALLER  # nobody to reach before opening: a card
     llm = FakeLLM([LLMTurn(say="Guten Tag, was darf es sein?")])
     loop = ConversationLoop(
         session,
@@ -879,7 +913,7 @@ def test_answer_that_arrives_after_the_limit_is_not_spoken(session, state):
 
     assert result.ended is True
     assert "Guten Tag" not in " ".join(result.say)
-    assert state.stage == "ended"
+    assert state.stage == "callback"
 
 
 def test_late_answer_still_gives_its_phone_number_to_the_callback(session, state):
@@ -927,6 +961,7 @@ def test_offer_spoken_to_the_guest_makes_its_dishes_usable(session, state):
 
 def test_tool_call_that_arrives_after_the_limit_is_not_dispatched(session, state):
     reservation = read_back_reservation(session, state)
+    state.slots["phone"] = CALLER  # nobody to reach before opening: a card
     llm = confirming(state)
     loop = ConversationLoop(
         session,
@@ -1835,6 +1870,7 @@ def test_a_booking_nobody_made_is_not_said(session, state):
 
 
 def test_a_model_that_insists_on_a_booking_ends_with_the_team(session, state):
+    state.slots["phone"] = CALLER  # nobody to reach before opening: a card
     llm = FakeLLM(
         [LLMTurn(say="Ihr Tisch ist reserviert.") for _ in range(MAX_TOOL_HOPS)]
     )
@@ -1905,6 +1941,26 @@ def test_a_late_confirm_tells_the_callback_card_what_is_booked(session, state):
 
     card = session.scalars(select(Callback)).one()
     assert f"Bereits gebucht: {SAY_TABLE_BOOKED}" in card.summary
+
+
+def test_a_late_confirm_without_team_or_number_asks_for_no_number(session, state):
+    """The booking stands and the line hangs up after its sentence: a question
+    for a callback number would be cut off by the farewell (#652)."""
+    read_back_reservation(session, state)
+    llm = confirming(state)
+    loop = ConversationLoop(
+        session,
+        llm,
+        "system",
+        now=NOW,
+        max_call_seconds=10,
+        clock=clock_from([0, 0, 0, 100]),
+    )
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert result.ended is True and state.callback_waits is None
+    assert result.say == [SAY_TABLE_BOOKED, SAY_NOBODY_REACHABLE]
 
 
 def test_a_confirmed_table_says_an_open_order_is_not_placed(session, state):

@@ -1,0 +1,61 @@
+{# The call list (T-8.7, docs/06 §4, mockup gui/mockups/admin-desktop.html):
+   the calls of one business day, newest first, with three filters. A call
+   with a note about its line (#651) shows its number marked and the note in
+   words. The number is cut (`calls_view.NUMBER_SHOWN`). #}
+{% extends "base.html" %}
+{% block title %}Anrufe{% endblock %}
+{% block body_class %}betrieb{% endblock %}
+
+{% block header %}
+<header>
+  <div class="top">
+    <a class="button" href="/gui">Zurück</a>
+    <h1 class="kz-title">Anrufe</h1>
+    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
+  </div>
+</header>
+{% endblock %}
+
+{% block main %}
+{% if tenant %}
+<section class="card kz-history">
+  <form class="call-filter" method="get" action="/gui/anrufe">
+    <select name="tag" aria-label="Tag">
+      {% for value, label, chosen in days %}<option value="{{ value }}"{% if chosen %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select name="ergebnis" aria-label="Ergebnis">
+      <option value="">Alle Ergebnisse</option>
+      {% for value, label, chosen in outcomes %}<option value="{{ value }}"{% if chosen %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select name="anliegen" aria-label="Anliegen">
+      <option value="">Alle Anliegen</option>
+      {% for value, label, chosen in intents %}<option value="{{ value }}"{% if chosen %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <button type="submit">Anzeigen</button>
+    <span class="muted">{{ count }}</span>
+  </form>
+  {% if rows %}
+  <table class="tbl">
+    <thead>
+      <tr><th>Zeit</th><th>Nummer</th><th>Anliegen</th><th>Ergebnis</th><th>Dauer</th><th>Kosten</th><th>Tools</th></tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>{{ row.time }}</td>
+        <td{% if row.note %} class="call-note"{% endif %}>{{ row.number }}</td>
+        <td>{{ row.intent }}</td>
+        <td>{{ row.outcome }}{% if row.note %} <span class="badge warn">{{ row.note }}</span>{% endif %}</td>
+        <td>{{ row.duration }}</td>
+        <td>{{ row.cost }}</td>
+        <td>{{ row.tools }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="note">Keine Anrufe für diese Auswahl.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}
