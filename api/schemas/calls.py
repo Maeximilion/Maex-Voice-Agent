@@ -9,6 +9,9 @@ from api.schemas.common import ToolRequest
 
 Intent = Literal["reservation", "pickup", "delivery", "info", "complaint", "unknown"]
 Outcome = Literal["completed", "transferred", "callback", "abandoned", "error"]
+# What was wrong with the line of a call (`calls.line_note`, migration 036).
+# `no_caller_audio`: answered, and no audio of the caller arrived (#651).
+LineNote = Literal["no_caller_audio"]
 
 
 class StartCallRequest(BaseModel):
@@ -26,6 +29,7 @@ class EndCallRequest(ToolRequest):
     intent: Intent | None = None
     cost_cents: int | None = Field(default=None, ge=0)
     model: str | None = None
+    line_note: LineNote | None = None
 
 
 class CallEnded(BaseModel):

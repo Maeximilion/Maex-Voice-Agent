@@ -56,6 +56,7 @@ def end_call(
     call.intent = req.intent
     call.cost_cents = req.cost_cents
     call.model = req.model
+    call.line_note = req.line_note
     session.commit()
     return CallEnded(
         call_id=call.id,
