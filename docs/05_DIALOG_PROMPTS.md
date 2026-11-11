@@ -201,7 +201,7 @@ one can be right
    → the core, before the model: the same sentence and the same handover,
      the card says "Frage zu Zusatzstoffen, vor einer Bestellung zu klären."
      (`escalation.names_an_additive`, evals `allergie_0020`,
-     `allergie_0021`). The word alone decides, as for traces: a speech
+     `allergie_0021`, `allergie_0022`). The word alone decides, as for traces: a speech
      engine drops the question mark, and a wish read back would promise
      what no table holds, so a question and a wish go the same way (Codex
      PR #643). The words are the register's legend (docs/14, "koffein" and
