@@ -210,7 +210,9 @@ one can be right
      stopped like a claim about an allergen and hands over, whatever it
      says about it ("glutamatfrei", "ohne Glutamat zubereitet", "ja, ist
      drin"); a dish name of the menu that holds such a word is no claim
-     (`guards.allergen_claim`). A complaint that names an additive gets no
+     (`guards.allergen_claim`). A dish description from the database that
+     names an additive is not read out either: the call goes to the team,
+     the careful side. A complaint that names an additive gets no
      offer of the catalogue and goes to the team
      (`escalation.only_a_complaint`)
 
