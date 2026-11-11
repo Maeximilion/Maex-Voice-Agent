@@ -770,10 +770,18 @@ class ConversationLoop:
                 # sentence, nothing followed, and the guest waited until the
                 # line hung up (#655, rule 5).
                 lead = told.removesuffix(SAY_TO_THE_TEAM).strip() or None
+                # With nobody to reach and no number the core is still on
+                # the line: it asks for one (Codex PR #658).
                 handover = self._handoff(
-                    state, SAY_TO_THE_TEAM, detail=user_text, summary=lead
+                    state,
+                    SAY_TO_THE_TEAM,
+                    detail=user_text,
+                    summary=lead or _DEFAULT_HANDOFF_SUMMARY,
+                    ask_number=True,
                 )
                 handover.say = [s for s in (lead, *handover.say) if s]
+                if not handover.ended:
+                    guards.note_said(state, " ".join(handover.say))
                 return handover
             if (
                 turn.tool_call.name == "get_item_details"
@@ -1402,8 +1410,11 @@ class ConversationLoop:
         sentence of the reason, with the table read back and not confirmed
         and the order that stands unplaced: time limit, outage, hop limit and
         the wish for a person all end a call in the middle of one, and the
-        card read "Kunde sagte: Ja" (#655). The second is the guest's
-        sentence `detail` and a booking made earlier in the call. `table` is
+        card read "Kunde sagte: Ja" (#655), and then the guest's sentence
+        `detail`. That part is what waits for a callback number
+        (`state.callback_waits`): the guest's words must not be lost while
+        the core asks for one (Codex PR #658). The second part is a booking
+        made earlier in the call, read when the card is written. `table` is
         a table the state no longer shows (`_note_to_team`). `open_named`:
         `summary` is a card that waited for a number and names all of it
         already (`_callback_answered`)."""
@@ -1413,18 +1424,20 @@ class ConversationLoop:
             # note (L13), and the team asks when it calls back.
             detail = None
         head = summary or _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY)
-        tail = _card_tail(detail, state.booking_say)
+        said = _card_tail(detail, None)
+        booked = _card_tail(None, state.booking_say)
         if open_named:
-            return head, tail, []
+            return head + said, booked, []
         table = self._open_table(state) or table
         if table:
             head += f" {SUMMARY_OPEN_TABLE} {table}."
-        # Room for the second part, and for the line's first sentence on a
-        # team leg nobody answered: both stand on that card (#207).
-        head = _with_open_order(state, head, reserve=len(tail + SUMMARY_MISSED) + 1)
+        # Room for what follows the order, and for the line's first sentence
+        # on a team leg nobody answered: all of it stands on that card (#207).
+        reserve = len(said + booked + SUMMARY_MISSED) + 1
+        head = _with_open_order(state, head, reserve=reserve)
         not_booked = SAY_ORDER_NOT_PLACED if state.cart else None
         not_booked = SAY_TABLE_NOT_BOOKED if table else not_booked
-        return head, tail, [not_booked] if not_booked else []
+        return head + said, booked, [not_booked] if not_booked else []
 
 
 def _with_open_order(state: ConversationState, summary: str, reserve: int = 0) -> str:

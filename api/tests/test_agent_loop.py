@@ -256,6 +256,11 @@ def test_a_transfer_of_the_model_without_team_or_number_asks_for_one(session, st
     assert result.ended is True and len(llm.calls) == 1
     card = session.scalars(select(Callback)).one()
     assert (card.reason, card.phone) == ("human_requested", "+497215551234")
+    # What the guest wanted waits with the card for the number (Codex PR #658).
+    assert card.summary == (
+        "Kunde wollte mit einem Menschen sprechen. Kunde sagte: "
+        "Ich hätte gern jemanden vom Team"
+    )
 
 
 def test_a_transfer_with_a_reason_the_model_made_up_is_still_carried_out(
@@ -2239,6 +2244,47 @@ def test_a_failed_tool_that_announces_the_team_is_carried_out(
     assert _card(session, state) == (
         "Diese Reservierung wurde bereits storniert. Kunde sagte: Ja, passt"
     )
+
+
+def test_a_failed_tool_without_team_or_number_asks_for_one(session, state):
+    """Nobody to reach and no number: the core is still on the line and asks
+    for one, the last-resort sentence would end the call (Codex PR #658)."""
+    reservation = read_back_reservation(session, state)
+    reservation.status = "cancelled"
+    session.commit()
+    assert "phone" not in state.slots
+    llm = confirming(state, then_say=SAY_CANCELLED)
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert result.ended is False
+    assert result.say == [
+        "Diese Reservierung wurde bereits storniert.",
+        SAY_CALLBACK_NUMBER,
+    ]
+    result = loop.run_turn(state, "0721 5551234")
+    assert result.ended is True and len(llm.calls) == 1
+    card = session.scalars(select(Callback)).one()
+    assert card.phone == "+497215551234"
+    assert card.summary == (
+        "Diese Reservierung wurde bereits storniert. Kunde sagte: Ja, passt"
+    )
+
+
+def test_a_booking_stands_once_on_a_card_that_waited_for_the_number(
+    session, tenant_id, call_id
+):
+    state = numberless(tenant_id, call_id)
+    state.booking_say = SAY_TABLE_BOOKED
+    llm = _model_asks_for_the_team()
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+    loop.run_turn(state, "0721 5551234")
+
+    card = session.scalars(select(Callback)).one().summary
+    assert card.count("Bereits gebucht") == 1 and "Kunde sagte: Ich hätte" in card
 
 
 def test_a_failed_tool_with_another_sentence_goes_back_to_the_model(session, state):
