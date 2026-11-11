@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 11.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.10
+> Status: 11.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.29.11
 
 ---
 
@@ -259,12 +259,13 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 ## Done
 
-Handover 11.11.2026 (T-0.12 first step): #636 merged, mypy checks every function body with 75 test modules as the baseline and strict flags on `api.core`, `api.domain.calls`, `api.domain.delivery`; the workbench n8n runs 2.47.2 and holds no imported workflow. Next: shrink the test baseline of #552 (Sonnet 5.5 medium), the open `priority: high` issues wait for Maxi (#572 vision model, #397 router, #73 and #81 server).
+Handover 11.11.2026 (T-0.12 first step): #636 merged, mypy checks every function body with 75 test modules as the baseline and strict flags on `api.core`, `api.domain.calls`, `api.domain.delivery`; the workbench n8n runs 2.47.2 and holds no imported workflow. Next: more strict packages for #552 (the test baseline was emptied the same day), the open `priority: high` issues wait for Maxi (#572 vision model, #397 router, #73 and #81 server).
 
 Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge hold; both branch states and manual review steps are in `docs/00_PCF.md`, and the unapproved draft/CI idea is saved in `docs/21_REVIEW_AUTOMATION.md`.
 
 | Date | What |
 |---|---|
+| 11.11.2026 | **The mypy test baseline is empty: every path passes `check_untyped_defs` (T-0.12 step 2, #552).** All 75 exempt test modules (544 errors) were fixed, so the baseline override in `pyproject.toml` is gone. Most fixes narrow an Optional with an assert where the test already relied on the value; test doubles now match the protocol or class they stand in for. One production annotation was wrong: `api.db.get_db` is a `Generator`. Six `type: ignore` with a named code and two `cast` remain where a test breaks a type on purpose (docs/22). The fixes ran on three Sonnet subagents (split routing). Verified: mypy clean on 511 files, ruff clean, full suite 8952 passed, 50 skipped. Next for T-0.12: more strict packages. |
 | 11.11.2026 | **mypy checks every function body, strict flags on three packages (T-0.12 first step, #552).** Baseline on `main` ef1c4fc: the old setting 0 errors, `--check-untyped-defs` 544 in 75 test files only, `--strict` 9600 (about 282 outside tests); table in docs/22. `pyproject.toml` turns `check_untyped_defs` on everywhere and lists the 75 failing test modules as a baseline that only shrinks; `api.core`, `api.domain.calls` and `api.domain.delivery` get the per-module flags of `--strict` one by one, because `strict = true` in an override applied to the whole run. Only `api/core/tool_log.py` needed a change (three bare `dict`). No `Any`, no `type: ignore`. T-0.12 stays in progress: next the test baseline, then more strict packages. |
 | 11.11.2026 | **The bar "Ton an" keeps a gap to the columns.** The hint above the board touched the column headings under it (Maxi, 11.11.2026): `.betrieb button.ton-an` in `app.css` gets `margin-bottom: var(--s3)`. Measured on the board in a browser: 12 px between the bar and the columns, 0 before. |
 | 10.11.2026 | **n8n 2.46.6 to 2.47.2 (#628, Dependabot).** One pin in `docker-compose.yml`; the 2.47.0 to 2.47.2 release notes name no breaking change. |
@@ -274,7 +275,6 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 | 10.11.2026 | **`raumplan.js` migrated to TypeScript (#626, T-3.18 second of three files).** `api/gui/ts/raumplan.ts` compiles to the committed `api/gui/static/raumplan.js`; markup, CSS and behaviour are unchanged. Compared in a browser against the old file on a mocked server: 63 steps (add, edit, delete, undo, arrow keys, room switch, refused and conflicting saves) gave identical editor HTML and identical save bodies, plus one real drag. Data from the server enters as `unknown` and passes `toClient`; the import of the geometry no longer carries `?v=2` (TypeScript cannot resolve a query), only the page's address of `raumplan.js` does. `app.js` is left. Not tried in the pilot's tablet browser. |
 | 10.11.2026 | **`base.js` migrated to TypeScript (#626, T-3.18 first of three files).** `api/gui/ts/base.ts` compiles to the committed `api/gui/static/base.js`; `base.html` loads it as a module. The htmx event's `detail.headers` is checked before the CSRF header is set (the old file threw on a null detail), and a setup code with invalid percent-encoding is left in the address bar instead of throwing. `raumplan.js` and `app.js` are left, one PR each. Not tried in the pilot's tablet browser. |
 | 10.11.2026 | **TypeScript toolchain for the browser code (#553, T-3.17 done).** `package.json` pins `typescript` 7.0.2 as the only package, `tsconfig.json` compiles `api/gui/ts/*.ts` to committed ES modules in `api/gui/static/`, CI's new job `browser` (in the required check `test`) fails on a type error or a stale output, Dependabot watches npm. First file: `raumplan-geometry.ts`, identical to the old build on 20,000 random rounds over every exported function; `toClient` now checks the server's room document at run time. `raumplan.js` is loaded as a module and imports it. Rule and migration steps: docs/22; remaining files: T-3.18, #626. |
-| 10.11.2026 | **README front page rebuilt inside the Night Service brand (#622).** New order: the banner as one example call, the demo recording, the call flow as a transcript with a station rail, the capability table by area, the roadmap as a line of stages, the architecture as two paths; local badges instead of an image service. `python -m scripts.readme_demo` records the demo from a real replay (`scripts/demo/pickup_call.json`, caller ID from the range reserved for media productions). `scripts/readme_check.py` checks links, anchors, SVG safety, image sizes and blocked terms in the CI job `readme`, which the required check `test` now stands for. `docs/15_README_STRATEGY.md`: section order, the rules every image keeps, four variants for a new image with Maxi's pick, when the demo is recorded again. Assumption: the full capability lists stay in the README, folded under the table, instead of moving into this file, which its upkeep rule keeps small. Left with Maxi: the Actions secret `README_BLOCKLIST`, the About text and topics of the repository, a new social preview, the profile README draft. |
 
 Older rows: `docs/HISTORY.md` section "Done (archive)".
 
@@ -296,6 +296,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.29.11 · 11.11.2026:** T-0.12 step 2: mypy test baseline emptied, every path checked
 - **v2.29.10 · 11.11.2026:** T-0.12 first step: mypy checks every function body, strict flags on three packages
 - **v2.29.9 · 11.11.2026:** The bar Ton an keeps a gap to the columns below
 - **v2.29.8 · 10.11.2026:** n8n 2.46.6 to 2.47.2 (#628)
