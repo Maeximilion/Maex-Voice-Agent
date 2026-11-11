@@ -255,9 +255,44 @@ HINT_ALLERGEN_CLAIM = (
 ALLERGEN_CLAIM = ToolResult(
     ok=False, error_code="out_of_scope", hint=HINT_ALLERGEN_CLAIM
 )
+HINT_ADDITIVE_CLAIM = (
+    "Abgelehnt: eine Aussage zu Zusatzstoffen, die keine Tabelle hält. "
+    "Der Kern gibt das Gespräch ans Team."
+)
+# Its own code in the call log (#649): a model sentence or note that names an
+# additive points at a guest's word the list of `escalation` misses.
+ADDITIVE_CLAIM = ToolResult(ok=False, error_code="additive", hint=HINT_ADDITIVE_CLAIM)
 
 
-def allergen_claim(state: ConversationState, say: str) -> bool:
+def without_menu_names(state: ConversationState, text: str) -> str:
+    """`text` without the dish and option names the search delivered that
+    themselves say "...frei" or name an additive: menu data, not a claim of
+    the model nor a question of the guest. "Nudeln (glutenfrei)" read back
+    sent a plain order to the team (repo audit 27.10.2026). Only as a whole:
+    a dish "Milch" must not cut "milchfrei" (Codex PR #388, P1). Also said
+    without its brackets ("Cola mit Farbstoff", #649).
+    shortcut: only names the search delivered in this call; a guest who names
+    such a dish before any search goes to the team, the careful side."""
+    names = [seen.get("name") for seen in state.seen_items.values()]
+    names += [name for _, name in state.offered_items.values()]
+    names += [
+        option
+        for seen in state.seen_items.values()
+        for group in [*seen.get("required", []), *seen.get("optional", [])]
+        for option in group.get("options", [])
+    ]
+    for name in names:
+        if not isinstance(name, str) or not (
+            _ALWAYS.search(name.lower()) or names_an_additive(name)
+        ):
+            continue
+        for form in (name, " ".join(re.sub(r"[()]", " ", name).split())):
+            whole = rf"(?<!\w){re.escape(form)}(?!\w)"
+            text = re.sub(whole, " ", text, flags=re.IGNORECASE)
+    return text
+
+
+def allergen_claim(state: ConversationState, say: str) -> ToolResult | None:
     """Does the model's sentence claim about allergens what no database value
     answers, or say it cannot answer such a question? Safety words count in
     a call that speaks of allergies or a sentence that names an allergen,
@@ -266,7 +301,8 @@ def allergen_claim(state: ConversationState, say: str) -> bool:
     the core's own sentences (read-back, booking) and the names of the dishes
     the search delivered are left out of the claim, as in `false_booking`.
     The loop hands the call to the team instead of saying it (L17, redesign
-    of PR #369)."""
+    of PR #369). Returns what the log shows for it: `ADDITIVE_CLAIM` for an
+    additive, `ALLERGEN_CLAIM` otherwise, None for no claim."""
     rest = say
     for own in (state.booking_say, state.readback):
         if own:
@@ -275,27 +311,20 @@ def allergen_claim(state: ConversationState, say: str) -> bool:
     # it: "Die Nudeln (glutenfrei) werden getrennt zubereitet." is a safety
     # promise about gluten (Codex PR #388, P1).
     named = names_an_allergen(rest) or "allerg" in rest.lower()
-    # A dish name the search delivered is menu data, not the model's claim:
-    # "Nudeln (glutenfrei)" read back sent a plain order to the team (repo
-    # audit 27.10.2026). Only a name that itself says "...frei" or names an
-    # additive, and only as a whole: a dish "Milch" must not cut "milchfrei"
-    # (Codex PR #388, P1).
-    names = [seen.get("name") for seen in state.seen_items.values()]
-    names += [name for _, name in state.offered_items.values()]
-    for name in names:
-        if name and (_ALWAYS.search(name.lower()) or names_an_additive(name)):
-            whole = rf"(?<!\w){re.escape(name)}(?!\w)"
-            rest = re.sub(whole, " ", rest, flags=re.IGNORECASE)
-    lowered = rest.lower()
+    lowered = without_menu_names(state, rest).lower()
     # An additive at all (#638): no table holds one, and a guest's sentence
     # that names one never reaches the model, so whatever a model says about
     # one is its own. Absence has too many forms to list ("glutamatfrei",
     # "ohne Glutamat zubereitet"; Codex PR #643).
     if names_an_additive(lowered):
-        return True
-    if _ALWAYS.search(lowered) or (named and _ABSENT.search(lowered)):
-        return True
-    return (state.allergy_talk or named) and _SAFE.search(lowered) is not None
+        return ADDITIVE_CLAIM
+    if (
+        _ALWAYS.search(lowered)
+        or (named and _ABSENT.search(lowered))
+        or ((state.allergy_talk or named) and _SAFE.search(lowered))
+    ):
+        return ALLERGEN_CLAIM
+    return None
 
 
 def false_booking(state: ConversationState, say: str) -> ToolResult | None:
@@ -385,6 +414,14 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             return None
     order_corrected(state)
     return refused
+
+
+def notes_an_additive(call: ToolCall) -> bool:
+    """Does a note of the draft name an additive? Read back, it would promise
+    what no table holds, so the loop hands the draft to the team instead
+    (#649). A guest's sentence that names one never reaches the model, so
+    such a note is the model's word or a guest's word the list misses."""
+    return any(names_an_additive(note) for note in _notes(call))
 
 
 def _notes(call: ToolCall) -> list[str]:

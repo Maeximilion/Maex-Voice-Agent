@@ -1536,6 +1536,9 @@ def test_an_answer_to_wogegen_is_still_read(session, known_tenant, said, ingredi
         # holds.
         "Die 13 ohne Glutamat, bitte.",
         "Können Sie das ohne Farbstoff machen",
+        # The register's legend has both (docs/14, #649).
+        "Ist im Tiramisu Koffein?",
+        "Ist das Tonic chininhaltig?",
     ],
 )
 def test_a_sentence_that_names_an_additive_is_read_as_one(said):
@@ -1553,6 +1556,8 @@ def test_a_sentence_that_names_an_additive_is_read_as_one(said):
         # A street spelled out, its number behind the last letter.
         "Mit L, E, Nummer 12.",
         "mit l e nummer 12",
+        # "chinin" inside another word.
+        "Haben Sie Zucchininudeln?",
     ],
 )
 def test_other_sentences_name_no_additive(said):
@@ -1604,6 +1609,7 @@ def test_without_a_team_the_card_names_the_additive_question(session, known_tena
         "Die Pho Bo ist glutamatfrei.",
         "Wir bereiten die Pho Bo ohne Glutamat zu.",
         "Ja, da sind Konservierungsstoffe drin.",
+        "Die Pho Bo enthält kein Koffein.",
     ],
 )
 def test_a_claim_of_the_model_about_an_additive_goes_to_the_team(
@@ -1637,3 +1643,172 @@ def test_addressed_as_a_person_with_the_number_pending_hears_the_truth_first(
 
     assert result.say == [SAY_NOT_A_PERSON, SAY_CALLBACK_NUMBER]
     assert not result.ended
+
+
+# -- review of PR #643 (#649) ---------------------------------------------------
+
+
+def test_addressed_as_a_person_past_the_limit_still_asks_for_the_number(
+    session, known_tenant
+):
+    """The address made the sentence take the timeout branch, which ran before
+    the additive handover: past the call limit, with no team and no number,
+    the call ended without a callback, while the same sentence without the
+    address asked for the number."""
+    state = state_for(session, known_tenant)
+    ticks = iter([0])
+    loop = ConversationLoop(
+        session,
+        FakeLLM([]),
+        "system",
+        now=CLOSED,
+        max_call_seconds=10,
+        clock=lambda: next(ticks, 100),
+    )
+
+    result = loop.run_turn(state, "Junge Frau, ist da Glutamat drin?")
+
+    assert not result.ended
+    assert result.say == [SAY_NOT_A_PERSON, SAY_ALLERGENS_BEYOND, SAY_CALLBACK_NUMBER]
+
+
+def test_a_note_that_names_an_additive_is_never_read_back(session, known_tenant):
+    """The guest's words named no additive the list knows, the model wrote
+    one into the note, and the core read it back as a promise no table
+    holds. The draft goes to the team with the order on the card instead,
+    and nothing is stored."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    pho = str(item(session, known_tenant, "13"))
+    draft = ToolCall(
+        "draft_order",
+        {
+            "type": "pickup",
+            "customer": {"name": "Müller", "phone": CALLER},
+            "items": [{"menu_item_id": pho, "quantity": 1, "note": "ohne Farbstoff"}],
+        },
+    )
+
+    result, _ = run(
+        session,
+        state,
+        "Einmal die Pho Bo auf Müller, ohne künstliche Farbe.",
+        LLMTurn(tool_call=ToolCall("search_menu", {"query": "Pho Bo"})),
+        LLMTurn(tool_call=draft),
+        LLMTurn(say="Passt das so?"),
+    )
+
+    assert result.ended and state.stage == "transferred"
+    assert result.say[:2] == [SAY_ALLERGENS_BEYOND, SAY_ORDER_NOT_PLACED]
+    assert session.scalars(select(Order)).all() == []
+    assert state.handoff_summary is not None
+    assert state.handoff_summary.startswith(SUMMARY_ADDITIVES)
+    assert "1x 13 Pho Bo" in state.handoff_summary
+
+
+def _table_waits_for(session, known_tenant, said: str) -> ConversationState:
+    state = state_for(session, known_tenant, phone=CALLER)
+    table = ToolCall(
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": CALLER,
+            "party_size": 4,
+            "reserved_for": "2026-09-16T19:00:00+02:00",
+        },
+    )
+    run(session, state, f"Tisch für vier auf Müller, {said}", LLMTurn(tool_call=table))
+    assert state.held_call is not None
+    return state
+
+
+@pytest.mark.parametrize(
+    ("allergy", "answer", "card"),
+    [
+        ("ich habe eine Erdnussallergie", "Ist da Glutamat drin?", SUMMARY_ADDITIVES),
+        (
+            "ich habe eine Erdnussallergie",
+            "Ja. Kochen Sie mit Glutamat?",
+            SUMMARY_ADDITIVES,
+        ),
+        ("ich habe eine Allergie", "Gegen Geschmacksverstärker.", SUMMARY_ADDITIVES),
+        (
+            "ich habe eine Erdnussallergie",
+            "Gibt es bei Ihnen Spuren von Nüssen?",
+            SUMMARY_ALLERGENS,
+        ),
+    ],
+)
+def test_a_handover_in_the_answer_to_a_question_of_the_core_keeps_the_held_table(
+    session, known_tenant, allergy, answer, card
+):
+    """The answer to the consent question or to "Wogegen?" took the held draft
+    and went to the team before the model: the card had no table on it, and
+    the guest did not hear that it was not booked."""
+    state = _table_waits_for(session, known_tenant, allergy)
+
+    result, llm = run(session, state, answer, now=CLOSED)
+
+    assert llm.calls == []
+    assert result.ended
+    assert result.say[:2] == [SAY_ALLERGENS_BEYOND, SAY_TABLE_NOT_BOOKED]
+    callback = session.scalars(select(Callback)).one()
+    assert callback.summary.startswith(card)
+    assert "Offene Reservierung, nicht bestätigt: 4 Personen" in callback.summary
+    assert "Erdnuss" not in callback.summary
+
+
+def test_an_illness_next_to_an_additive_reaches_the_card(session, known_tenant):
+    """No complaint word, so `escalation.check` found nothing, and the
+    additive handover wrote its question card: the team read "Frage zu
+    Zusatzstoffen" and never learned that the guest fell ill."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    said = "Die Suppe gestern war voller Glutamat, mir wurde danach übel."
+
+    result, llm = run(session, state, said, now=CLOSED)
+
+    assert llm.calls == []
+    assert result.ended
+    callback = session.scalars(select(Callback)).one()
+    assert callback.reason == "complaint"
+    assert said in callback.summary
+    assert not callback.summary.startswith(SUMMARY_ADDITIVES)
+
+
+@pytest.mark.parametrize(
+    "said", ["Noch eine Cola (mit Farbstoff) dazu.", "Noch eine Cola mit Farbstoff."]
+)
+def test_a_guest_who_repeats_a_dish_name_with_an_additive_word_orders_it(
+    session, known_tenant, said
+):
+    """#649: the name of a dish the search delivered is menu data in the
+    guest's sentence too; only the model's answer was spared."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    state.seen_items["cola"] = {"number": "45", "name": "Cola (mit Farbstoff)"}
+
+    result, llm = run(session, state, said, LLMTurn(say="Gern."))
+
+    assert len(llm.calls) == 1
+    assert result.say == ["Gern."]
+
+
+def test_a_claim_about_an_additive_is_carded_and_logged_as_one(session, known_tenant):
+    """The model's sentence named an additive the guest's words did not: the
+    card asked about allergens, and the log could not tell it from an
+    allergen claim, so the word the list misses stayed unseen."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Was ist denn in der Pho Bo alles drin?",
+        LLMTurn(say="Die Pho Bo enthält keine Konservierungsstoffe."),
+        now=CLOSED,
+    )
+
+    assert result.ended
+    callback = session.scalars(select(Callback)).one()
+    assert callback.summary.startswith(SUMMARY_ADDITIVES)
+    call = session.get(Call, state.call_id)
+    session.refresh(call)
+    says = [entry for entry in call.tool_calls if entry["name"] == "say"]
+    assert [entry.get("error_code") for entry in says] == ["additive"]

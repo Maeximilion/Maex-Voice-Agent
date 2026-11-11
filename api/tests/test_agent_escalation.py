@@ -1,11 +1,14 @@
 """agent/escalation.py: Sofort-Auslöser aus docs/05 §4, geprüft vor dem Modell."""
 
+import unicodedata
+
 import pytest
 
 from api.agent.escalation import (
     addresses_a_person,
     asks_more,
     check,
+    names_an_additive,
     without_human_question,
 )
 
@@ -166,6 +169,49 @@ def test_the_question_for_the_agents_name_is_read_like_the_one_for_a_human(text,
     rest = without_human_question(text)
     assert rest is not None
     assert asks_more(rest) is more
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Wie ist Ihr Name bitte?",
+        "Wie ist Ihr Name, bitte?",
+        "Wie war Ihr Name noch mal?",
+        "Wie heißen Sie bitte?",
+        "Mit wem spreche ich bitte?",
+    ],
+)
+def test_a_filler_behind_the_name_question_asks_nothing_more(text):
+    """#649: "Wie war noch mal Ihr Name?" got the offer of the team, the same
+    filler behind the name counted as a request of its own."""
+    rest = without_human_question(text)
+    assert rest is not None
+    assert not asks_more(rest)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Decomposed umlaut: "a" and the combining mark.
+        unicodedata.normalize("NFD", "Ist da Geschmacksverstärker drin?"),
+        "Sind da E\u2011Nummern drin?",  # non-breaking hyphen
+        "Sind da E\u2013Nummern drin?",  # en dash
+    ],
+)
+def test_an_additive_in_another_unicode_form_is_still_read(text):
+    """#649: the patterns read one form of each letter and of the hyphen."""
+    assert names_an_additive(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Danke, junge\u00a0Frau.",  # no-break space
+        unicodedata.normalize("NFD", "Danke, Fräulein."),
+    ],
+)
+def test_an_address_in_another_unicode_form_is_still_read(text):
+    assert addresses_a_person(text)
 
 
 @pytest.mark.parametrize(

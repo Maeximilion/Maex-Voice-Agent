@@ -12,6 +12,7 @@ Also checked here: the question whether a person is on the line
 """
 
 import re
+import unicodedata
 from typing import Literal
 
 from api.agent.consent import asks
@@ -22,6 +23,16 @@ EscalationReason = Literal["complaint", "human_requested", "cancellation"]
 
 # Where a sentence of the guest ends.
 SENTENCE = re.compile(r"(?<=[.;!?])\s+")
+# Typographic hyphens, dashes and the minus sign as the plain hyphen.
+_DASHES = str.maketrans(dict.fromkeys("\u2010\u2011\u2012\u2013\u2014\u2212", "-"))
+
+
+def _folded(text: str) -> str:
+    """One form of each letter, space and hyphen, lowercased, for the newer
+    patterns (#649): a decomposed "ä", a no-break space in "junge Frau" or a
+    typographic hyphen in "E-Nummer" no longer slips past them."""
+    return unicodedata.normalize("NFKC", text).translate(_DASHES).lower()
+
 
 # Reihenfolge ist die Prüfreihenfolge: "storniert die Reklamation" träfe sowohl
 # complaint- als auch cancellation-Wörter, complaint zuerst geprüft ist die
@@ -95,13 +106,14 @@ _BEYOND = re.compile(
 # drops the question mark, and a rule that told a question from a wish by its
 # word order missed "Sind da Konservierungsstoffe drin" (Codex PR #643).
 # "E-Nummer" only with its hyphen: "L, E, Nummer 12" spells a street.
+# "chinin" only where a word begins: "Zucchininudeln".
 # shortcut: a closed word list, an additive it misses reaches the model. Add
 # the word when the call log shows it.
 _ADDITIVE = re.compile(
     r"zusatzstoff|geschmacksverst(?:ä|ae)rker|glutamat"
     r"|konservierungs(?:stoff|mittel)|farbstoff|antioxidationsmittel"
     r"|schw(?:ä|ae)rzungsmittel|phosphat|s(?:ü|ue)(?:ß|ss)(?:ungsmittel|stoff)"
-    r"|\be-nummern?\b"
+    r"|koffein|\bchinin|\be-nummern?\b"
 )
 
 
@@ -178,7 +190,13 @@ def names_an_additive(text: str) -> bool:
     a guest's sentence that is for the team, a question ("Ist da Glutamat
     drin") and a wish ("die 13 ohne Glutamat") alike: read back, the wish
     would promise what no table holds."""
-    return _ADDITIVE.search(text.lower()) is not None
+    return _ADDITIVE.search(_folded(text)) is not None
+
+
+def names_an_incident(text: str) -> bool:
+    """Does `text` name what no fixed rule answers, an illness or a legal
+    step (`_TEAM_ONLY`)? Then the team has to read the sentence."""
+    return _TEAM_ONLY.search(text.lower()) is not None
 
 
 def only_a_complaint(text: str) -> bool:
@@ -199,7 +217,7 @@ def only_a_complaint(text: str) -> bool:
         or names_an_allergen(text)
         or asks_beyond_the_allergens(text)
         or names_an_additive(text)
-        or _TEAM_ONLY.search(lowered)
+        or names_an_incident(text)
         or _WANTS_ANYTHING.search(_WANTS_TO_COMPLAIN.sub(" ", lowered))
     )
 
@@ -262,14 +280,17 @@ _WORD = re.compile(r"[a-zäöüß]+")
 # The Art. 50 guidelines (point 40) want the truth said again there too
 # (#638). Two cues, both closed lists.
 # shortcut: another cue reaches the model. Add the wording when the call log
-# shows it. "Wie heißen sie" said of dishes reads the same and costs one true
-# sentence.
+# shows it. "Wie heißen sie denn?" said of dishes reads the same: alone in its
+# sentence it gets the fixed answer with the offer of the team instead of the
+# model's answer, and a "Ja" to that offer hands the call to the team (#649).
 # They ask for its name: a question about the agent, read like the one for a
-# human (`without_human_question`).
+# human (`without_human_question`). A filler on either side of the name is
+# part of the question, not a request of its own (#649).
+_FILLER = r"(?:,? (?:denn|bitte|noch ?mal))*"
 _ASKS_ITS_NAME = re.compile(
-    r"\bwie hei(?:ß|ss)en sie\b|\bwie hei(?:ß|ss)t du\b"
-    r"|\bwie (?:ist|war|lautet)(?: denn| bitte| noch ?mal)* (?:ihr|dein) name\b"
-    r"|\bmit wem (?:spreche|rede|telefoniere|habe) ich\b"
+    rf"\b(?:wie hei(?:ß|ss)en sie|wie hei(?:ß|ss)t du"
+    rf"|wie (?:ist|war|lautet){_FILLER} (?:ihr|dein) name"
+    rf"|mit wem (?:spreche|rede|telefoniere|habe) ich){_FILLER}\b"
 )
 # They address it as a person. No question: a "Ja" next to it still answers
 # what the agent asked, so the loop only says the truthful sentence first.
@@ -281,7 +302,7 @@ _ADDRESSED_AS_A_PERSON = re.compile(
 
 def addresses_a_person(text: str) -> bool:
     """Does the guest address the agent as a person ("Danke, junge Frau")?"""
-    return _ADDRESSED_AS_A_PERSON.search(text.lower()) is not None
+    return _ADDRESSED_AS_A_PERSON.search(_folded(text)) is not None
 
 
 def takes_for_a_person(text: str) -> bool:
@@ -300,7 +321,7 @@ def without_human_question(text: str) -> str | None:
     oder mit einem Menschen") is one question, both halves are cut. The
     question for the agent's name (`_ASKS_ITS_NAME`) is read like it and cut
     the same way."""
-    lowered = text.lower().replace("k.i.", "ki")
+    lowered = _folded(text).replace("k.i.", "ki")
     words = list(_WORD.finditer(lowered))
     found: list[tuple[int, int]] = []
     for at in range(len(words) - 1):

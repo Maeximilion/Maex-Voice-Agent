@@ -282,7 +282,7 @@ class ConversationLoop:
             # thing the readers of the turn see (#526).
             user_text = after_recording_answer(user_text)
         if state.recording != "on" or not stops_recording(user_text):
-            return self._guest_turn(state, user_text)
+            return self._guest_sentence(state, user_text)
         recording.withdraw(self._session, state, self._now)
         if only_stops_recording(user_text):
             # What the guest was asked stands: said again, it changes nothing
@@ -290,11 +290,27 @@ class ConversationLoop:
             return TurnResult(
                 state=state, say=[recording.SAY_RECORDING_STOPPED, _still_open(state)]
             )
-        result = self._guest_turn(state, user_text)
+        result = self._guest_sentence(state, user_text)
         result.say.insert(0, recording.SAY_RECORDING_STOPPED)
         return result
 
-    def _guest_turn(self, state: ConversationState, user_text: str) -> TurnResult:
+    def _guest_sentence(self, state: ConversationState, user_text: str) -> TurnResult:
+        """One sentence of the guest, after the recording. A guest who takes
+        the agent for a person hears the truthful sentence first, on every way
+        out of the turn (docs/09 L1, #638): asks whether a person is on the
+        line or for the agent's name (`rest`, the sentence without that
+        question), or addresses it as one ("Ja, junge Frau")."""
+        rest = escalation.without_human_question(user_text)
+        result = self._guest_turn(state, user_text, rest)
+        if (rest is not None or escalation.addresses_a_person(user_text)) and not (
+            result.say and result.say[0].startswith(SAY_NOT_A_PERSON)
+        ):
+            result.say.insert(0, SAY_NOT_A_PERSON)
+        return result
+
+    def _guest_turn(
+        self, state: ConversationState, user_text: str, rest: str | None
+    ) -> TurnResult:
         # The guest has stopped speaking: from here on they wait.
         turn_started = None if self._turn_deadline is None else self._clock()
         # First of all: a name or number the model writes in this turn may
@@ -326,17 +342,21 @@ class ConversationLoop:
             draft_replaced(
                 state, "create_reservation" if state.reservation_id else "draft_order"
             )
+        # The draft held for a question of the core, for the card of a
+        # handover in this turn (#649).
+        waiting = state.held_call
         # The answer to a question of the core about the allergy, the consent
         # logged also when this sentence goes to the team (L13): the draft
-        # that waited for it goes first, before the model is asked.
-        held = self._held_answered(state, user_text)
-        # Read past the question whether a person is on the line: "Spreche ich
-        # mit einem Menschen?" holds the words of the wish to talk to one and
-        # only asks, what else the sentence says still counts.
-        rest = escalation.without_human_question(user_text)
-        # Addressed as a person ("Ja, junge Frau"): the truthful sentence
-        # first as well, but no question, so the rest is read as it stands.
-        asks = escalation.takes_for_a_person(user_text)
+        # that waited for it goes first, before the model is asked. A
+        # sentence that only asks for a person or the agent's name answers
+        # neither and costs no answer, as after "Wogegen?"
+        # (`allergies._asks_back`, #649): the draft stays held, and the
+        # question is put again after the answer to it.
+        only_asks = rest is not None and not escalation.asks_more(rest)
+        held = None if only_asks else self._held_answered(state, user_text)
+        # Read past that question: "Spreche ich mit einem Menschen?" holds the
+        # words of the wish to talk to one and only asks, what else the
+        # sentence says still counts.
         reason = escalation.check(user_text if rest is None else rest)
         # The offer stands while it is the last thing the guest heard: any
         # sentence after it, the phone line's "Sind Sie noch da?" too, takes
@@ -364,14 +384,6 @@ class ConversationLoop:
                 # A "Ja" tells the team nothing the reason does not say.
                 detail=None if answered_offer else user_text,
             )
-        elif (
-            reason is None
-            and asks
-            and self._clock() - self._started > self._max_call_seconds
-        ):
-            # The answer keeps no call open past its limit: asked again and
-            # again, it would (Codex PR #372).
-            escalated = self._handoff(state, SAY_TIMEOUT, detail=user_text)
         # The call speaks of allergies: the guest's own, the allergens of a
         # dish, or an allergen named ("Ist das glutenfrei?"). The model's
         # answers are then checked for a claim (`guards.allergen_claim`).
@@ -380,26 +392,16 @@ class ConversationLoop:
             or escalation.speaks_of_allergies(user_text)
             or names_an_allergen(user_text)
         )
-        if escalated is None and escalation.asks_beyond_the_allergens(user_text):
-            # L17: before the model, which knows no more than the database,
-            # and before the consent question is put again.
-            escalated = self._allergens_to_team(
-                state, lead=SAY_ALLERGENS_BEYOND, table=open_table
-            )
-        if escalated is None and escalation.names_an_additive(user_text):
-            # The same way: the database holds no additive at all (#638).
-            escalated = self._allergens_to_team(
-                state,
-                lead=SAY_ALLERGENS_BEYOND,
-                table=open_table,
-                card=SUMMARY_ADDITIVES,
-            )
+        if escalated is None:
+            escalated = self._beyond_the_database(state, user_text, waiting, open_table)
         if escalated is not None:
-            if asks:
-                escalated.say.insert(0, SAY_NOT_A_PERSON)
             return escalated
         state.allergy_talk = talk
-        if held is None and rest is not None and not escalation.asks_more(rest):
+        if held is None and only_asks:
+            if self._clock() - self._started > self._max_call_seconds:
+                # The answer keeps no call open past its limit: asked again
+                # and again, it would (Codex PR #372).
+                return self._handoff(state, SAY_TIMEOUT, detail=user_text)
             guards.note_said(state, SAY_HUMAN_ANSWER)
             return TurnResult(state=state, say=[SAY_HUMAN_ANSWER])
         if state.held_call is not None:
@@ -419,15 +421,9 @@ class ConversationLoop:
                     held_call = ToolCall(
                         state.held_call["name"], state.held_call["args"]
                     )
-                    handed = self._note_to_team(state, held_call)
-                    if asks:
-                        handed.say.insert(0, SAY_NOT_A_PERSON)
-                    return handed
+                    return self._note_to_team(state, held_call)
                 guards.note_said(state, question)
-                say = [question]
-                if asks:
-                    say.insert(0, SAY_NOT_A_PERSON)
-                return TurnResult(state=state, say=say)
+                return TurnResult(state=state, say=[question])
             state.held_call = None
         result = self._converse(state, user_text, turn_started, held, open_table, wish)
         if not result.ended:
@@ -447,12 +443,10 @@ class ConversationLoop:
                 )
                 if not result.ended:
                     guards.note_said(state, SAY_CALLBACK_NUMBER)
-        if asks:
-            # A request next to the question ("Sind Sie ein Roboter? Ich
-            # möchte einen Tisch ..."): the truthful sentence first, then the
-            # model's answer to the request; the guest has said what they
-            # want, so no offer of the team (ultrareview of PR #372).
-            result.say.insert(0, SAY_NOT_A_PERSON)
+        # A request next to the question ("Sind Sie ein Roboter? Ich möchte
+        # einen Tisch ..."): the model answers it after the truthful sentence
+        # (`_guest_sentence`); the guest has said what they want, so no offer of
+        # the team (ultrareview of PR #372).
         return result
 
     def _converse(
@@ -603,20 +597,22 @@ class ConversationLoop:
             if turn.tool_call is None:
                 say = turn.say
                 assert say is not None  # LLMTurn garantiert genau eins von beidem
-                if guards.allergen_claim(state, say):
+                claim = guards.allergen_claim(state, say)
+                if claim is not None:
                     # L17: the model answered what no database value answers
                     # ("Das ist sicher", "glutenfrei", "keine Spuren"), or
                     # said it cannot: the guest hears neither from it, the
                     # team answers before any `confirm` (redesign of PR #369).
                     log_refused(
-                        self._session,
-                        state.call_id,
-                        state.tenant_id,
-                        SAY,
-                        guards.ALLERGEN_CLAIM,
+                        self._session, state.call_id, state.tenant_id, SAY, claim
                     )
                     return self._allergens_to_team(
-                        state, lead=SAY_ALLERGENS_BEYOND, table=open_table
+                        state,
+                        lead=SAY_ALLERGENS_BEYOND,
+                        table=open_table,
+                        card=SUMMARY_ADDITIVES
+                        if claim is guards.ADDITIVE_CLAIM
+                        else SUMMARY_ALLERGENS,
                     )
                 refused = guards.unread_allergy_question(read, say, user_text)
                 if refused is not None:
@@ -676,6 +672,22 @@ class ConversationLoop:
                 turn.tool_call,
                 cart_sent=turn.cart is not None,
             )
+            if refused is None and guards.notes_an_additive(turn.tool_call):
+                # Read back, the note would promise what no table holds: the
+                # draft goes to the team as an additive question (#649).
+                log_refused(
+                    self._session,
+                    state.call_id,
+                    state.tenant_id,
+                    turn.tool_call.name,
+                    guards.ADDITIVE_CLAIM,
+                )
+                return self._note_to_team(
+                    state,
+                    turn.tool_call,
+                    lead=SAY_ALLERGENS_BEYOND,
+                    card=SUMMARY_ADDITIVES,
+                )
             question = (
                 allergies.question(state)
                 if turn.tool_call.name in allergies.NOTED
@@ -881,9 +893,6 @@ class ConversationLoop:
             f"{offer.complaint} {user_text}",
             summary=_remedy_card(SUMMARY_REMEDY_OPEN, offer),
         )
-        if escalation.takes_for_a_person(user_text):
-            # The truthful answer first, in every turn (docs/09 L1).
-            result.say.insert(0, SAY_NOT_A_PERSON)
         return result
 
     def offer_unanswered(self, state: ConversationState) -> None:
@@ -1115,6 +1124,41 @@ class ConversationLoop:
         handed.say = [s for s in (*lead_say, *handed.say) if s]
         return handed
 
+    def _beyond_the_database(
+        self,
+        state: ConversationState,
+        user_text: str,
+        waiting: dict[str, Any] | None,
+        open_table: str | None,
+    ) -> TurnResult | None:
+        """What no table answers goes to the team before the model, which
+        knows no more than the database, and before the consent question is
+        put again (L17): traces and shared frying, or an additive, which the
+        data model has no field for (#638). A draft that waited for a question
+        of the core (`waiting`) goes onto the card as it would have been
+        booked (#649). An illness or a legal step in the sentence is a
+        complaint the team has to read: its card quotes the guest (#649),
+        unless the sentence names an allergy (L13). None for any other
+        sentence."""
+        if escalation.asks_beyond_the_allergens(user_text):
+            card = SUMMARY_ALLERGENS
+        elif escalation.names_an_additive(guards.without_menu_names(state, user_text)):
+            card = SUMMARY_ADDITIVES
+        else:
+            return None
+        lead: str | None = SAY_ALLERGENS_BEYOND
+        reason = "out_of_scope"
+        if escalation.names_an_incident(user_text):
+            detail = None if _names_health(state, user_text) else user_text
+            card = _handoff_summary("complaint", detail)
+            lead, reason = None, "complaint"
+        if waiting is not None:
+            call = ToolCall(waiting["name"], waiting["args"])
+            return self._note_to_team(state, call, lead, card, reason)
+        return self._allergens_to_team(
+            state, lead=lead, table=open_table, card=card, reason=reason
+        )
+
     def _allergens_to_team(
         self,
         state: ConversationState,
@@ -1122,6 +1166,7 @@ class ConversationLoop:
         lead: str | None = SAY_ALLERGENS_UNKNOWN,
         table: str | None = None,
         card: str = SUMMARY_ALLERGENS,
+        reason: str = "out_of_scope",
     ) -> TurnResult:
         """The guest asked about allergens beyond what the database holds
         (legal check L17, D24): the call goes to a team member, or a callback
@@ -1142,7 +1187,7 @@ class ConversationLoop:
         handed = self._handoff(
             state,
             SAY_ESCALATION,
-            "out_of_scope",
+            reason,
             summary=_with_open_order(state, summary, reserve=reserve),
             ask_number=True,
         )
@@ -1155,11 +1200,19 @@ class ConversationLoop:
             guards.note_said(state, " ".join(handed.say))
         return handed
 
-    def _note_to_team(self, state: ConversationState, call: ToolCall) -> TurnResult:
-        """The guest's allergy cannot go onto the draft `call` (#207): the
-        team takes the call, with the order or the table the draft asked for
-        on the card, and the guest hears that it is not booked. Nothing is
-        stored."""
+    def _note_to_team(
+        self,
+        state: ConversationState,
+        call: ToolCall,
+        lead: str | None = None,
+        card: str = SUMMARY_KITCHEN_NOTE,
+        reason: str = "out_of_scope",
+    ) -> TurnResult:
+        """The guest's allergy cannot go onto the draft `call` (#207), or
+        another `card` the team has to clear first stops it: the team takes
+        the call, with the order or the table the draft asked for on the
+        card, and the guest hears that it is not booked, after `lead`.
+        Nothing is stored."""
         state.held_call = None
         table = None
         if call.name == "create_reservation":
@@ -1171,7 +1224,7 @@ class ConversationLoop:
             with suppress(ValidationError):
                 state.cart = cart_lines(call.args.get("items"))
         return self._allergens_to_team(
-            state, lead=None, table=table, card=SUMMARY_KITCHEN_NOTE
+            state, lead=lead, table=table, card=card, reason=reason
         )
 
     def _open_table(self, state: ConversationState) -> str | None:
@@ -1213,9 +1266,6 @@ class ConversationLoop:
             result = self._handoff(
                 state, SAY_ESCALATION, state.callback_reason, summary=summary
             )
-        if escalation.takes_for_a_person(user_text):
-            # The truthful answer first, in every turn (docs/09 L1).
-            result.say.insert(0, SAY_NOT_A_PERSON)
         return result
 
     def _table_wish(self, state: ConversationState, args: dict[str, Any]) -> str:
