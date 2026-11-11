@@ -1064,7 +1064,9 @@ class ConversationLoop:
             )
         return to_local(self._now or utcnow(), self._zone)
 
-    def _dispatch(self, state: ConversationState, name: str, args: dict) -> ToolResult:
+    def _dispatch(
+        self, state: ConversationState, name: str, args: dict[str, Any]
+    ) -> ToolResult:
         return dispatch(
             self._session, state.call_id, state.tenant_id, name, args, now=self._now
         )

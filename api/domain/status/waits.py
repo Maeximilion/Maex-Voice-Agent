@@ -24,7 +24,8 @@ UNTIL_FIELDS = {
 
 
 def standard_wait(config: ServiceConfig, service: str) -> int:
-    return getattr(config, STANDARD_FIELDS[service])
+    minutes: int = getattr(config, STANDARD_FIELDS[service])
+    return minutes
 
 
 def holds_today(config: ServiceConfig, service: str, now: datetime) -> bool:
@@ -36,5 +37,6 @@ def holds_today(config: ServiceConfig, service: str, now: datetime) -> bool:
 def current_wait(config: ServiceConfig, service: str, now: datetime) -> int:
     """The wait at `now`, in minutes."""
     if holds_today(config, service, now):
-        return getattr(config, TODAY_FIELDS[service])
+        minutes: int = getattr(config, TODAY_FIELDS[service])
+        return minutes
     return standard_wait(config, service)

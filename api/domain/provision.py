@@ -14,8 +14,9 @@ the operations view shows only the oldest tenant (`stack_tenant_id`).
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import exists, select, text
+from sqlalchemy import ColumnExpressionArgument, exists, select, text
 from sqlalchemy.orm import Session
 
 from api.config import settings
@@ -154,7 +155,7 @@ def missing(session: Session, tenant_id: uuid.UUID) -> list[str]:
     """What the tenant still lacks before it takes calls, in the operator's
     words, with the command that fills it; empty when nothing is missing."""
 
-    def some(model, *where) -> bool:
+    def some(model: Any, *where: ColumnExpressionArgument[bool]) -> bool:
         return bool(
             session.scalar(select(exists().where(model.tenant_id == tenant_id, *where)))
         )

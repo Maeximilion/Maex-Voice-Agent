@@ -20,7 +20,7 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import NamedTuple, cast
+from typing import Any, NamedTuple, cast
 
 from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -252,7 +252,7 @@ def mark_active(session: Session, session_id: uuid.UUID, now: datetime) -> None:
     """A change on an unlocked device: the 15 minutes start again."""
     # An UPDATE answers a CursorResult, the one that carries rowcount.
     result = cast(
-        CursorResult,
+        CursorResult[*tuple[Any, ...]],
         session.execute(
             update(GuiSession)
             .where(
@@ -358,7 +358,7 @@ def audit(
     actor: str,
     action: str,
     entity_id: uuid.UUID,
-    payload: dict,
+    payload: dict[str, Any],
     entity: str = "gui_account",
 ) -> None:
     session.add(

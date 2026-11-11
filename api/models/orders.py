@@ -10,6 +10,7 @@ after its period clears only the links (migration 018, docs/03).
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -142,7 +143,7 @@ class OrderItem(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     unit_price_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     # Gewählte Optionen mit Preisdifferenz, z. B. [{"group": "Fleisch",
     # "option": "Huhn", "price_delta_cents": 0}].
-    options: Mapped[list] = mapped_column(
+    options: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     note: Mapped[str | None] = mapped_column(Text)

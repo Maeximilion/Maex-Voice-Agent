@@ -17,6 +17,7 @@ the direct one included (`_waits_for`). The guest's yes still confirms it.
 """
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
@@ -213,7 +214,7 @@ def _next_pickup_code(session: Session, order: Order, tz_name: str) -> str:
     return f"{PICKUP_PREFIX}{issued + 1}"
 
 
-def _address(session: Session, order: Order) -> dict | None:
+def _address(session: Session, order: Order) -> dict[str, Any] | None:
     address = session.get(Address, order.address_id) if order.address_id else None
     if address is None:
         return None
@@ -231,7 +232,7 @@ def order_event_payload(
     order: Order,
     revision: int = 0,
     correction_reason: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """Vollstaendig, damit der kalte Pfad den Bon ohne zweite Abfrage druckt.
 
     Nummer und Name kommen aus dem Schnappschuss des Entwurfs, nicht aus der

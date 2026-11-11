@@ -1,5 +1,7 @@
 """agent/intent.py: what the guest called for, heard in their own sentence."""
 
+import re
+
 import pytest
 
 from api.agent import intent
@@ -109,7 +111,7 @@ def test_a_wish_that_is_ruled_out_is_not_heard(sentence):
 @pytest.mark.parametrize("sentence", RULED_OUT)
 def test_ruled_out_cases_depend_on_the_negation_rule(sentence, monkeypatch):
     """Each case above is one the negation rule decides, not another rule."""
-    monkeypatch.setattr(intent, "_NEGATION", intent.re.compile(r"(?!)"))
+    monkeypatch.setattr(intent, "_NEGATION", re.compile(r"(?!)"))
     assert heard(sentence) is not None
 
 

@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, delete, select, text, update
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, NotFound
-from api.domain.ordering import board
+from api.domain.ordering import board, labels
 from api.domain.ordering.board import (
     ACTION_REGISTER_ENTERED,
     CORRECTED_SINCE,
@@ -310,7 +310,7 @@ def test_a_card_torn_by_a_correction_names_the_lines_it_shows(
     order_id = _order(session, tenant_id, call_id)
     approve_order(session, tenant_id, order_id)
     [row] = _rows(session, order_id)
-    real = board.current_labels_many
+    real = labels.current_labels_many
     engine = create_engine(migrated_db_url)
 
     def correction_commits_now(*args, **kwargs):

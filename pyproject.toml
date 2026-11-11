@@ -74,7 +74,15 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 # Strict per module, flag by flag: a `strict = true` in an override applies to the
 # whole run. Packages join this list once they pass; each step is its own change.
-module = ["api.core.*", "api.domain.calls.*", "api.domain.delivery.*"]
+module = [
+    "api.agent.*",
+    "api.core.*",
+    "api.domain.*",
+    "api.events.*",
+    "api.models.*",
+    "api.schemas.*",
+    "api.tools.*",
+]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 disallow_untyped_calls = true
@@ -86,3 +94,5 @@ warn_unused_ignores = true
 no_implicit_reexport = true
 strict_equality = true
 extra_checks = true
+# Not part of --strict: a name bound in one branch only and read after it.
+enable_error_code = ["possibly-undefined"]

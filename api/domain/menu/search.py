@@ -33,8 +33,8 @@ from collections.abc import Callable
 from datetime import datetime
 from functools import partial
 
-from sqlalchemy import func, literal, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy import ColumnElement, func, literal, or_, select
+from sqlalchemy.orm import InstrumentedAttribute, Session
 
 from api.config import settings
 from api.core.errors import Ambiguous, NotFound
@@ -107,7 +107,7 @@ AMBIGUOUS_LIMIT = 3
 PREFILTER_EPSILON = 1e-4
 
 
-def _active(tenant_id: uuid.UUID) -> tuple:
+def _active(tenant_id: uuid.UUID) -> tuple[ColumnElement[bool], ...]:
     return (MenuItem.tenant_id == tenant_id, MenuItem.active.is_(True))
 
 
@@ -762,12 +762,12 @@ def search_menu(
         )
     )
 
-    def score(column):
+    def score(column: InstrumentedAttribute[str]) -> ColumnElement[float]:
         return func.greatest(
             func.similarity(column, text), func.word_similarity(text, column)
         )
 
-    def candidate(column):
+    def candidate(column: InstrumentedAttribute[str]) -> ColumnElement[bool]:
         # Superset of score(column) >= low, backed by the index.
         return or_(column.op("%")(text), literal(text).op("<%")(column))
 

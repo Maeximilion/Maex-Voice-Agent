@@ -9,6 +9,7 @@ Agent vorlesen kann.
 import uuid
 from collections import defaultdict
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -200,7 +201,9 @@ def validated_lines(
     return lines
 
 
-def _options(item: MenuItem, wanted: OrderItemIn, offered: Offered) -> list[dict]:
+def _options(
+    item: MenuItem, wanted: OrderItemIn, offered: Offered
+) -> list[dict[str, Any]]:
     chosen: list[ItemOption] = []
     for choice in wanted.options:
         opt = offered.get(option_key(choice.group), {}).get(option_key(choice.name))
@@ -233,7 +236,7 @@ def _options(item: MenuItem, wanted: OrderItemIn, offered: Offered) -> list[dict
                 say=SAY_OPTION_TWICE.format(**say_args),
             )
 
-    options: list[dict] = [
+    options: list[dict[str, Any]] = [
         {
             "group": opt.group_name,
             "option": opt.option_name,

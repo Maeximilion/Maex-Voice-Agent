@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import BigInteger, DateTime, Index, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -23,4 +24,4 @@ class AuditLog(Timestamps, Base):
     action: Mapped[str] = mapped_column(Text, nullable=False)
     entity: Mapped[str] = mapped_column(Text, nullable=False)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
-    payload: Mapped[dict | None] = mapped_column(JSONB)
+    payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB)

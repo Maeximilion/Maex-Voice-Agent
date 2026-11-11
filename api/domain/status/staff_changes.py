@@ -30,6 +30,7 @@ import hashlib
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -89,14 +90,14 @@ class DayHours:
             return f"wie {WEEKDAYS[self.like_weekday]}"
         return "normale Zeiten der Woche"
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> dict[str, Any]:
         data = asdict(self)
         for key in ("opens", "closes"):
             data[key] = data[key].strftime("%H:%M") if data[key] else None
         return data
 
     @classmethod
-    def of(cls, data: dict) -> "DayHours":
+    def of(cls, data: dict[str, Any]) -> "DayHours":
         def at(text: str | None) -> time | None:
             return time.fromisoformat(text) if text else None
 
@@ -379,7 +380,7 @@ def _open_card(
 
 
 def _new_card(
-    session: Session, tenant_id: uuid.UUID, kind: str, day: date, before: dict
+    session: Session, tenant_id: uuid.UUID, kind: str, day: date, before: dict[str, Any]
 ) -> StaffChange:
     card = StaffChange(
         tenant_id=tenant_id,

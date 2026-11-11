@@ -10,6 +10,7 @@ den Kuechenbon (domain/ordering/handover.py). Beide sollen gleich zaehlen.
 
 import uuid
 from datetime import datetime, timedelta
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -27,7 +28,7 @@ def enqueue(
     *,
     tenant_id: uuid.UUID,
     event_type: str,
-    payload: dict,
+    payload: dict[str, Any],
 ) -> OutboxEvent:
     """Legt ein Ereignis als 'pending' ab. Faellig ist es sofort (Default next_attempt_at)."""
     if event_type not in EVENT_TYPES:

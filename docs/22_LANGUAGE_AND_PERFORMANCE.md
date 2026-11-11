@@ -133,9 +133,29 @@ for a card number, a settings field named by a parameter, a method patched on an
 instance, an attribute set on a double, a stub call object that only carries
 `.state`.
 
-Next steps, one reviewable change each: add more packages to the strict list (`api.domain.access` and
-`api.domain.callbacks` have 2 strict errors each, `api.schemas` 1; `api.models`
-has 8 bare `dict` or `list` columns). Count the rest again with
+**Third step (11.11.2026): the inner layers are strict.** Counted first with
+`mypy --strict` (9064 errors in 296 files, about 280 outside `api/tests`), then
+`api.domain` as a whole, `api.models`, `api.schemas`, `api.events`,
+`api.agent` and `api.tools` (already clean) joined `api.core` in the strict
+list, so the agent's whole path from tool call to table is strict. 75 errors, nearly all
+annotations: a JSONB column or payload is `dict[str, Any]` (or a list of
+those), the honest type of a JSON value and narrower than the bare `dict` it
+replaces; a tuple of SQL filters is `tuple[ColumnElement[bool], ...]`; a value
+read with `getattr` or out of a JSON payload is bound to an annotated name
+before it is returned. Behaviour stays the same. The strict list also turns on
+`possibly-undefined`, which `--strict` leaves off: during this step a
+misindented `return` after an `if` passed every other check and failed only
+in the evals, and this flag reports it. `no_implicit_reexport` moved
+five imports in tests and one in `api/gui/orders_view.py` to the module that
+defines the name. One `type: ignore[no-untyped-def]` was added: the wrap
+serializer in `api/schemas/menu.py` must stay without a return annotation,
+because Pydantic reads it and would replace the documented schema with a free
+`dict` (review PR #139). `provision.missing` keeps `Any` for a mapped class that
+carries `tenant_id`, which `GuiAccount` does without the `TenantScoped` mixin.
+
+Next steps, one reviewable change each: `api.jobs`, `api.dashboard` and
+`api.telephony` (each under ten strict errors besides the `api.config`
+re-exports), then `api.gui`, `evals` and `scripts`. Count the rest again with
 `mypy --strict` before each step.
 
 ## Browser code in TypeScript

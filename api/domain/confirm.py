@@ -6,6 +6,7 @@ Generisch über beide Vorgangsarten; die Bestellung liegt in
 
 import uuid
 from datetime import datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -231,7 +232,9 @@ def confirm_tablet(
     return CONFIRMED
 
 
-def _book(session: Session, reservation: Reservation, actor: str, audit: dict) -> None:
+def _book(
+    session: Session, reservation: Reservation, actor: str, audit: dict[str, Any]
+) -> None:
     """Draft to confirmed, with its audit row and its outbox event; the caller
     holds the row lock and commits."""
     reservation.status = "confirmed"

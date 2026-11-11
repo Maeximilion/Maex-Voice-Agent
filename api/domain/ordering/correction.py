@@ -33,6 +33,7 @@ import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import func, select
@@ -153,7 +154,7 @@ class PlannedLine:
     name: str
     quantity: int
     unit_price_cents: int
-    options: list[dict]
+    options: list[dict[str, Any]]
     note: str | None
     menu_item_id: uuid.UUID
     # Only where the team entered a number: the choice the tablet offers.
@@ -209,7 +210,7 @@ def order_version(rows: list[OrderItem], order: Order) -> str:
     Not updated_at on purpose: handover and release change the row but not the
     positions; a correction would otherwise be stale for no reason.
     """
-    data: list = [
+    data: list[list[Any]] = [
         [
             str(r.id),
             str(r.menu_item_id),
@@ -662,7 +663,7 @@ def _where(session: Session, order: Order, edit: AddressEdit | None) -> AddressP
     return where
 
 
-def _choice_keys(options: list[dict]) -> list[tuple[str, str]]:
+def _choice_keys(options: list[dict[str, Any]]) -> list[tuple[str, str]]:
     """Which options, whatever their order, spelling and frozen price."""
     return sorted((option_key(o["group"]), option_key(o["option"])) for o in options)
 
@@ -730,13 +731,13 @@ def _new_line(
 
 def _options(
     item: MenuItem, offered: list[OptionGroup], choices: tuple[Choice, ...]
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     """The chosen options in the form of order_items.options: one in a
     required group, each choice of an optional group at most once - the rule
     of draft_order (validation.py). Overwriting a second extra of the same
     group dropped a paid one in silence (repo audit 27.10.2026)."""
     by_group = {option_key(g.group): g for g in offered}
-    picked: dict[str, list[dict]] = {}
+    picked: dict[str, list[dict[str, Any]]] = {}
     for choice in choices:
         group = by_group.get(option_key(choice.group))
         opt = (
@@ -775,7 +776,7 @@ def _options(
     return options
 
 
-def _audit_line(row: OrderItem, label: list[str]) -> dict:
+def _audit_line(row: OrderItem, label: list[str]) -> dict[str, Any]:
     """Nur Kartendaten: kein Hinweis, er kann eine Allergie tragen."""
     return {
         "number": label[0],

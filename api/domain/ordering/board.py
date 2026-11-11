@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from sqlalchemy import (
+    ColumnElement,
     Text,
     and_,
     case,
@@ -137,7 +138,7 @@ def _window(tz_name: str, now: datetime | None) -> tuple[datetime, datetime]:
     return business_day_bounds_utc(business_day(now, tz_name), tz_name)
 
 
-def _filters(tenant_id: uuid.UUID) -> tuple:
+def _filters(tenant_id: uuid.UUID) -> tuple[ColumnElement[bool], ...]:
     return (
         Order.tenant_id == tenant_id,
         Order.deleted_at.is_(None),
@@ -156,7 +157,7 @@ def _filters(tenant_id: uuid.UUID) -> tuple:
     )
 
 
-def _unmarked():
+def _unmarked() -> ColumnElement[bool]:
     """An order the guest said yes to that nobody has marked as typed in."""
     return and_(
         Order.status.in_(ALREADY_CONFIRMED), Order.register_entered_at.is_(None)
@@ -635,7 +636,7 @@ def settle_default_if_marked(session: Session, order: Order) -> None:
         settle_default(session, order)
 
 
-def _ever_marked():
+def _ever_marked() -> ColumnElement[bool]:
     """The order was marked "In Kasse eingegeben" once: a correction clears
     `register_entered_at` until the team marks the new revision, the audit
     entry of the first mark stays (kept 365 days, `jobs/retention.py`)."""

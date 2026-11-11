@@ -17,7 +17,6 @@ from api.core.errors import InvalidInput
 from api.core.time import business_day, to_local
 from api.domain.ordering.board import MARKABLE, BoardOrder
 from api.domain.ordering.correction import (
-    MAX_QUANTITY,
     NO_CHANGE,
     REASONS,
     AddEdit,
@@ -29,6 +28,7 @@ from api.domain.ordering.correction import (
     RowEdit,
 )
 from api.domain.ordering.ticket import CANCELLED
+from api.schemas.orders import MAX_QUANTITY
 
 TYPE_LABELS = {"pickup": "Abholung", "delivery": "Lieferung"}
 UNKNOWN_NUMBER = "Nummer {number} gibt es nicht auf der Karte."

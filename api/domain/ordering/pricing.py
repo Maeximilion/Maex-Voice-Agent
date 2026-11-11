@@ -5,6 +5,7 @@ Die Pauschale für Lieferung kommt mit T-6.5 dazu.
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from api.models import MenuItem
 
@@ -15,18 +16,19 @@ class Line:
 
     item: MenuItem
     quantity: int
-    options: list[dict]
+    options: list[dict[str, Any]]
     note: str | None
 
 
-def row_cents(unit_price_cents: int, options: Sequence[dict]) -> int:
+def row_cents(unit_price_cents: int, options: Sequence[dict[str, Any]]) -> int:
     """Stueckpreis einer Position: Grundpreis plus Optionen.
 
     `order_items.unit_price_cents` haelt nur den Grundpreis, die Optionen tragen
     ihre Differenz selbst. Wer eine gespeicherte Position rechnet, nimmt diese
     Funktion und nie den Kartenpreis von jetzt (Korrektur im Tablet, T-4.7).
     """
-    return unit_price_cents + sum(o["price_delta_cents"] for o in options)
+    deltas: int = sum(o["price_delta_cents"] for o in options)
+    return unit_price_cents + deltas
 
 
 def unit_cents(line: Line) -> int:

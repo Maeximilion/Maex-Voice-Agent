@@ -13,7 +13,7 @@ customer's default, on the line the call came from only.
 
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -228,10 +228,11 @@ def _replay(
 
 def draft_labels(session: Session, order_id: uuid.UUID) -> list[list[str]]:
     """Nummer und Name je Position, wie vorgelesen oder im Tablet korrigiert."""
-    return _snapshot(session, order_id)["labels"]
+    labels: list[list[str]] = _snapshot(session, order_id)["labels"]
+    return labels
 
 
-def _snapshot(session: Session, order_id: uuid.UUID) -> dict:
+def _snapshot(session: Session, order_id: uuid.UUID) -> dict[str, Any]:
     snapshot = session.scalar(
         select(AuditLog.payload).where(
             AuditLog.entity == "order",

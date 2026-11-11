@@ -52,7 +52,7 @@ SAY_TABLE_TAKEN = "Den Tischnamen {name} gibt es schon. Bitte einen anderen wäh
 class StaleRevision(Conflict):
     """Another tablet saved this room since the editor loaded it."""
 
-    def __init__(self, current: dict) -> None:
+    def __init__(self, current: dict[str, Any]) -> None:
         super().__init__(
             "floor area changed since its revision",
             say=(
@@ -65,7 +65,7 @@ class StaleRevision(Conflict):
         self.current = current
 
 
-def plan(session: Session, tenant_id: uuid.UUID) -> list[dict]:
+def plan(session: Session, tenant_id: uuid.UUID) -> list[dict[str, Any]]:
     """Every room and terrace of the restaurant, oldest first."""
     areas = session.scalars(
         select(FloorArea)
@@ -77,7 +77,7 @@ def plan(session: Session, tenant_id: uuid.UUID) -> list[dict]:
 
 def create_area(
     session: Session, tenant_id: uuid.UUID, new: NewArea, actor: str = ACTOR_TABLET
-) -> dict:
+) -> dict[str, Any]:
     """A new, empty room or terrace. A room of equal sides starts as a square."""
     _lock(session, tenant_id)
     areas = session.scalars(
@@ -129,7 +129,7 @@ def save_area(
     area_id: uuid.UUID,
     request: SaveArea,
     actor: str = ACTOR_TABLET,
-) -> dict:
+) -> dict[str, Any]:
     """Store the whole room as the tablet sends it, or nothing.
 
     Raises `StaleRevision` when another save came first, `InvalidInput` when the
@@ -362,7 +362,7 @@ def _apply(
         session.add(TableCombination(tenant_id=tenant_id, table_a_id=a, table_b_id=b))
 
 
-def _document(session: Session, area: FloorArea) -> dict:
+def _document(session: Session, area: FloorArea) -> dict[str, Any]:
     """The room as the editor reads it; ids as text, like the browser sends them."""
     tables = session.scalars(
         select(DiningTable)
@@ -388,14 +388,14 @@ def _document(session: Session, area: FloorArea) -> dict:
     }
 
 
-def _from_request(wanted: Area) -> dict:
+def _from_request(wanted: Area) -> dict[str, Any]:
     """The wanted room in the shape of `_document`, to compare the two."""
     dumped = wanted.model_dump(mode="json")
     dumped["combinations"] = sorted(sorted(pair) for pair in dumped["combinations"])
     return dumped
 
 
-def _content(document: dict) -> dict:
+def _content(document: dict[str, Any]) -> dict[str, Any]:
     """What a room holds, without its id, revision and the order of its lists."""
     return {
         **{field: document[field] for field in AREA_FIELDS},
@@ -405,7 +405,7 @@ def _content(document: dict) -> dict:
     }
 
 
-def _changes(before: dict, after: dict) -> dict:
+def _changes(before: dict[str, Any], after: dict[str, Any]) -> dict[str, Any]:
     """The audit entry: what changed, before and after, by the names on the plan."""
     changes: dict[str, Any] = {}
     area = {f: [before[f], after[f]] for f in AREA_FIELDS if before[f] != after[f]}

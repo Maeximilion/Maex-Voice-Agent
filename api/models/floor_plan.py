@@ -7,6 +7,7 @@ JSON list on their area instead of a table each.
 """
 
 import uuid
+from typing import Any
 
 from sqlalchemy import CheckConstraint, ForeignKey, Index, Integer, SmallInteger, Text
 from sqlalchemy import text as sql
@@ -53,7 +54,7 @@ class FloorArea(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     depth_cm: Mapped[int] = mapped_column(Integer, nullable=False)
     wall_cm: Mapped[int] = mapped_column(Integer, nullable=False, server_default="20")
     # Walls, doors, counters and labels, checked by domain/reservations/floor_plan.py.
-    fixtures: Mapped[list] = mapped_column(
+    fixtures: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, server_default=sql("'[]'::jsonb")
     )
     # Every save names the revision it started from; another tablet's save in

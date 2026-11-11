@@ -1329,9 +1329,10 @@ def test_card_format_read_once_per_search(session, sushi, monkeypatch):
     """Review PR #155: position_parts searches recursively, the menu is still
     read only once."""
     import api.domain.menu.search as search_mod
+    from api.domain.menu import items
 
     calls = []
-    real = search_mod.card_format
+    real = items.card_format
 
     def counting(*a):
         calls.append(1)

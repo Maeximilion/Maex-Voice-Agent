@@ -11,6 +11,7 @@ Jede Funktion sperrt die Zeile (`FOR UPDATE`). Zwei Tablets, die gleichzeitig
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -61,7 +62,11 @@ def _locked(session: Session, tenant_id: uuid.UUID) -> ServiceConfig:
 
 
 def _audit(
-    session: Session, config: ServiceConfig, action: str, actor: str, payload: dict
+    session: Session,
+    config: ServiceConfig,
+    action: str,
+    actor: str,
+    payload: dict[str, Any],
 ) -> None:
     session.add(
         AuditLog(
@@ -112,7 +117,7 @@ def _mode_before_pause(session: Session, tenant_id: uuid.UUID) -> str:
         .order_by(AuditLog.id.desc())
         .limit(1)
     ).first()
-    previous = (payload or {}).get("from")
+    previous: str | None = (payload or {}).get("from")
     if not previous or previous == PAUSED:
         return RESUME_FALLBACK
     return previous
