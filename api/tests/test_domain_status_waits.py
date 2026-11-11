@@ -145,6 +145,7 @@ def test_todays_wait_outlives_a_restart(engine, session, tenant_id):
 
     with Session(engine) as restarted:
         config = restarted.get(ServiceConfig, tenant_id)
+        assert config is not None
         assert current_wait(config, "pickup", EVENING) == 75
 
 
@@ -174,7 +175,9 @@ def test_the_standard_is_set_and_outlives_a_restart(engine, session, tenant_id):
     switches.set_standard_wait(session, tenant_id, "pickup", 15)
 
     with Session(engine) as restarted:
-        assert standard_wait(restarted.get(ServiceConfig, tenant_id), "pickup") == 15
+        config = restarted.get(ServiceConfig, tenant_id)
+        assert config is not None
+        assert standard_wait(config, "pickup") == 15
     assert audits(session, tenant_id, switches.ACTION_WAIT_STANDARD) == [
         {"service": "pickup", "from": before, "to": 15}
     ]
@@ -213,6 +216,7 @@ def test_a_standard_outside_the_limits_changes_nothing(session, tenant_id, minut
     with pytest.raises(InvalidInput) as refused:
         switches.set_standard_wait(session, tenant_id, "pickup", minutes)
 
+    assert refused.value.say is not None
     assert "10 bis 180 Minuten" in refused.value.say
     session.rollback()
     assert standard_wait(config_of(session, tenant_id), "pickup") == before

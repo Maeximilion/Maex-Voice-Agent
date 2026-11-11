@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from scripts import call_log
-from scripts.call_log import main, parse, report, to_case, write_cases
+from scripts.call_log import Entry, main, parse, report, to_case, write_cases
 
 HEADER = "date;time;duration_min;intent;outcome;phrases;items;problems\n"
 VORLAGE = (
@@ -18,6 +18,12 @@ VORLAGE = (
 posix_mode = pytest.mark.skipif(
     sys.platform == "win32", reason="POSIX file mode, NTFS has none"
 )
+
+
+def _case(entry: Entry, salt: str = "") -> dict:
+    case = to_case(entry, salt)
+    assert case is not None
+    return case
 
 
 def _row(**kw: str) -> str:
@@ -49,7 +55,7 @@ def test_normalfall_report_und_fall():
     assert "Anrufe: 2 an 1 Tagen" in text
     assert "18 Uhr 1 · 19 Uhr 1" in text
     assert "Do 2" in text  # 24.09.2026 ist ein Donnerstag
-    case = to_case(entries[0])
+    case = _case(entries[0])
     assert case is not None
     assert case["expected"] == {
         "intent": "pickup",
@@ -108,8 +114,8 @@ def test_rueckruf_und_beschwerde_sind_eskalation():
         + _row(outcome="rueckruf")
         + _row(intent="beschwerde", outcome="erledigt")
     )
-    assert to_case(entries[0])["expected"] == {"intent": "pickup", "escalated": True}
-    assert to_case(entries[1])["expected"] == {"escalated": True}
+    assert _case(entries[0])["expected"] == {"intent": "pickup", "escalated": True}
+    assert _case(entries[1])["expected"] == {"escalated": True}
 
 
 def test_frage_ohne_kundensaetze_wird_kein_fall():
@@ -188,8 +194,8 @@ def test_fall_id_haengt_am_inhalt_nicht_an_der_zeile():
     woche1, _ = parse(HEADER + _row())
     woche2, _ = parse(HEADER + _row(date="01.10.2026"))
     nochmal, _ = parse(HEADER + _row(intent="reservierung", time="12:00") + _row())
-    assert to_case(woche1[0])["id"] != to_case(woche2[0])["id"]
-    assert to_case(woche1[0])["id"] == to_case(nochmal[1])["id"]
+    assert _case(woche1[0])["id"] != _case(woche2[0])["id"]
+    assert _case(woche1[0])["id"] == _case(nochmal[1])["id"]
 
 
 @pytest.fixture
@@ -222,7 +228,7 @@ def test_gleicher_wortlaut_in_derselben_stunde_bleibt_getrennt(tmp_path):
         + _row(time="18:05", intent="reservierung", phrases="Tisch fuer zwei | ja")
         + _row(time="18:40", intent="reservierung", phrases="Tisch fuer zwei | ja")
     )
-    assert to_case(entries[0])["id"] != to_case(entries[1])["id"]
+    assert _case(entries[0])["id"] != _case(entries[1])["id"]
     assert write_cases(entries, tmp_path) == 2
     assert len(list(tmp_path.iterdir())) == 2
 
@@ -243,7 +249,7 @@ def test_bestaetigter_fall_bekommt_erfundenen_namen_und_rufnummer():
     """Codex PR #135: ohne Name und Rufnummer kann der Agent nie bestaetigen,
     der Entwurf mit confirmed true waere immer rot."""
     entries, _ = parse(HEADER + _row(phrases="zweimal die 23 | ja passt so"))
-    case = to_case(entries[0])
+    case = _case(entries[0])
     assert case["caller_id"] == "+497215551234"
     # Codex PR #135: das Ja steht fest am Ende, statt es im letzten
     # Protokollsatz zu vermuten ("Danke" ist keine Bestaetigung).
@@ -257,7 +263,7 @@ def test_bestaetigter_fall_bekommt_erfundenen_namen_und_rufnummer():
 
 def test_abgelehnter_fall_bleibt_ohne_erfundene_daten():
     entries, _ = parse(HEADER + _row(outcome="abgelehnt", phrases="Tisch fuer sechs?"))
-    case = to_case(entries[0])
+    case = _case(entries[0])
     assert "caller_id" not in case
     assert case["transcript"] == []
     assert not any("Mueller" in hint for hint in case["review"])
@@ -340,11 +346,11 @@ def test_durchgesehene_datei_im_entwurfsordner_bleibt(tmp_path, eval_cases):
 def test_schon_in_evals_cases_wird_nicht_neu_entworfen(tmp_path, eval_cases):
     """Sonst ueberschreibt das naechste Verschieben den durchgesehenen Fall."""
     entries, _ = parse(HEADER + _row() + _row(intent="reservierung", time="19:10"))
-    fertig = to_case(entries[0])
+    fertig = _case(entries[0])
     (eval_cases / f"{fertig['id']}_abholung.json").write_text("{}", encoding="utf-8")
     assert write_cases(entries, tmp_path / "entwuerfe") == 1
     names = [p.name for p in (tmp_path / "entwuerfe").iterdir()]
-    assert names == [f"{to_case(entries[1])['id']}_reservierung.json"]
+    assert names == [f"{_case(entries[1])['id']}_reservierung.json"]
 
 
 def test_wochentag_je_tag_gemittelt():
@@ -526,7 +532,7 @@ def test_korrektur_an_durchgesehenem_fall_wird_gemeldet(tmp_path, eval_cases, ca
     """Codex PR #135: wird eine Zeile korrigiert, nachdem ihr Fall schon in
     evals/cases/ liegt, darf die Abweichung nicht still bleiben."""
     entries, _ = parse(HEADER + _row())
-    fertig = to_case(entries[0])
+    fertig = _case(entries[0])
     name = f"{fertig['id']}_abholung.json"
     (eval_cases / name).write_text(json.dumps(fertig), encoding="utf-8")
     korrigiert, _ = parse(HEADER + _row(outcome="abgebrochen"))
@@ -538,7 +544,7 @@ def test_korrektur_an_durchgesehenem_fall_wird_gemeldet(tmp_path, eval_cases, ca
 
 def test_unveraenderter_durchgesehener_fall_bleibt_still(tmp_path, eval_cases, capsys):
     entries, _ = parse(HEADER + _row())
-    fertig = to_case(entries[0])
+    fertig = _case(entries[0])
     fertig["expected"]["items"] = [{"number": "23", "quantity": 2}]
     (eval_cases / f"{fertig['id']}_abholung.json").write_text(
         json.dumps(fertig), encoding="utf-8"
@@ -566,7 +572,7 @@ def test_korrektur_zu_frage_meldet_durchgesehenen_fall(tmp_path, eval_cases, cap
     """Codex PR #135: wird eine Bestellung zur Frage korrigiert, entsteht kein
     Fall mehr; der durchgesehene Fall darf nicht still aktiv bleiben."""
     entries, _ = parse(HEADER + _row())
-    fertig = to_case(entries[0])
+    fertig = _case(entries[0])
     name = f"{fertig['id']}_abholung.json"
     (eval_cases / name).write_text(json.dumps(fertig), encoding="utf-8")
     korrigiert, _ = parse(HEADER + _row(intent="frage"))
@@ -602,20 +608,20 @@ def test_id_bleibt_bei_korrigiertem_wortlaut():
     Anrufs nicht aendern, sonst findet das Script den durchgesehenen Fall nicht."""
     vorher, _ = parse(HEADER + _row(phrases="zweimal die 32"))
     nachher, _ = parse(HEADER + _row(phrases="zweimal die 23"))
-    assert to_case(vorher[0])["id"] == to_case(nachher[0])["id"]
+    assert _case(vorher[0])["id"] == _case(nachher[0])["id"]
 
 
 def test_zwei_anrufe_in_derselben_minute_bleiben_getrennt():
     entries, _ = parse(
         HEADER + _row(phrases="Tisch fuer zwei") + _row(phrases="die 23")
     )
-    assert to_case(entries[0])["id"] != to_case(entries[1])["id"]
+    assert _case(entries[0])["id"] != _case(entries[1])["id"]
 
 
 def test_salz_macht_id_unberechenbar():
     """Ohne das lokale Salz laesst sich aus der ID keine Anrufzeit zurueckrechnen."""
     entries, _ = parse(HEADER + _row())
-    assert to_case(entries[0], salt="a")["id"] != to_case(entries[0], salt="b")["id"]
+    assert _case(entries[0], salt="a")["id"] != _case(entries[0], salt="b")["id"]
 
 
 def test_salz_wird_neben_der_csv_angelegt_und_wiederverwendet(tmp_path, eval_cases):
@@ -632,7 +638,7 @@ def test_salz_wird_neben_der_csv_angelegt_und_wiederverwendet(tmp_path, eval_cas
 def test_bestaetigte_lieferung_bekommt_erfundene_adresse():
     """Codex PR #135: ohne Adresse erreicht ein Lieferfall confirm nie."""
     entries, _ = parse(HEADER + _row(intent="lieferung"))
-    texts = [t["text"] for t in to_case(entries[0])["transcript"]]
+    texts = [t["text"] for t in _case(entries[0])["transcript"]]
     assert texts[0].startswith("Die Adresse ist Musterstrasse 1")
     assert texts[-2:] == ["Auf den Namen Mueller.", "Ja, das passt."]
 
@@ -641,7 +647,7 @@ def test_korrektur_die_ein_feld_entfernt_wird_gemeldet(tmp_path, eval_cases, cap
     """Codex PR #135: aus einem Rueckruf zur Abholung wird eine Beschwerde, das
     neue expected hat kein intent mehr; der alte Fall erwartet es aber noch."""
     entries, _ = parse(HEADER + _row(outcome="rueckruf"))
-    fertig = to_case(entries[0])
+    fertig = _case(entries[0])
     assert fertig["expected"] == {"intent": "pickup", "escalated": True}
     name = f"{fertig['id']}_abholung.json"
     (eval_cases / name).write_text(json.dumps(fertig), encoding="utf-8")
@@ -698,7 +704,7 @@ def test_verwaister_fall_in_derselben_minute_wird_gemeldet(
     beide, _ = parse(HEADER + _row(phrases="Tisch fuer zwei") + _row(phrases="die 23"))
     namen = []
     for e in beide:
-        case = to_case(e)
+        case = _case(e)
         namen.append(f"{case['id']}_abholung.json")
         (eval_cases / namen[-1]).write_text(json.dumps(case), encoding="utf-8")
     nur_zweiter, _ = parse(HEADER + _row(phrases="die 23"))
@@ -796,7 +802,7 @@ def test_letzter_tag_weg_meldet_durchgesehenen_fall(tmp_path, eval_cases, capsys
         p.name
         for p in entw.iterdir()
         if p.name.startswith(
-            to_case(
+            _case(
                 letzter[0], (tmp_path / ".call_log_salt").read_text(encoding="utf-8")
             )["id"]
         )
@@ -813,7 +819,7 @@ def test_letzter_tag_weg_meldet_durchgesehenen_fall(tmp_path, eval_cases, capsys
 def test_gleicher_anruf_mit_anderer_dauer_ist_ein_zweiter_anruf():
     """Codex PR #135: die Dauer unterscheidet zwei Anrufe derselben Minute."""
     entries, _ = parse(HEADER + _row(duration_min="2") + _row(duration_min="5"))
-    assert to_case(entries[0])["id"] != to_case(entries[1])["id"]
+    assert _case(entries[0])["id"] != _case(entries[1])["id"]
 
 
 @pytest.mark.parametrize(
@@ -1008,7 +1014,7 @@ def test_durchgesehener_fall_mit_falschem_expected_wird_gemeldet(
     """Codex PR #135: ein durchgesehener Fall mit expected als Liste, Text oder
     null gab einen Traceback statt einer Meldung."""
     entries, _ = parse(HEADER + _row())
-    case = to_case(entries[0])
+    case = _case(entries[0])
     case["expected"] = expected
     name = f"{case['id']}_abholung.json"
     (eval_cases / name).write_text(json.dumps(case), encoding="utf-8")
@@ -1165,7 +1171,7 @@ def test_cut_keeps_the_row_of_a_reviewed_case(tmp_path, eval_cases, capsys, with
     csv_file.write_text(HEADER + other + _row(time="18:42"), encoding="utf-8")
     entry = parse(HEADER + _row(time="18:42"))[0][0]
     old = _minute_id("18:42")
-    case = to_case(entry, SALT)
+    case = _case(entry, SALT)
     case["id"] = old
     del case["review"]
     (eval_cases / f"{old}_abholung.json").write_text(json.dumps(case), encoding="utf-8")
@@ -1199,7 +1205,7 @@ def test_cut_still_reports_a_row_changed_since_review(tmp_path, eval_cases, caps
     (tmp_path / ".call_log_salt").write_text(SALT, encoding="utf-8")
     csv_file.write_text(HEADER + _row(time="18:42"), encoding="utf-8")
     old = _minute_id("18:42")
-    case = to_case(parse(HEADER + _row(time="18:42"))[0][0], SALT)
+    case = _case(parse(HEADER + _row(time="18:42"))[0][0], SALT)
     del case["review"]
     name = f"{old}_abholung.json"
     (eval_cases / name).write_text(json.dumps(case), encoding="utf-8")
@@ -1222,7 +1228,7 @@ def test_cut_keeps_two_calls_of_one_hour_with_the_same_content(
         HEADER + _row(time="18:05") + _row(time="18:50"), encoding="utf-8"
     )
     old = _minute_id("18:50")
-    case = to_case(parse(HEADER + _row(time="18:50"))[0][0], SALT)
+    case = _case(parse(HEADER + _row(time="18:50"))[0][0], SALT)
     del case["review"]
     name = f"{old}_abholung.json"
     (eval_cases / name).write_text(json.dumps(case), encoding="utf-8")
@@ -1252,7 +1258,7 @@ def test_cut_maps_the_second_call_of_a_minute(tmp_path, eval_cases, capsys):
     second = _row(time="18:42")
     csv_file.write_text(HEADER + first + second, encoding="utf-8")
     old = _minute_id("18:42", 1)
-    case = to_case(parse(HEADER + second)[0][0], SALT)
+    case = _case(parse(HEADER + second)[0][0], SALT)
     del case["review"]
     (eval_cases / f"{old}_abholung.json").write_text(json.dumps(case), encoding="utf-8")
     assert main([str(csv_file), "--cases", str(entw)]) == 0

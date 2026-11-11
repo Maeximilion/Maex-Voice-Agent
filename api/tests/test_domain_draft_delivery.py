@@ -297,6 +297,7 @@ def test_a_postal_code_not_understood_is_asked_again(session, tenant_id, call_id
             now=NOW,
         )
 
+    assert err.value.say is not None
     assert "Postleitzahl" in err.value.say
 
 
@@ -317,6 +318,7 @@ def test_below_the_minimum_names_the_missing_amount(session, tenant_id, call_id)
         draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
 
     session.rollback()
+    assert err.value.say is not None
     assert "6 Euro 20" in err.value.say
     assert counts(session) == before
 
@@ -328,6 +330,7 @@ def test_the_fee_does_not_count_towards_the_minimum(session, tenant_id, call_id)
     with pytest.raises(BelowMinimum) as err:
         draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
 
+    assert err.value.say is not None
     assert "ein Cent" in err.value.say
 
 
@@ -398,6 +401,7 @@ def test_a_delivery_needs_an_address(session, tenant_id, call_id):
             now=NOW,
         )
 
+    assert err.value.say is not None
     assert "Adresse" in err.value.say
 
 
@@ -411,6 +415,7 @@ def test_a_pickup_needs_a_name(session, tenant_id, call_id):
             now=NOW,
         )
 
+    assert err.value.say is not None
     assert "Namen" in err.value.say
 
 
@@ -612,6 +617,7 @@ def test_another_name_opens_no_stored_address(session, tenant_id, call_id):
             now=NOW,
         )
 
+    assert err.value.say is not None
     assert "Rheinstraße" not in err.value.say
     assert "Adresse" in err.value.say
 
@@ -685,6 +691,7 @@ def test_an_unknown_caller_without_a_name_is_asked(session, tenant_id, call_id):
     with pytest.raises(InvalidInput) as err:
         draft_order(session, delivery(session, tenant_id, call_id, name=None), now=NOW)
 
+    assert err.value.say is not None
     assert "Namen" in err.value.say
 
 
@@ -787,6 +794,7 @@ def test_the_switch_after_the_read_back_holds_at_the_yes(
         confirmed(session, tenant_id, call_id, draft.order_id)
 
     session.rollback()
+    assert err.value.say is not None
     assert SAY_DELIVERY_CLOSED in err.value.say
     assert session.get(Order, draft.order_id).status == "draft"
 
@@ -823,6 +831,7 @@ def test_the_pickup_switch_after_the_read_back_holds_at_the_yes(
         confirmed(session, tenant_id, call_id, draft.order_id)
 
     session.rollback()
+    assert err.value.say is not None
     assert SAY_PICKUP_CLOSED in err.value.say
     assert session.get(Order, draft.order_id).status == "draft"
 
@@ -1046,6 +1055,7 @@ def test_a_correction_keeps_the_fee_in_the_total(session, tenant_id, call_id):
     confirmed(session, tenant_id, call_id, draft.order_id)
     plan = preview_correction(session, tenant_id, draft.order_id)
     row = plan.rows[0]
+    assert row.order_item_id is not None
     req = CorrectionRequest(
         version=plan.version,
         rows=(RowEdit(order_item_id=row.order_item_id, quantity=3),),
@@ -1077,6 +1087,7 @@ def test_a_correction_may_fall_below_the_minimum(session, tenant_id, call_id):
     draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
     confirmed(session, tenant_id, call_id, draft.order_id)
     plan = preview_correction(session, tenant_id, draft.order_id)
+    assert plan.rows[0].order_item_id is not None
     req = CorrectionRequest(
         version=plan.version,
         rows=(RowEdit(order_item_id=plan.rows[0].order_item_id, quantity=1),),
@@ -1095,6 +1106,7 @@ def test_a_correction_ticket_carries_the_address(session, tenant_id, call_id):
     draft = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
     confirmed(session, tenant_id, call_id, draft.order_id)
     plan = preview_correction(session, tenant_id, draft.order_id)
+    assert plan.rows[0].order_item_id is not None
     req = CorrectionRequest(
         version=plan.version,
         rows=(RowEdit(order_item_id=plan.rows[0].order_item_id, quantity=3),),
@@ -1438,6 +1450,7 @@ def test_a_named_number_opens_no_stored_address(session, tenant_id):
     with pytest.raises(InvalidInput) as err:
         draft_order(session, _stored(session, tenant_id, call, home.id), now=NOW)
 
+    assert err.value.say is not None
     assert "Rheinstraße" not in err.value.say
     assert counts(session) == (1, 1, 0)
 

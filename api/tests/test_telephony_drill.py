@@ -189,7 +189,7 @@ def test_a_hangup_on_the_question_passes_only_with_a_card_and_no_ring(
 ):
     monkeypatch.setattr(drill, "CARD_SECONDS", 0.0)
 
-    def hangup(card: str, *more: str) -> drill.Drill:
+    def hangup(card: str, *more: str) -> Stage:
         stage = Stage(tmp_path, {127: {"router": [*router(127, "answered"), *more]}})
         stage.prints["callbacks b"] = card
         return stage
@@ -437,7 +437,12 @@ def test_the_stranger_drill_hangs_up_whatever_got_through(tmp_path):
     stage = Stage(tmp_path, {})
     clis: list[tuple[str, str]] = []
     stage.compose = lambda *args: "100 200"  # type: ignore[method-assign]
-    stage.cli = lambda service, command: clis.append((service, command)) or ""  # type: ignore[method-assign]
+
+    def cli(service: str, command: str) -> str:
+        clis.append((service, command))
+        return ""
+
+    stage.cli = cli  # type: ignore[method-assign]
 
     [(_, ok, detail), (_, number_ok, _)] = drill.drill_stranger(stage)
     assert not ok and not number_ok and "100 200" in detail
@@ -450,7 +455,12 @@ def test_the_stranger_also_calls_with_a_number_the_logs_must_not_show(tmp_path):
     every run looks for it."""
     stage = Stage(tmp_path, {})
     sent: list[str] = []
-    stage.compose = lambda *args: sent.append(args[-1]) or "100 403"  # type: ignore[method-assign]
+
+    def compose(*args: str) -> str:
+        sent.append(args[-1])
+        return "100 403"
+
+    stage.compose = compose  # type: ignore[method-assign]
     stage.cli = lambda service, command: ""  # type: ignore[method-assign]
 
     checks = drill.drill_stranger(stage)

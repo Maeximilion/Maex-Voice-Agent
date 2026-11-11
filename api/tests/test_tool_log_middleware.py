@@ -48,6 +48,12 @@ def client(migrated_db_url):
         engine.dispose()
 
 
+def _tool_calls(s: Session, call_id: str) -> list:
+    call = s.get(Call, uuid.UUID(call_id))
+    assert call is not None
+    return call.tool_calls
+
+
 def test_erfolgreicher_tool_aufruf_wird_protokolliert(client):
     http, tenant_id, call_id, engine = client
 
@@ -59,6 +65,7 @@ def test_erfolgreicher_tool_aufruf_wird_protokolliert(client):
 
     with Session(engine) as s:
         call = s.get(Call, uuid.UUID(call_id))
+        assert call is not None
         assert len(call.tool_calls) == 1
         entry = call.tool_calls[0]
         assert entry["name"] == "get_service_status"
@@ -82,6 +89,7 @@ def test_fehlgeschlagener_tool_aufruf_traegt_den_fehlercode(client):
 
     with Session(engine) as s:
         call = s.get(Call, uuid.UUID(call_id))
+        assert call is not None
         entry = call.tool_calls[0]
         assert entry["name"] == "check_slot"
         assert entry["ok"] is False
@@ -103,6 +111,7 @@ def test_fremde_tenant_id_schreibt_nicht_in_einen_fremden_anruf(client):
 
     with Session(engine) as s:
         call = s.get(Call, uuid.UUID(call_id))
+        assert call is not None
         assert call.tool_calls == []
 
 
@@ -142,6 +151,7 @@ def test_zwei_aufrufe_haengen_beide_an(client):
 
     with Session(engine) as s:
         call = s.get(Call, uuid.UUID(call_id))
+        assert call is not None
         names = [entry["name"] for entry in call.tool_calls]
         assert names == ["get_service_status", "check_slot"]
 
@@ -153,6 +163,7 @@ def test_ping_wird_nicht_protokolliert(client):
 
     with Session(engine) as s:
         call = s.get(Call, uuid.UUID(call_id))
+        assert call is not None
         assert call.tool_calls == []
 
 
@@ -171,7 +182,7 @@ def test_without_the_token_nothing_is_written(client):
         assert r.status_code == 401
 
     with Session(engine) as s:
-        assert s.get(Call, uuid.UUID(call_id)).tool_calls == []
+        assert _tool_calls(s, call_id) == []
 
 
 def test_without_the_token_the_body_is_not_even_parsed(client, monkeypatch):
@@ -207,7 +218,7 @@ def test_a_tool_that_does_not_exist_is_not_logged(client):
 
     assert r.status_code == 404
     with Session(engine) as s:
-        assert s.get(Call, uuid.UUID(call_id)).tool_calls == []
+        assert _tool_calls(s, call_id) == []
 
 
 def test_a_call_with_the_wrong_method_is_not_logged(client):
@@ -225,7 +236,7 @@ def test_a_call_with_the_wrong_method_is_not_logged(client):
 
     assert r.status_code == 405
     with Session(engine) as s:
-        assert s.get(Call, uuid.UUID(call_id)).tool_calls == []
+        assert _tool_calls(s, call_id) == []
 
 
 def test_a_nested_body_is_an_unreadable_body(client):

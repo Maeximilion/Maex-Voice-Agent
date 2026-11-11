@@ -3,6 +3,7 @@
 import logging
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -35,6 +36,10 @@ BERLIN = ZoneInfo("Europe/Berlin")
 # A Wednesday after 05:00 local: the business day of 14.10. is over.
 NOW = datetime(2026, 10, 15, 6, 0, tzinfo=BERLIN).astimezone(UTC)
 DAY = timedelta(days=1)
+
+
+def _settings(**values: Any) -> Settings:
+    return Settings(**values)
 
 
 @pytest.fixture
@@ -1018,7 +1023,7 @@ def test_periods_come_from_the_settings(session, tenant_id, monkeypatch):
 def test_a_period_of_zero_days_is_refused(name):
     """0 would strip the orders the kitchen is cooking right now."""
     with pytest.raises(ValidationError):
-        Settings(**{name: 0})
+        _settings(**{name: 0})
 
 
 @pytest.mark.parametrize(
@@ -1034,8 +1039,8 @@ def test_a_period_beyond_ten_years_is_refused(name):
     """Ultrareview PR #371: 999,999,999 days, the usual way to switch a period
     off, overflowed the date arithmetic of start_call and of every pass."""
     with pytest.raises(ValidationError):
-        Settings(**{name: 999_999_999})
-    Settings(**{name: 3660 if name.endswith("_days") else 86400})
+        _settings(**{name: 999_999_999})
+    _settings(**{name: 3660 if name.endswith("_days") else 86400})
 
 
 def test_one_failing_period_does_not_stop_the_others(session, tenant_id, caplog):

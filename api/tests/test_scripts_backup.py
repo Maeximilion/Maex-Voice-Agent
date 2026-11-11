@@ -124,6 +124,7 @@ def _run(script, *args, db_url, backup_dir, passphrase_file=None, **extra):
     if passphrase_file is not None:
         env["BACKUP_PASSPHRASE_FILE"] = passphrase_file.as_posix()
     env.update(extra)
+    assert BASH is not None  # `_tools` skips the module without bash
     return subprocess.run(
         [BASH, f"scripts/{script}", *args],
         cwd=REPO_ROOT,
@@ -555,6 +556,7 @@ def test_two_backups_in_the_same_second_never_share_a_file(
             BACKUP_ENV_FILE=(backup_dir.parent / "absent.env").as_posix(),
             BACKUP_PASSPHRASE_FILE=passphrase_file.as_posix(),
         )
+        assert BASH is not None
         return subprocess.Popen(
             [BASH, "scripts/backup.sh"],
             cwd=REPO_ROOT,

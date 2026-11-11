@@ -311,7 +311,7 @@ def test_gh_output_with_an_emoji_is_read_as_utf8(monkeypatch):
     """PR #566 on Windows: Codex's summary comment holds emojis, and decoding gh's
     UTF-8 output with cp1252 crashed the waiter (byte 0x9d). Both gh calls read
     UTF-8 whatever the locale."""
-    seen = {}
+    seen: dict = {}
     body = {"id": 1, "body": "\U0001f4dd Code Review: \U0001f504 Running"}
     raw = (json.dumps(body, ensure_ascii=False) + "\n").encode("utf-8")
     monkeypatch.setattr(codex_review.subprocess, "run", _run_as_on_windows(raw, seen))

@@ -37,7 +37,7 @@ from api.domain.menu.wishes import (
     wish_candidates,
 )
 from api.models import ItemOption, MenuItem
-from api.schemas.menu import OptionGroup, OptionOut
+from api.schemas.menu import OptionGroup, OptionOut, Wish
 from api.schemas.orders import NOTE_MAX
 from api.tests.conftest import p95_ms
 from scripts.seed import seed
@@ -128,6 +128,13 @@ def test_gericht_und_wunsch_trennen(gesagt, gericht, wunsch):
     assert first_split(gesagt) == (gericht, wunsch)
 
 
+def wish_of(text: str, groups: list[OptionGroup]) -> Wish:
+    """classify_wish for a text that must be classified (not None)."""
+    wish = classify_wish(text, groups)
+    assert wish is not None
+    return wish
+
+
 def first_split(text):
     """Die erste Trennung, wie die Suche sie zuerst versucht."""
     candidates = wish_candidates(text)
@@ -141,20 +148,20 @@ def first_split(text):
     "wunsch", ["ohne Karotten", "keine Zwiebeln", "kein Koriander"]
 )
 def test_weglassen_ist_ein_hinweis(wunsch):
-    wish = classify_wish(wunsch, BEILAGE)
+    wish = wish_of(wunsch, BEILAGE)
     assert wish.kind == "note"
     assert wish.price_delta_cents is None
 
 
 def test_option_der_karte_mit_aufpreis_und_grund():
-    wish = classify_wish("mit Nudeln statt Reis", BEILAGE)
+    wish = wish_of("mit Nudeln statt Reis", BEILAGE)
     assert (wish.kind, wish.group, wish.option) == ("option", "Beilage", "Nudeln")
     assert wish.price_delta_cents == 300
     assert wish.reason == GRUND
 
 
 def test_option_ohne_aufpreis_gilt_auch():
-    wish = classify_wish("mit Huhn", BEILAGE)
+    wish = wish_of("mit Huhn", BEILAGE)
     assert (wish.kind, wish.option, wish.price_delta_cents) == ("option", "Huhn", -100)
 
 
@@ -163,14 +170,14 @@ def test_was_die_karte_nicht_kennt_wird_nicht_angeboten(wunsch):
     """D8: ohne Option auf der Karte kein Angebot - auch "Nudeln statt Reis"
     nicht, wenn das Gericht keine Beilagen-Gruppe hat."""
     groups = [] if wunsch == "Nudeln statt Reis" else BEILAGE
-    assert classify_wish(wunsch, groups).kind == "unknown"
+    assert wish_of(wunsch, groups).kind == "unknown"
 
 
 @pytest.mark.parametrize(
     "wunsch", ["ich habe eine Erdnussallergie", "ich bin allergisch gegen Sesam"]
 )
 def test_allergie_ist_kein_wunsch(wunsch):
-    assert classify_wish(wunsch, BEILAGE).kind == "allergy"
+    assert wish_of(wunsch, BEILAGE).kind == "allergy"
 
 
 # --- mit Datenbank ---------------------------------------------------------------
@@ -359,14 +366,14 @@ SAUCE = [
 
 def test_option_als_wortzusammensetzung_mit_der_gruppe():
     """ "Erdnusssauce" ist Option Erdnuss der Gruppe Sauce."""
-    wish = classify_wish("mit Erdnusssauce", SAUCE)
+    wish = wish_of("mit Erdnusssauce", SAUCE)
     assert (wish.kind, wish.group, wish.option) == ("option", "Sauce", "Erdnuss")
 
 
 def test_kein_vorsilben_treffer():
     """ "Reisnudeln" ist nicht die Option Reis: nur Option plus Gruppenname zaehlt
     zusammengesetzt, kein beliebiger Wortanfang."""
-    assert classify_wish("mit Reisnudeln", SAUCE).kind == "unknown"
+    assert wish_of("mit Reisnudeln", SAUCE).kind == "unknown"
 
 
 # --- Allergie im festen Wortlaut (E14, Maxi 24.09.2026) ----------------------------
@@ -384,7 +391,7 @@ def test_kein_vorsilben_treffer():
 def test_allergie_als_kuechenhinweis_im_festen_wortlaut(gesagt, hinweis):
     """E14: der Hinweis an die Kueche hat einen festen Wortlaut; er wird beim
     Vorlesen wiederholt, nie mit der Zusage, das Gericht sei frei davon."""
-    wish = classify_wish(gesagt, BEILAGE)
+    wish = wish_of(gesagt, BEILAGE)
     assert (wish.kind, wish.text) == ("allergy", hinweis)
 
 
@@ -439,9 +446,9 @@ def test_weglassen_einer_zutat_aus_dem_namen_ist_ein_hinweis(session, tenant_id)
 def test_option_mit_unbekanntem_rest_wird_nicht_still_verkuerzt():
     """Codex PR #139, P2: "mit Nudeln und Pommes" - Pommes kennt die Karte nicht.
     Nur Nudeln zu nehmen verschwiege die Pommes; der Wunsch gilt als unbekannt."""
-    assert classify_wish("mit Nudeln und Pommes", BEILAGE).kind == "unknown"
+    assert wish_of("mit Nudeln und Pommes", BEILAGE).kind == "unknown"
     # Was nach "statt" steht, ist das Ersetzte, kein weiterer Wunsch.
-    assert classify_wish("mit Nudeln statt Reis bitte", BEILAGE).kind == "option"
+    assert wish_of("mit Nudeln statt Reis bitte", BEILAGE).kind == "option"
 
 
 # --- Eigenes Review PR #139 --------------------------------------------------------
@@ -450,13 +457,13 @@ def test_option_mit_unbekanntem_rest_wird_nicht_still_verkuerzt():
 def test_weglassen_und_hinzufuegen_zusammen():
     """(1) "ohne Zwiebeln, dafür mit Nudeln": die Zugabe ist die Option mit
     Aufpreis, das Weglassen kommt als Hinweis mit - nie beides als freie Notiz."""
-    wish = classify_wish("ohne Zwiebeln, dafür mit Nudeln", BEILAGE)
+    wish = wish_of("ohne Zwiebeln, dafür mit Nudeln", BEILAGE)
     assert (wish.kind, wish.option, wish.price_delta_cents) == ("option", "Nudeln", 300)
     assert wish.note == "ohne Zwiebeln"
 
 
 def test_weglassen_und_unbekannte_zugabe():
-    wish = classify_wish("ohne Zwiebeln, dafür mit Pommes", BEILAGE)
+    wish = wish_of("ohne Zwiebeln, dafür mit Pommes", BEILAGE)
     assert wish.kind == "unknown"
     assert wish.text == "mit Pommes"
     assert wish.note == "ohne Zwiebeln"
@@ -477,7 +484,7 @@ def test_frage_nach_allergenen_ist_keine_eigene_allergie():
 
 def test_menge_am_ende_bleibt_nicht_im_hinweis():
     """(4) "zweimal" gehoert zur Position, nicht in den Hinweis fuer die Kueche."""
-    wish = classify_wish("ohne Zwiebeln, zweimal", BEILAGE)
+    wish = wish_of("ohne Zwiebeln, zweimal", BEILAGE)
     assert (wish.kind, wish.text) == ("note", "ohne Zwiebeln")
 
 
@@ -494,7 +501,7 @@ def test_menge_am_ende_bleibt_nicht_im_hinweis():
     ],
 )
 def test_zutat_der_allergie(gesagt, hinweis):
-    assert classify_wish(gesagt, BEILAGE).text == hinweis
+    assert wish_of(gesagt, BEILAGE).text == hinweis
 
 
 def test_option_in_zwei_gruppen_wird_nachgefragt():
@@ -507,7 +514,7 @@ def test_option_in_zwei_gruppen_wird_nachgefragt():
             options=[OptionOut(name="Reis", price_delta_cents=200, default=False)],
         ),
     ]
-    wish = classify_wish("mit Reis", groups)
+    wish = wish_of("mit Reis", groups)
     assert wish.kind == "open"
     assert wish.groups == ["Beilage", "Extra"]
 
@@ -518,7 +525,7 @@ def test_leere_felder_gehen_nicht_ans_modell():
         "reason"
         not in OptionOut(name="Reis", price_delta_cents=0, default=True).model_dump()
     )
-    note = classify_wish("ohne Karotten", BEILAGE).model_dump()
+    note = wish_of("ohne Karotten", BEILAGE).model_dump()
     assert set(note) == {"text", "kind"}
 
 
@@ -559,7 +566,7 @@ def test_optionsname_mit_bindestrich():
             options=[OptionOut(name="Süß-Sauer", price_delta_cents=0, default=False)],
         )
     ]
-    assert classify_wish("mit Süß-Sauer", groups).kind == "option"
+    assert wish_of("mit Süß-Sauer", groups).kind == "option"
 
 
 @pytest.mark.parametrize(
@@ -583,7 +590,7 @@ def test_jede_zutat_einer_allergie_bleibt(gesagt, hinweis):
     """Codex PR #139, P1: eine Aufzaehlung von Zutaten endet nicht am ersten
     "und" - sonst fehlte eine Allergie im Hinweis an die Kueche. Erst ein neuer
     Satzteil ("und dann noch eine Cola") beendet sie."""
-    assert classify_wish(gesagt, BEILAGE).text == hinweis
+    assert wish_of(gesagt, BEILAGE).text == hinweis
 
 
 def test_ganzer_name_vor_eindeutigem_praefix(session, tenant_id):
@@ -619,13 +626,13 @@ def test_ganzer_name_bei_mehrdeutigem_praefix_mit_zweitem_wunsch(session, tenant
 def test_extra_im_weglassen_ist_keine_zugabe(gesagt):
     """Codex PR #139, P2: "extra" direkt nach "ohne" gehoert zum Weglassen. Sonst
     kaeme die abgelehnte Zugabe als Option in die Bestellung."""
-    wish = classify_wish(gesagt, BEILAGE)
+    wish = wish_of(gesagt, BEILAGE)
     assert (wish.kind, wish.text, wish.option) == ("note", gesagt, None)
     assert first_split(f"die 47 {gesagt}") == ("die 47", gesagt)
 
 
 def test_extra_nach_dem_weglassen_bleibt_zugabe():
-    wish = classify_wish("ohne Zwiebeln, extra Nudeln", BEILAGE)
+    wish = wish_of("ohne Zwiebeln, extra Nudeln", BEILAGE)
     assert (wish.kind, wish.option, wish.note) == ("option", "Nudeln", "ohne Zwiebeln")
 
 
@@ -640,7 +647,7 @@ def test_extra_nach_dem_weglassen_bleibt_zugabe():
 def test_keine_zutat_ist_keine_allergie_zutat(gesagt):
     """Codex PR #139, P1: Unsicherheit oder Ablehnung ist keine Zutat. Der Hinweis
     "Keine Weiß ich nicht" ginge an die Kueche, die Allergie bliebe unbekannt."""
-    wish = classify_wish(gesagt, [])
+    wish = wish_of(gesagt, [])
     assert (wish.kind, wish.ingredient) == ("allergy", None)
 
 
@@ -650,12 +657,12 @@ def test_keine_zutat_ist_keine_allergie_zutat(gesagt):
 def test_weglassen_nach_der_option_bleibt(gesagt):
     """Codex PR #139, P2: die Option zuerst, das Weglassen danach - beides zaehlt,
     wie in der umgekehrten Reihenfolge."""
-    wish = classify_wish(gesagt, BEILAGE)
+    wish = wish_of(gesagt, BEILAGE)
     assert (wish.kind, wish.option, wish.note) == ("option", "Nudeln", "ohne Zwiebeln")
 
 
 def test_unbekannte_zugabe_mit_weglassen_bleibt_unbekannt():
-    assert classify_wish("mit Pommes ohne Zwiebeln", BEILAGE).kind == "unknown"
+    assert wish_of("mit Pommes ohne Zwiebeln", BEILAGE).kind == "unknown"
 
 
 def test_option_und_weglassen_in_der_suche(session, tenant_id):
@@ -697,7 +704,7 @@ def test_extra_zutat_aus_dem_namen_ist_wunsch(session, tenant_id):
 def test_jede_allergie_im_zusammengesetzten_namen(gesagt, hinweis):
     """Codex PR #139, P1: "Nuss- und Sesamallergie" sind zwei Allergien. Fehlt
     eine im Hinweis, erfaehrt die Kueche nichts davon."""
-    assert classify_wish(gesagt, BEILAGE).text == hinweis
+    assert wish_of(gesagt, BEILAGE).text == hinweis
 
 
 @pytest.mark.parametrize(
@@ -718,7 +725,7 @@ def test_jede_allergie_im_zusammengesetzten_namen(gesagt, hinweis):
 def test_intoleranz_ist_allergie(gesagt, hinweis):
     """Codex PR #139, P1: "Intoleranz" und "Unvertraeglichkeit" sind Allergie-
     Rede (docs/17), kein unbekannter Wunsch."""
-    wish = classify_wish(gesagt, BEILAGE)
+    wish = wish_of(gesagt, BEILAGE)
     assert (wish.kind, wish.text) == ("allergy", hinweis)
 
 
@@ -741,7 +748,7 @@ def test_intoleranz_in_der_suche(session, tenant_id):
 def test_jede_wiederholte_allergie_bleibt(gesagt):
     """Codex PR #139, P1: dieselbe Wendung zweimal ("gegen X allergisch und gegen
     Y allergisch") - jede Zutat kommt in den Hinweis, nicht nur die erste."""
-    wish = classify_wish(gesagt, BEILAGE)
+    wish = wish_of(gesagt, BEILAGE)
     assert wish.ingredient in ("Erdnüsse und Sesam",)
 
 
@@ -758,7 +765,7 @@ def test_zusammengesetzte_allergie_ohne_bindestrich(gesagt, zutaten):
     """Codex PR #139, P1: die Erkennung schreibt "Erdnuss und Sesamallergie"
     ohne Bindestrich - die Erdnuss gehoert trotzdem in den Hinweis. Ein
     Gericht davor ist keine Zutat."""
-    assert classify_wish(gesagt, BEILAGE).ingredient == zutaten
+    assert wish_of(gesagt, BEILAGE).ingredient == zutaten
 
 
 def test_ganzer_name_vor_aber(session, tenant_id):
@@ -773,7 +780,7 @@ def test_ganzer_name_vor_aber(session, tenant_id):
 def test_allergiefrei_ist_keine_eigene_allergie(gesagt):
     """Codex PR #139, P2: "allergiefrei?" fragt nach dem Gericht (Allergenpfad),
     keine eigene Allergie - sonst kaeme "Wogegen sind Sie allergisch?"."""
-    assert classify_wish(gesagt, BEILAGE).kind != "allergy"
+    assert wish_of(gesagt, BEILAGE).kind != "allergy"
 
 
 @pytest.mark.parametrize(
@@ -787,7 +794,7 @@ def test_allergiefrei_ist_keine_eigene_allergie(gesagt):
 def test_beiwort_nach_und_beendet_die_liste_nicht(gesagt, zutaten):
     """Codex PR #139, P1: "und auch Sesam" - das "auch" beendet die Liste der
     Zutaten nicht; sonst fehlte der Sesam im Hinweis."""
-    assert classify_wish(gesagt, BEILAGE).ingredient == zutaten
+    assert wish_of(gesagt, BEILAGE).ingredient == zutaten
 
 
 @pytest.mark.parametrize(
@@ -823,7 +830,7 @@ def test_zweites_gericht_mit_allergie_bleibt_eigene_position(session, tenant_id)
 def test_allgemeine_allergie_fragt_nach(gesagt):
     """Review PR #139: "Nahrungsmittel" ist keine Zutat - die Frage "Wogegen?"
     bleibt offen, statt "Keine Nahrungsmittel" an die Kueche zu geben."""
-    wish = classify_wish(gesagt, [])
+    wish = wish_of(gesagt, [])
     assert (wish.kind, wish.ingredient) == ("allergy", None)
 
 
@@ -894,7 +901,7 @@ def test_removal_before_the_allergy_is_kept(said, note, ingredient):
     only the allergy note, the removal was dropped. The kitchen note now names
     both, the allergy first in the fixed wording of E14, then the removal
     as the guest said it."""
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.text, wish.ingredient, wish.note) == (
         "allergy",
         note,
@@ -906,7 +913,7 @@ def test_removal_before_the_allergy_is_kept(said, note, ingredient):
 def test_removal_before_an_allergy_without_ingredient_waits_in_note():
     """Without an ingredient the agent asks "Wogegen?" first; the removal waits
     in `note` and goes after the note made from the answer."""
-    wish = classify_wish("ohne Zwiebeln, ich habe eine Allergie", BEILAGE)
+    wish = wish_of("ohne Zwiebeln, ich habe eine Allergie", BEILAGE)
     assert (wish.kind, wish.ingredient, wish.note) == (
         "allergy",
         None,
@@ -1043,7 +1050,7 @@ def test_denied_allergy_is_no_wish(said):
     ],
 )
 def test_denied_allergy_keeps_the_wishes_around_it(said, kind, text):
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.text if text else None) == (kind, text)
 
 
@@ -1054,7 +1061,7 @@ def test_denied_allergy_keeps_an_option_in_two_groups():
         OptionGroup(group="Beilage", required=False, options=[reis]),
         OptionGroup(group="Extra", required=False, options=[reis]),
     ]
-    wish = classify_wish("mit Reis, ich habe keine Allergie", groups)
+    wish = wish_of("mit Reis, ich habe keine Allergie", groups)
     assert (wish.kind, wish.groups) == ("open", ["Beilage", "Extra"])
 
 
@@ -1117,7 +1124,7 @@ def test_negation_mixed_with_more_asks_for_the_ingredient(said):
     """A negation next to more than a plain denial: which ingredient is meant
     is not read from the words but asked ("Wogegen?"). The denied one never
     goes to the kitchen, the real one is never lost."""
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", None)
 
 
@@ -1137,14 +1144,14 @@ def test_negation_mixed_with_more_asks_for_the_ingredient(said):
     ],
 )
 def test_negation_that_does_not_deny_keeps_the_allergy(said, ingredient):
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
 
 
 def test_removal_next_to_a_denial_that_asks_stays():
     """Own review, round 5: when the denial falls through to "Wogegen?", the
     removal said with it stays."""
-    wish = classify_wish(
+    wish = wish_of(
         "ich habe keine Allergie, aber ohne Koriander, dafür mit Pommes", BEILAGE
     )
     assert (wish.kind, wish.ingredient, wish.note) == (
@@ -1158,12 +1165,13 @@ def test_denial_next_to_an_addition_waits_for_the_dish():
     """Own review, round 5: with several hits the options are not known yet,
     so the addition is decided after the choice, not asked about."""
     wish = open_wish("mit Nudeln, ich habe keine Allergie")
+    assert wish is not None
     assert wish.kind == "open"
-    assert classify_wish(wish.text, BEILAGE).kind == "option"
+    assert wish_of(wish.text, BEILAGE).kind == "option"
 
 
 def test_removal_without_a_tab():
-    wish = classify_wish("ohne Zwiebeln\tich habe eine Erdnussallergie", [])
+    wish = wish_of("ohne Zwiebeln\tich habe eine Erdnussallergie", [])
     assert wish.text == "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
 
 
@@ -1233,13 +1241,13 @@ def test_removal_without_a_tab():
 def test_removal_after_the_allergy_is_kept(said, text, note):
     """Codex PR #330: "allergisch gegen Erdnuesse, aber ohne Zwiebeln" lost the
     removal behind the allergy."""
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.text, wish.note) == ("allergy", text, note)
 
 
 def test_addition_after_the_ingredient_is_no_ingredient():
     """Own review, round 7: "mit Nudeln" went into the allergy note unpriced."""
-    wish = classify_wish("ich bin allergisch gegen Erdnüsse, mit Nudeln", BEILAGE)
+    wish = wish_of("ich bin allergisch gegen Erdnüsse, mit Nudeln", BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", "Erdnüsse")
 
 
@@ -1262,7 +1270,7 @@ def test_addition_after_the_ingredient_is_no_ingredient():
     ],
 )
 def test_generic_denial_next_to_a_named_allergy(said, ingredient):
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
 
 
@@ -1275,23 +1283,20 @@ def test_generic_denial_next_to_a_named_allergy(said, ingredient):
 )
 def test_no_joiner_left_in_the_note(said):
     """Codex PR #330, round 7: "Keine Erdnuesse und und Sesam"."""
-    assert classify_wish(said, []).ingredient == "Erdnüsse und Sesam"
+    assert wish_of(said, []).ingredient == "Erdnüsse und Sesam"
 
 
 def test_sonst_does_not_end_the_ingredients():
     """Own review: "sonst" ended the list and the sesame was lost."""
-    wish = classify_wish(
-        "ich bin allergisch gegen Erdnüsse, sonst auch gegen Sesam", []
-    )
+    wish = wish_of("ich bin allergisch gegen Erdnüsse, sonst auch gegen Sesam", [])
+    assert wish.ingredient is not None
     assert "Sesam" in wish.ingredient
 
 
 def test_negation_before_the_phrase_keeps_its_ingredient():
     """Own review: a "nicht auf" in the wish before the allergy cancelled the
     ingredient the guest said clearly; only the phrase itself is read then."""
-    wish = classify_wish(
-        "die Soße nicht auf den Reis, ich habe eine Erdnussallergie", []
-    )
+    wish = wish_of("die Soße nicht auf den Reis, ich habe eine Erdnussallergie", [])
     assert (wish.kind, wish.ingredient) == ("allergy", "Erdnuss")
 
 
@@ -1305,7 +1310,7 @@ def test_negation_before_the_phrase_keeps_its_ingredient():
     ],
 )
 def test_removal_with_an_allergy_is_repeated(said, removal):
-    assert removal_with(classify_wish(said, [])) == removal
+    assert removal_with(wish_of(said, [])) == removal
 
 
 @pytest.mark.parametrize(
@@ -1350,13 +1355,13 @@ def test_denies_allergy(said, denied):
     ],
 )
 def test_words_of_the_allergy_phrase_stay_out_of_the_removal(said, note):
-    assert classify_wish(said, []).text == note
+    assert wish_of(said, []).text == note
 
 
 def test_auf_in_a_removal_stays_with_it():
     """Own review: the "auf" of "ohne Zwiebeln auf Reis" was moved into the
     allergy clause."""
-    wish = classify_wish("ohne Zwiebeln auf Reis ich habe eine Erdnussallergie", [])
+    wish = wish_of("ohne Zwiebeln auf Reis ich habe eine Erdnussallergie", [])
     assert (
         wish.text == "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln auf Reis"
     )
@@ -1389,20 +1394,20 @@ def test_gegen_of_the_dish_name_is_no_allergy_phrase():
 )
 def test_removal_is_not_cut_by_the_phrase(said, note):
     """Own review: the phrase swallowed the removal or cut it in half."""
-    assert classify_wish(said, []).text == note
+    assert wish_of(said, []).text == note
 
 
 def test_vertrage_alles_ist_keine_allergie():
     """Review PR #139: "ich vertrage alles" ist keine Allergie."""
-    assert classify_wish("ich vertrage alles", []).kind != "allergy"
+    assert wish_of("ich vertrage alles", []).kind != "allergy"
     assert wish_candidates("Pho Bo, ich vertrage alles") == []
-    assert classify_wish("ich vertrage keine Erdnüsse", []).ingredient == "Erdnüsse"
+    assert wish_of("ich vertrage keine Erdnüsse", []).ingredient == "Erdnüsse"
 
 
 def test_weglassen_nach_unbekannter_zugabe_bleibt_notiert():
     """Review PR #139: "mit Pommes ohne Zwiebeln" - die Zugabe wird abgelehnt, das
     Weglassen bleibt, wie in der umgekehrten Reihenfolge."""
-    wish = classify_wish("mit Pommes ohne Zwiebeln", BEILAGE)
+    wish = wish_of("mit Pommes ohne Zwiebeln", BEILAGE)
     assert (wish.kind, wish.note) == ("unknown", "ohne Zwiebeln")
 
 
@@ -1422,7 +1427,7 @@ def test_removal_word_directly_before_statt_is_not_understood(said, text, note):
     """ "ohne statt Reis" names neither what to leave out nor what to take
     instead. It ran into endless recursion (eval abholung_0075). It is a wish
     the agent does not offer, never a free note for the kitchen."""
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.text, wish.note) == ("unknown", text, note)
 
 
@@ -1431,7 +1436,7 @@ def test_removal_word_directly_before_statt_is_not_understood(said, text, note):
 )
 def test_bestaetigung_nach_der_zutat(gesagt):
     """Review PR #139: ein "ja genau" nach der Zutat macht sie nicht ungueltig."""
-    assert classify_wish(gesagt, []).ingredient == "Sesam"
+    assert wish_of(gesagt, []).ingredient == "Sesam"
 
 
 def test_allergie_vor_dem_gericht_gehoert_zum_gericht(session, tenant_id):
@@ -1444,7 +1449,6 @@ def test_allergie_vor_dem_gericht_gehoert_zum_gericht(session, tenant_id):
 
 def test_schema_nennt_die_felder():
     """Review PR #139: ohne leere Felder im Ergebnis, aber mit Schema."""
-    from api.schemas.menu import OptionOut, Wish
 
     for model in (OptionOut, Wish):
         schema = model.model_json_schema(mode="serialization")
@@ -1493,7 +1497,7 @@ def test_denial_joined_by_und_to_a_named_allergen_is_asked_about(said):
     adjective and took its "gegen X" as denied, so the allergy was dropped
     without a question (None, or the removal alone). "keine" does not govern
     an adjective: the agent asks."""
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", None)
 
 
@@ -1558,7 +1562,7 @@ def test_a_second_gegen_keeps_its_ingredient(said, ingredient):
     """Review of PR #330, older than it: the ingredient behind a second
     "gegen" without its own allergy word was lost, only one reached the
     kitchen."""
-    assert classify_wish(said, BEILAGE).ingredient == ingredient
+    assert wish_of(said, BEILAGE).ingredient == ingredient
 
 
 @pytest.mark.parametrize(
@@ -1584,7 +1588,7 @@ def test_a_second_gegen_keeps_its_ingredient(said, ingredient):
 def test_a_gegen_that_lists_nothing_stays_out(said):
     """A time, "auf jeden Fall" or a clause of its own is no second
     ingredient, and a "gegen" without one before it begins the list."""
-    assert classify_wish(said, BEILAGE).ingredient == "Erdnüsse"
+    assert wish_of(said, BEILAGE).ingredient == "Erdnüsse"
 
 
 @pytest.mark.parametrize(
@@ -1598,7 +1602,7 @@ def test_a_gegen_that_lists_nothing_stays_out(said):
 def test_a_clause_that_names_something_stays_in_the_note(said, kept):
     """The list ends at an order verb only when nothing to leave out follows
     it: the kitchen still reads "und möchte keine Zwiebeln" (Codex PR #338)."""
-    assert kept in classify_wish(said, BEILAGE).text
+    assert kept in wish_of(said, BEILAGE).text
 
 
 @pytest.mark.parametrize(
@@ -1652,7 +1656,7 @@ def test_more_than_the_parser_reads_is_asked_about(said):
     """Issue #207: only the first allergen reached the kitchen note and the
     agent did not ask. What the parser does not read is never noted in part:
     the ingredient stays open, and the agent asks "Wogegen?" (PR #361)."""
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", None)
 
 
@@ -1697,7 +1701,7 @@ def test_more_than_the_parser_reads_is_asked_about(said):
     ],
 )
 def test_what_goes_on_with_the_call_reads_as_on_main(said, ingredient):
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
 
 
@@ -1731,14 +1735,14 @@ def test_what_goes_on_with_the_call_reads_as_on_main(said, ingredient):
 def test_a_removal_after_aber_or_bitte_is_kept(said, text, note):
     """Issue #331: only a "keine" right after "aber" opened a removal, so
     "aber bitte keine Zwiebeln" lost the onions."""
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.text, wish.note) == ("allergy", text, note)
 
 
 def test_keine_without_aber_or_bitte_still_belongs_to_the_allergy():
     """A "keine" that no "aber" or "bitte" leads to may still name an
     allergen: it is not taken as a removal (Codex PR #330)."""
-    wish = classify_wish("ich vertrage keine Erdnüsse, keine Mandeln", BEILAGE)
+    wish = wish_of("ich vertrage keine Erdnüsse, keine Mandeln", BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", "Erdnüsse, keine Mandeln")
 
 
@@ -1755,7 +1759,7 @@ def test_a_waiting_removal_fits_an_order_line(removal, kept):
     """A removal that waits in `note` for the answer to "Wogegen?" is put on
     the order line as it is when the guest withdraws the allergy; one too
     long for the line is lost, as in `kitchen_note`, and the allergy stays."""
-    wish = classify_wish(f"{removal}, ich habe eine Allergie", BEILAGE)
+    wish = wish_of(f"{removal}, ich habe eine Allergie", BEILAGE)
     assert (wish.kind, wish.ingredient, wish.note) == ("allergy", None, kept)
 
 
@@ -1776,7 +1780,7 @@ def test_an_allergen_the_parser_cannot_read_is_asked_about(said):
     """An allergy word that names an allergen the parser does not read
     ("laktoseintolerant", "Erdnussallergiker") never gives the rest of the
     list alone: the agent asks "Wogegen?"."""
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", None)
 
 
@@ -1798,7 +1802,7 @@ def test_an_allergen_the_parser_cannot_read_is_asked_about(said):
     ],
 )
 def test_the_guests_own_verb_keeps_the_list(said, ingredient):
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
 
 
@@ -1817,7 +1821,7 @@ def test_the_guests_own_verb_keeps_the_list(said, ingredient):
     ],
 )
 def test_a_keine_that_denies_an_allergy_is_no_removal(said):
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.ingredient, wish.note) == ("allergy", None, None)
     assert "Keine" not in wish.text.split(". ")[-1:]
 
@@ -1833,14 +1837,14 @@ def test_a_keine_that_denies_an_allergy_is_no_removal(said):
 def test_a_word_after_a_comma_is_asked_about_never_noted(said):
     """ "Keine Erdnuss und Leider": the word after the comma went on the
     note. The parser does not read it, so the agent asks "Wogegen?"."""
-    wish = classify_wish(said, BEILAGE)
+    wish = wish_of(said, BEILAGE)
     assert (wish.kind, wish.ingredient) == ("allergy", None)
 
 
 def test_a_denial_after_aber_keeps_the_question():
     """Codex PR #361, round 4: "aber ich habe keine Allergie" contradicts the
     allergy before it; it is asked about, never noted."""
-    wish = classify_wish(
+    wish = wish_of(
         "ich bin allergisch gegen Erdnüsse, aber ich habe keine Allergie", BEILAGE
     )
     assert (wish.kind, wish.ingredient) == ("allergy", None)

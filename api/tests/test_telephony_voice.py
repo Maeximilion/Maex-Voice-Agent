@@ -108,6 +108,9 @@ class Core:
     def on_voice_failure(self, session_id: str) -> None:
         self.seen.append(("failure",))
 
+    def on_talked_over(self, session_id: str, text: str) -> None:
+        self.seen.append(("talked_over", text))
+
     def on_call_ended(self, session_id: str, speech=None, **_) -> None:
         self.seen.append(("ended",))
 
@@ -1038,11 +1041,12 @@ def test_the_watchdog_runs_before_the_engines_first_runs(
     monkeypatch.setattr(
         voice_app.Watchdog, "start", lambda self: order.append("watchdog")
     )
-    monkeypatch.setattr(
-        stt_whisper.Whisper,
-        "transcribe",
-        lambda self, pcm, terms: order.append("ear") or "",
-    )
+
+    def transcribe(self, pcm, terms) -> str:
+        order.append("ear")
+        return ""
+
+    monkeypatch.setattr(stt_whisper.Whisper, "transcribe", transcribe)
     its_database.setattr(settings, "voice_ear", "whisper")
     voice_from_settings()
     assert order == ["watchdog", "ear"]
@@ -1142,7 +1146,9 @@ def test_a_slow_run_of_the_ear_is_a_hang_only_past_its_devices_limit(
 
     monkeypatch.setattr(settings, "voice_ear_device", device)
     monkeypatch.setattr(stt_whisper.Whisper, "transcribe", slow)
-    transcribe = voice_app._whisper(watchdog)()._transcribe
+    ear = voice_app._whisper(watchdog)()
+    assert isinstance(ear, stt_whisper.SegmentingEar)
+    transcribe = ear._transcribe
     assert end.codes == []
     transcribe(b"\x00\x00", [])
     if device == "cuda":

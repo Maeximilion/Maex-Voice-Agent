@@ -130,6 +130,7 @@ def test_fehlschlag_plant_ersten_backoff_und_merkt_den_fehler(session, tenant_id
     assert event.status == "pending"
     assert event.attempts == 1
     assert event.next_attempt_at == NOW + timedelta(seconds=BACKOFF_SECONDS[0])
+    assert event.last_error is not None
     assert "ConnectError" in event.last_error
 
 

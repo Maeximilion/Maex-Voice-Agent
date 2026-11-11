@@ -83,6 +83,12 @@ def the_recording(session) -> Recording | None:
     return session.scalars(select(Recording)).one_or_none()
 
 
+def the_recording_row(session) -> Recording:
+    row = the_recording(session)
+    assert row is not None
+    return row
+
+
 # -- the setting ---------------------------------------------------------------
 
 
@@ -340,7 +346,7 @@ def test_a_yes_starts_the_recording_and_the_call_goes_on(session, tenant, switch
 
     assert answers(session) == ["yes"]
     assert [a.value for a in port.recordings(SID)] == [f"{SID}.wav"]
-    row = the_recording(session)
+    row = the_recording_row(session)
     assert row.file_name == f"{SID}.wav"
     assert row.call_id == the_call(session, SID).id
     assert row.withdrawn_at is None
@@ -586,7 +592,7 @@ def test_aufnahme_stoppen_stops_and_deletes_and_the_call_goes_on(
     logged = session.scalars(select(ConsentLog).where(ConsentLog.answer == "no")).one()
     assert logged.question == RECORDING_WITHDRAWN
     assert port.stopped(SID) == ["discard"]
-    assert the_recording(session).withdrawn_at is not None
+    assert the_recording_row(session).withdrawn_at is not None
     assert port.says(SID)[-2:] == [SAY_RECORDING_STOPPED, SAY_WHAT_CAN_I_DO]
     assert not port.transfers(SID)
 
@@ -763,7 +769,7 @@ def test_a_stop_said_while_the_call_ends_withdraws_and_deletes_the_file(
     wire.says("Aufnahme stoppen.")
 
     assert answers(session) == ["yes", "no"]
-    assert the_recording(session).withdrawn_at is not None
+    assert the_recording_row(session).withdrawn_at is not None
     assert list(switched_on.iterdir()) == []
     assert wire.line.played() == said
     wire.played()
@@ -813,7 +819,7 @@ def test_a_stop_after_the_line_is_gone_is_not_heard(session, tenant, switched_on
     wire.says("Aufnahme stoppen.")
 
     assert answers(session) == ["yes"]
-    assert the_recording(session).withdrawn_at is None
+    assert the_recording_row(session).withdrawn_at is None
     assert (switched_on / f"{WIRED}.wav").exists()
 
 
@@ -863,7 +869,7 @@ def test_shadow_a_yes_rings_the_team_with_a_recorded_leg(session, tenant, shadow
 
     assert answers(session) == ["yes"]
     assert port.team_leg_recorded(SID)
-    assert the_recording(session).file_name == f"{SID}.wav"
+    assert the_recording_row(session).file_name == f"{SID}.wav"
     assert port.transfers(SID) == [TEAM_PHONE]
     assert port.says(SID)[1:] == [SAY_HOW_TO_STOP, SAY_TO_THE_TEAM]
     # What `voice` itself writes is the AI's side only: nothing here.
@@ -884,7 +890,7 @@ def test_shadow_a_stop_before_the_team_rings_keeps_the_leg_off_the_file(
     wire.played()
 
     assert answers(session) == ["yes", "no"]
-    assert the_recording(session).withdrawn_at is not None
+    assert the_recording_row(session).withdrawn_at is not None
     assert wire.line.actions[-1] == ("transfer", TEAM_PHONE)
     assert ("record_team_leg",) not in wire.line.actions
 
@@ -1196,7 +1202,7 @@ def test_the_stop_key_withdraws_the_recording_of_a_finished_leg(
 
     logged = session.scalars(select(ConsentLog).where(ConsentLog.answer == "no")).one()
     assert logged.question == RECORDING_WITHDRAWN
-    assert the_recording(session).withdrawn_at is not None
+    assert the_recording_row(session).withdrawn_at is not None
 
 
 def test_the_stop_key_is_idempotent(session, tenant, shadow):
@@ -1265,6 +1271,6 @@ def test_a_recording_row_belongs_to_the_tenant_and_starts_at_the_yes(
     _, handler = on_the_phone(session, tenant)
     handler.on_user_turn(SID, "Ja.")
 
-    row = the_recording(session)
+    row = the_recording_row(session)
     assert row.tenant_id == tenant.id
     assert row.started_at == NOW

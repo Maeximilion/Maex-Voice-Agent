@@ -156,7 +156,9 @@ def test_a_ticket_nobody_picked_up_is_withdrawn(session, tenant_id, call_id):
     assert (ticket.status, ticket.attempts) == ("sent", 0)
     assert ticket.last_error == WITHDRAWN
     assert _claim(session, tenant_id) == []
-    assert _cancels(session, order_id)[0].payload["note_sent"] is False
+    payload = _cancels(session, order_id)[0].payload
+    assert payload is not None
+    assert payload["note_sent"] is False
 
 
 def test_a_red_card_whose_print_failed_ends_without_a_slip(session, tenant_id, call_id):
@@ -187,7 +189,9 @@ def test_a_printed_slip_gets_a_note_through_the_handover(session, tenant_id, cal
     order = _fresh(session, order_id)
     assert (order.status, order.handover_state) == ("cancelled", "pending")
     assert _ids(session, tenant_id) == []
-    assert _cancels(session, order_id)[0].payload["note_sent"] is True
+    payload = _cancels(session, order_id)[0].payload
+    assert payload is not None
+    assert payload["note_sent"] is True
 
     note = _print(session, tenant_id)
     assert (note["revision"], note["correction_reason"]) == (1, "cancelled")

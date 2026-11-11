@@ -267,6 +267,7 @@ def test_wartezeit_wird_nie_kuerzer_angesagt(session, tenant_id, call_id, sekund
     """Codex PR #124: um 18:00:45 wurden aus 20 Minuten Wartezeit 19 angesagt."""
     now = NOW.replace(second=sekunde, microsecond=500)
     draft = draft_order(session, request(session, tenant_id, call_id), now=now)
+    assert draft.ready_at is not None
     assert draft.ready_at >= now + timedelta(minutes=30)
     assert draft.ready_at.second == 0 and draft.ready_at.microsecond == 0
     assert "abholbereit in etwa 30 Minuten" in draft.readback
@@ -427,6 +428,7 @@ def test_pflichtgruppe_zweimal(session, tenant_id, call_id):
     items = [ente(session, tenant_id, ("Fleisch", "Ente"), ("Fleisch", "Huhn"))]
     with pytest.raises(InvalidInput) as err:
         draft_order(session, request(session, tenant_id, call_id, items), now=NOW)
+    assert err.value.say is not None
     assert "nur eine Auswahl" in err.value.say
 
 

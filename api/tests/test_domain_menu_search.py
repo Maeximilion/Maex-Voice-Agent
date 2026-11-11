@@ -177,6 +177,7 @@ def test_unbekannte_nummer_raet_nicht(session, tenant_id):
     """Nummer 99 gibt es nicht: kein Ausweichen auf einen aehnlichen Namen."""
     with pytest.raises(NotFound) as err:
         suche(session, tenant_id, "Nummer 99")
+    assert err.value.say is not None
     assert "Nummer 99" in err.value.say
 
 
@@ -241,6 +242,7 @@ def test_tippfehler_der_erkennung_findet_das_gericht(session, tenant_id):
 def test_nichts_gefunden(session, tenant_id, gesagt):
     with pytest.raises(NotFound) as err:
         suche(session, tenant_id, gesagt)
+    assert err.value.say is not None
     assert "Nummer sagen" in err.value.say
 
 
@@ -435,12 +437,14 @@ def test_zahl_ohne_buchstabe_trifft_nicht_die_variante(session, buchstaben):
     """Es gibt 31a, aber keine 31: "Nummer 31" ist nicht gefunden, nicht 31a."""
     with pytest.raises(NotFound) as err:
         suche(session, buchstaben, "Nummer 31")
+    assert err.value.say is not None
     assert "Nummer 31 " in err.value.say
 
 
 def test_unbekannte_buchstabennummer(session, buchstaben):
     with pytest.raises(NotFound) as err:
         suche(session, buchstaben, "Nummer 23c")
+    assert err.value.say is not None
     assert "Nummer 23c" in err.value.say
 
 
@@ -460,7 +464,9 @@ def test_ungueltiger_buchstabe_wird_nicht_abgeschnitten(session, tenant_id, gesa
     """Befund Codex PR #117: "23g" ist nicht die 23 - nicht gefunden statt still 23."""
     with pytest.raises(NotFound) as err:
         suche(session, tenant_id, gesagt)
+    assert err.value.say is not None
     assert "Nummer 23" in err.value.say and err.value.say != ""
+    assert err.value.say is not None
     assert "23 habe" not in err.value.say
 
 
@@ -562,6 +568,7 @@ def test_nummer_mit_mehr_im_satz_fragt_nach(session, tenant_id, gesagt):
     """Regel A: eine zweite Zahl oder Text neben der Nummer - nie selbst waehlen."""
     with pytest.raises(Ambiguous) as err:
         suche(session, tenant_id, gesagt)
+    assert err.value.say is not None
     assert "Welche Nummer" in err.value.say
 
 
@@ -855,7 +862,9 @@ def test_mehrere_positionen_ueber_http_ohne_bitte_um_wiederholung(session, tenan
     fragt je Teil, der Gast wartet."""
     with pytest.raises(Ambiguous) as err:
         suche(session, tenant_id, "die 23 und einmal Pho Bo")
+    assert err.value.say is not None
     assert "eins nach dem anderen" not in err.value.say
+    assert err.value.say is not None
     assert "Reihe nach" in err.value.say
 
 
@@ -929,10 +938,15 @@ def test_lange_aufzaehlung_sucht_nur_spannen_bis_zur_laengsten_karte(
 
     calls = []
     original = search_module._whole_dish
+
+    def counting(*a, **kw):
+        calls.append(a[3])
+        return original(*a, **kw)
+
     monkeypatch.setattr(
         search_module,
         "_whole_dish",
-        lambda *a, **kw: calls.append(a[3]) or original(*a, **kw),
+        counting,
     )
     gesagt = " und ".join(FRUECHTE)
     assert position_parts(session, tid, gesagt, now=NOW) == FRUECHTE
@@ -1063,6 +1077,7 @@ def test_a_prefix_that_was_said_is_taken_without_a_question(session, sushi):
 def test_ist_number_that_is_on_the_menu_in_neither_form_is_not_found(session, sushi):
     with pytest.raises(NotFound) as err:
         suche(session, sushi, "Ist neunundneunzig.")
+    assert err.value.say is not None
     assert "99 oder s99" in err.value.say
 
 
@@ -1071,6 +1086,7 @@ def test_missing_prefixed_number_is_never_the_bare_number(session, sushi, said):
     """Rule 2: "S 13" is not Pho Bo (13), "Nummer 23g" is not the 23."""
     with pytest.raises(NotFound) as err:
         suche(session, sushi, said)
+    assert err.value.say is not None
     assert "Nummer 13 " not in err.value.say and "Nummer 23 " not in err.value.say
 
 
@@ -1179,6 +1195,7 @@ def test_a_card_number_the_menu_does_not_have_is_a_position_of_its_own(
     assert position_parts(session, sushi, said, now=NOW) == parts
     with pytest.raises(NotFound) as err:
         suche(session, sushi, next(p for p in parts if "99" in p))
+    assert err.value.say is not None
     assert "99" in err.value.say
 
 
@@ -1296,6 +1313,7 @@ def test_number_with_heard_suffix_and_name_are_two_positions(session, sushi):
 def test_category_word_without_hit_names_card_numbers(session, sushi):
     with pytest.raises(NotFound) as err:
         suche(session, sushi, "Sushi 99")
+    assert err.value.say is not None
     assert "s99 oder sm99" in err.value.say
 
 
@@ -1304,7 +1322,7 @@ def test_by_number_rejects_a_bare_str(session, sushi):
     from api.domain.menu.search import _by_number
 
     with pytest.raises(TypeError):
-        _by_number(session, sushi, "023")
+        _by_number(session, sushi, "023")  # type: ignore[arg-type]  # a bare str is the bug under test
 
 
 def test_card_format_read_once_per_search(session, sushi, monkeypatch):
@@ -1314,9 +1332,12 @@ def test_card_format_read_once_per_search(session, sushi, monkeypatch):
 
     calls = []
     real = search_mod.card_format
-    monkeypatch.setattr(
-        search_mod, "card_format", lambda *a: calls.append(1) or real(*a)
-    )
+
+    def counting(*a):
+        calls.append(1)
+        return real(*a)
+
+    monkeypatch.setattr(search_mod, "card_format", counting)
     with pytest.raises(Ambiguous):
         suche(session, sushi, "die 23 und Pho Bo und die 24")
     assert len(calls) == 1
@@ -1348,6 +1369,7 @@ def test_unknown_prefix_after_marker_is_not_found(session, sushi, said):
     never the bare number."""
     with pytest.raises(NotFound) as err:
         suche(session, sushi, said)
+    assert err.value.say is not None
     assert "Nummer 12 " not in err.value.say
 
 

@@ -328,6 +328,7 @@ def test_ueberholter_bon_wird_nicht_mehr_ausgeliefert(session, tenant_id, order_
     assert [t["ticket"]["revision"] for t in tickets] == [1]
     old, new = _events(session, order_id)
     assert old.status == "sent"
+    assert old.last_error is not None
     assert "ueberholt von Revision 1" in old.last_error
     assert first["id"] == str(old.id)
 
@@ -520,6 +521,7 @@ def test_ueberholter_bon_ohne_versuche_ist_kein_alarm(
     sweep(session, _now(LEASE_SECONDS + PICKUP_TIMEOUT_SECONDS + 2))
     old, _new = _events(session, order_id)
     assert old.status == "sent"
+    assert old.last_error is not None
     assert "ueberholt von Revision 1" in old.last_error
     assert _order(session, order_id).handover_state == "sent"
     assert "Alarm" not in caplog.text
@@ -633,7 +635,7 @@ def test_waechter_faden_ueberlebt_einen_fehler(caplog):
             self.done = True
             return True
 
-    class Broken:
+    class Broken(Session):
         def rollback(self):
             pass
 

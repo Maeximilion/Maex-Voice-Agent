@@ -632,6 +632,7 @@ def _migrate(tmp_path, *args, **env):
         BACKUP_ENV_FILE=(tmp_path / "absent.env").as_posix(),
     )
     environment.update(env)
+    assert BASH is not None
     done = subprocess.run(
         [BASH, "scripts/migrate.sh", *args],
         cwd=REPO_ROOT,

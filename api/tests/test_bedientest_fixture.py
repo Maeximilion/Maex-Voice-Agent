@@ -1,6 +1,7 @@
 """scripts/bedientest_fixture: the start state of the operating test (T-3.5, protocol section 0)."""
 
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -174,7 +175,7 @@ def test_default_port_is_not_the_working_stacks(tmp_path, monkeypatch):
 
 
 def test_the_stack_gets_its_settings_from_the_process_not_the_checkout(monkeypatch):
-    seen = {}
+    seen: dict[str, Any] = {}
     monkeypatch.setattr(
         fx.subprocess, "run", lambda cmd, **kw: seen.update(cmd=cmd, env=kw["env"])
     )

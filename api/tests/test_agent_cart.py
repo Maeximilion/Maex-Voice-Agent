@@ -181,6 +181,7 @@ def test_cart_in_another_form_than_order_items_is_refused(cart):
 
     assert refused is not None
     assert refused.error_code == "invalid_input"
+    assert refused.hint is not None
     assert refused.hint.startswith(HINT_CART_FORM)
     assert state.cart == []
 
@@ -192,6 +193,8 @@ def test_refusal_names_the_field_but_never_what_the_guest_said():
 
     refused = take_cart(state, [line(ENTE, note=note)])
 
+    assert refused is not None
+    assert refused.hint is not None
     assert "note" in refused.hint
     assert "Müller" not in refused.hint
 
@@ -505,6 +508,7 @@ def test_cart_that_is_no_list_is_refused_not_ignored(cart):
 
     assert turn.cart is not None
     assert refused is not None
+    assert refused.hint is not None
     assert refused.hint.startswith(HINT_CART_FORM)
     assert state.stage == "collecting"
     assert state.order_id is None
@@ -727,7 +731,9 @@ class StatelessModel:
         self.states: list[dict] = []
         self.inputs: list[str] = []
 
-    def next_turn(self, system_prompt, state_json, input_text):
+    def next_turn(
+        self, system_prompt, state_json, input_text, *, timeout: float | None = None
+    ) -> LLMTurn:
         # A copy as the model would get it over the wire.
         seen = json.loads(json.dumps(state_json, default=str))
         self.states.append(seen)

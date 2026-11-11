@@ -1,6 +1,6 @@
 """Datenbankzugang: eine Engine je Prozess, eine Session je Request."""
 
-from collections.abc import Iterator
+from collections.abc import Generator
 
 from sqlalchemy import Engine, create_engine, event, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -115,7 +115,7 @@ def refuse_a_superuser_role(env: str, db: Engine) -> None:
         )
 
 
-def get_db() -> Iterator[Session]:
+def get_db() -> Generator[Session]:
     """FastAPI-Dependency. Commit entscheidet die Fachlogik, Rollback und Close passieren hier."""
     db = SessionLocal()
     try:

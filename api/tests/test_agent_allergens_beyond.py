@@ -319,6 +319,7 @@ def test_the_card_of_that_question_leaves_out_what_was_searched(session, known_t
         searches("Sellerie Spezial Erdnuss"),
     )
 
+    assert state.handoff_summary is not None
     assert state.handoff_summary.startswith(SUMMARY_ALLERGENS)
     assert "Erdnuss" not in state.handoff_summary
 

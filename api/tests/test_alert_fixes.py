@@ -160,7 +160,7 @@ def test_package_names_compare_by_pep_503():
 
 def test_code_scanning_counts_a_fixed_instance_on_the_current_head_or_merge():
     old = "o" * 40
-    cases = (
+    cases: tuple[tuple[list[dict[str, str]], list[dict[str, str]], str], ...] = (
         ([{"state": "fixed", "commit_sha": HEAD}], [], "fixed by #5"),
         ([], [{"state": "fixed", "commit_sha": MERGE}], "fixed by #5"),
         (
@@ -283,6 +283,7 @@ def test_gh_output_is_read_as_utf8(monkeypatch):
     class Done:
         returncode = 0
         stderr = ""
+        stdout = ""
 
     def run(args, **kwargs):
         Done.stdout = raw.decode(kwargs.get("encoding") or "cp1252")

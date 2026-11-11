@@ -64,7 +64,9 @@ def test_tone_seconds_ignores_another_tone():
 def test_tone_span_is_where_the_tone_is_not_how_long_it_was():
     pcm = bytes(RATE * 2) + tone(440, 2.0, RATE) + bytes(RATE * 2)
 
-    start, end = tone_span(pcm, 440, RATE)
+    span = tone_span(pcm, 440, RATE)
+    assert span is not None
+    start, end = span
 
     assert start == pytest.approx(1.0, abs=0.03)
     assert end == pytest.approx(3.0, abs=0.03)
