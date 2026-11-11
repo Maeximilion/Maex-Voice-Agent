@@ -980,6 +980,16 @@ def test_a_dish_name_the_search_found_is_no_claim(say):
     assert allergen_claim(_found("Nudeln (glutenfrei)"), say) is False
 
 
+def test_a_dish_name_with_an_additive_word_is_no_claim_but_a_sentence_about_one_is():
+    """#638: a model that names an additive says what no table holds, but a
+    dish the menu calls "Cola (mit Farbstoff)" is menu data."""
+    state = _found("Cola (mit Farbstoff)")
+
+    assert allergen_claim(state, "Gern, Nummer 45 Cola (mit Farbstoff).") is False
+    assert allergen_claim(state, "Die Cola (mit Farbstoff) ist ohne Süßstoff.") is True
+    assert allergen_claim(new_state(), "Die Cola ist mit Farbstoff.") is True
+
+
 def test_an_offered_candidate_name_is_no_claim_either():
     state = new_state()
     state.offered_items[ENTE] = ("46", "Latte laktosefrei")

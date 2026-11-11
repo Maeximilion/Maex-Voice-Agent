@@ -100,7 +100,7 @@ The plugin's compliance check ran over L1 to L18, D9, U1 to U8, N1 and N2. Three
 | The owner as his own officer (D9) | high: the authority can reject the appointment, and the DSFA then lacks the officer's advice (L10) | accepted by Maxi on 11.11.2026; an external officer if the authority objects |
 | A real call before the paper duties are done | high | the AI stays off for real callers until the table above shows no "open" in its "first real call" rows |
 | Art. 50(2) exemption claimed without evidence (N1) | medium | #637 |
-| A model-made answer about an additive the word list misses; no allergen list at the door (L17) | medium | the core hands a question about a listed additive to the team and stops a model's claim that one is absent (#638); the printed list |
+| A model-made answer about an additive the word list misses; no allergen list at the door (L17) | medium | the core hands every guest sentence that names a listed additive to the team and stops every model sentence that names one (#638); the printed list |
 | No paper confirmation with a delivery (N2) | low | the printed terms with the receipt |
 | Data Privacy Framework falls (L7) | low | EU services, standard clauses as fallback |
 

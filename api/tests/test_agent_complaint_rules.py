@@ -800,6 +800,25 @@ def test_the_question_for_a_person_keeps_its_truthful_answer(session, tenant_id,
     assert_went_to_the_team(result, session, state)
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        f"{COMPLAINT} Sind da Konservierungsstoffe drin",
+        "Ich bin unzufrieden, das Essen war kalt und voller Glutamat.",
+    ],
+)
+def test_a_complaint_that_names_an_additive_gets_no_offer(
+    session, tenant_id, state, said
+):
+    """Codex PR #643: the offer came before the check for an additive, and a
+    "Ja" to it ended the call with the question about the additive open."""
+    rule(session, tenant_id)
+
+    result = loop(session).run_turn(state, said)
+
+    assert_went_to_the_team(result, session, state)
+
+
 def test_a_withheld_number_goes_to_the_team(session, tenant_id):
     """Nobody could carry the remedy out."""
     rule(session, tenant_id)

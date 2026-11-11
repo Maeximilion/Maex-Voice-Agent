@@ -183,9 +183,9 @@ def names_an_additive(text: str) -> bool:
 
 def only_a_complaint(text: str) -> bool:
     """Is the complaint all this sentence holds? Not with another trigger, a
-    question, an allergy or allergen, a health incident, a legal step or a
-    wish of its own in it: those are for the team, however well a rule of the
-    catalogue fits."""
+    question, an allergy, allergen or additive, a health incident, a legal
+    step or a wish of its own in it: those are for the team, however well a
+    rule of the catalogue fits."""
     lowered = text.lower()
     return not (
         any(
@@ -198,6 +198,7 @@ def only_a_complaint(text: str) -> bool:
         or speaks_of_allergies(text)
         or names_an_allergen(text)
         or asks_beyond_the_allergens(text)
+        or names_an_additive(text)
         or _TEAM_ONLY.search(lowered)
         or _WANTS_ANYTHING.search(_WANTS_TO_COMPLAIN.sub(" ", lowered))
     )

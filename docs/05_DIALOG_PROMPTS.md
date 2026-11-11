@@ -206,8 +206,13 @@ one can be right
      what no table holds, so a question and a wish go the same way (Codex
      PR #643). The words are the register's legend (docs/14) and "Glutamat",
      "Zusatzstoff", "Süßstoff", "E-Nummer"; an additive the list misses
-     reaches the model, and a model's sentence that an additive is absent
-     is stopped like a claim about an allergen (`guards.allergen_claim`)
+     reaches the model. A model's sentence that names an additive at all is
+     stopped like a claim about an allergen and hands over, whatever it
+     says about it ("glutamatfrei", "ohne Glutamat zubereitet", "ja, ist
+     drin"); a dish name of the menu that holds such a word is no claim
+     (`guards.allergen_claim`). A complaint that names an additive gets no
+     offer of the catalogue and goes to the team
+     (`escalation.only_a_complaint`)
 
 An allergy note stays on the order whatever the dish contains (Maxi,
 27.10.2026): the kitchen works with it, also where the allergen is in no

@@ -1599,6 +1599,11 @@ def test_without_a_team_the_card_names_the_additive_question(session, known_tena
     [
         "Da ist kein Glutamat drin.",
         "Die Pho Bo enthält keine Konservierungsstoffe.",
+        # Codex PR #643: absence has more forms than a list holds, and a yes
+        # is as unfounded as a no. The name of an additive is enough.
+        "Die Pho Bo ist glutamatfrei.",
+        "Wir bereiten die Pho Bo ohne Glutamat zu.",
+        "Ja, da sind Konservierungsstoffe drin.",
     ],
 )
 def test_a_claim_of_the_model_about_an_additive_goes_to_the_team(
