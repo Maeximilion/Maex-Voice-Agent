@@ -42,7 +42,7 @@ def heard(*sentences, caller=None):
 
 def said(*sentences):
     """The words of a call as the state keeps them (`note_guest_details`)."""
-    words = {}
+    words: dict[str, int] = {}
     for sentence in sentences:
         for word, count in words_said(sentence).items():
             words[word] = max(words.get(word, 0), count)

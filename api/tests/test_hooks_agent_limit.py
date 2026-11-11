@@ -37,6 +37,7 @@ def run():
         pytest.skip(f"agent limit tests need {missing}")
 
     def _run(day=None, hook=HOOK):
+        assert BASH is not None
         env = dict(os.environ)
         env.pop("AGENT_LIMIT_DAY", None)
         if day is not None:

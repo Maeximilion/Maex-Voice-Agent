@@ -194,6 +194,7 @@ def test_a_full_window_is_entered_only_after_trotzdem(client, engine, tenant_id)
     assert drafts(engine)[-1].status == "confirmed"
     with Session(engine) as s:
         last = s.scalars(select(AuditLog).order_by(AuditLog.id.desc())).first()
+    assert last is not None
     assert last.payload == {"source": "tablet", "override": True}
 
 

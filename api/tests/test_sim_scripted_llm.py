@@ -9,6 +9,7 @@ Ja nicht bestaetigt (Regel 3).
 import json
 import uuid
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -31,7 +32,7 @@ from sim.scripted_order import PickupScript
 BERLIN = ZoneInfo("Europe/Berlin")
 NOW = datetime(2026, 9, 15, 18, 0, tzinfo=BERLIN)  # Dienstag, Abendfenster
 WUNSCH = "Guten Tag, ich haette gern einen Tisch fuer vier Personen morgen um 19 Uhr."
-START = {"stage": "start", "open": []}
+START: dict[str, Any] = {"stage": "start", "open": []}
 
 
 @pytest.fixture

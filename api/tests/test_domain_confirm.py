@@ -270,6 +270,7 @@ def test_a_draft_whose_seats_went_to_someone_else_is_refused(
         confirm(session, request(tenant_id, call_id, old), now=late)
     session.rollback()
 
+    assert refused.value.say is not None
     assert "vergeben" in refused.value.say
     assert session.get(Reservation, old).status == "draft"
     confirmed = session.scalars(select(OutboxEvent)).all()
@@ -285,7 +286,9 @@ def test_two_old_drafts_for_the_same_seats_confirm_only_once(migrated_db_url):
             seed(s, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
         )
         lift_party_limits(s, tenant)
-        limit = timedelta(seconds=s.get(ServiceConfig, tenant).max_call_seconds + 1)
+        config = s.get(ServiceConfig, tenant)
+        assert config is not None
+        limit = timedelta(seconds=config.max_call_seconds + 1)
         calls = [_second_call(s, tenant), _second_call(s, tenant)]
         # The second draft is only possible because the first one has expired.
         first = make_draft(s, tenant, calls[0], party_size=40)
@@ -320,7 +323,9 @@ def test_two_old_drafts_for_the_same_seats_confirm_only_once(migrated_db_url):
         thread.join(timeout=30)
 
     with Session(engine) as s:
-        statuses = sorted(s.get(Reservation, d).status for d in (first, second))
+        rows = [s.get(Reservation, d) for d in (first, second)]
+        assert all(row is not None for row in rows)
+        statuses = sorted(row.status for row in rows if row is not None)
     engine.dispose()
 
     assert sorted(map(str, results)) == ["ok", "refused"], results

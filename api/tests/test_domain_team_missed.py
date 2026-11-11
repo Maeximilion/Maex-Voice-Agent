@@ -374,6 +374,8 @@ def test_a_report_waits_for_the_call_log_and_reads_what_it_wrote(
 
         assert results and results[0] is not None
         with Session(engine) as check:
-            assert check.get(Call, call_id).outcome == after
+            call = check.get(Call, call_id)
+            assert call is not None
+            assert call.outcome == after
     finally:
         engine.dispose()

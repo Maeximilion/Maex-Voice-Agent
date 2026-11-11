@@ -5,6 +5,7 @@ softphone recorded. Both are built here, so every pass and every fail is a case.
 """
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -298,10 +299,10 @@ def test_a_call_the_caller_had_to_end_fails():
     ]
 
 
-class FakeStack:
+class FakeStack(spike.Stack):
     """Stands in for the containers: a call is over the moment it is placed."""
 
-    def __init__(self, run_dir, clock, steps: int) -> None:
+    def __init__(self, run_dir: Path, clock, steps: int) -> None:
         self.run_dir = run_dir
         self.clock = clock
         self.steps = steps  # how many calls the wall clock is set during

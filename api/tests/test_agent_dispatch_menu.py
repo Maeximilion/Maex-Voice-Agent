@@ -575,18 +575,15 @@ def test_eine_position_wird_nur_einmal_zerlegt(
 
     calls = []
     original = search_module.position_parts
-    monkeypatch.setattr(
-        search_module,
-        "position_parts",
-        lambda *a, **kw: calls.append(a[2]) or original(*a, **kw),
-    )
+
+    def spy(*a, **kw):
+        calls.append(a[2])
+        return original(*a, **kw)
+
+    monkeypatch.setattr(search_module, "position_parts", spy)
     import sys
 
     dispatch_module = sys.modules["api.agent.dispatch"]
-    monkeypatch.setattr(
-        dispatch_module,
-        "position_parts",
-        lambda *a, **kw: calls.append(a[2]) or original(*a, **kw),
-    )
+    monkeypatch.setattr(dispatch_module, "position_parts", spy)
     run(session, tenant_id, call_id, "search_menu", {"query": "die 23 ohne Karotten"})
     assert calls.count("die 23 ohne Karotten") == 1

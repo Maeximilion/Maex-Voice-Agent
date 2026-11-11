@@ -18,6 +18,7 @@ from datetime import datetime
 from datetime import time as clock_time
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -661,8 +662,23 @@ def test_fake_stops_feeding_turns_once_the_line_is_gone():
         def on_dtmf(self, session_id, digits):
             self.events.append(("dtmf", digits))
 
+        def on_silence(self, session_id):
+            pass
+
+        def on_talked_over(self, session_id, text):
+            pass
+
+        def on_voice_failure(self, session_id):
+            pass
+
         def on_call_ended(self, session_id, speech=None, **_):
             self.events.append(("end", session_id))
+
+        def on_team_missed(self, session_id):
+            return False
+
+        def on_recording_stopped(self, session_id):
+            return False
 
     port = FakeTelephony()
     recorder = Recorder(port)
@@ -852,8 +868,8 @@ def test_a_tenant_may_allow_longer_calls_than_the_setting(session, tenant):
 
 def test_two_tenants_keep_their_own_limits(session, tenant):
     seed(session, tenant_name="Zweitbetrieb", timezone="Europe/Berlin")
-    other = resolve_tenant(session, "Zweitbetrieb")
-    other = SimpleNamespace(id=other.id, timezone=other.timezone, name=other.name)
+    second = resolve_tenant(session, "Zweitbetrieb")
+    other = SimpleNamespace(id=second.id, timezone=second.timezone, name=second.name)
     set_mode(session, other.id, "primary")
     set_limit(session, tenant.id, 30)
     set_limit(session, other.id, 600)
@@ -1789,7 +1805,10 @@ def test_a_team_leg_of_any_kind_is_priced(monkeypatch, state, outcome, cents):
     monkeypatch.setattr(settings, "voice_ear_cents_per_hour", 0)
     monkeypatch.setattr(settings, "voice_mouth_cents_per_mchar", 0)
     monkeypatch.setattr(settings, "voice_outbound_cents_per_hour", 90)
-    live = SimpleNamespace(state=SimpleNamespace(**state))
+    # A stand-in with only the part `_cost` reads.
+    live = cast(
+        handler_module._LiveCall, SimpleNamespace(state=SimpleNamespace(**state))
+    )
 
     assert handler_module._cost(live, PRICED, SpeechUsage(), outcome) == cents
 
@@ -1799,7 +1818,10 @@ def test_a_cost_that_cannot_be_computed_leaves_it_unknown(monkeypatch):
     monkeypatch.setattr(settings, "llm_output_cents_per_mtok", 0)
     monkeypatch.setattr(settings, "voice_ear_cents_per_hour", 36)
     monkeypatch.setattr(settings, "voice_mouth_cents_per_mchar", 0)
-    live = SimpleNamespace(state=SimpleNamespace(transferred=False, stage="done"))
+    live = cast(
+        handler_module._LiveCall,
+        SimpleNamespace(state=SimpleNamespace(transferred=False, stage="done")),
+    )
 
     assert (
         handler_module._cost(live, PRICED, SpeechUsage(float("nan"), 0), None) is None

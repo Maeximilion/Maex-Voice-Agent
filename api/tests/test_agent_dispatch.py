@@ -137,6 +137,7 @@ def test_invalid_arguments_tell_the_model_which_field_is_wrong(
 
     assert result.ok is False
     assert result.error_code == "invalid_input"
+    assert result.hint is not None
     assert "phone" in result.hint
     assert "party_size" in result.hint
     assert "viele" not in result.hint
@@ -351,6 +352,7 @@ def test_a_date_no_calendar_holds_is_invalid_input(
 
     assert result.ok is False
     assert result.error_code == "invalid_input"
+    assert result.hint is not None
     assert "reserved_for" in result.hint
 
 
@@ -575,4 +577,5 @@ def test_a_time_without_an_offset_that_is_no_time_stays_invalid_input(
 
     assert result.ok is False
     assert result.error_code == "invalid_input"
+    assert result.hint is not None
     assert "reserved_for" in result.hint

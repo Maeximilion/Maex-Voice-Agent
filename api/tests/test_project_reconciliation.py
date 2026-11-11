@@ -35,7 +35,7 @@ def test_historical_intake_is_explicit_and_idempotent(monkeypatch, fix):
 
     monkeypatch.setattr(project_report, "graphql", graphql)
     monkeypatch.setattr(project_report.time, "sleep", lambda _: None)
-    board = []
+    board: list[project_report.Item] = []
     added = project_report.reconcile_history("PROJECT", board, [item], "token", fix=fix)
     assert len(added) == int(fix)
     assert len(calls) == 1 + int(fix)
@@ -77,6 +77,7 @@ def test_late_page_of_linked_prs_can_contain_the_first_implementation(monkeypatc
     item = project_report.parse_item(
         {"id": "ITEM", "updatedAt": "2026-11-02T12:00:00Z", "content": content}
     )
+    assert item is not None
     assert item.work_started == datetime(2026, 10, 12, 10, tzinfo=UTC)
 
 

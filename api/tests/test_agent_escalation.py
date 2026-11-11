@@ -44,6 +44,12 @@ def test_leerer_text_loest_nichts_aus():
 # -- without_human_question: whether a person is on the line (docs/09 L1) ------
 
 
+def _rest(text: str) -> str:
+    rest = without_human_question(text)
+    assert rest is not None
+    return rest
+
+
 @pytest.mark.parametrize(
     "text",
     [
@@ -107,9 +113,10 @@ def test_what_else_the_sentence_says_is_left_for_check():
     rest = without_human_question(
         "Sind Sie ein Mensch? Ich will mit einem Menschen sprechen."
     )
+    assert rest is not None
     assert check(rest) == "human_requested"
 
-    assert check(without_human_question("Spreche ich mit einem Menschen?")) is None
+    assert check(_rest("Spreche ich mit einem Menschen?")) is None
 
 
 @pytest.mark.parametrize(
@@ -123,7 +130,7 @@ def test_what_else_the_sentence_says_is_left_for_check():
 def test_both_halves_of_an_either_or_question_are_the_question(text):
     """Ultrareview of PR #372: the half after "oder" holds the words of the
     wish ("mit einem Menschen") and is still the question."""
-    assert check(without_human_question(text)) is None
+    assert check(_rest(text)) is None
 
 
 @pytest.mark.parametrize(
@@ -138,7 +145,7 @@ def test_both_halves_of_an_either_or_question_are_the_question(text):
     ],
 )
 def test_asks_more_tells_a_request_from_greeting_words(text, more):
-    assert asks_more(without_human_question(text)) is more
+    assert asks_more(_rest(text)) is more
 
 
 # -- taken for a person without asking (Art. 50 guidelines point 40, #638) -----

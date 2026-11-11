@@ -523,9 +523,12 @@ def test_event_mode_fetches_current_target_and_never_executes_fork_content(
 
 def test_pagination_supports_paths_without_query_string(monkeypatch):
     seen = []
-    monkeypatch.setattr(
-        pr_metadata, "rest", lambda method, path, token: seen.append(path) or []
-    )
+
+    def rest(method, path, token):
+        seen.append(path)
+        return []
+
+    monkeypatch.setattr(pr_metadata, "rest", rest)
     assert pr_metadata.pages("/repos/o/r/pulls/4/files", "t") == []
     assert seen == ["/repos/o/r/pulls/4/files?per_page=100&page=1"]
 

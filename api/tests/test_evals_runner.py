@@ -5,6 +5,7 @@ import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -17,7 +18,7 @@ from api.domain.customers.lookup import objected
 from api.domain.ordering import draft_order
 from api.models import Address, AuditLog, Customer, MenuItem, Tenant
 from api.schemas.confirm import ConfirmRequest
-from api.schemas.orders import DraftOrderRequest
+from api.schemas.orders import DraftOrderRequest, OrderCustomer, OrderItemIn
 from evals import runner
 from evals.judge import (
     CaseError,
@@ -33,6 +34,7 @@ from evals.judge import (
 )
 from evals.recorder import DRAFT_TOOLS, RecordingLLM, is_yes
 from evals.report import CaseResult, RunReport, previous_run, write
+from sim.scripted_order import MenuNumbers
 from sim.session import SimCall, Turn
 
 CASES = Path(runner.__file__).parent / "cases"
@@ -874,6 +876,7 @@ def test_gebucht_ohne_confirm_des_modells_wird_erkannt(migrated_db_url):
                     MenuItem.tenant_id == tenant.id, MenuItem.number == "13"
                 )
             )
+            assert item_id is not None
             draft = draft_order(
                 session,
                 DraftOrderRequest(
@@ -881,8 +884,8 @@ def test_gebucht_ohne_confirm_des_modells_wird_erkannt(migrated_db_url):
                     tenant_id=tenant.id,
                     idempotency_key=uuid.uuid4().hex,
                     type="pickup",
-                    customer={"name": "Schmidt", "phone": "0721 5551234"},
-                    items=[{"menu_item_id": item_id, "quantity": 1}],
+                    customer=OrderCustomer(name="Schmidt", phone="0721 5551234"),
+                    items=[OrderItemIn(menu_item_id=item_id, quantity=1)],
                 ),
                 now=runner.DEFAULT_NOW,
             )
@@ -934,6 +937,7 @@ def test_each_consent_check_reads_the_answer_to_its_own_question(
                     MenuItem.tenant_id == tenant.id, MenuItem.number == "13"
                 )
             )
+            assert item_id is not None
             draft = draft_order(
                 session,
                 DraftOrderRequest(
@@ -941,8 +945,8 @@ def test_each_consent_check_reads_the_answer_to_its_own_question(
                     tenant_id=tenant.id,
                     idempotency_key=uuid.uuid4().hex,
                     type="pickup",
-                    customer={"name": "Schmidt", "phone": "0721 5551234"},
-                    items=[{"menu_item_id": item_id, "quantity": 1}],
+                    customer=OrderCustomer(name="Schmidt", phone="0721 5551234"),
+                    items=[OrderItemIn(menu_item_id=item_id, quantity=1)],
                 ),
                 now=runner.DEFAULT_NOW,
             )
@@ -1150,7 +1154,9 @@ def test_vorheriger_lauf_nur_mit_gleichem_modell_und_tags(tmp_path):
     ok = CaseResult(id="a", name="", tags=[], passed=True)
     write(rep(["menu"], [ok]), tmp_path, datetime(2026, 9, 25, 8, tzinfo=UTC))
     assert previous_run(tmp_path, "scripted", []) is None
-    assert previous_run(tmp_path, "scripted", ["menu"])["accuracy"] == 1.0
+    green = previous_run(tmp_path, "scripted", ["menu"])
+    assert green is not None
+    assert green["accuracy"] == 1.0
 
 
 # --- Befunde aus dem Review von PR #142 ----------------------------------------------
@@ -1189,6 +1195,7 @@ def test_durchgefallener_lauf_ist_kein_massstab(tmp_path):
     write(rot, tmp_path, datetime(2026, 9, 25, 9, tzinfo=UTC))
     # Der zweite Aufruf ohne Fix vergleicht weiter mit dem gruenen Lauf.
     again = previous_run(tmp_path, "scripted", [])
+    assert again is not None
     assert again["passed_ids"] == ["a"]
 
 
@@ -1317,6 +1324,7 @@ def test_ausverkauft_mit_unbekannter_nummer_stuerzt_ab(migrated_db_url, tmp_path
     )
     report = run(migrated_db_url, cases, tmp_path / "r")
     [result] = report.cases
+    assert result.error is not None
     assert "sold_out" in result.error
     assert report.verdict == "durchgefallen"
 
@@ -1384,6 +1392,7 @@ def test_doppelte_bestaetigung_wird_gezaehlt(migrated_db_url):
                 MenuItem.tenant_id == tenant.id, MenuItem.number == "23"
             )
         )
+        assert item is not None
         draft = draft_order(
             session,
             DraftOrderRequest(
@@ -1391,8 +1400,8 @@ def test_doppelte_bestaetigung_wird_gezaehlt(migrated_db_url):
                 tenant_id=tenant.id,
                 idempotency_key="k1",
                 type="pickup",
-                customer={"name": "Mueller", "phone": "0721 5551234"},
-                items=[{"menu_item_id": item, "quantity": 1}],
+                customer=OrderCustomer(name="Mueller", phone="0721 5551234"),
+                items=[OrderItemIn(menu_item_id=item, quantity=1)],
             ),
             now=runner.DEFAULT_NOW,
         )
@@ -1639,7 +1648,9 @@ def test_heard_readback_is_the_agents_sentence_not_the_tools():
     """Codex PR #248: the tool returned the right sentence, the model said its
     own. The caller heard the model."""
     turns = [_turn("Das macht dann 25,70 Euro.", ("draft_order", True))]
-    assert "Macht 25 Euro 70," not in heard_readback(turns)
+    readback = heard_readback(turns)
+    assert readback is not None
+    assert "Macht 25 Euro 70," not in readback
 
 
 def test_without_a_draft_that_succeeded_nothing_was_read_back():
@@ -1707,7 +1718,7 @@ def test_said_pieces_are_checked_against_the_whole_call(migrated_db_url, tmp_pat
 
 
 def test_alternativen_des_letzten_abgelehnten_check_slot_in_ortszeit():
-    results = [
+    results: list[tuple[str, dict[str, Any]]] = [
         ("check_slot", {"available": False, "alternatives": ["2026-09-20T19:30:00Z"]}),
         ("search_menu", {"items": []}),
         (
@@ -1759,7 +1770,7 @@ def test_model_name_other_than_scripted_builds_the_model_client(monkeypatch):
     """`--model qwen3:14b`: the name goes to the server of `LLM_BASE_URL`."""
     monkeypatch.setattr(settings, "llm_base_url", "http://model.test/v1")
 
-    llm = runner.model_factory("qwen3:14b")(datetime.now(UTC), lambda: None)
+    llm = runner.model_factory("qwen3:14b")(datetime.now(UTC), MenuNumbers)
 
     assert isinstance(llm, ChatCompletionsLLM)
     assert llm.usage.model == "qwen3:14b"
@@ -1776,9 +1787,10 @@ def test_model_without_a_server_stops_the_run_before_any_case(monkeypatch):
 
 def test_recorder_passes_the_usage_of_the_model_on():
     inner = FakeLLM([])
-    inner.usage = Usage(model="m", requests=2, prompt_tokens=10, completion_tokens=3)
+    usage = Usage(model="m", requests=2, prompt_tokens=10, completion_tokens=3)
+    inner.usage = usage  # type: ignore[attr-defined]  # the double declares no usage
 
-    assert RecordingLLM(inner).usage == inner.usage
+    assert RecordingLLM(inner).usage == usage
     # The scripted stand-in and the test double count nothing.
     assert RecordingLLM(FakeLLM([])).usage is None
 
@@ -2149,6 +2161,7 @@ def test_customers_are_seeded_per_case(migrated_db_url):
             address = session.scalar(
                 select(Address).where(Address.tenant_id == mine.id)
             )
+            assert address is not None
             assert address.is_default and address.street == "Rheinstraße"
             assert (
                 session.scalar(

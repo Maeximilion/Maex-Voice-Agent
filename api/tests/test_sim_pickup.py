@@ -667,7 +667,9 @@ def test_menge_neben_dem_namen_waehlt_nicht_die_nummer(antwort, nummer):
         {"number": "2", "name": "Frühlingsrolle"},
         {"number": "13", "name": "Pho Bo"},
     ]
-    assert script._pick_suggestion(antwort)["number"] == nummer
+    picked = script._pick_suggestion(antwort)
+    assert picked is not None
+    assert picked["number"] == nummer
 
 
 # --- Zweites Review PR #133 und Codex auf 79da492 ----------------------------------

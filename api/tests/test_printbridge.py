@@ -342,8 +342,12 @@ def test_windows_haengender_auftrag_wird_geloescht():
 
 def test_druckerangabe():
     assert isinstance(from_spec("tcp:192.168.1.50"), TcpPrinter)
-    assert from_spec("tcp:192.168.1.50:9101").port == 9101
-    assert from_spec("windows:EPSON TM-T20II Kitchen").name == "EPSON TM-T20II Kitchen"
+    with_port = from_spec("tcp:192.168.1.50:9101")
+    assert isinstance(with_port, TcpPrinter)
+    assert with_port.port == 9101
+    windows = from_spec("windows:EPSON TM-T20II Kitchen")
+    assert isinstance(windows, WindowsPrinter)
+    assert windows.name == "EPSON TM-T20II Kitchen"
     with pytest.raises(ValueError):
         from_spec("usb")
 
@@ -553,7 +557,7 @@ def test_probebon_ohne_server(monkeypatch):
     monkeypatch.setattr("printbridge.bridge.from_spec", lambda spec: Capture())
     assert main(["--test"]) == 0
     assert "Probebon Umlaute äöü ß" in sent[0].decode("cp858")
-    assert SAMPLE["customer_name"] in sent[0].decode("cp858")
+    assert str(SAMPLE["customer_name"]) in sent[0].decode("cp858")
     # The test slip asks for a photo, above everything and as the last lines:
     # centered, big and inverted like the banner, wrapped to half the width.
     text = sent[0].decode("cp858")
@@ -569,7 +573,7 @@ def test_probebon_ohne_server(monkeypatch):
     assert text.count("\x1ba\x01") == text.count("\x1ba\x00") == 2
     assert sent[0].endswith(b"\x1ba\x00\x1bd\x04" + CUT)
     assert json.dumps(SAMPLE)  # Probebon ist reines JSON wie ein echter Bon
-    assert uuid.UUID(SAMPLE["order_id"])
+    assert uuid.UUID(str(SAMPLE["order_id"]))
 
 
 @pytest.fixture
@@ -630,14 +634,18 @@ def test_gescheiterte_meldung_haelt_die_uebrigen_bons_nicht_auf(tmp_path):
 
     acked: list[str] = []
 
-    class Flaky:
-        def claim(self):
+    class Flaky(Server):
+        def __init__(self) -> None:
+            super().__init__("http://localhost", "t", "x")
+
+        def claim(self, limit: int = 5) -> list[dict[str, Any]]:
             return tickets
 
-        def ack(self, event_id, ok, error=None):
+        def ack(self, event_id: str, ok: bool, error: str | None = None) -> str:
             if event_id == "e0":
                 raise ServerError("Netz kurz weg")
             acked.append(event_id)
+            return "ok"
 
     printer = FakePrinter()
     with pytest.raises(ServerError):
@@ -658,12 +666,16 @@ def test_server_uhrzeiten_gehen_vor_der_rechneruhr():
 def test_protokollfehler_meldet_trotzdem_gedruckt(tmp_path):
     acks: list[tuple] = []
 
-    class One:
-        def claim(self):
+    class One(Server):
+        def __init__(self) -> None:
+            super().__init__("http://localhost", "t", "x")
+
+        def claim(self, limit: int = 5) -> list[dict[str, Any]]:
             return [{"id": "e1", "ticket": TICKET, "print_time": "18:02"}]
 
-        def ack(self, event_id, ok, error=None):
+        def ack(self, event_id: str, ok: bool, error: str | None = None) -> str:
             acks.append((event_id, ok))
+            return "ok"
 
     class BrokenLog(PrintedLog):
         def record(self, order_id, revision):

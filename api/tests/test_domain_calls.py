@@ -14,7 +14,7 @@ from api.domain.calls import close_left_open_calls, end_call, start_call
 from api.domain.calls.end import LEFT_OPEN_GRACE
 from api.domain.calls.start import _delete_after
 from api.models import Call, ServiceConfig
-from api.schemas.calls import EndCallRequest, StartCallRequest
+from api.schemas.calls import CallStarted, EndCallRequest, StartCallRequest
 from scripts.seed import seed
 
 NOW = datetime(2026, 9, 15, 18, 0, tzinfo=UTC)
@@ -116,14 +116,14 @@ def test_gleichzeitige_starts_derselben_session_erzeugen_nur_einen_anruf(
         )
 
     start = threading.Barrier(6)
-    results: list[object] = []
+    results: list[CallStarted | Exception] = []
     lock = threading.Lock()
 
     def run() -> None:
         start.wait(timeout=10)
         with Session(engine) as own:
             try:
-                outcome: object = start_call(
+                outcome: CallStarted | Exception = start_call(
                     own, start_request(tenant, external_session_id="ext-race"), now=NOW
                 )
             except Exception as exc:  # noqa: BLE001 - im Test soll jeder Fehler auffallen
@@ -149,7 +149,7 @@ def test_gleichzeitige_starts_derselben_session_erzeugen_nur_einen_anruf(
     engine.dispose()
 
     assert anzahl == 1, f"erwartet ein Anruf, bekam {anzahl}"
-    ids = {r.call_id for r in results}
+    ids = {r.call_id for r in results if isinstance(r, CallStarted)}
     assert len(ids) == 1, f"alle Aufrufe sollen dieselbe call_id liefern, bekam {ids}"
 
 
@@ -363,5 +363,7 @@ def test_the_close_never_overwrites_an_end_that_commits_first(migrated_db_url):
 
     assert closed == [0]
     with Session(engine) as s:
-        assert s.get(Call, call_id).outcome == "completed"
+        closed_call = s.get(Call, call_id)
+        assert closed_call is not None
+        assert closed_call.outcome == "completed"
     engine.dispose()

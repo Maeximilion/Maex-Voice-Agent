@@ -455,7 +455,7 @@ def test_negative_price_is_rejected_when_the_settings_load(field):
     """Otherwise the cost is understated, or negative, and closing the call
     fails on `EndCallRequest.cost_cents` (Codex PR #211, P2)."""
     with pytest.raises(ValidationError):
-        Settings(**{field: -1})
+        Settings(**{field: -1})  # type: ignore[arg-type]  # field name is parametrized
 
 
 def test_answer_outside_the_contract_still_costs_its_tokens():

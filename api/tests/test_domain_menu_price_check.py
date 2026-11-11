@@ -380,6 +380,7 @@ def test_a_tap_that_waited_on_another_finds_nothing_open(engine, session, tenant
         row = first.scalar(
             select(MenuItem).where(MenuItem.id == dish).with_for_update()
         )
+        assert row is not None
         row.price_cents, row.register_price_cents = 720, None
         first.flush()
         tap = pool.submit(second_tablet)

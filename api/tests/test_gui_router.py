@@ -157,6 +157,7 @@ def test_the_sound_hint_keeps_a_gap_to_the_columns_below():
 def test_kopfzeile_folgt_dem_modus(client, engine, tenant_id):
     with Session(engine) as s:
         config = s.get(ServiceConfig, tenant_id)
+        assert config is not None
         config.call_mode = "paused"
         config.delivery_enabled = False
         s.commit()
@@ -952,7 +953,7 @@ def test_tablet_schrift_mindestens_18px():
 )
 def test_switch_rejects_invalid_csrf(client, engine, tenant_id, cookie, header):
     client.cookies.clear()
-    headers = {"HX-Request": "true"}
+    headers: dict[str | bytes, str | bytes] = {"HX-Request": "true"}
     if cookie is not None:
         headers["Cookie"] = f'csrf_token="{cookie}"'.encode("latin-1")
     if header is not None:
@@ -1161,6 +1162,7 @@ def test_wie_sonntag_nimmt_die_karte_weg_und_gilt(client, engine, tenant_id):
     assert "Allerheiligen" not in response.text
     with Session(engine) as s:
         row = s.get(SpecialDay, sid)
+        assert row is not None
         assert (row.status, row.like_weekday, row.closed) == ("set", 6, False)
 
 
@@ -1194,7 +1196,9 @@ def test_every_sheet_container_of_the_board_closes_by_button_and_escape():
     page = (gui / "templates/betrieb/index.html").read_text(encoding="utf-8")
     script = (gui / "static/app.js").read_text(encoding="utf-8")
     containers = re.findall(r'^<div id="([a-z-]+)"></div>$', page, re.MULTILINE)
-    listed = re.search(r"const sheets = \[([^\]]*)\]", script).group(1)
+    found = re.search(r"const sheets = \[([^\]]*)\]", script)
+    assert found is not None
+    listed = found.group(1)
     names = dict(
         re.findall(r'const (\w+) = document.getElementById\("([a-z-]+)"\)', script)
     )

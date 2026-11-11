@@ -262,6 +262,7 @@ def test_a_closed_ear_drops_what_is_still_queued():
         ear.feed(speech(10) + silence(30), 2.0 + n)
     ear.close()
     release.set()
+    assert ear.worker is not None
     ear.worker.join(5)
     assert len(engine.given) == 1
 
