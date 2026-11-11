@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 11.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.34.1
+> Status: 11.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.34.2
 
 ---
 
@@ -100,7 +100,6 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
   - Start the call log now (`docs/17_ANRUFPROTOKOLL.md`), two weeks give a first baseline. The log records only the hour since T-11.4 (legal check L15): write `18` or `18 Uhr`; a row with minutes is cut to the hour on the next run of the script. Still missing for any recording: handsets
   - **Phone line (26.09.2026):** Fritz!Box 6591 Cable on a cable line, three numbers; callers use one number only. Business cable tariff with **4 voice channels** and up to 10 numbers (provider's service description, table "Telefonleitungen/Sprachkanäle", checked 26.09.2026). (full text: docs/HISTORY.md)
   - **Register data (26.09.2026):** converter built (T-4.11), mapping in `docs/14_MENU_IMPORT_FORMAT.md` §Quelle Kasse. In the register: shorten the four names cut at 40 characters (32B, 35C, 38E, 15C) and the two extras cut at 16 ("Panierte Hühnerb", "Nudeln statt Rei"); remove the allergen test entries (13, 14, 35A, 15C) or confirm them (full text: docs/HISTORY.md)
-  - **Register data, dry run 04.10.2026 (counts only, the lists are in the converter report):** size 6 now sits on 13 dishes, the `G` dishes pass since T-4.12; five allergen entries instead of four, one Sushi dish came in with T-4.12 (full text: docs/HISTORY.md)
 - **C2** ~~Research voice platform, evaluate, PoC on test number~~ done differently on 07.10.2026: the comparison ran in Claude Code and ended with the own voice layer (E1 flipped). Left for Maxi: access to the pilot's router for step 2 of T-10.1 (a new IP telephone, a VPN to the router, one of the three numbers), the rule catalogue for complaints (D19), and later the accounts for the paid speech services
 
 ---
@@ -272,6 +271,7 @@ Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge 
 
 | Date | What |
 |---|---|
+| 11.11.2026 | **STATUS upkeep and the Fable use of 11.11.2026 recorded.** Sweep of rows done or decided and older than one month: one row qualified (register data dry run of 04.10.2026, superseded by the real import of 12.10.2026) and moved unchanged to `docs/HISTORY.md` under "What's Next and Open Decisions (archive, finished rows, 11.11.2026)"; the rest are open points, open tasks or doubtful and stay, so the file stays near 88 KB because open assumptions and review points are most of it (the next cut needs triage by hand, not age). `docs/metrics/routing_history.csv` gets use 4 of the Fable trial: the read-only review of the rule 5 path (issues #651 and #652), 21 calls, all on `claude-fable-5-2`, weighted 1130168 |
 | 11.11.2026 | **Fixes from the code review of #643 (#649): the additive handover keeps the held draft, and the AI notice holds on every way out.** Each line of #649 red first, one loop or unit test each, and eval `allergie_0022` (an additive question as the answer to the consent question: the guest now hears that the order is not placed). An address cue no longer takes the timeout branch before the allergen and additive handovers; a draft note that names an additive goes to the team instead of the read-back; "koffein" and "chinin" join the list; a handover in the answer to the consent question or to "Wogegen?" puts the held draft on the card; an illness or a legal step next to an additive goes as a complaint with the guest's sentence; a model claim about an additive gets the additive card and the log code `additive`; mode `shadow` reads the address cue; a bare question for a person or the agent's name right after the consent question costs no answer; fillers around the name question ask nothing more; dish names of the menu, also without brackets, are no claim and no guest question (option names never: an option "glutenfrei" would hide that promise about any dish, Codex PR #650); the truthful sentence is inserted in one place (`loop._guest_sentence`); the new patterns read NFKC-folded text. `cases/` 99 of 99, targets and the number eval unchanged against `main`. #647 and #648 stay open. |
 | 11.11.2026 | Model routing: Fable 5.2 in four uses at `high`, `xhigh` on Opus only after a stall, usage check before work (`CLAUDE.md` section 6, `.claude/hooks/route_advice.sh` with its tests, `/task`, `/start`, `scripts/session_usage.py`, docs/19 section 6). The hook no longer sends a Fable 5.2 session to `claude-fable-5-1` and accepts `Route: claude-fable-5-2 medium|high|xhigh`. |
 | 11.11.2026 | **The inner layers are mypy-strict (T-0.12 step 3, #552).** `api.domain` as a whole, `api.models`, `api.schemas`, `api.events`, `api.agent` and `api.tools` joined `api.core` in the strict list of `pyproject.toml`, so the agent's path from tool call to table is strict. `mypy --strict` counted 9064 errors in 296 files first, 75 of them in these packages; all were annotations (JSONB values as `dict[str, Any]`, SQL filter tuples as `tuple[ColumnElement[bool], ...]`, three untyped returns bound to a typed name). The strict list also turns on `possibly-undefined`: a misindented `return` in `current_wait` passed ruff and mypy during this step and failed only in the scripted evals, and the flag now reports it. One `type: ignore[no-untyped-def]` on the Pydantic wrap serializer of `api/schemas/menu.py`, whose missing return type is deliberate (PR #139). Evals 94/94, pytest 8952 passed. Next: `api.jobs`, `api.dashboard`, `api.telephony` (docs/22). |
@@ -303,6 +303,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.34.2 · 11.11.2026:** STATUS upkeep (one row archived) and Fable use 4 recorded in routing_history.csv
 - **v2.34.1 · 11.11.2026:** Review fixes of #643 (#649): additive handover keeps the held draft, AI notice on every way out
 - **v2.34.0 · 11.11.2026:** Model routing: Fable 5.2 in four uses, xhigh only after a stall, usage check
 - **v2.33.1 · 11.11.2026:** T-0.12 step 3: inner layers mypy-strict, possibly-undefined on
