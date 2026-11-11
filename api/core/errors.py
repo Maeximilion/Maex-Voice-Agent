@@ -4,9 +4,13 @@ Fachcode wirft diese Klassen, nie HTTPException. Der Agent liest jede Antwort vo
 deshalb tragen Fehler einen Code, eine Meldung fürs Log und optional einen Satz (say).
 """
 
+# How a tool's sentence announces the team. The conversation core carries out
+# the handover of a failed result that ends with it and does not ask the model
+# again (`agent/loop.py`, #655): build every such sentence from this one.
+SAY_TO_THE_TEAM = "Ich verbinde Sie mit dem Restaurant."
 # The sentence for every failure the guest cannot fix: the agent hands the call
 # to the team. Defined once here, so domain code needs no import of the HTTP hull.
-SAY_ON_FAILURE = "Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie mit dem Restaurant."
+SAY_ON_FAILURE = f"Bei mir gibt es gerade eine technische Störung. {SAY_TO_THE_TEAM}"
 
 ERROR_CODES = (
     "invalid_input",

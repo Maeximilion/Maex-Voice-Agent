@@ -128,7 +128,38 @@ def test_without_a_usable_number_there_is_no_card(session, tenant_id, caller_id)
 
     assert cards(session, call.id) == []
     session.refresh(call)
-    assert call.outcome == "transferred"
+    # Nobody took the call and nobody can call back: a lost call, which must
+    # not count as handed over (rule 4, #655).
+    assert call.outcome == "abandoned"
+
+
+def test_a_lost_team_leg_reported_before_the_call_log_stays_lost(session, tenant_id):
+    call = make_call(session, tenant_id, caller_id=None, outcome=None)
+
+    assert team_missed(session, tenant_id, "1760000000.1", now=REPORTED) is None
+    ended = end_call(
+        session,
+        EndCallRequest(call_id=call.id, tenant_id=tenant_id, outcome="transferred"),
+        now=REPORTED,
+    )
+
+    assert ended.outcome == "abandoned"
+
+
+def test_a_lost_team_leg_leaves_an_error_and_a_caller_who_hung_up_as_logged(
+    session, tenant_id
+):
+    outage = make_call(session, tenant_id, caller_id=None, outcome="error")
+    hung_up = make_call(
+        session, tenant_id, sid="1760000000.2", caller_id=None, outcome="transferred"
+    )
+
+    team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+    team_missed(session, tenant_id, "1760000000.2", now=REPORTED, rang=False)
+
+    session.refresh(outage)
+    session.refresh(hung_up)
+    assert (outage.outcome, hung_up.outcome) == ("error", "transferred")
 
 
 @pytest.mark.parametrize(

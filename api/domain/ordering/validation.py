@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import (
+    SAY_TO_THE_TEAM,
     BelowMinimum,
     Closed,
     Conflict,
@@ -46,9 +47,7 @@ SAY_ITEM_UNKNOWN = "Ein Gericht habe ich nicht auf der Karte gefunden. Können S
 SAY_OPTION_UNKNOWN = "{option} gibt es zu {name} nicht."
 SAY_OPTION_MISSING = "Welche Auswahl bei {group} möchten Sie zu {name}?"
 SAY_OPTION_REPEATED = "{option} zu {name} habe ich schon. Einmal {option}, richtig?"
-SAY_MENU_BROKEN = (
-    "Das kann ich gerade nicht sicher aufnehmen. Ich verbinde Sie mit dem Restaurant."
-)
+SAY_MENU_BROKEN = f"Das kann ich gerade nicht sicher aufnehmen. {SAY_TO_THE_TEAM}"
 SAY_OPTION_TWICE = "Bei {group} zu {name} geht nur eine Auswahl. Welche möchten Sie?"
 
 # Gruppe -> Option -> Zeile, beide Schlüssel über option_key() vereinheitlicht.

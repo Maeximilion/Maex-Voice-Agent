@@ -119,7 +119,8 @@ def team_missed(
     database, L17); else the card says the reason. The call's
     outcome becomes "callback",
     also when its log is still being written (`end_call` keeps it); an "error"
-    stays, logged before or after."""
+    stays, logged before or after. A team leg that rang with no number left
+    for a card makes the outcome "abandoned": the call reached nobody (#655)."""
     now = now or utcnow()
     call = session.execute(
         select(Call)
@@ -144,7 +145,11 @@ def team_missed(
         or _open_card_phone(session, call)
     )
     if call is None or number is None:
-        session.rollback()
+        if call is not None and rang and call.outcome != "error":
+            # The team was rung, nobody took the call and nobody can call
+            # back: lost. Left as "transferred" it would count as handed over.
+            call.outcome = "abandoned"
+        session.commit()
         return None
 
     reason = call.transfer_reason
