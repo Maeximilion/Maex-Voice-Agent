@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api.events import enqueue
 from api.events.dispatcher import (
     BACKOFF_SECONDS,
@@ -235,9 +236,9 @@ STRONG = "p" * 32
 def test_the_dispatcher_does_not_start_on_a_weak_n8n_password(monkeypatch, password):
     from api.events import dispatcher
 
-    monkeypatch.setattr(dispatcher.settings, "env", "prod")
-    monkeypatch.setattr(dispatcher.settings, "n8n_basic_auth_user", "maex")
-    monkeypatch.setattr(dispatcher.settings, "n8n_basic_auth_password", password)
+    monkeypatch.setattr(settings, "env", "prod")
+    monkeypatch.setattr(settings, "n8n_basic_auth_user", "maex")
+    monkeypatch.setattr(settings, "n8n_basic_auth_password", password)
     # Refused before the first pass: no session is ever opened.
     monkeypatch.setattr(dispatcher, "SessionLocal", lambda: pytest.fail("ran"))
 
@@ -259,7 +260,7 @@ def test_the_n8n_credential_check_lets_these_start(monkeypatch, env, user, passw
     """A strong password, no user (no credentials sent), or dev and test."""
     from api.events import dispatcher
 
-    monkeypatch.setattr(dispatcher.settings, "env", env)
-    monkeypatch.setattr(dispatcher.settings, "n8n_basic_auth_user", user)
-    monkeypatch.setattr(dispatcher.settings, "n8n_basic_auth_password", password)
+    monkeypatch.setattr(settings, "env", env)
+    monkeypatch.setattr(settings, "n8n_basic_auth_user", user)
+    monkeypatch.setattr(settings, "n8n_basic_auth_password", password)
     dispatcher.require_n8n_credential()

@@ -2,6 +2,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from api.domain.reservations.spoken import COUNTS
 from api.models import Address, Order
@@ -20,7 +21,7 @@ class SpokenLine:
     number: str
     name: str
     quantity: int
-    options: list[dict]
+    options: list[dict[str, Any]]
     note: str | None
 
 

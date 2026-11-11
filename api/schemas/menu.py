@@ -23,7 +23,7 @@ class _WithoutEmpty(BaseModel):
     # Ohne Rueckgabetyp: sonst ersetzt Pydantic das Schema durch ein freies
     # dict und die Felder fehlen in der API-Doku (Review PR #139).
     @model_serializer(mode="wrap")
-    def _drop_none(self, handler: Any, info: SerializationInfo):
+    def _drop_none(self, handler: Any, info: SerializationInfo):  # type: ignore[no-untyped-def]
         return {k: v for k, v in handler(self).items() if v is not None}
 
 

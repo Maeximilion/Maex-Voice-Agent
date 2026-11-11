@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import date, datetime, time
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -399,8 +400,8 @@ class StaffChange(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     # The date whose hours changed, or the business day a team number holds for.
     day: Mapped[date] = mapped_column(Date, nullable=False)
     # What held before the staff touched it, and what they asked for last.
-    before: Mapped[dict] = mapped_column(JSONB, nullable=False)
-    after: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    before: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    after: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     # Whether `after` holds; longer hours for a later date wait for the owner.
     held: Mapped[bool] = mapped_column(Boolean, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="open")

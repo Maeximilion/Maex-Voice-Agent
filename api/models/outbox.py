@@ -1,6 +1,7 @@
 """Outbox: der kalte Pfad beginnt hier, in derselben Transaktion wie der Fachvorgang."""
 
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import DateTime, Index, Integer, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -31,7 +32,7 @@ class OutboxEvent(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     )
 
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
-    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="pending")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     next_attempt_at: Mapped[datetime] = mapped_column(

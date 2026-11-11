@@ -1,6 +1,7 @@
 """The restaurant's login (#570, D34): hashes, sign-in with its growing wait, the
 device session with its 30 days and idle lock, the team PIN, the setup link."""
 
+import hashlib
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -408,7 +409,7 @@ def test_at_most_two_hashes_run_at_once(monkeypatch):
             running[0] -= 1
         return b"\0" * hashing.KEY_BYTES
 
-    monkeypatch.setattr(hashing.hashlib, "scrypt", slow)
+    monkeypatch.setattr(hashlib, "scrypt", slow)
     threads = [
         threading.Thread(target=hashing.verify_secret, args=("x", None))
         for _ in range(6)

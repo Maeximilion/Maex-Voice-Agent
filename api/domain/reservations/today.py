@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime
 from typing import Final
 
-from sqlalchemy import func, select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.orm import Session
 
 from api.core.time import business_day, business_day_bounds_utc
@@ -26,7 +26,9 @@ def _window(tz_name: str, now: datetime | None) -> tuple[datetime, datetime]:
     return business_day_bounds_utc(business_day(now, tz_name), tz_name)
 
 
-def _filters(tenant_id: uuid.UUID, start: datetime, end: datetime) -> tuple:
+def _filters(
+    tenant_id: uuid.UUID, start: datetime, end: datetime
+) -> tuple[ColumnElement[bool], ...]:
     return (
         Reservation.tenant_id == tenant_id,
         Reservation.status == CONFIRMED,

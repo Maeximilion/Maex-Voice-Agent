@@ -253,7 +253,7 @@ def _folded(text: str) -> str:
     return fold(" ".join(text.split()))
 
 
-def _local_day(column: Any, zone: str) -> ColumnElement:
+def _local_day(column: Any, zone: str) -> ColumnElement[date]:
     return cast(func.timezone(zone, column), Date)
 
 
@@ -279,7 +279,7 @@ def _on_day(
     ]
 
 
-def _own_line(session: Session, model: Any, *where: Any) -> list:
+def _own_line(session: Session, model: Any, *where: Any) -> list[Any]:
     """Rows of `model` whose number is the one their call came from, as the
     draft read it: the caller ID goes with its period, an objection or an
     erasure, the booking keeps its name longer (#523). A withheld one proved
@@ -383,7 +383,9 @@ def _calls_and_callbacks(
     sole = {call for call in own_calls if names_on[call] <= own_names}
     offered: set[uuid.UUID] = set()
 
-    def sort_out(row: Any, call_id: uuid.UUID, own: list, unclaimed: list) -> None:
+    def sort_out(
+        row: Any, call_id: uuid.UUID, own: list[Any], unclaimed: list[Any]
+    ) -> None:
         if call_id in sole:
             own.append(row)
         elif call_id in own_calls or not names_on[call_id]:
@@ -427,7 +429,9 @@ def _calls_and_callbacks(
     return calls, callbacks, unclaimed_calls, unclaimed_callbacks
 
 
-def _one_person(rows: list, said: set[str]) -> list:
+def _one_person(
+    rows: Sequence[Order | Reservation | Customer], said: set[str]
+) -> list[Order | Reservation | Customer]:
     """What one detail opens, on the numbers the guest said if they said any.
     The name on two numbers is two people (L12): the union would hand one of
     them the other's data (security audit 02.11.2026)."""

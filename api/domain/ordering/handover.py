@@ -28,7 +28,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Integer, cast, exists, or_, select
+from sqlalchemy import ColumnElement, Integer, cast, exists, or_, select
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Session
 
@@ -120,7 +120,7 @@ def _newest_revision(session: Session, event: OutboxEvent) -> int | None:
     )
 
 
-def _tickets_of(order: Order) -> tuple:
+def _tickets_of(order: Order) -> tuple[ColumnElement[bool], ...]:
     return (
         OutboxEvent.tenant_id == order.tenant_id,
         OutboxEvent.event_type.in_(KITCHEN),
@@ -281,7 +281,9 @@ def _supersede(event: OutboxEvent, newest: int, now: datetime) -> None:
     event.last_error = f"{head}ueberholt von Revision {newest}"
 
 
-def _local_times(session: Session, tenant_id: uuid.UUID, now: datetime) -> tuple:
+def _local_times(
+    session: Session, tenant_id: uuid.UUID, now: datetime
+) -> tuple[ZoneInfo, str]:
     """Zeitzone des Betriebs: der Bon zeigt Europe/Berlin, egal wo die Bruecke laeuft."""
     # scalar_one: only called with tickets of this tenant, and their foreign key
     # guarantees the row.

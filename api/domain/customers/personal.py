@@ -4,6 +4,8 @@ One place for the two ways it goes, the deletion job (`jobs/retention.py`) and a
 erasure on request (`requests.py`), so a store added to one reaches the other.
 """
 
+from typing import Any
+
 from sqlalchemy import ColumnElement, Text, cast, func
 
 from api.models import Order, OutboxEvent
@@ -26,7 +28,7 @@ ORDER_DAY = func.coalesce(Order.ready_at, Order.created_at)
 OUTBOX_KEEP = ("order_id", "reservation_id", "callback_id", "call_id", "revision")
 
 
-def thin_payload() -> ColumnElement:
+def thin_payload() -> ColumnElement[Any]:
     """The payload of the row reduced to `OUTBOX_KEEP`, as a SQL expression."""
     return func.jsonb_strip_nulls(
         func.jsonb_build_object(

@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import Text, case, cast, func, literal, select
+from sqlalchemy import ColumnElement, Text, case, cast, func, literal, select
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.orm import Session
 
@@ -48,7 +48,7 @@ class OpenCallback:
         return NUMBER_FROM_CALL if self.phone == self.caller_id else NUMBER_OTHER
 
 
-def _open_filters(tenant_id: uuid.UUID) -> tuple:
+def _open_filters(tenant_id: uuid.UUID) -> tuple[ColumnElement[bool], ...]:
     return (
         Callback.tenant_id == tenant_id,
         Callback.status == OPEN,
@@ -153,7 +153,9 @@ class DoneCallback(OpenCallback):
     done_by: str | None
 
 
-def _history_filters(tenant_id: uuid.UUID, now: datetime) -> tuple:
+def _history_filters(
+    tenant_id: uuid.UUID, now: datetime
+) -> tuple[ColumnElement[bool], ...]:
     return (
         Callback.tenant_id == tenant_id,
         Callback.status == DONE,

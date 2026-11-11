@@ -2,6 +2,7 @@
 
 import uuid
 from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -47,7 +48,7 @@ class Call(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     transfer_reason: Mapped[str | None] = mapped_column(Text)
     cost_cents: Mapped[int | None] = mapped_column(Integer)
     model: Mapped[str | None] = mapped_column(Text)
-    tool_calls: Mapped[list] = mapped_column(
+    tool_calls: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     delete_after: Mapped[date] = mapped_column(Date, nullable=False)

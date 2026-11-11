@@ -9,6 +9,7 @@ Löschkonzept), so nothing here is soft-deleted.
 
 import uuid
 from datetime import date, datetime
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -57,7 +58,7 @@ class DeliveryZone(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     match_type: Mapped[str] = mapped_column(Text, nullable=False)
     postal_codes: Mapped[list[str] | None] = mapped_column(ARRAY(Text))
-    polygon: Mapped[dict | None] = mapped_column(JSONB)
+    polygon: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     fee_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     min_order_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     eta_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
