@@ -1147,6 +1147,49 @@ def test_the_question_keeps_no_call_open_past_its_limit(session, state):
     assert state.stage == "transferred"
 
 
+@pytest.mark.parametrize(
+    "text", ["Wie heißen Sie denn?", "Hallo, mit wem spreche ich?"]
+)
+def test_a_guest_who_asks_the_agents_name_hears_the_truth_and_the_offer(
+    session, state, text
+):
+    """Art. 50 guidelines, point 40 (#638): a guest who takes the agent for a
+    person hears again that it is none, from the core as on the question."""
+    llm = FakeLLM([])  # must not be asked
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+
+    result = loop.run_turn(state, text)
+
+    assert result.say == [SAY_ANSWER]
+    assert result.ended is False
+    assert llm.calls == []
+
+
+def test_addressed_as_a_person_next_to_a_request_hears_the_truth_first(session, state):
+    llm = FakeLLM([LLMTurn(say="Gern, auf welchen Namen?")])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+    text = "Guten Tag, junge Frau, ich möchte einen Tisch für vier morgen um 19 Uhr."
+
+    result = loop.run_turn(state, text)
+
+    assert result.say == [SAY_NOT_A_PERSON, "Gern, auf welchen Namen?"]
+    [(_, _, heard)] = llm.calls
+    assert heard == text
+
+
+def test_a_yes_to_a_person_is_still_an_answer_and_gets_no_offer(session, state):
+    """An address is no question: "Ja, junge Frau." answers what the agent
+    asked and goes to the model. Read as the question, it got the offer of the
+    team, and the next "Ja" handed the call over."""
+    llm = FakeLLM([LLMTurn(say="Gern.")])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=lambda: 0)
+
+    result = loop.run_turn(state, "Ja, junge Frau.")
+
+    assert result.say == [SAY_NOT_A_PERSON, "Gern."]
+    assert state.last_say == "Gern."
+
+
 def test_complaint_about_an_order_is_not_logged_as_a_pickup(session, state):
     """Codex PR #241: the order word in a complaint made the call a pickup in
     the call log. The reason of the transfer says what such a call was."""

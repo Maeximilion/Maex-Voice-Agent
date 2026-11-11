@@ -171,6 +171,9 @@ SUMMARY_ALLERGENS = (
     "Frage zu Allergenen über die hinterlegten Angaben hinaus, vor einer "
     "Bestellung zu klären."
 )
+# The card when the guest asked about an additive, which no table holds
+# (#638). Draft wording.
+SUMMARY_ADDITIVES = "Frage zu Zusatzstoffen, vor einer Bestellung zu klären."
 # The card when the guest's allergy could not be noted: "Wogegen?" stayed
 # unanswered, or too many for one note (#207). It never names the allergy (L13).
 SUMMARY_KITCHEN_NOTE = (
@@ -331,7 +334,9 @@ class ConversationLoop:
         # mit einem Menschen?" holds the words of the wish to talk to one and
         # only asks, what else the sentence says still counts.
         rest = escalation.without_human_question(user_text)
-        asks = rest is not None
+        # Addressed as a person ("Ja, junge Frau"): the truthful sentence
+        # first as well, but no question, so the rest is read as it stands.
+        asks = rest is not None or escalation.addresses_a_person(user_text)
         reason = escalation.check(user_text if rest is None else rest)
         # The offer stands while it is the last thing the guest heard: any
         # sentence after it, the phone line's "Sind Sie noch da?" too, takes
@@ -380,6 +385,14 @@ class ConversationLoop:
             # and before the consent question is put again.
             escalated = self._allergens_to_team(
                 state, lead=SAY_ALLERGENS_BEYOND, table=open_table
+            )
+        if escalated is None and escalation.asks_about_additives(user_text):
+            # The same way: the database holds no additive at all (#638).
+            escalated = self._allergens_to_team(
+                state,
+                lead=SAY_ALLERGENS_BEYOND,
+                table=open_table,
+                card=SUMMARY_ADDITIVES,
             )
         if escalated is not None:
             if asks:

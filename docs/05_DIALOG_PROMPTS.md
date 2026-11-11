@@ -164,6 +164,8 @@ question with a request   → "Ich bin ein KI-Assistent, kein Mensch." and the m
 ```
 The AI Act asks for a truthful answer every time (docs/09 §1 L1), so the code gives it before the model, like the greeting (T-11.5, `agent/escalation.py` `without_human_question`, `agent/loop.py`). Only the question order counts, and a statement with "oder?" behind it ("Sind Sie ein Mensch?", "Spreche ich mit einer Maschine oder mit einem Menschen?", "Ist da ein Mensch?", "Sie sind ein Roboter, oder?"); a phrasing the list misses goes to the model, which says in its first sentence that it is an AI (the prompt has no room for more, `test_prompts_v3.py` budget). Greetings around the question ("Hallo, sagen Sie mal, ...") are no request; any other word or a digit is, and the model answers it after the truthful sentence. "Ich will mit einem Menschen sprechen" stays the wish of §4 and goes to the team at once. The triggers of §4 are read in the rest of the sentence, without the question's own words: a complaint, a cancellation or the wish for a human next to the question goes to the team as well, with the truthful sentence first. The offer stands while it is the last thing the guest heard: any sentence after it, the phone line's "Sind Sie noch da?" too, takes it back, and a "Ja" then answers that sentence. The question gets the answer only within the call limit; past `max_call_seconds` the truthful sentence comes before the handover of the timeout.
 
+**Taken for a person without asking (#638).** The Art. 50 guidelines (point 40) want the notice also where the exchange shows that the caller is misled about who speaks. A guest who asks for the agent's name ("Wie heißen Sie?", "Wie war Ihr Name?", "Mit wem spreche ich?") is read like the question above: the fixed sentence with the offer of the team when the sentence holds nothing else, the truthful sentence before the model's answer when it holds a request (`escalation._ASKS_ITS_NAME`, eval `eskalation_0019`). A guest who addresses it as a person ("junge Frau", "junger Mann", "Fräulein", "gute Frau", "guter Mann") asks nothing: the truthful sentence comes first and the model answers the sentence as it stands, with no offer, so a "Ja, junge Frau" still answers what the agent asked (`escalation.addresses_a_person`, eval `eskalation_0020`). Said every time such a cue comes, like the answer to the question. A closed list of clear cues: another one ("Kochen Sie das selbst?", which also asks about the kitchen) reaches the model.
+
 ### Allergie
 ```text
 get_item_details mit allergen_question: true
@@ -191,6 +193,19 @@ allergen) and hands over the same way when it claims what no database value
 answers ("sicher", "glutenfrei", "keine Spuren", "enthält keine",
 "garantiert", separate preparation) or is the fixed sentence
 (`guards.allergen_claim`)
+
+The guest asks about an additive (#638, § 5 LMZDV): "Ist da
+Geschmacksverstärker drin?", "Sind da Konservierungsstoffe drin?". No table
+holds an additive, so nothing a model says about one can be right
+   → the core, before the model: the same sentence and the same handover,
+     the card says "Frage zu Zusatzstoffen, vor einer Bestellung zu klären."
+     (`escalation.asks_about_additives`, evals `allergie_0020`,
+     `allergie_0021`). Only a question: "die 13 ohne Glutamat" is a wish and
+     goes the way of any wish. The words are the register's legend
+     (docs/14) and "Glutamat", "Zusatzstoff", "Süßstoff", "E-Nummer"; an
+     additive the list misses reaches the model, and a model's sentence that
+     an additive is absent is stopped like a claim about an allergen
+     (`guards.allergen_claim`)
 
 An allergy note stays on the order whatever the dish contains (Maxi,
 27.10.2026): the kitchen works with it, also where the allergen is in no

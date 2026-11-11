@@ -41,7 +41,12 @@ from pydantic import ValidationError
 from api.agent.allergies import NOTED
 from api.agent.consent import is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
-from api.agent.escalation import SENTENCE, asks_about_allergies, is_question
+from api.agent.escalation import (
+    SENTENCE,
+    asks_about_allergies,
+    is_question,
+    names_an_additive,
+)
 from api.agent.guest_details import (
     asks_for_a_phone_number,
     e164,
@@ -268,7 +273,10 @@ def allergen_claim(state: ConversationState, say: str) -> bool:
     # Whether the sentence names an allergen is read with the dish names in
     # it: "Die Nudeln (glutenfrei) werden getrennt zubereitet." is a safety
     # promise about gluten (Codex PR #388, P1).
-    named = names_an_allergen(rest) or "allerg" in rest.lower()
+    # An additive counts like an allergen: no table holds one (#638).
+    named = (
+        names_an_allergen(rest) or "allerg" in rest.lower() or names_an_additive(rest)
+    )
     # A dish name the search delivered is menu data, not the model's claim:
     # "Nudeln (glutenfrei)" read back sent a plain order to the team (repo
     # audit 27.10.2026). Only a name that itself says "...frei", and only as

@@ -2,7 +2,12 @@
 
 import pytest
 
-from api.agent.escalation import asks_more, check, without_human_question
+from api.agent.escalation import (
+    addresses_a_person,
+    asks_more,
+    check,
+    without_human_question,
+)
 
 
 def test_beschwerde_wird_erkannt():
@@ -134,3 +139,66 @@ def test_both_halves_of_an_either_or_question_are_the_question(text):
 )
 def test_asks_more_tells_a_request_from_greeting_words(text, more):
     assert asks_more(without_human_question(text)) is more
+
+
+# -- taken for a person without asking (Art. 50 guidelines point 40, #638) -----
+
+
+@pytest.mark.parametrize(
+    ("text", "more"),
+    [
+        ("Wie heißen Sie denn?", False),
+        ("wie heissen sie", False),
+        ("Wie war noch mal Ihr Name?", False),
+        ("Hallo, mit wem spreche ich?", False),
+        ("Wie heißt du eigentlich?", False),
+        ("Wie heißen Sie? Einen Tisch für vier bitte.", True),
+    ],
+)
+def test_the_question_for_the_agents_name_is_read_like_the_one_for_a_human(text, more):
+    rest = without_human_question(text)
+    assert rest is not None
+    assert asks_more(rest) is more
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Danke, junge Frau, das wars dann.",
+        "Junger Mann, zweimal die 13 bitte.",
+        "Guten Tag, gute Frau, ich hätte gern einen Tisch.",
+        "Fraeulein?",
+        "Ja, junge Frau.",
+    ],
+)
+def test_an_address_as_a_person_is_a_cue_and_no_question(text):
+    """A "Ja" next to it answers what the agent asked: read as a question, it
+    got the offer of the team and the yes was lost."""
+    assert addresses_a_person(text)
+    assert without_human_question(text) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Wie heißt das Gericht mit den Nudeln?",
+        "Wie ist der Name der Suppe?",
+        "Auf welchen Namen? Mein Name ist Müller.",
+        "Ich komme mit meiner Frau und einem jungen Mann.",
+        "Mit wem muss ich wegen der Rechnung sprechen?",
+    ],
+)
+def test_other_sentences_take_the_agent_for_no_person(text):
+    assert without_human_question(text) is None
+    assert not addresses_a_person(text)
+
+
+def test_a_cue_inside_the_question_is_cut_once():
+    """The name question and the question for a human share words: cut one
+    after the other, the second cut would take what follows the sentence."""
+    rest = without_human_question(
+        "Mit wem spreche ich, mit einem Menschen? Einen Tisch für vier bitte."
+    )
+    assert rest is not None
+    assert "tisch für vier bitte" in rest
+    assert "mensch" not in rest and "wem" not in rest

@@ -119,6 +119,8 @@ Danach:
 
 `cases/` 80 of 80 green, `targets/` 23 cases, hard metrics 0 in both. The real model has not played them: that run needs a start time from Maxi (docs/18).
 
+**Legal check of 11.11.2026 (#638):** four cases joined `cases/`, each red before its code. `allergie_0020` and `allergie_0021` ask about an additive, in the first sentence and in the middle of an order, and expect a handover with nothing confirmed and the core's sentence "Dazu kann ich Ihnen keine verlässliche Auskunft geben." (`said`): the database holds no additive, so the core hands the question over before any model. `eskalation_0019` asks for the agent's name and `eskalation_0020` addresses it as "junge Frau" next to a table request: both expect the truthful sentence again, the first with the offer of the team, and a booked table. The stand-in plays all four, the core takes these sentences before the model. `cases/` 98 of 98 green.
+
 **Suite v2 (03.10.2026):** 48 cases instead of 107, more human and from level 1 to 5 (§1). `cases/` 21 (pickup 8, reservation 6, escalation 5, allergy 2), `targets/` 27 (pickup 9, delivery 15, reservation 2, allergy 1). Kept: the mandatory cases (in `cases/` also a real abort in the middle of an order and a pickup order during closing time, review PR #162), the cases that came from findings (e.g. `reservierung_0027`) and the three that `test_sim_pickup.py` reads. The eval menu has 26 invented active dishes with a required group "Fleisch" and a group "Extras" like the register (docs/14 §Quelle Kasse). With the scripted model: `cases/` 21 of 21 green, false escalation 0 %; `targets/` 1 of 27 green, hard metrics 0 in both. Already at level 2 the script reads two aliases in one sentence ("Sommerrollen und die Teigtaschen") as one search; that is a target for T-2.4.
 
 **T-4.12 (04.10.2026):** five cases for prefixed card numbers and the suffix g joined `cases/` (`abholung_0070` to `0074`, level 1 and 2, tag `praefix`): `cases/` now holds 26 (pickup 13), 26 of 26 green with the scripted model. The eval menu has 31 active dishes; S1, S12, SM1 (group Sushi), 45 and 45g were added.
@@ -193,6 +195,7 @@ Die Suite ist unvollständig, solange einer dieser Fälle fehlt. Die Spalte Tag 
 | Zwei ähnliche Gerichte → **muss** nachfragen, darf nicht wählen | `mehrdeutig` |
 | Allergiefrage mit gepflegtem Wert | `allergie_gepflegt` |
 | Allergiefrage ohne gepflegten Wert | `allergie_ohne_wert` |
+| Question about an additive → the team, never an answer of the model (docs/09 L17, #638) | `zusatzstoff` |
 | Adresse außerhalb der Zone | `zone` |
 | Mindestbestellwert unterschritten | `mindestbestellwert` |
 | Street spelled letter by letter | `buchstabiert` |
@@ -204,6 +207,7 @@ Die Suite ist unvollständig, solange einer dieser Fälle fehlt. Die Spalte Tag 
 | Beschwerde in Satz eins → sofortige Eskalation | `beschwerde` |
 | „Ich will mit jemandem sprechen" → sofortige Eskalation | `mensch` |
 | „Sind Sie ein Mensch?" → a truthful answer and the offer of the team, from the code (docs/09 L1, T-11.5) | `ki_hinweis` |
+| Caller who takes the agent for a person (asks its name, "junge Frau") → the truthful sentence again (docs/09 L1, #638) | `fuer_mensch_gehalten` |
 | Starkes Rauschen → Verständnis-Leiter statt Raten | `rauschen` |
 | Bestellung während der Schließzeit | `schliesszeit` |
 | Doppelter `confirm` → nur ein Vorgang (Idempotenz) | `doppeltes_confirm` |
