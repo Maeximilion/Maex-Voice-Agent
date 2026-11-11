@@ -43,13 +43,15 @@ extend-immutable-calls = [
 ]
 
 [tool.mypy]
-# Non-strict (CLAUDE.md section 3): bodies of unannotated functions are not checked.
+# Tightened step by step (T-0.12, docs/22 "Type checking and browser interfaces").
 # Plain `mypy` checks these paths, in CI and in `make lint`.
 python_version = "3.12"
 files = ["api", "sim", "scripts", "evals", "printbridge", "db"]
 # No package build and not every folder has an __init__.py: module names come from
 # the repository root, as they do at runtime.
 explicit_package_bases = true
+# Bodies of unannotated functions are checked too, everywhere except the baseline below.
+check_untyped_defs = true
 
 [[tool.mypy.overrides]]
 # Optional packages of the speech spike (api/telephony/speech_bench.py). They are not
@@ -68,3 +70,103 @@ module = [
     "huggingface_hub.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Baseline of T-0.12 (11.11.2026): the test modules that still fail
+# check_untyped_defs, 544 errors in 75 of 223 files, mostly attribute access on an
+# Optional row. Shrink only: a module leaves this list in the change that makes it
+# pass, and a new module never joins it.
+module = [
+    "api.tests.conftest",
+    "api.tests.test_agent_allergens_beyond",
+    "api.tests.test_agent_cart",
+    "api.tests.test_agent_complaint_rules",
+    "api.tests.test_agent_delivery",
+    "api.tests.test_agent_dispatch",
+    "api.tests.test_agent_dispatch_menu",
+    "api.tests.test_agent_escalation",
+    "api.tests.test_agent_guest_details",
+    "api.tests.test_agent_llm",
+    "api.tests.test_agent_loop",
+    "api.tests.test_alert_fixes",
+    "api.tests.test_audit_due",
+    "api.tests.test_bedientest_fixture",
+    "api.tests.test_codex_review",
+    "api.tests.test_db",
+    "api.tests.test_domain_access",
+    "api.tests.test_domain_callbacks",
+    "api.tests.test_domain_calls",
+    "api.tests.test_domain_confirm",
+    "api.tests.test_domain_confirm_order",
+    "api.tests.test_domain_correction_address",
+    "api.tests.test_domain_create_reservation",
+    "api.tests.test_domain_draft_delivery",
+    "api.tests.test_domain_draft_order",
+    "api.tests.test_domain_floor_plan",
+    "api.tests.test_domain_menu_pos_dbf",
+    "api.tests.test_domain_menu_price_check",
+    "api.tests.test_domain_menu_search",
+    "api.tests.test_domain_menu_wishes",
+    "api.tests.test_domain_numberwords",
+    "api.tests.test_domain_ordering_correction",
+    "api.tests.test_domain_ordering_handover",
+    "api.tests.test_domain_provision",
+    "api.tests.test_domain_reservation_notice",
+    "api.tests.test_domain_slots",
+    "api.tests.test_domain_staff_changes",
+    "api.tests.test_domain_status",
+    "api.tests.test_domain_status_config",
+    "api.tests.test_domain_status_waits",
+    "api.tests.test_domain_team_missed",
+    "api.tests.test_evals_runner",
+    "api.tests.test_events_dispatcher",
+    "api.tests.test_gui_callback_history",
+    "api.tests.test_gui_login",
+    "api.tests.test_gui_router",
+    "api.tests.test_gui_tablet_reservation",
+    "api.tests.test_hooks_agent_limit",
+    "api.tests.test_hooks_merge_gate",
+    "api.tests.test_hooks_route_advice",
+    "api.tests.test_jobs_gui_access",
+    "api.tests.test_jobs_retention",
+    "api.tests.test_ops_status",
+    "api.tests.test_order_cancel",
+    "api.tests.test_pr_metadata",
+    "api.tests.test_printbridge",
+    "api.tests.test_project_reconciliation",
+    "api.tests.test_recording_consent",
+    "api.tests.test_scripts_backup",
+    "api.tests.test_scripts_call_log",
+    "api.tests.test_scripts_db_role",
+    "api.tests.test_sim_cli",
+    "api.tests.test_sim_pickup",
+    "api.tests.test_sim_replay",
+    "api.tests.test_sim_scripted_llm",
+    "api.tests.test_telephony",
+    "api.tests.test_telephony_audio",
+    "api.tests.test_telephony_drill",
+    "api.tests.test_telephony_session",
+    "api.tests.test_telephony_speech_adapters",
+    "api.tests.test_telephony_speech_engines",
+    "api.tests.test_telephony_speech_spike",
+    "api.tests.test_telephony_spike",
+    "api.tests.test_telephony_voice",
+    "api.tests.test_tool_log_middleware",
+]
+check_untyped_defs = false
+
+[[tool.mypy.overrides]]
+# Strict per module, flag by flag: a `strict = true` in an override applies to the
+# whole run. Packages join this list once they pass; each step is its own change.
+module = ["api.core.*", "api.domain.calls.*", "api.domain.delivery.*"]
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = true
+disallow_untyped_decorators = true
+disallow_any_generics = true
+disallow_subclassing_any = true
+warn_return_any = true
+warn_unused_ignores = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true

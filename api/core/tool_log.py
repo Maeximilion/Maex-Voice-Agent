@@ -13,7 +13,7 @@ import contextlib
 import json
 import logging
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from http import HTTPStatus
 
 from fastapi import Request, Response
@@ -115,7 +115,7 @@ async def _ids_from_body(request: Request) -> tuple[str, str] | None:
     return None
 
 
-def _outcome(body: bytes) -> dict:
+def _outcome(body: bytes) -> dict[str, object]:
     try:
         parsed = json.loads(body)
     except (ValueError, TypeError):
@@ -126,7 +126,9 @@ def _outcome(body: bytes) -> dict:
     return {"ok": False, "error_code": error_code} if error_code else {"ok": False}
 
 
-def _append(request: Request, call_id: str, tenant_id: str, entry: dict) -> None:
+def _append(
+    request: Request, call_id: str, tenant_id: str, entry: Mapping[str, object]
+) -> None:
     """Session über dieselbe get_db-Factory wie der Request, damit Tests mit eigener
     Wegwerf-DB (dependency override) auch hier landen statt in einer unbeteiligten
     Datenbank."""
@@ -141,7 +143,7 @@ def _append(request: Request, call_id: str, tenant_id: str, entry: dict) -> None
 
 
 def append_tool_call(
-    session: Session, call_id: str, tenant_id: str, entry: dict
+    session: Session, call_id: str, tenant_id: str, entry: Mapping[str, object]
 ) -> None:
     """Atomarer Anhang per jsonb `||`: kein Lesen-vor-Schreiben, also kein Wettlauf
     zwischen zwei Tool-Aufrufen desselben Anrufs. tenant_id steht mit im WHERE,

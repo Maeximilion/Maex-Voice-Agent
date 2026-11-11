@@ -101,6 +101,33 @@ annotations and stricter module-level checking in small changes. Do not hide the
 baseline with blanket `Any`, ignores or missing-import suppression. Keep runtime
 validation and regression tests. Medium priority, absent a concrete severe bug.
 
+**Baseline and first step (11.11.2026, mypy 2.4.1, 511 source files).** Measured
+on `main` at ef1c4fc before any change:
+
+| Setting | Errors | Where |
+|---|---|---|
+| the old configuration | 0 | – |
+| `--check-untyped-defs` | 544 in 75 files | only `api/tests`: 258 `union-attr` (attribute access on an Optional row), 86 `operator`, 86 `arg-type`, 61 `index` |
+| `--strict` | 9600 in 297 files | about 282 outside `api/tests`; most of all are `no-untyped-def` (5738) and `no-untyped-call` (2728) |
+
+The first step, all in `pyproject.toml` `[tool.mypy]`, which CI and `make lint`
+both read:
+
+- `check_untyped_defs` is on for every path. The 75 test modules that still fail
+  it are listed by name as the baseline; a module leaves the list in the change
+  that makes it pass, and a new module never joins it.
+- `api.core`, `api.domain.calls` and `api.domain.delivery` are checked with the
+  per-module flags of `--strict`, named one by one: a `strict = true` in an
+  override section applied to the whole run in the test of 11.11.2026. Getting
+  there needed only the three bare `dict` annotations of `api/core/tool_log.py`.
+- No `Any`, no `type: ignore` and no new missing-import suppression were added.
+
+Next steps, one reviewable change each: shrink the test baseline file by file,
+then add more packages to the strict list (`api.domain.access` and
+`api.domain.callbacks` have 2 strict errors each, `api.schemas` 1; `api.models`
+has 8 bare `dict` or `list` columns). Count the rest again with
+`mypy --strict` before each step.
+
 ## Browser code in TypeScript
 
 **Decision (Maxi, 09.11.2026, [#553](https://github.com/Maeximilion/Maex-Voice-Agent/issues/553), T-3.17):**

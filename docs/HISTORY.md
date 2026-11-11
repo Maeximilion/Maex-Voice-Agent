@@ -298,6 +298,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 | Date | What |
 |---|---|
+| 10.11.2026 | **Operator login, second part of the operator dashboard (#571).** `api/dashboard/` signs the operator in with password plus a TOTP code or a recovery code, against its own database and migrations (`db/dashboard/`); not reachable from outside yet (docs/23 §5 "Built"). |
 | 10.11.2026 | **STATUS upkeep rule (#562 closed).** A weekly sweep archives done and decided rows older than one month to `docs/HISTORY.md` (findable by ID with `grep -n`), `/done` archives what its task finishes, and `/start` suggests the sweep when none ran in 7 days or the file passes 80 KB; open and doubtful rows stay. |
 | 10.11.2026 | **STATUS cut, part 5 (#562).** Twenty finished What's Next items and the 26 decided rows D1 to D30 of Open Decisions went to `docs/HISTORY.md` (83.2 KB to 70.5 KB, every line checked present with `comm`); open items, assumptions awaiting Maxi and Open Points stay, by Maxi's rule to keep active rows. |
 | 10.11.2026 | **STATUS cut, part 4 (#562).** Thirteen long rows in Roadmap, Gates, Blockers and Done went to one sentence each (90.9 KB to 83.2 KB), full text in `docs/HISTORY.md`, every original line checked present with `comm`; the five sections hold only 15 KB, so the 40 KB target needs the other sections, left for Maxi's decision. |
