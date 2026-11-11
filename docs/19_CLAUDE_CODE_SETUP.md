@@ -918,14 +918,12 @@ Rules: `CLAUDE.md` section 6, "Fable 5.2" and "Usage check" (Maxi, 2026-11-11).
 
   > Fable 5.2 (Maxi, 11.11.2026): nur fuer vier Faelle und auf Effort high: Rat nach einem Stall (derselbe Fehler nach zwei Fix-Versuchen auf Opus xhigh), Design eines Epics oder neuen Teilsystems, Urteil eines Gate-Reviews, tiefes Read-only-Review oder langer unteilbarer Build nur auf Maxis Wort. Sonst Opus high; xhigh gilt bei Opus wie bei Fable nur nach einem Stall. Nie Fable fuer Warten, Shippen, Docs, GUI, Suche oder Security-Reviews. Vor jeder Fable-Nutzung und vor jeder Aufgabe das Nutzungslimit lesen (5 Stunden, Woche, Fable-Woche), wo ein Werkzeug dafuer da ist. Ein Repo mit eigener Model-Routing-Tabelle geht vor.
 
-- Open checks, each from a session on Opus 5.5 (a Fable session cannot run them):
+- Checks, each from a session on Opus 5.5 (a Fable session cannot run them), both closed on 2026-11-11 from an Opus 5.5 `high` session in the Windows desktop app (Pro plan, extra usage off):
 
-| Check | What to send | Passes when |
-|---|---|---|
-| A session below Fable spawns a Fable subagent | `Start one read-only subagent with model fable and effort high that only reports its model ID and effort, and change nothing.` | The subagent reports `claude-fable-5-2` at `high`. If it is refused or reports another model, use 1 of "Fable 5.2" always goes through a handover to a fresh Fable session; write that into `CLAUDE.md`. |
-| `/advisor` with Fable inside plan usage | `/advisor`, pick Fable, then one question about the code | The answer arrives and the usage card shows no usage credits. If it passes, the advisor replaces the consult subagent (no file is read twice); if it asks for credits, it stays off. |
-
-Results: none yet.
+| Check | What to send | Passes when | Result 2026-11-11 |
+|---|---|---|---|
+| A session below Fable spawns a Fable subagent | `Start one read-only subagent with model fable and effort high that only reports its model ID and effort, and change nothing.` | The subagent reports `claude-fable-5-2` at `high`. If it is refused or reports another model, use 1 of "Fable 5.2" always goes through a handover to a fresh Fable session; write that into `CLAUDE.md`. | Passed. The Agent tool with `model: fable`, `effort: high` started; the subagent quoted `claude-fable-5-2` from its system prompt and `printenv CLAUDE_EFFORT` printed `high`. About 120k subagent tokens for the bare check (its system prompt and tools). Use 1 runs as that subagent. |
+| `/advisor` with Fable inside plan usage | `/advisor`, pick Fable, then one question about the code | The answer arrives and the usage card shows no usage credits. If it passes, the advisor replaces the consult subagent (no file is read twice); if it asks for credits, it stays off. | Closed on the documentation, not run live (Maxi). code.claude.com/docs/en/advisor, "Cost": on a subscription advisor usage counts toward the plan limits, a Fable advisor bills to usage credits only on plans where Fable usage does (this account shows its own "Weekly · Fable" window). Each advisor call, however, rereads the whole conversation uncached at the advisor's rates, Claude decides when to call it, there is no cap, and `/advisor` saves to the user settings for every later session. That costs more than a consult subagent that reads only the named files, so the advisor stays off. |
 
 ## 7. Keeping this file true
 
