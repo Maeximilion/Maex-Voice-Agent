@@ -8,7 +8,12 @@ Gate: next gate status
 Open: next concrete step first
 Lessons: what the next session must know
 
-Also add the block at the top of the "Done" section in `docs/01_STATUS.md` (short form, one line) and check that "What's next" is correct. Then run `python scripts/status_bump.py patch "Handover: ..."` if no bump has happened in this session since the last one. Replace the `...` with the real one-line summary of this session, written out before the command runs; the text goes into the changelog verbatim, so never run it with a generic sentence.
+Where the block goes depends on the state of the work (Maxi, 2026-11-11):
+
+- **After a merged PR, with nothing of the session left open:** the block goes in the chat only. No line in `docs/01_STATUS.md`, no status bump and no `docs/handover-*` branch: the merged PR already wrote its Done row, the work package row and its spec name the next step, and a branch without a PR left six handover lines that never reached `main` (22.09. to 09.11.2026). The next session starts with `/task <id>` or `/start` and needs no branch name.
+- **Unfinished work (context full, a break, a task cut in parts):** the block goes in the chat, and its short form goes on the task's own branch, committed and pushed with the rest of the work, so it reaches `main` with that branch's PR. Then follow the steps below.
+
+For unfinished work, add the block at the top of the "Done" section in `docs/01_STATUS.md` (short form, one line) and check that "What's next" is correct. Then run `python scripts/status_bump.py patch "Handover: ..."` if no bump has happened in this session since the last one. Replace the `...` with the real one-line summary of this session, written out before the command runs; the text goes into the changelog verbatim, so never run it with a generic sentence.
 
 This command is the single source for handover rules. Memories hold none of them (Maxi, 2026-11-10).
 
