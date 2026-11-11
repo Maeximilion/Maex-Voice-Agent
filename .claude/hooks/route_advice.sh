@@ -11,7 +11,10 @@
 # is the only router here. The keyword lists are a heuristic: tune them below.
 # Umlauts fold and match as letters only in a UTF-8 locale; the hook's own may be empty.
 export LC_ALL=C.UTF-8
-xhigh='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|(speech|spoken|utterance|transcript)[- ]?to[- ]?(menu|item)|menu[- ]?item matching|match(ing|es)? (speech|what the caller says|a spoken)|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|hang.?up|auflegen|callbacks?|rückruf|calls? (should |must |is |gets? )?(be )?(ended|terminated|dropped|hung up)|\b(end|terminate|drop)(s|ing)? (the |a |an )?([a-z]+ )?calls?\b|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|drafts? (orders?|status|state|bookings?|reservations?|transactions?|expir[a-z]*|lifecycle|cleanup)|drafts? ?(->|→|to) ?confirmed|(order|booking|reservation)s? drafts?|delivery.?fees?|discounts?|rabatt|\btax(es)?\b|steuer|coupons?|gutschein|surcharges?|zuschlag|refunds?|erstattung|\btips?\b|gratuit|trinkgeld|reschedul|umbuch|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|(bookings?|reservations?) (should |must |can )?(be |are |is |gets? )?(accepted|rejected|cancell?ed|created|declined|rescheduled|moved)|\b(accept|reject|cancel|decline)(s|ing|ed)? (a |an |the )?(bookings?|reservations?)|(booking|reservation) (acceptance|cancell?ation|creation)|überbuch|\bcapacity\b|(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after|\b([3-9](rd|th)|[1-9][0-9]+(st|nd|rd|th)|[a-z]+(teenth|tieth)|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|dritte[nr]?|vierte[nr]?|fünfte[nr]?) (fix.?)?(attempt|try|versuch)|orders? (are |is |gets? |becomes? )?confirmed|(becomes?|turns?) confirmed'
+# A stall is the only way to xhigh (Maxi, 2026-11-11): the same failure survived two fix attempts.
+stall='(two|2|zwei) (fix.?)?(attempts|versuche)|still fail[a-z]* after|\b([3-9](rd|th)|[1-9][0-9]+(st|nd|rd|th)|[a-z]+(teenth|tieth)|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|dritte[nr]?|vierte[nr]?|fünfte[nr]?) (fix.?)?(attempt|try|versuch)'
+# Hard-rule code (the table's "xhigh triggers", name kept): Opus, and never Sonnet work.
+hard='migration|alembic|\bprices?\b|\bpreis|\btotals?\b|delivery.?zone|liefer.?zone|opening.?hours|öffnungszeit|availability|verfügbar|allergen|menu_item_id|(speech|spoken|utterance|transcript)[- ]?to[- ]?(menu|item)|menu[- ]?item matching|match(ing|es)? (speech|what the caller says|a spoken)|confirm[a-z]* (the |an? )?(order|booking|reservation|draft)|(order|booking|reservation) confirm|draft.?to.?confirmed|\bconfirm(\(|`| step| tool| logic| function| handles)|bestätig[a-z]* (die |der )?(bestellung|reservierung)|escalat|eskal|transfer|outage|hang.?up|auflegen|callbacks?|rückruf|calls? (should |must |is |gets? )?(be )?(ended|terminated|dropped|hung up)|\b(end|terminate|drop)(s|ing)? (the |a |an )?([a-z]+ )?calls?\b|(call|phone|transfer) fallback|fallback (to|for) (the )?(team|phone|call|human)|drafts? (orders?|status|state|bookings?|reservations?|transactions?|expir[a-z]*|lifecycle|cleanup)|drafts? ?(->|→|to) ?confirmed|(order|booking|reservation)s? drafts?|delivery.?fees?|discounts?|rabatt|\btax(es)?\b|steuer|coupons?|gutschein|surcharges?|zuschlag|refunds?|erstattung|\btips?\b|gratuit|trinkgeld|reschedul|umbuch|liefer.?gebühr|\bfees?\b|(reservation|booking)s? (conflict|check|rule|logic|capacity|slot|overlap)|double.?book|(bookings?|reservations?) (should |must |can )?(be |are |is |gets? )?(accepted|rejected|cancell?ed|created|declined|rescheduled|moved)|\b(accept|reject|cancel|decline)(s|ing|ed)? (a |an |the )?(bookings?|reservations?)|(booking|reservation) (acceptance|cancell?ation|creation)|überbuch|\bcapacity\b|orders? (are|is |gets? |becomes? )?confirmed|(becomes?|turns?) confirmed'
 # Hooks here are this project's hooks (.claude/hooks), never React or other framework hooks.
 opus='\bdomain\b|\bagent/|\btools/|\bevents/|telephony|\bjobs/|\bprompts?/|deploy|printbridge|\bn8n\b|\.claude/hooks|hook scripts?|(project|routing|session|git|claude) hooks?\b|\bhooks? (and|in|of) (the )?(settings|project)|route_advice|model.?router|asterisk|\bvoice\b|\bllm\b|settings\.json|docker-compose'
 # Imports here are the menu and data imports (scripts/import_menu.py), never a Python import.
@@ -97,9 +100,9 @@ head=${head%%</*}
 # Model and a valid effort, nothing after: "xhgh" or a missing effort is no route at all.
 route=$(grep -oiE '^ *Route: *claude-[a-z0-9.-]+ +(low|medium|high|xhigh|max|none) *$' <<<"$head" || true)
 # Only the efforts the table gives each model family: Haiku none, Sonnet medium, Opus high
-# or xhigh (max when Maxi asks), Fable high. low is never used.
+# or xhigh (max when Maxi asks), Fable medium, high or xhigh. low is never used.
 case "${route,,}" in
-  *haiku*" none"*|*sonnet*" medium"*|*opus*" high"*|*opus*" xhigh"*|*opus*" max"*|*fable*" high"*) ;;
+  *haiku*" none"*|*sonnet*" medium"*|*opus*" high"*|*opus*" xhigh"*|*opus*" max"*|*fable*" medium"*|*fable*" high"*|*fable*" xhigh"*) ;;
   *) route= ;;
 esac
 # Only a model ID the routing table in CLAUDE.md names can be switched to; a typo is malformed.
@@ -109,7 +112,7 @@ if [ -n "$route" ] && [ -f "$root/CLAUDE.md" ]; then
   grep -qF "\`$id\`" "$root/CLAUDE.md" || route=
 fi
 if [ -z "$route" ] && grep -qiE '^ *Route:' <<<"$head"; then
-  msg="routing check: the brief's Route line is not \"Route: <model-id> <effort>\" with a model and effort from the CLAUDE.md routing table (Haiku none, Sonnet medium, Opus high, xhigh or max, Fable high), so the setting of this thread cannot be checked."
+  msg="routing check: the brief's Route line is not \"Route: <model-id> <effort>\" with a model and effort from the CLAUDE.md routing table (Haiku none, Sonnet medium, Opus high, xhigh or max, Fable medium, high or xhigh), so the setting of this thread cannot be checked."
   jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
     additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
   exit 0
@@ -172,8 +175,9 @@ else
   elif sed -E 's/\b(file|data|byte|upload|download)[ -]?transfers?\b//g
       s/\b(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?|outages?) (typography|banners?|pages?|views?|forms?|filters?|selectors?|titles?|headings?|tabs?|buttons?|cards?|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text|pages?|views?|forms?|filters?|selectors?|titles?|headings?|tabs?|buttons?|cards?)\b//g
       s/\b(typography|banners?|pages?|views?|forms?|filters?|selectors?|titles?|headings?|tabs?|buttons?|cards?|font|colou?r|layout|label|display|style|styling|alignment|badges?|icons?|column|text|pages?|views?|forms?|filters?|selectors?|titles?|headings?|tabs?|buttons?|cards?)( [a-z]+){0,2} (for|of) (the |an? )?(prices?|fees?|totals?|allergens?|availability|capacity|opening.?hours|öffnungszeiten|delivery.?zones?|zones?|outages?)\b//g' \
-      <<<"$topic" | grep -qiE "$xhigh"; then
-    want=claude-opus-5-5 effort=xhigh
+      <<<"$topic" | grep -qiE "$hard|$stall"; then
+    want=claude-opus-5-5 effort=high
+    grep -qiE "$stall" <<<"$topic" && effort=xhigh
   elif grep -qiE "$opus" <<<"$topic"; then want=claude-opus-5-5 effort=high
   # Sonnet work only when no other code path or implementation work is named (api/gui/ and
   # templates are Sonnet's own).
@@ -235,7 +239,7 @@ if [ -z "$model" ]; then
   exit 0
 fi
 # A Fable session asked for by name keeps Fable, at the table's effort for it.
-[ -n "${fable_named-}" ] && [ "$(family "$model")" = 4 ] && want=claude-fable-5-1 effort=high
+[ -n "${fable_named-}" ] && [ "$(family "$model")" = 4 ] && want=claude-fable-5-2 effort=high
 
 want_f=$(family "$want") have_f=$(family "$model")
 # The exact routed model, a suffix such as [1m] allowed. An unknown effort counts as a

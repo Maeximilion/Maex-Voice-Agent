@@ -84,9 +84,9 @@ def test_default_work_gets_opus_high(run):
     assert "decision" not in out
 
 
-def test_trigger_words_raise_effort_to_xhigh(run):
-    out = run("Fix the migration for the delivery zone", "claude-opus-5-5", "high")
-    assert "effort xhigh" in message(out)
+def test_trigger_words_go_to_opus_high(run):
+    out = run("Fix the migration for the delivery zone", "claude-opus-5-5", "medium")
+    assert "effort high" in message(out)
 
 
 def test_gui_work_gets_sonnet_medium_and_a_stronger_session_a_thread(run):
@@ -99,7 +99,7 @@ def test_docs_only_prompt_stays_on_sonnet_despite_hard_rule_words(run):
     prompt = "Update docs/03_DATA_MODEL.md to correct a typo in the migration section"
     assert run(prompt) is None
     out = run(prompt + " and in db/migrations/007.py", sid="code")
-    assert "effort xhigh" in message(out)
+    assert "effort high" in message(out)
 
 
 def test_pure_search_goes_to_haiku(run):
@@ -109,13 +109,13 @@ def test_pure_search_goes_to_haiku(run):
 
 
 def test_short_task_is_routed_and_answers_are_not(run):
-    assert "effort xhigh" in message(run("Fix migration downgrade"))
+    assert "effort high" in message(run("Fix migration downgrade"))
     assert run("ok, weiter") is None
 
 
 def test_slash_commands_without_their_own_check_are_routed(run):
     out = run('/bug "Migration fails while upgrading the schema"')
-    assert "effort xhigh" in message(out)
+    assert "effort high" in message(out)
 
 
 def test_full_model_id_is_compared(run):
@@ -125,13 +125,20 @@ def test_full_model_id_is_compared(run):
 
 
 def test_claude_code_effort_variable_is_read(run):
-    out = run("Fix the migration downgrade", "claude-opus-5-5", effort="", level="high")
-    assert "effort high" in message(out)
+    out = run(
+        "Fix the migration downgrade", "claude-opus-5-5", effort="", level="medium"
+    )
+    assert "effort medium" in message(out)
 
 
 def test_unknown_effort_is_asked_about_only_for_xhigh(run):
     assert run(HOOKS_PROMPT, "claude-opus-5-5", effort="") is None
-    out = run("Fix the migration downgrade", "claude-opus-5-5", "", sid="x")
+    out = run(
+        "This is the third attempt to fix the migration downgrade",
+        "claude-opus-5-5",
+        "",
+        sid="x",
+    )
     assert "effort unknown" in message(out)
 
 
@@ -139,7 +146,7 @@ BRIEF = "Route: claude-sonnet-5-5 medium\nUpdate the GUI screen for the migratio
 
 
 def test_route_line_that_matches_the_thread_is_silent(run):
-    # The brief names "migration", which alone would ask for xhigh.
+    # The brief names "migration", which alone would ask for Opus.
     assert run(BRIEF, "claude-sonnet-5-5", "medium") is None
 
 
@@ -210,8 +217,8 @@ def test_route_line_without_effort_compares_the_model_only(run):
         "Fix how reservations are cancelled",
     ],
 )
-def test_booking_decisions_are_xhigh(run, prompt):
-    assert "effort xhigh" in message(run(prompt, "claude-opus-5-5", "high"))
+def test_booking_decisions_are_opus_work(run, prompt):
+    assert "effort high" in message(run(prompt, "claude-opus-5-5", "medium"))
 
 
 def test_running_tests_is_not_a_lookup(run):
@@ -222,9 +229,9 @@ def test_running_tests_is_not_a_lookup(run):
     assert out is None
 
 
-def test_speech_to_menu_matching_is_xhigh(run):
-    out = run("Fix speech-to-menu item matching", "claude-opus-5-5", "high")
-    assert "effort xhigh" in message(out)
+def test_speech_to_menu_matching_is_opus_work(run):
+    out = run("Fix speech-to-menu item matching", "claude-opus-5-5", "medium")
+    assert "effort high" in message(out)
 
 
 def test_docs_next_to_unnamed_work_takes_the_default(run):
@@ -238,11 +245,10 @@ def test_docs_next_to_unnamed_work_takes_the_default(run):
     [
         "Fix how orders are confirmed after a customer yes",
         "Change when an order becomes confirmed",
-        "This is the third attempt to fix authentication",
     ],
 )
-def test_confirmation_wording_and_repeated_failures_are_xhigh(run, prompt):
-    assert "effort xhigh" in message(run(prompt, "claude-opus-5-5", "high"))
+def test_confirmation_wording_is_opus_work(run, prompt):
+    assert "effort high" in message(run(prompt, "claude-opus-5-5", "medium"))
 
 
 @pytest.mark.parametrize(
@@ -287,7 +293,7 @@ def test_the_model_is_read_from_a_transcript_attachment(run, tmp_path):
             "high",
             "xhigh",
         ),
-        ("Fix the discount calculation", "claude-opus-5-5", "high", "xhigh"),
+        ("Fix the discount calculation", "claude-opus-5-5", "medium", "effort high"),
         ("Run the unit test suite", "claude-sonnet-5-5", "medium", None),
         (
             "Import the menu CSV and refactor authentication",
@@ -305,7 +311,7 @@ def test_the_model_is_read_from_a_transcript_attachment(run, tmp_path):
         ("Fix README", "claude-sonnet-5-5", "medium", None),
         (
             "Don't use Fable for this gate review",
-            "claude-fable-5-1",
+            "claude-fable-5-2",
             "high",
             "opus-5-5",
         ),
@@ -337,8 +343,13 @@ def test_round_13_wording(run, prompt, model, effort, expected):
             "high",
             "xhigh",
         ),
-        ("Fix the tip calculation", "claude-opus-5-5", "high", "xhigh"),
-        ("Change how bookings are rescheduled", "claude-opus-5-5", "high", "xhigh"),
+        ("Fix the tip calculation", "claude-opus-5-5", "medium", "effort high"),
+        (
+            "Change how bookings are rescheduled",
+            "claude-opus-5-5",
+            "medium",
+            "effort high",
+        ),
         (
             "Optimize authentication",
             "claude-sonnet-5-5",
@@ -414,7 +425,7 @@ def test_a_matching_brief_resets_the_retry_count(run):
 
 
 def test_a_mere_fable_mention_is_no_request(run):
-    out = run("Mention Fable in the README", "claude-fable-5-1", "high")
+    out = run("Mention Fable in the README", "claude-fable-5-2", "high")
     assert "claude-sonnet-5-5 at effort medium" in message(out)
 
 
@@ -456,15 +467,15 @@ def test_sonnet_work_from_the_table_is_recognised(run, prompt):
 
 
 def test_confirm_counts_only_with_an_order_booking_or_its_code(run):
-    out = run("Change how confirm handles the order", "claude-opus-5-5", "high")
-    assert "effort xhigh" in message(out)
+    out = run("Change how confirm handles the order", "claude-opus-5-5", "medium")
+    assert "effort high" in message(out)
     out = run("Make sure we confirm the order only after a yes", sid="order")
-    assert "effort xhigh" in message(out)
+    assert "effort high" in message(out)
 
 
 def test_a_mixed_docs_and_code_task_keeps_the_higher_setting(run):
     prompt = "Update README and domain order logic to fix the migration downgrade"
-    assert "effort xhigh" in message(run(prompt))
+    assert "effort high" in message(run(prompt))
 
 
 def test_a_python_import_is_not_a_data_import(run):
@@ -495,14 +506,13 @@ def test_a_malformed_route_line_is_reported(run, brief):
     [
         "Fix the delivery fee calculation",
         "Fix the reservation conflict check",
-        "This failure survived two fix attempts; debug it now",
         "Update README and fix the allergen matching",
         "Find every migration and correct its downgrade",
         "ok\nFix migration downgrade",
     ],
 )
-def test_hard_rule_work_reaches_xhigh(run, prompt):
-    assert "effort xhigh" in message(run(prompt, "claude-opus-5-5", "high"))
+def test_hard_rule_work_reaches_opus_high(run, prompt):
+    assert "effort high" in message(run(prompt, "claude-opus-5-5", "medium"))
 
 
 @pytest.mark.parametrize(
@@ -558,7 +568,10 @@ def test_a_half_applied_switch_carries_on(run):
 
 
 def test_every_advice_is_given_once_per_session(run):
-    high, xhigh = HOOKS_PROMPT, "Fix the migration downgrade"
+    high, xhigh = (
+        HOOKS_PROMPT,
+        "This is the third attempt to fix the migration downgrade",
+    )
     assert run(high) is not None
     assert run(xhigh) is not None
     assert run(high) is None
@@ -566,8 +579,8 @@ def test_every_advice_is_given_once_per_session(run):
 
 def test_a_draft_in_the_gui_is_not_the_confirm_step(run):
     assert run("Fix the draft badge color in the GUI") is None
-    out = run("Change how a draft order expires", "claude-opus-5-5", "high", sid="x")
-    assert "effort xhigh" in message(out)
+    out = run("Change how a draft order expires", "claude-opus-5-5", "medium", sid="x")
+    assert "effort high" in message(out)
 
 
 def test_a_search_asked_as_a_question_goes_to_haiku(run):
@@ -577,15 +590,15 @@ def test_a_search_asked_as_a_question_goes_to_haiku(run):
 
 def test_fable_asked_for_by_name_is_kept(run):
     prompt = "Perform the G1 gate review on Fable as requested"
-    assert run(prompt, "claude-fable-5-1", "high") is None
+    assert run(prompt, "claude-fable-5-2", "high") is None
     # Named but not asked for: the table decides, Fable is never recommended.
     prompt = "Fix the price rounding in domain/ordering, do not switch to Fable"
-    out = run(prompt, "claude-opus-5-5", "high", sid="opus")
-    assert "claude-opus-5-5 at effort xhigh" in message(out)
+    out = run(prompt, "claude-opus-5-5", "medium", sid="opus")
+    assert "claude-opus-5-5 at effort high" in message(out)
     # Withdrawn: the table decides again.
     out = run(
         "Move this GUI task off Fable and onto Sonnet",
-        "claude-fable-5-1",
+        "claude-fable-5-2",
         "high",
         sid="off",
     )
@@ -597,13 +610,13 @@ def test_fable_asked_for_by_name_is_kept(run):
     [
         "Leave it on Fable and fix the price rounding",
         "Fix the price rounding with no shortcuts on Fable",
-        "Use claude-fable-5-1 for the G1 gate review",
+        "Use claude-fable-5-2 for the G1 gate review",
         # German prompt input: the hook reads Maxi's German prompts.
         "Bitte mit Fable das Gate G1 pruefen",
     ],
 )
 def test_a_fable_request_in_other_words_is_kept(run, prompt):
-    assert run(prompt, "claude-fable-5-1", "high") is None
+    assert run(prompt, "claude-fable-5-2", "high") is None
 
 
 @pytest.mark.parametrize(
@@ -613,16 +626,16 @@ def test_a_fable_request_in_other_words_is_kept(run, prompt):
         "Calls are not transferred to the team anymore, fix it",
     ],
 )
-def test_call_transfer_wording_stays_xhigh(run, prompt):
-    assert "effort xhigh" in message(run(prompt, "claude-opus-5-5", "high"))
+def test_call_transfer_wording_stays_opus_work(run, prompt):
+    assert "effort high" in message(run(prompt, "claude-opus-5-5", "medium"))
 
 
 def test_transfer_counts_only_for_a_call(run):
     assert run("Fix file transfer progress in the GUI") is None
     out = run(
-        "Fix the call transfer to the team phone", "claude-opus-5-5", "high", sid="c"
+        "Fix the call transfer to the team phone", "claude-opus-5-5", "medium", sid="c"
     )
-    assert "effort xhigh" in message(out)
+    assert "effort high" in message(out)
 
 
 def test_a_route_line_without_a_space_after_the_colon_is_read(run):
@@ -641,10 +654,10 @@ def test_umlauts_fold_without_a_locale(run):
     out = run(
         "Öffnungszeiten für Montag im Code korrigieren bitte",
         "claude-opus-5-5",
-        "high",
+        "medium",
         lang="",
     )
-    assert "effort xhigh" in message(out)
+    assert "effort high" in message(out)
 
 
 def test_an_unknown_effort_stops_an_xhigh_thread_once_only(run):
@@ -684,8 +697,8 @@ def test_the_live_effort_wins_over_the_start_variable(run):
         (
             "Import the menu from CSV and fix the allergen matching",
             "claude-opus-5-5",
-            "high",
-            "effort xhigh",
+            "medium",
+            "effort high",
         ),
         (
             "Update the GUI template and refactor api/core/auth.py",
@@ -726,14 +739,14 @@ def test_the_live_effort_wins_over_the_start_variable(run):
         (
             "Fix when an unanswered call should be ended",
             "claude-opus-5-5",
-            "high",
-            "effort xhigh",
+            "medium",
+            "effort high",
         ),
         (
             "Perform the G1 gate review on Fable as requested",
-            "claude-fable-5-1",
+            "claude-fable-5-2",
             "medium",
-            "claude-fable-5-1 at effort high",
+            "claude-fable-5-2 at effort high",
         ),
         (
             "Update the project status after this task",
@@ -778,13 +791,13 @@ def test_a_docs_file_named_after_an_opus_area_stays_on_sonnet(run):
         "Check the draft -> confirmed step",
     ],
 )
-def test_the_draft_lifecycle_is_xhigh(run, prompt):
-    assert "effort xhigh" in message(run(prompt, "claude-opus-5-5", "high"))
+def test_the_draft_lifecycle_is_opus_work(run, prompt):
+    assert "effort high" in message(run(prompt, "claude-opus-5-5", "medium"))
 
 
 def test_a_debugging_question_is_not_a_lookup(run):
     out = run("Could you find out why the confirm step double-books a reservation?")
-    assert "effort xhigh" in message(out)
+    assert "effort high" in message(out)
 
 
 @pytest.mark.parametrize(
@@ -837,14 +850,14 @@ def test_a_hard_rule_subject_of_sonnet_work_stays_on_sonnet(run, prompt):
     assert run(prompt) is None
 
 
-def test_hard_rule_work_next_to_sonnet_work_keeps_xhigh(run):
+def test_hard_rule_work_next_to_sonnet_work_keeps_opus(run):
     out = run("Update the project status after the migration and fix the downgrade")
-    assert "effort xhigh" in message(out)
+    assert "effort high" in message(out)
     out = run("Fix the review comments on domain/ordering.py", sid="path")
     assert "claude-opus-5-5 at effort high" in message(out)
     # Writing findings is the review itself, not a fix of existing feedback.
     out = run("Write review findings on migration", sid="write")
-    assert "effort xhigh" in message(out)
+    assert "effort high" in message(out)
 
 
 HANDOVER = """Check Model and Effort if it is right for the handover:
@@ -876,7 +889,7 @@ def test_prompts_without_a_task_of_their_own_get_no_advice(run, prompt):
 
 def test_a_routing_question_that_asks_for_work_is_still_routed(run):
     out = run("Which model? Fix the migration downgrade first")
-    assert "effort xhigh" in message(out)
+    assert "effort high" in message(out)
     out = run("Why does the model router fail in the hooks?", sid="router")
     assert "claude-opus-5-5 at effort high" in message(out)
     out = run(
@@ -891,3 +904,42 @@ def test_the_default_needs_a_prompt_that_asks_for_work(run):
     assert "claude-opus-5-5 at effort high" in message(out)
     out = run("Please work on issue 578 now", sid="work")
     assert "claude-opus-5-5 at effort high" in message(out)
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "This is the third attempt to fix authentication",
+        "This failure survived two fix attempts; debug it now",
+    ],
+)
+def test_only_a_stall_reaches_xhigh(run, prompt):
+    assert "effort xhigh" in message(run(prompt, "claude-opus-5-5", "high"))
+
+
+def test_hard_rule_work_is_silent_on_opus_high_and_xhigh_is_told_to_go_down(run):
+    prompt = "Fix the migration for the delivery zone"
+    assert run(prompt, "claude-opus-5-5", "high") is None
+    out = run(prompt, "claude-opus-5-5", "xhigh", sid="down")
+    assert "claude-opus-5-5 at effort high" in message(out)
+    assert "switching down" in message(out)
+
+
+@pytest.mark.parametrize("effort", ["medium", "high", "xhigh"])
+def test_a_fable_route_takes_the_efforts_of_the_table(run, effort):
+    brief = f"Route: claude-fable-5-2 {effort}\nReview gate G1."
+    assert run(brief, "claude-fable-5-2", effort) is None
+
+
+def test_a_fable_route_at_max_and_the_old_fable_id_are_malformed(run):
+    out = run("Route: claude-fable-5-2 max\nReview gate G1.", "claude-fable-5-2", "max")
+    assert "cannot be checked" in message(out)
+    brief = "Route: claude-fable-5-1 high\nReview gate G1."
+    out = run(brief, "claude-fable-5-2", "high", sid="old")
+    assert "cannot be checked" in message(out)
+
+
+def test_a_fable_session_asked_for_by_name_is_told_to_leave_xhigh(run):
+    prompt = "Perform the G1 gate review on Fable as requested"
+    out = run(prompt, "claude-fable-5-2", "xhigh")
+    assert "claude-fable-5-2 at effort high" in message(out)
