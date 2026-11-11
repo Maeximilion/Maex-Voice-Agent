@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 11.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.30.0
+> Status: 11.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.31.0
 
 ---
 
@@ -93,7 +93,7 @@ Details and full list: `docs/07_WORKPACKAGES.md`. Mirrored on GitHub as issues: 
 ### In Chat (Maxi)
 - **C1** Current state: register, phone system, call volume, menu format, baseline measurement, legal check
   - **Legal check answered 20.10.2026 (docs/09 §1). Maxi's paper duties, all before the first real call unless noted:** privacy notice on example.com, which also names the call log (L4, L15); record of processing (L9); DSFA v0.1 finished with this result and the officer's advice (L10, D9), with the balancing for caller recognition (L12) (full text: docs/HISTORY.md)
-  - **Compliance check of 11.11.2026 (legal plugin; docs/09 §1, last block, with the status of every duty):** the answers were checked against the sources and every code duty is built; open are Maxi's paper duties, #637 and #638. New for Maxi: the officer's route (D9 below); hold the team briefing and keep the signed sheet (N3, AI literacy); the printed delivery terms and the printed allergen list with the additives go with every delivery and every pickup ordered by phone (N2, L17); the tax adviser gets the retention question of `docs/vorlagen/verfahrensdokumentation_telefon.md` section 6
+  - **Compliance check of 11.11.2026 (legal plugin; docs/09 §1, last block, with the status of every duty):** the answers were checked against the sources and every code duty is built; open are Maxi's paper duties, #637 and #638. New for Maxi: report the officer and publish the contact (D9, decided again 11.11.2026: Maxi himself); hold the team briefing and keep the signed sheet (N3, AI literacy); the printed delivery terms and the printed allergen list with the additives go with every delivery and every pickup ordered by phone (N2, L17); the tax adviser gets the retention question of `docs/vorlagen/verfahrensdokumentation_telefon.md` section 6
   - Start the call log now (`docs/17_ANRUFPROTOKOLL.md`), two weeks give a first baseline. The log records only the hour since T-11.4 (legal check L15): write `18` or `18 Uhr`; a row with minutes is cut to the hour on the next run of the script. Still missing for any recording: handsets
   - **Phone line (26.09.2026):** Fritz!Box 6591 Cable on a cable line, three numbers; callers use one number only. Business cable tariff with **4 voice channels** and up to 10 numbers (provider's service description, table "Telefonleitungen/Sprachkanäle", checked 26.09.2026). (full text: docs/HISTORY.md)
   - **Register data (26.09.2026):** converter built (T-4.11), mapping in `docs/14_MENU_IMPORT_FORMAT.md` §Quelle Kasse. In the register: shorten the four names cut at 40 characters (32B, 35C, 38E, 15C) and the two extras cut at 16 ("Panierte Hühnerb", "Nudeln statt Rei"); remove the allergen test entries (13, 14, 35A, 15C) or confirm them (full text: docs/HISTORY.md)
@@ -109,7 +109,7 @@ Decided D1 to D30: same archive section.
 | # | Question | Who | When needed |
 |---|---|---|---|
 | D4 | Voice: natural or audibly synthetic. **12.10.2026:** Maxi heard the test-phase voice (Piper `thorsten`) and finds it not clean, also before the telephone line; it stays for building and testing only. His idea, kept for later: his own voice, synthesized. (full text: docs/HISTORY.md) | Maxi | Stage 1, dialog test |
-| D9 | Reopened by the compliance check of 11.11.2026 (docs/09 §1): who is the data protection officer? Maxi named himself on 20.10.2026 with the conflict of interest recorded as a risk. The check found more: an officer is mandatory here (§ 38(1) sentence 2 BDSG), and the authorities treat an owner or managing director as officer as a conflict of interest as the rule (Hessian authority, DSK short paper 12), so the report can be rejected and the DSFA then lacks the officer's advice. The route without the conflict is an external officer, which costs money. Until Maxi answers, the decision of 20.10.2026 stands | Maxi | before the officer is reported and the DSFA is finished, so before the first real call |
+| D9 | ~~Reopened by the compliance check of 11.11.2026 (docs/09 §1): who is the data protection officer?~~ **decided 11.11.2026 (Maxi): he stays the officer himself**, as on 20.10.2026 and now knowing what the check found: an officer is mandatory here (§ 38(1) sentence 2 BDSG), and the authorities treat an owner or managing director as officer as a conflict of interest as the rule (Hessian authority, DSK short paper 12), so the report can be rejected and the DSFA then lacks the officer's advice. The risk is accepted; if the authority objects, the route is an external officer. Not asked again without a new fact | Maxi | decided; the report and the contact in the notice stay open (docs/09 §1) |
 | D15 | Operation model: which of the shortlist (Mistral Small, Claude Haiku 4.5, Gemini Flash via Vertex EU) goes into operation, and the vendor's DPA. Shortlist decided 06.10.2026 (Maxi); the pick is the smallest model with all hard eval metrics at 0 and latency in budget (`docs/18_MODEL_SELECTION.md` §3) | T-5.3 measures, Maxi decides | before G1 |
 | D22 | Status and history layout (Claude setup audit, 19.10.2026). `/start` now reads only the current sections of this file (about 49 KB instead of 476 KB). Done in #562: the Summary, older Done rows, older Changelog lines and settled assumptions moved into `docs/HISTORY.md`, merged with git's built-in `union` driver (tested: two parallel entries merge (full text: docs/HISTORY.md) | Maxi | before the status is restructured |
 | D23 | A `deny` rule for `.env` in `.claude/settings.json` (Claude setup audit, 19.10.2026). Since 19.10.2026 an `ask` rule makes Claude ask before its Read tool opens a `.env`; tested headless, the Grep tool and `cat .env` still read it. (full text: docs/HISTORY.md) | Maxi | after the next gates (Maxi, 19.10.2026) |
@@ -252,7 +252,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Blocker | Blocks | Resolution |
 |---|---|---|
-| Duties of the legal check open (questions answered 20.10.2026, checked against the sources 11.11.2026) | every real customer call; processing of real call recordings (C7 / T-7.x) | the status table at the end of `docs/09_OPERATIONS_LEGAL.md` §1: Maxi's paper duties (drafts in `docs/vorlagen/`, D9 first), #637 before the first real call, #638 before the first real order |
+| Duties of the legal check open (questions answered 20.10.2026, checked against the sources 11.11.2026) | every real customer call; processing of real call recordings (C7 / T-7.x) | the status table at the end of `docs/09_OPERATIONS_LEGAL.md` §1: Maxi's paper duties (drafts in `docs/vorlagen/`, the officer's report first), #637 before the first real call, #638 before the first real order |
 | Own voice layer not built (decided 07.10.2026 instead of a vendor) | real test calls, G0 (waits for T-10.1 and T-10.2), G1 | Block 1c in `docs/07_WORKPACKAGES.md`; step 2 of T-10.1 needs access to the pilot's router |
 | Menu data not structured | Stage 2 complete | converter built (T-4.11, 26.09.2026); the card number format takes `25G` and sushi `S12` since T-4.12 (50 dishes); the first real import with `--allergens-confirmed-by` is still open |
 | Docker Hub rate limit on first `make up` possible (occurred 16.09.2026 once, cleared after wait) | image build | `docker login` with free account, see README, section Known Issues |
@@ -297,6 +297,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.31.0 · 11.11.2026:** D9 decided again: Maxi stays the data protection officer, the risk is accepted
 - **v2.30.0 · 11.11.2026:** Legal check verified against the sources: N1 revised, N3 new, D9 reopened, paper duties at delivery
 - **v2.29.10 · 11.11.2026:** T-0.12 first step: mypy checks every function body, strict flags on three packages
 - **v2.29.9 · 11.11.2026:** The bar Ton an keeps a gap to the columns below
