@@ -943,3 +943,8 @@ def test_a_fable_session_asked_for_by_name_is_told_to_leave_xhigh(run):
     prompt = "Perform the G1 gate review on Fable as requested"
     out = run(prompt, "claude-fable-5-2", "xhigh")
     assert "claude-fable-5-2 at effort high" in message(out)
+
+
+def test_confirmed_orders_next_to_gui_work_stay_opus_work(run):
+    out = run("Change when orders are confirmed in the GUI")
+    assert "claude-opus-5-5 at effort high" in message(out)
