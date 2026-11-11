@@ -51,6 +51,7 @@
 <h2>2. Vor dem Test</h2>
 <p><strong>Zu Hause, bevor die Leitung den PC verlässt:</strong></p>
 <p><span class="c"></span>PC ist an und am Strom, Docker Desktop läuft, die Claude-App zeigt diese Sitzung. Den PC nicht herunterfahren und nicht zuklappen. Den Ruhezustand schaltet Claude für den Test ab und danach wieder ein.<br>
+<span class="c"></span>Im Ubuntu-Terminal <span class="chat">llm start</span> eingeben (fragt nach dem Passwort) und warten, bis „LLM-Server bereit“ dasteht. Das Sprachmodell kann Claude nicht selbst starten.<br>
 <span class="c"></span>Vom Kassen-PC oder vom Handy <span class="chat">Test</span> in die Sitzung schreiben. Claude antwortet: der Fernzugriff geht.</p>
 <p><strong>Am Testort:</strong></p>
 <p><span class="c"></span>Telefon B: <strong>Mailbox aus</strong> (<span class="chat">##002#</span> wählen und die Anruftaste drücken). Nimmt die Mailbox ab, zählt das als abgenommen, und die Zeilen 5 und 7 sind ungültig. Klingelton laut.<br>
@@ -75,7 +76,7 @@
 <h2>4. Start und Probeanruf</h2>
 <div class="row">
   <h3>Start</h3>
-  <p>Leitung schreibt <span class="chat">Start Leitungstest</span>. Claude schaltet den Ruhezustand des PCs ab, startet das Sprachmodell, meldet das KI-Telefon am Router an (dauert bis zu 3 Minuten), stellt die Leitung auf „KI nimmt an“, falls sie es nicht schon ist, und antwortet <span class="chat">Leitung bereit</span>.</p>
+  <p>Leitung schreibt <span class="chat">Start Leitungstest</span>. Claude schaltet den Ruhezustand des PCs ab, prüft das Sprachmodell, meldet das KI-Telefon am Router an (dauert bis zu 3 Minuten), stellt die Leitung auf „KI nimmt an“, falls sie es nicht schon ist, und antwortet <span class="chat">Leitung bereit</span>.</p>
   <p>Uhrzeit „Leitung bereit“: <span class="t"></span></p>
 </div>
 <div class="row">
@@ -117,7 +118,7 @@
   <h3>Zeile 3: Das Sprachmodell ist aus</h3>
   <table>
     <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B</th></tr>
-    <tr><td>Hält nur das Sprachmodell an. Telefonanlage und Sprachdienst laufen.</td><td>Ruft an, wartet die Begrüßung ab und sagt: <span class="say">„Ich möchte einen Tisch reservieren.“</span> Bleibt dran.</td><td>Notiert die Zeiten. Nimmt Telefon B ab, beide sagen kurz etwas, auflegen.</td></tr>
+    <tr><td>Trennt den Sprachdienst vom Sprachmodell; das dauert vor und nach der Zeile bis zu 2 Minuten. Telefonanlage und Sprachdienst laufen.</td><td>Ruft an, wartet die Begrüßung ab und sagt: <span class="say">„Ich möchte einen Tisch reservieren.“</span> Bleibt dran.</td><td>Notiert die Zeiten. Nimmt Telefon B ab, beide sagen kurz etwas, auflegen.</td></tr>
   </table>
   <p><strong>Erwartet:</strong> Die KI sagt: <span class="say">„Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie direkt mit dem Restaurant.“</span> Danach klingelt Telefon B.</p>
   <table class="f">

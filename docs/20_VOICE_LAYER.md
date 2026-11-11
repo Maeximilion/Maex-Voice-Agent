@@ -728,8 +728,9 @@ Tried on 01.11.2026 without a call: the stack came up healthy and registered in 
 `LLM_BASE_URL=http://host.docker.internal:8080/v1`, `LLM_MODEL=qwen3.6-35b-a3b` and
 `LLM_REASONING_EFFORT=none` set in the shell of the one command, so `.env` stays as it is; the ear
 runs on the CPU because the model fills the graphics card (`UD-IQ3_XXS`, 15.1 GB used with the
-desktop). The model server (`llm start`) unloads the model after 600 s without a request, so Claude
-sends it one request before every row.
+desktop). The model server unloads the model after 600 s without a request, so Claude sends it one
+request before every row; Maxi starts it (`llm start` asks for the password of `sudo`) before he
+leaves the workbench.
 
 Before the first row Claude reads `service_config.call_mode` and sets it to `primary` when it is
 anything else: in the seed's `shadow` the AI answers no call and every call goes to the team. The
@@ -744,7 +745,7 @@ up -d`):
 |---|---|---|
 | `voice` is down | `stop voice` | calls; the time until the team telephone rings |
 | A crash in the middle of a call | `kill voice` after the greeting, with `date +%T` before it | calls, speaks; the time from the kill until the team telephone rings |
-| The model is down | stops nothing in the stack; the model server is stopped (`llm stop`, by Claude when Maxi is not at the workbench) | calls, says something; hears the outage sentence, the team telephone rings |
+| The model is down | stops nothing in the stack; the model server is stopped (`llm stop`). With Maxi away from the workbench Claude cannot (the command asks for the password of `sudo`) and starts `voice` for this row with `LLM_BASE_URL` at a port nobody listens on instead: the same refused connection for the core | calls, says something; hears the outage sentence, the team telephone rings |
 | A live call handed to the team | nothing, the model up | asks for a person ("Kann ich bitte mit jemandem sprechen?"), answers the team telephone and talks to the caller: what the team sees as the caller's number (§12) |
 | The team does not pick up | nothing | as the row before, the team telephone not answered for 30 s: the caller hears that the restaurant calls back, the card is on the tablet view |
 | Asterisk is down | `stop asterisk`, and once `kill asterisk`; whether the router drops the registration at once or holds it up to its 300 s is what the row shows | calls; which telephones ring, and after how long |
