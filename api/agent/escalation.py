@@ -87,6 +87,23 @@ _BEYOND = re.compile(
     r"|\bzusammen mit\b[^.?!]{0,40}\bfrittier|\bmit\b[^.?!]{0,40}\bzusammen (?:ge)?frittier"
 )
 
+# An additive (§ 5 LMZDV, #638): the data model has no field for one and the
+# register's is not maintained (docs/14), so nothing a model says about it can
+# come from the database. The words are the register's legend and what guests
+# call them; sulphur and milk protein are allergens and read as such. The
+# word alone sends the call to the team, as "Spuren" does: a speech engine
+# drops the question mark, and a rule that told a question from a wish by its
+# word order missed "Sind da Konservierungsstoffe drin" (Codex PR #643).
+# "E-Nummer" only with its hyphen: "L, E, Nummer 12" spells a street.
+# shortcut: a closed word list, an additive it misses reaches the model. Add
+# the word when the call log shows it.
+_ADDITIVE = re.compile(
+    r"zusatzstoff|geschmacksverst(?:ä|ae)rker|glutamat"
+    r"|konservierungs(?:stoff|mittel)|farbstoff|antioxidationsmittel"
+    r"|schw(?:ä|ae)rzungsmittel|phosphat|s(?:ü|ue)(?:ß|ss)(?:ungsmittel|stoff)"
+    r"|\be-nummern?\b"
+)
+
 
 # What no fixed rule answers, whatever else the sentence says: a guest who fell
 # ill, or a legal step (D19: on any doubt the team). Stems, as in `_TRIGGERS`.
@@ -156,11 +173,19 @@ def asks_beyond_the_allergens(text: str) -> bool:
     return _BEYOND.search(text.lower()) is not None
 
 
+def names_an_additive(text: str) -> bool:
+    """Does `text` name an additive ("Geschmacksverstärker", "Glutamat")? In
+    a guest's sentence that is for the team, a question ("Ist da Glutamat
+    drin") and a wish ("die 13 ohne Glutamat") alike: read back, the wish
+    would promise what no table holds."""
+    return _ADDITIVE.search(text.lower()) is not None
+
+
 def only_a_complaint(text: str) -> bool:
     """Is the complaint all this sentence holds? Not with another trigger, a
-    question, an allergy or allergen, a health incident, a legal step or a
-    wish of its own in it: those are for the team, however well a rule of the
-    catalogue fits."""
+    question, an allergy, allergen or additive, a health incident, a legal
+    step or a wish of its own in it: those are for the team, however well a
+    rule of the catalogue fits."""
     lowered = text.lower()
     return not (
         any(
@@ -173,6 +198,7 @@ def only_a_complaint(text: str) -> bool:
         or speaks_of_allergies(text)
         or names_an_allergen(text)
         or asks_beyond_the_allergens(text)
+        or names_an_additive(text)
         or _TEAM_ONLY.search(lowered)
         or _WANTS_ANYTHING.search(_WANTS_TO_COMPLAIN.sub(" ", lowered))
     )
@@ -232,6 +258,37 @@ _NOTHING_ELSE = (
     | _BETWEEN
 )
 _WORD = re.compile(r"[a-zäöüß]+")
+# The guest takes the agent for a person without asking whether it is one.
+# The Art. 50 guidelines (point 40) want the truth said again there too
+# (#638). Two cues, both closed lists.
+# shortcut: another cue reaches the model. Add the wording when the call log
+# shows it. "Wie heißen sie" said of dishes reads the same and costs one true
+# sentence.
+# They ask for its name: a question about the agent, read like the one for a
+# human (`without_human_question`).
+_ASKS_ITS_NAME = re.compile(
+    r"\bwie hei(?:ß|ss)en sie\b|\bwie hei(?:ß|ss)t du\b"
+    r"|\bwie (?:ist|war|lautet)(?: denn| bitte| noch ?mal)* (?:ihr|dein) name\b"
+    r"|\bmit wem (?:spreche|rede|telefoniere|habe) ich\b"
+)
+# They address it as a person. No question: a "Ja" next to it still answers
+# what the agent asked, so the loop only says the truthful sentence first.
+_ADDRESSED_AS_A_PERSON = re.compile(
+    r"\bjunge frau\b|\bjunger mann\b|\bfr(?:ä|ae)ulein\b"
+    r"|\bgute frau\b|\bguter mann\b"
+)
+
+
+def addresses_a_person(text: str) -> bool:
+    """Does the guest address the agent as a person ("Danke, junge Frau")?"""
+    return _ADDRESSED_AS_A_PERSON.search(text.lower()) is not None
+
+
+def takes_for_a_person(text: str) -> bool:
+    """Does the guest ask whether a person is on the line, ask for the
+    agent's name or address it as a person? Then the truthful sentence comes
+    first, in every turn and on every way out of it (docs/09 L1, #638)."""
+    return without_human_question(text) is not None or addresses_a_person(text)
 
 
 def without_human_question(text: str) -> str | None:
@@ -240,7 +297,9 @@ def without_human_question(text: str) -> str | None:
     reads the rest: the question's own words ("mit einem Menschen") are those
     of the wish to talk to one, and a wish or a cancellation next to the
     question still counts (Codex PR #372). An either-or ("mit einer Maschine
-    oder mit einem Menschen") is one question, both halves are cut."""
+    oder mit einem Menschen") is one question, both halves are cut. The
+    question for the agent's name (`_ASKS_ITS_NAME`) is read like it and cut
+    the same way."""
     lowered = text.lower().replace("k.i.", "ki")
     words = list(_WORD.finditer(lowered))
     found: list[tuple[int, int]] = []
@@ -257,11 +316,15 @@ def without_human_question(text: str) -> str | None:
             noun = other
         if noun is not None:
             found.append((words[at].start(), words[noun].end()))
+    found += [cue.span() for cue in _ASKS_ITS_NAME.finditer(lowered)]
     if not found:
         return None
-    for start, end in reversed(found):
-        lowered = lowered[:start] + lowered[end:]
-    return lowered
+    # Spans can overlap ("Mit wem spreche ich, mit einem Menschen?").
+    rest, at = "", 0
+    for start, end in sorted(found):
+        rest += lowered[at : max(at, start)]
+        at = max(at, end)
+    return rest + lowered[at:]
 
 
 def _person_or_machine(words: list[re.Match[str]], at: int) -> int | None:
