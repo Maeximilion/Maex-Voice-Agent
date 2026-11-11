@@ -259,6 +259,8 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 ## Done
 
+Handover 11.11.2026 (T-0.12 first step): #636 merged, mypy checks every function body with 75 test modules as the baseline and strict flags on `api.core`, `api.domain.calls`, `api.domain.delivery`; the workbench n8n runs 2.47.2 and holds no imported workflow. Next: shrink the test baseline of #552 (Sonnet 5.5 medium), the open `priority: high` issues wait for Maxi (#572 vision model, #397 router, #73 and #81 server).
+
 Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge hold; both branch states and manual review steps are in `docs/00_PCF.md`, and the unapproved draft/CI idea is saved in `docs/21_REVIEW_AUTOMATION.md`.
 
 | Date | What |
