@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 11.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.34.2
+> Status: 11.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.34.3
 
 ---
 
@@ -302,6 +302,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.34.3 · 11.11.2026:** Fable checks closed: Fable subagent from Opus works, advisor stays off
 - **v2.34.2 · 11.11.2026:** STATUS upkeep (one row archived) and Fable use 4 recorded in routing_history.csv
 - **v2.34.1 · 11.11.2026:** Review fixes of #643 (#649): additive handover keeps the held draft, AI notice on every way out
 - **v2.34.0 · 11.11.2026:** Model routing: Fable 5.2 in four uses, xhigh only after a stall, usage check
