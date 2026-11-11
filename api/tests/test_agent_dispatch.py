@@ -14,8 +14,8 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from api.agent.dispatch import dispatch
-from api.models import Call, Reservation
+from api.agent.dispatch import ToolResult, dispatch
+from api.models import Call, Reservation, ServiceConfig
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -224,6 +224,74 @@ def test_transfer_to_team(session, tenant_id, call_id):
     )
     assert result.ok
     assert "transfer_to" in result.data
+
+
+def _on_the_tablet(migrated_db_url, tenant_id, **changed) -> None:
+    """The team changes `service_config` in a session of its own, mid-call."""
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as tablet:
+        config = tablet.get(ServiceConfig, tenant_id)
+        for name, value in changed.items():
+            setattr(config, name, value)
+        tablet.commit()
+    engine.dispose()
+
+
+@pytest.fixture
+def call_session(migrated_db_url, call_id):
+    """A session as a call holds it (`db.SessionLocal`): for the whole call,
+    and what it loaded does not expire on commit."""
+    engine = create_engine(migrated_db_url)
+    with Session(engine, autoflush=False, expire_on_commit=False) as s:
+        yield s
+    engine.dispose()
+
+
+def test_a_team_number_changed_during_the_call_is_the_one_dialled(
+    call_session, tenant_id, call_id, migrated_db_url
+):
+    """A review claimed the number read at the start of the call is dialled
+    to its end (#655). It is not: the session's identity map holds no strong
+    reference, and no tool keeps the row past its own call, so each tool
+    reads `service_config` again. This pins it for the tools called here."""
+    evening = berlin(DIENSTAG, 18)
+    dispatch(call_session, call_id, tenant_id, "get_service_status", {}, now=evening)
+    _on_the_tablet(migrated_db_url, tenant_id, team_phone="+4972215550999")
+
+    result = dispatch(
+        call_session,
+        call_id,
+        tenant_id,
+        "transfer_to_team",
+        {"reason": "complaint"},
+        now=evening,
+    )
+
+    assert result.data["transfer_to"] == "+4972215550999"
+
+
+def test_a_service_switched_off_during_the_call_is_off_in_the_status(
+    call_session, tenant_id, call_id, migrated_db_url
+):
+    def status() -> ToolResult:
+        return dispatch(
+            call_session,
+            call_id,
+            tenant_id,
+            "get_service_status",
+            {},
+            now=berlin(DIENSTAG, 18),
+        )
+
+    before = status()
+    _on_the_tablet(migrated_db_url, tenant_id, pickup_enabled=False)
+
+    after = status()
+
+    assert (before.data["pickup_enabled"], after.data["pickup_enabled"]) == (
+        True,
+        False,
+    )
 
 
 def test_unbekanntes_tool_ist_invalid_input_statt_crash(session, tenant_id, call_id):

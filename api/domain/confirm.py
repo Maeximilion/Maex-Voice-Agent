@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.core.errors import SAY_ON_FAILURE, Conflict, NotFound
+from api.core.errors import SAY_ON_FAILURE, SAY_TO_THE_TEAM, Conflict, NotFound
 from api.core.time import utcnow
 from api.domain.customers.contact import note_contact
 from api.domain.ordering.confirm import confirm_order
@@ -41,10 +41,8 @@ from api.models import AuditLog, Call, Reservation, ServiceConfig, Tenant
 from api.schemas.confirm import Confirmation, ConfirmRequest
 
 ACTOR_AGENT = "agent"
-SAY_CANCELLED = (
-    "Diese Reservierung wurde bereits storniert. Ich verbinde Sie mit dem Restaurant."
-)
 SAY_TABLET_CANCELLED = "Diese Reservierung wurde bereits storniert."
+SAY_CANCELLED = f"{SAY_TABLET_CANCELLED} {SAY_TO_THE_TEAM}"
 SAY_SEATS_GONE = (
     f"Dieser Tisch ist in der Zwischenzeit leider vergeben worden. {ASK_OTHER_TIME}"
 )

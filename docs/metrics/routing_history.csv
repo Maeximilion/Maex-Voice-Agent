@@ -51,3 +51,6 @@ date,task,split,session,model,calls,input,cache_write,cache_write_1h,cache_read,
 2026-11-11,fable-checks,no,3cbf1b79-c46f-4037-8c0b-fa8019e16287,claude-haiku-5-5,3,6,72640,0,126369,1608,111483
 2026-11-11,fable-checks,no,3cbf1b79-c46f-4037-8c0b-fa8019e16287,claude-opus-5-5,25,50,112918,112918,4159465,11402,698842
 2026-11-11,Fable use 4 (rule 5 review #651 #652),no,c2a79ea2-b8dc-459e-b513-01b0481f0179,claude-fable-5-2,21,42,218370,218370,4757113,43535,1130168
+2026-11-11,"Fable use 4 (code-review max, ledger #546 batch 1: 15 findings, 6 P1, #655 #656 #657)",no,f59389d0-b182-4755-a9eb-9ffb7e0e1357,claude-fable-5-2,58,118,1334969,126624,16422936,219961,4505896
+2026-11-11,"Fable use 4 (code-review max, ledger #546 batch 1: 15 findings, 6 P1, #655 #656 #657)",no,f59389d0-b182-4755-a9eb-9ffb7e0e1357,claude-opus-5-5,81,162,570099,0,17258134,130425,3090724
+2026-11-11,"#655 handovers carried out (Fable use 4, build on Maxi's word)",no,30907de6-bab3-44f3-83e9-e30ae8a3496a,claude-fable-5-2,68,136,290743,290743,19478370,83712,2948019

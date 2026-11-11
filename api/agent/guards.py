@@ -202,6 +202,7 @@ def note_said(state: ConversationState, say: str) -> None:
     # What the guest answers next refers to this sentence (`last_say`), and
     # with a first sentence said the call has begun: no second greeting.
     state.last_say = last_words(say)
+    state.last_said = say
     state.greeted = True
     state.asked_for_phone = asks_for_a_phone_number(
         say, asked_before=state.asked_for_phone

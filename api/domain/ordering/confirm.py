@@ -22,7 +22,7 @@ from typing import Any
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from api.core.errors import SAY_ON_FAILURE, Conflict, NotFound
+from api.core.errors import SAY_ON_FAILURE, SAY_TO_THE_TEAM, Conflict, NotFound
 from api.core.time import business_day, business_day_bounds_utc, tz, utcnow
 from api.domain.customers.contact import note_order
 from api.domain.ordering.draft import draft_labels
@@ -42,9 +42,7 @@ DIRECT_MODE = "primary"
 # ("A17" ist der Abholcode, "Nummer 17" ein Gericht). Format wie im Mockup.
 PICKUP_PREFIX = "A"
 
-SAY_CANCELLED = (
-    "Diese Bestellung wurde bereits storniert. Ich verbinde Sie mit dem Restaurant."
-)
+SAY_CANCELLED = f"Diese Bestellung wurde bereits storniert. {SAY_TO_THE_TEAM}"
 ALREADY_CONFIRMED = ("confirmed", "approved", "handed_over")
 
 

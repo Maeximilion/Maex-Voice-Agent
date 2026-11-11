@@ -162,6 +162,10 @@ class ConversationState(BaseModel):
     # every turn, so the state stays compact and never grows into a transcript
     # (docs/05 §5).
     last_say: str | None = None
+    # The same sentence whole, to say again when the guest only stops the
+    # recording (`loop._still_open`): `last_say` keeps the end of a long one.
+    # Never sent.
+    last_said: str | None = None
     # What get_service_status said in this call about being open and taking
     # orders (`SERVICE_FLAGS`); None until then. The model reads from it that
     # the status is known: it asked again at the start of every turn, one

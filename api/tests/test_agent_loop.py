@@ -35,15 +35,19 @@ from api.agent.loop import (
     SAY_ORDER_NOT_PLACED,
     SAY_ORDER_PLACED,
     SAY_TABLE_BOOKED,
+    SAY_TABLE_NOT_BOOKED,
     SAY_TEAM_OFFER,
     SUMMARY_OPEN_ORDER,
+    SUMMARY_OPEN_TABLE,
     ConversationLoop,
     TurnResult,
     _booked_say,
     _local_times,
     _order_lines,
+    _still_open,
 )
 from api.agent.state import Allergy, ConversationState, initial_state
+from api.domain.confirm import SAY_CANCELLED
 from api.models import Call, Callback, Reservation
 from scripts.seed import seed
 
@@ -200,28 +204,75 @@ def test_transfer_erfolgreich_beendet_das_gespraech(session, state):
     assert result.say == [SAY_ESCALATION]
     assert state.stage == "transferred"
     assert len(llm.calls) == 1
+    # The card for a team leg nobody answers, as on the core's own handover.
+    assert state.handoff_summary == (
+        "Kunde hat sich beschwert. Kunde sagte: "
+        "Da gibt es leider ein Problem mit meiner Bestellung"
+    )
 
 
-def test_transfer_without_a_reachable_team_goes_back_to_the_model(session, state):
-    """Before opening nobody takes the call: the model gets the result and can
-    take a callback instead, the call does not end on the tool."""
-    llm = FakeLLM(
+def _model_asks_for_the_team() -> FakeLLM:
+    """Hands the call over itself. Asked again, it would only announce it."""
+    return FakeLLM(
         [
             LLMTurn(
                 tool_call=ToolCall(
                     name="transfer_to_team", args={"reason": "human_requested"}
                 )
             ),
-            LLMTurn(say="Unter welcher Nummer erreichen wir Sie?"),
+            LLMTurn(say="Ich verbinde Sie mit dem Team."),
         ]
     )
+
+
+def test_a_transfer_of_the_model_without_the_team_becomes_a_callback(session, state):
+    """Before opening nobody takes the call. The result went back to the
+    model, and one that answered with a handover sentence left the guest with
+    neither a transfer nor a card (#655): the core writes the card itself."""
+    state.slots["phone"] = CALLER
+    llm = _model_asks_for_the_team()
     loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
 
     result = loop.run_turn(state, "Ich hätte gern jemanden vom Team")
 
-    assert result.say == ["Unter welcher Nummer erreichen wir Sie?"]
-    assert result.ended is False
-    assert '"available": false' in llm.calls[1][2]
+    assert result.ended is True and state.stage == "callback"
+    assert len(llm.calls) == 1
+    card = session.scalars(select(Callback)).one()
+    assert card.reason == "human_requested"
+    assert card.summary == (
+        "Kunde wollte mit einem Menschen sprechen. Kunde sagte: "
+        "Ich hätte gern jemanden vom Team"
+    )
+
+
+def test_a_transfer_of_the_model_without_team_or_number_asks_for_one(session, state):
+    llm = _model_asks_for_the_team()
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+
+    assert result.ended is False and result.say == [SAY_CALLBACK_NUMBER]
+    result = loop.run_turn(state, "0721 5551234")
+    assert result.ended is True and len(llm.calls) == 1
+    card = session.scalars(select(Callback)).one()
+    assert (card.reason, card.phone) == ("human_requested", "+497215551234")
+    # What the guest wanted waits with the card for the number (Codex PR #658).
+    assert card.summary == (
+        "Kunde wollte mit einem Menschen sprechen. Kunde sagte: "
+        "Ich hätte gern jemanden vom Team"
+    )
+
+
+def test_a_transfer_with_a_reason_the_model_made_up_is_still_carried_out(
+    session, state
+):
+    call = ToolCall(name="transfer_to_team", args={"reason": ["unklar"]})
+    llm = FakeLLM([LLMTurn(tool_call=call)])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+
+    assert result.ended is True and state.stage == "transferred"
 
 
 def test_max_call_seconds_uebergibt_wirklich_statt_nur_anzukuendigen(session, state):
@@ -1621,6 +1672,8 @@ def test_a_callback_that_fails_still_ends_with_the_team(session, state):
 
     assert result.ended is True and state.stage == "transferred"
     assert session.scalars(select(Callback)).all() == []
+    # The wish as the card of the team leg, whole and not as a guest's words.
+    assert state.handoff_summary == f"{WISH}."
 
 
 def test_a_team_table_next_to_an_open_order_names_the_order(session, state):
@@ -1919,6 +1972,9 @@ def test_a_callback_without_a_number_goes_to_the_team_when_it_is_there(
     assert result.say == [SAY_ESCALATION]
     assert state.stage == "transferred"
     assert len(llm.calls) == 1
+    assert state.handoff_summary == (
+        "Anliegen konnte automatisch nicht geklärt werden. Kunde sagte: ... krrr ..."
+    )
 
 
 def test_a_callback_without_a_number_asks_for_it_when_nobody_is_there(
@@ -2132,3 +2188,208 @@ def test_a_turn_the_core_takes_something_from_counts_noise_from_the_start(
 
     assert not any(result.ended for result in results)
     assert state.slots["party_size"] == 4
+
+
+# -- Every handover the guest hears of is carried out, with its card (#655) ----
+ORDER_ON_CARD = f"{SUMMARY_OPEN_ORDER} 2x 12 Pizza Margherita."
+HANDED_OVER = pytest.mark.parametrize(
+    ("now", "stage"), [(NOW, "callback"), (OPEN_NOW, "transferred")]
+)
+
+
+def _two_pizzas(state) -> None:
+    pizza = str(uuid.uuid4())
+    state.seen_items[pizza] = {"number": "12", "name": "Pizza Margherita"}
+    state.cart = [{"menu_item_id": pizza, "quantity": 2}]
+
+
+def _card(session, state) -> str:
+    """The card of the handover: with the call on the team leg, else written."""
+    if state.stage == "transferred":
+        return state.handoff_summary
+    return session.scalars(select(Callback)).one().summary
+
+
+def _past_the_limit(session, now) -> ConversationLoop:
+    """The call is past its limit when the guest's next sentence comes."""
+    return ConversationLoop(
+        session,
+        FakeLLM([]),
+        "system",
+        now=now,
+        max_call_seconds=10,
+        clock=clock_from([0, 100]),
+    )
+
+
+@HANDED_OVER
+def test_a_failed_tool_that_announces_the_team_is_carried_out(
+    session, state, now, stage
+):
+    """The tablet cancelled the draft the guest says yes to: the tool's
+    sentence ends with the handover. Passed back to the model, it was spoken
+    and nothing followed; the guest waited and the call ended `abandoned`."""
+    reservation = read_back_reservation(session, state)
+    reservation.status = "cancelled"
+    session.commit()
+    state.slots["phone"] = CALLER
+    llm = confirming(state, then_say=SAY_CANCELLED)
+    loop = ConversationLoop(session, llm, "system", now=now, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert result.ended is True and state.stage == stage
+    assert result.say[0] == "Diese Reservierung wurde bereits storniert."
+    assert len(result.say) == 2 and len(llm.calls) == 1
+    assert _card(session, state) == (
+        "Diese Reservierung wurde bereits storniert. Kunde sagte: Ja, passt"
+    )
+
+
+def test_a_failed_tool_without_team_or_number_asks_for_one(session, state):
+    """Nobody to reach and no number: the core is still on the line and asks
+    for one, the last-resort sentence would end the call (Codex PR #658)."""
+    reservation = read_back_reservation(session, state)
+    reservation.status = "cancelled"
+    session.commit()
+    assert "phone" not in state.slots
+    llm = confirming(state, then_say=SAY_CANCELLED)
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ja, passt")
+
+    assert result.ended is False
+    assert result.say == [
+        "Diese Reservierung wurde bereits storniert.",
+        SAY_CALLBACK_NUMBER,
+    ]
+    result = loop.run_turn(state, "0721 5551234")
+    assert result.ended is True and len(llm.calls) == 1
+    card = session.scalars(select(Callback)).one()
+    assert card.phone == "+497215551234"
+    assert card.summary == (
+        "Diese Reservierung wurde bereits storniert. Kunde sagte: Ja, passt"
+    )
+
+
+def test_a_booking_stands_once_on_a_card_that_waited_for_the_number(
+    session, tenant_id, call_id
+):
+    state = numberless(tenant_id, call_id)
+    state.booking_say = SAY_TABLE_BOOKED
+    llm = _model_asks_for_the_team()
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+    loop.run_turn(state, "0721 5551234")
+
+    card = session.scalars(select(Callback)).one().summary
+    assert card.count("Bereits gebucht") == 1 and "Kunde sagte: Ich hätte" in card
+
+
+def test_a_failed_tool_with_another_sentence_goes_back_to_the_model(session, state):
+    """Only the sentence that promises the team is carried out by the core."""
+    llm = FakeLLM(
+        [
+            LLMTurn(tool_call=ToolCall(name="check_slot", args={"party_size": 0})),
+            LLMTurn(say="Für wie viele Personen?"),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Einen Tisch bitte")
+
+    assert result.ended is False and result.say == ["Für wie viele Personen?"]
+
+
+@HANDED_OVER
+def test_a_handover_names_the_order_that_stands_unplaced(session, state, now, stage):
+    """A "Ja" to the read-back just as the call runs out of time: the card
+    read "Kunde sagte: Ja" and the team never learned of the order."""
+    state.slots["phone"] = CALLER
+    _two_pizzas(state)
+
+    result = _past_the_limit(session, now).run_turn(state, "Ja")
+
+    assert result.ended is True and state.stage == stage
+    assert result.say[0] == SAY_ORDER_NOT_PLACED and len(result.say) == 2
+    card = _card(session, state)
+    assert ORDER_ON_CARD in card and card.endswith("Kunde sagte: Ja")
+
+
+def test_a_handover_without_an_open_order_says_nothing_of_one(session, state):
+    state.slots["phone"] = CALLER
+
+    result = _past_the_limit(session, NOW).run_turn(state, "Ja")
+
+    assert len(result.say) == 1 and SUMMARY_OPEN_ORDER not in _card(session, state)
+
+
+def test_a_handover_names_the_table_read_back(session, state):
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+
+    result = _past_the_limit(session, NOW).run_turn(state, "Ja, passt")
+
+    assert result.say[0] == SAY_TABLE_NOT_BOOKED
+    assert (
+        f"{SUMMARY_OPEN_TABLE} 4 Personen, 16.09.2026 19:00 Uhr, Name Müller."
+        in _card(session, state)
+    )
+
+
+def test_a_model_failure_names_the_open_order_too(session, state):
+    class Down:
+        def next_turn(self, *args, **kwargs):
+            raise LLMError("down")
+
+    state.slots["phone"] = CALLER
+    _two_pizzas(state)
+    loop = ConversationLoop(session, Down(), "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Und eine Cola dazu")
+
+    assert result.say[0] == SAY_ORDER_NOT_PLACED
+    assert ORDER_ON_CARD in _card(session, state)
+
+
+def test_the_number_asked_for_after_noise_keeps_the_order_on_the_card(
+    session, tenant_id, call_id
+):
+    """The guest hears once that the order is not placed, with the question
+    for the number, and the card of the next turn names it once."""
+    state = numberless(tenant_id, call_id)
+    _two_pizzas(state)
+    turns = [LLMTurn(say=SAY_PARDON) for _ in range(6)]
+    loop = ConversationLoop(
+        session, FakeLLM(turns), "system", now=NOW, clock=clock_from([0])
+    )
+
+    results = [loop.run_turn(state, sentence) for sentence in NOISE[:6]]
+    assert results[-1].say == [SAY_ORDER_NOT_PLACED, SAY_CALLBACK_NUMBER]
+    result = loop.run_turn(state, "0721 5551234")
+
+    assert SAY_ORDER_NOT_PLACED not in result.say
+    assert _card(session, state).count(ORDER_ON_CARD) == 1
+
+
+def test_a_team_table_whose_callback_fails_keeps_the_order_on_the_card(session, state):
+    """The wish went into the handover as the guest's words: cut at 400
+    characters, and dropped whole when a line named the guest's allergy."""
+    state.slots["phone"] = "12"
+    _two_pizzas(state)
+
+    result = _ask_for_nine(session, state, now=OPEN_NOW)
+
+    assert result.say[1:] == [SAY_ORDER_NOT_PLACED, SAY_ESCALATION]
+    assert state.handoff_summary == f"{WISH}. {ORDER_ON_CARD}"
+
+
+def test_a_long_open_sentence_is_repeated_whole(state):
+    """Behind "Bitte nicht mehr aufnehmen." the voice said the last 299
+    characters of it, from the middle of a word on."""
+    asked = "Wir haben heute Pizza, Pasta und Salat. " * 12 + "Was darf es sein?"
+
+    note_said(state, asked)
+
+    assert _still_open(state) == asked
