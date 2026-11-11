@@ -714,19 +714,28 @@ What step 2 does not answer yet: two calls at once over the router (no second te
 by its own limit, §3), transfer from the IP telephone and what a second and third caller hear
 (T-10.2).
 
-### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, run set for 01.11.2026)
+### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, run sheet 11.11.2026, not run, date with Maxi)
 
 | | |
 |---|---|
 | Start folder | the repository folder in the Ubuntu home directory, Ubuntu terminal: its stack holds the dev database, and the tablet view shows the callback cards |
 | The one command | `docker compose -f docker-compose.yml -f docker-compose.override.yml -f deploy/asterisk/docker-compose.tunnel.yml --profile voice up -d --build` (the first start of `voice` loads its engines, up to 2 minutes); `... --profile voice rm -sf voice asterisk wireguard` takes the AI telephone off again and leaves the rest of the stack running |
-| Maxi has to have ready | Everything of the handover of T-10.1 step 2, with that stack down: both register as the same IP telephone with the same WireGuard key. In `.env`: `VOICE_EAR=whisper`, `VOICE_MOUTH=piper`, `VOICE_EAR_DEVICE` (`cuda` or `cpu`), the model of `LLM_BASE_URL` running (the run takes the graphics card; name a start time), and `TEAM_PHONE` the number the router rings the team telephone at. The dev database at the newest migration: 018 since 01.11.2026, after an encrypted backup (`backups/maex_maex_agent_20261101T214843Z_before_migration_018.dump.gpg`, passphrase file `~/.config/maex-voice-agent/backup.passphrase`). A second and a third telephone for the rows with more than one caller |
+| Maxi has to have ready | Everything of the handover of T-10.1 step 2, with that stack down: both register as the same IP telephone with the same WireGuard key. In `.env`: `VOICE_EAR=whisper`, `VOICE_MOUTH=piper`, `VOICE_EAR_DEVICE` (`cuda` or `cpu`), the model of `LLM_BASE_URL` running (the run takes the graphics card; name a start time), and `TEAM_PHONE` the number the router rings the team telephone at. The dev database at the newest migration (035 on 11.11.2026). A second and a third telephone for the rows with more than one caller. A mobile that serves as the team telephone has its mailbox off for the run (§5: a mailbox that answers is an answer), and the run lies inside the opening hours of the database: outside them a handover by the core rings nobody (§5) |
 | What the result looks like | per row below: the team telephone rings, by Maxi's clock within 30 s of placing the call or of the crash (the go of T-10.2). Our share is in Asterisk's own log, by call id and without a number: `docker compose ... logs asterisk \| grep -E 'call [0-9.]+: '` shows `arrived`, then `to the team` and `team leg ...` with their times |
 
-Before the first row Claude sets `service_config.call_mode` to `primary`: the seed leaves `shadow`, in
-which the AI answers no call and every call goes to the team. The tablet has no switch from `shadow`
-(only pause and resume), so it is set in the database, with a row in `audit_log`, and set back to
-`shadow` after the run.
+Tried on 01.11.2026 without a call: the stack came up healthy and registered in 20 s with
+`VOICE_EAR=whisper`, `VOICE_MOUTH=piper`, `VOICE_EAR_DEVICE=cpu`,
+`LLM_BASE_URL=http://host.docker.internal:8080/v1`, `LLM_MODEL=qwen3.6-35b-a3b` and
+`LLM_REASONING_EFFORT=none` set in the shell of the one command, so `.env` stays as it is; the ear
+runs on the CPU because the model fills the graphics card (`UD-IQ3_XXS`, 15.1 GB used with the
+desktop). The model server (`llm start`) unloads the model after 600 s without a request, so Claude
+sends it one request before every row.
+
+Before the first row Claude reads `service_config.call_mode` and sets it to `primary` when it is
+anything else: in the seed's `shadow` the AI answers no call and every call goes to the team. The
+tablet has no switch from `shadow` (only pause and resume), so it is set in the database, with a row
+in `audit_log`, and set back to the value found after the run. On 11.11.2026 the workbench's row
+was `primary` already.
 
 The rows, each on the test number, each with the line back up before the next (`... --profile voice
 up -d`):
@@ -735,12 +744,39 @@ up -d`):
 |---|---|---|
 | `voice` is down | `stop voice` | calls; the time until the team telephone rings |
 | A crash in the middle of a call | `kill voice` after the greeting, with `date +%T` before it | calls, speaks; the time from the kill until the team telephone rings |
-| The model is down | stops nothing in the stack; Maxi stops the model server | calls, says something; hears the outage sentence, the team telephone rings |
+| The model is down | stops nothing in the stack; the model server is stopped (`llm stop`, by Claude when Maxi is not at the workbench) | calls, says something; hears the outage sentence, the team telephone rings |
 | A live call handed to the team | nothing, the model up | asks for a person ("Kann ich bitte mit jemandem sprechen?"), answers the team telephone and talks to the caller: what the team sees as the caller's number (§12) |
 | The team does not pick up | nothing | as the row before, the team telephone not answered for 30 s: the caller hears that the restaurant calls back, the card is on the tablet view |
 | Asterisk is down | `stop asterisk`, and once `kill asterisk`; whether the router drops the registration at once or holds it up to its 300 s is what the row shows | calls; which telephones ring, and after how long |
 | A second and a third caller | nothing; the AI takes one call at a time (`max_concurrent_calls` 1) | while one call talks to the AI, a second caller calls (the core hands it to the team), then a third (the router's limit of 2 calls per IP telephone): what each hears |
 | Loop test | `stop asterisk` | calls the number `TEAM_PHONE` names: a team telephone rings, nothing ends at the test number |
+
+**With two mobiles (Maxi, 02.11.2026).** `TEAM_PHONE` is Maxi's mobile, so it is the team telephone
+of this run, and a second mobile calls the test number. Every row is measured by the clock at the
+telephones as written. The row with a second caller: the team telephone itself is the second caller,
+so the core's handover dials a telephone that is busy, and that is what the row shows. The third
+caller stays open unless a third telephone is at hand.
+
+**Run from a distance, with a printed sheet (Maxi, 11.11.2026).** Maxi and the caller are not at the
+workbench; the session stays open on it and Maxi writes to it from another device (not only from the
+team telephone, which rings during the run). The sheet is
+`docs/vorlagen/leitungstest_protokoll_druck.html`, German because the people at the telephones work
+from it, like the call log sheet: who does what, the checks before the run, a trial call, one box
+per row with the sentence to say, what is expected and the fields to fill in, the end and what to do
+when something sticks. Its blanks for names and numbers are filled into a copy outside the
+repository (`exports/`), printed from there, and the filled sheet comes back as a scan or photos in
+the chat, never into the repository; the times go to §11.
+
+- The words in the chat: `Start Leitungstest`, then per row `Zeile N start`, Claude's
+  `Zeile N: jetzt anrufen`, `Zeile N fertig`, Claude's `Leitung bereit` once the line is back up, and
+  `Ende Leitungstest`. Nobody calls before Claude's line.
+- Times: the sheet takes the clock time with seconds of placing the call and of the team telephone
+  ringing; Claude adds the times of Asterisk's log per row. In the crash row Claude kills `voice`
+  about 15 s after the log's `arrived` and writes the time of the kill into the chat.
+- The row "Asterisk is down" is two calls, one after `stop` and one after `kill`.
+- The workbench must not sleep: Claude turns standby and hibernation on mains power off at the start
+  (`powercfg /change standby-timeout-ac 0`, the same for `hibernate-timeout-ac`) and sets both back
+  to the values found at the end.
 
 Not covered here: anything that needs the trunk (T-10.12). The tunnel and `ACCESS_ALSO` are looked
 up once, so a new public address of the router during the run shows as `asterisk` unhealthy (not

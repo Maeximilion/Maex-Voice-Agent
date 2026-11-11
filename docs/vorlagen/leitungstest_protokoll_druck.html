@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Leitungstest Ausfallkarte</title>
+<!-- Print sheet for the wire run of T-10.2 (docs/20_VOICE_LAYER.md section 10, handover T-10.2).
+     Open in a browser, print A4 portrait. The spans with an id are filled for a run outside the
+     repository (names, telephone numbers); a filled or scanned sheet never goes into the repository. -->
+<style>
+  @page { size: A4 portrait; margin: 12mm; }
+  body { font-family: system-ui, sans-serif; font-size: 10pt; line-height: 1.35; color: #000; background: #fff; margin: 0; }
+  h1 { font-size: 16pt; margin: 0 0 1mm; }
+  h2 { font-size: 12pt; margin: 5mm 0 1.5mm; border-bottom: 1.5px solid #000; }
+  p { margin: 0 0 2mm; }
+  ol, ul { margin: 0 0 2mm; padding-left: 5mm; }
+  li { margin-bottom: 0.8mm; }
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 2mm; }
+  th, td { border: 1px solid #000; padding: 1mm 1.5mm; vertical-align: top; }
+  th { background: #eee; text-align: left; }
+  .row { break-inside: avoid; border: 1.5px solid #000; padding: 2mm 2.5mm; margin: 0 0 3mm; }
+  .row h3 { font-size: 11pt; margin: 0 0 1.5mm; }
+  .page { break-before: page; }
+  .v { display: inline-block; min-width: 42mm; border-bottom: 1px solid #000; }
+  .t { display: inline-block; width: 24mm; border-bottom: 1px solid #000; }
+  .s { display: inline-block; width: 12mm; border-bottom: 1px solid #000; }
+  .l { display: block; height: 7mm; border-bottom: 1px solid #000; }
+  .c { display: inline-block; width: 3.2mm; height: 3.2mm; border: 1px solid #000; vertical-align: -0.5mm; margin: 0 1mm 0 2mm; }
+  .say { font-style: italic; }
+  .chat { font-family: ui-monospace, monospace; font-weight: bold; white-space: nowrap; }
+  .f td { height: 8mm; }
+  .w25 { width: 25%; } .w20 { width: 20%; } .w33 { width: 33.3%; }
+</style>
+</head>
+<body>
+
+<h1>Leitungstest Ausfallkarte (T-10.2)</h1>
+<p>Datum: <span class="t"></span> &nbsp; Beginn: <span class="t"></span> &nbsp; Ende: <span class="t"></span> &nbsp; Bitte am Ende alle Blätter scannen.</p>
+<p><strong>Worum es geht:</strong> Fällt die KI am Telefon aus, muss der Anruf beim Team klingeln. Wir schalten acht Ausfälle einzeln ein, rufen jedes Mal die Testnummer an und messen, wie lange es dauert, bis das Teamtelefon klingelt. <strong>Bestanden ist eine Zeile bei höchstens 30 Sekunden.</strong></p>
+
+<h2>1. Wer macht was</h2>
+<table>
+  <tr><th class="w20">Rolle</th><th class="w25">Wer</th><th>Gerät und Aufgabe</th></tr>
+  <tr><td>Anrufer/in</td><td><span class="v" id="name-a"></span></td><td><strong>Telefon A</strong> (Handy), Nummer <span class="v" id="tel-a"></span>. Ruft die Testnummer an, spricht mit der KI, sagt an, was zu hören ist.</td></tr>
+  <tr><td>Leitung</td><td><span class="v" id="name-b"></span></td><td><strong>Telefon B</strong> (Handy), Nummer <span class="v" id="tel-b"></span>. Telefon B ist in diesem Test das <strong>Teamtelefon</strong>. Schreibt im Chat mit Claude, liest die Uhr ab, füllt diesen Bogen aus.</td></tr>
+  <tr><td>Technik</td><td>Claude</td><td>Sitzt am PC zu Hause (Werkbank). Schaltet die Ausfälle ein und wieder aus, liest die Zeiten aus dem Protokoll der Telefonanlage, meldet alles im Chat.</td></tr>
+  <tr><td>Chat-Gerät</td><td colspan="2">Am besten der Kassen-PC (Browser, Claude, diese Sitzung). Geht auch die Claude-App auf einem Handy, das gerade nicht telefoniert. Telefon B klingelt im Test, deshalb den Chat nicht nur auf Telefon B haben.</td></tr>
+  <tr><td>Testnummer</td><td colspan="2"><span class="v" id="tel-test"></span> (das KI-Telefon). <strong>Nie die Hauptnummer des Restaurants anrufen</strong>, außer in Zeile 8b.</td></tr>
+  <tr><td>Telefon C</td><td colspan="2">Freiwillig, nur für den dritten Anrufer in Zeile 7: <span class="v"></span></td></tr>
+</table>
+
+<h2>2. Vor dem Test</h2>
+<p><strong>Zu Hause, bevor die Leitung den PC verlässt:</strong></p>
+<p><span class="c"></span>PC ist an und am Strom, Docker Desktop läuft, die Claude-App zeigt diese Sitzung. Den PC nicht herunterfahren und nicht zuklappen. Den Ruhezustand schaltet Claude für den Test ab und danach wieder ein.<br>
+<span class="c"></span>Vom Kassen-PC oder vom Handy <span class="chat">Test</span> in die Sitzung schreiben. Claude antwortet: der Fernzugriff geht.</p>
+<p><strong>Am Testort:</strong></p>
+<p><span class="c"></span>Telefon B: <strong>Mailbox aus</strong> (<span class="chat">##002#</span> wählen und die Anruftaste drücken). Nimmt die Mailbox ab, zählt das als abgenommen, und die Zeilen 5 und 7 sind ungültig. Klingelton laut.<br>
+<span class="c"></span>Telefon A: die eigene Nummer wird mitgeschickt (nicht unterdrückt).<br>
+<span class="c"></span>Eine Uhr mit Sekunden ist zu sehen (Kassen-PC oder ein Handy). Stift liegt bereit.<br>
+<span class="c"></span>Der Test läuft in den Öffnungszeiten, die im System stehen. Claude prüft das beim Start; außerhalb klingelt in den Zeilen 3 bis 5 mit Absicht niemand.<br>
+<span class="c"></span>Am Router der Testnummer zugeordnete Telefone außer dem KI-Telefon (für Zeile 6): <span class="v"></span></p>
+
+<h2>3. So läuft jede Zeile ab</h2>
+<ol>
+  <li>Leitung schreibt im Chat <span class="chat">Zeile 1 start</span> (mit der Nummer der Zeile).</li>
+  <li>Claude bereitet den Ausfall vor und antwortet <span class="chat">Zeile 1: jetzt anrufen</span>. Vorher nicht anrufen.</li>
+  <li>Leitung sagt „jetzt“, Anrufer/in drückt auf Anrufen. Leitung schreibt die Uhrzeit mit Sekunden in „Anruf gestartet“.</li>
+  <li>Sobald Telefon B klingelt: Uhrzeit mit Sekunden in „Telefon B klingelt“.</li>
+  <li>Die Zeile so zu Ende führen, wie sie im Kasten steht. Dann beide auflegen.</li>
+  <li>Leitung schreibt <span class="chat">Zeile 1 fertig</span>, gern mit einem Satz dazu, was auffiel.</li>
+  <li>Claude schaltet den Ausfall wieder aus, nennt die Zeiten aus dem Protokoll und antwortet <span class="chat">Leitung bereit</span>. Erst dann die nächste Zeile.</li>
+</ol>
+<p><strong>Klingelt Telefon B nach 60 Sekunden nicht:</strong> auflegen, „kein Klingeln“ eintragen, <span class="chat">Zeile 1 fertig, kein Klingeln</span> schreiben. Das ist ein Ergebnis, kein Fehler von euch.</p>
+<p><strong>Sekunden</strong> = „Telefon B klingelt“ minus „Anruf gestartet“ (in Zeile 2 minus „Absturz“). Claude rechnet aus dem Protokoll der Anlage gegen; beide Werte bleiben auf dem Bogen.</p>
+
+<h2>4. Start und Probeanruf</h2>
+<div class="row">
+  <h3>Start</h3>
+  <p>Leitung schreibt <span class="chat">Start Leitungstest</span>. Claude schaltet den Ruhezustand des PCs ab, startet das Sprachmodell, meldet das KI-Telefon am Router an (dauert bis zu 3 Minuten), stellt die Leitung auf „KI nimmt an“, falls sie es nicht schon ist, und antwortet <span class="chat">Leitung bereit</span>.</p>
+  <p>Uhrzeit „Leitung bereit“: <span class="t"></span></p>
+</div>
+<div class="row">
+  <h3>Zeile 0: Probeanruf, nichts ist ausgefallen</h3>
+  <p>Anrufer/in ruft die Testnummer an. Die KI meldet sich und sagt, dass sie ein KI-Assistent ist. Anrufer/in sagt: <span class="say">„Ich wollte nur etwas testen. Vielen Dank, auf Wiederhören.“</span> und legt auf. Telefon B klingelt nicht.</p>
+  <p>KI hat sich gemeldet <span class="c"></span>ja <span class="c"></span>nein &nbsp;&nbsp; gut zu verstehen <span class="c"></span>ja <span class="c"></span>nein &nbsp;&nbsp; Sekunden bis zur Begrüßung: <span class="s"></span></p>
+  <p>Meldet sich die KI nicht: nicht weitermachen, im Chat schreiben, was zu hören war.</p>
+</div>
+
+<h2 class="page">5. Die acht Zeilen</h2>
+
+<div class="row">
+  <h3>Zeile 1: Der Sprachdienst ist aus</h3>
+  <table>
+    <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B</th></tr>
+    <tr><td>Hält den Sprachdienst an.</td><td>Ruft die Testnummer an und wartet. Es meldet sich keine KI, es läutet nur.</td><td>Notiert die Zeiten. Nimmt Telefon B ab, beide sagen kurz etwas, auflegen.</td></tr>
+  </table>
+  <p><strong>Erwartet:</strong> Telefon B klingelt nach etwa 5 bis 15 Sekunden.</p>
+  <table class="f">
+    <tr><td>Anruf gestartet<br><span class="t"></span></td><td>Telefon B klingelt<br><span class="t"></span></td><td>Sekunden<br><span class="s"></span></td><td>Bestanden (bis 30 s)<br><span class="c"></span>ja <span class="c"></span>nein</td></tr>
+  </table>
+  <p>Gehört und Bemerkung: <span class="l"></span></p>
+</div>
+
+<div class="row">
+  <h3>Zeile 2: Absturz mitten im Gespräch</h3>
+  <table>
+    <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B</th></tr>
+    <tr><td>Wartet, bis der Anruf da ist, lässt den Sprachdienst etwa 15 Sekunden danach abstürzen und schreibt <span class="chat">Absturz</span> mit der Uhrzeit in den Chat.</td><td>Ruft an, wartet die Begrüßung ab und spricht dann weiter, zum Beispiel: <span class="say">„Ich möchte etwas zum Abholen bestellen.“</span> Wird die KI plötzlich still: <strong>dranbleiben, nicht auflegen.</strong></td><td>Trägt die Absturzzeit aus dem Chat ein und die Uhrzeit, zu der Telefon B klingelt. Nimmt ab, beide sagen kurz etwas, auflegen.</td></tr>
+  </table>
+  <p><strong>Erwartet:</strong> Telefon B klingelt wenige Sekunden nach dem Absturz. Gemessen wird ab dem Absturz.</p>
+  <table class="f">
+    <tr><td>Anruf gestartet<br><span class="t"></span></td><td>Absturz (aus dem Chat)<br><span class="t"></span></td><td>Telefon B klingelt<br><span class="t"></span></td><td>Sekunden ab Absturz<br><span class="s"></span></td><td>Bestanden<br><span class="c"></span>ja <span class="c"></span>nein</td></tr>
+  </table>
+  <p>Gehört und Bemerkung: <span class="l"></span></p>
+</div>
+
+<div class="row">
+  <h3>Zeile 3: Das Sprachmodell ist aus</h3>
+  <table>
+    <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B</th></tr>
+    <tr><td>Hält nur das Sprachmodell an. Telefonanlage und Sprachdienst laufen.</td><td>Ruft an, wartet die Begrüßung ab und sagt: <span class="say">„Ich möchte einen Tisch reservieren.“</span> Bleibt dran.</td><td>Notiert die Zeiten. Nimmt Telefon B ab, beide sagen kurz etwas, auflegen.</td></tr>
+  </table>
+  <p><strong>Erwartet:</strong> Die KI sagt: <span class="say">„Bei mir gibt es gerade eine technische Störung. Ich verbinde Sie direkt mit dem Restaurant.“</span> Danach klingelt Telefon B.</p>
+  <table class="f">
+    <tr><td>Anruf gestartet<br><span class="t"></span></td><td>Telefon B klingelt<br><span class="t"></span></td><td>Sekunden<br><span class="s"></span></td><td>Störungssatz gehört<br><span class="c"></span>ja <span class="c"></span>nein</td><td>Bestanden<br><span class="c"></span>ja <span class="c"></span>nein</td></tr>
+  </table>
+  <p>Gehört und Bemerkung: <span class="l"></span></p>
+</div>
+
+<div class="row">
+  <h3>Zeile 4: Die KI gibt ein laufendes Gespräch an das Team</h3>
+  <table>
+    <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B</th></tr>
+    <tr><td>Schaltet nichts aus. Alles läuft.</td><td>Ruft an, wartet die Begrüßung ab und sagt: <span class="say">„Kann ich bitte mit jemandem sprechen?“</span> Bleibt dran und spricht dann mit der Leitung.</td><td>Nimmt Telefon B ab und spricht etwa 10 Sekunden mit dem Anrufer. Schaut vorher auf die Anzeige: welche Nummer ruft an?</td></tr>
+  </table>
+  <p><strong>Erwartet:</strong> Die KI sagt, dass sie verbindet, Telefon B klingelt, beide hören einander.</p>
+  <table class="f">
+    <tr><td>Anruf gestartet<br><span class="t"></span></td><td>Telefon B klingelt<br><span class="t"></span></td><td>Beide hören einander<br><span class="c"></span>ja <span class="c"></span>nein</td><td>Bestanden<br><span class="c"></span>ja <span class="c"></span>nein</td></tr>
+  </table>
+  <p>Telefon B zeigt als Anrufer: <span class="c"></span>die Nummer von Telefon A <span class="c"></span>die Testnummer <span class="c"></span>etwas anderes: <span class="v"></span></p>
+  <p>Gehört und Bemerkung: <span class="l"></span></p>
+</div>
+
+<div class="row">
+  <h3>Zeile 5: Das Team nimmt nicht ab</h3>
+  <table>
+    <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B</th></tr>
+    <tr><td>Schaltet nichts aus. Sieht nach dem Anruf nach, ob die Rückrufkarte für das Team angelegt ist, und meldet es im Chat.</td><td>Wie Zeile 4: <span class="say">„Kann ich bitte mit jemandem sprechen?“</span> Bleibt dran, bis die Ansage zu Ende ist und die Leitung von selbst auflegt.</td><td><strong>Lässt Telefon B klingeln.</strong> Nicht abnehmen und nicht wegdrücken. Notiert, wann es anfängt zu klingeln und wann der Anrufer die Ansage hört.</td></tr>
+  </table>
+  <p><strong>Erwartet:</strong> Nach etwa 30 Sekunden Klingeln hört der Anrufer: <span class="say">„Im Restaurant hat gerade leider niemand abgenommen. Ich habe Ihre Nummer notiert. Das Restaurant ruft Sie so bald wie möglich zurück. Vielen Dank für Ihren Anruf. Auf Wiederhören.“</span></p>
+  <table class="f">
+    <tr><td>Telefon B klingelt ab<br><span class="t"></span></td><td>Ansage beginnt<br><span class="t"></span></td><td>Ansage wie oben<br><span class="c"></span>ja <span class="c"></span>nein</td><td>Rückrufkarte laut Claude<br><span class="c"></span>ja <span class="c"></span>nein</td><td>Bestanden<br><span class="c"></span>ja <span class="c"></span>nein</td></tr>
+  </table>
+  <p>Gehört und Bemerkung: <span class="l"></span></p>
+</div>
+
+<div class="row">
+  <h3>Zeile 6: Die Telefonanlage der KI ist aus (zwei Anrufe: 6a und 6b)</h3>
+  <table>
+    <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B</th></tr>
+    <tr><td><strong>6a:</strong> hält die Anlage sauber an, sie meldet sich am Router ab. <strong>6b:</strong> lässt sie abstürzen, der Router kann sie bis zu 5 Minuten für angemeldet halten. Zwischen 6a und 6b auf <span class="chat">Leitung bereit</span> warten.</td><td>Ruft jeweils die Testnummer an und wartet bis zu 60 Sekunden. Sagt an, was zu hören ist: Läuten, Besetztzeichen, Ansage, Stille.</td><td>Notiert, welche Telefone klingeln und nach wie vielen Sekunden. Telefon B wird hier von uns nicht angerufen.</td></tr>
+  </table>
+  <p><strong>Erwartet:</strong> Das KI-Telefon fehlt einfach. Die Telefone, die der Router der Testnummer zuordnet, klingeln wie immer. Ist dort keines zugeordnet, klingelt keines: dann genau das eintragen.</p>
+  <table class="f">
+    <tr><th class="w20"></th><th>Anruf gestartet</th><th>Was klingelt, und wann</th><th>Was hört der Anrufer</th></tr>
+    <tr><td>6a angehalten</td><td></td><td></td><td></td></tr>
+    <tr><td>6b abgestürzt</td><td></td><td></td><td></td></tr>
+  </table>
+  <p>Bemerkung: <span class="l"></span></p>
+</div>
+
+<div class="row">
+  <h3>Zeile 7: Ein zweiter und ein dritter Anrufer</h3>
+  <table>
+    <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B (und Telefon C)</th></tr>
+    <tr><td>Schaltet nichts aus. Die KI führt immer nur ein Gespräch. Sieht danach nach, ob für den zweiten Anrufer eine Rückrufkarte angelegt ist.</td><td>Ruft an und <strong>hält das Gespräch mit der KI am Laufen</strong>, zum Beispiel nach den Öffnungszeiten fragen und langsam etwas bestellen. Legt erst auf, wenn die Leitung „fertig“ sagt.</td><td>Ruft mit <strong>Telefon B</strong> die Testnummer an, während A mit der KI spricht, und notiert, was zu hören ist. Wenn Telefon C da ist: C ruft an, solange A und B noch in der Leitung sind.</td></tr>
+  </table>
+  <p><strong>Erwartet:</strong> Das Gespräch von A läuft ungestört weiter. Den zweiten Anruf gibt die Anlage an das Teamtelefon weiter. Das ist heute Telefon B selbst und damit besetzt: B hört Läuten oder Besetzt, keine KI. Den dritten Anruf nimmt der Router nicht mehr an (höchstens zwei Gespräche je Telefon).</p>
+  <table class="f">
+    <tr><th class="w20"></th><th>Anruf gestartet</th><th>Was ist zu hören, wie lange</th></tr>
+    <tr><td>Zweiter Anrufer (B)</td><td></td><td></td></tr>
+    <tr><td>Dritter Anrufer (C)</td><td></td><td></td></tr>
+  </table>
+  <p>Gespräch von A blieb ungestört <span class="c"></span>ja <span class="c"></span>nein &nbsp;&nbsp; Rückrufkarte für B laut Claude <span class="c"></span>ja <span class="c"></span>nein &nbsp;&nbsp; kein Telefon C <span class="c"></span></p>
+  <p>Bemerkung: <span class="l"></span></p>
+</div>
+
+<div class="row">
+  <h3>Zeile 8: Schleifentest, die Software ist aus</h3>
+  <table>
+    <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B</th></tr>
+    <tr><td>Hält die Telefonanlage der KI an. Bestätigt danach, dass bei uns kein Anruf angekommen ist.</td><td><strong>8a:</strong> ruft direkt die Nummer von Telefon B an, nicht die Testnummer. <strong>8b</strong> (freiwillig, nur wenn das Team im Restaurant Bescheid weiß): ruft die Hauptnummer an.</td><td>8a: Telefon B klingelt wie bei jedem Anruf. 8b: die Telefone im Restaurant klingeln wie immer.</td></tr>
+  </table>
+  <p><strong>Erwartet:</strong> Die Teamnummer führt nie zurück zur KI. Es klingelt sofort beim Team, auch wenn unsere Software aus ist.</p>
+  <table class="f">
+    <tr><td>8a: Telefon B klingelt<br><span class="c"></span>ja <span class="c"></span>nein</td><td>8b: Restaurant klingelt wie immer<br><span class="c"></span>ja <span class="c"></span>nein <span class="c"></span>nicht gemacht</td><td>Bestanden<br><span class="c"></span>ja <span class="c"></span>nein</td></tr>
+  </table>
+  <p>Bemerkung: <span class="l"></span></p>
+</div>
+
+<h2>6. Ende</h2>
+<ol>
+  <li>Leitung schreibt <span class="chat">Ende Leitungstest</span>.</li>
+  <li>Claude meldet das KI-Telefon am Router ab (die Testnummer erreicht die KI dann nicht mehr), stellt die Leitung auf den Stand vor dem Test zurück, schaltet den Ruhezustand des PCs wieder ein und schreibt die Tabelle mit allen Zeiten aus dem Protokoll in den Chat.</li>
+  <li>Leitung schaltet die Mailbox von Telefon B wieder ein (App oder Kurzwahl des Anbieters).</li>
+  <li>Alle Blätter scannen oder gerade und scharf fotografieren (PDF, JPG oder PNG) und im Chat hochladen. Der ausgefüllte Bogen enthält Telefonnummern: nur in den Chat, nicht weitergeben.</li>
+</ol>
+
+<h2>7. Wenn etwas hakt</h2>
+<table>
+  <tr><th class="w33">Was passiert</th><th>Was tun</th></tr>
+  <tr><td>Claude antwortet nicht</td><td>Zwei Minuten warten, noch einmal schreiben. Bleibt es still, ist der PC zu Hause aus oder ohne Netz: Test abbrechen, Uhrzeit notieren. Ohne Claude ruft die Testnummer niemanden mehr an, es ist nichts kaputt.</td></tr>
+  <tr><td>Claude meldet „KI-Telefon nicht angemeldet“</td><td>Warten. Der Router hat eine neue Adresse bekommen, Claude meldet das KI-Telefon neu an und schreibt <span class="chat">Leitung bereit</span>.</td></tr>
+  <tr><td>Die KI versteht den Satz nicht</td><td>Den Satz einmal langsam wiederholen. Versteht sie ihn wieder nicht: eintragen und <span class="chat">fertig</span> schreiben. Auch das ist ein Ergebnis.</td></tr>
+  <tr><td>Es wurde zu früh angerufen</td><td>Auflegen, <span class="chat">Zeile wiederholen</span> schreiben, auf <span class="chat">jetzt anrufen</span> warten.</td></tr>
+  <tr><td>Ein echter Anruf kommt auf Telefon B</td><td>Annehmen oder später zurückrufen, dann die Zeile wiederholen.</td></tr>
+  <tr><td>Die Zeit wird knapp</td><td>Die Zeilen 1 bis 5 zählen am meisten. <span class="chat">Ende Leitungstest</span> geht jederzeit; die fehlenden Zeilen bleiben leer.</td></tr>
+</table>
+
+<h2>8. Gesamtergebnis</h2>
+<table class="f">
+  <tr><th>Zeile</th><th>1</th><th>2</th><th>3</th><th>4</th><th>5</th><th>6</th><th>7</th><th>8</th></tr>
+  <tr><td>Sekunden</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+  <tr><td>Bestanden</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>
+</table>
+<p>Was sonst auffiel (Tonqualität, Pausen, Verständlichkeit, Überraschungen):</p>
+<p><span class="l"></span><span class="l"></span><span class="l"></span><span class="l"></span><span class="l"></span><span class="l"></span></p>
+<p>Unterschrift Leitung: <span class="v"></span> &nbsp;&nbsp; Anrufer/in: <span class="v"></span></p>
+
+</body>
+</html>
