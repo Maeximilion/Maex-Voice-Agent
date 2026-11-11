@@ -298,6 +298,7 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 | Date | What |
 |---|---|
+| 11.11.2026 | **The bar "Ton an" keeps a gap to the columns.** The hint above the board touched the column headings under it (Maxi, 11.11.2026): `.betrieb button.ton-an` in `app.css` gets `margin-bottom: var(--s3)`. Measured on the board in a browser: 12 px between the bar and the columns, 0 before. |
 | 10.11.2026 | **n8n 2.46.6 to 2.47.2 (#628, Dependabot).** One pin in `docker-compose.yml`; the 2.47.0 to 2.47.2 release notes name no breaking change. |
 | 10.11.2026 | **The dev console's script is TypeScript (#626 closed, T-3.18 done).** The inline script of `dev/console.html` (the red bar for a failed tap, `ENV=dev` only) is `api/gui/ts/dev-console.ts`, loaded as a module (Maxi's word, 10.11.2026). Run in a headless browser with the real htmx: the bar shows on a 404 and on a send error and goes with the next answer that works. `api/tests/test_browser_code_language.py` allows no inline script and no handwritten script any more. |
 | 10.11.2026 | **Four medium CodeQL alerts fixed (#14, #15, #20, #21).** `api/gui/access.py` `_back` rebuilds the owner page's way back behind the constant `/gui/` prefix after the allowlist match, so CodeQL sees the redirect as sanitised (behaviour unchanged, covered by the existing redirect tests). `scripts/readme_demo.py` strips CR and LF from every header the README demo proxy forwards, with a test. Dependabot had no open alert at this point. |
