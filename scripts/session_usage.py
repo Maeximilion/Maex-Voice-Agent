@@ -6,10 +6,12 @@ Reads the session's transcript and those of its subagents under
 ~/.claude/projects/<folder>/, sums the usage of every model reply, and either
 prints it, records the part since the last record of the same session as rows
 of docs/metrics/routing_history.csv, or estimates what a split saved from the
-rows recorded so far.
+rows recorded so far. `context` prints the size of the session's current
+context, which /handover compares with its thresholds.
 
 Usage:
     python3 scripts/session_usage.py show
+    python3 scripts/session_usage.py context
     python3 scripts/session_usage.py record T-3.15 --split yes
     python3 scripts/session_usage.py estimate
 
@@ -79,29 +81,38 @@ def transcripts(projects_dir: Path, session: str) -> list[Path]:
     return ([main] if main.exists() else []) + subagents
 
 
+def replies(path: Path):
+    """(message, line) of every model reply in one transcript, in order."""
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        message = record.get("message") if isinstance(record, dict) else None
+        if not isinstance(message, dict) or message.get("role") != "assistant":
+            continue
+        if not isinstance(message.get("usage"), dict) or message.get("model") in (
+            None,
+            "",
+            "<synthetic>",
+        ):
+            continue
+        yield message, line
+
+
 def usage(paths: list[Path]) -> dict[str, dict[str, int]]:
     """Totals per model. One reply is written as several records with the same
     message id; it counts once."""
     totals: dict[str, dict[str, int]] = defaultdict(lambda: dict.fromkeys(COUNTS, 0))
     for path in paths:
         seen: set[str] = set()
-        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-            try:
-                record = json.loads(line)
-            except ValueError:
-                continue
-            message = record.get("message") if isinstance(record, dict) else None
-            if not isinstance(message, dict) or message.get("role") != "assistant":
-                continue
-            counted = message.get("usage")
-            model = message.get("model")
-            if not isinstance(counted, dict) or not model or model == "<synthetic>":
-                continue
+        for message, line in replies(path):
+            counted = message["usage"]
             key = message.get("id") or line
             if key in seen:
                 continue
             seen.add(key)
-            row = totals[model]
+            row = totals[message["model"]]
             row["calls"] += 1
             for field, source in USAGE_KEYS.items():
                 row[field] += int(counted.get(source) or 0)
@@ -109,6 +120,19 @@ def usage(paths: list[Path]) -> dict[str, dict[str, int]]:
             if isinstance(ttl, dict):
                 row["cache_write_1h"] += int(ttl.get("ephemeral_1h_input_tokens") or 0)
     return dict(totals)
+
+
+def context(path: Path) -> tuple[int, str]:
+    """Tokens the last reply of the main transcript read: its whole context."""
+    size, model = 0, ""
+    for message, _ in replies(path):
+        counted = message["usage"]
+        size = sum(
+            int(counted.get(USAGE_KEYS[k]) or 0)
+            for k in ("input", "cache_write", "cache_read")
+        )
+        model = message["model"]
+    return size, model
 
 
 def weighted(row: dict[str, int]) -> int:
@@ -203,6 +227,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--history", type=Path, default=HISTORY)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("show")
+    sub.add_parser("context")
     rec = sub.add_parser("record")
     rec.add_argument("task")
     rec.add_argument("--split", choices=["yes", "no"], required=True)
@@ -221,9 +246,14 @@ def main(argv: list[str] | None = None) -> int:
         Path.home() / ".claude" / "projects" / project_folder(os.getcwd())
     )
     paths = transcripts(projects, args.session)
-    if not paths:
+    main_file = projects / f"{args.session}.jsonl"
+    if not paths or (args.command == "context" and not main_file.exists()):
         print(f"no transcript of {args.session} under {projects}", file=sys.stderr)
         return 2
+    if args.command == "context":
+        size, model = context(main_file)
+        print(f"context {size:,} tokens ({model or 'no reply yet'})")
+        return 0
     totals = usage(paths)
     if args.command == "show":
         for model, row in sorted(totals.items()):

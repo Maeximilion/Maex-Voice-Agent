@@ -13,7 +13,7 @@
 4. **Klein committen.** Ein Commit pro abgeschlossenem Schritt, nicht pro Session.
 5. **Ausführen, nicht behaupten.** Tests laufen wirklich. Latenz wird wirklich gemessen.
 6. **Weiterdenk-Budget: drei Schritte.** Nach der Aufgabe bis zu drei naheliegende Folgeschritte selbst machen (Test ergänzen, Doku nachziehen, offensichtliche Lücke), dann melden.
-7. **Am Ende `/done` und `/handover`.** Status ist aktuell, bevor die Session schließt.
+7. **At the end `/done`.** The status is current before the session closes; `/handover` only when unfinished work continues in a new session.
 
 ---
 
@@ -112,7 +112,7 @@ Der wichtigste Ablauf, weil er die Qualität langfristig trägt.
 /done      → ponytail review on code diffs, tests, lint, set status in 07, update 01_STATUS,
              commit, push and open the PR without asking
 /ship 351 → drive the PR through CI, review rounds and the merge gate to its merge
-/handover  → Übergabeblock nach PCF Abschnitt 12, für den Chat oder die nächste Session
+/handover  → start block for a fresh session, only when unfinished work moves there
 ```
 
 ---

@@ -57,3 +57,4 @@ date,task,split,session,model,calls,input,cache_write,cache_write_1h,cache_read,
 2026-11-11,"#652 rule 5 review fixes (Fable use 4, build on Maxi's word)",no,56560873-8730-464b-8649-8eea62b8bc49,claude-fable-5-2,63,126,291609,291609,11496318,63023,2048091
 2026-11-11,"#651 no caller audio: mark and alarm (Fable use 4, build on Maxi's word)",no,56560873-8730-464b-8649-8eea62b8bc49,claude-fable-5-2,36,72,73639,73639,10816559,38447,1421241
 2026-11-11,"T-8.7 call list Anrufe (Fable, build on Maxi's word)",no,56560873-8730-464b-8649-8eea62b8bc49,claude-fable-5-2,24,48,38746,38746,8521214,25309,1056206
+2026-11-12,handover-rework,no,74f228b1-a8da-40cb-ae4b-35fd59c8451f,claude-opus-5-5,49,98,140257,140257,6633669,39680,1142379

@@ -131,6 +131,40 @@ def test_a_fable_session_counts_as_the_main_model_of_a_split(tmp_path):
     assert line.startswith("1 split task(s): 40% of the weighted volume")
 
 
+def test_context_is_what_the_last_main_reply_read(tmp_path, capsys):
+    session(
+        tmp_path,
+        [
+            reply("m1", OPUS, inp=5, write=1000, read=0),
+            reply("m2", OPUS, inp=3, write=200, read=1000),
+            '{"type": "assistant", "message": {"role": "assistant", "model": "<synthetic>", "usage": {"input_tokens": 0}}}',
+        ],
+        [reply("a1", SONNET, read=999_999)],  # a subagent's context is its own
+    )
+
+    code = su.main(["--session", "s1", "--projects-dir", str(tmp_path), "context"])
+
+    assert code == 0
+    assert capsys.readouterr().out == f"context 1,203 tokens ({OPUS})\n"
+
+
+def test_context_before_the_first_reply_is_zero(tmp_path):
+    (tmp_path / "s1.jsonl").write_text('{"type": "user"}\nnot json\n')
+
+    assert su.context(tmp_path / "s1.jsonl") == (0, "")
+
+
+def test_context_without_a_main_transcript_is_an_error(tmp_path, capsys):
+    sub = tmp_path / "s1" / "subagents"
+    sub.mkdir(parents=True)
+    (sub / "agent-a.jsonl").write_text(reply("a1", SONNET, read=5) + "\n")
+
+    code = su.main(["--session", "s1", "--projects-dir", str(tmp_path), "context"])
+
+    assert code == 2
+    assert "no transcript of s1" in capsys.readouterr().err
+
+
 def test_a_missing_session_is_a_clear_error(tmp_path, capsys):
     code = su.main(["--session", "nope", "--projects-dir", str(tmp_path), "show"])
 

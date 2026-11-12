@@ -868,12 +868,22 @@ Status: the callback list is merged; migrate the dispatcher next. Escalation unc
 Open: seed script for the usability test.
 """
 
+# The form /handover writes since 12.11.2026: the block opens with the heading
+# and names the command that resumes it last.
+HANDOVER_START = """## Handover 12.11.2026 - #671 - model switch
+Route: claude-sonnet-5-5 medium
+Where: branch fix/671-migration-downgrade, PR #671, head abc1234, all pushed
+Next: 1. Wait for the review of the head. 2. Fix the migration downgrade finding.
+Start with /ship 671
+"""
+
 
 @pytest.mark.parametrize(
     "prompt",
     [
         HANDOVER,
         "<pasted_content>\n" + HANDOVER + "</pasted_content>",
+        HANDOVER_START,
         "create an issue for the hook, then work on /task 3.5 in a fresh session "
         "with a handover",
         "Fix the migration downgrade for T-6.3 before the release",
