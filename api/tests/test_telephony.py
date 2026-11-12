@@ -37,7 +37,7 @@ from api.agent.loop import (
 from api.agent.state import ConversationState
 from api.config import settings
 from api.domain.callbacks.create import SAY_NOTED
-from api.domain.callbacks.transfer import SUMMARY_MISSED
+from api.domain.callbacks.transfer import SUMMARY_HUNG_UP, SUMMARY_MISSED
 from api.domain.menu.importer import apply
 from api.domain.menu.items import active_count
 from api.models import (
@@ -1967,11 +1967,10 @@ def test_after_an_outage_transfer_the_log_waits_out_a_lock_like_any_end(
 
 # -- the team leg nobody answered (T-10.8) ---------------------------------------
 
+COMPLAINT_TEXT = "Ich will mich beschweren, das Essen war kalt."
 COMPLAINT = {
     "caller_id": "+497215551234",
-    "transcript": [
-        {"role": "customer", "text": "Ich will mich beschweren, das Essen war kalt."},
-    ],
+    "transcript": [{"role": "customer", "text": COMPLAINT_TEXT}],
 }
 
 
@@ -2120,3 +2119,119 @@ def test_a_report_for_a_call_this_process_never_saw_is_false(session, tenant):
     handler = handler_for(session, tenant, port)
 
     assert handler.on_team_missed("1760000000.9") is False
+
+
+# -- failure paths that must still end with the right team (#674) ----------------
+
+
+def test_a_call_that_fails_to_open_goes_to_the_routed_team_phone(
+    session, tenant, monkeypatch
+):
+    """The routing was read and the call row was not written: the call goes
+    to today's team number, not to the one of the environment, which may be
+    the phone nobody staffs today."""
+
+    def start_call(session, req, **kwargs):
+        raise OperationalError("INSERT", {}, Exception("statement timeout"))
+
+    monkeypatch.setattr(handler_module, "start_call", start_call)
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, fallback_team_phone="+4930000000")
+    port.open("s-1", caller_id="+497215551234")
+
+    handler.on_call_started("s-1")
+
+    assert port.says("s-1") == [SAY_OUTAGE_FIRST]
+    assert port.transfers("s-1") == [TEAM_PHONE]
+
+
+@pytest.mark.parametrize(("length", "kept"), [(40, True), (41, False), (200, False)])
+def test_an_overlong_caller_id_never_refuses_the_call(session, tenant, length, kept):
+    """The dialplan hands the caller id over unbounded: one longer than the
+    call log takes is no number, and the call goes on as one with a withheld
+    number, never down the outage path."""
+    caller_id = "x" * length
+    port = FakeTelephony()
+    port.open("s-1", caller_id=caller_id)
+
+    handler_for(session, tenant, port).on_call_started("s-1")
+
+    assert port.says("s-1")[0].startswith("Guten Tag")
+    assert not port.transfers("s-1")
+    assert the_call(session, "s-1").caller_id == (caller_id if kept else None)
+
+
+def test_a_failing_key_term_lookup_never_reaches_the_caller(
+    session, tenant, monkeypatch
+):
+    """The key terms only help the ear: a database error while counting the
+    menu leaves the booking, its confirmation and the next turn alone, and no
+    names are handed over then."""
+
+    def broken(s, tenant_id):
+        s.execute(text("select 1 / 0"))
+
+    monkeypatch.setattr(handler_module, "active_count", broken)
+    port = FakeTelephony()
+
+    sid = port.play(RESERVATION, handler_for(session, tenant, port))
+
+    assert SAY_OUTAGE not in port.says(sid)
+    assert port.actions[-1].kind == "hangup"
+    assert set(map(tuple, port.terms)) == {()}
+    call = the_call(session, sid)
+    assert call.outcome == "completed"
+    assert _reservation_of(session, sid).status == "confirmed"
+
+
+def test_a_failed_session_closes_its_log_as_one_the_caller_waits_on(
+    session, tenant, migrated_db_url, bounded, monkeypatch
+):
+    """The session broke: its outage sentence and transfer reach nobody, and
+    the dialplan rings the team only after this write. So it waits no longer
+    than the line's bound, like a transfer the line refused."""
+    monkeypatch.setattr(handler_module, "END_CALL_TIMEOUT_MS", 5000)
+
+    def failed(handler: CallHandler) -> None:
+        handler.on_voice_failure("s-1")
+        handler.on_call_ended("s-1", line_failed=True)
+
+    took = _ended_under_a_lock(
+        session, tenant, migrated_db_url, bounded, 3.0, end=failed
+    )
+
+    assert took < 2.0
+
+
+def test_a_guest_who_hangs_up_on_the_handover_sentence_gets_a_card(session, tenant):
+    """The transfer waits for its sentence; a guest gone before it reaches the
+    line was never with the team: a card from the core's handover, and the
+    call is not counted as handed over."""
+    wire = _Wire(session, tenant)
+    wire.played()
+    wire.says(COMPLAINT_TEXT)
+    assert wire.call.outcome == "open"
+
+    wire.call.closed()
+    wire.call.drain()
+
+    assert wire.line.kinds().count("transfer") == 0
+    [card] = session.scalars(select(Callback)).all()
+    assert (card.phone, card.reason) == ("+497215551234", "complaint")
+    assert card.summary.startswith(SUMMARY_HUNG_UP)
+    assert _logged(session, "voice-1").outcome == "callback"
+
+
+def test_a_withheld_guest_who_hangs_up_on_the_handover_is_abandoned(session, tenant):
+    """Nobody can call back: no card, and the call reached nobody."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id=None)
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", COMPLAINT_TEXT)
+    assert port.transfers("s-1") == [TEAM_PHONE]
+
+    handler.on_call_ended("s-1", caller_hung_up=True)
+
+    assert session.scalars(select(Callback)).all() == []
+    assert the_call(session, "s-1").outcome == "abandoned"

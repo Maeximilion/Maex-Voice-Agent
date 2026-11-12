@@ -111,6 +111,7 @@ class CallEvents(Protocol):
         speech: SpeechUsage | None = None,
         *,
         caller_hung_up: bool = False,
+        line_failed: bool = False,
     ) -> None:
         """The line is gone: the caller hung up, or the line closed it after
         our hangup or transfer. Reported once for every call, also after a
@@ -120,7 +121,9 @@ class CallEvents(Protocol):
         hangup or transfer, so nothing rings the team for this call. Only on
         a call we answered: a leg closed before our first sentence is the
         telephone system's answer timeout, after which the team rings, or a
-        caller who gave up while it still rang."""
+        caller who gave up while it still rang. `line_failed`: the session
+        broke, nothing we asked for reached the line, and the dialplan rings
+        the team only once this returns (#674)."""
         ...
 
     def on_team_missed(self, session_id: str) -> bool:

@@ -324,6 +324,7 @@ class _Core:
         speech: SpeechUsage | None = None,
         *,
         caller_hung_up: bool = False,
+        line_failed: bool = False,
     ) -> None: ...
 
     def on_team_missed(self, session_id: str) -> bool:
