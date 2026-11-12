@@ -39,6 +39,7 @@ from api.agent.loop import (
     SAY_TEAM_OFFER,
     SUMMARY_OPEN_ORDER,
     SUMMARY_OPEN_TABLE,
+    SUMMARY_OUTAGE,
     ConversationLoop,
     TurnResult,
     _booked_say,
@@ -46,6 +47,7 @@ from api.agent.loop import (
     _order_lines,
     _still_open,
 )
+from api.agent.outcome import call_outcome
 from api.agent.state import Allergy, ConversationState, initial_state
 from api.domain.confirm import SAY_CANCELLED
 from api.models import Call, Callback, Reservation
@@ -622,6 +624,41 @@ def test_model_failure_without_team_or_number_asks_for_a_number(session, state):
     card = session.scalars(select(Callback)).one()
     assert card.phone == "+497215551234"
     assert "Einen Tisch für vier bitte" in card.summary
+    # A fault of ours, not a guest the core did not understand.
+    assert card.summary.startswith(SUMMARY_OUTAGE)
+
+
+def test_a_complaint_in_the_answer_to_the_number_question_names_the_callback(
+    session, state
+):
+    """The model is down and the core asks for a number: a complaint in the
+    answer is what the team calls back for, not the outage (#652)."""
+    loop = ConversationLoop(
+        session, BrokenLLM(), "system", now=NOW, clock=clock_from([0, 0])
+    )
+    loop.run_turn(state, "Einen Tisch für vier bitte")
+
+    result = loop.run_turn(state, "Ich will mich beschweren, 0721 5551234")
+
+    assert result.ended is True
+    assert session.scalars(select(Callback)).one().reason == "complaint"
+
+
+def test_an_outage_after_an_allergy_took_the_read_back_names_the_table(session, state):
+    """The allergy takes the read-back back before the model is asked; the
+    model then fails. The card still names the table, and the guest hears it
+    is not booked (#652)."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    loop = ConversationLoop(
+        session, BrokenLLM(), "system", now=NOW, clock=clock_from([0, 0])
+    )
+
+    result = loop.run_turn(state, "Ich habe übrigens eine Erdnussallergie")
+
+    assert result.ended is True and result.say[0] == SAY_TABLE_NOT_BOOKED
+    card = session.scalars(select(Callback)).one().summary
+    assert f"{SUMMARY_OPEN_TABLE} 4 Personen, 16.09.2026 19:00 Uhr" in card
 
 
 def test_model_failure_after_a_tool_call_still_hands_over(session, state):
@@ -1961,6 +1998,9 @@ def test_a_late_confirm_without_team_or_number_asks_for_no_number(session, state
 
     assert result.ended is True and state.callback_waits is None
     assert result.say == [SAY_TABLE_BOOKED, SAY_NOBODY_REACHABLE]
+    # The booking stands, and the call is logged as the booking it is.
+    assert state.stage == "confirmed"
+    assert call_outcome(state)[0] == "completed"
 
 
 def test_a_confirmed_table_says_an_open_order_is_not_placed(session, state):

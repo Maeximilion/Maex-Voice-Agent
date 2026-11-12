@@ -24,6 +24,7 @@ from api.models.tenants import _in
 
 INTENTS = ("reservation", "pickup", "delivery", "info", "complaint", "unknown")
 OUTCOMES = ("completed", "transferred", "callback", "abandoned", "error")
+LINE_NOTES = ("no_caller_audio",)
 CALLBACK_REASONS = ("complaint", "not_understood", "human_requested", "out_of_scope")
 CALLBACK_STATUSES = ("open", "done")
 
@@ -33,6 +34,7 @@ class Call(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     __table_args__ = (
         _in("intent", INTENTS, "ck_calls_intent"),
         _in("outcome", OUTCOMES, "ck_calls_outcome"),
+        _in("line_note", LINE_NOTES, "ck_calls_line_note"),
         Index("ix_calls_tenant_started", "tenant_id", "started_at"),
     )
 
