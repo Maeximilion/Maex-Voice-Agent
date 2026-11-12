@@ -229,6 +229,23 @@ or later (to confirm on the pilot's tablet in T-3.5).
 
 ## Review signals for both reviewers
 
+Both Claude Code and Codex reviewers inspect affected code for evidenced latency,
+CPU/concurrency, memory, serialization, typing and runtime/library constraints.
+Separate Python CPU from model/native-engine time, audio buffering, SQL and network
+waits. Start with the root cause and a fix within the current architecture; a
+language preference or hypothetical speedup is not an inline defect. Apply the
+existing severity, concrete-scenario and finding-count rules unchanged.
+
+The working agent collects credible unmeasured signals in measurement issue #550
+(location, triggering workload and proposed measurement), rather than creating an
+issue or full audit after every push. A measured Python limitation may justify a
+targeted comparison only through the blocked task #551 and the evidence/owner
+release gate in `docs/22_LANGUAGE_AND_PERFORMANCE.md`. Closing #550 alone does not
+release it. TypeScript UI strategy (#553) and gradual mypy hardening (#552) are
+separate decisions, not an instruction to rewrite Python. Follow-up review scope
+and the flexible three-round rule stay unchanged. Hosted review instructions
+cannot guarantee what a bot executes internally.
+
 The authoritative rule is in `CLAUDE.md`; `AGENTS.md` and the requests in
 [21](21_REVIEW_AUTOMATION.md) refer to it. Inspect affected paths for evidenced
 CPU saturation, excessive work/allocations, blocking, queue/concurrency problems,
