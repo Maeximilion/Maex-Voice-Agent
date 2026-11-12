@@ -550,7 +550,12 @@ def test_unknown_model_never_stops_a_routed_thread(run):
 def test_unknown_model_with_the_routed_effort_is_silent(run):
     # A thread's first prompt in the desktop app: no model known, the effort took.
     assert run(REMINDER + APP_BRIEF + BRIEF, model="") is None
-    out = run("Route: claude-haiku-5-5 medium\nFind the seed.", model="", effort="high", sid="h")
+    out = run(
+        "Route: claude-haiku-5-5 medium\nFind the seed.",
+        model="",
+        effort="high",
+        sid="h",
+    )
     assert "not known" in message(out)
 
 

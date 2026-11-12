@@ -952,8 +952,10 @@ Moved from `CLAUDE.md` section 6 "Model Routing" by Loop D PR 3 of #695; the rul
 - Fable and security work: Fable's classifiers decline most security work; Claude Code then falls back to an older Opus by itself, with a cold cache.
 - Fable trial: after five uses Maxi decides with the Ponytail cost and the outcome (did it find or solve what Opus `xhigh` did not) whether each use stays.
 - Routing table: Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`); the first check of `high` on the trigger rows is the P1 findings per PR on those rows after ten PRs, against the PRs before 2026-11-11.
-- Usage check: Compare the numbers with the usage card after five tasks.
-- Thread switch (`set_session_model`, `set_session_effort`): they work on a thread it started, never on itself, and need no approval at its own level or lower.
+- Usage check: compare the numbers with the usage card after five tasks. The terminal file `~/.claude/usage_gate/state.json` holds the week only, as fresh as the last terminal status line; on Ubuntu it did not exist on 2026-11-12 (#695 Loop A).
+- Thread switch (`set_session_model`, `set_session_effort`): the tools work on a thread the coordinating chat started, never on itself, and need no approval at its own level or lower. On the start call a session hands down only its own level or lower, and a fork or a cloud thread ignores `model` and `effort`, so the Route line check is what catches it.
+- Effort of subagents (live run in Ubuntu, 2026-11-12, #695 Loop C): a Haiku subagent started without an effort runs on `claude-haiku-5-5` and prints `CLAUDE_EFFORT=medium`; a subagent started with model `fable` runs on `claude-fable-5-2` at `high`. So the Haiku row says `medium`, and `route_advice.sh` accepts only `Route: claude-haiku-5-5 medium` for Haiku. The Agent tool took aliases only (`sonnet`, `opus`, `haiku`, `fable`) in that session.
+- Effort variables: sessions and subagents carry `CLAUDE_EFFORT`, the level in effect, but the Claude Code documentation does not name it; the documented variable is `CLAUDE_CODE_EFFORT_LEVEL`. `/task` reads `printenv CLAUDE_EFFORT`, which works today, and `route_advice.sh` falls back to `CLAUDE_CODE_EFFORT_LEVEL` where it is empty. If a release drops `CLAUDE_EFFORT`, `/task` asks its effort question every time: switch both to the documented variable then.
 
 ## 7. Keeping this file true
 

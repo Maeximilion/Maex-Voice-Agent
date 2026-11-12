@@ -1470,3 +1470,5 @@ Moved unchanged from `CLAUDE.md` section 6 "Model Routing" by Loop D PR 3 of #69
 - "Usage check", around agents: (Maxi, 2026-11-11, after the batch 1 review of #546 reached 91 percent).
 - "Agents per weekday": Ten agents at once drained the five-hour limit on 2026-11-02, and the weekly quota runs fuller towards the weekend.
 - "Threads": the coordinating chat ran at `xhigh` until 2026-11-11.
+- Intro of "Model Routing": `CLAUDE.md` itself loads at startup on whatever model is running and cannot be avoided; the saving covers what `/task` reads after its check (specs, modules). `/start` reads status and work packages on the starting model.
+- The Haiku row said "none (no effort setting)" until 13.11.2026; a Haiku subagent started without an effort runs at `medium` (#695 Loop C).
