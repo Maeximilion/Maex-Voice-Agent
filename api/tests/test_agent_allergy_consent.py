@@ -1548,3 +1548,42 @@ def test_a_denial_next_to_an_allergy_opens_none(session, state, said, noted):
     heard "Wogegen sind Sie allergisch?"."""
     assert read(session, state, said) == noted
     assert allergies.question(state) != SAY_ALLERGY_WHICH
+
+
+def test_a_later_dish_keeps_the_allergy_said_for_everything(session, state):
+    """#668 review: the entry said "bei allem" is the one not tied to a dish,
+    and the search of a later dish with the same allergy took it over, so a
+    third line went out without it again. It gets a copy instead."""
+    thirteen, forty_seven, fifty_two = (str(uuid.uuid4()) for _ in range(3))
+    state.allergies = [
+        Allergy(ingredient="Erdnuss", own=True, item=thirteen),
+        Allergy(ingredient="Erdnuss", own=True),
+    ]
+    state.allergy_consent = "yes"
+    wish = {"kind": "allergy", "ingredient": "Erdnuss", "text": REASONED}
+    found = {
+        "match_type": "exact_number",
+        "results": [{"menu_item_id": forty_seven, "number": "47", "name": "Curry"}],
+        "wish": wish,
+    }
+
+    apply_tool_result(state, "search_menu", ToolResult(ok=True, data=found))
+    call = allergies.noted_call(
+        state,
+        ToolCall(
+            "draft_order",
+            {
+                "items": [
+                    {"menu_item_id": item, "quantity": 1}
+                    for item in (thirteen, forty_seven, fifty_two)
+                ]
+            },
+        ),
+    )
+
+    assert [line.get("note") for line in call.args["items"]] == [
+        REASONED,
+        REASONED,
+        None,
+    ]
+    assert call.args["note"] == REASONED

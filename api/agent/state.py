@@ -695,9 +695,11 @@ def _to_dish(state: ConversationState, ingredient: Any, item_id: str) -> None:
         # is whose is not read, and the order of the searches must not
         # decide it. Both stay on the whole order (Codex PR #368, P1).
         return
-    if free:
+    if free and len(free) == len(same):
         free[0].item = item_id
     else:
+        # Tied to a dish already, a free one was said for the whole order
+        # ("bei allem", #668) and stays there; this dish gets a copy.
         # The same allergy said for another dish as well ("Die 13 bitte, ich
         # habe eine Erdnussallergie und die 23 bitte, mein Sohn hat eine
         # Erdnussallergie"): read once from the sentence, it goes onto both
