@@ -944,6 +944,17 @@ Rules: `CLAUDE.md` section 6, "Fable 5.2" and "Usage check" (Maxi, 2026-11-11).
 | A session below Fable spawns a Fable subagent | `Start one read-only subagent with model fable and effort high that only reports its model ID and effort, and change nothing.` | The subagent reports `claude-fable-5-2` at `high`. If it is refused or reports another model, use 1 of "Fable 5.2" always goes through a handover to a fresh Fable session; write that into `CLAUDE.md`. | Passed. The Agent tool with `model: fable`, `effort: high` started; the subagent quoted `claude-fable-5-2` from its system prompt and `printenv CLAUDE_EFFORT` printed `high`. About 120k subagent tokens for the bare check (its system prompt and tools). Use 1 runs as that subagent. |
 | `/advisor` with Fable inside plan usage | `/advisor`, pick Fable, then one question about the code | The answer arrives and the usage card shows no usage credits. If it passes, the advisor replaces the consult subagent (no file is read twice); if it asks for credits, it stays off. | Closed on the documentation, not run live (Maxi). code.claude.com/docs/en/advisor, "Cost": on a subscription advisor usage counts toward the plan limits, a Fable advisor bills to usage credits only on plans where Fable usage does (this account shows its own "Weekly · Fable" window). Each advisor call, however, rereads the whole conversation uncached at the advisor's rates, Claude decides when to call it, there is no cap, and `/advisor` saves to the user settings for every later session. That costs more than a consult subagent that reads only the named files, so the advisor stays off. |
 
+### Model routing: costs, trial bookkeeping and the thread switch
+
+Moved from `CLAUDE.md` section 6 "Model Routing" by Loop D PR 3 of #695; the rules themselves stay there.
+
+- Fable cost: Fable costs twice Opus on input, output and cache writes (cache reads cost the same) and has a weekly limit of its own.
+- Fable and security work: Fable's classifiers decline most security work; Claude Code then falls back to an older Opus by itself, with a cold cache.
+- Fable trial: after five uses Maxi decides with the Ponytail cost and the outcome (did it find or solve what Opus `xhigh` did not) whether each use stays.
+- Routing table: Revisit this table with real numbers (P2 findings per PR and model, `docs/08_EVALS.md`); the first check of `high` on the trigger rows is the P1 findings per PR on those rows after ten PRs, against the PRs before 2026-11-11.
+- Usage check: Compare the numbers with the usage card after five tasks.
+- Thread switch (`set_session_model`, `set_session_effort`): they work on a thread it started, never on itself, and need no approval at its own level or lower.
+
 ## 7. Keeping this file true
 
 The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 19.10.2026 (`sync-main.sh`, Windows and Ubuntu), 21.10.2026 (`claude-rc`, hands a refreshed login back when Claude exits; `usage_gate`, backed up with the fixed installer), 13.11.2026 (`model-router.sh` no longer repeats the prompt in its block message; `session-title.sh` sets the title itself, Ubuntu and Windows, #695 Loop B), 06.10.2026 (the others).

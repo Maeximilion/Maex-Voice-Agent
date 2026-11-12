@@ -1461,3 +1461,12 @@ Moved unchanged from `CLAUDE.md` section 6 by Loop D PR 2 of #695: dates of repl
 - Intro of "Cache-friendly sessions": (Maxi, 2026-11-07, from a read-only analysis of all transcripts at Ponytail prices: Opus 5.5 cache read 0.20 USD/M, 1h cache write 8 USD/M, 5m write 5 USD/M.) Cost is driven by cache writes, not by tokens: session ddc39224 was 98.7 % cache reads and cost 16.2 USD per merged PR, while Opus `xhigh` agents that waited over 5 minutes (pytest, evals, CI) rebuilt their 5-minute cache each time and cost 217 USD on 02.11.2026. A break over 1 hour rewrites the whole main context: 3 to 7.5 USD at 350k to 940k tokens. The measure for any change here is USD per merged PR (Ponytail), not agent hours.
 - From "Cache-friendly sessions" item 2 (`/ship` hand-off): A model switch rewrites the whole context (each model has its own cache): 2.40 USD at 600k on Sonnet, break-even after about 29 replies, while a fresh session from a handover costs about 0.5 to 0.65 USD.
 - From "Cache-friendly sessions" item 4 (idle check-in): Each check-in costs about 0.10 USD (a cache read) against up to 4.80 USD for a rewrite.
+
+Moved unchanged from `CLAUDE.md` section 6 "Model Routing" by Loop D PR 3 of #695:
+
+- The hard-rule row of the table: the `xhigh` triggers, the name stays, the effort is `high` since 2026-11-11.
+- Why the triggers no longer raise the effort: Since 2026-11-11 (Maxi) they no longer raise the effort: Anthropic's guidance for Opus 5.5 and Fable 5.2 keeps `xhigh` for a measured gain, because it buys a little quality for many more tokens.
+- "Fable 5.2" (Maxi, 2026-11-11, trial; replaces "Fable 5.1 only when Maxi asks").
+- "Usage check", around agents: (Maxi, 2026-11-11, after the batch 1 review of #546 reached 91 percent).
+- "Agents per weekday": Ten agents at once drained the five-hour limit on 2026-11-02, and the weekly quota runs fuller towards the weekend.
+- "Threads": the coordinating chat ran at `xhigh` until 2026-11-11.
