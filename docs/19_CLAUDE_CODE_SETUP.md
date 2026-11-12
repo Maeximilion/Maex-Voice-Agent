@@ -1,7 +1,7 @@
 # 19 – Claude Code Setup
 
 > The personal Claude Code setup behind this repository: three user-level hooks, the usage gate, the settings that wire them, and how to restore both on Windows and in Ubuntu (WSL). It lives outside the repository in `~/.claude`, so this file is its only backup.
-> Version 1.2 · 21.10.2026
+> Version 1.3 · 13.11.2026
 
 ---
 
@@ -34,9 +34,9 @@ Not backed up here, because it is specific to one machine: the `env` block of th
 | `agent_limit.sh` (project hook, `.claude/hooks/`) | SessionStart (every kind) | Reads today's row of the "Agents per weekday" table in `CLAUDE.md` (Maxi, 2026-11-02; the day in `Europe/Berlin`) and names it to the user and to Claude: agents at once, a workflow's agents included, and when workflows, ultracode, review and audit agents are worth it. The numbers live only in that table. Never blocks, and silent when the table has no row for the day. A session that runs past midnight keeps the day it started on until it resumes or compacts. On Windows, Git Bash without the zone data falls back to UTC, so the day can be one hour off around midnight |
 | `usage_gate/gate.py hook` | SessionStart, UserPromptSubmit (first entry of each event) | Exit 2 with a message when this week's usage has reached today's cap (Monday to Wednesday 80 percent, Thursday to Sunday 95), so a new prompt never reaches Claude. Details in section 4. |
 | `merge_gate.sh` (project hook, `.claude/hooks/`) | PreToolUse on shell commands | Guards against a forgotten step, not against a session that tries to get around it. Any command that names `gh pr merge` passes only as `gh pr merge <number> --merge --match-head-commit <full sha>`, with `--delete-branch` after it, checked in the folder the command runs in (the hook input's `cwd`, where gh resolves the PR too); a `cd` in front is refused, it could select another repository; the check for the words ignores case, since PowerShell runs `GH` as `gh`, sees flags on either side of `pr` (`gh -R owner/repo pr merge`, `gh pr -R owner/repo merge`) and joins Bash and PowerShell line continuations first; a wrapped call, another strategy, `--auto`, a branch name, and a commit message or search that names the command are blocked with that form (write such text to a file or as `gh pr merg[e]`). Then, for a PR into `main` whose head is that sha: every check passed (a check that ran twice on the head counts by the run that started last, a queued rerun without a start time counts as the newest, and a run cancelled before it started as the oldest), the branch contains the current `main`, the status version is higher than `main`'s (read from the `> Status:` header line only, exactly three numbers, compared as numbers, so `2.7.00` is no bump over `2.7.0`; `main` and the pull ref are fetched from the repository in the PR's URL, the one gh picked, which can differ from `origin`) (not for a `chore/readme-weekly-*` branch whose changes are all `README.md`, `.github/assets/*.svg` or `png-sources.json`), and a review is clean: Codex's newest state comment names that head without open findings, or a comment by the owner or a collaborator that opens with `Merge gate: <full head sha>` and came after Codex's newest state. `onFailure: "block"` makes a timeout or a crash block too; a missing script does not (the settings line checks for it), because a session whose `CLAUDE_PROJECT_DIR` points elsewhere, for example after a move to another folder, would otherwise have every shell command blocked (seen 21.10.2026). Other commands pass after one grep for `merge` (about 0.1 s on Windows). Needs `jq`, `git` and `gh`. Tests: `api/tests/test_hooks_merge_gate.py`. Known limits: `gh api .../merge`, gh aliases and quoting tricks are not caught. |
-| `session-title.sh` | UserPromptSubmit | Tells Claude when the session title should change. In this repository the form is gate, task or topic, branch. It reads the title from the transcript; the desktop app records generated titles there too, a terminal session was not checked. |
+| `session-title.sh` | UserPromptSubmit | Keeps the session title in the form gate, task or topic, branch. Where the task ID follows from the branch it sets the title itself (`hookSpecificOutput.sessionTitle`); where only the topic is known it tells Claude to rename the session. It reads the current title from the input field `session_title`, falling back to the transcript (the desktop app records generated titles there too, a terminal session was not checked). |
 
-A merge from `main` moves the head of an open pull request, so the review of the head commit has to be requested again (`CLAUDE.md` section 6, "Reviews").
+A merge from `main` moves the head of an open pull request, so the review of the head commit has to be requested again (`CLAUDE.md` section 6 "Reviews", in full `docs/21_REVIEW_AUTOMATION.md` "Working rules in force").
 
 ## 3. The settings block
 
@@ -319,35 +319,39 @@ if [ "$have" -eq 0 ]; then
   exit 0
 fi
 echo "$hash" > "$state/$sid.blocked"
-jq -n --arg m "$model" --arg p "$prompt" '{decision: "block", reason:
+# Claude Code appends the prompt to a block message itself ("Original prompt:").
+jq -n --arg m "$model" '{decision: "block", reason:
   ("model-router: this looks like an Opus-level task and the session is on \($m). "
    + "Switch in the model menu, then send the prompt again. "
-   + "Sending it again unchanged continues on \($m).\n\nYour prompt:\n\($p)")}'
+   + "Sending it again unchanged continues on \($m).")}'
 ```
 
 ### session-title.sh
 
 ```bash
 #!/usr/bin/env bash
-# Session title: tells Claude when the session's title should change, because a
-# hook cannot rename a session itself. Called by Claude Code on UserPromptSubmit.
+# Session title: sets the session's title where it follows from the branch, and
+# tells Claude when it should change where only Claude knows the topic. Called by
+# Claude Code on UserPromptSubmit.
 #   repo with a "Next gate" in docs/01_STATUS.md -> "<gate> · <task ID or topic> · <branch>"
-#   task ID readable from the branch (task/9-3-x, task/T-2.4-x) -> that exact title
+#   task ID readable from the branch (task/9-3-x, task/T-2.4-x) -> sets that exact title itself
 #   anywhere else -> one reminder if the first title is still there after $after prompts
-# Speaks once per wanted title and is silent everywhere else.
+# Acts once per wanted title and is silent everywhere else.
 after=5
 
 input=$(cat)
 sid=$(jq -r '.session_id // empty' <<<"$input")
 cwd=$(jq -r '.cwd // empty' <<<"$input")
 transcript=$(jq -r '.transcript_path // empty' <<<"$input")
-[ -n "$sid" ] && [ -f "$transcript" ] || exit 0
+[ -n "$sid" ] || exit 0
 case "$(jq -r '.prompt // ""' <<<"$input")" in "<scheduled-task"*) exit 0 ;; esac
 
 # Every title the session has had, oldest first; the app records each one in the transcript.
-titles=$(grep '^{"type":"custom-title"' "$transcript" | jq -r '.customTitle // empty' 2>/dev/null | uniq)
-current=$(tail -n 1 <<<"$titles")
-[ -n "$current" ] || exit 0
+# A new session has no transcript file at its first prompt.
+titles=$(grep -s '^{"type":"custom-title"' "$transcript" | jq -r '.customTitle // empty' 2>/dev/null | uniq)
+# The input names the current custom title; the transcript is the fallback where it does not.
+current=$(jq -r '.session_title // empty' <<<"$input")
+[ -n "$current" ] || current=$(tail -n 1 <<<"$titles")
 
 # State lives under the home folder: a shared temp folder can be prepared by another local user.
 state="$HOME/.claude/hook-state/session-title"
@@ -359,12 +363,15 @@ root=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null)
 gate=$(head -n 10 "$root/docs/01_STATUS.md" 2>/dev/null | grep -m1 -oE 'Next gate: \**G[0-9]+' | grep -oE 'G[0-9]+')
 task=
 [[ "$branch" =~ ^task/[Tt]?-?([0-9]+)[.-]([0-9]+)(-|$) ]] && task="T-${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
+# A task branch gives the whole title, so it needs no title to start from.
+[ -n "$task$current" ] || exit 0
 
+title=
 if [ -n "$branch" ] && [ -n "$gate$task" ]; then
   if [ -n "$task" ]; then
     want="${gate:+$gate · }$task · $branch"
     [ "$current" != "$want" ] || exit 0
-    msg="Session title check: this session is on branch $branch, so its title should be \"$want\", but it is \"$current\". $how"
+    title=$want
   else
     case "$current" in "$gate · "*" · $branch") exit 0 ;; esac
     want="$gate · <task ID or topic> · $branch"
@@ -379,7 +386,8 @@ else
   [ "$n" -eq "$after" ] && [ "$(wc -l <<<"$titles")" -eq 1 ] || exit 0
   msg="Session title check: after $after prompts this session still has its first title \"$current\". If that no longer says what the session is about, give it a short, specific title. $how"
 fi
-jq -n --arg m "$msg" '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $m}}'
+jq -n --arg m "$msg" --arg t "$title" '{hookSpecificOutput: ({hookEventName: "UserPromptSubmit"}
+  + if $t != "" then {sessionTitle: $t} else {additionalContext: $m} end)}'
 ```
 
 ### claude-rc (Ubuntu only)
@@ -938,4 +946,4 @@ Rules: `CLAUDE.md` section 6, "Fable 5.2" and "Usage check" (Maxi, 2026-11-11).
 
 ## 7. Keeping this file true
 
-The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 19.10.2026 (`sync-main.sh`, Windows and Ubuntu), 21.10.2026 (`claude-rc`, hands a refreshed login back when Claude exits; `usage_gate`, backed up with the fixed installer), 06.10.2026 (the others).
+The scripts in section 4 are copies. Whoever changes a hook in `~/.claude/hooks/` updates this file in the same session and repeats the change on the other machine. State of the copies: 19.10.2026 (`sync-main.sh`, Windows and Ubuntu), 21.10.2026 (`claude-rc`, hands a refreshed login back when Claude exits; `usage_gate`, backed up with the fixed installer), 13.11.2026 (`model-router.sh` no longer repeats the prompt in its block message; `session-title.sh` sets the title itself, Ubuntu and Windows, #695 Loop B), 06.10.2026 (the others).
