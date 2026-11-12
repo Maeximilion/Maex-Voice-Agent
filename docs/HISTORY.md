@@ -1445,3 +1445,16 @@ Full text of every row shortened in docs/01_STATUS.md by #562 part 3. Search by 
 Handover 11.11.2026 (T-0.12 first step): #636 merged, mypy checks every function body with 75 test modules as the baseline and strict flags on `api.core`, `api.domain.calls`, `api.domain.delivery`; the workbench n8n runs 2.47.2 and holds no imported workflow. Next: more strict packages for #552 (the test baseline was emptied the same day), the open `priority: high` issues wait for Maxi (#572 vision model, #397 router, #73 and #81 server).
 
 Handover 04.11.2026: PR #542 moves to PC continuation with its local-test merge hold; both branch states and manual review steps are in `docs/00_PCF.md`, and the unapproved draft/CI idea is saved in `docs/21_REVIEW_AUTOMATION.md`.
+
+## CLAUDE.md (archive, 13.11.2026)
+
+Moved unchanged from `CLAUDE.md` section 6 by Loop D PR 2 of #695: dates of replaced rules, incident stories and price reasoning. The rules in force live in `CLAUDE.md` and the commands in `.claude/commands/`.
+
+- From "Ultrareview ledger", after "This account used its three on #222, #282 and #423": the fourth was refused on 30.10.2026 ("Free ultrareviews used"), and Maxi declined credits and had `/code-review max 445` run instead.
+- "Merging a PR into `main`" (Maxi, 2026-10-06, replaces the rules of 2026-10-05 and 2026-10-06 morning).
+- The merge of an `xhigh` PR by Claude (Maxi, 2026-10-28, replaces the rule of 2026-10-19 that left it with Maxi).
+- From the rule that `/done` runs before a merge: Merging straight after a fix round skipped both once (PR #339).
+- Stacked PRs (Maxi, 2026-10-28, replaces the rule of 2026-10-22 that no task starts while a PR of the session is open).
+- Intro of "Cache-friendly sessions": (Maxi, 2026-11-07, from a read-only analysis of all transcripts at Ponytail prices: Opus 5.5 cache read 0.20 USD/M, 1h cache write 8 USD/M, 5m write 5 USD/M.) Cost is driven by cache writes, not by tokens: session ddc39224 was 98.7 % cache reads and cost 16.2 USD per merged PR, while Opus `xhigh` agents that waited over 5 minutes (pytest, evals, CI) rebuilt their 5-minute cache each time and cost 217 USD on 02.11.2026. A break over 1 hour rewrites the whole main context: 3 to 7.5 USD at 350k to 940k tokens. The measure for any change here is USD per merged PR (Ponytail), not agent hours.
+- From "Cache-friendly sessions" item 2 (`/ship` hand-off): A model switch rewrites the whole context (each model has its own cache): 2.40 USD at 600k on Sonnet, break-even after about 29 replies, while a fresh session from a handover costs about 0.5 to 0.65 USD.
+- From "Cache-friendly sessions" item 4 (idle check-in): Each check-in costs about 0.10 USD (a cache read) against up to 4.80 USD for a rewrite.
