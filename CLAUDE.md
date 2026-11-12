@@ -330,7 +330,7 @@ that is enough, and preserve this context for the next reviewer.
 ### Session End
 `/done` updates `docs/01_STATUS.md`: completed tasks, new insights, next step. A handover only when unfinished work moves to a new session; `/handover` decides when and what (Maxi, 2026-11-12).
 
-**Hand over before compression** (Maxi, 2026-10-21): a session never runs into context compression. Claude measures the context with `python3 scripts/session_usage.py context` before each large step, at `/done` and after a merge; at 250k tokens before a large step, or 450k at any clean point (`/handover` "When a block is due"), it finishes the current step at a clean point, pushes, writes the handover and tells Maxi to continue in a new session, instead of starting the next large step.
+**Hand over before compression** (Maxi, 2026-10-21): a session never runs into context compression. Claude measures the context with `python3 scripts/session_usage.py context` before each large step, at `/done` and after a merge; at 300k tokens before a large step, or 450k at any clean point (`/handover` "When a block is due"), it finishes the current step at a clean point, pushes, writes the handover and tells Maxi to continue in a new session, instead of starting the next large step.
 
 ### Cache-friendly sessions
 
