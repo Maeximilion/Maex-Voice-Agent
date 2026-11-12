@@ -644,6 +644,23 @@ def test_a_complaint_in_the_answer_to_the_number_question_names_the_callback(
     assert session.scalars(select(Callback)).one().reason == "complaint"
 
 
+def test_a_person_question_in_the_number_answer_keeps_the_callback_reason(
+    session, state
+):
+    """ "Spreche ich mit einem Menschen?" next to the number is no wish to talk
+    to one: the callback keeps its reason (Codex PR #667)."""
+    loop = ConversationLoop(
+        session, BrokenLLM(), "system", now=NOW, clock=clock_from([0, 0])
+    )
+    loop.run_turn(state, "Einen Tisch für vier bitte")
+
+    loop.run_turn(
+        state, "Spreche ich mit einem Menschen? Meine Nummer ist 0721 5551234"
+    )
+
+    assert session.scalars(select(Callback)).one().reason == "not_understood"
+
+
 def test_an_outage_after_an_allergy_took_the_read_back_names_the_table(session, state):
     """The allergy takes the read-back back before the model is asked; the
     model then fails. The card still names the table, and the guest hears it

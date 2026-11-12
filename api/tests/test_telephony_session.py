@@ -343,6 +343,19 @@ def test_a_caller_we_never_heard_who_gives_up_before_the_silence_is_marked(call)
     assert call.core.speech.no_caller_audio is True
 
 
+def test_a_short_call_handled_late_carries_no_mark(call):
+    """The caller hangs up a second after the answer and the worker gets to
+    the close ten seconds later: the call lasted a second (Codex PR #667)."""
+    call.start(GREETING)
+    call.played()
+    call.clock.now += 1.0
+    call.s.closed()
+    call.clock.now += 10.0
+    call.s.drain()
+
+    assert call.core.speech.no_caller_audio is False
+
+
 def test_a_call_that_ends_before_a_silence_carries_no_mark(call):
     """Handed on or hung up within moments: too short to say that nothing
     came, and a streak of such calls must not raise the alarm (#651)."""

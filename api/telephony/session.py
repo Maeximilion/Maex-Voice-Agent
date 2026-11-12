@@ -143,6 +143,7 @@ class CallSession:
         self._answered = False
         self._answered_at: float | None = None
         self._closed_unanswered = False
+        self._closed_at: float | None = None
         # For the note on a call nothing of the caller reached (#651): has
         # any frame held more than digital zero.
         self._caller_sound = False
@@ -203,6 +204,7 @@ class CallSession:
         # Read here, on the line's side: a first sentence still being made
         # answers the leg after this, while the event waits behind it (#652).
         self._closed_unanswered = not self._answered
+        self._closed_at = self._clock()
         self._post("closed")
 
     def broken(self) -> None:
@@ -801,7 +803,11 @@ class CallSession:
         return (
             not self._caller_sound
             and self._answered_at is not None
-            and self._clock() - self._answered_at >= self._silence_seconds
+            # Up to when the line reported the close, not when a busy worker
+            # got to it (Codex PR #667).
+            and (self._clock() if self._closed_at is None else self._closed_at)
+            - self._answered_at
+            >= self._silence_seconds
         )
 
 

@@ -1316,7 +1316,10 @@ class ConversationLoop:
         # The digits are a number to call, whatever came between.
         state.asked_for_phone = True
         note_guest_details(state, user_text)
-        if (wish := escalation.check(user_text)) is not None:
+        rest = escalation.without_human_question(user_text)
+        # "Spreche ich mit einem Menschen?" asks, it wishes nothing (Codex PR
+        # #667): read past it, as `_guest_turn` does.
+        if (wish := escalation.check(user_text if rest is None else rest)) is not None:
             # A complaint or the wish for a person in the answer: the team
             # calls back for that, not for the question's reason (#652).
             state.callback_reason = wish
