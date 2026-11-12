@@ -570,6 +570,9 @@ def test_the_call_limit_comes_before_the_question_is_put_again(session, state):
     assert result.ended
     assert ALLERGY_QUESTION not in result.say
     assert reservations(session) == []
+    # The held table goes onto the card, and the guest hears it is not booked.
+    assert result.say[0] == SAY_TABLE_NOT_BOOKED
+    assert SUMMARY_OPEN_TABLE in session.scalars(select(Callback)).one().summary
 
 
 def test_an_answer_that_goes_to_the_team_is_logged_and_stores_nothing(session, state):

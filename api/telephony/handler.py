@@ -662,9 +662,10 @@ class CallHandler:
                     intent=intent,
                     cost_cents=_cost(live, usage, speech, outcome),
                     model=usage.model,
-                    # The call ended as a silent one does, without the team
-                    # (Maxi, 11.11.2026): the note is all that tells it from
-                    # a guest who said nothing (#651).
+                    # A call the AI took ends as a silent one does, without
+                    # the team (Maxi, 11.11.2026); in mode shadow the team
+                    # takes it. The note is all that tells it from a guest
+                    # who said nothing (#651).
                     line_note=(
                         "no_caller_audio"
                         if speech is not None and speech.no_caller_audio

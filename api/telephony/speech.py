@@ -56,9 +56,9 @@ class Heard:
 class SpeechUsage:
     """What one call cost the ear and the mouth: the seconds of audio fed to
     the ear (a streaming service bills what it was sent) and the characters
-    given to the mouth (T-10.6). `no_caller_audio`: we answered, a silence
-    passed, and nothing of the caller had arrived by the end of the call, no
-    frame or only digital zero (#651)."""
+    given to the mouth (T-10.6). `no_caller_audio`: we answered at least a
+    silence's length before the end of the call, and nothing of the caller had
+    arrived by then, no frame or only digital zero (#651)."""
 
     heard_seconds: float = 0.0
     spoken_characters: int = 0
