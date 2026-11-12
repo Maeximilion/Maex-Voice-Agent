@@ -381,12 +381,23 @@ class ConversationLoop:
         if reason == "complaint" and wish is None:
             escalated = self._offer_remedy(state, user_text)
         if reason is not None and escalated is None:
+            # The table read back or the draft held for a question of the
+            # core, which this sentence may have taken out of the state (#690).
+            table = open_table
+            if table is None and waiting is not None:
+                table = self._held_draft(
+                    state, ToolCall(waiting["name"], waiting["args"])
+                )
+            state.held_call = None
             escalated = self._handoff(
                 state,
                 SAY_ESCALATION,
                 reason=reason,
                 # A "Ja" tells the team nothing the reason does not say.
                 detail=None if answered_offer else user_text,
+                # As for the model's `transfer_to_team` (#690).
+                ask_number=True,
+                table=table,
             )
         # The call speaks of allergies: the guest's own, the allergens of a
         # dish, or an allergen named ("Ist das glutenfrei?"). The model's
@@ -481,14 +492,16 @@ class ConversationLoop:
         zone = self._local_now(state).tzinfo
         assert zone is not None  # `to_local` gives an aware time
         for _ in range(MAX_TOOL_HOPS):
+            # A draft taken for the guest's answer and not yet carried out is
+            # on the card of an outage here (#690).
             if self._clock() - self._started > self._max_call_seconds:
-                return self._outage(state, SAY_TIMEOUT, user_text, open_table)
+                return self._outage(state, SAY_TIMEOUT, user_text, open_table, held)
             # The model calls and tools of one guest turn share one deadline:
             # each call alone may be quick and the guest still waits for all
             # of them. Time up: the model is not asked again.
             left = self._left_in_turn(turn_started)
             if left is not None and left <= 0:
-                return self._too_slow(state, user_text, open_table)
+                return self._too_slow(state, user_text, open_table, held)
 
             # The draft that waited for the guest's answer is carried out as
             # the model called it, with its notes as the answer allows.
@@ -972,11 +985,13 @@ class ConversationLoop:
         guest's first "Rufen Sie mich zurück" is no failed answer (Codex PR
         #347). None lets the model ask."""
         reason = _transfer_reason(args)
+        # The card before the transfer, as in `_handoff`: once transferred,
+        # the state no longer shows a table read back (#690).
+        head, tail, lead = self._card(state, reason, user_text)
         transfer = self._dispatch(state, "transfer_to_team", {"reason": reason})
         apply_tool_result(state, "transfer_to_team", transfer)
         if state.transferred:
             # With the card for a team leg nobody answers, as in `_handoff`.
-            head, tail, lead = self._card(state, reason, user_text)
             state.handoff_summary = head + tail
             return TurnResult(
                 state=state, say=[*lead, transfer.say or SAY_ESCALATION], ended=True
@@ -1050,7 +1065,11 @@ class ConversationLoop:
         return self._turn_deadline - (self._clock() - turn_started)
 
     def _too_slow(
-        self, state: ConversationState, user_text: str, table: str | None = None
+        self,
+        state: ConversationState,
+        user_text: str,
+        table: str | None = None,
+        held: ToolCall | None = None,
     ) -> TurnResult:
         """The guest has waited the restaurant's deadline in silence: an outage
         for them, so the call goes to the team with the outage sentence
@@ -1062,7 +1081,7 @@ class ConversationLoop:
             call_id=str(state.call_id),
             deadline_seconds=self._turn_deadline,
         )
-        return self._outage(state, SAY_ON_FAILURE, user_text, table)
+        return self._outage(state, SAY_ON_FAILURE, user_text, table, held)
 
     def _outage(
         self,
@@ -1070,6 +1089,7 @@ class ConversationLoop:
         say: str,
         user_text: str,
         table: str | None = None,
+        held: ToolCall | None = None,
     ) -> TurnResult:
         """A fault of ours ends the turn: the model is down, too slow or goes
         in circles, or the call is past its limit. To the team like every
@@ -1079,13 +1099,15 @@ class ConversationLoop:
         card (#652, rule 5). Not behind a booking: it stands, and the phone
         line hangs up after its sentence (`outcome.CLOSING_STAGES`). `table`
         is the table the turn began with (`_open_table`); a draft held for a
-        question of the core goes onto the card as well."""
+        question of the core goes onto the card as well, also `held`, one
+        already taken for the guest's answer (`_held_answered`)."""
         booked = state.stage == "confirmed"
-        held = state.held_call
+        if held is None and state.held_call is not None:
+            held = ToolCall(state.held_call["name"], state.held_call["args"])
         if booked:
             table = None  # the table the turn began with is booked now
         elif table is None and held is not None:
-            table = self._held_draft(state, ToolCall(held["name"], held["args"]))
+            table = self._held_draft(state, held)
         return self._handoff(
             state,
             say,
@@ -1160,12 +1182,8 @@ class ConversationLoop:
         after `lead`, the sentence of the tool. Without a number there is
         nobody to call back, and a callback can fail: both go the way of
         every handover (`_handoff`), a transfer where the team is reachable.
-
-        ponytail: a caller whose number is withheld is not asked for one, and
-        outside the opening hours hears the last sentence of `_handoff`. Asking
-        would need the wish to wait across turns, and every rule for when it
-        still stands either lost a wish or sent a stale one (Codex PR #280).
-        The same open point as for every handover (docs/01_STATUS.md)."""
+        With neither the team nor a number the core asks for one, and the wish
+        waits as the card (`state.callback_waits`, #690)."""
         wish = self._table_wish(state, args)
         phone = state.slots.get("phone")
         if phone:
@@ -1186,8 +1204,13 @@ class ConversationLoop:
         # The wish is the card, not a sentence of the guest: as `detail` it
         # was cut short, and dropped whole when a line of the order named the
         # guest's allergy (#655).
-        handed = self._handoff(state, SAY_ESCALATION, "out_of_scope", summary=wish)
+        handed = self._handoff(
+            state, SAY_ESCALATION, "out_of_scope", summary=wish, ask_number=True
+        )
         handed.say = [s for s in (lead, *handed.say) if s]
+        if not handed.ended:
+            # The question for the number ends the turn (`_allergens_to_team`).
+            guards.note_said(state, " ".join(handed.say))
         return handed
 
     def _beyond_the_database(
