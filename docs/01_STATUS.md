@@ -304,6 +304,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 ## Changelog
 
 - **v2.40.0 · 12.11.2026:** Loop D of #695, PR 1: the review rules left CLAUDE.md unchanged for docs/21 and docs/22 (58497 to 47408 bytes)
+- **v2.39.2 · 12.11.2026:** docs/19 names the Ubuntu env keys and the Fable 5.2 effort key (#695, Loop A)
 - **v2.39.1 · 12.11.2026:** Fix PR for #674: telephony failure paths end with the right team
 - **v2.39.0 · 12.11.2026:** Handover thresholds from the measured context (150k after a merge, 300k mid-task); the context is recorded per task
 - **v2.38.0 · 12.11.2026:** Handover only when unfinished work moves to a new session; the context is measured

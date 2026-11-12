@@ -20,7 +20,7 @@
 
 Windows and Ubuntu each have their own copy of the hooks and of the settings. A change on one side has to be repeated on the other. Nothing in this file is secret: the scripts hold no keys, and the settings block below holds none either.
 
-Not backed up here, because it is specific to one machine: the `env` block of the Ubuntu settings (it routes Claude Code through the local proxy) and the `autoMode` allow list. The usage gate was left out until 21.10.2026 (#323) and is backed up in section 4 now; its settings entries are written by its `install.py`, so section 3 does not list them. Also not backed up: its state files `state.json` and `override.json`, which the gate rebuilds from the status line, and its `test_gate.py` and `README.md`, which the gate does not need to run (the README text is summarised in section 4). `previous_statusline.json` is not disposable (the installer writes it owner-only, mode 0600, and tightens an older copy): it holds the status line from before the gate, so keep it in a machine backup together with the gate; without it `install.py remove` drops the status line, and it is then set again by hand from section 3.
+Not backed up here, because it is specific to one machine: the `env` block of the Ubuntu settings (it routes Claude Code through the local proxy; its keys are named in section 3, "The `env` block") and the `autoMode` allow list. The usage gate was left out until 21.10.2026 (#323) and is backed up in section 4 now; its settings entries are written by its `install.py`, so section 3 does not list them. Also not backed up: its state files `state.json` and `override.json`, which the gate rebuilds from the status line, and its `test_gate.py` and `README.md`, which the gate does not need to run (the README text is summarised in section 4). `previous_statusline.json` is not disposable (the installer writes it owner-only, mode 0600, and tightens an older copy): it holds the status line from before the gate, so keep it in a machine backup together with the gate; without it `install.py remove` drops the status line, and it is then set again by hand from section 3.
 
 ## 2. The hooks
 
@@ -130,6 +130,17 @@ Two more keys of `~/.claude/settings.json`, set by Maxi, kept the same on Window
 
 - `autoMode.allow` holds, after `"$defaults"`, one rule for `Bash(gh pr merge:*)` and one for `Bash(gh stack merge:*)` (added 2026-11-03). Each lets Claude merge without asking only when CI is complete and green, the PR is cleanly mergeable and its exact head commit has a review (Codex, Jules, or Claude's own in the session). The stack rule names the bottom PR of a stack, whose base is `main`, and the form `gh stack merge <number> --merge --yes`; the project hook `merge_gate.sh` checks the same before either command runs (CLAUDE.md §6). Copy the two rules from the Ubuntu file word for word; the backup before the stack rule is `~/.claude/settings.json.before-stack-merge-20261103.bak`.
 - `modelSettings.claude-opus-5-5.effortLevel` is `high` (since 2026-11-03, before `xhigh`): the default of the routing table in CLAUDE.md. `/task` asks for `xhigh` where a task needs it.
+- `modelSettings.claude-fable-5-2.effortLevel` is `high` (set 2026-11-12, #695): a Fable session runs at `high` (section 6, "Fable 5.2"), and Claude Code's own default for Fable 5.2 is `medium`. It replaced a key for `claude-fable-5-1`, which no session used any more; the backup from before is `~/.claude/settings.json.before-fable-52-20261112.bak`. A later Fable version needs its own key.
+
+The live check of 2026-11-12 (#695, Loop A) found both `modelSettings` keys in Ubuntu only; the Windows file had no `modelSettings` block. Loop B of #695 brings Windows to this state.
+
+### The `env` block (Ubuntu only)
+
+The Ubuntu `~/.claude/settings.json` has an `env` block with three keys (live check of 2026-11-12, #695); the Windows file has no `env` block. The values are specific to that machine, so a restore sets them by hand:
+
+- `ANTHROPIC_BASE_URL` points Claude Code at the local Headroom proxy (section 4, "claude-rc").
+- `CLAUDE_CODE_SUBAGENT_MODEL` is `claude-sonnet-5-5`: a subagent started without a model of its own runs on Sonnet 5.5, not on the model of its session. A model named on the call wins (checked 2026-11-12: subagents started with `haiku` and `fable` ran on `claude-haiku-5-5` and `claude-fable-5-2`). The order in the Claude Code documentation (sub-agents, read 2026-11-12) is: the call, the agent's frontmatter, this variable, the session's model. So the rule "every subagent gets an explicit cheaper model" in a Fable session (CLAUDE.md "Fable 5.2") guards the machine without this key, which is Windows today.
+- `ENABLE_TOOL_SEARCH` is `true`: tool definitions that are not needed at once are left out of the session start and loaded on demand through the tool search (seen in the session of 2026-11-12, which listed its connector tools as deferred).
 
 ### claude.ai connectors off in the Ubuntu terminal (Ubuntu only)
 
