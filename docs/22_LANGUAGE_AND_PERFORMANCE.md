@@ -246,7 +246,8 @@ separate decisions, not an instruction to rewrite Python. Follow-up review scope
 and the flexible three-round rule stay unchanged. Hosted review instructions
 cannot guarantee what a bot executes internally.
 
-The authoritative rule is in `CLAUDE.md`; `AGENTS.md` and the requests in
+The rule above is the authoritative one (moved unchanged from `CLAUDE.md`
+section 6 on 12.11.2026, #695); `AGENTS.md` and the requests in
 [21](21_REVIEW_AUTOMATION.md) refer to it. Inspect affected paths for evidenced
 CPU saturation, excessive work/allocations, blocking, queue/concurrency problems,
 serialization, typing gaps and runtime/library constraints. The working agent

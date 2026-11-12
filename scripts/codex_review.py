@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Where Codex's review of a pull request's head stands, optionally waiting for it.
 
-/ship step 2 and every fix round (CLAUDE.md section 6 "Reviews"):
+/ship step 2 and every fix round (docs/21_REVIEW_AUTOMATION.md "Working rules in force"):
 
     python3 scripts/codex_review.py 371          # one look
     python3 scripts/codex_review.py 371 --wait   # until done, stalled or timed out

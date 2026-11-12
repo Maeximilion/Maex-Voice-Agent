@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review-load-audit',
   description: 'Measure Codex review load on recent PRs and compare it with the 2026-10-22 baseline',
-  whenToUse: 'About two weeks or five PRs after a change to the review rules (AGENTS.md, CLAUDE.md "Reviews") or to the model routing table. Read-only.',
+  whenToUse: 'About two weeks or five PRs after a change to the review rules (AGENTS.md, docs/21 "Working rules in force") or to the model routing table. Read-only.',
   phases: [
     { title: 'Measure', detail: 'commits, rounds, findings by severity and area, finding quality' },
     { title: 'Check', detail: 'recount a sample of PRs' },
