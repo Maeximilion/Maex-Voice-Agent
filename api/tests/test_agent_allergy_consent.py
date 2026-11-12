@@ -1484,3 +1484,109 @@ def test_an_order_not_yet_in_the_cart_goes_onto_the_card(session, state):
     assert result.say == [SAY_ORDER_NOT_PLACED, SAY_CALLBACK_NUMBER]
     assert state.callback_waits is not None
     assert f"{SUMMARY_OPEN_ORDER} " in state.callback_waits
+
+
+def test_an_allergy_said_again_for_everything_reaches_every_line(session, state):
+    """#668: tied to dish 13 by its search, the peanut allergy said again
+    without a dish ("bei allem") counted as the same entry, and dish 47 went
+    out without it."""
+    thirteen, forty_seven = str(uuid.uuid4()), str(uuid.uuid4())
+    state.allergies = [Allergy(ingredient="Erdnuss", own=True, item=thirteen)]
+    state.allergy_consent = "yes"
+
+    allergies.note_allergies(
+        session, state, "Achten Sie bitte bei allem auf meine Erdnussallergie."
+    )
+    call = allergies.noted_call(
+        state,
+        ToolCall(
+            "draft_order",
+            {
+                "items": [
+                    {"menu_item_id": thirteen, "quantity": 1},
+                    {"menu_item_id": forty_seven, "quantity": 1},
+                ]
+            },
+        ),
+    )
+
+    assert call.args["items"][0]["note"] == REASONED
+    assert call.args["note"] == REASONED
+
+
+def test_an_allergy_said_again_for_the_whole_order_is_noted_once(state):
+    """Said twice without a dish, and twice for the same dish, it stays one
+    entry each: the draft that carries it is not taken back."""
+    thirteen = str(uuid.uuid4())
+    state.allergies = [
+        Allergy(ingredient="Erdnuss", own=True),
+        Allergy(ingredient="Erdnuss", own=True, item=thirteen),
+    ]
+
+    allergies._add(state, Allergy(ingredient="erdnuss", own=True))
+    allergies._add(state, Allergy(ingredient="Erdnuss", own=True, item=thirteen))
+
+    assert [(a.ingredient, a.item) for a in state.allergies] == [
+        ("Erdnuss", None),
+        ("Erdnuss", thirteen),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("said", "noted"),
+    [
+        (
+            "Meine Frau hat keine Allergie. Ich habe eine Nussallergie.",
+            [("Nuss", True)],
+        ),
+        (
+            "Ich habe keine Allergie. Meine Frau hat eine Nussallergie.",
+            [("Nuss", False)],
+        ),
+    ],
+)
+def test_a_denial_next_to_an_allergy_opens_none(session, state, said, noted):
+    """#668: the sentence read whole, whose first phrase is the denial, added
+    an allergy without an ingredient, and the guest who had named everything
+    heard "Wogegen sind Sie allergisch?"."""
+    assert read(session, state, said) == noted
+    assert allergies.question(state) != SAY_ALLERGY_WHICH
+
+
+def test_a_later_dish_keeps_the_allergy_said_for_everything(session, state):
+    """#668 review: the entry said "bei allem" is the one not tied to a dish,
+    and the search of a later dish with the same allergy took it over, so a
+    third line went out without it again. It gets a copy instead."""
+    thirteen, forty_seven, fifty_two = (str(uuid.uuid4()) for _ in range(3))
+    state.allergies = [
+        Allergy(ingredient="Erdnuss", own=True, item=thirteen),
+        Allergy(ingredient="Erdnuss", own=True),
+    ]
+    state.allergy_consent = "yes"
+    wish = {"kind": "allergy", "ingredient": "Erdnuss", "text": REASONED}
+    found = {
+        "match_type": "exact_number",
+        "results": [{"menu_item_id": forty_seven, "number": "47", "name": "Curry"}],
+        "wish": wish,
+    }
+
+    apply_tool_result(state, "search_menu", ToolResult(ok=True, data=found))
+    call = allergies.noted_call(
+        state,
+        ToolCall(
+            "draft_order",
+            {
+                "items": [
+                    {"menu_item_id": item, "quantity": 1}
+                    for item in (thirteen, forty_seven, fifty_two)
+                ]
+            },
+        ),
+    )
+
+    assert [line.get("note") for line in call.args["items"]] == [
+        REASONED,
+        REASONED,
+        None,
+    ]
+    assert call.args["note"] == REASONED
