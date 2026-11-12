@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Open security alerts and the open pull requests into main that fix them.
 
-/start step 5a (CLAUDE.md section 6 "Security alerts"), one line per open alert:
+/start step 5a ("Security alerts" in .claude/commands/start.md), one line per open alert:
 every Dependabot alert and every critical or high code-scanning alert names the
 pull request that fixes it or blocks task work; a lower code-scanning alert is a
 suggestion next to the tasks. A blocking Dependabot alert whose advisory has no
