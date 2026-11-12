@@ -593,6 +593,57 @@ def test_an_answer_that_goes_to_the_team_is_logged_and_stores_nothing(session, s
     assert session.scalars(select(Callback)).one().reason == "human_requested"
 
 
+@pytest.mark.parametrize(
+    "said", ["Nein, ich will mit einem Menschen sprechen.", "Ich will mich beschweren."]
+)
+def test_a_handover_instead_of_the_answer_names_the_held_table(session, state, said):
+    """#690: the table held for the consent question goes onto the card of a
+    handover in the answer's turn, and the guest hears it is not booked."""
+    state.slots["phone"] = CALLER
+    turn(
+        session,
+        state,
+        f"{TABLE}, morgen um 19 Uhr, ich habe eine Erdnussallergie",
+        LLMTurn(tool_call=table()),
+    )
+
+    said_back = turn(session, state, said)
+
+    assert said_back[0] == SAY_TABLE_NOT_BOOKED
+    assert reservations(session) == []
+    summary = session.scalars(select(Callback)).one().summary
+    assert f"{SUMMARY_OPEN_TABLE} 4 Personen, 16.09.2026 19:00 Uhr" in summary
+
+
+def test_a_consent_past_the_call_limit_names_the_held_table(session, state):
+    """#690: the consent comes past the call limit. The held draft was taken
+    for the answer before the limit ended the turn: it is still on the card."""
+    state.slots["phone"] = CALLER
+    turn(
+        session,
+        state,
+        f"{TABLE}, ich habe eine Erdnussallergie",
+        LLMTurn(tool_call=table()),
+    )
+    now = [0.0]
+    loop = ConversationLoop(
+        session,
+        FakeLLM([]),
+        "system",
+        now=NOW,
+        clock=lambda: now[0],
+        max_call_seconds=10,
+    )
+    now[0] = 11
+
+    result = loop.run_turn(state, "Ja, gerne.")
+
+    assert result.ended
+    assert result.say[0] == SAY_TABLE_NOT_BOOKED
+    assert reservations(session) == []
+    assert SUMMARY_OPEN_TABLE in session.scalars(select(Callback)).one().summary
+
+
 def test_the_question_is_asked_once_per_call(session, state):
     turn(
         session,
