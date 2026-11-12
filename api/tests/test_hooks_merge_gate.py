@@ -1,6 +1,6 @@
 """`.claude/hooks/merge_gate.sh` against a throwaway repository and a stand-in gh.
 
-PR #339 was merged straight after a fix round without the status bump (CLAUDE.md §6),
+PR #339 was merged straight after a fix round without the status bump (docs/HISTORY.md),
 so the gate blocks `gh pr merge` until CI, the sync with `main`, the bump and a clean
 review hold on the head commit. Every test builds a bare origin whose `main` carries a
 status version and a pull ref `refs/pull/7/head` for the branch, and a stand-in gh that

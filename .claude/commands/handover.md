@@ -6,7 +6,7 @@ Measure first: `python3 scripts/session_usage.py context` prints the current con
 
 Only when unfinished work continues in a new session:
 
-- **Model switch:** the `/ship` hand-off to Sonnet, a P1 that goes back to Opus, a Fable session whose PR opened (`CLAUDE.md` "Cache-friendly sessions" 2, "Fable 5.2").
+- **Model switch:** the `/ship` hand-off to Sonnet, a P1 that goes back to Opus, a Fable session whose PR opened (`/ship` "Cache-friendly hand-off", `CLAUDE.md` "Fable 5.2").
 - **Context:** at 300k tokens or more before the next large step (a new build step, a new task; not a push, a short fix or a wait), and at 450k or more at the next clean point whatever comes next. A session never runs into compression.
 - **Break with work left:** "PC shuts down at <time>" (park everything 15 minutes before), a pause over 45 minutes (ask how long), the idle check-in firing, 90 percent of the 5-hour window (name the reset time).
 - **A task cut in parts** on purpose.

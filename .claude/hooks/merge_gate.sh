@@ -12,7 +12,7 @@
 # Then, on that head commit of a PR into main:
 #   1. every check has finished and passed (success, skipped or neutral),
 #   2. the branch contains origin/main, or merging origin/main into it changes no file: a PR
-#      stacked on one that merged since lacks only that merge commit (CLAUDE.md §6),
+#      stacked on one that merged since lacks only that merge commit (done.md 7c),
 #   3. the status version is higher than main's; exempt only chore/readme-weekly-* whose
 #      changes are all generated (README.md, .github/assets/*.svg, png-sources.json),
 #   4. a review is clean: the Codex state comment names this head without open findings,

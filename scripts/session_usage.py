@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Token usage of a Claude Code session per model, for split routing (CLAUDE.md
+"""Token usage of a Claude Code session per model, for split routing (/task step 3a
 "Split routing", Maxi 2026-11-06).
 
 Reads the session's transcript and those of its subagents under

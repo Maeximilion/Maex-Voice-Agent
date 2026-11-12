@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Keep the ultrareview candidates in one rolling issue, ticked once reviewed.
 
-CLAUDE.md "Ultrareview" (Maxi, 2026-11-05): every candidate `/done` or `/gate`
+/done step 7a "Ultrareview ledger" (Maxi, 2026-11-05): every candidate `/done` or `/gate`
 names gets a line; a line is ticked when its review ran, with the level
 (`ultra`, or `max` and lower when no free ultrareview is left) and the issues
 that hold the findings not fixed at once. `/start` and `/gate` list the open
@@ -31,8 +31,8 @@ TITLE = "Ultrareview candidates"
 LABELS = ("chore", "code-review")
 MARKER = "<!-- ultrareview-ledger:v1 -->"
 INTRO = (
-    "Every ultrareview candidate that `/done` or `/gate` named (CLAUDE.md "
-    '"Ultrareview"). A line is ticked once its review ran, with the level: '
+    "Every ultrareview candidate that `/done` or `/gate` named (/done step 7a "
+    '"Ultrareview ledger"). A line is ticked once its review ran, with the level: '
     "`ultra`, or `max` when no free ultrareview is left. Findings that were not "
     "fixed at once each get an issue of their own, named on the line. Kept by "
     "`scripts/ultrareview_ledger.py`; edit by hand only to correct a line."
