@@ -129,7 +129,7 @@ Claude cannot write this file: the edit is blocked as a change to its own config
 Two more keys of `~/.claude/settings.json`, set by Maxi, kept the same on Windows and Ubuntu:
 
 - `autoMode.allow` holds, after `"$defaults"`, one rule for `Bash(gh pr merge:*)` and one for `Bash(gh stack merge:*)` (added 2026-11-03). Each lets Claude merge without asking only when CI is complete and green, the PR is cleanly mergeable and its exact head commit has a review (Codex, Jules, or Claude's own in the session). The stack rule names the bottom PR of a stack, whose base is `main`, and the form `gh stack merge <number> --merge --yes`; the project hook `merge_gate.sh` checks the same before either command runs (CLAUDE.md §6). Copy the two rules from the Ubuntu file word for word; the backup before the stack rule is `~/.claude/settings.json.before-stack-merge-20261103.bak`.
-- `modelSettings.claude-opus-5-5.effortLevel` is `high` (since 2026-11-03, before `xhigh`): the default of the routing table in CLAUDE.md. `/task` asks for `xhigh` where a task needs it.
+- `modelSettings.claude-opus-5-5.effortLevel` is `high` (since 2026-11-03, before `xhigh`): the default of the routing table in CLAUDE.md. `/task` asks for `xhigh` where a task needs it. Not set on Windows as of 2026-11-12 (checked live: the key is absent from `settings.json`); Ubuntu only until Maxi decides.
 
 ### claude.ai connectors off in the Ubuntu terminal (Ubuntu only)
 
@@ -320,7 +320,7 @@ jq -n --arg m "$model" --arg p "$prompt" '{decision: "block", reason:
 #!/usr/bin/env bash
 # Session title: tells Claude when the session's title should change, because a
 # hook cannot rename a session itself. Called by Claude Code on UserPromptSubmit.
-#   repo with a "Next gate" in docs/01_STATUS.md -> "<gate> · <task ID or topic> · <branch>"
+#   repo with a "Next gate" in docs/01_STATUS.md -> "<gate> - <task ID or topic> - <branch>"
 #   task ID readable from the branch (task/9-3-x, task/T-2.4-x) -> that exact title
 #   anywhere else -> one reminder if the first title is still there after $after prompts
 # Speaks once per wanted title and is silent everywhere else.
@@ -351,12 +351,12 @@ task=
 
 if [ -n "$branch" ] && [ -n "$gate$task" ]; then
   if [ -n "$task" ]; then
-    want="${gate:+$gate · }$task · $branch"
+    want="${gate:+$gate - }$task - $branch"
     [ "$current" != "$want" ] || exit 0
     msg="Session title check: this session is on branch $branch, so its title should be \"$want\", but it is \"$current\". $how"
   else
-    case "$current" in "$gate · "*" · $branch") exit 0 ;; esac
-    want="$gate · <task ID or topic> · $branch"
+    case "$current" in "$gate - "*" - $branch") exit 0 ;; esac
+    want="$gate - <task ID or topic> - $branch"
     msg="Session title check: the title should have the form \"$want\", but it is \"$current\". Use the task ID (T-x.y) if this session works on a task from docs/07_WORKPACKAGES.md, otherwise two to four words for the topic. If the topic is not clear yet, do it as soon as it is. $how"
   fi
   [ "$(cat "$state/$sid.asked" 2>/dev/null)" != "$want" ] || exit 0
