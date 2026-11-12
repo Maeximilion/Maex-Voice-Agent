@@ -302,8 +302,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.39.3 · 13.11.2026:** Fix PR for #690: a handover keeps the held draft or read-back table and asks a withheld caller for a number
 - **v2.39.4 · 13.11.2026:** docs/19 synced to the live user hooks (#695, Loop B)
+- **v2.39.3 · 13.11.2026:** Fix PR for #690: a handover keeps the held draft or read-back table and asks a withheld caller for a number
 - **v2.39.2 · 12.11.2026:** docs/19 names the Ubuntu env keys and the Fable 5.2 effort key (#695, Loop A)
 - **v2.39.1 · 12.11.2026:** Fix PR for #674: telephony failure paths end with the right team
 - **v2.39.0 · 12.11.2026:** Handover thresholds from the measured context (150k after a merge, 300k mid-task); the context is recorded per task
