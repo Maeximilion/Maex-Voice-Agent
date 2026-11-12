@@ -69,7 +69,12 @@ from api.domain.calls import (
 )
 from api.domain.calls.consent import Answer
 from api.domain.menu.items import active_count
-from api.schemas.calls import EndCallRequest, Outcome, StartCallRequest
+from api.schemas.calls import (
+    CALLER_ID_MAX_LENGTH,
+    EndCallRequest,
+    Outcome,
+    StartCallRequest,
+)
 from api.telephony.port import TelephonyPort
 from api.telephony.speech import SpeechUsage
 from api.telephony.speech_spike import spoken_name
@@ -222,10 +227,15 @@ class CallHandler:
             self._starting.add(session_id)
 
         session: Session | None = None
+        routing: CallRouting | None = None
         try:
             session = self._session_factory()
             routing = call_routing(session, self._tenant_id, self._now)
             caller_id = self._port.caller_id(session_id)
+            if caller_id is not None and len(caller_id) > CALLER_ID_MAX_LENGTH:
+                # No number is that long, and the dialplan does not bound it:
+                # a call with a withheld number, never one refused (#674).
+                caller_id = None
             call_id = start_call(
                 session,
                 StartCallRequest(
@@ -256,7 +266,8 @@ class CallHandler:
                 "call could not be opened, handing it to the team",
                 extra={"extra": {"session_id": session_id}},
             )
-            self._fail(session_id, None)
+            # Today's team number once it was read, not the environment's (#674).
+            self._fail(session_id, None, routing.team_phone if routing else None)
             return
 
         bind_call_id(str(call_id))
@@ -346,6 +357,7 @@ class CallHandler:
         speech: SpeechUsage | None = None,
         *,
         caller_hung_up: bool = False,
+        line_failed: bool = False,
     ) -> None:
         with self._lock:
             self._ai_calls.discard(session_id)  # the leg is gone, its place is free
@@ -358,12 +370,26 @@ class CallHandler:
             if live is None or not self._claim(live):
                 return  # closed already, or never known
             self._remember_closed(session_id)
-        self._finish(live, outcome, speech=speech)
-        if caller_hung_up and live.loop is None and live.state.recording is not None:
-            # Mode shadow with the recording question: the caller hung up on
-            # it, or behind the answer before the line handed the call on. The
-            # team never rang, and the card is its only notice (#252 no. 9).
-            self._card(session_id, rang=False)
+        # The caller hung up on the sentences before the transfer, so before
+        # the line had it: the team never rang (#674). A transfer with nothing
+        # said before it reaches the line at once.
+        unheard_handover = (
+            caller_hung_up and live.state.greeted and live.state.stage == "transferred"
+        )
+        if unheard_handover and outcome is None:
+            outcome = "abandoned"
+        # A failed session: the dialplan rings the team after this write.
+        self._finish(live, outcome, speech=speech, caller_waits=line_failed)
+        if unheard_handover or (
+            caller_hung_up and live.loop is None and live.state.recording is not None
+        ):
+            # Or mode shadow with the recording question, hung up on. The card
+            # is the team's only notice then (#252 no. 9).
+            with self._lock:
+                phone, summary, _ = self._named_phones.pop(
+                    session_id, (None, None, 0.0)
+                )
+            self._card(session_id, phone=phone, summary=summary, rang=False)
 
     def on_team_missed(self, session_id: str) -> bool:
         with self._lock:
@@ -510,7 +536,7 @@ class CallHandler:
             and not counted_as_heard
             and live.state.stage not in _NOT_INTERRUPTIBLE
         )
-        menu_size = active_count(live.session, live.tenant_id)
+        menu_size = self._menu_size(live)
         said = " ".join(result.say)
         self._port.expect(live.session_id, key_terms(live.state, said, menu_size))
         for line in result.say:
@@ -545,9 +571,20 @@ class CallHandler:
         note_said(live.state, question)
         # And the key terms follow it: the names asked about before would bend
         # a "Ja" into a dish (Codex PR #292).
-        menu_size = active_count(live.session, live.tenant_id)
+        menu_size = self._menu_size(live)
         self._port.expect(live.session_id, key_terms(live.state, question, menu_size))
         self._port.say(live.session_id, question, interruptible=True)
+
+    def _menu_size(self, live: _LiveCall) -> int:
+        """For the ear's key terms only, so best effort: 0 hands no names
+        over, and an error never changes what the caller hears (#674). In a
+        savepoint, so the turn's transaction stays usable."""
+        try:
+            with live.session.begin_nested():
+                return active_count(live.session, live.tenant_id)
+        except Exception:
+            logger.exception("the menu size for the key terms could not be read")
+            return 0
 
     def _transfer(self, live: _LiveCall, target: str) -> None:
         live.state.stage = "transferred"
@@ -571,8 +608,11 @@ class CallHandler:
             )
             self._fail(live.session_id, live)
 
-    def _fail(self, session_id: str, live: _LiveCall | None) -> None:
-        """Outage sentence, then the team. The sentence is best effort, the
+    def _fail(
+        self, session_id: str, live: _LiveCall | None, team_phone: str | None = None
+    ) -> None:
+        """Outage sentence, then the team: the call's number, else `team_phone`
+        as routed, else the environment's. The sentence is best effort, the
         transfer is not: if the line refuses it, the call is logged as an
         error at once and the error is raised to the call session, which ends as
         failed so the dialplan rings the team (docs/20 §5)."""
@@ -593,7 +633,11 @@ class CallHandler:
                 live.session.rollback()
             except Exception:
                 logger.exception("rollback after the failure failed")
-        target = live.team_phone if live is not None else self._fallback_team_phone
+        target = (
+            live.team_phone
+            if live is not None
+            else team_phone or self._fallback_team_phone
+        )
         if live is not None:
             self._keep_named_phone(live)
         try:

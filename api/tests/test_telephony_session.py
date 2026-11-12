@@ -79,10 +79,13 @@ class Core:
     def on_talked_over(self, session_id: str, text: str) -> None:
         self.calls.append(("talked_over", text))
 
-    def on_call_ended(self, session_id: str, speech=None, *, caller_hung_up=False):
+    def on_call_ended(
+        self, session_id: str, speech=None, *, caller_hung_up=False, line_failed=False
+    ):
         self.calls.append(("ended",))
         self.speech = speech
         self.hung_up = caller_hung_up
+        self.line_failed = line_failed
 
     def on_recording_stopped(self, session_id: str) -> bool:
         self.calls.append(("recording_stopped",))
@@ -298,6 +301,9 @@ def test_a_call_the_line_ended_for_us_is_no_caller_who_hung_up(call, ending):
 
     assert call.core.count("ended") == 1
     assert call.core.hung_up is False
+    # Only a failed session leaves the team to the dialplan, after its end
+    # was reported (#674).
+    assert call.core.line_failed is (ending == ("crash",))
 
 
 def _silent_call_ends(call, *frames: bytes) -> None:

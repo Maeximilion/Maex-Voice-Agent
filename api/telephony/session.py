@@ -791,6 +791,7 @@ class CallSession:
                     no_caller_audio=self._nothing_heard(),
                 ),
                 caller_hung_up=outcome == "closed" and not self._closed_unanswered,
+                line_failed=outcome == "failed",
             )
         except Exception:
             logger.exception("the core could not be told that the call ended")
