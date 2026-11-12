@@ -151,7 +151,42 @@ def test_context_is_what_the_last_main_reply_read(tmp_path, capsys):
 def test_context_before_the_first_reply_is_zero(tmp_path):
     (tmp_path / "s1.jsonl").write_text('{"type": "user"}\nnot json\n')
 
-    assert su.context(tmp_path / "s1.jsonl") == (0, "")
+    assert su.context_points(tmp_path / "s1.jsonl") is None
+
+
+def edit_reply(mid, read):
+    record = json.loads(reply(mid, OPUS, inp=0, read=read))
+    record["message"]["content"] = [{"type": "tool_use", "name": "Edit"}]
+    return json.dumps(record)
+
+
+def test_record_writes_each_tasks_context_once(tmp_path):
+    main_lines = [
+        reply("m1", OPUS, inp=0, write=50_000),
+        reply("m2", OPUS, inp=0, read=120_000),
+        edit_reply("m3", 130_000),
+        edit_reply("m3", 130_000),  # same reply, 2nd block
+        reply("m4", OPUS, inp=0, read=200_000),
+        reply("m5", OPUS, inp=0, read=190_000),
+    ]
+    session(tmp_path, main_lines)
+    args = ["--session", "s1", "--projects-dir", str(tmp_path)]
+    args += ["--history", str(tmp_path / "r.csv")]
+    args += ["--context-history", str(tmp_path / "c.csv")]
+
+    assert su.main([*args, "record", "T-1.1", "--split", "no"]) == 0
+    # The same session goes on with a second task that only reads.
+    (tmp_path / "s1.jsonl").write_text(
+        "\n".join([*main_lines, reply("m6", OPUS, inp=0, read=210_000)]) + "\n"
+    )
+    assert su.main([*args, "record", "T-1.2", "--split", "no"]) == 0
+
+    rows = su.read_history(tmp_path / "c.csv")
+    assert [(r["task"], r["calls"], r["first"], r["at_first_edit"]) for r in rows] == [
+        ("T-1.1", "5", "50000", "130000"),
+        ("T-1.2", "1", "210000", ""),
+    ]
+    assert (rows[0]["last"], rows[0]["peak"]) == ("190000", "200000")
 
 
 def test_context_without_a_main_transcript_is_an_error(tmp_path, capsys):

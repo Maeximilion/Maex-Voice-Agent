@@ -7,7 +7,10 @@ Reads the session's transcript and those of its subagents under
 prints it, records the part since the last record of the same session as rows
 of docs/metrics/routing_history.csv, or estimates what a split saved from the
 rows recorded so far. `context` prints the size of the session's current
-context, which /handover compares with its thresholds.
+context, which /handover compares with its thresholds; `record` also writes
+the context of the task's part to docs/metrics/context_history.csv (first
+reply, first file edit as the end of reading, last reply, peak), the data for
+those thresholds.
 
 Usage:
     python3 scripts/session_usage.py show
@@ -53,6 +56,19 @@ USAGE_KEYS = {
     "cache_read": "cache_read_input_tokens",
     "output": "output_tokens",
 }
+CONTEXT_HISTORY = HISTORY.with_name("context_history.csv")
+CONTEXT_FIELDS = [
+    "date",
+    "task",
+    "session",
+    "model",
+    "calls",
+    "first",
+    "at_first_edit",
+    "last",
+    "peak",
+]
+EDIT_TOOLS = {"Edit", "Write", "NotebookEdit"}
 # Assumption: the API price structure relative to an input token of the same
 # model (cache read 0.1, cache write 1.25 for five minutes and 2 for an hour,
 # output 5). cache_write_1h is the part of cache_write kept for an hour, so it
@@ -122,17 +138,44 @@ def usage(paths: list[Path]) -> dict[str, dict[str, int]]:
     return dict(totals)
 
 
-def context(path: Path) -> tuple[int, str]:
-    """Tokens the last reply of the main transcript read: its whole context."""
-    size, model = 0, ""
-    for message, _ in replies(path):
-        counted = message["usage"]
-        size = sum(
-            int(counted.get(USAGE_KEYS[k]) or 0)
-            for k in ("input", "cache_write", "cache_read")
-        )
+def context_points(path: Path, skip: int = 0) -> dict | None:
+    """Context sizes of the main transcript's replies after the first `skip`:
+    the first, the one at the first file edit (reading done), the last and the
+    peak. A reply split over several records counts once. None without one."""
+    calls: list[list] = []  # [size, edits a file]
+    index: dict[str, int] = {}
+    model = ""
+    for message, line in replies(path):
+        key = message.get("id") or line
+        if key not in index:
+            counted = message["usage"]
+            size = sum(
+                int(counted.get(USAGE_KEYS[k]) or 0)
+                for k in ("input", "cache_write", "cache_read")
+            )
+            index[key] = len(calls)
+            calls.append([size, False])
+        content = message.get("content")
+        if isinstance(content, list) and any(
+            isinstance(b, dict)
+            and b.get("type") == "tool_use"
+            and b.get("name") in EDIT_TOOLS
+            for b in content
+        ):
+            calls[index[key]][1] = True
         model = message["model"]
-    return size, model
+    part = calls[skip:]
+    if not part:
+        return None
+    sizes = [size for size, _ in part]
+    return {
+        "model": model,
+        "calls": len(part),
+        "first": sizes[0],
+        "at_first_edit": next((size for size, edit in part if edit), ""),
+        "last": sizes[-1],
+        "peak": max(sizes),
+    }
 
 
 def weighted(row: dict[str, int]) -> int:
@@ -164,6 +207,16 @@ def since_last_record(
     return part
 
 
+def append(path: Path, fields: list[str], rows: list[dict]) -> None:
+    new = not path.exists()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fields, lineterminator="\n")
+        if new:
+            writer.writeheader()
+        writer.writerows(rows)
+
+
 def record(
     path: Path, task: str, split: str, session: str, part: dict, today: str
 ) -> list[dict]:
@@ -179,16 +232,23 @@ def record(
         }
         for model, counts in sorted(part.items())
     ]
-    if not rows:
-        return rows
-    new = not path.exists()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", newline="", encoding="utf-8") as fh:
-        writer = csv.DictWriter(fh, fieldnames=FIELDS, lineterminator="\n")
-        if new:
-            writer.writeheader()
-        writer.writerows(rows)
+    if rows:
+        append(path, FIELDS, rows)
     return rows
+
+
+def record_context(
+    path: Path, task: str, session: str, main_file: Path, today: str
+) -> dict | None:
+    """One row for the task's part of the main transcript: the replies after
+    those earlier rows of the same session recorded."""
+    skip = sum(int(r["calls"]) for r in read_history(path) if r["session"] == session)
+    points = context_points(main_file, skip) if main_file.exists() else None
+    if points is None:
+        return None
+    row = {"date": today, "task": task, "session": session, **points}
+    append(path, CONTEXT_FIELDS, [row])
+    return row
 
 
 def estimate(history: list[dict[str, str]]) -> str:
@@ -225,6 +285,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--session", default=os.environ.get("CLAUDE_CODE_SESSION_ID"))
     parser.add_argument("--projects-dir", type=Path)
     parser.add_argument("--history", type=Path, default=HISTORY)
+    parser.add_argument("--context-history", type=Path, default=CONTEXT_HISTORY)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("show")
     sub.add_parser("context")
@@ -251,7 +312,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no transcript of {args.session} under {projects}", file=sys.stderr)
         return 2
     if args.command == "context":
-        size, model = context(main_file)
+        points = context_points(main_file)
+        size, model = (points["last"], points["model"]) if points else (0, "")
         print(f"context {size:,} tokens ({model or 'no reply yet'})")
         return 0
     totals = usage(paths)
@@ -260,14 +322,16 @@ def main(argv: list[str] | None = None) -> int:
             print(model, json.dumps({**row, "weighted": weighted(row)}))
         return 0
     part = since_last_record(totals, read_history(args.history), args.session)
-    rows = record(
-        args.history,
-        args.task,
-        args.split,
-        args.session,
-        part,
-        datetime.now(ZoneInfo("Europe/Berlin")).date().isoformat(),
+    today = datetime.now(ZoneInfo("Europe/Berlin")).date().isoformat()
+    rows = record(args.history, args.task, args.split, args.session, part, today)
+    ctx = record_context(
+        args.context_history, args.task, args.session, main_file, today
     )
+    if ctx:
+        print(
+            f"context {ctx['first']:,} first, {ctx['at_first_edit'] or 0:,} at the "
+            f"first edit, {ctx['last']:,} last, {ctx['calls']} calls"
+        )
     for row in rows:
         print(f"recorded {row['task']} {row['model']} weighted {row['weighted']:,}")
     if not rows:
