@@ -548,18 +548,21 @@ def test_zu_viele_tool_hops_brechen_sauber_ab(session, state):
 
 
 def test_last_resort_never_promises_a_transfer(session, state):
-    """Team not reachable and no number for a callback: the call ends, and the
-    guest hears that, not "Ich verbinde Sie" or "Ich gebe an das Team weiter"
-    (Codex PR #208, P1)."""
+    """Team not reachable and no number for a callback: the core asks for one
+    (#690), and a guest who declines ends the call hearing so, not "Ich
+    verbinde Sie" or "Ich gebe an das Team weiter" (Codex PR #208, P1)."""
     loop = ConversationLoop(
         session, BrokenLLM(), "system", now=NOW, clock=clock_from([0, 0])
     )
 
-    result = loop.run_turn(state, "Ich möchte mich beschweren!")
+    asked = loop.run_turn(state, "Ich möchte mich beschweren!")
+    result = loop.run_turn(state, "Nein, danke.")
 
+    assert asked.ended is False and asked.say == [SAY_CALLBACK_NUMBER]
     assert result.ended is True
     assert state.stage == "ended"
     (say,) = result.say
+    assert say == SAY_NOBODY_REACHABLE
     assert "verbinde" not in say
     assert "Team weiter" not in say
 
@@ -1738,18 +1741,30 @@ def test_a_team_table_without_a_number_is_transferred(session, state):
     assert session.get(Call, state.call_id).transfer_reason == "out_of_scope"
 
 
-def test_a_team_table_without_a_number_and_without_the_team_says_so(session, state):
-    """Before the restaurant opens and without a number there is no way to the
-    team: the guest hears that, after the sentence about the table, and is not
-    promised a callback."""
+def test_a_team_table_without_a_number_and_without_the_team_asks_for_one(
+    session, state
+):
+    """Before the restaurant opens and without a number the core asks for one,
+    after the sentence about the table, and the wish is the card of the
+    callback the answer makes (#690): the team learns of it."""
     state.caller_phone = None
 
     result = _ask_for_nine(session, state)
 
-    assert result.ended is True and state.stage == "ended"
+    assert result.ended is False
     assert result.say[0].startswith(TEAM_SAY)
-    assert result.say[1] == SAY_NOBODY_REACHABLE
+    assert result.say[-1] == SAY_CALLBACK_NUMBER
     assert session.scalars(select(Callback)).all() == []
+
+    loop = ConversationLoop(
+        session, FakeLLM([]), "system", now=NOW, clock=clock_from([0])
+    )
+    answered = loop.run_turn(state, "07221 5551234")
+
+    assert answered.ended is True and state.stage == "callback"
+    callback = session.scalars(select(Callback)).one()
+    assert callback.summary == f"{WISH}."
+    assert callback.phone == CALLER
 
 
 def test_a_callback_that_fails_still_ends_with_the_team(session, state):
@@ -2449,6 +2464,67 @@ def test_a_handover_names_the_table_read_back(session, state):
         f"{SUMMARY_OPEN_TABLE} 4 Personen, 16.09.2026 19:00 Uhr, Name Müller."
         in _card(session, state)
     )
+
+
+def test_an_allergy_and_the_wish_for_a_person_name_the_table_read_back(session, state):
+    """#690: the allergy takes the read-back back and the same sentence asks
+    for a person. The card still names the table, and the guest hears it is
+    not booked."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    loop = ConversationLoop(
+        session, FakeLLM([]), "system", now=NOW, clock=clock_from([0])
+    )
+
+    result = loop.run_turn(
+        state,
+        "Ich habe eine Erdnussallergie, ich möchte mit einem Mitarbeiter sprechen.",
+    )
+
+    assert result.ended is True and result.say[0] == SAY_TABLE_NOT_BOOKED
+    assert f"{SUMMARY_OPEN_TABLE} 4 Personen, 16.09.2026 19:00 Uhr" in _card(
+        session, state
+    )
+
+
+def test_a_callback_without_a_number_keeps_the_table_read_back(session, state):
+    """#690: number withheld, a table read back, and the model wants the team
+    to call back. The team takes the call, and its card names the table."""
+    read_back_reservation(session, state)
+    state.caller_phone = None
+    state.slots.pop("phone", None)
+    llm = FakeLLM([wants_a_callback()])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Rufen Sie mich lieber zurück")
+
+    assert result.ended is True and state.stage == "transferred"
+    assert result.say[0] == SAY_TABLE_NOT_BOOKED
+    assert f"{SUMMARY_OPEN_TABLE} 4 Personen, 16.09.2026 19:00 Uhr" in _card(
+        session, state
+    )
+
+
+@pytest.mark.parametrize(
+    "said", ["Ich will mit einem Menschen sprechen.", "Ich will mich beschweren."]
+)
+def test_an_escalation_word_without_a_number_or_team_asks_for_one(
+    session, tenant_id, call_id, said
+):
+    """#690: as the model's `transfer_to_team` does, the core's own handover
+    asks for a number where nobody is reachable and none is known, and the
+    answer makes the callback."""
+    state = numberless(tenant_id, call_id)
+    loop = ConversationLoop(
+        session, FakeLLM([]), "system", now=NOW, clock=clock_from([0])
+    )
+
+    result = loop.run_turn(state, said)
+
+    assert result.ended is False and result.say == [SAY_CALLBACK_NUMBER]
+    answered = loop.run_turn(state, "07221 5551234")
+    assert answered.ended is True and state.stage == "callback"
+    assert session.scalars(select(Callback)).one().phone == CALLER
 
 
 def test_a_model_failure_names_the_open_order_too(session, state):
