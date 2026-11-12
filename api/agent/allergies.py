@@ -107,7 +107,8 @@ def _note(state: ConversationState, text: str) -> None:
     if not mentions_allergy(text):
         return
     whole = _read(text)
-    said = [part for part in _SENTENCE.split(text) if mentions_allergy(part)]
+    sentences = [part for part in _SENTENCE.split(text) if part.strip()]
+    said = [part for part in sentences if mentions_allergy(part)]
     readings = [whole]
     if len(said) > 1:
         # Each sentence on its own, with its own owner: read whole, the
@@ -116,9 +117,15 @@ def _note(state: ConversationState, text: str) -> None:
         # "Erdnussallergie. Keine Milch wegen Unverträglichkeit"; Codex PR
         # #368, P1). What the whole leaves unread is still asked about: a
         # sentence without an allergy word may carry the list on ("Und gegen
-        # Sesam").
+        # Sesam"). Without such a sentence, every part was read on its own,
+        # and a whole left open by a denial in front ("Meine Frau hat keine
+        # Allergie. Ich habe eine Nussallergie.") asks for nothing (#668).
         readings = [_read(part) for part in said]
-        if whole is not None and whole.ingredient is None:
+        if (
+            whole is not None
+            and whole.ingredient is None
+            and len(said) < len(sentences)
+        ):
             others = any(r is not None and r.another_adult for r in readings)
             readings.append(whole.model_copy(update={"another_adult": others}))
     for wish in readings:
@@ -237,13 +244,14 @@ def answered(state: ConversationState, text: str) -> bool:
 
 
 def _add(state: ConversationState, allergy: Allergy) -> None:
-    """Notes `allergy` once: said again without a dish, it is the same
-    restriction, and the draft that carries it stays (`loop.py`). Said for
-    another dish, it is one more: each dish keeps its own (Codex PR #368)."""
+    """Notes `allergy` once per dish: said again for the same dish, or again
+    without one, it is the same restriction, and the draft that carries it
+    stays (`loop.py`). Said for another dish, it is one more: each dish keeps
+    its own (Codex PR #368). Said without a dish when every entry of it is
+    tied to one, it is one more for the whole order (#668: "bei allem")."""
     said = (allergy.ingredient or "").casefold(), allergy.own
     if allergy.ingredient is None or not any(
-        ((a.ingredient or "").casefold(), a.own) == said
-        and allergy.item in (None, a.item)
+        ((a.ingredient or "").casefold(), a.own) == said and a.item == allergy.item
         for a in state.allergies
     ):
         state.allergies.append(allergy)
