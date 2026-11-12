@@ -4,6 +4,141 @@ Status: design and implementation plan, 04.11.2026. Not an installed or live-tes
 review service. The first version has one Claude reviewer; specialised reviewers
 are a measured follow-up, not part of the initial rollout.
 
+## Working rules in force
+
+Moved unchanged from `CLAUDE.md` section 6 on 12.11.2026 (#695); this section is
+their one home. `CLAUDE.md` keeps the short form and names when to read them;
+`/ship` step 3 reads them before a fix round. The sections after this one are
+the design and its evidence.
+
+### Independent review requests
+
+Claude-written changes continue through the existing automatic Codex Review Bot
+on PR creation and subsequent pushes. Do not replace that integration with a
+second Codex Actions reviewer. For Codex-written changes, the working agent posts
+a new top-level `@claude review` comment after creating the PR and after every
+subsequent push to that open PR, checks that posting succeeded, and obtains a
+completed Claude review of the latest revision before merging. A push made before
+a PR exists is followed by the request when the PR is created. Do not add AI implementation-author labels, author/co-author trailers or credits
+unless Maxi explicitly requests them for that work. Reviewer names and mentions
+are allowed; the agent deliberately chooses the other model.
+
+Maxi prefers findings, review summaries and replies made as the reviewer to use
+the reviewer's own GitHub bot identity (04.11.2026), so they are distinguishable
+from his comments. PR creation, implementation updates, replies as the
+implementer and review-request mentions may use Maxi's account. Prefer
+`claude[bot]` for Claude and retain the existing `chatgpt-codex-connector[bot]`
+identity for hosted Codex. The authenticated publishing account determines the
+author. When a manual review uses Maxi's account, identify the reviewer in each
+review body, inline finding and reply made as reviewer with `Claude review` or
+`Codex review`. Verify the published author before claiming bot attribution.
+
+Another session of the implementing model cannot supply independent review. For
+mixed work, both reviewers must cover the other model's changes. A self-review is useful before publication but never replaces this independent
+review, including when the external reviewer is out of quota.
+
+For both independent reviewers, the first review covers the complete PR diff.
+Follow-up reviews focus on every change since the last completed independent
+review, the affected files and unresolved findings, with related code read as
+needed to assess the fix. Do not rereview unchanged, unaffected files by default.
+Use a full PR review when prior coverage cannot be trusted or the impact is
+unclear; record the new reviewed head and the prior evidence it builds on.
+For a manual Codex follow-up, use `@codex review` with the scoped request from
+`docs/21_REVIEW_AUTOMATION.md`, the last completed review and the current head.
+The hosted bot follows review guidance, but its internal file reads and token
+usage cannot be restricted by a proven file-scope setting. Keep its automatic
+trigger as it is; do not post an extra manual request while an automatic review
+of that head is running. The existing stalled-run exception in `/ship` remains.
+
+The Claude action is currently planned, not installed or live-tested. A mention
+alone does not establish that a review ran. Setup, exact-head validation and
+duplicate-trigger handling are documented in [docs/21_REVIEW_AUTOMATION.md](21_REVIEW_AUTOMATION.md).
+Start with subscription OAuth only. A later, separately configured stage uses
+API first within a shared USD 50 monthly review budget, then subscription OAuth;
+its budget enforcement and specialist experiment are documented there.
+
+Until the action is installed, a user-started Claude Code session can perform
+the independent review manually and publish it on GitHub using its authorised
+account. Record the full reviewed base/head SHAs and reviewer in a COMMENT
+review, with actual findings inline. Read the diff and applicable rules without
+changing the branch, running `/done` or `/ship`, implementing the planned action,
+or merging. A missing action does not invalidate a completed manual review;
+a bare mention without a completed review is insufficient. A later push still
+needs another independent review of the new head. The user decides when a manual
+review session starts; this instruction does not launch a paid session for them.
+
+### Reviews
+
+An independent review of the exact head commit gates a merge: use the other model under "Independent review requests", with both reviewers covering the other model's contributions for mixed work. Review is repeated after every commit that moves the head, a merge from `main` included. A `Merge gate: <full head sha>` comment may relay verified external review and triage evidence; it cannot replace that review. Each finding on that head is checked against the code before anything changes: a confirmed one is fixed with a test (P2 within the review loop limits below), a wrong or outdated one is answered on the PR with the evidence. A severity label is the reviewer's claim, not proof. The rest is advisory (Maxi, 2026-10-06): `/ponytail-review` and `/security-review` in `/done` step 1, and the security audit of `docs/09_OPERATIONS_LEGAL.md` section 5.
+
+**Repeated findings become rules** (Maxi, 2026-11-09, adapted from the Claude Code team's review practice): when a confirmed finding of the same kind turns up on a second PR, the PR that fixes it also fixes the cause at the source: a test, lint rule or hook where the check is mechanical, otherwise one short line in `AGENTS.md` "Code Review Rules". If that source fix is larger than the PR, it gets an issue instead. `AGENTS.md` "Code Review Rules" is this repository's `REVIEW.md`; there is no separate file, because only the managed Code Review service reads one, and that service is out of scope (`docs/21_REVIEW_AUTOMATION.md`).
+
+**Review comment format** (Maxi, 04.11.2026): use the same concise English format
+for Claude and Codex. Start with `[P0]`, `[P1]` or `[P2]` and a specific title
+(aim for at most 80 characters). Use one short paragraph, usually 2–4 sentences
+and about 40–100 words: the concrete trigger/input, the actual wrong behaviour
+and impact, then the required outcome and a useful verification case. These
+lengths are targets, not reasons to omit evidence or truncate a complex finding.
+One comment covers one root cause, anchored to the smallest useful diff range.
+Include a compact contract/code reference when the claim depends on it; do not
+repeat a file location already supplied by the inline anchor.
+
+State facts and assumptions separately. Do not claim a test ran unless it did.
+Give a minimal fix direction when useful, but allow any implementation that
+meets the required behaviour; code suggestions are optional and usually no more
+than three lines. Avoid vague demands such as "handle this properly", lectures,
+praise filler, personal criticism and optional style findings. Existing severity
+and scope rules decide what is reported; this adds no new reviewer categories.
+For a repeated finding, reference the earlier thread and name the still-failing
+scenario or new evidence instead of restating the original suggestion.
+
+**Evaluate feedback before changing code** (Maxi, 04.11.2026): a review comment,
+whether from a person or a model, is a claim to investigate, not an instruction
+to obey. Check the reported input/sequence, the current code, intended behaviour,
+callers and tests. Evaluate the proposed fix separately: it may break a contract,
+add unnecessary complexity or worsen performance. Prefer evidence over either
+the reviewer's confidence or the implementing agent's confidence.
+
+Before editing, read the whole thread and translate the claim into a checkable
+acceptance condition: given the reported input/state, what must happen instead?
+Verify that interpretation against the contract and code. If two materially
+different interpretations remain, ask one targeted question in the original
+thread before changing that behaviour. Test the failure mechanism and relevant
+boundary cases, not just the exact example or the suggested replacement line.
+
+- For a confirmed defect, choose a suitable fix and verify it with a regression
+  test. The reviewer's proposed implementation need not be used.
+- For a disproved, outdated or duplicate claim, or a suggestion that conflicts
+  with intended correct behaviour, reply in the original inline thread with the
+  reason and relevant code/contract/test evidence. State that no code change is
+  needed and why retaining the implementation is preferable; then resolve that
+  thread. Resolution means the concern was addressed, not necessarily fixed.
+- If a defect is real but the proposed fix is harmful, reject the fix with
+  evidence and address the underlying defect another way. Do not resolve the
+  defect merely because that proposed fix is unsuitable.
+- If the claim cannot yet be verified, say what is unknown and investigate or
+  ask a targeted question. Failure to reproduce once is not disproof. If real
+  work is deferred, link its tracking and reason under the existing P2 policy;
+  do not describe it as fixed or close it merely to clear the merge gate.
+
+Replies are concise, technical and in English. Revisit a rejection if new
+evidence invalidates it. No code change means no artificial commit/push just to
+acknowledge the thread. None of this replaces the completed independent review
+of the current head or the existing CI and merge requirements.
+For an accepted fix, reply with the corrected behaviour, the actual commit or
+test evidence and any remaining limitation; "done" alone is insufficient. For
+a rejection, state the contrary evidence. Keep replies to 1–3 sentences when
+that is enough, and preserve this context for the next reviewer.
+
+**Review loop limits** (Maxi, 2026-10-21): how long a PR stays in fix rounds. A round is one review of a new head.
+
+- P0 and P1 are always fixed, however many rounds it takes. No merge while one is open.
+- A P2 in code that hits an `xhigh` trigger from the Model Routing table of `CLAUDE.md` (allergens, a booking, prices, the fate of a call) counts as P1.
+- Any other P2 is assessed under the feedback rules above and fixed when it is a real defect or cheap to fix within the existing scope. Explain a rejected or deferred finding in its original thread; the `Merge gate:` comment below links the decision and summarises any remaining work. A cosmetic or speculative suggestion is not made actionable merely because its patch would be small.
+- After 3 consecutive rounds that each found only P2s (a round with a P0 or P1 resets the count), Claude stops and decides: keep fixing when a remaining P2 is a real defect inside the PR's scope; merge when the rest are cosmetic, speculative, or real defects outside the PR's scope, which go to #207 and do not block. Either way a PR comment that opens with `Merge gate: <full head sha>` states that no P0 or P1 is open and lists what is left and why; leftovers worth doing go to the rolling review issue #207. That comment records the triage decision and links the completed independent review of this head; it is not a substitute review. CI must still be green.
+- Stop patching and propose a structural redesign to Maxi when the findings per round grow after 3 rounds, when findings land in the same function 3 rounds in a row, or when a finding asks to undo an earlier fix of the same PR. Nothing else is pushed until Maxi approves it; a confirmed P0 or P1 is still fixed and pushed at once.
+- The fixes for one review go out in one push (Maxi, 2026-10-22): every push moves the head and costs a review round. For the same reason `origin/main` is merged into the branch only when the merge needs it (`/done` step 7b), never during fix rounds.
+
 ## Goal and scope
 
 Request Claude review with an authorised PR comment, then review each new pushed
@@ -42,7 +177,7 @@ automatic Codex Review Bot, including its inline comments and review after pushe
 This does not require a second Codex GitHub Actions integration. When Codex
 implements, it must post a new top-level `@claude review` comment after opening
 the PR and after every subsequent push to that open PR. This obligation lives
-in `CLAUDE.md`, not only in chat memory. A push before a PR exists cannot have a
+in "Independent review requests" above, not only in chat memory. A push before a PR exists cannot have a
 PR comment; opening that PR fulfils the pending request. Comment posting must
 succeed, or the working agent reports the failure and retries before merge.
 
@@ -200,7 +335,7 @@ file was read again. No scope-reduction claim is made for a failed/partial run.
 
 This is the shared review policy for both model families. The custom Claude
 action implements it in the input builder and prompt. For the existing hosted
-Codex bot it is supplied through `AGENTS.md`, `CLAUDE.md` and a scoped manual
+Codex bot it is supplied through `AGENTS.md`, this file and a scoped manual
 request when one is actually needed. A mention by itself cannot enforce which
 files the service loads, and hosted Codex quota savings have not been verified.
 
@@ -237,7 +372,7 @@ Check every change since that reviewed head, verify the reported fixes, and look
 for regressions caused by those changes. Read affected callers and contracts as
 needed. Follow AGENTS.md and CLAUDE.md. Do not repeat resolved root causes or
 reopen unrelated cosmetic work. Report concrete defects inline at valid lines;
-Apply CLAUDE.md's performance/language signals to affected code; distinguish
+Apply the performance/language signals of docs/22 to affected code; distinguish
 measured runtime limits from model, SQL, network or audio waits. Speculative
 rewrites are not findings. Use the shared English comment format: trigger, impact and required behaviour
 with a verification case in one short paragraph. For a repeated finding, link
@@ -290,7 +425,7 @@ continue for real in-scope defects, or use the existing triage/merge policy for
 cosmetic, speculative or outside-scope leftovers. This is not a three-round
 maximum and does not authorise blindly fixing every subsequent suggestion.
 P0/P1 still require fixes and reset the P2-only count. Use one completed review
-of a distinct head as one round, as `CLAUDE.md` already requires; duplicate
+of a distinct head as one round, as "Review loop limits" above requires; duplicate
 comments are not extra rounds. Keep the existing policy for base-sync heads and
 do not invent exceptions to reset the count. A clean result ends the loop.
 
@@ -314,7 +449,7 @@ reviews and a wider specialist matrix remain outside this change.
 
 ### Evidence-based feedback handling
 
-Apply the shared assessment rules in `CLAUDE.md` equally to human, Claude and
+Apply "Evaluate feedback before changing code" above equally to human, Claude and
 Codex comments. Verify the defect claim separately from its suggested fix. A
 confident or high-priority label is not proof; neither is the implementer's
 disagreement. Check an actual input/sequence against intended behaviour and
@@ -340,8 +475,8 @@ push to record this discussion; existing reviewed-head and merge-gate rules appl
 
 ### Performance and language signals
 
-Both the manual Claude reviewer and hosted Codex reviewer follow `CLAUDE.md`'s
-"Performance and language review signals" and [22](22_LANGUAGE_AND_PERFORMANCE.md).
+Both the manual Claude reviewer and hosted Codex reviewer follow
+"Review signals for both reviewers" in [22](22_LANGUAGE_AND_PERFORMANCE.md).
 Include that rule in manual Claude requests and any future fixed action prompt.
 The working agent records credible unmeasured signals in #550; concrete defects
 remain subject to the existing inline severity/cap rules. No new specialist,
@@ -349,7 +484,7 @@ full-repository audit, rewrite mandate or review loop is introduced.
 
 ### Concise comments that can be implemented and verified
 
-The shared format is defined in `CLAUDE.md` and referenced from `AGENTS.md` so
+The shared format is defined in "Review comment format" above and referenced from `AGENTS.md` so
 the hosted Codex bot can consume it. The Claude action prompt uses the same
 format. It is a writing guideline, not a new parser or a claim of measured
 token savings. Hosted Codex may still add its own badges, footer or summary.

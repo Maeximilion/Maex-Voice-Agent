@@ -26,20 +26,20 @@ For an agent that changes files here, whatever tool it runs in:
 
 How to review:
 
-- Follow `CLAUDE.md` section 6, "Performance and language review signals", for
+- Follow `docs/22_LANGUAGE_AND_PERFORMANCE.md`, "Review signals for both reviewers", for
   evidence of CPU, latency, concurrency, memory, typing or runtime limitations.
   Distinguish Python work from model/SQL/network/audio delays. An unmeasured
   language-change hypothesis is a measurement candidate for #550, not an inline
   defect or permission to start blocked task #551. Existing severity and scope
   limits apply to both reviewers.
 
-- Use the shared English "Review comment format" in `CLAUDE.md`: a priority and
+- Use the shared English "Review comment format" in `docs/21_REVIEW_AUTOMATION.md`: a priority and
   specific title, followed by one concise paragraph explaining the trigger,
   wrong outcome/impact and required behaviour with a verification case. Aim for
   roughly 40–100 words, but retain essential evidence. State the defect rather
   than prescribing an unnecessary rewrite; a repeated finding must explain the
   still-failing case and reference its earlier thread.
-- Follow the shared follow-up scope in `CLAUDE.md` section 6, "Independent review
+- Follow the shared follow-up scope in `docs/21_REVIEW_AUTOMATION.md`, "Independent review
   requests": use the last completed independent review as the baseline, check
   every later change and still-open findings, and read related code as needed.
   Missing or invalid prior coverage requires a full PR review. This applies to
@@ -51,7 +51,8 @@ How to review:
 - Back every claim about behaviour with the file and line that shows it; never infer behaviour from
   a name alone. Open the review summary with the number of findings, and say plainly when there is
   nothing to fix.
-- When processing feedback, follow `CLAUDE.md`'s evidence-based assessment rules.
+- When processing feedback, follow "Evaluate feedback before changing code" in
+  `docs/21_REVIEW_AUTOMATION.md`.
   A justified thread resolution may reject an incorrect suggestion without a
   code change. Consider that explanation before repeating the finding; a
   resolved flag alone proves neither a fix nor that the reviewer was wrong.
