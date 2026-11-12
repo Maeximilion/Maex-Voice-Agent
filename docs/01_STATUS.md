@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 12.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.37.3
+> Status: 12.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.37.4
 
 ---
 
@@ -306,7 +306,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.37.3 · 12.11.2026:** Batch 2 review of the ultrareview ledger, first fix PR (#668): allergy notes for every line, consent asked again after a question back
+- **v2.37.4 · 12.11.2026:** Batch 2 review of the ultrareview ledger, first fix PR (#668): an allergy said again for everything reaches every line, a denial next to an allergy opens none
+- **v2.37.3 · 12.11.2026:** CLAUDE.md: Claude gives the backup and migrate commands whenever a workbench migration is due
 - **v2.37.2 · 12.11.2026:** Call list filter: selects on the board get the height, font and padding of the buttons, so their text is no longer cut
 - **v2.37.1 · 12.11.2026:** fastapi 0.162.0 to 0.162.2 (Dependabot #659), patch release within the 0.162.* pin
 - **v2.37.0 · 11.11.2026:** T-8.7 (#661): the call list /gui/anrufe in its first form, with the marked number of a call without caller audio (#651)
