@@ -8,8 +8,8 @@ looks at each tenant and pushes to the operator, never to the team:
   hour, at most once a clock hour;
 - the last ALARM_NO_AUDIO_CALLS calls all without any audio of the caller
   (`calls.line_note`), the newest in the last hour, at most once a clock
-  hour: each of them ended as a silent call does, without the team, and a row
-  of them is one-way audio on our side, not muted telephones (#651);
+  hour: a call the AI took ends as a silent call does, without the team, and
+  a row of them is one-way audio on our side, not muted telephones (#651);
 - events to n8n that failed in the last hour, at most once a clock hour
   (kitchen slips go to the print bridge, not to n8n, and are left out).
   n8n down shows up here first, so this push does not go through n8n;
@@ -220,9 +220,8 @@ def _due(
                 hour,
                 "No audio from callers",
                 f"The last {settings.alarm_no_audio_calls} calls brought no audio "
-                "from the caller and were ended as silent calls; the team was "
-                "not rung. One-way audio on our side? Check the access (tunnel, "
-                "router, firewall).",
+                "from the caller. One-way audio on our side? Check the access "
+                "(tunnel, router, firewall).",
                 "high",
             )
         )

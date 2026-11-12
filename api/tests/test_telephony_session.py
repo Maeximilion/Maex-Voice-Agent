@@ -329,6 +329,33 @@ def test_a_caller_who_sends_sound_and_says_nothing_is_no_line_without_audio(call
     assert call.core.speech.no_caller_audio is False
 
 
+def test_a_caller_we_never_heard_who_gives_up_before_the_silence_is_marked(call):
+    """One-way audio: the caller says "Hallo?" twice and hangs up before
+    "Sind Sie noch da?". A silence's length since we answered, nothing came:
+    the mark, or every such caller breaks the monitor's row (#651)."""
+    call.start(GREETING)
+    call.played(after=3.0)
+    call.wait(SILENCE - 2.0)
+    assert call.core.count("silence") == 0
+    call.s.closed()
+    call.s.drain()
+
+    assert call.core.speech.no_caller_audio is True
+
+
+def test_a_short_call_handled_late_carries_no_mark(call):
+    """The caller hangs up a second after the answer and the worker gets to
+    the close ten seconds later: the call lasted a second (Codex PR #667)."""
+    call.start(GREETING)
+    call.played()
+    call.clock.now += 1.0
+    call.s.closed()
+    call.clock.now += 10.0
+    call.s.drain()
+
+    assert call.core.speech.no_caller_audio is False
+
+
 def test_a_call_that_ends_before_a_silence_carries_no_mark(call):
     """Handed on or hung up within moments: too short to say that nothing
     came, and a streak of such calls must not raise the alarm (#651)."""
@@ -338,6 +365,19 @@ def test_a_call_that_ends_before_a_silence_carries_no_mark(call):
     call.s.drain()
 
     assert call.core.speech.no_caller_audio is False
+
+
+def test_a_leg_closed_while_the_first_sentence_was_made_is_no_hangup(call):
+    """The first sentence comes in the start turn and answers the leg after
+    the dialplan's 10 s closed it; the close waited behind that turn. The team
+    rings: no card "hung up before the team rang" (#652)."""
+    call.core.on_start = [GREETING]
+    call.s.start()
+    call.s.closed()
+    call.s.drain()
+
+    assert ("answer",) in call.line.actions and call.s.outcome == "closed"
+    assert call.core.hung_up is False
 
 
 def test_a_leg_closed_before_we_answered_is_no_caller_who_hung_up(call):

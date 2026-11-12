@@ -141,11 +141,12 @@ class CallSession:
         self._turn_thread: int | None = None
 
         self._answered = False
+        self._answered_at: float | None = None
+        self._closed_unanswered = False
+        self._closed_at: float | None = None
         # For the note on a call nothing of the caller reached (#651): has
-        # any frame held more than digital zero, and how often did the
-        # caller's silence run out.
+        # any frame held more than digital zero.
         self._caller_sound = False
-        self._silences = 0
         self._mark = 0
         # One entry per sentence that is queued on the line and not reported as
         # played: may it be interrupted?
@@ -200,6 +201,10 @@ class CallSession:
 
     def closed(self) -> None:
         """The caller's leg is gone."""
+        # Read here, on the line's side: a first sentence still being made
+        # answers the leg after this, while the event waits behind it (#652).
+        self._closed_unanswered = not self._answered
+        self._closed_at = self._clock()
         self._post("closed")
 
     def broken(self) -> None:
@@ -313,7 +318,7 @@ class CallSession:
         self._turn(lambda: self._events.on_call_started(self.session_id))
 
     def _on_audio(self, at: float, frame: bytes) -> None:
-        if not self._caller_sound and any(frame):
+        if not self._caller_sound and frame.strip(b"\0"):
             # Anything but digital zero: the caller's side reaches us.
             self._caller_sound = True
         if self._tape is not None:
@@ -456,6 +461,7 @@ class CallSession:
         if not self._answered:
             self._line.answer()
             self._answered = True
+            self._answered_at = self._clock()
         self._mark += 1
         # Now, not when the sentence was asked for: the mouth took its time.
         # What the caller said meanwhile was no barge-in, and the audio cannot
@@ -536,7 +542,6 @@ class CallSession:
         if self._digits_due is not None and now >= self._digits_due:
             self._hand_over_digits()
         if self._silence_due is not None and now >= self._silence_due:
-            self._silences += 1
             self._turn(lambda: self._events.on_silence(self.session_id))
 
     # -- pieces -------------------------------------------------------------------------
@@ -783,14 +788,27 @@ class CallSession:
                 SpeechUsage(
                     heard_seconds=self._fed_bytes / (2 * self._sample_rate),
                     spoken_characters=self._spoken_characters,
-                    # Only once a silence passed: a call handed on or gone
-                    # within moments is too short to say that nothing came.
-                    no_caller_audio=self._silences > 0 and not self._caller_sound,
+                    no_caller_audio=self._nothing_heard(),
                 ),
-                caller_hung_up=outcome == "closed" and self._answered,
+                caller_hung_up=outcome == "closed" and not self._closed_unanswered,
             )
         except Exception:
             logger.exception("the core could not be told that the call ended")
+
+    def _nothing_heard(self) -> bool:
+        """Nothing of the caller arrived, though we answered at least a
+        silence's length ago: a call handed on or gone within moments is too
+        short to say so, one who gave up before "Sind Sie noch da?" is not,
+        or a row of one-way audio calls breaks at every such caller (#651)."""
+        return (
+            not self._caller_sound
+            and self._answered_at is not None
+            # Up to when the line reported the close, not when a busy worker
+            # got to it (Codex PR #667).
+            and (self._clock() if self._closed_at is None else self._closed_at)
+            - self._answered_at
+            >= self._silence_seconds
+        )
 
 
 class Lines:
