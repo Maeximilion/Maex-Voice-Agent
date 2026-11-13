@@ -224,6 +224,8 @@ function send(method: string, url: string, body?: unknown): Promise<Reply> {
           target.unsaved = false;
           // Steps made meanwhile, or held back behind a resent save, follow now.
           if (target.pending && JSON.stringify(target.pending) !== JSON.stringify(body.area)) target.again = true;
+          // What was sent is stored: no step waits, the room may be read again (Codex PR #724).
+          else target.pending = null;
           if (!target.again && target === area) status("Gespeichert.");
         } else if (res.status === 409 && data.area) {
           adopt(target, data.area);

@@ -410,6 +410,13 @@ def _keep_booked(
     paired = {t for pair in gone_pairs for t in pair}
     if not names and not paired:
         return
+    # `confirm_tablet` holds its tables with a shared lock until it commits:
+    # wait for it here, then read the booking as it ends (Codex PR #724).
+    session.scalars(
+        select(DiningTable.id)
+        .where(DiningTable.id.in_(names.keys() | paired))
+        .with_for_update()
+    ).all()
     now = clock.utcnow()
     # Confirmed only: a draft's tables are checked against the plan again
     # when it is confirmed (`confirm_tablet`, Codex #544).

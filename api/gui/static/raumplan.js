@@ -196,6 +196,9 @@ function send(method, url, body) {
                 // Steps made meanwhile, or held back behind a resent save, follow now.
                 if (target.pending && JSON.stringify(target.pending) !== JSON.stringify(body.area))
                     target.again = true;
+                // What was sent is stored: no step waits, the room may be read again (Codex PR #724).
+                else
+                    target.pending = null;
                 if (!target.again && target === area)
                     status("Gespeichert.");
             }

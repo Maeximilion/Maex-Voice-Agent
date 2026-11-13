@@ -597,3 +597,46 @@ def test_removing_a_combination_a_reservation_sits_on_is_refused(session, tenant
         _save(session, tenant_id, saved, combinations=[])
 
     assert "Müller" in (err.value.say or "")
+
+
+def test_a_confirmation_under_way_holds_its_table_against_a_removal(
+    migrated_db_url, tenant_id
+):
+    """Codex PR #724: `confirm_tablet` holds the table with a shared lock until
+    its commit. The removal waits for it and then sees the booking confirmed."""
+    from api.models import Reservation
+
+    engine = create_engine(migrated_db_url)
+    try:
+        with Session(engine) as setup:
+            t5 = _table("T5")
+            saved = _save(setup, tenant_id, _room(setup, tenant_id), tables=[t5])
+            booking = _book(setup, tenant_id, [t5], hours=3, status="draft")
+            booking_id = booking.id
+        outcome: dict = {}
+
+        def removal():
+            with Session(engine) as s:
+                try:
+                    _save(s, tenant_id, saved, tables=[])
+                    outcome["saved"] = True
+                except InvalidInput as exc:
+                    outcome["refused"] = exc.say
+
+        with Session(engine) as confirming:
+            confirming.scalars(
+                select(DiningTable)
+                .where(DiningTable.id == uuid.UUID(t5["id"]))
+                .with_for_update(read=True)
+            ).all()
+            confirming.get(Reservation, booking_id).status = "confirmed"
+            confirming.flush()
+            thread = threading.Thread(target=removal)
+            thread.start()
+            thread.join(0.5)
+            assert thread.is_alive(), "the removal waits for the confirmation"
+            confirming.commit()
+        thread.join(10)
+        assert "refused" in outcome, outcome
+    finally:
+        engine.dispose()
