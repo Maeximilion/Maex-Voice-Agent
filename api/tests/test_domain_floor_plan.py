@@ -540,7 +540,8 @@ def test_removing_a_table_with_a_reservation_ahead_is_refused(
     with pytest.raises(InvalidInput) as err:
         _save(session, tenant_id, saved, tables=[_table("T5", x=500)])
 
-    assert "T5" in err.value.say and "Müller" in err.value.say
+    say = err.value.say or ""
+    assert "T5" in say and "Müller" in say
     live = session.scalars(
         select(DiningTable.id).where(DiningTable.deleted_at.is_(None))
     ).all()
@@ -595,4 +596,4 @@ def test_removing_a_combination_a_reservation_sits_on_is_refused(session, tenant
     with pytest.raises(InvalidInput) as err:
         _save(session, tenant_id, saved, combinations=[])
 
-    assert "Müller" in err.value.say
+    assert "Müller" in (err.value.say or "")
