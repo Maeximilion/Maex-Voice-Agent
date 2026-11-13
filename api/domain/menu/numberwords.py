@@ -166,8 +166,13 @@ _HEARD_LETTERS = {"ist": "s"}
 # (`CardFormat.lettered`).
 _HEARD_SUFFIXES = {
     "ja": "a", "war": "b", "der": "d", "dann": "d", "die": "eg", "aeh": "e",
-    "eine": "e", "einen": "e", "ist": "f",
+    "eine": "e", "einen": "e", "ist": "f", "ah": "a",
+    # The letter itself behind a pause: "Die 30, A." (#677).
+    "a": "a", "b": "b", "c": "c", "d": "d", "e": "e", "f": "f", "g": "g",
 }  # fmt: skip
+# Of those, the ones that are no filler: behind a number they are its letter,
+# never a dish name for the name search ("die 30, ah", #677).
+_LETTER_WORDS = frozenset({"ah", "a", "b", "c", "d", "e", "f", "g"})
 # Between the number and such a word the ear sets a pause ("siebenundzwanzig,
 # die?"). A full stop ends the order: what follows it is an answer ("Die 26. Ja,
 # gerne."), not a letter (Codex PR #282).
@@ -327,6 +332,11 @@ def _word_value(word: str) -> int | None:
     hundreds = 1 if before in ("", "ein") else _below_hundred(before)
     if hundreds is None or not 1 <= hundreds <= 9:
         return None
+    # "hundertundfünfzehn" written as one word is 115, as spoken (#677).
+    if after.startswith("und"):
+        after = after.removeprefix("und")
+        if not after:
+            return None
     rest = 0 if not after else _below_hundred(after)
     return None if rest is None else hundreds * 100 + rest
 
@@ -369,6 +379,19 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
         value = _word_value(token)
         if value is None:
             break
+        if (
+            total is not None
+            and total % 10 == 0
+            and 1 <= value <= 9
+            and _counts(tokens, i + 1)
+            # Only a number named as a dish ("Nummer 40", "die 40"): "vierzig
+            # sieben Portionen" alone stays 47 portions (Codex PR #722).
+            and start > 0
+            and tokens[start - 1] in _ITEM_NUMBER_MARKERS | _LINK_ARTICLES
+        ):
+            # "Nummer 40 zwei Portionen": the unit is the quantity, never a
+            # part of the number (42) (#677).
+            break
         if total is None:
             total = value
         elif value == 100 and total <= 9:
@@ -387,9 +410,24 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
     return _Span(start, i, total)
 
 
-def _scan_ending_at(tokens: list[str], end: int) -> _Span | None:
-    """A number that ends directly **before** `end` ("drei Portionen", "zwei mal")."""
-    for start in range(max(0, end - 3), end + 1):
+def _bare_number_at(tokens: list[str], at: int) -> bool:
+    """Is the rest of the sentence from `at` one number and filler only?"""
+    span = _scan(tokens, at)
+    return span is not None and all(
+        t in PUNCTUATION or t in _SENTENCE_FILLER or t in _LEAD_FILLER or hesitation(t)
+        for t in tokens[span.end :]
+    )
+
+
+def _counts(tokens: list[str], at: int) -> bool:
+    """Does a quantity word stand at `at` ("Portionen", "mal", "x")?"""
+    return at < len(tokens) and tokens[at] in _QUANTITY_NOUNS
+
+
+def _scan_ending_at(tokens: list[str], end: int, floor: int = 0) -> _Span | None:
+    """A number that ends directly **before** `end` ("drei Portionen", "zwei mal"),
+    starting at `floor` or later."""
+    for start in range(max(floor, end - 3), end + 1):
         span = _scan(tokens, start)
         if span is not None and span.end == end + 1:
             return span
@@ -487,6 +525,14 @@ def _quantity_spans(tokens: list[str]) -> list[_Span]:
     Not the tens half of a number the ear may have cut: "drei und äh zwanzig
     Portionen" is no 20 portions (`_second_half`, #328)."""
     spans: list[_Span] = []
+    # Where a number named as a dish ends ("Nummer zwei hundert"): a quantity
+    # behind it starts there, never inside it (Codex PR #722).
+    dish_ends = [
+        span.end
+        for k in range(1, len(tokens))
+        if tokens[k - 1] in _ITEM_NUMBER_MARKERS | _LINK_ARTICLES
+        and (span := _scan(tokens, k)) is not None
+    ]
     for i, token in enumerate(tokens):
         suffix = _QUANTITY_SUFFIX.match(token)
         if suffix:
@@ -495,7 +541,8 @@ def _quantity_spans(tokens: list[str]) -> list[_Span]:
                 spans.append(_Span(i, i + 1, value))
                 continue
         if token in _QUANTITY_NOUNS and i > 0:
-            span = _scan_ending_at(tokens, i - 1)
+            floor = max((e for e in dish_ends if e <= i - 1), default=0)
+            span = _scan_ending_at(tokens, i - 1, floor)
             if span is not None:
                 spans.append(span)
     return [s for s in spans if not _second_half(tokens, s.start)]
@@ -1351,6 +1398,24 @@ def sole_item_number(
     glued = _glued(text)
     prefixed = _prefixed(text)
     mengen = _quantity_spans(tokens)
+    # "die dreizehn mal zwei", "13 x 2": with an article in front or as the
+    # first number, either number may be the dish and the other the quantity.
+    # Asked, never swapped (#677).
+    for q in mengen:
+        if (
+            q.end + 1 < len(tokens)
+            and tokens[q.end] in ("mal", "x")
+            and _word_value(tokens[q.end + 1]) is not None
+            # Only a bare second number: anything but filler behind it names
+            # a dish ("2 x 7up", "2 x 30 a", "zwei mal Acht Schätze"), and the
+            # search reads it (Codex PR #722).
+            and _bare_number_at(tokens, q.end + 1)
+            and (
+                (q.start > 0 and tokens[q.start - 1] in _LINK_ARTICLES)
+                or all(_word_value(t) is None for t in tokens[: q.start])
+            )
+        ):
+            return None, True
     consumed: set[int] = set()
     marked: list[_Span] = []
     invalid: list[ItemNumber] = []
@@ -1426,6 +1491,25 @@ def sole_item_number(
             )
         ):
             consumed.add(nxt)
+        # "die 30, ah", "Die 30, A.": a letter behind a pause is the number's,
+        # a candidate `_heard_suffixes` offers and the search asks (#677).
+        at = nxt
+        while at < len(tokens) and (tokens[at] in _PAUSES or hesitation(tokens[at])):
+            at += 1
+        # Only where the menu has that lettered dish: else the letter stays
+        # unread, and the plain number is not taken unasked.
+        if (
+            span in numbers
+            and at < len(tokens)
+            and tokens[at] in _LETTER_WORDS
+            and any(
+                canonical_card(f"{prefix}{span.value}{_HEARD_SUFFIXES[tokens[at]]}")
+                in card.lettered
+                for prefix in span.prefixes or ("",)
+            )
+            and all(_trails(t) for t in tokens[at + 1 :] if t not in PUNCTUATION)
+        ):
+            consumed.add(at)
     consumed |= marker_at
     # Tokens that belong to a number - valid or not.
     number_at = {k for s in numbers for k in range(s.start, s.end)} | invalid_at
