@@ -274,18 +274,25 @@ class ConversationLoop:
         """One sentence of the guest. What belongs to the recording comes
         first, before the model and whatever else the sentence asks: the
         answer to the question of the phone line (L2), or its withdrawal."""
+        addressed = False
         if state.recording == "asked":
+            # The address may sit in the answer clause that is cut off below.
+            addressed = escalation.addresses_a_person(user_text)
             answer = recording_answer(user_text)
             recording.settle(self._session, state, answer, self._now)
             if bare_recording_answer(user_text):
                 guards.note_said(state, recording.SAY_WHAT_CAN_I_DO)
-                return TurnResult(state=state, say=_opening(state))
+                say = _opening(state)
+                if escalation.addresses_a_person(user_text):
+                    # "Nein, junge Frau": the truthful sentence still comes first.
+                    say = [SAY_NOT_A_PERSON, *say]
+                return TurnResult(state=state, say=say)
             # No consent, and no second question: what the sentence holds
             # besides its answer is what the guest called for, and the only
             # thing the readers of the turn see (#526).
             user_text = after_recording_answer(user_text)
         if state.recording != "on" or not stops_recording(user_text):
-            return self._guest_sentence(state, user_text)
+            return self._guest_sentence(state, user_text, addressed)
         recording.withdraw(self._session, state, self._now)
         if only_stops_recording(user_text):
             # What the guest was asked stands: said again, it changes nothing
@@ -293,11 +300,13 @@ class ConversationLoop:
             return TurnResult(
                 state=state, say=[recording.SAY_RECORDING_STOPPED, _still_open(state)]
             )
-        result = self._guest_sentence(state, user_text)
+        result = self._guest_sentence(state, user_text, addressed)
         result.say.insert(0, recording.SAY_RECORDING_STOPPED)
         return result
 
-    def _guest_sentence(self, state: ConversationState, user_text: str) -> TurnResult:
+    def _guest_sentence(
+        self, state: ConversationState, user_text: str, addressed: bool = False
+    ) -> TurnResult:
         """One sentence of the guest, after the recording. A guest who takes
         the agent for a person hears the truthful sentence first, on every way
         out of the turn (docs/09 L1, #638): asks whether a person is on the
@@ -305,9 +314,9 @@ class ConversationLoop:
         question), or addresses it as one ("Ja, junge Frau")."""
         rest = escalation.without_human_question(user_text)
         result = self._guest_turn(state, user_text, rest)
-        if (rest is not None or escalation.addresses_a_person(user_text)) and not (
-            result.say and result.say[0].startswith(SAY_NOT_A_PERSON)
-        ):
+        if (
+            rest is not None or addressed or escalation.addresses_a_person(user_text)
+        ) and not (result.say and result.say[0].startswith(SAY_NOT_A_PERSON)):
             result.say.insert(0, SAY_NOT_A_PERSON)
         return result
 

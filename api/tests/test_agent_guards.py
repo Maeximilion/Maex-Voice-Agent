@@ -101,7 +101,10 @@ def draft(*item_ids):
 
 
 @pytest.mark.parametrize("entity", ["reservation", "order"])
-@pytest.mark.parametrize("said", ["Ja, passt so.", "Genau.", "Ja bitte"])
+@pytest.mark.parametrize(
+    "said",
+    ["Ja, passt so.", "Genau.", "Ja bitte", "Ja, junge Frau.", "Ja, junger Mann"],
+)
 def test_confirm_after_a_yes_to_the_read_back_draft_is_let_through(entity, said):
     state, draft_id = read_back(entity)
     start = begin_turn(state)
