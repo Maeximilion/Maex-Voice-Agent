@@ -1,6 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.26
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.25
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.24
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.23
@@ -284,6 +285,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 13.11.2026 | **Ultrareview ledger (#546, batch 9), fix PR for #742: a booking read-back names the night after midnight by its two days.** Red first (6 cases red). "Morgen um halb eins nachts" for 00:30 of tomorrow is still tonight, so the guest's yes booked 24 hours early. Hours 00:00 to 04:59 are now read "in der Nacht von Dienstag auf Mittwoch um halb eins" (`spoken_when` in `spoken.py`, the date added beyond a week); 23:30 and 05:30 keep "heute/morgen ... nachts/morgens". |
 | 13.11.2026 | **Follow-up of #670 (Codex on #718), fix PR for #719: an allergy named behind the caller's own denial is read with its owner.** Red first (4 agent cases red, a plain denial with a removal guards). "Ich habe keine Allergie, nur meine Frau gegen Sesam" (and "aber meine Frau hat eine Sesamallergie") is another adult's allergy: the kitchen gets "ohne Sesam" without its reason, nothing is asked (L13). A child behind the denial ("nur meine Tochter gegen Nüsse") is read as if said directly, the caller's to consent to. Still open: a person named without an ingredient ("..., nur meine Frau") is not asked about. |
 | 13.11.2026 | **Ultrareview ledger (#546, catch-up wave: data and privacy), fix PR for #693: a recording file without a row is deleted after the period too.** Red first (1 of 2 new tests red, the other guards a file with a row). The deletion job read only the `recordings` rows; a restore of last night's dump drops today's rows but leaves their WAV files. `retention._files_without_a_row` deletes a file no row names once its own time is past `RETENTION_RECORDING_DAYS`, and logs one it cannot delete; docs/03 and the restore runbook in docs/13 say so. Latent while recording is off. |
 | 13.11.2026 | **Ultrareview ledger (#546), fix PR for #691 (Maxi decided B): a premium-rate, service or satellite callback number keeps its card, with a warning and without the one-tap call link.** Red first (3 GUI cases red; 10 new domain cases for `customers.phone.costly`). German 0900, 0137, 0180, 0118 and 012 and the international +870, +881, +882 and +883 get the danger badge "Teure Sondernummer – vor dem Anruf prüfen" on the open and the done cards, and no `tel:` link; docs/06 says so. Foreign mobile and landline numbers keep the link. |
@@ -330,6 +332,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.26 · 13.11.2026:** Fix PR for #742: a booking read-back names the night after midnight by its two days
 - **v2.44.25 · 13.11.2026:** Fix PR for #719: another adult's allergy behind the caller's denial is noted without its reason
 - **v2.44.24 · 13.11.2026:** Fix PR for #693: a recording file without a row is deleted after the period too
 - **v2.44.23 · 13.11.2026:** Fix PR for #691: a costly callback number gets a warning and no one-tap link
