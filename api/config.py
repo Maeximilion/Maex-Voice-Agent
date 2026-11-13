@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     # Where the ear's engine runs: on the graphics card, or on the processor,
     # where it takes seconds for a sentence (docs/20 §11).
     voice_ear_device: Literal["cuda", "cpu"] = "cuda"
+    # Test calls only (#678): one log line per utterance with the windows of
+    # speech the detector counted, the floor, and what the engine heard, also
+    # below the floor, where it is asked only for this.
+    voice_ear_measure: bool = False
     # The mouth's voice, by the name of its file among the model files; empty
     # for the engine's own (`telephony/adapters/`). Which one is Maxi's to
     # hear (D4).
