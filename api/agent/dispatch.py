@@ -99,11 +99,26 @@ def in_local_time(
         moment = datetime.fromisoformat(when)
     except ValueError:
         return args
-    if moment.tzinfo is not None:
-        return args
     tenant = session.get(Tenant, tenant_id)
     zone = tenant.timezone if tenant else settings.tenant_timezone
     local = tz(zone)
+    if moment.tzinfo is not None:
+        # `now` carries today's offset, and a model copies it onto the evening
+        # after a clock change: 19:00+01:00 on 29 March is 20:00 there. An
+        # offset the zone has on another day of that year but not at this wall
+        # time is the wall time the guest said (#681); any other stays, and so
+        # does UTC: a zone with a UTC winter (London) cannot tell the two apart.
+        # shortcut: such a zone keeps the copied-offset error, fix if one signs up.
+        offset = moment.utcoffset()
+        wall = moment.replace(tzinfo=None)
+        try:
+            here = {wall.replace(tzinfo=local, fold=f).utcoffset() for f in (0, 1)}
+            year = {datetime(wall.year, m, 1, tzinfo=local).utcoffset() for m in (1, 7)}
+        except (OverflowError, ValueError):
+            return args
+        if not offset or offset in here or offset not in year:
+            return args
+        moment = wall
     try:
         if (
             moment.replace(tzinfo=local, fold=0).utcoffset()

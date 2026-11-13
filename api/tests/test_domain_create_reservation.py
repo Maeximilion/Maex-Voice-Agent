@@ -16,6 +16,7 @@ from api.domain.calls import end_call
 from api.domain.confirm import confirm
 from api.domain.reservations import capacity as reservations_capacity
 from api.domain.reservations import create_reservation
+from api.domain.reservations.create import readback
 from api.models import (
     AuditLog,
     Call,
@@ -89,7 +90,8 @@ def test_entwurf_mit_readback_und_audit(session, tenant_id, call_id):
 
     assert draft.status == "draft"
     assert draft.readback == (
-        "Ein Tisch für vier Personen heute um halb sieben, auf den Namen Müller. Passt das so?"
+        "Ein Tisch für vier Personen heute um halb sieben abends, auf den Namen Müller."
+        " Passt das so?"
     )
     row = session.get(Reservation, draft.reservation_id)
     assert row is not None and row.status == "draft" and row.call_id == call_id
@@ -271,7 +273,7 @@ def test_readback_morgen_eine_person_mit_hinweis(session, tenant_id, call_id):
     )
     assert draft.note == "Kinderstuhl"
     assert draft.readback == (
-        "Ein Tisch für eine Person morgen um zwölf Uhr, auf den Namen Müller"
+        "Ein Tisch für eine Person morgen um zwölf Uhr mittags, auf den Namen Müller"
         ", mit dem Hinweis: Kinderstuhl. Passt das so?"
     )
 
@@ -290,7 +292,26 @@ def test_readback_mit_wochentag_und_datum(session, tenant_id, call_id):
     )
     assert draft.readback == (
         "Ein Tisch für 15 Personen am Freitag, den 25. September um viertel nach sieben"
+        " abends"
         ", auf den Namen Müller. Passt das so?"
+    )
+
+
+@pytest.mark.parametrize(
+    ("hh", "said"), [(0, "um halb eins nachts"), (12, "um halb eins mittags")]
+)
+def test_the_readback_tells_half_past_midnight_from_half_past_noon(hh, said):
+    """#681: with lunch until 14:30 and the evening until 01:00, "morgen um
+    halb eins" was the same sentence for both, and the guest's yes confirms it."""
+    table = Reservation(
+        reserved_for=berlin(MITTWOCH, hh, 30),
+        created_at=NOW,
+        party_size=2,
+        guest_name="Müller",
+        note=None,
+    )
+    assert readback(table, BERLIN) == (
+        f"Ein Tisch für zwei Personen morgen {said}, auf den Namen Müller. Passt das so?"
     )
 
 

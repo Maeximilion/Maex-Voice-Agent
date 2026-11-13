@@ -306,6 +306,8 @@ def test_a_big_party_inside_the_notice_gets_no_callback(session, tenant_id):
 
     assert slot.available is False
     assert slot.team_callback is False
+    # Nor another time: above the limit that would end with the team (#681).
+    assert slot.alternatives == []
 
 
 def test_the_notice_of_another_weekday_does_not_count(session, tenant_id):
