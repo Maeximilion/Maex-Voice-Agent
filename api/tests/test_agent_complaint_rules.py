@@ -911,3 +911,35 @@ def test_neither_hardly_and_anything_but_rule_the_phrase_out(session, tenant_id,
     rule(session, tenant_id)
 
     assert matching_rule(session, tenant_id, said) is None
+
+
+@pytest.mark.parametrize("said", ["Nein, junge Frau.", "Ja, junger Mann."])
+def test_a_bare_answer_with_an_address_still_hears_the_truthful_sentence(
+    session, tenant_id, said
+):
+    """Codex PR #745: the address is cut for the reader, but the guest who takes
+    the agent for a person still hears that it is an AI (docs/05 section 3)."""
+    state = asked(session, tenant_id)
+
+    say = loop(session).run_turn(state, said).say
+
+    assert say[0] == SAY_NOT_A_PERSON
+    assert SAY_WHAT_CAN_I_DO in say
+
+
+@pytest.mark.parametrize("answer", ["Nein junge Frau,", "Ja, junger Mann,"])
+def test_an_answer_with_an_address_and_a_request_hears_the_truthful_sentence(
+    session, tenant_id, answer
+):
+    """Codex PR #745: the clause with the address is cut off with the answer;
+    the sentence of the AI still comes first."""
+    rule(session, tenant_id)
+    state = asked(session, tenant_id)
+
+    say = (
+        loop(session)
+        .run_turn(state, f"{answer} ich bin unzufrieden, das Essen war kalt.")
+        .say
+    )
+
+    assert say == [SAY_NOT_A_PERSON, OFFER]

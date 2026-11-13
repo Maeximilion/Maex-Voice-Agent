@@ -275,6 +275,31 @@ def test_a_wish_inside_the_complaint_phrase_keeps_the_sentence_for_the_team():
 
 
 @pytest.mark.parametrize(
+    "said",
+    [
+        "Die 23 bitte, ich möchte mich auch beschweren, die Pizza gestern war kalt.",
+        "Zwei Pizzen bitte, möchte mich beschweren: die Pizza war kalt.",
+        "Ich will eine Pizza, will mich beschweren, die Pizza war kalt.",
+        "Die 23 bitte. Ich möchte mich auch beschweren, die Pizza war kalt.",
+        "Ich hätte gern die 23, wollen mich aber auch beschweren, das Essen war kalt.",
+    ],
+)
+def test_a_modal_wish_in_the_complaint_gap_keeps_the_order_for_the_team(said):
+    """A wish word in front of the complaint must not be swallowed by it when
+    the gap holds a wish of its own: the order would be lost (#738, P1)."""
+    from api.agent.escalation import only_a_complaint
+
+    assert not only_a_complaint(said)
+
+
+def test_gern_and_bitte_stay_allowed_inside_the_complaint_phrase():
+    from api.agent.escalation import only_a_complaint
+
+    assert only_a_complaint("Ich möchte gern mich beschweren, die Pizza war kalt.")
+    assert only_a_complaint("Ich möchte bitte mich beschweren, die Pizza war kalt.")
+
+
+@pytest.mark.parametrize(
     ("said", "incident"),
     [
         ("Hat der Schwarztee Koffein?", False),
