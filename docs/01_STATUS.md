@@ -1,6 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.20
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.19
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.18
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.17
@@ -278,6 +279,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 13.11.2026 | **Batch 7 of the ultrareview ledger (#546: deploy and access), fix PR for #687: provisioning a customer no longer leaves the shared Caddy broken, a placeholder team number unnamed or shared tokens.** Red first (11 new test cases, all red). `new_stack.py`: the shared Caddy validates a new site before it reloads, and a site it refuses is removed again with `networks.json` rewritten; half an n8n editor account is refused before anything starts; push passwords are printed right after they are made; the key `caddy` is refused; one run at a time per root (`flock`), and `networks.json` is built from the site files on disk. `config.py`: agent, kitchen, proxy and media tokens differ pairwise outside dev. `provision.missing()` names a team number that is still the placeholder or empty. Docker steps faked in the tests (no Docker CLI there); not run against a real shared Caddy. |
 | 13.11.2026 | **Batch 6 of the ultrareview ledger (#546), fix PR for #686 (Maxi decided A): a special day "wie Sonntag" also takes Sunday's call-mode and call-limit windows.** Red first (2 new tests, both red). One helper, `status.hours.weekday_of`, now decides the weekday for the seats (`capacity_windows`, which had its own copy), the call mode (`mode_at`) and the call limit (`routing._call_limit`); docs/03 says so. |
 | 13.11.2026 | **Batch 6 of the ultrareview ledger (#546: migrations), fix PR for #685: the downgrade of migration 018 empties the order links and refuses while an objection to recognition exists.** Red first (2 new round-trip tests on rows, both red). A link from an order to a customer stopped the next upgrade at `fk_orders_customer_tenant`; an objection (Art. 21 GDPR) was dropped silently, so the number would be recognised again. Now `orders.customer_id` is emptied with the customers, and the downgrade stops and names the backup restore while objections exist (as 017 does). Only the downgrade changed: no workbench migration is due. |
 | 13.11.2026 | **Batch 6 of the ultrareview ledger (#546), fix PR for #684: after `out_of_zone` the active prompt has the model speak only the `say`.** v3 said "`say`, Abholung anbieten" without a condition, while the code leaves the pickup offer out of the `say` when pickup is closed (#534). Prompt line now "`out_of_zone`: nur `say`." (token budget kept), a prompt test pins it, and eval lieferung_0091 (pickup switched off, address outside the zone, `never_said` the offer) is new. Not red first: the scripted eval model speaks only the `say`, so it was green on main too; a real-model run waits for the workbench model (Maxi). Evals: cases 100/100, targets 1/23. |
@@ -318,6 +320,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.20 · 13.11.2026:** Fix PR for #687: provisioning leaves no broken shared Caddy, no unnamed placeholder team number, no shared tokens
 - **v2.44.19 · 13.11.2026:** Fix PR for #686: a special day like Sunday takes Sunday's call mode and call limit
 - **v2.44.18 · 13.11.2026:** Fix PR for #685: the downgrade of migration 018 empties order links and keeps objections
 - **v2.44.17 · 13.11.2026:** Fix PR for #684: after out_of_zone the prompt has the model speak only the say
