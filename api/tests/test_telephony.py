@@ -2145,6 +2145,71 @@ def test_a_call_that_fails_to_open_goes_to_the_routed_team_phone(
     assert port.transfers("s-1") == [TEAM_PHONE]
 
 
+# -- a team number that changes during a call (#710) -----------------------------
+
+
+CHANGED_PHONE = "+4972155599999"
+
+
+def _call_that_fails_after_the_staff_changed_the_number(session, tenant):
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, llm_factory=lambda s: BrokenLLM())
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant.id)
+        .values(team_phone=CHANGED_PHONE)
+    )
+    session.commit()
+    handler.on_user_turn("s-1", "Einen Tisch fuer vier bitte")
+    return port
+
+
+def test_an_outage_during_a_call_rings_the_number_that_holds_now(session, tenant):
+    port = _call_that_fails_after_the_staff_changed_the_number(session, tenant)
+
+    assert port.says("s-1")[-1] == SAY_OUTAGE
+    assert port.transfers("s-1") == [CHANGED_PHONE]
+
+
+def test_an_outage_with_the_number_unreadable_rings_the_one_read_at_the_start(
+    session, tenant, monkeypatch
+):
+    """The database is the outage: the read of the number fails, the call goes
+    to the number it started with, and the sentence and transfer still happen."""
+
+    def unreadable(session, tenant_id, now=None):
+        raise OperationalError("SELECT", {}, Exception("connection refused"))
+
+    monkeypatch.setattr(handler_module, "current_team_phone", unreadable)
+
+    port = _call_that_fails_after_the_staff_changed_the_number(session, tenant)
+
+    assert port.says("s-1")[-1] == SAY_OUTAGE
+    assert port.transfers("s-1") == [TEAM_PHONE]
+
+
+def test_a_handover_without_a_named_target_dials_the_number_that_holds_now(
+    session, tenant
+):
+    """The shadow leg and a transfer without a target of the core take it."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    live = handler._live["s-1"]
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant.id)
+        .values(team_phone=CHANGED_PHONE)
+    )
+    session.commit()
+
+    assert handler._team_phone(live) == CHANGED_PHONE
+    assert live.team_phone == CHANGED_PHONE
+
+
 @pytest.mark.parametrize(("length", "kept"), [(40, True), (41, False), (200, False)])
 def test_an_overlong_caller_id_never_refuses_the_call(session, tenant, length, kept):
     """The dialplan hands the caller id over unbounded: one longer than the

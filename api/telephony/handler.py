@@ -63,6 +63,7 @@ from api.domain.callbacks.create import SAY_NOTED
 from api.domain.calls import (
     CallRouting,
     call_routing,
+    current_team_phone,
     end_call,
     start_call,
     takes_call,
@@ -478,7 +479,7 @@ class CallHandler:
             self._port.record_team_leg(live.session_id)
             self._port.say(live.session_id, recording.SAY_HOW_TO_STOP)
         self._port.say(live.session_id, SAY_TO_THE_TEAM)
-        self._transfer(live, live.team_phone)
+        self._transfer(live, self._team_phone(live))
 
     def _talked_over(self, live: _LiveCall, text: str, *, ending: bool) -> None:
         """Into a read-back or another protected sentence, or into the last
@@ -544,7 +545,7 @@ class CallHandler:
         for line in result.say:
             self._port.say(live.session_id, line, interruptible=interruptible)
         if live.state.stage == "transferred":
-            self._transfer(live, live.state.transfer_to or live.team_phone)
+            self._transfer(live, live.state.transfer_to or self._team_phone(live))
         elif ending:
             self._hangup(live, last_said=result.say[-1] if result.say else "")
 
@@ -587,6 +588,24 @@ class CallHandler:
         except Exception:
             logger.exception("the menu size for the key terms could not be read")
             return 0
+
+    def _team_phone(self, live: _LiveCall) -> str:
+        """The number a handover without a named target dials: the one that
+        holds now, so a change during the call is followed (#710). The call's
+        own number when the database cannot be read: the outage path must not
+        depend on the read (rule 5, docs/20 §5). In a savepoint, so the turn's
+        transaction stays usable."""
+        try:
+            with live.session.begin_nested():
+                number = current_team_phone(live.session, live.tenant_id, self._now)
+        except Exception:
+            logger.exception(
+                "the team number could not be read again, using the call's own",
+                extra={"extra": {"session_id": live.session_id}},
+            )
+            return live.team_phone
+        live.team_phone = number
+        return number
 
     def _transfer(self, live: _LiveCall, target: str) -> None:
         live.state.stage = "transferred"
@@ -648,6 +667,10 @@ class CallHandler:
                 self._port.say(session_id, SAY_OUTAGE if greeted else SAY_OUTAGE_FIRST)
             except Exception:
                 logger.exception("outage sentence could not be spoken")
+            if live is not None:
+                # After the sentence has gone out, so a read the line's bound
+                # cuts off (2 s) delays only the transfer, never the words.
+                target = self._team_phone(live)
             self._port.transfer(session_id, target)
         except Exception:
             logger.exception(

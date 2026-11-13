@@ -1707,7 +1707,7 @@ def _phone_sheet(
         {
             "holding": holding,
             "standard": config.team_phone,
-            "choices": [n for n in staff.dialable_numbers() if n != holding],
+            "choices": [n for n in staff.sheet_numbers() if n != holding],
             "message": message,
             "tone": tone,
         },
@@ -1800,7 +1800,12 @@ def _hhmm(text: str) -> dt_time:
     """HH:MM only: a stored second or offset would undo to another time."""
     if len(text) != 5:
         raise ValueError(text)
-    return dt_time.fromisoformat(text)
+    # "1000Z" is five characters and 10:00 with an offset: a time with a zone
+    # cannot be compared with the stored ones.
+    parsed = dt_time.fromisoformat(text)
+    if parsed.tzinfo is not None:
+        raise ValueError(text)
+    return parsed
 
 
 def _typed_day(text: str) -> date | None:
