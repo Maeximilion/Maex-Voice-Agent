@@ -162,6 +162,9 @@ class CallSession:
         self._digits = ""
         self._digits_due: float | None = None
         self._silence_due: float | None = None
+        # The silence deadline an utterance put aside: line noise is no sign
+        # of the caller and must not move it (#675).
+        self._silence_held: float | None = None
         # The ear said that the caller is speaking and owes the finished
         # utterance by then; and when this utterance began.
         self._utterance_due: float | None = None
@@ -354,9 +357,10 @@ class CallSession:
         if not heard.final:
             # The caller is speaking: no silence, and the ear owes the end of
             # this utterance. If that never comes, nothing else would.
-            self._silence_due = None
             if self._utterance_began is None:
                 self._utterance_began = at
+                self._silence_held = self._silence_due
+            self._silence_due = None
             self._utterance_due = min(
                 at + UTTERANCE_SECONDS,
                 self._utterance_began + UTTERANCE_LIMIT_SECONDS,
@@ -373,9 +377,14 @@ class CallSession:
                 self._stop_playback()
             return
         self._utterance_due = self._utterance_began = None
+        held, self._silence_held = self._silence_held, None
         if not heard.speech:
-            # Words without speech energy: line noise, never an answer.
-            self._wait_for_the_caller(at)
+            # Words without speech energy: line noise, never an answer, and no
+            # sign of the caller either. The silence counts on as it stood:
+            # bursts closer than its length kept the call on the AI leg past
+            # its limit with no turn at all (#675, rule 5).
+            if self._silence_due is None:
+                self._wait_for_the_caller(at, held)
             return
         if not heard.text.strip():
             # Speech the ear made nothing of. Once is a cough; again and the
@@ -410,12 +419,15 @@ class CallSession:
             # A key that was pressed before the answer was on the line stops
             # nothing, like speech.
             self._stop_playback()
+        if digit == END_KEY and not self._digits:
+            # A hash alone hands nothing over and is no sign of the caller:
+            # the silence counts on, as for noise (#675).
+            if self._silence_due is None:
+                self._wait_for_the_caller(at)
+            return
         self._silence_due = None
         if digit == END_KEY:
-            if self._digits:
-                self._hand_over_digits()
-            else:
-                self._wait_for_the_caller(at)  # a hash alone hands nothing over
+            self._hand_over_digits()
         else:
             self._digits += digit
             if len(self._digits) >= KEYPAD_MAX_DIGITS:
@@ -476,7 +488,7 @@ class CallSession:
         self._outstanding.append(interruptible)
         if not interruptible:
             self._protected_until = math.inf
-        self._silence_due = None
+        self._silence_due = self._silence_held = None
         self._line.play(audio, self._mark)
         if self._tape is not None:
             self._taped(self._tape.spoken, audio)
@@ -681,15 +693,17 @@ class CallSession:
         if digits:
             self._turn(lambda: self._events.on_dtmf(self.session_id, digits))
 
-    def _wait_for_the_caller(self, at: float) -> None:
-        if (
-            self._listening()
-            and not self._outstanding
-            and not self._digits
-            # The ear still owes an utterance: the caller is not silent.
-            and self._utterance_due is None
-        ):
-            self._silence_due = at + self._silence_seconds
+    def _wait_for_the_caller(self, at: float, due: float | None = None) -> None:
+        """The silence is counted from `at`, or due at `due` where one was
+        put aside (`_silence_held`)."""
+        if self._listening() and not self._outstanding and not self._digits:
+            due = at + self._silence_seconds if due is None else due
+            if self._utterance_due is None:
+                self._silence_due = due
+            else:
+                # The ear still owes an utterance: the caller is not silent,
+                # unless it turns out to be noise.
+                self._silence_held = due
 
     def _voice_failed(self) -> None:
         """Ear or mouth failed, or the line does not say what it played: once,

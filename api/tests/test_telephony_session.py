@@ -616,18 +616,63 @@ def test_an_utterance_has_an_end_however_long_the_ear_reports_speech(call):
     assert call.core.count("voice_failure") == 1
 
 
-def test_a_dropped_utterance_starts_the_silence_anew(call):
-    """Noise, or an utterance into a read-back that is reported late: nothing
-    is taken, and the silent line is counted from there."""
+def test_noise_does_not_move_the_silence(call):
+    """Line noise is no sign of the caller: the silent line is counted from
+    the end of playback as before it, or a burst every few seconds keeps the
+    call on the AI leg past its limit with no turn at all (#675, rule 5)."""
     call.start(GREETING)
     call.played()
     call.clock.now += 1.0
     call.partial("")
     call.said("Ja", after=1.0, speech=False)
-    call.wait(SILENCE - 0.5)
+    call.wait(SILENCE - 2.5)
     assert call.core.count("silence") == 0
     call.wait(1.0)
     assert call.core.count("silence") == 1 and call.core.count("voice_failure") == 0
+
+
+def test_noise_for_hours_still_reaches_the_silence(call):
+    """#675: the reviewer's case, a burst of noise every five seconds for two
+    hours. The silence comes on time each time, and the core gets its turn."""
+    call.start(GREETING)
+    call.played()
+    played = call.clock.now
+    for _ in range(int(2 * 3600 / 5)):
+        call.partial("")
+        call.said("hm", after=0.2, speech=False)
+        call.wait(4.8)
+        if call.core.count("silence"):
+            break
+    assert call.core.count("silence") == 1
+    assert call.clock.now - played <= SILENCE + 5.0
+
+
+def test_a_hash_alone_does_not_move_the_silence(call):
+    """#675: a lone hash hands nothing over and is no sign of the caller."""
+    call.start(GREETING)
+    call.played()
+    call.clock.now += SILENCE - 1.0
+    call.key("#")
+    call.wait(1.1)
+    assert call.core.count("silence") == 1
+
+
+def test_an_utterance_said_into_a_read_back_starts_the_silence_anew(call):
+    """Speech taken for no answer, as into a read-back reported late, is the
+    caller: the silent line is counted from there."""
+    call.core.replies["Das wars"] = [("say", READBACK)]
+    call.start(GREETING)
+    call.played()
+    call.said("Das wars", after=1.0)
+    call.said("Ja", after=0.5)  # into the read-back that may not be interrupted
+    call.played(after=0.1)
+    call.ear.hear(Heard("Ja genau", ended_at=call.clock.now - 0.05))
+    call.s.drain()
+    assert call.core.turns() == ["Das wars"]
+    call.wait(SILENCE - 0.5)
+    assert call.core.count("silence") == 0
+    call.wait(1.0)
+    assert call.core.count("silence") == 1
 
 
 def test_a_hash_alone_that_stopped_a_sentence_leaves_the_call_waiting(call):
