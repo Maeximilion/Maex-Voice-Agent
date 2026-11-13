@@ -15,7 +15,9 @@ the plan is soft deleted, so a later reservation on it keeps its name.
 
 import math
 import uuid
+from datetime import timedelta
 from typing import Any, NoReturn
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_, select, text
 from sqlalchemy.exc import IntegrityError
@@ -24,7 +26,15 @@ from sqlalchemy.orm import Session
 from api.core import time as clock
 from api.core.errors import Conflict, InvalidInput, NotFound
 from api.domain.status.config import ACTOR_TABLET
-from api.models import AuditLog, DiningTable, FloorArea, TableCombination
+from api.models import (
+    AuditLog,
+    DiningTable,
+    FloorArea,
+    Reservation,
+    ReservationTable,
+    TableCombination,
+    Tenant,
+)
 from api.schemas.floor_plan import Area, NewArea, SaveArea
 
 ACTION_AREA_CREATED = "floor_plan.area_created"
@@ -323,6 +333,13 @@ def _apply(
             DiningTable.area_id == area.id, DiningTable.deleted_at.is_(None)
         )
     ).all()
+    _keep_booked(
+        session,
+        tenant_id,
+        area,
+        [row for row in live if row.id not in names],
+        {tuple(sorted(pair)) for pair in wanted.combinations},
+    )
     # Names leave before they arrive: a removed table and every renamed one
     # step out of the unique index first, so a swap or a ring of renames in one
     # save (T1 to X, T2 to T1, X to T2 after a resend) never meets its own old
@@ -360,6 +377,83 @@ def _apply(
             session.delete(combination)
     for a, b in wanted_pairs - stored.keys():
         session.add(TableCombination(tenant_id=tenant_id, table_a_id=a, table_b_id=b))
+
+
+# A reservation that began this long ago may still be seated at its table.
+SEATED_HOURS = 6
+
+
+def _keep_booked(
+    session: Session,
+    tenant_id: uuid.UUID,
+    area: FloorArea,
+    removed: list[DiningTable],
+    wanted_pairs: set[tuple[uuid.UUID, ...]],
+) -> None:
+    """Refuse a save that removes a table, or a combination, a reservation
+    still sits on: confirmed and begun at most `SEATED_HOURS` ago. The
+    table's name would be free for a new table, and the guests' booking would
+    hang on a table nobody sees (#680). The team moves or cancels it first."""
+    names = {row.id: row.name for row in removed}
+    gone_pairs = [
+        (c.table_a_id, c.table_b_id)
+        for c in session.scalars(
+            select(TableCombination).where(
+                TableCombination.table_a_id.in_(
+                    select(DiningTable.id).where(DiningTable.area_id == area.id)
+                )
+            )
+        )
+        if tuple(sorted((c.table_a_id, c.table_b_id))) not in wanted_pairs
+        and not {c.table_a_id, c.table_b_id} & names.keys()
+    ]
+    paired = {t for pair in gone_pairs for t in pair}
+    if not names and not paired:
+        return
+    # `confirm_tablet` holds its tables with a shared lock until it commits:
+    # wait for it here, then read the booking as it ends (Codex PR #724).
+    session.scalars(
+        select(DiningTable.id)
+        .where(DiningTable.id.in_(names.keys() | paired))
+        .with_for_update()
+    ).all()
+    now = clock.utcnow()
+    # Confirmed only: a draft's tables are checked against the plan again
+    # when it is confirmed (`confirm_tablet`, Codex #544).
+    held = (Reservation.status == "confirmed") & (
+        Reservation.reserved_for >= now - timedelta(hours=SEATED_HOURS)
+    )
+    seats: dict[uuid.UUID, set[uuid.UUID]] = {}
+    bookings: dict[uuid.UUID, Reservation] = {}
+    for booking, table_id in session.execute(
+        select(Reservation, ReservationTable.table_id)
+        .join(ReservationTable, ReservationTable.reservation_id == Reservation.id)
+        .where(
+            Reservation.tenant_id == tenant_id,
+            Reservation.deleted_at.is_(None),
+            ReservationTable.table_id.in_(names.keys() | paired),
+            held,
+        )
+        .order_by(Reservation.reserved_for)
+    ):
+        bookings.setdefault(booking.id, booking)
+        seats.setdefault(booking.id, set()).add(table_id)
+    for booking_id, tables in seats.items():
+        table = next((names[t] for t in sorted(tables) if t in names), None)
+        on_pair = any({a, b} <= tables for a, b in gone_pairs)
+        if table is None and not on_pair:
+            continue
+        what = f"Tisch {table}" if table else "Die Kombination"
+        booking = bookings[booking_id]
+        zone = ZoneInfo(
+            session.scalars(select(Tenant.timezone).where(Tenant.id == tenant_id)).one()
+        )
+        _refuse(
+            "table removed with a reservation on it",
+            f"{what} ist für {booking.guest_name} am "
+            f"{booking.reserved_for.astimezone(zone):%d.%m. um %H:%M} Uhr "
+            "reserviert. Bitte die Reservierung zuerst verlegen oder stornieren.",
+        )
 
 
 def _document(session: Session, area: FloorArea) -> dict[str, Any]:

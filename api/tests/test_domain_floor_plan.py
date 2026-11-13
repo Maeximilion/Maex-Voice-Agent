@@ -492,3 +492,153 @@ def test_the_answer_names_the_revision_this_save_wrote(migrated_db_url, tenant_i
         assert [t["name"] for t in saved["tables"]] == ["T1"]
     finally:
         engine.dispose()
+
+
+# --- #680: a table that holds a reservation is not removed silently -------------
+
+
+def _book(session, tenant_id, tables: list[dict], hours: float, status="confirmed"):
+    """A reservation on `tables`, `hours` from now."""
+    from datetime import timedelta
+
+    from api.core import time as clock
+    from api.models import Reservation, ReservationTable
+
+    booking = Reservation(
+        tenant_id=tenant_id,
+        source="tablet",
+        status=status,
+        guest_name="Müller",
+        phone="+4972215551234",
+        party_size=4,
+        reserved_for=clock.utcnow() + timedelta(hours=hours),
+        idempotency_key=str(uuid.uuid4()),
+    )
+    session.add(booking)
+    session.flush()
+    session.add_all(
+        ReservationTable(
+            tenant_id=tenant_id, reservation_id=booking.id, table_id=uuid.UUID(t["id"])
+        )
+        for t in tables
+    )
+    session.commit()
+    return booking
+
+
+@pytest.mark.parametrize("status", ["confirmed"])
+def test_removing_a_table_with_a_reservation_ahead_is_refused(
+    session, tenant_id, status
+):
+    """#680: the table left the plan, its name was free again, and a new table
+    of that name could be booked twice."""
+    room = _room(session, tenant_id)
+    t5 = _table("T5")
+    saved = _save(session, tenant_id, room, tables=[t5])
+    _book(session, tenant_id, [t5], hours=3, status=status)
+
+    with pytest.raises(InvalidInput) as err:
+        _save(session, tenant_id, saved, tables=[_table("T5", x=500)])
+
+    say = err.value.say or ""
+    assert "T5" in say and "Müller" in say
+    live = session.scalars(
+        select(DiningTable.id).where(DiningTable.deleted_at.is_(None))
+    ).all()
+    assert live == [uuid.UUID(t5["id"])]
+
+
+def test_a_reservation_earlier_today_still_holds_its_table(session, tenant_id):
+    """The guests may be sitting there: a table begun half an hour ago is not
+    removed either."""
+    room = _room(session, tenant_id)
+    t5 = _table("T5")
+    saved = _save(session, tenant_id, room, tables=[t5])
+    _book(session, tenant_id, [t5], hours=-0.5)
+
+    with pytest.raises(InvalidInput):
+        _save(session, tenant_id, saved, tables=[])
+
+
+@pytest.mark.parametrize(
+    ("hours", "status"), [(-48, "confirmed"), (3, "cancelled"), (3, "draft")]
+)
+def test_a_past_or_cancelled_reservation_does_not_hold_the_table(
+    session, tenant_id, hours, status
+):
+    room = _room(session, tenant_id)
+    t5 = _table("T5")
+    saved = _save(session, tenant_id, room, tables=[t5])
+    _book(session, tenant_id, [t5], hours=hours, status=status)
+
+    assert _save(session, tenant_id, saved, tables=[])["tables"] == []
+
+
+def test_a_renamed_or_moved_table_with_a_reservation_is_kept(session, tenant_id):
+    room = _room(session, tenant_id)
+    t5 = _table("T5")
+    saved = _save(session, tenant_id, room, tables=[t5])
+    _book(session, tenant_id, [t5], hours=3)
+
+    moved = _save(session, tenant_id, saved, tables=[{**t5, "name": "T6", "x_cm": 300}])
+
+    assert [t["name"] for t in moved["tables"]] == ["T6"]
+
+
+def test_removing_a_combination_a_reservation_sits_on_is_refused(session, tenant_id):
+    room = _room(session, tenant_id)
+    t1, t2 = _table("T1"), _table("T2", x=400)
+    saved = _save(
+        session, tenant_id, room, tables=[t1, t2], combinations=[[t1["id"], t2["id"]]]
+    )
+    _book(session, tenant_id, [t1, t2], hours=3)
+
+    with pytest.raises(InvalidInput) as err:
+        _save(session, tenant_id, saved, combinations=[])
+
+    assert "Müller" in (err.value.say or "")
+
+
+def test_a_confirmation_under_way_holds_its_table_against_a_removal(
+    migrated_db_url, tenant_id
+):
+    """Codex PR #724: `confirm_tablet` holds the table with a shared lock until
+    its commit. The removal waits for it and then sees the booking confirmed."""
+    from api.models import Reservation
+
+    engine = create_engine(migrated_db_url)
+    try:
+        with Session(engine) as setup:
+            t5 = _table("T5")
+            saved = _save(setup, tenant_id, _room(setup, tenant_id), tables=[t5])
+            booking = _book(setup, tenant_id, [t5], hours=3, status="draft")
+            booking_id = booking.id
+        outcome: dict = {}
+
+        def removal():
+            with Session(engine) as s:
+                try:
+                    _save(s, tenant_id, saved, tables=[])
+                    outcome["saved"] = True
+                except InvalidInput as exc:
+                    outcome["refused"] = exc.say
+
+        with Session(engine) as confirming:
+            confirming.scalars(
+                select(DiningTable)
+                .where(DiningTable.id == uuid.UUID(t5["id"]))
+                .with_for_update(read=True)
+            ).all()
+            draft = confirming.get(Reservation, booking_id)
+            assert draft is not None
+            draft.status = "confirmed"
+            confirming.flush()
+            thread = threading.Thread(target=removal)
+            thread.start()
+            thread.join(0.5)
+            assert thread.is_alive(), "the removal waits for the confirmation"
+            confirming.commit()
+        thread.join(10)
+        assert "refused" in outcome, outcome
+    finally:
+        engine.dispose()
