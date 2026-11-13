@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.26
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.27
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.24
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.23
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.22
@@ -284,6 +284,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 13.11.2026 | **Batch 9 of the ultrareview ledger (#546), fix PR for #740 (stacked on #739): a second person's allergy behind the caller's own is read on its own.** Red first (8 agent cases red). "Ich bin allergisch gegen Nüsse, meine Frau gegen Sesam", "Erdnussallergie, mein Mann Sesam" and the same in the answer to "Wogegen?" no longer lose the other person's sesame: the caller's own is read in full (no "Wogegen?" needed), the adult's goes to the kitchen as "ohne Sesam" without a reason, a child's is asked about with the caller's consent. Read only at the end of the whole text, one person and one single-word ingredient (a time, a name or a clause that is no list is asked about as before). Still open: such a clause in the middle of a longer text. |
 | 13.11.2026 | **Batch 9 of the ultrareview ledger (#546), fix PR for #739: the allergen claim guard reads more absence forms, a health word without an allergy word is asked about, a noted plural matches its singular on a card.** Red first (9 guard cases, 7 note cases, 4 plural cases red). "Die 13 hat keine Nüsse", "Es gibt kein Gluten", "Nüsse sind da nicht drin" are claims and go to the team; "Mein Sohn hat Zöliakie" opens "Wogegen?" in the core, as the refused note's hint promises (a diet word like "meiden" asks too: the safe side); noted "Erdnüsse" keeps "Erdnuss" off a callback card, each part of a noted list on its own. Still open: "ist ... kein" and other absence forms the call log does not show yet. |
 | 13.11.2026 | **Follow-up of #670 (Codex on #718), fix PR for #719: an allergy named behind the caller's own denial is read with its owner.** Red first (4 agent cases red, a plain denial with a removal guards). "Ich habe keine Allergie, nur meine Frau gegen Sesam" (and "aber meine Frau hat eine Sesamallergie") is another adult's allergy: the kitchen gets "ohne Sesam" without its reason, nothing is asked (L13). A child behind the denial ("nur meine Tochter gegen Nüsse") is read as if said directly, the caller's to consent to. Still open: a person named without an ingredient ("..., nur meine Frau") is not asked about. |
 | 13.11.2026 | **Ultrareview ledger (#546, catch-up wave: data and privacy), fix PR for #693: a recording file without a row is deleted after the period too.** Red first (1 of 2 new tests red, the other guards a file with a row). The deletion job read only the `recordings` rows; a restore of last night's dump drops today's rows but leaves their WAV files. `retention._files_without_a_row` deletes a file no row names once its own time is past `RETENTION_RECORDING_DAYS`, and logs one it cannot delete; docs/03 and the restore runbook in docs/13 say so. Latent while recording is off. |
@@ -331,6 +332,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.27 · 13.11.2026:** Fix PR for #740: a second person's allergy behind the caller's is read on its own
 - **v2.44.26 · 13.11.2026:** Fix PR for #739: allergen claim guard reads more absence forms, health words are asked about, plural allergies match on cards
 - **v2.44.25 · 13.11.2026:** Fix PR for #719: another adult's allergy behind the caller's denial is noted without its reason
 - **v2.44.24 · 13.11.2026:** Fix PR for #693: a recording file without a row is deleted after the period too
