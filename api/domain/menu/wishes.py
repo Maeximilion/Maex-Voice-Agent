@@ -44,6 +44,8 @@ from api.schemas.orders import NOTE_MAX
 _REMOVE = frozenset({"ohne", "kein", "keine", "keinen", "keinem"})
 _ADD = frozenset({"mit", "extra"})
 _INSTEAD = frozenset({"statt", "anstatt"})
+# After a removal, what follows these is wished instead: "ohne Huhn, dafür Tofu".
+_SWAP = frozenset({"dafuer", "sondern", "lieber"})
 _LEAD_FILLER = frozenset({"bitte", "aber", "und", "dann", "dafuer"})
 # Verbindet Teile eines Wunsches, ohne selbst etwas zu wuenschen.
 _GLUE = frozenset({"gern", "gerne", "dazu", "noch", "als", "die", "der", "das", "den"})
@@ -1325,9 +1327,18 @@ def _without(
 
 
 def _drop_quantity(text: str) -> str:
-    """Nur echte Mengen: "zweimal", "einmal", "2 x" - nicht "normal"."""
-    text = _without(_COUNTED, text, lambda found: True)
-    return _without(_TIMES, text, lambda found: _is_quantity(found.group(1)))
+    """Nur echte Mengen: "zweimal", "einmal", "2 x" - nicht "normal". A count
+    right behind "mit" or "extra" is the addition's ("mit 2x Ei") and stays,
+    so `has_number` asks about it (#671)."""
+
+    def dish_count(found: re.Match[str]) -> bool:
+        before = _words(text[: found.start()])
+        return not (before and before[-1] in _ADD)
+
+    text = _without(_COUNTED, text, dish_count)
+    return _without(
+        _TIMES, text, lambda found: _is_quantity(found.group(1)) and dish_count(found)
+    )
 
 
 def classify_wish(text: str, groups: list[OptionGroup]) -> Wish | None:
@@ -1875,12 +1886,26 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
             # be the same text again (endless recursion). Not understood, and
             # never a free note.
             return Wish(text=text, kind="unknown")
-        return _classify(_clean(added), groups).model_copy(update={"note": left_out})
+        wish = _classify(_clean(added), groups)
+        # A removal behind the addition stays next to the one before it
+        # ("ohne Huhn, dafür Tofu, ohne Zwiebeln", Codex PR #720).
+        note = ", ".join(n for n in (left_out, wish.note) if n)
+        return wish.model_copy(update={"note": note})
     addition, removal = _split_removal(text)
     if removal is not None:
         # "mit Nudeln ohne Zwiebeln": die Option und der Hinweis, wie umgekehrt
         # (Codex PR #139). Nur eine sichere Option nimmt den Hinweis mit.
         wish = _classify(_clean(addition), groups)
+        behind = _classify(_clean(removal), groups)
+        if behind.kind != "note":
+            # A second addition behind the removal ("mit Nudeln, ohne
+            # Zwiebeln, mit Tofu") is never kept in the note, where its price
+            # would be lost (#671): one wish carries one option, so ask.
+            return Wish(
+                text=f"{addition}, {behind.text}",
+                kind="unknown",
+                note=behind.note,
+            )
         if wish.kind != "option" or wish.note:
             # Die Zugabe wird abgelehnt, das Weglassen bleibt - wie in "ohne
             # Zwiebeln, dafuer mit Pommes" (Review PR #139).
@@ -1930,17 +1955,23 @@ def _split_addition(text: str) -> tuple[str, str | None]:
         (
             i
             for i, w in enumerate(words)
-            if i > 0 and (_adds(words, i) or w in _INSTEAD)
+            if i > 0 and (_adds(words, i) or w in _INSTEAD or _swaps(words, i))
         ),
         None,
     )
     if at is None:
         return text, None
+    begin = at + 1 if words[at] in _SWAP else at
     if words[at] in _INSTEAD:
-        at -= 1
+        at = begin = at - 1
     removal = text[: tokens[at].start()]
     removal = _cut_tail(_JOINER_AT_END, removal)
-    return removal.strip(" ,.;"), text[tokens[at].start() :].strip(" ,.;")
+    return removal.strip(" ,.;"), text[tokens[begin].start() :].strip(" ,.;")
+
+
+def _swaps(words: list[str], i: int) -> bool:
+    """ "dafür", "sondern" or "lieber" with a word after it (#671)."""
+    return words[i] in _SWAP and any(w != "," for w in words[i + 1 :])
 
 
 def _split_removal(text: str) -> tuple[str, str | None]:
@@ -2002,7 +2033,11 @@ def opens_with_allergy(text: str) -> bool:
 def has_number(wish: str) -> bool:
     """Steht eine Zahl im Wunsch ("mit 2 Soßen")? Dann gilt Regel A: eine zweite
     Zahl neben der Nummer wird nachgefragt, nie als Wunsch abgetrennt. Artikel
-    ("ohne eine Zwiebel") zaehlen nicht."""
+    ("ohne eine Zwiebel") zaehlen nicht; "2x" and "zweimal" do (#671)."""
+    if _COUNTED.search(wish) or any(
+        _is_quantity(found.group(1)) for found in _TIMES.finditer(wish)
+    ):
+        return True
     return any(
         w.isdigit() or (w not in _ARTICLES and parse_cardinal(w) is not None)
         for w in _words(wish)

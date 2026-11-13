@@ -18,6 +18,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from api.core.errors import Ambiguous
 from api.domain.menu.details import get_item_details
 from api.domain.menu.importer import (
     ALIASES_FILE,
@@ -1934,3 +1935,104 @@ def test_another_persons_allergy_behind_a_denial_is_never_the_callers():
     from api.domain.menu.wishes import only_denies
 
     assert only_denies("Ich habe keine Allergie, nur meine Frau gegen Sesam")
+
+
+# --- #671: a priced addition never goes out as a free note --------------------------
+
+EXTRA = [
+    *BEILAGE,
+    OptionGroup(
+        group="Extra",
+        required=False,
+        options=[
+            OptionOut(name="Ei", price_delta_cents=100, default=False),
+            OptionOut(name="Tofu", price_delta_cents=150, default=False),
+        ],
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "mit Nudeln, ohne Zwiebeln, mit Tofu",
+        "mit Nudeln, ohne Zwiebeln, extra Ei",
+        "mit Nudeln, ohne Zwiebeln statt Reis",
+        "mit Nudeln, ohne Huhn, dafür Tofu",
+    ],
+)
+def test_addition_behind_a_removal_is_not_a_note(said):
+    """#671 P1: what follows the first "ohne" was kept whole as the note, so
+    a second priced addition there went out free next to the first option."""
+    wish = wish_of(said, EXTRA)
+    assert wish.kind == "unknown"
+    assert "Tofu" not in (wish.note or "") and "Ei" not in (wish.note or "")
+
+
+def test_option_keeps_a_plain_removal_behind_it():
+    wish = wish_of("mit Nudeln, ohne Zwiebeln, ohne Koriander", EXTRA)
+    assert (wish.kind, wish.option, wish.price_delta_cents) == ("option", "Nudeln", 300)
+    assert wish.note == "ohne Zwiebeln, ohne Koriander"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ohne Huhn, dafür Tofu",
+        "kein Huhn, sondern Tofu",
+        "ohne Huhn, lieber Tofu",
+        "ohne Huhn, dafür mit Tofu",
+    ],
+)
+def test_swap_after_a_removal_is_priced(said):
+    """#671: "dafür", "sondern" and "lieber" open an addition like "mit"."""
+    wish = wish_of(said, EXTRA)
+    assert (wish.kind, wish.option, wish.price_delta_cents) == ("option", "Tofu", 150)
+    assert wish.note in ("ohne Huhn", "kein Huhn")
+
+
+@pytest.mark.parametrize(
+    "said", ["ohne Zwiebeln, lieber scharf", "kein Huhn, sondern was anderes"]
+)
+def test_unknown_swap_after_a_removal_stays_open(said):
+    """Not a free note either: the agent asks about what the menu does not know."""
+    assert wish_of(said, EXTRA).kind == "unknown"
+
+
+@pytest.mark.parametrize(
+    "said",
+    ["ohne Huhn, dafür Tofu, ohne Zwiebeln", "ohne Huhn, mit Tofu, ohne Zwiebeln"],
+)
+def test_a_removal_behind_the_addition_is_kept(said):
+    """Codex PR #720: the removal before the addition overwrote the one after it."""
+    wish = wish_of(said, EXTRA)
+    assert (wish.kind, wish.option) == ("option", "Tofu")
+    assert wish.note == "ohne Huhn, ohne Zwiebeln"
+
+
+def test_removal_ending_in_dafuer_stays_a_note():
+    assert wish_of("ohne Zwiebeln, dafür", EXTRA).kind == "note"
+
+
+@pytest.mark.parametrize(
+    "said", ["die 23 mit 2x Ei", "die 23 mit 2 Stück Ei", "die 23 mit zweimal Ei"]
+)
+def test_count_inside_an_addition_reaches_the_ask_back(said):
+    """#671: the count of an addition was dropped as a dish quantity, so one
+    egg was charged where two were asked for."""
+    from api.domain.menu.wishes import has_number
+
+    assert has_number(first_split(said)[1])
+    assert wish_of("mit 2x Ei", EXTRA).kind == "unknown"
+
+
+def test_count_at_the_end_still_belongs_to_the_dish():
+    assert not first_split("die 23 mit Ei, zweimal")[1].endswith("zweimal")
+
+
+@pytest.mark.parametrize("said", ["Nummer 23 mit 2x Ei", "Nummer 23 mit zweimal Ei"])
+def test_search_asks_about_a_counted_addition(session, tenant_id, said):
+    """Rule A, as for "Nummer 23 mit 2 Soßen": the second number is asked about."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, tenant_id, said)
+    assert "Welche Nummer" in (err.value.say or "")
