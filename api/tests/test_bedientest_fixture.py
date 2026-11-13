@@ -210,12 +210,41 @@ def test_a_lan_bind_is_refused_unless_asked_for_twice(monkeypatch, capsys):
     assert "Note:" not in capsys.readouterr().out
 
 
-def test_reset_keeps_the_bind_of_the_last_up(tmp_path, monkeypatch):
+def test_reset_keeps_the_lan_bind_of_the_last_up_only_when_allowed_again(
+    tmp_path, monkeypatch, capsys
+):
+    """#689: a plain `reset` reopened the LAN bind without --allow-lan, and
+    without the warning."""
     monkeypatch.setattr(fx, "WORK_DIR", tmp_path)
     monkeypatch.setattr(fx.subprocess, "run", lambda *a, **k: None)
-    fx.main(["up", "--bind", "0.0.0.0", "--allow-lan"])
+    fx.main(["up", "--bind", "192.168.1.5", "--allow-lan"])
+    capsys.readouterr()
+    fx.main(["reset", "--allow-lan"])
+    assert "192.168.1.5:18000:8000" in (tmp_path / "override.yml").read_text()
+    # The link and the note name the address that is bound, not the arguments'.
+    out = capsys.readouterr().out
+    assert "http://192.168.1.5:18000" in out and "Note: bound to 192.168.1.5" in out
     fx.main(["reset"])
-    assert "0.0.0.0:18000:8000" in (tmp_path / "override.yml").read_text()
+    assert "127.0.0.1:18000:8000" in (tmp_path / "override.yml").read_text()
+
+
+def test_reset_keeps_a_loopback_port_of_the_last_up(tmp_path, monkeypatch):
+    monkeypatch.setattr(fx, "WORK_DIR", tmp_path)
+    monkeypatch.setattr(fx.subprocess, "run", lambda *a, **k: None)
+    fx.main(["up", "--port", "18123"])
+    fx.main(["reset"])
+    assert "127.0.0.1:18123:8000" in (tmp_path / "override.yml").read_text()
+
+
+def test_down_forgets_the_bind(tmp_path, monkeypatch):
+    """#689: `down` left the LAN bind for the next `reset`."""
+    monkeypatch.setattr(fx, "WORK_DIR", tmp_path)
+    monkeypatch.setattr(fx.subprocess, "run", lambda *a, **k: None)
+    fx.main(["up", "--bind", "192.168.1.5", "--allow-lan"])
+    fx.main(["down"])
+    assert not (tmp_path / "override.yml").exists()
+    fx.main(["reset"])
+    assert "127.0.0.1:18000:8000" in (tmp_path / "override.yml").read_text()
 
 
 def test_the_shell_of_the_caller_cannot_redirect_the_stack(monkeypatch):

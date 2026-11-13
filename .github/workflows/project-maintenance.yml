@@ -25,8 +25,11 @@ permissions:
   # but GitHub additionally requires this permission for pull requests.
   pull-requests: write
 
+# A group of its own (#689): in the sync's group the next issue event replaced
+# this waiting run, and the day's maintenance was skipped. It may overlap a sync;
+# both write the values the repository gives, so the second write is the same.
 concurrency:
-  group: projektpflege
+  group: projektpflege-maintenance
   cancel-in-progress: false
 
 jobs:

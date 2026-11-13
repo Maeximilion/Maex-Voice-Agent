@@ -21,6 +21,7 @@ stack. Invented data only. The dev `reset` keeps the images; `up` rebuilds the a
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -100,10 +101,23 @@ def docker_environment() -> dict[str, str]:
     }
 
 
+def bound() -> tuple[str, int] | None:
+    """The bind and port the last `up` wrote, or None."""
+    path = WORK_DIR / "override.yml"
+    found = (
+        re.search(r'"([^"]+):(\d+):8000"', path.read_text()) if path.exists() else None
+    )
+    return (found.group(1), int(found.group(2))) if found else None
+
+
 def up(args: argparse.Namespace, build: bool) -> None:
-    # `reset` keeps the bind and port of the last `up`.
-    if not args.dry_run and (build or not (WORK_DIR / "override.yml").exists()):
-        write_config(args.bind, args.port)
+    # `reset` keeps the bind and port of the last `up`, but a LAN bind only
+    # with --allow-lan in this call too: the ENV=dev stack is open there (#689).
+    last = bound()
+    keep = not build and last is not None and (last[0] == LOOPBACK or args.allow_lan)
+    bind, port = last if keep and last else (args.bind, args.port)
+    if not args.dry_run and not keep:
+        write_config(bind, port)
     run(compose("down", "-v", "--remove-orphans"), args.dry_run)
     run(
         compose("up", "-d", "--wait", *(["--build"] if build else []), "db", "api"),
@@ -117,15 +131,15 @@ def up(args: argparse.Namespace, build: bool) -> None:
     )
     run(compose("exec", "-T", "api", *INNER, "fill"), args.dry_run)
     # The view needs the restaurant's login (#570), and the fresh volume has none.
-    base = f"http://{args.bind}:{args.port}"
+    base = f"http://{bind}:{port}"
     run(compose("exec", "-T", "api", *ACCESS, "--base-url", base), args.dry_run)
     print(
         "Tablet: open the link above once, set any password, team PIN and admin PIN, "
         f"then the board is at {base}/gui/; stack `{PROJECT}`"
     )
-    if args.bind != LOOPBACK:
+    if bind != LOOPBACK:
         print(
-            f"Note: bound to {args.bind}; the stack runs ENV=dev (no proxy secret) and is "
+            f"Note: bound to {bind}; the stack runs ENV=dev (no proxy secret) and is "
             "reachable from that network. Invented data only; run `down` when done."
         )
 
@@ -161,6 +175,9 @@ def main(argv: list[str] | None = None) -> int:
         run(compose("exec", "-T", "api", *INNER, "arrive", args.what), args.dry_run)
     elif args.command == "down":
         run(compose("down", "-v", "--remove-orphans"), args.dry_run)
+        if not args.dry_run:
+            # The next `reset` starts on loopback, never on a LAN bind of old (#689).
+            (WORK_DIR / "override.yml").unlink(missing_ok=True)
     else:
         up(args, build=args.command == "up")
     return 0
