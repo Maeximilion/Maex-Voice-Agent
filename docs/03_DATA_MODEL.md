@@ -111,7 +111,7 @@ Feiertage, Urlaub, Sonderzeiten. Schlägt `opening_hours` für dieses Datum.
 | opens_at / closes_at | TIME NULL | nur wenn `closed = false` |
 | note | TEXT | erscheint in der GUI |
 | status | TEXT, default `set` | `set` counts; `suggested` is a statutory holiday the job wrote and counts for nothing until the team answers on the tablet; `dismissed` keeps the weekday's hours and stops the job from suggesting the date again (T-9.5, migration 015). `domain/status/hours.py` and the seats read `set` rows only |
-| like_weekday | SMALLINT 0 to 6 NULL | the hours and the seats of that weekday hold on the date ("wie Sonntag", Monday is 0); never together with `closed` or hours of its own. A suggestion proposes Sunday (6) |
+| like_weekday | SMALLINT 0 to 6 NULL | the hours, the seats, the call-mode windows and the call-limit windows of that weekday hold on the date (`status.hours.weekday_of`, #686) ("wie Sonntag", Monday is 0); never together with `closed` or hours of its own. A suggestion proposes Sunday (6) |
 
 One suggestion or dismissal per date (`uq_special_days_suggestion`, partial unique index on `status <> 'set'`): two passes of the job at once write one row.
 
