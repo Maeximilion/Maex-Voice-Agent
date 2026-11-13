@@ -1886,7 +1886,11 @@ def _classify(text: str, groups: list[OptionGroup]) -> Wish:
             # be the same text again (endless recursion). Not understood, and
             # never a free note.
             return Wish(text=text, kind="unknown")
-        return _classify(_clean(added), groups).model_copy(update={"note": left_out})
+        wish = _classify(_clean(added), groups)
+        # A removal behind the addition stays next to the one before it
+        # ("ohne Huhn, dafür Tofu, ohne Zwiebeln", Codex PR #720).
+        note = ", ".join(n for n in (left_out, wish.note) if n)
+        return wish.model_copy(update={"note": note})
     addition, removal = _split_removal(text)
     if removal is not None:
         # "mit Nudeln ohne Zwiebeln": die Option und der Hinweis, wie umgekehrt

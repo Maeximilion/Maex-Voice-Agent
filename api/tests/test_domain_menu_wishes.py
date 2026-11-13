@@ -1999,6 +1999,17 @@ def test_unknown_swap_after_a_removal_stays_open(said):
     assert wish_of(said, EXTRA).kind == "unknown"
 
 
+@pytest.mark.parametrize(
+    "said",
+    ["ohne Huhn, dafür Tofu, ohne Zwiebeln", "ohne Huhn, mit Tofu, ohne Zwiebeln"],
+)
+def test_a_removal_behind_the_addition_is_kept(said):
+    """Codex PR #720: the removal before the addition overwrote the one after it."""
+    wish = wish_of(said, EXTRA)
+    assert (wish.kind, wish.option) == ("option", "Tofu")
+    assert wish.note == "ohne Huhn, ohne Zwiebeln"
+
+
 def test_removal_ending_in_dafuer_stays_a_note():
     assert wish_of("ohne Zwiebeln, dafür", EXTRA).kind == "note"
 
