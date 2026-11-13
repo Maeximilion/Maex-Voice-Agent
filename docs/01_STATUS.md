@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.10
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.11
 
 ---
 
@@ -273,6 +273,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 13.11.2026 | **Batch 2 of the ultrareview ledger (#546: allergens and consent), fix PR for #671: a priced addition in a wish no longer goes out as a free note or loses its count (rule 1).** Red first (18 test cases). A second addition behind a removal ("mit Nudeln, ohne Zwiebeln, mit Tofu") makes the wish unknown, so the agent asks, instead of riding unpriced in the note; "dafür", "sondern" and "lieber" after a removal open an addition like "mit" ("ohne Huhn, dafür Tofu" is the Tofu option with its price, an unknown one stays open); a count right behind "mit" or "extra" ("mit 2x Ei", "mit zweimal Ei") stays in the wish and reaches the rule-A ask-back, a count at the end still belongs to the dish. Evals: cases 99/99, targets 1/23 (same as main), numbers 249/249. |
 | 13.11.2026 | **Batch 2 of the ultrareview ledger (#546: allergens and consent), fix PR for #670: four allergy sentences the wish parser misread (L13).** Red first (11 test cases). A denial with an allergen behind it ("keine Allergie gegen Erdnüsse, aber Sesam", "keine Allergie, nur Laktose") no longer only denies, while "aber bitte ohne Zwiebeln", "aber gegen Abend" and "aber auch nicht gegen Sesam" still do. Another person behind the caller's allergy without an allergy word of their own ("meine Frau gegen Sesam", "mein Mann Sesam") and "und auf Sesam" behind "gegen Erdnüsse" leave the ingredient open, so the guest is asked "Wogegen?"; "und auf Diät" is asked too, the trade-off of Codex PR #338 reversed. "ich vertrage Erdnüsse gar nicht" counts as an allergy with its negation up to the end of the clause. Evals: cases 99/99 and targets 1/23 the same as `main` case by case, number eval 249/249; mypy clean; the full suite green apart from the known environment failures. |
 | 13.11.2026 | **Batch 2 of the ultrareview ledger (#546: allergens and consent), fix PR for #669: the core names a dish's allergens, not the model (rule 1).** Red first (3 tests, all 14 letters among them). `get_item_details` answers an allergen question with maintained values with its own sentence from the fixed table of the 14 LMIV names (`details.ALLERGEN_SPOKEN`), in LMIV order: "Laut unseren Angaben enthält Nummer 23 Frühlingsrollen (4 Stück): glutenhaltiges Getreide und Soja." `allergens.names` carries the same names next to the letters, which mean other allergens in a common menu key. The tool text says "Allergene nur aus `say`" (two phrases shortened to stay inside the prompt budget of 2600 tokens). Open on #669: an eval of the known-allergen answer, since the stand-in model looks up no allergens. Evals: cases 99/99 and targets 1/23 the same as `main` case by case, number eval 249/249; mypy clean; the full suite green apart from the known environment failures. |
 | 13.11.2026 | **Batch 1 of the ultrareview ledger (#546: conversation core), fix PR for #657: no remedy for a complaint nobody made, no order wish lost behind a complaint.** Red first (13 test cases). `complaint_rules._DOUBT` knows "weder ... noch", "kaum" and "alles andere als", so "weder kalt noch matschig" offers no cold-food remedy. `_WANTS_TO_COMPLAIN` takes no wish of its own into the gap before "beschweren" ("möchte gern bestellen, aber zuerst beschweren" goes to the team), while "möchte mich gerne beschweren" stays a complaint. `_TEAM_ONLY` reads its stems as words: "Schwarztee", "Quarztorte", "zerbrochen" and "Kübel" name no incident, "Hausarzt" and "Zahnarzt" still do. Evals: cases 99/99 and targets 1/23 the same as `main` case by case, number eval 249/249; mypy clean; the full suite green apart from the known environment failures. |
@@ -304,6 +305,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.11 · 13.11.2026:** Fix PR for #671: a priced addition in a wish never goes out as a free note or loses its count
 - **v2.44.10 · 13.11.2026:** Fix PR for #670: four allergy sentences the wish parser misread
 - **v2.44.9 · 13.11.2026:** Fix PR for #669: the core names a dish's allergens from the fixed LMIV table
 - **v2.44.8 · 13.11.2026:** Fix PR for #657: complaint doubt words, a wish behind the complaint, incident words as words
