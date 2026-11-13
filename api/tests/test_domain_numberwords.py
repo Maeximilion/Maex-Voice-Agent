@@ -1419,6 +1419,10 @@ def test_a_pause_before_the_quantity_noun_still_asks_after_eine(text):
         ("Nummer hundert zwei Portionen", "100", 2),
         ("Nummer 40 2x", "40", 2),
         ("Nummer vierzig zwei mal", "40", 2),
+        # Codex PR #722: hundreds said as separate words.
+        ("Nummer zwei hundert zwei Portionen", "200", 2),
+        ("Nummer zwei hundert zwei mal", "200", 2),
+        ("Nummer zwei hundert 2 x", "200", 2),
     ],
 )
 def test_a_unit_with_a_quantity_behind_it_is_not_joined_to_the_number(

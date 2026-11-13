@@ -424,9 +424,10 @@ def _counts(tokens: list[str], at: int) -> bool:
     return at < len(tokens) and tokens[at] in _QUANTITY_NOUNS
 
 
-def _scan_ending_at(tokens: list[str], end: int) -> _Span | None:
-    """A number that ends directly **before** `end` ("drei Portionen", "zwei mal")."""
-    for start in range(max(0, end - 3), end + 1):
+def _scan_ending_at(tokens: list[str], end: int, floor: int = 0) -> _Span | None:
+    """A number that ends directly **before** `end` ("drei Portionen", "zwei mal"),
+    starting at `floor` or later."""
+    for start in range(max(floor, end - 3), end + 1):
         span = _scan(tokens, start)
         if span is not None and span.end == end + 1:
             return span
@@ -524,6 +525,14 @@ def _quantity_spans(tokens: list[str]) -> list[_Span]:
     Not the tens half of a number the ear may have cut: "drei und äh zwanzig
     Portionen" is no 20 portions (`_second_half`, #328)."""
     spans: list[_Span] = []
+    # Where a number named as a dish ends ("Nummer zwei hundert"): a quantity
+    # behind it starts there, never inside it (Codex PR #722).
+    dish_ends = [
+        span.end
+        for k in range(1, len(tokens))
+        if tokens[k - 1] in _ITEM_NUMBER_MARKERS | _LINK_ARTICLES
+        and (span := _scan(tokens, k)) is not None
+    ]
     for i, token in enumerate(tokens):
         suffix = _QUANTITY_SUFFIX.match(token)
         if suffix:
@@ -532,7 +541,8 @@ def _quantity_spans(tokens: list[str]) -> list[_Span]:
                 spans.append(_Span(i, i + 1, value))
                 continue
         if token in _QUANTITY_NOUNS and i > 0:
-            span = _scan_ending_at(tokens, i - 1)
+            floor = max((e for e in dish_ends if e <= i - 1), default=0)
+            span = _scan_ending_at(tokens, i - 1, floor)
             if span is not None:
                 spans.append(span)
     return [s for s in spans if not _second_half(tokens, s.start)]
