@@ -394,7 +394,13 @@ def _position_parts(
         # A wish or an allergy behind the number belongs to its dish ("Die 13,
         # meine Frau hat eine Erdnussallergie"): kept whole, the search reads
         # it as dish and wish, and asks if a number is lost there.
-        if not any(numbers) or wish_candidates(query):
+        # The same dish named twice in other words ("die 13 und Pho Bo") may
+        # be one portion: whole, so the search asks (Codex PR #721).
+        if (
+            not any(numbers)
+            or wish_candidates(query)
+            or any(len(words) > 1 for words in said.values())
+        ):
             return [query]
         cut: list[str] = []
         run: int | None = None  # first piece of the run of names being kept

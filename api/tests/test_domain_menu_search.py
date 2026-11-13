@@ -1444,6 +1444,15 @@ def test_a_card_number_stays_a_position_beside_an_unclear_name(
     assert position_parts(session, sushi, said, now=NOW) == parts
 
 
+def test_the_same_dish_named_twice_keeps_the_sentence_whole(session, sushi):
+    """Codex PR #721: the cut at card numbers skipped the check for one dish
+    named in other words, and Pho Bo (the 13) became two positions."""
+    said = "die 13 und Pho Bo und S12 und Ente"
+    assert position_parts(session, sushi, said, now=NOW) == [said]
+    with pytest.raises(Ambiguous):
+        suche(session, sushi, said)
+
+
 @pytest.mark.parametrize(
     "said",
     ["Die 13, meine Frau hat eine Erdnussallergie", "die 13, ich habe keine Allergie"],
