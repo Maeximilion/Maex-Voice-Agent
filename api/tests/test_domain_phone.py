@@ -37,3 +37,30 @@ def test_ungueltig(raw: str):
 
 def test_anderes_land_als_default():
     assert normalize_phone("044 123 45 67", country_code="41") == "+41441234567"
+
+
+# --- #683: the trunk zero after the country code -----------------------------
+
+
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [
+        ("+49 0171 2345678", "+491712345678"),
+        ("0049 07221 5551234", "+4972215551234"),
+        ("+4907221 5551234", "+4972215551234"),
+        ("+43 0664 1234567", "+436641234567"),
+        ("+41 079 1234567", "+41791234567"),
+    ],
+)
+def test_the_trunk_zero_after_the_country_code_is_dropped(said, number):
+    """#683: "+49 0171 ..." kept the zero, and the team called a number that
+    does not exist."""
+    assert normalize_phone(said) == number
+
+
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [("+39 06 1234 5678", "+390612345678"), ("0039 02 12345678", "+390212345678")],
+)
+def test_an_italian_number_keeps_its_zero(said, number):
+    assert normalize_phone(said) == number
