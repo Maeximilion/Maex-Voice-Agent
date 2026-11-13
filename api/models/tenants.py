@@ -275,8 +275,9 @@ class CallLimitWindow(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
 class CallModeWindow(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
     """A weekly window with a call mode of its own, say the agent answers on
     Friday evenings and only listens in by day (T-8.1, docs/02 §4). Where
-    windows overlap, the most cautious mode counts. A window ends before
-    midnight; one across it is two rows (as `CallLimitWindow`)."""
+    windows overlap, the most cautious mode counts. A window to midnight ends
+    at 24:00, which only SQL can write and `mode_at` reads as text (#682);
+    one across midnight is two rows (as `CallLimitWindow`)."""
 
     __tablename__ = "call_mode_windows"
     __table_args__ = (

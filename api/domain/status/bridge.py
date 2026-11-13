@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core import time as clock
 from api.domain.status.hours import load_hours, open_window_at
-from api.models import BridgeHeartbeat, Tenant
+from api.models import BridgeHeartbeat, ServiceConfig, Tenant
 
 # Far below the shortest silence that counts (1 minute): a poll every 2 s writes
 # at most this often.
@@ -63,9 +63,14 @@ def silence(
     limit = timedelta(minutes=settings.alarm_bridge_silent_minutes)
     if seen is not None and now - seen < limit:
         return None
+    # A service the team switched off sends no slip, open or not (#682).
+    config = session.get(ServiceConfig, tenant.id)
+    services = [
+        s for s in ORDER_SERVICES if config is None or getattr(config, f"{s}_enabled")
+    ]
     zone = clock.tz(tenant.timezone)
     data = load_hours(session, tenant.id, now.astimezone(zone).date(), days=1)
-    windows = [w for s in ORDER_SERVICES if (w := open_window_at(data, now, s, zone))]
+    windows = [w for s in services if (w := open_window_at(data, now, s, zone))]
     # Opening starts the clock too: last night's poll says nothing at 11:02, and
     # the register PC may come on a few minutes late without an alarm each day.
     if not windows or now - min(opens for opens, _ in windows) < limit:
