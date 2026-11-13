@@ -32,7 +32,7 @@
 ## get_item_details
 **Wann:** bei Fragen zu Optionen, Beschreibung oder Allergenen eines gefundenen Gerichts.
 **Eingabe:** `menu_item_id`, `allergen_question` (Pflicht, `true` nur bei einer Allergenfrage).
-**Liefert:** Beschreibung, `option_groups` (je Option `reason`: warum sie mehr kostet, aus der Karte; leer heißt, der Preis steht so in der Karte), `allergens` (`known: false` heißt: keine Auskunft, nicht „frei davon").
+**Liefert:** Beschreibung, `option_groups` (je Option `reason`: warum sie mehr kostet, aus der Karte; leer: Preis steht so in der Karte), `allergens` (`known: false`: keine Auskunft, nicht „frei davon"). Allergene nur aus `say`.
 
 ## find_customer
 **Wann:** bei einer Lieferung, wenn `customer` im Zustand fehlt und `phone` in `slots` steht. War `found` false und nennt der Gast danach seinen Namen, noch einmal.

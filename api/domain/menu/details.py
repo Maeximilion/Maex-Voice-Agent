@@ -32,6 +32,26 @@ from api.schemas.menu import Allergens, ItemDetails
 SAY_ALLERGENS_UNKNOWN = (
     "Das kann ich Ihnen nicht sicher sagen, dazu ist bei uns nichts hinterlegt."
 )
+SAY_ALLERGENS_KNOWN = "Laut unseren Angaben enthält Nummer {number} {name}: {names}."
+# The 14 allergens of the LMIV (Annex II) by the letter the database stores
+# (`ALLERGEN_CODES`): the law's names, so neither the model nor a common menu
+# key ("n" for molluscs) names them (#669, rule 1).
+ALLERGEN_SPOKEN = {
+    "A": "glutenhaltiges Getreide",
+    "B": "Krebstiere",
+    "C": "Eier",
+    "D": "Fisch",
+    "E": "Erdnüsse",
+    "F": "Soja",
+    "G": "Milch",
+    "H": "Schalenfrüchte",
+    "L": "Sellerie",
+    "M": "Senf",
+    "N": "Sesam",
+    "O": "Schwefeldioxid und Sulfite",
+    "P": "Lupinen",
+    "R": "Weichtiere",
+}
 
 
 def get_item_details(
@@ -81,9 +101,16 @@ def _say(
     """
     if allergen_question and not allergens.known:
         return SAY_ALLERGENS_UNKNOWN
+    said = []
+    if allergen_question:
+        *rest, last = allergens.names
+        names = f"{', '.join(rest)} und {last}" if rest else last
+        said.append(
+            SAY_ALLERGENS_KNOWN.format(number=item.number, name=item.name, names=names)
+        )
     if sold_out:
-        return SAY_SOLD_OUT.format(name=item.name)
-    return None
+        said.append(SAY_SOLD_OUT.format(name=item.name))
+    return " ".join(said) or None
 
 
 def _allergens(
@@ -106,5 +133,6 @@ def _allergens(
     return Allergens(
         known=True,
         codes=codes,
+        names=[ALLERGEN_SPOKEN[code] for code in codes],
         confirmed_at=max(row.confirmed_at for row in rows).astimezone(zone).date(),
     )
