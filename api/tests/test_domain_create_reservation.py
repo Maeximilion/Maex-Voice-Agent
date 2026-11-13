@@ -298,7 +298,11 @@ def test_readback_mit_wochentag_und_datum(session, tenant_id, call_id):
 
 
 @pytest.mark.parametrize(
-    ("hh", "said"), [(0, "um halb eins nachts"), (12, "um halb eins mittags")]
+    ("hh", "said"),
+    [
+        (0, "in der Nacht von Dienstag auf Mittwoch um halb eins"),
+        (12, "morgen um halb eins mittags"),
+    ],
 )
 def test_the_readback_tells_half_past_midnight_from_half_past_noon(hh, said):
     """#681: with lunch until 14:30 and the evening until 01:00, "morgen um
@@ -311,8 +315,47 @@ def test_the_readback_tells_half_past_midnight_from_half_past_noon(hh, said):
         note=None,
     )
     assert readback(table, BERLIN) == (
-        f"Ein Tisch für zwei Personen morgen {said}, auf den Namen Müller. Passt das so?"
+        f"Ein Tisch für zwei Personen {said}, auf den Namen Müller. Passt das so?"
     )
+
+
+@pytest.mark.parametrize(
+    ("created", "day", "hh", "said"),
+    [
+        # 00:30 of "morgen" is the night of today to tomorrow: it is still
+        # tonight, and "morgen um halb eins nachts" sent the guest to 24 hours
+        # later than the table (#742).
+        (NOW, MITTWOCH, 0, "in der Nacht von Dienstag auf Mittwoch um halb eins"),
+        (
+            NOW,
+            MITTWOCH + timedelta(days=1),
+            0,
+            "in der Nacht von Mittwoch auf Donnerstag",
+        ),
+        # More than a week out the date comes with it.
+        (
+            NOW,
+            date(2026, 9, 26),
+            0,
+            "in der Nacht von Freitag auf Samstag, den 26. September",
+        ),
+        # Tonight's own after-midnight table is named by its two days as well.
+        (NOW, MITTWOCH - timedelta(days=1), 0, "in der Nacht von Montag auf Dienstag"),
+        (NOW, MITTWOCH, 4, "in der Nacht von Dienstag auf Mittwoch um halb fünf"),
+        # 23:30 is still the evening of its own day, 05:30 the morning.
+        (NOW, MITTWOCH, 23, "morgen um halb zwölf nachts"),
+        (NOW, MITTWOCH, 5, "morgen um halb sechs morgens"),
+    ],
+)
+def test_after_midnight_table_is_named_by_its_night(created, day, hh, said):
+    table = Reservation(
+        reserved_for=berlin(day, hh, 30),
+        created_at=created,
+        party_size=2,
+        guest_name="Müller",
+        note=None,
+    )
+    assert said in readback(table, BERLIN)
 
 
 def test_entwurf_zaehlt_sofort_gegen_die_kapazitaet(session, tenant_id, call_id):
