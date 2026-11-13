@@ -1097,6 +1097,19 @@ def test_a_wish_echoed_or_a_question_of_certainty_is_no_claim(say):
 
 
 @pytest.mark.parametrize(
+    "say",
+    [
+        "Mit diesem Gericht sind Sie sicher.",
+        "Damit sind Sie ganz sicher.",
+        "Sind Sie sicher? Die Pho Bo ist sicher.",
+    ],
+)
+def test_a_promise_to_the_guest_that_they_are_safe_is_a_claim(say):
+    """Only the question that opens with the verb is cut (Codex PR #714, P1)."""
+    assert allergen_claim(new_state(allergy_talk=True), say) is ALLERGEN_CLAIM
+
+
+@pytest.mark.parametrize(
     "note", ["Zöliakie, ohne Gluten", "reagiert auf Sellerie", "darf keine Nüsse"]
 )
 def test_a_note_with_health_words_is_refused_like_an_allergy(note):

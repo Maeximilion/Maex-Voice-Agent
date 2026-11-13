@@ -245,11 +245,17 @@ _ABSENT = re.compile(
 )
 # Safety and separate preparation: a claim in a call that speaks of
 # allergies.
+# The model asking the guest whether they are sure ("Sind Sie sicher, dass
+# ...?") is no promise: a question that opens with the verb, cut before
+# `_SAFE` reads. "Mit diesem Gericht sind Sie sicher." stays a claim (#656,
+# Codex PR #714).
+_ASKS_IF_SURE = re.compile(
+    r"(?:^|(?<=[.!?:;]))\s*(?:sind|bist|seid)\s+(?:sie|du|ihr)\b[^.!?]*\?"
+)
 _SAFE = re.compile(
     r"\b(?:keine|ohne) (?:spuren|kontamination|kreuzkontakt|kontakt)\b"
     r"|unbedenklich|bedenkenlos|garantier|hundertprozentig|\b100 ?(?:%|prozent)"
-    # Not the model asking the guest: "Sind Sie sicher, dass ...?" (#656).
-    r"|\b(?:ist|sind|wäre|waere|bleibt)\b(?!\s+(?:sie|du|ihr)\b)(?:\s+\w+){0,3}\s+sicher"
+    r"|\b(?:ist|sind|wäre|waere|bleibt)\b(?:\s+\w+){0,3}\s+sicher"
     r"\s*(?:[.!?,]|$|f(?:ü|ue)r\b|zu essen)"
     r"|getrennt (?:zubereitet|frittiert|gekocht|gelagert)"
     r"|eigene[nmrs]? (?:fritteuse|pfanne|öl|oel)"
@@ -324,7 +330,10 @@ def allergen_claim(state: ConversationState, say: str) -> ToolResult | None:
     if (
         _ALWAYS.search(lowered)
         or (named and _ABSENT.search(lowered))
-        or ((state.allergy_talk or named) and _SAFE.search(lowered))
+        or (
+            (state.allergy_talk or named)
+            and _SAFE.search(_ASKS_IF_SURE.sub(" ", lowered))
+        )
     ):
         return ALLERGEN_CLAIM
     return None
