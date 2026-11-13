@@ -174,13 +174,21 @@ def _mentions_allergy(words: list[str], i: int) -> bool:
         # "ich vertrage Erdnüsse gar nicht", "... Kuhmilch und Sahne nicht":
         # the negation at the end of its clause (#670). Its ingredient stays
         # open, so the guest is asked "Wogegen?".
+        # Only across the ingredient: a verb, a pronoun or a word that says
+        # the guest tolerates it ends the clause ("ich vertrage Erdnüsse gut
+        # und möchte nicht scharf essen", Codex PR #718).
         for w in words[i + 1 : i + 8]:
-            if w == ",":
-                return False
             if w == "nicht":
                 return True
+            if w == "," or w in _ORDER_VERBS or w in _PRONOUNS or w in _TOLERATES:
+                return False
         return False
     return _is_allergy(word)
+
+
+_TOLERATES = frozenset(
+    {"gut", "gern", "gerne", "super", "prima", "problemlos", "alles", "bestens"}
+)
 
 
 def _ingredient(text: str) -> str | None:
@@ -1520,8 +1528,12 @@ def _names_more_after_denial(words: list[str]) -> bool:
                 and not (
                     words[k] in _YET_NOT
                     or words[k] in _ORDER_VERBS
-                    # A time ("gegen acht Uhr") names no allergen either.
+                    # A time ("gegen acht Uhr") names no allergen either, and another
+                    # person ("nur meine Frau gegen Sesam") is not read as the
+                    # caller's own allergy here (Codex PR #718): as on main.
                     or parse_cardinal(words[k]) is not None
+                    or words[k] in _POSSESSIVES
+                    or words[k] in _OTHERS
                 )
             ):
                 return True

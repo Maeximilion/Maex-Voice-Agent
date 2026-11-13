@@ -1914,5 +1914,23 @@ def test_vertrage_with_its_negation_at_the_clause_end_is_an_allergy(said):
     assert wish.kind == "allergy" and wish.ingredient is None
 
 
-def test_vertrage_without_a_negation_is_no_allergy():
-    assert not mentions_allergy("ich vertrage Erdnüsse sehr gut und nehme die 13")
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ich vertrage Erdnüsse sehr gut und nehme die 13",
+        # Codex PR #718: the "nicht" of another clause.
+        "Ich vertrage Erdnüsse gut und möchte nicht scharf essen",
+        "Ich vertrage alles, nur nicht zu scharf",
+    ],
+)
+def test_vertrage_without_its_own_negation_is_no_allergy(said):
+    assert not mentions_allergy(said)
+
+
+def test_another_persons_allergy_behind_a_denial_is_never_the_callers():
+    """Codex PR #718: "nur meine Frau gegen Sesam" behind the caller's denial
+    must not become the caller's allergy, which the caller's consent would
+    note with its reason."""
+    from api.domain.menu.wishes import only_denies
+
+    assert only_denies("Ich habe keine Allergie, nur meine Frau gegen Sesam")
