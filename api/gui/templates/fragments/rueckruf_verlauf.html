@@ -20,6 +20,7 @@
         </div>
         {% if c.phone %}
         <div class="phone">{{ c.phone }}</div>
+        {% if c.costly %}<div class="cb-note"><span class="badge danger">Teure Sondernummer &ndash; vor dem Anruf pr&uuml;fen</span></div>{% endif %}
         {% if c.number_note %}
         <div class="cb-note">
           <span class="badge warn">{{ c.number_note }}</span>
@@ -31,7 +32,7 @@
         <div class="muted">Nummer nach der L&ouml;schfrist entfernt</div>
         {% endif %}
         <div class="cb-actions">
-          {% if c.phone %}<a class="button" href="tel:{{ c.phone }}">Anrufen</a>{% endif %}
+          {% if c.phone and not c.costly %}<a class="button" href="tel:{{ c.phone }}">Anrufen</a>{% endif %}
           <button type="button" class="primary" hx-post="/gui/rueckrufe/{{ c.id }}/wieder-offen"
                   hx-target="#rueckruf-verlauf" hx-swap="innerHTML">Wieder &ouml;ffnen</button>
         </div>
