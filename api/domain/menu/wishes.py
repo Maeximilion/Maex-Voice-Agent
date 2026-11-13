@@ -1933,11 +1933,23 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
     )
     if ingredient is None:
         return None
+    # Every later clause is a plain removal, or the allergy may go on there
+    # ("..., Nüsse und Milch", "..., und mein Mann gegen Nüsse"): then
+    # nothing is read, and the caller is asked (Codex PR #735).
+    later = [_classify(_unglued(clause), groups) for clause in clauses[n + 1 :]]
+    if any(wish.kind != "note" for wish in later):
+        return None
     removals = [
         removal
-        for clause in clauses[:n] + clauses[n + 1 :]
-        if not mentions_allergy(clause)
-        and (removal := removal_with(_classify(_unglued(clause), groups)))
+        for wish in [
+            *(
+                _classify(_unglued(c), groups)
+                for c in clauses[:n]
+                if not mentions_allergy(c)
+            ),
+            *later,
+        ]
+        if (removal := removal_with(wish))
     ]
     return Wish(
         text=kitchen_note(

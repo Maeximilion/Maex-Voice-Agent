@@ -2071,6 +2071,9 @@ def test_an_allergy_behind_the_callers_denial_has_its_owner(
         "Ich habe keine Allergie, aber meine Frau hat keine Sesamallergie",
         # Codex PR #735: two people behind the denial, one "gegen" each.
         "Ich habe keine Allergie, nur meine Frau gegen Sesam und ich gegen Nüsse",
+        # Codex PR #735: the list or a second person goes on behind a comma.
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam, Nüsse und Milch",
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam, und mein Mann gegen Nüsse",
     ],
 )
 def test_a_doubtful_clause_behind_a_denial_gives_no_ingredient(said):
