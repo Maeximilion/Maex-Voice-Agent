@@ -837,6 +837,27 @@ def test_spalte_rueckrufe_zeigt_karte(client, engine, tenant_id):
     assert 'data-reason="complaint"' in body and ">complaint<" not in body
 
 
+@pytest.mark.parametrize("number", ["+499001234567", "+491371234567", "+8821234567"])
+def test_a_costly_callback_number_gets_a_warning_and_no_one_tap_link(
+    client, engine, tenant_id, number
+):
+    """#691 (Maxi decided B): a premium, service or satellite number stays on
+    the card, with a warning and without the tel: link."""
+    from sqlalchemy import update
+
+    from api.models import Callback
+
+    rueckruf(engine, tenant_id)
+    with Session(engine) as s:
+        s.execute(update(Callback).values(phone=number))
+        s.commit()
+
+    body = client.get("/gui/").text
+
+    assert number in body and "Teure Sondernummer" in body
+    assert f'href="tel:{number}"' not in body
+
+
 def test_rueckrufe_leerzustand(client, tenant_id):
     body = client.get("/gui/fragments/rueckrufe").text
 

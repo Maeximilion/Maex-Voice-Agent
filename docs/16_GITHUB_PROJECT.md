@@ -81,7 +81,7 @@ So that the merge takes the linked issue along, **every** pull request descripti
 
 `Done` arises exclusively here. Not earlier, not by hand, not through Claude Code.
 
-Manually adding a Development link can make GitHub's built-in workflow put a closed issue back on `In progress`. There is no corresponding `issues` activity type in Actions. `project-sync.yml` also runs at minute 17 of every hour with `--fix --status-only`, restoring closed issues and merged PRs to `Done`. GitHub can delay scheduled runs; this is reconciliation, not a synchronous lock. Issue edits and PR label changes also trigger the event run. All board runs share the `projektpflege` concurrency group.
+Manually adding a Development link can make GitHub's built-in workflow put a closed issue back on `In progress`. There is no corresponding `issues` activity type in Actions. `project-sync.yml` also runs at minute 17 of every hour with `--fix --status-only`, restoring closed issues and merged PRs to `Done`. GitHub can delay scheduled runs; this is reconciliation, not a synchronous lock. Issue edits and PR label changes also trigger the event run. Sync runs share the `projektpflege` concurrency group; the daily maintenance has its own group (`projektpflege-maintenance`), so a later sync cannot replace its waiting run (#689).
 
 ---
 
