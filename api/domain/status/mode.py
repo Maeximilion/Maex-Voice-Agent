@@ -14,9 +14,9 @@ Read wherever the mode decides something: whether the agent answers a call
 """
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time, timedelta, tzinfo
 
-from sqlalchemy import select
+from sqlalchemy import Text, cast, select
 from sqlalchemy.orm import Session
 
 from api.core import time as clock
@@ -48,8 +48,15 @@ def mode_at(
         return ModeNow(PAUSED, None)
     zone = clock.tz(tenant.timezone)
     local = (now or clock.utcnow()).astimezone(zone)
-    windows = session.scalars(
-        select(CallModeWindow).where(
+    # The columns, not the rows: a window to midnight ends at 24:00, which
+    # Postgres stores and Python's time cannot hold. Its end is read as text
+    # and becomes the next midnight (#682).
+    windows = session.execute(
+        select(
+            CallModeWindow.starts_at,
+            cast(CallModeWindow.ends_at, Text),
+            CallModeWindow.call_mode,
+        ).where(
             CallModeWindow.tenant_id == tenant.id,
             CallModeWindow.weekday == local.weekday(),
             CallModeWindow.starts_at <= local.time(),
@@ -60,13 +67,19 @@ def mode_at(
     # made in the first; join the rows when the tablet gets a window editor.
     chosen = config.call_mode_chosen_at
     planned = [
-        w
-        for w in windows
-        if chosen is None or datetime.combine(local.date(), w.starts_at, zone) > chosen
+        (mode, _end(local, ends, zone))
+        for starts, ends, mode in windows
+        if chosen is None or datetime.combine(local.date(), starts, zone) > chosen
     ]
     if not planned:
         return ModeNow(config.call_mode, None)
-    mode = min((w.call_mode for w in planned), key=CAUTION.index)
+    mode = min((m for m, _ in planned), key=CAUTION.index)
     # Of overlapping windows of that mode the latest end, whatever the row order.
-    until = max(w.ends_at for w in planned if w.call_mode == mode)
-    return ModeNow(mode, datetime.combine(local.date(), until, zone))
+    return ModeNow(mode, max(until for m, until in planned if m == mode))
+
+
+def _end(local: datetime, ends: str, zone: tzinfo) -> datetime:
+    """A window's end on the day of `local`; "24:00:00" is the next midnight."""
+    if ends.startswith("24:"):
+        return datetime.combine(local.date() + timedelta(days=1), time(0), zone)
+    return datetime.combine(local.date(), time.fromisoformat(ends), zone)

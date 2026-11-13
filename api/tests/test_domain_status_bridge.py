@@ -191,3 +191,35 @@ def test_the_header_token_changes_when_the_bridge_falls_silent(session, tenant_i
     )
 
     assert before != after
+
+
+# --- #682: no slip can be due, no alarm -------------------------------------
+
+
+def test_no_alarm_when_pickup_and_delivery_are_switched_off(session, tenant_id):
+    """#682: the team stopped orders early and turned the register PC off;
+    the bridge alarm went on every hour although no slip could come."""
+    hours(session, tenant_id, "delivery", time(17), time(22))
+    switches.set_pickup(session, tenant_id, False)
+    switches.set_delivery(session, tenant_id, False)
+    claim_tickets(session, tenant_id, NOW - timedelta(minutes=30))
+
+    assert silence(session, tenant_id) is None
+
+
+def test_one_service_still_on_keeps_the_alarm(session, tenant_id):
+    hours(session, tenant_id, "delivery", time(17), time(22))
+    switches.set_delivery(session, tenant_id, False)
+    last = NOW - timedelta(minutes=30)
+    claim_tickets(session, tenant_id, last)
+
+    assert silence(session, tenant_id).since == last
+
+
+def test_only_the_switched_off_service_open_is_no_alarm(session, tenant_id):
+    """Pickup is open but off, delivery is on but closed: nothing can come."""
+    hours(session, tenant_id, "delivery", time(11), time(14))
+    switches.set_pickup(session, tenant_id, False)
+    claim_tickets(session, tenant_id, NOW - timedelta(minutes=30))
+
+    assert silence(session, tenant_id) is None

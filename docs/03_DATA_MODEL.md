@@ -65,7 +65,7 @@ A weekly window with a limit of its own for concurrent AI calls (D16: weekdays 1
 |---|---|---|
 | tenant_id | UUID FK | |
 | weekday | SMALLINT 0 to 6 | Monday is 0, in the restaurant's clock |
-| starts_at, ends_at | TIME, starts_at < ends_at | the window; the end is not in it, and one across midnight is two rows |
+| starts_at, ends_at | TIME, starts_at < ends_at | the window; the end is not in it, and one across midnight is two rows. A window to midnight ends at `24:00`; only `max_calls` is read, so the end never reaches Python |
 | max_calls | INT ≥ 1 | the limit while the window holds; where windows overlap, the lowest counts |
 
 ### `call_mode_windows`
@@ -76,7 +76,7 @@ A weekly window with a call mode of its own, say the agent answers on Friday eve
 |---|---|---|
 | tenant_id | UUID FK | |
 | weekday | SMALLINT 0 to 6 | Monday is 0, in the restaurant's clock |
-| starts_at, ends_at | TIME, starts_at < ends_at | the window; the end is not in it, and one across midnight is two rows. The second row begins a window of its own at 00:00, so a tap made during the first holds only until midnight |
+| starts_at, ends_at | TIME, starts_at < ends_at | the window; the end is not in it, and one across midnight is two rows. A window to midnight ends at `24:00` (Postgres stores it, Python's `time` cannot hold it: `mode_at` reads the end as text and makes it the next midnight, #682). The second row begins a window of its own at 00:00, so a tap made during the first holds only until midnight |
 | call_mode | TEXT | `shadow`, `overflow` or `primary`; never `paused`, the emergency stop is a button. Where windows overlap, the most cautious mode counts (`shadow` before `overflow` before `primary`) |
 
 ### `bridge_heartbeats`
