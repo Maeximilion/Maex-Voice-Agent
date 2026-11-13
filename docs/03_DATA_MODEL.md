@@ -111,7 +111,7 @@ Feiertage, Urlaub, Sonderzeiten. Schlägt `opening_hours` für dieses Datum.
 | opens_at / closes_at | TIME NULL | nur wenn `closed = false` |
 | note | TEXT | erscheint in der GUI |
 | status | TEXT, default `set` | `set` counts; `suggested` is a statutory holiday the job wrote and counts for nothing until the team answers on the tablet; `dismissed` keeps the weekday's hours and stops the job from suggesting the date again (T-9.5, migration 015). `domain/status/hours.py` and the seats read `set` rows only |
-| like_weekday | SMALLINT 0 to 6 NULL | the hours and the seats of that weekday hold on the date ("wie Sonntag", Monday is 0); never together with `closed` or hours of its own. A suggestion proposes Sunday (6) |
+| like_weekday | SMALLINT 0 to 6 NULL | the hours, the seats, the call-mode windows and the call-limit windows of that weekday hold on the date (`status.hours.weekday_of`, #686) ("wie Sonntag", Monday is 0); never together with `closed` or hours of its own. A suggestion proposes Sunday (6) |
 
 One suggestion or dismissal per date (`uq_special_days_suggestion`, partial unique index on `status <> 'set'`): two passes of the job at once write one row.
 
@@ -606,7 +606,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 015 | `special_days.status` and `like_weekday`, `uq_special_days_suggestion`, `service_config.holiday_region`: statutory holidays as suggestions the team answers (T-9.5); every existing special day becomes `set`, nothing changes; downgrade deletes suggestions and dismissals, a day "like a weekday" keeps its own weekday, the region goes |
 | 016 | `bridge_heartbeats`: the time of the print bridge's last poll (T-8.3); nothing backfilled, the downgrade drops the table and the next poll writes it again |
 | 017 | `uq_special_days_set`: one `set` row per tenant and date (#441); the upgrade first lists every date with two `set` rows and stops without a change, the team decides which row holds; the downgrade drops the key |
-| 018 | `delivery_zones`, `customers`, `addresses`, `recognition_objections`, `orders.address_id` and the foreign keys of `orders.customer_id` and `orders.address_id` (T-6.1, L12); nothing writes them yet, T-6.2 and T-6.5 do, T-6.7 deletes; the downgrade drops the four tables with every row and the links on the orders |
+| 018 | `delivery_zones`, `customers`, `addresses`, `recognition_objections`, `orders.address_id` and the foreign keys of `orders.customer_id` and `orders.address_id` (T-6.1, L12); nothing writes them yet, T-6.2 and T-6.5 do, T-6.7 deletes; the downgrade drops the four tables with every row and empties `orders.customer_id`, and refuses while an objection to recognition exists (restore the backup instead, #685) |
 | 019 | `data_subject_requests`: the request log of data subjects (T-11.8, U2); nothing backfilled, the lines of the interim file are moved in by hand (docs/09 §2); the downgrade drops the table with every logged request |
 | 020 (after 021) | `menu_items.register_price_cents` and `register_price_rejected`: what the price check found (T-4.9); every dish starts without a difference; the downgrade drops both, the next check finds the differences again and a rejection has to be repeated, `audit_log` keeps it |
 | 021 | `complaint_rules`: the catalogue of fixed answers to a complaint, empty (T-10.11, D19); nothing backfilled and nothing seeded; the downgrade drops the table with every rule, booked remedies stay on their cards and in `audit_log` |

@@ -223,3 +223,42 @@ def test_the_emergency_stop_beats_a_mode_window(session, tenant):
     add_mode_window(session, tenant.id, "17:00", "22:00", "primary")
 
     assert call_routing(session, tenant.id, FRIDAY_EVENING).ai_answers is False
+
+
+# --- #686: a special day "wie Sonntag" takes Sunday's windows ----------------
+
+
+def _like_sunday(session, tenant_id, day) -> None:
+    from api.models import SpecialDay
+
+    session.add(SpecialDay(tenant_id=tenant_id, date=day, like_weekday=6))
+    session.commit()
+
+
+def test_a_day_like_sunday_takes_sundays_call_limit(session, answering):
+    """#686 (decided A): hours and seats followed Sunday, the call limit the
+    date's own weekday."""
+    tenant = answering
+    add_window(session, tenant.id, 6, "17:00", "22:00", 4)
+    add_window(session, tenant.id, 4, "17:00", "22:00", 2)
+    _like_sunday(session, tenant.id, FRIDAY_EVENING.date())
+
+    assert call_routing(session, tenant.id, FRIDAY_EVENING).call_limit == 4
+
+
+def test_a_day_like_sunday_takes_sundays_call_mode(session, tenant):
+    set_config(session, tenant.id, call_mode="shadow")
+    session.add(
+        CallModeWindow(
+            tenant_id=tenant.id,
+            weekday=6,
+            starts_at=time(17),
+            ends_at=time(22),
+            call_mode="primary",
+        )
+    )
+    session.commit()
+    assert not call_routing(session, tenant.id, FRIDAY_EVENING).ai_answers
+    _like_sunday(session, tenant.id, FRIDAY_EVENING.date())
+
+    assert call_routing(session, tenant.id, FRIDAY_EVENING).ai_answers

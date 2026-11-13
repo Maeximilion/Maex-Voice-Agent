@@ -318,3 +318,43 @@ def test_downgrade_removes_only_this_step(scratch_db_url):
 
     command.upgrade(_config(scratch_db_url), "head")
     assert _schema(scratch_db_url)[0] >= TABLES
+
+
+def test_a_downgrade_with_linked_orders_comes_back_up(scratch_db_url):
+    """#685: a link on an order stayed behind, and the next upgrade stopped at
+    the foreign key."""
+    command.upgrade(_config(scratch_db_url), "018")
+    engine = create_engine(scratch_db_url)
+    try:
+        with engine.begin() as conn:
+            tenant = _tenant(conn)
+            order = _order(
+                conn, tenant, kind="pickup", customer=_customer(conn, tenant)
+            )
+        command.downgrade(_config(scratch_db_url), "017")
+        with engine.connect() as conn:
+            linked = conn.execute(
+                text("SELECT customer_id FROM orders WHERE id = :o"), {"o": order}
+            ).scalar_one()
+        assert linked is None
+        command.upgrade(_config(scratch_db_url), "018")
+    finally:
+        engine.dispose()
+
+
+def test_a_downgrade_with_an_objection_stops_and_changes_nothing(scratch_db_url):
+    """#685: the objection to recognition (Art. 21 GDPR) was dropped silently."""
+    command.upgrade(_config(scratch_db_url), "018")
+    engine = create_engine(scratch_db_url)
+    try:
+        with engine.begin() as conn:
+            _object(conn, _tenant(conn))
+        with pytest.raises(RuntimeError, match="backup"):
+            command.downgrade(_config(scratch_db_url), "017")
+        with engine.connect() as conn:
+            kept = conn.execute(
+                text("SELECT count(*) FROM recognition_objections")
+            ).scalar_one()
+        assert kept == 1
+    finally:
+        engine.dispose()

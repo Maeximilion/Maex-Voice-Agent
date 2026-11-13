@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
 from api.core.time import to_local, utcnow
+from api.domain.status.hours import weekday_of
 from api.domain.status.mode import mode_at
 from api.domain.status.staff_changes import team_phone_at
 from api.models import CallLimitWindow, ServiceConfig, Tenant
@@ -97,7 +98,7 @@ def _call_limit(
     limits = session.scalars(
         select(CallLimitWindow.max_calls).where(
             CallLimitWindow.tenant_id == tenant.id,
-            CallLimitWindow.weekday == local.weekday(),
+            CallLimitWindow.weekday == weekday_of(session, tenant.id, local.date()),
             CallLimitWindow.starts_at <= local.time(),
             CallLimitWindow.ends_at > local.time(),
         )
