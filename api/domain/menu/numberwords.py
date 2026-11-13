@@ -410,6 +410,12 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
     return _Span(start, i, total)
 
 
+def _lettered_after(tokens: list[str], at: int) -> bool:
+    """Does a card letter follow the number that starts at `at`?"""
+    span = _scan(tokens, at)
+    return span is not None and span.end < len(tokens) and tokens[span.end] in _SUFFIXES
+
+
 def _counts(tokens: list[str], at: int) -> bool:
     """Does a quantity word stand at `at` ("Portionen", "mal", "x")?"""
     return at < len(tokens) and tokens[at] in _QUANTITY_NOUNS
@@ -1389,6 +1395,8 @@ def sole_item_number(
             and _word_value(tokens[q.end + 1]) is not None
             # "2 x 7up": digits glued to letters are a name (Codex PR #722).
             and q.end + 1 not in glued
+            # "2 x 30 a": a card letter behind it names the dish (Codex PR #722).
+            and not _lettered_after(tokens, q.end + 1)
             and (
                 (q.start > 0 and tokens[q.start - 1] in _LINK_ARTICLES)
                 or all(_word_value(t) is None for t in tokens[: q.start])

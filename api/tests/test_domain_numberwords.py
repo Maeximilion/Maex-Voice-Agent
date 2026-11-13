@@ -1449,6 +1449,13 @@ def test_a_quantity_before_a_name_with_digits_does_not_ask(text):
     assert sole_item_number(text) == (None, False)
 
 
+@pytest.mark.parametrize("text", ["2 x 30 a", "zwei mal dreißig a", "2 x 30a"])
+def test_a_quantity_before_a_lettered_card_number_does_not_ask(text):
+    """Codex PR #722: the letter makes the second number the dish."""
+    ref, unclear = sole_item_number(text, THIRTY)
+    assert not unclear and ref is not None and ref.text == "30a"
+
+
 def test_tens_and_unit_still_join_without_a_quantity():
     ref, _ = sole_item_number("Nummer vierzig sieben")
     assert ref is not None and ref.text == "47"
