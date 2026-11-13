@@ -895,3 +895,19 @@ def test_a_null_phrase_left_in_a_row_matches_nothing_and_breaks_nothing(
 
     assert found is not None and found.id == row.id
     assert matching_rule(session, tenant_id, "Das Essen war zu salzig") is None
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich möchte mich beschweren, die Lieferung kam eine Stunde zu spät, "
+        "das Essen war aber weder kalt noch matschig.",
+        "Das Essen war kaum kalt.",
+        "Das Essen war alles andere als kalt.",
+    ],
+)
+def test_neither_hardly_and_anything_but_rule_the_phrase_out(session, tenant_id, said):
+    """A remedy for a complaint nobody made is money promised (#657, P1)."""
+    rule(session, tenant_id)
+
+    assert matching_rule(session, tenant_id, said) is None

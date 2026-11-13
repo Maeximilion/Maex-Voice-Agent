@@ -19,8 +19,10 @@ _WORD = re.compile(r"\w+")
 # A sentence that rules something out or only supposes it does not say what the
 # phrase says ("nicht kalt", "wenn es kalt ist"). Read outside the phrase, so a
 # row can hold "nicht warm". Any such word silences the sentence, the safe side.
+# "weder ... noch", "kaum" and "alles andere als" too (#657).
 _DOUBT = re.compile(
-    r" (?:nichts?|nie|niemals|nein|kein\w*|ohne|wenn|falls|ob|vielleicht) "
+    r" (?:nichts?|nie|niemals|nein|kein\w*|ohne|wenn|falls|ob|vielleicht"
+    r"|weder|kaum|alles andere als) "
 )
 
 
