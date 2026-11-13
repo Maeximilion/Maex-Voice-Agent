@@ -2609,3 +2609,31 @@ def test_a_noted_ingredient_matches_its_plural_on_a_card(state):
     state.allergies = [Allergy(ingredient="Erdnuss")]
     for said in ("es geht um die Erdnüsse in der Soße", "die Erdnuesse in der Soße"):
         assert _names_health(state, said)
+
+
+@pytest.mark.parametrize(
+    ("noted", "said"),
+    [
+        ("Erdnüsse", "es geht um die Erdnuss in der Soße"),
+        ("Nüsse", "ich möchte mit jemandem sprechen wegen der Nuss"),
+        ("Eier", "das Ei im Teig"),
+        ("Haselnüsse", "die Haselnuss im Eis"),
+        ("Erdnuesse", "die Erdnuss"),
+        ("Mandeln", "die Mandel"),
+        ("Milch, Ei und Nüsse", "geht um die Nuss"),
+    ],
+)
+def test_a_noted_plural_matches_its_singular_on_a_card(state, noted, said):
+    """Noted "Erdnüsse", said "Erdnuss": the sentence kept off the card only
+    when the noted word was the singular (#739, P2)."""
+    state.allergies = [Allergy(ingredient=noted)]
+    assert _names_health(state, said)
+
+
+@pytest.mark.parametrize(
+    ("noted", "said"),
+    [("Erdnüsse", "Pizza mit Salami"), ("Nüsse", ""), ("Eier", "die Pizza")],
+)
+def test_a_noted_ingredient_is_not_found_in_unrelated_words(state, noted, said):
+    state.allergies = [Allergy(ingredient=noted)]
+    assert not _names_health(state, said)

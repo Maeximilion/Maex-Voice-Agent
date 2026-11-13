@@ -1695,3 +1695,39 @@ def test_a_plain_denial_still_notes_nothing(session, state):
     assert (
         read(session, state, "Ich habe keine Allergie, nur ohne Koriander bitte") == []
     )
+
+
+# --- #739: health words that name no allergy -----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("said", "noted"),
+    [
+        ("Mein Sohn hat Zöliakie, die 13 bitte.", [(None, True)]),
+        ("Ich habe Zöliakie.", [(None, True)]),
+        ("Meine Frau hat Zöliakie.", [(None, False)]),
+        ("Ich reagiere auf Sellerie.", [(None, True)]),
+        # Another sentence with an allergy word keeps the health word's own.
+        (
+            "Ich habe eine Nussallergie. Mein Sohn hat Zöliakie.",
+            [(None, True), ("Nuss", True)],
+        ),
+        ("Die 13 bitte, ohne Zwiebeln.", []),
+    ],
+)
+def test_a_health_word_opens_the_question_wogegen(session, state, said, noted):
+    """The model's note "Zöliakie, ohne Gluten" is refused with the promise
+    that the core notes it, so the core has to ask (#739, P2)."""
+    assert read(session, state, said) == noted
+
+
+def test_a_health_word_in_a_whole_turn_is_asked_about(session, state):
+    said = turn(
+        session,
+        state,
+        f"{TABLE}. Mein Sohn hat Zöliakie.",
+        LLMTurn(tool_call=table()),
+    )
+
+    assert said == [SAY_ALLERGY_WHICH]
+    assert reservations(session) == []

@@ -36,6 +36,7 @@ from api.domain.menu.wishes import (
     of_another_adult,
     only_denies,
     read_in_full,
+    speaks_of_health,
     which_answer,
     wish_candidates,
 )
@@ -104,6 +105,16 @@ def _open(state: ConversationState) -> set[int]:
 
 def _note(state: ConversationState, text: str) -> None:
     """An allergy said without a question of the core (`note_allergies`)."""
+    # A health word that names no allergy ("Mein Sohn hat Zöliakie") is asked
+    # about, as a model note with it is refused for the core to take (#739).
+    # Taken out of the text, so a person named there ("Mein Sohn hat
+    # Zöliakie") leaves the allergy of the other sentences read in full.
+    parts = _SENTENCE.split(text)
+    health = [p for p in parts if speaks_of_health(p) and not mentions_allergy(p)]
+    for part in health:
+        _add(state, Allergy(ingredient=None, own=not of_another_adult(part)))
+    if health:
+        text = ". ".join(p for p in parts if p not in health)
     if not mentions_allergy(text):
         return
     whole = _read(text)

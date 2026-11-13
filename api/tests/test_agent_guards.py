@@ -1073,6 +1073,15 @@ def test_a_safety_promise_about_a_frei_dish_still_counts():
         "In der 13 sind keine Nüsse enthalten.",
         "Die 13 ist ohne Erdnüsse.",
         "Die Suppe kommt ganz ohne Sesam.",
+        # #739: the common forms of "no nuts in it" that `_ABSENT` missed.
+        "Die 13 hat keine Nüsse.",
+        "In der 13 gibt es keine Nüsse.",
+        "Es gibt kein Gluten in der 13.",
+        "Nüsse sind da nicht drin.",
+        "Nüsse sind nicht darin.",
+        "Die 13 hat kein Gluten.",
+        "Unsere Gerichte haben alle keine Erdnüsse.",
+        "Da sind keine Nüsse.",
     ],
 )
 def test_an_inflected_or_turned_absence_claim_is_refused(say):
@@ -1086,6 +1095,9 @@ def test_an_inflected_or_turned_absence_claim_is_refused(say):
     [
         "Die Bestellung enthält keine Getränke.",
         "Die 13 ohne Erdnüsse, notiert.",
+        # #739: absence of something that is no allergen.
+        "Die Bestellung hat keine Getränke.",
+        "Es gibt keine Lieferung nach 22 Uhr.",
         "Sind Sie sicher, dass Sie zwanzig Portionen möchten?",
         "Sind Sie ganz sicher?",
     ],

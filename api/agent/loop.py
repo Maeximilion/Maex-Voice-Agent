@@ -1592,9 +1592,24 @@ def _names_health(state: ConversationState, text: str) -> bool:
     # "Ei" also hits "bei" and that card gets the sentence of its reason, the
     # safe side; split it into words if the team misses requests on cards.
     return speaks_of_health(text) or any(
-        allergy.ingredient and _plain_vowels(allergy.ingredient) in folded
+        stem in folded
         for allergy in state.allergies
+        for stem in _stems(allergy.ingredient)
     )
+
+
+def _stems(ingredient: str | None) -> list[str]:
+    """What of each ingredient a card or note names it by: without the plural
+    ending, so the noted "Erdnüsse" is in "Erdnuss" (#739). A list ("Milch, Ei
+    und Nüsse") is each of its parts."""
+    parts = _plain_vowels(ingredient or "").replace(" und ", ",").split(",")
+    stems = [part.strip().removesuffix(_plural(part.strip())) for part in parts]
+    return [stem for stem in stems if len(stem) >= 2]
+
+
+def _plural(word: str) -> str:
+    """The plural ending of a folded word: "Eier", "Mandeln", "Nüsse"."""
+    return next((end for end in ("er", "en", "e", "n") if word.endswith(end)), "")
 
 
 def _plain_vowels(text: str) -> str:

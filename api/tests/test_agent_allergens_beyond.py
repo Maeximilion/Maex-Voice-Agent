@@ -1163,7 +1163,7 @@ def test_a_wait_for_the_number_is_no_turn_without_understanding(session, known_t
 
 # The audit of 30.10.2026 on `7768182` (#252): a sentence about allergens
 # rests on `get_item_details`, and an allergy said on the phone is never lost.
-CLAIM = "Die Nummer 13 hat keine Erdnüsse."
+CLAIM = "Die Nummer 13 ist bei Erdnüssen gut verträglich."
 
 
 @pytest.mark.parametrize(

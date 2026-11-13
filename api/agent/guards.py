@@ -242,6 +242,10 @@ _ABSENT = re.compile(
     # (#656); "die 13 ohne Erdnüsse, notiert" says a wish back, no claim.
     r"|\bkein\w*(?:\s+\w+){0,3}\s+enthalten\b"
     r"|\b(?:ist|sind|kommt|kommen|wird|werden)\b(?:\s+\w+){0,3}\s+ohne\b"
+    # "Die 13 hat keine Nüsse", "Da gibt es kein Gluten", "Nüsse sind da nicht
+    # drin" (#739).
+    r"|\b(?:hat|haben|gibt|sind)\b(?:\s+\w+){0,3}\s+kein"
+    r"|\bnicht (?:drin|darin|dabei)\b"
 )
 # Safety and separate preparation: a claim in a call that speaks of
 # allergies.
