@@ -50,6 +50,9 @@ SESSION_IDLE = timedelta(minutes=30)
 SESSION_MAX = timedelta(hours=12)
 # last_seen_at moves at most once a minute, not on every request.
 TOUCH_EVERY = timedelta(minutes=1)
+# A sign-in this recent with the same code makes a refused second post a
+# double tap, not a known password (#688).
+REPEAT_WINDOW = timedelta(minutes=2)
 TOKEN_BYTES = 32
 RECOVERY_CODES = 10
 # 80 random bits, sixteen base32 letters, shown in four groups.
@@ -114,8 +117,9 @@ def sign_in(
         raise SignInRefused()
     factor = _second_factor(db, account, code, now)
     if factor is None:
+        repeat = _just_signed_in(db, account, code, now)
         db.rollback()
-        _note_failure(db, name, address, "factor")
+        _note_failure(db, name, address, "repeat" if repeat else "factor")
         raise SignInRefused()
     if not trusted:
         account.failures, account.blocked_until, account.last_failed_at = 0, None, None
@@ -289,6 +293,11 @@ def _count_attempt(
             OperatorLoginFailure, address, with_for_update=True, populate_existing=True
         )
         counters = [row for row in (account, known) if row is not None]
+        if account is None:
+            # An unknown name waits like a known one, or the wait would tell
+            # which names exist (#688, docs/23 §5). Its counter sits beside the
+            # addresses under a key no address can have, forgotten the same way.
+            counters.append(_name_counter(db, name, now))
     waits = [row.blocked_until for row in counters if row.blocked_until is not None]
     if waits and max(waits) > now:
         db.rollback()
@@ -301,6 +310,41 @@ def _count_attempt(
     account_id = account.id if account else None
     db.commit()
     return stored, account_id, device is not None
+
+
+def _name_counter(db: Session, name: str, now: datetime) -> OperatorLoginFailure:
+    key = f"name:{name}"
+    db.execute(
+        insert(OperatorLoginFailure)
+        .values(address=key, failures=0, last_failed_at=now)
+        .on_conflict_do_nothing(index_elements=["address"])
+    )
+    row = db.get(
+        OperatorLoginFailure, key, with_for_update=True, populate_existing=True
+    )
+    assert row is not None
+    return row
+
+
+def _just_signed_in(
+    db: Session, account: OperatorAccount, code: str, now: datetime
+) -> bool:
+    """Is `code` the one this account signed in with a moment ago? Then a
+    second post of the same form (a double tap) is no sign of a known
+    password (#688)."""
+    step = totp.matching_step(account.totp_secret, code, now.timestamp(), None)
+    if step is None or step != account.totp_last_step:
+        return False
+    return bool(
+        db.scalar(
+            select(func.count())
+            .select_from(OperatorSession)
+            .where(
+                OperatorSession.account_id == account.id,
+                OperatorSession.created_at >= now - REPEAT_WINDOW,
+            )
+        )
+    )
 
 
 def _note_failure(db: Session, name: str | None, address: str, reason: str) -> None:

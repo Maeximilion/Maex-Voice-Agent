@@ -265,8 +265,8 @@ def test_an_address_waits_on_its_own_and_is_forgotten_after_a_day(
             row.address: row.failures
             for row in db.scalars(select(OperatorLoginFailure))
         }
-    # The old address is gone; this one starts again from one.
-    assert left == {"testclient": 1}
+    # The old address and the old names are gone; these start again from one.
+    assert left == {"testclient": 1, "name:emil": 1}
 
 
 def test_ended_sessions_go_with_the_next_sign_in(client, factors, clock, sessions):
@@ -547,3 +547,62 @@ def test_the_models_match_the_migration(sessions, operator_url):
             assert compare_metadata(context, Base.metadata) == []
     finally:
         engine.dispose()
+
+
+# --- #688: the wait and the audit tell nothing ---------------------------------
+
+
+def _refusal(sessions, name, address, at, code="000001"):
+    with sessions() as db:
+        try:
+            access.sign_in(db, name, PASSWORD + "x", code, address, at)
+        except access.SignInRefused as refused:
+            return refused.wait_minutes
+    raise AssertionError("signed in")
+
+
+@pytest.mark.parametrize("name", ["maxi", "nobody"])
+def test_a_known_and_an_unknown_name_wait_alike(sessions, factors, clock, name):
+    """#688: after three failures from one address, a known name waited on a
+    second address while an unknown one did not, and the answer told them
+    apart."""
+    for _ in range(3):
+        _refusal(sessions, name, "192.0.2.1", clock.at)
+    assert _refusal(sessions, name, "192.0.2.2", clock.at) == 1
+
+
+def test_one_form_sent_twice_is_audited_as_a_repeat(client, factors, clock, sessions):
+    """#688: the second post of the code that had just signed in was audited
+    as `factor`, which the runbook reads as a known password."""
+    code = _code(factors.totp_secret, clock.at)
+    assert _sign_in(client, code).status_code == 303
+    client.cookies.clear()
+    assert _sign_in(client, code).status_code == 401
+    with sessions() as db:
+        reasons = [
+            row.detail["reason"]
+            for row in db.scalars(
+                select(OperatorAudit).where(
+                    OperatorAudit.action == "operator.sign_in_failed"
+                )
+            )
+        ]
+    assert reasons == ["repeat"]
+
+
+def test_a_wrong_code_after_a_sign_in_is_still_a_factor_failure(
+    client, factors, clock, sessions
+):
+    assert _sign_in(client, _code(factors.totp_secret, clock.at)).status_code == 303
+    client.cookies.clear()
+    assert _sign_in(client, _wrong(factors.totp_secret, clock.at)).status_code == 401
+    with sessions() as db:
+        reasons = [
+            row.detail["reason"]
+            for row in db.scalars(
+                select(OperatorAudit).where(
+                    OperatorAudit.action == "operator.sign_in_failed"
+                )
+            )
+        ]
+    assert reasons == ["factor"]
