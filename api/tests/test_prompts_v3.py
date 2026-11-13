@@ -118,3 +118,12 @@ def test_allergenfrage_und_eigene_allergie_getrennt():
     text = SYSTEM_PROMPT.read_text(encoding="utf-8")
     regel = next(z for z in text.splitlines() if z.startswith("- Allergien:"))
     assert "Frage" in regel and "eigene Allergie" in regel
+
+
+def test_out_of_zone_offers_pickup_only_through_its_say():
+    """#684: the prompt offered pickup after `out_of_zone` without a condition,
+    though the code leaves the offer out of the `say` when pickup is closed."""
+    text = SYSTEM_PROMPT.read_text(encoding="utf-8")
+    line = next(line for line in text.splitlines() if "`out_of_zone`" in line)
+    assert "Abholung anbieten" not in line
+    assert "nur `say`" in line
