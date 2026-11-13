@@ -2082,6 +2082,8 @@ def test_an_allergy_behind_the_callers_denial_has_its_owner(
         # Codex PR #735: a verbal intolerance, and an intolerance behind "ohne".
         "Ich habe keine Allergie, nur meine Frau gegen Sesam und verträgt Milch nicht",
         "Ich habe keine Allergie, nur meine Frau gegen Sesam, ohne Milch wegen Laktoseintoleranz",
+        # Codex PR #735: an elided "gegen" inside a later removal clause.
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam, ohne Milch und gegen Nüsse",
     ],
 )
 def test_a_doubtful_clause_behind_a_denial_gives_no_ingredient(said):

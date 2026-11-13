@@ -1887,6 +1887,14 @@ _THEIRS = re.compile(
 )
 
 
+# Words that carry an allergy on in a later clause ("..., ohne Milch und
+# gegen Nüsse", "..., ohne Milch wegen ...", "..., und mein Mann ..."): that
+# clause is no plain removal (Codex PR #735).
+_MAY_GO_ON = (
+    frozenset({"gegen", "auf", "wegen", "ich", "wir"}) | _PERSONS | _CHILDREN | _OTHERS
+)
+
+
 def _unglued(clause: str) -> str:
     """The clause without the joining words in front ("und ohne Zwiebeln")."""
     return _LEADING_GLUE.sub("", _clean(clause))
@@ -1946,7 +1954,7 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
     # nothing is read, and the caller is asked (Codex PR #735).
     later = [_classify(_unglued(clause), groups) for clause in clauses[n + 1 :]]
     if any(wish.kind != "note" for wish in later) or any(
-        mentions_allergy(clause) or "wegen" in _words(clause)
+        mentions_allergy(clause) or _MAY_GO_ON & set(_words(clause))
         for clause in clauses[n + 1 :]
     ):
         return None
