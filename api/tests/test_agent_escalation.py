@@ -255,3 +255,43 @@ def test_a_cue_inside_the_question_is_cut_once():
     assert rest is not None
     assert "tisch für vier bitte" in rest
     assert "mensch" not in rest and "wem" not in rest
+
+
+def test_a_wish_inside_the_complaint_phrase_keeps_the_sentence_for_the_team():
+    """ "möchte gern bestellen, aber zuerst beschweren": the order wish must not
+    vanish with the complaint, or the call ends on a remedy (#657, P1)."""
+    from api.agent.escalation import only_a_complaint
+
+    assert not only_a_complaint(
+        "Ich möchte gern bestellen, aber zuerst beschweren: die Pizza gestern war kalt."
+    )
+    assert only_a_complaint("Ich möchte mich gerne beschweren, die Pizza war kalt.")
+    assert only_a_complaint("Ich will mich über die Lieferung beschweren.")
+    # A noun names what happened, no wish (Codex PR #715).
+    assert only_a_complaint(
+        "Ich möchte mich über die Bestellung beschweren, das Essen war kalt"
+    )
+    assert only_a_complaint("Ich möchte mich über die Abholung beschweren.")
+
+
+@pytest.mark.parametrize(
+    ("said", "incident"),
+    [
+        ("Hat der Schwarztee Koffein?", False),
+        ("Die Quarztorte war trocken.", False),
+        ("Die Flasche war zerbrochen.", False),
+        ("Der Kübel war kaputt.", False),
+        ("Mein Hausarzt sagt, das war verdorben.", True),
+        ("Ich war beim Zahnarzt.", True),
+        ("Ich habe erbrochen.", True),
+        ("Mir ist übel.", True),
+        # Compounds count (Codex PR #715).
+        ("Das Essen war kalt, mir wurde danach speiübel.", True),
+        ("Mir war kotzübel.", True),
+    ],
+)
+def test_an_incident_word_is_read_as_a_word_not_inside_another(said, incident):
+    """ "arzt" in "Schwarztee", "erbroch" in "zerbrochen" (#657, P2)."""
+    from api.agent.escalation import names_an_incident
+
+    assert names_an_incident(said) is incident

@@ -121,8 +121,13 @@ _ADDITIVE = re.compile(
 # ill, or a legal step (D19: on any doubt the team). Stems, as in `_TRIGGERS`.
 # shortcut: a closed word list that misses other words for the same thing, add
 # the word when the call log shows it.
+# Word starts where a stem hides in other words ("zerbrochen"), "übel" but
+# in "Kübel", "Dübel" and "grübeln" ("speiübel" counts), and
+# "arzt" anywhere but in "Schwarztee" and "Quarztorte": "Hausarzt" counts
+# (#657).
 _TEAM_ONLY = re.compile(
-    r"krank|übel|uebel|erbroch|durchfall|vergift|arzt|ärztin|notaufnahme"
+    r"krank|(?<![kdg])(?:übel|uebel)|\berbroch|durchfall|vergift|(?<!schw)(?<!qu)arzt"
+    r"|ärztin|notaufnahme"
     r"|anwalt|anwältin|polizei|gesundheitsamt|verbraucherzentrale"
 )
 # What the guest still wants: the call ends with a remedy, and an order or a
@@ -140,8 +145,19 @@ _WANTS_ANYTHING = re.compile(_WANTS)
 # The wish that is the complaint: "ich möchte mich über die Lieferung
 # beschweren". By distance, not by sentence: speech recognition sets commas
 # where it likes. Further away, or behind an "und", it is a wish of its own.
+# A wish of its own in the gap ("möchte gern bestellen, aber zuerst
+# beschweren") is no part of it: it stays and keeps the sentence for the team
+# (#657). "gern" and "bitte" may stand there.
+# Verb forms only: "über die Bestellung beschweren" names what happened.
+_OTHER_WISH = (
+    r"(?:(?:bestell|abhol|mitnehm|reservier|nehm|brauch)(?:e|en)?"
+    r"|abzuholen|mitzunehmen|tisch(?:e[ns]?)?)\b"
+)
 _WANTS_TO_COMPLAIN = re.compile(
-    _WANTS + r"(?:\W+(?!und\b)\w+){0,4}?\W+(?:beschwer|reklam)\w*"
+    _WANTS
+    + r"(?:\W+(?!und\b)(?!"
+    + _OTHER_WISH
+    + r")\w+){0,4}?\W+(?:beschwer|reklam)\w*"
 )
 
 
