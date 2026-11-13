@@ -562,13 +562,17 @@ def test_a_check_card_answer_without_the_admin_pin_goes_to_the_pin_page(
     )
     assert changed.status_code == 200
     with Session(engine) as session:
-        card_id = session.scalars(select(StaffChange.id)).one()
+        card_id, seen = session.execute(
+            select(StaffChange.id, StaffChange.updated_at)
+        ).one()
+    shown = {"gesehen": seen.isoformat()}
     answer = client.post(
         f"/gui/pruefen/{card_id}/uebernehmen",
+        data=shown,
         headers={**HX, "HX-Current-URL": "http://testserver/gui/"},
     )
     assert answer.status_code == 401
     assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/"
     assert _owner(client, back="/gui/").headers["location"] == "/gui/"
-    kept = client.post(f"/gui/pruefen/{card_id}/uebernehmen", headers=HX)
+    kept = client.post(f"/gui/pruefen/{card_id}/uebernehmen", data=shown, headers=HX)
     assert kept.status_code == 200

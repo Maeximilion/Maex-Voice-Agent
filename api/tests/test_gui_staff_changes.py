@@ -69,6 +69,11 @@ def _cards(engine) -> list[StaffChange]:
         return list(session.scalars(select(StaffChange)))
 
 
+def _seen(card: StaffChange) -> dict[str, str]:
+    """What a card's buttons send: the version the owner saw (#596)."""
+    return {"gesehen": card.updated_at.isoformat()}
+
+
 def _config(engine) -> ServiceConfig:
     with Session(engine) as session:
         return session.scalars(select(ServiceConfig)).one()
@@ -161,7 +166,9 @@ def test_the_sheet_shows_what_a_date_holds(client):
 def test_the_owner_keeps_and_undoes_on_the_card(client, engine):
     client.post("/gui/teamnummer", data={"nummer": NUMBER}, headers=HX)
     (card,) = _cards(engine)
-    kept = client.post(f"/gui/pruefen/{card.id}/uebernehmen", headers=HX)
+    kept = client.post(
+        f"/gui/pruefen/{card.id}/uebernehmen", data=_seen(card), headers=HX
+    )
     assert kept.status_code == 200 and "Teamnummer heute" not in kept.text
     assert _config(engine).team_phone == NUMBER
 
@@ -172,7 +179,55 @@ def test_the_owner_keeps_and_undoes_on_the_card(client, engine):
         headers=HX,
     )
     card = next(c for c in _cards(engine) if c.kind == "day_hours")
-    undone = client.post(f"/gui/pruefen/{card.id}/zuruecknehmen", headers=HX)
+    undone = client.post(
+        f"/gui/pruefen/{card.id}/zuruecknehmen", data=_seen(card), headers=HX
+    )
     assert undone.status_code == 200
     assert {c.status for c in _cards(engine)} == {"kept", "undone"}
     assert client.post(f"/gui/pruefen/{card.id}/weg", headers=HX).status_code == 404
+
+
+def test_a_card_changed_after_it_was_shown_is_not_kept(client, engine):
+    """The buttons carry the version the owner saw (#596 P1); a newer one is
+    refused with the fresh list and a note, and a button without it too."""
+    client.post("/gui/teamnummer", data={"nummer": NUMBER}, headers=HX)
+    (card,) = _cards(engine)
+    cards = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert f'"gesehen": "{card.updated_at.isoformat()}"' in cards
+    stale = (card.updated_at - timedelta(seconds=1)).isoformat()
+    refused = client.post(
+        f"/gui/pruefen/{card.id}/uebernehmen", data={"gesehen": stale}, headers=HX
+    )
+    assert refused.status_code == 200 and "gerade geändert" in refused.text
+    assert "Teamnummer heute" in refused.text
+    bare = client.post(f"/gui/pruefen/{card.id}/uebernehmen", headers=HX)
+    assert "gerade geändert" in bare.text
+    assert _config(engine).team_phone != NUMBER
+    assert _cards(engine)[0].status == "open"
+
+
+def test_a_span_over_midnight_needs_the_box(client, engine):
+    form = {
+        "datum": _today().isoformat(),
+        "art": "zeiten",
+        "von": "22:00",
+        "bis": "10:00",
+    }
+    refused = client.post("/gui/tageszeiten", data=form, headers=HX)
+    assert refused.status_code == 409 and "Mitternacht" in refused.text
+    assert 'value="22:00"' in refused.text and 'value="10:00"' in refused.text
+    assert _cards(engine) == []
+    held = client.post("/gui/tageszeiten", data={**form, "nachts": "1"}, headers=HX)
+    assert held.status_code == 200 and "Gilt sofort" in held.text
+
+
+@pytest.mark.parametrize("typed", ["10:00:30", "10:00+02:00"])
+def test_times_with_seconds_or_an_offset_are_refused(client, engine, typed):
+    form = {
+        "datum": _today().isoformat(),
+        "art": "zeiten",
+        "von": typed,
+        "bis": "22:00",
+    }
+    assert client.post("/gui/tageszeiten", data=form, headers=HX).status_code == 422
+    assert _cards(engine) == []

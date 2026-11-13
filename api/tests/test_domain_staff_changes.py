@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
-from api.core.errors import InvalidInput
+from api.core.errors import Conflict, InvalidInput
 from api.domain.callbacks import transfer_to_team
 from api.domain.calls.routing import call_routing
 from api.domain.status import staff_changes as staff
@@ -525,3 +525,68 @@ def test_the_owners_answer_pushes_nothing(session, tenant_id):
 )
 def test_day_hours_read_as_on_the_tablet(hours, text):
     assert hours.text() == text
+
+
+# --- #596: what the owner saw, a weekday's seats, a span over midnight ----------
+
+
+def test_keep_refuses_hours_the_owner_never_saw(session, tenant_id):
+    """A second tablet rewrites a waiting card between showing and tapping keep
+    (#596 P1): the shown version is refused and nothing is written."""
+    card = staff.change_day_hours(
+        session, tenant_id, SATURDAY, DayHours(opens=time(10), closes=time(23)), NOW
+    )
+    assert card is not None and not card.held
+    seen = card.updated_at
+    later = DayHours(opens=time(10), closes=time(2))
+    staff.change_day_hours(session, tenant_id, SATURDAY, later, NOW, overnight=True)
+    before = _windows(session, tenant_id, SATURDAY)
+    with pytest.raises(Conflict):
+        staff.decide(session, tenant_id, card.id, keep=True, now=NOW, seen=seen)
+    assert _windows(session, tenant_id, SATURDAY) == before
+    (card,) = _cards(session, tenant_id)
+    assert card.status == "open"
+    staff.decide(session, tenant_id, card.id, keep=True, now=NOW, seen=card.updated_at)
+    assert _windows(session, tenant_id, SATURDAY) == [("10:00", "02:00")]
+
+
+def test_keep_refuses_a_team_number_the_owner_never_saw(session, tenant_id):
+    standard = _config(session, tenant_id).team_phone
+    card = staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    assert card is not None
+    seen = card.updated_at
+    staff.change_team_phone(session, tenant_id, "+4972215550000", NOW)
+    with pytest.raises(Conflict):
+        staff.decide(session, tenant_id, card.id, keep=True, now=NOW, seen=seen)
+    assert _config(session, tenant_id).team_phone == standard
+
+
+def test_shorter_times_on_a_day_like_another_weekday_wait(session, tenant_id):
+    """Times inside Sunday's windows on a day "wie Sonntag" drop the weekday and
+    with it Sunday's seats (#596 P2): the owner decides. Closing still holds."""
+    session.add(
+        SpecialDay(tenant_id=tenant_id, date=SATURDAY, like_weekday=6, status="set")
+    )
+    session.commit()
+    card = staff.change_day_hours(
+        session, tenant_id, SATURDAY, DayHours(opens=time(12), closes=time(13)), NOW
+    )
+    assert card is not None and not card.held
+    closed = staff.change_day_hours(
+        session, tenant_id, SATURDAY, DayHours(closed=True), NOW
+    )
+    assert closed is not None and closed.held
+
+
+def test_a_span_over_midnight_needs_the_staff_to_say_so(session, tenant_id):
+    """ "von 22:00 bis 10:00" with the times swapped would open the night (#596 P2)."""
+    swapped = DayHours(opens=time(22), closes=time(10))
+    with pytest.raises(InvalidInput) as refused:
+        staff.change_day_hours(session, tenant_id, TUESDAY, swapped, NOW)
+    assert "Mitternacht" in (refused.value.say or "")
+    assert _cards(session, tenant_id) == []
+    card = staff.change_day_hours(
+        session, tenant_id, TUESDAY, swapped, NOW, overnight=True
+    )
+    assert card is not None and card.held
+    assert _windows(session, tenant_id, TUESDAY) == [("22:00", "10:00")]

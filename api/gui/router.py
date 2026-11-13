@@ -29,7 +29,7 @@ from api.config import LOCAL_ENVS, settings
 from api.core import time as clock
 from api.core.auth import require_gui_proxy
 from api.core.envelope import fail_body
-from api.core.errors import AppError, InvalidInput
+from api.core.errors import AppError, Conflict, InvalidInput
 from api.core.logging import get_logger
 from api.core.time import business_day, to_local
 from api.db import SessionLocal, get_db
@@ -1589,20 +1589,19 @@ HOURS_HELD = "Gilt sofort. Der Inhaber sieht es auf der Übersicht."
 HOURS_WAIT = "Wartet auf den Inhaber: die Karte steht auf der Übersicht."
 NO_DATE = "Bitte einen Tag wählen."
 NO_TIME = "Bitte Beginn und Ende als Uhrzeit angeben."
+CARD_CHANGED = "Die Karte hat sich gerade geändert. Bitte noch einmal prüfen."
 # The buttons of a check card -> keep or undo (`domain/status/staff_changes.py`).
 CHECK_ANSWERS = {"uebernehmen": True, "zuruecknehmen": False}
-
-
-def _hours_text(data: dict) -> str:
-    return staff.DayHours.of(data).text()
 
 
 def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
     """The staff changes the owner has not decided, from today on, by date."""
     rows = []
-    for card in staff.open_cards(
-        session, tenant.id, business_day(tz_name=tenant.timezone)
-    ):
+    cards = staff.open_cards(session, tenant.id, business_day(tz_name=tenant.timezone))
+    holding_on = staff.days_hours(
+        session, tenant.id, [c.day for c in cards if c.kind == staff.DAY_HOURS]
+    )
+    for card in cards:
         if card.kind == staff.TEAM_PHONE:
             title, keep = "Teamnummer heute", "Als Standard übernehmen"
             before, after = card.before["number"], card.after["number"]
@@ -1610,10 +1609,9 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
         else:
             title = f"Öffnungszeit {WEEKDAYS[card.day.weekday()]}, {card.day:%d.%m.}"
             keep = "Übernehmen"
-            before, after = _hours_text(card.before), _hours_text(card.after)
-            holding = _hours_text(
-                staff.day_hours(session, tenant.id, card.day).as_dict()
-            )
+            before = staff.DayHours.of(card.before).text()
+            after = staff.DayHours.of(card.after).text()
+            holding = holding_on[card.day].text()
         rows.append(
             {
                 "id": card.id,
@@ -1623,19 +1621,24 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
                 "after": after,
                 "now": holding,
                 "waiting": not card.held,
+                "seen": card.updated_at.isoformat(),
             }
         )
     return rows
 
 
-def _checks_fragment(request: Request, session: Session) -> HTMLResponse:
+def _checks_fragment(
+    request: Request, session: Session, note: str | None = None
+) -> HTMLResponse:
     tenant = _tenant(session)
     if tenant is None:
         return templates.TemplateResponse(
             request, "fragments/pruefen.html", {"checks_problem": NO_TENANT}, 503
         )
     return templates.TemplateResponse(
-        request, "fragments/pruefen.html", {"checks": _check_rows(session, tenant)}
+        request,
+        "fragments/pruefen.html",
+        {"checks": _check_rows(session, tenant), "checks_note": note},
     )
 
 
@@ -1657,16 +1660,28 @@ def check_answer(
     request: Request,
     card_id: uuid.UUID,
     choice: str,
+    form: dict[str, str] = Depends(_form),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """The owner's answer, behind the admin PIN. A card another tablet
-    decided first is no error: the fresh list is the answer."""
+    decided first is no error: the fresh list is the answer. The button sends
+    the card version the owner saw (`gesehen`); a card changed since, or a
+    button without it, decides nothing and shows the fresh list (#596)."""
     if choice not in CHECK_ANSWERS:
         raise HTTPException(status_code=404)
+    try:
+        seen = datetime.fromisoformat(form.get("gesehen", ""))
+    except ValueError:
+        return _checks_fragment(request, session, CARD_CHANGED)
     tenant = _tenant(session)
     if tenant is not None:
         try:
-            staff.decide(session, tenant.id, card_id, keep=CHECK_ANSWERS[choice])
+            staff.decide(
+                session, tenant.id, card_id, keep=CHECK_ANSWERS[choice], seen=seen
+            )
+        except Conflict:
+            session.rollback()
+            return _checks_fragment(request, session, CARD_CHANGED)
         except AppError as exc:
             session.rollback()
             logger.info("Check card not decided: %s", exc.message)
@@ -1747,10 +1762,13 @@ def _hours_sheet(
     message: str | None = None,
     tone: str = "danger",
     status: int = 200,
+    typed: staff.DayHours | None = None,
 ) -> HTMLResponse:
+    """`typed`: times the staff sent and the domain refused, shown again."""
     today = business_day(tz_name=tenant.timezone)
     day = day if day is not None and day >= today else today
     holding = staff.day_hours(session, tenant.id, day)
+    times = typed if typed is not None and typed.opens is not None else holding
     choice = (
         "geschlossen"
         if holding.closed
@@ -1764,15 +1782,22 @@ def _hours_sheet(
         {
             "day": day.isoformat(),
             "today": today.isoformat(),
-            "holding": _hours_text(holding.as_dict()),
+            "holding": holding.text(),
             "choice": choice,
-            "opens": f"{holding.opens:%H:%M}" if holding.opens else "",
-            "closes": f"{holding.closes:%H:%M}" if holding.closes else "",
+            "opens": f"{times.opens:%H:%M}" if times.opens else "",
+            "closes": f"{times.closes:%H:%M}" if times.closes else "",
             "message": message,
             "tone": tone,
         },
         status,
     )
+
+
+def _hhmm(text: str) -> dt_time:
+    """HH:MM only: a stored second or offset would undo to another time."""
+    if len(text) != 5:
+        raise ValueError(text)
+    return dt_time.fromisoformat(text)
 
 
 def _typed_day(text: str) -> date | None:
@@ -1814,17 +1839,24 @@ def day_hours_change(
     hours = staff.DayHours(closed=choice == "geschlossen")
     if choice == "zeiten":
         try:
-            opens = dt_time.fromisoformat(form.get("von", ""))
-            closes = dt_time.fromisoformat(form.get("bis", ""))
+            opens, closes = _hhmm(form.get("von", "")), _hhmm(form.get("bis", ""))
         except ValueError:
             return _hours_sheet(request, session, tenant, day, NO_TIME, status=422)
         hours = staff.DayHours(opens=opens, closes=closes)
     try:
-        card = staff.change_day_hours(session, tenant.id, day, hours)
+        card = staff.change_day_hours(
+            session, tenant.id, day, hours, overnight=bool(form.get("nachts"))
+        )
     except AppError as exc:
         session.rollback()
         return _hours_sheet(
-            request, session, tenant, day, exc.say or SWITCH_FAILED, status=409
+            request,
+            session,
+            tenant,
+            day,
+            exc.say or SWITCH_FAILED,
+            status=409,
+            typed=hours,
         )
     if card is None:
         return _hours_sheet(request, session, tenant, day, NO_CHANGE, "ok")
