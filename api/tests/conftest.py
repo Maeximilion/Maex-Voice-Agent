@@ -18,7 +18,9 @@ from evals.scratch_db import (  # noqa: F401
     alembic_config,
     create_scratch_db,
     drop_scratch_db,
+    empty_scratch_db,
     migrate,
+    scratch_db_state,
 )
 
 LATENZ_BUDGET_MS = 300
@@ -194,14 +196,29 @@ def bounded_db(migrated_db_url):
         sessions.kw["bind"].dispose()
 
 
+@pytest.fixture(scope="session")
+def _reused_db(migrated_template_url):
+    """One copy of the template per test process (xdist worker), emptied after each
+    test instead of dropped: the copy and the drop were half the time of a test.
+    A list, so `migrated_db_url` can swap in a new copy."""
+    held = [scratch_db_state(create_scratch_db(template=migrated_template_url))]
+    yield held
+    drop_scratch_db(held[0].url)
+
+
 @pytest.fixture
-def migrated_db_url(migrated_template_url):
-    """Frische Datenbank auf dem aktuellen Schema, je Test eine eigene."""
-    url = create_scratch_db(template=migrated_template_url)
-    try:
-        yield url
-    finally:
-        drop_scratch_db(url)
+def migrated_db_url(_reused_db, migrated_template_url):
+    """A database on the current schema, fresh for every test.
+
+    Each test sees the state of a fresh copy of the template. A test that left
+    more than rows behind (a table, a grant, a setting) gets its database dropped
+    and the next test a new copy (`empty_scratch_db`)."""
+    yield _reused_db[0].url
+    if not empty_scratch_db(_reused_db[0]):
+        drop_scratch_db(_reused_db[0].url)
+        _reused_db[0] = scratch_db_state(
+            create_scratch_db(template=migrated_template_url)
+        )
 
 
 def lift_party_limits(session, tenant_id) -> None:
