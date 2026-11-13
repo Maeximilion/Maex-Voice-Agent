@@ -20,6 +20,7 @@ from sqlalchemy import Text, cast, select
 from sqlalchemy.orm import Session
 
 from api.core import time as clock
+from api.domain.status.hours import weekday_of
 from api.models import CallModeWindow, ServiceConfig, Tenant
 from api.models.tenants import WINDOW_MODES
 
@@ -58,7 +59,7 @@ def mode_at(
             CallModeWindow.call_mode,
         ).where(
             CallModeWindow.tenant_id == tenant.id,
-            CallModeWindow.weekday == local.weekday(),
+            CallModeWindow.weekday == weekday_of(session, tenant.id, local.date()),
             CallModeWindow.starts_at <= local.time(),
             CallModeWindow.ends_at > local.time(),
         )

@@ -57,6 +57,21 @@ def _window(day: date, opens: time, closes: time, zone: ZoneInfo) -> Window:
     return start, datetime.combine(end_day, closes, tzinfo=zone)
 
 
+def weekday_of(session: Session, tenant_id: uuid.UUID, day: date) -> int:
+    """The weekday whose windows hold on `day`: its own, or the one a special
+    day set for it is like ("wie Sonntag", T-9.5). Hours, seats, call mode
+    and call limit all follow it (#686)."""
+    like = session.scalar(
+        select(SpecialDay.like_weekday).where(
+            SpecialDay.tenant_id == tenant_id,
+            SpecialDay.date == day,
+            SpecialDay.status == "set",
+            SpecialDay.like_weekday.is_not(None),
+        )
+    )
+    return day.weekday() if like is None else like
+
+
 def windows_for_day(
     data: HoursData, day: date, service: str, zone: ZoneInfo
 ) -> list[Window]:
