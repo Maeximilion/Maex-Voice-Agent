@@ -32,6 +32,7 @@ from api.domain.menu.wishes import (
     classify_wish,
     denies_allergy,
     kitchen_note,
+    mentions_allergy,
     open_wish,
     removal_with,
     wish_candidates,
@@ -1577,9 +1578,6 @@ def test_a_second_gegen_keeps_its_ingredient(said, ingredient):
         "ich bin allergisch gegen Erdnüsse und auf dem Weg zu euch",
         "ich bin allergisch gegen Erdnüsse und auf Antibiotika angewiesen",
         "ich bin allergisch gegen Erdnüsse, auf Wiedersehen",
-        # Codex PR #338: a list repeats its own preposition.
-        "ich bin allergisch gegen Erdnüsse und auf Diät",
-        "ich bin allergisch gegen Erdnüsse und auf Reisen",
         # Codex PR #338: the order goes on after the list.
         "ich bin allergisch gegen Erdnüsse und möchte bestellen",
         "ich bin allergisch gegen Erdnüsse, und möchte zwei Pho Bo",
@@ -1848,3 +1846,91 @@ def test_a_denial_after_aber_keeps_the_question():
         "ich bin allergisch gegen Erdnüsse, aber ich habe keine Allergie", BEILAGE
     )
     assert (wish.kind, wish.ingredient) == ("allergy", None)
+
+
+# --- #670: allergy sentences the parser misread (L13) ---------------------------
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "keine Allergie gegen Erdnüsse, aber Sesam",
+        "Ich habe keine Allergie, nur Laktose",
+        "Ich habe keine Allergie gegen Nüsse, sondern gegen Sesam",
+    ],
+)
+def test_a_denial_with_an_allergen_behind_it_does_not_only_deny(said):
+    """The allergen behind the denial is noted or asked for (#670, P1)."""
+    from api.domain.menu.wishes import only_denies
+
+    assert not only_denies(said)
+    assert wish_of(said, BEILAGE).kind == "allergy"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich habe keine Allergie, aber bitte ohne Zwiebeln",
+        "Ich habe keine Allergie, aber die 13 bitte",
+    ],
+)
+def test_a_denial_with_a_wish_behind_it_still_only_denies(said):
+    from api.domain.menu.wishes import only_denies
+
+    assert only_denies(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich bin allergisch gegen Nüsse, meine Frau gegen Sesam",
+        "Erdnussallergie, mein Mann Sesam",
+        # A list repeats no other preposition: "auf" after "gegen" (Codex PR
+        # #338's trade-off, reversed by #670: one question, no lost allergen).
+        "Ich bin allergisch gegen Erdnüsse und auf Sesam",
+        "ich bin allergisch gegen Erdnüsse und auf Diät",
+    ],
+)
+def test_a_second_person_or_preposition_leaves_the_ingredient_open(said):
+    """Never the wife's allergy as the caller's, never a dropped sesame
+    (#670, P1): the ingredient stays open and the guest is asked."""
+    wish = wish_of(said, BEILAGE)
+    assert wish.kind == "allergy" and wish.ingredient is None
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ich vertrage Erdnüsse gar nicht",
+        "ich vertrage Nüsse leider nicht",
+        "ich vertrage Kuhmilch und Sahne nicht",
+    ],
+)
+def test_vertrage_with_its_negation_at_the_clause_end_is_an_allergy(said):
+    """(#670, P1): noted after the question "Wogegen?", as "ich vertrage
+    Milch nicht" already was."""
+    assert mentions_allergy(said)
+    wish = wish_of(said, BEILAGE)
+    assert wish.kind == "allergy" and wish.ingredient is None
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ich vertrage Erdnüsse sehr gut und nehme die 13",
+        # Codex PR #718: the "nicht" of another clause.
+        "Ich vertrage Erdnüsse gut und möchte nicht scharf essen",
+        "Ich vertrage alles, nur nicht zu scharf",
+    ],
+)
+def test_vertrage_without_its_own_negation_is_no_allergy(said):
+    assert not mentions_allergy(said)
+
+
+def test_another_persons_allergy_behind_a_denial_is_never_the_callers():
+    """Codex PR #718: "nur meine Frau gegen Sesam" behind the caller's denial
+    must not become the caller's allergy, which the caller's consent would
+    note with its reason."""
+    from api.domain.menu.wishes import only_denies
+
+    assert only_denies("Ich habe keine Allergie, nur meine Frau gegen Sesam")
