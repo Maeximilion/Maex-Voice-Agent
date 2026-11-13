@@ -121,11 +121,12 @@ _ADDITIVE = re.compile(
 # ill, or a legal step (D19: on any doubt the team). Stems, as in `_TRIGGERS`.
 # shortcut: a closed word list that misses other words for the same thing, add
 # the word when the call log shows it.
-# Word starts where a stem hides in other words ("zerbrochen", "Kübel"), and
+# Word starts where a stem hides in other words ("zerbrochen"), "übel" but
+# in "Kübel", "Dübel" and "grübeln" ("speiübel" counts), and
 # "arzt" anywhere but in "Schwarztee" and "Quarztorte": "Hausarzt" counts
 # (#657).
 _TEAM_ONLY = re.compile(
-    r"krank|\b(?:übel|uebel)|\berbroch|durchfall|vergift|(?<!schw)(?<!qu)arzt"
+    r"krank|(?<![kdg])(?:übel|uebel)|\berbroch|durchfall|vergift|(?<!schw)(?<!qu)arzt"
     r"|ärztin|notaufnahme"
     r"|anwalt|anwältin|polizei|gesundheitsamt|verbraucherzentrale"
 )
@@ -147,8 +148,10 @@ _WANTS_ANYTHING = re.compile(_WANTS)
 # A wish of its own in the gap ("möchte gern bestellen, aber zuerst
 # beschweren") is no part of it: it stays and keeps the sentence for the team
 # (#657). "gern" and "bitte" may stand there.
+# Verb forms only: "über die Bestellung beschweren" names what happened.
 _OTHER_WISH = (
-    r"(?:bestell|abhol|abzuhol|mitnehm|mitzunehm|reservier|tisch|nehm|brauch)\w*\b"
+    r"(?:(?:bestell|abhol|mitnehm|reservier|nehm|brauch)(?:e|en)?"
+    r"|abzuholen|mitzunehmen|tisch(?:e[ns]?)?)\b"
 )
 _WANTS_TO_COMPLAIN = re.compile(
     _WANTS

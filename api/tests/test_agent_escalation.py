@@ -267,6 +267,11 @@ def test_a_wish_inside_the_complaint_phrase_keeps_the_sentence_for_the_team():
     )
     assert only_a_complaint("Ich möchte mich gerne beschweren, die Pizza war kalt.")
     assert only_a_complaint("Ich will mich über die Lieferung beschweren.")
+    # A noun names what happened, no wish (Codex PR #715).
+    assert only_a_complaint(
+        "Ich möchte mich über die Bestellung beschweren, das Essen war kalt"
+    )
+    assert only_a_complaint("Ich möchte mich über die Abholung beschweren.")
 
 
 @pytest.mark.parametrize(
@@ -280,6 +285,9 @@ def test_a_wish_inside_the_complaint_phrase_keeps_the_sentence_for_the_team():
         ("Ich war beim Zahnarzt.", True),
         ("Ich habe erbrochen.", True),
         ("Mir ist übel.", True),
+        # Compounds count (Codex PR #715).
+        ("Das Essen war kalt, mir wurde danach speiübel.", True),
+        ("Mir war kotzübel.", True),
     ],
 )
 def test_an_incident_word_is_read_as_a_word_not_inside_another(said, incident):
