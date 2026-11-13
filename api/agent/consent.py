@@ -33,6 +33,7 @@ free text through.
 """
 
 import re
+import unicodedata
 from itertools import pairwise
 
 from api.domain.calls.consent import Answer
@@ -92,6 +93,22 @@ _FILLER = frozenset(
 # "Ja, kein Reis"). These two phrases are the exception and stay a yes
 # (review PR #142).
 _HARMLESS = ("kein problem", "nicht schlecht")
+# A guest who takes the agent for a person ("Ja, junge Frau") still answers
+# the question: the form of address is cut like `_HARMLESS`, before any reader
+# looks at the words (#648). The same five forms as
+# `escalation._ADDRESSED_AS_A_PERSON`, which has the truthful sentence said;
+# a test keeps the two lists equal. Whole phrases only: "Frau Müller" stays.
+_ADDRESS = re.compile(
+    r"\b(?:junge frau|junger mann|fr(?:ä|ae)ulein|gute frau|guter mann)\b"
+)
+
+
+def _lowered(text: str) -> str:
+    """Lowercase, with the forms of address cut out (a decomposed "ä" or a
+    no-break space in "junge Frau" is folded first, as in `escalation`)."""
+    return _ADDRESS.sub(" ", unicodedata.normalize("NFKC", text).lower())
+
+
 _WORD = re.compile(r"[a-zäöüß]+")
 # Verb first, subject second: a question, with or without its mark. Only the
 # verbs and subjects that are assent or filler words themselves, any other word
@@ -200,7 +217,7 @@ def _polite(words: list[str]) -> bool:
 def is_yes(text: str) -> bool:
     """An assent word, and nothing else but filler. A digit is never part of a
     yes: "Ja, 2" changes a quantity. A question is none: it asks."""
-    lowered = text.lower()
+    lowered = _lowered(text)
     if any(char.isdigit() for char in lowered):
         return False
     if "?" in lowered or asks(lowered):
@@ -313,7 +330,7 @@ def consent_answer(
     stays a word of the yes, also when `about` names it: "Ich bin nicht
     einverstanden" is a no, "Ich bin einverstanden" a yes. `refuse` names words
     a no may carry and a yes never: they make no yes."""
-    lowered = text.lower()
+    lowered = _lowered(text)
     rest = _WORD.sub(
         lambda word: (
             " " if word.group() in about and word.group() not in _YES else word.group()
@@ -389,7 +406,7 @@ def recording_answer(text: str) -> Answer:
         return "no"
     if any(
         _asks_back(_WORD.findall(sentence))
-        for sentence in _SENTENCE_END.split(text.lower())
+        for sentence in _SENTENCE_END.split(_lowered(text))
     ):
         return "unclear"
     return consent_answer(text, _RECORD_IT, refuse=_REFUSE)
@@ -524,7 +541,7 @@ def bare_answer(text: str) -> bool:
     drop it, and "Ja, bitte 20:00" would be a bare yes (Codex PR #368)."""
     if any(char.isdigit() for char in text):
         return False
-    words = _WORD.findall(text.lower())
+    words = _WORD.findall(_lowered(text))
     rest = " ".join(word for word in words if word not in _PRESENT)
     if not rest:
         return bool(words)
