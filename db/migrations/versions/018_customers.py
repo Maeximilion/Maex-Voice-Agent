@@ -14,7 +14,9 @@ them is T-6.7.
 On a database that holds a restaurant's data: backup first, with
 `bash scripts/backup.sh --label before_migration_018` (CLAUDE.md §8, docs/13
 §4). The downgrade drops the four tables with every row in them and the links
-on the orders; `orders.customer_id` stays as the plain column it was.
+on the orders; `orders.customer_id` stays as the plain column it was, emptied.
+It refuses while an objection to recognition exists: restore the backup then
+(#685).
 
 Revision: 018
 Revises: 017
@@ -206,6 +208,23 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
+    objections = bind.execute(
+        sa.text("SELECT count(*) FROM recognition_objections")
+    ).scalar_one()
+    if objections:
+        # An objection (Art. 21 GDPR) dropped here is gone after the next
+        # upgrade, and the number is recognised again (#685).
+        raise RuntimeError(
+            f"Migration 018 downgrade stopped, nothing changed: {objections} "
+            "objection(s) to recognition would be lost, and those numbers would "
+            "be recognised again after the next upgrade. Restore the backup taken "
+            "before the upgrade (bash scripts/backup.sh --label "
+            "before_migration_018) instead of downgrading."
+        )
+    # The customers go with their table: a link left on an order would stop the
+    # next upgrade at its foreign key (#685).
+    bind.execute(sa.text("UPDATE orders SET customer_id = NULL"))
     op.drop_constraint("ck_orders_address_on_delivery", "orders", type_="check")
     op.drop_constraint("fk_orders_address_tenant", "orders", type_="foreignkey")
     op.drop_constraint("fk_orders_customer_tenant", "orders", type_="foreignkey")
