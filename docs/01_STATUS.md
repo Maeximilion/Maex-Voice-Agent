@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.14
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.18
 
 ---
 
@@ -273,6 +273,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 13.11.2026 | **Batch 6 of the ultrareview ledger (#546: migrations), fix PR for #685: the downgrade of migration 018 empties the order links and refuses while an objection to recognition exists.** Red first (2 new round-trip tests on rows, both red). A link from an order to a customer stopped the next upgrade at `fk_orders_customer_tenant`; an objection (Art. 21 GDPR) was dropped silently, so the number would be recognised again. Now `orders.customer_id` is emptied with the customers, and the downgrade stops and names the backup restore while objections exist (as 017 does). Only the downgrade changed: no workbench migration is due. |
 | 13.11.2026 | **Batch 5 of the ultrareview ledger (#546: reservations, floor plan), fix PR for #680: removing a booked table is refused, and a refused save reads the other rooms again.** Red first (3 of 7 new test cases red). A floor plan save that removes a table, or a pair, a confirmed reservation sits on (begun at most `SEATED_HOURS` = 6 ago, or ahead) is refused with the guest and time named, so the name cannot be handed to a new table and booked twice; a past, cancelled or draft booking does not hold the table (a tablet draft is checked against the plan again at confirm, Codex #544), a renamed or moved table keeps its booking. After a refusal `raumplan.ts` reads the other rooms from the server, so a name another tablet took is not picked again on every retry (not run in a browser; compiled output checked by CI). Assumption: six hours covers a party still seated. |
 | 13.11.2026 | **Batch 6 of the ultrareview ledger (#546: modes and availability), fix PR for #682: a mode window ending at 24:00 no longer breaks every status read, and the bridge alarm honours the order switches.** Red first (4 of 6 new test cases red). `mode_at` reads a window's end as text, so `24:00` (how docs/03 ends a window at midnight) is the next midnight instead of a DataError on every call, `confirm` and tablet header while it is due; no migration. `bridge.silence` counts only the services switched on: with pickup and delivery off the register PC may be off without the red banner and the hourly push. |
 | 13.11.2026 | **Batch 4 of the ultrareview ledger (#546: speech in, dish number out), fix PR for #676: a clear card number is no longer lost or invented when a sentence is split (rule 2).** Red first (22 test cases). A piece that is one card number stays a position of its own when a name piece next to it is unclear ("die 23 und Ente" is the 23 and the Ente to ask about), unless the sentence carries a wish; a sentence kept whole with a card number beside more ("Pho Bo, äh, die 23", "die 23 und Pho Bo statt Wan-Tan-Suppe") asks which number instead of taking the name; "nee" is a correction word (one shared set with numberwords); a comma between two digits is a decimal comma, no separator ("eine Cola 0,5" no longer claims dish 5); an alias matched only without its numbers no longer wins over a dish of the same name once normalised ("Sake 200 ml" asks). The judge of spoken orders (`evals.heard.positions`) cuts the same way. Evals: cases 99/99, targets 1/23 (same as main), numbers 249/249. |
@@ -308,6 +309,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.18 · 13.11.2026:** Fix PR for #685: the downgrade of migration 018 empties order links and keeps objections
 - **v2.44.14 · 13.11.2026:** Fix PR for #680: a booked table is not removed silently, a refused save reads the other rooms again
 - **v2.44.13 · 13.11.2026:** Fix PR for #682: a mode window to 24:00 is read as midnight, the bridge alarm honours the order switches
 - **v2.44.12 · 13.11.2026:** Fix PR for #676: a clear card number is no longer lost or invented when a sentence is split
