@@ -21,6 +21,7 @@ from api.domain.access.admin import AdminRefused
 from api.domain.access.sessions import IDLE, stack_tenant_id
 from api.domain.access.setup import issue_link, use_link
 from api.gui.router import router as gui_router
+from api.gui.session import csrf_matches
 from api.gui.sse import _signed_in
 from api.main import app
 from api.models import GuiAccount, GuiLoginFailure, GuiSession, StaffChange
@@ -674,3 +675,11 @@ def test_without_a_team_pin_the_lock_page_says_so(client, engine):
         "/gui/entsperren", data={"csrf_token": "testtoken", "pin": PIN}
     )
     assert answer.status_code == 409 and "Team-PIN" in answer.text
+
+
+def test_csrf_matches_needs_both_ascii_and_equal():
+    assert csrf_matches("abc", "abc")
+    assert not csrf_matches("abc", "abd")
+    assert not csrf_matches("", "")
+    assert not csrf_matches(None, "abc") and not csrf_matches("abc", None)
+    assert not csrf_matches("äbc", "äbc")  # compare_digest takes no non-ASCII str

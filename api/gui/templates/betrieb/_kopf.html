@@ -1,0 +1,11 @@
+{# The header of a sub page of the operations view: the way back, its title and
+   the restaurant's name. In `block header`: `{{ kopf("Anrufe", tenant) }}`. #}
+{% macro kopf(title, tenant) %}
+<header>
+  <div class="top">
+    <a class="button" href="/gui">Zurück</a>
+    <h1 class="kz-title">{{ title }}</h1>
+    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
+  </div>
+</header>
+{% endmacro %}

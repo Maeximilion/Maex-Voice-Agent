@@ -16,6 +16,7 @@ from api.domain.access.sessions import (
     IDLE,
     SESSION_DAYS,
     SignInRefused,
+    count_failure,
     devices,
     end_sessions,
     mark_active,
@@ -654,3 +655,23 @@ def test_without_a_team_pin_a_locked_device_counts_no_try(session, tenant_id, re
             unlock(session, access.session_id, PIN, T0 + IDLE)
         assert "Team-PIN" in (refused.value.say or "")
     assert resolve(session, ready, tenant_id, T0 + IDLE) is not None
+
+
+def test_same_secret_compares_pins_by_value():
+    assert hashing.same_secret("1234", "1234")
+    assert not hashing.same_secret("1234", "1235")
+    assert not hashing.same_secret("1234", "123")
+    assert hashing.same_secret("ä1", "ä1")  # no ASCII limit, unlike str compare_digest
+
+
+def test_count_failure_gives_count_wait_and_last_failure_in_one_step():
+    now = datetime(2026, 11, 13, 12, 0, tzinfo=UTC)
+    assert count_failure(0, None, now) == (1, None, now)
+    assert count_failure(2, now - timedelta(minutes=1), now) == (
+        3,
+        now + timedelta(minutes=1),
+        now,
+    )
+    # A day without a failure starts the count again; a count of 0 never waits.
+    assert count_failure(2, now - timedelta(days=1), now) == (1, None, now)
+    assert count_failure(0, now - timedelta(minutes=1), now) == (1, None, now)
