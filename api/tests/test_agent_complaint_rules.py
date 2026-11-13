@@ -12,7 +12,7 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
 from api.agent.guards import note_said
@@ -878,3 +878,20 @@ def test_a_wish_from_before_keeps_the_models_handover(session, tenant_id, state)
     )
 
     assert_went_to_the_team(result, session, state)
+
+
+def test_a_null_phrase_left_in_a_row_matches_nothing_and_breaks_nothing(
+    session, tenant_id
+):
+    """#692: a row written by hand before migration 037 can hold a NULL among
+    its phrases. The matcher skips it: the other phrases still match, and a
+    complaint is not turned into an outage."""
+    session.execute(
+        text("ALTER TABLE complaint_rules DROP CONSTRAINT ck_complaint_rules_phrases")
+    )
+    row = rule(session, tenant_id, phrases=["kalt", None])
+
+    found = matching_rule(session, tenant_id, "Das Essen war kalt")
+
+    assert found is not None and found.id == row.id
+    assert matching_rule(session, tenant_id, "Das Essen war zu salzig") is None
