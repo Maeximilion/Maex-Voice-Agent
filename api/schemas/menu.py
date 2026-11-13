@@ -100,6 +100,9 @@ class Allergens(BaseModel):
 
     known: bool
     codes: list[str] = Field(default_factory=list)
+    # The LMIV names of `codes`, in the same order (#669): a letter alone
+    # means another allergen in another menu key.
+    names: list[str] = Field(default_factory=list)
     confirmed_at: date | None = None
 
 

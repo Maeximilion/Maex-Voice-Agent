@@ -22,6 +22,7 @@ from api.domain.menu.importer import (
 )
 from api.main import app
 from api.models import ItemAllergen, MenuItem
+from api.models.menu import ALLERGEN_CODES
 from api.tests.conftest import p95_ms
 from scripts.seed import seed
 
@@ -98,8 +99,13 @@ def test_gepflegte_allergene_in_der_reihenfolge_der_lmiv(session, tenant_id):
     assert result.allergens.known is True
     # Die Datei nennt F vor A, vorgelesen wird trotzdem immer A vor F.
     assert result.allergens.codes == ["A", "F"]
+    assert result.allergens.names == ["glutenhaltiges Getreide", "Soja"]
     assert result.allergens.confirmed_at == NOW.date()
-    assert result.say is None
+    # The core names them from the fixed table, never the model (#669, rule 1).
+    assert result.say == (
+        "Laut unseren Angaben enthält Nummer 23 Frühlingsrollen (4 Stück): "
+        "glutenhaltiges Getreide und Soja."
+    )
 
 
 def test_ohne_gepflegten_wert_gibt_es_keine_auskunft(session, tenant_id):
@@ -139,8 +145,12 @@ def test_ausverkauft_steht_auch_in_den_details(session, tenant_id):
     result = details(session, tenant_id, "23")
 
     assert result.sold_out is True
-    # Gepflegte Allergene, also bleibt Platz für den Satz aus der Suche.
-    assert result.say == "Frühlingsrollen (4 Stück) ist heute leider aus."
+    # Maintained allergens: their sentence, then the one of the search.
+    assert result.say == (
+        "Laut unseren Angaben enthält Nummer 23 Frühlingsrollen (4 Stück): "
+        "glutenhaltiges Getreide und Soja. "
+        "Frühlingsrollen (4 Stück) ist heute leider aus."
+    )
 
 
 def test_fehlende_allergen_auskunft_wiegt_schwerer_als_ausverkauft(session, tenant_id):
@@ -244,7 +254,7 @@ def test_tool_folgt_der_huelle(client, session, tenant_id):
 
     body = post(client, tenant_id, item.id).json()
 
-    assert body["ok"] is True and body["say"] is None
+    assert body["ok"] is True and body["say"].startswith("Laut unseren Angaben")
     assert set(body["data"]) == {
         "menu_item_id",
         "number",
@@ -258,6 +268,7 @@ def test_tool_folgt_der_huelle(client, session, tenant_id):
     assert body["data"]["allergens"] == {
         "known": True,
         "codes": ["A", "F"],
+        "names": ["glutenhaltiges Getreide", "Soja"],
         "confirmed_at": str(date(2026, 9, 18)),
     }
 
@@ -342,3 +353,41 @@ def test_latenz_p95_unter_300_ms(client, session, tenant_id):
 
     print(f"\nget_item_details p95 = {p95:.1f} ms")
     assert p95 < 300, f"p95 {p95:.1f} ms über dem Budget aus docs/04 §1"
+
+
+def test_every_code_has_its_lmiv_name_in_lmiv_order(session, tenant_id):
+    """All 14 letters, stored in reverse: each gets the name of the LMIV
+    (Annex II), in its order (#669). The model never maps a letter itself."""
+    item = gericht(session, tenant_id, "12")
+    for code in reversed(ALLERGEN_CODES):
+        session.add(
+            ItemAllergen(
+                menu_item_id=item.id,
+                allergen_code=code,
+                confirmed_by="Küche",
+                confirmed_at=NOW,
+            )
+        )
+    session.commit()
+
+    result = details(session, tenant_id, "12")
+
+    assert result.allergens.names == [
+        "glutenhaltiges Getreide",
+        "Krebstiere",
+        "Eier",
+        "Fisch",
+        "Erdnüsse",
+        "Soja",
+        "Milch",
+        "Schalenfrüchte",
+        "Sellerie",
+        "Senf",
+        "Sesam",
+        "Schwefeldioxid und Sulfite",
+        "Lupinen",
+        "Weichtiere",
+    ]
+    assert result.say is not None
+    assert result.say.endswith("Lupinen und Weichtiere.")
+    assert result.say.index("Krebstiere") < result.say.index("Sellerie")
