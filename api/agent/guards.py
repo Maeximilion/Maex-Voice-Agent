@@ -66,7 +66,7 @@ from api.agent.state import (
 from api.domain.menu.items import option_key
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.search import SAY_WHICH_NUMBER
-from api.domain.menu.wishes import mentions_allergy
+from api.domain.menu.wishes import mentions_allergy, speaks_of_health
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
 HINT_CONFIRM = (
@@ -230,7 +230,7 @@ def note_said(state: ConversationState, say: str) -> None:
 _ALWAYS = re.compile(
     r"keine verl(?:ä|ae)ssliche auskunft"
     r"|(?:allergen|spuren|gluten|laktose|lactose|nuss|sesam|soja|milch|sellerie"
-    r"|senf|lupinen|sulfit|weizen|fisch)frei\b|\beie?r?frei\b"
+    r"|senf|lupinen|sulfit|weizen|fisch)frei(?:e[mnrs]?)?\b|\beie?r?frei(?:e[mnrs]?)?\b"
 )
 # Absence said of something: a claim only where the sentence names an
 # allergen ("enthält keine Nüsse"), not "Die Bestellung enthält keine
@@ -238,13 +238,18 @@ _ALWAYS = re.compile(
 _ABSENT = re.compile(
     r"\bfrei von\b|\b(?:enthält|enthaelt|enthalten)\b(?:\s+\w+){0,3}\s+kein"
     r"|\bnicht enthalten|\bkein\w* \w+ (?:drin|darin|dabei)\b"
+    # "In der 13 sind keine Nüsse enthalten", "Die 13 ist ohne Erdnüsse"
+    # (#656); "die 13 ohne Erdnüsse, notiert" says a wish back, no claim.
+    r"|\bkein\w*(?:\s+\w+){0,3}\s+enthalten\b"
+    r"|\b(?:ist|sind|kommt|kommen|wird|werden)\b(?:\s+\w+){0,3}\s+ohne\b"
 )
 # Safety and separate preparation: a claim in a call that speaks of
 # allergies.
 _SAFE = re.compile(
     r"\b(?:keine|ohne) (?:spuren|kontamination|kreuzkontakt|kontakt)\b"
     r"|unbedenklich|bedenkenlos|garantier|hundertprozentig|\b100 ?(?:%|prozent)"
-    r"|\b(?:ist|sind|wäre|waere|bleibt)\b(?:\s+\w+){0,3}\s+sicher"
+    # Not the model asking the guest: "Sind Sie sicher, dass ...?" (#656).
+    r"|\b(?:ist|sind|wäre|waere|bleibt)\b(?!\s+(?:sie|du|ihr)\b)(?:\s+\w+){0,3}\s+sicher"
     r"\s*(?:[.!?,]|$|f(?:ü|ue)r\b|zu essen)"
     r"|getrennt (?:zubereitet|frittiert|gekocht|gelagert)"
     r"|eigene[nmrs]? (?:fritteuse|pfanne|öl|oel)"
@@ -393,7 +398,7 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
         )
     else:
         ids = [line["menu_item_id"] for line in lines]
-        if any(mentions_allergy(line.get("note") or "") for line in lines):
+        if any(speaks_of_health(line.get("note") or "") for line in lines):
             refused = _ALLERGY_NOTE
         elif not all(item_id in state.known_item_ids for item_id in ids):
             refused = _CART_ITEM
@@ -473,7 +478,7 @@ def refusal(
     the model gets instead. `cart_sent`: the same answer carried a `cart`,
     which the core has taken by now. `call` as the model wrote it, before the
     core writes the allergies onto it (`allergies.noted_call`)."""
-    if any(mentions_allergy(note) for note in _notes(call)):
+    if any(speaks_of_health(note) for note in _notes(call)):
         return _ALLERGY_NOTE
     if call.name == "get_item_details" and _states_an_allergy(user_text, call):
         return _STATED_ALLERGY

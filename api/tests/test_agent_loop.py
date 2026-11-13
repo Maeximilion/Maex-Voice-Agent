@@ -44,6 +44,7 @@ from api.agent.loop import (
     TurnResult,
     _booked_say,
     _local_times,
+    _names_health,
     _order_lines,
     _still_open,
 )
@@ -1870,8 +1871,8 @@ def test_the_card_names_an_allergy_only_as_a_removal(state):
     lines = _order_lines(state, 200)
 
     assert lines == (
-        "1x 13 Pho Bo (ohne Erdnuss, ohne Zwiebeln), "
-        "für die ganze Bestellung: ohne Sesam"
+        "für die ganze Bestellung: ohne Sesam, "
+        "1x 13 Pho Bo (ohne Erdnuss, ohne Zwiebeln)"
     )
     assert "Allergie" not in lines
     assert state.allergy_consent == "yes"
@@ -2582,3 +2583,29 @@ def test_a_long_open_sentence_is_repeated_whole(state):
     note_said(state, asked)
 
     assert _still_open(state) == asked
+
+
+def test_the_note_for_the_whole_order_is_kept_first_and_never_counted(state):
+    """What the kitchen must know first is no dish and must not be the first
+    to go when the card is short (#656, P2)."""
+    for n in range(10):
+        dish = str(uuid.uuid4())
+        state.seen_items[dish] = {"number": f"{100 + n}", "name": "Salat"}
+        state.cart.append({"menu_item_id": dish, "quantity": 1})
+    state.allergies = [Allergy(ingredient="Sesam")]
+    state.allergy_consent = "yes"
+
+    lines = _order_lines(state, 70)
+
+    assert lines.startswith("für die ganze Bestellung: ohne Sesam, 1x 100")
+    assert lines.endswith("weitere Positionen") and len(lines) <= 70
+    shown = lines.count("1x ")
+    assert lines.endswith(f"{10 - shown} weitere Positionen")
+
+
+def test_a_noted_ingredient_matches_its_plural_on_a_card(state):
+    """ "Erdnuss" from "Erdnussallergie" is in "Erdnüsse" and "Erdnuesse"
+    (#656, P2): a summary naming them keeps the allergy off the card."""
+    state.allergies = [Allergy(ingredient="Erdnuss")]
+    for said in ("es geht um die Erdnüsse in der Soße", "die Erdnuesse in der Soße"):
+        assert _names_health(state, said)

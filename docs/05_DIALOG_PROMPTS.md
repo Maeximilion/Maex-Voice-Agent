@@ -192,7 +192,14 @@ every model sentence in a call that speaks of allergies (or names an
 allergen) and hands over the same way when it claims what no database value
 answers ("sicher", "glutenfrei", "keine Spuren", "enthält keine",
 "garantiert", separate preparation) or is the fixed sentence
-(`guards.allergen_claim`)
+(`guards.allergen_claim`). Inflected and turned forms count too ("eine
+glutenfreie Variante", "es sind keine Nüsse enthalten", "die 13 ist ohne
+Erdnüsse"); a wish said back ("die 13 ohne Erdnüsse, notiert") and the
+model asking "Sind Sie sicher, dass ...?" do not (#656). A note the model
+writes is refused for the same health words a card may not carry
+(`wishes.speaks_of_health`: an allergy word, "Zöliakie", "reagiert auf",
+"darf kein"), and on a card the note for the whole order stands first and
+is never counted as a position
 
 The guest names an additive (#638, § 5 LMZDV): "Ist da
 Geschmacksverstärker drin?", "Sind da Konservierungsstoffe drin", "die 13

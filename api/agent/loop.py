@@ -12,7 +12,6 @@ anzukündigen (CLAUDE.md §2 Regel 5: kein Anruf geht verloren).
 
 import json
 import logging
-import re
 import time
 from collections.abc import Callable
 from contextlib import suppress
@@ -65,7 +64,7 @@ from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.calls import record_consent
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import names_an_allergen
-from api.domain.menu.wishes import mentions_allergy
+from api.domain.menu.wishes import speaks_of_health
 from api.domain.ordering.readback import spoken_euro
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Reservation, Tenant
@@ -1550,15 +1549,17 @@ def _order_lines(state: ConversationState, room: int) -> str:
         dish = " ".join(x for x in (number, name) if x) or "Gericht"
         full.append(f"{line['quantity']}x {dish}{tail}")
         short.append(f"{line['quantity']}x {number or name or 'Gericht'}{tail}")
-    if noted.get("note"):
-        full.append(f"für die ganze Bestellung: {noted['note']}")
-        short.append(full[-1])
-    if len(text := ", ".join(full)) <= room:
+    # What the kitchen must know for the whole order comes first and is no
+    # position: it never goes and is never counted (#656).
+    whole = [f"für die ganze Bestellung: {noted['note']}"] if noted.get("note") else []
+    if len(text := ", ".join(whole + full)) <= room:
         return text
     for kept in range(len(short), -1, -1):
         rest = len(short) - kept
-        parts = short[:kept] + (
-            [f"{rest} weitere Position{'en' * (rest > 1)}"] if rest else []
+        parts = (
+            whole
+            + short[:kept]
+            + ([f"{rest} weitere Position{'en' * (rest > 1)}"] if rest else [])
         )
         if len(text := ", ".join(parts)) <= room:
             return text
@@ -1583,29 +1584,26 @@ def _booked_say(
     return placed.replace("Ihre Bestellung ist", SAY_FOR_NAME.format(name=name), 1)
 
 
-# Health data a card may not carry that `mentions_allergy` does not read: it
-# reads what can become a kitchen note, a card has to be stricter (review of
-# the repo audit fix, 27.10.2026).
-_HEALTH_ON_A_CARD = re.compile(
-    r"z(?:ö|oe)liak|reagier\w*\s+auf|darf\s+kein|\bmeiden\b", re.IGNORECASE
-)
-
-
 def _names_health(state: ConversationState, text: str) -> bool:
     """Does `text` speak of the guest's allergy: in an allergy word, in other
     words for one, or by an ingredient the guest named as one in this call?"""
-    folded = text.casefold()
+    folded = _plain_vowels(text)
     # shortcut: the ingredient is matched as a substring, so a short one like
     # "Ei" also hits "bei" and that card gets the sentence of its reason, the
     # safe side; split it into words if the team misses requests on cards.
-    return (
-        mentions_allergy(text)
-        or bool(_HEALTH_ON_A_CARD.search(text))
-        or any(
-            allergy.ingredient and allergy.ingredient.casefold() in folded
-            for allergy in state.allergies
-        )
+    return speaks_of_health(text) or any(
+        allergy.ingredient and _plain_vowels(allergy.ingredient) in folded
+        for allergy in state.allergies
     )
+
+
+def _plain_vowels(text: str) -> str:
+    """Umlauts in both spellings to their plain vowel: "Erdnuss" is then in
+    "Erdnüsse" and "Erdnuesse" (#656)."""
+    text = text.casefold().replace("ß", "ss")
+    for umlaut, plain in (("ä", "a"), ("ö", "o"), ("ü", "u")):
+        text = text.replace(umlaut, plain).replace(f"{plain}e", plain)
+    return text
 
 
 def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
