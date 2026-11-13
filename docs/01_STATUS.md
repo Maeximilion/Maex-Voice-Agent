@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.2
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.3
 
 ---
 
@@ -304,6 +304,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.3 · 13.11.2026:** Sessions load caveman at level full instead of ultra (Maxi, 13.11.2026).
 - **v2.44.2 · 13.11.2026:** Test database reused per xdist worker, full suite locally 352 s to 169 s
 - **v2.44.1 · 13.11.2026:** #681 fix: booking time, limits and horizon on the right day and hour around midnight and the clock change
 - **v2.44.0 · 13.11.2026:** Loop D PR 5 of #695: CLAUDE.md reworded below 25000 bytes (31162 to 24977), no rule dropped

@@ -147,7 +147,7 @@ Large docs (`docs/01_STATUS.md`, `docs/07_WORKPACKAGES.md`, `docs/20_VOICE_LAYER
 
 Closing the loop is no follow-up step: an untested path, unverified claim or known gap in what was just built belongs to the task; test and fix it before reporting, unasked. "I can test X if you want" is only for work outside the scope or behind a wait point.
 
-Every session loads the personal skills `code-autopilot` and `caveman` at level `ultra` (Skill tool, argument `ultra`) unasked (Maxi, 2026-10-19): `/start`, `/task` (after its model and environment checks) and `/bug` load both, any other session before its first reply; one not installed: say so in one line. `caveman` shapes chat replies to Maxi only: everything written to the repo, handover blocks too, stays in full English sentences, and questions stay closed popups. Where a skill differs, this file wins.
+Every session loads the personal skills `code-autopilot` and `caveman` (Skill tool, `caveman` with the argument `full`, Maxi, 2026-11-13) unasked (Maxi, 2026-10-19): `/start`, `/task` (after its model and environment checks) and `/bug` load both, any other session before its first reply; one not installed: say so in one line. `caveman` shapes chat replies to Maxi only: everything written to the repo, handover blocks too, stays in full English sentences, and questions stay closed popups. Where a skill differs, this file wins.
 
 ### Questions
 Ask closed questions (yes/no or A/B/C with marked recommendation), **one per interruption**, only when the answer is needed, as clickable choices (`AskUserQuestion`). Research answerable questions yourself. Mark assumptions and write them to `docs/01_STATUS.md`.
