@@ -976,3 +976,99 @@ def test_the_announcements_asterisk_plays_are_the_sentences_of_the_code(tmp_path
         stage.prints["missed_later.sln16"] = stale
         [(_, ok, detail)] = drill.drill_announcements(stage)
         assert not ok and "missed_later" in detail
+
+
+def _blocked_stage(tmp_path, dropped: str = "12\n") -> Stage:
+    stage = Stage(
+        tmp_path,
+        {
+            128: {
+                "router": [
+                    *router(128, "dials", "answered"),
+                    "NoOp(DRILL 128 caller leg ended dialstatus=ANSWER)",
+                ],
+                "asterisk": ["call 1.1: voice leg ANSWER ending [hangup]"],
+            }
+        },
+    )
+    stage.prints["line_note"] = "no_caller_audio"
+    stage.prints["ps -q asterisk"] = "abc123\n"
+    stage.prints["iptables -vxn"] = dropped
+    return stage
+
+
+def _rule_commands(stage: Stage) -> list[tuple[str, ...]]:
+    return [c for c in stage.commands if c[:2] == ("run", "--rm")]
+
+
+def test_a_caller_whose_rtp_is_blocked_is_noted_and_the_rule_comes_off(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(drill, "NOTE_WAIT_SECONDS", 0)
+    stage = _blocked_stage(tmp_path)
+
+    checks = drill.drill_caller_rtp_blocked(stage)
+
+    assert all(ok for _, ok, _ in checks), checks
+    assert len(checks) == 3
+    on, off = _rule_commands(stage)
+    for run in (on, off):
+        assert "NET_ADMIN" in run and "container:abc123" in run
+    assert "iptables -I INPUT -p udp --dport 10000:10039 -j DROP" in on[-1]
+    assert "iptables -D INPUT -p udp --dport 10000:10039 -j DROP" in off[-1]
+    placed = next(
+        i for i, c in enumerate(stage.commands) if "channel originate" in str(c)
+    )
+    assert stage.commands.index(on) < placed < stage.commands.index(off)
+
+
+def test_a_blocked_leg_that_sent_no_packet_measures_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(drill, "NOTE_WAIT_SECONDS", 0)
+    *_, (_, ok, detail) = drill.drill_caller_rtp_blocked(_blocked_stage(tmp_path, ""))
+    assert not ok and detail.startswith("0 packets")
+
+
+def test_a_blocked_leg_without_the_note_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(drill, "NOTE_WAIT_SECONDS", 0)
+    stage = _blocked_stage(tmp_path)
+    stage.prints["line_note"] = "none"
+    checks = drill.drill_caller_rtp_blocked(stage)
+    assert [ok for _, ok, _ in checks] == [True, False, True]
+
+
+def test_a_docker_that_refuses_the_rule_says_so_and_places_no_call(tmp_path):
+    stage = _blocked_stage(tmp_path)
+    stage.prints["iptables -I"] = drill.DrillError("operation not permitted")
+
+    [(_, ok, detail)] = drill.drill_caller_rtp_blocked(stage)
+
+    assert not ok and "operation not permitted" in detail
+    assert not any("channel originate" in str(c) for c in stage.commands)
+
+
+def test_the_rule_comes_off_when_the_call_breaks(tmp_path, monkeypatch):
+    def broken(*_args):
+        raise drill.DrillError("a call of the last drill does not end")
+
+    monkeypatch.setattr(drill, "silent_call", broken)
+    stage = _blocked_stage(tmp_path)
+
+    with pytest.raises(drill.DrillError):
+        drill.drill_caller_rtp_blocked(stage)
+    assert "iptables -D" in _rule_commands(stage)[-1][-1]
+
+
+def test_the_blocked_ports_are_the_media_range_and_its_caller_speaks():
+    rtp = (drill.CONFIG_DIR / "conf" / "rtp.conf").read_text()
+    start, end = drill.RTP_PORTS.split(":")
+    assert f"rtpstart={start}" in rtp and f"rtpend={end}" in rtp
+    dialplan = (drill.CONFIG_DIR / "drill" / "extensions.conf").read_text()
+    speaks = next(line for line in dialplan.splitlines() if "?speaks)" in line)
+    assert '"128"' in speaks
+    assert drill.drill_caller_rtp_blocked in [s for _, s in drill.SCENARIOS]
+
+
+def test_the_number_of_the_blocked_caller_must_not_show_in_the_logs(tmp_path):
+    stage = Stage(tmp_path, {})
+    stage.logs["asterisk"].append(f"Dial({drill.NUMBER_PREFIX}128)")
+    assert not stage.no_caller_in_the_logs()[1]
