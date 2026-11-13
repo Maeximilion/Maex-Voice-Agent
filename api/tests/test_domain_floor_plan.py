@@ -629,7 +629,9 @@ def test_a_confirmation_under_way_holds_its_table_against_a_removal(
                 .where(DiningTable.id == uuid.UUID(t5["id"]))
                 .with_for_update(read=True)
             ).all()
-            confirming.get(Reservation, booking_id).status = "confirmed"
+            draft = confirming.get(Reservation, booking_id)
+            assert draft is not None
+            draft.status = "confirmed"
             confirming.flush()
             thread = threading.Thread(target=removal)
             thread.start()
