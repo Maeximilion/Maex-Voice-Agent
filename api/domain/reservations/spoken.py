@@ -94,18 +94,20 @@ def spoken_time(dt: datetime) -> str:
     return f"{hour} Uhr {minute}"
 
 
+def daytime_word(hour: int) -> str:
+    """Tells 12:30 ("mittags") from 00:30 ("nachts"), which `spoken_time` says alike."""
+    if 5 <= hour < 11:
+        return "morgens"
+    if 11 <= hour < 14:
+        return "mittags"
+    if 14 <= hour < 17:
+        return "nachmittags"
+    if 17 <= hour < 23:
+        return "abends"
+    return "nachts"
+
+
 def spoken_daytime(dt: datetime) -> str:
     """„abends um sieben": die Tageszeit macht eine Uhrzeit ohne Tag eindeutig."""
-    hour = dt.hour
-    if 5 <= hour < 11:
-        daytime = "morgens"
-    elif 11 <= hour < 14:
-        daytime = "mittags"
-    elif 14 <= hour < 17:
-        daytime = "nachmittags"
-    elif 17 <= hour < 23:
-        daytime = "abends"
-    else:
-        daytime = "nachts"
-    clock = _hour_word(hour, standalone=True) if dt.minute == 0 else spoken_time(dt)
-    return f"{daytime} um {clock}"
+    clock = _hour_word(dt.hour, standalone=True) if dt.minute == 0 else spoken_time(dt)
+    return f"{daytime_word(dt.hour)} um {clock}"

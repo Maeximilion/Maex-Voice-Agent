@@ -835,3 +835,39 @@ def test_a_horizon_of_one_day_is_said_in_the_singular(session, tenant_id):
     result = check_slot(session, tenant_id, berlin(date(2026, 9, 17), 19), 2, now=NOW)
     assert result.say is not None
     assert "höchstens einen Tag im Voraus" in result.say
+
+
+def test_after_midnight_the_same_day_limit_counts_for_the_evening(session, tenant_id):
+    """#681: Monday 18:00 to 01:00, a call at 23:00 for 00:15 is the same
+    evening, so the smaller same-day limit holds, not the general one."""
+    _nachtfenster(session, tenant_id, weekday=0)
+    result = check_slot(
+        session, tenant_id, berlin(DIENSTAG, 0, 15), 7, now=berlin(MONTAG, 23)
+    )
+    assert result.available is False and result.team_callback is True
+    assert result.say is not None
+    assert result.say.startswith("Für sieben Personen noch heute")
+
+
+def test_the_night_of_the_last_horizon_day_can_be_booked(session, tenant_id):
+    """#681: the horizon counts service days, so 00:15 after the last day's
+    evening belongs to that evening (docs/04: "whole evening")."""
+    _set_config(session, tenant_id, reservation_max_days_ahead=6)
+    _nachtfenster(session, tenant_id, weekday=0)
+    night = datetime(2026, 9, 22, 0, 15, tzinfo=BERLIN)
+    assert check_slot(session, tenant_id, night, 2, now=NOW).available is True
+    beyond = check_slot(session, tenant_id, berlin(date(2026, 9, 22), 19), 2, now=NOW)
+    assert beyond.available is False and beyond.say is not None
+    assert "höchstens 6 Tage" in beyond.say
+
+
+def test_a_party_above_the_limit_hears_no_other_time(session, tenant_id, book):
+    """#681: alternatives for a party the agent may not book itself would end
+    in the team anyway, after a yes for a time it never could promise."""
+    _evening_in_two_turns(session, tenant_id)
+    book(berlin(DIENSTAG, 19, 0), 20)
+    result = check_slot(session, tenant_id, berlin(DIENSTAG, 19, 30), 6, now=NOW)
+    assert result.available is False and result.team_callback is True
+    assert result.alternatives == []
+    assert result.say is not None
+    assert result.say.startswith("Für sechs Personen noch heute")

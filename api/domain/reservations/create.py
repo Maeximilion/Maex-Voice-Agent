@@ -20,7 +20,12 @@ from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone, number_or_none
 from api.domain.reservations.capacity import lock_capacity_days
 from api.domain.reservations.slots import check_slot
-from api.domain.reservations.spoken import spoken_date, spoken_party_size, spoken_time
+from api.domain.reservations.spoken import (
+    daytime_word,
+    spoken_date,
+    spoken_party_size,
+    spoken_time,
+)
 from api.models import AuditLog, Call, Reservation, Tenant
 from api.schemas.reservations import (
     CreateReservationRequest,
@@ -152,8 +157,11 @@ def readback(r: Reservation, zone: ZoneInfo) -> str:
     """
     local = r.reserved_for.astimezone(zone)
     when = spoken_date(local, today=r.created_at.astimezone(zone).date())
+    # The daytime word: "halb eins" is 00:30 and 12:30 alike, and the guest's
+    # yes confirms what is read back (#681).
     satz = (
-        f"Ein Tisch für {spoken_party_size(r.party_size)} {when} um {spoken_time(local)}"
+        f"Ein Tisch für {spoken_party_size(r.party_size)} {when}"
+        f" um {spoken_time(local)} {daytime_word(local.hour)}"
         f", auf den Namen {r.guest_name}"
     )
     if r.note:
