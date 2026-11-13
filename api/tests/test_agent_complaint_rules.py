@@ -925,3 +925,21 @@ def test_a_bare_answer_with_an_address_still_hears_the_truthful_sentence(
 
     assert say[0] == SAY_NOT_A_PERSON
     assert SAY_WHAT_CAN_I_DO in say
+
+
+@pytest.mark.parametrize("answer", ["Nein junge Frau,", "Ja, junger Mann,"])
+def test_an_answer_with_an_address_and_a_request_hears_the_truthful_sentence(
+    session, tenant_id, answer
+):
+    """Codex PR #745: the clause with the address is cut off with the answer;
+    the sentence of the AI still comes first."""
+    rule(session, tenant_id)
+    state = asked(session, tenant_id)
+
+    say = (
+        loop(session)
+        .run_turn(state, f"{answer} ich bin unzufrieden, das Essen war kalt.")
+        .say
+    )
+
+    assert say == [SAY_NOT_A_PERSON, OFFER]
