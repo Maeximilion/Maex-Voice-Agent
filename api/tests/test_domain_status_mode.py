@@ -6,7 +6,7 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput
@@ -276,3 +276,53 @@ def test_the_header_token_changes_when_a_window_begins(session, tenant_id):
     during = switches.config_change_token(session, tenant_id, now=NOW)
 
     assert before != during
+
+
+# --- #682: a window to midnight ends at 24:00 ------------------------------
+
+
+def midnight_window(session, tenant_id, mode, starts, weekday=FRIDAY) -> None:
+    """Written by SQL as the docs say: Python's time has no 24:00."""
+    session.execute(
+        text(
+            "INSERT INTO call_mode_windows (id, tenant_id, weekday, starts_at, ends_at,"
+            " call_mode) VALUES (:id, :tenant, :day, :starts, '24:00', :mode)"
+        ),
+        {
+            "id": uuid.uuid4(),
+            "tenant": tenant_id,
+            "day": weekday,
+            "starts": starts,
+            "mode": mode,
+        },
+    )
+    session.commit()
+
+
+def test_a_window_ending_at_midnight_holds_until_midnight(session, tenant_id):
+    """#682: psycopg could not read 24:00, and every mode read failed while
+    such a window was due."""
+    configure(session, tenant_id, call_mode="shadow")
+    midnight_window(session, tenant_id, "primary", time(18))
+
+    now = now_mode(session, tenant_id, datetime(2026, 10, 30, 23, 30, tzinfo=BERLIN))
+
+    assert now.mode == "primary"
+    assert now.planned_until == datetime(2026, 10, 31, 0, 0, tzinfo=BERLIN)
+
+
+def test_a_midnight_window_of_another_day_does_not_break_the_read(session, tenant_id):
+    configure(session, tenant_id, call_mode="shadow")
+    midnight_window(session, tenant_id, "primary", time(18), weekday=FRIDAY - 1)
+
+    assert now_mode(session, tenant_id).mode == "shadow"
+
+
+def test_a_midnight_window_beside_a_shorter_one_of_its_mode_wins(session, tenant_id):
+    configure(session, tenant_id, call_mode="shadow")
+    window(session, tenant_id, "primary", time(17), time(22))
+    midnight_window(session, tenant_id, "primary", time(17, 30))
+
+    now = now_mode(session, tenant_id)
+
+    assert now.planned_until == datetime(2026, 10, 31, 0, 0, tzinfo=BERLIN)
