@@ -1444,6 +1444,27 @@ def test_a_card_number_stays_a_position_beside_an_unclear_name(
     assert position_parts(session, sushi, said, now=NOW) == parts
 
 
+@pytest.fixture
+def thirty(session, tenant_id):
+    """A number with and without a letter, as the register has them."""
+    rows = "30;Ente Kung Pao;Hauptgerichte;12,00;;ja\n30a;Huhn Kung Pao;Hauptgerichte;11,00;;ja\n"
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + rows, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    return tenant_id
+
+
+@pytest.mark.parametrize("said", ["Die 30, A.", "die 30, ah"])
+def test_a_letter_after_a_pause_is_not_cut_off_its_number(session, thirty, said):
+    """The cut at card numbers must not take the 30 for a 30a and leave the
+    letter as a piece of its own."""
+    assert position_parts(session, thirty, said, now=NOW) == [said]
+    with pytest.raises((Ambiguous, NotFound)):
+        suche(session, thirty, said)
+
+
 def test_the_same_dish_named_twice_keeps_the_sentence_whole(session, sushi):
     """Codex PR #721: the cut at card numbers skipped the check for one dish
     named in other words, and Pho Bo (the 13) became two positions."""
@@ -1482,6 +1503,15 @@ def test_a_sentence_kept_whole_with_a_card_number_asks(
     with pytest.raises(Ambiguous) as err:
         suche(session, sushi, said, split_check=split_check)
     assert "Welche Nummer" in (err.value.say or "")
+
+
+def test_a_joined_number_with_a_quantity_is_no_card_number_beside_a_name(
+    session, sushi
+):
+    """Codex PR #721: the check for a card number beside more cut "drei und
+    zwanzig" into a 3 and asked, though it is 23 portions of Pho Bo."""
+    result = suche(session, sushi, "drei und zwanzig Portionen Pho Bo")
+    assert nummern(result) == ["13"]
 
 
 def test_nee_is_a_correction():

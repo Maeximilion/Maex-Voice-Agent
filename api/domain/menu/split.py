@@ -99,12 +99,14 @@ def _strip(part: str) -> str:
 def separator_pieces(text: str) -> int:
     """Wie viele Stuecke ein Text an den Trennern hat, ohne jede Pruefung. Fuer
     die Grenze der Spannen in search.position_parts: "Fisch und Chips" hat zwei."""
-    return len(cut_at_separators(text))
+    return len(_SEPARATOR.split(text.strip()))
 
 
 def cut_at_separators(text: str) -> list[str]:
-    """The pieces of a text at the separators, without any check."""
-    return [_strip(p) for p in _SEPARATOR.split(text.strip())]
+    """The pieces of a text at the separators, without the check whether it
+    may be split at all, but with a joined number kept whole ("drei und
+    zwanzig Portionen", Codex PR #721) and a wish kept at its piece."""
+    return [_strip(p) for p in _split(text.strip(), by_position=False)]
 
 
 def _separable(text: str) -> bool:

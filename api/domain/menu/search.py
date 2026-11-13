@@ -43,8 +43,10 @@ from api.domain.menu.items import card_format, option_groups
 from api.domain.menu.items import is_sold_out as _sold_out
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.domain.menu.numberwords import (
+    CARD_SUFFIXES,
     CardFormat,
     canonical_card,
+    fold,
     sole_item_number,
 )
 from api.domain.menu.sold_out import alternatives
@@ -396,10 +398,13 @@ def _position_parts(
         # it as dish and wish, and asks if a number is lost there.
         # The same dish named twice in other words ("die 13 und Pho Bo") may
         # be one portion: whole, so the search asks (Codex PR #721).
+        # A lone letter after a pause ("Die 30, A.") is the number's letter,
+        # not a piece of its own: whole, the 30 is not taken for a 30a.
         if (
             not any(numbers)
             or wish_candidates(query)
             or any(len(words) > 1 for words in said.values())
+            or any(fold(p).strip(" .!?") in _LETTER_PIECES for p in pieces)
         ):
             return [query]
         cut: list[str] = []
@@ -463,6 +468,10 @@ def _position_parts(
     if len(positions) == 1 or any(len(words) > 1 for words in said.values()):
         return [query]
     return positions
+
+
+# A card letter said on its own, as the ear writes it ("A", "ah").
+_LETTER_PIECES = frozenset({"ah", *CARD_SUFFIXES})
 
 
 def _longest_dish(session: Session, tenant_id: uuid.UUID) -> int:
