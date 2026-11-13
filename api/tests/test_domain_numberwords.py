@@ -1406,3 +1406,86 @@ def test_a_pause_before_the_quantity_noun_still_asks_after_eine(text):
     """Codex on PR #362 (cd49a14): the quantity noun after a pause was not
     seen, so "eine zwanzig äh Portionen Pho" went to the name search as Pho."""
     assert sole_item_number(text) == (None, True)
+
+
+# --- #677: quantity and card number never read into each other -----------------
+
+
+@pytest.mark.parametrize(
+    ("text", "number", "quantity"),
+    [
+        ("Nummer 40 zwei Portionen", "40", 2),
+        ("Nummer 20 2 Portionen", "20", 2),
+        ("Nummer hundert zwei Portionen", "100", 2),
+        ("Nummer 40 2x", "40", 2),
+        ("Nummer vierzig zwei mal", "40", 2),
+    ],
+)
+def test_a_unit_with_a_quantity_behind_it_is_not_joined_to_the_number(
+    text, number, quantity
+):
+    """#677: "Nummer 40 zwei Portionen" was dish 42."""
+    ref, unclear = sole_item_number(text)
+    assert not unclear and ref is not None and ref.text == number
+    assert find_quantity(text) == quantity
+
+
+def test_tens_and_unit_still_join_without_a_quantity():
+    ref, _ = sole_item_number("Nummer vierzig sieben")
+    assert ref is not None and ref.text == "47"
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["die dreizehn mal zwei", "die 13 x 2", "13 x 2", "13x2", "die zwölf mal drei"],
+)
+def test_n_times_m_asks(text):
+    """#677: the number in front of "mal" became the quantity and the one
+    behind it the dish, without a question."""
+    assert sole_item_number(text) == (None, True)
+
+
+@pytest.mark.parametrize(
+    "text", ["zweimal die 13", "zwei mal die 13", "die 13 zweimal"]
+)
+def test_a_quantity_before_an_article_or_behind_the_number_is_still_one(text):
+    ref, unclear = sole_item_number(text)
+    assert not unclear and ref is not None and ref.text == "13"
+
+
+THIRTY = CardFormat.from_items([("30", "Hauptspeisen"), ("30a", "Hauptspeisen")])
+
+
+@pytest.mark.parametrize(
+    "text", ["die 30, ah", "Die 30, A.", "die 30 ah", "Nummer 30, a"]
+)
+def test_a_letter_behind_a_pause_is_a_candidate_that_is_asked(text):
+    """#677: "ah" and a lone letter behind the number went to the name search
+    as a dish "ah" and ended not found."""
+    ref, unclear = sole_item_number(text, THIRTY)
+    assert not unclear and ref is not None
+    assert ref.cards == ("30", "30a") and ref.heard == ("30a",)
+
+
+@pytest.mark.parametrize("text", ["die 30, ah", "Die 30, c."])
+def test_a_letter_behind_a_pause_without_the_lettered_dish_is_not_dropped(text):
+    """No 30a on the menu: the plain 30 is not taken unasked, the sentence
+    stays for the name search as before."""
+    assert sole_item_number(text, LETTERED) == (None, False)
+
+
+@pytest.mark.parametrize(
+    ("text", "value"),
+    [
+        ("hundertundfünfzehn", 115),
+        ("zweihundertundzwei", 202),
+        ("hundertfünfzehn", 115),
+    ],
+)
+def test_hundred_and_a_rest_in_one_word_is_a_number(text, value):
+    """#677: "hundertundfünfzehn" written as one word was no number."""
+    assert parse_cardinal(text) == value
+
+
+def test_hundred_and_alone_is_no_number():
+    assert parse_cardinal("hundertund") is None
