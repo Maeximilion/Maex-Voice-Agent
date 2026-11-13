@@ -1605,6 +1605,7 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
         session, tenant.id, [c.day for c in cards if c.kind == staff.DAY_HOURS]
     )
     for card in cards:
+        calls: list[staff.BookingToCall] = []
         if card.kind == staff.TEAM_PHONE:
             title, keep = "Teamnummer heute", "Als Standard übernehmen"
             before, after = card.before["number"], card.after["number"]
@@ -1615,6 +1616,11 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
             before = staff.DayHours.of(card.before).text()
             after = staff.DayHours.of(card.after).text()
             holding = holding_on[card.day].text()
+            # A held closure or shortening: the guests the team calls itself.
+            if card.held:
+                calls = staff.bookings_outside_hours(
+                    session, tenant.id, card.day, holding_on[card.day], tenant.timezone
+                )
         rows.append(
             {
                 "id": card.id,
@@ -1624,6 +1630,7 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
                 "after": after,
                 "now": holding,
                 "waiting": not card.held,
+                "calls": calls,
                 "seen": card.updated_at.isoformat(),
             }
         )

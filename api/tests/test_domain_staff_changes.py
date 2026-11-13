@@ -24,6 +24,7 @@ from api.models import (
     Call,
     OpeningHours,
     OutboxEvent,
+    Reservation,
     ServiceConfig,
     SpecialDay,
     StaffChange,
@@ -622,3 +623,56 @@ def test_a_span_over_midnight_needs_the_staff_to_say_so(session, tenant_id):
     )
     assert card is not None and card.held
     assert _windows(session, tenant_id, TUESDAY) == [("22:00", "10:00")]
+
+
+# --- the guests a held closure or shortening leaves (#710) ---------------------
+
+
+def _table(session, tenant_id, day, at: time, name, status="confirmed"):
+    session.add(
+        Reservation(
+            tenant_id=tenant_id,
+            source="tablet",
+            status=status,
+            guest_name=name,
+            phone="+491701234567",
+            party_size=2,
+            reserved_for=datetime.combine(day, at, tzinfo=BERLIN),
+            idempotency_key=str(uuid.uuid4()),
+        )
+    )
+    session.commit()
+
+
+def _guests(session, tenant_id, day, hours) -> list[str]:
+    found = staff.bookings_outside_hours(
+        session, tenant_id, day, hours, "Europe/Berlin"
+    )
+    return [b.guest_name for b in found]
+
+
+def test_a_closure_lists_every_confirmed_table_of_the_date(session, tenant_id):
+    _table(session, tenant_id, SATURDAY, time(19), "Bauer")
+    _table(session, tenant_id, SATURDAY, time(12), "Aydin")
+    found = staff.bookings_outside_hours(
+        session, tenant_id, SATURDAY, DayHours(closed=True), "Europe/Berlin"
+    )
+    assert [(b.guest_name, b.at.strftime("%H:%M"), b.phone) for b in found] == [
+        ("Aydin", "12:00", "+491701234567"),
+        ("Bauer", "19:00", "+491701234567"),
+    ]
+
+
+def test_a_shortening_lists_only_the_tables_outside_the_new_hours(session, tenant_id):
+    _table(session, tenant_id, SATURDAY, time(11, 45), "Early")
+    _table(session, tenant_id, SATURDAY, time(13), "Inside")
+    _table(session, tenant_id, SATURDAY, time(19), "Evening")
+    shorter = DayHours(opens=time(12), closes=time(13, 30))
+    assert _guests(session, tenant_id, SATURDAY, shorter) == ["Early", "Evening"]
+
+
+def test_a_cancelled_table_and_another_date_stay_off_the_list(session, tenant_id):
+    _table(session, tenant_id, SATURDAY, time(19), "Gone", status="cancelled")
+    _table(session, tenant_id, SATURDAY + timedelta(days=1), time(19), "Sunday")
+    _table(session, tenant_id, SATURDAY, time(19), "Draft", status="draft")
+    assert _guests(session, tenant_id, SATURDAY, DayHours(closed=True)) == []

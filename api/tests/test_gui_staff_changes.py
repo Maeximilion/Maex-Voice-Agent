@@ -15,7 +15,7 @@ from api.config import settings
 from api.core.time import business_day
 from api.db import get_db
 from api.main import app
-from api.models import ServiceConfig, StaffChange
+from api.models import Reservation, ServiceConfig, StaffChange
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -231,3 +231,32 @@ def test_times_with_seconds_or_an_offset_are_refused(client, engine, typed):
     }
     assert client.post("/gui/tageszeiten", data=form, headers=HX).status_code == 422
     assert _cards(engine) == []
+
+
+def test_a_held_closure_lists_the_guests_to_call(client, engine):
+    later = _today() + timedelta(days=7)
+    with Session(engine) as session:
+        session.add(
+            Reservation(
+                tenant_id=session.scalar(select(ServiceConfig.tenant_id)),
+                source="tablet",
+                status="confirmed",
+                guest_name="Familie Bauer",
+                phone="+491701234567",
+                party_size=4,
+                reserved_for=datetime.combine(later, time(19), tzinfo=BERLIN),
+                idempotency_key="gui-closure-list",
+            )
+        )
+        session.commit()
+    before = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert "selbst anrufen" not in before
+    client.post(
+        "/gui/tageszeiten",
+        data={"datum": later.isoformat(), "art": "geschlossen"},
+        headers=HX,
+    )
+    cards = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert "Diese Gäste bitte selbst anrufen" in cards
+    assert "19:00 Uhr, Familie Bauer, 4 Personen" in cards
+    assert 'href="tel:+491701234567"' in cards

@@ -39,6 +39,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core import time as clock
 from api.core.errors import Conflict, InvalidInput, NotFound
+from api.core.time import business_day_bounds_utc
 from api.domain.customers.phone import E164, normalize_phone
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.hours import (
@@ -51,6 +52,7 @@ from api.events import enqueue
 from api.events.types import DAY_HOURS_CHANGED, TEAM_PHONE_CHANGED
 from api.models import (
     AuditLog,
+    Reservation,
     ServiceConfig,
     SpecialDay,
     StaffChange,
@@ -72,6 +74,16 @@ OVERNIGHT = (
 PAST_DAY = "Ein vergangener Tag lässt sich nicht mehr ändern."
 NO_NUMBER = "Das ist keine Telefonnummer."
 NOT_LISTED = "Diese Nummer kann die Telefonanlage nicht anrufen. Weitere Nummern gibt der Betreiber frei."
+
+
+@dataclass(frozen=True)
+class BookingToCall:
+    """A confirmed table a held closure or shortening leaves without hours."""
+
+    guest_name: str
+    at: datetime
+    phone: str
+    party_size: int
 
 
 @dataclass(frozen=True)
@@ -382,6 +394,39 @@ def open_cards(
             .order_by(StaffChange.day, StaffChange.created_at)
         )
     )
+
+
+def bookings_outside_hours(
+    session: Session, tenant_id: uuid.UUID, day: date, hours: DayHours, zone: str
+) -> list[BookingToCall]:
+    """The confirmed tables of the business day that `hours` would leave
+    without a dine-in window: all of them when closed, the ones outside the
+    times when shortened. The team calls these guests itself (#710, Maxi
+    2026-11-13): nothing is cancelled and no guest is messaged. By time."""
+    start, end = business_day_bounds_utc(day, zone)
+    tz = ZoneInfo(zone)
+    special = {} if hours.normal else {day: hours.row(tenant_id, day)}
+    windows = windows_for_day(
+        HoursData(regular_hours(session, tenant_id), special), day, "dinein", tz
+    )
+    rows = session.scalars(
+        select(Reservation)
+        .where(
+            Reservation.tenant_id == tenant_id,
+            Reservation.status == "confirmed",
+            Reservation.deleted_at.is_(None),
+            Reservation.reserved_for >= start,
+            Reservation.reserved_for < end,
+        )
+        .order_by(Reservation.reserved_for)
+    )
+    return [
+        BookingToCall(
+            r.guest_name, r.reserved_for.astimezone(tz), r.phone, r.party_size
+        )
+        for r in rows
+        if not any(a <= r.reserved_for < b for a, b in windows)
+    ]
 
 
 def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> str:
