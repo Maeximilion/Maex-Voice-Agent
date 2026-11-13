@@ -246,11 +246,12 @@ _ABSENT = re.compile(
 # Safety and separate preparation: a claim in a call that speaks of
 # allergies.
 # The model asking the guest whether they are sure ("Sind Sie sicher, dass
-# ...?") is no promise: a question that opens with the verb, cut before
-# `_SAFE` reads. "Mit diesem Gericht sind Sie sicher." stays a claim (#656,
-# Codex PR #714).
+# ...?") is no promise: only that phrase, opening its sentence with the verb,
+# is cut before `_SAFE` reads, so a claim in the rest of the question still
+# counts. "Mit diesem Gericht sind Sie sicher." stays a claim (#656, Codex PR
+# #714, two rounds).
 _ASKS_IF_SURE = re.compile(
-    r"(?:^|(?<=[.!?:;]))\s*(?:sind|bist|seid)\s+(?:sie|du|ihr)\b[^.!?]*\?"
+    r"(?:^|(?<=[.!?:;]))\s*(?:sind|bist|seid)\s+(?:sie|du|ihr)(?:\s+\w+){0,2}?\s+sicher\b"
 )
 _SAFE = re.compile(
     r"\b(?:keine|ohne) (?:spuren|kontamination|kreuzkontakt|kontakt)\b"
