@@ -130,7 +130,8 @@ jobs:
 
   # The suite without the latency tests, split over parallel jobs by a hash of the
   # test id (`PYTEST_SHARD`, api/tests/conftest.py); one more shard is one more
-  # entry in `shard`. Inside a job on all cores, every test on its own database.
+  # entry in `shard`. Inside a job on all cores; each worker keeps one database
+  # and empties it after every test (evals/scratch_db.py, empty_scratch_db).
   pytest:
     runs-on: ubuntu-latest
     timeout-minutes: 15
