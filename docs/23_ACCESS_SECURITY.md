@@ -196,13 +196,16 @@ the second builds against.
 - **Idle lock (D34, and Maxi 09.11.2026 on the lock screen):** 15 minutes after the last sign-in,
   PIN or change, the session is locked. The board stays live and readable (docs/06 §1 rule 7:
   always visible; new orders with their sound), and the next change goes to the PIN page
-  (`/gui/entsperren`, `HX-Redirect` on a 401). Only a change moves the 15 minutes; reading and the
+  (`/gui/entsperren`, `HX-Redirect` on a 401); a change behind the admin PIN goes to the admin PIN
+  page instead, which unlocks too, so the owner's click is not lost to the team PIN (#597). Only a change moves the 15 minutes; reading and the
   event stream do not. Five wrong PINs in a row end the session; the device then needs the password.
   The PIN is never a login: it only unlocks a session that already exists.
 - **Devices:** each session is a device with its first and last use and the browser's name. In (a)
   the operator lists and signs them out on the stack (`python -m api.jobs.gui_access devices`,
   `sign-out <id>` or `--all`), until the dashboard has it (#571). The owner's device list
   (`/gui/geraete`, under "Einstellungen" in the header) has "Gerät abmelden" behind the admin PIN (#570 b).
+  A device signed out there loses its open event stream on the next tick (#597), and its admin PIN
+  form answers with the sign-in, not with a wrong PIN.
 - **Two levels in the admin area (D34 point 3, the admin PIN built in (b)):** staff with the shared login, no PIN: call
   mode, team number and the hours of a given date (a special day). The owner, with an admin PIN
   asked when a protected part is first opened and then unlocked on that device for 60 minutes:

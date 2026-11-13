@@ -155,13 +155,14 @@ def test_strom_haelt_keine_request_session_fest(monkeypatch):
 
     monkeypatch.setattr(gui_router, "SessionLocal", TrackingSession)
     monkeypatch.setattr(sse, "_token", lambda *_: "0:-")
+    monkeypatch.setattr(sse, "_signed_in", lambda *_: True)
     # Der echte Strom laeuft endlos; hier genuegt ein Takt. Geprueft wird die
     # Session des Endpunkts, nicht die Schleife.
     monkeypatch.setattr(
         gui_router,
         "today_event_stream",
-        lambda request, tenant_id, tz_name: sse.today_event_stream(
-            request, tenant_id, tz_name, poll_seconds=0, max_ticks=1
+        lambda request, tenant_id, tz_name, session_id: sse.today_event_stream(
+            request, tenant_id, tz_name, session_id, poll_seconds=0, max_ticks=1
         ),
     )
 
@@ -352,3 +353,18 @@ def test_a_staff_change_reaches_an_open_tablet(monkeypatch):
     events = [c for c in chunks if c.startswith("event: ")]
     assert events[-1] == "event: checks\ndata: k1\n\n"
     assert sum(c.startswith("event: checks") for c in events) == 2
+
+
+def test_the_stream_of_a_device_signed_out_meanwhile_ends(monkeypatch):
+    """The owner signs a device out at /gui/geraete (#597): its open stream
+    sends no more signals and ends; the browser's reconnect then meets the
+    sign-in (app.ts `probe`)."""
+    monkeypatch.setattr(sse, "_token", lambda *_: "t0")
+    signed_in = iter([True, False])
+    monkeypatch.setattr(sse, "_signed_in", lambda *_: next(signed_in))
+    session_id = uuid.uuid4()
+
+    chunks = drain(stream(FakeRequest(), session_id=session_id, max_ticks=5))
+
+    assert sum(c.startswith("event: ") for c in chunks) == 8  # the first tick only
+    assert chunks[-1] == "event: checks\ndata: k0\n\n"

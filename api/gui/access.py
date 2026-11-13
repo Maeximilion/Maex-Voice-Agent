@@ -236,6 +236,8 @@ def owner_post(
     try:
         unlock_admin(db, access.session_id, form.get("pin", ""), now)
     except AdminRefused as refused:
+        if refused.ended:
+            return RedirectResponse(LOGIN, status_code=303)
         message = (
             NO_ADMIN_PIN
             if refused.missing

@@ -38,6 +38,7 @@ from api.domain.reservations import today_change_token
 from api.domain.status.config import config_change_token
 from api.domain.status.holidays import suggestions_change_token
 from api.domain.status.staff_changes import cards_change_token
+from api.models import GuiSession
 
 logger = get_logger("api.gui.sse")
 
@@ -81,7 +82,13 @@ def _prices_token(session: Session, tenant_id: uuid.UUID) -> str:
     return price_check.change_token(session, tenant_id)
 
 
-def _tokens(tenant_id: uuid.UUID, tz_name: str) -> dict[str, str]:
+def _signed_in(session: Session, session_id: uuid.UUID) -> bool:
+    return session.get(GuiSession, session_id) is not None
+
+
+def _tokens(
+    tenant_id: uuid.UUID, tz_name: str, session_id: uuid.UUID | None = None
+) -> dict[str, str] | None:
     """Ein Fingerabdruck je Bereich der Seite, in der Reihenfolge der Ereignisse.
 
     Alle in einer Sitzung: die Abfragen lesen denselben Mandanten und
@@ -89,9 +96,14 @@ def _tokens(tenant_id: uuid.UUID, tz_name: str) -> dict[str, str]:
     aus dem Pool je Takt und Tablet - bei vier Tablets und zwei Sekunden Takt
     sechs pro Sekunde, nur um festzustellen, dass sich nichts geaendert hat
     (Review PR #117).
+
+    None when the device's session has ended meanwhile (signed out at
+    /gui/geraete, #597): its stream must not go on.
     """
     session = SessionLocal()
     try:
+        if session_id is not None and not _signed_in(session, session_id):
+            return None
         return {
             "header": _header_token(session, tenant_id),
             "today": _token(session, tenant_id, tz_name),
@@ -110,6 +122,7 @@ async def today_event_stream(
     request: Request,
     tenant_id: uuid.UUID,
     tz_name: str,
+    session_id: uuid.UUID | None = None,
     poll_seconds: float = POLL_SECONDS,
     heartbeat_seconds: float = HEARTBEAT_SECONDS,
     max_ticks: int | None = None,
@@ -128,7 +141,7 @@ async def today_event_stream(
         if await request.is_disconnected():
             return
         try:
-            tokens = await asyncio.to_thread(_tokens, tenant_id, tz_name)
+            tokens = await asyncio.to_thread(_tokens, tenant_id, tz_name, session_id)
         except SQLAlchemyError as exc:
             # Kein Abbruch: die Seite zeigt die gelbe Leiste (docs/06 §5) und der
             # naechste Durchlauf holt sie wieder weg, ohne Neuverbindung.
@@ -137,6 +150,8 @@ async def today_event_stream(
             last_send = time.monotonic()
             yield "event: problem\ndata: db\n\n"
         else:
+            if tokens is None:
+                return
             recovered = failed
             failed = False
             sent = False

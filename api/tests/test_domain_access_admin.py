@@ -247,3 +247,14 @@ def test_no_admin_pin_before_the_first_link(session, tenant_id):
     assert admin_pin(session, tenant_id, "operator:test") is None
     with pytest.raises(InvalidInput):
         set_admin_pin(session, tenant_id, ADMIN, "operator:test")
+
+
+def test_a_device_signed_out_meanwhile_is_told_so_not_a_wrong_pin(
+    session, tenant_id, token
+):
+    """The owner types the right PIN on a device another tablet signed out
+    (#597): the answer is the sign-in, not "Die Inhaber-PIN stimmt nicht"."""
+    _access(session, tenant_id, token, T0)
+    refused = _refused(session, uuid.uuid4(), ADMIN, T0)
+    assert refused.ended and not refused.missing and refused.wait_minutes is None
+    assert session.scalars(select(GuiAccount)).one().admin_failures == 0
