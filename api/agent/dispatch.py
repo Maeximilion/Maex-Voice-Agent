@@ -106,7 +106,9 @@ def in_local_time(
         # `now` carries today's offset, and a model copies it onto the evening
         # after a clock change: 19:00+01:00 on 29 March is 20:00 there. An
         # offset the zone has on another day of that year but not at this wall
-        # time is the wall time the guest said (#681); any other stays.
+        # time is the wall time the guest said (#681); any other stays, and so
+        # does UTC: a zone with a UTC winter (London) cannot tell the two apart.
+        # shortcut: such a zone keeps the copied-offset error, fix if one signs up.
         offset = moment.utcoffset()
         wall = moment.replace(tzinfo=None)
         try:
@@ -114,7 +116,7 @@ def in_local_time(
             year = {datetime(wall.year, m, 1, tzinfo=local).utcoffset() for m in (1, 7)}
         except (OverflowError, ValueError):
             return args
-        if offset in here or offset not in year:
+        if not offset or offset in here or offset not in year:
             return args
         moment = wall
     try:

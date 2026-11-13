@@ -15,7 +15,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from api.agent.dispatch import ToolResult, dispatch, in_local_time
-from api.models import Call, Reservation, ServiceConfig
+from api.models import Call, Reservation, ServiceConfig, Tenant
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -667,3 +667,15 @@ def test_an_offset_the_zone_has_on_another_day_is_the_local_wall_time(
     args = in_local_time(session, tenant_id, {"reserved_for": sent})
 
     assert datetime.fromisoformat(args["reserved_for"]) == meant
+
+
+def test_a_utc_time_stays_utc_in_a_zone_with_a_utc_winter(session, tenant_id):
+    """Codex PR #707: in London +00:00 is the winter offset, and an explicit
+    UTC time in summer is not a copied one: 18:00Z stays 18:00Z (19:00 BST)."""
+    session.get(Tenant, tenant_id).timezone = "Europe/London"
+    session.flush()
+    sent = "2026-07-15T18:00:00+00:00"
+
+    args = in_local_time(session, tenant_id, {"reserved_for": sent})
+
+    assert args["reserved_for"] == sent
