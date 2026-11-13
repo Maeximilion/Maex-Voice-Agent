@@ -1443,7 +1443,16 @@ def test_with_an_article_the_unit_before_the_quantity_is_not_joined():
     assert not unclear and ref is not None and ref.text == "40"
 
 
-@pytest.mark.parametrize("text", ["2 x 7up bitte", "zwei mal 7up", "2x7up"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "2 x 7up bitte",
+        "zwei mal 7up",
+        "2x7up",
+        "zwei mal Acht Schätze",
+        "2 x 8 Kostbarkeiten",
+    ],
+)
 def test_a_quantity_before_a_name_with_digits_does_not_ask(text):
     """Codex PR #722: "7up" is a name, not the second number of "n mal m"."""
     assert sole_item_number(text) == (None, False)
@@ -1463,7 +1472,14 @@ def test_tens_and_unit_still_join_without_a_quantity():
 
 @pytest.mark.parametrize(
     "text",
-    ["die dreizehn mal zwei", "die 13 x 2", "13 x 2", "13x2", "die zwölf mal drei"],
+    [
+        "die dreizehn mal zwei",
+        "die 13 x 2",
+        "13 x 2",
+        "13x2",
+        "die zwölf mal drei",
+        "die 13 x 2 bitte",
+    ],
 )
 def test_n_times_m_asks(text):
     """#677: the number in front of "mal" became the quantity and the one

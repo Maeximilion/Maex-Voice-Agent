@@ -410,10 +410,13 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
     return _Span(start, i, total)
 
 
-def _lettered_after(tokens: list[str], at: int) -> bool:
-    """Does a card letter follow the number that starts at `at`?"""
+def _bare_number_at(tokens: list[str], at: int) -> bool:
+    """Is the rest of the sentence from `at` one number and filler only?"""
     span = _scan(tokens, at)
-    return span is not None and span.end < len(tokens) and tokens[span.end] in _SUFFIXES
+    return span is not None and all(
+        t in PUNCTUATION or t in _SENTENCE_FILLER or t in _LEAD_FILLER or hesitation(t)
+        for t in tokens[span.end :]
+    )
 
 
 def _counts(tokens: list[str], at: int) -> bool:
@@ -1393,10 +1396,10 @@ def sole_item_number(
             q.end + 1 < len(tokens)
             and tokens[q.end] in ("mal", "x")
             and _word_value(tokens[q.end + 1]) is not None
-            # "2 x 7up": digits glued to letters are a name (Codex PR #722).
-            and q.end + 1 not in glued
-            # "2 x 30 a": a card letter behind it names the dish (Codex PR #722).
-            and not _lettered_after(tokens, q.end + 1)
+            # Only a bare second number: anything but filler behind it names
+            # a dish ("2 x 7up", "2 x 30 a", "zwei mal Acht Schätze"), and the
+            # search reads it (Codex PR #722).
+            and _bare_number_at(tokens, q.end + 1)
             and (
                 (q.start > 0 and tokens[q.start - 1] in _LINK_ARTICLES)
                 or all(_word_value(t) is None for t in tokens[: q.start])
