@@ -64,3 +64,25 @@ def test_the_trunk_zero_after_the_country_code_is_dropped(said, number):
 )
 def test_an_italian_number_keeps_its_zero(said, number):
     assert normalize_phone(said) == number
+
+
+@pytest.mark.parametrize(
+    ("number", "expected"),
+    [
+        ("+499001234567", True),
+        ("+491371234567", True),
+        ("+491801234567", True),
+        ("+491181234", True),
+        ("+4912345678", True),
+        ("+8821234567", True),
+        ("+491712345678", False),
+        ("+4972215551234", False),
+        ("+12685551234", False),
+        (None, False),
+    ],
+)
+def test_costly_numbers_are_the_premium_service_and_satellite_ranges(number, expected):
+    """#691: such a callback number gets no one-tap link on the tablet."""
+    from api.domain.customers.phone import costly
+
+    assert costly(number) is expected

@@ -50,3 +50,24 @@ def number_or_none(raw: str | None) -> str | None:
         return normalize_phone(raw)
     except InvalidInput:
         return None
+
+
+# Numbers that cost the caller more than a call: German premium and service
+# ranges, international shared-cost and satellite codes (#691). Allowed as a
+# callback number (Maxi decided B), but never dialled with one tap.
+COSTLY_PREFIXES = (
+    "+49900",
+    "+49137",
+    "+49180",
+    "+49118",
+    "+4912",
+    "+870",
+    "+881",
+    "+882",
+    "+883",
+)
+
+
+def costly(number: str | None) -> bool:
+    """Is the E.164 number in a premium-rate, service or satellite range?"""
+    return bool(number) and str(number).startswith(COSTLY_PREFIXES)

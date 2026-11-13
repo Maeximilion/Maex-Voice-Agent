@@ -14,7 +14,7 @@ Periods are settings (api/config.py), decided by Maxi with the legal check on
 import logging
 import re
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import (
     Text,
@@ -34,6 +34,7 @@ from api.core.logging import configure_logging, error_text, get_logger, log
 from api.core.time import business_day, business_day_bounds_utc, to_local, tz, utcnow
 from api.db import SessionLocal
 from api.domain.access.sessions import DEVICE_DAYS, FAILURES_FORGOTTEN, SESSION_DAYS
+from api.domain.calls import recordings
 from api.domain.calls.recordings import delete_file
 from api.domain.customers.personal import (
     CALLBACK_GONE,
@@ -335,6 +336,36 @@ def _recordings(session: Session, now: datetime) -> int:
             )
             continue
         session.delete(row)
+        deleted += 1
+    session.flush()
+    return deleted + _files_without_a_row(session, cutoff)
+
+
+def _files_without_a_row(session: Session, cutoff: datetime) -> int:
+    """A file no row names, older than the period by its own time, goes too:
+    a restore of last night's dump drops today's rows, never the files, and
+    nothing else would ever look at them (#693, L2). A row is committed before
+    a byte is recorded, so a file being written always has one."""
+    if not recordings.FOLDER.is_dir():
+        return 0
+    named = set(session.scalars(select(Recording.file_name)))
+    deleted = 0
+    for path in recordings.FOLDER.iterdir():
+        if not path.is_file() or path.name in named:
+            continue
+        if datetime.fromtimestamp(path.stat().st_mtime, UTC) >= cutoff:
+            continue
+        try:
+            path.unlink()
+        except OSError as exc:
+            log(
+                logger,
+                logging.ERROR,
+                "Recording file without a row not deleted",
+                file=path.name,
+                error=error_text(exc),
+            )
+            continue
         deleted += 1
     return deleted
 

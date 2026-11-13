@@ -1095,3 +1095,40 @@ def test_cold_path_runs_the_job_in_its_own_loop(migrated_db_url, session, tenant
     finally:
         engine.dispose()
     assert _fresh(session, call).caller_id is None
+
+
+# -- #693: a file no row names ----------------------------------------------------
+
+
+def _orphan(folder, name, age):
+    import os
+
+    path = folder / name
+    path.write_bytes(b"audio")
+    at = (NOW - age).timestamp()
+    os.utime(path, (at, at))
+    return path
+
+
+def test_a_file_without_a_row_goes_after_the_period(session, tenant_id, folder):
+    """#693: a restore of last night's dump dropped today's rows, and their
+    files were never deleted."""
+    old = _orphan(folder, "restored-away.wav", 30 * DAY + timedelta(seconds=1))
+    young = _orphan(folder, "still-young.wav", 30 * DAY - timedelta(seconds=1))
+
+    counts = purge(session, NOW)
+
+    assert counts["recordings"] == 1
+    assert not old.exists() and young.exists()
+
+
+def test_a_file_with_a_row_is_left_to_its_row(session, tenant_id, folder):
+    """The row decides for its own file, by the start of the call."""
+    import os
+
+    row = _recording(session, tenant_id, folder, NOW - DAY)
+    at = (NOW - 40 * DAY).timestamp()
+    os.utime(folder / row.file_name, (at, at))
+
+    assert purge(session, NOW)["recordings"] == 0
+    assert (folder / row.file_name).exists()
