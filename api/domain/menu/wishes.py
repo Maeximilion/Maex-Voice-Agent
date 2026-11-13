@@ -166,10 +166,20 @@ def _mentions_allergy(words: list[str], i: int) -> bool:
         k = i + 1
         if k < len(words) and words[k] in _PRONOUNS:
             k = _skip(words, k + 1, _ADVERBS | {"leider"})
-        return any(
+        if any(
             w in _REMOVE or w in ("nicht", "weder")
             for w in [*words[i + 1 : i + 3], *words[k : k + 1]]
-        )
+        ):
+            return True
+        # "ich vertrage Erdnüsse gar nicht", "... Kuhmilch und Sahne nicht":
+        # the negation at the end of its clause (#670). Its ingredient stays
+        # open, so the guest is asked "Wogegen?".
+        for w in words[i + 1 : i + 8]:
+            if w == ",":
+                return False
+            if w == "nicht":
+                return True
+        return False
     return _is_allergy(word)
 
 
@@ -247,11 +257,21 @@ def _left_unread(text: str, pieces: list[str]) -> bool:
         return _SENTENCE_END.search(text, tokens[at].end(), tokens[k].start()) is None
 
     for i in range(first + 1, len(words) - 1):
+        # "und auf Sesam" after "gegen Erdnüsse" lists one more (#670); asked
+        # also for "und auf Diät", one question that loses no allergen.
         if (
-            words[i] == "gegen"
+            (words[i] == "gegen" or (words[i] == "auf" and words[i - 1] == "und"))
             and unread(i + 1)
             and _item_ends(text, tokens, words, i + 1)
         ):
+            return True
+        # Another person's allergy behind the caller's ("meine Frau gegen
+        # Sesam", "mein Mann Sesam") is never noted as the caller's (#670).
+        # One with an allergy word of its own is read on its own (`another_adult`).
+        names_someone = (
+            words[i] in _POSSESSIVES and words[i + 1] in _PERSONS | _CHILDREN
+        ) or words[i] in _OTHERS
+        if names_someone and not any(_allergy_word(w) for w in words[i + 1 :]):
             return True
         if words[i] == "aber" and words[i + 1] in _LIST_MODIFIERS:
             k = _skip(words, i + 1, _LIST_MODIFIERS)
@@ -1363,6 +1383,7 @@ _PERSONS = frozenset(
     | {"nachbar", "nachbarin", "chef", "chefin", "gast", "gaeste", "besuch"}
 )
 # Persons that are someone else without a possessive in front.
+_CHILDREN = frozenset({"sohn", "tochter", "kind", "kinder", "baby"})
 _OTHERS = frozenset(
     {"freund", "freundin", "freunde", "kollege", "kollegin", "kollegen"}
     | {"begleitung", "jemand", "jemanden", "jemandem"}
@@ -1473,6 +1494,40 @@ def _goes_on(text: str) -> bool:
     )
 
 
+# Behind a denial, what may still name an allergen: "keine Allergie gegen
+# Erdnüsse, aber Sesam", "keine Allergie, nur Laktose" (#670). Not a wish
+# ("aber bitte ohne Zwiebeln") or a dish ("aber die 13").
+_YET = frozenset({"aber", "nur", "sondern", "ausser"})
+_YET_SKIP = frozenset({"auch", "gegen", "auf", "noch", "eben"})
+_YET_NOT = (
+    _REMOVE
+    | _ADD
+    | _ARTICLES
+    | _NOT_LISTED
+    | frozenset({"bitte", "die", "der", "das", "den", "dem", "gerne", "gern"})
+    | frozenset({"nicht", "weder", "nie", "niemals"})
+)
+
+
+def _names_more_after_denial(words: list[str]) -> bool:
+    first = next((i for i, w in enumerate(words) if _is_allergy(w)), len(words))
+    for i in range(first + 1, len(words) - 1):
+        if words[i] in _YET:
+            k = _skip(words, i + 1, _YET_SKIP)
+            if (
+                k < len(words)
+                and words[k] != ","
+                and not (
+                    words[k] in _YET_NOT
+                    or words[k] in _ORDER_VERBS
+                    # A time ("gegen acht Uhr") names no allergen either.
+                    or parse_cardinal(words[k]) is not None
+                )
+            ):
+                return True
+    return False
+
+
 def only_denies(text: str) -> bool:
     """Does the sentence deny an allergy and name none ("Pho Bo, ich habe
     keine Allergie", "Ich habe keine Allergie und moechte Pho Bo zum
@@ -1481,7 +1536,7 @@ def only_denies(text: str) -> bool:
     "und", "keine Allergien und Unvertraeglichkeiten gegen Laktose" would
     leave a part that reads as an intolerance (Codex PR #330, #338). As the
     stand-in model judges it (`sim/scripted_llm.py`)."""
-    if _goes_on(text):
+    if _goes_on(text) or _names_more_after_denial(_tokens(text)[1]):
         return False
     clauses = wish_candidates(text)
     if clauses and denies_allergy(clauses[-1][1]):

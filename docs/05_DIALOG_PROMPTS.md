@@ -255,7 +255,11 @@ Gast nennt eine eigene Allergie ("ich vertrage keine Erdnüsse")
      `note` of draft_order for the whole order (D24); on a table: its `note`
    → not read in full ("gegen Erdnüsse allergisch und gegen Sesam", or a dish
      in front that read whole would count as an allergen): "Wogegen sind Sie
-     allergisch?"; the core reads the answer, "Keine." takes it back
+     allergisch?"; the core reads the answer, "Keine." takes it back. So are
+     "gegen Erdnüsse und auf Sesam", another person behind the caller's own
+     allergy without an allergy word of their own ("meine Frau gegen Sesam",
+     "mein Mann Sesam"), "ich vertrage Erdnüsse gar nicht", and a denial
+     with more behind it ("keine Allergie, nur Laktose") (#670)
 
 Before the first draft that needs it (T-11.1, L13), the core holds
 draft_order or create_reservation and asks itself:
