@@ -1727,6 +1727,28 @@ def test_a_plain_denial_still_notes_nothing(session, state):
             [(None, True), ("Nuss", True)],
         ),
         ("Die 13 bitte, ohne Zwiebeln.", []),
+        # One running owner, changed only by a sentence that speaks of health
+        # (Codex PR #748, P1, round 4).
+        (
+            "Meine Frau hat Zöliakie. Ich habe eine Nussallergie. Und eine Sesamallergie.",
+            [(None, False), ("Nuss", True), ("Sesam", True)],
+        ),
+        (
+            "Meine Frau hat eine Erdnussallergie. Und eine Nussallergie.",
+            [("Erdnuss", False), ("Nuss", False)],
+        ),
+        (
+            "Meine Frau hat eine Nussallergie. Ich nehme die 13. Und eine Sesamallergie.",
+            [("Nuss", False), ("Sesam", False)],
+        ),
+        (
+            "Ich habe eine Erdnussallergie. Meine Frau hat eine Sesamallergie.",
+            [("Erdnuss", True), ("Sesam", False)],
+        ),
+        (
+            "Meine Frau hat eine Nussallergie. Ich habe eine Sesamallergie.",
+            [("Nuss", False), ("Sesam", True)],
+        ),
     ],
 )
 def test_a_health_word_opens_the_question_wogegen(session, state, said, noted):

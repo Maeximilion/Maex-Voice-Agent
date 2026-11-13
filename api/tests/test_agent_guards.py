@@ -1087,6 +1087,10 @@ def test_a_safety_promise_about_a_frei_dish_still_counts():
         "Da sind keine Nüsse.",
         # A denial acknowledged in front does not hide the claim behind it.
         "Sie haben keine Allergie. Die 13 hat keine Nüsse.",
+        # The guest's allergy is no food (Codex PR #748, P1, round 4).
+        "Für Ihre Nussallergie passt die 13, die hat keine Nüsse.",
+        "Die 13 hat keine Allergene.",
+        "Die 13 hat keine Zutaten mit Gluten.",
     ],
 )
 def test_an_inflected_or_turned_absence_claim_is_refused(say):
@@ -1109,6 +1113,11 @@ def test_an_inflected_or_turned_absence_claim_is_refused(say):
         # The guest's own denial said back (Codex PR #748, P1).
         "Gut, Sie haben keine Allergie.",
         "Ich habe notiert: Sie haben keine Allergien.",
+        "Sie haben keine bekannten Allergien.",
+        "Haben Sie keine weiteren Allergien?",
+        "Sie haben also keine Nussallergie, richtig?",
+        "Sie haben keine Allergie gegen Nüsse, richtig?",
+        "Ihre Nussallergie ist notiert, Besteck ist nicht dabei.",
     ],
 )
 def test_a_wish_echoed_or_a_question_of_certainty_is_no_claim(say):
