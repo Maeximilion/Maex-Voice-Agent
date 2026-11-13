@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.21
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.24
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.20
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.19
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.18
@@ -280,6 +280,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 13.11.2026 | **Ultrareview ledger (#546, catch-up wave: data and privacy), fix PR for #693: a recording file without a row is deleted after the period too.** Red first (1 of 2 new tests red, the other guards a file with a row). The deletion job read only the `recordings` rows; a restore of last night's dump drops today's rows but leaves their WAV files. `retention._files_without_a_row` deletes a file no row names once its own time is past `RETENTION_RECORDING_DAYS`, and logs one it cannot delete; docs/03 and the restore runbook in docs/13 say so. Latent while recording is off. |
 | 13.11.2026 | **Batch 7 of the ultrareview ledger (#546: operator login), fix PR for #688: the sign-in wait no longer tells which operator names exist, and a double-submitted sign-in raises no takeover alarm.** Red first (3 of 5 new or changed test cases red). An unknown name now has its own failure counter (in `operator_login_failures` under `name:` and the hash of the name, forgotten after a day like an address), so it waits like a known one (docs/23 §5). A refused code that is the one the account signed in with in the last two minutes is audited with `reason` `repeat`, not `factor`; docs/09 says so. No migration. |
 | 13.11.2026 | **Batch 7 of the ultrareview ledger (#546: deploy and access), fix PR for #687: provisioning a customer no longer leaves the shared Caddy broken, a placeholder team number unnamed or shared tokens.** Red first (11 new test cases, all red). `new_stack.py`: the shared Caddy validates a new site before it reloads, and a site it refuses is removed again with `networks.json` rewritten; half an n8n editor account is refused before anything starts; push passwords are printed right after they are made; the key `caddy` is refused; one run at a time per root (`flock`), and `networks.json` is built from the site files on disk. `config.py`: agent, kitchen, proxy and media tokens differ pairwise outside dev. `provision.missing()` names a team number that is still the placeholder or empty. Docker steps faked in the tests (no Docker CLI there); not run against a real shared Caddy. |
 | 13.11.2026 | **Batch 6 of the ultrareview ledger (#546), fix PR for #686 (Maxi decided A): a special day "wie Sonntag" also takes Sunday's call-mode and call-limit windows.** Red first (2 new tests, both red). One helper, `status.hours.weekday_of`, now decides the weekday for the seats (`capacity_windows`, which had its own copy), the call mode (`mode_at`) and the call limit (`routing._call_limit`); docs/03 says so. |
@@ -322,6 +323,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.24 · 13.11.2026:** Fix PR for #693: a recording file without a row is deleted after the period too
 - **v2.44.21 · 13.11.2026:** Fix PR for #688: the operator sign-in wait tells no names, a double tap raises no takeover alarm
 - **v2.44.20 · 13.11.2026:** Fix PR for #687: provisioning leaves no broken shared Caddy, no unnamed placeholder team number, no shared tokens
 - **v2.44.19 · 13.11.2026:** Fix PR for #686: a special day like Sunday takes Sunday's call mode and call limit
