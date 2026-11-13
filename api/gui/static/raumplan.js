@@ -139,6 +139,36 @@ function send(method, url, body) {
         target.saved = fresh.saved;
         target.pending = fresh.pending;
     }
+    // The other rooms as the server holds them now. A room with a step still
+    // on its way keeps it; a room another tablet created is added.
+    function refreshOthers(keep) {
+        fetch("/gui/raumplan/plan", { credentials: "same-origin", headers: { Accept: "application/json" } })
+            .then((res) => (res.status === 200 ? res.json() : null))
+            .then((data) => {
+            const docs = data ? record(data).areas : null;
+            if (!Array.isArray(docs))
+                return;
+            let added = false;
+            docs.forEach((doc) => {
+                const fresh = fromDoc(doc);
+                const mine = areas.find((a) => a.room.id === fresh.room.id);
+                if (!mine) {
+                    areas.push(fresh);
+                    added = true;
+                }
+                else if (mine !== keep && mine !== area && !mine.saving && !mine.unsaved && !mine.unacked && !mine.pending && mine.revision !== fresh.revision) {
+                    adopt(mine, doc);
+                    // An undo would send a room another tablet has changed since: the
+                    // history goes, as on a 409 (Codex PR #724).
+                    mine.history = [];
+                }
+            });
+            if (added)
+                render();
+        })
+            .catch((err) => { if (window.console)
+            window.console.error(err); });
+    }
     // A save whose answer never came may have been stored: it goes out again,
     // exactly as it was, before anything newer. The server takes the same room
     // twice as no conflict and answers with its revision (Codex on #535).
@@ -170,6 +200,9 @@ function send(method, url, body) {
                 // Steps made meanwhile, or held back behind a resent save, follow now.
                 if (target.pending && JSON.stringify(target.pending) !== JSON.stringify(body.area))
                     target.again = true;
+                // What was sent is stored: no step waits, the room may be read again (Codex PR #724).
+                else
+                    target.pending = null;
                 if (!target.again && target === area)
                     status("Gespeichert.");
             }
@@ -191,6 +224,9 @@ function send(method, url, body) {
                 target.again = false;
                 replaced = true;
                 status(say || "Das hat nicht geklappt, nichts gespeichert.", true);
+                // The refusal may come from a name another tablet took in another
+                // room: those rooms are read again, or every retry picks it (#680).
+                refreshOthers(target);
             }
             else {
                 lost();
