@@ -192,7 +192,10 @@ the second builds against.
 - **Sessions per device:** cookie `__Host-session` (`Secure`, `HttpOnly`, `SameSite=Lax`, path `/`;
   `maex_session` without `Secure` in dev and test, which run over plain HTTP), a random 32-byte
   token whose SHA-256 is the server-side row (`gui_sessions`). The session slides for 30 days on use
-  and ends after 30 days without one; the cookie may outlive it, the row decides.
+  and ends after 30 days without one; the cookie may outlive it, the row decides. Use sets the session
+  and device cookies again at most once a minute and moves the device's `last_used_at`, so a tablet in
+  daily use is not dropped by its browser 400 days after the sign-in (#598). Without a team PIN yet
+  (the state migration 031 leaves) the lock page says so and counts no try.
 - **Idle lock (D34, and Maxi 09.11.2026 on the lock screen):** 15 minutes after the last sign-in,
   PIN or change, the session is locked. The board stays live and readable (docs/06 §1 rule 7:
   always visible; new orders with their sound), and the next change goes to the PIN page

@@ -26,7 +26,7 @@ from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from api.core.errors import Unauthorized
+from api.core.errors import InvalidInput, Unauthorized
 from api.domain.access.hashing import token_hash, verify_secret
 from api.models import (
     AuditLog,
@@ -48,6 +48,7 @@ FAILURES_FORGOTTEN = timedelta(days=1)
 TOUCH_EVERY = timedelta(minutes=1)
 DEVICE_CHARS = 120
 TOKEN_BYTES = 32
+NO_TEAM_PIN = "Noch keine Team-PIN. Der Betreiber setzt sie."
 # A device cookie nobody signed in with for this long is forgotten (the most a
 # browser keeps a cookie).
 DEVICE_DAYS = 400
@@ -58,7 +59,9 @@ class Access:
     session_id: uuid.UUID
     locked: bool
     # The owner's admin PIN holds on this device (`domain/access/admin.py`).
-    admin: bool = False
+    admin: bool
+    # The once-a-minute touch ran: the cookies are due again (#598).
+    slid: bool = False
 
 
 class SignInRefused(Unauthorized):
@@ -221,13 +224,19 @@ def open_session(
 
 
 def resolve(
-    session: Session, token: str, tenant_id: uuid.UUID | None, now: datetime
+    session: Session,
+    token: str,
+    tenant_id: uuid.UUID | None,
+    now: datetime,
+    device_token: str = "",
 ) -> Access | None:
     """The session behind a cookie, or None when there is none for this stack.
 
     A session of another tenant is not valid here, even if its row were found:
     the stack serves one tenant (docs/23 §6). Moves `last_seen_at`, which slides
-    the 30 days, and commits that."""
+    the 30 days, and with it the device's 400 (`last_used_at` of the device
+    cookie `device_token`), and commits that; `slid` then tells the caller to
+    set both cookies again, whose browser lifetime starts anew."""
     if not token or tenant_id is None:
         return None
     row = session.scalars(
@@ -239,13 +248,23 @@ def resolve(
         session.delete(row)
         session.commit()
         return None
-    if now - row.last_seen_at >= TOUCH_EVERY:
+    slid = now - row.last_seen_at >= TOUCH_EVERY
+    if slid:
         row.last_seen_at = now
+        if device_token:
+            session.execute(
+                update(GuiDevice)
+                .where(
+                    GuiDevice.account_id == row.account_id,
+                    GuiDevice.token_hash == token_hash(device_token),
+                )
+                .values(last_used_at=now)
+            )
         session.commit()
     locked = now - row.last_active_at >= IDLE
     # The idle lock closes owner rights too: after the team PIN, staff rights only.
     admin = not locked and row.admin_until is not None and row.admin_until > now
-    return Access(row.id, locked=locked, admin=admin)
+    return Access(row.id, locked=locked, admin=admin, slid=slid)
 
 
 def mark_active(session: Session, session_id: uuid.UUID, now: datetime) -> None:
@@ -273,7 +292,8 @@ def unlock(
 
     None when it was right (the device is unlocked); otherwise the tries left,
     0 when the fifth wrong PIN ended the session. The session row stays locked
-    for the check, so parallel tries cannot pass five. Commits."""
+    for the check, so parallel tries cannot pass five. Without a team PIN
+    yet, InvalidInput and no try counts. Commits."""
     row = session.get(
         GuiSession, session_id, with_for_update=True, populate_existing=True
     )
@@ -282,7 +302,11 @@ def unlock(
         return 0
     account = session.get(GuiAccount, row.account_id)
     stored = account.team_pin if account else None
-    if stored and hmac.compare_digest(pin.encode(), stored.encode()):
+    if not stored:
+        # Migration 031 leaves this until the operator sets one: no try counts.
+        session.rollback()
+        raise InvalidInput("no team pin yet", say=NO_TEAM_PIN)
+    if hmac.compare_digest(pin.encode(), stored.encode()):
         # The team PIN opens staff rights: an owner's hour left open ends here.
         row.pin_failures, row.last_active_at, row.admin_until = 0, now, None
         session.commit()
