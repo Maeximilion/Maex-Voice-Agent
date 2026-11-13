@@ -392,3 +392,21 @@ def test_the_networks_come_from_the_site_files_on_disk(tmp_path, monkeypatch):
 
     networks = json.loads((root / "caddy" / "networks.json").read_text())
     assert set(networks["networks"]) == {"maex-beta_edge", "maex-pilot_edge"}
+
+
+def test_a_rerun_that_fails_puts_the_working_site_back(tmp_path, monkeypatch):
+    """Codex PR #730: a rerun's failure deleted the customer's working site."""
+    root = tmp_path / "srv"
+    _stack(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker())
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+    site = root / "caddy" / "sites" / "pilot.caddy"
+    working = site.read_text()
+    monkeypatch.setattr(new_stack, "run", FakeDocker(refuse="caddy reload"))
+
+    with pytest.raises(new_stack.Refused, match="put back"):
+        new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    assert site.read_text() == working
+    networks = json.loads((root / "caddy" / "networks.json").read_text())
+    assert set(networks["networks"]) == {"maex-pilot_edge"}

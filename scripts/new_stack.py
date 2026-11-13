@@ -337,6 +337,9 @@ def go_live(root: Path, key: str, site: str) -> None:
     sites_dir = root / "caddy" / "sites"
     sites_dir.mkdir(parents=True, exist_ok=True, mode=0o750)
     path = sites_dir / f"{key}.caddy"
+    # A rerun replaces a working site: that one comes back on a failure, a new
+    # one goes (Codex PR #730).
+    before = path.read_text() if path.exists() else None
     write_private(path, site, 0o640)
     networks = root / "caddy" / "networks.json"
     networks.write_text(networks_file(list(site_files(sites_dir))))
@@ -348,10 +351,14 @@ def go_live(root: Path, key: str, site: str) -> None:
         run([*command, "caddy", "validate", *config], root, env=caddy_env)
         run([*command, "caddy", "reload", *config], root, env=caddy_env)
     except Refused:
-        path.unlink(missing_ok=True)
+        if before is None:
+            path.unlink(missing_ok=True)
+        else:
+            write_private(path, before, 0o640)
         networks.write_text(networks_file(list(site_files(sites_dir))))
+        undone = "removed again" if before is None else "put back as it was"
         raise Refused(
-            f"the shared Caddy refused {path.name}; it is removed again, the other "
+            f"the shared Caddy refused {path.name}; it is {undone}, the other "
             "sites are as they were. Fix the stack's .env and run again."
         ) from None
 
