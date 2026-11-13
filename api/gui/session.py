@@ -9,6 +9,7 @@ part of the admin area also needs the admin PIN on this device
 (`require_admin`, #570 part b).
 """
 
+from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from urllib.parse import quote, urlsplit
 
@@ -59,6 +60,8 @@ def set_access_cookies(response: Response, signed: Signed) -> None:
     """The session, and the device cookie that keeps the device's own count of
     failed sign-ins (`domain/access/sessions.py`)."""
     for kind, value in (("session", signed.token), ("device", signed.device_token)):
+        if not value:
+            continue
         response.set_cookie(
             cookie_name(kind),
             value,
@@ -68,6 +71,21 @@ def set_access_cookies(response: Response, signed: Signed) -> None:
             samesite="lax",
             secure=secure(),
         )
+
+
+async def slide_cookies(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Set the session and device cookies again when the session slid (at
+    most once a minute, `resolve`): a browser drops a cookie 400 days after
+    it was set, used or not (#598). A dependency cannot do it: FastAPI drops
+    its headers when a route returns its own response."""
+    response = await call_next(request)
+    if getattr(request.state, "slide_cookies", False):
+        set_access_cookies(
+            response, Signed(session_token(request), device_token(request))
+        )
+    return response
 
 
 def client_address(request: Request) -> str:
@@ -92,9 +110,13 @@ def require_gui_session(request: Request, db: Session = Depends(get_db)) -> Acce
 
 def _checked_access(request: Request, db: Session) -> Access:
     now = clock.utcnow()
-    access = resolve(db, session_token(request), stack_tenant_id(db), now)
+    access = resolve(
+        db, session_token(request), stack_tenant_id(db), now, device_token(request)
+    )
     if access is None:
         raise _away(request, LOGIN)
+    if access.slid:
+        request.state.slide_cookies = True
     if request.method in WRITES:
         if not same_origin(request):
             raise HTTPException(status_code=403, detail="Only from this site")
@@ -123,7 +145,10 @@ def _owner_page(request: Request) -> str:
     back = request.url.path
     if request.method != "GET":
         # A write returns to the page it came from, not to its own path.
-        back = urlsplit(request.headers.get("hx-current-url", "")).path
+        try:
+            back = urlsplit(request.headers.get("hx-current-url", "")).path
+        except ValueError:  # "http://[" and the like: the owner page leads to the board
+            back = ""
     return f"{OWNER}?weiter={quote(back, safe='/')}"
 
 

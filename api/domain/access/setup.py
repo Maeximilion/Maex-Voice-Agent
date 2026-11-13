@@ -116,7 +116,7 @@ def use_link(
         session.rollback()
         raise InvalidInput("setup link replaced or expired", say=LINK_GONE)
     account, link = found
-    refuse_same_pins(session, account, pin, admin_pin or account.admin_pin)
+    refuse_same_pins(session, pin, admin_pin or account.admin_pin)
     account.password_hash, account.team_pin = password_hash, pin
     if admin_pin is not None:
         account.admin_pin, account.admin_failures = admin_pin, 0
@@ -178,7 +178,7 @@ def set_team_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) -
     if account is None:
         session.rollback()
         raise InvalidInput("no login yet", say=NO_LOGIN)
-    refuse_same_pins(session, account, pin, account.admin_pin)
+    refuse_same_pins(session, pin, account.admin_pin)
     account.team_pin = pin
     session.execute(
         update(GuiSession)

@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput
@@ -623,3 +623,34 @@ def _refused_with(session, tenant_id, device_token):
             device_token=device_token,
         )
     return refused.value
+
+
+def test_a_device_in_daily_use_is_kept_past_400_days(session, tenant_id):
+    """Use slides the device's 400 days like the session's 30 (#598, Maxi
+    12.11.2026): the once-a-minute touch moves `last_used_at` too and says the
+    cookies are due again."""
+    code, _ = issue_link(session, tenant_id, "operator:test", T0)
+    signed = use_link(session, tenant_id, code, PASSWORD, PIN, "Tablet", T0)
+    at = T0
+    while at <= T0 + timedelta(days=DEVICE_DAYS):
+        at += timedelta(days=SESSION_DAYS - 1)
+        access = resolve(session, signed.token, tenant_id, at, signed.device_token)
+        assert access is not None and access.slid
+        purge(session, at)
+    assert session.execute(select(func.count()).select_from(GuiDevice)).scalar() == 1
+    again = resolve(session, signed.token, tenant_id, at, signed.device_token)
+    assert again is not None and not again.slid
+
+
+def test_without_a_team_pin_a_locked_device_counts_no_try(session, tenant_id, ready):
+    """The state migration 031 leaves until the operator sets a team PIN (#598):
+    a PIN typed then is no wrong try, and five of them end nothing."""
+    session.execute(update(GuiAccount).values(team_pin=None))
+    session.commit()
+    access = resolve(session, ready, tenant_id, T0 + IDLE)
+    assert access is not None
+    for _ in range(6):
+        with pytest.raises(InvalidInput) as refused:
+            unlock(session, access.session_id, PIN, T0 + IDLE)
+        assert "Team-PIN" in (refused.value.say or "")
+    assert resolve(session, ready, tenant_id, T0 + IDLE) is not None

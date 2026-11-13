@@ -51,7 +51,7 @@ WRONG_ADMIN_PIN = "Die Inhaber-PIN stimmt nicht."
 NO_ADMIN_PIN = "Noch keine Inhaber-PIN. Der Betreiber setzt sie."
 # Where the admin PIN page may lead back to: a path of the view, nothing else,
 # and not the owner pages themselves (review of #587).
-BACK = re.compile(r"/gui/((?!inhaber)[a-z0-9/-]*)")
+BACK = re.compile(r"/gui/((?!inhaber)(?!.*\.\.)[A-Za-z0-9/._-]*)")
 
 
 def _checked(request: Request, form: dict[str, str]) -> None:
@@ -185,7 +185,12 @@ def unlock_post(
     access = resolve(db, session_token(request), stack_tenant_id(db), now)
     if access is None:
         return RedirectResponse(LOGIN, status_code=303)
-    left = unlock(db, access.session_id, form.get("pin", ""), now)
+    try:
+        left = unlock(db, access.session_id, form.get("pin", ""), now)
+    except InvalidInput as refused:
+        return _page_response(
+            request, "zugang/entsperren.html", {"message": refused.say}, 409
+        )
     if left is None:
         return RedirectResponse(BOARD, status_code=303)
     if left == 0:

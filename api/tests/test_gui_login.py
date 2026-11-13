@@ -23,7 +23,7 @@ from api.domain.access.setup import issue_link, use_link
 from api.gui.router import router as gui_router
 from api.gui.sse import _signed_in
 from api.main import app
-from api.models import GuiLoginFailure, GuiSession, StaffChange
+from api.models import GuiAccount, GuiLoginFailure, GuiSession, StaffChange
 from scripts.seed import seed
 
 pytestmark = pytest.mark.gui_login
@@ -623,3 +623,54 @@ def test_the_right_admin_pin_on_a_device_signed_out_meanwhile_goes_to_the_sign_i
     monkeypatch.setattr("api.gui.access.unlock_admin", signed_out)
     answer = _owner(client)
     assert answer.status_code == 303 and answer.headers["location"] == "/gui/anmelden"
+
+
+def test_a_device_in_use_gets_its_cookies_again(client, engine):
+    """The browser drops a cookie 400 days after it was set (#598): use sets
+    both again, at most once a minute."""
+    _set_up_and_sign_in(client, engine)
+    with Session(engine) as session:
+        session.execute(
+            update(GuiSession).values(
+                last_seen_at=clock.utcnow() - timedelta(minutes=2)
+            )
+        )
+        session.commit()
+    page = client.get("/gui/", headers=HTML)
+    cookies = " ".join(page.headers.get_list("set-cookie"))
+    assert "maex_session=" in cookies and "maex_device=" in cookies
+    assert "Max-Age=34560000" in cookies
+    again = " ".join(client.get("/gui/", headers=HTML).headers.get_list("set-cookie"))
+    assert "maex_session=" not in again and "maex_device=" not in again
+
+
+@pytest.mark.parametrize(
+    ("back", "lands"),
+    [("/gui/raum_plan.v2", "/gui/raum_plan.v2"), ("/gui/../elsewhere", "/gui/")],
+)
+def test_the_way_back_takes_any_page_of_the_view(client, engine, back, lands):
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=back).headers["location"] == lands
+
+
+def test_a_broken_current_url_still_goes_to_the_admin_pin(client, engine):
+    _set_up_and_sign_in(client, engine)
+    own = _sessions(engine)[0]
+    answer = client.post(
+        f"{DEVICES}/{own.id}/abmelden",
+        headers={**HX, "HX-Current-URL": "http://["},
+    )
+    assert answer.status_code == 401
+    assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter="
+
+
+def test_without_a_team_pin_the_lock_page_says_so(client, engine):
+    _set_up_and_sign_in(client, engine)
+    with Session(engine) as session:
+        session.execute(update(GuiAccount).values(team_pin=None))
+        session.commit()
+    _lock(engine)
+    answer = client.post(
+        "/gui/entsperren", data={"csrf_token": "testtoken", "pin": PIN}
+    )
+    assert answer.status_code == 409 and "Team-PIN" in answer.text

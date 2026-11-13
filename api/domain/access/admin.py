@@ -32,7 +32,7 @@ from api.domain.access.sessions import (
     locked_account,
     minutes_left,
 )
-from api.models import GuiAccount, GuiSession
+from api.models import GuiSession
 
 ADMIN_FOR = timedelta(minutes=60)
 SAME_AS_TEAM = "Die Inhaber-PIN muss sich von der Team-PIN unterscheiden."
@@ -144,7 +144,7 @@ def set_admin_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) 
     if account is None:
         session.rollback()
         raise InvalidInput("no login yet", say=NO_LOGIN)
-    refuse_same_pins(session, account, account.team_pin, pin)
+    refuse_same_pins(session, account.team_pin, pin)
     account.admin_pin, account.admin_failures = pin, 0
     account.admin_blocked_until = account.admin_last_failed_at = None
     session.execute(
@@ -156,9 +156,7 @@ def set_admin_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) 
     session.commit()
 
 
-def refuse_same_pins(
-    session: Session, account: GuiAccount, team_pin: str | None, admin: str | None
-) -> None:
+def refuse_same_pins(session: Session, team_pin: str | None, admin: str | None) -> None:
     """The staff know the team PIN, so it can never open owner rights. Rolls
     back and raises InvalidInput when the two would be equal."""
     if team_pin and admin and hmac.compare_digest(team_pin.encode(), admin.encode()):

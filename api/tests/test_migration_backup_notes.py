@@ -7,6 +7,10 @@ when the first restaurant data could exist, a migration whose upgrade or
 downgrade drops a column or table, or deletes rows, says in its docstring
 `bash scripts/backup.sh --label before_migration_<revision>`. 001 to 005 came
 before the rule and before any data.
+
+It covers deletions only (review of #586, #598): a data change by `UPDATE ...
+SET` or a `NOT NULL` `alter_column` passes unflagged, so such a migration names
+its backup by the same rule without this guard noticing.
 """
 
 import ast
