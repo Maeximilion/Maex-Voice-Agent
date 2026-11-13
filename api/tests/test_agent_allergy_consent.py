@@ -1712,6 +1712,10 @@ def test_a_plain_denial_still_notes_nothing(session, state):
             "Meine Frau hat Zöliakie. Und eine Nussallergie.",
             [(None, False), ("Nuss", False)],
         ),
+        (
+            "Meine Frau hat Zöliakie. Und eine Nussallergie. Ich habe eine Sesamallergie.",
+            [(None, False), ("Nuss", False), ("Sesam", True)],
+        ),
         # An owner named in the later sentence is kept (Codex PR #748, P1).
         (
             "Meine Frau hat Zöliakie. Mein Sohn hat eine Nussallergie.",

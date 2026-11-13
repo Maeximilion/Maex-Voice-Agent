@@ -1103,6 +1103,7 @@ def test_an_inflected_or_turned_absence_claim_is_refused(say):
         # #739: absence of something that is no allergen.
         "Die Bestellung hat keine Getränke.",
         "Es gibt keine Lieferung nach 22 Uhr.",
+        "Die Bestellung hat keine Getränke. Die 13 ohne Erdnüsse, notiert.",
         "Sind Sie sicher, dass Sie zwanzig Portionen möchten?",
         "Sind Sie ganz sicher?",
         # The guest's own denial said back (Codex PR #748, P1).

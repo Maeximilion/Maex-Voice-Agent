@@ -242,11 +242,17 @@ _ABSENT = re.compile(
     # (#656); "die 13 ohne Erdnüsse, notiert" says a wish back, no claim.
     r"|\bkein\w*(?:\s+\w+){0,3}\s+enthalten\b"
     r"|\b(?:ist|sind|kommt|kommen|wird|werden)\b(?:\s+\w+){0,3}\s+ohne\b"
-    # "Die 13 hat keine Nüsse", "Da gibt es kein Gluten", "Nüsse sind da nicht
-    # drin" (#739); "Sie haben keine Allergie" acknowledges the guest, no claim.
-    r"|\b(?:hat|haben|gibt|sind)\b(?:\s+\w+){0,3}\s+kein(?!\w*\s+allergie)"
+)
+# Absence forms that say little without the allergen: read within the one
+# sentence that names it ("Die Bestellung hat keine Getränke. Die 13 ohne
+# Erdnüsse, notiert." is no claim). "Die 13 hat keine Nüsse", "Da gibt es kein
+# Gluten", "Nüsse sind da nicht drin" (#739); "Sie haben keine Allergie"
+# acknowledges the guest, no claim.
+_ABSENT_IN_SENTENCE = re.compile(
+    r"\b(?:hat|haben|gibt|sind)\b(?:\s+\w+){0,3}\s+kein(?!\w*\s+allergie)"
     r"|\bnicht (?:drin|darin|dabei)\b"
 )
+_SENTENCES = re.compile(r"(?<=[.!?;:])\s+")
 # Safety and separate preparation: a claim in a call that speaks of
 # allergies.
 # The model asking the guest whether they are sure ("Sind Sie sicher, dass
@@ -335,6 +341,11 @@ def allergen_claim(state: ConversationState, say: str) -> ToolResult | None:
     if (
         _ALWAYS.search(lowered)
         or (named and _ABSENT.search(lowered))
+        or any(
+            _ABSENT_IN_SENTENCE.search(part)
+            and (names_an_allergen(part) or "allerg" in part)
+            for part in _SENTENCES.split(lowered)
+        )
         or (
             (state.allergy_talk or named)
             and _SAFE.search(_ASKS_IF_SURE.sub(" ", lowered))

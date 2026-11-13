@@ -125,7 +125,7 @@ def _note(state: ConversationState, text: str) -> None:
     whole = _read(text)
     sentences = [part for part in _SENTENCE.split(text) if part.strip()]
     said = [part for part in sentences if mentions_allergy(part)]
-    readings = [whole]
+    readings = [(whole, text)]
     if len(said) > 1:
         # Each sentence on its own, with its own owner: read whole, the
         # parser takes the first allergy's owner and phrase for all of them
@@ -136,19 +136,19 @@ def _note(state: ConversationState, text: str) -> None:
         # Sesam"). Without such a sentence, every part was read on its own,
         # and a whole left open by a denial in front ("Meine Frau hat keine
         # Allergie. Ich habe eine Nussallergie.") asks for nothing (#668).
-        readings = [_read(part) for part in said]
+        readings = [(_read(part), part) for part in said]
         if (
             whole is not None
             and whole.ingredient is None
             and len(said) < len(sentences)
         ):
-            others = any(r is not None and r.another_adult for r in readings)
-            readings.append(whole.model_copy(update={"another_adult": others}))
-    for wish in readings:
+            others = any(r is not None and r.another_adult for r, _ in readings)
+            readings.append((whole.model_copy(update={"another_adult": others}), text))
+    for wish, source in readings:
         if wish is not None:
             # shortcut: a speaker or owner word ("ich", "mein Sohn") in the
-            # allergy sentences keeps its own owner; a continuation without a speaker follows the health word.
-            other = wish.another_adult or (other_adult and not _OWNER.search(text))
+            # sentence it was read from keeps its own owner; a continuation without a speaker follows the health word.
+            other = wish.another_adult or (other_adult and not _OWNER.search(source))
             _add(state, Allergy(ingredient=wish.ingredient, own=not other))
 
 
