@@ -1461,8 +1461,10 @@ def test_a_letter_after_a_pause_is_not_cut_off_its_number(session, thirty, said)
     """The cut at card numbers must not take the 30 for a 30a and leave the
     letter as a piece of its own."""
     assert position_parts(session, thirty, said, now=NOW) == [said]
-    with pytest.raises((Ambiguous, NotFound)):
-        suche(session, thirty, said)
+    # Both offered, neither taken (#677).
+    result = suche(session, thirty, said)
+    assert result.match_type == "ambiguous"
+    assert sorted(nummern(result)) == ["30", "30a"]
 
 
 def test_the_same_dish_named_twice_keeps_the_sentence_whole(session, sushi):
