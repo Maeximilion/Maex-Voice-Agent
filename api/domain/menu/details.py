@@ -32,7 +32,8 @@ from api.schemas.menu import Allergens, ItemDetails
 SAY_ALLERGENS_UNKNOWN = (
     "Das kann ich Ihnen nicht sicher sagen, dazu ist bei uns nichts hinterlegt."
 )
-SAY_ALLERGENS_KNOWN = "Laut unseren Angaben enthält Nummer {number} {name}: {names}."
+SAY_ALLERGENS_LEAD = "Laut unseren Angaben enthält"
+SAY_ALLERGENS_KNOWN = SAY_ALLERGENS_LEAD + " Nummer {number} {name}: {names}."
 # The 14 allergens of the LMIV (Annex II) by the letter the database stores
 # (`ALLERGEN_CODES`): the law's names, so neither the model nor a common menu
 # key ("n" for molluscs) names them (#669, rule 1).

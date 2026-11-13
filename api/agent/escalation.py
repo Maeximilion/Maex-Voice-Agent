@@ -147,10 +147,13 @@ _WANTS_ANYTHING = re.compile(_WANTS)
 # where it likes. Further away, or behind an "und", it is a wish of its own.
 # A wish of its own in the gap ("möchte gern bestellen, aber zuerst
 # beschweren") is no part of it: it stays and keeps the sentence for the team
-# (#657). "gern" and "bitte" may stand there.
+# (#657). "gern" and "bitte" may stand there. A modal wish word counts as one
+# too: "Die 23 bitte, ich möchte mich auch beschweren" keeps the "bitte" in
+# front for the team (#738).
 # Verb forms only: "über die Bestellung beschweren" names what happened.
 _OTHER_WISH = (
     r"(?:(?:bestell|abhol|mitnehm|reservier|nehm|brauch)(?:e|en)?"
+    r"|m(?:ö|oe)chten?|will|wollen|h(?:ä|ae)tten?"
     r"|abzuholen|mitzunehmen|tisch(?:e[ns]?)?)\b"
 )
 _WANTS_TO_COMPLAIN = re.compile(
