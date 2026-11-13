@@ -464,3 +464,17 @@ def test_create_says_why_a_stack_refuses(cli, capsys, engine):
         session.commit()
     assert job.main(["create", str(cli)]) == 1
     assert "refused: this database already holds" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("number", ["+49000000000", ""])
+def test_missing_names_a_placeholder_team_number(engine, number):
+    """#687: the placeholder of .env.example became the team number, and no
+    gap named it."""
+    with Session(engine) as session:
+        tenant_id = create_tenant(session, _spec(), "operator:test", T0).tenant_id
+        assert tenant_id is not None
+        config = session.get(ServiceConfig, tenant_id)
+        assert config is not None
+        config.team_phone = number
+        session.commit()
+        assert any(gap.startswith("team number") for gap in missing(session, tenant_id))

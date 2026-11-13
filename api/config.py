@@ -13,6 +13,9 @@ from api.core.tokens import (
     valid_production_token,
 )
 
+# The team number of .env.example: no telephone answers it (#687).
+TEAM_PHONE_PLACEHOLDER = "+49000000000"
+
 # Upper limit of every deletion period in days (api/jobs/retention.py).
 MAX_RETENTION_DAYS = 3660
 
@@ -36,7 +39,7 @@ class Settings(BaseSettings):
 
     tenant_name: str = "Pilotbetrieb"
     tenant_timezone: str = "Europe/Berlin"
-    team_phone: str = "+49000000000"
+    team_phone: str = TEAM_PHONE_PLACEHOLDER
     # The other numbers the dialplan transfers to (deploy/asterisk/render.sh),
     # comma-separated: the only ones the staff may set as today's team number
     # (#570 b), since the dialplan dials no other (T-10.13).
@@ -247,8 +250,20 @@ class Settings(BaseSettings):
         kitchen = self.kitchen_bridge_token
         if kitchen and not valid_production_token(kitchen):
             raise ValueError(f"KITCHEN_BRIDGE_TOKEN {rule}")
-        if kitchen == self.agent_api_token:
-            raise ValueError("KITCHEN_BRIDGE_TOKEN must differ from AGENT_API_TOKEN")
+        # Every pair differs: one value copied into another line would hand the
+        # agent token to Caddy's site file or the Asterisk container (#687).
+        named = {
+            "AGENT_API_TOKEN": self.agent_api_token,
+            "KITCHEN_BRIDGE_TOKEN": kitchen,
+            "GUI_PROXY_SECRET": self.gui_proxy_secret,
+            "VOICE_MEDIA_TOKEN": self.voice_media_token,
+        }
+        seen: dict[str, str] = {}
+        for name, value in named.items():
+            if value and value in seen:
+                raise ValueError(f"{name} must differ from {seen[value]}")
+            if value:
+                seen[value] = name
         ops = self.ops_token
         if ops and not valid_production_token(ops):
             raise ValueError(f"OPS_TOKEN {rule}")

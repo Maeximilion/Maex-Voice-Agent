@@ -264,3 +264,131 @@ def test_push_values_survive_the_env_round_trip(tmp_path):
     path.write_text(new_stack.env_text(EXAMPLE, values))
     read = new_stack.read_env(path)
     assert {name: read[name] for name in values} == values
+
+
+# --- #687: a run that fails leaves the shared Caddy as it was -----------------
+
+
+class FakeDocker:
+    """`new_stack.run` without Docker: records each command, answers the hash,
+    the provisioning and, when asked to, refuses the Caddy check."""
+
+    def __init__(self, refuse: str | None = None):
+        self.commands: list[list[str]] = []
+        self.refuse = refuse
+
+    def __call__(self, command, cwd, **options):
+        import subprocess
+
+        self.commands.append(command)
+        text = " ".join(command)
+        if self.refuse and self.refuse in text:
+            raise new_stack.Refused(f"failed: {text}")
+        out = ""
+        if new_stack.HASH_SCRIPT in command:
+            out = "\n".join(_fake_hashes(options["input"].split()))
+        elif "api.jobs.provision" in text:
+            out = json.dumps({"tenant_id": "t-1", "missing": []})
+        return subprocess.CompletedProcess(command, 0, stdout=out)
+
+
+def _stack(root, key="pilot"):
+    """A cloned stack as `git clone` leaves it, without the clone."""
+    stack = root / key
+    (stack / "deploy").mkdir(parents=True)
+    (stack / ".env.example").write_text(EXAMPLE)
+    (stack / "deploy" / "Caddyfile").write_text(CADDYFILE)
+    return stack
+
+
+def _customer(tmp_path, key="pilot"):
+    path = tmp_path / f"{key}.json"
+    path.write_text(json.dumps({"key": key, "name": "Pizzeria"}))
+    return path
+
+
+def test_a_site_the_shared_caddy_refuses_is_taken_out_again(tmp_path, monkeypatch):
+    """#687: the file stayed, and the next start of the shared Caddy failed for
+    every customer on it."""
+    root = tmp_path / "srv"
+    _stack(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker(refuse="caddy validate"))
+
+    with pytest.raises(new_stack.Refused, match="removed again"):
+        new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    assert not (root / "caddy" / "sites" / "pilot.caddy").exists()
+    networks = json.loads((root / "caddy" / "networks.json").read_text())
+    assert networks["networks"] == {}
+
+
+def test_a_site_is_checked_before_it_is_loaded(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _stack(root)
+    docker = FakeDocker()
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    caddy = [" ".join(c[-4:-2]) for c in docker.commands if "caddy" in c[-4:-2]]
+    assert caddy == ["caddy validate", "caddy reload"]
+    assert (root / "caddy" / "sites" / "pilot.caddy").exists()
+
+
+def test_half_an_editor_account_is_refused_before_anything_starts(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "srv"
+    stack = _stack(root)
+    env = new_stack.fresh_env({"key": "pilot", "name": "x"}, "a.example.org")
+    env["N8N_EDITOR_AUTH_USER"] = "maxi"
+    (stack / ".env").write_text(new_stack.env_text(EXAMPLE, env))
+    docker = FakeDocker()
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    with pytest.raises(new_stack.BadInput, match="N8N_EDITOR_AUTH"):
+        new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+    assert not any("up" in c for c in docker.commands)
+
+
+def test_push_passwords_are_shown_before_a_later_step_can_fail(
+    tmp_path, monkeypatch, capsys
+):
+    """#687: they were printed only at the end, and a failure in between lost
+    them for good."""
+    root = tmp_path / "srv"
+    _stack(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker(refuse="migrate.sh"))
+
+    with pytest.raises(new_stack.Refused):
+        new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    out = capsys.readouterr().out
+    assert all(f"Push server user {u}," in out for u in new_stack.PUSH_SIGN_IN)
+
+
+def test_the_key_of_the_shared_caddy_is_refused(tmp_path):
+    with pytest.raises(new_stack.BadInput, match="shared Caddy"):
+        new_stack.read_customer(_customer(tmp_path, key="caddy"))
+
+
+def test_the_networks_come_from_the_site_files_on_disk(tmp_path, monkeypatch):
+    """#687: a run wrote the networks of the sites it had read minutes before,
+    and dropped a stack another run had added meanwhile."""
+    root = tmp_path / "srv"
+    _stack(root)
+    sites = root / "caddy" / "sites"
+    sites.mkdir(parents=True)
+    monkeypatch.setattr(new_stack, "run", FakeDocker())
+    real_check = new_stack.check_sites
+
+    def beta_arrives(found):
+        # Another run writes its site after this one has read the files.
+        (sites / "beta.caddy").write_text(_site("beta", "b.example.org"))
+        return real_check(found)
+
+    monkeypatch.setattr(new_stack, "check_sites", beta_arrives)
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    networks = json.loads((root / "caddy" / "networks.json").read_text())
+    assert set(networks["networks"]) == {"maex-beta_edge", "maex-pilot_edge"}

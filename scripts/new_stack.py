@@ -30,6 +30,7 @@ Exit code: 0 done, 1 a step or the check failed, 2 wrong call or input.
 """
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -47,6 +48,8 @@ E164 = re.compile(r"^\+[1-9]\d{6,14}$")
 DOMAIN = re.compile(r"^(?=.{1,200}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
 COMPOSE_FILES = "docker-compose.yml:deploy/docker-compose.prod.yml:deploy/docker-compose.customer.yml"
 CADDY_PROJECT = "maex-caddy"
+# Keys that would take the shared Caddy's folder or Compose project (#687).
+RESERVED_KEYS = frozenset({"caddy"})
 # What deploy/Caddyfile names, and what a site of one stack becomes.
 UPSTREAMS = {"api:8000", "n8n:5678", "push:80"}
 FRESH_VARIABLES = (
@@ -294,6 +297,10 @@ def read_customer(path: Path) -> dict:
     key = spec.get("key") if isinstance(spec, dict) else None
     if not isinstance(key, str) or not CUSTOMER_KEY.fullmatch(key) or len(key) > 32:
         raise BadInput("customer file: key must look like `pilot` or `pizza-nord`")
+    if key in RESERVED_KEYS:
+        raise BadInput(
+            f"customer file: key {key!r} is the shared Caddy's, choose another"
+        )
     name = spec.get("name")
     if not isinstance(name, str) or not name.strip() or not name.isprintable():
         # A line break would end the .env line and start another variable.
@@ -322,7 +329,50 @@ def caddy(root: Path, *args: str) -> tuple[list[str], dict[str, str]]:
     ], {**os.environ, "MAEX_SITES": str(sites), "MAEX_SITES_GID": str(os.getgid())}
 
 
+def go_live(root: Path, key: str, site: str) -> None:
+    """Put the site file in, then let the shared Caddy check and load it. A
+    file it refuses is taken out again, so the next start of the shared Caddy
+    does not fail for every customer on it (#687). The networks come from the
+    files on disk when they are written, not from a list read earlier."""
+    sites_dir = root / "caddy" / "sites"
+    sites_dir.mkdir(parents=True, exist_ok=True, mode=0o750)
+    path = sites_dir / f"{key}.caddy"
+    write_private(path, site, 0o640)
+    networks = root / "caddy" / "networks.json"
+    networks.write_text(networks_file(list(site_files(sites_dir))))
+    config = ("--config", "/etc/caddy/Caddyfile")
+    try:
+        command, caddy_env = caddy(root, "up", "-d")
+        run(command, root, env=caddy_env)
+        command, caddy_env = caddy(root, "exec", "-T", "caddy")
+        run([*command, "caddy", "validate", *config], root, env=caddy_env)
+        run([*command, "caddy", "reload", *config], root, env=caddy_env)
+    except Refused:
+        path.unlink(missing_ok=True)
+        networks.write_text(networks_file(list(site_files(sites_dir))))
+        raise Refused(
+            f"the shared Caddy refused {path.name}; it is removed again, the other "
+            "sites are as they were. Fix the stack's .env and run again."
+        ) from None
+
+
 def create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
+    """One run at a time per root: a second run reads the site files only
+    after the first has written its own (#687). Wrong input is refused
+    before the root is touched."""
+    read_customer(spec_path)
+    if not DOMAIN.fullmatch(domain):
+        raise BadInput(f"domain {domain!r}: lower-case host name like example.org")
+    if dry_run:
+        _create(spec_path, domain, root, dry_run)
+        return
+    root.mkdir(parents=True, exist_ok=True)
+    with open(root / ".new_stack.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        _create(spec_path, domain, root, dry_run)
+
+
+def _create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     spec = read_customer(spec_path)
     if not DOMAIN.fullmatch(domain):
         raise BadInput(f"domain {domain!r}: lower-case host name like example.org")
@@ -378,6 +428,16 @@ def create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
         current = env_path.read_text(encoding="utf-8")
         write_private(env_path, env_text(current, push), 0o600)
         print(f"wrote {env_path}: " + ", ".join(push), file=sys.stderr)
+        for user, password in sign_in.items():
+            # Shown once, right away: .env keeps only the hash, and a later
+            # step that fails would lose them, a rerun skips them (#687).
+            print(f"Push server user {user}, password once: {password}")
+    if bool(env.get("N8N_EDITOR_AUTH_USER")) != bool(env.get("N8N_EDITOR_AUTH_HASH")):
+        # Half a pair makes a site file the shared Caddy cannot load (#687).
+        raise BadInput(
+            f"{env_path}: set both N8N_EDITOR_AUTH_USER and N8N_EDITOR_AUTH_HASH, "
+            "or neither"
+        )
     # Checked before anything starts: a refused site leaves no stack behind.
     caddyfile = (stack / "deploy" / "Caddyfile").read_text(encoding="utf-8")
     sites = {**others, key: site_text(caddyfile, key, env)}
@@ -404,24 +464,11 @@ def create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     write_private(env_path, env_text(current, tenant), 0o600)
     run(["docker", "compose", "up", "-d", "--build"], stack)
 
-    sites_dir.mkdir(parents=True, exist_ok=True, mode=0o750)
-    write_private(sites_dir / f"{key}.caddy", sites[key], 0o640)
-    (root / "caddy" / "networks.json").write_text(networks_file(list(sites)))
-    command, caddy_env = caddy(root, "up", "-d")
-    run(command, root, env=caddy_env)
-    command, caddy_env = caddy(root, "exec", "-T", "caddy")
-    run(
-        [*command, "caddy", "reload", "--config", "/etc/caddy/Caddyfile"],
-        root,
-        env=caddy_env,
-    )
+    go_live(root, key, sites[key])
 
     print(f"Stack {project(key)} runs, tenant {report['tenant_id']}.")
     if report.get("setup_link"):
         print(f"First login, once: {report['setup_link']}")
-    for user, password in sign_in.items():
-        # Shown once like the setup link; .env keeps only the hash.
-        print(f"Push server user {user}, password once: {password}")
     for gap in report.get("missing", []):
         print(f"still missing: {gap}")
 

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.17
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.20
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.16
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.15
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.14
@@ -276,6 +276,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 13.11.2026 | **Batch 7 of the ultrareview ledger (#546: deploy and access), fix PR for #687: provisioning a customer no longer leaves the shared Caddy broken, a placeholder team number unnamed or shared tokens.** Red first (11 new test cases, all red). `new_stack.py`: the shared Caddy validates a new site before it reloads, and a site it refuses is removed again with `networks.json` rewritten; half an n8n editor account is refused before anything starts; push passwords are printed right after they are made; the key `caddy` is refused; one run at a time per root (`flock`), and `networks.json` is built from the site files on disk. `config.py`: agent, kitchen, proxy and media tokens differ pairwise outside dev. `provision.missing()` names a team number that is still the placeholder or empty. Docker steps faked in the tests (no Docker CLI there); not run against a real shared Caddy. |
 | 13.11.2026 | **Batch 6 of the ultrareview ledger (#546), fix PR for #684: after `out_of_zone` the active prompt has the model speak only the `say`.** v3 said "`say`, Abholung anbieten" without a condition, while the code leaves the pickup offer out of the `say` when pickup is closed (#534). Prompt line now "`out_of_zone`: nur `say`." (token budget kept), a prompt test pins it, and eval lieferung_0091 (pickup switched off, address outside the zone, `never_said` the offer) is new. Not red first: the scripted eval model speaks only the `say`, so it was green on main too; a real-model run waits for the workbench model (Maxi). Evals: cases 100/100, targets 1/23. |
 | 13.11.2026 | **Batch 6 of the ultrareview ledger (#546: modes and approvals), fix PR for #683: the trunk zero after the country code is dropped, and the rule for a team number changed mid-call is written down.** Red first (5 of 7 new test cases red). `normalize_phone` drops one 0 after +49, +43 or +41 ("+49 0171 ...", "0049 07221 ..."), so a callback number exists again; an Italian +39 0... keeps its zero. The handover already reads the team number fresh (`populate_existing`, on main); the outage and shadow legs keep the number read at call start on purpose, now stated in docs/20 §7 and at `handler.py`. |
 | 13.11.2026 | **Batch 4 of the ultrareview ledger (#546: speech in, dish number out), fix PR for #677: a quantity and a card number no longer read into each other (rule 2).** Red first (24 test cases). A unit with a quantity word behind it is not joined to a round number before it ("Nummer 40 zwei Portionen" is the 40 twice, no longer dish 42; also "Nummer 40 2x" and "Nummer hundert zwei Portionen"); "<n> mal <m>" with an article in front or as the first number ("die dreizehn mal zwei", "13 x 2") asks instead of a silent swap; a card letter behind a pause ("die 30, ah", "Die 30, A.") is a candidate the search asks about where the menu has that lettered dish, else the sentence stays for the name search as before; "hundertundfünfzehn" as one word is 115. Evals: cases 99/99, targets 1/23 (same as main), numbers 249/249. |
@@ -314,6 +315,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.20 · 13.11.2026:** Fix PR for #687: provisioning leaves no broken shared Caddy, no unnamed placeholder team number, no shared tokens
 - **v2.44.17 · 13.11.2026:** Fix PR for #684: after out_of_zone the prompt has the model speak only the say
 - **v2.44.16 · 13.11.2026:** Fix PR for #683: the trunk zero after the country code is dropped; the mid-call team number rule is written down
 - **v2.44.15 · 13.11.2026:** Fix PR for #677: a quantity and a card number no longer read into each other

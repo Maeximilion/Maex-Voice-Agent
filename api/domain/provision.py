@@ -19,7 +19,7 @@ from typing import Any
 from sqlalchemy import ColumnExpressionArgument, exists, select, text
 from sqlalchemy.orm import Session
 
-from api.config import settings
+from api.config import TEAM_PHONE_PLACEHOLDER, settings
 from api.core.errors import InvalidInput
 from api.domain.access.setup import issue_link
 from api.domain.customers.phone import normalize_phone
@@ -181,4 +181,7 @@ def missing(session: Session, tenant_id: uuid.UUID) -> list[str]:
         gaps.append("login, setup link not used (python -m api.jobs.gui_access link)")
     if config is None or config.privacy_notice_address is None:
         gaps.append("privacy notice address (docs/09 L4)")
+    if config is None or config.team_phone in ("", TEAM_PHONE_PLACEHOLDER):
+        # Every transfer and fallback would ring a number nobody answers (#687).
+        gaps.append("team number, still the placeholder (TEAM_PHONE in .env)")
     return gaps
