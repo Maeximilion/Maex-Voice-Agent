@@ -276,6 +276,8 @@ class CallHandler:
             session=session,
             call_id=call_id,
             tenant_id=self._tenant_id,
+            # The number of this call's own legs (outage, shadow): read once,
+            # never again while the database may be gone (docs/20, #683).
             team_phone=routing.team_phone,
             state=initial_state(call_id, self._tenant_id, caller_id=caller_id),
         )
