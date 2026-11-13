@@ -37,6 +37,7 @@ from api.domain.menu.wishes import (
     only_denies,
     read_in_full,
     speaks_of_health,
+    theirs_behind,
     which_answer,
     wish_candidates,
 )
@@ -62,6 +63,13 @@ def note_allergies(session: Session, state: ConversationState, text: str) -> Non
     A sentence that only denies an allergy takes none back: a restriction
     too many is the safe side."""
     asked = _ASKED_WHICH.search(state.last_say or "")
+    # Another person's allergy at the end ("..., meine Frau gegen Sesam") is
+    # read on its own, so it is never lost behind the caller's own "Wogegen?"
+    # (#740).
+    theirs: list[Wish] = []
+    while (split := theirs_behind(text, answering=asked is not None)) is not None:
+        text, wish = split
+        theirs.append(wish)
     before = _open(state)
     if asked is not None:
         # The first sentence answers the question; a later sentence with an
@@ -80,6 +88,8 @@ def note_allergies(session: Session, state: ConversationState, text: str) -> Non
             _note(state, sentence)
     else:
         _note(state, text)
+    for wish in reversed(theirs):
+        _add(state, Allergy(ingredient=wish.ingredient, own=not wish.another_adult))
     if before - _open(state):
         # An open allergy was answered or taken back: the next one starts
         # with its own answers (#207).
