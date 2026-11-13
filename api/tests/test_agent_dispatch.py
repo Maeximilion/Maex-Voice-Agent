@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from api.agent.dispatch import ToolResult, dispatch
+from api.agent.dispatch import ToolResult, dispatch, in_local_time
 from api.models import Call, Reservation, ServiceConfig
 from scripts.seed import seed
 
@@ -647,3 +647,23 @@ def test_a_time_without_an_offset_that_is_no_time_stays_invalid_input(
     assert result.error_code == "invalid_input"
     assert result.hint is not None
     assert "reserved_for" in result.hint
+
+
+@pytest.mark.parametrize(
+    ("sent", "meant"),
+    [
+        # `now` on the eve of a clock change carries the old offset, and the
+        # model copied it onto the evening after: the guest said seven (#681).
+        ("2026-03-29T19:00:00+01:00", datetime(2026, 3, 29, 19, tzinfo=BERLIN)),
+        ("2026-10-25T19:00:00+02:00", datetime(2026, 10, 25, 19, tzinfo=BERLIN)),
+        # The right offset, and one the zone never has, stay what they say.
+        ("2026-03-29T19:00:00+02:00", datetime(2026, 3, 29, 19, tzinfo=BERLIN)),
+        ("2026-03-29T17:00:00+00:00", datetime(2026, 3, 29, 19, tzinfo=BERLIN)),
+    ],
+)
+def test_an_offset_the_zone_has_on_another_day_is_the_local_wall_time(
+    session, tenant_id, sent, meant
+):
+    args = in_local_time(session, tenant_id, {"reserved_for": sent})
+
+    assert datetime.fromisoformat(args["reserved_for"]) == meant

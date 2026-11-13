@@ -94,15 +94,23 @@ def check_slot(
 
     zone = ZoneInfo(tenant.timezone)
     local = reserved_for.astimezone(zone)
-    # Calendar days of the restaurant, not hours: at ten in the evening the
-    # last day of the horizon can still be booked for its whole evening.
-    days_ahead = (local.date() - now.astimezone(zone).date()).days
-    if days_ahead > config.reservation_max_days_ahead:
-        return _unavailable([], _say_too_far_ahead(config.reservation_max_days_ahead))
     # Fenster des Vortags reichen über Mitternacht (18:00 bis 01:00), deshalb beide Tage.
     yesterday, today = local.date() - timedelta(days=1), local.date()
 
     hours = load_hours(session, tenant_id, yesterday, days=2)
+    service = open_window_at(hours, local, DINEIN, zone)
+    # Days of the restaurant's service, not hours or calendar days: at ten in
+    # the evening the last day of the horizon can still be booked for its
+    # whole evening, 00:15 after a Monday evening included, and that 00:15
+    # asked for at 23:00 is the same day (#681), as hours and capacity count it.
+    service_day = service[0].astimezone(zone).date() if service else local.date()
+    days_ahead = (service_day - now.astimezone(zone).date()).days
+    if days_ahead > config.reservation_max_days_ahead:
+        return _unavailable([], _say_too_far_ahead(config.reservation_max_days_ahead))
+    limit = config.reservation_max_party_size
+    if days_ahead <= 0:
+        limit = min(limit, config.reservation_max_party_size_same_day)
+
     today_services = windows_for_day(hours, today, DINEIN, zone)
     services = windows_for_day(hours, yesterday, DINEIN, zone) + today_services
     windows = [
@@ -155,7 +163,22 @@ def check_slot(
             if slot != local and slot > now and fit(slot, service)
         ]
 
-    service = open_window_at(hours, local, DINEIN, zone)
+    def team_decides() -> SlotCheck:
+        # "noch heute" only where the day is the reason.
+        today_only = party_size <= config.reservation_max_party_size
+        return SlotCheck(
+            available=False,
+            team_callback=True,
+            say=_say_team_decides(party_size, today_only),
+        )
+
+    def unavailable(chosen: list[datetime], say: str) -> SlotCheck:
+        # Another time for a party the agent may not book itself would end
+        # with the team too, after a yes it could never keep (#681).
+        if chosen and party_size > limit:
+            return team_decides()
+        return _unavailable(chosen, say)
+
     if (
         service is not None
         and startable(local, service)
@@ -172,17 +195,8 @@ def check_slot(
         # restaurant's rule (#252): above the limit, and on the same day above
         # the smaller one, the team calls back. Only here: a closed day stays
         # closed and a full evening full, whatever the size of the party.
-        limit = config.reservation_max_party_size
-        if days_ahead == 0:
-            limit = min(limit, config.reservation_max_party_size_same_day)
         if party_size > limit:
-            # "noch heute" only where the day is the reason.
-            today_only = party_size <= config.reservation_max_party_size
-            return SlotCheck(
-                available=False,
-                team_callback=True,
-                say=_say_team_decides(party_size, today_only),
-            )
+            return team_decides()
         return SlotCheck(available=True)
 
     # In UTC gemessen: zwei Zeiten derselben ZoneInfo zieht Python als Wandzeit ab,
@@ -200,6 +214,12 @@ def check_slot(
             # Any service of the day, a later one included: lunch inside the
             # notice can still leave the evening.
             day_over = not chosen and not any(free_slots(other) for other in services)
+            if party_size > limit:
+                # The rule of the day calls nobody back, and a party above the
+                # limit hears no other time either (#681).
+                return _unavailable(
+                    [], _say_too_soon(seats_free(local), local, [], day_over)
+                )
             say = _say_too_soon(seats_free(local), local, chosen, day_over)
         elif startable(local, service):
             say = _say_full(local, chosen)
@@ -209,7 +229,7 @@ def check_slot(
                 local,
                 chosen,
             )
-        return _unavailable(chosen, say)
+        return unavailable(chosen, say)
 
     # Ruhetag oder geschlossener Sondertag: der Gast soll das hoeren, statt es mit
     # anderen Uhrzeiten am selben Tag zu versuchen (Review PR #152). Nicht, wenn der
@@ -223,7 +243,7 @@ def check_slot(
         for later in today_services:
             chosen = free_slots(later)[:MAX_ALTERNATIVES]
             if chosen:
-                return _unavailable(
+                return unavailable(
                     chosen,
                     _say_with_options(
                         f"Um {spoken_time(local)} haben wir noch geschlossen.",
