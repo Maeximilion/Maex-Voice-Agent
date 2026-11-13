@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Link every chain of open pull requests as a native GitHub stack.
 
-/done step 7c (CLAUDE.md section 6 "Stacked PRs"): an open PR whose base is the
+/done step 7c ("Stacked PRs" in .claude/commands/done.md): an open PR whose base is the
 branch of another open PR forms a chain with it, whoever opened them. A chain
 whose PRs are not all in one stack yet is linked with `gh stack link`, bottom
 first. A PR based on `main` alone is no chain. Two PRs on the same branch make a
