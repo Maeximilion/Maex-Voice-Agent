@@ -25,9 +25,9 @@ on:
 permissions:
   contents: read
 
-# Shared with project-maintenance: two runs writing the board at once could both
-# set the same field. GitHub keeps at most one waiting run per group, which is
-# enough, since every run syncs the whole board.
+# One sync at a time: GitHub keeps at most one waiting run per group, which is
+# enough, since every sync syncs the whole board. project-maintenance has its own
+# group, so a sync never replaces its waiting run (#689).
 concurrency:
   group: projektpflege
   cancel-in-progress: false

@@ -1,6 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.22
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.21
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.20
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.19
@@ -280,6 +281,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 13.11.2026 | **Batch 7 of the ultrareview ledger (#546: operating test and repository automation), fix PR for #689: the throwaway stack never reopens a LAN bind on its own, and the daily board maintenance cannot be cancelled by a sync.** Red first (2 of 3 new or changed fixture tests red; the workflow change is two config lines without a test, as `.github/workflows` is not mounted in the test container). `bedientest_fixture.py`: `reset` keeps a LAN bind of the last `up` only with `--allow-lan` in the same call, `down` removes the bind, and the printed link and note name the address actually bound. `project-maintenance.yml` waits in a concurrency group of its own (`projektpflege-maintenance`); docs/16 says so. |
 | 13.11.2026 | **Batch 7 of the ultrareview ledger (#546: operator login), fix PR for #688: the sign-in wait no longer tells which operator names exist, and a double-submitted sign-in raises no takeover alarm.** Red first (3 of 5 new or changed test cases red). An unknown name now has its own failure counter (in `operator_login_failures` under `name:` and the hash of the name, forgotten after a day like an address), so it waits like a known one (docs/23 §5). A refused code that is the one the account signed in with in the last two minutes is audited with `reason` `repeat`, not `factor`; docs/09 says so. No migration. |
 | 13.11.2026 | **Batch 7 of the ultrareview ledger (#546: deploy and access), fix PR for #687: provisioning a customer no longer leaves the shared Caddy broken, a placeholder team number unnamed or shared tokens.** Red first (11 new test cases, all red). `new_stack.py`: the shared Caddy validates a new site before it reloads, and a site it refuses is removed again with `networks.json` rewritten; half an n8n editor account is refused before anything starts; push passwords are printed right after they are made; the key `caddy` is refused; one run at a time per root (`flock`), and `networks.json` is built from the site files on disk. `config.py`: agent, kitchen, proxy and media tokens differ pairwise outside dev. `provision.missing()` names a team number that is still the placeholder or empty. Docker steps faked in the tests (no Docker CLI there); not run against a real shared Caddy. |
 | 13.11.2026 | **Batch 6 of the ultrareview ledger (#546), fix PR for #686 (Maxi decided A): a special day "wie Sonntag" also takes Sunday's call-mode and call-limit windows.** Red first (2 new tests, both red). One helper, `status.hours.weekday_of`, now decides the weekday for the seats (`capacity_windows`, which had its own copy), the call mode (`mode_at`) and the call limit (`routing._call_limit`); docs/03 says so. |
@@ -322,6 +324,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.22 · 13.11.2026:** Fix PR for #689: no LAN bind reopened by reset, board maintenance in its own concurrency group
 - **v2.44.21 · 13.11.2026:** Fix PR for #688: the operator sign-in wait tells no names, a double tap raises no takeover alarm
 - **v2.44.20 · 13.11.2026:** Fix PR for #687: provisioning leaves no broken shared Caddy, no unnamed placeholder team number, no shared tokens
 - **v2.44.19 · 13.11.2026:** Fix PR for #686: a special day like Sunday takes Sunday's call mode and call limit
