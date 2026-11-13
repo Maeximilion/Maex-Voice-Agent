@@ -513,7 +513,7 @@ def test_alias_mit_ziffer_vorn(session, tenant_id):
     assert plan.ok, plan.errors
     apply(session, tenant_id, plan, now=NOW)
 
-    for gesagt in ("7up", "ein 7up bitte"):
+    for gesagt in ("7up", "ein 7up bitte", "2 x 7up bitte", "zwei mal 7up"):
         assert nummern(suche(session, tenant_id, gesagt)) == ["90"], gesagt
 
 

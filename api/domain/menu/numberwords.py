@@ -384,6 +384,10 @@ def _scan(tokens: list[str], start: int) -> _Span | None:
             and total % 10 == 0
             and 1 <= value <= 9
             and _counts(tokens, i + 1)
+            # Only a number named as a dish ("Nummer 40", "die 40"): "vierzig
+            # sieben Portionen" alone stays 47 portions (Codex PR #722).
+            and start > 0
+            and tokens[start - 1] in _ITEM_NUMBER_MARKERS | _LINK_ARTICLES
         ):
             # "Nummer 40 zwei Portionen": the unit is the quantity, never a
             # part of the number (42) (#677).
@@ -1383,6 +1387,8 @@ def sole_item_number(
             q.end + 1 < len(tokens)
             and tokens[q.end] in ("mal", "x")
             and _word_value(tokens[q.end + 1]) is not None
+            # "2 x 7up": digits glued to letters are a name (Codex PR #722).
+            and q.end + 1 not in glued
             and (
                 (q.start > 0 and tokens[q.start - 1] in _LINK_ARTICLES)
                 or all(_word_value(t) is None for t in tokens[: q.start])

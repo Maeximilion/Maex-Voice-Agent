@@ -1430,6 +1430,25 @@ def test_a_unit_with_a_quantity_behind_it_is_not_joined_to_the_number(
     assert find_quantity(text) == quantity
 
 
+@pytest.mark.parametrize("text", ["vierzig sieben Portionen", "40 7 Portionen Pho Bo"])
+def test_a_compound_quantity_without_a_dish_marker_stays_the_quantity(text):
+    """Codex PR #722: without "Nummer" or "die" in front, "vierzig sieben
+    Portionen" is 47 portions, never dish 40 seven times."""
+    assert sole_item_number(text)[0] is None
+    assert find_quantity(text) == 47
+
+
+def test_with_an_article_the_unit_before_the_quantity_is_not_joined():
+    ref, unclear = sole_item_number("die 40 zwei Portionen")
+    assert not unclear and ref is not None and ref.text == "40"
+
+
+@pytest.mark.parametrize("text", ["2 x 7up bitte", "zwei mal 7up", "2x7up"])
+def test_a_quantity_before_a_name_with_digits_does_not_ask(text):
+    """Codex PR #722: "7up" is a name, not the second number of "n mal m"."""
+    assert sole_item_number(text) == (None, False)
+
+
 def test_tens_and_unit_still_join_without_a_quantity():
     ref, _ = sole_item_number("Nummer vierzig sieben")
     assert ref is not None and ref.text == "47"
