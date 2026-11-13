@@ -101,7 +101,10 @@ def draft(*item_ids):
 
 
 @pytest.mark.parametrize("entity", ["reservation", "order"])
-@pytest.mark.parametrize("said", ["Ja, passt so.", "Genau.", "Ja bitte"])
+@pytest.mark.parametrize(
+    "said",
+    ["Ja, passt so.", "Genau.", "Ja bitte", "Ja, junge Frau.", "Ja, junger Mann"],
+)
 def test_confirm_after_a_yes_to_the_read_back_draft_is_let_through(entity, said):
     state, draft_id = read_back(entity)
     start = begin_turn(state)
@@ -1082,6 +1085,12 @@ def test_a_safety_promise_about_a_frei_dish_still_counts():
         "Die 13 hat kein Gluten.",
         "Unsere Gerichte haben alle keine Erdnüsse.",
         "Da sind keine Nüsse.",
+        # A denial acknowledged in front does not hide the claim behind it.
+        "Sie haben keine Allergie. Die 13 hat keine Nüsse.",
+        # The guest's allergy is no food (Codex PR #748, P1, round 4).
+        "Für Ihre Nussallergie passt die 13, die hat keine Nüsse.",
+        "Die 13 hat keine Allergene.",
+        "Die 13 hat keine Zutaten mit Gluten.",
     ],
 )
 def test_an_inflected_or_turned_absence_claim_is_refused(say):
@@ -1098,8 +1107,17 @@ def test_an_inflected_or_turned_absence_claim_is_refused(say):
         # #739: absence of something that is no allergen.
         "Die Bestellung hat keine Getränke.",
         "Es gibt keine Lieferung nach 22 Uhr.",
+        "Die Bestellung hat keine Getränke. Die 13 ohne Erdnüsse, notiert.",
         "Sind Sie sicher, dass Sie zwanzig Portionen möchten?",
         "Sind Sie ganz sicher?",
+        # The guest's own denial said back (Codex PR #748, P1).
+        "Gut, Sie haben keine Allergie.",
+        "Ich habe notiert: Sie haben keine Allergien.",
+        "Sie haben keine bekannten Allergien.",
+        "Haben Sie keine weiteren Allergien?",
+        "Sie haben also keine Nussallergie, richtig?",
+        "Sie haben keine Allergie gegen Nüsse, richtig?",
+        "Ihre Nussallergie ist notiert, Besteck ist nicht dabei.",
     ],
 )
 def test_a_wish_echoed_or_a_question_of_certainty_is_no_claim(say):
