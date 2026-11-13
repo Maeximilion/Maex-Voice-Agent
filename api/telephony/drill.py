@@ -18,7 +18,8 @@ telephone registers at, the caller who rings it, and the team telephone. Then
 one call per drill:
 
   silent caller   the AI answers, asks twice into the silence, says goodbye and
-                  hangs up; the team does not ring
+                  hangs up; the team does not ring, and the call carries the note
+                  no_caller_audio (#651)
   own number      a call from the AI telephone's own number is refused; nobody
                   answers and the team does not ring
   keys            the caller's keys reach the core as a turn, the model cannot
@@ -113,6 +114,8 @@ UNLISTED_NUMBER = NUMBER_PREFIX + "999"
 # The stranger's second INVITE comes from this number: a refused call must not
 # leave it in Asterisk's output (#252 finding 12).
 STRANGER_NUMBER = NUMBER_PREFIX + "114"
+# How long the drill waits for the note on a closed call (#651).
+NOTE_WAIT_SECONDS = 5.0
 # docs/20 §5: each row of the outage map within the limit Maxi sets (proposal).
 TEAM_LIMIT_SECONDS = 30.0
 # What a call may take at most before the drill gives up on it.
@@ -452,6 +455,20 @@ class Call:
             f"where c.external_session_id = '{self.sid}'"
         )
 
+    def line_note(self) -> str:
+        """The note on the call's row, once the call was closed: "none" for a
+        row without one, "" for no row. The row closes a moment after the
+        line did."""
+        deadline = time.monotonic() + NOTE_WAIT_SECONDS
+        while True:
+            note = self.drill.sql(
+                "select coalesce(line_note, 'none') from calls "
+                f"where external_session_id = '{self.sid}'"
+            )
+            if note not in ("", "none") or time.monotonic() >= deadline:
+                return note
+            time.sleep(0.5)
+
     def recording_row(self) -> str:
         """ "running", "withdrawn" or "" for no row."""
         return self.drill.sql(
@@ -481,6 +498,7 @@ def silent_call(drill: Drill, n: int, name: str) -> list[Check]:
     call.wait(call.ended)
     seconds = time.monotonic() - call.placed
     drill.quiet()
+    note = call.line_note()
     return [
         (
             name,
@@ -489,7 +507,15 @@ def silent_call(drill: Drill, n: int, name: str) -> list[Check]:
             and not call.router_says(call.team_rings),
             f"call over after {seconds:.1f} s, ending {call.ending()}, "
             f"team rang: {call.router_says(call.team_rings)}",
-        )
+        ),
+        # The caller leg sends nothing, so nothing of the caller reaches the
+        # AI: what Asterisk sends then (no frames, or zeros) is what the note
+        # of #651 rests on.
+        (
+            f"{name}: the call is noted no_caller_audio",
+            note == "no_caller_audio",
+            f"note on the call: {note!r}",
+        ),
     ]
 
 
