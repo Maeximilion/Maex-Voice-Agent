@@ -156,8 +156,12 @@ function send(method, url, body) {
                     areas.push(fresh);
                     added = true;
                 }
-                else if (mine !== keep && mine !== area && !mine.saving && !mine.unsaved && !mine.unacked && !mine.pending)
+                else if (mine !== keep && mine !== area && !mine.saving && !mine.unsaved && !mine.unacked && !mine.pending && mine.revision !== fresh.revision) {
                     adopt(mine, doc);
+                    // An undo would send a room another tablet has changed since: the
+                    // history goes, as on a 409 (Codex PR #724).
+                    mine.history = [];
+                }
             });
             if (added)
                 render();

@@ -190,7 +190,12 @@ function send(method: string, url: string, body?: unknown): Promise<Reply> {
           const fresh = fromDoc(doc);
           const mine = areas.find((a) => a.room.id === fresh.room.id);
           if (!mine) { areas.push(fresh); added = true; }
-          else if (mine !== keep && mine !== area && !mine.saving && !mine.unsaved && !mine.unacked && !mine.pending) adopt(mine, doc);
+          else if (mine !== keep && mine !== area && !mine.saving && !mine.unsaved && !mine.unacked && !mine.pending && mine.revision !== fresh.revision) {
+            adopt(mine, doc);
+            // An undo would send a room another tablet has changed since: the
+            // history goes, as on a 409 (Codex PR #724).
+            mine.history = [];
+          }
         });
         if (added) render();
       })
