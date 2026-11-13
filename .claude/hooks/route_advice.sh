@@ -98,11 +98,11 @@ esac
 # A wrapper closed on the same line (<brief>Route: ...</brief>) leaves its closing tag.
 head=${head%%</*}
 # Model and a valid effort, nothing after: "xhgh" or a missing effort is no route at all.
-route=$(grep -oiE '^ *Route: *claude-[a-z0-9.-]+ +(low|medium|high|xhigh|max|none) *$' <<<"$head" || true)
-# Only the efforts the table gives each model family: Haiku none, Sonnet medium, Opus high
+route=$(grep -oiE '^ *Route: *claude-[a-z0-9.-]+ +(low|medium|high|xhigh|max) *$' <<<"$head" || true)
+# Only the efforts the table gives each model family: Haiku medium, Sonnet medium, Opus high
 # or xhigh (max when Maxi asks), Fable medium, high or xhigh. low is never used.
 case "${route,,}" in
-  *haiku*" none"*|*sonnet*" medium"*|*opus*" high"*|*opus*" xhigh"*|*opus*" max"*|*fable*" medium"*|*fable*" high"*|*fable*" xhigh"*) ;;
+  *haiku*" medium"*|*sonnet*" medium"*|*opus*" high"*|*opus*" xhigh"*|*opus*" max"*|*fable*" medium"*|*fable*" high"*|*fable*" xhigh"*) ;;
   *) route= ;;
 esac
 # Only a model ID the routing table in CLAUDE.md names can be switched to; a typo is malformed.
@@ -112,7 +112,7 @@ if [ -n "$route" ] && [ -f "$root/CLAUDE.md" ]; then
   grep -qF "\`$id\`" "$root/CLAUDE.md" || route=
 fi
 if [ -z "$route" ] && grep -qiE '^ *Route:' <<<"$head"; then
-  msg="routing check: the brief's Route line is not \"Route: <model-id> <effort>\" with a model and effort from the CLAUDE.md routing table (Haiku none, Sonnet medium, Opus high, xhigh or max, Fable medium, high or xhigh), so the setting of this thread cannot be checked."
+  msg="routing check: the brief's Route line is not \"Route: <model-id> <effort>\" with a model and effort from the CLAUDE.md routing table (Haiku medium, Sonnet medium, Opus high, xhigh or max, Fable medium, high or xhigh), so the setting of this thread cannot be checked."
   jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
     additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
   exit 0
@@ -157,7 +157,7 @@ else
   if grep -qiE "$search" <<<"$lower" \
     && ! sed -E 's/\b(where|which|that|wherever) ([a-z_]+ ){1,3}(write|update|change|add|create|edit|remove|delete|build)s?\b//g' <<<"$lower" \
       | grep -qiE "$change"; then
-    want=claude-haiku-5-5 effort=none
+    want=claude-haiku-5-5 effort=medium
   # Docs-only: no code path and no implementation area (domain, agent/, code, logic,
   # matching, ...); a mixed docs and code task takes the higher setting below.
   # The topic of a doc ("the telephony docs") and a typo fix in it are not code work.
@@ -192,9 +192,6 @@ else
     want=claude-opus-5-5 effort=high
   fi
 fi
-# Haiku takes no effort setting: "none" means effort is not compared, but messages keep it.
-shown=${effort:-any}
-[ "$effort" = none ] && effort=
 
 model=$(jq -r '.model // empty' <<<"$input")
 [ -n "$model" ] || model=$(cat "$state/$sid.model" 2>/dev/null)
@@ -211,7 +208,7 @@ fi
 # timeout is 10 s). A thread that really stays on the wrong model (fork, cloud) pays the
 # 5 s once, on that resend.
 if [ -n "$route" ] && [ -z "$(jq -r '.model // empty' <<<"$input")" ] \
-  && grep -qx "$(cksum <<<"$want ${effort:-any}")" "$state/$sid.seen" 2>/dev/null; then
+  && grep -qx "$(cksum <<<"$want $effort")" "$state/$sid.seen" 2>/dev/null; then
   for _ in 1 2 3 4 5 6 7 8 9 10; do
     m=$(cat "$state/$sid.model" 2>/dev/null)
     [ -z "$m" ] || model=$m
@@ -232,8 +229,8 @@ have_effort=${have_effort:-$CLAUDE_CODE_EFFORT_LEVEL}
 # and effort together at the start: a routed effort that took counts as a match.
 if [ -z "$model" ]; then
   [ -n "$route" ] || exit 0
-  [ -n "$effort" ] && [ "$have_effort" = "$effort" ] && { rm -f "$state/$sid.seen"; exit 0; }
-  msg="routing check: the brief asks for $want at effort $shown, but this session's model is not known to the hook yet and its effort is ${have_effort:-unknown}, so the setting of this thread cannot be checked."
+  [ "$have_effort" = "$effort" ] && { rm -f "$state/$sid.seen"; exit 0; }
+  msg="routing check: the brief asks for $want at effort $effort, but this session's model is not known to the hook yet and its effort is ${have_effort:-unknown}, so the setting of this thread cannot be checked."
   jq -n --arg m "$msg" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit",
     additionalContext: ("Carry on with the task and name this in your report to the session that started you: " + $m)}}'
   exit 0
@@ -245,32 +242,32 @@ want_f=$(family "$want") have_f=$(family "$model")
 # The exact routed model, a suffix such as [1m] allowed. An unknown effort counts as a
 # match except where xhigh is wanted: that one is asked about once.
 if [[ "$model" == "$want"* ]]; then
-  if [ -z "$effort" ] || [ "$have_effort" = "$effort" ]; then [ -z "$route" ] || rm -f "$state/$sid.seen"; exit 0; fi
+  if [ "$have_effort" = "$effort" ]; then [ -z "$route" ] || rm -f "$state/$sid.seen"; exit 0; fi
   [ -n "$have_effort" ] || [ "$effort" = xhigh ] || exit 0
 fi
 
 now="session is on $model, effort ${have_effort:-unknown}"
 if [ -n "$route" ]; then
-  msg="routing check: the brief asks for $want at effort $shown, but this $now."
+  msg="routing check: the brief asks for $want at effort $effort, but this $now."
   # First time: stop before any work, so the starting session can switch this thread
   # (set_session_model / set_session_effort work on a thread it started, never on itself)
   # and send the brief again. Same mismatch after that resend: the switch did not take
   # (fork, cloud) or only half took, so carry on and report it. After that: silent, never
   # a loop. Counted per requested route, whatever setting the thread is on now.
-  hash=$(cksum <<<"$want ${effort:-any}")
+  hash=$(cksum <<<"$want $effort")
   seen=$(grep -cx "$hash" "$state/$sid.seen" 2>/dev/null)
   echo "$hash" >> "$state/$sid.seen"
   case "${seen:-0}" in
-    0) ctx="Routing mismatch: do not start the task and use no tools. Reply with exactly this one line, then end your turn: ROUTE-MISMATCH want=$want $shown have=$model ${have_effort:-unknown}. The session that started you switches your model and effort and sends the brief again." ;;
+    0) ctx="Routing mismatch: do not start the task and use no tools. Reply with exactly this one line, then end your turn: ROUTE-MISMATCH want=$want $effort have=$model ${have_effort:-unknown}. The session that started you switches your model and effort and sends the brief again." ;;
     1) ctx="The brief was sent again but this thread still runs on the wrong setting: carry on with the task and name the mismatch in your report. $msg" ;;
     *) exit 0 ;;
   esac
   jq -n --arg m "$msg" --arg c "$ctx" '{systemMessage: $m, hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext: $c}}'
   exit 0
 elif [ "$have_f" -lt "$want_f" ] || { [ "$have_f" = "$want_f" ] && { [[ "$model" != "$want"* ]] || [ "$(level "$have_effort")" -lt "$(level "$effort")" ]; }; }; then
-  msg="routing advice: this prompt fits $want at effort ${effort:-none} (CLAUDE.md Model Routing); $now. Switch in the model menu if you want, no need to resend."
+  msg="routing advice: this prompt fits $want at effort $effort (CLAUDE.md Model Routing); $now. Switch in the model menu if you want, no need to resend."
 else
-  msg="routing advice: this prompt fits $want at effort ${effort:-none} (CLAUDE.md Model Routing); $now. A coordinating session hands it to a fresh thread with that model and effort and a Route line; otherwise switching down saves tokens."
+  msg="routing advice: this prompt fits $want at effort $effort (CLAUDE.md Model Routing); $now. A coordinating session hands it to a fresh thread with that model and effort and a Route line; otherwise switching down saves tokens."
 fi
 # The same advice once per session and state: a person who keeps the setting is not nagged.
 hash=$(cksum <<<"$msg")
