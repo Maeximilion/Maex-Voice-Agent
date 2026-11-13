@@ -1876,6 +1876,17 @@ def _with_allergy(
     )
 
 
+# The one clause `_theirs_behind_a_denial` reads, after fold(): "nur meine
+# Frau gegen Sesam", "aber mein Mann ist gegen Erdnuss allergisch", "meine
+# Tochter hat eine Sesamallergie".
+_THEIRS = re.compile(
+    r"(?:(?:nur|aber|auch|dafuer)\s+)?"
+    r"(?:mein|meine|meinem|meinen|meiner|unser|unsere|unserem|unseren|unserer)\s+"
+    r"(?P<person>[a-z]+)\s+(?:aber\s+|nur\s+|auch\s+)?"
+    r"(?:(?:ist\s+|hat\s+(?:eine\s+)?)?(?:gegen\s+[a-z]+(?:\s+allergisch)?|[a-z]+allergie))"
+)
+
+
 def _unglued(clause: str) -> str:
     """The clause without the joining words in front ("und ohne Zwiebeln")."""
     return _LEADING_GLUE.sub("", _clean(clause))
@@ -1915,37 +1926,29 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
     before, behind = text[:comma], clauses[n]
     if not _denial_phrase(_SENTENCE_END.split(before)[-1]):
         return None
-    said = _words(behind)
-    adult = of_another_adult(behind)
+    # A whitelist, not guards: the clause is one person and one single-word
+    # allergen in one of the shapes below, nothing else. Every other form is
+    # asked about, as on main; five review rounds found forms that passed
+    # guards (Codex PR #735).
+    shape = _THEIRS.fullmatch(fold(_clean(behind)))
+    if shape is None:
+        return None
+    person = shape.group("person")
+    if person not in _PERSONS | _CHILDREN:
+        return None
     # A child's allergy is the caller's to consent to, as said directly.
-    if not (adult or _CHILDREN & set(said)):
-        return None
-    people = _PERSONS | _CHILDREN | _OTHERS
-    if (
-        # Exactly one person and one allergen, or it is asked (Codex PR #735).
-        sum(w in people for w in said) > 1
-        # An allergen is a "gegen", a compound the parser reads ("Nussallergie",
-        # "Laktoseintoleranz", "Milchunverträglichkeit") or a "vertrage keine";
-        # the plain word "allergisch" names none (Codex PR #735).
-        or sum(1 for _ in _compound_stems(behind))
-        + len(_GEGEN_WORD.findall(behind))
-        + len(_INGREDIENT[1].findall(behind))
-        > 1
-        or _PRONOUNS & set(said)
-        or _negated(said)
-    ):
-        return None
-    # "nur meine Frau gegen Sesam": the allergy word is the denial's.
-    ingredient = _ingredient(behind) or (
-        _ingredient(f"{behind} allergisch") if _GEGEN_WORD.search(behind) else None
-    )
-    if ingredient is None:
+    adult = person in _PERSONS
+    ingredient = _ingredient(behind) or _ingredient(f"{behind} allergisch")
+    if ingredient is None or " " in ingredient.strip():
         return None
     # Every later clause is a plain removal, or the allergy may go on there
     # ("..., Nüsse und Milch", "..., und mein Mann gegen Nüsse"): then
     # nothing is read, and the caller is asked (Codex PR #735).
     later = [_classify(_unglued(clause), groups) for clause in clauses[n + 1 :]]
-    if any(wish.kind != "note" for wish in later):
+    if any(wish.kind != "note" for wish in later) or any(
+        mentions_allergy(clause) or "wegen" in _words(clause)
+        for clause in clauses[n + 1 :]
+    ):
         return None
     # What is said in front of the denial's own clause, commas and all
     # ("Ohne Zwiebeln und ich habe keine Allergie", Codex PR #735).

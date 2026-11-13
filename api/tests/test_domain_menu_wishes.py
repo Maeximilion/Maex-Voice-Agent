@@ -2079,6 +2079,9 @@ def test_an_allergy_behind_the_callers_denial_has_its_owner(
         # Codex PR #735: an intolerance compound beside the elided allergy.
         "Ich habe keine Allergie, nur meine Frau gegen Sesam und eine Laktoseintoleranz",
         "Ich habe keine Allergie, nur meine Frau gegen Sesam und eine Milchunverträglichkeit",
+        # Codex PR #735: a verbal intolerance, and an intolerance behind "ohne".
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam und verträgt Milch nicht",
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam, ohne Milch wegen Laktoseintoleranz",
     ],
 )
 def test_a_doubtful_clause_behind_a_denial_gives_no_ingredient(said):
