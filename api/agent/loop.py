@@ -279,7 +279,11 @@ class ConversationLoop:
             recording.settle(self._session, state, answer, self._now)
             if bare_recording_answer(user_text):
                 guards.note_said(state, recording.SAY_WHAT_CAN_I_DO)
-                return TurnResult(state=state, say=_opening(state))
+                say = _opening(state)
+                if escalation.addresses_a_person(user_text):
+                    # "Nein, junge Frau": the truthful sentence still comes first.
+                    say = [SAY_NOT_A_PERSON, *say]
+                return TurnResult(state=state, say=say)
             # No consent, and no second question: what the sentence holds
             # besides its answer is what the guest called for, and the only
             # thing the readers of the turn see (#526).
