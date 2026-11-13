@@ -35,10 +35,13 @@ def matching_rule(
             ComplaintRule.tenant_id == tenant_id, ComplaintRule.active.is_(True)
         )
     ).all()
-    hits = [rule for rule in rules if any(_spoken(p) in words for p in rule.phrases)]
+    # A NULL among the phrases of a row from before migration 037 says nothing
+    # (#692): skipped, or every complaint would end as an outage.
+    phrases = {rule.id: [p for p in rule.phrases if p is not None] for rule in rules}
+    hits = [r for r in rules if any(_spoken(p) in words for p in phrases[r.id])]
     if len(hits) != 1:
         return None
-    for phrase in hits[0].phrases:
+    for phrase in phrases[hits[0].id]:
         words = words.replace(_spoken(phrase), " ")
     return None if _DOUBT.search(words) else hits[0]
 

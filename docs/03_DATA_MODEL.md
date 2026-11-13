@@ -237,7 +237,7 @@ The catalogue of fixed answers to a complaint, per tenant (D19, T-10.11, migrati
 | id | UUID PK | |
 | tenant_id | UUID FK | |
 | name | TEXT | what the team reads on the card; not blank, at most 100 characters so a card always fits |
-| phrases | TEXT[] | the words that select the rule, at least one; any of them matches, as whole words and as written (`kalt` does not cover `kalte`) |
+| phrases | TEXT[] | the words that select the rule, at least one and none NULL (migration 037, #692); any of them matches, as whole words and as written (`kalt` does not cover `kalte`) |
 | remedy_cents | INTEGER | the remedy, above 0: every remedy is money (D19). The amount on the card and in `audit_log`; a sentence that names an amount has to name this one |
 | offer_say | TEXT | the offer in German, closing with the question the guest's yes answers; not blank |
 | granted_say | TEXT | what the guest hears after the yes, the last sentence of the call; not blank |
@@ -624,6 +624,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 033 | `service_config.team_phone_today` and `team_phone_today_until` (CHECK both or neither), `staff_changes` with a partial unique index on open cards: staff changes and their check cards (#570 b, D34 point 4); new columns and a new table; the downgrade drops them, a staff number for today and every card are gone, hours written stay (backup first) |
 | 035 | `tenants.customer_key` (CHECK on the form, unique): the customer's key, by which provisioning finds the tenant it created (#573); a new column only; the downgrade drops it, after which a rerun of provisioning refuses because the stack already holds a tenant |
 | 036 | `calls.line_note` (CHECK on the closed list, today `no_caller_audio`): the note on a call nothing of the caller reached (#651). Down drops the column and the notes; no call is lost |
+| 037 | `complaint_rules.phrases` holds no NULL element (CHECK with `array_position(phrases, NULL) IS NULL`, #692). Up drops the NULLs of an existing row and fails on a row of NULLs only, which is fixed by hand; down restores the old check and changes no row |
 | planned, next free number | `eval_cases`, `eval_runs` |
 
 ### Operator database (#571, docs/23 §5)

@@ -85,7 +85,11 @@ class ComplaintRule(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
 
     __tablename__ = "complaint_rules"
     __table_args__ = (
-        CheckConstraint("cardinality(phrases) > 0", name="ck_complaint_rules_phrases"),
+        # No NULL among them: the matcher would raise on every complaint (#692).
+        CheckConstraint(
+            "cardinality(phrases) > 0 AND array_position(phrases, NULL) IS NULL",
+            name="ck_complaint_rules_phrases",
+        ),
         CheckConstraint("remedy_cents > 0", name="ck_complaint_rules_remedy_cents"),
         CheckConstraint(
             "btrim(name) <> '' AND btrim(offer_say) <> '' AND btrim(granted_say) <> ''",
