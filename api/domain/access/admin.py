@@ -40,13 +40,19 @@ NO_LOGIN = "Noch kein Zugang: erst einen Link machen."
 
 
 class AdminRefused(Unauthorized):
-    """A wrong admin PIN, a wait that still runs (`wait_minutes`), or no admin
-    PIN set yet (`missing`)."""
+    """A wrong admin PIN, a wait that still runs (`wait_minutes`), no admin
+    PIN set yet (`missing`), or a device signed out meanwhile (`ended`)."""
 
-    def __init__(self, wait_minutes: int | None = None, missing: bool = False):
+    def __init__(
+        self,
+        wait_minutes: int | None = None,
+        missing: bool = False,
+        ended: bool = False,
+    ):
         super().__init__("admin pin refused")
         self.wait_minutes = wait_minutes
         self.missing = missing
+        self.ended = ended
 
 
 def unlock_admin(
@@ -64,7 +70,7 @@ def unlock_admin(
     )
     if account is None or row is None or row.account_id != account.id:
         session.rollback()
-        raise AdminRefused()
+        raise AdminRefused(ended=True)
     if not account.admin_pin:
         session.rollback()
         raise AdminRefused(missing=True)

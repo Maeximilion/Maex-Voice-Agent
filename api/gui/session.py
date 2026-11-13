@@ -13,6 +13,7 @@ from datetime import timedelta
 from urllib.parse import quote, urlsplit
 
 from fastapi import Depends, HTTPException, Request, Response
+from fastapi.routing import APIRoute
 from sqlalchemy.orm import Session
 
 from api.config import LOCAL_ENVS, settings
@@ -98,7 +99,11 @@ def _checked_access(request: Request, db: Session) -> Access:
         if not same_origin(request):
             raise HTTPException(status_code=403, detail="Only from this site")
         if access.locked:
-            raise _away(request, UNLOCK)
+            # Behind the admin PIN its page unlocks too; the team PIN would
+            # close owner rights and lose the owner's click (#597).
+            raise _away(
+                request, _owner_page(request) if _needs_admin(request) else UNLOCK
+            )
         mark_active(db, access.session_id, now)
     return access
 
@@ -110,12 +115,29 @@ def require_admin(
     weekly hours when their pages come (D34 point 3). Without the admin PIN on
     this device it goes to the PIN page, which leads back here."""
     if not access.admin:
-        back = request.url.path
-        if request.method != "GET":
-            # A write returns to the page it came from, not to its own path.
-            back = urlsplit(request.headers.get("hx-current-url", "")).path
-        raise _away(request, f"{OWNER}?weiter={quote(back, safe='/')}")
+        raise _away(request, _owner_page(request))
     return access
+
+
+def _owner_page(request: Request) -> str:
+    back = request.url.path
+    if request.method != "GET":
+        # A write returns to the page it came from, not to its own path.
+        back = urlsplit(request.headers.get("hx-current-url", "")).path
+    return f"{OWNER}?weiter={quote(back, safe='/')}"
+
+
+def _needs_admin(request: Request) -> bool:
+    """Whether the route depends on `require_admin`. The router's session
+    check runs before it, so it reads the route's dependency tree."""
+    route = request.scope.get("route")
+    stack = list(route.dependant.dependencies) if isinstance(route, APIRoute) else []
+    while stack:
+        dependency = stack.pop()
+        if dependency.call is require_admin:
+            return True
+        stack.extend(dependency.dependencies)
+    return False
 
 
 def _away(request: Request, path: str) -> HTTPException:

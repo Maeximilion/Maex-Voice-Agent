@@ -17,9 +17,11 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core import time as clock
 from api.db import get_db
+from api.domain.access.admin import AdminRefused
 from api.domain.access.sessions import IDLE, stack_tenant_id
 from api.domain.access.setup import issue_link, use_link
 from api.gui.router import router as gui_router
+from api.gui.sse import _signed_in
 from api.main import app
 from api.models import GuiLoginFailure, GuiSession, StaffChange
 from scripts.seed import seed
@@ -522,9 +524,14 @@ def test_signing_out_this_device_goes_to_the_sign_in(client, engine):
     _set_up_and_sign_in(client, engine)
     assert _owner(client).status_code == 303
     own = _sessions(engine)[0]
+    with Session(engine) as session:
+        assert _signed_in(session, own.id)
     answer = client.post(f"{DEVICES}/{own.id}/abmelden", headers=HX)
     assert answer.headers["HX-Redirect"] == "/gui/anmelden"
     assert _sessions(engine) == []
+    # Its event stream ends on the next tick (#597).
+    with Session(engine) as session:
+        assert not _signed_in(session, own.id)
 
 
 def test_closing_the_owner_part_leaves_staff_rights(client, engine):
@@ -576,3 +583,43 @@ def test_a_check_card_answer_without_the_admin_pin_goes_to_the_pin_page(
     assert _owner(client, back="/gui/").headers["location"] == "/gui/"
     kept = client.post(f"/gui/pruefen/{card_id}/uebernehmen", data=shown, headers=HX)
     assert kept.status_code == 200
+
+
+def test_a_locked_device_writing_behind_the_admin_pin_goes_to_the_admin_pin(
+    client, engine
+):
+    """The owner reads the device list past the idle lock and taps "Gerät
+    abmelden" (#597): the admin PIN page, which unlocks too, not the team PIN
+    page, whose PIN would close owner rights and lose the click."""
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client).status_code == 303
+    _lock(engine)
+    own = _sessions(engine)[0]
+    answer = client.post(
+        f"{DEVICES}/{own.id}/abmelden",
+        headers={**HX, "HX-Current-URL": "http://testserver/gui/geraete"},
+    )
+    assert answer.status_code == 401
+    assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/geraete"
+    # The same for a route that names the check only among its dependencies.
+    card = client.post(
+        f"/gui/pruefen/{own.id}/uebernehmen",
+        headers={**HX, "HX-Current-URL": "http://testserver/gui/"},
+    )
+    assert card.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/"
+    # A staff write on the locked device still asks the team PIN.
+    staff = client.post("/gui/kopfzeile/ki-pausieren", headers=HX)
+    assert staff.headers["HX-Redirect"] == "/gui/entsperren"
+
+
+def test_the_right_admin_pin_on_a_device_signed_out_meanwhile_goes_to_the_sign_in(
+    client, engine, monkeypatch
+):
+    _set_up_and_sign_in(client, engine)
+
+    def signed_out(*_args):
+        raise AdminRefused(ended=True)
+
+    monkeypatch.setattr("api.gui.access.unlock_admin", signed_out)
+    answer = _owner(client)
+    assert answer.status_code == 303 and answer.headers["location"] == "/gui/anmelden"

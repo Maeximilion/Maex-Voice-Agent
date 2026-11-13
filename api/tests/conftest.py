@@ -78,8 +78,10 @@ def _gui_signed_in(request):
     from api.gui.session import require_admin, require_gui_session
     from api.main import app
 
-    app.dependency_overrides[require_gui_session] = lambda: None
-    # With the admin PIN, too; no real device has this id.
+    # No real device has this id; the admin PIN is open too.
+    app.dependency_overrides[require_gui_session] = lambda: Access(
+        uuid.UUID(int=0), locked=False, admin=False
+    )
     app.dependency_overrides[require_admin] = lambda: Access(
         uuid.UUID(int=0), locked=False, admin=True
     )

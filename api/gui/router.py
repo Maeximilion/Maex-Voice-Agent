@@ -1927,7 +1927,9 @@ def device_sign_out(
 
 
 @router.get("/events", include_in_schema=False)
-def events(request: Request) -> StreamingResponse:
+def events(
+    request: Request, access: Access = Depends(require_gui_session)
+) -> StreamingResponse:
     """Ereignisstrom für die Live-Aktualisierung.
 
     Bewusst ohne die Session der Anfrage: die wird erst nach dem Ende der
@@ -1943,7 +1945,7 @@ def events(request: Request) -> StreamingResponse:
             iter(["event: problem\ndata: tenant\n\n"]), media_type="text/event-stream"
         )
     return StreamingResponse(
-        today_event_stream(request, tenant_id, tz_name),
+        today_event_stream(request, tenant_id, tz_name, access.session_id),
         media_type="text/event-stream",
         # Ein puffernder Proxy haelt Ereignisse sonst zurueck, bis genug
         # Bytes zusammen sind - die Live-Ansicht waere dann nicht live.
