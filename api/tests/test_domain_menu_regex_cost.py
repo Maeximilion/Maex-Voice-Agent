@@ -138,7 +138,10 @@ def test_long_run_of_one_character_stays_linear(call, text):
 
 # The operations as they were before the fix. They are the reference here and
 # nothing else: do not use them on text a caller controls.
-_OLD_SEPARATOR = re.compile(r"\s*,\s*|\s+(?:und|sowie)\s+", re.IGNORECASE)
+# With the decimal comma of #676: no cut between two digits ("0,5").
+_OLD_SEPARATOR = re.compile(
+    r"\s*(?<!\d),\s*|\s*,(?!\d)\s*|\s+(?:und|sowie)\s+", re.IGNORECASE
+)
 _OLD_COMPOUND = re.compile(
     r"(\w+?)-?(?:allergie|intoleranz|unvertr(?:ä|ae)glichkeit)"
     r"|(\w+)-(?=\s*(?:,|und|oder|sowie)\s)",
@@ -193,7 +196,7 @@ REFERENCE = {
     "pieces at the separators": (
         _old_pieces,
         _new_pieces,
-        ["und", "Und", "sowie", "oder", "die", "23"],
+        ["und", "Und", "sowie", "oder", "die", "23", "0,5", "8, 50"],
     ),
     "joining words at the end": (
         lambda text: re.sub(

@@ -120,8 +120,8 @@ def positions(heard: str, menu: Menu = EVAL) -> list[str]:
     und die S37" stays whole by the sentence, because "die S37" opens no
     position without the menu, and every piece at the separators is a position
     if each of them is one card number - one that leads to a dish, clearly or
-    through a heard letter, or one the menu does not have, which the search
-    then says. A piece that is no single card number keeps the sentence whole,
+    through a heard letter, one with several dishes the search asks between
+    (#676), or one the menu does not have, which the search then says. A piece that is no single card number keeps the sentence whole,
     and the search asks. A piece that is a dish name is not looked up here:
     this judge has no name search, so such a sentence stays whole, which is
     the cautious verdict.
@@ -133,9 +133,7 @@ def positions(heard: str, menu: Menu = EVAL) -> list[str]:
     if len(pieces) <= 1:
         return parts
     for piece in pieces:
-        got = resolve(piece, menu.card)
-        several = len(dishes(got, menu)) > 1 and "?" not in got
-        if got in ("?", "name") or several:
+        if resolve(piece, menu.card) in ("?", "name"):
             return parts
     return pieces
 

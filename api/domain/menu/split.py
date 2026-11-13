@@ -28,6 +28,7 @@ Position, die Sauce ist Option und kein zweites Gericht.
 import re
 
 from api.domain.menu.numberwords import (
+    ALTERNATIVE_WORDS,
     find_quantity,
     fold,
     hesitation,
@@ -41,12 +42,11 @@ from api.domain.menu.numberwords import (
 # pattern that begins with `\s*` or `\s+` reads a long run of spaces again from
 # every character of it (CodeQL py/polynomial-redos). The whitespace in front
 # stays at the end of the piece before; `_strip` takes it off.
-_SEPARATOR = re.compile(r",\s*|\s(?:und|sowie)\s+", re.IGNORECASE)
+# A comma between two digits is a decimal comma ("eine Cola 0,5"), no
+# separator: cut there, the "5" became a dish of its own (#676).
+_SEPARATOR = re.compile(r"(?<!\d),\s*|,(?!\d)\s*|\s(?:und|sowie)\s+", re.IGNORECASE)
 _WORD = re.compile(r"\d+|[a-z]+")
-# Nach fold() (ä -> ae). Deckungsgleich mit numberwords._ALTERNATIVE_WORDS.
-_CORRECTION_WORDS = frozenset(
-    {"oder", "nein", "bzw", "beziehungsweise", "sondern", "lieber", "statt", "anstatt"}
-)
+_CORRECTION_WORDS = ALTERNATIVE_WORDS
 _ARTICLES = frozenset({"ein", "eine", "einen", "einem", "einer"})
 _DETERMINERS = frozenset({"die", "der", "das", "den"})
 _NUMBER_MARKERS = frozenset({"nummer", "nr", "no"})
@@ -99,7 +99,12 @@ def _strip(part: str) -> str:
 def separator_pieces(text: str) -> int:
     """Wie viele Stuecke ein Text an den Trennern hat, ohne jede Pruefung. Fuer
     die Grenze der Spannen in search.position_parts: "Fisch und Chips" hat zwei."""
-    return len(_SEPARATOR.split(text.strip()))
+    return len(cut_at_separators(text))
+
+
+def cut_at_separators(text: str) -> list[str]:
+    """The pieces of a text at the separators, without any check."""
+    return [_strip(p) for p in _SEPARATOR.split(text.strip())]
 
 
 def _separable(text: str) -> bool:
