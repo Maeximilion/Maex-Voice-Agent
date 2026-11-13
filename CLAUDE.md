@@ -9,7 +9,7 @@
 
 An AI agent answers calls on the restaurant **<Pilotbetrieb>** (<Ort>)'s landline and handles **reservations, pickups, and deliveries**. Complaints are to be resolved by fixed rules from the database, and what the rules do not cover goes to the team (D19, 07.10.2026; until T-10.11 is built the code hands a complaint to a human). Edge cases escalate to a human. The team controls everything via a browser GUI on a tablet.
 
-**Division of Labor (since 07.10.2026, E1 flipped):** there is no external voice platform. We build the **logic, database, interface and the voice layer**: Asterisk takes the call on our own server, speech-to-text and text-to-speech sit behind swappable ports, the conversation core decides (`docs/20_VOICE_LAYER.md`). The voice layer runs on the workbench in the test phase (T-1.11), not live yet; a hosted platform is the last resort only.
+**Division of Labor:** there is no external voice platform. We build the **logic, database, interface and the voice layer**: Asterisk takes the call on our own server, speech-to-text and text-to-speech sit behind swappable ports, the conversation core decides (`docs/20_VOICE_LAYER.md`). The voice layer runs on the workbench in the test phase (T-1.11), not live yet; a hosted platform is the last resort only.
 
 **Placeholders:** Operation, company, location, and provider names appear in code and docs as `<Pilotbetrieb>`, `<Firmenname>`, `<Ort>`, `<Kassensystem>`, `<Kassenanbieter>`, and `example.com`. Real values come from `.env` and the database, never into the repo. No emojis in code.
 
@@ -43,9 +43,6 @@ These six rules override any convenience. If a task violates them: **stop and as
 | Voice layer | Own: Asterisk + service `voice`, speech engines behind ports (`docs/20_VOICE_LAYER.md`) | Set 07.10.2026, test phase on the workbench |
 
 "Default" = suggestion, can change. If Maxi disagrees, this and `docs/01_STATUS.md` get updated.
-
-**Why HTMX over React:** one container instead of two, no Node build, no CORS, live updates via Server-Sent-Events. Sufficient for a tablet UI with lists and large buttons. Rationale in `docs/06_GUI.md`.
-
 ---
 
 ## 4. Folder Structure
@@ -100,7 +97,7 @@ The rules themselves live in `docs/21_REVIEW_AUTOMATION.md` "Working rules in fo
 `/start` begin session · `/task T-x.y` build task · `/done` close out · `/ship <PR>` drive a PR through CI and review to its merge · `/bug "…"` error with a red eval case or test first · `/eval` run and assess suite · `/gate Gx` close gate, sync README and version · `/project` maintain the board, the only command allowed to write to it · `/handover` hand unfinished work to a new session. Detailed workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`. After `/done` opens or updates its task's PR, the session goes on with `/ship` itself (`done.md` "Automatic handoff").
 
 ### Model Routing
-Start the session on the model you expect to need: a switch starts a cold cache, and every doc read before it is paid for twice. `/start` recommends model and effort for the task it suggests; `/task` checks both against the table before it reads anything else and asks the user to switch on a mismatch (the user switches, Claude cannot).
+Start the session on the model you expect to need. `/start` recommends model and effort for the task it suggests; `/task` checks both against the table before it reads anything else and asks the user to switch on a mismatch (the user switches, Claude cannot).
 
 | Work | Model | Effort |
 |---|---|---|
@@ -123,7 +120,7 @@ In a workflow, a scanning or collecting stage runs on Haiku 5.5 and the judging 
 
 Maxi starts uses 2 to 4; `/start` names at most one candidate in one line. Never on Fable: `/ship`, waiting for CI or a review, P2 fix rounds, `gui/`, docs, status, seeds and imports, tests for existing code, search and reading, the board, a security audit or security review. In a Fable session: no optional follow-up steps ("The Loop"; Definition of Done items stay in the task); the session ends with a handover when its PR opens, `/ship` runs in a fresh Sonnet session and a P1 fix on Opus; every subagent gets an explicit cheaper `model`, since it can otherwise inherit Fable. `/advisor` stays off.
 
-**Usage check** (Maxi, 2026-11-11, start values): before a task, a fix round, a Fable use or an agent starts, after every agent and during a long run, the session reads the plan limits: `get_usage` in the desktop app (5-hour window, week, Fable week), `~/.claude/usage_gate/state.json` in a terminal (the week only); where neither can be read, it says so in one line and goes on. No task starts at 70 percent or more of the 5-hour window (a Sonnet row: 85) or 90 or more of the week, no Fable use at 80 or more of the Fable week (a consult: 95); it names the reset time and what still fits instead. At 90 or more of the 5-hour window it finishes the step, commits, pushes and writes the handover with the reset time; agents write their findings to files as they go, so a complete handover is ready before the limit. The user-level usage gate blocks at its weekly cap (`docs/19_CLAUDE_CODE_SETUP.md`).
+**Usage check** (Maxi, 2026-11-11): before a task, a fix round, a Fable use or an agent starts, after every agent and during a long run, the session reads the plan limits: `get_usage` in the desktop app (5-hour window, week, Fable week), `~/.claude/usage_gate/state.json` in a terminal (the week only); where neither can be read, it says so in one line and goes on. No task starts at 70 percent or more of the 5-hour window (a Sonnet row: 85) or 90 or more of the week, no Fable use at 80 or more of the Fable week (a consult: 95); it names the reset time and what still fits instead. At 90 or more of the 5-hour window it finishes the step, commits, pushes and writes the handover with the reset time; agents write their findings to files as they go, so a complete handover is ready before the limit. The user-level usage gate blocks at its weekly cap (`docs/19_CLAUDE_CODE_SETUP.md`).
 
 **Agents per weekday** (Maxi, 2026-11-02): agents at once count every subagent and thread of the session, a workflow's agents included; the day is the one in `Europe/Berlin`. The project hook `agent_limit.sh` reads today's row from this table and names it at every session start. A rule, not a cap: nothing in Claude Code counts agents per day.
 
@@ -139,17 +136,17 @@ Maxi starts uses 2 to 4; `/start` names at most one candidate in one line. Never
 
 **Threads** (Maxi, 2026-10-15): a coordinating chat (a project chat, or any session that hands work on) runs on Opus 5.5 at `high` and starts each thread with `context` "fresh" and the `model` and `effort` of this table on the start call. The brief's first line is `Route: <model-id> <effort>` (`Route: claude-sonnet-5-5 medium`, Haiku `medium` too); the project hook `route_advice.sh` checks it. A thread on the wrong setting does no work and answers only `ROUTE-MISMATCH want=... have=...`; the coordinating chat switches it with `set_session_model` and `set_session_effort` and sends the brief again. The same mismatch again: the thread carries on and reports it, one switch attempt, never a loop. Switch tools and test: `docs/19_CLAUDE_CODE_SETUP.md` section 6.
 
-**Ultrareview** (`/code-review ultra <PR>`: billed, started by Maxi only, Claude cannot launch it; the free runs are used up, so the reminder names a local `/code-review max <PR>`, run on Maxi's word): the reminder, the ledger and how its findings are filed live in `done.md` step 7a; read it before acting on such a review or a batch review of the ledger.
+**Ultrareview** (`/code-review ultra <PR>`: billed, started by Maxi only, Claude cannot launch it; the reminder names a local `/code-review max <PR>`, run on Maxi's word): the reminder, the ledger and how its findings are filed live in `done.md` step 7a; read it before acting on such a review or a batch review of the ledger.
 
 ### Reading docs
-Large docs (`docs/01_STATUS.md`, `docs/07_WORKPACKAGES.md`, `docs/20_VOICE_LAYER.md`, `docs/HISTORY.md`) are never read in full (Maxi, 2026-11-09, #562: whole-file reads were about a fifth of all context). `grep -n` the heading or ID first, then read that range with offset and limit, and cut long table rows with `cut -c1-260`. `docs/HISTORY.md` is the archive of STATUS (Summary, older Done rows, Changelog, settled assumptions): grep it, add entries only. The weekly STATUS upkeep: `start.md` step 3.
+Large docs (`docs/01_STATUS.md`, `docs/07_WORKPACKAGES.md`, `docs/20_VOICE_LAYER.md`, `docs/HISTORY.md`) are never read in full (Maxi, 2026-11-09). `grep -n` the heading or ID first, then read that range with offset and limit, and cut long table rows with `cut -c1-260`. `docs/HISTORY.md` is the archive of STATUS (Summary, older Done rows, Changelog, settled assumptions): grep it, add entries only. The weekly STATUS upkeep: `start.md` step 3.
 
 ### The Loop
 **Plan → Build → Execute → Assess → Iterate.** After each task, independently take up to **3 follow-up steps** toward the goal (add tests, close obvious gaps, sync docs), then report results. Larger scope expansions only as a proposal.
 
 Closing the loop is not a follow-up step: an untested path, an unverified claim or a known gap in what was just built or changed belongs to the same task. Test it and fix what it shows before reporting, without asking first and without counting it against the three steps. "I can test X if you want" is only for work outside the scope or behind a wait point.
 
-Every session loads the personal skills `code-autopilot` and `caveman` at level `ultra` (Skill tool, argument `ultra`) without being asked (Maxi, 2026-10-19, replaces the rule of 2026-10-12): `/start`, `/task` and `/bug` load both themselves, `/task` only after its model and environment checks so that nothing is read on the wrong model; any other session loads them before its first reply. Where a skill is not installed, say so in one line and go on. `caveman` shapes the chat replies to Maxi only: everything written to the repo (code, comments, commit messages, PR titles and descriptions, review replies, docs, `docs/01_STATUS.md`, handover blocks) stays in full English sentences, and questions stay closed popup questions (Questions below). Where either skill differs from this file, this file wins (the follow-up budget of 3 above, no emojis, English for everything written to the repo).
+Every session loads the personal skills `code-autopilot` and `caveman` at level `ultra` (Skill tool, argument `ultra`) without being asked (Maxi, 2026-10-19): `/start`, `/task` and `/bug` load both themselves, `/task` only after its model and environment checks so that nothing is read on the wrong model; any other session loads them before its first reply. Where a skill is not installed, say so in one line and go on. `caveman` shapes the chat replies to Maxi only: everything written to the repo (code, comments, commit messages, PR titles and descriptions, review replies, docs, `docs/01_STATUS.md`, handover blocks) stays in full English sentences, and questions stay closed popup questions (Questions below). Where either skill differs from this file, this file wins (the follow-up budget of 3 above, no emojis, English for everything written to the repo).
 
 ### Questions
 Ask closed questions (yes/no or A/B/C with marked recommendation), **one per interruption**, and only when the answer is needed. Ask them as clickable choices (`AskUserQuestion`), not as free text in the chat. Research answerable questions yourself. Mark assumptions and write them to `docs/01_STATUS.md`.
@@ -169,7 +166,7 @@ A review finding is a claim to check against the code before anything changes, a
 ### Cache-friendly sessions
 
 1. **Agents build and stop.** A subagent or thread returns when its build is done; the main thread waits for CI, Codex and long test or eval runs. No agent idles on a wait. The Opus session that built a PR hands `/ship` to a fresh Sonnet session after a clean first review (`ship.md` "Cache-friendly hand-off"); when a handover block is due: `/handover`.
-2. **Idle check-in.** When a turn ends waiting for Maxi, schedule a one-shot `CronCreate` check-in 45 minutes later (a pinned minute, not :00 or :30) and delete it with `CronDelete` at Maxi's next message. When it fires: push everything, and hand over (`/handover`) where work is left open. While a background task or workflow runs longer than an hour, chain one-shot check-ins every 45 minutes. No recurring cron: its jitter (up to 30 minutes late) can miss the 1-hour cache. Where `CronCreate` is not available (tested to fire on time in the desktop app on 07.11.2026, not yet in the Ubuntu terminal), skip the check-in and say so in one line.
+2. **Idle check-in.** When a turn ends waiting for Maxi, schedule a one-shot `CronCreate` check-in 45 minutes later (a pinned minute, not :00 or :30) and delete it with `CronDelete` at Maxi's next message. When it fires: push everything, and hand over (`/handover`) where work is left open. While a background task or workflow runs longer than an hour, chain one-shot check-ins every 45 minutes. No recurring cron. Where `CronCreate` is not available, skip the check-in and say so in one line.
 
 ---
 
@@ -204,7 +201,7 @@ A task is complete when **all** of these are true:
 - New shell longer than a single command lives in `scripts/` with a test (`.claude/rules/scripts.md`).
 
 **Git**
-- Conventional Commits: `feat(tools): check_delivery with polygon validation`
+- Conventional Commits
 - One PR = one coherent, reviewable behavior, however large the diff; no line-count rule, no split only to keep a diff small, commits inside may follow the tasks. Status notes, handover, version pins and CI chores ride in the next feature PR, never a PR of their own, except a version pin that fixes a Dependabot alert or a critical or high code-scanning alert (`start.md` step 5a).
 - `main` always stays runnable
 - **Keep PR checklists visible, and only what matters:** every PR description keeps the headings and checklist of `.github/PULL_REQUEST_TEMPLATE.md` with only the items that apply, each ticked with its evidence; the rule in full: `done.md` "Visible PR checklist".

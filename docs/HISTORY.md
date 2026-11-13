@@ -1481,3 +1481,15 @@ Moved unchanged from `CLAUDE.md` section 8 "Conventions" by Loop D PR 4 of #695:
 - From the rule that shell lives in `scripts/`: Embedded scripts drew most of the review findings on #341 and #357.
 - From "What Maxi wants kept lives in the repository": A usage gate once installed only in the home folder left nothing to merge.
 - "No AI attribution unless Maxi asks for it in that work" (Maxi, 2026-11-09, after #610).
+
+Moved unchanged from `CLAUDE.md` sections 1, 3, 6 and 8 by Loop D PR 5 of #695:
+
+- "Division of Labor": (since 07.10.2026, E1 flipped).
+- Section 3: **Why HTMX over React:** one container instead of two, no Node build, no CORS, live updates via Server-Sent-Events. Sufficient for a tablet UI with lists and large buttons. Rationale in `docs/06_GUI.md`.
+- Intro of "Model Routing", why the session starts on the model it needs: a switch starts a cold cache, and every doc read before it is paid for twice.
+- "Usage check": (Maxi, 2026-11-11, start values).
+- "Ultrareview": the free runs are used up, so the reminder names a local `/code-review max <PR>`.
+- "Reading docs": (Maxi, 2026-11-09, #562: whole-file reads were about a fifth of all context).
+- "The Loop", skills at session start: (Maxi, 2026-10-19, replaces the rule of 2026-10-12).
+- "Cache-friendly sessions" item 2, idle check-in: No recurring cron: its jitter (up to 30 minutes late) can miss the 1-hour cache. `CronCreate` was tested to fire on time in the desktop app on 07.11.2026, not yet in the Ubuntu terminal.
+- Section 8 Git, example: Conventional Commits: `feat(tools): check_delivery with polygon validation`
