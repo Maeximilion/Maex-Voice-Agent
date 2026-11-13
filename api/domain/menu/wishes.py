@@ -1876,9 +1876,6 @@ def _with_allergy(
     )
 
 
-_COMPOUND_ALLERGY = re.compile(r".+allergien?")
-
-
 def _unglued(clause: str) -> str:
     """The clause without the joining words in front ("und ohne Zwiebeln")."""
     return _LEADING_GLUE.sub("", _clean(clause))
@@ -1927,10 +1924,12 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
     if (
         # Exactly one person and one allergen, or it is asked (Codex PR #735).
         sum(w in people for w in said) > 1
-        # An allergen is a "gegen" or a compound ("Nussallergie"); the plain
-        # word "allergisch" names none.
-        or sum(bool(_COMPOUND_ALLERGY.fullmatch(w)) for w in said)
+        # An allergen is a "gegen", a compound the parser reads ("Nussallergie",
+        # "Laktoseintoleranz", "Milchunverträglichkeit") or a "vertrage keine";
+        # the plain word "allergisch" names none (Codex PR #735).
+        or sum(1 for _ in _compound_stems(behind))
         + len(_GEGEN_WORD.findall(behind))
+        + len(_INGREDIENT[1].findall(behind))
         > 1
         or _PRONOUNS & set(said)
         or _negated(said)

@@ -2076,6 +2076,9 @@ def test_an_allergy_behind_the_callers_denial_has_its_owner(
         "Ich habe keine Allergie, nur meine Frau gegen Sesam, und mein Mann gegen Nüsse",
         # Codex PR #735: one elided, one compound allergy of two people.
         "Ich habe keine Allergie, nur meine Frau gegen Sesam und mein Mann eine Nussallergie",
+        # Codex PR #735: an intolerance compound beside the elided allergy.
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam und eine Laktoseintoleranz",
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam und eine Milchunverträglichkeit",
     ],
 )
 def test_a_doubtful_clause_behind_a_denial_gives_no_ingredient(said):
