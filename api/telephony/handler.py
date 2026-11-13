@@ -375,8 +375,12 @@ class CallHandler:
         # The caller hung up on the sentences before the transfer, so before
         # the line had it: the team never rang (#674). A transfer with nothing
         # said before it reaches the line at once.
-        unheard_handover = (
-            caller_hung_up and live.state.greeted and live.state.stage == "transferred"
+        # The same for the outage sentence of a failed turn (`_fail`): its
+        # call is in `_ending` as an error, and a sentence is always said
+        # before its transfer (#741). The outcome stays "error".
+        unheard_handover = caller_hung_up and (
+            outcome == "error"
+            or (live.state.greeted and live.state.stage == "transferred")
         )
         if unheard_handover and outcome is None:
             outcome = "abandoned"

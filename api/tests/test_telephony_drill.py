@@ -93,8 +93,47 @@ def test_a_silent_caller_who_is_ended_by_the_ai_passes(tmp_path):
             }
         },
     )
-    [(_, ok, detail)] = drill.drill_silent(stage)
+    [(_, ok, detail), _] = drill.drill_silent(stage)
     assert ok, detail
+
+
+def _silent_stage(tmp_path, note: str, monkeypatch) -> Stage:
+    monkeypatch.setattr(drill, "NOTE_WAIT_SECONDS", 0)
+    stage = Stage(
+        tmp_path,
+        {
+            101: {
+                "router": [
+                    *router(101, "dials", "answered"),
+                    "NoOp(DRILL 101 caller leg ended dialstatus=ANSWER)",
+                ],
+                "asterisk": ["call 1.1: voice leg ANSWER ending [hangup]"],
+            }
+        },
+    )
+    stage.prints["line_note"] = note
+    return stage
+
+
+def test_a_silent_caller_leaves_the_note_that_nothing_of_it_arrived(
+    tmp_path, monkeypatch
+):
+    # Also what answers #651's open question: that Asterisk sends no audio,
+    # or only zeros, on a caller leg that sends none.
+    [_, (name, ok, detail)] = drill.drill_silent(
+        _silent_stage(tmp_path, "no_caller_audio", monkeypatch)
+    )
+    assert ok, detail
+    assert "no_caller_audio" in name
+
+
+def test_a_silent_caller_whose_call_carries_no_note_fails(tmp_path, monkeypatch):
+    # Asterisk sent audible frames, or the session did not mark the call.
+    [_, (_, ok, detail)] = drill.drill_silent(
+        _silent_stage(tmp_path, "none", monkeypatch)
+    )
+    assert not ok
+    assert "none" in detail
 
 
 def test_a_silent_caller_whose_call_rang_the_team_fails(tmp_path):
@@ -111,7 +150,7 @@ def test_a_silent_caller_whose_call_rang_the_team_fails(tmp_path):
             }
         },
     )
-    [(_, ok, _)] = drill.drill_silent(stage)
+    [(_, ok, _), _] = drill.drill_silent(stage)
     assert not ok
 
 
@@ -637,7 +676,7 @@ def test_the_way_back_fails_when_the_team_took_the_call(tmp_path):
     lines = [*router(119, "dials", "answered"), TEAM_RINGS]
     lines += router(119, "caller leg ended dialstatus=ANSWER")
     stage = Stage(tmp_path, {119: {"router": lines}})
-    [(_, ok, _)] = drill.drill_back_after_the_cuts(stage)
+    [(_, ok, _), _] = drill.drill_back_after_the_cuts(stage)
     assert not ok
 
 
