@@ -1059,3 +1059,72 @@ def test_a_safety_promise_about_a_frei_dish_still_counts():
         allergen_claim(state, "Die Nudeln (glutenfrei) werden getrennt zubereitet.")
         is ALLERGEN_CLAIM
     )
+
+
+# --- #656: inflected and other absence claims, certainty questions, health notes
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Die 23 ist eine glutenfreie Variante.",
+        "Wir haben auch laktosefreies Eis.",
+        "Das sind nussfreien Gerichte.",
+        "In der 13 sind keine Nüsse enthalten.",
+        "Die 13 ist ohne Erdnüsse.",
+        "Die Suppe kommt ganz ohne Sesam.",
+    ],
+)
+def test_an_inflected_or_turned_absence_claim_is_refused(say):
+    """No allergy word from the guest ("Haben Sie glutenfreie Gerichte?"): the
+    model's promise still has no database value behind it (#656, P1)."""
+    assert allergen_claim(new_state(), say) is ALLERGEN_CLAIM
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Die Bestellung enthält keine Getränke.",
+        "Die 13 ohne Erdnüsse, notiert.",
+        "Sind Sie sicher, dass Sie zwanzig Portionen möchten?",
+        "Sind Sie ganz sicher?",
+    ],
+)
+def test_a_wish_echoed_or_a_question_of_certainty_is_no_claim(say):
+    """A guest's wish said back and the model asking the guest whether they
+    are sure are no promise (#656, P2), also in a call about allergies."""
+    assert allergen_claim(new_state(allergy_talk=True), say) is None
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Mit diesem Gericht sind Sie sicher.",
+        "Damit sind Sie ganz sicher.",
+        "Sind Sie sicher? Die Pho Bo ist sicher.",
+        "Sind Sie mit der Suppe einverstanden, die wir garantiert getrennt zubereiten?",
+        "Sind Sie sicher, dass die Suppe garantiert getrennt zubereitet sein soll?",
+    ],
+)
+def test_a_promise_to_the_guest_that_they_are_safe_is_a_claim(say):
+    """Only the question that opens with the verb is cut (Codex PR #714, P1)."""
+    assert allergen_claim(new_state(allergy_talk=True), say) is ALLERGEN_CLAIM
+
+
+@pytest.mark.parametrize(
+    "note", ["Zöliakie, ohne Gluten", "reagiert auf Sellerie", "darf keine Nüsse"]
+)
+def test_a_note_with_health_words_is_refused_like_an_allergy(note):
+    """The card's stricter health words count on a note too (#656, P2): what
+    a note stores is read back and copied onto a card without L13's question."""
+    state = new_state()
+    state.known_item_ids.add(PHO)
+    call = ToolCall(
+        "draft_order",
+        {
+            "type": "pickup",
+            "items": [{"menu_item_id": PHO, "quantity": 1, "note": note}],
+        },
+    )
+    refused = refusal(state, begin_turn(state), "Die 13 bitte.", call)
+    assert refused is not None and "Allergie" in (refused.hint or "")

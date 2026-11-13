@@ -1057,6 +1057,20 @@ def mentions_allergy(text: str) -> bool:
     return bool(_allergy_words(_tokens(_clean(text))[1]))
 
 
+# Health data that `mentions_allergy` does not read (review of the repo audit
+# fix, 27.10.2026): a note and a card may carry neither (#656).
+_HEALTH_WORDS = re.compile(
+    r"z(?:ö|oe)liak|reagier\w*\s+auf|darf\s+kein|\bmeiden\b", re.IGNORECASE
+)
+
+
+def speaks_of_health(text: str) -> bool:
+    """An allergy word, or another word for the guest's health ("Zöliakie",
+    "reagiert auf", "darf kein"): the one reader for what a note or a card
+    must not carry without L13's question."""
+    return mentions_allergy(text) or bool(_HEALTH_WORDS.search(text))
+
+
 def allergies_named(text: str) -> int:
     """How many allergy words the guest says ("Erdnussallergie, meine Frau
     eine Sesamallergie": two; "Nuss- und Sesamallergie": one)."""
