@@ -103,7 +103,7 @@ def _open(state: ConversationState) -> set[int]:
     return {id(allergy) for allergy in state.allergies if allergy.ingredient is None}
 
 
-_I = re.compile(r"\bich\b", re.IGNORECASE)
+_OWNER = re.compile(r"\b(?:ich|mir|wir|uns|mein\w*|unser\w*)\b", re.IGNORECASE)
 
 
 def _note(state: ConversationState, text: str) -> None:
@@ -146,9 +146,9 @@ def _note(state: ConversationState, text: str) -> None:
             readings.append(whole.model_copy(update={"another_adult": others}))
     for wish in readings:
         if wish is not None:
-            # shortcut: "ich" in the allergy sentences keeps the caller's own
-            # reason; a continuation without a speaker follows the health word.
-            other = wish.another_adult or (other_adult and not _I.search(text))
+            # shortcut: a speaker or owner word ("ich", "mein Sohn") in the
+            # allergy sentences keeps its own owner; a continuation without a speaker follows the health word.
+            other = wish.another_adult or (other_adult and not _OWNER.search(text))
             _add(state, Allergy(ingredient=wish.ingredient, own=not other))
 
 
