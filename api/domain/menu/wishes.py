@@ -1876,6 +1876,9 @@ def _with_allergy(
     )
 
 
+_COMPOUND_ALLERGY = re.compile(r".+allergien?")
+
+
 def _unglued(clause: str) -> str:
     """The clause without the joining words in front ("und ohne Zwiebeln")."""
     return _LEADING_GLUE.sub("", _clean(clause))
@@ -1915,16 +1918,22 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
     before, behind = text[:comma], clauses[n]
     if not _denial_phrase(_SENTENCE_END.split(before)[-1]):
         return None
-    words = _words(behind)
+    said = _words(behind)
     adult = of_another_adult(behind)
     # A child's allergy is the caller's to consent to, as said directly.
-    if not (adult or _CHILDREN & set(words)):
+    if not (adult or _CHILDREN & set(said)):
         return None
+    people = _PERSONS | _CHILDREN | _OTHERS
     if (
-        allergies_named(behind) > 1
-        or len(_GEGEN_WORD.findall(behind)) > 1
-        or _PRONOUNS & set(words)
-        or _negated(words)
+        # Exactly one person and one allergen, or it is asked (Codex PR #735).
+        sum(w in people for w in said) > 1
+        # An allergen is a "gegen" or a compound ("Nussallergie"); the plain
+        # word "allergisch" names none.
+        or sum(bool(_COMPOUND_ALLERGY.fullmatch(w)) for w in said)
+        + len(_GEGEN_WORD.findall(behind))
+        > 1
+        or _PRONOUNS & set(said)
+        or _negated(said)
     ):
         return None
     # "nur meine Frau gegen Sesam": the allergy word is the denial's.
@@ -1939,16 +1948,13 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
     later = [_classify(_unglued(clause), groups) for clause in clauses[n + 1 :]]
     if any(wish.kind != "note" for wish in later):
         return None
+    # What is said in front of the denial's own clause, commas and all
+    # ("Ohne Zwiebeln und ich habe keine Allergie", Codex PR #735).
+    start = _clause_start(words, named[0], nearest=True)
+    head = _clean(_drop_trailing_glue(text[: tokens[start].start()]))
     removals = [
         removal
-        for wish in [
-            *(
-                _classify(_unglued(c), groups)
-                for c in clauses[:n]
-                if not mentions_allergy(c)
-            ),
-            *later,
-        ]
+        for wish in [*([_classify(head, groups)] if head else []), *later]
         if (removal := removal_with(wish))
     ]
     return Wish(
