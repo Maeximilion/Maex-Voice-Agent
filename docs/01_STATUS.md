@@ -1,6 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.26
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.25
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.24
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.23
@@ -330,6 +331,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.26 · 13.11.2026:** Fix PR for #738: a modal wish word in the complaint gap keeps the sentence for the team
 - **v2.44.25 · 13.11.2026:** Fix PR for #719: another adult's allergy behind the caller's denial is noted without its reason
 - **v2.44.24 · 13.11.2026:** Fix PR for #693: a recording file without a row is deleted after the period too
 - **v2.44.23 · 13.11.2026:** Fix PR for #691: a costly callback number gets a warning and no one-tap link
