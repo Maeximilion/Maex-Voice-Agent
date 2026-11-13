@@ -1,6 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.31
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.30
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.29
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.28
@@ -335,6 +336,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.31 · 13.11.2026:** Fix PR for #737: the model's own handovers and a callback without a number keep the table read back that a new allergy dropped
 - **v2.44.30 · 13.11.2026:** Fix for #669/#717: the guest hears the core's allergen sentence word for word
 - **v2.44.29 · 13.11.2026:** #651: the silent-caller drill checks the no_caller_audio note on the call row; measured on Asterisk 22 that a caller leg sending nothing leaves it
 - **v2.44.28 · 13.11.2026:** Address forms (junge Frau, junger Mann, Fräulein, gute Frau, guter Mann) are cut in consent.py before the yes and no readers (#648, Maxi 13.11.2026)

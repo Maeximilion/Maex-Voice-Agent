@@ -604,6 +604,7 @@ class ConversationLoop:
                         SAY_NOT_UNDERSTOOD,
                         reason="not_understood",
                         detail=user_text,
+                        table=open_table,
                     )
 
             if turn.cart is not None:
@@ -720,6 +721,7 @@ class ConversationLoop:
                     user_text,
                     summary=_HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY),
                     ask_number=True,
+                    table=open_table,
                 )
                 return handover
             if refused is None and guards.notes_an_additive(turn.tool_call):
@@ -876,7 +878,11 @@ class ConversationLoop:
                 )
             if result is guards.CALLBACK_WITHOUT_NUMBER:
                 handed = self._callback_without_number(
-                    state, turn.tool_call.args, user_text, reported_failures
+                    state,
+                    turn.tool_call.args,
+                    user_text,
+                    reported_failures,
+                    open_table,
                 )
                 if handed is not None:
                     return handed
@@ -997,6 +1003,7 @@ class ConversationLoop:
         args: dict[str, Any],
         user_text: str,
         reported_failures: set[str],
+        open_table: str | None = None,
     ) -> TurnResult | None:
         """The model wants the team to call back, and nobody's number is known.
         The team takes the call instead where it is reachable. Otherwise only
@@ -1010,7 +1017,7 @@ class ConversationLoop:
         reason = _transfer_reason(args)
         # The card before the transfer, as in `_handoff`: once transferred,
         # the state no longer shows a table read back (#690).
-        head, tail, lead = self._card(state, reason, user_text)
+        head, tail, lead = self._card(state, reason, user_text, table=open_table)
         transfer = self._dispatch(state, "transfer_to_team", {"reason": reason})
         apply_tool_result(state, "transfer_to_team", transfer)
         if state.transferred:
@@ -1023,7 +1030,11 @@ class ConversationLoop:
             self._ladder.record_failure("phone")
             if self._ladder.should_end_call("phone"):
                 return self._handoff(
-                    state, SAY_NOT_UNDERSTOOD, reason="not_understood", detail=user_text
+                    state,
+                    SAY_NOT_UNDERSTOOD,
+                    reason="not_understood",
+                    detail=user_text,
+                    table=open_table,
                 )
         # The model is told to ask for it: behind this a bare "Nummer" is the
         # number to call back (`guest_details.asks_for_a_phone_number`). A
