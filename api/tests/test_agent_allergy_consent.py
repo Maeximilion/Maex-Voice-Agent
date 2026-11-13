@@ -1641,3 +1641,57 @@ def test_a_later_dish_keeps_the_allergy_said_for_everything(session, state):
         None,
     ]
     assert call.args["note"] == REASONED
+
+
+# --- #719: another adult's allergy behind the caller's own denial --------------
+
+
+@pytest.mark.parametrize(
+    "behind",
+    [
+        "nur meine Frau gegen Sesam",
+        "aber meine Frau hat eine Sesamallergie",
+        "nur meine Frau ist gegen Sesam allergisch",
+    ],
+)
+def test_another_adults_allergy_behind_a_denial_is_noted_without_reason(
+    session, state, behind
+):
+    """#719: the wife's allergy behind "Ich habe keine Allergie" was not noted
+    at all (or asked about as the caller's own)."""
+    said = turn(
+        session,
+        state,
+        f"{TABLE}. Ich habe keine Allergie, {behind}",
+        LLMTurn(tool_call=table()),
+        LLMTurn(say="Passt das so?"),
+    )
+
+    assert said == ["Passt das so?"]
+    [reservation] = reservations(session)
+    assert reservation.note == "ohne Sesam"
+    assert logged(session) == []
+
+
+def test_a_childs_allergy_behind_a_denial_is_asked_about_like_the_callers(
+    session, state
+):
+    assert read(
+        session, state, "Ich habe keine Allergie, nur meine Tochter gegen Nuesse"
+    ) == [("Nuesse", True)]
+
+
+def test_the_other_adults_denial_notes_nothing(session, state):
+    """Codex PR #735: "aber meine Frau hat keine Sesamallergie" gave sesame."""
+    assert read(
+        session,
+        state,
+        "Ich habe keine Allergie, aber meine Frau hat keine Sesamallergie",
+    ) in ([], [(None, True)], [(None, False)])
+    assert all(a.ingredient is None for a in state.allergies)
+
+
+def test_a_plain_denial_still_notes_nothing(session, state):
+    assert (
+        read(session, state, "Ich habe keine Allergie, nur ohne Koriander bitte") == []
+    )

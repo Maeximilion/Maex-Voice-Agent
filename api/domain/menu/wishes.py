@@ -1787,6 +1787,9 @@ def _with_allergy(
     wishes said around it ("ich habe keine Allergie, aber bitte ohne
     Koriander"), None without one; a negation in the phrase mixed with more
     gives an allergy without an ingredient."""
+    theirs = _theirs_behind_a_denial(text, groups)
+    if theirs is not None:
+        return theirs
     start = _clause_start(words, named[0], nearest=True)
     heard = words  # as said: `named` points into it
     # Whose allergy: read in its clause, as said ("ohne Zwiebeln fuer meine
@@ -1808,6 +1811,7 @@ def _with_allergy(
     after = _denial(words, named, start)
     if after is not None:
         tail = text[tokens[after].start() :] if after < len(tokens) else ""
+
         said = _clean(", ".join(part for part in (head, tail) if part))
         if not _WISHED & set(_words(said)):
             return None
@@ -1869,6 +1873,107 @@ def _with_allergy(
         kind="allergy",
         ingredient=ingredient,
         another_adult=other,
+    )
+
+
+# The one clause `_theirs_behind_a_denial` reads, after fold(): "nur meine
+# Frau gegen Sesam", "aber mein Mann ist gegen Erdnuss allergisch", "meine
+# Tochter hat eine Sesamallergie".
+_THEIRS = re.compile(
+    r"(?:(?:nur|aber|auch|dafuer)\s+)?"
+    r"(?:mein|meine|meinem|meinen|meiner|unser|unsere|unserem|unseren|unserer)\s+"
+    r"(?P<person>[a-z]+)\s+(?:aber\s+|nur\s+|auch\s+)?"
+    r"(?:(?:ist\s+|hat\s+(?:eine\s+)?)?(?:gegen\s+[a-z]+(?:\s+allergisch)?|[a-z]+allergie))"
+)
+
+
+# Words that carry an allergy on in a later clause ("..., ohne Milch und
+# gegen Nüsse", "..., ohne Milch wegen ...", "..., und mein Mann ..."): that
+# clause is no plain removal (Codex PR #735).
+_MAY_GO_ON = (
+    frozenset({"gegen", "auf", "wegen", "ich", "wir"}) | _PERSONS | _CHILDREN | _OTHERS
+)
+
+
+def _unglued(clause: str) -> str:
+    """The clause without the joining words in front ("und ohne Zwiebeln")."""
+    return _LEADING_GLUE.sub("", _clean(clause))
+
+
+_LEADING_GLUE = re.compile(r"^(?:(?:und|aber|dann|bitte)\s+)+", re.IGNORECASE)
+
+
+def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None:
+    """ "Ich habe keine Allergie, nur meine Frau gegen Sesam": the caller
+    denies an own allergy, and the clause behind the comma names another
+    adult's. That one goes to the kitchen without its reason, whatever the
+    caller consents to (#719, L13); a child's is read as if said directly,
+    asked about with the caller's consent. A removal said in another clause
+    stays next to it. None for anything else, and for anything doubtful (a
+    second person, a second "gegen", a denial in the clause), which the
+    caller is then asked about.
+
+    Non-recursive: the denial is judged on the words (`_denial_phrase`), not
+    by classifying every part in front of a comma again (Codex PR #735)."""
+    # One place to look, so the reading stays linear: the comma right behind
+    # the first allergy word, judged on that word's own sentence.
+    tokens, words = _tokens(text)
+    named = _allergy_words(words)
+    comma = next(
+        (
+            tokens[i].start()
+            for i in range(named[0] if named else len(words), len(words))
+            if words[i] == ","
+        ),
+        None,
+    )
+    if comma is None:
+        return None
+    clauses = text.split(",")
+    n = text[:comma].count(",") + 1
+    before, behind = text[:comma], clauses[n]
+    if not _denial_phrase(_SENTENCE_END.split(before)[-1]):
+        return None
+    # A whitelist, not guards: the clause is one person and one single-word
+    # allergen in one of the shapes below, nothing else. Every other form is
+    # asked about, as on main; five review rounds found forms that passed
+    # guards (Codex PR #735).
+    shape = _THEIRS.fullmatch(fold(_clean(behind)))
+    if shape is None:
+        return None
+    person = shape.group("person")
+    if person not in _PERSONS | _CHILDREN:
+        return None
+    # A child's allergy is the caller's to consent to, as said directly.
+    adult = person in _PERSONS
+    ingredient = _ingredient(behind) or _ingredient(f"{behind} allergisch")
+    if ingredient is None or " " in ingredient.strip():
+        return None
+    # Every later clause is a plain removal, or the allergy may go on there
+    # ("..., Nüsse und Milch", "..., und mein Mann gegen Nüsse"): then
+    # nothing is read, and the caller is asked (Codex PR #735).
+    later = [_classify(_unglued(clause), groups) for clause in clauses[n + 1 :]]
+    if any(wish.kind != "note" for wish in later) or any(
+        mentions_allergy(clause) or _MAY_GO_ON & set(_words(clause))
+        for clause in clauses[n + 1 :]
+    ):
+        return None
+    # What is said in front of the denial's own clause, commas and all
+    # ("Ohne Zwiebeln und ich habe keine Allergie", Codex PR #735).
+    start = _clause_start(words, named[0], nearest=True)
+    head = _clean(_drop_trailing_glue(text[: tokens[start].start()]))
+    removals = [
+        removal
+        for wish in [*([_classify(head, groups)] if head else []), *later]
+        if (removal := removal_with(wish))
+    ]
+    return Wish(
+        text=kitchen_note(
+            ", ".join(removals) or None, ALLERGY_NOTE.format(ingredient=ingredient)
+        ),
+        kind="allergy",
+        ingredient=ingredient,
+        another_adult=adult or None,
     )
 
 

@@ -2036,3 +2036,81 @@ def test_search_asks_about_a_counted_addition(session, tenant_id, said):
     with pytest.raises(Ambiguous) as err:
         suche(session, tenant_id, said)
     assert "Welche Nummer" in (err.value.say or "")
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient", "another_adult"),
+    [
+        ("Ich habe keine Allergie, nur meine Frau gegen Sesam", "Sesam", True),
+        (
+            "Ich habe keine Allergie, aber meine Frau hat eine Sesamallergie",
+            "Sesam",
+            True,
+        ),
+        ("Ich habe keine Allergie, mein Mann aber gegen Erdnuss", "Erdnuss", True),
+        ("Ich habe keine Allergie, nur meine Tochter gegen Nüsse", "Nüsse", None),
+    ],
+)
+def test_an_allergy_behind_the_callers_denial_has_its_owner(
+    said, ingredient, another_adult
+):
+    """#719: the allergy of the person named behind the denial is read, with
+    that person as its owner."""
+    wish = wish_of(said, [])
+    assert (wish.kind, wish.ingredient, wish.another_adult) == (
+        "allergy",
+        ingredient,
+        another_adult,
+    )
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # Codex PR #735: the wife denies too.
+        "Ich habe keine Allergie, aber meine Frau hat keine Sesamallergie",
+        # Codex PR #735: two people behind the denial, one "gegen" each.
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam und ich gegen Nüsse",
+        # Codex PR #735: the list or a second person goes on behind a comma.
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam, Nüsse und Milch",
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam, und mein Mann gegen Nüsse",
+        # Codex PR #735: one elided, one compound allergy of two people.
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam und mein Mann eine Nussallergie",
+        # Codex PR #735: an intolerance compound beside the elided allergy.
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam und eine Laktoseintoleranz",
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam und eine Milchunverträglichkeit",
+        # Codex PR #735: a verbal intolerance, and an intolerance behind "ohne".
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam und verträgt Milch nicht",
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam, ohne Milch wegen Laktoseintoleranz",
+        # Codex PR #735: an elided "gegen" inside a later removal clause.
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam, ohne Milch und gegen Nüsse",
+    ],
+)
+def test_a_doubtful_clause_behind_a_denial_gives_no_ingredient(said):
+    wish = classify_wish(said, [])
+    assert wish is None or wish.ingredient is None
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ohne Zwiebeln, ich habe keine Allergie, nur meine Frau gegen Sesam",
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam, und ohne Zwiebeln",
+        # Codex PR #735: the removal shares the denial's clause.
+        "Ohne Zwiebeln und ich habe keine Allergie, nur meine Frau gegen Sesam",
+    ],
+)
+def test_a_removal_beside_the_other_adults_allergy_stays(said):
+    """Codex PR #735: the removal was dropped by the new reading."""
+    wish = wish_of(said, [])
+    assert (wish.ingredient, wish.another_adult) == ("Sesam", True)
+    assert removal_with(wish) == "ohne Zwiebeln"
+
+
+def test_a_comma_chain_is_read_in_linear_time():
+    """Codex PR #735: every part in front of a comma was classified again."""
+    import time
+
+    start = time.perf_counter()
+    classify_wish("Ich habe eine Allergie" + ", x" * 30, [])
+    assert time.perf_counter() - start < 0.5
