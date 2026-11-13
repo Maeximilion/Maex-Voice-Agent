@@ -111,6 +111,9 @@ _WORD_RUN = re.compile(r"\w+")
 _CLAUSE_WORDS = (
     frozenset(
         {"dann", "noch", "ich", "wir", "bitte", "aber", "dazu", "auch", "ausserdem"}
+        # "gegen Nuesse, deshalb die 5": the reason opens the order, not an
+        # ingredient (#207, probe of PR #413).
+        | {"deshalb", "deswegen", "daher", "darum"}
     )
     | _ARTICLES
     | frozenset({"die", "der", "das", "den", "einmal"})

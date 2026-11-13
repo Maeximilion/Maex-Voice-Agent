@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.29
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.30
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.28
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.27
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.25
@@ -333,6 +333,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.30 · 14.11.2026:** Issue #207 sweep: a reason filler (deshalb, daher) after an allergy list no longer lands in the ingredient; one constant for the allowed .claude files in test_compose_mounts
 - **v2.44.29 · 13.11.2026:** #651: the silent-caller drill checks the no_caller_audio note on the call row; measured on Asterisk 22 that a caller leg sending nothing leaves it
 - **v2.44.28 · 13.11.2026:** Address forms (junge Frau, junger Mann, Fräulein, gute Frau, guter Mann) are cut in consent.py before the yes and no readers (#648, Maxi 13.11.2026)
 - **v2.44.27 · 13.11.2026:** Fix PR for #738: a modal wish word in the complaint gap keeps the sentence for the team
