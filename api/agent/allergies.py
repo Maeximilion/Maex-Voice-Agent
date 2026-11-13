@@ -28,6 +28,7 @@ from api.domain.menu.numberwords import CardFormat, canonical_card
 from api.domain.menu.search import SAY_ALLERGY_WHICH, SAY_ALLERGY_WHICH_FOR
 from api.domain.menu.wishes import (
     ALLERGY_NOTE,
+    WITHDRAWN,
     allergies_named,
     answers_only,
     classify_wish,
@@ -83,7 +84,10 @@ def note_allergies(session: Session, state: ConversationState, text: str) -> Non
                 said[-1] += f" {sentence}"
             else:
                 said.append(sentence)
-        _answer(session, state, said[0], asked.group("dish"))
+        # "Keine, aber meine Frau gegen Sesam": which allergy the "Keine" takes
+        # back is not clear, so the question stays open (#740, Codex PR #361).
+        if not (theirs and which_answer(said[0])[0] == WITHDRAWN):
+            _answer(session, state, said[0], asked.group("dish"))
         for sentence in said[1:]:
             _note(state, sentence)
     else:

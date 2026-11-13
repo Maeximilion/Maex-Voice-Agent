@@ -1805,3 +1805,17 @@ def test_a_health_word_in_a_whole_turn_is_asked_about(session, state):
 
     assert said == [SAY_ALLERGY_WHICH]
     assert reservations(session) == []
+
+
+def test_a_denial_next_to_a_second_persons_allergy_keeps_the_question(session, state):
+    """ "Keine, aber meine Frau gegen Sesam" after "Wogegen?": the wife's sesame
+    is noted, the caller's own allergy stays open (#740, Codex PR #361)."""
+    read(session, state, "Ich habe eine Allergie.")
+    guards.note_said(state, SAY_ALLERGY_WHICH)
+
+    assert read(
+        session, state, "Keine, aber meine Frau ist gegen Sesam allergisch."
+    ) == [
+        (None, True),
+        ("Sesam", False),
+    ]
