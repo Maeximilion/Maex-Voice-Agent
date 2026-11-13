@@ -37,6 +37,7 @@ from api.domain.access.sessions import Access, devices, end_sessions
 from api.domain.callbacks import list_history, list_open, mark_done, reopen
 from api.domain.callbacks.board import HISTORY_DAYS, NUMBER_OTHER, NUMBER_WITHHELD
 from api.domain.confirm import confirm_tablet
+from api.domain.customers.phone import costly
 from api.domain.menu import price_check
 from api.domain.menu import sold_out as dishes
 from api.domain.ordering import board as order_board
@@ -158,6 +159,8 @@ def _callback_row(cb, tz_name: str) -> dict:
         "id": str(cb.callback_id),
         "time": orders_view.clock(cb.created_at, tz_name),
         "phone": cb.phone,
+        # A premium or service number: a warning and no one-tap link (#691).
+        "costly": costly(cb.phone),
         "number_note": CALLBACK_NUMBER_NOTES.get(origin),
         "caller_id": cb.caller_id if origin == NUMBER_OTHER else None,
         "reason": cb.reason,

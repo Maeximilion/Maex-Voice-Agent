@@ -20,6 +20,10 @@
     </div>
     {% if c.phone %}
     <div class="phone">{{ c.phone }}</div>
+    {% if c.costly %}
+    {# Premium or service number: dialled by hand after a look, never by one tap (#691). #}
+    <div class="cb-note"><span class="badge danger">Teure Sondernummer &ndash; vor dem Anruf pr&uuml;fen</span></div>
+    {% endif %}
     {# The guest named this number; the line does not back it (#252). #}
     {% if c.number_note %}
     <div class="cb-note">
@@ -33,7 +37,7 @@
     {% endif %}
     {% if c.summary %}<p class="summary">&bdquo;{{ c.summary }}&ldquo;</p>{% endif %}
     <div class="cb-actions">
-      {% if c.phone %}<a class="button" href="tel:{{ c.phone }}">Anrufen</a>{% endif %}
+      {% if c.phone and not c.costly %}<a class="button" href="tel:{{ c.phone }}">Anrufen</a>{% endif %}
       {# Keine Rueckfrage: nur Loeschen und Stornieren fragen nach (docs/06 §1 Regel 6). #}
       <button class="primary" hx-post="/gui/rueckrufe/{{ c.id }}/erledigt"
               hx-target="#rueckrufe-liste" hx-swap="innerHTML">Erledigt</button>
