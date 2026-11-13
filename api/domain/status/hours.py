@@ -26,14 +26,19 @@ class HoursData:
     special: dict[date, SpecialDay]
 
 
-def load_hours(
-    session: Session, tenant_id: uuid.UUID, start: date, days: int = LOOKAHEAD_DAYS
-) -> HoursData:
-    regular = tuple(
+def regular_hours(session: Session, tenant_id: uuid.UUID) -> tuple[OpeningHours, ...]:
+    """The weekly hours alone."""
+    return tuple(
         session.scalars(
             select(OpeningHours).where(OpeningHours.tenant_id == tenant_id)
         ).all()
     )
+
+
+def load_hours(
+    session: Session, tenant_id: uuid.UUID, start: date, days: int = LOOKAHEAD_DAYS
+) -> HoursData:
+    regular = regular_hours(session, tenant_id)
     special_rows = session.scalars(
         select(SpecialDay).where(
             SpecialDay.tenant_id == tenant_id,

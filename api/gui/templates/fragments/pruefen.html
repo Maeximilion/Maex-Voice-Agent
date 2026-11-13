@@ -1,7 +1,10 @@
 {# Check cards of staff changes (#570 part b, D34 point 4, docs/06 §4): a team
    number or a date's hours the staff changed without the owner's PIN. Each
    card stays until the owner keeps or undoes it; both buttons ask the admin PIN
-   first (`require_admin`). Replaced as a whole; empty when nothing is open. #}
+   first (`require_admin`) and send the card version shown (`gesehen`): a card
+   changed since is not decided (#596). Replaced as a whole; empty when nothing
+   is open. #}
+{% if checks_note %}<p class="badge warn" role="status">{{ checks_note }}</p>{% endif %}
 {% if checks_problem %}
 <p class="empty">{{ checks_problem }}</p>
 {% elif checks %}
@@ -16,9 +19,9 @@
     <p>{% if c.waiting %}Beantragt{% else %}Jetzt{% endif %}: <b>{{ c.after }}</b></p>
     {% if c.waiting and c.now != c.before %}<p class="muted">Gilt bis dahin: {{ c.now }}</p>{% endif %}
     <div class="cb-actions">
-      <button class="primary" hx-post="/gui/pruefen/{{ c.id }}/uebernehmen"
+      <button class="primary" hx-post="/gui/pruefen/{{ c.id }}/uebernehmen" hx-vals='{"gesehen": "{{ c.seen }}"}'
               hx-target="#pruefen-liste" hx-swap="innerHTML">{{ c.keep }}</button>
-      <button hx-post="/gui/pruefen/{{ c.id }}/zuruecknehmen"
+      <button hx-post="/gui/pruefen/{{ c.id }}/zuruecknehmen" hx-vals='{"gesehen": "{{ c.seen }}"}'
               hx-target="#pruefen-liste" hx-swap="innerHTML">Zurücknehmen</button>
     </div>
   </li>

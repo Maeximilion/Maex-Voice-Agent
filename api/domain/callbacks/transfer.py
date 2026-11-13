@@ -58,7 +58,8 @@ def transfer_to_team(
 ) -> TransferResult:
     now = now or utcnow()
     tenant = session.get(Tenant, req.tenant_id)
-    config = session.get(ServiceConfig, req.tenant_id)
+    # Fresh: the team number may have changed since this session read it.
+    config = session.get(ServiceConfig, req.tenant_id, populate_existing=True)
     if tenant is None or config is None:
         raise NotFound("Mandant unbekannt oder ohne service_config")
 

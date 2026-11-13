@@ -18,7 +18,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, NotFound
-from api.models import AuditLog, SpecialDay
+from api.models import AuditLog, ServiceConfig, SpecialDay
 from api.models.tenants import HOLIDAY_REGIONS
 
 ACTOR_TABLET = "gui:tablet"
@@ -210,6 +210,13 @@ def answer(
     the suggestion is dismissed (one counting row per date, #441). Commits."""
     if choice not in ANSWERS:
         raise InvalidInput(f"Unknown answer {choice!r} to a holiday suggestion")
+    # The lock every staff change takes first (staff_changes._locked): a staff
+    # row for the same date cannot appear between `already_set` and the flush.
+    session.scalars(
+        select(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant_id)
+        .with_for_update()
+    ).first()
     day = session.scalars(
         select(SpecialDay)
         .where(SpecialDay.id == special_day_id, SpecialDay.tenant_id == tenant_id)
