@@ -165,3 +165,30 @@ def test_the_default_outbox_periods_pass():
     assert values.retention_outbox_row_days == 90
     assert values.retention_outbox_unsent_days == 30
     assert values.retention_outbox_sent_days == 7
+
+
+@pytest.mark.parametrize(
+    ("field", "name"),
+    [
+        ("gui_proxy_secret", "GUI_PROXY_SECRET"),
+        ("voice_media_token", "VOICE_MEDIA_TOKEN"),
+    ],
+)
+def test_production_refuses_a_token_shared_with_the_agent_token(field, name):
+    """#687: only the kitchen token was compared with the agent token."""
+    with pytest.raises(ValidationError, match=f"{name} must differ"):
+        _settings(env="prod", agent_api_token=LONG_ENOUGH, **{field: LONG_ENOUGH})
+
+
+def test_production_refuses_the_proxy_secret_as_the_media_token():
+    with pytest.raises(ValidationError, match="VOICE_MEDIA_TOKEN must differ"):
+        _settings(
+            env="prod",
+            agent_api_token=LONG_ENOUGH,
+            gui_proxy_secret="p" * 64,
+            voice_media_token="p" * 64,
+        )
+
+
+def test_dev_may_share_tokens():
+    assert _settings(env="dev", gui_proxy_secret="x" * 40, voice_media_token="x" * 40)
