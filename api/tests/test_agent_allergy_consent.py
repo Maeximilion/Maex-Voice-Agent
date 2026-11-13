@@ -1707,6 +1707,11 @@ def test_a_plain_denial_still_notes_nothing(session, state):
         ("Ich habe Zöliakie.", [(None, True)]),
         ("Meine Frau hat Zöliakie.", [(None, False)]),
         ("Ich reagiere auf Sellerie.", [(None, True)]),
+        # The other adult carries on into the continuation (Codex PR #748, P1).
+        (
+            "Meine Frau hat Zöliakie. Und eine Nussallergie.",
+            [(None, False), ("Nuss", False)],
+        ),
         # Another sentence with an allergy word keeps the health word's own.
         (
             "Ich habe eine Nussallergie. Mein Sohn hat Zöliakie.",

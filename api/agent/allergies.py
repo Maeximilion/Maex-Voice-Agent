@@ -103,16 +103,21 @@ def _open(state: ConversationState) -> set[int]:
     return {id(allergy) for allergy in state.allergies if allergy.ingredient is None}
 
 
+_I = re.compile(r"\bich\b", re.IGNORECASE)
+
+
 def _note(state: ConversationState, text: str) -> None:
     """An allergy said without a question of the core (`note_allergies`)."""
     # A health word that names no allergy ("Mein Sohn hat Zöliakie") is asked
     # about, as a model note with it is refused for the core to take (#739).
-    # Taken out of the text, so a person named there ("Mein Sohn hat
-    # Zöliakie") leaves the allergy of the other sentences read in full.
+    # Taken out of the text, so the allergy of the other sentences is read in
+    # full; an adult named there still owns a continuation that names nobody
+    # ("Meine Frau hat Zöliakie. Und eine Nussallergie.", Codex PR #748, P1).
     parts = _SENTENCE.split(text)
     health = [p for p in parts if speaks_of_health(p) and not mentions_allergy(p)]
     for part in health:
         _add(state, Allergy(ingredient=None, own=not of_another_adult(part)))
+    other_adult = any(of_another_adult(p) for p in health)
     if health:
         text = ". ".join(p for p in parts if p not in health)
     if not mentions_allergy(text):
@@ -141,7 +146,10 @@ def _note(state: ConversationState, text: str) -> None:
             readings.append(whole.model_copy(update={"another_adult": others}))
     for wish in readings:
         if wish is not None:
-            _add(state, Allergy(ingredient=wish.ingredient, own=not wish.another_adult))
+            # shortcut: "ich" in the allergy sentences keeps the caller's own
+            # reason; a continuation without a speaker follows the health word.
+            other = wish.another_adult or (other_adult and not _I.search(text))
+            _add(state, Allergy(ingredient=wish.ingredient, own=not other))
 
 
 def _read(text: str) -> Wish | None:
