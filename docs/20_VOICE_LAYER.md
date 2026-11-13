@@ -224,6 +224,8 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 
 **Test number.** In the test phase every row of this table is tried on a number customers do not call, with a team telephone assigned to that number next to the AI telephone. The main number stays untouched until operation.
 
+**A team number changed during a call** (#683). The agent's handover (`transfer_to_team`) reads the number from the database at that moment, so a change on the tablet reaches it. The legs `voice` dials on its own, an outage (`_fail`) and the shadow leg, use the number read at the start of the call: they must work when the database does not, so they never read it again. A change in the middle of such a call rings the old number; if that does not answer, the fallback number and then the missed-call card follow, and no call is lost (rule 5).
+
 **Loop guard.** The team number must never be forwarded to us. `voice` refuses to start when the
 team number is one of its own inbound numbers, the dialplan rejects a call from its own number, and
 one line test proves it: software off, call the main number.

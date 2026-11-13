@@ -7,6 +7,8 @@ from api.core.errors import InvalidInput
 DEFAULT_COUNTRY_CODE = "49"
 E164 = re.compile(r"^\+[1-9]\d{6,14}$")
 TRUNK_IN_BRACKETS = re.compile(r"\(\s*0\s*\)")
+# Countries whose national numbers never start with 0 after the country code.
+TRUNK_ZERO_AFTER = ("49", "43", "41")
 SAY_INVALID_PHONE = (
     "Die Rufnummer habe ich nicht verstanden. Können Sie sie noch einmal sagen?"
 )
@@ -28,6 +30,12 @@ def normalize_phone(raw: str, country_code: str = DEFAULT_COUNTRY_CODE) -> str:
         digits = f"+{country_code}{digits[1:]}"
     elif digits and not digits.startswith("+"):
         digits = f"+{digits}"
+    # "+49 0171 ...": the trunk zero said after the country code. Here no
+    # number starts with 0, so it is dropped (#683); Italy keeps its 0.
+    for code in TRUNK_ZERO_AFTER:
+        rest = digits[len(code) + 1 :]
+        if digits.startswith(f"+{code}") and rest[:1] == "0" and rest[1:2] not in "0":
+            digits = f"+{code}{rest[1:]}"
     if not E164.match(digits):
         raise InvalidInput(f"Rufnummer ungültig: {raw!r}", say=SAY_INVALID_PHONE)
     return digits
