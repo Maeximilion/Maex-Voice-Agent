@@ -1787,7 +1787,7 @@ def _with_allergy(
     wishes said around it ("ich habe keine Allergie, aber bitte ohne
     Koriander"), None without one; a negation in the phrase mixed with more
     gives an allergy without an ingredient."""
-    theirs = _theirs_behind_a_denial(text)
+    theirs = _theirs_behind_a_denial(text, groups)
     if theirs is not None:
         return theirs
     start = _clause_start(words, named[0], nearest=True)
@@ -1876,35 +1876,77 @@ def _with_allergy(
     )
 
 
-def _theirs_behind_a_denial(text: str) -> Wish | None:
+def _unglued(clause: str) -> str:
+    """The clause without the joining words in front ("und ohne Zwiebeln")."""
+    return _LEADING_GLUE.sub("", _clean(clause))
+
+
+_LEADING_GLUE = re.compile(r"^(?:(?:und|aber|dann|bitte)\s+)+", re.IGNORECASE)
+
+
+def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None:
     """ "Ich habe keine Allergie, nur meine Frau gegen Sesam": the caller
     denies an own allergy, and the clause behind the comma names another
     adult's. That one goes to the kitchen without its reason, whatever the
     caller consents to (#719, L13); a child's is read as if said directly,
-    asked about with the caller's consent. None for anything else."""
-    for comma in (i for i, char in enumerate(text) if char == ","):
-        before, behind = text[:comma], text[comma + 1 :]
-        if not (denies_allergy(before) or only_denies(before)):
-            continue
-        adult = of_another_adult(behind)
-        # A child's allergy is the caller's to consent to, as said directly.
-        if allergies_named(behind) > 1 or not (
-            adult or _CHILDREN & set(_words(behind))
-        ):
-            return None
-        # "nur meine Frau gegen Sesam": the allergy word is the denial's.
-        ingredient = _ingredient(behind) or (
-            _ingredient(f"{behind} allergisch") if _GEGEN_WORD.search(behind) else None
-        )
-        if ingredient is None:
-            return None
-        return Wish(
-            text=ALLERGY_NOTE.format(ingredient=ingredient),
-            kind="allergy",
-            ingredient=ingredient,
-            another_adult=adult or None,
-        )
-    return None
+    asked about with the caller's consent. A removal said in another clause
+    stays next to it. None for anything else, and for anything doubtful (a
+    second person, a second "gegen", a denial in the clause), which the
+    caller is then asked about.
+
+    Non-recursive: the denial is judged on the words (`_denial_phrase`), not
+    by classifying every part in front of a comma again (Codex PR #735)."""
+    # One place to look, so the reading stays linear: the comma right behind
+    # the first allergy word, judged on that word's own sentence.
+    tokens, words = _tokens(text)
+    named = _allergy_words(words)
+    comma = next(
+        (
+            tokens[i].start()
+            for i in range(named[0] if named else len(words), len(words))
+            if words[i] == ","
+        ),
+        None,
+    )
+    if comma is None:
+        return None
+    clauses = text.split(",")
+    n = text[:comma].count(",") + 1
+    before, behind = text[:comma], clauses[n]
+    if not _denial_phrase(_SENTENCE_END.split(before)[-1]):
+        return None
+    words = _words(behind)
+    adult = of_another_adult(behind)
+    # A child's allergy is the caller's to consent to, as said directly.
+    if not (adult or _CHILDREN & set(words)):
+        return None
+    if (
+        allergies_named(behind) > 1
+        or len(_GEGEN_WORD.findall(behind)) > 1
+        or _PRONOUNS & set(words)
+        or _negated(words)
+    ):
+        return None
+    # "nur meine Frau gegen Sesam": the allergy word is the denial's.
+    ingredient = _ingredient(behind) or (
+        _ingredient(f"{behind} allergisch") if _GEGEN_WORD.search(behind) else None
+    )
+    if ingredient is None:
+        return None
+    removals = [
+        removal
+        for clause in clauses[:n] + clauses[n + 1 :]
+        if not mentions_allergy(clause)
+        and (removal := removal_with(_classify(_unglued(clause), groups)))
+    ]
+    return Wish(
+        text=kitchen_note(
+            ", ".join(removals) or None, ALLERGY_NOTE.format(ingredient=ingredient)
+        ),
+        kind="allergy",
+        ingredient=ingredient,
+        another_adult=adult or None,
+    )
 
 
 def _classify(text: str, groups: list[OptionGroup]) -> Wish:

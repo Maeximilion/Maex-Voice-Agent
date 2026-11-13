@@ -1681,6 +1681,16 @@ def test_a_childs_allergy_behind_a_denial_is_asked_about_like_the_callers(
     ) == [("Nuesse", True)]
 
 
+def test_the_other_adults_denial_notes_nothing(session, state):
+    """Codex PR #735: "aber meine Frau hat keine Sesamallergie" gave sesame."""
+    assert read(
+        session,
+        state,
+        "Ich habe keine Allergie, aber meine Frau hat keine Sesamallergie",
+    ) in ([], [(None, True)], [(None, False)])
+    assert all(a.ingredient is None for a in state.allergies)
+
+
 def test_a_plain_denial_still_notes_nothing(session, state):
     assert (
         read(session, state, "Ich habe keine Allergie, nur ohne Koriander bitte") == []

@@ -2062,3 +2062,40 @@ def test_an_allergy_behind_the_callers_denial_has_its_owner(
         ingredient,
         another_adult,
     )
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # Codex PR #735: the wife denies too.
+        "Ich habe keine Allergie, aber meine Frau hat keine Sesamallergie",
+        # Codex PR #735: two people behind the denial, one "gegen" each.
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam und ich gegen Nüsse",
+    ],
+)
+def test_a_doubtful_clause_behind_a_denial_gives_no_ingredient(said):
+    wish = classify_wish(said, [])
+    assert wish is None or wish.ingredient is None
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ohne Zwiebeln, ich habe keine Allergie, nur meine Frau gegen Sesam",
+        "Ich habe keine Allergie, nur meine Frau gegen Sesam, und ohne Zwiebeln",
+    ],
+)
+def test_a_removal_beside_the_other_adults_allergy_stays(said):
+    """Codex PR #735: the removal was dropped by the new reading."""
+    wish = wish_of(said, [])
+    assert (wish.ingredient, wish.another_adult) == ("Sesam", True)
+    assert removal_with(wish) == "ohne Zwiebeln"
+
+
+def test_a_comma_chain_is_read_in_linear_time():
+    """Codex PR #735: every part in front of a comma was classified again."""
+    import time
+
+    start = time.perf_counter()
+    classify_wish("Ich habe eine Allergie" + ", x" * 30, [])
+    assert time.perf_counter() - start < 0.5
