@@ -313,7 +313,8 @@ def _count_attempt(
 
 
 def _name_counter(db: Session, name: str, now: datetime) -> OperatorLoginFailure:
-    key = f"name:{name}"
+    # The hash, not the name: any length fits the index (Codex PR #731).
+    key = f"name:{token_hash(name)}"
     db.execute(
         insert(OperatorLoginFailure)
         .values(address=key, failures=0, last_failed_at=now)

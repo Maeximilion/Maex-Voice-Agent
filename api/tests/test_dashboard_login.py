@@ -17,6 +17,7 @@ from sqlalchemy.orm import sessionmaker
 
 from api.dashboard import access, cli, totp
 from api.dashboard import app as web
+from api.dashboard.access import token_hash
 from api.dashboard.config import DashboardSettings, settings
 from api.dashboard.db import get_db
 from api.dashboard.models import (
@@ -266,7 +267,7 @@ def test_an_address_waits_on_its_own_and_is_forgotten_after_a_day(
             for row in db.scalars(select(OperatorLoginFailure))
         }
     # The old address and the old names are gone; these start again from one.
-    assert left == {"testclient": 1, "name:emil": 1}
+    assert left == {"testclient": 1, f"name:{token_hash('emil')}": 1}
 
 
 def test_ended_sessions_go_with_the_next_sign_in(client, factors, clock, sessions):
@@ -606,3 +607,11 @@ def test_a_wrong_code_after_a_sign_in_is_still_a_factor_failure(
             )
         ]
     assert reasons == ["factor"]
+
+
+def test_an_oversized_unknown_name_is_refused_like_any_other(client, clock):
+    """Codex PR #731: a name of kilobytes broke the index of its counter."""
+    import secrets
+
+    name = secrets.token_hex(4000)
+    assert _sign_in(client, "000001", name=name).status_code == 401
