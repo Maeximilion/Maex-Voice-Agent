@@ -544,6 +544,40 @@ def test_closing_the_owner_part_leaves_staff_rights(client, engine):
     assert client.get("/gui/", headers=HTML).status_code == 200
 
 
+def _age_owner_clock(engine, minutes: int) -> None:
+    with Session(engine) as session:
+        session.execute(
+            update(GuiSession).values(
+                admin_active_at=clock.utcnow() - timedelta(minutes=minutes)
+            )
+        )
+        session.commit()
+
+
+def test_an_owner_page_keeps_owner_rights_and_staff_pages_do_not(client, engine):
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client).status_code == 303
+    # Staff pages and staff writes never move the owner's own clock (#600).
+    _age_owner_clock(engine, 14)
+    assert client.get("/gui/", headers=HTML).status_code == 200
+    assert client.post("/gui/kopfzeile/ki-pausieren", headers=HX).status_code == 200
+    assert _sessions(engine)[0].admin_active_at < clock.utcnow() - timedelta(minutes=13)
+    # An owner page does: the 15 minutes start again.
+    assert client.get(DEVICES, headers=HTML).status_code == 200
+    assert _sessions(engine)[0].admin_active_at > clock.utcnow() - timedelta(minutes=1)
+
+
+def test_owner_rights_end_when_the_owner_is_idle_though_the_staff_write(client, engine):
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client).status_code == 303
+    _age_owner_clock(engine, 16)
+    # The staff's write keeps the device unlocked, the owner rights are gone.
+    assert client.post("/gui/kopfzeile/ki-pausieren", headers=HX).status_code == 200
+    gone = client.get(DEVICES, headers=HTML)
+    assert gone.status_code == 303
+    assert gone.headers["location"] == "/gui/inhaber?weiter=/gui/geraete"
+
+
 def test_the_admin_pin_unlocks_a_locked_device(client, engine):
     _set_up_and_sign_in(client, engine)
     _lock(engine)

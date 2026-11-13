@@ -38,6 +38,9 @@ from api.models import (
 
 SESSION_DAYS = 30
 IDLE = timedelta(minutes=15)
+# Owner rights end after this long without an owner page or owner write, however
+# busy the staff keep the tablet (#600, Maxi 13.11.2026).
+ADMIN_IDLE = timedelta(minutes=15)
 PIN_TRIES = 5
 # Every third wrong password in a row waits, one minute longer each time.
 WAIT_EVERY = 3
@@ -261,8 +264,15 @@ def resolve(
             )
         session.commit()
     locked = now - row.last_active_at >= IDLE
-    # The idle lock closes owner rights too: after the team PIN, staff rights only.
-    admin = not locked and row.admin_until is not None and row.admin_until > now
+    # The idle lock and the owner's own idle clock close owner rights; after the team
+    # PIN, staff rights only.
+    admin = (
+        not locked
+        and row.admin_until is not None
+        and row.admin_until > now
+        and row.admin_active_at is not None
+        and now - row.admin_active_at < ADMIN_IDLE
+    )
     return Access(row.id, locked=locked, admin=admin, slid=slid)
 
 
@@ -307,7 +317,8 @@ def unlock(
         raise InvalidInput("no team pin yet", say=NO_TEAM_PIN)
     if same_secret(pin, stored):
         # The team PIN opens staff rights: an owner's hour left open ends here.
-        row.pin_failures, row.last_active_at, row.admin_until = 0, now, None
+        row.pin_failures, row.last_active_at = 0, now
+        row.admin_until = row.admin_active_at = None
         session.commit()
         return None
     row.pin_failures += 1
