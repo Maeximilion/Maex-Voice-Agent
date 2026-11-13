@@ -62,7 +62,7 @@ from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.calls import record_consent
-from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
+from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import speaks_of_health
 from api.domain.ordering.readback import spoken_euro
@@ -488,6 +488,9 @@ class ConversationLoop:
         called: list[str] = []
         # Of those, the ones that worked: what the model can have read.
         read: set[str] = set()
+        # The core's allergen sentences of this turn, one per dish looked up:
+        # the only allergen words the guest hears (#669, #717, rule 1).
+        allergen_says: list[str] = []
         zone = self._local_now(state).tzinfo
         assert zone is not None  # `to_local` gives an aware time
         for _ in range(MAX_TOOL_HOPS):
@@ -654,6 +657,12 @@ class ConversationLoop:
                     called.append(SAY)
                     pending_input = _tool_result_as_input(SAY, refused, zone)
                     continue
+                if allergen_says:
+                    # The model relays nothing: a dropped allergen ("Die 23
+                    # enthält Gluten", soy missing) or an added one passed
+                    # every guard. shortcut: its other words are dropped
+                    # too; the guest asks on, the next turn answers.
+                    say = " ".join(allergen_says)
                 # What the guest hears decides which offered dishes count as
                 # put to them (guards.py, rule 2).
                 guards.note_said(state, say)
@@ -872,6 +881,12 @@ class ConversationLoop:
             called.append(turn.tool_call.name)
             if result.ok:
                 read.add(turn.tool_call.name)
+                if (
+                    turn.tool_call.name == "get_item_details"
+                    and told.startswith(SAY_ALLERGENS_LEAD)
+                    and told not in allergen_says
+                ):
+                    allergen_says.append(told)
             pending_input = _tool_result_as_input(turn.tool_call.name, result, zone)
 
         return self._outage(state, SAY_STUCK, user_text, open_table)
