@@ -62,7 +62,7 @@ from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.calls import record_consent
-from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
+from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.wishes import speaks_of_health
 from api.domain.ordering.readback import spoken_euro
@@ -274,18 +274,25 @@ class ConversationLoop:
         """One sentence of the guest. What belongs to the recording comes
         first, before the model and whatever else the sentence asks: the
         answer to the question of the phone line (L2), or its withdrawal."""
+        addressed = False
         if state.recording == "asked":
+            # The address may sit in the answer clause that is cut off below.
+            addressed = escalation.addresses_a_person(user_text)
             answer = recording_answer(user_text)
             recording.settle(self._session, state, answer, self._now)
             if bare_recording_answer(user_text):
                 guards.note_said(state, recording.SAY_WHAT_CAN_I_DO)
-                return TurnResult(state=state, say=_opening(state))
+                say = _opening(state)
+                if escalation.addresses_a_person(user_text):
+                    # "Nein, junge Frau": the truthful sentence still comes first.
+                    say = [SAY_NOT_A_PERSON, *say]
+                return TurnResult(state=state, say=say)
             # No consent, and no second question: what the sentence holds
             # besides its answer is what the guest called for, and the only
             # thing the readers of the turn see (#526).
             user_text = after_recording_answer(user_text)
         if state.recording != "on" or not stops_recording(user_text):
-            return self._guest_sentence(state, user_text)
+            return self._guest_sentence(state, user_text, addressed)
         recording.withdraw(self._session, state, self._now)
         if only_stops_recording(user_text):
             # What the guest was asked stands: said again, it changes nothing
@@ -293,11 +300,13 @@ class ConversationLoop:
             return TurnResult(
                 state=state, say=[recording.SAY_RECORDING_STOPPED, _still_open(state)]
             )
-        result = self._guest_sentence(state, user_text)
+        result = self._guest_sentence(state, user_text, addressed)
         result.say.insert(0, recording.SAY_RECORDING_STOPPED)
         return result
 
-    def _guest_sentence(self, state: ConversationState, user_text: str) -> TurnResult:
+    def _guest_sentence(
+        self, state: ConversationState, user_text: str, addressed: bool = False
+    ) -> TurnResult:
         """One sentence of the guest, after the recording. A guest who takes
         the agent for a person hears the truthful sentence first, on every way
         out of the turn (docs/09 L1, #638): asks whether a person is on the
@@ -305,9 +314,9 @@ class ConversationLoop:
         question), or addresses it as one ("Ja, junge Frau")."""
         rest = escalation.without_human_question(user_text)
         result = self._guest_turn(state, user_text, rest)
-        if (rest is not None or escalation.addresses_a_person(user_text)) and not (
-            result.say and result.say[0].startswith(SAY_NOT_A_PERSON)
-        ):
+        if (
+            rest is not None or addressed or escalation.addresses_a_person(user_text)
+        ) and not (result.say and result.say[0].startswith(SAY_NOT_A_PERSON)):
             result.say.insert(0, SAY_NOT_A_PERSON)
         return result
 
@@ -488,6 +497,9 @@ class ConversationLoop:
         called: list[str] = []
         # Of those, the ones that worked: what the model can have read.
         read: set[str] = set()
+        # The core's allergen sentences of this turn, one per dish looked up:
+        # the only allergen words the guest hears (#669, #717, rule 1).
+        allergen_says: list[str] = []
         zone = self._local_now(state).tzinfo
         assert zone is not None  # `to_local` gives an aware time
         for _ in range(MAX_TOOL_HOPS):
@@ -655,6 +667,12 @@ class ConversationLoop:
                     called.append(SAY)
                     pending_input = _tool_result_as_input(SAY, refused, zone)
                     continue
+                if allergen_says:
+                    # The model relays nothing: a dropped allergen ("Die 23
+                    # enthält Gluten", soy missing) or an added one passed
+                    # every guard. shortcut: its other words are dropped
+                    # too; the guest asks on, the next turn answers.
+                    say = " ".join(allergen_says)
                 # What the guest hears decides which offered dishes count as
                 # put to them (guards.py, rule 2).
                 guards.note_said(state, say)
@@ -878,6 +896,12 @@ class ConversationLoop:
             called.append(turn.tool_call.name)
             if result.ok:
                 read.add(turn.tool_call.name)
+                if (
+                    turn.tool_call.name == "get_item_details"
+                    and told.startswith(SAY_ALLERGENS_LEAD)
+                    and told not in allergen_says
+                ):
+                    allergen_says.append(told)
             pending_input = _tool_result_as_input(turn.tool_call.name, result, zone)
 
         return self._outage(state, SAY_STUCK, user_text, open_table)
