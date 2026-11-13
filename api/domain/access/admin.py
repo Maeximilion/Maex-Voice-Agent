@@ -17,22 +17,22 @@ Stored readable like the team PIN (Maxi 09.11.2026): the operator sees and
 sets it. It never equals the team PIN.
 """
 
-import hmac
 import uuid
 from datetime import datetime, timedelta
+from typing import Literal
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, Unauthorized
-from api.domain.access.hashing import pin_problem
+from api.domain.access.hashing import pin_problem, same_secret
 from api.domain.access.sessions import (
     audit,
     count_failure,
     locked_account,
     minutes_left,
 )
-from api.models import GuiSession
+from api.models import GuiAccount, GuiSession
 
 ADMIN_FOR = timedelta(minutes=60)
 SAME_AS_TEAM = "Die Inhaber-PIN muss sich von der Team-PIN unterscheiden."
@@ -79,7 +79,7 @@ def unlock_admin(
     if blocked is not None and blocked > now:
         session.rollback()
         raise AdminRefused(minutes_left(blocked - now))
-    if hmac.compare_digest(pin.encode(), account.admin_pin.encode()):
+    if same_secret(pin, account.admin_pin):
         account.admin_failures = 0
         account.admin_blocked_until = account.admin_last_failed_at = None
         row.admin_until, row.last_active_at, row.pin_failures = now + ADMIN_FOR, now, 0
@@ -94,11 +94,11 @@ def unlock_admin(
         )
         session.commit()
         return
-    previous = account.admin_last_failed_at if account.admin_failures else None
-    account.admin_failures, account.admin_blocked_until = count_failure(
-        account.admin_failures, previous, now
-    )
-    account.admin_last_failed_at = now
+    (
+        account.admin_failures,
+        account.admin_blocked_until,
+        account.admin_last_failed_at,
+    ) = count_failure(account.admin_failures, account.admin_last_failed_at, now)
     audit(
         session,
         row.tenant_id,
@@ -124,26 +124,14 @@ def close_admin(session: Session, session_id: uuid.UUID) -> None:
 def admin_pin(session: Session, tenant_id: uuid.UUID, actor: str) -> str | None:
     """The owner's admin PIN for the operator, or None. The look is audited,
     never the value. Commits."""
-    account = locked_account(session, tenant_id)
-    if account is None:
-        session.rollback()
-        return None
-    audit(session, tenant_id, actor, "gui.admin_pin_shown", account.id, {})
-    session.commit()
-    return account.admin_pin
+    return shown_pin(session, tenant_id, actor, "admin")
 
 
 def set_admin_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) -> None:
     """The operator sets the admin PIN. A new PIN is often one that leaked: it
     starts with no wait, and owner rights still open on any device end (review
     of #587). Raises InvalidInput. Commits."""
-    problem = pin_problem(pin)
-    if problem:
-        raise InvalidInput("admin pin refused", say=problem)
-    account = locked_account(session, tenant_id)
-    if account is None:
-        session.rollback()
-        raise InvalidInput("no login yet", say=NO_LOGIN)
+    account = pin_account(session, tenant_id, pin, "admin")
     refuse_same_pins(session, account.team_pin, pin)
     account.admin_pin, account.admin_failures = pin, 0
     account.admin_blocked_until = account.admin_last_failed_at = None
@@ -156,9 +144,39 @@ def set_admin_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) 
     session.commit()
 
 
+def shown_pin(
+    session: Session, tenant_id: uuid.UUID, actor: str, which: Literal["team", "admin"]
+) -> str | None:
+    """The team or admin PIN for the operator, or None. The look is audited,
+    never the value. Commits."""
+    account = locked_account(session, tenant_id)
+    if account is None:
+        session.rollback()
+        return None
+    audit(session, tenant_id, actor, f"gui.{which}_pin_shown", account.id, {})
+    session.commit()
+    return account.team_pin if which == "team" else account.admin_pin
+
+
+def pin_account(
+    session: Session, tenant_id: uuid.UUID, pin: str, which: Literal["team", "admin"]
+) -> GuiAccount:
+    """The locked account when the operator may set `pin` as its team or admin
+    PIN. Raises InvalidInput for a PIN that is no 4 to 6 digits or for a
+    restaurant without a login yet."""
+    problem = pin_problem(pin)
+    if problem:
+        raise InvalidInput(f"{which} pin refused", say=problem)
+    account = locked_account(session, tenant_id)
+    if account is None:
+        session.rollback()
+        raise InvalidInput("no login yet", say=NO_LOGIN)
+    return account
+
+
 def refuse_same_pins(session: Session, team_pin: str | None, admin: str | None) -> None:
     """The staff know the team PIN, so it can never open owner rights. Rolls
     back and raises InvalidInput when the two would be equal."""
-    if team_pin and admin and hmac.compare_digest(team_pin.encode(), admin.encode()):
+    if team_pin and admin and same_secret(team_pin, admin):
         session.rollback()
         raise InvalidInput("admin pin equals team pin", say=SAME_AS_TEAM)

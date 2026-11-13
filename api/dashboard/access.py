@@ -303,9 +303,9 @@ def _count_attempt(
         db.rollback()
         raise SignInRefused(minutes_left(max(waits) - now))
     for row in counters:
-        previous = row.last_failed_at if row.failures else None
-        row.failures, row.blocked_until = count_failure(row.failures, previous, now)
-        row.last_failed_at = now
+        row.failures, row.blocked_until, row.last_failed_at = count_failure(
+            row.failures, row.last_failed_at, now
+        )
     stored = account.password_hash if account else None
     account_id = account.id if account else None
     db.commit()

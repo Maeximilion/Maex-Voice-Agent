@@ -9,6 +9,7 @@ part of the admin area also needs the admin PIN on this device
 (`require_admin`, #570 part b).
 """
 
+import secrets
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from urllib.parse import quote, urlsplit
@@ -86,6 +87,18 @@ async def slide_cookies(
             response, Signed(session_token(request), device_token(request))
         )
     return response
+
+
+def csrf_matches(cookie: str | None, sent: str | None) -> bool:
+    """The CSRF cookie and the token the request sent (form field or header):
+    both there, ASCII (`compare_digest` takes no more) and equal."""
+    return bool(
+        cookie
+        and sent
+        and cookie.isascii()
+        and sent.isascii()
+        and secrets.compare_digest(cookie, sent)
+    )
 
 
 def client_address(request: Request) -> str:
