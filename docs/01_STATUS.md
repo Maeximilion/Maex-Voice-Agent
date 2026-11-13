@@ -1,7 +1,8 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.30
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.31
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.29
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.28
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.27
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.25
@@ -287,6 +288,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 13.11.2026 | **Batch 9 follow-up of #669 (candidate #717, rule 1): the guest hears the core's allergen sentence, not the model's.** Red first (4 of 7 new loop tests red). A turn that looked up a dish with maintained allergens (`get_item_details`, sentence from `ALLERGEN_SPOKEN`) now ends with those sentences word for word (`loop.py`, after the guards); a model sentence that dropped, added or renamed an allergen no longer reaches the guest. Own function, `guards.py` untouched. Open on #669: an eval case, since the stand-in model looks up no allergens. |
 | 13.11.2026 | **Follow-up of #670 (Codex on #718), fix PR for #719: an allergy named behind the caller's own denial is read with its owner.** Red first (4 agent cases red, a plain denial with a removal guards). "Ich habe keine Allergie, nur meine Frau gegen Sesam" (and "aber meine Frau hat eine Sesamallergie") is another adult's allergy: the kitchen gets "ohne Sesam" without its reason, nothing is asked (L13). A child behind the denial ("nur meine Tochter gegen Nüsse") is read as if said directly, the caller's to consent to. Still open: a person named without an ingredient ("..., nur meine Frau") is not asked about. |
 | 13.11.2026 | **Ultrareview ledger (#546, catch-up wave: data and privacy), fix PR for #693: a recording file without a row is deleted after the period too.** Red first (1 of 2 new tests red, the other guards a file with a row). The deletion job read only the `recordings` rows; a restore of last night's dump drops today's rows but leaves their WAV files. `retention._files_without_a_row` deletes a file no row names once its own time is past `RETENTION_RECORDING_DAYS`, and logs one it cannot delete; docs/03 and the restore runbook in docs/13 say so. Latent while recording is off. |
 | 13.11.2026 | **Ultrareview ledger (#546), fix PR for #691 (Maxi decided B): a premium-rate, service or satellite callback number keeps its card, with a warning and without the one-tap call link.** Red first (3 GUI cases red; 10 new domain cases for `customers.phone.costly`). German 0900, 0137, 0180, 0118 and 012 and the international +870, +881, +882 and +883 get the danger badge "Teure Sondernummer – vor dem Anruf prüfen" on the open and the done cards, and no `tel:` link; docs/06 says so. Foreign mobile and landline numbers keep the link. |
@@ -333,7 +335,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.44.30 · 14.11.2026:** #678: measurement of the ear's floor (MIN_SPEECH_SECONDS) behind VOICE_EAR_MEASURE and scripts/ear_floor.py; the floor stays 0.25 s until Maxi's test calls are measured (decision 13.11.2026)
+- **v2.44.31 · 14.11.2026:** #678: measurement of the ear's floor (MIN_SPEECH_SECONDS) behind VOICE_EAR_MEASURE and scripts/ear_floor.py; the floor stays 0.25 s until Maxi's test calls are measured (decision 13.11.2026)
+- **v2.44.30 · 13.11.2026:** Fix for #669/#717: the guest hears the core's allergen sentence word for word
 - **v2.44.29 · 13.11.2026:** #651: the silent-caller drill checks the no_caller_audio note on the call row; measured on Asterisk 22 that a caller leg sending nothing leaves it
 - **v2.44.28 · 13.11.2026:** Address forms (junge Frau, junger Mann, Fräulein, gute Frau, guter Mann) are cut in consent.py before the yes and no readers (#648, Maxi 13.11.2026)
 - **v2.44.27 · 13.11.2026:** Fix PR for #738: a modal wish word in the complaint gap keeps the sentence for the team
