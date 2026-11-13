@@ -22,11 +22,13 @@ from api.domain.menu.importer import (
 )
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.search import (
+    CLEAR_MATCHES,
     SAY_IN_TURN,
     SAY_WHICH_NUMBER,
     position_parts,
     search_menu,
 )
+from api.domain.menu.split import split_positions
 from api.main import app
 from api.models import MenuItem
 from api.tests.conftest import p95_ms
@@ -1419,3 +1421,138 @@ def test_the_judge_of_spoken_orders_finds_the_positions_of_the_conversation(
     menu = Menu.from_rows(active_numbers(session, sushi))
     real = [p.strip(" .!?;:") for p in position_parts(session, sushi, said, now=NOW)]
     assert positions(said, menu) == real
+
+
+# --- #676: a clear card number is never lost in a sentence kept whole -------------
+
+
+@pytest.mark.parametrize(
+    ("said", "parts"),
+    [
+        ("die 23 und Ente", ["die 23", "Ente"]),
+        ("die 23 und Sommerrollen und Ente", ["die 23", "Sommerrollen und Ente"]),
+        ("die 23 und die 24 und Ente", ["die 23", "die 24", "Ente"]),
+        ("S12 und Ente", ["S12", "Ente"]),
+        ("die 23 und Ente und die 24", ["die 23", "Ente", "die 24"]),
+    ],
+)
+def test_a_card_number_stays_a_position_beside_an_unclear_name(
+    session, sushi, said, parts
+):
+    """#676: an unclear or unknown name piece kept the sentence whole, and the
+    name search over it dropped the card numbers said before it."""
+    assert position_parts(session, sushi, said, now=NOW) == parts
+
+
+@pytest.fixture
+def thirty(session, tenant_id):
+    """A number with and without a letter, as the register has them."""
+    rows = "30;Ente Kung Pao;Hauptgerichte;12,00;;ja\n30a;Huhn Kung Pao;Hauptgerichte;11,00;;ja\n"
+    plan = parse(
+        {MENU_FILE: KARTE[MENU_FILE] + rows, ALIASES_FILE: KARTE[ALIASES_FILE]}
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    return tenant_id
+
+
+@pytest.mark.parametrize("said", ["Die 30, A.", "die 30, ah"])
+def test_a_letter_after_a_pause_is_not_cut_off_its_number(session, thirty, said):
+    """The cut at card numbers must not take the 30 for a 30a and leave the
+    letter as a piece of its own."""
+    assert position_parts(session, thirty, said, now=NOW) == [said]
+    with pytest.raises((Ambiguous, NotFound)):
+        suche(session, thirty, said)
+
+
+def test_the_same_dish_named_twice_keeps_the_sentence_whole(session, sushi):
+    """Codex PR #721: the cut at card numbers skipped the check for one dish
+    named in other words, and Pho Bo (the 13) became two positions."""
+    said = "die 13 und Pho Bo und S12 und Ente"
+    assert position_parts(session, sushi, said, now=NOW) == [said]
+    with pytest.raises(Ambiguous):
+        suche(session, sushi, said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    ["Die 13, meine Frau hat eine Erdnussallergie", "die 13, ich habe keine Allergie"],
+)
+def test_a_wish_behind_a_card_number_stays_with_it(session, sushi, said):
+    """The cut at card numbers leaves a sentence with a wish whole (evals
+    allergie_0015 and allergie_0016)."""
+    assert position_parts(session, sushi, said, now=NOW) == [said]
+    assert nummern(suche(session, sushi, said)) == ["13"]
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "die 23, die 24, äh, Pho Bo",
+        "Pho Bo, äh, die 23",
+        "die 23 und Pho Bo statt Wan-Tan-Suppe",
+        "die 23, nee, die 24",
+    ],
+)
+@pytest.mark.parametrize("split_check", [True, False])
+def test_a_sentence_kept_whole_with_a_card_number_asks(
+    session, sushi, said, split_check
+):
+    """#676: a hesitation or correction keeps the sentence whole; the name
+    search stripped the card number and took a name, or the corrected number."""
+    with pytest.raises(Ambiguous) as err:
+        suche(session, sushi, said, split_check=split_check)
+    assert "Welche Nummer" in (err.value.say or "")
+
+
+def test_a_joined_number_with_a_quantity_is_no_card_number_beside_a_name(
+    session, sushi
+):
+    """Codex PR #721: the check for a card number beside more cut "drei und
+    zwanzig" into a 3 and asked, though it is 23 portions of Pho Bo."""
+    result = suche(session, sushi, "drei und zwanzig Portionen Pho Bo")
+    assert nummern(result) == ["13"]
+
+
+def test_nee_is_a_correction():
+    assert split_positions("die 23, nee, die 24") == ["die 23, nee, die 24"]
+
+
+@pytest.mark.parametrize(
+    "said", ["Eine Cola 0,5", "ein Wasser 0,75", "die 23 für 8,50"]
+)
+def test_a_decimal_comma_is_no_separator(session, sushi, said):
+    """#676: "0,5" was cut into "0" and a dish 5."""
+    assert split_positions(said) == [said]
+    assert len(position_parts(session, sushi, said, now=NOW)) == 1
+
+
+def test_a_comma_with_a_space_between_numbers_still_separates():
+    assert split_positions("die 23, 24") == ["die 23", "24"]
+
+
+@pytest.fixture
+def sake(session, tenant_id):
+    """Two dishes whose names differ only by a number, an alias on one."""
+    rows = "70;Sake 100 ml;Getränke;4,00;;ja\n71;Sake 200 ml;Getränke;7,00;;ja\n"
+    plan = parse(
+        {
+            MENU_FILE: KARTE[MENU_FILE] + rows,
+            ALIASES_FILE: KARTE[ALIASES_FILE] + "70;der Sake 100 ml\n",
+        }
+    )
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    return tenant_id
+
+
+def test_an_alias_never_wins_for_a_dish_that_differs_only_by_its_number(session, sake):
+    """#676: "Sake 200 ml" normalises like the alias of the 100 ml and was
+    taken as the 100 ml without a question."""
+    result = suche(session, sake, "Sake 200 ml")
+    assert nummern(result) != ["70"]
+    assert result.match_type not in CLEAR_MATCHES or nummern(result) == ["71"]
+
+
+def test_the_alias_said_as_it_is_still_finds_its_dish(session, sake):
+    assert nummern(suche(session, sake, "der Sake 100 ml")) == ["70"]

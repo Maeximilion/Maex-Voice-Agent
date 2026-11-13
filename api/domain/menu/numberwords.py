@@ -817,14 +817,26 @@ def hesitation(token: str) -> bool:
     return _HESITATION.fullmatch(token) is not None
 
 
-# Words that turn a second number into an alternative or a correction.
-_ALTERNATIVE_WORDS = frozenset(
-    {"oder", "nein", "bzw", "beziehungsweise", "sondern", "lieber", "statt", "anstatt"}
+# Words that turn a second number into an alternative or a correction, after
+# fold(); split.py keeps a sentence with one of them whole. "nee" as the ear
+# writes a spoken "nein" (#676).
+ALTERNATIVE_WORDS = frozenset(
+    {
+        "oder",
+        "nein",
+        "nee",
+        "bzw",
+        "beziehungsweise",
+        "sondern",
+        "lieber",
+        "statt",
+        "anstatt",
+    }
 )
 # Words that can connect two numbers. They are only transparent if there
 # really is a number on the left and on the right - "Nummer 23, nein" is an
 # order taken back, not a 23 (Codex PR #117, P1).
-_CONNECTORS = _ALTERNATIVE_WORDS | {"und"}
+_CONNECTORS = ALTERNATIVE_WORDS | {"und"}
 
 
 def _connected(tokens: list[str], after: int, before: int) -> bool:
@@ -840,7 +852,7 @@ def _connected(tokens: list[str], after: int, before: int) -> bool:
     # oder die 24"). Everything else must be a connecting word - an "oder"
     # between rice and noodles does not connect a later time (Codex PR #117).
     words = [t for t in between if not hesitation(t) and t not in _LINK_ARTICLES]
-    return all(t in _ALTERNATIVE_WORDS or t == "und" for t in words)
+    return all(t in ALTERNATIVE_WORDS or t == "und" for t in words)
 
 
 def _suffix_at(tokens: list[str], at: int) -> str:

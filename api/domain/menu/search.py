@@ -43,12 +43,19 @@ from api.domain.menu.items import card_format, option_groups
 from api.domain.menu.items import is_sold_out as _sold_out
 from api.domain.menu.normalize import normalize_alias, normalize_query
 from api.domain.menu.numberwords import (
+    CARD_SUFFIXES,
     CardFormat,
     canonical_card,
+    fold,
     sole_item_number,
 )
 from api.domain.menu.sold_out import alternatives
-from api.domain.menu.split import raw_pieces, separator_pieces, split_positions
+from api.domain.menu.split import (
+    cut_at_separators,
+    raw_pieces,
+    separator_pieces,
+    split_positions,
+)
 from api.domain.menu.wishes import (
     classify_wish,
     has_number,
@@ -378,10 +385,40 @@ def _position_parts(
     def whole(rest: list[str]) -> list[str]:
         """The sentence kept whole. The name search strips every number, so a
         piece with an unclear number further on ("einmal Suppe, und 30", where
-        "Suppe" hits two dishes) makes the sentence ask for it instead (#328)."""
+        "Suppe" hits two dishes) makes the sentence ask for it instead (#328).
+        For the same reason a piece that is one card number stays a position
+        of its own, and only the pieces between them are kept together: "die
+        23 und Ente" is the 23 and the Ente to ask about (#676), unless the
+        sentence carries a wish."""
         if any(sole_item_number(piece, piece_card)[1] for piece in rest):
             raise Ambiguous("Nummer nicht eindeutig", say=SAY_WHICH_NUMBER)
-        return [query]
+        numbers = [sole_item_number(p, piece_card)[0] is not None for p in pieces]
+        # A wish or an allergy behind the number belongs to its dish ("Die 13,
+        # meine Frau hat eine Erdnussallergie"): kept whole, the search reads
+        # it as dish and wish, and asks if a number is lost there.
+        # The same dish named twice in other words ("die 13 und Pho Bo") may
+        # be one portion: whole, so the search asks (Codex PR #721).
+        # A lone letter after a pause ("Die 30, A.") is the number's letter,
+        # not a piece of its own: whole, the 30 is not taken for a 30a.
+        if (
+            not any(numbers)
+            or wish_candidates(query)
+            or any(len(words) > 1 for words in said.values())
+            or any(fold(p).strip(" .!?") in _LETTER_PIECES for p in pieces)
+        ):
+            return [query]
+        cut: list[str] = []
+        run: int | None = None  # first piece of the run of names being kept
+        for k, number in enumerate([*numbers, True]):
+            if not number:
+                run = k if run is None else run
+                continue
+            if run is not None:
+                cut.append(query[spans[run][0] : spans[k - 1][1]])
+                run = None
+            if k < len(pieces):
+                cut.append(pieces[k])
+        return cut
 
     i = 0
     while i < len(pieces):
@@ -431,6 +468,10 @@ def _position_parts(
     if len(positions) == 1 or any(len(words) > 1 for words in said.values()):
         return [query]
     return positions
+
+
+# A card letter said on its own, as the ear writes it ("A", "ah").
+_LETTER_PIECES = frozenset({"ah", *CARD_SUFFIXES})
 
 
 def _longest_dish(session: Session, tenant_id: uuid.UUID) -> int:
@@ -500,17 +541,31 @@ def _alias_items(session: Session, tenant_id: uuid.UUID, query: str) -> list[Men
     """Aktive Gerichte, deren Alias genau das Gesagte ist (Schritt 2 der Suche)."""
     text = normalize_query(query)
     said = {normalize_alias(query), text}
-    matched_ids = {
-        item_id
-        for item_id, alias in session.execute(
-            select(ItemAlias.menu_item_id, ItemAlias.alias)
-            .join(MenuItem, ItemAlias.menu_item_id == MenuItem.id)
-            .where(*_active(tenant_id))
-        )
-        if alias in said or normalize_query(alias) == text
-    }
+    exact: set[uuid.UUID] = set()
+    loose: set[uuid.UUID] = set()
+    for item_id, alias in session.execute(
+        select(ItemAlias.menu_item_id, ItemAlias.alias)
+        .join(MenuItem, ItemAlias.menu_item_id == MenuItem.id)
+        .where(*_active(tenant_id))
+    ):
+        if alias in said:
+            exact.add(item_id)
+        elif normalize_query(alias) == text:
+            loose.add(item_id)
+    matched_ids = exact | loose
     if not matched_ids:
         return []
+    if loose - exact:
+        # Matched without its numbers: "Sake 200 ml" is "sake ml" like the
+        # alias "der Sake 100 ml". A dish named so once normalised is just as
+        # meant, so the search asks instead of taking the alias's dish (#676).
+        matched_ids |= {
+            item_id
+            for item_id, name in session.execute(
+                select(MenuItem.id, MenuItem.name).where(*_active(tenant_id))
+            )
+            if normalize_query(name) == text
+        }
     return list(
         session.scalars(
             select(MenuItem)
@@ -727,6 +782,14 @@ def search_menu(
         )
     if len(parts) > 1:
         raise Ambiguous("mehrere Positionen: " + " | ".join(parts), say=SAY_IN_TURN)
+    # A card number kept whole beside more ("Pho Bo, äh, die 23", "die 23 und
+    # Pho Bo statt Wan-Tan-Suppe"): the name search below strips it and would
+    # take the name alone, so the number is asked for (#676).
+    pieces = cut_at_separators(query)
+    if len(pieces) > 1 and any(
+        sole_item_number(p, card)[0] is not None for p in pieces
+    ):
+        raise Ambiguous("Nummer neben mehr im Satz", say=SAY_WHICH_NUMBER)
 
     # 2. Exact alias. Aliases are stored as on the menu, often with an article
     # ("die knusprigen rollen"); the guest says "die knusprigen Rollen, bitte".
