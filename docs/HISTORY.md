@@ -1497,3 +1497,4 @@ Moved unchanged from `CLAUDE.md` sections 1, 3, 6 and 8 by Loop D PR 5 of #695:
 - "The Loop", skills at session start: (Maxi, 2026-10-19, replaces the rule of 2026-10-12).
 - "Cache-friendly sessions" item 2, idle check-in: No recurring cron: its jitter (up to 30 minutes late) can miss the 1-hour cache. `CronCreate` was tested to fire on time in the desktop app on 07.11.2026, not yet in the Ubuntu terminal.
 - Section 8 Git, example: Conventional Commits: `feat(tools): check_delivery with polygon validation`
+- "The Loop", skills at session start: `caveman` loaded at level `ultra` from 2026-10-19 until 2026-11-13, when Maxi switched it to `full`.
