@@ -561,10 +561,14 @@ def test_an_owner_page_keeps_owner_rights_and_staff_pages_do_not(client, engine)
     _age_owner_clock(engine, 14)
     assert client.get("/gui/", headers=HTML).status_code == 200
     assert client.post("/gui/kopfzeile/ki-pausieren", headers=HX).status_code == 200
-    assert _sessions(engine)[0].admin_active_at < clock.utcnow() - timedelta(minutes=13)
+    idle_since = _sessions(engine)[0].admin_active_at
+    assert idle_since is not None
+    assert idle_since < clock.utcnow() - timedelta(minutes=13)
     # An owner page does: the 15 minutes start again.
     assert client.get(DEVICES, headers=HTML).status_code == 200
-    assert _sessions(engine)[0].admin_active_at > clock.utcnow() - timedelta(minutes=1)
+    active_at = _sessions(engine)[0].admin_active_at
+    assert active_at is not None
+    assert active_at > clock.utcnow() - timedelta(minutes=1)
 
 
 def test_owner_rights_end_when_the_owner_is_idle_though_the_staff_write(client, engine):
