@@ -1787,6 +1787,9 @@ def _with_allergy(
     wishes said around it ("ich habe keine Allergie, aber bitte ohne
     Koriander"), None without one; a negation in the phrase mixed with more
     gives an allergy without an ingredient."""
+    theirs = _theirs_behind_a_denial(text)
+    if theirs is not None:
+        return theirs
     start = _clause_start(words, named[0], nearest=True)
     heard = words  # as said: `named` points into it
     # Whose allergy: read in its clause, as said ("ohne Zwiebeln fuer meine
@@ -1808,6 +1811,7 @@ def _with_allergy(
     after = _denial(words, named, start)
     if after is not None:
         tail = text[tokens[after].start() :] if after < len(tokens) else ""
+
         said = _clean(", ".join(part for part in (head, tail) if part))
         if not _WISHED & set(_words(said)):
             return None
@@ -1870,6 +1874,37 @@ def _with_allergy(
         ingredient=ingredient,
         another_adult=other,
     )
+
+
+def _theirs_behind_a_denial(text: str) -> Wish | None:
+    """ "Ich habe keine Allergie, nur meine Frau gegen Sesam": the caller
+    denies an own allergy, and the clause behind the comma names another
+    adult's. That one goes to the kitchen without its reason, whatever the
+    caller consents to (#719, L13); a child's is read as if said directly,
+    asked about with the caller's consent. None for anything else."""
+    for comma in (i for i, char in enumerate(text) if char == ","):
+        before, behind = text[:comma], text[comma + 1 :]
+        if not (denies_allergy(before) or only_denies(before)):
+            continue
+        adult = of_another_adult(behind)
+        # A child's allergy is the caller's to consent to, as said directly.
+        if allergies_named(behind) > 1 or not (
+            adult or _CHILDREN & set(_words(behind))
+        ):
+            return None
+        # "nur meine Frau gegen Sesam": the allergy word is the denial's.
+        ingredient = _ingredient(behind) or (
+            _ingredient(f"{behind} allergisch") if _GEGEN_WORD.search(behind) else None
+        )
+        if ingredient is None:
+            return None
+        return Wish(
+            text=ALLERGY_NOTE.format(ingredient=ingredient),
+            kind="allergy",
+            ingredient=ingredient,
+            another_adult=adult or None,
+        )
+    return None
 
 
 def _classify(text: str, groups: list[OptionGroup]) -> Wish:

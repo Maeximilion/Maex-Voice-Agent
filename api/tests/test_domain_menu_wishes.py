@@ -2036,3 +2036,29 @@ def test_search_asks_about_a_counted_addition(session, tenant_id, said):
     with pytest.raises(Ambiguous) as err:
         suche(session, tenant_id, said)
     assert "Welche Nummer" in (err.value.say or "")
+
+
+@pytest.mark.parametrize(
+    ("said", "ingredient", "another_adult"),
+    [
+        ("Ich habe keine Allergie, nur meine Frau gegen Sesam", "Sesam", True),
+        (
+            "Ich habe keine Allergie, aber meine Frau hat eine Sesamallergie",
+            "Sesam",
+            True,
+        ),
+        ("Ich habe keine Allergie, mein Mann aber gegen Erdnuss", "Erdnuss", True),
+        ("Ich habe keine Allergie, nur meine Tochter gegen Nüsse", "Nüsse", None),
+    ],
+)
+def test_an_allergy_behind_the_callers_denial_has_its_owner(
+    said, ingredient, another_adult
+):
+    """#719: the allergy of the person named behind the denial is read, with
+    that person as its owner."""
+    wish = wish_of(said, [])
+    assert (wish.kind, wish.ingredient, wish.another_adult) == (
+        "allergy",
+        ingredient,
+        another_adult,
+    )
