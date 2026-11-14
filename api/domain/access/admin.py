@@ -19,14 +19,15 @@ sets it. It never equals the team PIN.
 
 import uuid
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Any, Literal, cast
 
-from sqlalchemy import update
+from sqlalchemy import CursorResult, update
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, Unauthorized
 from api.domain.access.hashing import pin_problem, same_secret
 from api.domain.access.sessions import (
+    TOUCH_EVERY,
     audit,
     count_failure,
     locked_account,
@@ -82,7 +83,8 @@ def unlock_admin(
     if same_secret(pin, account.admin_pin):
         account.admin_failures = 0
         account.admin_blocked_until = account.admin_last_failed_at = None
-        row.admin_until, row.last_active_at, row.pin_failures = now + ADMIN_FOR, now, 0
+        row.admin_until, row.admin_active_at = now + ADMIN_FOR, now
+        row.last_active_at, row.pin_failures = now, 0
         audit(
             session,
             row.tenant_id,
@@ -113,11 +115,29 @@ def unlock_admin(
     raise AdminRefused(minutes_left(blocked - now) if blocked else None)
 
 
+def mark_admin_active(session: Session, session_id: uuid.UUID, now: datetime) -> None:
+    """An owner page or owner write: the owner's 15 minutes start again. Staff
+    writes never call this (#600). Commits when it moved."""
+    result = cast(
+        CursorResult[*tuple[Any, ...]],
+        session.execute(
+            update(GuiSession)
+            .where(
+                GuiSession.id == session_id,
+                GuiSession.admin_active_at <= now - TOUCH_EVERY,
+            )
+            .values(admin_active_at=now)
+        ),
+    )
+    if result.rowcount:
+        session.commit()
+
+
 def close_admin(session: Session, session_id: uuid.UUID) -> None:
     """The owner is done: the device keeps staff rights only. Commits."""
     row = session.get(GuiSession, session_id)
     if row is not None:
-        row.admin_until = None
+        row.admin_until = row.admin_active_at = None
     session.commit()
 
 
@@ -138,7 +158,7 @@ def set_admin_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) 
     session.execute(
         update(GuiSession)
         .where(GuiSession.tenant_id == tenant_id)
-        .values(admin_until=None)
+        .values(admin_until=None, admin_active_at=None)
     )
     audit(session, tenant_id, actor, "gui.admin_pin_set", account.id, {})
     session.commit()
