@@ -9,6 +9,7 @@ part of the admin area also needs the admin PIN on this device
 (`require_admin`, #570 part b).
 """
 
+import secrets
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from urllib.parse import quote, urlsplit
@@ -21,6 +22,7 @@ from api.config import LOCAL_ENVS, settings
 from api.core import time as clock
 from api.core.origin import same_origin
 from api.db import get_db
+from api.domain.access.admin import mark_admin_active
 from api.domain.access.sessions import (
     Access,
     Signed,
@@ -88,6 +90,18 @@ async def slide_cookies(
     return response
 
 
+def csrf_matches(cookie: str | None, sent: str | None) -> bool:
+    """The CSRF cookie and the token the request sent (form field or header):
+    both there, ASCII (`compare_digest` takes no more) and equal."""
+    return bool(
+        cookie
+        and sent
+        and cookie.isascii()
+        and sent.isascii()
+        and secrets.compare_digest(cookie, sent)
+    )
+
+
 def client_address(request: Request) -> str:
     """The address the sign-in counts failures for. Outside dev and test only
     Caddy reaches the view (`require_gui_proxy`), and Caddy sets
@@ -131,13 +145,16 @@ def _checked_access(request: Request, db: Session) -> Access:
 
 
 def require_admin(
-    request: Request, access: Access = Depends(require_gui_session)
+    request: Request,
+    access: Access = Depends(require_gui_session),
+    db: Session = Depends(get_db),
 ) -> Access:
     """The owner's part of the admin area: the device list now, zones, fees and
     weekly hours when their pages come (D34 point 3). Without the admin PIN on
     this device it goes to the PIN page, which leads back here."""
     if not access.admin:
         raise _away(request, _owner_page(request))
+    mark_admin_active(db, access.session_id, clock.utcnow())
     return access
 
 

@@ -15,10 +15,18 @@ from api.domain.access.admin import (
     AdminRefused,
     admin_pin,
     close_admin,
+    mark_admin_active,
     set_admin_pin,
     unlock_admin,
 )
-from api.domain.access.sessions import IDLE, mark_active, resolve, sign_in, unlock
+from api.domain.access.sessions import (
+    ADMIN_IDLE,
+    IDLE,
+    mark_active,
+    resolve,
+    sign_in,
+    unlock,
+)
 from api.domain.access.setup import issue_link, set_team_pin, use_link
 from api.models import AuditLog, GuiAccount, Tenant
 
@@ -70,9 +78,12 @@ def test_the_admin_pin_opens_owner_rights_for_60_minutes(session, tenant_id, tok
     assert not access.admin
     unlock_admin(session, access.session_id, ADMIN, T0)
     assert _access(session, tenant_id, token, T0).admin
-    # Changes keep the device unlocked; the owner's hour does not slide with them.
+    # Staff changes keep the device unlocked; the owner's hour does not slide
+    # with them. An owner page every 10 minutes keeps the owner's own clock.
     for minutes in range(10, 60, 10):
-        mark_active(session, access.session_id, T0 + timedelta(minutes=minutes))
+        at = T0 + timedelta(minutes=minutes)
+        mark_active(session, access.session_id, at)
+        mark_admin_active(session, access.session_id, at)
     assert _access(
         session, tenant_id, token, T0 + ADMIN_FOR - timedelta(seconds=1)
     ).admin
@@ -94,6 +105,51 @@ def test_the_idle_lock_closes_owner_rights_and_the_team_pin_does_not_reopen_them
     # Staff unlock the device with the team PIN: staff rights only.
     assert unlock(session, access.session_id, PIN, later) is None
     assert not _access(session, tenant_id, token, later).admin
+
+
+def test_owner_rights_end_after_15_idle_minutes_though_staff_keep_the_tablet_busy(
+    session, tenant_id, token
+):
+    access = _access(session, tenant_id, token, T0)
+    unlock_admin(session, access.session_id, ADMIN, T0)
+    # Staff write every 5 minutes: the idle lock never comes, the owner's clock does.
+    for minutes in range(5, 15, 5):
+        mark_active(session, access.session_id, T0 + timedelta(minutes=minutes))
+    last = T0 + ADMIN_IDLE - timedelta(seconds=1)
+    assert _access(session, tenant_id, token, last).admin
+    mark_active(session, access.session_id, T0 + timedelta(minutes=14))
+    gone = _access(session, tenant_id, token, T0 + ADMIN_IDLE)
+    assert not gone.locked and not gone.admin
+
+
+def test_an_owner_page_at_14_minutes_keeps_owner_rights_to_the_cap(
+    session, tenant_id, token
+):
+    access = _access(session, tenant_id, token, T0)
+    unlock_admin(session, access.session_id, ADMIN, T0)
+    at = T0 + timedelta(minutes=14)
+    mark_active(session, access.session_id, at)
+    mark_admin_active(session, access.session_id, at)
+    later = at + timedelta(minutes=14)
+    assert _access(session, tenant_id, token, later).admin
+    # The 60-minute cap holds however often the owner comes back.
+    for minutes in range(28, 60, 10):
+        at = T0 + timedelta(minutes=minutes)
+        mark_active(session, access.session_id, at)
+        mark_admin_active(session, access.session_id, at)
+    end = T0 + ADMIN_FOR
+    assert _access(session, tenant_id, token, end - timedelta(seconds=1)).admin
+    assert not _access(session, tenant_id, token, end).admin
+
+
+def test_an_owner_page_does_not_open_rights_that_are_gone(session, tenant_id, token):
+    access = _access(session, tenant_id, token, T0)
+    mark_admin_active(session, access.session_id, T0)
+    assert not _access(session, tenant_id, token, T0).admin
+    unlock_admin(session, access.session_id, ADMIN, T0)
+    close_admin(session, access.session_id)
+    mark_admin_active(session, access.session_id, T0 + timedelta(minutes=5))
+    assert not _access(session, tenant_id, token, T0 + timedelta(minutes=5)).admin
 
 
 def test_the_admin_pin_unlocks_a_locked_device_too(session, tenant_id, token):
