@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.2
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.3
 > Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
@@ -297,6 +297,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 14.11.2026 | **STATUS upkeep 14.11.2026 (#562): no row qualified, nothing archived.** Swept What's Next, Open Decisions, Made Assumptions, Open Points from Reviews, Blockers, Done and Changelog for rows that are done or decided and dated before 14.10.2026. Size before: 103543 bytes; rows moved: none, so no new archive heading in `docs/HISTORY.md` and the size grew only by this row and the bump. Every candidate stayed because it is still open or watched: C2 (done, but its sentence still lists what is left for Maxi), D4 and D15, the "By design" and "Deliberate" Open Points rows (each names a trigger to look again), the decisions D9 and D32 to D34 (under one month), and all Changelog lines (from 09.11.2026 on). The file stays above 80000 bytes; getting below needs a decision on the open rows, not a cut. |
 | 14.11.2026 | **#207, Maxi's answers to the sweep's three questions.** 1 (A): a backup script that hangs in `api/tests/test_scripts_backup.py` now fails after 120 s instead of 300 s, with its stderr so far and the process list taken before the kill, so the next hang of `test_restore_with_the_wrong_passphrase_changes_nothing` names the process that waits (self-test added). 2 (B): the `autoMode.allow` merge rules stay as they are; `docs/19` says why a self-review still never merges. 3 (B): the usage gate stays user-level with its Markdown copy. |
 | 14.11.2026 | **The outage map ran on the wire (T-10.2): six rows go, two no-go.** Maxi called the test number from the restaurant, the session at the workbench switched the outages on and off. Every outage on our side reached the restaurant's telephone: `voice` down 4 s after the call arrived, `voice` killed mid-call in the same second, the model down after 17 s with the outage sentence, a handover asked for after 15 s with audio both ways, an unanswered team leg as a callback card and the sentence, and the main number rings as always with the software off. No-go: Asterisk down ("not reachable", no telephone is assigned to the test number besides the AI's) and a second caller during an AI call (the router rings nothing). Asterisk crashed once after a team leg (#768); the other findings are #769. Before the run: the wire-path audit on `10ec06a` (no P1, no P2) and the drills, 49 of 49 |
 | 14.11.2026 | **#763, part: a health word without an allergy word is clarified by the model, not read by the core (Maxi, 14.11.2026).** A first attempt that had the core open an allergy for "Zöliakie" was dropped after `/code-review max` confirmed four L13 and rule 1 defects (findings on #763). Now the refusal of a note with a health word tells the model to ask the guest first what is meant and what must stay out of the food, and to note only the removal. "Zöliakie" and "Cöliakie" arm the allergen claim check (L17); before, "die 13 ist für Sie unbedenklich" reached a coeliac unchecked. Other health phrases ("darf kein Gluten") name their allergen and armed it already. "bedarf keiner" and "darf keiner wissen" no longer read as health. Red first. No prompt change: the core's prompt budget has 6 tokens left (2594 of 2600). Open on #763: a model that writes no note gets no hint. |
@@ -329,6 +330,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.46.3 · 14.11.2026:** STATUS upkeep: sweep found no row older than a month that is done or decided
 - **v2.46.2 · 14.11.2026:** opentelemetry-api 1.45.1 to 1.45.2 (#762), closes Dependabot alerts #9 and #10
 - **v2.46.1 · 14.11.2026:** #207: a hung backup script fails after 120 s with its stderr and the process list; docs/19 notes why the autoMode merge rules stay
 - **v2.46.0 · 14.11.2026:** T-10.2 ran on the wire: six rows go, two no-go (#768, #769)
