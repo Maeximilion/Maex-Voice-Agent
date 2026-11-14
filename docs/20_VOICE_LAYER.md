@@ -758,11 +758,28 @@ up -d`):
 | A second and a third caller | nothing; the AI takes one call at a time (`max_concurrent_calls` 1) | while one call talks to the AI, a second caller calls (the core hands it to the team), then a third (the router's limit of 2 calls per IP telephone): what each hears |
 | Loop test | `stop asterisk` | calls the number `TEAM_PHONE` names: a team telephone rings, nothing ends at the test number |
 
-**With two mobiles (Maxi, 02.11.2026).** `TEAM_PHONE` is Maxi's mobile, so it is the team telephone
-of this run, and a second mobile calls the test number. Every row is measured by the clock at the
-telephones as written. The row with a second caller: the team telephone itself is the second caller,
-so the core's handover dials a telephone that is busy, and that is what the row shows. The third
-caller stays open unless a third telephone is at hand.
+**The team telephone is the restaurant's main number (Maxi, 14.11.2026, replaces the two mobiles of
+02.11.2026).** For this run `TEAM_PHONE` is the main number, set in the shell of the one command
+like the engines, so `.env` stays as it is; the team number in the database is set to it for the run
+and set back after it, with a row in `audit_log`. Maxi's mobile calls the test number and a second
+mobile is the second caller. It is an exception to "the main number stays untouched" of §5, and
+Maxi's: the main number is only rung as the team's, the AI never answers it, the team knows, and a
+guest who calls in between is taken first. What it adds to the rows:
+
+- Every handover is a call from the AI telephone out through the router to a number of that same
+  router. Whether the router connects it inside, sends it out and back in on two lines, or answers
+  busy is not known; the trial call and the first row show it. If it does not ring, the run goes
+  back to a mobile as `TEAM_PHONE`.
+- An answering machine or mailbox on the main number, the router's or the provider's, is off for the
+  run or answers later than 40 s: answering is an answer (§5).
+- At the router the AI telephone takes calls for the test number only. Were it assigned to the main
+  number too, every team leg would come back to it; the dialplan's loop guard refuses such a call,
+  and the team telephones still ring.
+- The row with a second caller: the handover of the second call is a third call at the AI telephone
+  (the first caller, the second caller, the team leg), and the router allows two per IP telephone
+  (§3). So the team leg may be refused; what the second caller hears then is what the row shows.
+- The loop test is the line test of §5 itself: software off, call the main number, the team
+  telephones ring as always.
 
 **Run from a distance, with a printed sheet (Maxi, 11.11.2026).** Maxi and the caller are not at the
 workbench; the session stays open on it and Maxi writes to it from another device (not only from the
