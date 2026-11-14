@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.39
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.35
@@ -349,6 +349,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.40 · 14.11.2026:** Issue #207 sweep: a reason filler (deshalb, daher) after an allergy list no longer lands in the ingredient; one constant for the allowed .claude files in test_compose_mounts
 - **v2.44.39 · 14.11.2026:** #651: a drill point with the caller's RTP blocked in transit (iptables DROP on the media ports): the call ends as a silent one with the note, the team does not ring; the understanding ladder is tested to end with the team
 - **v2.44.38 · 13.11.2026:** Last open item of #710: the check card of a held closure or shortening lists the confirmed tables outside the new hours (name, time, phone), so the team calls those guests itself; nothing is cancelled, no guest messaged.
 - **v2.44.37 · 13.11.2026:** Fix PR for #740: a second person's allergy behind the caller's is read on its own
