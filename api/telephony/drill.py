@@ -20,6 +20,11 @@ one call per drill:
   silent caller   the AI answers, asks twice into the silence, says goodbye and
                   hangs up; the team does not ring, and the call carries the note
                   no_caller_audio (#651)
+  RTP blocked     the caller leg plays a tone, and the AI telephone's media
+                  ports drop every packet of it (iptables in a throwaway
+                  container in Asterisk's network namespace, NET_ADMIN, alpine
+                  from the registry): the same, and the dropped packets are
+                  counted, so the leg did send (#651)
   own number      a call from the AI telephone's own number is refused; nobody
                   answers and the team does not ring
   keys            the caller's keys reach the core as a turn, the model cannot
@@ -114,6 +119,12 @@ UNLISTED_NUMBER = NUMBER_PREFIX + "999"
 # The stranger's second INVITE comes from this number: a refused call must not
 # leave it in Asterisk's output (#252 finding 12).
 STRANGER_NUMBER = NUMBER_PREFIX + "114"
+# The media ports of deploy/asterisk/conf/rtp.conf, and the image that holds
+# iptables (the Asterisk image has none): alpine 3.22.
+RTP_PORTS = "10000:10039"
+IPTABLES_IMAGE = (
+    "alpine@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f"
+)
 # How long the drill waits for the note on a closed call (#651).
 NOTE_WAIT_SECONDS = 5.0
 # docs/20 §5: each row of the outage map within the limit Maxi sets (proposal).
@@ -339,7 +350,7 @@ class Drill:
         numbers = [
             form
             for number in [
-                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 128)),
+                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 129)),
                 TEAM_PHONE,
                 LISTED_BUSY_NUMBER,
                 UNLISTED_NUMBER,
@@ -517,6 +528,54 @@ def silent_call(drill: Drill, n: int, name: str) -> list[Check]:
             f"note on the call: {note!r}",
         ),
     ]
+
+
+def rtp_rule(drill: Drill, on: bool) -> int:
+    """Drop (or let through again) every packet to the AI telephone's media
+    ports, as a firewall or NAT that swallows the caller's RTP does, and the
+    packets dropped so far when it comes off. The rule lives in Asterisk's
+    network namespace, a sidecar sets it: the Asterisk image has no iptables
+    and its container no NET_ADMIN. A DrillError names what Docker refused."""
+    drop = f"INPUT -p udp --dport {RTP_PORTS} -j DROP"
+    script = "apk add -q iptables && " + (
+        f"iptables -I {drop}"
+        if on
+        else f"iptables -vxn -L INPUT | awk '$3 == \"DROP\" {{print $1}}' "
+        f"&& iptables -D {drop}"
+    )
+    container = drill.compose("ps", "-q", "asterisk").strip()
+    out = drill.docker(
+        "run", "--rm", "--cap-add", "NET_ADMIN", "--network", f"container:{container}",
+        IPTABLES_IMAGE, "sh", "-c", script,
+    )  # fmt: skip
+    words = out.split()
+    return int(words[-1]) if words and not on else 0
+
+
+def drill_caller_rtp_blocked(drill: Drill) -> list[Check]:
+    """128 plays a tone, which would be "Ja" to the drill's ear, but none of
+    it arrives. What the session and Asterisk make of a leg whose RTP is lost
+    in transit, which a leg that sends nothing (101) does not show: the packets
+    are sent, and counted where they are dropped (#651)."""
+    name = "caller's RTP blocked in transit"
+    try:
+        rtp_rule(drill, True)
+    except DrillError as exc:
+        return [(name, False, f"the RTP could not be blocked: {exc}")]
+    try:
+        checks = silent_call(
+            drill, 128, f"{name}: the AI answers, asks, says goodbye and hangs up"
+        )
+    finally:
+        dropped = rtp_rule(drill, False)
+    checks.append(
+        (
+            f"{name}: the caller's packets were sent and dropped",
+            dropped > 0,
+            f"{dropped} packets dropped at the media ports",
+        )
+    )
+    return checks
 
 
 def drill_own_number(drill: Drill) -> list[Check]:
@@ -1306,6 +1365,7 @@ def drill_back_after_the_cuts(drill: Drill) -> list[Check]:
 
 SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
     ("a silent caller (101)", drill_silent),
+    ("the caller's RTP is blocked in transit (128)", drill_caller_rtp_blocked),
     ("a call from our own number (100)", drill_own_number),
     ("an INVITE from a stranger", drill_stranger),
     ("keys, and the model is down (102)", drill_keys),
