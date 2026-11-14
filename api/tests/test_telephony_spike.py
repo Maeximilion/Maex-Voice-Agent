@@ -5,6 +5,7 @@ softphone recorded. Both are built here, so every pass and every fail is a case.
 """
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -389,14 +390,14 @@ def test_each_run_directory_is_its_own_compose_project(tmp_path):
 
 
 def test_root_is_refused_before_anything_is_touched(monkeypatch, capsys):
-    monkeypatch.setattr(spike.os, "getuid", lambda: 0)
+    monkeypatch.setattr(os, "getuid", lambda: 0)
 
     assert spike.main(["--dry-run"]) == 2
     assert "unprivileged" in capsys.readouterr().err
 
 
 def test_the_config_folder_is_refused_as_run_directory(monkeypatch, capsys):
-    monkeypatch.setattr(spike.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(os, "getuid", lambda: 1000)
 
     assert spike.main(["--run-dir", str(spike.CONFIG_DIR)]) == 2
     assert "not a run directory" in capsys.readouterr().err
@@ -404,7 +405,7 @@ def test_the_config_folder_is_refused_as_run_directory(monkeypatch, capsys):
 
 
 def test_a_folder_with_somebodys_files_is_refused_and_left_alone(tmp_path, monkeypatch):
-    monkeypatch.setattr(spike.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(os, "getuid", lambda: 1000)
     (tmp_path / "rec").mkdir()
     (tmp_path / "rec" / "holiday.wav").write_bytes(b"mine")
 
@@ -454,7 +455,7 @@ def test_a_run_that_breaks_at_its_first_step_leaves_no_old_report(
     run = tmp_path / "run"
     spike.render(run)
     (run / "report.json").write_text("[]")
-    monkeypatch.setattr(spike.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(os, "getuid", lambda: 1000)
     monkeypatch.setattr(spike, "docker_problem", lambda: None)
 
     def broken(self, *args):

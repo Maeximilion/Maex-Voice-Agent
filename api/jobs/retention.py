@@ -13,11 +13,17 @@ Periods are settings (api/config.py), decided by Maxi with the legal check on
 
 import logging
 import re
+import typing
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import (
+    CursorResult,
+    Select,
     Text,
+    UpdateBase,
     and_,
     case,
     cast,
@@ -217,8 +223,10 @@ def purge(session: Session, now: datetime) -> dict[str, int]:
     return counts
 
 
-def _run(session: Session, statement) -> int:
-    return session.execute(statement).rowcount  # type: ignore[attr-defined]
+def _run(session: Session, statement: UpdateBase) -> int:
+    # An UPDATE or DELETE answers a CursorResult, the one that carries rowcount.
+    result = typing.cast(CursorResult[*tuple[Any, ...]], session.execute(statement))
+    return result.rowcount
 
 
 def _allergy_notes(session: Session, now: datetime, days: int) -> int:
@@ -260,7 +268,12 @@ def _allergy_notes(session: Session, now: datetime, days: int) -> int:
     return changed
 
 
-def _outbox_allergy_notes(session: Session, tenant_id, orders, tables) -> int:
+def _outbox_allergy_notes(
+    session: Session,
+    tenant_id: uuid.UUID,
+    orders: Select[uuid.UUID],
+    tables: Select[uuid.UUID],
+) -> int:
     """confirm copies the notes into the outbox payload (`note`, `items[].note`;
     domain/ordering/confirm.py, domain/confirm.py), where they would stay until
     the payload is cut days later (Codex PR #371). The copies of the same
@@ -293,7 +306,7 @@ def _outbox_allergy_notes(session: Session, tenant_id, orders, tables) -> int:
     return changed
 
 
-def _without_allergy(payload: dict) -> dict:
+def _without_allergy(payload: dict[str, Any]) -> dict[str, Any]:
     """The payload with every allergy note set to None, the rest as it was."""
 
     def clean(note: object) -> object:

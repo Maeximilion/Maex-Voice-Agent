@@ -1735,8 +1735,7 @@ def _ending_during_start(monkeypatch, handler, *, fail: bool = False):
     """`start_call` that is told about the end of the leg while it writes the
     call row, the way an adapter on another thread would."""
     import api.telephony.handler as module
-
-    real = module.start_call
+    from api.domain.calls import start_call as real
 
     def start_call(session, req, **kwargs):
         handler.on_call_ended(req.external_session_id)

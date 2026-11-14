@@ -246,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"speech_spike: {problem}", file=sys.stderr)
         return 2
 
+    menu_text: str | None = None
     try:
         if recorded:
             plan = json.loads((run_dir / "plan.json").read_text(encoding="utf-8"))
