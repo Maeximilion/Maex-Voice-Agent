@@ -18,6 +18,10 @@
 - `/asterisk/alive`: Asterisk's healthcheck, while it is registered, and
   `/asterisk/seen`, how long ago, for the monitor (T-8.3, api/jobs/monitor.py).
 
+- `/media/ready`: asked by the dialplan before it dials `/media`, with the same
+  credentials, so a `voice` that would refuse the media connection is never
+  dialled (#768).
+
 All but `/asterisk/seen` and `/health` want the media token as the password of Basic credentials. A call is named
 by the id of the caller's channel (`${UNIQUEID}`): the dialplan hands it to the
 media channel as an inherited variable, which `MEDIA_START` reports
@@ -56,6 +60,15 @@ router = APIRouter()
 
 @router.get("/health", response_class=PlainTextResponse)
 def health() -> str:
+    return "ok"
+
+
+@router.get("/media/ready", response_class=PlainTextResponse)
+def media_ready(request: Request) -> str:
+    """ "ok" only with the credentials `/media` checks: on Asterisk 22.11.0 a
+    media connection that fails keeps a lock, which can crash it (#768)."""
+    if not _voice(request.app).authorized(request.headers.get("authorization")):
+        raise HTTPException(status_code=401)
     return "ok"
 
 

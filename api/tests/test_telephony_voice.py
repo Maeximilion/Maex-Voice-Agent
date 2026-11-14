@@ -448,6 +448,28 @@ def test_health_answers_without_a_token(phone):
     assert client.get("/health").text == "ok"
 
 
+def test_media_ready_wants_the_media_token(phone):
+    """The dialplan's question before it dials `/media` (#768): a `voice`
+    whose token differs from Asterisk's would refuse the media connection."""
+    client, _ = phone
+    assert client.get("/media/ready").status_code == 401
+    assert client.get("/media/ready", headers=basic("wrong")).status_code == 401
+    assert client.get("/media/ready", headers=basic(TOKEN)).text == "ok"
+
+
+def test_the_dialplan_asks_voice_with_the_token_before_it_dials_it():
+    """Asterisk 22.11.0 keeps a lock when a media connection fails, which can
+    crash it with every live call (#768): the dialplan asks `/media/ready` with
+    the media token first, and anything but "ok" rings the team."""
+    conf = DIALPLAN.read_text()
+    dial = conf.index("Dial(WebSocket/voice")
+    token = conf.index("CURLOPT(userpwd)=asterisk:${ENV(VOICE_MEDIA_TOKEN)}")
+    probe = conf.index("CURL(http://voice:8001/media/ready)")
+    assert token < probe < dial
+    line = conf[conf.rindex("\n", 0, probe) : conf.index("\n", probe)]
+    assert '!= "ok"]?unreached,1)' in line
+
+
 def test_asterisk_says_it_is_alive_with_the_media_token(phone):
     """Its healthcheck posts while it is registered (T-8.3); the monitor reads
     how long ago, without a token, like /health."""

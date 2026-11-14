@@ -37,6 +37,8 @@ one call per drill:
                   media connection to it (#768)
   down, 5 calls   `voice` is stopped for five calls that the team takes and
                   the caller ends: Asterisk is still up afterwards (#768)
+  refuses         `voice` holds another media token than Asterisk: the team
+                  rings, and Asterisk opens no media connection to it (#768)
   voice frozen    `voice` is paused, it takes the connection and answers
                   nothing: the team rings
   frozen mid-call `voice` is paused after it answered: the team rings
@@ -287,6 +289,17 @@ class Drill:
         self._env["DRILL_RECORDING"] = "true" if on else "false"
         self.restart("voice")
 
+    def other_media_token(self, on: bool) -> None:
+        """`voice` with a media token Asterisk does not hold, or its own again."""
+        own = self.secrets["VOICE_MEDIA_TOKEN"]
+        if on:
+            # Kept with the secrets, which no container's output may show.
+            self.secrets["OTHER_MEDIA_TOKEN"] = secrets.token_hex(16)
+        self._env["VOICE_MEDIA_TOKEN"] = (
+            self.secrets["OTHER_MEDIA_TOKEN"] if on else own
+        )
+        self.restart("voice")
+
     def recordings(self) -> dict[str, int]:
         """The files of the folder of the recordings, each with its size."""
         listed = self.compose(
@@ -353,7 +366,7 @@ class Drill:
         numbers = [
             form
             for number in [
-                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 130)),
+                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 131)),
                 TEAM_PHONE,
                 LISTED_BUSY_NUMBER,
                 UNLISTED_NUMBER,
@@ -1226,22 +1239,30 @@ VOICE_DOWN_CALLS = 5
 
 def drill_voice_down_calls(drill: Drill) -> list[Check]:
     """129 calls while `voice` is down, talks to the team and hangs up, five
-    times: on the wire Asterisk crashed after such a call (#768)."""
-    rang, up = 0, True
+    times: on the wire Asterisk crashed after such a call (#768). Against the
+    dialplan without the question to `voice`, 7 of 8 runs crashed within five
+    calls. The first call that does not ring the team in time ends the drill."""
+    rang = 0
     drill.compose("stop", "voice")
     try:
         with team_away(drill, "talk"):
-            while up and rang < VOICE_DOWN_CALLS:
+            for _ in range(VOICE_DOWN_CALLS):
                 call = drill.place(129)
                 try:
-                    call.wait(call.team_rings, timeout=TEAM_LIMIT_SECONDS + 10)
-                    rang += 1
+                    _, in_time, _ = team_check("", call, call.placed)
                     drill.quiet()
                 except DrillError:
-                    pass  # judged by whether Asterisk is still there
-                up = asterisk_up(drill)
+                    break  # no ring, or a call that does not end
+                if not in_time:
+                    break
+                rang += 1
+                if not asterisk_up(drill):
+                    break
     finally:
-        if not asterisk_up(drill):
+        # Read after the router is set back: the crash comes as the call's
+        # thread ends, which can be after the last look in the loop.
+        up = asterisk_up(drill)
+        if not up:
             # The router's legs of a call Asterisk dropped would wait for it.
             drill.cli("router", "channel request hangup all")
             drill.restart("asterisk")
@@ -1252,8 +1273,28 @@ def drill_voice_down_calls(drill: Drill) -> list[Check]:
         (
             f"voice down for {VOICE_DOWN_CALLS} calls: Asterisk stays up",
             up and rang == VOICE_DOWN_CALLS,
-            f"the team rang for {rang} of {VOICE_DOWN_CALLS} calls, Asterisk {'up' if up else 'gone'}",
+            f"the team rang in time for {rang} of {VOICE_DOWN_CALLS} calls, "
+            f"Asterisk {'up' if up else 'gone'}",
         )
+    ]
+
+
+def drill_voice_refuses(drill: Drill) -> list[Check]:
+    """130 calls while `voice` holds another media token than Asterisk, as
+    after a token changed in `.env` and only `voice` recreated: it answers,
+    and would refuse the media connection, the crashing path of #768."""
+    try:
+        drill.other_media_token(True)
+        call = drill.place(130)
+        check = team_check(
+            "voice refuses the media connection: the team rings", call, call.placed
+        )
+    finally:
+        drill.other_media_token(False)
+    drill.quiet()
+    return [
+        check,
+        no_websocket_tried("voice refuses: no media connection is tried", call),
     ]
 
 
@@ -1265,7 +1306,10 @@ def drill_voice_frozen(drill: Drill) -> list[Check]:
     """`voice` takes the connection and answers nothing: its process is paused,
     so the kernel completes the TCP handshake and the WebSocket handshake waits
     for ever. Asterisk before 22.11.0 waited with it and the team never rang
-    (Asterisk issue #1979, Codex on PR #297)."""
+    (Asterisk issue #1979, Codex on PR #297). Since #768 the dialplan's
+    question to `voice` gives up first, so this drill no longer reaches the
+    `Dial`: Asterisk's own handshake timeout is the backstop for a freeze
+    after that question, which no drill makes (#775)."""
     drill.compose("pause", "voice")
     try:
         call = drill.place(107)
@@ -1436,6 +1480,7 @@ SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
     ("voice crashes in the middle of a call (105)", drill_crash),
     ("voice is down (104)", drill_voice_down),
     ("voice is down for several calls (129)", drill_voice_down_calls),
+    ("voice refuses the media connection (130)", drill_voice_refuses),
     ("voice is frozen (107)", drill_voice_frozen),
     ("voice freezes in the middle of a call (108)", drill_voice_frozen_mid_call),
     ("the database is down (106)", drill_database_down),
