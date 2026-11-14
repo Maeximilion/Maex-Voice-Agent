@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.2
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.3
 > Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
@@ -330,6 +330,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.46.3 · 14.11.2026:** test(outbox): order-independent outbox assertions (#592)
 - **v2.46.2 · 14.11.2026:** opentelemetry-api 1.45.1 to 1.45.2 (#762), closes Dependabot alerts #9 and #10
 - **v2.46.1 · 14.11.2026:** #207: a hung backup script fails after 120 s with its stderr and the process list; docs/19 notes why the autoMode merge rules stay
 - **v2.46.0 · 14.11.2026:** T-10.2 ran on the wire: six rows go, two no-go (#768, #769)
