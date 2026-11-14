@@ -20,6 +20,7 @@ import threading
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
+from typing import NamedTuple
 
 from api.core.logging import get_logger
 from api.telephony.speech import Heard
@@ -50,6 +51,32 @@ PAD_SECONDS = 0.3
 SPEECH = 0.5
 SILENCE = 0.35
 
+
+class Measure(NamedTuple):
+    """What the ear counted in one utterance, for measuring the floor
+    `MIN_SPEECH_SECONDS` on test calls (#678): the windows of speech, the floor
+    in windows, and what the engine made of it, also when it was not asked."""
+
+    windows: int
+    floor: int
+    heard: str
+
+    @property
+    def below(self) -> bool:
+        return self.windows < self.floor
+
+
+def log_measure(measure: Measure) -> None:
+    """One line per utterance for `VOICE_EAR_MEASURE`. Counts, plus the text
+    the engine made of it: test calls with the team's own voices only."""
+    logger.info(
+        "ear measure: windows=%d floor=%d below=%s heard=%r",
+        *measure[:2],
+        measure.below,
+        measure.heard,
+    )
+
+
 # The engine: the audio of one utterance and the key terms, to its text.
 Transcribe = Callable[[bytes, list[str]], str]
 # The detector of one call: the speech probability of the next window.
@@ -70,8 +97,14 @@ class SegmentingEar:
     final no longer than `session.UTTERANCE_SECONDS` after the last partial.
     """
 
-    def __init__(self, transcribe: Transcribe, probability: Probability):
+    def __init__(
+        self,
+        transcribe: Transcribe,
+        probability: Probability,
+        measure: Callable[[Measure], None] | None = None,
+    ):
         self._transcribe = transcribe
+        self._measure = measure
         self._probability = probability
         self._frames: queue.SimpleQueue[tuple[bytes, float] | None] = (
             queue.SimpleQueue()
@@ -192,13 +225,21 @@ class SegmentingEar:
         self._before.extend(self._audio[self._end :])
         # Windows of speech, not the span from the first to the last: two
         # clicks with a pause between are no speech (Codex PR #292).
-        speech = self._spoken >= _windows(MIN_SPEECH_SECONDS)
+        floor = _windows(MIN_SPEECH_SECONDS)
+        speech = self._spoken >= floor
         self._audio = None
+        if not speech and not self._measure:
+            self._sink(Heard("", ended_at=self._ended_at, speech=False))
+            return
+        # Measuring asks the engine below the floor too, to see what it would
+        # have heard; the caller still gets no speech.
+        text = self._transcribe(audio, self._terms).strip()
+        if self._measure:
+            self._measure(Measure(self._spoken, floor, text))
         if not speech:
             self._sink(Heard("", ended_at=self._ended_at, speech=False))
             return
-        text = self._transcribe(audio, self._terms)
-        self._sink(Heard(text.strip(), ended_at=self._ended_at))
+        self._sink(Heard(text, ended_at=self._ended_at))
 
 
 class Whisper:
@@ -224,8 +265,8 @@ class Whisper:
             local_files_only=True,
         )
 
-    def ear(self) -> SegmentingEar:
-        return SegmentingEar(self.transcribe, silero())
+    def ear(self, measure: Callable[[Measure], None] | None = None) -> SegmentingEar:
+        return SegmentingEar(self.transcribe, silero(), measure)
 
     def transcribe(self, pcm: bytes, terms: list[str]) -> str:
         import numpy as np

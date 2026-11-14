@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Keep the ultrareview candidates in one rolling issue, ticked once reviewed.
+"""Keep the review candidates of auto mode in one open issue, ticked once reviewed.
 
-/done step 7a "Ultrareview ledger" (Maxi, 2026-11-05): every candidate `/done` or `/gate`
-names gets a line; a line is ticked when its review ran, with the level
-(`ultra`, or `max` and lower when no free ultrareview is left) and the issues
-that hold the findings not fixed at once. `/start` and `/gate` list the open
-lines.
+/done step 7a "Review ledger" (Maxi, 2026-11-14): a PR with an `xhigh` trigger
+whose `/code-review max` could not run before the PR opened, because Claude
+worked in auto mode, gets a line; a line is ticked when its review ran, with
+the level and the issues that hold the findings not fixed at once. `/start` and
+`/gate` list the open lines. A closed ledger is finished: the next `add` opens
+a new issue.
 
     python3 scripts/ultrareview_ledger.py add 544 "migration 029, a booking"
     python3 scripts/ultrareview_ledger.py done 544 --level max --findings 601 602
@@ -27,15 +28,17 @@ import sys
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-TITLE = "Ultrareview candidates"
-LABELS = ("chore", "code-review")
+TITLE = "Review candidates from auto mode"
+LABELS = ("chore", "code-review", "priority: medium")
 MARKER = "<!-- ultrareview-ledger:v1 -->"
 INTRO = (
-    "Every ultrareview candidate that `/done` or `/gate` named (/done step 7a "
-    '"Ultrareview ledger"). A line is ticked once its review ran, with the level: '
-    "`ultra`, or `max` when no free ultrareview is left. Findings that were not "
-    "fixed at once each get an issue of their own, named on the line. Kept by "
-    "`scripts/ultrareview_ledger.py`; edit by hand only to correct a line."
+    "Pull requests with an `xhigh` trigger whose `/code-review max` could not run "
+    "before the PR opened, because Claude worked in auto mode (/done step 1 and "
+    '7a "Review ledger"). A line is ticked once its review ran, with the level. '
+    "Findings that were not fixed at once each get an issue of their own, named on "
+    "the line. Kept by `scripts/ultrareview_ledger.py`; edit by hand only to correct "
+    "a line. Close the issue when every line is ticked; the next candidate opens a "
+    "new one."
 )
 LEVELS = ("ultra", "max", "xhigh", "high")
 LINE = re.compile(r"^- \[(?P<mark>[ x])\] #(?P<pr>\d+) (?P<text>.*)$")
@@ -113,8 +116,9 @@ def load() -> tuple[int | None, str]:
     """The ledger issue's number and body; None and a fresh body before the first add."""
     # The label list, not `--search`: the search index lags a new issue by
     # seconds, and a second `add` in that time would open a duplicate.
+    # Open ledgers only: a closed one is finished, the next `add` starts a new one.
     out = _gh(
-        "issue", "list", "--state", "all", "--label", LABELS[1],
+        "issue", "list", "--state", "open", "--label", LABELS[1],
         "--json", "number,title,body", "--limit", "200",
     )  # fmt: skip
     for issue in json.loads(out):
@@ -144,8 +148,6 @@ def save(number: int | None, body: str) -> int:
         f"repos/{{owner}}/{{repo}}/issues/{number}",
         "-f",
         f"body={body}",
-        "-f",
-        "state=open",
     )
     return number
 
@@ -172,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "list":
         items = open_items(body)
         where = f" (#{number})" if number else ""
-        print(f"{len(items)} open ultrareview candidates{where}")
+        print(f"{len(items)} open review candidates{where}")
         print("\n".join(items))
         return 0
     new = (

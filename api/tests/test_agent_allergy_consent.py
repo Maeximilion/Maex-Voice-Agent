@@ -297,11 +297,11 @@ def test_the_answer_to_wogegen_fills_the_open_allergy(session, state, answer, no
             "Ich bin gegen Erdnüsse allergisch. Mein Mann hat eine Sesamallergie.",
             [("Erdnüsse", True), ("Sesam", False)],
         ),
-        # One sentence that names more than it reads: the husband's allergy
-        # is noted, the question for the caller's stays open.
+        # One sentence: the husband's allergy is read on its own (#740), so
+        # the caller's is read in full.
         (
             "Erdnüsse, und mein Mann hat eine Sesamallergie.",
-            [(None, True), ("Sesam", False)],
+            [("Erdnüsse", True), ("Sesam", False)],
         ),
         ("Mein Mann ist gegen Sesam allergisch.", [("Sesam", False)]),
         ("Keine. Aber mein Mann hat eine Sesamallergie.", [("Sesam", False)]),
@@ -1643,6 +1643,80 @@ def test_a_later_dish_keeps_the_allergy_said_for_everything(session, state):
     assert call.args["note"] == REASONED
 
 
+# --- #740: a second person's allergy behind the caller's own -----------------
+
+
+@pytest.mark.parametrize(
+    ("said", "noted"),
+    [
+        (
+            "Ich bin allergisch gegen Nüsse, meine Frau gegen Sesam.",
+            [("Nüsse", True), ("Sesam", False)],
+        ),
+        ("Erdnussallergie, mein Mann Sesam.", [("Erdnuss", True), ("Sesam", False)]),
+        (
+            "Ich bin gegen Milch allergisch und mein Mann hat eine Sesamallergie",
+            [("Milch", True), ("Sesam", False)],
+        ),
+        # A child's allergy is asked about with the caller's consent.
+        (
+            "Ich bin allergisch gegen Nüsse, meine Tochter gegen Sesam",
+            [("Nüsse", True), ("Sesam", True)],
+        ),
+        # Not read as an ingredient: a time, a name, a clause that is no list.
+        ("Ich bin allergisch gegen Nüsse, meine Frau gegen acht", [(None, True)]),
+        ("Ich bin allergisch gegen Nüsse, meine Frau Müller", [(None, True)]),
+    ],
+)
+def test_a_second_persons_allergy_behind_the_callers_is_read_on_its_own(
+    session, state, said, noted
+):
+    """The caller's allergy was left open because of the wife's, and her sesame
+    was lost behind the answer to "Wogegen?" (#740, P1)."""
+    assert read(session, state, said) == noted
+
+
+def test_the_second_persons_allergy_survives_the_answer_to_wogegen(session, state):
+    assert read(session, state, "Ich habe eine Allergie, meine Frau gegen Sesam") == [
+        (None, True),
+        ("Sesam", False),
+    ]
+    guards.note_said(state, SAY_ALLERGY_WHICH)
+
+    assert read(session, state, "Gegen Nüsse.") == [("Sesam", False), ("Nüsse", True)]
+
+
+@pytest.mark.parametrize(
+    "answer", ["Gegen Nüsse, meine Frau gegen Sesam.", "Nüsse und mein Mann Sesam"]
+)
+def test_a_second_person_in_the_answer_to_wogegen_is_noted(session, state, answer):
+    read(session, state, "Ich habe eine Allergie.")
+    guards.note_said(state, SAY_ALLERGY_WHICH)
+
+    noted = read(session, state, answer)
+    assert ("Sesam", False) in noted and any(own and name for name, own in noted)
+
+
+def test_a_second_persons_allergy_reaches_the_kitchen_note_without_a_reason(
+    session, state
+):
+    said = turn(
+        session,
+        state,
+        f"{TABLE}. Ich bin allergisch gegen Nüsse, meine Frau gegen Sesam.",
+        LLMTurn(tool_call=table()),
+        LLMTurn(say="Passt das so?"),
+    )
+
+    assert said == [ALLERGY_QUESTION]
+    turn(session, state, "Nein.", LLMTurn(say="Passt das so?"))
+    [reservation] = reservations(session)
+    assert reservation.note is not None
+    assert "ohne Sesam" in reservation.note
+    assert "WICHTIG: Keine Sesam" not in reservation.note
+    assert "ohne Nüsse" in reservation.note
+
+
 # --- #719: another adult's allergy behind the caller's own denial --------------
 
 
@@ -1695,3 +1769,44 @@ def test_a_plain_denial_still_notes_nothing(session, state):
     assert (
         read(session, state, "Ich habe keine Allergie, nur ohne Koriander bitte") == []
     )
+
+
+def test_a_denial_next_to_a_second_persons_allergy_keeps_the_question(session, state):
+    """ "Keine, aber meine Frau gegen Sesam" after "Wogegen?": the wife's sesame
+    is noted, the caller's own allergy stays open (#740, Codex PR #361)."""
+    read(session, state, "Ich habe eine Allergie.")
+    guards.note_said(state, SAY_ALLERGY_WHICH)
+
+    assert read(
+        session, state, "Keine, aber meine Frau ist gegen Sesam allergisch."
+    ) == [
+        (None, True),
+        ("Sesam", False),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("said", "noted"),
+    [
+        ("Ich habe eine Erdnussallergie und meine Frau Milchreis", [(None, False)]),
+        ("Ich bin allergisch gegen Nüsse, meine Frau Erdnussbutter", [(None, True)]),
+    ],
+)
+def test_a_dish_name_behind_the_caller_is_no_second_allergy(
+    session, state, said, noted
+):
+    """Codex PR #751, P1: a dish that holds an allergen word is no allergy."""
+    assert read(session, state, said) == noted
+
+
+@pytest.mark.parametrize(
+    "answer", ["Keine, meine Frau gegen Sesam?", "Nüsse, meine Frau gegen Sesam?"]
+)
+def test_a_question_back_with_a_second_person_keeps_the_question(
+    session, state, answer
+):
+    """Codex PR #751, P1: a question back is no answer to "Wogegen?"."""
+    read(session, state, "Ich habe eine Allergie.")
+    guards.note_said(state, SAY_ALLERGY_WHICH)
+
+    assert read(session, state, answer) == [(None, True)]

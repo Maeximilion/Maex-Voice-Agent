@@ -1598,6 +1598,7 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
         session, tenant.id, [c.day for c in cards if c.kind == staff.DAY_HOURS]
     )
     for card in cards:
+        calls: list[staff.BookingToCall] = []
         if card.kind == staff.TEAM_PHONE:
             title, keep = "Teamnummer heute", "Als Standard übernehmen"
             before, after = card.before["number"], card.after["number"]
@@ -1608,6 +1609,17 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
             before = staff.DayHours.of(card.before).text()
             after = staff.DayHours.of(card.after).text()
             holding = holding_on[card.day].text()
+            # What holds now differs from the date before the change (closed,
+            # shorter, back to the weekly hours): the guests the team calls itself.
+            if holding_on[card.day] != staff.DayHours.of(card.before):
+                calls = staff.bookings_outside_hours(
+                    session,
+                    tenant.id,
+                    card.day,
+                    holding_on[card.day],
+                    tenant.timezone,
+                    staff.DayHours.of(card.before),
+                )
         rows.append(
             {
                 "id": card.id,
@@ -1617,6 +1629,7 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
                 "after": after,
                 "now": holding,
                 "waiting": not card.held,
+                "calls": calls,
                 "seen": card.updated_at.isoformat(),
             }
         )
@@ -1700,7 +1713,7 @@ def _phone_sheet(
         {
             "holding": holding,
             "standard": config.team_phone,
-            "choices": [n for n in staff.dialable_numbers() if n != holding],
+            "choices": [n for n in staff.sheet_numbers() if n != holding],
             "message": message,
             "tone": tone,
         },
@@ -1793,7 +1806,12 @@ def _hhmm(text: str) -> dt_time:
     """HH:MM only: a stored second or offset would undo to another time."""
     if len(text) != 5:
         raise ValueError(text)
-    return dt_time.fromisoformat(text)
+    # "1000Z" is five characters and 10:00 with an offset: a time with a zone
+    # cannot be compared with the stored ones.
+    parsed = dt_time.fromisoformat(text)
+    if parsed.tzinfo is not None:
+        raise ValueError(text)
+    return parsed
 
 
 def _typed_day(text: str) -> date | None:

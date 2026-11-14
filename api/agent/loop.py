@@ -64,7 +64,7 @@ from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.calls import record_consent
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import names_an_allergen
-from api.domain.menu.wishes import speaks_of_health
+from api.domain.menu.wishes import names_coeliac, speaks_of_health
 from api.domain.ordering.readback import spoken_euro
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Reservation, Tenant
@@ -408,12 +408,14 @@ class ConversationLoop:
                 table=table,
             )
         # The call speaks of allergies: the guest's own, the allergens of a
-        # dish, or an allergen named ("Ist das glutenfrei?"). The model's
-        # answers are then checked for a claim (`guards.allergen_claim`).
+        # dish, an allergen named ("Ist das glutenfrei?") or coeliac disease,
+        # which names none (#763). The model's answers are then checked for a
+        # claim (`guards.allergen_claim`).
         talk = (
             state.allergy_talk
             or escalation.speaks_of_allergies(user_text)
             or names_an_allergen(user_text)
+            or names_coeliac(user_text)
         )
         if escalated is None:
             escalated = self._beyond_the_database(state, user_text, waiting, open_table)
@@ -1627,9 +1629,24 @@ def _names_health(state: ConversationState, text: str) -> bool:
     # "Ei" also hits "bei" and that card gets the sentence of its reason, the
     # safe side; split it into words if the team misses requests on cards.
     return speaks_of_health(text) or any(
-        allergy.ingredient and _plain_vowels(allergy.ingredient) in folded
+        stem in folded
         for allergy in state.allergies
+        for stem in _stems(allergy.ingredient)
     )
+
+
+def _stems(ingredient: str | None) -> list[str]:
+    """What of each ingredient a card or note names it by: without the plural
+    ending, so the noted "Erdnüsse" is in "Erdnuss" (#739). A list ("Milch, Ei
+    und Nüsse") is each of its parts."""
+    parts = _plain_vowels(ingredient or "").replace(" und ", ",").split(",")
+    stems = [part.strip().removesuffix(_plural(part.strip())) for part in parts]
+    return [stem for stem in stems if len(stem) >= 2]
+
+
+def _plural(word: str) -> str:
+    """The plural ending of a folded word: "Eier", "Mandeln", "Nüsse"."""
+    return next((end for end in ("er", "en", "e", "n") if word.endswith(end)), "")
 
 
 def _plain_vowels(text: str) -> str:

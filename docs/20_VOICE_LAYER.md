@@ -218,13 +218,13 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 | The recording: the question, its log, the row or the file | `agent/recording.py`, the session | nothing has to: the call goes on without a recording, and in mode `shadow` the team rings as on a no (§4, T-11.3) |
 | The caller hangs up in mode `shadow` with the recording question, or on the sentence before a transfer of the AI, or on the outage sentence of a failed turn, before the line has the transfer | the session (`closed`), the handler | nothing can: a callback card under the caller id instead, with the card the core wrote for the handover, none for a withheld number; the call is logged `callback` or `abandoned`, never `transferred` (§4, #252 no. 9, #674); the outage sentence's call stays `error` and gets its card too (#741). Only on a call we answered: a leg closed before our first sentence is the row below or a caller who gave up while it rang (#652) |
 | `voice` takes the call and says nothing for 10 s (a slow start of the call, a mouth that hangs) | the dialplan: its `Dial` to `voice` gives up, our leg is closed | the dialplan dials the team number. The call log shows `abandoned`: `voice` cannot tell this from a caller who gave up while it rang (#652) |
-| No audio of the caller reaches `voice` (one-way audio after a tunnel, NAT or firewall change; from here the same as a muted telephone) | the session, per call: the note `no_caller_audio` in the call log. The monitor: the last `ALARM_NO_AUDIO_CALLS` (3) calls all carry it, a push to the operator at most once a clock hour (#651) | nothing, by decision (Maxi, 11.11.2026): each call is asked twice and ended as a silent one. The operator's push is what ends the fault. Measured in the drill (13.11.2026, Asterisk 22): a caller leg that sends nothing (the router's `Wait`) leaves the note on the call, so the session sees no frame or zero frames; not measured on a line whose RTP is blocked in transit (#651) |
+| No audio of the caller reaches `voice` (one-way audio after a tunnel, NAT or firewall change; from here the same as a muted telephone) | the session, per call: the note `no_caller_audio` in the call log. The monitor: the last `ALARM_NO_AUDIO_CALLS` (3) calls all carry it, a push to the operator at most once a clock hour (#651) | nothing, by decision (Maxi, 11.11.2026): each call is asked twice and ended as a silent one. The operator's push is what ends the fault. Measured in the drill (13.11.2026, Asterisk 22): a caller leg that sends nothing (the router's `Wait`) leaves the note on the call, so the session sees no frame or zero frames, and the same on a line whose RTP is blocked in transit: the drill sets an iptables DROP rule on the AI telephone's media ports (10000 to 10039) while the caller plays a tone, 283 packets dropped, the call ends as a silent one with the note and the team does not ring (14.11.2026, #651) |
 | The media connection breaks while a transfer waits for its sentence | the session: the sentence is dropped, the core is told and logs the call as `error` | the session performs the transfer that waited at once (#652); if the line refuses it, the dialplan dials the team number |
 | Asterisk or the whole machine is down | test phase: the router, the AI telephone is simply not registered. Operation: the trunk | test phase: the team telephones ring as before. Operation: the trunk's forwarding rules |
 
 **Test number.** In the test phase every row of this table is tried on a number customers do not call, with a team telephone assigned to that number next to the AI telephone. The main number stays untouched until operation.
 
-**A team number changed during a call** (#683). The agent's handover (`transfer_to_team`) reads the number from the database at that moment, so a change on the tablet reaches it. The legs `voice` dials on its own, an outage (`_fail`) and the shadow leg, use the number read at the start of the call: they must work when the database does not, so they never read it again. A change in the middle of such a call rings the old number; if that does not answer, the fallback number and then the missed-call card follow, and no call is lost (rule 5).
+**A team number changed during a call** (#683). The agent's handover (`transfer_to_team`) reads the number from the database at that moment, so a change on the tablet reaches it. The legs `voice` dials on its own, an outage (`_fail`) and the shadow leg, read the number again when they dial (#710), once, in a savepoint bound by the line's 2 s statement limit and after the outage sentence has gone out; when that read fails (the database is the outage) they use the number read at the start of the call, so they work when the database does not. A change in the middle of a call whose database cannot be read rings the old number; if that does not answer, the fallback number and then the missed-call card follow, and no call is lost (rule 5).
 
 **Loop guard.** The team number must never be forwarded to us. `voice` refuses to start when the
 team number is one of its own inbound numbers, the dialplan rejects a call from its own number, and
@@ -258,6 +258,7 @@ crash) to the team telephone ringing, on the kit's monotonic clock, which polls 
 | Database stopped | the outage sentence, the team rang after 8.3 s (the same lookup, for `db`) |
 | A turn of the core with the model down | the core hands over: the team rings, or, outside the opening hours, a callback card and goodbye; nobody is rung then (Maxi, 20.10.2026). A caller whose number is withheld is asked for one first, by the core without the model, also when the call is past its limit or the model too slow (#652); only a caller who gives none hears to call again later |
 | A silent caller | answered, asked twice, goodbye and our hangup after 6.5 s (2 s silence in the drill); the team does not ring; the call carries `no_caller_audio` (#651) |
+| The caller's RTP blocked in transit (a tone is sent, none of it arrives; iptables DROP on the media ports, set by a sidecar with `NET_ADMIN`) | as a silent caller: asked twice, goodbye and our hangup after 6.6 s, the team does not ring, the call carries `no_caller_audio`; the drill counts the packets dropped (#651) |
 | A call from our own number | refused, nobody answers, the team does not ring |
 
 **Hardened after the audit of 15.10.2026 (T-10.13, 19./20.10.2026, #252 findings 1 to 3).** Before,
@@ -719,7 +720,7 @@ What step 2 does not answer yet: two calls at once over the router (no second te
 by its own limit, §3), transfer from the IP telephone and what a second and third caller hear
 (T-10.2).
 
-### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, run sheet 11.11.2026, not run, date with Maxi)
+### Handover: T-10.2, the outage map on the wire (prepared 29.10.2026, run 14.11.2026: six rows go, two no-go)
 
 | | |
 |---|---|
@@ -757,11 +758,28 @@ up -d`):
 | A second and a third caller | nothing; the AI takes one call at a time (`max_concurrent_calls` 1) | while one call talks to the AI, a second caller calls (the core hands it to the team), then a third (the router's limit of 2 calls per IP telephone): what each hears |
 | Loop test | `stop asterisk` | calls the number `TEAM_PHONE` names: a team telephone rings, nothing ends at the test number |
 
-**With two mobiles (Maxi, 02.11.2026).** `TEAM_PHONE` is Maxi's mobile, so it is the team telephone
-of this run, and a second mobile calls the test number. Every row is measured by the clock at the
-telephones as written. The row with a second caller: the team telephone itself is the second caller,
-so the core's handover dials a telephone that is busy, and that is what the row shows. The third
-caller stays open unless a third telephone is at hand.
+**The team telephone is the restaurant's main number (Maxi, 14.11.2026, replaces the two mobiles of
+02.11.2026).** For this run `TEAM_PHONE` is the main number, set in the shell of the one command
+like the engines, so `.env` stays as it is; the team number in the database is set to it for the run
+and set back after it, with a row in `audit_log`. Maxi's mobile calls the test number and a second
+mobile is the second caller. It is an exception to "the main number stays untouched" of §5, and
+Maxi's: the main number is only rung as the team's, the AI never answers it, the team knows, and a
+guest who calls in between is taken first. What it adds to the rows:
+
+- Every handover is a call from the AI telephone out through the router to a number of that same
+  router. Whether the router connects it inside, sends it out and back in on two lines, or answers
+  busy is not known; the trial call and the first row show it. If it does not ring, the run goes
+  back to a mobile as `TEAM_PHONE`.
+- An answering machine or mailbox on the main number, the router's or the provider's, is off for the
+  run or answers later than 40 s: answering is an answer (§5).
+- At the router the AI telephone takes calls for the test number only. Were it assigned to the main
+  number too, every team leg would come back to it; the dialplan's loop guard refuses such a call,
+  and the team telephones still ring.
+- The row with a second caller: the handover of the second call is a third call at the AI telephone
+  (the first caller, the second caller, the team leg), and the router allows two per IP telephone
+  (§3). So the team leg may be refused; what the second caller hears then is what the row shows.
+- The loop test is the line test of §5 itself: software off, call the main number, the team
+  telephones ring as always.
 
 **Run from a distance, with a printed sheet (Maxi, 11.11.2026).** Maxi and the caller are not at the
 workbench; the session stays open on it and Maxi writes to it from another device (not only from the
@@ -793,6 +811,15 @@ the database stopped 8.3 s, `voice` frozen 4.4 s and 8.2 to 9.6 s in the middle 
 the team leg through the router, and the rows "`voice` is down" and "A crash in the middle of a
 call" measure exactly that. `python3 -m scripts.voice_drill` is run once more on the day before the
 run, so those numbers are of the code that goes on the wire.
+
+**Run on 14.11.2026.** Results in §11, findings in #768 and #769. What a next run needs to know:
+today's team number was set with the product's own staff change (`change_team_phone` in the `api`
+container with `TEAM_PHONE` set to the main number for that one process, actor `wire_run:T-10.2`)
+and set back the same way, no SQL; the stack came up and registered in under a minute; `voice` for
+the row "the model is down" was started with `LLM_BASE_URL` at a dead port; an answered team leg
+that the caller ends logs no "team leg" line, only an unanswered one does. Open for a second run:
+the row "Asterisk is down" after a team telephone is assigned to the test number at the router, and
+the row with a second caller after Maxi's decision in #769.
 
 Not covered here: anything that needs the trunk (T-10.12). The tunnel and `ACCESS_ALSO` are looked
 up once, so a new public address of the router during the run shows as `asterisk` unhealthy (not
@@ -904,6 +931,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 | 29.10.2026 | T-10.7 | `python -m evals.voice` in the speech image on the workbench's graphics card: the 56 cases of `evals/cases/` spoken by `kerstin-low` (steady) through the modelled line, heard by the service's ear (Whisper large-v3-turbo behind the segmenting ear), no key terms | **Hard 0 with both models, every read-back checked.** Scripted: cases as text 56/56, as heard 10/56; qwen3.6-35b-a3b: 29/56 and 14/56. Numbers of single-number lines right 8, silently wrong 1 ("Zweimal die S 12" heard as "S2" and taken), asked 7 of 16; dish names 1 of 4 by letters. No speech in 7 lines ("Ja.", "Sesam.", "Keine.", "Nein, danke.", "... hallo ..."). Line noise heard as no speech; noise variants that got to their read-back 3/39 (scripted) and 5/39. Medians: agent's mouth to the first audio of a read-back 0.06 s, ear after the last frame 0.15 s (max 2.8 s), core per turn with setup 2.5 s on qwen. The ear's miss after silence, §12 |
 | 29.10.2026 | T-10.7, line with noise | the same run on a line that carries band-limited noise of about -55 dBFS around and under every sentence (`speech_bench.on_the_line`) instead of digital silence; scripted model; engine tests in the speech image | **Hard 0, every read-back checked (3/3).** Lines without speech 2 instead of 7 ("Keine.", "... hallo ..."); single-number lines 8 right, 3 silently wrong, 5 asked of 16, the wrong ones all numbers with a letter ("S 12", "Sushi zwölf", "45g" heard as "5 und 40 D", §12 "numbers with a letter"); cases as heard 9/56. Engine tests 9/9: the answer after 4 and 10 s heard in `thorsten-medium` and `thorsten-high`, the quiet line alone no speech. The detector unchanged |
 | 02.11.2026 | T-9.8 | `python3 -m scripts.voice_drill` on the workbench on the separate networks, `backend` internal as in production, with eight new points and `voice` cut off by `docker network disconnect` | **35 of 35 points.** The 27 points of before all passed. Cut from Asterisk: the team rang after 5.3 s, 8.4 s after a cut mid-call. Cut from the database: after 8.3 s, 12.4 s after a cut mid-call. The next call was the AI's. Asterisk reached `voice` and not the database, by name or by address; the database has no default route. The production files themselves: docs/13 §3 |
+| 14.11.2026 | T-10.2 | The outage map on the wire, row by row: the product's `asterisk` and `voice` (Whisper on the CPU, Piper, `qwen3.6-35b-a3b`) registered at the pilot's router through the tunnel, `main` at `10ec06a`, calls from Maxi's mobile to the test number, the restaurant's main number as the team telephone, opening hours open. Times are Asterisk's own log (arrival to "to the team"); the clock at the telephones was not written down per row: Maxi confirmed afterwards that every row that rang stayed clearly under 30 s from placing the call (14.11.2026), and the sheet was not scanned | **Six rows go, two no-go.** Trial call: answered and greeted, no team ring. `voice` down: to the team 4 s after arrival, answered, audio both ways; Asterisk died with a segmentation fault 44 s later and restarted (#768). `voice` killed 16 s into a call: to the team in the same second. Model unreachable: outage sentence, to the team 17 s after arrival, 4 s after the failure. Handover asked for: to the team after 15 s, audio both ways; the team telephone shows the test number, not the caller. Team does not pick up: 30 s of ringing, card `noted` in the same second, the sentence played. Loop test: software off, the main number rings as always, nothing reached us. **No-go:** Asterisk stopped or killed: the caller hears the network's "not reachable", no telephone rings, because only the AI telephone is assigned to the test number; the router dropped the killed registration within a minute. A second caller during an AI call: handed over in the same second, the router rang nothing for 30 s and refused nothing, a callback card. The router dials its own main number from the AI telephone without trouble. Before the run the router was unreachable from 11:23 to 11:35. Findings: #768, #769 |
 
 ---
 
@@ -924,6 +952,17 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   and the detector stays as it was. Open: a recording of real line audio through the router
   (T-10.1 step 2 setup) to confirm the level and kind of noise; until then the threshold
   and the 256 ms stay as measured in T-10.3.
+- **The floor of 256 ms and one-word answers (#678, Maxi 13.11.2026: measure, then set).** The
+  floor stays at 8 windows until the numbers of test calls with own voices are in (no customer
+  audio). `VOICE_EAR_MEASURE=true` makes the service log one line per utterance, `ear measure:
+  windows=N floor=8 below=True heard='...'`, and asks Whisper also below the floor, only to log
+  what it would have heard; the caller still gets no speech. `scripts/ear_floor.py` runs the same
+  count on Piper voices and synthetic noises in the image of `voice` (`--run-dir`, `--whisper`),
+  and turns the log lines of two test calls (`--from-log`, `--noise-log`) into a table and the verdict. Decision rule: the floor
+  becomes the smallest window count that no click or breath of the test calls reaches and every
+  short answer ("Ja.", "Nein.", "Zwei.") reaches; if the highest noise is not below the lowest
+  answer, the floor stays and the text of the short finals decides (a click Whisper turns into
+  "Ja." would be a yes, hard rule 3).
 - **A caller's leg left open after the team hung up (seen once, 14.10.2026):** in the drill
   "voice frozen" of the first of two runs on the branch of T-1.11 part 2, the team leg rang and
   hung up, and the caller's leg stayed up on the stand-in router for the 60 s the kit waits; the

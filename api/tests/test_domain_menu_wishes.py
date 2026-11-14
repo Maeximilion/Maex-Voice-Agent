@@ -36,6 +36,7 @@ from api.domain.menu.wishes import (
     mentions_allergy,
     open_wish,
     removal_with,
+    speaks_of_health,
     wish_candidates,
 )
 from api.models import ItemOption, MenuItem
@@ -1591,6 +1592,34 @@ def test_a_gegen_that_lists_nothing_stays_out(said):
 
 
 @pytest.mark.parametrize(
+    "said",
+    [
+        "Ich habe eine Erdnussallergie und meine Frau Sesam",
+        "Ich habe eine Erdnussallergie und mein Sohn auch Sesam",
+    ],
+)
+def test_another_persons_allergy_without_gegen_leaves_the_ingredient_open(said):
+    """Probe of PR #413 (issue #207), fixed by #670: nothing is noted, so the
+    guest is asked "Wogegen?" and no allergen is lost behind the filler."""
+    assert wish_of(said, BEILAGE).ingredient is None
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ich bin allergisch gegen Nüsse, deshalb die 5",
+        "ich bin allergisch gegen Nüsse, deswegen nehme ich die 5",
+        "ich bin allergisch gegen Nüsse und deshalb die 5",
+        "ich bin allergisch gegen Nüsse, daher die 5",
+    ],
+)
+def test_a_reason_filler_after_the_list_stays_out(said):
+    """Probe of PR #413 (issue #207): "deshalb die 5" is the order going on,
+    not part of the ingredient on the kitchen note."""
+    assert wish_of(said, BEILAGE).ingredient == "Nüsse"
+
+
+@pytest.mark.parametrize(
     ("said", "kept"),
     [
         ("ich bin allergisch gegen Erdnüsse und möchte keine Zwiebeln", "Zwiebeln"),
@@ -2114,3 +2143,21 @@ def test_a_comma_chain_is_read_in_linear_time():
     start = time.perf_counter()
     classify_wish("Ich habe eine Allergie" + ", x" * 30, [])
     assert time.perf_counter() - start < 0.5
+
+
+@pytest.mark.parametrize(
+    ("text", "health"),
+    [
+        ("Ich darf kein Gluten.", True),
+        ("Zöliakie, ohne Gluten", True),
+        # "bedarf" is no "darf" (#763 review).
+        ("Das bedarf keiner Reservierung.", False),
+        ("Das darf keiner wissen, es ist eine Überraschung.", False),
+        ("Ich darf keine Nüsse.", True),
+        # Codex PR #767, P1: "keinerlei" is the strong "kein".
+        ("Ich darf keinerlei Gluten.", True),
+        ("ohne Gluten", False),
+    ],
+)
+def test_health_words_need_the_whole_word(text, health):
+    assert speaks_of_health(text) is health

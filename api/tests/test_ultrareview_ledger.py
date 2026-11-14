@@ -127,3 +127,40 @@ def test_gh_talks_utf8_whatever_the_locale(monkeypatch):
         == "\U0001f4dd body\n"
     )
     assert seen["encoding"] == "utf-8"
+
+
+def test_a_closed_ledger_stays_closed_and_the_next_add_opens_a_new_one(monkeypatch):
+    issues = [
+        {
+            "number": 546,
+            "state": "CLOSED",
+            "title": ledger.TITLE,
+            "body": ledger.fresh_body(),
+        }
+    ]
+    patched: list[list[str]] = []
+
+    def fake_run(cmd, input=None, **_):
+        if cmd[1:3] == ["issue", "list"]:
+            state = cmd[cmd.index("--state") + 1]
+            out = json.dumps(
+                [i for i in issues if state == "all" or i["state"] == state.upper()]
+            )
+        elif cmd[1:3] == ["issue", "create"]:
+            issues.append({"number": 901, "state": "OPEN", "title": "", "body": input})
+            out = "https://github.com/o/r/issues/901\n"
+        else:
+            patched.append(cmd)
+            issues[-1]["body"] = next(a for a in cmd if a.startswith("body="))[5:]
+            out = "{}"
+        return subprocess.CompletedProcess(cmd, 0, out, "")
+
+    monkeypatch.setattr(ledger.subprocess, "run", fake_run)
+
+    assert ledger.main(["add", "770", "a booking"]) == 0
+    assert ledger.main(["add", "771", "an allergen"]) == 0
+
+    assert [i["number"] for i in issues if i["state"] == "OPEN"] == [901]
+    assert issues[0]["body"] == ledger.fresh_body()
+    assert all("state=open" not in a for c in patched for a in c)
+    assert len(ledger.open_items(issues[1]["body"])) == 2

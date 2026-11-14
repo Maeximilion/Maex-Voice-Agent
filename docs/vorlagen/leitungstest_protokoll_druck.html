@@ -10,7 +10,7 @@
   @page { size: A4 portrait; margin: 12mm; }
   body { font-family: system-ui, sans-serif; font-size: 10pt; line-height: 1.35; color: #000; background: #fff; margin: 0; }
   h1 { font-size: 16pt; margin: 0 0 1mm; }
-  h2 { font-size: 12pt; margin: 5mm 0 1.5mm; border-bottom: 1.5px solid #000; }
+  h2 { font-size: 12pt; margin: 5mm 0 1.5mm; border-bottom: 1.5px solid #000; break-after: avoid; }
   p { margin: 0 0 2mm; }
   ol, ul { margin: 0 0 2mm; padding-left: 5mm; }
   li { margin-bottom: 0.8mm; }
@@ -41,11 +41,11 @@
 <table>
   <tr><th class="w20">Rolle</th><th class="w25">Wer</th><th>Gerät und Aufgabe</th></tr>
   <tr><td>Anrufer/in</td><td><span class="v" id="name-a"></span></td><td><strong>Telefon A</strong> (Handy), Nummer <span class="v" id="tel-a"></span>. Ruft die Testnummer an, spricht mit der KI, sagt an, was zu hören ist.</td></tr>
-  <tr><td>Leitung</td><td><span class="v" id="name-b"></span></td><td><strong>Telefon B</strong> (Handy), Nummer <span class="v" id="tel-b"></span>. Telefon B ist in diesem Test das <strong>Teamtelefon</strong>. Schreibt im Chat mit Claude, liest die Uhr ab, füllt diesen Bogen aus.</td></tr>
+  <tr><td>Leitung</td><td><span class="v" id="name-b"></span></td><td><strong>Telefon B</strong> ist das <strong>Teamtelefon</strong>: das Telefon im Restaurant an der Hauptnummer <span class="v" id="tel-b"></span>. Die Leitung steht bei Telefon B, nimmt ab oder lässt klingeln, wie es in der Zeile steht, liest die Uhr ab, füllt diesen Bogen aus und schreibt im Chat mit Claude. Ruft die Leitung selbst mit Telefon A an, macht sie beide Spalten der Zeile.</td></tr>
   <tr><td>Technik</td><td>Claude</td><td>Sitzt am PC zu Hause (Werkbank). Schaltet die Ausfälle ein und wieder aus, liest die Zeiten aus dem Protokoll der Telefonanlage, meldet alles im Chat.</td></tr>
-  <tr><td>Chat-Gerät</td><td colspan="2">Am besten der Kassen-PC (Browser, Claude, diese Sitzung). Geht auch die Claude-App auf einem Handy, das gerade nicht telefoniert. Telefon B klingelt im Test, deshalb den Chat nicht nur auf Telefon B haben.</td></tr>
-  <tr><td>Testnummer</td><td colspan="2"><span class="v" id="tel-test"></span> (das KI-Telefon). <strong>Nie die Hauptnummer des Restaurants anrufen</strong>, außer in Zeile 8b.</td></tr>
-  <tr><td>Telefon C</td><td colspan="2">Freiwillig, nur für den dritten Anrufer in Zeile 7: <span class="v"></span></td></tr>
+  <tr><td>Chat-Gerät</td><td colspan="2">Am besten der Kassen-PC (Browser, Claude, diese Sitzung). Geht auch die Claude-App auf einem Handy, das gerade nicht telefoniert. Telefon A telefoniert im Test, deshalb den Chat nicht nur auf Telefon A haben.</td></tr>
+  <tr><td>Testnummer</td><td colspan="2"><span class="v" id="tel-test"></span> (das KI-Telefon). Angerufen wird immer die Testnummer. <strong>Die Hauptnummer selbst nur in Zeile 8 anrufen.</strong></td></tr>
+  <tr><td>Telefon C</td><td colspan="2">Zweiter Anrufer in Zeile 7: <span class="v" id="name-c"></span>, Handy <span class="v" id="tel-c"></span>. Ein dritter Anrufer (Telefon D) ist freiwillig: <span class="v"></span></td></tr>
 </table>
 
 <h2>2. Vor dem Test</h2>
@@ -54,7 +54,9 @@
 <span class="c"></span>Im Ubuntu-Terminal <span class="chat">llm start</span> eingeben (fragt nach dem Passwort) und warten, bis „LLM-Server bereit“ dasteht. Das Sprachmodell kann Claude nicht selbst starten.<br>
 <span class="c"></span>Vom Kassen-PC oder vom Handy <span class="chat">Test</span> in die Sitzung schreiben. Claude antwortet: der Fernzugriff geht.</p>
 <p><strong>Am Testort:</strong></p>
-<p><span class="c"></span>Telefon B: <strong>Mailbox aus</strong> (<span class="chat">##002#</span> wählen und die Anruftaste drücken). Nimmt die Mailbox ab, zählt das als abgenommen, und die Zeilen 5 und 7 sind ungültig. Klingelton laut.<br>
+<p><span class="c"></span>Telefon B: <strong>Anrufbeantworter und Mailbox der Hauptnummer aus</strong> (am Router und beim Anbieter), oder sie nehmen erst nach mehr als 40 Sekunden ab. Nimmt einer ab, zählt das als abgenommen, und Zeile 5 ist ungültig. Klingelton laut.<br>
+<span class="c"></span>Das Team weiß Bescheid: bei jeder Zeile klingelt das Telefon des Restaurants, und die Leitung ist kurz belegt. Am besten zu einer ruhigen Zeit testen.<br>
+<span class="c"></span>Am Router ist das KI-Telefon nur der Testnummer zugeordnet, nicht der Hauptnummer.<br>
 <span class="c"></span>Telefon A: die eigene Nummer wird mitgeschickt (nicht unterdrückt).<br>
 <span class="c"></span>Eine Uhr mit Sekunden ist zu sehen (Kassen-PC oder ein Handy). Stift liegt bereit.<br>
 <span class="c"></span>Der Test läuft in den Öffnungszeiten, die im System stehen. Claude prüft das beim Start; außerhalb klingelt in den Zeilen 3 bis 5 mit Absicht niemand.<br>
@@ -172,16 +174,16 @@
 <div class="row">
   <h3>Zeile 7: Ein zweiter und ein dritter Anrufer</h3>
   <table>
-    <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B (und Telefon C)</th></tr>
-    <tr><td>Schaltet nichts aus. Die KI führt immer nur ein Gespräch. Sieht danach nach, ob für den zweiten Anrufer eine Rückrufkarte angelegt ist.</td><td>Ruft an und <strong>hält das Gespräch mit der KI am Laufen</strong>, zum Beispiel nach den Öffnungszeiten fragen und langsam etwas bestellen. Legt erst auf, wenn die Leitung „fertig“ sagt.</td><td>Ruft mit <strong>Telefon B</strong> die Testnummer an, während A mit der KI spricht, und notiert, was zu hören ist. Wenn Telefon C da ist: C ruft an, solange A und B noch in der Leitung sind.</td></tr>
+    <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B, und Telefon C</th></tr>
+    <tr><td>Schaltet nichts aus. Die KI führt immer nur ein Gespräch. Sieht danach nach, ob für den zweiten Anrufer eine Rückrufkarte angelegt ist.</td><td>Ruft an und <strong>hält das Gespräch mit der KI am Laufen</strong>, zum Beispiel nach den Öffnungszeiten fragen und langsam etwas bestellen. Legt erst auf, wenn die Leitung „fertig“ sagt.</td><td><strong>Telefon C</strong> ruft die Testnummer an, während A mit der KI spricht, und sagt an, was zu hören ist. Die Leitung notiert, ob Telefon B klingelt, nimmt ab und spricht kurz mit C. Wenn Telefon D da ist: D ruft an, solange A und C noch in der Leitung sind.</td></tr>
   </table>
-  <p><strong>Erwartet:</strong> Das Gespräch von A läuft ungestört weiter. Den zweiten Anruf gibt die Anlage an das Teamtelefon weiter. Das ist heute Telefon B selbst und damit besetzt: B hört Läuten oder Besetzt, keine KI. Den dritten Anruf nimmt der Router nicht mehr an (höchstens zwei Gespräche je Telefon).</p>
+  <p><strong>Erwartet:</strong> Das Gespräch von A läuft ungestört weiter. Den zweiten Anruf gibt die Anlage ohne KI an das Teamtelefon weiter: Telefon B soll klingeln. Der Router erlaubt dem KI-Telefon aber höchstens zwei Gespräche zugleich, und die Weitergabe wäre das dritte. Scheitert sie, klingelt Telefon B nicht: dann genau eintragen, was C hört. Einen dritten Anrufer nimmt der Router nicht mehr an.</p>
   <table class="f">
     <tr><th class="w20"></th><th>Anruf gestartet</th><th>Was ist zu hören, wie lange</th></tr>
-    <tr><td>Zweiter Anrufer (B)</td><td></td><td></td></tr>
-    <tr><td>Dritter Anrufer (C)</td><td></td><td></td></tr>
+    <tr><td>Zweiter Anrufer (C)</td><td></td><td></td></tr>
+    <tr><td>Dritter Anrufer (D)</td><td></td><td></td></tr>
   </table>
-  <p>Gespräch von A blieb ungestört <span class="c"></span>ja <span class="c"></span>nein &nbsp;&nbsp; Rückrufkarte für B laut Claude <span class="c"></span>ja <span class="c"></span>nein &nbsp;&nbsp; kein Telefon C <span class="c"></span></p>
+  <p>Gespräch von A blieb ungestört <span class="c"></span>ja <span class="c"></span>nein &nbsp;&nbsp; Telefon B klingelte für C <span class="c"></span>ja <span class="c"></span>nein &nbsp;&nbsp; Rückrufkarte für C laut Claude <span class="c"></span>ja <span class="c"></span>nein &nbsp;&nbsp; kein Telefon D <span class="c"></span></p>
   <p>Bemerkung: <span class="l"></span></p>
 </div>
 
@@ -189,11 +191,11 @@
   <h3>Zeile 8: Schleifentest, die Software ist aus</h3>
   <table>
     <tr><th class="w33">Claude</th><th class="w33">Anrufer/in, Telefon A</th><th>Leitung, Telefon B</th></tr>
-    <tr><td>Hält die Telefonanlage der KI an. Bestätigt danach, dass bei uns kein Anruf angekommen ist.</td><td><strong>8a:</strong> ruft direkt die Nummer von Telefon B an, nicht die Testnummer. <strong>8b</strong> (freiwillig, nur wenn das Team im Restaurant Bescheid weiß): ruft die Hauptnummer an.</td><td>8a: Telefon B klingelt wie bei jedem Anruf. 8b: die Telefone im Restaurant klingeln wie immer.</td></tr>
+    <tr><td>Hält die Telefonanlage der KI an. Bestätigt danach, dass bei uns kein Anruf angekommen ist.</td><td>Ruft die <strong>Hauptnummer</strong> an, also die Nummer von Telefon B, nicht die Testnummer.</td><td>Telefon B und die anderen Telefone im Restaurant klingeln wie bei jedem Anruf. Abnehmen, kurz sprechen, auflegen.</td></tr>
   </table>
   <p><strong>Erwartet:</strong> Die Teamnummer führt nie zurück zur KI. Es klingelt sofort beim Team, auch wenn unsere Software aus ist.</p>
   <table class="f">
-    <tr><td>8a: Telefon B klingelt<br><span class="c"></span>ja <span class="c"></span>nein</td><td>8b: Restaurant klingelt wie immer<br><span class="c"></span>ja <span class="c"></span>nein <span class="c"></span>nicht gemacht</td><td>Bestanden<br><span class="c"></span>ja <span class="c"></span>nein</td></tr>
+    <tr><td>Anruf gestartet<br><span class="t"></span></td><td>Restaurant klingelt wie immer<br><span class="c"></span>ja <span class="c"></span>nein</td><td>Bestanden<br><span class="c"></span>ja <span class="c"></span>nein</td></tr>
   </table>
   <p>Bemerkung: <span class="l"></span></p>
 </div>
@@ -202,7 +204,7 @@
 <ol>
   <li>Leitung schreibt <span class="chat">Ende Leitungstest</span>.</li>
   <li>Claude meldet das KI-Telefon am Router ab (die Testnummer erreicht die KI dann nicht mehr), stellt die Leitung auf den Stand vor dem Test zurück, schaltet den Ruhezustand des PCs wieder ein und schreibt die Tabelle mit allen Zeiten aus dem Protokoll in den Chat.</li>
-  <li>Leitung schaltet die Mailbox von Telefon B wieder ein (App oder Kurzwahl des Anbieters).</li>
+  <li>Leitung schaltet Anrufbeantworter und Mailbox der Hauptnummer wieder ein.</li>
   <li>Alle Blätter scannen oder gerade und scharf fotografieren (PDF, JPG oder PNG) und im Chat hochladen. Der ausgefüllte Bogen enthält Telefonnummern: nur in den Chat, nicht weitergeben.</li>
 </ol>
 
@@ -213,7 +215,7 @@
   <tr><td>Claude meldet „KI-Telefon nicht angemeldet“</td><td>Warten. Der Router hat eine neue Adresse bekommen, Claude meldet das KI-Telefon neu an und schreibt <span class="chat">Leitung bereit</span>.</td></tr>
   <tr><td>Die KI versteht den Satz nicht</td><td>Den Satz einmal langsam wiederholen. Versteht sie ihn wieder nicht: eintragen und <span class="chat">fertig</span> schreiben. Auch das ist ein Ergebnis.</td></tr>
   <tr><td>Es wurde zu früh angerufen</td><td>Auflegen, <span class="chat">Zeile wiederholen</span> schreiben, auf <span class="chat">jetzt anrufen</span> warten.</td></tr>
-  <tr><td>Ein echter Anruf kommt auf Telefon B</td><td>Annehmen oder später zurückrufen, dann die Zeile wiederholen.</td></tr>
+  <tr><td>Ein echter Gast ruft im Restaurant an</td><td>Annehmen, der Gast geht vor. Danach die Zeile wiederholen.</td></tr>
   <tr><td>Die Zeit wird knapp</td><td>Die Zeilen 1 bis 5 zählen am meisten. <span class="chat">Ende Leitungstest</span> geht jederzeit; die fehlenden Zeilen bleiben leer.</td></tr>
 </table>
 

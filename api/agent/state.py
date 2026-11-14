@@ -194,8 +194,8 @@ class ConversationState(BaseModel):
     # while a question of the core about the allergy waits for its answer
     # (`allergies.question`, `loop.py`). Never sent.
     held_call: dict[str, Any] | None = None
-    # The call has spoken of allergies: the guest's own, or the allergens of
-    # a dish. A later "Ist das wirklich sicher?" asks beyond the maintained
+    # The call has spoken of allergies: the guest's own, the allergens of a
+    # dish, an allergen named or coeliac disease (#763). A later "Ist das wirklich sicher?" asks beyond the maintained
     # values (`escalation.asks_beyond_the_allergens`, L17). Never sent.
     allergy_talk: bool = False
     # Answers to "Wogegen?" that left the allergy open since the last one

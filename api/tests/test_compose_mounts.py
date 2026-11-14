@@ -45,6 +45,13 @@ WINDOWS_ABS_RE = re.compile(r"^[A-Za-z]:[\\/]")
 # Pfade, die niemals in den Container gehoeren: die Umgebungsdatei und alles unter
 # .claude/ - dort liegen im Haupt-Checkout die Worktrees samt eigener .env.
 GESCHUETZT = (".env", ".claude")
+# The only files under .claude/ that the api container may read (one list for the
+# mount test and the secret check, #207).
+ALLOWED_CLAUDE_FILES = (
+    ".claude/hooks/sync_main.sh",
+    ".claude/hooks/merge_gate.sh",
+    ".claude/settings.json",
+)
 # Felder, die Compose erst beim Start aus anderen Quellen zusammenfuehrt. Was sie
 # hereinholen, steht nicht im rohen YAML - der Waechter ist dort blind und sagt das,
 # statt stillzuhalten. Kommt ein weiteres Feld dieser Art dazu, gehoert es hierher.
@@ -191,12 +198,7 @@ def _is_mounted(ref: str, mounts: set[str]) -> bool:
 
 
 def test_checkout_files_needed_by_container_tests_are_read_only():
-    required = (
-        ".claude/hooks/sync_main.sh",
-        ".claude/hooks/merge_gate.sh",
-        ".claude/settings.json",
-        ".github/assets",
-    )
+    required = (*ALLOWED_CLAUDE_FILES, ".github/assets")
     volumes = _compose()["services"]["api"]["volumes"]
     for path in required:
         assert f"./{path}:/app/{path}:ro" in volumes
@@ -304,11 +306,7 @@ def _traegt_geheimnisse(mount: str) -> bool:
         return True
     if PurePosixPath(mount).name.casefold() == ".env":  # auch tiefer liegende .env
         return True
-    if mount in {
-        ".claude/hooks/sync_main.sh",
-        ".claude/hooks/merge_gate.sh",
-        ".claude/settings.json",
-    }:
+    if mount in ALLOWED_CLAUDE_FILES:
         return False
     if _ist_unter(mount, ".claude/commands"):  # nach der .env-Pruefung, nicht davor
         return False

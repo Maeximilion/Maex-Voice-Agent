@@ -135,10 +135,14 @@ HINT_NOT_BOOKED = (
     "readback vor und warte auf ein klares Ja."
 )
 HINT_ALLERGY_NOTE = (
-    "Abgelehnt: ein `note` nennt eine Allergie. Die Allergie des Gastes notiert "
-    "der Kern selbst aus seinen Worten; schreib sie nie in ein `note`, auch "
-    "nicht verneint. Andere Wünsche („ohne Zwiebeln“, „Kinderstuhl“) bleiben im "
-    "`note`. Ruf denselben Schritt ohne die Allergie noch einmal auf."
+    "Abgelehnt: ein `note` nennt eine Allergie oder die Gesundheit des Gastes. "
+    "Sagte der Gast statt einer Allergie nur ein Wort wie „Zöliakie“ oder „darf "
+    "kein“, ruf noch nichts auf: frag ihn zuerst, was er meint und was nicht "
+    "ins Essen darf; ins `note` kommt dann nur das Weglassen („ohne Gluten“). "
+    "Eine Allergie notiert der Kern selbst aus seinen Worten; schreib sie nie "
+    "in ein `note`, auch nicht verneint. Andere Wünsche („ohne Zwiebeln“, "
+    "„Kinderstuhl“) bleiben im `note`. Ruf denselben Schritt dann ohne die "
+    "Allergie noch einmal auf."
 )
 # Words that tell a guest something is booked, with any ending ("Ihre
 # bestätigte Bestellung"; Codex PR #347).
@@ -243,6 +247,36 @@ _ABSENT = re.compile(
     r"|\bkein\w*(?:\s+\w+){0,3}\s+enthalten\b"
     r"|\b(?:ist|sind|kommt|kommen|wird|werden)\b(?:\s+\w+){0,3}\s+ohne\b"
 )
+# Absence forms that say little without the allergen: read within the one
+# sentence that names it ("Die Bestellung hat keine Getränke. Die 13 ohne
+# Erdnüsse, notiert." is no claim). "Die 13 hat keine Nüsse", "Da gibt es kein
+# Gluten", "Nüsse sind da nicht drin" (#739).
+_ABSENT_IN_SENTENCE = re.compile(
+    r"\b(?:hat|haben|gibt|sind)\b(?:\s+\w+){0,3}\s+kein"
+    r"|\bnicht (?:drin|darin|dabei)\b"
+)
+_SENTENCES = re.compile(r"(?<=[.!?;:])\s+")
+_ALLERGY_WORD = re.compile(r"allergi|unvertr(?:ä|ae)glich|intoleran")
+
+
+def _food(part: str) -> str:
+    """`part` without the guest's allergy: "Sie haben keine Nussallergie",
+    "keine Allergie gegen Nüsse" acknowledge the guest and name no food that
+    could be called absent. The allergy words go word by word, with a "gegen"
+    or "auf" and the word behind it, not by a pattern over `\\w*`.
+    shortcut: "Allergie gegen Nüsse und Sesam" keeps its second allergen and
+    goes to the team; upgrade when the call log shows the wording."""
+    words, kept, skip = part.split(), [], 0
+    for n, word in enumerate(words):
+        if skip:
+            skip -= 1
+        elif _ALLERGY_WORD.search(word):
+            skip = 2 if words[n + 1 : n + 2] in (["gegen"], ["auf"]) else 0
+        else:
+            kept.append(word)
+    return " ".join(kept)
+
+
 # Safety and separate preparation: a claim in a call that speaks of
 # allergies.
 # The model asking the guest whether they are sure ("Sind Sie sicher, dass
@@ -331,6 +365,11 @@ def allergen_claim(state: ConversationState, say: str) -> ToolResult | None:
     if (
         _ALWAYS.search(lowered)
         or (named and _ABSENT.search(lowered))
+        or any(
+            _ABSENT_IN_SENTENCE.search(rest)
+            and (names_an_allergen(rest) or "allergen" in rest)
+            for rest in map(_food, _SENTENCES.split(lowered))
+        )
         or (
             (state.allergy_talk or named)
             and _SAFE.search(_ASKS_IF_SURE.sub(" ", lowered))

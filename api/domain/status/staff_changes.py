@@ -26,6 +26,7 @@ Holiday answers (T-9.5) stay as they are (Maxi, 09.11.2026): the system
 suggested the date, the staff only confirm it.
 """
 
+import hashlib
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time
@@ -39,11 +40,14 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core import time as clock
 from api.core.errors import Conflict, InvalidInput, NotFound
-from api.domain.customers.phone import normalize_phone
+from api.core.time import business_day_bounds_utc
+from api.domain.customers.phone import E164, costly, normalize_phone
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.hours import (
     HoursData,
     Window,
+    load_hours,
+    open_window_at,
     regular_hours,
     windows_for_day,
 )
@@ -51,6 +55,7 @@ from api.events import enqueue
 from api.events.types import DAY_HOURS_CHANGED, TEAM_PHONE_CHANGED
 from api.models import (
     AuditLog,
+    Reservation,
     ServiceConfig,
     SpecialDay,
     StaffChange,
@@ -72,6 +77,20 @@ OVERNIGHT = (
 PAST_DAY = "Ein vergangener Tag lässt sich nicht mehr ändern."
 NO_NUMBER = "Das ist keine Telefonnummer."
 NOT_LISTED = "Diese Nummer kann die Telefonanlage nicht anrufen. Weitere Nummern gibt der Betreiber frei."
+
+
+@dataclass(frozen=True)
+class BookingToCall:
+    """A confirmed table a held closure or shortening leaves without hours."""
+
+    guest_name: str
+    at: datetime
+    phone: str
+    party_size: int
+
+    @property
+    def costly(self) -> bool:
+        return costly(self.phone)
 
 
 @dataclass(frozen=True)
@@ -146,6 +165,15 @@ def dialable_numbers() -> list[str]:
     return list(dict.fromkeys(n.strip() for n in listed if n.strip()))
 
 
+def sheet_numbers() -> list[str]:
+    """The dialable numbers the sheet offers: those written in E.164. The
+    dialplan compares exactly as written and a typed number is normalised, so
+    a listed national number (`0721...`) could be offered and never accepted
+    (#596). The dialplan itself still dials it, so `dialable_numbers` keeps it
+    for the tenant's own number (`provision`)."""
+    return [n for n in dialable_numbers() if E164.match(n)]
+
+
 def team_phone_at(config: ServiceConfig, now: datetime) -> str:
     """The number a call goes to at `now`: today's while it holds, else the
     standard. The one reader of the team number."""
@@ -168,7 +196,7 @@ def change_team_phone(
         number = normalize_phone(raw)
     except InvalidInput:
         raise InvalidInput("team number refused", say=NO_NUMBER) from None
-    if number not in dialable_numbers():
+    if number not in sheet_numbers():
         raise InvalidInput("team number not dialable", say=NOT_LISTED)
     now = now or clock.utcnow()
     config, zone = _locked(session, tenant_id)
@@ -230,7 +258,8 @@ def change_day_hours(
 ) -> StaffChange | None:
     """The staff change a date's hours. Held at once for today, when shorter,
     or when back to what held before the staff came; otherwise the card waits
-    for the owner. Asking for what holds now withdraws a waiting request. None
+    for the owner, today's too when times on a date "like" another weekday
+    would drop that weekday and its seats (#710). Asking for what holds now withdraws a waiting request. None
     when nothing changes. An end before the start runs past midnight and is
     refused unless the staff say so (`overnight`): swapped times would open
     the night. Raises InvalidInput. Commits."""
@@ -263,7 +292,7 @@ def change_day_hours(
     origin = DayHours.of(card.before)
     held = (
         hours in (holding, origin)
-        or day == today
+        or (day == today and not _drops_weekday(hours, holding))
         or _within(session, tenant_id, day, hours, holding, zone)
     )
     if hours == shown and held == card.held:
@@ -374,6 +403,57 @@ def open_cards(
     )
 
 
+def bookings_outside_hours(
+    session: Session,
+    tenant_id: uuid.UUID,
+    day: date,
+    hours: DayHours,
+    zone: str,
+    before: DayHours | None = None,
+) -> list[BookingToCall]:
+    """The confirmed tables of the business day that `hours` would leave
+    without a dine-in window: all of them when closed, the ones outside the
+    times when shortened. The team calls these guests itself (#710, Maxi
+    2026-11-13): nothing is cancelled and no guest is messaged. By time."""
+    tz = ZoneInfo(zone)
+    after = load_hours(session, tenant_id, day, days=1)
+
+    def dinein(held: DayHours) -> list[tuple[datetime, datetime]]:
+        special = {} if held.normal else {day: held.row(tenant_id, day)}
+        return windows_for_day(HoursData(after.regular, special), day, "dinein", tz)
+
+    # The date's span: its business day plus the windows that held before the
+    # change, which may start before or end after the cutoff (02:00 to 04:00,
+    # 22:00 to 10:00). The query bounds come from this span, never a constant.
+    span = [business_day_bounds_utc(day, zone), *dinein(before or DayHours())]
+    # After the change: the date with its new hours, its neighbours as set. A
+    # table counts as kept when any window still holds it, also one of the day
+    # before or after (open_window_at checks the previous day too).
+    if hours.normal:
+        after.special.pop(day, None)
+    else:
+        after.special[day] = hours.row(tenant_id, day)
+    rows = session.scalars(
+        select(Reservation)
+        .where(
+            Reservation.tenant_id == tenant_id,
+            Reservation.status == "confirmed",
+            Reservation.deleted_at.is_(None),
+            Reservation.reserved_for >= min(a for a, _ in span),
+            Reservation.reserved_for < max(b for _, b in span),
+        )
+        .order_by(Reservation.reserved_for)
+    )
+    return [
+        BookingToCall(
+            r.guest_name, r.reserved_for.astimezone(tz), r.phone, r.party_size
+        )
+        for r in rows
+        if any(a <= r.reserved_for < b for a, b in span)
+        and open_window_at(after, r.reserved_for, "dinein", tz) is None
+    ]
+
+
 def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> str:
     """A fingerprint of the open cards for the event stream (gui/sse.py),
     hashed in the database: no card rows with their JSONB per tablet tick."""
@@ -393,7 +473,18 @@ def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> s
             StaffChange.day >= today,
         )
     )
-    return str(digest)[:16]
+    if digest == hashlib.md5(b"").hexdigest():  # no open card, nothing to list
+        return ""
+    # The guest lists on the cards hang on the confirmed tables (#710).
+    tables = session.execute(
+        select(func.count(), func.max(Reservation.updated_at)).where(
+            Reservation.tenant_id == tenant_id,
+            Reservation.status == "confirmed",
+            Reservation.deleted_at.is_(None),
+            Reservation.reserved_for >= business_day_bounds_utc(today)[0],
+        )
+    ).one()
+    return str(digest)[:16] + hashlib.md5(repr(tuple(tables)).encode()).hexdigest()[:8]
 
 
 # --- helpers ---------------------------------------------------------------------
@@ -493,6 +584,17 @@ def _write(
     session.flush()
 
 
+def _drops_weekday(after: DayHours, before: DayHours) -> bool:
+    """Times on a date "like" another weekday cannot keep that weekday (one
+    meaning per row, `ck_special_days_like_weekday_alone`): its seats, call
+    mode and call limit go to the plain weekday's. Closing drops nothing."""
+    return (
+        before.like_weekday is not None
+        and not after.closed
+        and after.like_weekday != before.like_weekday
+    )
+
+
 def _within(
     session: Session,
     tenant_id: uuid.UUID,
@@ -505,8 +607,7 @@ def _within(
     shorter hours. Then the change holds at once (D34 point 4). Times on a
     date "like" another weekday drop that weekday and with it its seats
     (`reservations/capacity.py`), so they wait for the owner (#596)."""
-    weekday_dropped = after.like_weekday != before.like_weekday
-    if before.like_weekday is not None and not after.closed and weekday_dropped:
+    if _drops_weekday(after, before):
         return False
     regular = regular_hours(session, tenant_id)
     tz = ZoneInfo(zone)

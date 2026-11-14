@@ -115,7 +115,7 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 | Version | 0.0.1 |
 | Stage | 0, Foundation |
 | Next Gate | G0: Budget · Rights · Telephony path · Vendor chosen · Stage order |
-| As of | 2026-11-10 |
+| As of | 2026-11-11 |
 <!-- /readme:status -->
 
 <p align="center">
@@ -238,7 +238,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | `OWNER_DATABASE_URL` | Only on the server: the owner of the schema, for migrations, backup and restore. `DATABASE_URL` then names a role without superuser that `bash scripts/db_role.sh` sets up; in `ENV=prod` the API does not start as a superuser (`docs/13_DEPLOYMENT.md` §3). Empty on the workbench |
 | `AGENT_API_TOKEN` | Bearer token for the tool endpoints (`/v1/tools`). Outside `ENV=dev` and `ENV=test`, the API does not start on the placeholder, fewer than 32 characters, or any whitespace (`openssl rand -hex 32`) |
 | `TEAM_PHONE` | Extension for forwarding to team; the AI telephone's dialplan rings it whenever the service `voice` cannot say where a call goes |
-| `VOICE_MEDIA_TOKEN`, `VOICE_NUMBER`, `VOICE_EAR`, `VOICE_MOUTH` | The service `voice` of the own voice layer (Compose profile `voice`): the token Asterisk presents, the number the AI telephone answers, and the speech engines (`whisper`, `piper`; `VOICE_EAR_DEVICE`, `VOICE_MOUTH_VOICE`, model files in `deploy/speech/run/models`). It does not start with one missing, with an engine it cannot load, or with the team on its own number (`docs/20_VOICE_LAYER.md` §7) |
+| `VOICE_MEDIA_TOKEN`, `VOICE_NUMBER`, `VOICE_EAR`, `VOICE_MOUTH` | The service `voice` of the own voice layer (Compose profile `voice`): the token Asterisk presents, the number the AI telephone answers, and the speech engines (`whisper`, `piper`; `VOICE_EAR_DEVICE`, `VOICE_MOUTH_VOICE`, `VOICE_EAR_MEASURE` for test calls only, model files in `deploy/speech/run/models`). It does not start with one missing, with an engine it cannot load, or with the team on its own number (`docs/20_VOICE_LAYER.md` §7) |
 | `ACCESS_HOST`, `ACCESS_USER`, `ACCESS_PASSWORD` | Where the AI telephone registers: the pilot's router in the test phase, a SIP trunk in operation. Asterisk takes SIP only from the IPv4 addresses of the servers its `_sip._udp` SRV records name, or of `ACCESS_HOST` itself without such records, looked up when it starts; a lookup that fails stops the start until DNS answers. Read by Asterisk only |
 | `ACCESS_ALSO` | More names or IPv4 addresses Asterisk takes SIP from, comma-separated, looked up once at the start: the pilot's router calls from its public address, also through its VPN. Read by Asterisk only |
 | `ACCESS_WIREGUARD_CONF` | Test phase only: path of the router's WireGuard file for the AI telephone's own tunnel (`deploy/asterisk/docker-compose.line.yml` with the probe, `deploy/asterisk/docker-compose.tunnel.yml` on top of the product's stack) |
