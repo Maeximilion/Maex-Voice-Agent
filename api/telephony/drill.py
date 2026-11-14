@@ -193,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
             for title, _ in SCENARIOS:
                 step("Drill:", title)
         else:
-            checks += run_scenarios(drill, SCENARIOS)
+            run_scenarios(drill, SCENARIOS, checks)
             checks.append(drill.no_secret_in_the_logs())
             checks.append(drill.no_caller_in_the_logs())
     except DrillError as exc:
@@ -1408,24 +1408,35 @@ SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
 
 
 def run_scenarios(
-    drill: Drill, scenarios: list[tuple[str, Callable[[Drill], list[Check]]]]
-) -> list[Check]:
-    """Every scenario, and whether Asterisk lived through each: a crash after
-    the handover (#768, exit code 139 when a team leg ended) leaves the call's
-    own checks green, and the drill Compose starts no container again, so a
-    later call would fail under a scenario that did nothing wrong."""
-    checks: list[Check] = []
+    drill: Drill,
+    scenarios: list[tuple[str, Callable[[Drill], list[Check]]]],
+    checks: list[Check],
+) -> None:
+    """Every scenario into `checks`, and whether Asterisk lived through each: a
+    crash after the handover (#768, exit code 139 when a team leg ended) leaves
+    the call's own checks green, and the drill Compose starts no container
+    again, so a later call would fail under a scenario that did nothing wrong.
+    A drill that raises keeps what ran before it and the Asterisk point (Codex
+    PR #774): the crash is most likely why it raised."""
     died: list[str] = []
     life = drill.asterisk_life()
-    for title, scenario in scenarios:
-        step("Drill:", title)
-        checks += scenario(drill)
-        now = drill.asterisk_life()
-        if now != life:
-            died.append(title)
-            life = now
-    checks.append(("Asterisk lived through every drill", not died, "; ".join(died)))
-    return checks
+    title = ""
+    try:
+        for title, scenario in scenarios:
+            step("Drill:", title)
+            checks += scenario(drill)
+            now = drill.asterisk_life()
+            if now != life:
+                died.append(title)
+                life = now
+    finally:
+        if title and title not in died:
+            try:
+                if drill.asterisk_life() != life:
+                    died.append(title)
+            except DrillError:
+                died.append(f"{title} (container not readable)")
+        checks.append(("Asterisk lived through every drill", not died, "; ".join(died)))
 
 
 def render(run_dir: Path, secret: dict[str, str]) -> None:
