@@ -167,6 +167,8 @@ def test_a_lost_team_leg_leaves_an_error_and_a_caller_who_hung_up_as_logged(
     [
         ("human_requested", "human_requested", "niemand abgenommen"),
         ("cancellation", "human_requested", "stornieren"),
+        # The core's outage in the conversation (#769): the card as before.
+        ("outage", "not_understood", "niemand abgenommen"),
         # Paused mode, shadow mode, the outage path: the core gave no reason.
         (None, "out_of_scope", "nicht bekannt"),
     ],
