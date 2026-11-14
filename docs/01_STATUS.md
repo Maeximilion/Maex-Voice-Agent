@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.41
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.45.0
 > Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
@@ -93,7 +93,7 @@ docs/21. Historical session details are in `docs/00_PCF.md` section 13.
 **Browser code in TypeScript (10.11.2026, #553 done):** standing rule (Maxi, 10.11.2026): browser logic is TypeScript from now on and no language moves back (`CLAUDE.md` §8, check in `api/tests/test_browser_code_language.py`). The toolchain is built and `raumplan-geometry` is the first migrated file (docs/22 "Browser code in TypeScript"). `base.js`, `raumplan.js` and `app.js` are migrated and the inline script of the dev console is `api/gui/ts/dev-console.ts` (T-3.18 done 10.11.2026, #626): no handwritten script and no inline script is left, and both lists in the check are empty. Editing browser code needs Node on the host (`npm ci && npm run build`); the server and `make up` do not.
 
 ### In Claude Code (can start immediately, without vendor)
-3. **T-10.2 on the wire, with Maxi and a second caller at the telephones (G0 waits for it).** Sheet and handover are ready since 11.11.2026 (`docs/vorlagen/leitungstest_protokoll_druck.html`, docs/20 §10 "Handover: T-10.2"); the session that runs it stays open on the workbench and Maxi writes `Start Leitungstest` from another device. Before he leaves: `llm start`, the mailbox of the team telephone off. Open after the run: the times into docs/20 §11, the third caller only with a third telephone, two calls at once over the router (T-10.1 step 2)
+3. **T-10.2 on the wire, with Maxi and a second caller at the telephones (G0 waits for it).** Sheet and handover are ready since 11.11.2026 (`docs/vorlagen/leitungstest_protokoll_druck.html`, docs/20 §10 "Handover: T-10.2"); the session that runs it stays open on the workbench and Maxi writes `Start Leitungstest` from another device. Before he leaves: `llm start`. The team telephone of the run is the restaurant's main number (Maxi, 14.11.2026; an exception to "the main number stays untouched", docs/20 §10): its answering machine off, the team told. Open after the run: the times into docs/20 §11, the third caller only with a third telephone, two calls at once over the router (T-10.1 step 2)
 4. **T-3.5** the five-minute operating test on a real tablet with a team member (needs a person, not code; T-3.2 and T-3.4 done 18.09.2026). Protocol ready 16.10.2026: `docs/vorlagen/bedientest_protokoll.md`, method in docs/06 section 8; Maxi runs it with two different team members, one after the other, and records both verdicts here (full text: docs/HISTORY.md)
 5. **T-2.4** `agent/llm.py` against a real model with token counting. Parts 1 to 3 and the core guards built 06.10.2026 (the client, tokens and cost per call, the model switch for text phone and evals, summary above). The cart in the conversation state built 07.10.2026, so a real model keeps the order across turns (summary above). (full text: docs/HISTORY.md)
    - **Required before T-2.4 closes (Maxi, 06.10.2026): `.env.example` documents every `LLM_*` setting the core reads.** PR #208 added `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`, `LLM_TIMEOUT_SECONDS`, `LLM_MAX_OUTPUT_TOKENS` and the two price lines and was merged on 06.10.2026 without the rest (full text: docs/HISTORY.md)
@@ -350,6 +350,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.45.0 · 14.11.2026:** T-10.2: the main number is the team telephone of the wire run (Maxi), sheet and handover changed
 - **v2.44.41 · 14.11.2026:** #678: measurement of the ear's floor (MIN_SPEECH_SECONDS) behind VOICE_EAR_MEASURE and scripts/ear_floor.py; the floor stays 0.25 s until Maxi's test calls are measured (decision 13.11.2026)
 - **v2.44.40 · 14.11.2026:** Issue #207 sweep: a reason filler (deshalb, daher) after an allergy list no longer lands in the ingredient; one constant for the allowed .claude files in test_compose_mounts
 - **v2.44.39 · 14.11.2026:** #651: a drill point with the caller's RTP blocked in transit (iptables DROP on the media ports): the call ends as a silent one with the note, the team does not ring; the understanding ladder is tested to end with the team
