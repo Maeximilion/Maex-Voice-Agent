@@ -85,6 +85,10 @@ class GuiSession(UUIDPrimaryKey, Base):
     # The owner's rights on this device end here, 60 minutes after the admin
     # PIN; the idle lock and the team PIN end them earlier.
     admin_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # The owner's own idle clock: the admin PIN, an owner page or an owner
+    # write. 15 minutes after it the owner rights end, however busy the staff
+    # keep the tablet (#600). NULL: no owner rights.
+    admin_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class GuiSetupLink(UUIDPrimaryKey, Base):
