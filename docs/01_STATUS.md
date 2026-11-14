@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.6
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.7
 > Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
@@ -333,6 +333,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.46.7 · 14.11.2026:** Asterisk crash of #768 avoided: the dialplan asks voice with the media token before it dials it
 - **v2.46.6 · 14.11.2026:** T-3.16 compact cards and sticky red bar (#517)
 - **v2.46.5 · 14.11.2026:** mypy strict flags on api.jobs, api.dashboard, api.telephony (#552)
 - **v2.46.4 · 14.11.2026:** Asterisk crash fails the drill (#768), model outage logged as outage (#769)
