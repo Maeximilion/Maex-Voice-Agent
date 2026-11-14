@@ -186,6 +186,8 @@ def _card_reason(reason: str | None) -> CallbackReason:
     gave no reason for (paused, shadow, the outage path)."""
     if reason in _CALLBACK_REASONS:
         return cast(CallbackReason, reason)
+    if reason == "outage":  # its card as before #769, the text names the fault
+        return "not_understood"
     return "human_requested" if reason == "cancellation" else "out_of_scope"
 
 
