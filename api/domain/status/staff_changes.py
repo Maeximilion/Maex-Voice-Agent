@@ -416,11 +416,11 @@ def bookings_outside_hours(
     times when shortened. The team calls these guests itself (#710, Maxi
     2026-11-13): nothing is cancelled and no guest is messaged. By time."""
     tz = ZoneInfo(zone)
-    regular = regular_hours(session, tenant_id)
+    after = load_hours(session, tenant_id, day, days=1)
 
     def dinein(held: DayHours) -> list[tuple[datetime, datetime]]:
         special = {} if held.normal else {day: held.row(tenant_id, day)}
-        return windows_for_day(HoursData(regular, special), day, "dinein", tz)
+        return windows_for_day(HoursData(after.regular, special), day, "dinein", tz)
 
     # The date's span: its business day plus the windows that held before the
     # change, which may start before or end after the cutoff (02:00 to 04:00,
@@ -429,7 +429,6 @@ def bookings_outside_hours(
     # After the change: the date with its new hours, its neighbours as set. A
     # table counts as kept when any window still holds it, also one of the day
     # before or after (open_window_at checks the previous day too).
-    after = load_hours(session, tenant_id, day, days=1)
     if hours.normal:
         after.special.pop(day, None)
     else:
