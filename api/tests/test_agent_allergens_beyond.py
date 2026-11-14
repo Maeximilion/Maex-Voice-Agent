@@ -1885,3 +1885,50 @@ def test_a_claim_about_an_additive_is_carded_and_logged_as_one(session, known_te
     session.refresh(call)
     says = [entry for entry in call.tool_calls if entry["name"] == "say"]
     assert [entry.get("error_code") for entry in says] == ["additive"]
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich habe Zöliakie, ist die 13 etwas für mich?",
+        "Wegen meiner Cöliakie: geht die 13?",
+    ],
+)
+def test_a_health_word_of_the_guest_makes_it_an_allergy_call(
+    session, known_tenant, said
+):
+    """#763: a coeliac named no allergy word, so the model's "unbedenklich"
+    went out unchecked (L17)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        said,
+        LLMTurn(say="Ja, die Nummer 13 ist für Sie unbedenklich."),
+    )
+
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Einen Tisch um 19 Uhr, das darf keiner wissen, es ist eine Überraschung.",
+        "Wir wollen die Stoßzeit meiden, geht 17 Uhr?",
+        "Keiner reagiert auf meine Mails, deshalb rufe ich an.",
+    ],
+)
+def test_everyday_words_near_health_words_arm_no_claim_check(
+    session, known_tenant, said
+):
+    """#763 review: only coeliac disease arms the check, not every phrase the
+    note reader refuses; "garantiert" is then no allergen claim."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session, state, said, LLMTurn(say="Das bleibt garantiert unter uns.")
+    )
+
+    assert not result.ended and not state.allergy_talk

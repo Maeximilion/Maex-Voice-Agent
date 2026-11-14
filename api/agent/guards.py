@@ -135,10 +135,14 @@ HINT_NOT_BOOKED = (
     "readback vor und warte auf ein klares Ja."
 )
 HINT_ALLERGY_NOTE = (
-    "Abgelehnt: ein `note` nennt eine Allergie. Die Allergie des Gastes notiert "
-    "der Kern selbst aus seinen Worten; schreib sie nie in ein `note`, auch "
-    "nicht verneint. Andere Wünsche („ohne Zwiebeln“, „Kinderstuhl“) bleiben im "
-    "`note`. Ruf denselben Schritt ohne die Allergie noch einmal auf."
+    "Abgelehnt: ein `note` nennt eine Allergie oder die Gesundheit des Gastes. "
+    "Sagte der Gast statt einer Allergie nur ein Wort wie „Zöliakie“ oder „darf "
+    "kein“, ruf noch nichts auf: frag ihn zuerst, was er meint und was nicht "
+    "ins Essen darf; ins `note` kommt dann nur das Weglassen („ohne Gluten“). "
+    "Eine Allergie notiert der Kern selbst aus seinen Worten; schreib sie nie "
+    "in ein `note`, auch nicht verneint. Andere Wünsche („ohne Zwiebeln“, "
+    "„Kinderstuhl“) bleiben im `note`. Ruf denselben Schritt dann ohne die "
+    "Allergie noch einmal auf."
 )
 # Words that tell a guest something is booked, with any ending ("Ihre
 # bestätigte Bestellung"; Codex PR #347).

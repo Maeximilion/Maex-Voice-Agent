@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.45.0
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.45.1
 > Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
@@ -297,6 +297,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 14.11.2026 | **#763, part: a health word without an allergy word is clarified by the model, not read by the core (Maxi, 14.11.2026).** A first attempt that had the core open an allergy for "Zöliakie" was dropped after `/code-review max` confirmed four L13 and rule 1 defects (findings on #763). Now the refusal of a note with a health word tells the model to ask the guest first what is meant and what must stay out of the food, and to note only the removal. "Zöliakie" and "Cöliakie" arm the allergen claim check (L17); before, "die 13 ist für Sie unbedenklich" reached a coeliac unchecked. Other health phrases ("darf kein Gluten") name their allergen and armed it already. "bedarf keiner" and "darf keiner wissen" no longer read as health. Red first. No prompt change: the core's prompt budget has 6 tokens left (2594 of 2600). Open on #763: a model that writes no note gets no hint. |
 | 14.11.2026 | **Review rule narrowed and the ultrareview ledger #546 closed (Maxi, 14.11.2026).** A diff with an `xhigh` trigger now gets a local `/code-review max` in `/done` before its PR opens, findings fixed in that PR; the 400-line trigger is gone. Only in auto mode (Maxi away) a skipped review goes into a new ledger, #764 "Review candidates from auto mode". Data behind it, from #546: 77 reviews, 42 finding issues, 19 P1 on hard-rule PRs that Codex had passed; the five lines-only candidates gave no P1 of their own. `scripts/ultrareview_ledger.py` reads open ledgers only and no longer reopens a closed one (red first: it wrote into the closed issue). `CLAUDE.md` "Deep review", `done.md` steps 1 and 7a, `start.md` 5d. The 12 open lines of #546 (#743 to #760) move to the new ledger. |
 | 13.11.2026 | **Batch 9 of the ultrareview ledger (#546), fix PR for #740 (stacked on #739): a second person's allergy behind the caller's own is read on its own.** Red first (8 agent cases red). "Ich bin allergisch gegen Nüsse, meine Frau gegen Sesam", "Erdnussallergie, mein Mann Sesam" and the same in the answer to "Wogegen?" no longer lose the other person's sesame: the caller's own is read in full (no "Wogegen?" needed), the adult's goes to the kitchen as "ohne Sesam" without a reason, a child's is asked about with the caller's consent. Read only at the end of the whole text, one person and one single-word ingredient (a time, a name or a clause that is no list is asked about as before). Still open: such a clause in the middle of a longer text. |
 | 13.11.2026 | **Batch 9 of the ultrareview ledger (#546), fix PR for #739: the allergen claim guard reads more absence forms, a noted plural matches its singular on a card.** Red first (guard and plural cases red). "Die 13 hat keine Nüsse", "Es gibt kein Gluten", "Nüsse sind da nicht drin" are claims and go to the team; noted "Erdnüsse" keeps "Erdnuss" off a callback card, each part of a noted list on its own. Moved out: health words that name no allergy ("Zöliakie", "darf kein", "meiden") and whose allergy it is, after four Codex ownership findings, to #763 (the L13 owner reading stays as on `main`). Still open: "ist ... kein" and other absence forms the call log does not show yet. |
@@ -351,6 +352,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.45.1 · 14.11.2026:** #763: a health word without an allergy word is clarified by the model (refusal hint), arms the allergen claim check; bedarf no longer reads as darf
 - **v2.45.0 · 14.11.2026:** T-10.2: the main number is the team telephone of the wire run (Maxi), sheet and handover changed
 - **v2.44.42 · 14.11.2026:** #546 closed: a diff with an xhigh trigger gets /code-review max in /done before its PR opens, the 400-line trigger is gone; only auto mode fills a new review ledger, which no longer reopens a closed one
 - **v2.44.41 · 14.11.2026:** #678: measurement of the ear's floor (MIN_SPEECH_SECONDS) behind VOICE_EAR_MEASURE and scripts/ear_floor.py; the floor stays 0.25 s until Maxi's test calls are measured (decision 13.11.2026)
