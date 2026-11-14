@@ -221,7 +221,7 @@ def test_a_span_over_midnight_needs_the_box(client, engine):
     assert held.status_code == 200 and "Gilt sofort" in held.text
 
 
-@pytest.mark.parametrize("typed", ["10:00:30", "10:00+02:00"])
+@pytest.mark.parametrize("typed", ["10:00:30", "10:00+02:00", "1000Z", "10:0Z"])
 def test_times_with_seconds_or_an_offset_are_refused(client, engine, typed):
     form = {
         "datum": _today().isoformat(),

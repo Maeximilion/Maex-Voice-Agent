@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core import time as clock
 from api.core.errors import Conflict, InvalidInput, NotFound
-from api.domain.customers.phone import normalize_phone
+from api.domain.customers.phone import E164, normalize_phone
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.hours import (
     HoursData,
@@ -146,6 +146,15 @@ def dialable_numbers() -> list[str]:
     return list(dict.fromkeys(n.strip() for n in listed if n.strip()))
 
 
+def sheet_numbers() -> list[str]:
+    """The dialable numbers the sheet offers: those written in E.164. The
+    dialplan compares exactly as written and a typed number is normalised, so
+    a listed national number (`0721...`) could be offered and never accepted
+    (#596). The dialplan itself still dials it, so `dialable_numbers` keeps it
+    for the tenant's own number (`provision`)."""
+    return [n for n in dialable_numbers() if E164.match(n)]
+
+
 def team_phone_at(config: ServiceConfig, now: datetime) -> str:
     """The number a call goes to at `now`: today's while it holds, else the
     standard. The one reader of the team number."""
@@ -168,7 +177,7 @@ def change_team_phone(
         number = normalize_phone(raw)
     except InvalidInput:
         raise InvalidInput("team number refused", say=NO_NUMBER) from None
-    if number not in dialable_numbers():
+    if number not in sheet_numbers():
         raise InvalidInput("team number not dialable", say=NOT_LISTED)
     now = now or clock.utcnow()
     config, zone = _locked(session, tenant_id)
@@ -230,7 +239,8 @@ def change_day_hours(
 ) -> StaffChange | None:
     """The staff change a date's hours. Held at once for today, when shorter,
     or when back to what held before the staff came; otherwise the card waits
-    for the owner. Asking for what holds now withdraws a waiting request. None
+    for the owner, today's too when times on a date "like" another weekday
+    would drop that weekday and its seats (#710). Asking for what holds now withdraws a waiting request. None
     when nothing changes. An end before the start runs past midnight and is
     refused unless the staff say so (`overnight`): swapped times would open
     the night. Raises InvalidInput. Commits."""
@@ -263,7 +273,7 @@ def change_day_hours(
     origin = DayHours.of(card.before)
     held = (
         hours in (holding, origin)
-        or day == today
+        or (day == today and not _drops_weekday(hours, holding))
         or _within(session, tenant_id, day, hours, holding, zone)
     )
     if hours == shown and held == card.held:
@@ -493,6 +503,17 @@ def _write(
     session.flush()
 
 
+def _drops_weekday(after: DayHours, before: DayHours) -> bool:
+    """Times on a date "like" another weekday cannot keep that weekday (one
+    meaning per row, `ck_special_days_like_weekday_alone`): its seats, call
+    mode and call limit go to the plain weekday's. Closing drops nothing."""
+    return (
+        before.like_weekday is not None
+        and not after.closed
+        and after.like_weekday != before.like_weekday
+    )
+
+
 def _within(
     session: Session,
     tenant_id: uuid.UUID,
@@ -505,8 +526,7 @@ def _within(
     shorter hours. Then the change holds at once (D34 point 4). Times on a
     date "like" another weekday drop that weekday and with it its seats
     (`reservations/capacity.py`), so they wait for the owner (#596)."""
-    weekday_dropped = after.like_weekday != before.like_weekday
-    if before.like_weekday is not None and not after.closed and weekday_dropped:
+    if _drops_weekday(after, before):
         return False
     regular = regular_hours(session, tenant_id)
     tz = ZoneInfo(zone)
