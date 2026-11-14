@@ -577,7 +577,7 @@ Legt die Aufgabe an, GUI meldet sie mit Ton. `reason`: `complaint` · `not_under
 
 **Fehler:** unbekannter Anruf oder fremder Mandant → `not_found` mit Störungssatz · unbrauchbare Rufnummer → `invalid_input` mit Nachfrage-Satz · leeres `summary` → `invalid_input` · unbekannter `reason` → `invalid_input`.
 
-**Second writer, not a tool:** after a team leg nobody answered, the line's process writes the card through the same function, the same lock and the same rule of one open card per call (`callbacks.team_missed`, T-10.8). The number is the one the guest named in the call or the caller id; the reason is the transfer's (a cancellation becomes `human_requested`, a transfer without a reason, paused or the outage path, `out_of_scope`); the audit actor is `telephony`; the call's outcome becomes `callback` (an `error` stays). The text is "Ans Team weitergeleitet, dort hat niemand abgenommen." and the reason's sentence, or, where the core wrote a card of its own for the handover (an allergen question beyond the database, T-11.1, L17), that card, which the line's process keeps with the named number. Without a usable number no card is written.
+**Second writer, not a tool:** after a team leg nobody answered, the line's process writes the card through the same function, the same lock and the same rule of one open card per call (`callbacks.team_missed`, T-10.8). The number is the one the guest named in the call or the caller id; the reason is the transfer's (a cancellation becomes `human_requested`, the core's `outage` `not_understood`, a transfer without a reason, paused or the outage path, `out_of_scope`); the audit actor is `telephony`; the call's outcome becomes `callback` (an `error` stays). The text is "Ans Team weitergeleitet, dort hat niemand abgenommen." and the reason's sentence, or, where the core wrote a card of its own for the handover (an allergen question beyond the database, T-11.1, L17), that card, which the line's process keeps with the named number. Without a usable number no card is written.
 
 Die Rufnummer wird nach E.164 normalisiert. Eine geklammerte `(0)` hinter der Landesvorwahl entfällt dabei (`+49 (0)7221 5551234` → `+4972215551234`).
 
@@ -586,6 +586,8 @@ Die Rufnummer wird nach E.164 normalisiert. Eine geklammerte `(0)` hinter der La
 ## `transfer_to_team`
 
 **Request** `{ "call_id": "…", "tenant_id": "…", "reason": "complaint" }`
+
+`reason`: `complaint` · `not_understood` · `human_requested` · `out_of_scope` · `cancellation` · `outage`. `outage` is the conversation core's own, never the model's (a model that names it hands over as `not_understood`): a fault of ours ended the turn: the model down, too slow or going in circles, or the call past its limit (#769). It stands in `calls.transfer_reason`, so the figures and alarms tell an outage from a guest who was not understood; a card written for it keeps the reason `not_understood`, and its text says "Technische Störung".
 
 **Response** `{ "ok": true, "data": { "transfer_to": "+49…", "available": true }, "say": null }`
 

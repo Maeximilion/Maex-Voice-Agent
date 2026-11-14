@@ -146,11 +146,14 @@ _COMPLAINT_TOOLS = ("transfer_to_team", "create_callback")
 _RULE_FIRST = ToolResult(ok=False, error_code="conflict")
 
 _CALLBACK_REASONS = frozenset(get_args(CallbackReason))
-_TRANSFER_REASONS = frozenset(get_args(TransferReason))
+# What a model may hand over with: an outage is the core's to say (#769).
+_TRANSFER_REASONS = frozenset(get_args(TransferReason)) - {"outage"}
 # Fallback-Grund für Rückrufe, wenn der eigentliche Grund (z. B. "cancellation")
 # in CallbackReason gar nicht existiert (docs/03: Storno ist nur ein
 # Transfer-Grund, kein Rückruf-Grund — siehe api/schemas/transfer.py).
 _CALLBACK_REASON_FALLBACK: CallbackReason = "human_requested"
+# An outage's card keeps the reason it had before #769; its text names the fault.
+_CALLBACK_REASON_FOR: dict[str, CallbackReason] = {"outage": "not_understood"}
 
 _HANDOFF_SUMMARIES = {
     "complaint": "Kunde hat sich beschwert.",
@@ -1147,6 +1150,7 @@ class ConversationLoop:
         return self._handoff(
             state,
             say,
+            "outage",
             detail=user_text,
             summary=SUMMARY_OUTAGE,
             ask_number=not booked,
@@ -1481,7 +1485,9 @@ class ConversationLoop:
         phone = state.slots.get("phone")
         if phone:
             callback_reason = (
-                reason if reason in _CALLBACK_REASONS else _CALLBACK_REASON_FALLBACK
+                reason
+                if reason in _CALLBACK_REASONS
+                else _CALLBACK_REASON_FOR.get(reason, _CALLBACK_REASON_FALLBACK)
             )
             callback = self._dispatch(
                 state,

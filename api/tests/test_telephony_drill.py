@@ -9,6 +9,7 @@ touched.
 import socket
 import stat
 import threading
+from collections.abc import Callable
 from datetime import time
 
 import pytest
@@ -1072,3 +1073,50 @@ def test_the_number_of_the_blocked_caller_must_not_show_in_the_logs(tmp_path):
     stage = Stage(tmp_path, {})
     stage.logs["asterisk"].append(f"Dial({drill.NUMBER_PREFIX}128)")
     assert not stage.no_caller_in_the_logs()[1]
+
+
+def _life_stage(
+    tmp_path, lives: list[str]
+) -> tuple[Stage, list[tuple[str, Callable[[drill.Drill], list[drill.Check]]]]]:
+    """A stage whose `docker inspect` of Asterisk prints `lives` in turn, and
+    one scenario per change."""
+    stage = Stage(tmp_path, {})
+    stage.prints["ps -a -q asterisk"] = "c0ffee"
+    stage.prints["inspect"] = lives[0]
+
+    def scenario(index: int):
+        def run(_: drill.Drill) -> list[drill.Check]:
+            stage.prints["inspect"] = lives[index + 1]
+            return [(f"drill {index}", True, "")]
+
+        return run
+
+    return stage, [(f"drill {i}", scenario(i)) for i in range(len(lives) - 1)]
+
+
+def test_asterisk_alive_through_every_drill_passes(tmp_path):
+    up = "true 2026-11-14T11:00:00Z 0"
+    stage, scenarios = _life_stage(tmp_path, [up, up, up])
+    checks = drill.run_scenarios(stage, scenarios)
+    assert [name for name, _, _ in checks] == [
+        "drill 0",
+        "drill 1",
+        "Asterisk lived through every drill",
+    ]
+    assert checks[-1] == ("Asterisk lived through every drill", True, "")
+    assert stage.commands[1][:2] == ("inspect", "-f")
+
+
+@pytest.mark.parametrize(
+    "after",
+    [
+        "false 2026-11-14T11:00:00Z 0",  # died and stays down (drill Compose)
+        "true 2026-11-14T11:05:00Z 1",  # died and was started again
+    ],
+)
+def test_asterisk_dying_in_a_drill_fails_and_names_that_drill(tmp_path, after):
+    up = "true 2026-11-14T11:00:00Z 0"
+    stage, scenarios = _life_stage(tmp_path, [up, after, after])
+    _, ok, detail = drill.run_scenarios(stage, scenarios)[-1]
+    assert not ok
+    assert detail == "drill 0"  # only where it died, not every drill after
