@@ -18,6 +18,14 @@
     <p>Vorher: {{ c.before }}</p>
     <p>{% if c.waiting %}Beantragt{% else %}Jetzt{% endif %}: <b>{{ c.after }}</b></p>
     {% if c.waiting and c.now != c.before %}<p class="muted">Gilt bis dahin: {{ c.now }}</p>{% endif %}
+    {% if c.calls %}
+    <p><b>Diese Gäste bitte selbst anrufen:</b></p>
+    <ul>
+      {% for b in c.calls %}
+      <li>{{ b.at.strftime("%H:%M") }} Uhr, {{ b.guest_name }}, {{ b.party_size }} Personen, {% if b.costly %}{{ b.phone }} <span class="badge danger">Teure Sondernummer &ndash; vor dem Anruf pr&uuml;fen</span>{% else %}<a href="tel:{{ b.phone }}">{{ b.phone }}</a>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
     <div class="cb-actions">
       <button class="primary" hx-post="/gui/pruefen/{{ c.id }}/uebernehmen" hx-vals='{"gesehen": "{{ c.seen }}"}'
               hx-target="#pruefen-liste" hx-swap="innerHTML">{{ c.keep }}</button>

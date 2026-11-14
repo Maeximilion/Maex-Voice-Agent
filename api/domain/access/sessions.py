@@ -15,7 +15,6 @@ who keeps the account's wait running cannot keep the restaurant's own tablets
 out (OWASP device cookies; review of #585).
 """
 
-import hmac
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -27,7 +26,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, Unauthorized
-from api.domain.access.hashing import token_hash, verify_secret
+from api.domain.access.hashing import same_secret, token_hash, verify_secret
 from api.models import (
     AuditLog,
     GuiAccount,
@@ -39,6 +38,9 @@ from api.models import (
 
 SESSION_DAYS = 30
 IDLE = timedelta(minutes=15)
+# Owner rights end after this long without an owner page or owner write, however
+# busy the staff keep the tablet (#600, Maxi 13.11.2026).
+ADMIN_IDLE = timedelta(minutes=15)
 PIN_TRIES = 5
 # Every third wrong password in a row waits, one minute longer each time.
 WAIT_EVERY = 3
@@ -171,9 +173,9 @@ def _count_attempt(
         session.rollback()
         raise SignInRefused(minutes_left(max(waits) - now))
     for row in counters:
-        previous = row.last_failed_at if row.failures else None
-        row.failures, row.blocked_until = count_failure(row.failures, previous, now)
-        row.last_failed_at = now
+        row.failures, row.blocked_until, row.last_failed_at = count_failure(
+            row.failures, row.last_failed_at, now
+        )
     stored = account.password_hash if account else None
     session.commit()
     return stored, device is not None
@@ -262,8 +264,15 @@ def resolve(
             )
         session.commit()
     locked = now - row.last_active_at >= IDLE
-    # The idle lock closes owner rights too: after the team PIN, staff rights only.
-    admin = not locked and row.admin_until is not None and row.admin_until > now
+    # The idle lock and the owner's own idle clock close owner rights; after the team
+    # PIN, staff rights only.
+    admin = (
+        not locked
+        and row.admin_until is not None
+        and row.admin_until > now
+        and row.admin_active_at is not None
+        and now - row.admin_active_at < ADMIN_IDLE
+    )
     return Access(row.id, locked=locked, admin=admin, slid=slid)
 
 
@@ -306,9 +315,10 @@ def unlock(
         # Migration 031 leaves this until the operator sets one: no try counts.
         session.rollback()
         raise InvalidInput("no team pin yet", say=NO_TEAM_PIN)
-    if hmac.compare_digest(pin.encode(), stored.encode()):
+    if same_secret(pin, stored):
         # The team PIN opens staff rights: an owner's hour left open ends here.
-        row.pin_failures, row.last_active_at, row.admin_until = 0, now, None
+        row.pin_failures, row.last_active_at = 0, now
+        row.admin_until = row.admin_active_at = None
         session.commit()
         return None
     row.pin_failures += 1
@@ -361,15 +371,16 @@ def _end(session: Session, row: GuiSession, actor: str, reason: str) -> None:
 
 def count_failure(
     failures: int, last_failed_at: datetime | None, now: datetime
-) -> tuple[int, datetime | None]:
-    """The failure count after one more, and the wait it brings."""
+) -> tuple[int, datetime | None, datetime]:
+    """One more failure: the new count, the wait it brings and the time to keep
+    as the last failure. The one step every failure counter takes."""
     if last_failed_at is None or now - last_failed_at >= FAILURES_FORGOTTEN:
         failures = 0
     failures += 1
     if failures % WAIT_EVERY:
-        return failures, None
+        return failures, None, now
     minutes = min(failures // WAIT_EVERY, WAIT_MAX_MINUTES)
-    return failures, now + timedelta(minutes=minutes)
+    return failures, now + timedelta(minutes=minutes), now
 
 
 def minutes_left(left: timedelta) -> int:

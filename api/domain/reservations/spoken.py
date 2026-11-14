@@ -64,6 +64,9 @@ COUNTS = {
 }
 
 
+NIGHT_ENDS = 5  # local hour; 00:00 to 04:59 is the tail of the night before
+
+
 def spoken_date(dt: datetime, today: date | None = None) -> str:
     """„heute", „morgen" oder „am Dienstag, den 15. September". dt und today in Ortszeit."""
     day = dt.date()
@@ -73,6 +76,22 @@ def spoken_date(dt: datetime, today: date | None = None) -> str:
         if day == today + timedelta(days=1):
             return "morgen"
     return f"am {WEEKDAYS[day.weekday()]}, den {day.day}. {MONTHS[day.month - 1]}"
+
+
+def spoken_when(dt: datetime, today: date) -> str:
+    """Date and time of day: the hours after midnight belong to the night that began the evening before.
+
+    "morgen um halb eins nachts" is heard as tomorrow night, a day late; the night
+    is named by both days instead (#742). dt and today in local time.
+    """
+    if dt.hour >= NIGHT_ENDS:
+        return f"{spoken_date(dt, today)} um {spoken_time(dt)} {daytime_word(dt.hour)}"
+    day = dt.date()
+    start = WEEKDAYS[(day - timedelta(days=1)).weekday()]
+    named = f"in der Nacht von {start} auf {WEEKDAYS[day.weekday()]}"
+    if abs((day - today).days) > 6:  # a weekday alone is ambiguous beyond a week
+        named += f", den {day.day}. {MONTHS[day.month - 1]}"
+    return f"{named} um {spoken_time(dt)}"
 
 
 def spoken_party_size(n: int) -> str:

@@ -178,10 +178,13 @@ the second builds against.
 - **Admin PIN (#570 b, built):** 4 to 6 digits, never the team PIN (the staff know that one; a
   CHECK in the database too). The owner sets it on the setup page with password and team PIN; a
   setup link used without one keeps it. Right, it holds owner rights on that device for 60 minutes
-  (`gui_sessions.admin_until`) and unlocks a locked device as well. The idle lock ends them early:
-  after 15 minutes without a change the device is locked, and the team PIN that unlocks it opens
-  staff rights only, so an owner who walks away leaves nothing open; "Inhaber-Bereich schließen"
-  ends them at once. Wrong admin PINs count on the account with the waits of a wrong password (every
+  (`gui_sessions.admin_until`) and unlocks a locked device as well. They end earlier on
+  their own idle clock (`gui_sessions.admin_active_at`, migration 038, #600, Maxi 13.11.2026): 15
+  minutes without an owner page or an owner write, however busy the staff keep the tablet; staff
+  pages and writes never extend it. The idle lock ends them too: after 15 minutes without a change
+  the device is locked, and the team PIN that unlocks it opens staff rights only. So an owner who
+  walks away leaves nothing open, also on a busy shared tablet; "Inhaber-Bereich schließen" ends
+  them at once. Wrong admin PINs count on the account with the waits of a wrong password (every
   third in a row, 1 to 5 minutes, no check while one runs), not with the team PIN's five tries:
   the staff could sign in again at will, so ending the session would cost a guesser nothing. Nor
   do they end it on a lost tablet (Maxi 09.11.2026, review of #587): the board stays usable for the

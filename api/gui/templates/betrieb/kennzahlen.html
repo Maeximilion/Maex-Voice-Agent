@@ -2,18 +2,11 @@
    on top, the history per business day below. A dash means the day had nothing
    to divide by. A cost marked * leaves out calls whose cost is unknown. #}
 {% extends "base.html" %}
+{% from "betrieb/_kopf.html" import kopf with context %}
 {% block title %}Kennzahlen{% endblock %}
 {% block body_class %}betrieb{% endblock %}
 
-{% block header %}
-<header>
-  <div class="top">
-    <a class="button" href="/gui">Zurück</a>
-    <h1 class="kz-title">Kennzahlen</h1>
-    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
-  </div>
-</header>
-{% endblock %}
+{% block header %}{{ kopf("Kennzahlen", tenant) }}{% endblock %}
 
 {% block main %}
 {% if tenant %}

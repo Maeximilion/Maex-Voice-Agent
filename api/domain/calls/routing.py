@@ -89,6 +89,18 @@ def call_routing(
     )
 
 
+def current_team_phone(
+    session: Session, tenant_id: uuid.UUID, now: datetime | None = None
+) -> str:
+    """The team number that holds at `now`, read fresh: a call that has run for
+    a while finds a change the staff made since (#710). Raises when the
+    database cannot be read; the caller keeps the number it has."""
+    config = session.get(ServiceConfig, tenant_id, populate_existing=True)
+    if config is None:
+        raise NotFound("Tenant without service_config")
+    return team_phone_at(config, now or utcnow())
+
+
 def _call_limit(
     session: Session, tenant: Tenant, config: ServiceConfig, now: datetime
 ) -> int:
