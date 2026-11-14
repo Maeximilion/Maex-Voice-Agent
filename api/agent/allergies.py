@@ -122,8 +122,11 @@ def _others(parts: list[str]) -> list[bool]:
                 other = here = True
                 # "Ohne Zwiebeln für meine Frau, ich habe eine Erdnussallergie":
                 # both in one sentence, its own reading tells whose allergy.
+                # The caller speaks last there, so the next sentence carries on
+                # as the caller's too ("..., ich habe eine Erdnussallergie. Und
+                # eine Sesamallergie."; Codex PR #748, P1).
                 if mentions_allergy(part) and _I.search(part):
-                    here = False
+                    other = here = False
             elif _SPEAKER.search(part):
                 other = here = False
         owners.append(here)

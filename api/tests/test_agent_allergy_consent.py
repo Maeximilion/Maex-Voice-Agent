@@ -172,6 +172,11 @@ def test_anything_else_is_unclear(said):
             "ohne Zwiebeln für meine Frau und ich habe eine Erdnussallergie",
             [("Erdnuss", True)],
         ),
+        # Codex PR #748, P1: the caller spoke last, the continuation is theirs.
+        (
+            "Ohne Zwiebeln für meine Frau, ich habe eine Erdnussallergie. Und eine Sesamallergie.",
+            [("Erdnuss", True), ("Sesam", True)],
+        ),
         # Codex PR #368: what is said beside the allergy is no part of it.
         ("Erdnussallergie. Bitte Besteck dazu", [("Erdnuss", True)]),
         # An allergen list stays one allergy.
