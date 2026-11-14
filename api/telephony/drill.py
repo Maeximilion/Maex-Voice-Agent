@@ -78,6 +78,9 @@ one call per drill:
                   a call and in the middle of one: nothing answers and nothing
                   refuses, unlike a stopped container, and the team rings
   back            the networks are back: the next call is the AI's, no restart
+  Asterisk alive  after every drill the AI telephone's container runs, since
+                  the same start: a crash on any of them fails this point and
+                  names the drill (#768)
 
 A team ring is timed on this machine's monotonic clock from the call being
 placed, or from the kill, against the limit of docs/20 §5 (proposal: 30 s).
@@ -191,11 +194,11 @@ def main(argv: list[str] | None = None) -> int:
         if not args.dry_run:
             drill.registered()
             drill.mode("primary")
-        for title, scenario in SCENARIOS:
-            step("Drill:", title)
-            if not args.dry_run:
-                checks += scenario(drill)
-        if not args.dry_run:
+        if args.dry_run:
+            for title, _ in SCENARIOS:
+                step("Drill:", title)
+        else:
+            run_scenarios(drill, SCENARIOS, checks)
             checks.append(drill.no_secret_in_the_logs())
             checks.append(drill.no_caller_in_the_logs())
     except DrillError as exc:
@@ -330,6 +333,15 @@ class Drill:
 
     def restart(self, service: str) -> None:
         self.compose("up", "-d", "--wait", service)
+
+    def asterisk_life(self) -> str:
+        """Whether the AI telephone runs, since when and how often it was
+        started again: any of them moves when Asterisk dies (#768)."""
+        container = self.compose("ps", "-a", "-q", "asterisk").strip()
+        return self.docker(
+            "inspect", "-f",
+            "{{.State.Running}} {{.State.StartedAt}} {{.RestartCount}}", container,
+        ).strip()  # fmt: skip
 
     def quiet(self) -> None:
         """Wait until no call is left on the router, so the next drill starts
@@ -1494,6 +1506,38 @@ SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
     ("voice is cut off from the database (118)", drill_cut_from_database),
     ("the networks are back (119)", drill_back_after_the_cuts),
 ]
+
+
+def run_scenarios(
+    drill: Drill,
+    scenarios: list[tuple[str, Callable[[Drill], list[Check]]]],
+    checks: list[Check],
+) -> None:
+    """Every scenario into `checks`, and whether Asterisk lived through each: a
+    crash after the handover (#768, exit code 139 when a team leg ended) leaves
+    the call's own checks green, and the drill Compose starts no container
+    again, so a later call would fail under a scenario that did nothing wrong.
+    A drill that raises keeps what ran before it and the Asterisk point (Codex
+    PR #774): the crash is most likely why it raised."""
+    died: list[str] = []
+    life = drill.asterisk_life()
+    title = ""
+    try:
+        for title, scenario in scenarios:
+            step("Drill:", title)
+            checks += scenario(drill)
+            now = drill.asterisk_life()
+            if now != life:
+                died.append(title)
+                life = now
+    finally:
+        if title and title not in died:
+            try:
+                if drill.asterisk_life() != life:
+                    died.append(title)
+            except DrillError:
+                died.append(f"{title} (container not readable)")
+        checks.append(("Asterisk lived through every drill", not died, "; ".join(died)))
 
 
 def render(run_dir: Path, secret: dict[str, str]) -> None:

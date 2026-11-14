@@ -153,10 +153,29 @@ because Pydantic reads it and would replace the documented schema with a free
 `dict` (review PR #139). `provision.missing` keeps `Any` for a mapped class that
 carries `tenant_id`, which `GuiAccount` does without the `TenantScoped` mixin.
 
-Next steps, one reviewable change each: `api.jobs`, `api.dashboard` and
-`api.telephony` (each under ten strict errors besides the `api.config`
-re-exports), then `api.gui`, `evals` and `scripts`. Count the rest again with
-`mypy --strict` before each step.
+**Fourth step (14.11.2026): the jobs, the operator dashboard and the voice
+layer are strict.** `api.jobs`, `api.dashboard` and `api.telephony` joined the
+strict list; 37 errors in 18 files. Most were annotations: `array[int]`,
+`dict[str, Any]`, `Mapped[Any]`, `CursorResult[*tuple[Any, ...]]` for the
+`rowcount` of an UPDATE or DELETE, and a typed name for a value that comes as
+`Any` (a JSON body, the `run` that argparse's `set_defaults` stores). Three were
+more: `wave.open` gets its default mode `"rb"` spelled out, which selects the
+typed reader; `telephony/router.py` takes the `Starlette` app, whose `state`
+is typed, so its `type: ignore` went; and `speech_spike.main` binds
+`menu_text` to `None` before the branch that reads a recorded run, where it was
+unbound but never read. `no_implicit_reexport` moved 16 references in six tests to the
+home module of the name (`os`, `httpx`, `SpikeError`, `token_hash`,
+`start_call`); `monkeypatch.setattr(os, "getuid", ...)` patches the same module
+object as `spike.os` did. The speech spike's tests give the kit its own copy of
+`os`, so its root test patches the name by its string path instead. Behaviour
+stays the same.
+
+Next steps, one reviewable change each (strict errors outside `api/tests` on
+14.11.2026): `api.kitchen`, `api.ops` and `api.services` (already clean) with
+the top modules `api.config`, `api.db` and `api.main` (the `api.config`
+re-exports), then `api.gui` (50), `printbridge` (3), `sim` (1), `db` (8),
+`evals` (28) and `scripts` (97). Count the rest again with `mypy --strict`
+before each step.
 
 ## Browser code in TypeScript
 

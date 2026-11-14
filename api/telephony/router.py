@@ -31,11 +31,11 @@ media channel as an inherited variable, which `MEDIA_START` reports
 import asyncio
 import contextlib
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fastapi import APIRouter, HTTPException, Request, WebSocket
 from fastapi.responses import PlainTextResponse
-from starlette.types import ASGIApp
+from starlette.applications import Starlette
 
 from api.core.logging import get_logger
 from api.telephony.adapters.asterisk import (
@@ -223,5 +223,5 @@ async def _write(
         await websocket.close()
 
 
-def _voice(app: ASGIApp) -> "Voice":
-    return app.state.voice  # type: ignore[attr-defined]
+def _voice(app: Starlette) -> "Voice":
+    return cast("Voice", app.state.voice)

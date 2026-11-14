@@ -112,7 +112,8 @@ def asterisk_seen() -> float | None:
         f"{settings.voice_url}/asterisk/seen", timeout=settings.n8n_timeout_seconds
     )
     response.raise_for_status()
-    return response.json()["seconds"]
+    seconds: float | None = response.json()["seconds"]
+    return seconds
 
 
 def check(

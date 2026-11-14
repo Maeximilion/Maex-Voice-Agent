@@ -93,7 +93,7 @@ def _sounding(pcm: bytes, freq_hz: int, rate: int) -> list[int]:
     ]
 
 
-def _samples(pcm: bytes) -> array:
+def _samples(pcm: bytes) -> array[int]:
     samples = array("h")
     samples.frombytes(pcm[: len(pcm) - len(pcm) % 2])
     if sys.byteorder == "big":
@@ -101,13 +101,13 @@ def _samples(pcm: bytes) -> array:
     return samples
 
 
-def _to_bytes(samples: array) -> bytes:
+def _to_bytes(samples: array[int]) -> bytes:
     if sys.byteorder == "big":
         samples.byteswap()
     return samples.tobytes()
 
 
-def _level(samples: array, freq_hz: int, rate: int) -> float:
+def _level(samples: array[int], freq_hz: int, rate: int) -> float:
     """Goertzel: the strength of one frequency without a full transform."""
     if not samples:
         return 0.0

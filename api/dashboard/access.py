@@ -21,7 +21,7 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import NamedTuple, cast
+from typing import Any, NamedTuple, cast
 
 from sqlalchemy import CursorResult, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
@@ -238,7 +238,11 @@ def reset_account(db: Session, name: str, password: str) -> Factors:
 
 
 def audit(
-    db: Session, actor: str, action: str, detail: dict, target: str | None = None
+    db: Session,
+    actor: str,
+    action: str,
+    detail: dict[str, Any],
+    target: str | None = None,
 ) -> None:
     """One row of the operator's own audit; the caller commits."""
     db.add(OperatorAudit(actor=actor, action=action, target=target, detail=detail))
@@ -376,7 +380,7 @@ def _second_factor(
     if not RECOVERY.fullmatch(recovery):
         return None
     used = cast(
-        CursorResult,
+        CursorResult[*tuple[Any, ...]],
         db.execute(
             delete(OperatorRecoveryCode).where(
                 OperatorRecoveryCode.account_id == account.id,

@@ -504,7 +504,7 @@ def test_the_probe_reads_what_voice_answers(monkeypatch):
         asked.append(url)
         return Response()
 
-    monkeypatch.setattr(monitor.httpx, "get", fake_get)
+    monkeypatch.setattr(httpx, "get", fake_get)
 
     assert monitor.asterisk_seen() == 12.5
     assert asked == ["http://voice:8001/asterisk/seen"]
@@ -713,7 +713,7 @@ def test_a_push_that_fails_is_sent_on_the_next_pass(session, tenant_id):
 def test_without_a_token_nothing_is_posted(monkeypatch):
     monkeypatch.setattr(settings, "monitor_push_token", "")
     posted = []
-    monkeypatch.setattr(monitor.httpx, "post", lambda *a, **k: posted.append(a))
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: posted.append(a))
 
     monitor.push("Titel", "Text", "normal")
 
@@ -733,7 +733,7 @@ def test_the_push_carries_the_token_and_priority(monkeypatch):
         posted.append((url, kwargs))
         return Response()
 
-    monkeypatch.setattr(monitor.httpx, "post", fake_post)
+    monkeypatch.setattr(httpx, "post", fake_post)
 
     monitor.push("Titel", "Text", "high")
 

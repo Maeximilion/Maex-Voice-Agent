@@ -6,9 +6,11 @@ rendering of the router's configuration, and the refusals before anything is
 touched.
 """
 
+import os
 import socket
 import stat
 import threading
+from collections.abc import Callable
 from datetime import time
 
 import pytest
@@ -884,13 +886,13 @@ def test_the_router_gets_the_password_of_the_run_and_nothing_else_is_shared(
 
 
 def test_root_is_refused_before_anything_is_touched(monkeypatch, capsys):
-    monkeypatch.setattr(drill.os, "getuid", lambda: 0)
+    monkeypatch.setattr(os, "getuid", lambda: 0)
     assert drill.main(["--dry-run"]) == 2
     assert "unprivileged" in capsys.readouterr().err
 
 
 def test_a_folder_with_somebodys_files_is_refused(tmp_path, monkeypatch):
-    monkeypatch.setattr(drill.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(os, "getuid", lambda: 1000)
     (tmp_path / "notes.txt").write_text("mine")
     assert drill.main(["--dry-run", "--run-dir", str(tmp_path)]) == 2
     assert (tmp_path / "notes.txt").read_text() == "mine"
@@ -1213,3 +1215,89 @@ def test_the_number_of_the_blocked_caller_must_not_show_in_the_logs(tmp_path):
     stage = Stage(tmp_path, {})
     stage.logs["asterisk"].append(f"Dial({drill.NUMBER_PREFIX}128)")
     assert not stage.no_caller_in_the_logs()[1]
+
+
+def _life_stage(
+    tmp_path, lives: list[str]
+) -> tuple[Stage, list[tuple[str, Callable[[drill.Drill], list[drill.Check]]]]]:
+    """A stage whose `docker inspect` of Asterisk prints `lives` in turn, and
+    one scenario per change."""
+    stage = Stage(tmp_path, {})
+    stage.prints["ps -a -q asterisk"] = "c0ffee"
+    stage.prints["inspect"] = lives[0]
+
+    def scenario(index: int):
+        def run(_: drill.Drill) -> list[drill.Check]:
+            stage.prints["inspect"] = lives[index + 1]
+            return [(f"drill {index}", True, "")]
+
+        return run
+
+    return stage, [(f"drill {i}", scenario(i)) for i in range(len(lives) - 1)]
+
+
+def test_asterisk_alive_through_every_drill_passes(tmp_path):
+    up = "true 2026-11-14T11:00:00Z 0"
+    stage, scenarios = _life_stage(tmp_path, [up, up, up])
+    checks: list[drill.Check] = []
+    drill.run_scenarios(stage, scenarios, checks)
+    assert [name for name, _, _ in checks] == [
+        "drill 0",
+        "drill 1",
+        "Asterisk lived through every drill",
+    ]
+    assert checks[-1] == ("Asterisk lived through every drill", True, "")
+    assert stage.commands[1][:2] == ("inspect", "-f")
+
+
+@pytest.mark.parametrize(
+    "after",
+    [
+        "false 2026-11-14T11:00:00Z 0",  # died and stays down (drill Compose)
+        "true 2026-11-14T11:05:00Z 1",  # died and was started again
+    ],
+)
+def test_asterisk_dying_in_a_drill_fails_and_names_that_drill(tmp_path, after):
+    up = "true 2026-11-14T11:00:00Z 0"
+    stage, scenarios = _life_stage(tmp_path, [up, after, after])
+    checks: list[drill.Check] = []
+    drill.run_scenarios(stage, scenarios, checks)
+    _, ok, detail = checks[-1]
+    assert not ok
+    assert detail == "drill 0"  # only where it died, not every drill after
+
+
+def test_a_drill_that_raises_keeps_the_checks_before_it_and_the_asterisk_point(
+    tmp_path,
+):
+    """Asterisk dies in the first drill, the second raises because of it: the
+    first drill's checks and the Asterisk point naming it survive (Codex PR
+    #774), and the error still reaches `main`."""
+    up = "true 2026-11-14T11:00:00Z 0"
+    down = "false 2026-11-14T11:00:00Z 0"
+    stage, scenarios = _life_stage(tmp_path, [up, down])
+
+    def raises(_: drill.Drill) -> list[drill.Check]:
+        raise drill.DrillError("a call of the last drill does not end")
+
+    checks: list[drill.Check] = []
+    with pytest.raises(drill.DrillError):
+        drill.run_scenarios(stage, [*scenarios, ("drill 1", raises)], checks)
+    assert checks == [
+        ("drill 0", True, ""),
+        ("Asterisk lived through every drill", False, "drill 0"),
+    ]
+
+
+def test_a_drill_that_raises_after_asterisk_died_in_it_names_that_drill(tmp_path):
+    up = "true 2026-11-14T11:00:00Z 0"
+    stage, _ = _life_stage(tmp_path, [up])
+
+    def dies_and_raises(_: drill.Drill) -> list[drill.Check]:
+        stage.prints["inspect"] = "false 2026-11-14T11:00:00Z 0"
+        raise drill.DrillError("the team never rang")
+
+    checks: list[drill.Check] = []
+    with pytest.raises(drill.DrillError):
+        drill.run_scenarios(stage, [("drill 0", dies_and_raises)], checks)
+    assert checks == [("Asterisk lived through every drill", False, "drill 0")]

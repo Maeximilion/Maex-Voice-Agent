@@ -278,6 +278,19 @@ def test_a_transfer_with_a_reason_the_model_made_up_is_still_carried_out(
     assert result.ended is True and state.stage == "transferred"
 
 
+def test_a_model_cannot_claim_an_outage_as_its_reason(session, state):
+    """An outage is the core's to log: a model that names it hands over as
+    not understood, so the figures count only real faults (#769)."""
+    call = ToolCall(name="transfer_to_team", args={"reason": "outage"})
+    llm = FakeLLM([LLMTurn(tool_call=call)])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+
+    assert result.ended is True and state.stage == "transferred"
+    assert session.get(Call, state.call_id).transfer_reason == "not_understood"
+
+
 def test_max_call_seconds_uebergibt_wirklich_statt_nur_anzukuendigen(session, state):
     """Vorher endete der Anruf nach dem Zeitlimit mit einer Übergabe-Ankündigung,
     ohne dass `transfer_to_team`/`create_callback` je aufgerufen wurde -- die
@@ -624,6 +637,8 @@ def test_model_failure_hands_the_call_to_the_team(session, state):
     assert result.ended is True
     assert state.stage == "transferred"
     assert state.transferred is True
+    # The log tells the outage from a guest it did not understand (#769).
+    assert session.get(Call, state.call_id).transfer_reason == "outage"
 
 
 def test_model_failure_without_a_reachable_team_creates_a_callback(session, state):
@@ -638,6 +653,9 @@ def test_model_failure_without_a_reachable_team_creates_a_callback(session, stat
     assert state.stage == "callback"
     callback = session.scalars(select(Callback)).one()
     assert "Einen Tisch für vier bitte" in callback.summary
+    # The card keeps its reason of before #769; its text names the fault.
+    assert callback.reason == "not_understood"
+    assert callback.summary.startswith("Technische Störung")
 
 
 def test_model_failure_without_team_or_number_asks_for_a_number(session, state):

@@ -27,6 +27,7 @@ Exit code: 0 done, 1 nothing matched or refused, 2 no tenant.
 import argparse
 import os
 import sys
+from collections.abc import Callable
 
 from sqlalchemy.orm import Session
 
@@ -135,7 +136,8 @@ def main(argv: list[str] | None = None) -> int:
         if tenant is None:
             print("No tenant in this database.", file=sys.stderr)
             return 2
-        return args.run(session, tenant, args)
+        run: Callable[[Session, Tenant, argparse.Namespace], int] = args.run
+        return run(session, tenant, args)
     finally:
         session.close()
 
