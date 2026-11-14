@@ -1783,3 +1783,30 @@ def test_a_denial_next_to_a_second_persons_allergy_keeps_the_question(session, s
         (None, True),
         ("Sesam", False),
     ]
+
+
+@pytest.mark.parametrize(
+    ("said", "noted"),
+    [
+        ("Ich habe eine Erdnussallergie und meine Frau Milchreis", [(None, False)]),
+        ("Ich bin allergisch gegen Nüsse, meine Frau Erdnussbutter", [(None, True)]),
+    ],
+)
+def test_a_dish_name_behind_the_caller_is_no_second_allergy(
+    session, state, said, noted
+):
+    """Codex PR #751, P1: a dish that holds an allergen word is no allergy."""
+    assert read(session, state, said) == noted
+
+
+@pytest.mark.parametrize(
+    "answer", ["Keine, meine Frau gegen Sesam?", "Nüsse, meine Frau gegen Sesam?"]
+)
+def test_a_question_back_with_a_second_person_keeps_the_question(
+    session, state, answer
+):
+    """Codex PR #751, P1: a question back is no answer to "Wogegen?"."""
+    read(session, state, "Ich habe eine Allergie.")
+    guards.note_said(state, SAY_ALLERGY_WHICH)
+
+    assert read(session, state, answer) == [(None, True)]

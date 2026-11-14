@@ -37,7 +37,7 @@ from api.domain.menu.numberwords import (
     parse_cardinal,
     sole_item_number,
 )
-from api.domain.menu.pos_convert import names_an_allergen
+from api.domain.menu.pos_convert import ALLERGEN_KINDS, ALLERGEN_NAMES
 from api.schemas.menu import OptionGroup, Wish
 from api.schemas.orders import NOTE_MAX
 
@@ -1898,6 +1898,17 @@ _THEIRS_BARE = re.compile(
 )
 
 
+# Names (with a plural ending) a bare "mein Mann <word>" may read as an allergy;
+# a dish that holds one ("Milchreis", "Erdnussbutter") is no allergy (#740).
+_PLAIN_ALLERGENS = frozenset(
+    name + ending
+    for table in (ALLERGEN_NAMES, ALLERGEN_KINDS)
+    for names in table.values()
+    for name in names
+    for ending in ("", "e", "en", "n", "s")
+)
+
+
 def theirs_behind(text: str, *, answering: bool = False) -> tuple[str, Wish] | None:
     """ "Ich bin allergisch gegen Nüsse, meine Frau gegen Sesam": the caller's
     own words, and behind the last comma or "und" one person's allergy to the
@@ -1910,6 +1921,8 @@ def theirs_behind(text: str, *, answering: bool = False) -> tuple[str, Wish] | N
     asked about.
     shortcut: only the end of the whole text, not the end of a sentence in its
     middle; the guest is asked, upgrade if the call log shows it."""
+    if text.rstrip().endswith("?"):  # a question back answers no "Wogegen?"
+        return None
     for join in _NEXT_PERSON.finditer(text):
         head, clause = text[: join.start()], text[join.end() :]
         if not _clean(head) or (
@@ -1924,9 +1937,9 @@ def theirs_behind(text: str, *, answering: bool = False) -> tuple[str, Wish] | N
         if (shape := _THEIRS.fullmatch(folded)) is not None:
             said = _clean(clause)
             ingredient = _ingredient(said) or _ingredient(f"{said} allergisch")
-        elif (
-            shape := _THEIRS_BARE.fullmatch(folded)
-        ) is not None and names_an_allergen(shape.group("what")):
+        elif (shape := _THEIRS_BARE.fullmatch(folded)) is not None and shape.group(
+            "what"
+        ) in _PLAIN_ALLERGENS:
             ingredient = _ingredient(f"gegen {_clean(clause).split()[-1]} allergisch")
         else:
             continue
