@@ -333,6 +333,8 @@ for every Dependabot pull request, and new languages added by hand.
 host terminates TLS for every customer's host name and forwards to that customer's stack; each
 stack keeps its own `db`, `api`, `dispatcher`, `voice`, `asterisk`, `n8n` and `push`, its own
 `.env` with its own tokens, and its own Compose project name. The schema keeps `tenant_id` on
+
+**Go-live per customer:** the repeatable checklist (technical part, staged switch-on, rollback, sign-off) is `docs/vorlagen/go_live_checklist.md` (#575).
 every table, so a later move to one shared stack stays possible.
 
 ### Why: the code serves one tenant per stack (checked 09.11.2026)
