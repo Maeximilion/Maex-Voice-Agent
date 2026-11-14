@@ -294,7 +294,9 @@ services:
     # Asterisk 22.11.0 with chan_websocket. Pinned by digest, a third-party
     # build. Not older: before 22.11.0 a `voice` that takes the connection and
     # answers nothing held the call for ever, and the team never rang (Asterisk
-    # issue #1979, the drill "voice frozen").
+    # issue #1979, shown by the drill "voice frozen" before #768). 22.11.0 can
+    # crash after a failed media connection (#768, Asterisk issue #2121): the
+    # dialplan asks `voice` first, until an image of 22.12.0 or later (#775).
     image: andrius/asterisk:22.11.0_alpine-3.24-537e52c@sha256:98c0e598fb16492215ddc7cc52c3200646b44584ffa9267bebecff531fd3530b
     restart: unless-stopped
     # It takes outside input: of the containers it reaches `voice` alone.
