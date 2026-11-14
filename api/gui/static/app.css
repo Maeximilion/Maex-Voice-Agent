@@ -357,3 +357,20 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 .zugang-form input{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);min-height:var(--tap);padding:0 var(--s3)}
 .zugang-form .badge{font-size:var(--fs-body);white-space:normal;padding:var(--s2) var(--s3)}
 .zugang-form a.button{display:flex;align-items:center;justify-content:center;min-height:var(--tap)}
+/* T-3.16: an order that only waits for "In Kasse eingegeben" is one line; a red
+   card also sticks to the top of the column as a ~50 px bar, below the sticky h2. */
+.order.compact{padding-top:6px;padding-bottom:6px}
+.order.compact summary{display:flex;align-items:center;gap:var(--s3);cursor:pointer;list-style:none}
+.order.compact summary::-webkit-details-marker{display:none}
+.order.compact .code{margin-left:0;font-size:var(--fs-h2);padding:4px 10px}
+.order.compact .name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.order.compact button{flex:0 0 auto}
+.red-bars{list-style:none;margin:0 0 var(--s3);padding:0;position:sticky;top:48px;z-index:1;display:flex;flex-direction:column;gap:var(--s2)}
+.red-bar{display:flex;align-items:center;gap:var(--s3);min-height:50px;padding:4px var(--s3);background:var(--surface);border:3px solid var(--danger);border-radius:var(--r-lg)}
+.red-bar .code{font-family:var(--font-mono);font-weight:800;background:var(--accent);color:var(--surface);padding:4px 10px;border-radius:10px}
+.red-bar b{flex:1 1 auto;color:var(--danger)}
+.red-bar button,.order.compact button{flex:0 0 auto;width:auto;min-height:44px;padding:4px 12px;white-space:nowrap;font-size:var(--fs-base,16px)}
+.red-bar b{font-size:var(--fs-base,16px)}
+.order.compact .time{font-size:var(--fs-base,16px)}
+.order.compact .name{min-width:70px}
+.order.compact summary{gap:var(--s2)}
