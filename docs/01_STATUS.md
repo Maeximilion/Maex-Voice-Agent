@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.45.1
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.45.2
 > Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
@@ -297,6 +297,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 14.11.2026 | **#207, Maxi's answers to the sweep's three questions.** 1 (A): a backup script that hangs in `api/tests/test_scripts_backup.py` now fails after 120 s instead of 300 s, with its stderr so far and the process list taken before the kill, so the next hang of `test_restore_with_the_wrong_passphrase_changes_nothing` names the process that waits (self-test added). 2 (B): the `autoMode.allow` merge rules stay as they are; `docs/19` says why a self-review still never merges. 3 (B): the usage gate stays user-level with its Markdown copy. |
 | 14.11.2026 | **#763, part: a health word without an allergy word is clarified by the model, not read by the core (Maxi, 14.11.2026).** A first attempt that had the core open an allergy for "Zöliakie" was dropped after `/code-review max` confirmed four L13 and rule 1 defects (findings on #763). Now the refusal of a note with a health word tells the model to ask the guest first what is meant and what must stay out of the food, and to note only the removal. "Zöliakie" and "Cöliakie" arm the allergen claim check (L17); before, "die 13 ist für Sie unbedenklich" reached a coeliac unchecked. Other health phrases ("darf kein Gluten") name their allergen and armed it already. "bedarf keiner" and "darf keiner wissen" no longer read as health. Red first. No prompt change: the core's prompt budget has 6 tokens left (2594 of 2600). Open on #763: a model that writes no note gets no hint. |
 | 14.11.2026 | **Review rule narrowed and the ultrareview ledger #546 closed (Maxi, 14.11.2026).** A diff with an `xhigh` trigger now gets a local `/code-review max` in `/done` before its PR opens, findings fixed in that PR; the 400-line trigger is gone. Only in auto mode (Maxi away) a skipped review goes into a new ledger, #764 "Review candidates from auto mode". Data behind it, from #546: 77 reviews, 42 finding issues, 19 P1 on hard-rule PRs that Codex had passed; the five lines-only candidates gave no P1 of their own. `scripts/ultrareview_ledger.py` reads open ledgers only and no longer reopens a closed one (red first: it wrote into the closed issue). `CLAUDE.md` "Deep review", `done.md` steps 1 and 7a, `start.md` 5d. The 12 open lines of #546 (#743 to #760) move to the new ledger. |
 | 13.11.2026 | **Batch 9 of the ultrareview ledger (#546), fix PR for #740 (stacked on #739): a second person's allergy behind the caller's own is read on its own.** Red first (8 agent cases red). "Ich bin allergisch gegen Nüsse, meine Frau gegen Sesam", "Erdnussallergie, mein Mann Sesam" and the same in the answer to "Wogegen?" no longer lose the other person's sesame: the caller's own is read in full (no "Wogegen?" needed), the adult's goes to the kitchen as "ohne Sesam" without a reason, a child's is asked about with the caller's consent. Read only at the end of the whole text, one person and one single-word ingredient (a time, a name or a clause that is no list is asked about as before). Still open: such a clause in the middle of a longer text. |
@@ -352,6 +353,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.45.2 · 14.11.2026:** #207: a hung backup script fails after 120 s with its stderr and the process list; docs/19 notes why the autoMode merge rules stay
 - **v2.45.1 · 14.11.2026:** #763: a health word without an allergy word is clarified by the model (refusal hint), arms the allergen claim check; bedarf no longer reads as darf
 - **v2.45.0 · 14.11.2026:** T-10.2: the main number is the team telephone of the wire run (Maxi), sheet and handover changed
 - **v2.44.42 · 14.11.2026:** #546 closed: a diff with an xhigh trigger gets /code-review max in /done before its PR opens, the 400-line trigger is gone; only auto mode fills a new review ledger, which no longer reopens a closed one
