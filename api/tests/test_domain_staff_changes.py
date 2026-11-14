@@ -710,3 +710,13 @@ def test_the_check_token_follows_the_tables_behind_a_card(session, tenant_id):
     row.status = "cancelled"
     session.commit()
     assert staff.cards_change_token(session, tenant_id, TUESDAY) != token
+
+
+def test_a_special_window_past_the_cutoff_keeps_its_late_table(session, tenant_id):
+    """Special hours Saturday 22:00 to 10:00, weekly ones end in the evening."""
+    was = DayHours(opens=time(22), closes=time(10))
+    _table(session, tenant_id, SATURDAY + timedelta(days=1), time(6), "Night")
+    found = staff.bookings_outside_hours(
+        session, tenant_id, SATURDAY, DayHours(closed=True), "Europe/Berlin", was
+    )
+    assert [b.guest_name for b in found] == ["Night"]

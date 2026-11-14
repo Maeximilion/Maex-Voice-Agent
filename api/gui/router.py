@@ -1613,7 +1613,12 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
             # shorter, back to the weekly hours): the guests the team calls itself.
             if holding_on[card.day] != staff.DayHours.of(card.before):
                 calls = staff.bookings_outside_hours(
-                    session, tenant.id, card.day, holding_on[card.day], tenant.timezone
+                    session,
+                    tenant.id,
+                    card.day,
+                    holding_on[card.day],
+                    tenant.timezone,
+                    staff.DayHours.of(card.before),
                 )
         rows.append(
             {

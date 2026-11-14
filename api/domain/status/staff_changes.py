@@ -402,7 +402,12 @@ def open_cards(
 
 
 def bookings_outside_hours(
-    session: Session, tenant_id: uuid.UUID, day: date, hours: DayHours, zone: str
+    session: Session,
+    tenant_id: uuid.UUID,
+    day: date,
+    hours: DayHours,
+    zone: str,
+    before: DayHours | None = None,
 ) -> list[BookingToCall]:
     """The confirmed tables of the business day that `hours` would leave
     without a dine-in window: all of them when closed, the ones outside the
@@ -413,8 +418,12 @@ def bookings_outside_hours(
     regular = regular_hours(session, tenant_id)
     special = {} if hours.normal else {day: hours.row(tenant_id, day)}
     windows = windows_for_day(HoursData(regular, special), day, "dinein", tz)
-    # A weekly window that runs past the 05:00 cutoff still belongs to this date.
+    # A window of the date before the change (its own or the weekly one) that
+    # runs past the 05:00 cutoff still belongs to this date.
     own = windows_for_day(HoursData(regular, {}), day, "dinein", tz)
+    if before is not None and not before.normal:
+        was = {day: before.row(tenant_id, day)}
+        own += windows_for_day(HoursData(regular, was), day, "dinein", tz)
     reach = max([end, *(b for _, b in own)])
     rows = session.scalars(
         select(Reservation)
