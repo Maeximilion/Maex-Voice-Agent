@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.9
+> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.10
 > Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
@@ -334,6 +334,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.46.10 · 15.11.2026:** Graphify: a SessionStart hook builds a missing code graph per checkout and worktree; app worktree sessions run hooks from the main checkout
 - **v2.46.9 · 14.11.2026:** Graphify code graph for Claude: project skill, hooks and setup steps (docs/19)
 - **v2.46.8 · 14.11.2026:** Asterisk crash of #768 avoided: the dialplan asks voice with the media token before it dials it
 - **v2.46.7 · 14.11.2026:** docs: per-customer go-live checklist (#575)
