@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.6
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.7
 > Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
@@ -297,6 +297,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 14.11.2026 | **Per-customer go-live checklist (#575, documentation part):** `docs/vorlagen/go_live_checklist.md`: before go-live (stack, menu and allergens, hours and zones, print bridge, backup and restore rehearsal, outage drills, audit trigger, legal pointers to docs/09 §1), staged switch-on `shadow`, `overflow`, `primary` with evidence, the team, rollback in one step, sign-off table; linked from docs/13 §8. Not built yet and named in it: dashboard checks (#571), per-customer installer (#574), SIP trunk (T-10.12). Legal per customer stays with Maxi. |
 | 14.11.2026 | **T-3.16 (#517), two items Maxi decided on 09.11.2026: compact cards and a sticky red bar.** An order that waits only for „In Kasse eingegeben“ renders as one line (code, name, time, button; tap opens the full card, so Korrigieren and Stornieren stay reachable); a red card also sticks to the top of the column as a one-line „Nochmal senden“ bar and keeps its full card. `orders_view.card` adds `compact`; template and `app.css`, no script, no new route. Header below 1180 px still open. |
 | 14.11.2026 | **Two findings of the wire run (#768, #769): Asterisk dying in a drill fails the drill, and a model outage is logged as `outage`.** `api/telephony/drill.py` reads the AI telephone's container (running, start time, restarts) before the first drill and after each one; the new point "Asterisk lived through every drill" fails and names the drill where it changed (#768, third box; the segfault itself still waits for a reproduction with core files). The conversation core's own handover after a fault of ours (model down, too slow or in circles, call past its limit) now writes `calls.transfer_reason` `outage` instead of `not_understood`; a model cannot claim it, and a card written for it keeps the reason `not_understood` with its text "Technische Störung" (#769, fourth box; docs/03, docs/04). Drills 50 of 50 on the workbench, evals the same as `main` case by case. |
 | 14.11.2026 | **STATUS upkeep 14.11.2026: nothing to archive.** No row that is done or decided is older than one month; the file stays at about 103 KB. Getting below 80000 bytes needs a decision on open rows (C2 struck through but still naming Maxi's leftovers, the "By design" and "Deliberate" rows of Open Points from Reviews), not another sweep (#562). |
@@ -332,6 +333,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.46.7 · 14.11.2026:** docs: per-customer go-live checklist (#575)
 - **v2.46.6 · 14.11.2026:** T-3.16 compact cards and sticky red bar (#517)
 - **v2.46.5 · 14.11.2026:** mypy strict flags on api.jobs, api.dashboard, api.telephony (#552)
 - **v2.46.4 · 14.11.2026:** Asterisk crash fails the drill (#768), model outage logged as outage (#769)
