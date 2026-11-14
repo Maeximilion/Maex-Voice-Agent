@@ -1005,3 +1005,11 @@ def test_a_cart_note_without_an_allergy_is_taken(note):
 
     assert take_cart(state, [line(ENTE, note=note)]) is None
     assert state.cart[0]["note"] == note
+
+
+def test_the_allergy_note_hint_has_a_health_word_asked_about_first():
+    """#763: a guest who said "Zöliakie" is asked what is meant before the
+    step is called again, and only the removal goes into the note."""
+    ask = HINT_ALLERGY_NOTE.index("frag ihn zuerst")
+    assert ask < HINT_ALLERGY_NOTE.index("noch einmal auf")
+    assert "ohne Gluten" in HINT_ALLERGY_NOTE

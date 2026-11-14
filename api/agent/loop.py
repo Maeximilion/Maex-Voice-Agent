@@ -64,7 +64,7 @@ from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.calls import record_consent
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import names_an_allergen
-from api.domain.menu.wishes import speaks_of_health
+from api.domain.menu.wishes import names_coeliac, speaks_of_health
 from api.domain.ordering.readback import spoken_euro
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Reservation, Tenant
@@ -408,12 +408,14 @@ class ConversationLoop:
                 table=table,
             )
         # The call speaks of allergies: the guest's own, the allergens of a
-        # dish, or an allergen named ("Ist das glutenfrei?"). The model's
-        # answers are then checked for a claim (`guards.allergen_claim`).
+        # dish, an allergen named ("Ist das glutenfrei?") or coeliac disease,
+        # which names none (#763). The model's answers are then checked for a
+        # claim (`guards.allergen_claim`).
         talk = (
             state.allergy_talk
             or escalation.speaks_of_allergies(user_text)
             or names_an_allergen(user_text)
+            or names_coeliac(user_text)
         )
         if escalated is None:
             escalated = self._beyond_the_database(state, user_text, waiting, open_table)

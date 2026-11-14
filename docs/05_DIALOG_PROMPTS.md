@@ -199,7 +199,12 @@ model asking "Sind Sie sicher, dass ...?" do not (#656). A note the model
 writes is refused for the same health words a card may not carry
 (`wishes.speaks_of_health`: an allergy word, "Zöliakie", "reagiert auf",
 "darf kein"), and on a card the note for the whole order stands first and
-is never counted as a position
+is never counted as a position. A health word without an allergy word
+("Ich habe Zöliakie") is not read by the core: the refusal tells the model
+to ask the guest what is meant and what must stay out of the food, and only
+the removal ("ohne Gluten") goes into the note; once the guest names an
+allergy, the core notes it as usual. "Zöliakie" (or "Cöliakie") also arms
+the claim check above, since it names no allergen (#763, Maxi 14.11.2026)
 
 The guest names an additive (#638, § 5 LMZDV): "Ist da
 Geschmacksverstärker drin?", "Sind da Konservierungsstoffe drin", "die 13
