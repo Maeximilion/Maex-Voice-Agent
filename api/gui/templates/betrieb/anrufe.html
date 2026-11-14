@@ -3,18 +3,11 @@
    with a note about its line (#651) shows its number marked and the note in
    words. The number is cut (`calls_view.NUMBER_SHOWN`). #}
 {% extends "base.html" %}
+{% from "betrieb/_kopf.html" import kopf with context %}
 {% block title %}Anrufe{% endblock %}
 {% block body_class %}betrieb{% endblock %}
 
-{% block header %}
-<header>
-  <div class="top">
-    <a class="button" href="/gui">Zurück</a>
-    <h1 class="kz-title">Anrufe</h1>
-    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
-  </div>
-</header>
-{% endblock %}
+{% block header %}{{ kopf("Anrufe", tenant) }}{% endblock %}
 
 {% block main %}
 {% if tenant %}

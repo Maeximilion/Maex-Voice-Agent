@@ -37,7 +37,6 @@ from api.domain.menu.wishes import (
     of_another_adult,
     only_denies,
     read_in_full,
-    speaks_of_health,
     theirs_behind,
     which_answer,
     wish_candidates,
@@ -117,53 +116,14 @@ def _open(state: ConversationState) -> set[int]:
     return {id(allergy) for allergy in state.allergies if allergy.ingredient is None}
 
 
-_I = re.compile(r"\b(?:ich|mir|mich)\b", re.IGNORECASE)
-_SPEAKER = re.compile(r"\b(?:ich|mir|mich|mein\w*|unser\w*)\b", re.IGNORECASE)
-
-
-def _others(parts: list[str]) -> list[bool]:
-    """Whether each sentence is another adult's: one running owner, changed
-    only by a sentence that speaks of health. Another adult named there makes
-    it theirs, "ich"/"mein Sohn" the caller's, any other sentence ("Ich nehme
-    die 13.", "Und eine Sesamallergie.") inherits.
-    shortcut: the owner starts as the caller with every utterance, a name
-    from an earlier turn is not carried; upgrade when the call log shows it."""
-    other, owners = False, []
-    for part in parts:
-        here = other
-        if speaks_of_health(part):
-            if of_another_adult(part):
-                other = here = True
-                # "Ohne Zwiebeln für meine Frau, ich habe eine Erdnussallergie":
-                # both in one sentence, its own reading tells whose allergy.
-                if mentions_allergy(part) and _I.search(part):
-                    here = False
-            elif _SPEAKER.search(part):
-                other = here = False
-        owners.append(here)
-    return owners
-
-
 def _note(state: ConversationState, text: str) -> None:
     """An allergy said without a question of the core (`note_allergies`)."""
-    # A health word that names no allergy ("Mein Sohn hat Zöliakie") is asked
-    # about, as a model note with it is refused for the core to take (#739).
-    # Taken out of the text, so the allergy of the other sentences is read in
-    # full. `own` is the L13 consent and picks the wording only, the kitchen
-    # gets the ingredient either way, so a doubt reads as another's.
-    parts = [part for part in _SENTENCE.split(text) if part.strip()]
-    kept = []
-    for part, other in zip(parts, _others(parts), strict=True):
-        if speaks_of_health(part) and not mentions_allergy(part):
-            _add(state, Allergy(ingredient=None, own=not other))
-        else:
-            kept.append((part, other))
-    text = ". ".join(part for part, _ in kept)
     if not mentions_allergy(text):
         return
     whole = _read(text)
-    said = [(part, other) for part, other in kept if mentions_allergy(part)]
-    readings = [(whole, said[0][1])]
+    sentences = [part for part in _SENTENCE.split(text) if part.strip()]
+    said = [part for part in sentences if mentions_allergy(part)]
+    readings = [whole]
     if len(said) > 1:
         # Each sentence on its own, with its own owner: read whole, the
         # parser takes the first allergy's owner and phrase for all of them
@@ -174,20 +134,17 @@ def _note(state: ConversationState, text: str) -> None:
         # Sesam"). Without such a sentence, every part was read on its own,
         # and a whole left open by a denial in front ("Meine Frau hat keine
         # Allergie. Ich habe eine Nussallergie.") asks for nothing (#668).
-        readings = [(_read(part), other) for part, other in said]
-        if whole is not None and whole.ingredient is None and len(said) < len(kept):
-            others = any(
-                other or (r is not None and r.another_adult) for r, other in readings
-            )
-            readings.append((whole.model_copy(update={"another_adult": others}), False))
-    for wish, other in readings:
+        readings = [_read(part) for part in said]
+        if (
+            whole is not None
+            and whole.ingredient is None
+            and len(said) < len(sentences)
+        ):
+            others = any(r is not None and r.another_adult for r in readings)
+            readings.append(whole.model_copy(update={"another_adult": others}))
+    for wish in readings:
         if wish is not None:
-            _add(
-                state,
-                Allergy(
-                    ingredient=wish.ingredient, own=not (wish.another_adult or other)
-                ),
-            )
+            _add(state, Allergy(ingredient=wish.ingredient, own=not wish.another_adult))
 
 
 def _read(text: str) -> Wish | None:
