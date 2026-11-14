@@ -36,6 +36,7 @@ from api.domain.menu.wishes import (
     mentions_allergy,
     open_wish,
     removal_with,
+    speaks_of_health,
     wish_candidates,
 )
 from api.models import ItemOption, MenuItem
@@ -2142,3 +2143,19 @@ def test_a_comma_chain_is_read_in_linear_time():
     start = time.perf_counter()
     classify_wish("Ich habe eine Allergie" + ", x" * 30, [])
     assert time.perf_counter() - start < 0.5
+
+
+@pytest.mark.parametrize(
+    ("text", "health"),
+    [
+        ("Ich darf kein Gluten.", True),
+        ("Zöliakie, ohne Gluten", True),
+        # "bedarf" is no "darf" (#763 review).
+        ("Das bedarf keiner Reservierung.", False),
+        ("Das darf keiner wissen, es ist eine Überraschung.", False),
+        ("Ich darf keine Nüsse.", True),
+        ("ohne Gluten", False),
+    ],
+)
+def test_health_words_need_the_whole_word(text, health):
+    assert speaks_of_health(text) is health

@@ -33,7 +33,12 @@ from api.agent.loop import SAY_ALLERGENS_BEYOND
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import parse_cardinal
 from api.domain.menu.pos_convert import names_an_allergen
-from api.domain.menu.wishes import denies_allergy, mentions_allergy, only_denies
+from api.domain.menu.wishes import (
+    denies_allergy,
+    mentions_allergy,
+    names_coeliac,
+    only_denies,
+)
 from sim.scripted_order import (
     ADDRESS_FIELDS,
     CLEAR_MATCHES,
@@ -216,7 +221,12 @@ class ScriptedLLM:
             # The phone line said the disclosure already (telephony/handler.py).
             self._greeted = True
         if _as_tool_result(input_text) is None:
-            if speaks_of_allergies(input_text) or names_an_allergen(input_text):
+            # As the core arms `allergy_talk` (`loop.py`).
+            if (
+                speaks_of_allergies(input_text)
+                or names_an_allergen(input_text)
+                or names_coeliac(input_text)
+            ):
                 self._allergy_talk = True
             if self._allergy_talk and "?" in input_text and _SAFETY.search(input_text):
                 return LLMTurn(say=SAY_ALLERGENS_BEYOND)

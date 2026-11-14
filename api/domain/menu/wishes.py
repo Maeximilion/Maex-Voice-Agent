@@ -1093,9 +1093,19 @@ def mentions_allergy(text: str) -> bool:
 
 # Health data that `mentions_allergy` does not read (review of the repo audit
 # fix, 27.10.2026): a note and a card may carry neither (#656).
+_COELIAC = re.compile(r"[zc](?:ö|oe)liak", re.IGNORECASE)
+# "darf kein" as whole words: "bedarf keiner", "darf keiner wissen" are no
+# health (#763).
 _HEALTH_WORDS = re.compile(
-    r"z(?:ö|oe)liak|reagier\w*\s+auf|darf\s+kein|\bmeiden\b", re.IGNORECASE
+    rf"{_COELIAC.pattern}|reagier\w{{0,30}}\s+auf|\bdarf\s+kein(?:e[nm]?)?\b|\bmeiden\b",
+    re.IGNORECASE,
 )
+
+
+def names_coeliac(text: str) -> bool:
+    """ "Zöliakie" in any spelling: the one health word no allergen list holds
+    (#763). The others ("darf kein Gluten") name their allergen anyway."""
+    return bool(_COELIAC.search(text))
 
 
 def speaks_of_health(text: str) -> bool:
