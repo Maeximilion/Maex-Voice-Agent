@@ -84,7 +84,7 @@ def card(order: BoardOrder, tz_name: str) -> dict:
     compact = (
         register["can_mark"]
         and not register["register_late"]
-        and order.handover_state not in (None, "failed")
+        and order.handover_state == "sent"
     )
     return {
         "id": str(order.order_id),

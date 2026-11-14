@@ -195,11 +195,25 @@ def test_card_waiting_only_for_the_register_is_one_line(client, db, tenant_id):
     assert "Frühlingsrollen" in html
 
     client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX)
+    # The bridge reports the slip as printed.
+    db.execute(update(Order).where(Order.id == order_id).values(handover_state="sent"))
+    db.commit()
     html = client.get("/gui/fragments/bestellungen").text
     assert "card order compact" in html
     assert "In Kasse eingegeben" in html
     # Tap on the line opens the full card: Korrigieren and Stornieren stay reachable.
     assert "<details><summary>" in html and "Korrigieren" in html
+
+
+def test_card_whose_slip_is_still_printing_stays_full(client, db, tenant_id):
+    order_id = _order(db, tenant_id, mode="primary")
+    client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX)
+    db.execute(
+        update(Order).where(Order.id == order_id).values(handover_state="pending")
+    )
+    db.commit()
+    html = client.get("/gui/fragments/bestellungen").text
+    assert "Zettel wird gedruckt" in html and "compact" not in html
 
 
 def test_new_card_waiting_for_passt_stays_full(client, db, tenant_id):
