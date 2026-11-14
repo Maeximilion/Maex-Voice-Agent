@@ -535,6 +535,65 @@ def test_voice_is_started_again_when_the_team_never_rings(tmp_path, monkeypatch)
     assert stage.commands[-1] == ("up", "-d", "--wait", "voice")
 
 
+WEBSOCKET_FAILED = (
+    "res_websocket_client.c:465 ast_websocket_client_connect: WebSocket/voice/0x1: "
+    "Websocket connection to ws://voice:8001/media failed after 1 tries"
+)
+
+
+@pytest.mark.parametrize("tried", [False, True])
+def test_voice_down_fails_when_asterisk_tries_the_media_connection(tmp_path, tried):
+    """A failed media connection keeps a lock in Asterisk 22.11.0, which can
+    crash it when the call ends (#768): the dialplan must not try it."""
+    lines = ["voice not reached"] + ([WEBSOCKET_FAILED] if tried else [])
+    stage = Stage(tmp_path, {104: {"router": [TEAM_RINGS], "asterisk": lines}})
+
+    checks = drill.drill_voice_down(stage)
+
+    assert [ok for _, ok, _ in checks] == [True, True, not tried]
+    assert ("websocket" in checks[-1][2].lower()) is tried
+
+
+def test_voice_frozen_fails_when_asterisk_tries_the_media_connection(tmp_path):
+    stage = Stage(
+        tmp_path, {107: {"router": [TEAM_RINGS], "asterisk": [WEBSOCKET_FAILED]}}
+    )
+
+    assert [ok for _, ok, _ in drill.drill_voice_frozen(stage)] == [True, False]
+
+
+def test_voice_down_for_several_calls_passes_while_asterisk_stays_up(tmp_path):
+    stage = Stage(tmp_path, {129: {"router": [TEAM_RINGS]}})
+    stage.prints = {"--status running": "abc123\n"}
+
+    [(_, ok, note)] = drill.drill_voice_down_calls(stage)
+
+    assert ok, note
+    placed = [c for c in stage.commands if "Local/129@dialout" in " ".join(c)]
+    assert len(placed) == drill.VOICE_DOWN_CALLS
+    assert ("cli", "router", "dialplan set global TEAM_AWAY talk") in stage.commands
+    assert ("cli", "router", "dialplan set global TEAM_AWAY answer") in stage.commands
+    assert ("up", "-d", "--wait", "asterisk") not in stage.commands
+    assert stage.commands[-2] == ("up", "-d", "--wait", "voice")
+
+
+def test_voice_down_for_several_calls_fails_and_restarts_a_crashed_asterisk(
+    tmp_path, monkeypatch
+):
+    """Asterisk gone after the first call: no further call is placed, the
+    router's legs are hung up, Asterisk and `voice` are started again."""
+    stage = Stage(tmp_path, {129: {"router": [TEAM_RINGS]}})
+    monkeypatch.setattr(stage, "registered", lambda: None)
+
+    [(_, ok, note)] = drill.drill_voice_down_calls(stage)
+
+    assert not ok
+    assert note == "the team rang for 1 of 5 calls, Asterisk gone"
+    assert ("cli", "router", "channel request hangup all") in stage.commands
+    assert ("up", "-d", "--wait", "asterisk") in stage.commands
+    assert ("up", "-d", "--wait", "voice") in stage.commands
+
+
 def networks_stage(tmp_path, **prints: str) -> Stage:
     """A stack whose walls hold, unless a test says otherwise. A key names a
     piece of the command, the first that matches answers."""
