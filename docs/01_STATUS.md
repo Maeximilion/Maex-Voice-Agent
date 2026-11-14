@@ -1,6 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.35
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.34
@@ -294,6 +295,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 13.11.2026 | **Batch 9 of the ultrareview ledger (#546), fix PR for #740 (stacked on #739): a second person's allergy behind the caller's own is read on its own.** Red first (8 agent cases red). "Ich bin allergisch gegen Nüsse, meine Frau gegen Sesam", "Erdnussallergie, mein Mann Sesam" and the same in the answer to "Wogegen?" no longer lose the other person's sesame: the caller's own is read in full (no "Wogegen?" needed), the adult's goes to the kitchen as "ohne Sesam" without a reason, a child's is asked about with the caller's consent. Read only at the end of the whole text, one person and one single-word ingredient (a time, a name or a clause that is no list is asked about as before). Still open: such a clause in the middle of a longer text. |
 | 13.11.2026 | **Batch 9 of the ultrareview ledger (#546), fix PR for #739: the allergen claim guard reads more absence forms, a noted plural matches its singular on a card.** Red first (guard and plural cases red). "Die 13 hat keine Nüsse", "Es gibt kein Gluten", "Nüsse sind da nicht drin" are claims and go to the team; noted "Erdnüsse" keeps "Erdnuss" off a callback card, each part of a noted list on its own. Moved out: health words that name no allergy ("Zöliakie", "darf kein", "meiden") and whose allergy it is, after four Codex ownership findings, to #763 (the L13 owner reading stays as on `main`). Still open: "ist ... kein" and other absence forms the call log does not show yet. |
 | 13.11.2026 | **Batch 9 of the ultrareview ledger (#546), fix PR for #710: the open items of #596 and two from the batch 9 review.** Red first (6 tests). A staff change for today on a "wie Sonntag" date waits for the owner like a later date, since times cannot keep `like_weekday` (`ck_special_days_like_weekday_alone`) and Sunday's seats, call mode and call limit would go to the plain weekday's; closing still holds at once. `_hhmm` takes `strptime("%H:%M")`, so `1000Z` is a 422, not a 500. The sheet offers only E.164 numbers of `TEAM_PHONE` and `TRANSFER_TARGETS` (`sheet_numbers`); a hard start check in `api/config.py` was not built, since the dialplan dials national forms and the voice drill lists one on purpose. An outage or a shadow leg reads the team number again (`CallHandler._team_phone`, savepoint, the line's 2 s bound, after the outage sentence) and falls back to the number read at the start of the call. Left open: bookings on a closed or shortened date (a decision on what the team sees and does). |
 | 13.11.2026 | **Ultrareview ledger (#546, batch 9), fix PR for #742: a booking read-back names the night after midnight by its two days.** Red first (6 cases red). "Morgen um halb eins nachts" for 00:30 of tomorrow is still tonight, so the guest's yes booked 24 hours early. Hours 00:00 to 04:59 are now read "in der Nacht von Dienstag auf Mittwoch um halb eins" (`spoken_when` in `spoken.py`, the date added beyond a week); 23:30 and 05:30 keep "heute/morgen ... nachts/morgens". |
@@ -346,8 +348,10 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.37 · 13.11.2026:** Fix PR for #740: a second person's allergy behind the caller's is read on its own
 - **v2.44.36 · 13.11.2026:** Fix PR for #739: allergen claim guard reads more absence forms, plural allergies match on cards (health words moved to #763)
 - **v2.44.35 · 13.11.2026:** Fix PR for #710: today's staff hours on a "wie Sonntag" date wait for the owner, `_hhmm` refuses an offset, the sheet offers only E.164 numbers, an outage rings the team number that holds now with a fallback to the start's
+
 - **v2.44.34 · 13.11.2026:** Fix PR for #600: owner rights get an idle clock of their own, 15 minutes without an owner page or write, migration 038
 - **v2.44.32 · 13.11.2026:** Fix PR for #742: a booking read-back names the night after midnight by its two days
 - **v2.44.31 · 13.11.2026:** Fix PR for #737: the model's own handovers and a callback without a number keep the table read back that a new allergy dropped
