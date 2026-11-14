@@ -925,6 +925,17 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   and the detector stays as it was. Open: a recording of real line audio through the router
   (T-10.1 step 2 setup) to confirm the level and kind of noise; until then the threshold
   and the 256 ms stay as measured in T-10.3.
+- **The floor of 256 ms and one-word answers (#678, Maxi 13.11.2026: measure, then set).** The
+  floor stays at 8 windows until the numbers of test calls with own voices are in (no customer
+  audio). `VOICE_EAR_MEASURE=true` makes the service log one line per utterance, `ear measure:
+  windows=N floor=8 below=True heard='...'`, and asks Whisper also below the floor, only to log
+  what it would have heard; the caller still gets no speech. `scripts/ear_floor.py` runs the same
+  count on Piper voices and synthetic noises in the image of `voice` (`--run-dir`, `--whisper`),
+  and turns the log lines of two test calls (`--from-log`, `--noise-log`) into a table and the verdict. Decision rule: the floor
+  becomes the smallest window count that no click or breath of the test calls reaches and every
+  short answer ("Ja.", "Nein.", "Zwei.") reaches; if the highest noise is not below the lowest
+  answer, the floor stays and the text of the short finals decides (a click Whisper turns into
+  "Ja." would be a yes, hard rule 3).
 - **A caller's leg left open after the team hung up (seen once, 14.10.2026):** in the drill
   "voice frozen" of the first of two runs on the branch of T-1.11 part 2, the team leg rang and
   hung up, and the caller's leg stayed up on the stand-in router for the 60 s the kit waits; the

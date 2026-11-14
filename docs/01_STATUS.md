@@ -1,6 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.41
 > Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
@@ -349,6 +350,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.44.41 · 14.11.2026:** #678: measurement of the ear's floor (MIN_SPEECH_SECONDS) behind VOICE_EAR_MEASURE and scripts/ear_floor.py; the floor stays 0.25 s until Maxi's test calls are measured (decision 13.11.2026)
 - **v2.44.40 · 14.11.2026:** Issue #207 sweep: a reason filler (deshalb, daher) after an allergy list no longer lands in the ingredient; one constant for the allowed .claude files in test_compose_mounts
 - **v2.44.39 · 14.11.2026:** #651: a drill point with the caller's RTP blocked in transit (iptables DROP on the media ports): the call ends as a silent one with the note, the team does not ring; the understanding ladder is tested to end with the team
 - **v2.44.38 · 13.11.2026:** Last open item of #710: the check card of a held closure or shortening lists the confirmed tables outside the new hours (name, time, phone), so the team calls those guests itself; nothing is cancelled, no guest messaged.

@@ -207,6 +207,7 @@ def _whisper(watchdog: Watchdog) -> Callable[[], Ear]:
         WINDOW,
         SegmentingEar,
         Whisper,
+        log_measure,
         silero,
     )
 
@@ -233,7 +234,10 @@ def _whisper(watchdog: Watchdog) -> Callable[[], Ear]:
     # fresh one, it keeps state from window to window (Codex on PR #310).
     with watchdog.watch("detector", ENGINE_LOAD_SECONDS):
         silero()(bytes(2 * WINDOW))
-    return lambda: SegmentingEar(transcribe, watchdog.watched("detector", silero()))
+    measure = log_measure if settings.voice_ear_measure else None
+    return lambda: SegmentingEar(
+        transcribe, watchdog.watched("detector", silero()), measure
+    )
 
 
 def _piper(watchdog: Watchdog) -> Callable[[], Mouth]:

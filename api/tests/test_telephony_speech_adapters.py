@@ -20,7 +20,9 @@ from api.telephony.adapters.stt_whisper import (
     SAMPLE_RATE,
     TURN_END_SECONDS,
     WINDOW,
+    Measure,
     SegmentingEar,
+    log_measure,
 )
 from api.telephony.adapters.tts_piper import PiperMouth
 from api.telephony.speech import Heard
@@ -149,6 +151,36 @@ def test_a_click_is_no_speech_and_the_engine_is_not_asked():
     assert finals(heard) == [heard[-1]]
     assert (heard[-1].text, heard[-1].speech) == ("", False)
     assert engine.given == []
+
+
+def test_measuring_asks_the_engine_below_the_floor_and_the_caller_still_hears_no_speech():
+    """#678: the windows, the floor and what the engine heard, for a final
+    under the floor; the final itself is the one without measuring."""
+    engine, measured = Engine("Ja."), list[Measure]()
+    short = windows(MIN_SPEECH_SECONDS) - 1
+    heard = hear(
+        SegmentingEar(engine, probability, measured.append),
+        speech(short) + silence(30),
+    )
+    assert measured == [Measure(short, windows(MIN_SPEECH_SECONDS), "Ja.")]
+    assert measured[0].below
+    assert (heard[-1].text, heard[-1].speech) == ("", False)
+
+
+def test_measuring_a_final_over_the_floor_changes_nothing_for_the_caller():
+    measured = list[Measure]()
+    heard = hear(
+        SegmentingEar(Engine("Ja."), probability, measured.append),
+        speech(windows(MIN_SPEECH_SECONDS)) + silence(30),
+    )
+    assert [m.below for m in measured] == [False]
+    assert (heard[-1].text, heard[-1].speech) == ("Ja.", True)
+
+
+def test_a_measure_is_logged_as_one_line(caplog):
+    with caplog.at_level("INFO"):
+        log_measure(Measure(5, 8, "Nein."))
+    assert "windows=5 floor=8 below=True heard='Nein.'" in caplog.text
 
 
 def test_clicks_with_a_pause_between_are_no_speech():
