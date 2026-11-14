@@ -26,6 +26,7 @@ Holiday answers (T-9.5) stay as they are (Maxi, 09.11.2026): the system
 suggested the date, the staff only confirm it.
 """
 
+import hashlib
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time
@@ -40,7 +41,7 @@ from api.config import settings
 from api.core import time as clock
 from api.core.errors import Conflict, InvalidInput, NotFound
 from api.core.time import business_day_bounds_utc
-from api.domain.customers.phone import E164, normalize_phone
+from api.domain.customers.phone import E164, costly, normalize_phone
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.hours import (
     HoursData,
@@ -84,6 +85,10 @@ class BookingToCall:
     at: datetime
     phone: str
     party_size: int
+
+    @property
+    def costly(self) -> bool:
+        return costly(self.phone)
 
 
 @dataclass(frozen=True)
@@ -405,10 +410,12 @@ def bookings_outside_hours(
     2026-11-13): nothing is cancelled and no guest is messaged. By time."""
     start, end = business_day_bounds_utc(day, zone)
     tz = ZoneInfo(zone)
+    regular = regular_hours(session, tenant_id)
     special = {} if hours.normal else {day: hours.row(tenant_id, day)}
-    windows = windows_for_day(
-        HoursData(regular_hours(session, tenant_id), special), day, "dinein", tz
-    )
+    windows = windows_for_day(HoursData(regular, special), day, "dinein", tz)
+    # A weekly window that runs past the 05:00 cutoff still belongs to this date.
+    own = windows_for_day(HoursData(regular, {}), day, "dinein", tz)
+    reach = max([end, *(b for _, b in own)])
     rows = session.scalars(
         select(Reservation)
         .where(
@@ -416,7 +423,7 @@ def bookings_outside_hours(
             Reservation.status == "confirmed",
             Reservation.deleted_at.is_(None),
             Reservation.reserved_for >= start,
-            Reservation.reserved_for < end,
+            Reservation.reserved_for < reach,
         )
         .order_by(Reservation.reserved_for)
     )
@@ -426,6 +433,7 @@ def bookings_outside_hours(
         )
         for r in rows
         if not any(a <= r.reserved_for < b for a, b in windows)
+        and (r.reserved_for < end or any(a <= r.reserved_for < b for a, b in own))
     ]
 
 
@@ -448,7 +456,18 @@ def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> s
             StaffChange.day >= today,
         )
     )
-    return str(digest)[:16]
+    if digest == hashlib.md5(b"").hexdigest():  # no open card, nothing to list
+        return ""
+    # The guest lists on the cards hang on the confirmed tables (#710).
+    tables = session.execute(
+        select(func.count(), func.max(Reservation.updated_at)).where(
+            Reservation.tenant_id == tenant_id,
+            Reservation.status == "confirmed",
+            Reservation.deleted_at.is_(None),
+            Reservation.reserved_for >= business_day_bounds_utc(today)[0],
+        )
+    ).one()
+    return str(digest)[:16] + hashlib.md5(repr(tuple(tables)).encode()).hexdigest()[:8]
 
 
 # --- helpers ---------------------------------------------------------------------

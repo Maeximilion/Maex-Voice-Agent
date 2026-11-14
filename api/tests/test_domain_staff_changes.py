@@ -676,3 +676,37 @@ def test_a_cancelled_table_and_another_date_stay_off_the_list(session, tenant_id
     _table(session, tenant_id, SATURDAY + timedelta(days=1), time(19), "Sunday")
     _table(session, tenant_id, SATURDAY, time(19), "Draft", status="draft")
     assert _guests(session, tenant_id, SATURDAY, DayHours(closed=True)) == []
+
+
+def test_a_weekly_window_past_the_cutoff_keeps_its_late_table(session, tenant_id):
+    """Saturday 22:00 to Sunday 10:00: the table at Sunday 06:00 is Saturday's."""
+    for row in session.scalars(
+        select(OpeningHours).where(
+            OpeningHours.tenant_id == tenant_id,
+            OpeningHours.service == "dinein",
+            OpeningHours.weekday == SATURDAY.weekday(),
+        )
+    ):
+        session.delete(row)
+    session.add(
+        OpeningHours(
+            tenant_id=tenant_id,
+            service="dinein",
+            weekday=SATURDAY.weekday(),
+            opens_at=time(22),
+            closes_at=time(10),
+        )
+    )
+    session.commit()
+    _table(session, tenant_id, SATURDAY + timedelta(days=1), time(6), "Night")
+    assert _guests(session, tenant_id, SATURDAY, DayHours(closed=True)) == ["Night"]
+
+
+def test_the_check_token_follows_the_tables_behind_a_card(session, tenant_id):
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    _table(session, tenant_id, SATURDAY, time(19), "Bauer")
+    token = staff.cards_change_token(session, tenant_id, TUESDAY)
+    row = session.scalar(select(Reservation).where(Reservation.guest_name == "Bauer"))
+    row.status = "cancelled"
+    session.commit()
+    assert staff.cards_change_token(session, tenant_id, TUESDAY) != token

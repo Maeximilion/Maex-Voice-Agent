@@ -260,3 +260,44 @@ def test_a_held_closure_lists_the_guests_to_call(client, engine):
     assert "Diese Gäste bitte selbst anrufen" in cards
     assert "19:00 Uhr, Familie Bauer, 4 Personen" in cards
     assert 'href="tel:+491701234567"' in cards
+
+
+def _table(engine, day, name, phone="+491701234567"):
+    with Session(engine) as session:
+        session.add(
+            Reservation(
+                tenant_id=session.scalar(select(ServiceConfig.tenant_id)),
+                source="tablet",
+                status="confirmed",
+                guest_name=name,
+                phone=phone,
+                party_size=2,
+                reserved_for=datetime.combine(day, time(19), tzinfo=BERLIN),
+                idempotency_key=f"gui-{name}",
+            )
+        )
+        session.commit()
+
+
+def test_the_list_stays_while_replacement_hours_wait(client, engine):
+    later = _today() + timedelta(days=7)
+    _table(engine, later, "Familie Bauer")
+    form = {"datum": later.isoformat()}
+    client.post("/gui/tageszeiten", data=form | {"art": "geschlossen"}, headers=HX)
+    longer = form | {"art": "zeiten", "von": "10:00", "bis": "23:59"}
+    client.post("/gui/tageszeiten", data=longer, headers=HX)
+    cards = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert "Familie Bauer" in cards
+
+
+def test_a_costly_number_is_shown_but_not_linked(client, engine):
+    later = _today() + timedelta(days=7)
+    _table(engine, later, "Premium", phone="+4990012345678")
+    client.post(
+        "/gui/tageszeiten",
+        data={"datum": later.isoformat(), "art": "geschlossen"},
+        headers=HX,
+    )
+    cards = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert "+4990012345678" in cards and "Teure Sondernummer" in cards
+    assert "tel:+4990012345678" not in cards

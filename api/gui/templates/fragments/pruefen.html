@@ -22,7 +22,7 @@
     <p><b>Diese Gäste bitte selbst anrufen:</b></p>
     <ul>
       {% for b in c.calls %}
-      <li>{{ b.at.strftime("%H:%M") }} Uhr, {{ b.guest_name }}, {{ b.party_size }} Personen, <a href="tel:{{ b.phone }}">{{ b.phone }}</a></li>
+      <li>{{ b.at.strftime("%H:%M") }} Uhr, {{ b.guest_name }}, {{ b.party_size }} Personen, {% if b.costly %}{{ b.phone }} <span class="badge danger">Teure Sondernummer &ndash; vor dem Anruf pr&uuml;fen</span>{% else %}<a href="tel:{{ b.phone }}">{{ b.phone }}</a>{% endif %}</li>
       {% endfor %}
     </ul>
     {% endif %}
