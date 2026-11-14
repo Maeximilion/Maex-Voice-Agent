@@ -6,6 +6,7 @@ client (on PATH, or Docker for the client image); where those are missing the te
 are skipped locally and fail in CI.
 """
 
+import contextlib
 import os
 import shutil
 import subprocess
@@ -125,15 +126,49 @@ def _run(script, *args, db_url, backup_dir, passphrase_file=None, **extra):
         env["BACKUP_PASSPHRASE_FILE"] = passphrase_file.as_posix()
     env.update(extra)
     assert BASH is not None  # `_tools` skips the module without bash
-    return subprocess.run(
+    run = subprocess.Popen(
         [BASH, f"scripts/{script}", *args],
         cwd=REPO_ROOT,
         env=env,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
         errors="replace",
-        timeout=300,
+    )
+    try:
+        out, err = run.communicate(timeout=RUN_TIMEOUT)
+    except subprocess.TimeoutExpired as hung:
+        pytest.fail(_hang_report(run, script, hung))
+    return subprocess.CompletedProcess(run.args, run.returncode, out, err)
+
+
+# A run of a backup script takes seconds; one CI run hung 300 s after gpg had
+# printed "decryption failed" and was never reproduced (#207). 120 s still
+# leaves room for a slow runner.
+RUN_TIMEOUT = 120
+
+
+def _hang_report(run: subprocess.Popen, script: str, hung) -> str:
+    """What still runs when a script hangs, taken before it is killed: the
+    process that holds the pipe open is the cause (#207)."""
+    tree = (
+        subprocess.run(
+            ["ps", "-eo", "pid,ppid,etime,args"], capture_output=True, text=True
+        ).stdout
+        if shutil.which("ps")
+        else "ps not found"
+    )
+    run.kill()
+    # A grandchild may still hold the pipe; the tree above names it.
+    with contextlib.suppress(subprocess.TimeoutExpired):
+        run.communicate(timeout=5)
+    stderr = hung.stderr or ""
+    if isinstance(stderr, bytes):
+        stderr = stderr.decode("utf-8", "replace")
+    return (
+        f"scripts/{script} hung for {RUN_TIMEOUT} s (pid {run.pid}).\n"
+        f"stderr so far:\n{stderr}\nprocesses before the kill:\n{tree}"
     )
 
 
@@ -882,3 +917,17 @@ def test_restore_check_catches_a_damaged_gpg_trailer(db, backup_dir, passphrase_
     assert "cannot read the dump to its end; nothing changed" in done.stderr
     name = make_url(db).database
     assert _databases_like(f"{name}_") == []
+
+
+def test_a_hung_script_is_reported_with_what_still_runs(tmp_path):
+    """#207: the report names the waiting process instead of a bare timeout."""
+    run = subprocess.Popen(
+        ["sleep", "30"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+    )
+    try:
+        run.communicate(timeout=0.2)
+    except subprocess.TimeoutExpired as hung:
+        report = _hang_report(run, "restore.sh", hung)
+    assert run.poll() is not None
+    assert "scripts/restore.sh hung" in report
+    assert "sleep 30" in report or "ps not found" in report
