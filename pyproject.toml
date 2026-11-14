@@ -77,10 +77,13 @@ ignore_missing_imports = true
 module = [
     "api.agent.*",
     "api.core.*",
+    "api.dashboard.*",
     "api.domain.*",
     "api.events.*",
+    "api.jobs.*",
     "api.models.*",
     "api.schemas.*",
+    "api.telephony.*",
     "api.tools.*",
 ]
 disallow_untyped_defs = true

@@ -6,6 +6,7 @@ rendering of the router's configuration, and the refusals before anything is
 touched.
 """
 
+import os
 import socket
 import stat
 import threading
@@ -743,13 +744,13 @@ def test_the_router_gets_the_password_of_the_run_and_nothing_else_is_shared(
 
 
 def test_root_is_refused_before_anything_is_touched(monkeypatch, capsys):
-    monkeypatch.setattr(drill.os, "getuid", lambda: 0)
+    monkeypatch.setattr(os, "getuid", lambda: 0)
     assert drill.main(["--dry-run"]) == 2
     assert "unprivileged" in capsys.readouterr().err
 
 
 def test_a_folder_with_somebodys_files_is_refused(tmp_path, monkeypatch):
-    monkeypatch.setattr(drill.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(os, "getuid", lambda: 1000)
     (tmp_path / "notes.txt").write_text("mine")
     assert drill.main(["--dry-run", "--run-dir", str(tmp_path)]) == 2
     assert (tmp_path / "notes.txt").read_text() == "mine"

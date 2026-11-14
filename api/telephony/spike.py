@@ -363,7 +363,7 @@ def finished_wav(path: Path) -> bytes:
 def read_wav(path: Path) -> bytes:
     """The samples of a recording, empty while it is missing or half written."""
     try:
-        with wave.open(str(path)) as recording:
+        with wave.open(str(path), "rb") as recording:
             return recording.readframes(recording.getnframes())
     except (OSError, EOFError, wave.Error):
         return b""
@@ -386,7 +386,8 @@ def events(
 
 
 def sent_at(log: list[dict[str, Any]]) -> float:
-    return next(r["t"] for r in log if r["dir"] == "out" and "bytes" in r)
+    first: float = next(r["t"] for r in log if r["dir"] == "out" and "bytes" in r)
+    return first
 
 
 def judge_two_way(calls: dict[str, dict[str, Any]]) -> list[Check]:

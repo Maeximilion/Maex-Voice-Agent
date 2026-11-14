@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from api.telephony import speech_spike as kit
+from api.telephony.spike import SpikeError
 from evals.number_eval import load
 
 
@@ -381,7 +382,7 @@ def test_a_step_that_breaks_ends_the_run_and_leaves_no_old_report(
     (tmp_path / "report.json").write_text("old")
 
     def broken(command, dry_run, cwd=None):
-        raise kit.SpikeError("`docker build` failed")
+        raise SpikeError("`docker build` failed")
 
     monkeypatch.setattr(kit, "docker", broken)
     monkeypatch.setattr(kit, "docker_problem", lambda: None)
@@ -432,7 +433,8 @@ def test_root_is_refused_before_docker_or_the_run_directory_is_touched(
 ):
     """The containers take the caller's uid. As root nothing may happen at
     all: no question to Docker, no old result cleared, no folder made."""
-    monkeypatch.setattr(kit.os, "getuid", lambda: 0)
+    # The kit's own `os` (the fixture above), not the real one pytest uses.
+    monkeypatch.setattr("api.telephony.speech_spike.os.getuid", lambda: 0)
 
     def never(*args, **kwargs):
         raise AssertionError("root must be refused before this is reached")
@@ -684,7 +686,7 @@ def test_judge_only_removes_the_old_verdict_before_it_judges(
     assert (tmp_path / "judged.json").exists() and (tmp_path / "report.json").exists()
 
     def broken(command, dry_run, cwd=None):
-        raise kit.SpikeError("the judge broke")
+        raise SpikeError("the judge broke")
 
     monkeypatch.setattr(kit, "docker", broken)
     assert kit.main(["--run-dir", str(tmp_path), "--judge-only"]) == 1
@@ -957,7 +959,7 @@ def test_the_menu_is_checked_in_the_image_before_anything_is_spoken(
     def docker(command, dry_run, cwd=None):
         seen.append(command)
         if "check" in command:
-            raise kit.SpikeError("the menu has errors")
+            raise SpikeError("the menu has errors")
 
     monkeypatch.setattr(kit, "docker", docker)
     monkeypatch.setattr(kit, "docker_problem", lambda: None)
@@ -1038,7 +1040,7 @@ def test_the_menu_that_is_checked_is_the_menu_that_is_measured(tmp_path, monkeyp
             )
         if "check" in command:
             checked.append((run_dir / kit.MENU_COPY).read_text(encoding="utf-8"))
-            raise kit.SpikeError("stop here")
+            raise SpikeError("stop here")
 
     monkeypatch.setattr(kit, "docker", docker)
     monkeypatch.setattr(kit, "docker_problem", lambda: None)
