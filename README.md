@@ -115,7 +115,7 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 | Version | 0.0.1 |
 | Stage | 0, Foundation |
 | Next Gate | G0: Budget · Rights · Telephony path · Vendor chosen · Stage order |
-| As of | 2026-11-10 |
+| As of | 2026-11-11 |
 <!-- /readme:status -->
 
 <p align="center">
