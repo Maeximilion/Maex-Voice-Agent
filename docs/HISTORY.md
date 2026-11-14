@@ -1505,3 +1505,10 @@ Moved unchanged from `CLAUDE.md` sections 1, 3, 6 and 8 by Loop D PR 5 of #695:
 - "Cache-friendly sessions" item 2, idle check-in: No recurring cron: its jitter (up to 30 minutes late) can miss the 1-hour cache. `CronCreate` was tested to fire on time in the desktop app on 07.11.2026, not yet in the Ubuntu terminal.
 - Section 8 Git, example: Conventional Commits: `feat(tools): check_delivery with polygon validation`
 - "The Loop", skills at session start: `caveman` loaded at level `ultra` from 2026-10-19 until 2026-11-13, when Maxi switched it to `full`.
+
+## CLAUDE.md (archive, 14.11.2026)
+
+Replaced in section 6 "Model Routing" by the "Deep review" paragraph (Maxi, 2026-11-14, closing #546):
+
+- **Ultrareview** (`/code-review ultra <PR>`: billed, only Maxi starts it; the reminder names a local `/code-review max <PR>`, run on Maxi's word): reminder, ledger and filing live in `done.md` step 7a; read it before acting on such a review or a ledger batch review.
+- In the `xhigh` trigger sentence: "the ultrareview reminder" became "the deep review in `/done`".
