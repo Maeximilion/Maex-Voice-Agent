@@ -39,7 +39,7 @@ class Action:
 
 
 def load_call(path: Path) -> dict[str, Any]:
-    case = json.loads(path.read_text(encoding="utf-8"))
+    case: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     if not any(_is_caller_event(entry) for entry in case.get("transcript", [])):
         # A file without anything the caller does tests only the greeting; a
         # mistake in the file should fail loudly instead.

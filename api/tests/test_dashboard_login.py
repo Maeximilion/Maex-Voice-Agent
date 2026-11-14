@@ -17,7 +17,6 @@ from sqlalchemy.orm import sessionmaker
 
 from api.dashboard import access, cli, totp
 from api.dashboard import app as web
-from api.dashboard.access import token_hash
 from api.dashboard.config import DashboardSettings, settings
 from api.dashboard.db import get_db
 from api.dashboard.models import (
@@ -26,6 +25,7 @@ from api.dashboard.models import (
     OperatorLoginFailure,
     OperatorSession,
 )
+from api.domain.access.hashing import token_hash
 from evals.scratch_db import create_scratch_db, drop_scratch_db
 
 ROOT = Path(__file__).resolve().parents[2]

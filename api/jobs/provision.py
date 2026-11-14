@@ -22,6 +22,7 @@ refused, or something missing, 2 file or tenant not found.
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -104,7 +105,8 @@ def main(argv: list[str] | None = None) -> int:
         run=_check
     )
     args = parser.parse_args(argv)
-    return args.run(args)
+    run: Callable[[argparse.Namespace], int] = args.run
+    return run(args)
 
 
 if __name__ == "__main__":

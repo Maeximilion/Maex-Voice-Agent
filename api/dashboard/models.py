@@ -10,6 +10,7 @@ cookie), as on a customer's login (docs/23 §6).
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import (
     BigInteger,
@@ -44,7 +45,7 @@ def _account() -> Mapped[uuid.UUID]:
     )
 
 
-def _at(nullable: bool = False) -> Mapped:
+def _at(nullable: bool = False) -> Mapped[Any]:
     return mapped_column(DateTime(timezone=True), nullable=nullable)
 
 
@@ -125,6 +126,6 @@ class OperatorAudit(Base):
     action: Mapped[str] = mapped_column(Text, nullable=False)
     # The customer's key once actions on customers exist (#571 part 3).
     target: Mapped[str | None] = mapped_column(Text)
-    detail: Mapped[dict] = mapped_column(
+    detail: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )

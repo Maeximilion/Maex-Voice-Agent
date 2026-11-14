@@ -15,6 +15,7 @@ import secrets
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -99,7 +100,7 @@ async def _form(request: Request) -> dict[str, str]:
 
 
 def _page(
-    request: Request, template: str, context: dict, status_code: int = 200
+    request: Request, template: str, context: dict[str, Any], status_code: int = 200
 ) -> HTMLResponse:
     """A page with the CSRF token its form posts back, and the cookie it is
     compared with."""
@@ -146,7 +147,7 @@ def require_operator(
 
 
 @app.get("/health")
-def health() -> dict:
+def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
