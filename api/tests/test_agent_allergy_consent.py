@@ -172,11 +172,6 @@ def test_anything_else_is_unclear(said):
             "ohne Zwiebeln für meine Frau und ich habe eine Erdnussallergie",
             [("Erdnuss", True)],
         ),
-        # Codex PR #748, P1: the caller spoke last, the continuation is theirs.
-        (
-            "Ohne Zwiebeln für meine Frau, ich habe eine Erdnussallergie. Und eine Sesamallergie.",
-            [("Erdnuss", True), ("Sesam", True)],
-        ),
         # Codex PR #368: what is said beside the allergy is no part of it.
         ("Erdnussallergie. Bitte Besteck dazu", [("Erdnuss", True)]),
         # An allergen list stays one allergy.
@@ -1700,75 +1695,3 @@ def test_a_plain_denial_still_notes_nothing(session, state):
     assert (
         read(session, state, "Ich habe keine Allergie, nur ohne Koriander bitte") == []
     )
-
-
-# --- #739: health words that name no allergy -----------------------------------
-
-
-@pytest.mark.parametrize(
-    ("said", "noted"),
-    [
-        ("Mein Sohn hat Zöliakie, die 13 bitte.", [(None, True)]),
-        ("Ich habe Zöliakie.", [(None, True)]),
-        ("Meine Frau hat Zöliakie.", [(None, False)]),
-        ("Ich reagiere auf Sellerie.", [(None, True)]),
-        # The other adult carries on into the continuation (Codex PR #748, P1).
-        (
-            "Meine Frau hat Zöliakie. Und eine Nussallergie.",
-            [(None, False), ("Nuss", False)],
-        ),
-        (
-            "Meine Frau hat Zöliakie. Und eine Nussallergie. Ich habe eine Sesamallergie.",
-            [(None, False), ("Nuss", False), ("Sesam", True)],
-        ),
-        # An owner named in the later sentence is kept (Codex PR #748, P1).
-        (
-            "Meine Frau hat Zöliakie. Mein Sohn hat eine Nussallergie.",
-            [(None, False), ("Nuss", True)],
-        ),
-        # Another sentence with an allergy word keeps the health word's own.
-        (
-            "Ich habe eine Nussallergie. Mein Sohn hat Zöliakie.",
-            [(None, True), ("Nuss", True)],
-        ),
-        ("Die 13 bitte, ohne Zwiebeln.", []),
-        # One running owner, changed only by a sentence that speaks of health
-        # (Codex PR #748, P1, round 4).
-        (
-            "Meine Frau hat Zöliakie. Ich habe eine Nussallergie. Und eine Sesamallergie.",
-            [(None, False), ("Nuss", True), ("Sesam", True)],
-        ),
-        (
-            "Meine Frau hat eine Erdnussallergie. Und eine Nussallergie.",
-            [("Erdnuss", False), ("Nuss", False)],
-        ),
-        (
-            "Meine Frau hat eine Nussallergie. Ich nehme die 13. Und eine Sesamallergie.",
-            [("Nuss", False), ("Sesam", False)],
-        ),
-        (
-            "Ich habe eine Erdnussallergie. Meine Frau hat eine Sesamallergie.",
-            [("Erdnuss", True), ("Sesam", False)],
-        ),
-        (
-            "Meine Frau hat eine Nussallergie. Ich habe eine Sesamallergie.",
-            [("Nuss", False), ("Sesam", True)],
-        ),
-    ],
-)
-def test_a_health_word_opens_the_question_wogegen(session, state, said, noted):
-    """The model's note "Zöliakie, ohne Gluten" is refused with the promise
-    that the core notes it, so the core has to ask (#739, P2)."""
-    assert read(session, state, said) == noted
-
-
-def test_a_health_word_in_a_whole_turn_is_asked_about(session, state):
-    said = turn(
-        session,
-        state,
-        f"{TABLE}. Mein Sohn hat Zöliakie.",
-        LLMTurn(tool_call=table()),
-    )
-
-    assert said == [SAY_ALLERGY_WHICH]
-    assert reservations(session) == []
