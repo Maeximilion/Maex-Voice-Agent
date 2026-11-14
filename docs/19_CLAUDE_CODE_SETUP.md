@@ -883,6 +883,38 @@ Chained pull requests are linked as native stacks (CLAUDE.md §6), which needs t
 gh extension install github/gh-stack
 ```
 
+### Graphify (both systems)
+
+Graphify maps the code into a graph that Claude queries (`graphify query`, `path`, `explain`) before it greps or reads files (Maxi, 2026-11-14). The repository carries what `graphify install --project` wrote (version 0.9.109): the skill in `.claude/skills/graphify/`, `.claude/CLAUDE.md`, the `## graphify` section of `CLAUDE.md` and three hooks in `.claude/settings.json` (`graphify hook-guard search`, `read`, `compact`). The CLI itself is installed once per machine. The PyPI package is `graphifyy` with two y; other `graphify*` packages are not the official one.
+
+Windows, PowerShell; restart the desktop app afterwards so it sees the new `PATH`:
+
+```powershell
+uv tool install graphifyy
+```
+
+```powershell
+uv tool update-shell
+```
+
+Ubuntu, any folder:
+
+```bash
+pipx install graphifyy
+```
+
+Per checkout and worktree, in its folder: build the graph (code only through tree-sitter, no model call, nothing leaves the machine, about 20 seconds), then install the git hooks that rebuild it in the background after a commit, checkout, merge or rebase. The hooks live in the clone's `.git/hooks`, so all worktrees of a clone share them, but they only rebuild where `graphify-out/` exists. `hook install` also adds a merge driver line to `.gitattributes`; the graph is not committed (`graphify-out/` is in `.gitignore`), so that line is undone at once.
+
+```bash
+graphify update .
+```
+
+```bash
+graphify hook install && git checkout .gitattributes
+```
+
+Without `graphify` on `PATH` the three Claude hooks fail with "command not found", which Claude Code treats as a non-blocking error: the tool call goes through. Remove: `graphify hook uninstall` per clone, `uv tool uninstall graphifyy` or `pipx uninstall graphifyy` per machine; `graphify uninstall` removes the repository files and belongs in a pull request.
+
 ### Ubuntu threads for projects and claude.ai
 
 A project in the desktop app (or claude.ai/code) can only start a session inside Ubuntu when a Remote Control server runs there. Console: Ubuntu terminal.

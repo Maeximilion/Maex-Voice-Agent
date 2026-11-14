@@ -46,3 +46,6 @@ node_modules/
 
 # Terms the README and its images must not contain, one per line (scripts/readme_check.py)
 .readme_blocklist
+
+# Graphify code graph: built per checkout with `graphify update .` (docs/19)
+graphify-out/

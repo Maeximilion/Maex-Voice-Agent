@@ -31,6 +31,16 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "graphify hook-guard compact",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -42,6 +52,26 @@
             "command": "f=\"$CLAUDE_PROJECT_DIR/.claude/hooks/merge_gate.sh\"; if [ -f \"$f\" ]; then bash \"$f\"; fi",
             "timeout": 60,
             "onFailure": "block"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "graphify hook-guard search",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "Read|Glob",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "graphify hook-guard read",
+            "timeout": 10
           }
         ]
       }
