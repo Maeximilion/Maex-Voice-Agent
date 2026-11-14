@@ -11,13 +11,39 @@
 {% if not orders %}
 <p class="empty">Noch keine Bestellungen heute.</p>
 {% else %}
+{# Red cards also stick to the top of the column as one-line bars (T-3.16); the
+   full card keeps its place below. #}
+{% if orders|selectattr("failed")|list %}
+<ul class="red-bars">
+  {% for o in orders if o.failed %}
+  <li class="red-bar" data-bar-for="{{ o.id }}">
+    {% if o.pickup_code %}<span class="code" title="Abholcode">{{ o.pickup_code }}</span>{% endif %}
+    <b>{{ o.state }}</b>
+    <button class="stop" hx-post="/gui/bestellungen/{{ o.id }}/nochmal-senden"
+            hx-target="#bestellungen-liste" hx-swap="innerHTML">Nochmal senden</button>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
 <ul class="cards">
   {% for o in orders %}
   {# overdue: waits for "Passt" longer than the restaurant allows (#252). app.js
      reads data-overdue and rings once when a card turns red. #}
   {# register_late: not marked as typed into the register since an earlier
      business day (T-11.6); the red edge of an overdue card, no alarm. #}
-  <li class="card order {{ 'failed' if o.failed }}{{ 'overdue' if (o.overdue or o.register_late) and not o.failed }}{{ ' awaiting' if o.awaiting and not o.failed and not o.overdue and not o.register_late }}" data-id="{{ o.id }}"{% if o.overdue and not o.failed %} data-overdue="1"{% endif %}>
+  <li class="card order{{ ' compact' if o.compact }} {{ 'failed' if o.failed }}{{ 'overdue' if (o.overdue or o.register_late) and not o.failed }}{{ ' awaiting' if o.awaiting and not o.failed and not o.overdue and not o.register_late }}" data-id="{{ o.id }}"{% if o.overdue and not o.failed %} data-overdue="1"{% endif %}>
+    {% if o.compact %}
+    {# Only "In Kasse eingegeben" is left (slip out, Passt done, not red, T-3.16):
+       one line; a tap on the line opens the full card (Korrigieren, Stornieren).
+       A button in the summary acts on its own and does not toggle. #}
+    <details><summary>
+      {% if o.pickup_code %}<span class="code" title="Abholcode">{{ o.pickup_code }}</span>{% endif %}
+      <span class="name">{{ o.name }}</span>
+      <b class="time">{{ o.time }}</b>
+      <button class="primary" hx-post="/gui/bestellungen/{{ o.id }}/in-kasse/{{ o.version }}"
+              hx-target="#bestellungen-liste" hx-swap="innerHTML">In Kasse eingegeben</button>
+    </summary>
+    {% endif %}
     <div class="res-head">
       <b class="time">{{ o.time }}</b>
       <span class="badge accent">{{ o.type }}</span>

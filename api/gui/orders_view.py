@@ -79,6 +79,13 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         tone, state = "ok", "Zettel wird gedruckt"
     else:
         tone, state = "ok", "Zettel liegt an der Kasse"
+    register = _register(order, tz_name)
+    # Only "In Kasse eingegeben" is left (T-3.16): slip out, Passt done, not red.
+    compact = (
+        register["can_mark"]
+        and not register["register_late"]
+        and order.handover_state == "sent"
+    )
     return {
         "id": str(order.order_id),
         "time": clock(order.created_at, tz_name),
@@ -107,7 +114,8 @@ def card(order: BoardOrder, tz_name: str) -> dict:
         "cancelled": cancelled,
         "version": order.version,
         "corrected": REASONS.get(order.corrected) if order.corrected else None,
-        **_register(order, tz_name),
+        "compact": compact,
+        **register,
     }
 
 

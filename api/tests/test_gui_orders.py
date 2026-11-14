@@ -188,6 +188,54 @@ def test_rote_karte_hat_nochmal_senden_statt_passt(client, db, tenant_id):
     assert _fresh(db, order_id).handover_state == "pending"
 
 
+def test_card_waiting_only_for_the_register_is_one_line(client, db, tenant_id):
+    order_id = _order(db, tenant_id, mode="primary")
+    html = client.get("/gui/fragments/bestellungen").text
+    assert "compact" not in html  # waits for Passt: full
+    assert "Frühlingsrollen" in html
+
+    client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX)
+    # The bridge reports the slip as printed.
+    db.execute(update(Order).where(Order.id == order_id).values(handover_state="sent"))
+    db.commit()
+    html = client.get("/gui/fragments/bestellungen").text
+    assert "card order compact" in html
+    assert "In Kasse eingegeben" in html
+    # Tap on the line opens the full card: Korrigieren and Stornieren stay reachable.
+    assert "<details><summary>" in html and "Korrigieren" in html
+
+
+def test_card_whose_slip_is_still_printing_stays_full(client, db, tenant_id):
+    order_id = _order(db, tenant_id, mode="primary")
+    client.post(f"/gui/bestellungen/{order_id}/passt", headers=HX)
+    db.execute(
+        update(Order).where(Order.id == order_id).values(handover_state="pending")
+    )
+    db.commit()
+    html = client.get("/gui/fragments/bestellungen").text
+    assert "Zettel wird gedruckt" in html and "compact" not in html
+
+
+def test_new_card_waiting_for_passt_stays_full(client, db, tenant_id):
+    _order(db, tenant_id)
+    html = client.get("/gui/fragments/bestellungen").text
+    assert "compact" not in html and "red-bar" not in html
+    assert "Frühlingsrollen" in html
+
+
+def test_red_card_has_a_sticky_bar_and_its_full_card(client, db, tenant_id):
+    order_id = _order(db, tenant_id, mode="primary")
+    db.execute(
+        update(Order).where(Order.id == order_id).values(handover_state="failed")
+    )
+    db.commit()
+    html = client.get("/gui/fragments/bestellungen").text
+    assert f'data-bar-for="{order_id}"' in html
+    assert html.count(f"/gui/bestellungen/{order_id}/nochmal-senden") == 2
+    assert f'data-id="{order_id}"' in html and "Frühlingsrollen" in html
+    assert "compact" not in html
+
+
 # --- Korrektur -------------------------------------------------------------------
 
 
