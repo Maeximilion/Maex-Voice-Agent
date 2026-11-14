@@ -913,6 +913,8 @@ graphify update .
 graphify hook install && git checkout .gitattributes
 ```
 
+The three Claude hooks fire in a terminal `claude` session (checked 2026-11-15 on Windows with `claude -p`: a marker file `graphify-out/cache/hook_sessions/<session_id>.nudges` appears and the model sees the "graphify: this project has a knowledge graph" note). They do not fire in the desktop app: three fresh app sessions on Windows, with the bare command and with the absolute path in `.claude/settings.local.json`, saw no note, and a probe PreToolUse hook there never ran either. In the app, call `graphify query "<question>"` yourself; do not use the missing note as a setup check.
+
 Without `graphify` on `PATH` the three Claude hooks fail with "command not found", which Claude Code treats as a non-blocking error: the tool call goes through. Remove: `graphify hook uninstall` per clone, `uv tool uninstall graphifyy` or `pipx uninstall graphifyy` per machine; `graphify uninstall` removes the repository files and belongs in a pull request.
 
 ### Ubuntu threads for projects and claude.ai
