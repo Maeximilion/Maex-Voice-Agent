@@ -427,15 +427,13 @@ class ScriptedLLM:
                 return replace(turn, say=_join(prefix, turn.say)) if turn.say else turn
         if name == "search_menu" and self._opening_prefix is not None:
             return self._after_opening_search(result, slots)
-        if (
-            not result.get("ok")
-            and result.get("hint") == HINT_UNNOTED_ALLERGY
-            and self._pickup is not None
-        ):
+        if not result.get("ok") and result.get("hint") == HINT_UNNOTED_ALLERGY:
             # The stand-in notes what the search read as the allergy; an
             # allergy it did not read it cannot word, so it sends the draft
             # again, and the core lets the second one go (`guards.py`).
-            return self._pickup.draft_again(slots)
+            if self._pickup is not None:
+                return self._pickup.draft_again(slots)
+            return LLMTurn(tool_call=ToolCall("create_reservation", _draft(slots)))
         if not result.get("ok"):
             if self._pickup is not None:
                 # The tool's sentence offers pickup, or asks for one more dish.
