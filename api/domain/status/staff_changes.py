@@ -413,26 +413,26 @@ def bookings_outside_hours(
     without a dine-in window: all of them when closed, the ones outside the
     times when shortened. The team calls these guests itself (#710, Maxi
     2026-11-13): nothing is cancelled and no guest is messaged. By time."""
-    start, end = business_day_bounds_utc(day, zone)
     tz = ZoneInfo(zone)
     regular = regular_hours(session, tenant_id)
-    special = {} if hours.normal else {day: hours.row(tenant_id, day)}
-    windows = windows_for_day(HoursData(regular, special), day, "dinein", tz)
-    # A window of the date before the change (its own or the weekly one) that
-    # runs past the 05:00 cutoff still belongs to this date.
-    own = windows_for_day(HoursData(regular, {}), day, "dinein", tz)
-    if before is not None and not before.normal:
-        was = {day: before.row(tenant_id, day)}
-        own += windows_for_day(HoursData(regular, was), day, "dinein", tz)
-    reach = max([end, *(b for _, b in own)])
+
+    def dinein(held: DayHours) -> list[tuple[datetime, datetime]]:
+        special = {} if held.normal else {day: held.row(tenant_id, day)}
+        return windows_for_day(HoursData(regular, special), day, "dinein", tz)
+
+    # The date's span: its business day plus the windows that held before the
+    # change, which may start before or end after the cutoff (02:00 to 04:00,
+    # 22:00 to 10:00). The query bounds come from this span, never a constant.
+    span = [business_day_bounds_utc(day, zone), *dinein(before or DayHours())]
+    new = dinein(hours)
     rows = session.scalars(
         select(Reservation)
         .where(
             Reservation.tenant_id == tenant_id,
             Reservation.status == "confirmed",
             Reservation.deleted_at.is_(None),
-            Reservation.reserved_for >= start,
-            Reservation.reserved_for < reach,
+            Reservation.reserved_for >= min(a for a, _ in span),
+            Reservation.reserved_for < max(b for _, b in span),
         )
         .order_by(Reservation.reserved_for)
     )
@@ -441,8 +441,8 @@ def bookings_outside_hours(
             r.guest_name, r.reserved_for.astimezone(tz), r.phone, r.party_size
         )
         for r in rows
-        if not any(a <= r.reserved_for < b for a, b in windows)
-        and (r.reserved_for < end or any(a <= r.reserved_for < b for a, b in own))
+        if any(a <= r.reserved_for < b for a, b in span)
+        and not any(a <= r.reserved_for < b for a, b in new)
     ]
 
 

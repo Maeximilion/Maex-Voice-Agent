@@ -720,3 +720,95 @@ def test_a_special_window_past_the_cutoff_keeps_its_late_table(session, tenant_i
         session, tenant_id, SATURDAY, DayHours(closed=True), "Europe/Berlin", was
     )
     assert [b.guest_name for b in found] == ["Night"]
+
+
+def _hours(opens: time, closes: time) -> DayHours:
+    return DayHours(opens=opens, closes=closes)
+
+
+# (before the change, hours that hold after it, [(day offset, time, status, name)], listed)
+# Weekly Saturday dine-in hours: 11:30-14:00 and 17:00-22:00.
+_T = time
+WINDOW_CASES = {
+    "normal closure": (
+        None,
+        DayHours(closed=True),
+        [(0, _T(12), "confirmed", "A"), (0, _T(19), "confirmed", "B")],
+        ["A", "B"],
+    ),
+    "shortening": (
+        None,
+        _hours(_T(12), _T(13, 30)),
+        [
+            (0, _T(11, 45), "confirmed", "Early"),
+            (0, _T(13), "confirmed", "Inside"),
+            (0, _T(19), "confirmed", "Evening"),
+        ],
+        ["Early", "Evening"],
+    ),
+    "after-midnight window closed": (
+        _hours(_T(23), _T(2)),
+        DayHours(closed=True),
+        [(0, _T(23, 30), "confirmed", "Late"), (1, _T(1), "confirmed", "Night")],
+        ["Late", "Night"],
+    ),
+    "after-midnight window shortened": (
+        _hours(_T(23), _T(2)),
+        _hours(_T(23), _T(0, 30)),
+        [
+            (0, _T(23, 15), "confirmed", "Inside"),
+            (1, _T(0, 15), "confirmed", "Still"),
+            (1, _T(1), "confirmed", "Night"),
+        ],
+        ["Night"],
+    ),
+    "pre-05:00 special window closed": (
+        _hours(_T(2), _T(4)),
+        DayHours(closed=True),
+        [(0, _T(3), "confirmed", "Dawn")],
+        ["Dawn"],
+    ),
+    "pre-05:00 special window shortened": (
+        _hours(_T(2), _T(4)),
+        _hours(_T(2), _T(3, 30)),
+        [
+            (0, _T(3), "confirmed", "Inside"),
+            (0, _T(3, 45), "confirmed", "Dawn"),
+        ],
+        ["Dawn"],
+    ),
+    "weekly hours shorten a special day": (
+        _hours(_T(10), _T(23)),
+        DayHours(),
+        [
+            (0, _T(12), "confirmed", "Inside"),
+            (0, _T(22, 30), "confirmed", "Late"),
+        ],
+        ["Late"],
+    ),
+    "cancelled, draft and other dates stay off": (
+        None,
+        DayHours(closed=True),
+        [
+            (0, _T(19), "cancelled", "Gone"),
+            (0, _T(19), "draft", "Draft"),
+            (-1, _T(19), "confirmed", "Friday"),
+            (1, _T(19), "confirmed", "Sunday"),
+            (0, _T(19), "confirmed", "Kept"),
+        ],
+        ["Kept"],
+    ),
+}
+
+
+@pytest.mark.parametrize("case", WINDOW_CASES)
+def test_the_window_table_lists_what_the_old_windows_held_and_the_new_ones_do_not(
+    session, tenant_id, case
+):
+    before, after, tables, listed = WINDOW_CASES[case]
+    for offset, at, status, name in tables:
+        _table(session, tenant_id, SATURDAY + timedelta(days=offset), at, name, status)
+    found = staff.bookings_outside_hours(
+        session, tenant_id, SATURDAY, after, "Europe/Berlin", before
+    )
+    assert [b.guest_name for b in found] == listed
