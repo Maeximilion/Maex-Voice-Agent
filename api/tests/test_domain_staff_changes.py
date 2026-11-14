@@ -3,6 +3,7 @@ for today, a date's hours that hold at once when they shorten or are for today
 and otherwise wait for the owner, the owner's keep and undo, and the readers of
 the team number."""
 
+import json
 import uuid
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -405,6 +406,12 @@ def _events(session, tenant_id) -> list[tuple[str, dict]]:
     return [(row.event_type, row.payload) for row in rows]
 
 
+def _by_content(events):
+    """These changes share one transaction, so `created_at` (the transaction
+    start) ties and the row order is arbitrary: compare as a sorted multiset."""
+    return sorted(events, key=lambda e: json.dumps(e, sort_keys=True))
+
+
 def test_each_team_number_change_pushes_once(session, tenant_id):
     standard = _config(session, tenant_id).team_phone
     staff.change_team_phone(session, tenant_id, NUMBER, NOW)
@@ -412,11 +419,16 @@ def test_each_team_number_change_pushes_once(session, tenant_id):
     staff.change_team_phone(session, tenant_id, standard, NOW)
     day = TUESDAY.isoformat()
     # Nothing but the day and the numbers: no device, no name.
-    assert _events(session, tenant_id) == [
-        (TEAM_PHONE_CHANGED, {"day": day, "from": standard, "to": NUMBER}),
-        (TEAM_PHONE_CHANGED, {"day": day, "from": NUMBER, "to": "+4972215550000"}),
-        (TEAM_PHONE_CHANGED, {"day": day, "from": "+4972215550000", "to": standard}),
-    ]
+    assert _by_content(_events(session, tenant_id)) == _by_content(
+        [
+            (TEAM_PHONE_CHANGED, {"day": day, "from": standard, "to": NUMBER}),
+            (TEAM_PHONE_CHANGED, {"day": day, "from": NUMBER, "to": "+4972215550000"}),
+            (
+                TEAM_PHONE_CHANGED,
+                {"day": day, "from": "+4972215550000", "to": standard},
+            ),
+        ]
+    )
 
 
 def test_a_date_change_pushes_in_the_tablets_words_and_says_when_it_waits(
@@ -425,26 +437,28 @@ def test_a_date_change_pushes_in_the_tablets_words_and_says_when_it_waits(
     staff.change_day_hours(session, tenant_id, TUESDAY, DayHours(closed=True), NOW)
     longer = DayHours(opens=time(11), closes=time(23))
     staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW)
-    assert _events(session, tenant_id) == [
-        (
-            DAY_HOURS_CHANGED,
-            {
-                "day": TUESDAY.isoformat(),
-                "from": "normale Zeiten der Woche",
-                "to": "geschlossen",
-                "held": True,
-            },
-        ),
-        (
-            DAY_HOURS_CHANGED,
-            {
-                "day": SATURDAY.isoformat(),
-                "from": "normale Zeiten der Woche",
-                "to": "11:00 bis 23:00 Uhr",
-                "held": False,
-            },
-        ),
-    ]
+    assert _by_content(_events(session, tenant_id)) == _by_content(
+        [
+            (
+                DAY_HOURS_CHANGED,
+                {
+                    "day": TUESDAY.isoformat(),
+                    "from": "normale Zeiten der Woche",
+                    "to": "geschlossen",
+                    "held": True,
+                },
+            ),
+            (
+                DAY_HOURS_CHANGED,
+                {
+                    "day": SATURDAY.isoformat(),
+                    "from": "normale Zeiten der Woche",
+                    "to": "11:00 bis 23:00 Uhr",
+                    "held": False,
+                },
+            ),
+        ]
+    )
 
 
 def test_a_withdrawn_request_pushes_from_the_request_not_from_what_held(
@@ -455,8 +469,7 @@ def test_a_withdrawn_request_pushes_from_the_request_not_from_what_held(
     longer = DayHours(opens=time(10), closes=time(23))
     staff.change_day_hours(session, tenant_id, SATURDAY, longer, NOW)
     staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
-    last = _events(session, tenant_id)[-1]
-    assert last == (
+    assert (
         DAY_HOURS_CHANGED,
         {
             "day": SATURDAY.isoformat(),
@@ -464,7 +477,7 @@ def test_a_withdrawn_request_pushes_from_the_request_not_from_what_held(
             "to": "geschlossen",
             "held": True,
         },
-    )
+    ) in _events(session, tenant_id)
 
 
 def test_a_tap_that_changes_nothing_pushes_nothing(session, tenant_id):
@@ -504,7 +517,7 @@ def test_a_waiting_request_sent_again_on_its_day_holds_and_pushes(session, tenan
     card = staff.change_day_hours(session, tenant_id, SATURDAY, longer, on_the_day)
     assert card is not None and card.held
     assert _windows(session, tenant_id, SATURDAY) == [("11:00", "23:00")]
-    assert [p["held"] for _, p in _events(session, tenant_id)] == [False, True]
+    assert sorted(p["held"] for _, p in _events(session, tenant_id)) == [False, True]
 
 
 def test_the_owners_answer_pushes_nothing(session, tenant_id):
