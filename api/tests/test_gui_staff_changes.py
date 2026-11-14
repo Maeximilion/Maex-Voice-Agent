@@ -15,7 +15,7 @@ from api.config import settings
 from api.core.time import business_day
 from api.db import get_db
 from api.main import app
-from api.models import Reservation, ServiceConfig, StaffChange
+from api.models import Reservation, ServiceConfig, SpecialDay, StaffChange
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -262,7 +262,7 @@ def test_a_held_closure_lists_the_guests_to_call(client, engine):
     assert 'href="tel:+491701234567"' in cards
 
 
-def _table(engine, day, name, phone="+491701234567"):
+def _table(engine, day, name, phone="+491701234567", at=time(19)):
     with Session(engine) as session:
         session.add(
             Reservation(
@@ -272,7 +272,7 @@ def _table(engine, day, name, phone="+491701234567"):
                 guest_name=name,
                 phone=phone,
                 party_size=2,
-                reserved_for=datetime.combine(day, time(19), tzinfo=BERLIN),
+                reserved_for=datetime.combine(day, at, tzinfo=BERLIN),
                 idempotency_key=f"gui-{name}",
             )
         )
@@ -301,3 +301,25 @@ def test_a_costly_number_is_shown_but_not_linked(client, engine):
     cards = client.get("/gui/fragments/pruefen", headers=HX).text
     assert "+4990012345678" in cards and "Teure Sondernummer" in cards
     assert "tel:+4990012345678" not in cards
+
+
+def test_weekly_hours_back_on_a_longer_date_list_the_late_table(client, engine):
+    later = _today() + timedelta(days=7)
+    with Session(engine) as session:
+        session.add(
+            SpecialDay(
+                tenant_id=session.scalar(select(ServiceConfig.tenant_id)),
+                date=later,
+                opens_at=time(10),
+                closes_at=time(23),
+                status="set",
+            )
+        )
+        session.commit()
+    _table(engine, later, "Late", at=time(22, 30))
+    client.post(
+        "/gui/tageszeiten",
+        data={"datum": later.isoformat(), "art": "normal"},
+        headers=HX,
+    )
+    assert "Late" in client.get("/gui/fragments/pruefen", headers=HX).text

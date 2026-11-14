@@ -1609,8 +1609,9 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
             before = staff.DayHours.of(card.before).text()
             after = staff.DayHours.of(card.after).text()
             holding = holding_on[card.day].text()
-            # What holds now is closed or shorter: the guests the team calls itself.
-            if not holding_on[card.day].normal:
+            # What holds now differs from the date before the change (closed,
+            # shorter, back to the weekly hours): the guests the team calls itself.
+            if holding_on[card.day] != staff.DayHours.of(card.before):
                 calls = staff.bookings_outside_hours(
                     session, tenant.id, card.day, holding_on[card.day], tenant.timezone
                 )
