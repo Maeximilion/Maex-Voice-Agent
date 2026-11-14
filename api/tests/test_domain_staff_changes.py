@@ -578,6 +578,38 @@ def test_shorter_times_on_a_day_like_another_weekday_wait(session, tenant_id):
     assert closed is not None and closed.held
 
 
+def test_shorter_times_today_on_a_day_like_another_weekday_wait_too(session, tenant_id):
+    """Today holds at once by design, but not when the times would drop "wie
+    Sonntag" with Sunday's seats, call mode and call limit (#710)."""
+    session.add(
+        SpecialDay(tenant_id=tenant_id, date=TUESDAY, like_weekday=6, status="set")
+    )
+    session.commit()
+    card = staff.change_day_hours(
+        session, tenant_id, TUESDAY, DayHours(opens=time(12), closes=time(13)), NOW
+    )
+    assert card is not None and not card.held
+    row = session.scalars(select(SpecialDay).where(SpecialDay.date == TUESDAY)).one()
+    session.refresh(row)
+    assert row.like_weekday == 6 and row.opens_at is None
+    closed = staff.change_day_hours(
+        session, tenant_id, TUESDAY, DayHours(closed=True), NOW
+    )
+    assert closed is not None and closed.held
+
+
+def test_a_listed_national_number_is_never_offered_on_the_sheet(
+    session, tenant_id, monkeypatch
+):
+    """The dialplan dials it as written, but a typed number is normalised and
+    would never match it (#596)."""
+    monkeypatch.setattr(settings, "transfer_targets", f"07215559999,{NUMBER}")
+    assert staff.dialable_numbers() == [settings.team_phone, "07215559999", NUMBER]
+    assert staff.sheet_numbers() == [settings.team_phone, NUMBER]
+    with pytest.raises(InvalidInput):
+        staff.change_team_phone(session, tenant_id, "07215559999", NOW)
+
+
 def test_a_span_over_midnight_needs_the_staff_to_say_so(session, tenant_id):
     """ "von 22:00 bis 10:00" with the times swapped would open the night (#596 P2)."""
     swapped = DayHours(opens=time(22), closes=time(10))
