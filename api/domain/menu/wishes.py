@@ -1097,7 +1097,7 @@ _COELIAC = re.compile(r"[zc](?:ö|oe)liak", re.IGNORECASE)
 # "darf kein" as whole words: "bedarf keiner", "darf keiner wissen" are no
 # health (#763).
 _HEALTH_WORDS = re.compile(
-    rf"{_COELIAC.pattern}|reagier\w{{0,30}}\s+auf|\bdarf\s+kein(?:e[nm]?)?\b|\bmeiden\b",
+    rf"{_COELIAC.pattern}|reagier\w{{0,30}}\s+auf|\bdarf\s+kein(?:e[nm]?|erlei)?\b|\bmeiden\b",
     re.IGNORECASE,
 )
 

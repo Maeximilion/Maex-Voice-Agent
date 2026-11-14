@@ -2154,6 +2154,8 @@ def test_a_comma_chain_is_read_in_linear_time():
         ("Das bedarf keiner Reservierung.", False),
         ("Das darf keiner wissen, es ist eine Überraschung.", False),
         ("Ich darf keine Nüsse.", True),
+        # Codex PR #767, P1: "keinerlei" is the strong "kein".
+        ("Ich darf keinerlei Gluten.", True),
         ("ohne Gluten", False),
     ],
 )
