@@ -14,8 +14,6 @@
                 hx-confirm="{% if row.this %}Dieses Gerät abmelden? Danach braucht es das Passwort.{% else %}Dieses Gerät abmelden?{% endif %}">Gerät abmelden</button>
       </td>
     </tr>
-    {% else %}
-    <tr><td colspan="4">Kein Gerät angemeldet.</td></tr>
     {% endfor %}
   </tbody>
 </table>

@@ -2300,3 +2300,52 @@ def test_a_withheld_guest_who_hangs_up_on_the_handover_is_abandoned(session, ten
 
     assert session.scalars(select(Callback)).all() == []
     assert the_call(session, "s-1").outcome == "abandoned"
+
+
+def test_a_guest_who_hangs_up_on_the_outage_sentence_gets_a_card(session, tenant):
+    """#741: a turn failed, the outage sentence is queued and the transfer waits
+    behind it. A guest gone before it reaches the line was never with the team:
+    a card from the kept summary, and the call stays logged as an error."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, llm_factory=lambda s: BrokenLLM())
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", "Einen Tisch für vier bitte")
+    assert port.says("s-1")[-1] == SAY_OUTAGE
+
+    handler.on_call_ended("s-1", caller_hung_up=True)
+
+    [card] = session.scalars(select(Callback)).all()
+    assert card.phone == "+497215551234"
+    assert the_call(session, "s-1").outcome == "error"
+
+
+def test_a_withheld_guest_who_hangs_up_on_the_outage_sentence_gets_no_card(
+    session, tenant
+):
+    """Nobody can call back, and the end stays an error."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, llm_factory=lambda s: BrokenLLM())
+    port.open("s-1", caller_id=None)
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", "Einen Tisch für vier bitte")
+
+    handler.on_call_ended("s-1", caller_hung_up=True)
+
+    assert session.scalars(select(Callback)).all() == []
+    assert the_call(session, "s-1").outcome == "error"
+
+
+def test_an_outage_transfer_that_reached_the_line_leaves_no_card(session, tenant):
+    """The guest stayed for the sentence: the line had the transfer, and the
+    team's missed leg is what writes a card then."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, llm_factory=lambda s: BrokenLLM())
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    handler.on_user_turn("s-1", "Einen Tisch für vier bitte")
+
+    handler.on_call_ended("s-1")
+
+    assert session.scalars(select(Callback)).all() == []
+    assert the_call(session, "s-1").outcome == "error"

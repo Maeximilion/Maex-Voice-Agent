@@ -443,6 +443,79 @@ def test_a_maintained_value_is_answered_and_the_call_goes_on(session, known_tena
     assert session.scalars(select(Callback)).all() == []
 
 
+CORE_SAY = (
+    "Laut unseren Angaben enthält Nummer 23 Frühlingsrollen: glutenhaltiges Getreide."
+)
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        # Nothing wrong with the claim for a guard to catch: a letter dropped
+        # or one added (#717), a name other than the table's (#669).
+        "Die 23 enthält Gluten und Soja.",
+        "Die 23 enthält Gluten, Erdnüsse und Soja.",
+        "Die 23 enthält Weizen.",
+        "In den Frühlingsrollen ist Gluten.",
+        CORE_SAY,
+    ],
+)
+def test_the_guest_hears_the_core_sentence_for_a_maintained_value(
+    session, known_tenant, answer
+):
+    """#669, #717 (rule 1): the allergens a guest hears come from the table of
+    the core, whatever the model makes of the result."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Ist in den Frühlingsrollen Gluten?",
+        details(session, known_tenant, "23"),
+        LLMTurn(say=answer),
+    )
+
+    assert not result.ended
+    assert result.say == [CORE_SAY]
+    assert state.last_said == CORE_SAY
+
+
+def test_each_dish_looked_up_in_a_turn_gets_its_sentence(session):
+    tenant_id = _tenant(session, "Testbetrieb")
+    csv = "number;allergen_codes;confirmed_by\n23;A;Maxi\n13;F,L;Maxi\n"
+    plan = parse({**KARTE, ALLERGENS_FILE: csv})
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    state = state_for(session, tenant_id, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Was ist in den Frühlingsrollen und in der Pho Bo?",
+        details(session, tenant_id, "23"),
+        details(session, tenant_id, "23"),
+        details(session, tenant_id, "13"),
+        LLMTurn(say="Die Frühlingsrollen enthalten Gluten, die Pho Bo Soja."),
+    )
+
+    assert result.say == [
+        f"{CORE_SAY} Laut unseren Angaben enthält Nummer 13 Pho Bo: Soja und Sellerie."
+    ]
+
+
+def test_a_sentence_without_a_lookup_in_the_turn_is_left_alone(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Hallo, ich möchte etwas bestellen.",
+        LLMTurn(say="Gern, was darf es sein?"),
+    )
+
+    assert result.say == ["Gern, was darf es sein?"]
+
+
 @pytest.mark.parametrize(
     "answer",
     [
