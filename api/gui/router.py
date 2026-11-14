@@ -53,7 +53,7 @@ from api.domain.status import staff_changes as staff
 from api.domain.status.mode import CAUTION, mode_at
 from api.domain.status.waits import current_wait, standard_wait
 from api.gui import calls_view, figures_view, orders_view
-from api.gui.session import LOGIN, require_admin, require_gui_session
+from api.gui.session import LOGIN, csrf_matches, require_admin, require_gui_session
 from api.gui.sse import today_event_stream
 from api.models import Reservation, ServiceConfig, Tenant
 from api.schemas.floor_plan import NewArea, SaveArea
@@ -321,14 +321,7 @@ def _require_htmx(
     """Require the page's CSRF token for state-changing HTMX requests."""
     if hx_request != "true":
         raise HTTPException(status_code=403, detail="Only from the operations view")
-    csrf_cookie = request.cookies.get("csrf_token")
-    if (
-        not csrf_cookie
-        or not x_csrf_token
-        or not csrf_cookie.isascii()
-        or not x_csrf_token.isascii()
-        or not secrets.compare_digest(csrf_cookie, x_csrf_token)
-    ):
+    if not csrf_matches(request.cookies.get("csrf_token"), x_csrf_token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
 
@@ -1605,6 +1598,7 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
         session, tenant.id, [c.day for c in cards if c.kind == staff.DAY_HOURS]
     )
     for card in cards:
+        calls: list[staff.BookingToCall] = []
         if card.kind == staff.TEAM_PHONE:
             title, keep = "Teamnummer heute", "Als Standard übernehmen"
             before, after = card.before["number"], card.after["number"]
@@ -1615,6 +1609,17 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
             before = staff.DayHours.of(card.before).text()
             after = staff.DayHours.of(card.after).text()
             holding = holding_on[card.day].text()
+            # What holds now differs from the date before the change (closed,
+            # shorter, back to the weekly hours): the guests the team calls itself.
+            if holding_on[card.day] != staff.DayHours.of(card.before):
+                calls = staff.bookings_outside_hours(
+                    session,
+                    tenant.id,
+                    card.day,
+                    holding_on[card.day],
+                    tenant.timezone,
+                    staff.DayHours.of(card.before),
+                )
         rows.append(
             {
                 "id": card.id,
@@ -1624,6 +1629,7 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
                 "after": after,
                 "now": holding,
                 "waiting": not card.held,
+                "calls": calls,
                 "seen": card.updated_at.isoformat(),
             }
         )
@@ -1707,7 +1713,7 @@ def _phone_sheet(
         {
             "holding": holding,
             "standard": config.team_phone,
-            "choices": [n for n in staff.dialable_numbers() if n != holding],
+            "choices": [n for n in staff.sheet_numbers() if n != holding],
             "message": message,
             "tone": tone,
         },
@@ -1800,7 +1806,12 @@ def _hhmm(text: str) -> dt_time:
     """HH:MM only: a stored second or offset would undo to another time."""
     if len(text) != 5:
         raise ValueError(text)
-    return dt_time.fromisoformat(text)
+    # "1000Z" is five characters and 10:00 with an offset: a time with a zone
+    # cannot be compared with the stored ones.
+    parsed = dt_time.fromisoformat(text)
+    if parsed.tzinfo is not None:
+        raise ValueError(text)
+    return parsed
 
 
 def _typed_day(text: str) -> date | None:
@@ -1870,6 +1881,14 @@ def day_hours_change(
 # --- The owner's device list (#570 part b, D34 point 6) ---------------------------
 
 
+def _admin_tenant(session: Session) -> Tenant:
+    """The restaurant behind a session that `require_admin` just found: the
+    session check resolves it by the same oldest tenant, so it is there."""
+    tenant = _tenant(session)
+    assert tenant is not None
+    return tenant
+
+
 def _device_rows(session: Session, tenant: Tenant, own: uuid.UUID) -> list[dict]:
     shown = "%d.%m.%Y %H:%M"
     return [
@@ -1890,11 +1909,7 @@ def devices_page(
     access: Access = Depends(require_admin),
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
-    tenant = _tenant(session)
-    if tenant is None:
-        return _page_response(
-            request, "betrieb/geraete.html", {"problem": NO_TENANT}, 503
-        )
+    tenant = _admin_tenant(session)
     rows = _device_rows(session, tenant, access.session_id)
     return _page_response(
         request, "betrieb/geraete.html", {"tenant": tenant, "devices": rows}
@@ -1915,9 +1930,7 @@ def device_sign_out(
 ) -> HTMLResponse:
     """The lost tablet: one device signed out; it needs the password again.
     A device gone already is no error, the fresh list is the answer."""
-    tenant = _tenant(session)
-    if tenant is None:
-        return HTMLResponse(NO_TENANT, status_code=503)
+    tenant = _admin_tenant(session)
     end_sessions(session, tenant.id, "gui:owner", "owner", session_id)
     session.commit()
     if session_id == access.session_id:

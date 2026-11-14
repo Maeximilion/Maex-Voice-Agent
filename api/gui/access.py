@@ -8,7 +8,7 @@ themselves live in `domain/access/`.
 """
 
 import re
-import secrets
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -20,6 +20,7 @@ from api.core.errors import InvalidInput
 from api.db import get_db
 from api.domain.access.admin import AdminRefused, close_admin, unlock_admin
 from api.domain.access.sessions import (
+    Access,
     SignInRefused,
     resolve,
     sign_in,
@@ -31,6 +32,7 @@ from api.gui.router import NO_TENANT, _form, _page_response
 from api.gui.session import (
     LOGIN,
     client_address,
+    csrf_matches,
     device_token,
     same_origin,
     session_token,
@@ -55,14 +57,8 @@ BACK = re.compile(r"/gui/((?!inhaber)(?!.*\.\.)[A-Za-z0-9/._-]*)")
 
 
 def _checked(request: Request, form: dict[str, str]) -> None:
-    cookie = request.cookies.get("csrf_token", "")
-    sent = form.get("csrf_token", "")
-    if (
-        not same_origin(request)
-        or not cookie
-        or not sent.isascii()
-        or not cookie.isascii()
-        or not secrets.compare_digest(cookie, sent)
+    if not same_origin(request) or not csrf_matches(
+        request.cookies.get("csrf_token"), form.get("csrf_token")
     ):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
@@ -71,9 +67,14 @@ def _device(request: Request) -> str:
     return request.headers.get("user-agent", "")
 
 
+def _access(request: Request, db: Session, now: datetime) -> Access | None:
+    """The signed-in device behind the request's cookie, or None."""
+    return resolve(db, session_token(request), stack_tenant_id(db), now)
+
+
 @router.get("/anmelden", response_class=HTMLResponse, include_in_schema=False)
 def sign_in_page(request: Request, db: Session = Depends(get_db)) -> Response:
-    if resolve(db, session_token(request), stack_tenant_id(db), clock.utcnow()):
+    if _access(request, db, clock.utcnow()):
         return RedirectResponse(BOARD, status_code=303)
     return _page_response(request, "zugang/anmelden.html", {})
 
@@ -166,7 +167,7 @@ def setup_post(
 
 @router.get("/entsperren", response_class=HTMLResponse, include_in_schema=False)
 def unlock_page(request: Request, db: Session = Depends(get_db)) -> Response:
-    access = resolve(db, session_token(request), stack_tenant_id(db), clock.utcnow())
+    access = _access(request, db, clock.utcnow())
     if access is None:
         return RedirectResponse(LOGIN, status_code=303)
     if not access.locked:
@@ -182,7 +183,7 @@ def unlock_post(
 ) -> Response:
     _checked(request, form)
     now = clock.utcnow()
-    access = resolve(db, session_token(request), stack_tenant_id(db), now)
+    access = _access(request, db, now)
     if access is None:
         return RedirectResponse(LOGIN, status_code=303)
     try:
@@ -218,7 +219,7 @@ def _back(value: str) -> str:
 def owner_page(
     request: Request, weiter: str = "", db: Session = Depends(get_db)
 ) -> Response:
-    access = resolve(db, session_token(request), stack_tenant_id(db), clock.utcnow())
+    access = _access(request, db, clock.utcnow())
     if access is None:
         return RedirectResponse(LOGIN, status_code=303)
     if access.admin:
@@ -234,7 +235,7 @@ def owner_post(
 ) -> Response:
     _checked(request, form)
     now = clock.utcnow()
-    access = resolve(db, session_token(request), stack_tenant_id(db), now)
+    access = _access(request, db, now)
     if access is None:
         return RedirectResponse(LOGIN, status_code=303)
     back = _back(form.get("weiter", ""))
@@ -264,7 +265,7 @@ def owner_close(
 ) -> Response:
     """The owner is done before the hour ends: staff rights on this device."""
     _checked(request, form)
-    access = resolve(db, session_token(request), stack_tenant_id(db), clock.utcnow())
+    access = _access(request, db, clock.utcnow())
     if access is not None:
         close_admin(db, access.session_id)
     return RedirectResponse(BOARD, status_code=303)

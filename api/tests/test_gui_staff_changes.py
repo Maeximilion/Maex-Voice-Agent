@@ -15,7 +15,7 @@ from api.config import settings
 from api.core.time import business_day
 from api.db import get_db
 from api.main import app
-from api.models import ServiceConfig, StaffChange
+from api.models import Reservation, ServiceConfig, SpecialDay, StaffChange
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -221,7 +221,7 @@ def test_a_span_over_midnight_needs_the_box(client, engine):
     assert held.status_code == 200 and "Gilt sofort" in held.text
 
 
-@pytest.mark.parametrize("typed", ["10:00:30", "10:00+02:00"])
+@pytest.mark.parametrize("typed", ["10:00:30", "10:00+02:00", "1000Z", "10:0Z"])
 def test_times_with_seconds_or_an_offset_are_refused(client, engine, typed):
     form = {
         "datum": _today().isoformat(),
@@ -231,3 +231,95 @@ def test_times_with_seconds_or_an_offset_are_refused(client, engine, typed):
     }
     assert client.post("/gui/tageszeiten", data=form, headers=HX).status_code == 422
     assert _cards(engine) == []
+
+
+def test_a_held_closure_lists_the_guests_to_call(client, engine):
+    later = _today() + timedelta(days=7)
+    with Session(engine) as session:
+        session.add(
+            Reservation(
+                tenant_id=session.scalar(select(ServiceConfig.tenant_id)),
+                source="tablet",
+                status="confirmed",
+                guest_name="Familie Bauer",
+                phone="+491701234567",
+                party_size=4,
+                reserved_for=datetime.combine(later, time(19), tzinfo=BERLIN),
+                idempotency_key="gui-closure-list",
+            )
+        )
+        session.commit()
+    before = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert "selbst anrufen" not in before
+    client.post(
+        "/gui/tageszeiten",
+        data={"datum": later.isoformat(), "art": "geschlossen"},
+        headers=HX,
+    )
+    cards = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert "Diese Gäste bitte selbst anrufen" in cards
+    assert "19:00 Uhr, Familie Bauer, 4 Personen" in cards
+    assert 'href="tel:+491701234567"' in cards
+
+
+def _table(engine, day, name, phone="+491701234567", at=time(19)):
+    with Session(engine) as session:
+        session.add(
+            Reservation(
+                tenant_id=session.scalar(select(ServiceConfig.tenant_id)),
+                source="tablet",
+                status="confirmed",
+                guest_name=name,
+                phone=phone,
+                party_size=2,
+                reserved_for=datetime.combine(day, at, tzinfo=BERLIN),
+                idempotency_key=f"gui-{name}",
+            )
+        )
+        session.commit()
+
+
+def test_the_list_stays_while_replacement_hours_wait(client, engine):
+    later = _today() + timedelta(days=7)
+    _table(engine, later, "Familie Bauer")
+    form = {"datum": later.isoformat()}
+    client.post("/gui/tageszeiten", data=form | {"art": "geschlossen"}, headers=HX)
+    longer = form | {"art": "zeiten", "von": "10:00", "bis": "23:59"}
+    client.post("/gui/tageszeiten", data=longer, headers=HX)
+    cards = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert "Familie Bauer" in cards
+
+
+def test_a_costly_number_is_shown_but_not_linked(client, engine):
+    later = _today() + timedelta(days=7)
+    _table(engine, later, "Premium", phone="+4990012345678")
+    client.post(
+        "/gui/tageszeiten",
+        data={"datum": later.isoformat(), "art": "geschlossen"},
+        headers=HX,
+    )
+    cards = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert "+4990012345678" in cards and "Teure Sondernummer" in cards
+    assert "tel:+4990012345678" not in cards
+
+
+def test_weekly_hours_back_on_a_longer_date_list_the_late_table(client, engine):
+    later = _today() + timedelta(days=7)
+    with Session(engine) as session:
+        session.add(
+            SpecialDay(
+                tenant_id=session.scalar(select(ServiceConfig.tenant_id)),
+                date=later,
+                opens_at=time(10),
+                closes_at=time(23),
+                status="set",
+            )
+        )
+        session.commit()
+    _table(engine, later, "Late", at=time(22, 30))
+    client.post(
+        "/gui/tageszeiten",
+        data={"datum": later.isoformat(), "art": "normal"},
+        headers=HX,
+    )
+    assert "Late" in client.get("/gui/fragments/pruefen", headers=HX).text
