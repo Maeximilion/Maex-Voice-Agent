@@ -26,6 +26,7 @@ from api.agent.escalation import speaks_of_allergies
 from api.agent.guards import (
     HINT_GUEST_NAME,
     HINT_GUEST_PHONE,
+    HINT_UNNOTED_ALLERGY,
     HINT_UNREAD_ALLERGY_QUESTION,
 )
 from api.agent.llm import LLMTurn, ToolCall
@@ -426,6 +427,15 @@ class ScriptedLLM:
                 return replace(turn, say=_join(prefix, turn.say)) if turn.say else turn
         if name == "search_menu" and self._opening_prefix is not None:
             return self._after_opening_search(result, slots)
+        if (
+            not result.get("ok")
+            and result.get("hint") == HINT_UNNOTED_ALLERGY
+            and self._pickup is not None
+        ):
+            # The stand-in notes what the search read as the allergy; an
+            # allergy it did not read it cannot word, so it sends the draft
+            # again, and the core lets the second one go (`guards.py`).
+            return self._pickup.draft_again(slots)
         if not result.get("ok"):
             if self._pickup is not None:
                 # The tool's sentence offers pickup, or asks for one more dish.

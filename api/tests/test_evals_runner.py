@@ -908,25 +908,27 @@ def test_gebucht_ohne_confirm_des_modells_wird_erkannt(migrated_db_url):
 
 
 @pytest.mark.parametrize(
-    ("logged", "with_recording", "reason_without", "recorded_without"),
+    ("logged", "with_recording", "recorded_without"),
     [
-        # A yes to the recording is no consent to the allergy as a reason.
-        ([("recording", "yes"), ("allergy", "no")], True, 1, False),
-        # A yes to the allergy note is no consent to a recording.
-        ([("recording", "no"), ("allergy", "yes")], True, 0, True),
-        ([("recording", "yes"), ("allergy", "yes")], True, 0, False),
+        ([("recording", "yes")], True, False),
+        ([("recording", "no")], True, True),
+        # A withdrawal comes as a "no" behind its yes.
+        ([("recording", "yes"), ("withdrawn", "no")], True, False),
+        ([], False, False),
     ],
 )
-def test_each_consent_check_reads_the_answer_to_its_own_question(
-    migrated_db_url, logged, with_recording, reason_without, recorded_without
+def test_the_recording_check_reads_the_answer_to_its_question(
+    migrated_db_url, logged, with_recording, recorded_without
 ):
-    """Review of T-11.3: the consent log holds both questions now, and each hard
-    check must read the answer to its own."""
+    """Review of T-11.3: a recording without a yes to its question is always
+    red. Since 15.11.2026 the allergy is asked about no more (Maxi, L13)."""
     from api.agent import recording
-    from api.agent.consent import ALLERGY_QUESTION
     from api.models import ConsentLog, OrderItem, Recording
 
-    questions = {"recording": recording.question(), "allergy": ALLERGY_QUESTION}
+    questions = {
+        "recording": recording.question(),
+        "withdrawn": recording.RECORDING_WITHDRAWN,
+    }
     engine = create_engine(migrated_db_url)
     try:
         with Session(engine) as session:
@@ -953,7 +955,7 @@ def test_each_consent_check_reads_the_answer_to_its_own_question(
             line = session.scalars(
                 select(OrderItem).where(OrderItem.order_id == draft.order_id)
             ).one()
-            line.note = "Keine Nuesse. Grund: Allergie"
+            line.note = "WICHTIG !!! Kunde ist allergisch auf Nüsse"
             for which, answer in logged:
                 session.add(
                     ConsentLog(
@@ -977,7 +979,6 @@ def test_each_consent_check_reads_the_answer_to_its_own_question(
 
             seen = observe(session, call.call_id, confirms=0)
 
-            assert seen.reason_without_consent == reason_without
             assert seen.recording_without_consent is recorded_without
             assert seen.consent == [answer for _, answer in logged]
     finally:
@@ -1015,20 +1016,12 @@ def _reservation_seen(**extra) -> Observed:
 
 def test_consent_and_the_note_of_the_whole_order_are_judged():
     """T-11.1: the consent log and the note on the order or table as a whole."""
-    seen = _reservation_seen(
-        consent=["yes"], note="WICHTIG: Keine Sesam. Grund: Allergie"
-    )
+    seen = _reservation_seen(consent=["yes"], note="WICHTIG !!! Allergie: Sesam")
     assert judge({"consent": ["yes"]}, seen) == []
-    assert judge({"note": "wichtig: keine sesam.  grund: allergie"}, seen) == []
+    assert judge({"note": "wichtig !!!  allergie: sesam"}, seen) == []
     assert judge({"consent": []}, seen)[0].startswith("consent")
     assert judge({"note": None}, seen)[0].startswith("note")
     assert judge({"note": None, "consent": []}, _reservation_seen()) == []
-
-
-def test_a_reason_stored_without_a_yes_is_always_red():
-    """Whatever the case expects: health data without consent is never right."""
-    diffs = judge({}, _reservation_seen(reason_without_consent=1))
-    assert diffs == ["Allergie als Grund ohne Einwilligung: 1"]
 
 
 @pytest.mark.parametrize(
@@ -1442,11 +1435,9 @@ def test_hinweis_und_tools_aus_dem_fall(migrated_db_url, tmp_path):
         "Nein, das wars.",
         "Auf den Namen Mueller.",
         "Meine Nummer ist 0721 5551234.",
-        # The consent to the kitchen note (L13), then the yes to the order.
-        "Ja.",
         "Ja, passt so.",
     ]
-    hinweis = "WICHTIG: Keine Erdnuss. Grund: Allergie"
+    hinweis = "WICHTIG !!! Allergie: Erdnuss"
     cases = write_cases(
         tmp_path / "c",
         fall(
@@ -1488,13 +1479,11 @@ def test_scripted_model_knows_the_menu_of_the_case(migrated_db_url, tmp_path):
             "Nein, das wars.",
             "Auf den Namen Mueller.",
             "Meine Nummer ist 0721 5551234.",
-            # The consent to the kitchen note (L13), then the yes to the order.
-            "Ja.",
             "Ja, passt so.",
         ]
 
     def note(ingredient: str) -> dict:
-        text = f"WICHTIG: Keine {ingredient}. Grund: Allergie"
+        text = f"WICHTIG !!! Allergie: {ingredient}"
         return {"items": [{"number": "13", "quantity": 1, "note": text}]}
 
     cases = write_cases(

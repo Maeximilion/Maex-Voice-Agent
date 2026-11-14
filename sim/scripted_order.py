@@ -30,15 +30,14 @@ from api.domain.menu.search import (
     SAY_ALLERGY_NOTE,
     SAY_NOT_FOUND,
     SAY_SOLD_OUT,
-    allergy_question,
     say_for_wish,
     say_understood,
 )
 from api.domain.menu.wishes import (
-    WITHDRAWN,
+    ALLERGY_NOTE,
     classify_wish,
+    kitchen_note,
     names_an_order,
-    removal_with,
     which_answer,
 )
 from api.schemas.menu import MenuHit, OptionGroup, Wish
@@ -49,6 +48,10 @@ SAY_MORE = "Darf es noch etwas sein?"
 SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
 SAY_PHONE = "Unter welcher Telefonnummer sind Sie erreichbar?"
 SAY_RESTART = "Dann noch einmal von vorn: was möchten Sie bestellen?"
+# An allergy without its ingredient: the model asks (Maxi, 15.11.2026), with
+# the dish while another one is open too (Codex PR #139, P1).
+SAY_ALLERGY_WHICH = "Wogegen sind Sie allergisch?"
+SAY_ALLERGY_WHICH_FOR = "Wogegen sind Sie bei {name} allergisch?"
 SAY_ADDRESS = (
     "An welche Adresse dürfen wir liefern? Bitte nennen Sie Postleitzahl, Ort, "
     "Straße und Hausnummer."
@@ -586,9 +589,9 @@ class PickupScript:
         elif wish["kind"] == "note":
             item.note = wish["text"]
         elif wish["kind"] == "allergy":
-            # The core notes the allergy from the guest's sentence (T-11.1);
-            # only the removal said with it goes into `note`.
-            item.note = removal_with(Wish.model_validate(wish))
+            # The model notes the allergy for the kitchen, as the search
+            # wrote it, with the removal said with it (Maxi, 15.11.2026).
+            item.note = wish["text"]
         return wish
 
     def _pick_suggestion(
@@ -632,9 +635,9 @@ class PickupScript:
     def _answer_allergy(
         self, text: str, slots: dict[str, Any], patch: dict[str, Any]
     ) -> LLMTurn:
-        """The answer to "Wogegen?", read as the core reads it
-        (`wishes.which_answer`). The core notes the allergy itself (T-11.1);
-        only a removal said with it goes into the line's `note`."""
+        """The answer to "Wogegen?", read with `wishes.which_answer`. The
+        model notes the allergy on the line, in front of a removal said with
+        it (Maxi, 15.11.2026)."""
         wish = classify_wish(text, [])
         if (wish is None or wish.kind != "allergy") and _orders_something(
             text, self._numbers()
@@ -658,14 +661,23 @@ class PickupScript:
                 understanding_failure="allergy",
             )
         self._allergy_for.pop(0)
-        lead = None if answer == WITHDRAWN else SAY_ALLERGY_NOTE.format(name=item.name)
+        lead = None
+        if isinstance(answer, Wish) and answer.ingredient:
+            item.note = kitchen_note(
+                item.note, ALLERGY_NOTE.format(ingredient=answer.ingredient)
+            )
+            lead = SAY_ALLERGY_NOTE.format(name=item.name)
         if not self._allergy_for:
             self._allergy_named = False
         return self._next(slots, patch, lead=_join(lead, self._take_deferred()))
 
     def _allergy_question(self) -> str:
-        names = [i.name for i in self._allergy_for]
-        return allergy_question(names, self._allergy_named) or ""
+        """The question for the first open allergy. With several, it names
+        the dish so the answer belongs to it, also for the last one in the
+        row (Codex PR #139, P1)."""
+        if self._allergy_named:
+            return SAY_ALLERGY_WHICH_FOR.format(name=self._allergy_for[0].name)
+        return SAY_ALLERGY_WHICH
 
     def _take_deferred(self) -> str | None:
         """The question that was held back, once no other one is open."""
@@ -811,6 +823,10 @@ class PickupScript:
             tool_call=ToolCall("draft_order", self._draft_args(slots)),
             state_patch=state_patch,
         )
+
+    def draft_again(self, slots: dict[str, Any]) -> LLMTurn:
+        """The same draft once more, after the core sent it back."""
+        return LLMTurn(tool_call=ToolCall("draft_order", self._draft_args(slots)))
 
     def _draft_args(self, slots: dict[str, Any]) -> dict[str, Any]:
         customer: dict[str, Any] = {"phone": slots["phone"]}

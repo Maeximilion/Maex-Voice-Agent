@@ -195,16 +195,14 @@ answers ("sicher", "glutenfrei", "keine Spuren", "enthält keine",
 (`guards.allergen_claim`). Inflected and turned forms count too ("eine
 glutenfreie Variante", "es sind keine Nüsse enthalten", "die 13 ist ohne
 Erdnüsse"); a wish said back ("die 13 ohne Erdnüsse, notiert") and the
-model asking "Sind Sie sicher, dass ...?" do not (#656). A note the model
-writes is refused for the same health words a card may not carry
-(`wishes.speaks_of_health`: an allergy word, "Zöliakie", "reagiert auf",
-"darf kein"), and on a card the note for the whole order stands first and
-is never counted as a position. A health word without an allergy word
-("Ich habe Zöliakie") is not read by the core: the refusal tells the model
-to ask the guest what is meant and what must stay out of the food, and only
-the removal ("ohne Gluten") goes into the note; once the guest names an
-allergy, the core notes it as usual. "Zöliakie" (or "Cöliakie") also arms
-the claim check above, since it names no allergen (#763, Maxi 14.11.2026)
+model asking "Sind Sie sicher, dass ...?" do not (#656). A card never
+carries a note with a health word (`wishes.speaks_of_health`: an allergy
+word, "Zöliakie", "reagiert auf", "darf kein"): its line reads "Hinweis für
+die Küche mit dem Gast klären" instead. A health word without an allergy
+word ("Ich habe Zöliakie") the model asks about itself, what is meant and
+what must stay out of the food (prompt). "Zöliakie" (or "Cöliakie") also
+arms the claim check above, since it names no allergen (#763, Maxi
+14.11.2026)
 
 The guest names an additive (#638, § 5 LMZDV): "Ist da
 Geschmacksverstärker drin?", "Sind da Konservierungsstoffe drin", "die 13
@@ -226,8 +224,7 @@ one can be right
      "ja, ist drin"); a dish name of the menu that holds such a word is no
      claim (`guards.allergen_claim`). A note of a draft that names one is
      never read back: the draft goes to the team with the order or the
-     table on the card (#649). So does a draft that waited for the consent
-     question or "Wogegen?" when the answer names an additive or traces. A
+     table on the card (#649). A
      dish description from the database that names an additive is not read
      out either: the call goes to the team, the careful side. A complaint
      that names an additive gets no offer of the catalogue and goes to the
@@ -246,52 +243,32 @@ the order with the team on every dish without maintained values
 Jede andere Rückfrage (Optionen, Extras, Beschreibung):
    get_item_details mit allergen_question: false
 
-Gast nennt eine eigene Allergie ("ich vertrage keine Erdnüsse")
-   → Hinweis an Position oder Vorgang, Wortlaut fest (E14):
-     "WICHTIG: Keine <Zutat>. Grund: Allergie"
+Gast nennt eine Allergie ("ich vertrage keine Erdnüsse", "meine Frau hat
+eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
+   → the model writes it as a plain note, as on a delivery platform: on the
+     dish it was said with, for the whole order on the order's `note`, on a
+     table on its `note`; the model decides where it belongs
+   → highlighted in the model's words: "WICHTIG !!! Kunde ist allergisch auf
+     Nüsse", another person "WICHTIG !!! Allergie (Frau): Sesam"
+   → no consent question: naming the allergy for the kitchen is the consent
+     (L13, Maxi as data protection officer); no allergy list in the state,
+     no "Wogegen?" from the core; an allergy without its ingredient the
+     model asks about
    → beim Vorlesen wiederholen, nie zusagen, das Gericht sei frei davon
-   → a removal said with it stays, after it (#252):
-     "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
-   → the core reads it from the guest's own sentence, every turn, and
-     writes it onto the draft itself (T-11.1); the model never writes an
-     allergy into a note, a draft or cart with one is refused
-   → on the dish when a clear search found the dish of its sentence; said
-     without a dish, with an unclear one, or the dish no longer ordered:
-     `note` of draft_order for the whole order (D24); on a table: its `note`
-   → not read in full ("gegen Erdnüsse allergisch und gegen Sesam", or a dish
-     in front that read whole would count as an allergen): "Wogegen sind Sie
-     allergisch?"; the core reads the answer, "Keine." takes it back. So are
-     "gegen Erdnüsse und auf Sesam", another person behind the caller's own
-     allergy without an allergy word of their own ("meine Frau gegen Sesam",
-     "mein Mann Sesam"), "ich vertrage Erdnüsse gar nicht", and a denial
-     with more behind it ("keine Allergie, nur Laktose") (#670)
-
-Before the first draft that needs it (T-11.1, L13), the core holds
-draft_order or create_reservation and asks itself:
-   an allergy not read in full → "Wogegen sind Sie allergisch?"
-     an answer it reads  → on to the next question or the draft
-     anything else       → the draft is dropped, the model reads the
-                           sentence; the next draft is held again
-   an allergy of the caller or their child, consent not asked yet →
-     "Darf ich die Allergie als Hinweis für die Küche notieren?"
-   explicit "ja"     → the draft with the fixed wording, read out by the core
-   "nein"            → the draft with "ohne <Zutat>" only, read out by the core
-   anything else     → no consent; the draft is dropped, the model reads the
-                       sentence, and the next draft carries "ohne <Zutat>"
-   asked once per call, the answer holds for every note of the call and is
-   logged (`consent_log`: call, time, question, answer); it counts only as
-   the answer to the question itself: after "Sind Sie noch da?" the
-   question is put again
-
-Another adult's allergy ("meine Frau hat eine Erdnussallergie")
-   → "ohne Erdnuss" only, never the reason, never asked (L13);
-     the caller's own child counts as the caller ("mein Sohn ...")
+   → safety net: once the guest named an allergy in the call (not only
+     denied one), a draft_order or create_reservation whose notes name none
+     ("allergi", "unverträglich", "intoleran", the words the retention job
+     deletes by) goes back to the model once per turn with a hint; the
+     second goes through (`guards.unnoted_allergy`)
+   → the menu search still splits an allergy said behind a dish off as its
+     `wish` (`kind: allergy`, text "WICHTIG !!! Allergie: <Zutat>"), and the
+     dish is found as before
 
 Gast verneint eine Allergie ("ich habe keine Erdnussallergie")
    → no note (#252)
 ```
 
-The allergy and the consent are the core's, not the model's (`agent/allergies.py`, `agent/loop.py`, redesign of 26.10.2026 after five review rounds on PR #368 that each found another note wording which lost a restriction or put it on the wrong person): the core keeps each allergy as structured state (ingredient, whose, dish) read from the guest's sentence with the parser of the menu search, any sentence of the call, also one said while a draft waits for a question. The model's notes carry only other wishes. A yes to the consent question is as strict as the yes to a read-back, with the words that say "note it" besides ("Ja, notieren Sie das"); "Ja, und noch eine Cola" is no explicit consent. A handover card never quotes a guest sentence that names an allergy. Whose allergy it is, is read on the words of the allergy's clause (`of_another_adult`): a person after "mein", "unser" ("meine Frau"), one on their own ("ein Freund", "jemand") or the subject "er", "sie", "wir"; a list of persons, closed, so a person it does not name keeps the allergy as the caller's own.
+From 26.10. to 15.11.2026 the core read the allergy itself (`agent/allergies.py`, after five review rounds on PR #368), asked "Wogegen sind Sie allergisch?" and "Darf ich die Allergie als Hinweis für die Küche notieren?", and wrote "WICHTIG: Keine <Zutat>. Grund: Allergie" onto the draft. Maxi's decision of 15.11.2026 (#736, #763) removed the reader, the question and the consent: the note is the model's, the core keeps the safety net above. A guest sentence that names an allergy named after a read-back drops that read-back, so a yes cannot confirm a draft without it. A handover card never quotes a guest sentence that names an allergy.
 
 ---
 

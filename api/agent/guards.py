@@ -26,10 +26,10 @@ that insists ends in the handoff to the team, not in a booking.
 - Rule 1 sits in `state.apply_state_patch`: a model writes only guest details.
   Of an order line it writes dish, quantity, options and note; number, name
   and the options still open are added by the state from the search result.
-- The caller's allergy (T-11.1): the core reads it from the guest's own
-  sentence and writes it onto the draft itself (`agent/allergies.py`). A
-  note the model writes may not name one: a cart or a draft with such a note
-  is refused (`_ALLERGY_NOTE`), whatever else it says.
+- The guest's allergy (Maxi, 15.11.2026): the model writes it as a note on
+  the dish, the order or the table. A guest who named one in this call gets
+  no draft without such a note: the first one goes back with a hint
+  (`unnoted_allergy`).
 """
 
 import re
@@ -38,7 +38,6 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from api.agent.allergies import NOTED
 from api.agent.consent import is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
 from api.agent.escalation import (
@@ -66,7 +65,7 @@ from api.agent.state import (
 from api.domain.menu.items import option_key
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.search import SAY_WHICH_NUMBER
-from api.domain.menu.wishes import mentions_allergy, speaks_of_health
+from api.domain.menu.wishes import mentions_allergy
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
 HINT_CONFIRM = (
@@ -134,15 +133,11 @@ HINT_NOT_BOOKED = (
     "Buchung, sag `booking_say` aus dem Zustand wörtlich; sonst lies den "
     "readback vor und warte auf ein klares Ja."
 )
-HINT_ALLERGY_NOTE = (
-    "Abgelehnt: ein `note` nennt eine Allergie oder die Gesundheit des Gastes. "
-    "Sagte der Gast statt einer Allergie nur ein Wort wie „Zöliakie“ oder „darf "
-    "kein“, ruf noch nichts auf: frag ihn zuerst, was er meint und was nicht "
-    "ins Essen darf; ins `note` kommt dann nur das Weglassen („ohne Gluten“). "
-    "Eine Allergie notiert der Kern selbst aus seinen Worten; schreib sie nie "
-    "in ein `note`, auch nicht verneint. Andere Wünsche („ohne Zwiebeln“, "
-    "„Kinderstuhl“) bleiben im `note`. Ruf denselben Schritt dann ohne die "
-    "Allergie noch einmal auf."
+HINT_UNNOTED_ALLERGY = (
+    "Abgelehnt: der Gast hat eine Allergie genannt, und kein `note` nennt sie. "
+    "Notiere die Allergie des Gastes als Hinweis am Gericht oder an der "
+    "Bestellung („WICHTIG !!! Kunde ist allergisch auf …“) und ruf denselben "
+    "Schritt noch einmal auf."
 )
 # Words that tell a guest something is booked, with any ending ("Ihre
 # bestätigte Bestellung"; Codex PR #347).
@@ -447,9 +442,7 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
         )
     else:
         ids = [line["menu_item_id"] for line in lines]
-        if any(speaks_of_health(line.get("note") or "") for line in lines):
-            refused = _ALLERGY_NOTE
-        elif not all(item_id in state.known_item_ids for item_id in ids):
+        if not all(item_id in state.known_item_ids for item_id in ids):
             refused = _CART_ITEM
         elif any(state.seen_items.get(i, {}).get("sold_out") for i in ids):
             # A clear hit that is sold out is known, and draft_order would
@@ -466,6 +459,10 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             return None
     order_corrected(state)
     return refused
+
+
+# The calls that store a note: on an order line, on the whole order, on a table.
+NOTED = frozenset({"draft_order", "create_reservation"})
 
 
 def notes_an_additive(call: ToolCall) -> bool:
@@ -525,10 +522,7 @@ def refusal(
 ) -> ToolResult | None:
     """None lets the call through to `dispatch`; otherwise the failed result
     the model gets instead. `cart_sent`: the same answer carried a `cart`,
-    which the core has taken by now. `call` as the model wrote it, before the
-    core writes the allergies onto it (`allergies.noted_call`)."""
-    if any(speaks_of_health(note) for note in _notes(call)):
-        return _ALLERGY_NOTE
+    which the core has taken by now."""
     if call.name == "get_item_details" and _states_an_allergy(user_text, call):
         return _STATED_ALLERGY
     if call.name == "confirm":
@@ -698,13 +692,29 @@ def flag_the_allergy_question(call: ToolCall, user_text: str) -> ToolCall:
 
 HINT_STATED_ALLERGY = (
     "Abgelehnt: der Gast hat nur seine Allergie genannt und nichts gefragt. "
-    "Der Kern notiert sie für die Küche; prüf keine Allergene und mach mit der "
-    "Bestellung weiter."
+    "Notiere sie als Hinweis für die Küche; prüf keine Allergene und mach mit "
+    "der Bestellung weiter."
 )
 _STATED_ALLERGY = ToolResult(
     ok=False, error_code="invalid_input", hint=HINT_STATED_ALLERGY
 )
-_ALLERGY_NOTE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERGY_NOTE)
+UNNOTED_ALLERGY = ToolResult(
+    ok=False, error_code="invalid_input", hint=HINT_UNNOTED_ALLERGY
+)
+
+
+def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | None:
+    """A draft for a guest who named an allergy in this call, with no note
+    that names one: the kitchen would never hear of it. The words are those
+    the retention job deletes such a note by (`jobs/retention.py`), so what
+    passes here is also deleted in time (L13). The loop gives this back once
+    per turn: a model that sends the draft again without it goes through,
+    never into a loop."""
+    if not state.allergy_named or call.name not in NOTED:
+        return None
+    if any(_ALLERGY_WORD.search(note.lower()) for note in _notes(call)):
+        return None
+    return UNNOTED_ALLERGY
 
 
 def unheard_readback(state: ConversationState) -> str | None:

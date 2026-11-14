@@ -19,13 +19,13 @@
 
 ## create_reservation
 **Wann:** sobald Datum, Uhrzeit, Personenzahl, Name und Rufnummer vorliegen und `check_slot` frei meldet. Nach jeder Änderung erneut `check_slot`, dann `create_reservation` — nie `draft_order`.
-**Eingabe:** `guest_name`, `phone`, `party_size`, `reserved_for`, optional `note` (ohne Allergie).
+**Eingabe:** `guest_name`, `phone`, `party_size`, `reserved_for`, optional `note`.
 **Liefert:** `reservation_id`, Status `draft`, `readback` — der Satz, der vorgelesen wird.
 
 ## search_menu
 **Wann:** sofort, wenn der Gast ein Gericht oder eine Nummer nennt, mit seinem ganzen Satz: bevor du etwas dazu sagst, nachfragst oder es in eine Bestellung kommt.
 **Eingabe:** `query` (das Gesagte, so wie es kam).
-**Liefert:** `match_type` (`exact_number` · `alias` · `fuzzy_single` · `ambiguous`) und `results` mit `menu_item_id`, Nummer, Name, Preis, `sold_out`, `option_groups`. Nennt der Satz einen Wunsch („ohne Karotten", „mit Nudeln statt Reis"), dazu `wish`: `kind` `note` (Weglassen), `option` (steht auf der Karte, mit `group`, `option`, `price_delta_cents`, `reason`), `allergy` (notiert der Kern, keine Zusage), `unknown` (nicht anbieten, `say` sprechen) oder `open` (nachfragen: Gericht wählen lassen oder, mit `groups`, die Gruppe). Ein Weglassen zur Zugabe steht in `wish.note` und gehört ebenfalls in `note`. Fragt `say` „Wogegen …?", liest der Kern die Antwort; bei mehreren Gerichten eines nach dem anderen.
+**Liefert:** `match_type` (`exact_number` · `alias` · `fuzzy_single` · `ambiguous`) und `results` mit `menu_item_id`, Nummer, Name, Preis, `sold_out`, `option_groups`. Nennt der Satz einen Wunsch („ohne Karotten", „mit Nudeln statt Reis"), dazu `wish`: `kind` `note` (Weglassen), `option` (steht auf der Karte, mit `group`, `option`, `price_delta_cents`, `reason`), `allergy` (ins `note`, keine Zusage), `unknown` (nicht anbieten, `say` sprechen) oder `open` (nachfragen: Gericht wählen lassen oder, mit `groups`, die Gruppe). Ein Weglassen zur Zugabe steht in `wish.note` und gehört ebenfalls in `note`.
 **Mehrere Gerichte in einem Satz:** das Tool zerlegt selbst und liefert `match_type: "positions"` mit einem Eintrag je Teil (`query`, `ok`, Ergebnis oder `error_code` und `say`).
 **Regel:** bei `ambiguous` nachfragen, nie selbst wählen. `not_found`: `say` sprechen. Das `say` eines eindeutigen Treffers wiederholt das Verstandene: sprich es, dann weiter.
 
@@ -46,7 +46,7 @@
 
 ## draft_order
 **Wann:** sobald alle Gerichte gefunden, Pflichtoptionen gewählt und Name und Rufnummer bekannt sind, bei einer Lieferung auch die Adresse. Nach jeder Änderung erneut.
-**Eingabe:** `type` (`"pickup"` oder `"delivery"`), `customer` (`name`, `phone`; bei `delivery` dazu `address` mit `street`, `house_number`, `postal_code`, `city`, optional `floor_note`, oder `address_id` aus `customer` im Zustand, dann `name` nur, wenn der Gast ihn genannt hat), `items` (je `menu_item_id`, `quantity`, optional `options` als `{group, name}` und `note`), optional `note` für die ganze Bestellung (ohne Allergie).
+**Eingabe:** `type` (`"pickup"` oder `"delivery"`), `customer` (`name`, `phone`; bei `delivery` dazu `address` mit `street`, `house_number`, `postal_code`, `city`, optional `floor_note`, oder `address_id` aus `customer` im Zustand, dann `name` nur, wenn der Gast ihn genannt hat), `items` (je `menu_item_id`, `quantity`, optional `options` als `{group, name}` und `note`), optional `note` für die ganze Bestellung.
 **Liefert:** `order_id`, Summe, Liefergebühr, `ready_at`, `readback` — der Satz, der vorgelesen wird. `below_minimum`: `say` nennt den Fehlbetrag. `closed`: `say` sprechen.
 
 ## confirm

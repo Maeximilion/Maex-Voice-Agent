@@ -176,6 +176,17 @@ def is_question(text: str) -> bool:
     return "?" in text or asks(text.lower())
 
 
+def names_an_allergy(text: str) -> bool:
+    """Does the guest name an allergy, their own or another's, in a sentence
+    that does not only deny one? "Ich habe eine Nussallergie", never "Ich
+    habe keine Allergie" (`guards.unnoted_allergy`)."""
+    return any(
+        mentions_allergy(sentence)
+        and not (denies_allergy(sentence) or only_denies(sentence))
+        for sentence in SENTENCE.split(text)
+    )
+
+
 def asks_about_allergies(text: str) -> bool:
     """Does a guest with an allergy ask about one? A question that speaks of
     allergies or names an allergen, next to an allergy that is not denied:

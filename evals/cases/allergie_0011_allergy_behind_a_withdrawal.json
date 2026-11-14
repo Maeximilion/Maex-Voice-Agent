@@ -38,10 +38,6 @@
     },
     {
       "role": "customer",
-      "text": "Ja."
-    },
-    {
-      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -53,12 +49,10 @@
       {
         "number": "13",
         "quantity": 1,
-        "note": "WICHTIG: Keine Sesam. Grund: Allergie"
+        "note": "WICHTIG !!! Allergie: Sesam"
       }
     ],
     "customer_name": "Mueller",
-    "consent": [
-      "yes"
-    ]
+    "consent": []
   }
 }

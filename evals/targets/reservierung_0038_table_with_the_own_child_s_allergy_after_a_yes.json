@@ -1,6 +1,6 @@
 {
   "id": "reservierung_0038",
-  "name": "Table with the own child's allergy, noted with its reason after a yes",
+  "name": "Table with the own child's allergy, noted without a question",
   "tags": [
     "reservierung",
     "allergie",
@@ -23,10 +23,6 @@
     },
     {
       "role": "customer",
-      "text": "Ja."
-    },
-    {
-      "role": "customer",
       "text": "Ja, passt."
     }
   ],
@@ -37,9 +33,7 @@
     "confirmed": true,
     "escalated": false,
     "reserved_for": "2026-09-18T19:30",
-    "note": "WICHTIG: Keine Nuss. Grund: Allergie",
-    "consent": [
-      "yes"
-    ]
+    "note": "WICHTIG !!! Allergie (Tochter): Nüsse",
+    "consent": []
   }
 }

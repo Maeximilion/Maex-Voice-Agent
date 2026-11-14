@@ -943,8 +943,8 @@ def test_allergie_steht_im_festen_wortlaut_in_der_bestellung(session, tenant):
     )
     [order] = orders(session)
     assert order.status == "confirmed"
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
-    assert "WICHTIG: Keine Erdnüsse. Grund: Allergie" in said(turns)
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
+    assert "WICHTIG !!! Allergie: Erdnüsse" in said(turns)
 
 
 def test_wunsch_nach_der_wahl_wird_gesagt(
@@ -992,7 +992,7 @@ def test_eigene_allergie_ist_kein_rueckruf(session, tenant):
     session.expire_all()
     assert list(session.scalars(select(Callback))) == []
     [order] = orders(session)
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnuss. Grund: Allergie"]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnuss"]
 
 
 def test_allergie_ohne_zutat_wird_nachgefragt_und_notiert(session, tenant):
@@ -1005,7 +1005,7 @@ def test_allergie_ohne_zutat_wird_nachgefragt_und_notiert(session, tenant):
     assert "Wogegen" in " ".join(turns[1].say)
     assert "Darf es noch etwas sein?" not in " ".join(turns[1].say)
     [order] = orders(session)
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
 
 def test_removal_and_allergy_in_one_sentence_reach_the_order(session, tenant):
@@ -1016,7 +1016,7 @@ def test_removal_and_allergy_in_one_sentence_reach_the_order(session, tenant):
         session, tenant, "Pho Bo ohne Zwiebeln, ich habe eine Erdnussallergie."
     )
     [order] = orders(session)
-    note = "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
+    note = "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln"
     assert _notes(session, order) == [note]
     assert note in said(turns)
 
@@ -1027,9 +1027,7 @@ def test_removal_before_an_allergy_without_ingredient_is_kept(session, tenant):
     )
     assert "Wogegen" in " ".join(turns[1].say)
     [order] = orders(session)
-    assert _notes(session, order) == [
-        "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln"
-    ]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln"]
 
 
 @pytest.mark.parametrize(
@@ -1082,15 +1080,15 @@ def test_allergy_withdrawn_with_a_removal_notes_the_removal(session, tenant):
     [
         (
             "Erdnüsse und gegen Sesam.",
-            "WICHTIG: Keine Erdnüsse und Sesam. Grund: Allergie",
+            "WICHTIG !!! Allergie: Erdnüsse und Sesam",
         ),
-        ("Gegen Erdnüsse.", "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
+        ("Gegen Erdnüsse.", "WICHTIG !!! Allergie: Erdnüsse"),
         # Round 4: an "auf" further on still ends the list.
-        ("Erdnüsse, auf jeden Fall.", "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
+        ("Erdnüsse, auf jeden Fall.", "WICHTIG !!! Allergie: Erdnüsse"),
         # Codex PR #330, round 7: "und auf".
         (
             "Erdnüsse und auf Sesam.",
-            "WICHTIG: Keine Erdnüsse und Sesam. Grund: Allergie",
+            "WICHTIG !!! Allergie: Erdnüsse und Sesam",
         ),
     ],
 )
@@ -1120,13 +1118,13 @@ def test_removal_said_again_with_the_withdrawal_is_noted_once(session, tenant):
         (
             "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
             ["Ohne Knoblauch, gegen Erdnüsse."],
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln, Ohne Knoblauch",
+            "WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln, Ohne Knoblauch",
         ),
         # Round 5: a denial that may hide an intolerance asks again.
         (
             "Pho Bo, ich habe eine Allergie.",
             ["Keine Allergie, aber mit Erdnüssen habe ich Probleme.", "Erdnüsse."],
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie",
+            "WICHTIG !!! Allergie: Erdnüsse",
         ),
         # Round 6: a removal in an answer that names no ingredient yet.
         (
@@ -1135,30 +1133,30 @@ def test_removal_said_again_with_the_withdrawal_is_noted_once(session, tenant):
                 "Ohne Koriander, ich habe eine Nahrungsmittelallergie.",
                 "Erdnüsse.",
             ],
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln, Ohne Koriander",
+            "WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln, Ohne Koriander",
         ),
         # Round 6: a removal alone as the answer is the ingredient.
         (
             "Pho Bo, ich habe eine Allergie.",
             ["Ohne Zwiebeln."],
-            "WICHTIG: Keine Zwiebeln. Grund: Allergie",
+            "WICHTIG !!! Allergie: Zwiebeln",
         ),
         # Round 7: a removal behind the ingredient.
         (
             "Pho Bo, ich habe eine Allergie.",
             ["Erdnüsse, aber ohne Zwiebeln."],
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln",
         ),
         (
             "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
             ["Ohne Zwiebeln und auf Erdnüsse."],
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln",
         ),
         # Codex PR #330, round 8: "aber gegen", and a removal with nothing.
         (
             "Pho Bo, ich habe eine Allergie.",
             ["Ohne Zwiebeln, aber gegen Erdnüsse."],
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln",
         ),
         (
             "Pho Bo, ich habe eine Allergie.",
@@ -1169,12 +1167,12 @@ def test_removal_said_again_with_the_withdrawal_is_noted_once(session, tenant):
         (
             "Pho Bo, ich habe eine Allergie.",
             ["Bitte ohne Zwiebeln, aber gegen Erdnüsse."],
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Bitte ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnüsse. Bitte ohne Zwiebeln",
         ),
         (
             "Pho Bo, ich habe eine Allergie.",
             ["Erdnüsse, aber auf jeden Fall."],
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie",
+            "WICHTIG !!! Allergie: Erdnüsse",
         ),
         # Round 7: an answer that names nothing.
         ("Pho Bo, ich habe eine Allergie.", ["Nein, keine."], None),
@@ -1203,22 +1201,22 @@ LONG_REMOVAL = "Pho Bo ohne " + "Zwiebeln, " * 20 + "Koriander, ich habe eine Al
         (
             "Pho Bo, ich habe eine Allergie.",
             ["Keine, aber ich bin gegen Sesam allergisch.", "Sesam."],
-            "WICHTIG: Keine Sesam. Grund: Allergie",
+            "WICHTIG !!! Allergie: Sesam",
         ),
         (
             "Pho Bo, ich habe eine Allergie.",
             ["Gegen nichts, aber ich vertrage keine Laktose.", "Laktose."],
-            "WICHTIG: Keine Laktose. Grund: Allergie",
+            "WICHTIG !!! Allergie: Laktose",
         ),
         # Still no ingredient behind it: the question stays open.
         (
             "Pho Bo ohne Zwiebeln, ich habe eine Allergie.",
             ["Keine, aber ich habe eine Allergie.", "Erdnüsse."],
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln",
         ),
         # Issue #331: a waiting removal too long for the order line.
         (LONG_REMOVAL, ["Keine."], None),
-        (LONG_REMOVAL, ["Erdnüsse."], "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
+        (LONG_REMOVAL, ["Erdnüsse."], "WICHTIG !!! Allergie: Erdnüsse"),
     ],
 )
 def test_answer_after_a_withdrawal_and_a_long_removal(
@@ -1247,7 +1245,7 @@ def test_another_persons_allergy_after_a_withdrawal_asks_again(session, tenant):
     )
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
 
 def test_denial_with_another_dish_keeps_the_question(session, tenant):
@@ -1275,9 +1273,7 @@ def test_removal_said_again_with_the_ingredient(session, tenant):
     # The removal is repeated at once, so the guest knows it was noted.
     assert "Pho Bo, ohne Zwiebeln" in " ".join(turns[1].say)
     [order] = orders(session)
-    assert _notes(session, order) == [
-        "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln"
-    ]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln"]
 
 
 @pytest.mark.parametrize(
@@ -1323,7 +1319,7 @@ def test_allergie_ohne_antwort_bleibt_offen(session, tenant, antwort):
     )
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
 
 def test_zwei_allergien_ohne_zutat_werden_nacheinander_gefragt(session, tenant):
@@ -1342,8 +1338,8 @@ def test_zwei_allergien_ohne_zutat_werden_nacheinander_gefragt(session, tenant):
     assert "bei Frühlingsrollen (4 Stück)" in zweite
     [order] = orders(session)
     assert _notes(session, order) == [
-        "WICHTIG: Keine Erdnüsse. Grund: Allergie",
-        "WICHTIG: Keine Sesam. Grund: Allergie",
+        "WICHTIG !!! Allergie: Erdnüsse",
+        "WICHTIG !!! Allergie: Sesam",
     ]
 
 
@@ -1364,7 +1360,7 @@ def test_allergie_und_auswahl_nacheinander(session, tenant):
     assert "Meinen Sie" in zweite
     [order] = orders(session)
     assert sorted(p[0] for p in positions(session, order)) == ["12", "13"]
-    assert "WICHTIG: Keine Erdnüsse. Grund: Allergie" in _notes(session, order)
+    assert "WICHTIG !!! Allergie: Erdnüsse" in _notes(session, order)
 
 
 @pytest.mark.parametrize(
@@ -1381,7 +1377,7 @@ def test_ganze_antwort_auf_wogegen(session, tenant, antwort):
     Erdnüsse allergisch") gibt dieselbe Zutat wie das blosse Wort."""
     _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", antwort)
     [order] = orders(session)
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
 
 @pytest.mark.parametrize("antwort", ["Keine Erdnüsse.", "Kein Erdnüsse bitte."])
@@ -1390,7 +1386,7 @@ def test_keine_als_antwort_auf_wogegen(session, tenant, antwort):
     "Keine Keine Erdnüsse"."""
     _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", antwort)
     [order] = orders(session)
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
 
 def test_allergiefrei_geht_an_das_team(session, tenant):
@@ -1419,13 +1415,12 @@ def test_mehrdeutige_position_mit_wunsch_fragt_einmal(session, tenant):
 
 def test_allergie_bleibt_wenn_die_wahl_neu_gesucht_wird(session, tenant):
     """Review PR #139: "Pho" statt der angebotenen "Pho Bo" wird neu gesucht - die
-    Allergie aus der Frage geht nicht verloren. The core ties an allergy to a
-    line only when a clear search found the dish of its sentence; said with an
-    unclear one, it goes onto the whole order, the safe side (T-11.1)."""
+    Allergie aus der Frage geht nicht verloren. The model notes it on the
+    dish chosen for it (Maxi, 15.11.2026)."""
     _bestellung(session, tenant, "Eine Suppe mit Erdnussallergie.", "Pho.")
     [order] = orders(session)
-    assert _notes(session, order) == [None]
-    assert order.note == "WICHTIG: Keine Erdnuss. Grund: Allergie"
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnuss"]
+    assert order.note is None
 
 
 def test_mehrdeutig_mit_allergie_erst_die_wahl(session, tenant):
@@ -1443,8 +1438,9 @@ def test_mehrdeutig_mit_allergie_erst_die_wahl(session, tenant):
     assert erste.count("Meinen Sie") == 1
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
-    # Said with an unclear dish: onto the whole order (T-11.1).
-    assert order.note == "WICHTIG: Keine Erdnüsse. Grund: Allergie"
+    # On the dish chosen for it, by the model (Maxi, 15.11.2026).
+    assert "WICHTIG !!! Allergie: Erdnüsse" in _notes(session, order)
+    assert order.note is None
 
 
 def test_mehrdeutig_mit_allergie_und_zutat_fragt_einmal(session, tenant):
@@ -1462,7 +1458,7 @@ def test_bestellung_ist_keine_antwort_auf_wogegen(session, tenant, antwort):
     )
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
 
 # --- Befunde aus der Eval-Suite v1 (T-5.2) -----------------------------------------
@@ -1605,7 +1601,7 @@ def test_prefixed_number_is_not_an_ingredient(session, sushi, answer):
     )
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
 
 @pytest.mark.parametrize("answer", ["Fünf-Gewürze-Pulver.", "Zwei Sachen: Milch."])
@@ -1638,7 +1634,7 @@ def test_compact_ingredient_is_not_a_card_number(session, tenant, answer, ingred
     _, turns = _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", answer)
     assert "Wogegen" not in " ".join(turns[2].say)
     [order] = orders(session)
-    assert _notes(session, order) == [f"WICHTIG: Keine {ingredient}. Grund: Allergie"]
+    assert _notes(session, order) == [f"WICHTIG !!! Allergie: {ingredient}"]
 
 
 def test_the_menu_decides_what_a_card_number_is(session, tenant):
@@ -1650,7 +1646,7 @@ def test_the_menu_decides_what_a_card_number_is(session, tenant):
     )
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
 
 @pytest.mark.parametrize("answer", ["Die 12 mit Reis.", "Sesam, und die 12."])
@@ -1662,7 +1658,7 @@ def test_number_on_the_menu_in_a_sentence_is_an_order(session, tenant, answer):
     )
     assert "Wogegen" in " ".join(turns[2].say)
     [order] = orders(session)
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnüsse. Grund: Allergie"]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
 
 SUSHI_MENU = MenuNumbers.from_items(
@@ -1930,7 +1926,7 @@ def test_allergy_in_the_opening_sentence_is_an_order(session, tenant):
     [order] = orders(session)
     assert order.status == "confirmed"
     assert positions(session, order) == [("13", 1, [])]
-    assert _notes(session, order) == ["WICHTIG: Keine Erdnuss. Grund: Allergie"]
+    assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnuss"]
 
 
 @pytest.mark.parametrize(

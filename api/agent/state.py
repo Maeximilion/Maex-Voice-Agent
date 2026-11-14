@@ -24,7 +24,6 @@ from api.agent.guest_details import (
 )
 from api.agent.intent import heard, names_the_way
 from api.core.errors import InvalidInput
-from api.domain.calls.consent import Answer
 from api.domain.customers.phone import normalize_phone
 from api.domain.menu.items import option_key
 from api.domain.menu.search import CLEAR_MATCHES
@@ -64,20 +63,6 @@ SERVICE_FLAGS = (
     "delivery_enabled",
     "reservations_enabled",
 )
-
-
-class Allergy(BaseModel):
-    """An allergy the guest named (T-11.1)."""
-
-    # As the guest said it ("Erdnuss", "Milch, Ei und Nuss"). None while the
-    # words did not give it in full: the guest is asked "Wogegen?".
-    ingredient: str | None = None
-    # The caller's own or their own child's. Another adult's is never noted
-    # with its reason: the caller's "ja" is no consent of theirs (L13).
-    own: bool = True
-    # The dish it was said with (`menu_item_id` of a clear search hit); None
-    # for the whole order or the table.
-    item: str | None = None
 
 
 class RemedyOffer(BaseModel):
@@ -179,28 +164,14 @@ class ConversationState(BaseModel):
     # Team extension from transfer_to_team, for the phone line to dial. Not part
     # of the prompt: the model has no use for the number.
     transfer_to: str | None = None
-    # The allergies the guest named in this call, read by the core from the
-    # guest's own sentences (`agent/allergies.py`, T-11.1). The model never
-    # carries one in a note: the core writes them onto the draft itself.
-    # Memory of the core, never sent.
-    allergies: list[Allergy] = Field(default_factory=list)
-    # The caller's answer to the question for the allergy as a kitchen note
-    # (`consent.ALLERGY_QUESTION`, legal check L13), None while it was not
-    # asked. Asked once per call, before the first draft that would carry an
-    # allergy as its reason; the answer holds for every note of the call.
-    # Memory of the core, never sent.
-    allergy_consent: Answer | None = None
-    # The draft, `draft_order` or `create_reservation` as the model called it,
-    # while a question of the core about the allergy waits for its answer
-    # (`allergies.question`, `loop.py`). Never sent.
-    held_call: dict[str, Any] | None = None
     # The call has spoken of allergies: the guest's own, the allergens of a
     # dish, an allergen named or coeliac disease (#763). A later "Ist das wirklich sicher?" asks beyond the maintained
     # values (`escalation.asks_beyond_the_allergens`, L17). Never sent.
     allergy_talk: bool = False
-    # Answers to "Wogegen?" that left the allergy open since the last one
-    # that filled one (`allergies.asked_out`, #207). Never sent.
-    which_asks: int = 0
+    # The guest named an allergy in this call and did not only deny one: a
+    # draft then has to carry a note that names it (`guards.unnoted_allergy`,
+    # Maxi 15.11.2026). Never sent.
+    allergy_named: bool = False
     # The card the core wrote for a handover the team takes live, for the
     # phone line to use when nobody answers the team leg
     # (`domain/callbacks/transfer.team_missed`). Never sent.
@@ -533,11 +504,9 @@ def _as_set(lines: list[dict[str, Any]]) -> list[str]:
 
 
 def draft_replaced(state: ConversationState, name: str) -> None:
-    """A new draft (`name`) waits for a question of the core about the
-    allergy, or the guest named an allergy the draft read out before does not
-    carry (`loop.py`): that draft is no longer what the guest wants, also
-    when the new one never goes out, and a yes must not confirm it (Codex PR
-    #368, P1)."""
+    """The guest named an allergy after the draft (`name`) was read out
+    (`loop.py`): the draft may not carry it, and a yes must not confirm it
+    (Codex PR #368, P1)."""
     if state.stage == "readback_pending":
         _drop_readback(state, name)
 
@@ -665,48 +634,12 @@ def _note_search(state: ConversationState, data: dict[str, Any]) -> None:
             state.known_item_ids.update(str(h["menu_item_id"]) for h in hits)
         for h in hits:
             state.seen_items[str(h["menu_item_id"])] = _seen(h)
-        wish = part.get("wish") or {}
-        if clear and hits and wish.get("kind") == "allergy":
-            _to_dish(state, wish.get("ingredient"), str(hits[0]["menu_item_id"]))
         if not clear:
             for h in hits:
                 state.offered_items[str(h["menu_item_id"])] = (
                     str(h.get("number") or ""),
                     str(h.get("name") or ""),
                 )
-
-
-def _to_dish(state: ConversationState, ingredient: Any, item_id: str) -> None:
-    """The search found the dish an allergy was said with: the first one the
-    guest named that is not tied to a dish yet, with the same ingredient or,
-    still asked for, none, goes onto that dish's line. Only what the core read
-    from the guest's own sentence: the search reads the model's query."""
-    said = ingredient.casefold() if isinstance(ingredient, str) else None
-    same = [
-        allergy
-        for allergy in state.allergies
-        if (allergy.ingredient.casefold() if allergy.ingredient else None) == said
-    ]
-    if not same or any(allergy.item == item_id for allergy in same):
-        return
-    free = [allergy for allergy in same if allergy.item is None]
-    if len({allergy.own for allergy in free}) > 1:
-        # The same allergen for the caller and for another adult: which dish
-        # is whose is not read, and the order of the searches must not
-        # decide it. Both stay on the whole order (Codex PR #368, P1).
-        return
-    if free and len(free) == len(same):
-        free[0].item = item_id
-    else:
-        # Tied to a dish already, a free one was said for the whole order
-        # ("bei allem", #668) and stays there; this dish gets a copy.
-        # The same allergy said for another dish as well ("Die 13 bitte, ich
-        # habe eine Erdnussallergie und die 23 bitte, mein Sohn hat eine
-        # Erdnussallergie"): read once from the sentence, it goes onto both
-        # lines (Codex PR #368). Whose it is there is the caller's only when
-        # every entry of it is.
-        own = all(allergy.own for allergy in same)
-        state.allergies.append(same[0].model_copy(update={"item": item_id, "own": own}))
 
 
 def _seen(hit: dict[str, Any]) -> dict[str, Any]:

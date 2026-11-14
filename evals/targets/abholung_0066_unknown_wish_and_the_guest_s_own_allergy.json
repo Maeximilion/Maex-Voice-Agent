@@ -33,10 +33,6 @@
     },
     {
       "role": "customer",
-      "text": "Ja."
-    },
-    {
-      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -54,7 +50,7 @@
       {
         "number": "42",
         "quantity": 1,
-        "note": "WICHTIG: Keine Erdnuss. Grund: Allergie"
+        "note": "WICHTIG !!! Kunde ist allergisch auf Erdnuss"
       },
       {
         "number": "20",
@@ -64,8 +60,6 @@
     "customer_name": "Krueger",
     "confirmed": true,
     "escalated": false,
-    "consent": [
-      "yes"
-    ]
+    "consent": []
   }
 }

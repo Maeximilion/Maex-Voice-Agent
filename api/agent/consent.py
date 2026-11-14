@@ -302,12 +302,8 @@ def read_out(say: str, readback: str) -> bool:
     return False
 
 
-# The question for the caller's consent to the allergy as a kitchen note, word
-# for word as Maxi decided it (legal check L13). The core asks it, never the
-# model, and the consent log stores it as the version that was asked.
-ALLERGY_QUESTION = "Darf ich die Allergie als Hinweis für die Küche notieren?"
-# Words a yes to that question may carry besides the assent and the filler of
-# `is_yes`: "Ja, notieren Sie das", "Ja, auf jeden Fall".
+# Words a yes to a consent question may carry besides the assent and the
+# filler of `is_yes`: "Ja, notieren Sie das", "Ja, auf jeden Fall".
 _NOTE_IT = frozenset(
     {"notieren", "aufschreiben", "weitergeben", "sie", "unbedingt", "auf"}
     | {"jeden", "fall", "duerfen", "dürfen"}
@@ -321,12 +317,12 @@ _NO_FILLER = (_FILLER - {"doch"}) | {"lieber", "besser", "nicht", "nötig", "noe
 def consent_answer(
     text: str, about: frozenset[str] = _NOTE_IT, refuse: frozenset[str] = frozenset()
 ) -> Answer:
-    """The answer to `ALLERGY_QUESTION`, or with `about` to another consent
-    question. A yes as strict as for a booking (`is_yes`), with the words that
-    say "note it" besides: anything more, as in "Ja, und noch eine Cola", is no
+    """The answer to a consent question, `about` the words it may carry. A
+    yes as strict as for a booking (`is_yes`), with the words that say "note
+    it" besides: anything more, as in "Ja, und noch eine Cola", is no
     explicit consent. A no is a sentence of a no word or "nicht" and filler
     ("Nein, nicht notieren"). Anything else is unclear, and unclear is no
-    consent (L13: only an explicit "ja" stores the reason). An assent word
+    consent. An assent word
     stays a word of the yes, also when `about` names it: "Ich bin nicht
     einverstanden" is a no, "Ich bin einverstanden" a yes. `refuse` names words
     a no may carry and a yes never: they make no yes."""

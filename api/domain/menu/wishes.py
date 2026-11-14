@@ -27,7 +27,6 @@ Reine Funktionen ohne Datenbank.
 import re
 from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterator
-from itertools import pairwise
 from typing import Literal
 
 from api.domain.menu.numberwords import (
@@ -37,7 +36,6 @@ from api.domain.menu.numberwords import (
     parse_cardinal,
     sole_item_number,
 )
-from api.domain.menu.pos_convert import ALLERGEN_KINDS, ALLERGEN_NAMES
 from api.schemas.menu import OptionGroup, Wish
 from api.schemas.orders import NOTE_MAX
 
@@ -78,9 +76,10 @@ _TIMES = re.compile(r"\b(\w+?)mal\b", re.IGNORECASE)
 _COUNTED = re.compile(r"\b\d+\s*(?:x|portionen?|stück|stueck)\b", re.IGNORECASE)
 
 
-# Fester Wortlaut des Kuechenhinweises (E14, Maxi 24.09.2026): wird beim
-# Vorlesen wiederholt, nie mit der Zusage, das Gericht sei frei davon.
-ALLERGY_NOTE = "WICHTIG: Keine {ingredient}. Grund: Allergie"
+# The kitchen note for an allergy the search reads behind a dish, as the
+# model writes one (Maxi, 15.11.2026; E14): read back, never with the promise
+# that the dish is free of it. Whose allergy it is the model words itself.
+ALLERGY_NOTE = "WICHTIG !!! Allergie: {ingredient}"
 # Die Zutaten reichen bis zum naechsten Satzteil: "gegen Erdnuesse und Sesam" sind
 # zwei (Codex PR #139, P1), "gegen Sesam und dann noch eine Cola" ist eine.
 # Der Rest steht im Lookahead: so findet die Suche auch die naechste Wendung
@@ -281,7 +280,7 @@ def _left_unread(text: str, pieces: list[str]) -> bool:
             return True
         # Another person's allergy behind the caller's ("meine Frau gegen
         # Sesam", "mein Mann Sesam") is never noted as the caller's (#670).
-        # One with an allergy word of its own is read on its own (`another_adult`).
+        # One with an allergy word of its own is read on its own.
         names_someone = (
             words[i] in _POSSESSIVES and words[i + 1] in _PERSONS | _CHILDREN
         ) or words[i] in _OTHERS
@@ -1115,12 +1114,6 @@ def speaks_of_health(text: str) -> bool:
     return mentions_allergy(text) or bool(_HEALTH_WORDS.search(text))
 
 
-def allergies_named(text: str) -> int:
-    """How many allergy words the guest says ("Erdnussallergie, meine Frau
-    eine Sesamallergie": two; "Nuss- und Sesamallergie": one)."""
-    return len(_allergy_words(_tokens(_clean(text))[1]))
-
-
 def denies_allergy(text: str) -> bool:
     """Does the guest only deny an allergy of their own ("ich habe keine
     Allergie", "nicht allergisch")? As `classify_wish` decides without the
@@ -1368,8 +1361,8 @@ def classify_wish(text: str, groups: list[OptionGroup]) -> Wish | None:
 
 def kitchen_note(removal: str | None, allergy: str) -> str:
     """The kitchen note for an allergy and the removal the guest said with it,
-    the allergy first as the kitchen reads it (E14): "WICHTIG: Keine Erdnuss.
-    Grund: Allergie. Ohne Zwiebeln". One too long for an order line keeps the
+    the allergy first as the kitchen reads it (E14): "WICHTIG !!! Allergie:
+    Erdnuss. Ohne Zwiebeln". One too long for an order line keeps the
     allergy alone: the removal is the part to lose."""
     if not removal:
         return allergy
@@ -1394,14 +1387,10 @@ def removal_with(wish: Wish) -> str | None:
     return removal[0].lower() + removal[1:]
 
 
-# Whose allergy it is (legal check L13). The caller's "ja" counts for themselves
-# and their own child; for another adult it is no consent of that person, so
-# that allergy is never noted with its reason. Read on the words alone: a person
-# who is not the caller's child, after "mein", "unser" and the like ("meine
-# Frau"), on their own ("ein Freund", "jemand"), or as the subject of the
-# sentence ("er hat", "wir sind"). Anything else is the caller's own.
-# ponytail: closed lists; a person they do not name keeps the allergy as the
-# caller's own. Add the word when the call log shows it.
+# Persons the guest may speak of, so their allergy is no dish name and no plain
+# removal: after "mein", "unser" and the like ("meine Frau"), or on their own
+# ("ein Freund", "jemand").
+# ponytail: closed lists; add the word when the call log shows it.
 _POSSESSIVES = frozenset(
     {"mein", "meine", "meinem", "meinen", "meiner", "meines"}
     | {"unser", "unsere", "unserem", "unseren", "unserer", "unseres"}
@@ -1421,30 +1410,6 @@ _OTHERS = frozenset(
     {"freund", "freundin", "freunde", "kollege", "kollegin", "kollegen"}
     | {"begleitung", "jemand", "jemanden", "jemandem"}
 )
-# "er hat", "sie ist", "wir sind": the allergy of someone the caller speaks of.
-# "wir" holds another adult too, and the caller cannot consent for them. Only
-# the singular verbs after "sie": "Sie haben" is how the caller addresses the
-# restaurant.
-_THIRD_SUBJECTS = frozenset(
-    {
-        (subject, verb)
-        for subject in ("er", "sie")
-        for verb in ("hat", "ist", "vertraegt", "reagiert")
-    }
-    | {("wir", verb) for verb in ("haben", "sind", "vertragen", "reagieren")}
-)
-
-
-def of_another_adult(text: str) -> bool:
-    """Does `text` speak of the allergy of an adult other than the caller?"""
-    for word, follows in pairwise([*_words(text), ""]):
-        if word in _OTHERS or (word in _POSSESSIVES and follows in _PERSONS):
-            return True
-        if (word, follows) in _THIRD_SUBJECTS:
-            return True
-    return False
-
-
 # Where a part of an answer to "Wogegen?" begins: "gegen" or "auf" at the
 # start or after "und", "aber", "sondern" ("Ohne Zwiebeln und auf
 # Erdnuesse", "Ohne Zwiebeln, aber gegen Erdnuesse", Codex PR #330),
@@ -1588,57 +1553,6 @@ def only_denies(text: str) -> bool:
                 runs.append([n, n])
     return bool(runs) and all(
         denies_allergy("".join(parts[first : last + 1])) for first, last in runs
-    )
-
-
-# What an answer to "Wogegen?" may say besides its ingredient: "Ich bin gegen
-# Sesam allergisch", "Ja, Erdnüsse", "Ich habe doch keine Allergie".
-_ANSWER_WORDS = (
-    _FILLERS
-    | _NOTHING
-    | _NOTHING_FILL
-    | _ARTICLES
-    | _NEGATION
-    | _PREPOSITIONS
-    | _AFFIRMATIONS
-    | frozenset({"und", "oder", "sowie", "nur", "ohne", "jeden", "fall"})
-)
-
-
-def answers_only(text: str) -> bool:
-    """Does the answer to "Wogegen?" give its ingredient, or that there is
-    none, and nothing else? "Erdnüsse, aber bitte erst übermorgen" changes the
-    booking as well, and "Erdnüsse, aber ohne Zwiebeln" the dish: the model
-    has to read such a sentence (Codex PR #368)."""
-    answer, removals = which_answer(text)
-    if answer is None or removals:
-        return False
-    read = set(_words(answer.ingredient or "")) if isinstance(answer, Wish) else set()
-    return all(
-        word in read or word in _ANSWER_WORDS or _is_allergy(word)
-        for word in _words(_HESITATION.sub("", text))
-    )
-
-
-# Who speaks of an allergy in an answer: "Mein Mann hat eine Sesamallergie",
-# "Mein Sohn verträgt keine Milch".
-_SPEAKERS = (
-    _POSSESSIVES
-    | _PERSONS
-    | _OTHERS
-    | frozenset({"sohn", "tochter", "kind", "kinder", "baby", "er", "sie"})
-    | frozenset({"hat", "ist", "vertraegt", "vertragen", "reagiert", "reagieren"})
-)
-
-
-def read_in_full(text: str, ingredient: str) -> bool:
-    """Does `ingredient` hold every word of the answer to "Wogegen?" that may
-    name one? "Erdnüsse, und mein Mann hat eine Sesamallergie" read as
-    "Sesam" leaves the caller's peanut out (Codex PR #368)."""
-    read = set(_words(ingredient))
-    return all(
-        word in read or word in _ANSWER_WORDS or word in _SPEAKERS or _is_allergy(word)
-        for word in _words(_HESITATION.sub("", text))
     )
 
 
@@ -1868,25 +1782,21 @@ def _with_allergy(
         ingredient = _ingredient(
             text[tokens[start].start() :] if _negated(words[:start]) else text
         )
-    # Never noted with its reason, whatever the caller answers (L13).
-    other = of_another_adult(clause) or None
     if ingredient is None:
         # The removal waits for "Wogegen?" and goes on the order line as it is
         # when the allergy is withdrawn: one too long for the line is lost, as
         # in `kitchen_note` (#331).
         if removal is None or len(removal) > NOTE_MAX:
-            return Wish(text=text, kind="allergy", another_adult=other)
+            return Wish(text=text, kind="allergy")
         return Wish(
             text=text[tokens[start].start() :],
             kind="allergy",
             note=removal,
-            another_adult=other,
         )
     return Wish(
         text=kitchen_note(removal, ALLERGY_NOTE.format(ingredient=ingredient)),
         kind="allergy",
         ingredient=ingredient,
-        another_adult=other,
     )
 
 
@@ -1899,83 +1809,6 @@ _THEIRS = re.compile(
     r"(?P<person>[a-z]+)\s+(?:aber\s+|nur\s+|auch\s+)?"
     r"(?:(?:ist\s+|hat\s+(?:eine\s+)?)?(?:gegen\s+[a-z]+(?:\s+allergisch)?|[a-z]+allergie))"
 )
-
-
-# One more person in the same breath ("..., meine Frau gegen Sesam", "...
-# und mein Mann Sesam"): where `theirs_behind` tries to cut the text.
-_NEXT_PERSON = re.compile(
-    r"(?:,|\bund\b)\s*(?=(?:(?:nur|aber|auch)\s+)?(?:mein|unser)\w*\s)", re.IGNORECASE
-)
-_THEIRS_BARE = re.compile(
-    r"(?:(?:nur|aber|auch)\s+)?(?:mein|unser)\w*\s+(?P<person>[a-z]+)\s+(?P<what>[a-z]+)"
-)
-
-
-# Names (with a plural ending) a bare "mein Mann <word>" may read as an allergy;
-# a dish that holds one ("Milchreis", "Erdnussbutter") is no allergy (#740).
-_PLAIN_ALLERGENS = frozenset(
-    name + ending
-    for table in (ALLERGEN_NAMES, ALLERGEN_KINDS)
-    for names in table.values()
-    for name in names
-    for ending in ("", "e", "en", "n", "s")
-)
-
-
-def theirs_behind(text: str, *, answering: bool = False) -> tuple[str, Wish] | None:
-    """ "Ich bin allergisch gegen Nüsse, meine Frau gegen Sesam": the caller's
-    own words, and behind the last comma or "und" one person's allergy to the
-    end of the text, as `_THEIRS` reads it, or "mein Mann Sesam" (a person
-    and one word that names an allergen). Returns the text without that
-    clause and its allergy (`another_adult` for an adult), so neither is lost
-    behind the other's "Wogegen?" (#740). The words in front must speak of an
-    allergy and be no denial (`_theirs_behind_a_denial` reads that), unless
-    they answer "Wogegen?" (`answering`). None for anything else, as ever
-    asked about.
-    shortcut: only the end of the whole text, not the end of a sentence in its
-    middle; the guest is asked, upgrade if the call log shows it."""
-    if text.rstrip().endswith("?"):  # a question back answers no "Wogegen?"
-        return None
-    for join in _NEXT_PERSON.finditer(text):
-        head, clause = text[: join.start()], text[join.end() :]
-        if not _clean(head) or (
-            not answering
-            and (
-                not mentions_allergy(head)
-                or _denial_phrase(_SENTENCE_END.split(head)[-1])
-            )
-        ):
-            continue
-        folded = fold(_clean(clause))
-        if (shape := _THEIRS.fullmatch(folded)) is not None:
-            said = _clean(clause)
-            ingredient = _ingredient(said) or _ingredient(f"{said} allergisch")
-        elif (shape := _THEIRS_BARE.fullmatch(folded)) is not None and shape.group(
-            "what"
-        ) in _PLAIN_ALLERGENS:
-            ingredient = _ingredient(f"gegen {_clean(clause).split()[-1]} allergisch")
-        else:
-            continue
-        if shape.group("person") not in _PERSONS | _CHILDREN:
-            continue
-        if ingredient is None or " " in ingredient.strip():
-            continue
-        # "meine Frau gegen acht" is a time, no ingredient.
-        said_word = fold(ingredient)
-        if parse_cardinal(said_word) is not None or said_word in (
-            _TIME_WORDS | _NOT_LISTED
-        ):
-            continue
-        # A child's allergy is the caller's to consent to, as said directly.
-        adult = shape.group("person") in _PERSONS
-        wish = Wish(
-            text=ALLERGY_NOTE.format(ingredient=ingredient),
-            kind="allergy",
-            ingredient=ingredient,
-            another_adult=adult or None,
-        )
-        return head, wish
-    return None
 
 
 # Words that carry an allergy on in a later clause ("..., ohne Milch und
@@ -2035,8 +1868,6 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
     person = shape.group("person")
     if person not in _PERSONS | _CHILDREN:
         return None
-    # A child's allergy is the caller's to consent to, as said directly.
-    adult = person in _PERSONS
     ingredient = _ingredient(behind) or _ingredient(f"{behind} allergisch")
     if ingredient is None or " " in ingredient.strip():
         return None
@@ -2064,7 +1895,6 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
         ),
         kind="allergy",
         ingredient=ingredient,
-        another_adult=adult or None,
     )
 
 

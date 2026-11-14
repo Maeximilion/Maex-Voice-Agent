@@ -68,9 +68,9 @@ from api.models import (
 
 logger = get_logger("api.jobs.retention")
 
-# A caller's allergy in a note: the kitchen wording "Grund: Allergie"
-# (domain/menu/wishes.py ALLERGY_NOTE) and what the team types by hand
-# ("Nussallergie", "Laktoseintoleranz"). The whole note goes; "ohne Zwiebeln"
+# A caller's allergy in a note: the model's "WICHTIG !!! Kunde ist allergisch
+# auf ..." (prompts/system_v3.md, guards.unnoted_allergy) and what the team
+# types by hand ("Nussallergie", "Laktoseintoleranz"). The whole note goes; "ohne Zwiebeln"
 # alone stays until the guest details go. Whether ~* folds an umlaut depends
 # on the locale of the database, hence both cases.
 ALLERGY = "allergi|unvertr(ä|Ä|ae)glich|intoleran"

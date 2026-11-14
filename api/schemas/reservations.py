@@ -45,7 +45,7 @@ class SlotCheck(BaseModel):
     say: str | None = Field(default=None, exclude=True)
 
 
-# The longest note of a table, the guest's allergies included (`agent/allergies.py`).
+# The longest note of a table, the guest's allergy included.
 RESERVATION_NOTE_MAX = 500
 
 

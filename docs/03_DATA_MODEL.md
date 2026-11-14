@@ -246,14 +246,14 @@ The catalogue of fixed answers to a complaint, per tenant (D19, T-10.11, migrati
 The yes writes `complaint.remedy_booked` to `audit_log` (rule id, `call_id`, `remedy_cents`), in the transaction of the card.
 
 ### `consent_log`
-One row per answer to a consent question of the agent (legal check L13, T-11.1, migration 010). The proof a stored allergy note with "Grund: Allergie" rests on; the allergy itself is not in it.
+One row per answer to a consent question of the agent (legal check L13, T-11.1, migration 010; the recording, L2, T-11.3). Since 15.11.2026 the agent asks no allergy question (Maxi, #736): naming the allergy is the consent, and older rows of that question stay as they are; the allergy itself is never in it.
 
 | Feld | Typ | Bemerkung |
 |---|---|---|
 | id | UUID PK | |
 | tenant_id / call_id | UUID FK | |
-| question | TEXT | the question word for word as it was asked, its version (`agent/consent.py` `ALLERGY_QUESTION`, `agent/recording.py` `question()`); a withdrawal of a recording holds the caller's words `Aufnahme stoppen` |
-| answer | TEXT | `yes` / `no` / `unclear`; only `yes` lets a note keep the reason or a call be recorded, `unclear` is no consent, silence on the recording question too |
+| question | TEXT | the question word for word as it was asked, its version (`agent/recording.py` `question()`; until 15.11.2026 also the allergy question); a withdrawal of a recording holds the caller's words `Aufnahme stoppen` |
+| answer | TEXT | `yes` / `no` / `unclear`; only `yes` lets a call be recorded, `unclear` is no consent, silence on the recording question too |
 | answered_at | TIMESTAMPTZ | |
 
 Since T-11.3 it also holds the answers about a recording (L2): one row per call that was asked, and a `no` behind the `yes` for a withdrawal.
@@ -436,7 +436,7 @@ Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
 | delivery_fee_cents | INT | |
 | total_cents | INT | |
 | ready_at | TIMESTAMPTZ | zugesagte Zeit |
-| note | TEXT | the note of the whole order (`draft_order` `note`, T-11.1): the guest's allergy said without a dish or when it is unclear which dish it belongs to (D24), in the same two forms as `order_items.note` |
+| note | TEXT | the note of the whole order (`draft_order` `note`), as the model writes it: a remark for the whole order, the guest's allergy said without a dish (D24, Maxi 15.11.2026) |
 | idempotency_key | TEXT UNIQUE | |
 | pickup_code | TEXT NULL | Abholcode („A17"), ab `confirm` gesetzt (docs/04 confirm, docs/06 §3) |
 | handover_state | TEXT NULL | `pending` / `sent` / `failed` — Übergabe an Küche/Kasse; leer, solange Entwurf, und leer nach `confirm` außerhalb von `primary`, bis das Team freigibt. `sent` setzt die Rückmeldung der Druckbrücke, `failed` heißt „Küche hat den Bon nicht" (Druckfehler oder 60 s unabgeholt) und wird wieder `sent`, sobald der Bon doch gedruckt ist (T-4.6, docs/04 §Küchenbon) |
@@ -458,7 +458,7 @@ Das Tablet schreibt ins `audit_log`: `order.approved` (Passt, `released` sagt, o
 | quantity | INT | |
 | unit_price_cents | INT | Preis zum Bestellzeitpunkt, eingefroren |
 | options | JSONB | gewählte Optionen mit Preisdifferenz |
-| note | TEXT | „ohne Zwiebeln", „WICHTIG: Keine Erdnüsse. Grund: Allergie" (E14) only after the caller's "ja" to the consent question, otherwise „ohne Erdnüsse" (L13, T-11.1) |
+| note | TEXT | the model's remark on the dish: „ohne Zwiebeln", „WICHTIG !!! Kunde ist allergisch auf Nüsse" (E14, L13; Maxi 15.11.2026, no consent question) |
 
 ---
 

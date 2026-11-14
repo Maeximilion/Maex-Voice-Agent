@@ -90,13 +90,9 @@ SAY_WISH_UNKNOWN = (
     "wie es auf der Karte steht."
 )
 SAY_WISH_WHICH_GROUP = "Meinen Sie {option} bei {groups}?"
-# No promise to pass the allergy on: whether it reaches the kitchen with its
-# reason is the caller's answer to the consent question the core asks before
-# the draft (T-11.1, legal check L13).
-SAY_ALLERGY_WHICH = "Wogegen sind Sie allergisch?"
-# Several dishes with an allergy but no ingredient: one question after the
-# other, each with its dish (Codex PR #139, P1).
-SAY_ALLERGY_WHICH_FOR = "Wogegen sind Sie bei {name} allergisch?"
+# No promise about the dish: the model notes the allergy for the kitchen, and
+# asks itself what an allergy without its ingredient is against (Maxi,
+# 15.11.2026).
 SAY_ALLERGY_NOTE = (
     "Ob {name} frei davon ist, kann ich Ihnen nur sagen, wenn es bei uns "
     "hinterlegt ist."
@@ -588,22 +584,9 @@ def say_for_wish(hit: MenuHit, wish: Wish) -> str | None:
         return SAY_WISH_WHICH_GROUP.format(
             option=wish.option, groups=" oder bei ".join(wish.groups)
         )
-    if wish.kind == "allergy":
-        if wish.ingredient:
-            return SAY_ALLERGY_NOTE.format(name=hit.name)
-        return SAY_ALLERGY_WHICH
+    if wish.kind == "allergy" and wish.ingredient:
+        return SAY_ALLERGY_NOTE.format(name=hit.name)
     return None
-
-
-def allergy_question(names: list[str], named: bool | None = None) -> str | None:
-    """The question for the first open allergy. With several, it names the
-    dish so the answer belongs to it - also for the last one in the row
-    (`named`)."""
-    if not names:
-        return None
-    if named is None:
-        named = len(names) > 1
-    return SAY_ALLERGY_WHICH_FOR.format(name=names[0]) if named else SAY_ALLERGY_WHICH
 
 
 def _named_dish(session: Session, tenant_id: uuid.UUID, text: str) -> MenuItem | None:

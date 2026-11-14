@@ -1,6 +1,6 @@
 {
   "id": "allergie_0016",
-  "name": "The yes of the caller counts for their own child",
+  "name": "The own child's allergy is noted without a question",
   "tags": [
     "allergie",
     "allergie_einwilligung",
@@ -30,10 +30,6 @@
     },
     {
       "role": "customer",
-      "text": "Ja, notieren Sie das bitte."
-    },
-    {
-      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -45,12 +41,10 @@
       {
         "number": "13",
         "quantity": 1,
-        "note": "WICHTIG: Keine Erdnuss. Grund: Allergie"
+        "note": "WICHTIG !!! Allergie: Erdnuss"
       }
     ],
     "customer_name": "Mueller",
-    "consent": [
-      "yes"
-    ]
+    "consent": []
   }
 }

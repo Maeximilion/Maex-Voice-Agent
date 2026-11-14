@@ -37,6 +37,7 @@ from api.agent.loop import (
     SAY_TABLE_BOOKED,
     SAY_TABLE_NOT_BOOKED,
     SAY_TEAM_OFFER,
+    SUMMARY_NOTE_TO_CLEAR,
     SUMMARY_OPEN_ORDER,
     SUMMARY_OPEN_TABLE,
     SUMMARY_OUTAGE,
@@ -44,12 +45,11 @@ from api.agent.loop import (
     TurnResult,
     _booked_say,
     _local_times,
-    _names_health,
     _order_lines,
     _still_open,
 )
 from api.agent.outcome import call_outcome
-from api.agent.state import Allergy, ConversationState, initial_state
+from api.agent.state import ConversationState, initial_state
 from api.domain.confirm import SAY_CANCELLED
 from api.models import Call, Callback, Reservation
 from scripts.seed import seed
@@ -1902,28 +1902,32 @@ def test_options_and_the_note_of_a_line_reach_the_card(state):
     )
 
 
-def test_the_card_names_an_allergy_only_as_a_removal(state):
-    """Codex PR #369, P1: with the caller's consent the open order on a card
-    carried "WICHTIG: Keine Erdnuss. Grund: Allergie". The card is kept for
-    the period of a callback, the allergy only until the night after its
-    order (L13): the card says what to leave out, never why."""
-    pho = str(uuid.uuid4())
+@pytest.mark.parametrize(
+    "note",
+    [
+        "WICHTIG !!! Kunde ist allergisch auf Erdnüsse",
+        "WICHTIG !!! Allergie (Frau): Sesam",
+        "ohne Gluten wegen Zöliakie",
+    ],
+)
+def test_the_card_never_carries_a_note_about_the_guests_health(state, note):
+    """Codex PR #369, P1: the card is kept for the period of a callback, the
+    allergy only until the night after its order (L13). A line note about
+    the guest's health is replaced, the other lines keep theirs."""
+    pho, ente = str(uuid.uuid4()), str(uuid.uuid4())
     state.seen_items[pho] = {"number": "13", "name": "Pho Bo"}
-    state.cart = [{"menu_item_id": pho, "quantity": 1, "note": "ohne Zwiebeln"}]
-    state.allergies = [
-        Allergy(ingredient="Erdnuss", item=pho),
-        Allergy(ingredient="Sesam"),
+    state.seen_items[ente] = {"number": "41", "name": "Ente"}
+    state.cart = [
+        {"menu_item_id": pho, "quantity": 1, "note": note},
+        {"menu_item_id": ente, "quantity": 1, "note": "ohne Zwiebeln"},
     ]
-    state.allergy_consent = "yes"
 
     lines = _order_lines(state, 200)
 
     assert lines == (
-        "für die ganze Bestellung: ohne Sesam, "
-        "1x 13 Pho Bo (ohne Erdnuss, ohne Zwiebeln)"
+        f"1x 13 Pho Bo ({SUMMARY_NOTE_TO_CLEAR}), 1x 41 Ente (ohne Zwiebeln)"
     )
-    assert "Allergie" not in lines
-    assert state.allergy_consent == "yes"
+    assert "allerg" not in lines.lower()
 
 
 def test_times_in_a_tool_result_reach_the_model_in_local_time(session, state):
@@ -2669,57 +2673,3 @@ def test_a_long_open_sentence_is_repeated_whole(state):
     note_said(state, asked)
 
     assert _still_open(state) == asked
-
-
-def test_the_note_for_the_whole_order_is_kept_first_and_never_counted(state):
-    """What the kitchen must know first is no dish and must not be the first
-    to go when the card is short (#656, P2)."""
-    for n in range(10):
-        dish = str(uuid.uuid4())
-        state.seen_items[dish] = {"number": f"{100 + n}", "name": "Salat"}
-        state.cart.append({"menu_item_id": dish, "quantity": 1})
-    state.allergies = [Allergy(ingredient="Sesam")]
-    state.allergy_consent = "yes"
-
-    lines = _order_lines(state, 70)
-
-    assert lines.startswith("für die ganze Bestellung: ohne Sesam, 1x 100")
-    assert lines.endswith("weitere Positionen") and len(lines) <= 70
-    shown = lines.count("1x ")
-    assert lines.endswith(f"{10 - shown} weitere Positionen")
-
-
-def test_a_noted_ingredient_matches_its_plural_on_a_card(state):
-    """ "Erdnuss" from "Erdnussallergie" is in "Erdnüsse" and "Erdnuesse"
-    (#656, P2): a summary naming them keeps the allergy off the card."""
-    state.allergies = [Allergy(ingredient="Erdnuss")]
-    for said in ("es geht um die Erdnüsse in der Soße", "die Erdnuesse in der Soße"):
-        assert _names_health(state, said)
-
-
-@pytest.mark.parametrize(
-    ("noted", "said"),
-    [
-        ("Erdnüsse", "es geht um die Erdnuss in der Soße"),
-        ("Nüsse", "ich möchte mit jemandem sprechen wegen der Nuss"),
-        ("Eier", "das Ei im Teig"),
-        ("Haselnüsse", "die Haselnuss im Eis"),
-        ("Erdnuesse", "die Erdnuss"),
-        ("Mandeln", "die Mandel"),
-        ("Milch, Ei und Nüsse", "geht um die Nuss"),
-    ],
-)
-def test_a_noted_plural_matches_its_singular_on_a_card(state, noted, said):
-    """Noted "Erdnüsse", said "Erdnuss": the sentence kept off the card only
-    when the noted word was the singular (#739, P2)."""
-    state.allergies = [Allergy(ingredient=noted)]
-    assert _names_health(state, said)
-
-
-@pytest.mark.parametrize(
-    ("noted", "said"),
-    [("Erdnüsse", "Pizza mit Salami"), ("Nüsse", ""), ("Eier", "die Pizza")],
-)
-def test_a_noted_ingredient_is_not_found_in_unrelated_words(state, noted, said):
-    state.allergies = [Allergy(ingredient=noted)]
-    assert not _names_health(state, said)

@@ -24,7 +24,7 @@ from api.agent.loop import (
     ConversationLoop,
 )
 from api.agent.recording import SAY_WHAT_CAN_I_DO
-from api.agent.state import Allergy, ConversationState
+from api.agent.state import ConversationState
 from api.domain.callbacks import matching_rule
 from api.domain.callbacks.complaint_rules import ACTION_REMEDY_BOOKED
 from api.domain.callbacks.create import SAY_NOTED
@@ -841,8 +841,6 @@ def test_a_withheld_number_goes_to_the_team(session, tenant_id):
         {"stage": "callback"},
         {"cart": [{"menu_item_id": str(uuid.uuid4()), "quantity": 1}]},
         {"seen_items": {"x": {"number": "23", "name": "Suppe"}}},
-        {"held_call": {"name": "draft_order", "args": {}}},
-        {"allergies": [Allergy(ingredient="Erdnuss")]},
         {"allergy_talk": True},
     ],
 )

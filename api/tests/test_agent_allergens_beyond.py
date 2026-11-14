@@ -16,7 +16,6 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.agent import guards
-from api.agent.consent import ALLERGY_QUESTION
 from api.agent.escalation import (
     asks_about_allergies,
     asks_beyond_the_allergens,
@@ -33,9 +32,10 @@ from api.agent.loop import (
     SAY_TABLE_NOT_BOOKED,
     SUMMARY_ADDITIVES,
     SUMMARY_ALLERGENS,
+    SUMMARY_NOTE_TO_CLEAR,
     ConversationLoop,
 )
-from api.agent.state import Allergy, ConversationState
+from api.agent.state import ConversationState
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.importer import ALLERGENS_FILE, apply, parse
@@ -612,15 +612,17 @@ def test_an_allergen_named_by_the_guest_makes_it_an_allergy_call(session, known_
 def test_an_allergy_note_stays_whatever_the_dish_contains(session, known_tenant):
     """Maxi, 27.10.2026: an allergy note is taken whatever the dish contains;
     the kitchen works with it. The 23 has gluten maintained and no sesame:
-    the sesame note stays on its line."""
+    the sesame note the model wrote stays on its line, unchanged and with no
+    consent question (Maxi, 15.11.2026)."""
     state = state_for(session, known_tenant, phone=CALLER)
     item_23 = str(item(session, known_tenant, "23"))
+    note = "WICHTIG !!! Kunde ist allergisch auf Sesam"
     draft = ToolCall(
         "draft_order",
         {
             "type": "pickup",
             "customer": {"name": "Müller", "phone": CALLER},
-            "items": [{"menu_item_id": item_23, "quantity": 1}],
+            "items": [{"menu_item_id": item_23, "quantity": 1, "note": note}],
         },
     )
     run(
@@ -633,15 +635,14 @@ def test_an_allergy_note_stays_whatever_the_dish_contains(session, known_tenant)
             )
         ),
         LLMTurn(tool_call=draft),
+        LLMTurn(say="Passt das so?"),
     )
-    assert state.last_say == ALLERGY_QUESTION
-    run(session, state, "Ja.")
 
+    assert state.stage == "readback_pending"
     [order] = session.scalars(select(Order)).all()
-    [note] = session.scalars(
+    assert session.scalars(
         select(OrderItem.note).where(OrderItem.order_id == order.id)
-    ).all()
-    assert note == "WICHTIG: Keine Sesam. Grund: Allergie"
+    ).all() == [note]
 
 
 def test_an_open_order_is_not_placed_and_goes_onto_the_card(session, known_tenant):
@@ -676,19 +677,20 @@ def test_an_open_order_is_not_placed_and_goes_onto_the_card(session, known_tenan
     assert "Erdnüss" not in callback.summary
 
 
-def test_a_consented_allergy_reaches_the_card_only_as_a_removal(session, known_tenant):
-    """Codex PR #369, P1: the caller said "ja" to the kitchen note, the order
-    is open, and a traces question goes to a callback card. The card is kept
-    for the period of a callback, the allergy only until the night after its
-    order (L13): it says what to leave out, never why."""
+def test_a_noted_allergy_never_reaches_the_card(session, known_tenant):
+    """Codex PR #369, P1: the order with the allergy note is open, and a
+    traces question goes to a callback card. The card is kept for the period
+    of a callback, the allergy only until the night after its order (L13):
+    the line names a note to clear, never the allergy."""
     state = state_for(session, known_tenant, phone=CALLER)
     pho = str(item(session, known_tenant, "13"))
+    note = "WICHTIG !!! Kunde ist allergisch auf Erdnüsse"
     draft = ToolCall(
         "draft_order",
         {
             "type": "pickup",
             "customer": {"name": "Müller", "phone": CALLER},
-            "items": [{"menu_item_id": pho, "quantity": 1}],
+            "items": [{"menu_item_id": pho, "quantity": 1, "note": note}],
         },
     )
     run(
@@ -697,54 +699,18 @@ def test_a_consented_allergy_reaches_the_card_only_as_a_removal(session, known_t
         "Einmal die Pho Bo auf Müller, ich habe eine Erdnussallergie.",
         LLMTurn(tool_call=ToolCall("search_menu", {"query": "Pho Bo"})),
         LLMTurn(tool_call=draft),
+        LLMTurn(say="Passt das so?"),
     )
-    assert state.last_say == ALLERGY_QUESTION
-    run(session, state, "Ja.")
     assert state.stage == "readback_pending"
 
     result, _ = run(session, state, "Sind da Spuren von Sesam drin?", now=CLOSED)
 
     assert result.ended
     callback = session.scalars(select(Callback)).one()
-    assert "1x 13 Pho Bo" in callback.summary
-    assert "ohne Erdnuss" in callback.summary
-    assert "Allergie" not in callback.summary
+    assert f"1x 13 Pho Bo ({SUMMARY_NOTE_TO_CLEAR})" in callback.summary
+    assert "allergisch" not in callback.summary
+    assert "Erdnüss" not in callback.summary
     assert "WICHTIG" not in callback.summary
-
-
-def test_traces_asked_instead_of_the_consent_answer_go_to_the_team(
-    session,
-    known_tenant,
-):
-    """The consent question waits with a draft; the guest asks about traces
-    instead. The question goes to the team, nothing is stored, and the
-    consent question is not put again."""
-    state = state_for(session, known_tenant, phone=CALLER)
-    table = ToolCall(
-        "create_reservation",
-        {
-            "guest_name": "Müller",
-            "phone": CALLER,
-            "party_size": 2,
-            "reserved_for": "2026-09-16T19:00:00+02:00",
-        },
-    )
-    # The core reads the allergy from the guest's sentence and holds the
-    # draft for the consent question; the model writes no allergy (T-11.1).
-    run(
-        session,
-        state,
-        "Tisch für zwei auf Müller, ich habe eine Erdnussallergie",
-        LLMTurn(tool_call=table),
-    )
-    assert state.held_call is not None
-    assert state.last_say == ALLERGY_QUESTION
-
-    result, _ = run(session, state, "Gibt es bei Ihnen Spuren von Nüssen?", now=CLOSED)
-
-    assert result.ended
-    assert result.say[0] == SAY_ALLERGENS_BEYOND
-    assert session.scalars(select(Callback)).one().reason == "out_of_scope"
 
 
 def test_a_human_question_next_to_traces_hears_the_truth_first(session, known_tenant):
@@ -1498,13 +1464,14 @@ def test_the_card_names_the_table_the_guest_moved_to(session, known_tenant):
     ],
 )
 def test_a_mixed_negation_keeps_the_allergy(session, known_tenant, said):
-    """What the second half names is not read, so "Wogegen?" asks for it."""
+    """What the second half names is an allergy: the call is one in which a
+    draft has to note it (`guards.unnoted_allergy`)."""
     state = state_for(session, known_tenant, phone=CALLER)
 
     run(session, state, said, LLMTurn(say="Gern."))
 
     assert not only_denies(said)
-    assert state.allergies == [Allergy(ingredient=None)]
+    assert state.allergy_named
 
 
 @pytest.mark.parametrize(
@@ -1525,70 +1492,6 @@ def test_a_mixed_negation_keeps_the_allergy(session, known_tenant, said):
 )
 def test_a_plain_denial_stays_one(said):
     assert only_denies(said)
-
-
-def wogegen(session, known_tenant) -> ConversationState:
-    state = state_for(session, known_tenant, phone=CALLER)
-    state.allergies = [Allergy(ingredient=None)]
-    state.last_say = "Wogegen sind Sie allergisch?"
-    return state
-
-
-@pytest.mark.parametrize(
-    "said",
-    [
-        "Ist das wichtig",
-        "Ist das wirklich nötig",
-        "Ist da etwas drin",
-        "Stimmt das",
-        "Passt das",
-        "Ist gut",
-        "Ist mir egal",
-    ],
-)
-def test_an_answer_of_that_shape_is_no_ingredient_and_costs_an_answer(
-    session, known_tenant, said
-):
-    """Without its mark it is no question back, and the count goes on: after
-    two such answers the team takes the call."""
-    state = wogegen(session, known_tenant)
-
-    run(session, state, said, LLMTurn(say="Gern."))
-
-    assert state.allergies == [Allergy(ingredient=None)]
-    assert state.which_asks == 1
-
-
-def test_an_allergy_beside_such_a_sentence_is_noted(session, known_tenant):
-    state = wogegen(session, known_tenant)
-
-    run(
-        session,
-        state,
-        "Ist das wichtig, mein Mann hat auch eine Sesamallergie",
-        LLMTurn(say="Gern."),
-        LLMTurn(say="Gern."),
-    )
-
-    assert [allergy.ingredient for allergy in state.allergies if allergy.ingredient]
-
-
-@pytest.mark.parametrize(
-    "said, ingredient",
-    [
-        ("Erdnüsse", "Erdnüsse"),
-        ("Gegen Erdnüsse", "Erdnüsse"),
-        ("Ich bin gegen Erdnüsse allergisch", "Erdnüsse"),
-    ],
-)
-def test_an_answer_to_wogegen_is_still_read(session, known_tenant, said, ingredient):
-    state = state_for(session, known_tenant, phone=CALLER)
-    state.allergies = [Allergy(ingredient=None)]
-    state.last_say = "Wogegen sind Sie allergisch?"
-
-    run(session, state, said, LLMTurn(say="Gern."))
-
-    assert [allergy.ingredient for allergy in state.allergies] == [ingredient]
 
 
 # -- additives: no table holds one (#638, § 5 LMZDV) ---------------------------
@@ -1776,58 +1679,6 @@ def test_a_note_that_names_an_additive_is_never_read_back(session, known_tenant)
     assert state.handoff_summary is not None
     assert state.handoff_summary.startswith(SUMMARY_ADDITIVES)
     assert "1x 13 Pho Bo" in state.handoff_summary
-
-
-def _table_waits_for(session, known_tenant, said: str) -> ConversationState:
-    state = state_for(session, known_tenant, phone=CALLER)
-    table = ToolCall(
-        "create_reservation",
-        {
-            "guest_name": "Müller",
-            "phone": CALLER,
-            "party_size": 4,
-            "reserved_for": "2026-09-16T19:00:00+02:00",
-        },
-    )
-    run(session, state, f"Tisch für vier auf Müller, {said}", LLMTurn(tool_call=table))
-    assert state.held_call is not None
-    return state
-
-
-@pytest.mark.parametrize(
-    ("allergy", "answer", "card"),
-    [
-        ("ich habe eine Erdnussallergie", "Ist da Glutamat drin?", SUMMARY_ADDITIVES),
-        (
-            "ich habe eine Erdnussallergie",
-            "Ja. Kochen Sie mit Glutamat?",
-            SUMMARY_ADDITIVES,
-        ),
-        ("ich habe eine Allergie", "Gegen Geschmacksverstärker.", SUMMARY_ADDITIVES),
-        (
-            "ich habe eine Erdnussallergie",
-            "Gibt es bei Ihnen Spuren von Nüssen?",
-            SUMMARY_ALLERGENS,
-        ),
-    ],
-)
-def test_a_handover_in_the_answer_to_a_question_of_the_core_keeps_the_held_table(
-    session, known_tenant, allergy, answer, card
-):
-    """The answer to the consent question or to "Wogegen?" took the held draft
-    and went to the team before the model: the card had no table on it, and
-    the guest did not hear that it was not booked."""
-    state = _table_waits_for(session, known_tenant, allergy)
-
-    result, llm = run(session, state, answer, now=CLOSED)
-
-    assert llm.calls == []
-    assert result.ended
-    assert result.say[:2] == [SAY_ALLERGENS_BEYOND, SAY_TABLE_NOT_BOOKED]
-    callback = session.scalars(select(Callback)).one()
-    assert callback.summary.startswith(card)
-    assert "Offene Reservierung, nicht bestätigt: 4 Personen" in callback.summary
-    assert "Erdnuss" not in callback.summary
 
 
 def test_an_illness_next_to_an_additive_reaches_the_card(session, known_tenant):

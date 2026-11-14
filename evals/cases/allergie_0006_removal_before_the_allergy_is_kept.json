@@ -31,10 +31,6 @@
     },
     {
       "role": "customer",
-      "text": "Ja."
-    },
-    {
-      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -46,12 +42,10 @@
       {
         "number": "13",
         "quantity": 1,
-        "note": "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
+        "note": "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln"
       }
     ],
     "customer_name": "Mueller",
-    "consent": [
-      "yes"
-    ]
+    "consent": []
   }
 }

@@ -38,10 +38,6 @@
     },
     {
       "role": "customer",
-      "text": "Ja."
-    },
-    {
-      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -54,7 +50,7 @@
         "options": [
           "Huhn"
         ],
-        "note": "WICHTIG: Keine Erdnuss. Grund: Allergie"
+        "note": "WICHTIG !!! Kunde ist allergisch auf Erdnuss"
       },
       {
         "number": "13",
@@ -79,8 +75,6 @@
       "check_delivery"
     ],
     "order_type": "delivery",
-    "consent": [
-      "yes"
-    ]
+    "consent": []
   }
 }
