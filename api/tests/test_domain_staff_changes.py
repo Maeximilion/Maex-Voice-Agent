@@ -24,6 +24,7 @@ from api.models import (
     Call,
     OpeningHours,
     OutboxEvent,
+    Reservation,
     ServiceConfig,
     SpecialDay,
     StaffChange,
@@ -578,6 +579,38 @@ def test_shorter_times_on_a_day_like_another_weekday_wait(session, tenant_id):
     assert closed is not None and closed.held
 
 
+def test_shorter_times_today_on_a_day_like_another_weekday_wait_too(session, tenant_id):
+    """Today holds at once by design, but not when the times would drop "wie
+    Sonntag" with Sunday's seats, call mode and call limit (#710)."""
+    session.add(
+        SpecialDay(tenant_id=tenant_id, date=TUESDAY, like_weekday=6, status="set")
+    )
+    session.commit()
+    card = staff.change_day_hours(
+        session, tenant_id, TUESDAY, DayHours(opens=time(12), closes=time(13)), NOW
+    )
+    assert card is not None and not card.held
+    row = session.scalars(select(SpecialDay).where(SpecialDay.date == TUESDAY)).one()
+    session.refresh(row)
+    assert row.like_weekday == 6 and row.opens_at is None
+    closed = staff.change_day_hours(
+        session, tenant_id, TUESDAY, DayHours(closed=True), NOW
+    )
+    assert closed is not None and closed.held
+
+
+def test_a_listed_national_number_is_never_offered_on_the_sheet(
+    session, tenant_id, monkeypatch
+):
+    """The dialplan dials it as written, but a typed number is normalised and
+    would never match it (#596)."""
+    monkeypatch.setattr(settings, "transfer_targets", f"07215559999,{NUMBER}")
+    assert staff.dialable_numbers() == [settings.team_phone, "07215559999", NUMBER]
+    assert staff.sheet_numbers() == [settings.team_phone, NUMBER]
+    with pytest.raises(InvalidInput):
+        staff.change_team_phone(session, tenant_id, "07215559999", NOW)
+
+
 def test_a_span_over_midnight_needs_the_staff_to_say_so(session, tenant_id):
     """ "von 22:00 bis 10:00" with the times swapped would open the night (#596 P2)."""
     swapped = DayHours(opens=time(22), closes=time(10))
@@ -590,3 +623,211 @@ def test_a_span_over_midnight_needs_the_staff_to_say_so(session, tenant_id):
     )
     assert card is not None and card.held
     assert _windows(session, tenant_id, TUESDAY) == [("22:00", "10:00")]
+
+
+# --- the guests a held closure or shortening leaves (#710) ---------------------
+
+
+def _table(session, tenant_id, day, at: time, name, status="confirmed"):
+    session.add(
+        Reservation(
+            tenant_id=tenant_id,
+            source="tablet",
+            status=status,
+            guest_name=name,
+            phone="+491701234567",
+            party_size=2,
+            reserved_for=datetime.combine(day, at, tzinfo=BERLIN),
+            idempotency_key=str(uuid.uuid4()),
+        )
+    )
+    session.commit()
+
+
+def _guests(session, tenant_id, day, hours) -> list[str]:
+    found = staff.bookings_outside_hours(
+        session, tenant_id, day, hours, "Europe/Berlin"
+    )
+    return [b.guest_name for b in found]
+
+
+def test_a_closure_lists_every_confirmed_table_of_the_date(session, tenant_id):
+    _table(session, tenant_id, SATURDAY, time(19), "Bauer")
+    _table(session, tenant_id, SATURDAY, time(12), "Aydin")
+    found = staff.bookings_outside_hours(
+        session, tenant_id, SATURDAY, DayHours(closed=True), "Europe/Berlin"
+    )
+    assert [(b.guest_name, b.at.strftime("%H:%M"), b.phone) for b in found] == [
+        ("Aydin", "12:00", "+491701234567"),
+        ("Bauer", "19:00", "+491701234567"),
+    ]
+
+
+def test_a_shortening_lists_only_the_tables_outside_the_new_hours(session, tenant_id):
+    _table(session, tenant_id, SATURDAY, time(11, 45), "Early")
+    _table(session, tenant_id, SATURDAY, time(13), "Inside")
+    _table(session, tenant_id, SATURDAY, time(19), "Evening")
+    shorter = DayHours(opens=time(12), closes=time(13, 30))
+    assert _guests(session, tenant_id, SATURDAY, shorter) == ["Early", "Evening"]
+
+
+def test_a_cancelled_table_and_another_date_stay_off_the_list(session, tenant_id):
+    _table(session, tenant_id, SATURDAY, time(19), "Gone", status="cancelled")
+    _table(session, tenant_id, SATURDAY + timedelta(days=1), time(19), "Sunday")
+    _table(session, tenant_id, SATURDAY, time(19), "Draft", status="draft")
+    assert _guests(session, tenant_id, SATURDAY, DayHours(closed=True)) == []
+
+
+def test_a_weekly_window_past_the_cutoff_keeps_its_late_table(session, tenant_id):
+    """Saturday 22:00 to Sunday 10:00: the table at Sunday 06:00 is Saturday's."""
+    for row in session.scalars(
+        select(OpeningHours).where(
+            OpeningHours.tenant_id == tenant_id,
+            OpeningHours.service == "dinein",
+            OpeningHours.weekday == SATURDAY.weekday(),
+        )
+    ):
+        session.delete(row)
+    session.add(
+        OpeningHours(
+            tenant_id=tenant_id,
+            service="dinein",
+            weekday=SATURDAY.weekday(),
+            opens_at=time(22),
+            closes_at=time(10),
+        )
+    )
+    session.commit()
+    _table(session, tenant_id, SATURDAY + timedelta(days=1), time(6), "Night")
+    assert _guests(session, tenant_id, SATURDAY, DayHours(closed=True)) == ["Night"]
+
+
+def test_the_check_token_follows_the_tables_behind_a_card(session, tenant_id):
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    _table(session, tenant_id, SATURDAY, time(19), "Bauer")
+    token = staff.cards_change_token(session, tenant_id, TUESDAY)
+    row = session.scalar(select(Reservation).where(Reservation.guest_name == "Bauer"))
+    row.status = "cancelled"
+    session.commit()
+    assert staff.cards_change_token(session, tenant_id, TUESDAY) != token
+
+
+def test_a_special_window_past_the_cutoff_keeps_its_late_table(session, tenant_id):
+    """Special hours Saturday 22:00 to 10:00, weekly ones end in the evening."""
+    was = DayHours(opens=time(22), closes=time(10))
+    _table(session, tenant_id, SATURDAY + timedelta(days=1), time(6), "Night")
+    found = staff.bookings_outside_hours(
+        session, tenant_id, SATURDAY, DayHours(closed=True), "Europe/Berlin", was
+    )
+    assert [b.guest_name for b in found] == ["Night"]
+
+
+def test_a_table_the_next_day_still_holds_stays_off_the_list(session, tenant_id):
+    """Sunday 03:00 lies in Saturday's business day, but Sunday's own special
+    hours 02:00 to 04:00 still hold it: closing Saturday leaves it its table."""
+    sunday = SATURDAY + timedelta(days=1)
+    session.add(
+        SpecialDay(
+            tenant_id=tenant_id,
+            date=sunday,
+            opens_at=time(2),
+            closes_at=time(4),
+            status="set",
+        )
+    )
+    session.commit()
+    _table(session, tenant_id, sunday, time(3), "Dawn")
+    _table(session, tenant_id, SATURDAY, time(19), "Evening")
+    assert _guests(session, tenant_id, SATURDAY, DayHours(closed=True)) == ["Evening"]
+
+
+def _hours(opens: time, closes: time) -> DayHours:
+    return DayHours(opens=opens, closes=closes)
+
+
+# (before the change, hours that hold after it, [(day offset, time, status, name)], listed)
+# Weekly Saturday dine-in hours: 11:30-14:00 and 17:00-22:00.
+_T = time
+WINDOW_CASES = {
+    "normal closure": (
+        None,
+        DayHours(closed=True),
+        [(0, _T(12), "confirmed", "A"), (0, _T(19), "confirmed", "B")],
+        ["A", "B"],
+    ),
+    "shortening": (
+        None,
+        _hours(_T(12), _T(13, 30)),
+        [
+            (0, _T(11, 45), "confirmed", "Early"),
+            (0, _T(13), "confirmed", "Inside"),
+            (0, _T(19), "confirmed", "Evening"),
+        ],
+        ["Early", "Evening"],
+    ),
+    "after-midnight window closed": (
+        _hours(_T(23), _T(2)),
+        DayHours(closed=True),
+        [(0, _T(23, 30), "confirmed", "Late"), (1, _T(1), "confirmed", "Night")],
+        ["Late", "Night"],
+    ),
+    "after-midnight window shortened": (
+        _hours(_T(23), _T(2)),
+        _hours(_T(23), _T(0, 30)),
+        [
+            (0, _T(23, 15), "confirmed", "Inside"),
+            (1, _T(0, 15), "confirmed", "Still"),
+            (1, _T(1), "confirmed", "Night"),
+        ],
+        ["Night"],
+    ),
+    "pre-05:00 special window closed": (
+        _hours(_T(2), _T(4)),
+        DayHours(closed=True),
+        [(0, _T(3), "confirmed", "Dawn")],
+        ["Dawn"],
+    ),
+    "pre-05:00 special window shortened": (
+        _hours(_T(2), _T(4)),
+        _hours(_T(2), _T(3, 30)),
+        [
+            (0, _T(3), "confirmed", "Inside"),
+            (0, _T(3, 45), "confirmed", "Dawn"),
+        ],
+        ["Dawn"],
+    ),
+    "weekly hours shorten a special day": (
+        _hours(_T(10), _T(23)),
+        DayHours(),
+        [
+            (0, _T(12), "confirmed", "Inside"),
+            (0, _T(22, 30), "confirmed", "Late"),
+        ],
+        ["Late"],
+    ),
+    "cancelled, draft and other dates stay off": (
+        None,
+        DayHours(closed=True),
+        [
+            (0, _T(19), "cancelled", "Gone"),
+            (0, _T(19), "draft", "Draft"),
+            (-1, _T(19), "confirmed", "Friday"),
+            (1, _T(19), "confirmed", "Sunday"),
+            (0, _T(19), "confirmed", "Kept"),
+        ],
+        ["Kept"],
+    ),
+}
+
+
+@pytest.mark.parametrize("case", WINDOW_CASES)
+def test_the_window_table_lists_what_the_old_windows_held_and_the_new_ones_do_not(
+    session, tenant_id, case
+):
+    before, after, tables, listed = WINDOW_CASES[case]
+    for offset, at, status, name in tables:
+        _table(session, tenant_id, SATURDAY + timedelta(days=offset), at, name, status)
+    found = staff.bookings_outside_hours(
+        session, tenant_id, SATURDAY, after, "Europe/Berlin", before
+    )
+    assert [b.guest_name for b in found] == listed

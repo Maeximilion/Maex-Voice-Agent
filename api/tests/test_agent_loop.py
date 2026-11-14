@@ -404,6 +404,36 @@ def test_ladder_erschoepft_eskaliert_ohne_dass_das_modell_selbst_zaehlt(session,
     assert state.stage == "ended"
 
 
+@pytest.mark.parametrize(
+    ("now", "stage", "phone"),
+    [(OPEN_NOW, "transferred", None), (NOW, "callback", CALLER)],
+)
+def test_a_caller_the_ladder_cannot_understand_ends_with_the_team(
+    session, state, now, stage, phone
+):
+    """#651 point 3: a caller who stays hard to understand is not hung up on.
+    The team takes the call, or, with nobody there, a callback card under the
+    number we know (docs/05 §2: the ladder ends at step 6 or 7)."""
+    if phone:
+        state.slots["phone"] = phone
+    turns = [
+        LLMTurn(say="Wie bitte?", understanding_failure="party_size") for _ in range(6)
+    ]
+    loop = ConversationLoop(
+        session, FakeLLM(turns), "system", now=now, clock=clock_from([0] * 7)
+    )
+
+    results = [loop.run_turn(state, "Am Dingsbums um irgendwann") for _ in range(6)]
+
+    assert [r.ended for r in results] == [False] * 5 + [True]
+    assert state.stage == stage
+    if phone:
+        card = session.scalars(select(Callback)).one()
+        assert (card.phone, card.reason) == (CALLER, "not_understood")
+    else:
+        assert "nicht geklärt" in (state.handoff_summary or "")
+
+
 def test_ladder_gibt_dem_modell_einen_stufen_hinweis(session, state):
     llm = FakeLLM(
         [
@@ -2506,6 +2536,44 @@ def test_a_callback_without_a_number_keeps_the_table_read_back(session, state):
     )
 
 
+def test_a_new_allergy_and_the_models_transfer_name_the_table_read_back(session, state):
+    """#737: the allergy takes the read-back back, the escalation check lets
+    the sentence pass, and the model hands the call over itself. The card
+    still names the table, and the guest hears it is not booked."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    loop = ConversationLoop(
+        session, _model_asks_for_the_team(), "system", now=NOW, clock=clock_from([0])
+    )
+
+    result = loop.run_turn(
+        state, "Ich habe eine Erdnussallergie. Kann ich bitte den Chef haben?"
+    )
+
+    assert result.ended is True and result.say[0] == SAY_TABLE_NOT_BOOKED
+    assert f"{SUMMARY_OPEN_TABLE} 4 Personen, 16.09.2026 19:00 Uhr" in _card(
+        session, state
+    )
+
+
+def test_a_new_allergy_and_a_callback_without_a_number_name_the_table(session, state):
+    """#737: as above, the model asks for a callback and no number is known.
+    The team takes the call, and its card names the table."""
+    read_back_reservation(session, state)
+    state.caller_phone = None
+    state.slots.pop("phone", None)
+    llm = FakeLLM([wants_a_callback()])
+    loop = ConversationLoop(session, llm, "system", now=OPEN_NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Nussallergie, rufen Sie mich bitte zurück")
+
+    assert result.ended is True and state.stage == "transferred"
+    assert result.say[0] == SAY_TABLE_NOT_BOOKED
+    assert f"{SUMMARY_OPEN_TABLE} 4 Personen, 16.09.2026 19:00 Uhr" in _card(
+        session, state
+    )
+
+
 @pytest.mark.parametrize(
     "said", ["Ich will mit einem Menschen sprechen.", "Ich will mich beschweren."]
 )
@@ -2609,3 +2677,31 @@ def test_a_noted_ingredient_matches_its_plural_on_a_card(state):
     state.allergies = [Allergy(ingredient="Erdnuss")]
     for said in ("es geht um die Erdnüsse in der Soße", "die Erdnuesse in der Soße"):
         assert _names_health(state, said)
+
+
+@pytest.mark.parametrize(
+    ("noted", "said"),
+    [
+        ("Erdnüsse", "es geht um die Erdnuss in der Soße"),
+        ("Nüsse", "ich möchte mit jemandem sprechen wegen der Nuss"),
+        ("Eier", "das Ei im Teig"),
+        ("Haselnüsse", "die Haselnuss im Eis"),
+        ("Erdnuesse", "die Erdnuss"),
+        ("Mandeln", "die Mandel"),
+        ("Milch, Ei und Nüsse", "geht um die Nuss"),
+    ],
+)
+def test_a_noted_plural_matches_its_singular_on_a_card(state, noted, said):
+    """Noted "Erdnüsse", said "Erdnuss": the sentence kept off the card only
+    when the noted word was the singular (#739, P2)."""
+    state.allergies = [Allergy(ingredient=noted)]
+    assert _names_health(state, said)
+
+
+@pytest.mark.parametrize(
+    ("noted", "said"),
+    [("Erdnüsse", "Pizza mit Salami"), ("Nüsse", ""), ("Eier", "die Pizza")],
+)
+def test_a_noted_ingredient_is_not_found_in_unrelated_words(state, noted, said):
+    state.allergies = [Allergy(ingredient=noted)]
+    assert not _names_health(state, said)

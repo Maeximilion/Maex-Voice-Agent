@@ -3,19 +3,12 @@
    the properties on the right. The plan itself is drawn by raumplan.js from
    /gui/raumplan/plan; every finished step is saved at once. #}
 {% extends "base.html" %}
+{% from "betrieb/_kopf.html" import kopf with context %}
 {% block title %}Raumplan{% endblock %}
 {% block body_class %}betrieb raumplan-seite{% endblock %}
 {% block head %}<link rel="stylesheet" href="/gui/static/raumplan.css">{% endblock %}
 
-{% block header %}
-<header>
-  <div class="top">
-    <a class="button" href="/gui">Zurück</a>
-    <h1 class="kz-title">Raumplan</h1>
-    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
-  </div>
-</header>
-{% endblock %}
+{% block header %}{{ kopf("Raumplan", tenant) }}{% endblock %}
 
 {% block main %}
 {% if tenant %}

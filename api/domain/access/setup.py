@@ -17,11 +17,17 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput
-from api.domain.access.admin import NO_LOGIN, SAME_AS_TEAM, refuse_same_pins
+from api.domain.access.admin import (
+    SAME_AS_TEAM,
+    pin_account,
+    refuse_same_pins,
+    shown_pin,
+)
 from api.domain.access.hashing import (
     hash_secret,
     password_problem,
     pin_problem,
+    same_secret,
     token_hash,
 )
 from api.domain.access.sessions import (
@@ -105,7 +111,7 @@ def use_link(
     if not problem and admin_pin is not None:
         if pin_problem(admin_pin):
             problem = ADMIN_PIN_DIGITS
-        elif admin_pin == pin:
+        elif same_secret(admin_pin, pin):
             problem = SAME_AS_TEAM
     if problem:
         raise InvalidInput("setup values refused", say=problem)
@@ -116,7 +122,8 @@ def use_link(
         session.rollback()
         raise InvalidInput("setup link replaced or expired", say=LINK_GONE)
     account, link = found
-    refuse_same_pins(session, pin, admin_pin or account.admin_pin)
+    if admin_pin is None:  # a given one was compared above
+        refuse_same_pins(session, pin, account.admin_pin)
     account.password_hash, account.team_pin = password_hash, pin
     if admin_pin is not None:
         account.admin_pin, account.admin_failures = admin_pin, 0
@@ -158,26 +165,14 @@ def _open_link(
 def team_pin(session: Session, tenant_id: uuid.UUID, actor: str) -> str | None:
     """The restaurant's team PIN for the operator, or None. The look is
     audited, never the value. Commits."""
-    account = locked_account(session, tenant_id)
-    if account is None:
-        session.rollback()
-        return None
-    audit(session, tenant_id, actor, "gui.team_pin_shown", account.id, {})
-    session.commit()
-    return account.team_pin
+    return shown_pin(session, tenant_id, actor, "team")
 
 
 def set_team_pin(session: Session, tenant_id: uuid.UUID, pin: str, actor: str) -> None:
     """The operator sets the team PIN; signed-in devices stay signed in and
     unlock with the new one, their wrong tries forgotten (review of #586).
     Raises InvalidInput. Commits."""
-    problem = pin_problem(pin)
-    if problem:
-        raise InvalidInput("team pin refused", say=problem)
-    account = locked_account(session, tenant_id)
-    if account is None:
-        session.rollback()
-        raise InvalidInput("no login yet", say=NO_LOGIN)
+    account = pin_account(session, tenant_id, pin, "team")
     refuse_same_pins(session, pin, account.admin_pin)
     account.team_pin = pin
     session.execute(

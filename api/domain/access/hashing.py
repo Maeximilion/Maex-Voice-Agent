@@ -72,6 +72,11 @@ def verify_secret(secret: str, stored: str | None) -> bool:
     return hmac.compare_digest(actual, expected)
 
 
+def same_secret(a: str, b: str) -> bool:
+    """Whether two secrets (PINs) are equal, in constant time."""
+    return hmac.compare_digest(a.encode(), b.encode())
+
+
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 

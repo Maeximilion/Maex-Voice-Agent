@@ -37,6 +37,7 @@ from api.domain.menu.numberwords import (
     parse_cardinal,
     sole_item_number,
 )
+from api.domain.menu.pos_convert import ALLERGEN_KINDS, ALLERGEN_NAMES
 from api.schemas.menu import OptionGroup, Wish
 from api.schemas.orders import NOTE_MAX
 
@@ -111,6 +112,9 @@ _WORD_RUN = re.compile(r"\w+")
 _CLAUSE_WORDS = (
     frozenset(
         {"dann", "noch", "ich", "wir", "bitte", "aber", "dazu", "auch", "ausserdem"}
+        # "gegen Nuesse, deshalb die 5": the reason opens the order, not an
+        # ingredient (#207, probe of PR #413).
+        | {"deshalb", "deswegen", "daher", "darum"}
     )
     | _ARTICLES
     | frozenset({"die", "der", "das", "den", "einmal"})
@@ -1885,6 +1889,83 @@ _THEIRS = re.compile(
     r"(?P<person>[a-z]+)\s+(?:aber\s+|nur\s+|auch\s+)?"
     r"(?:(?:ist\s+|hat\s+(?:eine\s+)?)?(?:gegen\s+[a-z]+(?:\s+allergisch)?|[a-z]+allergie))"
 )
+
+
+# One more person in the same breath ("..., meine Frau gegen Sesam", "...
+# und mein Mann Sesam"): where `theirs_behind` tries to cut the text.
+_NEXT_PERSON = re.compile(
+    r"(?:,|\bund\b)\s*(?=(?:(?:nur|aber|auch)\s+)?(?:mein|unser)\w*\s)", re.IGNORECASE
+)
+_THEIRS_BARE = re.compile(
+    r"(?:(?:nur|aber|auch)\s+)?(?:mein|unser)\w*\s+(?P<person>[a-z]+)\s+(?P<what>[a-z]+)"
+)
+
+
+# Names (with a plural ending) a bare "mein Mann <word>" may read as an allergy;
+# a dish that holds one ("Milchreis", "Erdnussbutter") is no allergy (#740).
+_PLAIN_ALLERGENS = frozenset(
+    name + ending
+    for table in (ALLERGEN_NAMES, ALLERGEN_KINDS)
+    for names in table.values()
+    for name in names
+    for ending in ("", "e", "en", "n", "s")
+)
+
+
+def theirs_behind(text: str, *, answering: bool = False) -> tuple[str, Wish] | None:
+    """ "Ich bin allergisch gegen Nüsse, meine Frau gegen Sesam": the caller's
+    own words, and behind the last comma or "und" one person's allergy to the
+    end of the text, as `_THEIRS` reads it, or "mein Mann Sesam" (a person
+    and one word that names an allergen). Returns the text without that
+    clause and its allergy (`another_adult` for an adult), so neither is lost
+    behind the other's "Wogegen?" (#740). The words in front must speak of an
+    allergy and be no denial (`_theirs_behind_a_denial` reads that), unless
+    they answer "Wogegen?" (`answering`). None for anything else, as ever
+    asked about.
+    shortcut: only the end of the whole text, not the end of a sentence in its
+    middle; the guest is asked, upgrade if the call log shows it."""
+    if text.rstrip().endswith("?"):  # a question back answers no "Wogegen?"
+        return None
+    for join in _NEXT_PERSON.finditer(text):
+        head, clause = text[: join.start()], text[join.end() :]
+        if not _clean(head) or (
+            not answering
+            and (
+                not mentions_allergy(head)
+                or _denial_phrase(_SENTENCE_END.split(head)[-1])
+            )
+        ):
+            continue
+        folded = fold(_clean(clause))
+        if (shape := _THEIRS.fullmatch(folded)) is not None:
+            said = _clean(clause)
+            ingredient = _ingredient(said) or _ingredient(f"{said} allergisch")
+        elif (shape := _THEIRS_BARE.fullmatch(folded)) is not None and shape.group(
+            "what"
+        ) in _PLAIN_ALLERGENS:
+            ingredient = _ingredient(f"gegen {_clean(clause).split()[-1]} allergisch")
+        else:
+            continue
+        if shape.group("person") not in _PERSONS | _CHILDREN:
+            continue
+        if ingredient is None or " " in ingredient.strip():
+            continue
+        # "meine Frau gegen acht" is a time, no ingredient.
+        said_word = fold(ingredient)
+        if parse_cardinal(said_word) is not None or said_word in (
+            _TIME_WORDS | _NOT_LISTED
+        ):
+            continue
+        # A child's allergy is the caller's to consent to, as said directly.
+        adult = shape.group("person") in _PERSONS
+        wish = Wish(
+            text=ALLERGY_NOTE.format(ingredient=ingredient),
+            kind="allergy",
+            ingredient=ingredient,
+            another_adult=adult or None,
+        )
+        return head, wish
+    return None
 
 
 # Words that carry an allergy on in a later clause ("..., ohne Milch und
