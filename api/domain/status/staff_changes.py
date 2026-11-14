@@ -46,6 +46,8 @@ from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.hours import (
     HoursData,
     Window,
+    load_hours,
+    open_window_at,
     regular_hours,
     windows_for_day,
 )
@@ -424,7 +426,14 @@ def bookings_outside_hours(
     # change, which may start before or end after the cutoff (02:00 to 04:00,
     # 22:00 to 10:00). The query bounds come from this span, never a constant.
     span = [business_day_bounds_utc(day, zone), *dinein(before or DayHours())]
-    new = dinein(hours)
+    # After the change: the date with its new hours, its neighbours as set. A
+    # table counts as kept when any window still holds it, also one of the day
+    # before or after (open_window_at checks the previous day too).
+    after = load_hours(session, tenant_id, day, days=1)
+    if hours.normal:
+        after.special.pop(day, None)
+    else:
+        after.special[day] = hours.row(tenant_id, day)
     rows = session.scalars(
         select(Reservation)
         .where(
@@ -442,7 +451,7 @@ def bookings_outside_hours(
         )
         for r in rows
         if any(a <= r.reserved_for < b for a, b in span)
-        and not any(a <= r.reserved_for < b for a, b in new)
+        and open_window_at(after, r.reserved_for, "dinein", tz) is None
     ]
 
 

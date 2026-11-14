@@ -722,6 +722,25 @@ def test_a_special_window_past_the_cutoff_keeps_its_late_table(session, tenant_i
     assert [b.guest_name for b in found] == ["Night"]
 
 
+def test_a_table_the_next_day_still_holds_stays_off_the_list(session, tenant_id):
+    """Sunday 03:00 lies in Saturday's business day, but Sunday's own special
+    hours 02:00 to 04:00 still hold it: closing Saturday leaves it its table."""
+    sunday = SATURDAY + timedelta(days=1)
+    session.add(
+        SpecialDay(
+            tenant_id=tenant_id,
+            date=sunday,
+            opens_at=time(2),
+            closes_at=time(4),
+            status="set",
+        )
+    )
+    session.commit()
+    _table(session, tenant_id, sunday, time(3), "Dawn")
+    _table(session, tenant_id, SATURDAY, time(19), "Evening")
+    assert _guests(session, tenant_id, SATURDAY, DayHours(closed=True)) == ["Evening"]
+
+
 def _hours(opens: time, closes: time) -> DayHours:
     return DayHours(opens=opens, closes=closes)
 
