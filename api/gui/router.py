@@ -1598,6 +1598,7 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
         session, tenant.id, [c.day for c in cards if c.kind == staff.DAY_HOURS]
     )
     for card in cards:
+        calls: list[staff.BookingToCall] = []
         if card.kind == staff.TEAM_PHONE:
             title, keep = "Teamnummer heute", "Als Standard übernehmen"
             before, after = card.before["number"], card.after["number"]
@@ -1608,6 +1609,17 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
             before = staff.DayHours.of(card.before).text()
             after = staff.DayHours.of(card.after).text()
             holding = holding_on[card.day].text()
+            # What holds now differs from the date before the change (closed,
+            # shorter, back to the weekly hours): the guests the team calls itself.
+            if holding_on[card.day] != staff.DayHours.of(card.before):
+                calls = staff.bookings_outside_hours(
+                    session,
+                    tenant.id,
+                    card.day,
+                    holding_on[card.day],
+                    tenant.timezone,
+                    staff.DayHours.of(card.before),
+                )
         rows.append(
             {
                 "id": card.id,
@@ -1617,6 +1629,7 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
                 "after": after,
                 "now": holding,
                 "waiting": not card.held,
+                "calls": calls,
                 "seen": card.updated_at.isoformat(),
             }
         )

@@ -26,6 +26,7 @@ Holiday answers (T-9.5) stay as they are (Maxi, 09.11.2026): the system
 suggested the date, the staff only confirm it.
 """
 
+import hashlib
 import uuid
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, time
@@ -39,11 +40,14 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core import time as clock
 from api.core.errors import Conflict, InvalidInput, NotFound
-from api.domain.customers.phone import E164, normalize_phone
+from api.core.time import business_day_bounds_utc
+from api.domain.customers.phone import E164, costly, normalize_phone
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.hours import (
     HoursData,
     Window,
+    load_hours,
+    open_window_at,
     regular_hours,
     windows_for_day,
 )
@@ -51,6 +55,7 @@ from api.events import enqueue
 from api.events.types import DAY_HOURS_CHANGED, TEAM_PHONE_CHANGED
 from api.models import (
     AuditLog,
+    Reservation,
     ServiceConfig,
     SpecialDay,
     StaffChange,
@@ -72,6 +77,20 @@ OVERNIGHT = (
 PAST_DAY = "Ein vergangener Tag lässt sich nicht mehr ändern."
 NO_NUMBER = "Das ist keine Telefonnummer."
 NOT_LISTED = "Diese Nummer kann die Telefonanlage nicht anrufen. Weitere Nummern gibt der Betreiber frei."
+
+
+@dataclass(frozen=True)
+class BookingToCall:
+    """A confirmed table a held closure or shortening leaves without hours."""
+
+    guest_name: str
+    at: datetime
+    phone: str
+    party_size: int
+
+    @property
+    def costly(self) -> bool:
+        return costly(self.phone)
 
 
 @dataclass(frozen=True)
@@ -384,6 +403,57 @@ def open_cards(
     )
 
 
+def bookings_outside_hours(
+    session: Session,
+    tenant_id: uuid.UUID,
+    day: date,
+    hours: DayHours,
+    zone: str,
+    before: DayHours | None = None,
+) -> list[BookingToCall]:
+    """The confirmed tables of the business day that `hours` would leave
+    without a dine-in window: all of them when closed, the ones outside the
+    times when shortened. The team calls these guests itself (#710, Maxi
+    2026-11-13): nothing is cancelled and no guest is messaged. By time."""
+    tz = ZoneInfo(zone)
+    after = load_hours(session, tenant_id, day, days=1)
+
+    def dinein(held: DayHours) -> list[tuple[datetime, datetime]]:
+        special = {} if held.normal else {day: held.row(tenant_id, day)}
+        return windows_for_day(HoursData(after.regular, special), day, "dinein", tz)
+
+    # The date's span: its business day plus the windows that held before the
+    # change, which may start before or end after the cutoff (02:00 to 04:00,
+    # 22:00 to 10:00). The query bounds come from this span, never a constant.
+    span = [business_day_bounds_utc(day, zone), *dinein(before or DayHours())]
+    # After the change: the date with its new hours, its neighbours as set. A
+    # table counts as kept when any window still holds it, also one of the day
+    # before or after (open_window_at checks the previous day too).
+    if hours.normal:
+        after.special.pop(day, None)
+    else:
+        after.special[day] = hours.row(tenant_id, day)
+    rows = session.scalars(
+        select(Reservation)
+        .where(
+            Reservation.tenant_id == tenant_id,
+            Reservation.status == "confirmed",
+            Reservation.deleted_at.is_(None),
+            Reservation.reserved_for >= min(a for a, _ in span),
+            Reservation.reserved_for < max(b for _, b in span),
+        )
+        .order_by(Reservation.reserved_for)
+    )
+    return [
+        BookingToCall(
+            r.guest_name, r.reserved_for.astimezone(tz), r.phone, r.party_size
+        )
+        for r in rows
+        if any(a <= r.reserved_for < b for a, b in span)
+        and open_window_at(after, r.reserved_for, "dinein", tz) is None
+    ]
+
+
 def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> str:
     """A fingerprint of the open cards for the event stream (gui/sse.py),
     hashed in the database: no card rows with their JSONB per tablet tick."""
@@ -403,7 +473,18 @@ def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> s
             StaffChange.day >= today,
         )
     )
-    return str(digest)[:16]
+    if digest == hashlib.md5(b"").hexdigest():  # no open card, nothing to list
+        return ""
+    # The guest lists on the cards hang on the confirmed tables (#710).
+    tables = session.execute(
+        select(func.count(), func.max(Reservation.updated_at)).where(
+            Reservation.tenant_id == tenant_id,
+            Reservation.status == "confirmed",
+            Reservation.deleted_at.is_(None),
+            Reservation.reserved_for >= business_day_bounds_utc(today)[0],
+        )
+    ).one()
+    return str(digest)[:16] + hashlib.md5(repr(tuple(tables)).encode()).hexdigest()[:8]
 
 
 # --- helpers ---------------------------------------------------------------------
