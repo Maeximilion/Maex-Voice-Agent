@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.18
+> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.19
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.17
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.16
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.15
@@ -300,6 +300,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 15.11.2026 | **Menu parser corpus, step 1 of the conservation gate (#207, Maxi's decision of 15.11.2026).** `api/tests/test_menu_corpus.py` runs 221 rows through `search_menu` and checks four properties: N (card numbers and counts), O (free notes), A (allergies) and P (unclaimed pieces). The confirmed red probes of #720, #721, #722 and #735 are strict xfail (64 rows); the reviewers' "checked and clean" sentences and a generated dish x residue x second-element block are green where main holds. The gate PR flips the xfails; the counts are the over-ask baseline. |
 | 15.11.2026 | **UI review of the tablet with the UI UX Pro Max skill, three fixes (Maxi, 15.11.2026).** „Nochmal senden“ on the red bar and „In Kasse eingegeben“ on a compact card are 60 px with 18 px text again (were 44 px and 16 px from the undefined token `--fs-base`; the red bar is now about 70 px, `docs/06`). Card edges and dividers (`--line`) from 1.2:1 to 2:1 against card and page. Buttons, links and fields of the operations view take `touch-action: manipulation`, so quick taps on minus and plus do not zoom. Found on the way: on a 1024 px tablet the compact card's button ran out of the card; it now wraps below. `api/tests/test_gui_stylesheet.py` guards all of it. |
 | 15.11.2026 | **UI UX Pro Max skill in the repository (Maxi, 15.11.2026).** `.claude/skills/ui-ux-pro-max/` as `ui-ux-pro-max-cli@2.15.0 init --ai claude` wrote it, so Windows, Ubuntu and terminal sessions all get it from the checkout; the six companion skills of the CLI are left out. Search script checked with Python 3.10 (Windows) and 3.12 (Ubuntu); setup, update path and why the GUI rules win: `docs/19_CLAUDE_CODE_SETUP.md` "UI UX Pro Max". |
 | 15.11.2026 | **T-0.12 (#552) done: every path but the tests is mypy-strict.** `api.gui`, `db`, `evals`, `scripts` and the package root `api` joined the strict list (222 errors in 37 files on `main` at 69ef367, nearly all annotations; the 41 in `api/tests` were `no_implicit_reexport`). No behaviour change: mypy (524 files), ruff and the whole pytest suite against a scratch Postgres are green. `api.tests` stays at `check_untyped_defs` (docs/22 "Seventh step"). |
@@ -331,6 +332,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.46.19 · 15.11.2026:** Menu parser corpus: 221 table rows through search_menu, the red probes of #720, #721, #722 and #735 as strict xfail, the baseline of the conservation gate (#207)
 - **v2.46.18 · 15.11.2026:** Graphify: sessions ask the MCP connector first (the only use the dashboard counts) and rebuild a missing local graph themselves
 - **v2.46.15 · 15.11.2026:** T-0.12 done: api.gui, db, evals and scripts mypy-strict (#552)
 - **v2.46.14 · 15.11.2026:** Guest remarks and allergies become plain notes the model writes; the core allergy reader and the allergy consent question are gone, one safety net checks a named allergy is noted (#736, #763)
