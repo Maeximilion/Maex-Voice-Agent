@@ -186,6 +186,21 @@ _DISH_RECLAIMED = (
     + r")\w+){1,2}"
     + r"(?=\s+reklam\w*\b(?!\W+(?:muss|m(?:ü|ue)ss(?:en|te)|will|werde|sollte?)\b))"
 )
+# No comma in the phrase and no new clause after the complaint word, as for
+# the dish reclaimed: "bei Ihnen Pizza, beschweren muss ich auch" orders.
+_NO_NEW_CLAUSE = r"(?!\W+(?:muss|m(?:ü|ue)ss(?:en|te)|will|werde|sollte?)\b)"
+# The person complained to: "beim Chef", "bei Ihrem Chef" (Graphify, PR #793).
+_PERSON_COMPLAINED_TO = (
+    r"\s+beim?\b(?:\s+(?!und\b)(?!"
+    + _OTHER_WISH
+    + r")(?!"
+    + _COMPLAINT_WORD
+    + r")\w+){1,2}(?=\s+"
+    + _COMPLAINT_WORD
+    + r"\w*\b"
+    + _NO_NEW_CLAUSE
+    + r")"
+)
 _WANTS_TO_COMPLAIN = re.compile(
     _WANTS
     # At most four words to the complaint, whatever they are.
@@ -201,6 +216,8 @@ _WANTS_TO_COMPLAIN = re.compile(
     + r"(?:(?:ü|ue)ber|wegen)\b(?:"
     + _GAP_WORD
     + r"\w+)*|"
+    + _PERSON_COMPLAINED_TO
+    + r"|"
     + _DISH_RECLAIMED
     + r")?\W+"
     + _COMPLAINT_WORD

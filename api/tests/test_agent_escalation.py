@@ -325,6 +325,39 @@ def test_a_reason_after_ueber_or_wegen_stays_part_of_the_complaint():
 @pytest.mark.parametrize(
     "said",
     [
+        "Ich möchte mich beim Chef beschweren.",
+        "Ich möchte mich bei Ihrem Chef beschweren.",
+        "Ich möchte mich bei der Chefin beschweren.",
+        "Ich will mich beim Fahrer beschweren.",
+    ],
+)
+def test_the_person_complained_to_stays_part_of_the_complaint(said):
+    """After "bei" or "beim", up to two words name the person the guest
+    complains to, as on main before the #744 follow-up (Graphify on PR #793)."""
+    from api.agent.escalation import only_a_complaint
+
+    assert only_a_complaint(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich möchte bei Ihnen Pizza, beschweren muss ich mich aber auch.",
+        "Ich möchte beim Fahrer zahlen, beschweren muss ich mich auch.",
+        "Ich möchte bei Ihnen eine Pizza beschweren muss ich mich auch.",
+    ],
+)
+def test_an_order_behind_bei_stays_for_the_team(said):
+    """ "bei" does not open the gap to an order: behind a comma or before a new
+    clause the words are a dish ordered, and the order stays for the team."""
+    from api.agent.escalation import only_a_complaint
+
+    assert not only_a_complaint(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
         "Ich möchte die Pizza reklamieren",
         "Ich möchte die Pizza reklamieren, die war kalt.",
         "ich möchte die 23 reklamieren die war kalt",
