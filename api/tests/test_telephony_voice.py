@@ -544,6 +544,38 @@ def test_the_dialplan_records_a_team_leg_only_on_the_word_record():
     assert dialplan.index("MixMonitor(") > start
 
 
+def _steps() -> list[str]:
+    return [
+        line
+        for line in DIALPLAN.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith(";")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("name", "alphabet"), [("ENDING", "a-z +0-9"), ("CARD", "a-z")]
+)
+def test_an_answer_of_voice_is_filtered_before_it_is_compared(name, alphabet):
+    """22.11.0 counts a `$[...]` that a quote broke as true: a JSON error from
+    `voice` would record a leg, hang up or promise a callback (#776). Checked
+    on the pinned image: `{"detail":"Unauthorized"}` gave `record` and
+    `hangup` both true, filtered it matches neither."""
+    steps = _steps()
+    fetch = next(i for i, s in enumerate(steps) if f"Set({name}=${{CURL(" in s)
+    assert steps[fetch + 1].strip() == (
+        f"same => n,Set({name}=${{FILTER({alphabet},${{{name}}})}})"
+    )
+
+
+def test_no_compare_reads_the_raw_caller_number():
+    """The caller's number comes from outside; a quote in it would drop the
+    call as a loop (#776)."""
+    compares = [s for s in _steps() if "$[" in s]
+    assert compares
+    assert not [s for s in compares if "CALLERID(" in s]
+    assert any("FILTER(+0-9,${CALLERID(num)})" in s for s in _steps())
+
+
 def test_the_stop_key_stops_deletes_and_tells_voice():
     dialplan = DIALPLAN.read_text(encoding="utf-8")
     stop = dialplan[dialplan.index("[stop-recording]") :]
