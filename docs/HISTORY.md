@@ -1537,3 +1537,15 @@ Replaced in section 6 "Model Routing" by the "Deep review" paragraph (Maxi, 2026
 
 - **Ultrareview** (`/code-review ultra <PR>`: billed, only Maxi starts it; the reminder names a local `/code-review max <PR>`, run on Maxi's word): reminder, ledger and filing live in `done.md` step 7a; read it before acting on such a review or a ledger batch review.
 - In the `xhigh` trigger sentence: "the ultrareview reminder" became "the deep review in `/done`".
+
+## What's Next and Open Decisions (archive, finished rows, 15.11.2026)
+
+Sub-items of item 14 (follow-ups of the security audit #252, decided 12.10.2026), the built or recorded ones, moved unchanged. The unbuilt ones (silence while the model answers, left in #252) stay in `docs/01_STATUS.md`.
+
+    - **Reservations by phone (built 13.10.2026, summary above):** up to 90 days ahead. Up to 8 guests the agent books itself; above 8, and on the same day above 5, it takes the wish and the team calls back to confirm and talk it through. Once the team has confirmed, the guest hears it by a call from a person (full text: docs/HISTORY.md)
+    - **Orders (built 13.10.2026, summary above, branch `feat/252-order-approval-threshold`):** above 150 euros the order waits for the team's approval on the tablet before a slip prints, whatever the mode.
+    - **Postgres: built 13.10.2026** (branch `feat/252-postgres-application-role`, summary above). A role without superuser for the application, the superuser for backup, restore and migrations. Opt-in by `.env`: `DATABASE_URL` names the role, `OWNER_DATABASE_URL` the owner (full text: docs/HISTORY.md)
+    - **Callback numbers: built 12.10.2026** (branch `feat/252-callback-number-mark`). The card in "Rückrufe" marks a number the call did not come from: "Andere Nummer als der Anruf" with the caller's number next to it, or "Anruf ohne Rufnummer" (docs/06 §3). The comparison is `OpenCallback.number_origin` in `domain/callbacks/board.py`.
+    - **Operations view without an access check of its own: recorded 12.10.2026** as accepted for stage 1, the proxy is the check (docs/13 §3).
+    - Order of the rest: migration 007 with the new `service_config` fields is built (13.10.2026: booking horizon, party size limits, `order_approval_above_cents`, `turn_deadline_seconds`). Left: nothing, all five fields are read. The Postgres role (#281) and the order threshold (#283) are on `main`, the silence deadline is pull request #287.
+    - The handover's steps by hand (13.10.2026): the ruleset on `main` is applied, four required checks next to the pull request rule (docs/13 §6; its name on GitHub is still `t-4.6-probebo`, because a disabled ruleset called `Main` blocks the name of the file). (full text: docs/HISTORY.md)
