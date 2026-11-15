@@ -256,10 +256,26 @@ _ABSENT = re.compile(
 # Erdnüsse, notiert." is no claim). "Die 13 hat keine Nüsse", "Da gibt es kein
 # Gluten", "Nüsse sind da nicht drin" (#739).
 _ABSENT_IN_SENTENCE = re.compile(
-    r"\b(?:hat|haben|gibt|sind)\b(?:\s+\w+){0,3}\s+kein"
-    r"|\bnicht (?:drin|darin|dabei)\b"
+    # "In der 13 ist keine Erdnuss", "Da ist nix von Sesam drin", "Da kommen
+    # keine Nüsse rein" (#764).
+    r"\b(?:hat|haben|gibt|ist|sind|kommt|kommen)\b(?:\s+\w+){0,3}"
+    r"\s+(?:kein|nix\b|nichts\b)"
+    r"|\bnicht (?:drin|darin|dabei|rein|enthalten)\b"
+    # "Milch ist da keine drin", "Soja ist keins drin" (#764).
+    r"|\b(?:kein\w*|nix|nichts)(?:\s+\w+){0,3}\s+(?:drin|darin|dabei|rein)\b"
+    # "Die 13 enthält Sesam nicht", "Sesam hat die 13 nicht" (#764).
+    r"|\b(?:enthält|enthaelt|enthalten|hat|haben)\b(?:\s+\w+){0,3}\s+nicht\b"
+    # "Die 13 enthält weder Nüsse noch Sesam"; a note "weder Nüsse noch
+    # Sesam" names no dish's contents (#764).
+    r"|\b(?:enthält|enthaelt|enthalten|hat|haben|gibt|ist|sind|kommt|kommen)\b"
+    r".*\bweder\b.*\bnoch\b"
 )
+# Set phrases that deny nothing about a dish ("Das ist kein Problem").
+_NO_TROUBLE = re.compile(r"\bkein(?:e|en)?\s+(?:problem|ursache|thema|sorge)\b")
 _SENTENCES = re.compile(r"(?<=[.!?;:])\s+")
+# An allergen asked back before the answer, "Nüsse? Nein, die sind nicht
+# drin.": read with the sentence behind it (#764).
+_ASKED_BACK = re.compile(r"^\W*\w+(?:\s+\w+)?\s*\?$")
 _ALLERGY_WORD = re.compile(r"allergi|unvertr(?:ä|ae)glich|intoleran")
 
 
@@ -276,9 +292,24 @@ def _food(part: str) -> str:
             skip -= 1
         elif _ALLERGY_WORD.search(word):
             skip = 2 if words[n + 1 : n + 2] in (["gegen"], ["auf"]) else 0
+            # Its comma stays: "Gast ist allergisch, keine Nüsse" says no
+            # "ist keine" (#764).
+            kept.append(re.sub(r"\w", "", word))
         else:
             kept.append(word)
-    return " ".join(kept)
+    return " ".join(w for w in kept if w)
+
+
+def _sentences(text: str) -> list[str]:
+    """`text` sentence by sentence, an allergen asked back ("Nüsse?") with
+    the sentence that answers it."""
+    parts: list[str] = []
+    for part in _SENTENCES.split(text):
+        if parts and _ASKED_BACK.match(parts[-1]):
+            parts[-1] = f"{parts[-1]} {part}"
+        else:
+            parts.append(part)
+    return parts
 
 
 # Safety and separate preparation: a claim in a call that speaks of
@@ -359,7 +390,7 @@ def allergen_claim(state: ConversationState, say: str) -> ToolResult | None:
     # it: "Die Nudeln (glutenfrei) werden getrennt zubereitet." is a safety
     # promise about gluten (Codex PR #388, P1).
     named = names_an_allergen(rest) or "allerg" in rest.lower()
-    lowered = without_menu_names(state, rest).lower()
+    lowered = _NO_TROUBLE.sub(" ", without_menu_names(state, rest).lower())
     # An additive at all (#638): no table holds one, and a guest's sentence
     # that names one never reaches the model, so whatever a model says about
     # one is its own. Absence has too many forms to list ("glutamatfrei",
@@ -372,7 +403,7 @@ def allergen_claim(state: ConversationState, say: str) -> ToolResult | None:
         or any(
             _ABSENT_IN_SENTENCE.search(rest)
             and (names_an_allergen(rest) or "allergen" in rest)
-            for rest in map(_food, _SENTENCES.split(lowered))
+            for rest in map(_food, _sentences(lowered))
         )
         or (
             (state.allergy_talk or named)
