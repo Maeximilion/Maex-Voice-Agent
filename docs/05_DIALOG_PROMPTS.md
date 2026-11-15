@@ -287,7 +287,7 @@ Gast verneint eine Allergie ("ich habe keine Erdnussallergie")
    → no note (#252)
 ```
 
-From 26.10. to 15.11.2026 the core read the allergy itself (`agent/allergies.py`, after five review rounds on PR #368), asked "Wogegen sind Sie allergisch?" and "Darf ich die Allergie als Hinweis für die Küche notieren?", and wrote "WICHTIG: Keine <Zutat>. Grund: Allergie" onto the draft. Maxi's decision of 15.11.2026 (#736, #763) removed the reader, the question and the consent: the note is the model's, the core keeps the safety net above. A guest sentence that names an allergy named after a read-back drops that read-back, so a yes cannot confirm a draft without it. A handover card never quotes a guest sentence that names an allergy.
+From 26.10. to 15.11.2026 the core read the allergy itself (`agent/allergies.py`, after five review rounds on PR #368), asked "Wogegen sind Sie allergisch?" and "Darf ich die Allergie als Hinweis für die Küche notieren?", and wrote "WICHTIG: Keine <Zutat>. Grund: Allergie" onto the draft. Maxi's decision of 15.11.2026 (#736, #763) removed the reader, the question and the consent: the note is the model's, the core keeps the safety net above. A guest sentence that names an allergy named after a read-back drops that read-back, so a yes cannot confirm a draft without it. A handover card never quotes a guest sentence that names an allergy. Nor does a card the model writes name what the guest said they react to: a shared word of five letters or more, an allergen by its name ("Soja", Codex PR #788), and since #764 a shorter ingredient at any length, the word after "gegen", "auf" or "kein" and the part in front of "-allergie" ("Kiwi", "Mais", "Zimt", `loop._names_health`).
 
 ---
 

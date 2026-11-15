@@ -1600,7 +1600,60 @@ def _names_health(state: ConversationState, text: str) -> bool:
     said = {word for sentence in state.allergy_said for word in _stems(sentence)}
     # By prefix: "Erdnussallergie" there names "Erdnüssen" here (Codex PR
     # #788, P1).
-    return any(a.startswith(b) or b.startswith(a) for a in said for b in _stems(text))
+    if any(a.startswith(b) or b.startswith(a) for a in said for b in _stems(text)):
+        return True
+    # What the guest reacts to, at any length: "Kiwi" there and "Kiwi" or
+    # "Kiwis" here, as the allergen names above (#764).
+    ingredients = {w for sentence in state.allergy_said for w in _ingredients(sentence)}
+    return any(
+        word.startswith(ingredient)
+        for word in _WORD.findall(_plain(text))
+        for ingredient in ingredients
+    )
+
+
+# The word in front of what a guest reacts to: "gegen Kiwi", "auf Reis",
+# "kein Lamm", "keinen Mais".
+_BEFORE_INGREDIENT = frozenset({"gegen", "auf", "kein", "keine", "keinen", "keiner"})
+# Words between that word and the ingredient ("gegen die Kiwi").
+_NO_INGREDIENT = frozenset(
+    {"der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "alle"}
+    | {"und", "oder", "auch", "so", "etwas", "was", "mit", "von", "zu"}
+)
+_WORD = re.compile(r"\w+")
+# An allergy word behind its ingredient: "Kiwiallergie".
+_ALLERGY_SUFFIX = re.compile(r"^(\w{3,}?)(?:allergi|unvertraglich|intoleran)")
+
+
+def _plain(text: str) -> str:
+    """`text` folded as `_stems` folds it, without dropping a word."""
+    folded = text.casefold().replace("ß", "ss")
+    for umlaut, plain in (("ä", "a"), ("ö", "o"), ("ü", "u")):
+        folded = folded.replace(umlaut, plain)
+    return folded
+
+
+def _ingredients(sentence: str) -> set[str]:
+    """The short words a guest's sentence about their health names as what
+    they react to (#764): the words after "gegen", "auf" or "kein" up to the
+    clause's end ("allergisch gegen Kiwi und Mango"), and the part of a
+    compound in front of the allergy word ("Kiwiallergie"). Of three letters
+    or more; a longer word is a stem of `_stems` already.
+    shortcut: a short name after such a word ("auf den Namen Kim") counts
+    too; the card then gets the sentence of its reason, the safe side."""
+    found: set[str] = set()
+    for clause in re.split(r"[.,;:!?]", _plain(sentence)):
+        words = _WORD.findall(clause)
+        for n, word in enumerate(words):
+            if (match := _ALLERGY_SUFFIX.match(word)) is not None:
+                found.add(match.group(1))
+            if word in _BEFORE_INGREDIENT:
+                found.update(
+                    w
+                    for w in words[n + 1 : n + 4]
+                    if w not in _NO_INGREDIENT and w not in _PLAIN_WORDS
+                )
+    return {w for w in found if 3 <= len(w) < 5}
 
 
 def _stems(text: str) -> set[str]:

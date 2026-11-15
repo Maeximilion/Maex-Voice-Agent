@@ -954,6 +954,33 @@ def test_a_noted_allergy_never_reaches_the_card(session, known_tenant):
     assert "WICHTIG" not in callback.summary
 
 
+def test_a_short_ingredient_of_the_guest_never_reaches_the_handover_card(
+    session, known_tenant
+):
+    """#764 (L13): "Kiwi" said with the allergy one turn before stays off the
+    card of a later handover that quotes the guest."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ich bin allergisch gegen Kiwi.",
+        LLMTurn(say="Notiert."),
+        now=CLOSED,
+    )
+
+    run(
+        session,
+        state,
+        "Ich möchte bitte mit jemandem sprechen, ist im Obstsalat Kiwi?",
+        LLMTurn(tool_call=ToolCall("transfer_to_team", {"reason": "human_requested"})),
+        now=CLOSED,
+    )
+
+    cards = [c.summary for c in session.scalars(select(Callback)).all()]
+    assert cards
+    assert not any("Kiwi" in card for card in cards)
+
+
 def test_a_human_question_next_to_traces_hears_the_truth_first(session, known_tenant):
     """Merge of T-11.5 into T-11.1: the question for traces goes to the team
     before the model (L17); a "Sind Sie ein Mensch?" in the same sentence still

@@ -2754,3 +2754,46 @@ def test_a_short_allergen_name_on_a_model_card_is_rewritten(state, said, summary
     )
 
     assert _card_without_allergy(state, call).args["summary"] != summary
+
+
+@pytest.mark.parametrize(
+    ("said", "summary"),
+    [
+        ("Ich bin allergisch gegen Kiwi.", "Rückruf wegen Kiwi im Obstsalat"),
+        ("Ich vertrage keinen Mais.", "Frage zu Mais in der Suppe"),
+        ("Ich bin allergisch gegen Zimt.", "Rückruf: Zimt im Dessert?"),
+        ("Ich habe eine Allergie gegen Mohn.", "Rückruf: Mohnbrötchen"),
+        ("Meine Frau verträgt kein Lamm.", "Rückruf: Lamm im Curry"),
+        ("Ich habe eine Kiwiallergie.", "Rückruf: Kiwis im Obstsalat"),
+        ("Ich reagiere auf Reis.", "Rückruf: Reis zur 13"),
+    ],
+)
+def test_a_short_ingredient_of_the_guest_on_a_model_card_is_rewritten(
+    state, said, summary
+):
+    """#764 (L13): what the guest said they react to is matched at any
+    length, the way the allergen names are since #788 for "Soja"."""
+    state.allergy_said = [said]
+    call = ToolCall(
+        "create_callback", {"reason": "human_requested", "summary": summary}
+    )
+
+    assert _card_without_allergy(state, call).args["summary"] != summary
+
+
+@pytest.mark.parametrize(
+    ("said", "summary"),
+    [
+        # Short words of the sentence that are no ingredient stay off.
+        ("Ich bin allergisch gegen Kiwi.", "Kunde möchte einen Tisch am Freitag."),
+        ("Ich habe eine Allergie gegen die Kiwi.", "Rückruf: die Bestellung um acht"),
+        ("Meine Frau verträgt kein Lamm.", "Rückruf: Frau Meier wegen der 13"),
+    ],
+)
+def test_a_card_without_the_short_ingredient_stays(state, said, summary):
+    state.allergy_said = [said]
+    call = ToolCall(
+        "create_callback", {"reason": "human_requested", "summary": summary}
+    )
+
+    assert _card_without_allergy(state, call) == call
