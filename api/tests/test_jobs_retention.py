@@ -422,6 +422,12 @@ def test_allergy_note_stays_until_05_00_of_the_next_morning(session, tenant_id):
         "WICHTIG !!! Zöliakie, glutenfrei",
         "wichtig!!! Allergie (Ehefrau): Sesam",
         "WICHTIG !!! Gast sagte: Ich darf keine Nüsse essen.",
+        # A health note the model wrote without the prefix (Codex PR #788).
+        "Zöliakie",
+        "Coeliakie",
+        "verträgt keine Milch",
+        "reagiert auf Sellerie",
+        "darf kein Gluten",
     ],
 )
 def test_other_words_for_an_allergy_count_as_well(session, tenant_id, note):

@@ -1121,7 +1121,12 @@ def speaks_of_health(text: str) -> bool:
 # the job that deletes it the night after its order (`jobs/retention.py`, L13):
 # a note the net lets pass is a note that is deleted. POSIX and Python alike;
 # both cases of the umlaut, since whether ~* folds one depends on the locale.
-HEALTH_NOTE = "allergi|unvertr(ä|Ä|ae)glich|intoleran|wichtig *!!!"
+HEALTH_NOTE = (
+    "allergi|unvertr(ä|Ä|ae)glich|intoleran|wichtig *!!!"
+    # The health words of `speaks_of_health` too: a note "Zöliakie" the model
+    # wrote is deleted with the rest (Codex PR #788, P1).
+    "|[zc](ö|Ö|oe)liak|reagier|darf kein|vertr(ä|Ä|ae|a)gt? kein|meiden"
+)
 HEALTH_NOTE_RE = re.compile(HEALTH_NOTE, re.IGNORECASE)
 
 
@@ -1421,6 +1426,14 @@ _OTHERS = frozenset(
     {"freund", "freundin", "freunde", "kollege", "kollegin", "kollegen"}
     | {"begleitung", "jemand", "jemanden", "jemandem"}
 )
+
+
+def names_someone_else(text: str) -> bool:
+    """Does `text` name a person besides the caller ("Meine Frau hat eine
+    Sesamallergie", "Mein Sohn")? Word by word, nothing more."""
+    return bool(set(_words(text)) & (_PERSONS | _CHILDREN | _OTHERS))
+
+
 # Where a part of an answer to "Wogegen?" begins: "gegen" or "auf" at the
 # start or after "und", "aber", "sondern" ("Ohne Zwiebeln und auf
 # Erdnuesse", "Ohne Zwiebeln, aber gegen Erdnuesse", Codex PR #330),

@@ -63,7 +63,12 @@ from api.domain.callbacks import matching_rule, note_remedy
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
-from api.domain.menu.wishes import HEALTH_NOTE_RE, names_coeliac, speaks_of_health
+from api.domain.menu.wishes import (
+    HEALTH_NOTE_RE,
+    names_coeliac,
+    names_someone_else,
+    speaks_of_health,
+)
 from api.domain.ordering.readback import spoken_euro
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Reservation, Tenant
@@ -1505,15 +1510,19 @@ def _note_allergy_said(state: ConversationState, text: str) -> bool:
     (`escalation.arms_the_net`) or answers the model's question about an
     allergy ("Gegen Erdnüsse."), for the safety net and the model, which
     keeps nothing between turns (Maxi, 15.11.2026). A bare denial in answer
-    to such a question ("Keine.", "Ich habe keine Allergie") takes it back
-    (`allergie_0012`). True for every sentence kept: a read-back waiting for
+    to such a question ("Keine.") takes back the caller's own sentences, not
+    another person's. True for every sentence kept: a read-back waiting for
     its yes may not carry it."""
     asked = _asked_about_an_allergy(state)
     if escalation.bare_denial(text, asked=asked):
-        # Not without the question: "Ich habe keine Allergie" after "meine
-        # Frau hat eine Sesamallergie" takes back no one else's.
+        # As the answer to the model's question it takes back the caller's
+        # own sentences (`allergie_0012`), never one that names someone else:
+        # "Nein." to "Haben Sie selbst eine Allergie?" after "Meine Frau hat
+        # eine Sesamallergie" is about the caller only (Codex PR #788, P1).
         if asked:
-            state.allergy_said = []
+            state.allergy_said = [
+                s for s in state.allergy_said if names_someone_else(s)
+            ]
         return False
     armed = escalation.arms_the_net(text)
     if armed or asked:

@@ -374,7 +374,9 @@ def test_the_answer_to_the_models_allergy_question_is_kept(session, known_tenant
 
 
 @pytest.mark.parametrize("answer", ["Keine.", "Nein.", "Ich habe keine Allergie."])
-def test_a_bare_denial_to_the_question_takes_it_back(session, known_tenant, answer):
+def test_a_bare_denial_to_the_question_takes_the_own_back(
+    session, known_tenant, answer
+):
     """`allergie_0012`: "Wogegen?" - "Keine.": nothing is left to note."""
     state = state_for(session, known_tenant, phone=CALLER)
     run(
@@ -389,13 +391,25 @@ def test_a_bare_denial_to_the_question_takes_it_back(session, known_tenant, answ
     assert state.allergy_said == []
 
 
-def test_a_denial_without_the_question_takes_no_one_elses_back(session, known_tenant):
-    """ "Ich habe keine Allergie" after another person's names only the
-    caller: the safe side keeps the sentence."""
+@pytest.mark.parametrize("asked", [None, "Haben Sie selbst eine Allergie?"])
+def test_a_denial_takes_no_one_elses_back(session, known_tenant, asked):
+    """ "Nein." or "Ich habe keine Allergie" after another person's names only
+    the caller: the sentence stays, also as the answer to the model's own
+    question (Codex PR #788, P1)."""
     state = state_for(session, known_tenant, phone=CALLER)
-    run(session, state, "Meine Frau hat eine Sesamallergie.", LLMTurn(say="Gut."))
+    run(
+        session,
+        state,
+        "Meine Frau hat eine Sesamallergie.",
+        LLMTurn(say=asked or "Gut."),
+    )
 
-    run(session, state, "Ich habe keine Allergie.", LLMTurn(say="Gut."))
+    run(
+        session,
+        state,
+        "Nein." if asked else "Ich habe keine Allergie.",
+        LLMTurn(say="Gut."),
+    )
 
     assert state.allergy_said == ["Meine Frau hat eine Sesamallergie."]
 
