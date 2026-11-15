@@ -445,6 +445,8 @@ Outside → `ok: false`, `error.code: "out_of_zone"`, `say` offers pickup only w
 ```
 Legt die Reservierung als `draft` an und gibt `readback` zurück — den Satz, den der Agent vorliest. Erst `confirm` macht sie gültig.
 
+The day in `readback` is named from the moment the draft was made (`created_at`, so a replay says the same): „heute", „morgen", else weekday and date. A table from 00:00 to 04:59 is named by its night („in der Nacht von Dienstag auf Mittwoch um halb eins", #742). A draft made from 00:00 to 04:59 never says „heute" or „morgen": to a guest still in the evening before they mean a day earlier than the calendar, so the day comes as weekday and date („am Mittwoch, den 16. September um sieben Uhr abends", #750 follow-up).
+
 **Prüfungen im Code, nicht im Modell:** Anruf bekannt (`call_id` muss in `calls` stehen, sonst `not_found`) · Rufnummer nach E.164 normalisierbar (sonst `invalid_input` mit `say`) · Zeitpunkt in der Zukunft · Slot frei nach denselben Regeln wie `check_slot` (sonst `conflict`, `say` nennt die Alternativen). Der Entwurf zählt sofort gegen die Kapazität und landet im `audit_log`. It counts for every other call; against its own call it does not, as in `check_slot` (#207): a corrected draft is checked without the one it replaces. Gleicher `idempotency_key` → dieselbe Antwort ohne neue Prüfung; Schlüssel eines anderen Mandanten → `conflict`.
 
 ---

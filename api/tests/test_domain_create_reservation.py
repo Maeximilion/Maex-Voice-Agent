@@ -358,6 +358,102 @@ def test_after_midnight_table_is_named_by_its_night(created, day, hh, said):
     assert said in readback(table, BERLIN)
 
 
+# Wednesday 00:15: the night of Tuesday to Wednesday, the evening may run on.
+AFTER_MIDNIGHT = berlin(MITTWOCH, 0, 15)
+
+
+@pytest.mark.parametrize(
+    ("created", "day", "hh", "said"),
+    [
+        # At 00:15 most callers still live in Tuesday: "heute" would be
+        # Tuesday's and "morgen" Wednesday to them. A guest who meant Wednesday
+        # by "morgen" heard "morgen" back for Thursday, and the yes booked the
+        # table 24 hours late (#750 follow-up).
+        (
+            AFTER_MIDNIGHT,
+            MITTWOCH,
+            19,
+            "Ein Tisch für zwei Personen am Mittwoch, den 16. September um sieben "
+            "Uhr abends",
+        ),
+        (
+            AFTER_MIDNIGHT,
+            MITTWOCH + timedelta(days=1),
+            19,
+            "Ein Tisch für zwei Personen am Donnerstag, den 17. September um "
+            "sieben Uhr abends",
+        ),
+        # 04:59 is still the night.
+        (
+            berlin(MITTWOCH, 4, 59),
+            MITTWOCH,
+            12,
+            "am Mittwoch, den 16. September um zwölf Uhr mittags",
+        ),
+        # The table's own night keeps its name by both days.
+        (
+            AFTER_MIDNIGHT,
+            MITTWOCH,
+            1,
+            "in der Nacht von Dienstag auf Mittwoch um ein Uhr",
+        ),
+        # From five the calendar day holds again, and the evening before too.
+        (berlin(MITTWOCH, 5, 0), MITTWOCH, 19, "heute um sieben Uhr abends"),
+        (
+            berlin(DIENSTAG, 20, 0),
+            MITTWOCH,
+            19,
+            "morgen um sieben Uhr abends",
+        ),
+        (
+            berlin(DIENSTAG, 23, 59),
+            MITTWOCH,
+            19,
+            "morgen um sieben Uhr abends",
+        ),
+    ],
+)
+def test_a_draft_made_after_midnight_names_the_day_by_weekday_and_date(
+    created, day, hh, said
+):
+    table = Reservation(
+        reserved_for=berlin(day, hh),
+        created_at=created,
+        party_size=2,
+        guest_name="Müller",
+        note=None,
+    )
+    assert said in readback(table, BERLIN)
+
+
+def test_a_call_after_midnight_reads_the_draft_back_by_weekday_and_date(
+    session, tenant_id, call_id
+):
+    draft = create_reservation(
+        session,
+        request(tenant_id, call_id, reserved_for=berlin(MITTWOCH + timedelta(1), 19)),
+        now=AFTER_MIDNIGHT,
+    )
+    assert draft.readback == (
+        "Ein Tisch für vier Personen am Donnerstag, den 17. September um sieben Uhr"
+        " abends, auf den Namen Müller. Passt das so?"
+    )
+
+
+def test_a_draft_made_after_midnight_never_says_heute_or_morgen():
+    for hh in (0, 1, 4):
+        for later in range(3):
+            table = Reservation(
+                reserved_for=berlin(MITTWOCH + timedelta(days=later), 19),
+                created_at=berlin(MITTWOCH, hh, 15).astimezone(ZoneInfo("UTC")),
+                party_size=2,
+                guest_name="Müller",
+                note=None,
+            )
+            said = readback(table, BERLIN)
+            assert " heute " not in said and " morgen " not in said, said
+
+
 def test_entwurf_zaehlt_sofort_gegen_die_kapazitaet(session, tenant_id, call_id):
     # For every other call: a call's own drafts do not count against it (#207).
     lift_party_limits(session, tenant_id)
