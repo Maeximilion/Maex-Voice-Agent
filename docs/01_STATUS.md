@@ -1,6 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
+> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.18
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.17
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.16
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.15
@@ -330,6 +331,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.46.18 · 15.11.2026:** Graphify: sessions ask the MCP connector first (the only use the dashboard counts) and rebuild a missing local graph themselves
 - **v2.46.15 · 15.11.2026:** T-0.12 done: api.gui, db, evals and scripts mypy-strict (#552)
 - **v2.46.14 · 15.11.2026:** Guest remarks and allergies become plain notes the model writes; the core allergy reader and the allergy consent question are gone, one safety net checks a named allergy is noted (#736, #763)
 - **v2.46.13 · 15.11.2026:** Strict mypy on printbridge and sim (#552)
