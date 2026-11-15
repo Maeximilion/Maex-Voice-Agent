@@ -5,12 +5,18 @@ from typing import Literal, Self
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Kept importable from here: the rest of the customer stack does.
+# Kept importable from here, "X as X" for strict mypy: the stack imports them so.
 from api.core.tokens import (
-    LOCAL_ENVS,
-    TOKEN_MIN_LENGTH,
-    TOKEN_PLACEHOLDER,
-    valid_production_token,
+    LOCAL_ENVS as LOCAL_ENVS,
+)
+from api.core.tokens import (
+    TOKEN_MIN_LENGTH as TOKEN_MIN_LENGTH,
+)
+from api.core.tokens import (
+    TOKEN_PLACEHOLDER as TOKEN_PLACEHOLDER,
+)
+from api.core.tokens import (
+    valid_production_token as valid_production_token,
 )
 
 # The team number of .env.example: no telephone answers it (#687).

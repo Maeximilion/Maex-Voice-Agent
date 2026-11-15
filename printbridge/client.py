@@ -69,13 +69,18 @@ class Server:
         if not envelope.get("ok"):
             error = envelope.get("error") or {}
             raise ServerError(f"{path}: {error.get('code')} {error.get('message')}")
-        return envelope["data"]
+        data: dict[str, Any] = envelope["data"]
+        return data
 
     def claim(self, limit: int = 5) -> list[dict[str, Any]]:
-        return self._post("/v1/kitchen/claim", {"limit": limit})["tickets"]
+        tickets: list[dict[str, Any]] = self._post(
+            "/v1/kitchen/claim", {"limit": limit}
+        )["tickets"]
+        return tickets
 
     def ack(self, event_id: str, ok: bool, error: str | None = None) -> str:
         body: dict[str, Any] = {"event_id": event_id, "ok": ok}
         if error:
             body["error"] = error[:500]
-        return self._post("/v1/kitchen/ack", body)["status"]
+        status: str = self._post("/v1/kitchen/ack", body)["status"]
+        return status
