@@ -161,11 +161,67 @@ _OTHER_WISH = (
     r"|m(?:ö|oe)chten?|will|wollen|h(?:ä|ae)tten?"
     r"|abzuholen|mitzunehmen|tisch(?:e[ns]?)?)\b"
 )
+# What else may stand in the gap: the guest, filler, the person complained to
+# and a pronoun object ("das reklamieren"). "Ich möchte die 23, beschweren muss
+# ich mich aber auch" has the order's own verb in front of its dish, and cut as
+# the complaint's wish it took the order with it (#744 follow-up). After
+# "über" or "wegen" the words name what is complained about ("über die
+# Lieferung"), and so does a dish right before "reklamieren" ("die Pizza
+# reklamieren", Maxi, 15.11.2026): no comma between, and no new clause after
+# it ("reklamieren muss ich auch").
+_COMPLAINT_GAP = (
+    r"(?:mich|uns|sich|dich|ich|wir|gerne?|bitte|mal|auch|jetzt|nun|gleich"
+    r"|hier|hiermit|heute|einmal|nochmal|noch|nur|kurz|eben|doch|ja|leider|erst"
+    r"|zuerst|aber|au(?:ß|ss)erdem|zudem|dann|w(?:ü|ue)rden?|bei|ihnen|euch"
+    r"|dar(?:ü|ue)ber|deswegen|deshalb|eine[nm]?|das|dies(?:es)?|es|etwas)\b"
+)
+_COMPLAINT_WORD = r"(?:beschwer|reklam)"
+_GAP_WORD = r"\W+(?!und\b)(?!" + _OTHER_WISH + r")(?!" + _COMPLAINT_WORD + r")"
+_DISH_RECLAIMED = (
+    r"\s+(?:d(?:er|ie|as|en|em)|eine?[nm]?|meine?[nm]?|unsere?[nm]?)\b(?:\s+"
+    + r"(?!und\b)(?!"
+    + _OTHER_WISH
+    + r")(?!"
+    + _COMPLAINT_WORD
+    + r")\w+){1,2}"
+    + r"(?=\s+reklam\w*\b(?!\W+(?:muss|m(?:ü|ue)ss(?:en|te)|will|werde|sollte?)\b))"
+)
+# No comma in the phrase and no new clause after the complaint word, as for
+# the dish reclaimed: "bei Ihnen Pizza, beschweren muss ich auch" orders.
+_NO_NEW_CLAUSE = r"(?!\W+(?:muss|m(?:ü|ue)ss(?:en|te)|will|werde|sollte?)\b)"
+# The person complained to: "beim Chef", "bei Ihrem Chef" (Graphify, PR #793).
+_PERSON_COMPLAINED_TO = (
+    r"\s+beim?\b(?:\s+(?!und\b)(?!"
+    + _OTHER_WISH
+    + r")(?!"
+    + _COMPLAINT_WORD
+    + r")\w+){1,2}(?=\s+"
+    + _COMPLAINT_WORD
+    + r"\w*\b"
+    + _NO_NEW_CLAUSE
+    + r")"
+)
 _WANTS_TO_COMPLAIN = re.compile(
     _WANTS
-    + r"(?:\W+(?!und\b)(?!"
-    + _OTHER_WISH
-    + r")\w+){0,4}?\W+(?:beschwer|reklam)\w*"
+    # At most four words to the complaint, whatever they are.
+    + r"(?=(?:"
+    + _GAP_WORD
+    + r"\w+){0,4}\W+"
+    + _COMPLAINT_WORD
+    + r")(?:"
+    + _GAP_WORD
+    + _COMPLAINT_GAP
+    + r")*(?:"
+    + _GAP_WORD
+    + r"(?:(?:ü|ue)ber|wegen)\b(?:"
+    + _GAP_WORD
+    + r"\w+)*|"
+    + _PERSON_COMPLAINED_TO
+    + r"|"
+    + _DISH_RECLAIMED
+    + r")?\W+"
+    + _COMPLAINT_WORD
+    + r"\w*"
 )
 
 

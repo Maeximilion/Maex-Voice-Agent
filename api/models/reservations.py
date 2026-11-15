@@ -54,6 +54,10 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     )
     note: Mapped[str | None] = mapped_column(Text)
     idempotency_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    # A self-test's card (#574): shown on the tablet as TEST, never sent out.
+    is_test: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
 
 
 class ReservationTable(TenantScoped, Base):

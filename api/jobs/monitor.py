@@ -393,6 +393,7 @@ def _day_report(session: Session, tenant: Tenant, day: date) -> Alarm:
                 Call.tenant_id == tenant.id,
                 Call.started_at >= start,
                 Call.started_at < end,
+                Call.is_test.is_(False),
             )
             .group_by(Call.outcome)
         ).all()
@@ -416,6 +417,7 @@ def _day_report(session: Session, tenant: Tenant, day: date) -> Alarm:
             Reservation.status == "confirmed",
             # The agent's day: a table the team entered by hand took no call (T-3.12).
             Reservation.source == "agent",
+            Reservation.is_test.is_(False),
             Reservation.created_at >= start,
             Reservation.created_at < end,
         )
@@ -451,6 +453,7 @@ def _cost(
             Call.tenant_id == tenant.id,
             Call.started_at >= start,
             Call.started_at < end,
+            Call.is_test.is_(False),
         )
     ).one()
     return known or 0, unknown

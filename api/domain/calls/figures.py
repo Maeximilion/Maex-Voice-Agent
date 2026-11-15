@@ -72,6 +72,7 @@ def span_figures(
                 Call.tenant_id == tenant.id,
                 Call.started_at >= start,
                 Call.started_at < end,
+                Call.is_test.is_(False),
             )
             .group_by(Call.outcome)
         ).all()
@@ -84,6 +85,7 @@ def span_figures(
             Call.tenant_id == tenant.id,
             Call.started_at >= start,
             Call.started_at < end,
+            Call.is_test.is_(False),
         )
     ).one()
     taken = (

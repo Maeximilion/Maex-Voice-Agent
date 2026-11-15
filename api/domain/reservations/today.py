@@ -70,6 +70,7 @@ def list_today(
             phone=row.phone,
             note=row.note,
             tables=seated.get(row.id, []),
+            is_test=row.is_test,
         )
         for row in rows
     ]

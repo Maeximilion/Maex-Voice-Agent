@@ -398,6 +398,40 @@ EUR; isolation and the unchanged code decide it.
   away for a second or two: add a customer outside service hours. A `team_phone` in the customer file must be E.164 there, since it becomes `TEAM_PHONE` as written; anything else is refused before the first step. The setup link of the first login is printed once. An existing `.env` is never
   rewritten, so a rerun keeps every token and only renders the site file again, for example after
   `N8N_EDITOR_AUTH_USER` and `_HASH` were set (both empty: the editor answers 401). The push server gets its five users (#595): `team`, `owner` and `ops`, whose passwords are printed once and kept only as bcrypt hashes in `NTFY_AUTH_USERS` (hashed inside the stack's own pinned `push` image, the passwords over stdin), and `n8n` and `monitor` with fresh `tk_` tokens in `NTFY_AUTH_TOKENS`, the monitor's also as `MONITOR_PUSH_TOKEN`. The n8n token still goes into n8n's credential by hand (n8n/README.md). To issue new push passwords, empty `NTFY_AUTH_USERS` and run the script again. Still by hand: the voice profile and the trunk.
+  **Self-test (#574):** once the menu (and the zones, for delivery) are in, in the stack's folder
+  `docker compose exec api python -m sim.selftest`, or `new_stack.py ... --selftest` on a rerun,
+  which waits for the API's health first (without the flag the script prints the command). One
+  line per check, and the run stops at the first that fails: `health` (`/health` of the running
+  API, `--health-url` for another address), `database` (reachable and at the head migration of
+  the checkout), `configuration` (tenant, `service_config`, opening hours; what `provision check`
+  still lists follows as `note` lines), `menu` (active dishes and categories, and how many dishes
+  have no allergen information, which is allowed: the agent then says it has none),
+  `reservation` and, only with `--print-slip`, `print`. The last line is `connected` or
+  `not connected: <check>`; exit code 0, else 3 health, 4 database, 5 configuration, 6 menu,
+  7 reservation, 8 print (2 a wrong call).
+  The reservation is a simulated call through the agent with the scripted stand-in model
+  (`sim/`): a table for two at the first free time from today on, a draft before the yes,
+  `confirm` as the only step to a booking, and then the tablet's day list and the change token
+  its event stream polls must show it. It is a test call (`calls.is_test` and
+  `reservations.is_test`, migration 039, Maxi 15.11.2026): `confirm` writes no outbox event and
+  no customer contact for it, so n8n and the push server get nothing and nobody is called, and
+  the figures, the call log, the day report and the hours change cards leave it out. The call
+  carries its own `call_id` like any call and runs in one database transaction; a second
+  connection checks during the call that nothing is visible outside it. A call that fails a
+  check is rolled back and keeps no row. One that passes is committed: when its table is on
+  today's business day, the tablet shows it as a card marked TEST ("Test der Einrichtung, kein
+  Gast") for `--card-seconds` (60 by default, 0 for none), then the self-test deletes the call,
+  the table and their audit rows and checks that nothing is left. A run that was stopped with
+  Ctrl-C removes its card too; one that was killed leaves it until the next run, which deletes
+  it first. A table on a later day (no free table today) shows on no tablet now and is removed at
+  once. For about a second the test holds the day lock of the chosen day and a share lock on
+  `service_config`, and while the card shows its two seats count as booked, so run it outside
+  service hours where possible.
+  `--print-slip [--slip-wait 30]` sends one slip marked SELBSTTEST ("Testbon - nicht kochen")
+  through the print bridge, so it comes out of the kitchen printer: off by default, tell the
+  kitchen first. It is a kitchen event without an order or a call, which never goes to n8n; the
+  test waits for the bridge's answer and then removes its row. A slip the bridge claimed and did
+  not answer stays (it may still print); one it never claimed is removed.
 - #570 logins are per stack; the GUI's tenant choice may stay as it is.
 - #571 operator dashboard reads several stacks over an ops API per stack on an internal `ops`
   network (docs/23 §8).

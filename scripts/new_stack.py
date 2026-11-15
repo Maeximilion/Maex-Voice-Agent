@@ -1,6 +1,6 @@
 """Create a new customer's stack on the server, and its tenant inside it (#573, D32).
 
-    python3 scripts/new_stack.py customer.json --domain example.org [--root /srv/maex] [--dry-run]
+    python3 scripts/new_stack.py customer.json --domain example.org [--root /srv/maex] [--dry-run] [--selftest]
     python3 scripts/new_stack.py --check-sites [--root /srv/maex]
 
 Run on the host as the deploy user, from any checkout of this repository. For
@@ -20,6 +20,11 @@ the customer whose key the file names (format: deploy/customer.example.json):
    this stack's containers and secret; every site file is checked against every
    other (docs/23 §8) before the shared Caddy (deploy/caddy) joins the stack's
    `edge` network and reloads.
+
+6. With `--selftest`, the stack's self-test (`python -m sim.selftest` in its api
+   container, docs/13 §8). Without it the command is printed: right after the
+   first run the menu is still missing, so a rerun with `--selftest` once the
+   menu is in is the usual way; a rerun keeps every token.
 
 The setup link of the first login is printed once and stored nowhere. Values of
 secrets are never printed, only the names of what was written. `--dry-run`
@@ -371,7 +376,12 @@ def go_live(root: Path, key: str, site: str) -> None:
         ) from None
 
 
-def create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
+SELFTEST = ("docker", "compose", "exec", "-T", "api", "python", "-m", "sim.selftest")
+
+
+def create(
+    spec_path: Path, domain: str, root: Path, dry_run: bool, selftest: bool = False
+) -> None:
     """One run at a time per root: a second run reads the site files only
     after the first has written its own (#687). Wrong input is refused
     before the root is touched."""
@@ -385,6 +395,19 @@ def create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     with open(root / ".new_stack.lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
         _create(spec_path, domain, root, dry_run)
+    stack = root / read_customer(spec_path)["key"]
+    if not selftest:
+        print(f"Self-test once the menu is in: cd {stack} && {' '.join(SELFTEST)}")
+        return
+    # Up is not ready: the self-test starts with /health of a running API.
+    run(["docker", "compose", "up", "-d", "--wait", "api"], stack)
+    try:
+        run(list(SELFTEST), stack, stdout=sys.stdout)
+    except Refused:
+        raise Refused(
+            "the stack runs, its self-test failed on the check it names; fix "
+            f"that and run it again: cd {stack} && {' '.join(SELFTEST)}"
+        ) from None
 
 
 def _create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
@@ -495,6 +518,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--root", type=Path, default=Path("/srv/maex"))
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--check-sites", action="store_true")
+    parser.add_argument(
+        "--selftest", action="store_true", help="run the stack's self-test at the end"
+    )
     args = parser.parse_args(argv)
     try:
         if args.check_sites:
@@ -504,7 +530,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1 if problems else 0
         if not args.customer or not args.domain:
             parser.error("a customer file and --domain are needed")
-        create(args.customer, args.domain, args.root, args.dry_run)
+        create(args.customer, args.domain, args.root, args.dry_run, args.selftest)
     except Refused as refused:
         print(f"refused: {refused}", file=sys.stderr)
         return 2 if isinstance(refused, BadInput) else 1
