@@ -1,0 +1,8 @@
+a12080d44612b258a9978a2d371c195bfc01987c refs/heads/docs/575-golive-checklist
+6cd70843f7cac36d842bd5d2bad7aa66d4207492 refs/heads/docs/status-upkeep-2026-11-15
+315cb42b14ee9475ccb2e6a6074b9ab810dc08b9 refs/heads/feat/574-selftest
+3642e5b650cfdee26c566d3d51d7a14645adb57f refs/heads/feat/576-offboarding
+8e6d1e14c2c4acc4e8f16f62cd2dd6cf84455441 refs/heads/fix/207-signin-repeat-address
+f4a278e27391a04b09827aab2320966e42fb4856 refs/heads/fix/764-allergen-guard
+7699a3613a69572e2962b09fd703313638a59251 refs/heads/fix/764-dialog-batch
+2bfeb96afa496a21e8c7929393545a65a2b20515 refs/heads/fix/764-outage-path

@@ -1,0 +1,11 @@
+die 23,24
+23,24
+die 23,24 und Pho Bo
+Pho Bo,23
+die 23 statt Pho Bo
+die 23 oder Pho Bo
+Eine Cola 0,5 und eine Pho Bo
+zwei Cola 0,5
+die 13 für 11,90
+S12, äh, S1
+die 25,G

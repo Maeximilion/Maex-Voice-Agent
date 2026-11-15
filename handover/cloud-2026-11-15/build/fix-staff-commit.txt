@@ -1,0 +1,18 @@
+fix(staff): times for today after a held closure still wait on a "wie Sonntag" date
+
+Finding of the batch review of ledger #764 on #754:
+
+- change_day_hours checked today's weekday rule only against the row
+  that holds now. A held closure of a date set "like" another weekday
+  leaves the row closed with no weekday, so times or the weekly hours
+  sent after it held at once and today ran on the plain weekday's
+  seats, call mode and call limit without the owner, the bypass the
+  #710 rule closed.
+- The today clause now also checks the card's origin, what held before
+  the staff came, so such times wait for the owner and the row stays
+  closed until the owner decides.
+- Tests: own times and the weekly hours after the closure both wait and
+  the owner's undo brings "wie Sonntag" back; on a plain day times after
+  a closure still hold at once. docs/06 names the case.
+
+Refs #764

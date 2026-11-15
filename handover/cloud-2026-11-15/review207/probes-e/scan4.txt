@@ -1,0 +1,6 @@
+die 23, ne, die 24
+nicht die 23, die 24
+die 23, quatsch, die 24
+die 23, sorry, die 24
+die 23, doch die 24
+nicht die 23

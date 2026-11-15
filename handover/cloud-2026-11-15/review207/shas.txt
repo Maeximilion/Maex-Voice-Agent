@@ -1,0 +1,15 @@
+#712 7dc25b1aa49bc84cac6fb3434efe0820535cfc00 +152/-22 fix(gui): keep the owner's click after the idle lock and end a signed-out device
+#713 5299d033f38dd0316545f14e6803aec0aface13c +171/-24 fix(access): slide the device and its cookies with use, and no try without a tea
+#720 2b75e545eccea368b727ddf9df8ea484e57245e2 +148/-9 fix(menu): a priced addition in a wish never rides free in the note (#671)
+#721 af3883b3dc5163289674160ddb084cdb888d7cbf +252/-30 fix(menu): a clear card number is never lost or invented in a split (#676)
+#722 a0a07be58bb4cc3a3439a3351ecd91842ae79eae +226/-8 fix(menu): a quantity and a card number never read into each other (#677)
+#724 f5ec1ad915779b4be4b1824e5e449d7c5ae9d435 +315/-3 fix(floor-plan): a booked table is never removed silently (#680)
+#725 e576f1f07eddcfdd2684cce5e42b93727fe3c9f7 +121/-18 fix(status): a mode window to 24:00 is midnight, switched-off orders raise no br
+#726 43194924d62932e3901232119130f76d488bea20 +42/-0 fix(phone): drop the trunk zero after the country code (#683)
+#728 df87f7354d55a89f430f2b3d663eb72a2829466e +64/-2 fix(migrations): the downgrade of 018 empties order links and keeps objections (
+#729 33e8a5873fa72852f28d6b43f60f2aaf7185ccc7 +65/-13 fix(status): a special day like Sunday takes Sunday's call mode and call limit (
+#730 903d261e764a76043096ae543e7537470821720a +280/-18 fix(deploy): provisioning leaves no broken shared Caddy, placeholder number or s
+#731 ecf246344cd82c301dde4a0f1d95b2a21b14556c +120/-4 fix(dashboard): the sign-in wait tells no names, a double tap raises no takeover
+#732 811c951c9586226280866596d324d61e36dee1cb +66/-14 fix(ops): no LAN bind reopened by reset, board maintenance in its own group (#68
+#734 c977b28513aa0b3a8d12519c1dcc194a0ef8de80 +74/-3 fix(retention): a recording file without a row is deleted after the period too (
+#735 a6c4458c622806edafcdd5b96fa8a15ca3b0ac89 +240/-0 fix(menu): an allergy behind the caller's own denial is read with its owner (#71

@@ -1,0 +1,30 @@
+feat(agent): guest remarks and allergies become plain notes the model writes
+## What Changed
+
+- Guest remarks and allergies become plain notes the model writes: on the dish line ("bitte nicht scharf"), on the order ("bitte alles vegan halten") or on the table. An allergy or health note starts with "WICHTIG !!!" ("WICHTIG !!! Kunde ist allergisch auf Nüsse"). The core allergy reader (`api/agent/allergies.py`), the core's "Wogegen?" question and the allergy consent question are removed (about 3,700 lines, mostly the reader and its tests).
+- One safety net in the core, which parses nothing: the guest's health sentences are kept in the state (`allergy_said`) and sent to the model; a draft without a health note is refused once with the guest's words in the hint; on the second miss the core writes "WICHTIG !!! Gast sagte: ..." on the order or table note itself. One shared pattern (`wishes.HEALTH_NOTE`: the allergy words, "WICHTIG !!!" and the health words such as Zöliakie) decides what a health note is, for the safety net and for the retention job, which deletes such notes the night after the order.
+- Kept: allergen answers only from the database (rule 1), the claim guard (now also on note texts: a note that promises "nussfrei" goes back to the model), priced additions from `item_options` (D8), callback and handover cards that never quote the guest's health words.
+- [ ] #787 measure the model-written notes on a real model
+
+## Why
+
+Maxi's decision of 15.11.2026 (#736 comment 6885786926): the parser kept growing (five review rounds on one sentence form in #735, a new P1 per patch in #748), and delivery platforms take remarks as plain notes too. Saying an allergy to the agent is the consent to note it for the kitchen (Maxi as data protection officer; L13 in docs/09 updated). The #718 cases ("Ich vertrage scharfes Essen nicht", "Keine Allergie, nur Pho Bo") and the #763 health words ("Ich habe Zöliakie") become notes or a question the model asks itself.
+
+## How Tested
+
+Local, head `aa479aaf` (after three Codex rounds: seven P1s fixed with tests, the last round clean), project image against a throwaway Postgres; CI green on the same head:
+- `ruff check`, `ruff format --check`: clean; `mypy`: no issues in 524 files.
+- `pytest -n 6 -m "not latency"`: 9087 passed, 357 skipped, 8 errors, all in `test_attribution_check.py` because the image has no git (the same on main; CI has git). Latency: 47 passed.
+- Evals, cases: 103/103, every hard metric 0 (origin/main: 100/100; the difference is the new cases `allergie_0023` to `allergie_0027`; `allergie_0013` and `allergie_0014` were removed with the consent question). Targets: 1/23 on head and on main, the same 22 red cases. Number eval: 249/249 on both.
+- `/code-review max` ran before the PR opened (ten finders, a sweep and five verifiers): 15 findings, all fixed in this PR with tests, none filed. `/ponytail-review`: four cuts applied, one (the duplicated allergy-word regex) solved by the shared pattern.
+
+- [x] `make lint` clean (ruff and mypy, locally and in CI on `aa479aaf`)
+- [x] `make test` green (locally on `aa479aaf`, the 8 git-less errors aside; CI pytest green)
+- [x] Affected documentation and `docs/01_STATUS.md` synced (docs 01, 03, 04, 05, 07, 08, 09, 11, README and `docs/metrics/capabilities.toml`)
+- [x] No credentials, no real operations or customer data in diff
+
+## Issue
+
+Closes #736
+Closes #763
+

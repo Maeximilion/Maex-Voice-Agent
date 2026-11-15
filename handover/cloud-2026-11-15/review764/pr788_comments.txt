@@ -1,0 +1,156 @@
+---- chatgpt-codex-connector[bot] api/agent/guards.py:756
+**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve the allergy when the fallback note exceeds its limit**
+
+When the guest gives ordering details before naming an allergy, their sentence can exceed the order note's 200-character limit. If the model omits the allergy twice, this slice keeps the ordering preamble and can remove the entire allergy: a sentence ending in “Ich habe eine Erdnussallergie” reproduces this. The loop then dispatches the truncated draft without another check, leaving the kitchen uninformed. Preserve the health information or hand over when it cannot fit; verify with a long sentence whose allergen appears at the end.
+
+AGENTS.md reference: [AGENTS.md:L65-L68](https://github.com/Maeximilion/Maex-Voice-Agent/blob/c4fc369ab42866f8461c4f9deb7b3abe8e6dd690/AGENTS.md#L65-L68)
+
+Useful? React with 👍 / 👎.
+
+<!-- codex-code-review-finding:v1 -->
+---- chatgpt-codex-connector[bot] api/agent/loop.py:1516
+**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Invalidate the draft when an answer supplies a new allergen**
+
+If a draft already exists and the model asks “Wogegen sind Sie allergisch?”, the answer “Gegen Erdnüsse.” is appended to `allergy_said` but returns false because it contains no health keyword. Consequently, `run_turn` does not call `draft_replaced`, and the old draft remains confirmable. Re-reading its unchanged readback and receiving “Ja” can confirm an order without the newly supplied allergy; `unnoted_allergy` only checks draft creation. Invalidate the draft for substantive allergy answers too, and test this question–answer–readback–confirmation sequence.
+
+AGENTS.md reference: [AGENTS.md:L65-L68](https://github.com/Maeximilion/Maex-Voice-Agent/blob/c4fc369ab42866f8461c4f9deb7b3abe8e6dd690/AGENTS.md#L65-L68)
+
+Useful? React with 👍 / 👎.
+
+<!-- codex-code-review-finding:v1 -->
+---- chatgpt-codex-connector[bot] api/agent/loop.py:1552
+**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve compound-allergy matching when redacting callback cards**
+
+After “Ich habe eine Erdnussallergie.”, a callback summary such as “Rückfrage zu den Erdnüssen in der 13.” now escapes redaction: the guest's stem is `erdnussallergi`, while the summary's is `erdnuss`. Previously, matching used the extracted ingredient and caught this case. `_card_without_allergy` consequently stores the allergy reference unchanged under the longer callback retention period, contrary to L13 in `docs/09_OPERATIONS_LEGAL.md`. Preserve ingredient matching for compound allergy words and extend the callback-redaction test to cover this guest sentence, not only “Gegen Erdnüsse.”
+
+Useful? React with 👍 / 👎.
+
+<!-- codex-code-review-finding:v1 -->
+---- Maeximilion api/agent/guards.py:756
+Confirmed and fixed in 56f389b3: when the cut of `WICHTIG !!! Gast sagte: ...` no longer contains a health word (`speaks_of_health` on the kept part), `with_the_guests_words` returns None and the loop hands the call to the team with nothing stored (rule 5). Test: `test_guests_words_that_lose_the_allergy_in_the_cut_go_to_the_team` (allergy at the end of a sentence over the table note limit); the cut that keeps the allergy still writes the note.
+---- Maeximilion api/agent/loop.py:1516
+Confirmed and fixed in 56f389b3: `_note_allergy_said` now returns True for every sentence it keeps, the answer to the model's allergy question included, so `draft_replaced` drops the pending read-back and a yes cannot confirm the draft without the new allergen. Test: `test_a_newly_armed_sentence_and_an_answer_about_it_drop_the_read_back` (draft, "Haben Sie eine Allergie?", "Gegen Erdnüsse.", read-back gone).
+---- Maeximilion api/agent/loop.py:1552
+Confirmed and fixed in 56f389b3: `_names_health` matches the stems of the card and of `allergy_said` by prefix, so `erdnussallergi` names `erdnuss`. Test: `test_a_model_card_naming_the_guests_health_is_rewritten` now runs every summary against both "Gegen Erdnüsse." and "Ich habe eine Erdnussallergie.".
+---- chatgpt-codex-connector[bot] api/agent/loop.py:1584
+**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Preserve short allergen names in callback redaction**
+
+After “Ich bin allergisch gegen Soja.”, a model callback summary such as “Rückfrage zu Soja in der 13.” passes through `_card_without_allergy` unchanged because `_stems` discards words shorter than five characters. This stores the guest’s health information for the longer callback retention period, contrary to L13 in `docs/09_OPERATIONS_LEGAL.md`. The compound-prefix fix discussed in `inline:4576499820` works for Erdnüsse, but this distinct short-name case still fails for Soja, Ei and Senf. Preserve matching for short allergens and add these callback-redaction cases.
+
+Useful? React with 👍 / 👎.
+
+<!-- codex-code-review-finding:v1 -->
+---- Maeximilion api/agent/loop.py:1584
+Confirmed and fixed in 5f9a5c60: `_names_health` also compares the allergens named by the database names (`pos_convert.allergens_named`, the same reading as `names_an_allergen`), so "Soja", "Ei" and "Senf" match whatever their length. Test: `test_a_short_allergen_name_on_a_model_card_is_rewritten` (Soja, Eier/Ei, Senfallergie/Senf).
+---- chatgpt-codex-connector[bot] api/agent/loop.py:1516
+**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Keep other guests' allergies when the caller denies their own**
+
+After “Meine Frau hat eine Sesamallergie.”, the model can ask “Haben Sie selbst eine Allergie?”. Answering “Nein.” clears the entire `allergy_said` list, including the wife's allergy. Because the model retains no conversation history and `unnoted_allergy` allows drafts when this list is empty, a subsequent order can proceed without her kitchen warning. Preserve previously stated allergies belonging to other guests rather than treating an answer about the caller as a withdrawal for everyone. Add a regression covering this sequence before drafting the order.
+
+AGENTS.md reference: [AGENTS.md:L65-L68](https://github.com/Maeximilion/Maex-Voice-Agent/blob/5f9a5c6037a3bc9bcb8c81e422d4c764d2e5c0e2/AGENTS.md#L65-L68)
+
+Useful? React with 👍 / 👎.
+
+<!-- codex-code-review-finding:v1 -->
+---- chatgpt-codex-connector[bot] api/domain/menu/wishes.py:1125
+**<sub><sub>![P1 Badge](https://img.shields.io/badge/P1-orange?style=flat)</sub></sub>  Purge health notes that lack the highlighted prefix**
+
+For “Ich habe Zöliakie.”, if the model twice drafts with the line note `Zöliakie`, the fallback adds a matching order-level note but preserves the original line note. This pattern matches only the added note: `_allergy_notes` and `_without_allergy` leave `Zöliakie` on the order item and in the outbox beyond L13's next-night deletion deadline. Previously, `refusal` rejected this health note. Ensure every health note now allowed through is covered by retention, and test purging both notes from this fallback-generated draft.
+
+Useful? React with 👍 / 👎.
+
+<!-- codex-code-review-finding:v1 -->
+---- Maeximilion api/agent/loop.py:1516
+Confirmed and fixed in aa479aaf: a bare denial in answer to the model's allergy question now takes back only the caller's own sentences; a kept sentence that names another person (`wishes.names_someone_else`: Frau, Sohn, Kollege, ...) stays, and without the question a denial takes nothing back. Test: `test_a_denial_takes_no_one_elses_back` ("Meine Frau hat eine Sesamallergie.", "Haben Sie selbst eine Allergie?", "Nein."; and the same without the question); `allergie_0012` still withdraws the caller's own.
+---- Maeximilion api/domain/menu/wishes.py:1125
+Confirmed and fixed in aa479aaf: `HEALTH_NOTE` now also holds the health words of `speaks_of_health` (Zöliakie/Coeliakie, reagier, darf kein, vertr(ä)gt kein, meiden), so a line note "Zöliakie" passes the net as a health note in the first place and the retention job deletes it the night after the order, like the order note. Test: `test_other_words_for_an_allergy_count_as_well` with Zöliakie, Coeliakie, verträgt keine Milch, reagiert auf Sellerie, darf kein Gluten (on Postgres, the same pattern the net reads).
+---- graphify-labs[bot] api/agent/loop.py:1577
+⚠️ **Health regression** — `_card_without_allergy()`
+
+high coupling complexity (Ca·Ce = 12).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/jobs/retention.py:79
+⚠️ **Health regression** — `purge()`
+
+fans out to 14 callees (efferent coupling); 61 callers depend on it (afferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergens_beyond.py:680
+⚠️ **Health regression** — `test_a_noted_allergy_never_reaches_the_card()`
+
+fans out to 6 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergy_notes.py:50
+⚠️ **Health regression** — `draft()`
+
+11 callers depend on it (afferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergy_notes.py:86
+⚠️ **Health regression** — `test_a_remark_on_a_dish_goes_on_its_line()`
+
+fans out to 6 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergy_notes.py:101
+⚠️ **Health regression** — `test_a_remark_for_the_whole_order_goes_on_the_order()`
+
+fans out to 6 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergy_notes.py:120
+⚠️ **Health regression** — `test_the_models_allergy_note_goes_through_unchanged()`
+
+fans out to 7 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergy_notes.py:141
+⚠️ **Health regression** — `test_a_draft_without_the_named_allergy_goes_back_once()`
+
+fans out to 7 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergy_notes.py:158
+⚠️ **Health regression** — `test_a_second_draft_without_it_goes_through_never_into_a_loop()`
+
+fans out to 7 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergy_notes.py:184
+⚠️ **Health regression** — `test_an_allergy_said_in_an_earlier_turn_still_arms_it()`
+
+fans out to 6 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergy_notes.py:209
+⚠️ **Health regression** — `test_a_denial_or_no_allergy_does_not_arm_it()`
+
+fans out to 7 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergy_notes.py:494
+⚠️ **Health regression** — `test_a_note_that_promises_a_dish_free_of_an_allergen_goes_back()`
+
+fans out to 7 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergy_notes.py:514
+⚠️ **Health regression** — `test_a_refused_draft_stays_on_the_card_when_the_model_fails()`
+
+fans out to 7 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_agent_allergy_notes.py:536
+⚠️ **Health regression** — `test_order_and_table_notes_reach_the_model()`
+
+fans out to 6 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
+---- graphify-labs[bot] api/tests/test_evals_runner.py:920
+⚠️ **Health regression** — `test_the_recording_check_reads_the_answer_to_its_question()`
+
+fans out to 14 callees (efferent coupling).
+
+_Grounded coupling-delta finding (deterministic), not an LLM guess._
