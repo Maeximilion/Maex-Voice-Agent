@@ -264,9 +264,6 @@ def broken_a(r: Reading, s: Spec) -> str | None:
     ]
     if not wishes:
         return f"allergy {s.allergies} said, clear hit without an allergy wish"
-    for w in wishes:
-        if w.get("ingredient") is None:
-            return None
     text = " ".join((w.get("text") or "").lower() for w in wishes)
     lost = [a for a in s.allergies if a not in text]
     return f"allergy {lost} dropped from the reading {text!r}" if lost else None
@@ -731,3 +728,14 @@ def test_row_counts():
         f"generated {len(GENERATED)} (xfail {len(GENERATED_RED)} {dict(gen_red)})"
     )
     assert total == len(RED) + len(CLEAN) + len(GENERATED)
+
+
+def test_an_open_wish_does_not_hide_a_dropped_allergy() -> None:
+    # An "open" wish (one option in two groups) has no ingredient either; it
+    # must not wave the allergy check through (Graphify on PR #792).
+    open_wish = {"kind": "open", "text": "mit reis", "ingredient": None}
+    reading = Reading([Pos("clear", ["13"], open_wish)], "")
+    assert broken_a(reading, Spec(allergies=("erdnuss",))) is not None
+    kept = {"kind": "allergy", "text": "erdnuss allergie", "ingredient": None}
+    reading = Reading([Pos("clear", ["13"], kept)], "")
+    assert broken_a(reading, Spec(allergies=("erdnuss",))) is None
