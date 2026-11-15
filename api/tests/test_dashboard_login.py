@@ -609,6 +609,76 @@ def test_a_wrong_code_after_a_sign_in_is_still_a_factor_failure(
     assert reasons == ["factor"]
 
 
+def _failures(sessions) -> list[tuple[str, str]]:
+    with sessions() as db:
+        return [
+            (row.detail["reason"], row.detail["address"])
+            for row in db.scalars(
+                select(OperatorAudit)
+                .where(OperatorAudit.action == "operator.sign_in_failed")
+                .order_by(OperatorAudit.id)
+            )
+        ]
+
+
+def _replay(sessions, code: str, address: str, at: datetime) -> None:
+    with sessions() as db, pytest.raises(access.SignInRefused):
+        access.sign_in(db, "maxi", PASSWORD, code, address, at)
+
+
+def test_the_code_just_used_sent_from_another_address_is_a_factor_alarm(
+    sessions, factors, clock
+):
+    """Review #207: someone who knows the password and saw the code, racing
+    the operator from elsewhere, was audited `repeat`, the label the runbook
+    reads as a double tap, no alarm."""
+    code = _code(factors.totp_secret, clock.at)
+    with sessions() as db:
+        assert access.sign_in(db, "maxi", PASSWORD, code, "198.51.100.7", clock.at)
+    _replay(sessions, code, "203.0.113.9", clock.at)
+    _replay(sessions, code, "198.51.100.7", clock.at)
+    assert _failures(sessions) == [
+        ("factor", "203.0.113.9"),
+        ("repeat", "198.51.100.7"),
+    ]
+
+
+def test_a_recovery_sign_in_elsewhere_leaves_the_double_tap_a_repeat(
+    sessions, factors, clock
+):
+    """Only the sign-in that used the code counts, not a later one with a
+    recovery code, which leaves the TOTP step as it was."""
+    code = _code(factors.totp_secret, clock.at)
+    with sessions() as db:
+        assert access.sign_in(db, "maxi", PASSWORD, code, "198.51.100.7", clock.at)
+    with sessions() as db:
+        assert access.sign_in(
+            db, "maxi", PASSWORD, factors.recovery_codes[0], "203.0.113.9", clock.at
+        )
+    _replay(sessions, code, "198.51.100.7", clock.at)
+    _replay(sessions, code, "203.0.113.9", clock.at)
+    assert _failures(sessions) == [
+        ("repeat", "198.51.100.7"),
+        ("factor", "203.0.113.9"),
+    ]
+
+
+def test_a_code_used_from_another_address_is_no_repeat_of_an_earlier_sign_in(
+    sessions, factors, clock
+):
+    """The address must be the one of the sign-in that used the code: an
+    earlier sign-in of this address with another code makes no repeat."""
+    with sessions() as db:
+        first = _code(factors.totp_secret, clock.at)
+        assert access.sign_in(db, "maxi", PASSWORD, first, "198.51.100.7", clock.at)
+    later = clock.at + timedelta(seconds=totp.STEP_SECONDS)
+    code = _code(factors.totp_secret, later)
+    with sessions() as db:
+        assert access.sign_in(db, "maxi", PASSWORD, code, "203.0.113.9", later)
+    _replay(sessions, code, "198.51.100.7", later)
+    assert _failures(sessions) == [("factor", "198.51.100.7")]
+
+
 def test_an_oversized_unknown_name_is_refused_like_any_other(client, clock):
     """Codex PR #731: a name of kilobytes broke the index of its counter."""
     import secrets

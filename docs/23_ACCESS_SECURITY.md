@@ -135,7 +135,9 @@ browser (a device cookie, as in §6, so a guesser cannot keep the operator out);
 first account and the break glass with `python -m api.dashboard.cli add|reset <name>`, which
 asks the password twice and prints the TOTP link and ten recovery codes once. A failure on a
 known account is audited with whether the password or the factor was wrong (a right password
-with a wrong factor means the password is known); one on an unknown name is not, so a spray of
+with a wrong factor means the password is known; the code that had just signed in, sent again
+from the same address within two minutes, is a double tap, `repeat`, and from any other address
+stays `factor`); one on an unknown name is not, so a spray of
 names cannot fill the table, and an address is forgotten a day after its last failure. Every
 request but `/health` needs `OPERATOR_PROXY_SECRET` from Caddy outside dev and test (as
 `GUI_PROXY_SECRET`, T10): every customer's `api` shares an `ops` network with the dashboard. The
