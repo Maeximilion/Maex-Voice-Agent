@@ -920,6 +920,20 @@ The three Claude hooks fire in a terminal `claude` session (checked 2026-11-15 o
 
 Without `graphify` on `PATH` the three Claude hooks fail with "command not found", which Claude Code treats as a non-blocking error: the tool call goes through. Remove: `graphify hook uninstall` per clone, `uv tool uninstall graphifyy` or `pipx uninstall graphifyy` per machine; `graphify uninstall` removes the repository files and belongs in a pull request.
 
+### UI UX Pro Max (both systems)
+
+UI UX Pro Max is a design skill (styles, colors, fonts, UX and accessibility rules, chart advice) that Claude loads on its own for interface work (Maxi, 2026-11-15). Source: `github.com/nextlevelbuilder/ui-ux-pro-max-skill`, MIT. The repository carries the skill in `.claude/skills/ui-ux-pro-max/` as `npx -y ui-ux-pro-max-cli@2.15.0 init --ai claude` wrote it, so every checkout has it: the Windows app sessions, the Ubuntu app sessions and a terminal `claude` in `~/Maex-Voice-Agent`. Nothing is installed per machine and there is no user-level copy; a session sees the skill once its checkout has it, an app session from the main checkout after the merge and the pull.
+
+The skill's search script needs only a Python 3 standard library, makes no network calls and writes nothing unless `--persist` is passed (then `design-system/<project>/` under `--output-dir`, by default the current folder). Checked 2026-11-15 with Python 3.10 on Windows and 3.12 in Ubuntu:
+
+```bash
+python3 .claude/skills/ui-ux-pro-max/scripts/search.py "touch target" --domain ux -n 2
+```
+
+The CLI also writes six companion skills (`banner-design`, `brand`, `design`, `design-system`, `slides`, `ui-styling`). They are left out: logos, banners, slides and brand kits are not work this project does, `design` calls the Gemini API with a key of its own, and each extra skill puts its description into every session. Its advice is general web design: the tablet GUI keeps its own rules (`docs/06_GUI.md`, `.claude/rules/gui.md`), and those win where they differ, for example Tailwind or React suggestions against Jinja2, HTMX and TypeScript in `api/gui/ts/`.
+
+Update: run the CLI in an empty folder, copy only `.claude/skills/ui-ux-pro-max/` over the repository copy, run the check above, and bump the version here, all in one pull request. npm 2.15.0 (2026-08-13) is behind the upstream README, which already names flags such as `--dry-run` that this version refuses.
+
 ### Ubuntu threads for projects and claude.ai
 
 A project in the desktop app (or claude.ai/code) can only start a session inside Ubuntu when a Remote Control server runs there. Console: Ubuntu terminal.
