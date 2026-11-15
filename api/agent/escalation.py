@@ -162,13 +162,13 @@ _OTHER_WISH = (
     r"|abzuholen|mitzunehmen|tisch(?:e[ns]?)?)\b"
 )
 # What else may stand in the gap: the guest, filler, the person complained to
-# and a pronoun object ("das reklamieren"), never a dish. "Ich möchte die 23,
-# beschweren muss ich mich aber auch" has the order's own verb in front of its
-# dish, and cut as the complaint's wish it took the order with it (#744
-# follow-up). After "über" or "wegen" the words name what is complained about
-# ("über die Lieferung"). shortcut: any other object goes to the team, "Ich
-# möchte die Pizza reklamieren" too, the safe side; add a word when the call
-# log shows it.
+# and a pronoun object ("das reklamieren"). "Ich möchte die 23, beschweren muss
+# ich mich aber auch" has the order's own verb in front of its dish, and cut as
+# the complaint's wish it took the order with it (#744 follow-up). After
+# "über" or "wegen" the words name what is complained about ("über die
+# Lieferung"), and so does a dish right before "reklamieren" ("die Pizza
+# reklamieren", Maxi, 15.11.2026): no comma between, and no new clause after
+# it ("reklamieren muss ich auch").
 _COMPLAINT_GAP = (
     r"(?:mich|uns|sich|dich|ich|wir|gerne?|bitte|mal|auch|jetzt|nun|gleich"
     r"|hier|hiermit|heute|einmal|nochmal|noch|nur|kurz|eben|doch|ja|leider|erst"
@@ -177,6 +177,15 @@ _COMPLAINT_GAP = (
 )
 _COMPLAINT_WORD = r"(?:beschwer|reklam)"
 _GAP_WORD = r"\W+(?!und\b)(?!" + _OTHER_WISH + r")(?!" + _COMPLAINT_WORD + r")"
+_DISH_RECLAIMED = (
+    r"\s+(?:d(?:er|ie|as|en|em)|eine?[nm]?|meine?[nm]?|unsere?[nm]?)\b(?:\s+"
+    + r"(?!und\b)(?!"
+    + _OTHER_WISH
+    + r")(?!"
+    + _COMPLAINT_WORD
+    + r")\w+){1,2}"
+    + r"(?=\s+reklam\w*\b(?!\W+(?:muss|m(?:ü|ue)ss(?:en|te)|will|werde|sollte?)\b))"
+)
 _WANTS_TO_COMPLAIN = re.compile(
     _WANTS
     # At most four words to the complaint, whatever they are.
@@ -191,7 +200,9 @@ _WANTS_TO_COMPLAIN = re.compile(
     + _GAP_WORD
     + r"(?:(?:ü|ue)ber|wegen)\b(?:"
     + _GAP_WORD
-    + r"\w+)*)?\W+"
+    + r"\w+)*|"
+    + _DISH_RECLAIMED
+    + r")?\W+"
     + _COMPLAINT_WORD
     + r"\w*"
 )

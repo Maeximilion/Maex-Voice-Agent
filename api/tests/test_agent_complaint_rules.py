@@ -765,6 +765,7 @@ def test_a_sentence_with_more_in_it_goes_to_the_team(session, tenant_id, state, 
         "ich möchte mich beschweren das essen war kalt",
         "Ich will mich über die Lieferung beschweren, das Essen war kalt.",
         "Ich möchte das reklamieren, das Essen war kalt.",
+        "Ich möchte die Pizza reklamieren, die war kalt.",
         "Ich hätte gerne eine Beschwerde, das Essen war kalt.",
         # Filler, a person or a reason between the wish and the complaint
         # keep it the complaint's own wish (#744 follow-up).
@@ -808,6 +809,22 @@ def test_an_order_in_front_of_the_models_complaint_handover_goes_to_the_team(
     result = loop(session, [LLMTurn(tool_call=call)] * 3).run_turn(state, said)
 
     assert result.say != [OFFER]
+    assert_went_to_the_team(result, session, state)
+
+
+def test_a_dish_to_reclaim_gets_the_offer_and_a_no_goes_to_the_team(
+    session, tenant_id, state
+):
+    """A plain complaint about a dish meets the rule first; only a guest the
+    offer does not satisfy goes to the team (Maxi, 15.11.2026)."""
+    rule(session, tenant_id, phrases=["pizza"])
+    agent = loop(session)
+
+    assert agent.run_turn(state, "Ich möchte die Pizza reklamieren").say == [OFFER]
+
+    result = agent.run_turn(state, "nein, das reicht mir nicht")
+
+    assert result.say == [SAY_ESCALATION]
     assert_went_to_the_team(result, session, state)
 
 
