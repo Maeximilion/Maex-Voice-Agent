@@ -2,6 +2,7 @@
 
 > One copy per restaurant, filled in on a second device or printed. Filled copies stay out of the repository (they name the restaurant and the people). Every step names a command, a screen or a document section that exists today; a step that is not built yet says so with its issue number.
 > Hard rule 5 applies at every step: if anything fails, the phone rings at the team. Do not go on to the next stage while the rollback of section 4 is untested.
+> Marks on every item: **auto** = a command that exists today checks it (run it, keep the output); **auto (planned)** = `python -m api.jobs.selftest` of #574 will check it, not built yet, do it by hand until then; **hand** = a person checks and ticks; **Maxi** = a legal or contract duty, Maxi's decision, this sheet holds only the pointer and no legal text.
 
 | Field | Entry |
 |---|---|
@@ -15,58 +16,58 @@
 
 ### 1.1 Stack and tenant
 
-- [ ] Stack created on the EU server: `python3 scripts/new_stack.py <customer.json> --domain <domain> --dry-run`, then without `--dry-run`, outside service hours (the shared Caddy is recreated, docs/13 §8 "What this means for the other issues"). Customer file shaped like `deploy/customer.example.json`, kept with the stack on the server, never in the repository.
-- [ ] Per-customer installer with a self-test: not built yet: #574 (`new_stack.py` above is the stack part, #573).
-- [ ] Inside the new stack's api container: `python -m api.jobs.provision check` lists what the tenant still lacks (menu, zones, print bridge). It must report nothing missing.
-- [ ] Mode is `shadow` after provisioning (`provision create` writes it that way); confirm in the tablet header ("KI hört mit").
-- [ ] Team number: `TEAM_PHONE` in the stack's `.env` is E.164 and is the phone that rings at the team; extra numbers in `TRANSFER_TARGETS` (docs/13 §0a, `.env.example`).
-- [ ] Access: each tablet signed in with the setup link of the first login, restaurant password and team PIN set (docs/13 §0a, `docs/23_ACCESS_SECURITY.md`).
-- [ ] Dashboard checks that run these items automatically: not built yet: #571.
+- [ ] **[auto (`--dry-run`)]** Stack created on the EU server: `python3 scripts/new_stack.py <customer.json> --domain <domain> --dry-run`, then without `--dry-run`, outside service hours (the shared Caddy is recreated, docs/13 §8 "What this means for the other issues"). Customer file shaped like `deploy/customer.example.json`, kept with the stack on the server, never in the repository.
+- [ ] **[auto (planned, #574)]** Per-customer installer with a self-test: not built yet: #574 (`new_stack.py` above is the stack part, #573).
+- [ ] **[auto]** Inside the new stack's api container: `python -m api.jobs.provision check` lists what the tenant still lacks (menu, zones, print bridge). It must report nothing missing.
+- [ ] **[hand; auto (planned, #574)]** Mode is `shadow` after provisioning (`provision create` writes it that way); confirm in the tablet header ("KI hört mit").
+- [ ] **[hand; auto (planned, #574)]** Team number: `TEAM_PHONE` in the stack's `.env` is E.164 and is the phone that rings at the team; extra numbers in `TRANSFER_TARGETS` (docs/13 §0a, `.env.example`).
+- [ ] **[hand]** Access: each tablet signed in with the setup link of the first login, restaurant password and team PIN set (docs/13 §0a, `docs/23_ACCESS_SECURITY.md`).
+- [ ] **[auto (planned, #571)]** Dashboard checks that run these items automatically: not built yet: #571.
 
 ### 1.2 Menu and allergens
 
-- [ ] Menu CSVs prepared per `docs/14_MENU_IMPORT_FORMAT.md`; from a register export: `python -m scripts.kasse_to_csv imports/kasse --out imports --allergens-confirmed-by <Name>` (docs/14 "Quelle Kasse").
-- [ ] Dry run clean, warnings read (dishes without alias, aliases leading to two dishes): `python -m scripts.import_menu imports/ --dry-run` (docs/14 "Prüfregeln des Importers"), then the same command without `--dry-run`.
-- [ ] Allergens: every dish either has a list confirmed by a named person (`--allergens-confirmed-by`) or stays "no information" (empty row in `item_allergens.csv`). Letters without a confirmation are an error by design; no dish carries a claim in its name without a confirmed list (docs/14, check 1 "Claim without allergens").
-- [ ] Prices checked against the register: `python -m scripts.price_check imports/kasse --dry-run` (docs/14 "Preisabgleich").
-- [ ] Menu reviewed by the restaurant on the tablet (dishes, options, aliases); name of the reviewer in the sign-off table.
+- [ ] **[hand]** Menu CSVs prepared per `docs/14_MENU_IMPORT_FORMAT.md`; from a register export: `python -m scripts.kasse_to_csv imports/kasse --out imports --allergens-confirmed-by <Name>` (docs/14 "Quelle Kasse").
+- [ ] **[auto]** Dry run clean, warnings read (dishes without alias, aliases leading to two dishes): `python -m scripts.import_menu imports/ --dry-run` (docs/14 "Prüfregeln des Importers"), then the same command without `--dry-run`.
+- [ ] **[auto (importer errors on unconfirmed letters), confirmation by hand]** Allergens: every dish either has a list confirmed by a named person (`--allergens-confirmed-by`) or stays "no information" (empty row in `item_allergens.csv`). Letters without a confirmation are an error by design; no dish carries a claim in its name without a confirmed list (docs/14, check 1 "Claim without allergens").
+- [ ] **[auto]** Prices checked against the register: `python -m scripts.price_check imports/kasse --dry-run` (docs/14 "Preisabgleich").
+- [ ] **[hand]** Menu reviewed by the restaurant on the tablet (dishes, options, aliases); name of the reviewer in the sign-off table.
 
 ### 1.3 Hours, zones, service configuration
 
-- [ ] Weekly hours and seats written by `provision create` from the customer file; checked on the tablet or against the customer file.
-- [ ] Delivery zones: `python -m scripts.seed_zones imports/zones.csv --dry-run`, then without `--dry-run` (columns in docs/14 `zones.csv`). Skip if the restaurant does not deliver.
-- [ ] Service configuration read once: waiting times, `order_approval_above_cents`, `overflow_needs_approval` (docs/02 §4, docs/09 §4).
+- [ ] **[hand]** Weekly hours and seats written by `provision create` from the customer file; checked on the tablet or against the customer file.
+- [ ] **[auto (`--dry-run`)]** Delivery zones: `python -m scripts.seed_zones imports/zones.csv --dry-run`, then without `--dry-run` (columns in docs/14 `zones.csv`). Skip if the restaurant does not deliver.
+- [ ] **[hand]** Service configuration read once: waiting times, `order_approval_above_cents`, `overflow_needs_approval` (docs/02 §4, docs/09 §4).
 
 ### 1.4 Print bridge
 
-- [ ] Bridge installed on the register PC and its settings entered (`MAEX_SERVER_URL`, `MAEX_KITCHEN_TOKEN`, `MAEX_TENANT_ID`, `MAEX_PRINTER`): `printbridge/README.md` "Settings" and "Setting it up on the register PC".
-- [ ] Test slip printed and photographed: `python -m printbridge --test` (`printbridge/README.md` "Commissioning"); then `python -m printbridge --once` against the stack.
-- [ ] The tablet shows no red bar "Druckbrücke meldet sich nicht".
+- [ ] **[hand]** Bridge installed on the register PC and its settings entered (`MAEX_SERVER_URL`, `MAEX_KITCHEN_TOKEN`, `MAEX_TENANT_ID`, `MAEX_PRINTER`): `printbridge/README.md` "Settings" and "Setting it up on the register PC".
+- [ ] **[hand (the slip); auto: tablet bar of the bridge]** Test slip printed and photographed: `python -m printbridge --test` (`printbridge/README.md` "Commissioning"); then `python -m printbridge --once` against the stack.
+- [ ] **[hand]** The tablet shows no red bar "Druckbrücke meldet sich nicht".
 
 ### 1.5 Backup and restore rehearsal
 
-- [ ] Backup run by hand in the stack's folder: `bash scripts/backup.sh`; cron line in place (`deploy/backup.cron`, docs/13 §4).
-- [ ] Restore rehearsed on that dump: `bash scripts/restore.sh <dump file> --check` reports table count and schema revision and drops the scratch database again (docs/13 §4 "Restore").
-- [ ] Before any later production migration: backup first (CLAUDE.md §8).
+- [ ] **[auto]** Backup run by hand in the stack's folder: `bash scripts/backup.sh`; cron line in place (`deploy/backup.cron`, docs/13 §4).
+- [ ] **[auto]** Restore rehearsed on that dump: `bash scripts/restore.sh <dump file> --check` reports table count and schema revision and drops the scratch database again (docs/13 §4 "Restore").
+- [ ] **[hand]** Before any later production migration: backup first (CLAUDE.md §8).
 
 ### 1.6 Phone line and outage drills
 
-- [ ] Test phase: the AI telephone is an IP telephone at the restaurant's router on a number customers do not call, a team telephone assigned to the same number (docs/20 §3). Never the main number before operation.
-- [ ] Operation entry (SIP trunk, one number per restaurant): not built yet: T-10.12 (#404).
-- [ ] Outage map tried on that line, every row rings the team within 30 s (docs/20 §5 and the handover "T-10.2, the outage map on the wire", §10). Software drill without a line: `python3 -m scripts.voice_drill` (docs/20 §10, "T-1.11, outage drills").
-- [ ] Push notifications reach the owner and the team devices (docs/09 §2 "Alarme für Maxi", `n8n/README.md`).
+- [ ] **[hand]** Test phase: the AI telephone is an IP telephone at the restaurant's router on a number customers do not call, a team telephone assigned to the same number (docs/20 §3). Never the main number before operation.
+- [ ] **[hand (not built, T-10.12)]** Operation entry (SIP trunk, one number per restaurant): not built yet: T-10.12 (#404).
+- [ ] **[hand on the line; auto: `scripts.voice_drill` without a line]** Outage map tried on that line, every row rings the team within 30 s (docs/20 §5 and the handover "T-10.2, the outage map on the wire", §10). Software drill without a line: `python3 -m scripts.voice_drill` (docs/20 §10, "T-1.11, outage drills").
+- [ ] **[hand]** Push notifications reach the owner and the team devices (docs/09 §2 "Alarme für Maxi", `n8n/README.md`).
 
 ### 1.7 Security audit trigger
 
-- [ ] `bash scripts/audit_due.sh` run; a component that becomes reachable from outside for this customer (new public path behind Caddy, SIP trunk, new published port) has a recorded audit before go-live (docs/09 §5 "When an audit is due"). Maxi decides; an open P1 finding blocks.
+- [ ] **[auto; decision Maxi]** `bash scripts/audit_due.sh` run; a component that becomes reachable from outside for this customer (new public path behind Caddy, SIP trunk, new published port) has a recorded audit before go-live (docs/09 §5 "When an audit is due"). Maxi decides; an open P1 finding blocks.
 
 ### 1.8 Legal items, per restaurant
 
 Pointers only; the texts are Maxi's (CLAUDE.md §10).
 
-- [ ] Every duty in the table "Where every duty stands" of `docs/09_OPERATIONS_LEGAL.md` §1 is read for this restaurant. A duty marked "first real call" blocks every real call in any mode; the others block the step they name.
-- [ ] The drafts the restaurant fills in or signs are in `docs/vorlagen/` (privacy notice, record of processing, data-protection officer notice, delivery terms, team information, procedure documentation, allergen list). Who fills in what: the "Whose" column of that table.
-- [ ] Recording stays off (`RECORDING_ENABLED=false`) until the team consents and L2 is met (docs/09 §1, L2 and L11).
+- [ ] **[Maxi]** Every duty in the table "Where every duty stands" of `docs/09_OPERATIONS_LEGAL.md` §1 is read for this restaurant. A duty marked "first real call" blocks every real call in any mode; the others block the step they name.
+- [ ] **[Maxi]** The drafts the restaurant fills in or signs are in `docs/vorlagen/` (privacy notice, record of processing, data-protection officer notice, delivery terms, team information, procedure documentation, allergen list). Who fills in what: the "Whose" column of that table.
+- [ ] **[Maxi; auto (planned, #574) for the setting]** Recording stays off (`RECORDING_ENABLED=false`) until the team consents and L2 is met (docs/09 §1, L2 and L11).
 
 ---
 
@@ -86,11 +87,11 @@ The operating test and the outage tests stay with the evals of `docs/08_EVALS.md
 
 ## 3. The team
 
-- [ ] Briefing sheet held: `docs/vorlagen/team_einweisung.md` (T-8.5); everyone present tapped "KI pausieren" and "KI einschalten" once; sign-off line on the sheet filled in; Maxi's number written in.
-- [ ] Team information sheet and written consents where recording or the team's own calls are involved: `docs/vorlagen/team_information.md`, docs/09 §1 L11 and N3 (AI literacy: briefing held).
-- [ ] Who is called when the agent fails: the team telephone first, always (`TEAM_PHONE`, outage map docs/20 §5); the number for the tech contact (Maxi) is on the briefing sheet; named person per shift: ____________.
-- [ ] Operating test at the new site (T-3.5, protocol `docs/vorlagen/bedientest_protokoll.md`): what repeats per customer is section 0 of the protocol (real tablet in its place, signed in, sound on, phone ringing nearby) and one pass by a team member of this restaurant, 5 minutes, without explanation. The isolated test stack (`python3 -m scripts.bedientest_fixture up`) is a workbench tool; the whole two-tester protocol of T-3.5 is not repeated unless the tablet layout or the board changed since the last run. Filled sheets stay out of the repository.
-- [ ] Every morning, one minute (sheet section 4): mode, waiting times, callbacks, red cards.
+- [ ] **[hand]** Briefing sheet held: `docs/vorlagen/team_einweisung.md` (T-8.5); everyone present tapped "KI pausieren" and "KI einschalten" once; sign-off line on the sheet filled in; Maxi's number written in.
+- [ ] **[Maxi (consents, drafts); hand]** Team information sheet and written consents where recording or the team's own calls are involved: `docs/vorlagen/team_information.md`, docs/09 §1 L11 and N3 (AI literacy: briefing held).
+- [ ] **[hand]** Who is called when the agent fails: the team telephone first, always (`TEAM_PHONE`, outage map docs/20 §5); the number for the tech contact (Maxi) is on the briefing sheet; named person per shift: ____________.
+- [ ] **[hand (needs a person)]** Operating test at the new site (T-3.5, protocol `docs/vorlagen/bedientest_protokoll.md`): what repeats per customer is section 0 of the protocol (real tablet in its place, signed in, sound on, phone ringing nearby) and one pass by a team member of this restaurant, 5 minutes, without explanation. The isolated test stack (`python3 -m scripts.bedientest_fixture up`) is a workbench tool; the whole two-tester protocol of T-3.5 is not repeated unless the tablet layout or the board changed since the last run. Filled sheets stay out of the repository.
+- [ ] **[hand]** Every morning, one minute (sheet section 4): mode, waiting times, callbacks, red cards.
 
 ---
 
@@ -105,7 +106,11 @@ Goal: calls ring the team's phone again and the AI takes nothing, at any stage.
 5. **Software versions:** previous prompt version from `prompts/` and restart; migration: backup first, `alembic downgrade -1` (docs/09 §4).
 6. **Database lost:** "KI pausieren", then `scripts/restore.sh` (docs/09 §2 "Störungen", docs/13 §4).
 
-- [ ] Rollback tried once for real before stage 2: pause on the tablet, a test call rings the team within 30 s, "KI einschalten", then the same for step 3 (rule of docs/09 §4: no step forward without a tested way back). Time measured: ____ s.
+- [ ] **[hand]** Rollback tried once for real before stage 2: pause on the tablet, a test call rings the team within 30 s, "KI einschalten", then the same for step 3 (rule of docs/09 §4: no step forward without a tested way back). Time measured: ____ s.
+
+---
+
+Open question for Maxi (rollback): the docs give no single command that flips a customer back to its own phone once a carrier trunk exists (T-10.12); step 4 stays empty until then. Option A (recommended): when T-10.12 is built, add the forwarding switch-back as one documented step in docs/20 and here. Option B: keep the router assignment of step 3 as the only rollback for the test phase and do not onboard a trunk customer before A exists.
 
 ---
 
