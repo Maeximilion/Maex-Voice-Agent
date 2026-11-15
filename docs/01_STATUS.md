@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.20
+> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.21
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.17
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.16
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.15
@@ -300,6 +300,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 15.11.2026 | **#574 done: the self-test of a stack, with Maxi's decision 8 of 15.11.2026.** `python -m sim.selftest [--print-slip] [--card-seconds N]` checks health, the database head, the configuration, the menu, a simulated reservation call (draft, yes, `confirm`) and optionally a test slip. Migration 039 adds `is_test` to `calls` and `reservations`. The table shows on the real tablet as a TEST card for `--card-seconds` (60 by default), then the run deletes it; a card left by a killed run goes with the next run. Test rows get no outbox event and no customer contact, and figures, the call log, the day report and the hours-change cards leave them out. The downgrade refuses while a test call or test table is left. |
 | 15.11.2026 | **#744, #750 follow-ups (ledger #764), with Maxi's decision 6 of 15.11.2026.** "Ich möchte die Pizza reklamieren" gets the remedy offer of the complaint rules first, and "nein, das reicht mir nicht" then goes to the team on the existing declined-offer path. An order's own wish verb in front of a complaint keeps the order for the team. A complaint to a person ("beim Chef", "bei Ihrem Chef") stays a complaint, which fixes a regression of this branch found by Graphify and missed by Codex. A draft made from 00:00 to 04:59 names weekday and date, never heute or morgen. |
 | 15.11.2026 | **Menu parser corpus, step 1 of the conservation gate (#207, Maxi's decision of 15.11.2026).** `api/tests/test_menu_corpus.py` runs 221 rows through `search_menu` and checks four properties: N (card numbers and counts), O (free notes), A (allergies) and P (unclaimed pieces). The confirmed red probes of #720, #721, #722 and #735 are strict xfail (64 rows); the reviewers' "checked and clean" sentences and a generated dish x residue x second-element block are green where main holds. The gate PR flips the xfails; the counts are the over-ask baseline. |
 | 15.11.2026 | **UI review of the tablet with the UI UX Pro Max skill, three fixes (Maxi, 15.11.2026).** „Nochmal senden“ on the red bar and „In Kasse eingegeben“ on a compact card are 60 px with 18 px text again (were 44 px and 16 px from the undefined token `--fs-base`; the red bar is now about 70 px, `docs/06`). Card edges and dividers (`--line`) from 1.2:1 to 2:1 against card and page. Buttons, links and fields of the operations view take `touch-action: manipulation`, so quick taps on minus and plus do not zoom. Found on the way: on a 1024 px tablet the compact card's button ran out of the card; it now wraps below. `api/tests/test_gui_stylesheet.py` guards all of it. |
@@ -333,6 +334,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.46.21 · 15.11.2026:** Self-test: python -m sim.selftest checks a stack end to end; its table shows on the real tablet as a TEST card for a minute and never reaches outside (is_test, migration 039; #574)
 - **v2.46.20 · 15.11.2026:** A complaint about a dish gets the remedy offer first, the team only when the guest is still not satisfied; an order in front of a complaint stays for the team; a draft made after midnight names weekday and date (#744, #750, ledger #764)
 - **v2.46.19 · 15.11.2026:** Menu parser corpus: 221 table rows through search_menu, the red probes of #720, #721, #722 and #735 as strict xfail, the baseline of the conservation gate (#207)
 - **v2.46.18 · 15.11.2026:** Graphify: sessions ask the MCP connector first (the only use the dashboard counts) and rebuild a missing local graph themselves

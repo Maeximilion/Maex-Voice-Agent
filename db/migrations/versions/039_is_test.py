@@ -41,10 +41,13 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Without the flag a left test call and its card would pass for real ones.
-    left = op.get_bind().scalar(sa.text("SELECT count(*) FROM calls WHERE is_test"))
+    left = sum(
+        op.get_bind().scalar(sa.text(f"SELECT count(*) FROM {table} WHERE is_test"))
+        for table in TABLES
+    )
     if left:
         raise RuntimeError(
-            f"{left} self-test call(s) left: remove them first "
+            f"{left} self-test row(s) left in calls or reservations: remove them first "
             "(python -m sim.selftest --card-seconds 0 deletes them)"
         )
     for table in TABLES:

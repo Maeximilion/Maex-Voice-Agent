@@ -80,7 +80,21 @@ def test_down_refuses_while_a_test_call_is_left(engine, scratch_db_url):
     with engine.begin() as connection:
         connection.execute(text("UPDATE calls SET is_test = true"))
 
-    with pytest.raises(RuntimeError, match="1 self-test call"):
+    with pytest.raises(RuntimeError, match="1 self-test row"):
         command.downgrade(_config(scratch_db_url), "038")
 
     assert _flag(engine, "calls") is not None
+
+
+def test_down_refuses_while_a_test_table_is_left(engine, scratch_db_url):
+    # A test table whose call is no test row any more still passes for a real
+    # one once the flag is gone (Graphify on PR #794).
+    _a_call_and_its_table(engine)
+    command.upgrade(_config(scratch_db_url), "039")
+    with engine.begin() as connection:
+        connection.execute(text("UPDATE reservations SET is_test = true"))
+
+    with pytest.raises(RuntimeError, match="1 self-test row"):
+        command.downgrade(_config(scratch_db_url), "038")
+
+    assert _flag(engine, "reservations") is not None
