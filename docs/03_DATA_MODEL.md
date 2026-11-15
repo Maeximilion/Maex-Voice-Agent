@@ -186,6 +186,7 @@ Two tables of one room the team may push together. One row per pair, the smaller
 | reserved_for | TIMESTAMPTZ | |
 | note | TEXT | Kinderstuhl, Allergie, Anlass |
 | idempotency_key | TEXT UNIQUE | |
+| is_test | BOOL, default false | the table of a self-test call (#574, migration 039), copied from `calls.is_test` by `create_reservation`: the tablet shows it as a card marked TEST, its `confirm` writes no outbox event and no customer contact, the hours change cards never list it; `sim.selftest` deletes it again |
 
 ### `reservation_tables`
 The table, or the two tables of a combination, a reservation the team entered sits on (T-3.12, migration 029). An agent's reservation has none: it books seats of a window, not a table (D28). A table is taken for the capacity window of its reservation, the turn; outside every window only the same start time collides (assumption, docs/01).
@@ -213,6 +214,7 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | line_note | TEXT NULL | what was wrong with the line of the call, a closed list (CHECK, migration 036). `no_caller_audio`: the AI answered at least a silence's length (VOICE_SILENCE_SECONDS) before the end of the call, and nothing of the caller had arrived by then, no frame or only digital zero (#651, Maxi 11.11.2026). The call ends as a silent one, without the team; the note marks it in the call list and feeds the monitor's alarm for calls in a row without audio (docs/20 §5). NULL on every other call |
 | cost_cents | INT NULL | von der Plattform, sobald verfügbar. From the own core (text phone, T-2.4): the model cost of the call in whole cents, rounded up, from the counted tokens and the prices in `.env`; empty when no real model ran, a price is missing or the tokens of one request are unknown, never 0 for unknown. The exact tokens are in the log line "model usage", not in this table |
 | model | TEXT NULL | welches Modell lief |
+| is_test | BOOL, default false | a self-test call (`python -m sim.selftest`, #574, migration 039): outside the figures, the call log and the monitor's day report; the self-test deletes it again |
 | tool_calls | JSONB | Liste mit Name, Dauer, Ergebnis |
 | delete_after | DATE | the day the caller number goes, `RETENTION_CALLER_ID_DAYS` (90) after `started_at` (T-11.2; 24 months before). Informational: the deletion job goes by `started_at`, so a shortened period also reaches older rows |
 
@@ -627,6 +629,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 036 | `calls.line_note` (CHECK on the closed list, today `no_caller_audio`): the note on a call nothing of the caller reached (#651). Down drops the column and the notes; no call is lost |
 | 037 | `complaint_rules.phrases` holds no NULL element (CHECK with `array_position(phrases, NULL) IS NULL`, #692). Up drops the NULLs of an existing row and fails on a row of NULLs only, which is fixed by hand; down restores the old check and changes no row |
 | 038 | `gui_sessions.admin_active_at`: the owner's idle clock, 15 minutes without an owner page or write ends owner rights (#600); new column only, rights open at the upgrade end at once; down drops it |
+| 039 | `calls.is_test` and `reservations.is_test` (BOOL NOT NULL, default false): the rows of a self-test call (#574); new columns only, false for every row; down drops them and refuses while a test call is left |
 | planned, next free number | `eval_cases`, `eval_runs` |
 
 ### Operator database (#571, docs/23 §5)

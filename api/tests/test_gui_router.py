@@ -89,13 +89,23 @@ def tenant_id(engine) -> uuid.UUID:
         )
 
 
-def reservierung(engine, tenant_id, *, name="Müller", hh=19, party_size=4, note=None):
+def reservierung(
+    engine,
+    tenant_id,
+    *,
+    name="Müller",
+    hh=19,
+    party_size=4,
+    note=None,
+    is_test=False,
+):
     with Session(engine) as s:
         call = Call(
             tenant_id=tenant_id,
             external_session_id="ext",
             started_at=datetime.now(BERLIN),
             delete_after=datetime.now(BERLIN).date(),
+            is_test=is_test,
         )
         s.add(call)
         s.flush()
@@ -110,6 +120,7 @@ def reservierung(engine, tenant_id, *, name="Müller", hh=19, party_size=4, note
                 reserved_for=heute(hh),
                 note=note,
                 idempotency_key=uuid.uuid4().hex,
+                is_test=is_test,
             )
         )
         s.commit()
@@ -183,6 +194,20 @@ def test_fragment_liefert_nur_die_liste(client, engine, tenant_id):
     body = client.get("/gui/fragments/heute").text
 
     assert "Schmidt" in body and "1 Person<" in body and "<html" not in body
+
+
+def test_the_self_test_card_is_marked_test_and_a_real_one_is_not(
+    client, engine, tenant_id
+):
+    reservierung(engine, tenant_id, name="Selbsttest", hh=20, is_test=True)
+    reservierung(engine, tenant_id, name="Schmidt", hh=21)
+
+    body = client.get("/gui/fragments/heute").text
+
+    test_card, real_card = body.split('<li class="card res"')[1:]
+    assert "Selbsttest" in test_card and ">TEST</span>" in test_card
+    assert "Test der Einrichtung, kein Gast" in test_card
+    assert "Schmidt" in real_card and "TEST" not in real_card
 
 
 def test_ohne_mandant_klartext_statt_stacktrace(client):
