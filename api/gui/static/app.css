@@ -8,7 +8,9 @@
 :root{
   /* colour */
   --bg:#0D0819; --surface:#17102B; --surface-2:#21183D;
-  --text:#F1ECFF; --muted:#A89CCB; --line:#2B2148; --line-strong:#76699F;
+  /* The line tone: card edges and dividers at 2:1 against card and page, so cards stay
+     apart under kitchen light (UI review, 15.11.2026; was #2B2148 at 1.2:1). */
+  --text:#F1ECFF; --muted:#A89CCB; --line:#4E4178; --line-strong:#76699F;
   --accent:#E8FF2E; --accent-bg:#2B2148; --accent-text:#F1ECFF;
   /* Violet is the electric ultra violet Maxi chose on 03.11.2026 (was #9D7BFF). */
   --warn:#C7AEFF; --warn-bg:#24125A; --warn-line:#7B2FFF;
@@ -83,6 +85,9 @@ header{background:var(--surface);border-bottom:2px solid var(--line)}
 .betrieb select{height:auto;min-height:var(--tap);font-size:var(--fs-body);padding:var(--s3) 14px}
 .betrieb .mode{font-size:var(--fs-body);padding:10px 16px}
 .betrieb .dot{width:28px;height:28px;font-size:16px}
+/* No double-tap zoom on quick taps (minus and plus, the steppers). :where keeps
+   it at zero specificity, so touch-action:none of the floor plan still wins. */
+:where(.betrieb) :where(button,a.button,summary,input,select){touch-action:manipulation}
 .betrieb main{padding:var(--s4) var(--s4) 40px}
 /* The board page fills the screen: the command bar stays, each column scrolls
    on its own, so a new order never pushes the stop button out of view. */
@@ -360,17 +365,23 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 /* T-3.16: an order that only waits for "In Kasse eingegeben" is one line; a red
    card also sticks to the top of the column as a ~50 px bar, below the sticky h2. */
 .order.compact{padding-top:6px;padding-bottom:6px}
-.order.compact summary{display:flex;align-items:center;gap:var(--s3);cursor:pointer;list-style:none}
+/* One line where the column has room; on a 1024 px tablet the button wraps below
+   instead of running out of the card (UI review, 15.11.2026). */
+.order.compact summary{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2);cursor:pointer;list-style:none}
 .order.compact summary::-webkit-details-marker{display:none}
 .order.compact .code{margin-left:0;font-size:var(--fs-h2);padding:4px 10px}
 .order.compact .name{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .order.compact button{flex:0 0 auto}
 .red-bars{list-style:none;margin:0 0 var(--s3);padding:0;position:sticky;top:48px;z-index:1;display:flex;flex-direction:column;gap:var(--s2)}
-.red-bar{display:flex;align-items:center;gap:var(--s3);min-height:50px;padding:4px var(--s3);background:var(--surface);border:3px solid var(--danger);border-radius:var(--r-lg)}
+/* The bar is as low as a 60 px button allows (UI review, 15.11.2026): "Nochmal
+   senden" is the most urgent tap on the board and keeps the full target. */
+.red-bar{display:flex;align-items:center;gap:var(--s3);padding:2px var(--s3);background:var(--surface);border:3px solid var(--danger);border-radius:var(--r-lg)}
 .red-bar .code{font-family:var(--font-mono);font-weight:800;background:var(--accent);color:var(--surface);padding:4px 10px;border-radius:10px}
-.red-bar b{flex:1 1 auto;color:var(--danger)}
-.red-bar button,.order.compact button{flex:0 0 auto;width:auto;min-height:44px;padding:4px 12px;white-space:nowrap;font-size:var(--fs-base,16px)}
-.red-bar b{font-size:var(--fs-base,16px)}
-.order.compact .time{font-size:var(--fs-base,16px)}
+.red-bar b{flex:1 1 auto;color:var(--danger);font-size:var(--fs-body)}
+.red-bar button,.order.compact button{flex:0 0 auto;width:auto;min-height:var(--tap);padding:var(--s1) var(--s3);white-space:nowrap;font-size:var(--fs-body)}
+.order.compact .time{font-size:var(--fs-body)}
 .order.compact .name{min-width:70px}
-.order.compact summary{gap:var(--s2)}
+/* The name gives way first (zero basis and width): the code beside it still
+   names the order, and the full card shows the name on a tap. */
+.order.compact summary .name{flex:1 1 0;min-width:0}
+.order.compact summary button{margin-left:auto}
