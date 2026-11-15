@@ -39,7 +39,10 @@ def list_calls(
     """The tenant's calls that started on the business day, newest first."""
     start, end = business_day_bounds_utc(day, tenant.timezone)
     query = select(Call).where(
-        Call.tenant_id == tenant.id, Call.started_at >= start, Call.started_at < end
+        Call.tenant_id == tenant.id,
+        Call.started_at >= start,
+        Call.started_at < end,
+        Call.is_test.is_(False),
     )
     if outcome is not None:
         query = query.where(Call.outcome == outcome)

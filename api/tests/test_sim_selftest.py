@@ -13,11 +13,17 @@ from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
 from api.config import settings
+from api.core.time import business_day
+from api.domain.calls.figures import span_figures
+from api.domain.calls.log import list_calls
 from api.domain.menu.importer import apply, parse
 from api.domain.ordering.handover import ack_ticket, claim_tickets
 from api.domain.ordering.selftest_slip import queue_selftest_slip, remove_selftest_slip
 from api.domain.provision import create_tenant
+from api.domain.reservations import list_today
+from api.domain.status.staff_changes import DayHours, bookings_outside_hours
 from api.events.dispatcher import dispatch_once
+from api.jobs.monitor import _day_report
 from api.models import (
     AuditLog,
     Call,
@@ -37,6 +43,8 @@ from sim.selftest import ALEMBIC_INI, check_database, run
 
 # Monday morning: the provisioned seats are Tuesday to Sunday, 17:00 to 22:00.
 NOW = datetime(2026, 11, 9, 10, 0, tzinfo=UTC)
+# Tuesday morning: today has seats, so the test card is on today's tablet.
+TUESDAY = datetime(2026, 11, 10, 10, 0, tzinfo=UTC)
 TABLES = (Call, Reservation, OutboxEvent, AuditLog, Customer)
 
 
@@ -222,9 +230,9 @@ def test_reservations_switched_off_fail_the_call_with_the_reason(stack):
     assert "FAIL  reservation: reservations are switched off on the tablet" in lines
 
 
-def test_the_dispatcher_sees_nothing_while_the_call_holds_its_event(stack, monkeypatch):
-    """The team's outbox event exists inside the test's transaction and nowhere
-    else: a dispatcher pass at that moment sends nothing to n8n."""
+def test_the_dispatcher_sends_nothing_during_the_call_or_the_card(stack, monkeypatch):
+    """A test card has no outbox event: a dispatcher pass during the call and
+    one while the tablet shows the card send nothing to n8n."""
     sent: list[OutboxEvent] = []
     checked = selftest_call._check_booking
 
@@ -232,22 +240,124 @@ def test_the_dispatcher_sees_nothing_while_the_call_holds_its_event(stack, monke
         sent.append(event)
 
     def with_a_dispatcher_pass(session, *args):
-        report = checked(session, *args)
+        found = checked(session, *args)
         with Session(stack) as other:
             dispatch_once(other, send, limit=10)
-        assert session.scalar(
-            select(func.count()).where(
-                OutboxEvent.payload["call_id"].astext == str(report.call_id)
-            )
-        )
-        return report
+        return found
+
+    def show(_seconds: float) -> None:
+        with Session(stack) as other:
+            dispatch_once(other, send, limit=10)
 
     monkeypatch.setattr(selftest_call, "_check_booking", with_a_dispatcher_pass)
 
-    code, lines = selftest_run(stack)
+    code, lines = selftest_run(stack, now=TUESDAY, sleep=show)
 
     assert code == 0, lines
     assert sent == []
+
+
+def test_a_table_today_shows_as_a_test_card_and_is_removed_after(stack):
+    """The card is on the tablet's day list, marked as a test, while the
+    self-test waits; no figure, call log, day report or hours change card
+    counts it, no customer is noted, and afterwards no row is left."""
+    before = counts(stack)
+    seen: dict[str, object] = {}
+
+    def show(seconds: float) -> None:
+        seen["seconds"] = seconds
+        with Session(stack) as session:
+            tenant = session.scalars(select(Tenant)).one()
+            day = business_day(TUESDAY, tenant.timezone)
+            seen["cards"] = [
+                (row.guest_name, row.is_test)
+                for row in list_today(session, tenant.id, tenant.timezone, now=TUESDAY)
+            ]
+            seen["calls"] = session.scalar(
+                select(func.count()).select_from(Call).where(Call.is_test)
+            )
+            seen["figures"] = span_figures(session, tenant, day, day).calls
+            seen["log"] = list_calls(session, tenant, day)
+            seen["report"] = _day_report(session, tenant, day)[3]
+            seen["to_call"] = bookings_outside_hours(
+                session, tenant.id, day, DayHours(closed=True), tenant.timezone
+            )
+            seen["customers"] = session.scalar(
+                select(func.count()).select_from(Customer)
+            )
+            seen["events"] = session.scalar(
+                select(func.count()).select_from(OutboxEvent)
+            )
+
+    code, lines = selftest_run(stack, now=TUESDAY, sleep=show)
+
+    assert code == 0, lines
+    assert seen["seconds"] == selftest_call.SHOW_SECONDS
+    assert seen["cards"] == [(selftest_call.GUEST, True)]
+    assert seen["calls"] == 1
+    assert seen["figures"] == 0
+    assert seen["log"] == []
+    assert str(seen["report"]).startswith("0 calls")
+    assert "0 reservations" in str(seen["report"])
+    assert seen["to_call"] == []
+    assert seen["customers"] == before["customers"]
+    assert seen["events"] == before["outbox"]
+    reservation = next(line for line in lines if "reservation:" in line)
+    assert "10.11.2026 17:" in reservation
+    assert "card on the tablet as TEST for 60 s" in reservation
+    assert "      the tablet shows the TEST card for 60 s" in lines
+    assert counts(stack) == before
+
+
+def test_card_seconds_zero_shows_no_card_and_waits_not(stack):
+    waits: list[float] = []
+
+    code, lines = selftest_run(stack, now=TUESDAY, sleep=waits.append, card_seconds=0)
+
+    assert code == 0, lines
+    assert waits == []
+    assert any("card not shown (--card-seconds 0)" in line for line in lines)
+
+
+def test_a_table_on_a_later_day_is_not_waited_for(stack):
+    waits: list[float] = []
+
+    code, lines = selftest_run(stack, sleep=waits.append)
+
+    assert code == 0, lines
+    assert waits == []
+    assert any("card not today" in line for line in lines)
+
+
+def test_a_stopped_run_still_removes_its_card(stack):
+    before = counts(stack)
+
+    def stopped(_seconds: float) -> None:
+        raise KeyboardInterrupt
+
+    with pytest.raises(KeyboardInterrupt):
+        selftest_run(stack, now=TUESDAY, sleep=stopped)
+
+    assert counts(stack) == before
+
+
+def test_a_card_a_killed_run_left_is_removed_by_the_next(stack):
+    """A run killed while its card showed leaves the card (`_call` commits it,
+    the removal never came); the next run starts by deleting it."""
+    with Session(stack) as session:
+        tenant_id = session.scalars(select(Tenant.id)).one()
+    left = selftest_call._call(stack, tenant_id, TUESDAY)
+    with Session(stack) as session:
+        assert selftest_call.rows_of(session, left.call_id)
+
+    code, lines = selftest_run(stack, now=TUESDAY, sleep=lambda _s: None)
+
+    assert code == 0, lines
+    with Session(stack) as session:
+        assert not selftest_call.rows_of(session, left.call_id)
+        assert not session.scalar(
+            select(func.count()).select_from(Call).where(Call.is_test)
+        )
 
 
 def test_a_call_that_fails_after_the_booking_leaves_no_row(stack, monkeypatch):
@@ -326,7 +436,7 @@ def test_a_slip_the_bridge_holds_is_kept_and_another_event_is_never_removed(
 def test_an_unexpected_error_in_a_check_is_one_line_and_its_exit_code(
     stack, monkeypatch
 ):
-    def broken(*_args):
+    def broken(*_args, **_options):
         raise RuntimeError("model gone")
 
     monkeypatch.setattr(selftest, "reservation_call", broken)
@@ -338,3 +448,18 @@ def test_an_unexpected_error_in_a_check_is_one_line_and_its_exit_code(
         "FAIL  reservation: RuntimeError: model gone",
         "not connected: reservation",
     ]
+
+
+def test_a_run_during_service_books_a_later_time_today(stack):
+    """Tuesday 18:00 in Berlin, inside the evening window: the times before now
+    are skipped, not refused (check_slot raises on a time that passed)."""
+    waits: list[float] = []
+
+    code, lines = selftest_run(
+        stack, now=datetime(2026, 11, 10, 17, 0, tzinfo=UTC), sleep=waits.append
+    )
+
+    assert code == 0, lines
+    reservation = next(line for line in lines if "reservation:" in line)
+    assert "10.11.2026 18:" in reservation or "10.11.2026 19:" in reservation
+    assert waits == [selftest_call.SHOW_SECONDS]

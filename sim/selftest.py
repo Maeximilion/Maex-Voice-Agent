@@ -1,6 +1,7 @@
 """Self-test of a stack (#574): "connected", or the first check that failed.
 
-    python -m sim.selftest [--health-url URL] [--print-slip [--slip-wait 30]]
+    python -m sim.selftest [--health-url URL] [--card-seconds 60]
+                           [--print-slip [--slip-wait 30]]
 
 Run inside the stack's api container (`docker compose exec api python -m
 sim.selftest`), after `api.jobs.provision create` and the menu import. One
@@ -12,10 +13,12 @@ line per check, in this order, and the run stops at the first that fails:
 4. menu: active dishes, with how many have no allergen information (allowed:
    the agent then says it has none, docs/05).
 5. reservation: a simulated call through the agent with the scripted stand-in
-   model books a table: draft, the yes, `confirm`, then the tablet's day list,
-   its event stream and the team's outbox event see it. All of it in one
-   transaction that is rolled back (`selftest_call.py`): no row is kept, the
-   dispatcher never sees the event, nobody is called or notified.
+   model books a table: draft, the yes, `confirm`, then the tablet's day list
+   and its event stream see it. It is a test call (`calls.is_test`): no outbox
+   event, nobody is called or notified, no figure counts it. A table on today's
+   business day shows on the tablet as a card marked TEST for `--card-seconds`
+   (0: not at all); then the self-test deletes the call and its rows
+   (`selftest_call.py`). A failed call is rolled back and keeps no row.
 6. print: only with `--print-slip`, one slip marked SELBSTTEST goes to the
    print bridge, and the test waits for its answer. A slip on paper in the
    kitchen is an effect outside the server, so it is off by default.
@@ -54,7 +57,7 @@ from api.domain.ordering.selftest_slip import (
 )
 from api.domain.provision import missing
 from api.models import ItemAllergen, MenuItem, OpeningHours, ServiceConfig, Tenant
-from sim.selftest_call import CallFailed, reservation_call
+from sim.selftest_call import SHOW_SECONDS, CallFailed, reservation_call
 
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "db" / "alembic.ini"
 HEALTH_URL = "http://127.0.0.1:8000/health"
@@ -150,18 +153,37 @@ def check_menu(session: Session, tenant_id: uuid.UUID) -> str:
     )
 
 
-def check_reservation(engine: Engine, tenant_id: uuid.UUID, now: datetime) -> str:
+def check_reservation(
+    engine: Engine,
+    tenant_id: uuid.UUID,
+    now: datetime,
+    *,
+    show: float = SHOW_SECONDS,
+    out: Callable[[str], None] = print,
+    sleep: Callable[[float], None] = time.sleep,
+) -> str:
+    def showing(seconds: float) -> None:
+        out(f"      the tablet shows the TEST card for {seconds:.0f} s")
+        sleep(seconds)
+
     try:
-        report = reservation_call(engine, tenant_id, now)
+        report = reservation_call(engine, tenant_id, now, show=show, sleep=showing)
     except CallFailed as failed:
         raise Failed(str(failed)) from None
     with Session(engine) as session:
         zone = session.scalar(select(Tenant.timezone).where(Tenant.id == tenant_id))
     when = to_local(report.reserved_for, zone or "Europe/Berlin")
+    if not report.shown_today:
+        card = "not today, so not on the tablet's list now"
+    elif show > 0:
+        card = f"on the tablet as TEST for {show:.0f} s"
+    else:
+        card = "not shown (--card-seconds 0)"
     return (
-        f"simulated call booked a table for {when:%d.%m.%Y %H:%M} "
-        f"({' '.join(report.tools)}); draft, confirm, tablet list, event stream "
-        "and outbox saw it; rolled back, no row kept, nobody notified"
+        f"simulated test call booked a table for {when:%d.%m.%Y %H:%M} "
+        f"({' '.join(report.tools)}); draft, confirm, tablet list and event "
+        f"stream saw it, no outbox event; card {card}; removed, no row kept, "
+        "nobody notified"
     )
 
 
@@ -194,6 +216,7 @@ def run(
     health_url: str = HEALTH_URL,
     print_slip: bool = False,
     slip_wait: float = SLIP_WAIT_SECONDS,
+    card_seconds: float = SHOW_SECONDS,
     now: datetime | None = None,
     out: Callable[[str], None] = print,
     sleep: Callable[[float], None] = time.sleep,
@@ -233,7 +256,14 @@ def run(
         ("menu", menu),
         (
             "reservation",
-            lambda: check_reservation(engine, found["tenant"], now or utcnow()),
+            lambda: check_reservation(
+                engine,
+                found["tenant"],
+                now or utcnow(),
+                show=card_seconds,
+                out=out,
+                sleep=sleep,
+            ),
         ),
     ]
     if print_slip:
@@ -260,6 +290,12 @@ def main(argv: list[str] | None = None) -> int:
         "--print-slip", action="store_true", help="one test slip on the kitchen printer"
     )
     parser.add_argument("--slip-wait", type=float, default=SLIP_WAIT_SECONDS)
+    parser.add_argument(
+        "--card-seconds",
+        type=float,
+        default=SHOW_SECONDS,
+        help="how long the tablet shows the TEST card (0: not at all)",
+    )
     args = parser.parse_args(argv)
 
     with httpx.Client(timeout=HEALTH_TIMEOUT_SECONDS) as client:
@@ -269,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
             health_url=args.health_url,
             print_slip=args.print_slip,
             slip_wait=args.slip_wait,
+            card_seconds=args.card_seconds,
         )
 
 

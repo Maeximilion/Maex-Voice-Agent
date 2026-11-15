@@ -261,7 +261,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `scripted_order.py` — der Abholfluss des Modell-Ersatzes: Gerichte, Pflichtoptionen, Name, `draft_order`, vorlesen, `confirm`; what a card number is on the open allergy question it takes from the active menu (`MenuNumbers`, handed in by `session.py`), not from the import grammar
 - `noise.py` — verrauscht Eingaben absichtlich (Buchstabendreher, abgeschnittene Wörter), um die Leiter zu testen
 - `selftest.py` — the self-test of a stack (#574, docs/13 §8): `python -m sim.selftest [--print-slip]` checks health, database at head, configuration, menu, a simulated reservation and, when asked, the print path; "connected" or the first failing check, with its exit code. In `sim/`, not `jobs/`: it drives a call through the agent, and `jobs/` sits below `agent/`
-- `selftest_call.py` — the self-test's reservation call: the scripted model books a table for two through `confirm`, the tablet's day list, its event stream and the outbox must see it, all in one transaction that is rolled back, so no row is kept and the dispatcher never sees the event
+- `selftest_call.py` — the self-test's reservation call: a test call (`calls.is_test`, migration 039) in which the scripted model books a table for two through `confirm`; the tablet's day list and its event stream must see it, the outbox must not. A failed call is rolled back; a passed one is committed, shown as a TEST card on today's tablet for `--card-seconds`, then deleted with its rows
 
 Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik → DB → Tablet zeigt die Bestellung. Everything is testable without a telephone.
 

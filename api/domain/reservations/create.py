@@ -85,6 +85,8 @@ def create_reservation(
         reserved_for=req.reserved_for,
         note=note,
         idempotency_key=req.idempotency_key,
+        # The self-test's table is a test card like its call (#574).
+        is_test=call.is_test,
         # Fester Bezugspunkt für den readback, damit ein Replay über Mitternacht
         # nicht plötzlich "heute" statt "morgen" sagt.
         created_at=now,

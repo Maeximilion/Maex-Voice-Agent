@@ -135,6 +135,7 @@ def _today_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
             "phone": row.phone,
             "note": row.note,
             "tables": row.tables,
+            "is_test": row.is_test,
         }
         for row in list_today(session, tenant.id, tenant.timezone)
     ]

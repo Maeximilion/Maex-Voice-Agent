@@ -410,16 +410,23 @@ EUR; isolation and the unchanged code decide it.
   `not connected: <check>`; exit code 0, else 3 health, 4 database, 5 configuration, 6 menu,
   7 reservation, 8 print (2 a wrong call).
   The reservation is a simulated call through the agent with the scripted stand-in model
-  (`sim/`): a table for two at the first free time from tomorrow on, a draft before the yes,
-  `confirm` as the only step to a booking, and then the tablet's day list, the change token its
-  event stream polls and the team's `reservation.confirmed` event in the outbox must show it.
-  The call carries its own `call_id` like any call, but all of it runs in one database
-  transaction that is rolled back: no row is kept, the dispatcher never sees the event, so n8n
-  and the push server get nothing, no tablet shows a card, and nobody is called. A second
-  connection checks during the call that nothing is visible outside it, a fresh read afterwards
-  that nothing is left. For about a second the test holds the day lock of the chosen day and a
-  share lock on `service_config`: a real booking for that day or a settings change on the tablet
-  waits that long, so run it outside service hours where possible.
+  (`sim/`): a table for two at the first free time from today on, a draft before the yes,
+  `confirm` as the only step to a booking, and then the tablet's day list and the change token
+  its event stream polls must show it. It is a test call (`calls.is_test` and
+  `reservations.is_test`, migration 039, Maxi 15.11.2026): `confirm` writes no outbox event and
+  no customer contact for it, so n8n and the push server get nothing and nobody is called, and
+  the figures, the call log, the day report and the hours change cards leave it out. The call
+  carries its own `call_id` like any call and runs in one database transaction; a second
+  connection checks during the call that nothing is visible outside it. A call that fails a
+  check is rolled back and keeps no row. One that passes is committed: when its table is on
+  today's business day, the tablet shows it as a card marked TEST ("Test der Einrichtung, kein
+  Gast") for `--card-seconds` (60 by default, 0 for none), then the self-test deletes the call,
+  the table and their audit rows and checks that nothing is left. A run that was stopped with
+  Ctrl-C removes its card too; one that was killed leaves it until the next run, which deletes
+  it first. A table on a later day (no free table today) shows on no tablet now and is removed at
+  once. For about a second the test holds the day lock of the chosen day and a share lock on
+  `service_config`, and while the card shows its two seats count as booked, so run it outside
+  service hours where possible.
   `--print-slip [--slip-wait 30]` sends one slip marked SELBSTTEST ("Testbon - nicht kochen")
   through the print bridge, so it comes out of the kitchen printer: off by default, tell the
   kitchen first. It is a kitchen event without an order or a call, which never goes to n8n; the

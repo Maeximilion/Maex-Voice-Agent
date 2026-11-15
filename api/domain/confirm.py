@@ -130,14 +130,16 @@ def _confirm_reservation(
     ):
         raise Conflict("Plätze inzwischen vergeben", say=SAY_SEATS_GONE)
 
-    note_contact(
-        session,
-        req.tenant_id,
-        req.call_id,
-        reservation.phone,
-        now,
-        reservation.guest_name,
-    )
+    # A self-test's guest is nobody's contact (#574).
+    if not reservation.is_test:
+        note_contact(
+            session,
+            req.tenant_id,
+            req.call_id,
+            reservation.phone,
+            now,
+            reservation.guest_name,
+        )
     _book(
         session,
         reservation,
@@ -234,7 +236,8 @@ def _book(
     session: Session, reservation: Reservation, actor: str, audit: dict[str, Any]
 ) -> None:
     """Draft to confirmed, with its audit row and its outbox event; the caller
-    holds the row lock and commits."""
+    holds the row lock and commits. A self-test's card gets no outbox event:
+    nothing of it reaches n8n, the guest or the team (#574)."""
     reservation.status = "confirmed"
     session.add(
         AuditLog(
@@ -246,6 +249,8 @@ def _book(
             payload=audit,
         )
     )
+    if reservation.is_test:
+        return
     enqueue(
         session,
         tenant_id=reservation.tenant_id,
