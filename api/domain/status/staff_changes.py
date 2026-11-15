@@ -259,7 +259,8 @@ def change_day_hours(
     """The staff change a date's hours. Held at once for today, when shorter,
     or when back to what held before the staff came; otherwise the card waits
     for the owner, today's too when times on a date "like" another weekday
-    would drop that weekday and its seats (#710). Asking for what holds now withdraws a waiting request. None
+    would drop that weekday and its seats (#710), also after a held closure
+    of that date. Asking for what holds now withdraws a waiting request. None
     when nothing changes. An end before the start runs past midnight and is
     refused unless the staff say so (`overnight`): swapped times would open
     the night. Raises InvalidInput. Commits."""
@@ -290,9 +291,15 @@ def change_day_hours(
     # What the card showed until now: what held, or the request that waited.
     shown = DayHours.of(card.after)
     origin = DayHours.of(card.before)
+    # The weekday the card started from counts too: after a held closure the
+    # row reads closed, and times then would still drop "wie Sonntag".
     held = (
         hours in (holding, origin)
-        or (day == today and not _drops_weekday(hours, holding))
+        or (
+            day == today
+            and not _drops_weekday(hours, holding)
+            and not _drops_weekday(hours, origin)
+        )
         or _within(session, tenant_id, day, hours, holding, zone)
     )
     if hours == shown and held == card.held:
