@@ -106,6 +106,9 @@ class FakeTelephony:
         self.actions.append(Action("hangup", session_id))
         self._open.discard(session_id)
 
+    def speak_now(self, session_id: str) -> None:
+        """Every sentence is "spoken" when it is asked for here."""
+
     def start_recording(self, session_id: str, file_name: str) -> None:
         self.actions.append(Action("recording", session_id, file_name))
 

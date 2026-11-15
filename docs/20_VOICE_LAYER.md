@@ -134,9 +134,10 @@ core runs in a worker thread, and the port methods only enqueue.
 and what the line finished playing are queued with the time they happened and handled strictly one
 after another. The core runs in that worker. What it asks of the line (`Lines`, the
 `TelephonyPort` over all sessions) is kept while its turn runs and carried out the moment the turn
-returns, before anything that queued up behind it; timers fire on the time of the events, never
-ahead of an event that waited in the queue, and an event's time and its place in the queue are
-taken under one lock. Three ports: `Ear`, `Mouth` and
+returns, before anything that queued up behind it (one exception: the outage path has its
+sentence carried out at once with `speak_now`, still in order, §5); timers fire on the time of
+the events, never ahead of an event that waited in the queue, and an event's time and its place
+in the queue are taken under one lock. Three ports: `Ear`, `Mouth` and
 `Line`, the caller's leg (`answer`, `play` with a mark the line reports back when it was played,
 `flush`, `transfer`, `hangup`); the media adapter of T-1.11 implements `Line`. How a session ended
 is its `outcome`: only `hangup` lets the dialplan end the call, after `transfer`, `closed` or
@@ -224,7 +225,7 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 
 **Test number.** In the test phase every row of this table is tried on a number customers do not call, with a team telephone assigned to that number next to the AI telephone. The main number stays untouched until operation.
 
-**A team number changed during a call** (#683). The agent's handover (`transfer_to_team`) reads the number from the database at that moment, so a change on the tablet reaches it. The legs `voice` dials on its own, an outage (`_fail`) and the shadow leg, read the number again when they dial (#710), once, in a savepoint bound by the line's 2 s statement limit and after the outage sentence has gone out; when that read fails (the database is the outage) they use the number read at the start of the call, so they work when the database does not. A change in the middle of a call whose database cannot be read rings the old number; if that does not answer, the fallback number and then the missed-call card follow, and no call is lost (rule 5).
+**A team number changed during a call** (#683). The agent's handover (`transfer_to_team`) reads the number from the database at that moment, so a change on the tablet reaches it. The legs `voice` dials on its own, an outage (`_fail`) and the shadow leg, read the number again when they dial (#710), once, in a savepoint. On the outage path the sentence goes out first: inside a turn the session would keep it until the turn returns, behind the read, so `_fail` asks the line to speak what was said so far at once (`TelephonyPort.speak_now`), and the read runs while the caller hears the sentence; the transfer waits for the end of the sentence anyway, so a slow read delays the transfer only by what it outlasts the sentence, never the words (#754 follow-up). The line's 2 s statement limit bounds a read on a live connection; when the database is cut, a fresh connect is bounded by `connect_timeout` (2 s) plus the name lookup of `db`, which is not. When that read fails (the database is the outage) they use the number read at the start of the call, so they work when the database does not. A change in the middle of a call whose database cannot be read rings the old number; if that does not answer, the fallback number and then the missed-call card follow, and no call is lost (rule 5).
 
 **Loop guard.** The team number must never be forwarded to us. `voice` refuses to start when the
 team number is one of its own inbound numbers, the dialplan rejects a call from its own number, and
@@ -368,7 +369,7 @@ network disconnect`, without touching either container:
 |---|---|
 | `voice` cut off from Asterisk before a call | "voice not reached", the team rang after 5.3 s |
 | `voice` cut off from Asterisk in the middle of a call | Asterisk's pings notice, as for a freeze; the team rang 8.4 s after the cut |
-| `voice` cut off from the database in the middle of a call, inside the opening hours | the caller's keys start a turn that finds a silent database, "call failed, handing it to the team", ending `transfer`; the team rang 12.4 s after the cut, within the limit of 30 s, though it is the slowest of these |
+| `voice` cut off from the database in the middle of a call, inside the opening hours | the caller's keys start a turn that finds a silent database, "call failed, handing it to the team", ending `transfer`; the team rang 12.4 s after the cut, within the limit of 30 s, though it is the slowest of these. Measured before the outage path read the team number again (#710); since the #754 follow-up that read runs while the outage sentence plays, so it may add to the time to the ring only what outlasts the sentence. Still to be measured again on the workbench |
 | `voice` cut off from the database before a call | "call could not be opened, handing it to the team"; the team rang after 8.3 s |
 | The networks are back | the next call is the AI's: answered, asked, goodbye, no team ring, no restart of `voice` |
 | Tried from inside Asterisk | `voice:8001` connects; `db:5432` does not, by name or by address |

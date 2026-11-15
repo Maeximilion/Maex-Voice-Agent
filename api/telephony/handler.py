@@ -669,8 +669,17 @@ class CallHandler:
             except Exception:
                 logger.exception("outage sentence could not be spoken")
             if live is not None:
-                # After the sentence has gone out, so a read the line's bound
-                # cuts off (2 s) delays only the transfer, never the words.
+                # The sentence goes out before the read: inside a turn of the
+                # own voice layer it would wait for the end of the turn, behind
+                # the read (#754). The read runs while the caller hears it, and
+                # the transfer waits for its end anyway, so a database that is
+                # the outage delays the transfer by no more than the part of
+                # the read that outlasts the sentence, never the words.
+                self._port.speak_now(session_id)
+                if still_open and live.finished:
+                    # The mouth failed on the sentence, and that failure took
+                    # the call to the team already (`on_voice_failure`).
+                    return
                 target = self._team_phone(live)
             self._port.transfer(session_id, target)
         except Exception:

@@ -1232,7 +1232,9 @@ class _Wire:
     """A call on the own voice layer with fakes for ear, mouth and line: the
     handler and the core are the real ones."""
 
-    def __init__(self, session, tenant, *, refuses_transfer: bool = False):
+    def __init__(
+        self, session, tenant, *, refuses_transfer: bool = False, llm_factory=None
+    ):
         from api.telephony.adapters.fake_speech import FakeEar, FakeLine, FakeMouth
         from api.telephony.session import CallSession, Lines
 
@@ -1244,7 +1246,7 @@ class _Wire:
             line=self.line,
             ear=self.ear,
             mouth=FakeMouth(),
-            events=handler_for(session, tenant, self.lines),
+            events=handler_for(session, tenant, self.lines, llm_factory=llm_factory),
             caller_id="0721 5551234",
             clock=lambda: self.now,
             silence_seconds=6.0,
@@ -2171,6 +2173,83 @@ def test_an_outage_with_the_number_unreadable_rings_the_one_read_at_the_start(
 
     assert port.says("s-1")[-1] == SAY_OUTAGE
     assert port.transfers("s-1") == [TEAM_PHONE]
+
+
+def _outage_on_the_wire(session, tenant, monkeypatch, *, unreadable=False):
+    """A call on the own voice layer whose turn fails after the staff changed
+    the team number. Each read of the number is marked on the line, so the
+    test sees it between what the caller hears."""
+    wire = _Wire(session, tenant, llm_factory=lambda s: BrokenLLM())
+    wire.played()
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant.id)
+        .values(team_phone=CHANGED_PHONE)
+    )
+    session.commit()
+    from api.domain.calls import current_team_phone as real
+
+    def marked(*args, **kwargs):
+        wire.line.actions.append(("team_number_read",))
+        if unreadable:
+            raise OperationalError("SELECT", {}, Exception("connection refused"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(handler_module, "current_team_phone", marked)
+    return wire
+
+
+def test_on_the_wire_the_outage_sentence_plays_before_the_team_number_is_read(
+    session, tenant, monkeypatch
+):
+    """#754 follow-up: inside a turn the sentence would wait for the end of the
+    turn, behind the read. It goes out first, the read runs while it plays,
+    and the transfer still waits for its end and dials the number of now."""
+    wire = _outage_on_the_wire(session, tenant, monkeypatch)
+
+    wire.says("Einen Tisch fuer vier bitte")
+
+    actions = wire.line.actions
+    assert actions.index(("play", SAY_OUTAGE)) < actions.index(("team_number_read",))
+    assert "transfer" not in wire.line.kinds()
+    wire.played()
+    assert actions[-1] == ("transfer", CHANGED_PHONE)
+    assert actions.count(("team_number_read",)) == 1
+
+
+def test_on_the_wire_an_unreadable_team_number_comes_after_the_sentence_too(
+    session, tenant, monkeypatch
+):
+    """The database is the outage: the sentence is on the line before the read
+    that fails, and the call goes to the number it started with."""
+    wire = _outage_on_the_wire(session, tenant, monkeypatch, unreadable=True)
+
+    wire.says("Einen Tisch fuer vier bitte")
+    wire.played()
+
+    actions = wire.line.actions
+    assert actions.index(("play", SAY_OUTAGE)) < actions.index(("team_number_read",))
+    assert actions[-1] == ("transfer", TEAM_PHONE)
+    assert the_call(session, "voice-1").outcome == "error"
+
+
+def test_on_the_wire_a_mouth_that_fails_on_the_outage_sentence_rings_the_team_once(
+    session, tenant, monkeypatch
+):
+    """The sentence that now goes out first fails in the mouth: that failure
+    takes the call to the team, and the failed turn behind it neither reads
+    the number again nor asks for a second transfer."""
+    wire = _outage_on_the_wire(session, tenant, monkeypatch)
+    wire.call._mouth.broken = True
+
+    wire.says("Einen Tisch fuer vier bitte")
+
+    actions = wire.line.actions
+    assert ("play", SAY_OUTAGE) not in actions
+    assert [a for a in actions if a[0] == "transfer"] == [("transfer", CHANGED_PHONE)]
+    assert actions.count(("team_number_read",)) == 1
+    assert wire.call.outcome == "transfer"
+    assert the_call(session, "voice-1").outcome == "error"
 
 
 def test_a_handover_without_a_named_target_dials_the_number_that_holds_now(
