@@ -367,6 +367,17 @@ def test_trunk_zero_in_brackets_keeps_the_country_code():
     assert number_known("+496641234567", None, numbers("+43 (0)664 1234567")) is False
 
 
+def test_a_foreign_number_in_words_loses_its_trunk_zero():
+    """Review #207: "null null drei drei null sechs ..." was stored as
+    +330612345678, a callback number that does not exist."""
+    sentence = (
+        "Meine Nummer ist null null drei drei null sechs "
+        "eins zwei drei vier fünf sechs sieben acht"
+    )
+    assert numbers(sentence) == {"+33612345678"}
+    assert numbers("Meine Nummer ist +44 07700 900123") == {"+447700900123"}
+
+
 def test_three_groups_that_are_no_date_stay_a_number():
     """There is no month 21: a number someone writes in groups of two."""
     assert numbers("Unter 07 21 5551 erreichbar") == {"+497215551"}

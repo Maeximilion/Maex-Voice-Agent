@@ -581,6 +581,8 @@ Legt die Aufgabe an, GUI meldet sie mit Ton. `reason`: `complaint` · `not_under
 
 Die Rufnummer wird nach E.164 normalisiert. Eine geklammerte `(0)` hinter der Landesvorwahl entfällt dabei (`+49 (0)7221 5551234` → `+4972215551234`).
 
+An unbracketed 0 said right after the country code is dropped too, but only for the countries in `TRUNK_ZERO_AFTER` (`api/domain/customers/phone.py`, #683 and review #207): those whose trunk prefix is a single 0 that the international form omits and none of whose numbers begins with a single 0 (Germany, Austria, Switzerland, Liechtenstein, France, the United Kingdom, Ireland, the Netherlands, Belgium, Sweden, Finland, Poland, Lithuania, Slovakia, Romania, Bulgaria, Moldova, Ukraine, Turkey, Slovenia, Croatia, Bosnia and Herzegovina, Serbia, Montenegro, North Macedonia, Kosovo, Albania): `+33 06 12 34 56 78` and `null null drei drei null sechs ...` become `+33612345678`. Every other country keeps the 0 as said, because there it may belong to the number (Italy, Côte d'Ivoire, Benin, Norway), the trunk prefix is another (Hungary 06, Russia 8) or there is none (Spain, Portugal, Greece, Czechia, Denmark, Luxembourg). Two zeros always stay (the placeholder `+49000000000`). The source of each entry is named at the list. A caller ID never needs this: it never carries a trunk digit after its country code (docs/20).
+
 ---
 
 ## `transfer_to_team`
