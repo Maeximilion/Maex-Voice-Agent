@@ -31,7 +31,7 @@ CUSTOMER = "customer"
 
 
 def load_case(path: Path) -> dict[str, Any]:
-    case = json.loads(path.read_text(encoding="utf-8"))
+    case: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
     if not customer_lines(case):
         raise ValueError(f"{path}: kein Kundensatz im Transkript")
     return case

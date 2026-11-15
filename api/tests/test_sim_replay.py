@@ -15,8 +15,10 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from api.agent import loop
 from api.agent.llm import ChatCompletionsLLM, LLMError
 from api.config import settings
+from api.domain import calls
 from api.models import Call, Callback, Reservation
 from scripts.seed import seed
 from sim.replay import customer_lines, load_case, replay
@@ -362,7 +364,7 @@ def test_a_finish_that_failed_before_the_model_ran_still_logs_its_usage_later(
         '{"say": "Gern."}', {"prompt_tokens": 500, "completion_tokens": 10}
     )
     call = SimCall(session, tenant, llm=llm, now=NOW)
-    real = sim_session.end_call
+    real = calls.end_call
 
     def blip(*args, **kwargs):
         monkeypatch.setattr(sim_session, "end_call", real)
@@ -389,7 +391,7 @@ def test_a_finish_that_failed_after_the_model_ran_logs_every_request_later(
         '{"say": "Gern."}', {"prompt_tokens": 500, "completion_tokens": 10}
     )
     call = SimCall(session, tenant, llm=llm, now=NOW)
-    real = sim_session.end_call
+    real = calls.end_call
 
     def blip(*args, **kwargs):
         monkeypatch.setattr(sim_session, "end_call", real)
@@ -558,7 +560,7 @@ def test_the_call_limit_is_the_tenants_on_the_text_phone_too(
 
     built = {}
 
-    class Recording(sim_session.ConversationLoop):
+    class Recording(loop.ConversationLoop):
         def __init__(self, *args, **kwargs):
             built.update(kwargs)
             super().__init__(*args, **kwargs)

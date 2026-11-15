@@ -91,6 +91,8 @@ module = [
     "api.schemas.*",
     "api.telephony.*",
     "api.tools.*",
+    "printbridge.*",
+    "sim.*",
 ]
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
