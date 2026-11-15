@@ -438,7 +438,7 @@ for _said in (
     "die dreizehn mal die zwölf",
     "die 13 mal Nummer 12",
 ):
-    _nums = ("23", "24") if "23" in _said else ("13", "12")
+    _nums: tuple[str, ...] = ("23", "24") if "23" in _said else ("13", "12")
     RED.append(
         row("N", "e722-article-number-times-article-number", _said, numbers=_nums)
     )
