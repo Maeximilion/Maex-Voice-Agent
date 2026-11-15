@@ -415,9 +415,11 @@ def test_the_yes_to_a_read_back_with_an_allergy_note_is_no_answer_about_it(
     assert state.allergy_said == []
 
 
-def test_a_newly_armed_sentence_drops_the_read_back_but_an_answer_does_not(
+def test_a_newly_armed_sentence_and_an_answer_about_it_drop_the_read_back(
     session, known_tenant
 ):
+    """The answer "Gegen Erdnüsse." after the model's question names what the
+    read-back lacks: a yes must not confirm it (Codex PR #788, P1)."""
     state = state_for(session, known_tenant, phone=CALLER)
     run(
         session,
@@ -430,9 +432,6 @@ def test_a_newly_armed_sentence_drops_the_read_back_but_an_answer_does_not(
     assert state.stage == "readback_pending"
 
     run(session, state, "Gegen Erdnüsse.", LLMTurn(say="Notiert."))
-    assert state.stage == "readback_pending"
-
-    run(session, state, "Und meine Frau hat Zöliakie.", LLMTurn(say="Notiert."))
     assert state.stage != "readback_pending"
 
 
@@ -470,6 +469,7 @@ def test_the_guests_words_go_behind_the_models_order_note():
     call = ToolCall("draft_order", {"items": [], "note": "bitte klingeln"})
 
     noted = guards.with_the_guests_words(state, call)
+    assert noted is not None
 
     assert noted.args["note"] == (
         "bitte klingeln. WICHTIG !!! Gast sagte: Ich habe eine Nussallergie"
@@ -531,3 +531,52 @@ def test_order_and_table_notes_reach_the_model(session, known_tenant):
     )
 
     assert state.to_prompt_json()["order_note"] == "bitte alles vegan halten"
+
+
+def test_a_newly_armed_sentence_drops_the_read_back(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Einmal die Pho Bo auf Müller.",
+        search(),
+        draft(session, known_tenant),
+        LLMTurn(say="Passt das so?"),
+    )
+    assert state.stage == "readback_pending"
+
+    run(session, state, "Und meine Frau hat Zöliakie.", LLMTurn(say="Notiert."))
+    assert state.stage != "readback_pending"
+
+
+def test_guests_words_that_lose_the_allergy_in_the_cut_go_to_the_team(
+    session, known_tenant
+):
+    """The allergy at the end of a sentence longer than the note: cut, the
+    note would keep the preamble and drop the allergy (Codex PR #788, P1).
+    The team takes the call, nothing is stored."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    table = {
+        "guest_name": "Müller",
+        "phone": CALLER,
+        "party_size": 2,
+        "reserved_for": "2026-09-16T19:00:00+02:00",
+    }
+    said = (
+        "Ein Tisch für zwei auf Müller "
+        + "und so weiter " * 40
+        + "und ich habe eine Erdnussallergie"
+    )
+
+    result, _ = run(
+        session,
+        state,
+        said,
+        LLMTurn(tool_call=ToolCall("create_reservation", table)),
+        LLMTurn(tool_call=ToolCall("create_reservation", table)),
+    )
+
+    assert result.ended or result.say
+    assert session.scalars(select(Reservation)).all() == []
+    assert state.handoff_summary is not None
+    assert "Erdnuss" not in state.handoff_summary

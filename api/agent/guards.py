@@ -65,7 +65,7 @@ from api.agent.state import (
 from api.domain.menu.items import option_key
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.search import SAY_WHICH_NUMBER
-from api.domain.menu.wishes import HEALTH_NOTE_RE, mentions_allergy
+from api.domain.menu.wishes import HEALTH_NOTE_RE, mentions_allergy, speaks_of_health
 from api.schemas.orders import NOTE_MAX
 from api.schemas.reservations import RESERVATION_NOTE_MAX
 
@@ -735,12 +735,15 @@ def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | No
     return ToolResult(ok=False, error_code="invalid_input", hint=hint)
 
 
-def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall:
+def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall | None:
     """The draft with the guest's own words about their health on the note of
     the whole order or of the table, behind what the model wrote there, cut
     to the field: the model sent it again without them. Words, never a
     reading of them (Maxi, 15.11.2026). One that would not fit next to the
-    model's note takes the field alone: the health part is the one to keep."""
+    model's note takes the field alone: the health part is the one to keep.
+    None when the cut would drop the health words themselves ("..., ich habe
+    eine Erdnussallergie" at the end of a long sentence, Codex PR #788, P1):
+    the team takes the call instead (rule 5)."""
     added = NOTED_FOR_THE_GUEST.format(said=_said(state))
     limit = NOTE_MAX_FOR[call.name]
     before = call.args.get("note")
@@ -751,6 +754,9 @@ def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall:
     )
     if len(note) > limit:
         note = added[:limit].rstrip()
+        kept = note.removeprefix(NOTED_FOR_THE_GUEST.format(said=""))
+        if not speaks_of_health(kept):
+            return None
     return ToolCall(call.name, {**call.args, "note": note})
 
 

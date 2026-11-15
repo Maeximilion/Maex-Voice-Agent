@@ -2687,10 +2687,12 @@ def test_a_long_open_sentence_is_repeated_whole(state):
         "Rückfrage zu den Erdnüssen in der 13.",
     ],
 )
-def test_a_model_card_naming_the_guests_health_is_rewritten(state, summary):
+@pytest.mark.parametrize("said", ["Gegen Erdnüsse.", "Ich habe eine Erdnussallergie."])
+def test_a_model_card_naming_the_guests_health_is_rewritten(state, summary, said):
     """L13: a card is kept for the period of a callback, the health note only
-    until the night after the order. Reason and booking stay."""
-    state.allergy_said = ["Gegen Erdnüsse."]
+    until the night after the order. Reason and booking stay. A compound
+    allergy word names its ingredient too (Codex PR #788)."""
+    state.allergy_said = [said]
     state.booking_say = "Ihr Tisch ist reserviert."
     call = ToolCall(
         "create_callback", {"reason": "human_requested", "summary": summary}

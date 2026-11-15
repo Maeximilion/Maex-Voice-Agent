@@ -703,7 +703,12 @@ class ConversationLoop:
                     # Sent again without it: the core writes the guest's own
                     # words onto it and lets it go, never a loop and never a
                     # draft without them (Maxi, 15.11.2026).
-                    call = guards.with_the_guests_words(state, call)
+                    noted = guards.with_the_guests_words(state, call)
+                    if noted is None:
+                        return self._note_to_team(
+                            state, call, lead=None, card=f"{SUMMARY_NOTE_TO_CLEAR}."
+                        )
+                    call = noted
                 else:
                     # Back to the model once, with the guest's words. The
                     # draft stays on the card of a handover meanwhile.
@@ -1501,8 +1506,8 @@ def _note_allergy_said(state: ConversationState, text: str) -> bool:
     allergy ("Gegen Erdnüsse."), for the safety net and the model, which
     keeps nothing between turns (Maxi, 15.11.2026). A bare denial in answer
     to such a question ("Keine.", "Ich habe keine Allergie") takes it back
-    (`allergie_0012`). True for a sentence that arms the net itself: a
-    read-back waiting for its yes may not carry it."""
+    (`allergie_0012`). True for every sentence kept: a read-back waiting for
+    its yes may not carry it."""
     asked = _asked_about_an_allergy(state)
     if escalation.bare_denial(text, asked=asked):
         # Not without the question: "Ich habe keine Allergie" after "meine
@@ -1513,7 +1518,9 @@ def _note_allergy_said(state: ConversationState, text: str) -> bool:
     armed = escalation.arms_the_net(text)
     if armed or asked:
         state.allergy_said = [*state.allergy_said, text.strip()][-ALLERGY_SAID_MAX:]
-    return armed
+    # An answer to the model's question ("Gegen Erdnüsse.") is new health
+    # information too: a read-back before it lacks it (Codex PR #788, P1).
+    return armed or asked
 
 
 def _asked_about_an_allergy(state: ConversationState) -> bool:
@@ -1549,7 +1556,9 @@ def _names_health(state: ConversationState, text: str) -> bool:
     if speaks_of_health(text) or HEALTH_NOTE_RE.search(text):
         return True
     said = {word for sentence in state.allergy_said for word in _stems(sentence)}
-    return bool(said & _stems(text))
+    # By prefix: "Erdnussallergie" there names "Erdnüssen" here (Codex PR
+    # #788, P1).
+    return any(a.startswith(b) or b.startswith(a) for a in said for b in _stems(text))
 
 
 def _stems(text: str) -> set[str]:
