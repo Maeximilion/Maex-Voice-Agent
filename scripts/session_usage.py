@@ -28,8 +28,10 @@ import json
 import os
 import sys
 from collections import defaultdict
+from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 HISTORY = (
@@ -97,7 +99,7 @@ def transcripts(projects_dir: Path, session: str) -> list[Path]:
     return ([main] if main.exists() else []) + subagents
 
 
-def replies(path: Path):
+def replies(path: Path) -> Iterator[tuple[dict[str, Any], str]]:
     """(message, line) of every model reply in one transcript, in order."""
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
@@ -138,11 +140,11 @@ def usage(paths: list[Path]) -> dict[str, dict[str, int]]:
     return dict(totals)
 
 
-def context_points(path: Path, skip: int = 0) -> dict | None:
+def context_points(path: Path, skip: int = 0) -> dict[str, Any] | None:
     """Context sizes of the main transcript's replies after the first `skip`:
     the first, the one at the first file edit (reading done), the last and the
     peak. A reply split over several records counts once. None without one."""
-    calls: list[list] = []  # [size, edits a file]
+    calls: list[list[int | bool]] = []  # [size, edits a file]
     index: dict[str, int] = {}
     model = ""
     for message, line in replies(path):
@@ -207,7 +209,7 @@ def since_last_record(
     return part
 
 
-def append(path: Path, fields: list[str], rows: list[dict]) -> None:
+def append(path: Path, fields: list[str], rows: list[dict[str, Any]]) -> None:
     new = not path.exists()
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", newline="", encoding="utf-8") as fh:
@@ -218,8 +220,8 @@ def append(path: Path, fields: list[str], rows: list[dict]) -> None:
 
 
 def record(
-    path: Path, task: str, split: str, session: str, part: dict, today: str
-) -> list[dict]:
+    path: Path, task: str, split: str, session: str, part: dict[str, Any], today: str
+) -> list[dict[str, Any]]:
     rows = [
         {
             "date": today,
@@ -239,7 +241,7 @@ def record(
 
 def record_context(
     path: Path, task: str, session: str, main_file: Path, today: str
-) -> dict | None:
+) -> dict[str, Any] | None:
     """One row for the task's part of the main transcript: the replies after
     those earlier rows of the same session recorded."""
     skip = sum(int(r["calls"]) for r in read_history(path) if r["session"] == session)

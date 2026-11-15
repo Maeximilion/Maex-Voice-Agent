@@ -38,7 +38,9 @@ import secrets
 import string
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # api/models/tenants.py CUSTOMER_KEY; the host needs no package of the API.
@@ -92,7 +94,9 @@ def push_token() -> str:
     return "tk_" + "".join(secrets.choice(alphabet) for _ in range(29))
 
 
-def push_env(hash_passwords) -> tuple[dict[str, str], dict[str, str]]:
+def push_env(
+    hash_passwords: Callable[[list[str]], list[str]],
+) -> tuple[dict[str, str], dict[str, str]]:
     """The push server's users and tokens for .env, and the passwords of the
     users people sign in with, to print once (only their hashes are kept)."""
     passwords = {user: secrets.token_hex(16) for user in PUSH_USERS}
@@ -113,7 +117,7 @@ def push_env(hash_passwords) -> tuple[dict[str, str], dict[str, str]]:
     return values, {user: passwords[user] for user in PUSH_SIGN_IN}
 
 
-def fresh_env(spec: dict, domain: str) -> dict[str, str]:
+def fresh_env(spec: dict[str, Any], domain: str) -> dict[str, str]:
     """Every value the new stack's .env sets, secrets freshly made."""
     made = {name: secrets.token_hex(32) for name in FRESH_VARIABLES}
     app_password = secrets.token_hex(32)
@@ -279,7 +283,10 @@ def networks_file(keys: list[str]) -> str:
     )
 
 
-def run(command: list[str], cwd: Path, **options) -> subprocess.CompletedProcess:
+# `options` are subprocess.run keywords (env, input, stdout), passed on as given.
+def run(
+    command: list[str], cwd: Path, **options: Any
+) -> subprocess.CompletedProcess[str]:
     print("+ " + " ".join(command), file=sys.stderr)
     # Docker's progress goes to stderr: stdout keeps the result and the link.
     options.setdefault("stdout", sys.stderr)
@@ -289,7 +296,7 @@ def run(command: list[str], cwd: Path, **options) -> subprocess.CompletedProcess
     return done
 
 
-def read_customer(path: Path) -> dict:
+def read_customer(path: Path) -> dict[str, Any]:
     try:
         spec = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError) as error:
@@ -310,7 +317,8 @@ def read_customer(path: Path) -> dict:
         # It becomes TEAM_PHONE as written, and provisioning compares the
         # normalized number with it exactly: only E.164 reads the same both ways.
         raise BadInput("customer file: team_phone must be E.164, like +4972215551234")
-    return spec
+    customer: dict[str, Any] = spec
+    return customer
 
 
 def caddy(root: Path, *args: str) -> tuple[list[str], dict[str, str]]:

@@ -73,8 +73,10 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # Strict per module, flag by flag: a `strict = true` in an override applies to the
-# whole run. Packages join this list once they pass; each step is its own change.
+# whole run. Every path of `files` is in this list except the tests (api.tests),
+# which only get `check_untyped_defs`.
 module = [
+    "api",
     "api.agent.*",
     "api.config",
     "api.core.*",
@@ -82,6 +84,7 @@ module = [
     "api.db",
     "api.domain.*",
     "api.events.*",
+    "api.gui.*",
     "api.jobs.*",
     "api.kitchen.*",
     "api.main",
@@ -91,7 +94,10 @@ module = [
     "api.schemas.*",
     "api.telephony.*",
     "api.tools.*",
+    "db.*",
+    "evals.*",
     "printbridge.*",
+    "scripts.*",
     "sim.*",
 ]
 disallow_untyped_defs = true

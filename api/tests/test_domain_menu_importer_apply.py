@@ -1,5 +1,6 @@
 """domain/menu/importer.apply und scripts/import_menu: Karte einspielen, idempotent, Bericht (T-4.2)."""
 
+import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1320,14 +1321,14 @@ def test_skript_rollt_zurueck_wenn_ein_spaeterer_tausch_scheitert(
     _kasse(kasse, [SUPPE])
     for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
         (out / name).write_text("alt\n", encoding="utf-8")
-    real_replace = kasse_to_csv.os.replace
+    real_replace = os.replace
 
     def flaky(src, dst):
         if str(src).endswith(OPTIONS_FILE + ".tmp"):
             raise OSError(5, "E/A-Fehler", str(dst))
         return real_replace(src, dst)
 
-    monkeypatch.setattr(kasse_to_csv.os, "replace", flaky)
+    monkeypatch.setattr(os, "replace", flaky)
 
     assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2
 
@@ -1350,7 +1351,7 @@ def test_skript_gemischter_ordner_bleibt_gemeldet_wenn_tmp_nicht_loeschbar(
     _kasse(kasse, [SUPPE])
     for name in (MENU_FILE, OPTIONS_FILE, ALLERGENS_FILE):
         (out / name).write_text("alt\n", encoding="utf-8")
-    real_replace = kasse_to_csv.os.replace
+    real_replace = os.replace
     real_unlink = Path.unlink
 
     def flaky(src, dst):
@@ -1365,7 +1366,7 @@ def test_skript_gemischter_ordner_bleibt_gemeldet_wenn_tmp_nicht_loeschbar(
             raise PermissionError(13, "in Benutzung", str(self))
         return real_unlink(self, *args, **kw)
 
-    monkeypatch.setattr(kasse_to_csv.os, "replace", flaky)
+    monkeypatch.setattr(os, "replace", flaky)
     monkeypatch.setattr(Path, "unlink", stuck)
 
     assert kasse_to_csv.main([str(kasse), "--out", str(out)]) == 2

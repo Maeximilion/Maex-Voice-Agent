@@ -38,23 +38,24 @@ import re
 import subprocess
 import sys
 from collections.abc import Callable
+from typing import Any
 
 BLOCKING = {"critical", "high"}
 REPO = "repos/{owner}/{repo}"  # gh fills in the repository of the checkout
 
-Gh = Callable[[str], list]
+Gh = Callable[[str], list[dict[str, Any]]]
 
 
 class GhError(Exception):
     pass
 
 
-def _blocks(alert: dict) -> bool:
+def _blocks(alert: dict[str, Any]) -> bool:
     # Every Dependabot alert blocks, whatever its severity (Maxi, 2026-10-27).
     return alert["source"] == "dependabot" or alert["severity"] in BLOCKING
 
 
-def gh_api(path: str) -> list:
+def gh_api(path: str) -> list[dict[str, Any]]:
     """Every item of a REST list, all pages."""
     res = subprocess.run(
         ["gh", "api", "--paginate", path, "--jq", ".[]"],
@@ -74,7 +75,7 @@ def _package(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()  # PEP 503: Foo_Bar is foo-bar
 
 
-def _alerts(gh: Gh, errors: list[str]) -> list[dict]:
+def _alerts(gh: Gh, errors: list[str]) -> list[dict[str, Any]]:
     alerts = []
     try:
         for a in gh(f"{REPO}/dependabot/alerts?state=open&per_page=100"):
@@ -111,7 +112,9 @@ def _alerts(gh: Gh, errors: list[str]) -> list[dict]:
     return alerts
 
 
-def _carrying(gh: Gh, pr: dict, alert: dict) -> list[dict]:
+def _carrying(
+    gh: Gh, pr: dict[str, Any], alert: dict[str, Any]
+) -> list[dict[str, Any]]:
     """Dependency changes of the pull request that carry the alert's advisory."""
     changes = gh(
         f"{REPO}/dependency-graph/compare/{pr['base']['sha']}...{pr['head']['sha']}"
@@ -124,7 +127,7 @@ def _carrying(gh: Gh, pr: dict, alert: dict) -> list[dict]:
     ]
 
 
-def _fixes(gh: Gh, pr: dict, alert: dict) -> bool:
+def _fixes(gh: Gh, pr: dict[str, Any], alert: dict[str, Any]) -> bool:
     if alert["source"] == "dependabot":
         kinds = {
             c["change_type"]
@@ -145,7 +148,7 @@ def _fixes(gh: Gh, pr: dict, alert: dict) -> bool:
     return False
 
 
-def _candidate(gh: Gh, pr: dict, alert: dict) -> bool:
+def _candidate(gh: Gh, pr: dict[str, Any], alert: dict[str, Any]) -> bool:
     if alert["source"] == "dependabot" and any(
         c["change_type"] == "removed" for c in _carrying(gh, pr, alert)
     ):
@@ -160,14 +163,17 @@ def report(gh: Gh = gh_api) -> tuple[list[str], list[str]]:
     gh = functools.cache(gh)  # one compare and one file list per pull request
     errors: list[str] = []
     alerts = _alerts(gh, errors)
-    prs: list[dict] = []
+    prs: list[dict[str, Any]] = []
     if any(_blocks(a) for a in alerts):
         try:
             prs = gh(f"{REPO}/pulls?state=open&base=main&per_page=100")
         except GhError as exc:
             errors.append(f"open pull requests: {exc}")
 
-    def which(check: Callable[[Gh, dict, dict], bool], alert: dict) -> list[str]:
+    def which(
+        check: Callable[[Gh, dict[str, Any], dict[str, Any]], bool],
+        alert: dict[str, Any],
+    ) -> list[str]:
         found = []
         for pr in prs:
             try:
