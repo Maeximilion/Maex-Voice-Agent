@@ -622,6 +622,16 @@ def names_an_allergen(text: str) -> bool:
     return any(_allergens_named(word)[0] for word in re.findall(r"[a-z]+", fold(text)))
 
 
+def allergens_named(text: str) -> set[str]:
+    """The database letters of the allergens `text` names, read as
+    `names_an_allergen` reads it: "Soja" and "Sojasauce" both give "F"."""
+    return {
+        code
+        for word in re.findall(r"[a-z]+", fold(text))
+        for code in _allergens_named(word)[0]
+    }
+
+
 def free_from_claim(name: str) -> set[str]:
     """Database letters of the allergens the name says are absent.
 

@@ -62,7 +62,7 @@ from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
-from api.domain.menu.pos_convert import names_an_allergen
+from api.domain.menu.pos_convert import allergens_named, names_an_allergen
 from api.domain.menu.wishes import HEALTH_NOTE_RE, names_coeliac, speaks_of_health
 from api.domain.ordering.readback import spoken_euro
 from api.domain.reservations.spoken import WEEKDAYS
@@ -1554,6 +1554,10 @@ def _names_health(state: ConversationState, text: str) -> bool:
     sentence too; the card then gets the sentence of its reason, the safe
     side."""
     if speaks_of_health(text) or HEALTH_NOTE_RE.search(text):
+        return True
+    # The same allergen by name, a short one too: "Soja" there and here
+    # (Codex PR #788, P1).
+    if allergens_named(" ".join(state.allergy_said)) & allergens_named(text):
         return True
     said = {word for sentence in state.allergy_said for word in _stems(sentence)}
     # By prefix: "Erdnussallergie" there names "Erdnüssen" here (Codex PR

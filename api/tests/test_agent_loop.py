@@ -2735,3 +2735,22 @@ def test_the_order_note_on_a_card_never_names_health(state, note, shown):
     assert _order_lines(state, 200) == (
         f"für die ganze Bestellung: {shown}, 1x 13 Pho Bo"
     )
+
+
+@pytest.mark.parametrize(
+    ("said", "summary"),
+    [
+        ("Ich bin allergisch gegen Soja.", "Rückfrage zu Soja in der 13."),
+        ("Ich vertrage keine Eier.", "Kunde fragt nach Ei in der 40."),
+        ("Ich habe eine Senfallergie.", "Rückfrage zum Senf."),
+    ],
+)
+def test_a_short_allergen_name_on_a_model_card_is_rewritten(state, said, summary):
+    """Words under five letters are no stems: the allergen by name still
+    names the guest's health (Codex PR #788)."""
+    state.allergy_said = [said]
+    call = ToolCall(
+        "create_callback", {"reason": "human_requested", "summary": summary}
+    )
+
+    assert _card_without_allergy(state, call).args["summary"] != summary
