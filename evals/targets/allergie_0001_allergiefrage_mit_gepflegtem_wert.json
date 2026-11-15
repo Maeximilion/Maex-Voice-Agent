@@ -31,10 +31,6 @@
     },
     {
       "role": "customer",
-      "text": "Ja."
-    },
-    {
-      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -54,9 +50,7 @@
         "number": "23"
       }
     ],
-    "note": "WICHTIG: Keine Gluten. Grund: Allergie",
-    "consent": [
-      "yes"
-    ]
+    "note": "WICHTIG !!! Kunde ist allergisch auf Gluten",
+    "consent": []
   }
 }

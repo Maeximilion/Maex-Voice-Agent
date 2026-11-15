@@ -19,7 +19,6 @@ from typing import Any
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from api.agent.consent import ALLERGY_QUESTION
 from api.agent.guest_details import words_said
 from api.agent.recording import RECORDING_WITHDRAWN
 from api.core.time import to_local
@@ -88,10 +87,11 @@ EXPECTED_KEYS = frozenset(
         # The note of the confirmed order as a whole, or of the confirmed table,
         # word for word; null says there is none (D24, T-11.1).
         "note",
-        # The answers to the question for the allergy as a kitchen note, in
-        # the order of the consent log ("yes", "no", "unclear"); [] says it
-        # was never asked (legal check L13, T-11.1). The question for a
-        # recording counts too, and a withdrawal comes as a "no" behind its yes.
+        # The answers to the consent questions of the call, in the order of
+        # the consent log ("yes", "no", "unclear"); [] says none was asked.
+        # Since 15.11.2026 that is the recording (L2, T-11.3); a withdrawal
+        # comes as a "no" behind its yes. An allergy is asked about no more:
+        # naming it is the consent (L13, Maxi).
         "consent",
         # What became of the recording of the call (L2, T-11.3): `RECORDINGS`.
         "recording",
@@ -99,8 +99,6 @@ EXPECTED_KEYS = frozenset(
 )
 # The states of `expected.recording`, by the row of the call.
 RECORDINGS = ("none", "running", "withdrawn")
-# What only a note with the caller's yes may carry (L13, `domain/menu/wishes.py`).
-ALLERGY_REASON = "Grund: Allergie"
 ADDRESS_KEYS = ("street", "house_number", "postal_code", "city", "floor_note")
 # Free text ("2. OG, Klingel Müller"): every expected word has to occur, the
 # wording around it is free (Codex PR #162).
@@ -407,10 +405,6 @@ class Observed:
     note: str | None = None
     # The consent log of the call, answers in order.
     consent: list[str] = field(default_factory=list)
-    # Notes of the call that carry the allergy as their reason, drafts
-    # included, while no "yes" stands in its consent log: stored health data
-    # without consent (L13).
-    reason_without_consent: int = 0
     # The recording of the call, one of `RECORDINGS`.
     recording: str = "none"
     # A row of a call without a "yes" in its log: always red (L2).
@@ -463,25 +457,13 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         .order_by(ConsentLog.answered_at, ConsentLog.question == RECORDING_WITHDRAWN)
     ).all()
     consent = [answer for _, answer in logged]
-    # Each hard check reads the answer to its own question (review of T-11.3):
-    # the log holds the allergy note and the recording, whose wording carries
-    # the period and so has no fixed text.
-    allergy_yes = (ALLERGY_QUESTION, "yes") in logged
+    # The recording's question carries the period and so has no fixed text
+    # (review of T-11.3).
     recording_yes = any(
-        answer == "yes" and question not in (ALLERGY_QUESTION, RECORDING_WITHDRAWN)
+        answer == "yes" and question != RECORDING_WITHDRAWN
         for question, answer in logged
     )
     recorded = session.scalar(select(Recording).where(Recording.call_id == call_id))
-    stored = [
-        *session.scalars(
-            select(OrderItem.note).where(
-                OrderItem.order_id.in_([order.id for order in orders])
-            )
-        ),
-        *(order.note for order in orders),
-        *(reservation.note for reservation in reservations),
-    ]
-    with_reason = sum(ALLERGY_REASON in (note or "") for note in stored)
 
     address = None
     if done_orders and done_orders[-1].address_id:
@@ -510,7 +492,6 @@ def observe(session: Session, call_id: uuid.UUID, confirms: int) -> Observed:
         extra_reservations=max(0, len(done_res) - 1),
         note=done[-1].note if done else None,
         consent=consent,
-        reason_without_consent=0 if allergy_yes else with_reason,
         recording=_recording_state(recorded),
         recording_without_consent=recorded is not None and not recording_yes,
     )
@@ -693,11 +674,6 @@ def judge(expected: dict[str, Any], seen: Observed) -> list[str]:
         )
     if seen.recording_without_consent:
         diffs.append("Aufnahme ohne Einwilligung")
-    # Always, not only when expected: the reason without a yes is never right.
-    if seen.reason_without_consent:
-        diffs.append(
-            f"Allergie als Grund ohne Einwilligung: {seen.reason_without_consent}"
-        )
     # Immer, nicht nur wenn erwartet: ein Vorgang, zweimal bestaetigt, ist nie richtig.
     if seen.duplicate_confirms:
         diffs.append(f"doppelt bestaetigt: {seen.duplicate_confirms} zusaetzlich")

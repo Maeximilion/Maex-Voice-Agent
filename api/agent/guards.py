@@ -26,10 +26,10 @@ that insists ends in the handoff to the team, not in a booking.
 - Rule 1 sits in `state.apply_state_patch`: a model writes only guest details.
   Of an order line it writes dish, quantity, options and note; number, name
   and the options still open are added by the state from the search result.
-- The caller's allergy (T-11.1): the core reads it from the guest's own
-  sentence and writes it onto the draft itself (`agent/allergies.py`). A
-  note the model writes may not name one: a cart or a draft with such a note
-  is refused (`_ALLERGY_NOTE`), whatever else it says.
+- The guest's allergy (Maxi, 15.11.2026): the model writes it as a note on
+  the dish, the order or the table. A guest who named one in this call gets
+  no draft without such a note: the first one goes back with a hint
+  (`unnoted_allergy`).
 """
 
 import re
@@ -38,7 +38,6 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from api.agent.allergies import NOTED
 from api.agent.consent import is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
 from api.agent.escalation import (
@@ -66,7 +65,9 @@ from api.agent.state import (
 from api.domain.menu.items import option_key
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.search import SAY_WHICH_NUMBER
-from api.domain.menu.wishes import mentions_allergy, speaks_of_health
+from api.domain.menu.wishes import HEALTH_NOTE_RE, mentions_allergy, speaks_of_health
+from api.schemas.orders import NOTE_MAX
+from api.schemas.reservations import RESERVATION_NOTE_MAX
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
 HINT_CONFIRM = (
@@ -134,15 +135,17 @@ HINT_NOT_BOOKED = (
     "Buchung, sag `booking_say` aus dem Zustand wörtlich; sonst lies den "
     "readback vor und warte auf ein klares Ja."
 )
-HINT_ALLERGY_NOTE = (
-    "Abgelehnt: ein `note` nennt eine Allergie oder die Gesundheit des Gastes. "
-    "Sagte der Gast statt einer Allergie nur ein Wort wie „Zöliakie“ oder „darf "
-    "kein“, ruf noch nichts auf: frag ihn zuerst, was er meint und was nicht "
-    "ins Essen darf; ins `note` kommt dann nur das Weglassen („ohne Gluten“). "
-    "Eine Allergie notiert der Kern selbst aus seinen Worten; schreib sie nie "
-    "in ein `note`, auch nicht verneint. Andere Wünsche („ohne Zwiebeln“, "
-    "„Kinderstuhl“) bleiben im `note`. Ruf denselben Schritt dann ohne die "
-    "Allergie noch einmal auf."
+# The hint of the safety net, with the guest's words behind it: the model
+# keeps nothing between turns (`unnoted_allergy`).
+HINT_UNNOTED_ALLERGY = "Abgelehnt: kein `note` nennt die Allergie des Gastes."
+_HINT_UNNOTED_SAID = (
+    " Der Gast sagte: „{said}“. Notiere die Allergie als WICHTIG-Hinweis am "
+    "Gericht, an der Bestellung oder am Tisch und ruf denselben Schritt noch "
+    "einmal auf."
+)
+HINT_NOTE_CLAIM = (
+    "Abgelehnt: ein `note` sagt, ein Gericht sei frei von etwas. Notiere nur, "
+    "was der Gast gesagt hat, und ruf denselben Schritt noch einmal auf."
 )
 # Words that tell a guest something is booked, with any ending ("Ihre
 # bestätigte Bestellung"; Codex PR #347).
@@ -447,9 +450,7 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
         )
     else:
         ids = [line["menu_item_id"] for line in lines]
-        if any(speaks_of_health(line.get("note") or "") for line in lines):
-            refused = _ALLERGY_NOTE
-        elif not all(item_id in state.known_item_ids for item_id in ids):
+        if not all(item_id in state.known_item_ids for item_id in ids):
             refused = _CART_ITEM
         elif any(state.seen_items.get(i, {}).get("sold_out") for i in ids):
             # A clear hit that is sold out is known, and draft_order would
@@ -466,6 +467,10 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             return None
     order_corrected(state)
     return refused
+
+
+# The calls that store a note: on an order line, on the whole order, on a table.
+NOTED = frozenset({"draft_order", "create_reservation"})
 
 
 def notes_an_additive(call: ToolCall) -> bool:
@@ -525,10 +530,7 @@ def refusal(
 ) -> ToolResult | None:
     """None lets the call through to `dispatch`; otherwise the failed result
     the model gets instead. `cart_sent`: the same answer carried a `cart`,
-    which the core has taken by now. `call` as the model wrote it, before the
-    core writes the allergies onto it (`allergies.noted_call`)."""
-    if any(speaks_of_health(note) for note in _notes(call)):
-        return _ALLERGY_NOTE
+    which the core has taken by now."""
     if call.name == "get_item_details" and _states_an_allergy(user_text, call):
         return _STATED_ALLERGY
     if call.name == "confirm":
@@ -564,8 +566,8 @@ def refusal(
 def _states_an_allergy(user_text: str, call: ToolCall) -> bool:
     """An allergen lookup on a guest sentence that names an allergy of their
     own and asks nothing ("Die 13, ich habe eine Erdnussallergie."). The
-    core notes the allergy for the kitchen whatever the dish contains (Maxi,
-    27.10.2026); the lookup would find nothing maintained for most dishes and
+    allergy goes on the note for the kitchen whatever the dish contains (Maxi,
+    27.10.2026, 15.11.2026); the lookup would find nothing maintained for most dishes and
     end the order with the team (L17), though the guest asked no question
     (real-model run of 27.10.2026). Refused only where no reading finds a
     question, clause by clause too: one may ask without naming the allergy
@@ -698,13 +700,79 @@ def flag_the_allergy_question(call: ToolCall, user_text: str) -> ToolCall:
 
 HINT_STATED_ALLERGY = (
     "Abgelehnt: der Gast hat nur seine Allergie genannt und nichts gefragt. "
-    "Der Kern notiert sie für die Küche; prüf keine Allergene und mach mit der "
-    "Bestellung weiter."
+    "Notiere sie als Hinweis für die Küche; prüf keine Allergene und mach mit "
+    "der Bestellung weiter."
 )
 _STATED_ALLERGY = ToolResult(
     ok=False, error_code="invalid_input", hint=HINT_STATED_ALLERGY
 )
-_ALLERGY_NOTE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERGY_NOTE)
+# The longest note of the whole order and of a table.
+NOTE_MAX_FOR = {"draft_order": NOTE_MAX, "create_reservation": RESERVATION_NOTE_MAX}
+NOTE_CLAIM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_NOTE_CLAIM)
+# What the core writes onto a draft the model sent twice without the guest's
+# words (`with_the_guests_words`).
+NOTED_FOR_THE_GUEST = "WICHTIG !!! Gast sagte: {said}"
+# A note that only repeats the example of a hint names nothing.
+_TEMPLATE = ("…", "<", "WICHTIG-Hinweis")
+
+
+def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | None:
+    """A draft for a guest who spoke of their health in this call
+    (`state.allergy_said`), with no note that names it: the kitchen would
+    never hear of it. A note passes by `wishes.HEALTH_NOTE`, the pattern the
+    retention job deletes such a note by, so what passes here is deleted in
+    time (L13). The hint quotes the guest. The loop gives it back once per
+    turn, and writes the guest's words on the next one itself
+    (`with_the_guests_words`), never a loop."""
+    if not state.allergy_said or call.name not in NOTED:
+        return None
+    if any(
+        HEALTH_NOTE_RE.search(note) and not any(t in note for t in _TEMPLATE)
+        for note in _notes(call)
+    ):
+        return None
+    hint = HINT_UNNOTED_ALLERGY + _HINT_UNNOTED_SAID.format(said=_said(state))
+    return ToolResult(ok=False, error_code="invalid_input", hint=hint)
+
+
+def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall | None:
+    """The draft with the guest's own words about their health on the note of
+    the whole order or of the table, behind what the model wrote there, cut
+    to the field: the model sent it again without them. Words, never a
+    reading of them (Maxi, 15.11.2026). One that would not fit next to the
+    model's note takes the field alone: the health part is the one to keep.
+    None when the cut would drop the health words themselves ("..., ich habe
+    eine Erdnussallergie" at the end of a long sentence, Codex PR #788, P1):
+    the team takes the call instead (rule 5)."""
+    added = NOTED_FOR_THE_GUEST.format(said=_said(state))
+    limit = NOTE_MAX_FOR[call.name]
+    before = call.args.get("note")
+    note = (
+        f"{before.strip()}. {added}"
+        if isinstance(before, str) and before.strip()
+        else added
+    )
+    if len(note) > limit:
+        note = added[:limit].rstrip()
+        kept = note.removeprefix(NOTED_FOR_THE_GUEST.format(said=""))
+        if not speaks_of_health(kept):
+            return None
+    return ToolCall(call.name, {**call.args, "note": note})
+
+
+def _said(state: ConversationState) -> str:
+    # Without the closing full stop: a read-back puts its own behind a note.
+    return " ".join(sentence.strip() for sentence in state.allergy_said).rstrip(" .")
+
+
+def claims_in_a_note(state: ConversationState, call: ToolCall) -> ToolResult | None:
+    """A note of a draft that promises a dish free of an allergen ("nussfrei",
+    "keine Spuren"): read back, the guest would hear what no database value
+    answers (L17), so it goes back. The same reading as the model's sentence
+    (`allergen_claim`); an additive has its own way (`notes_an_additive`)."""
+    if any(allergen_claim(state, note) is ALLERGEN_CLAIM for note in _notes(call)):
+        return NOTE_CLAIM
+    return None
 
 
 def unheard_readback(state: ConversationState) -> str | None:

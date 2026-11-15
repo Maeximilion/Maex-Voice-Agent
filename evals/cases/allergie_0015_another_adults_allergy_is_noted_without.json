@@ -1,6 +1,6 @@
 {
   "id": "allergie_0015",
-  "name": "Another adult's allergy is noted without its reason and never asked about",
+  "name": "Another adult's allergy is noted like the caller's, never asked about",
   "tags": [
     "allergie",
     "allergie_einwilligung",
@@ -41,7 +41,7 @@
       {
         "number": "13",
         "quantity": 1,
-        "note": "ohne Erdnuss"
+        "note": "WICHTIG !!! Allergie: Erdnuss"
       }
     ],
     "customer_name": "Mueller",

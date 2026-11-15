@@ -13,7 +13,7 @@ as of now; the total is rebuilt from the positions that are in the database
 afterwards. A mandatory choice is chosen, never filled with the default
 (rule 2).
 
-A note on a position ("WICHTIG: Keine Erdnuesse. Grund: Allergie", E14) is
+A note on a position ("WICHTIG !!! Allergie: Erdnuesse", E14) is
 never lost silently: a position with a note is only dropped with an explicit
 `drop_note`. "Falsches Gericht" is corrected by the team with a swap, then the
 note stays on the position.

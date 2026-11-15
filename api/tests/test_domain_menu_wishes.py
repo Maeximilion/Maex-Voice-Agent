@@ -259,7 +259,7 @@ def test_search_keeps_the_removal_before_the_allergy(session, tenant_id):
     assert [h.number for h in result.results] == ["13"]
     assert (result.wish.kind, result.wish.text) == (
         "allergy",
-        "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
+        "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln",
     )
     assert "frei davon" in result.say
 
@@ -385,10 +385,10 @@ def test_kein_vorsilben_treffer():
 @pytest.mark.parametrize(
     ("gesagt", "hinweis"),
     [
-        ("ich habe eine Erdnussallergie", "WICHTIG: Keine Erdnuss. Grund: Allergie"),
-        ("ich bin allergisch gegen Sesam", "WICHTIG: Keine Sesam. Grund: Allergie"),
-        ("ich vertrage keine Erdnüsse", "WICHTIG: Keine Erdnüsse. Grund: Allergie"),
-        ("Allergie gegen Sellerie", "WICHTIG: Keine Sellerie. Grund: Allergie"),
+        ("ich habe eine Erdnussallergie", "WICHTIG !!! Allergie: Erdnuss"),
+        ("ich bin allergisch gegen Sesam", "WICHTIG !!! Allergie: Sesam"),
+        ("ich vertrage keine Erdnüsse", "WICHTIG !!! Allergie: Erdnüsse"),
+        ("Allergie gegen Sellerie", "WICHTIG !!! Allergie: Sellerie"),
     ],
 )
 def test_allergie_als_kuechenhinweis_im_festen_wortlaut(gesagt, hinweis):
@@ -407,15 +407,17 @@ def test_vertraegt_keine_ist_eine_allergie_kein_weglassen():
     )
 
 
-def test_allergie_ohne_zutat_wird_nachgefragt(session, tenant_id):
+def test_an_allergy_without_its_ingredient_is_the_models_to_ask(session, tenant_id):
+    """Maxi, 15.11.2026: the core asks no "Wogegen?"; the dish is found."""
     result = suche(session, tenant_id, "Pho Bo, ich habe eine Allergie")
-    assert result.wish.kind == "allergy"
-    assert "Wogegen" in result.say
+    assert [hit.name for hit in result.results] == ["Pho Bo"]
+    assert (result.wish.kind, result.wish.ingredient) == ("allergy", None)
+    assert "Wogegen" not in (result.say or "")
 
 
 def test_allergie_in_der_suche_im_festen_wortlaut(session, tenant_id):
     result = suche(session, tenant_id, "Pho Bo, ich habe eine Erdnussallergie")
-    assert result.wish.text == "WICHTIG: Keine Erdnuss. Grund: Allergie"
+    assert result.wish.text == "WICHTIG !!! Allergie: Erdnuss"
 
 
 # --- Codex PR #139 -----------------------------------------------------------------
@@ -497,10 +499,10 @@ def test_menge_am_ende_bleibt_nicht_im_hinweis():
         # (5) Die Zutat endet am Satzteil.
         (
             "ich bin allergisch gegen Sesam und dann noch eine Cola",
-            "WICHTIG: Keine Sesam. Grund: Allergie",
+            "WICHTIG !!! Allergie: Sesam",
         ),
         # (6) Andere Wortstellung.
-        ("ich bin gegen Nüsse allergisch", "WICHTIG: Keine Nüsse. Grund: Allergie"),
+        ("ich bin gegen Nüsse allergisch", "WICHTIG !!! Allergie: Nüsse"),
     ],
 )
 def test_zutat_der_allergie(gesagt, hinweis):
@@ -577,15 +579,15 @@ def test_optionsname_mit_bindestrich():
     [
         (
             "ich bin allergisch gegen Erdnüsse und Sesam",
-            "WICHTIG: Keine Erdnüsse und Sesam. Grund: Allergie",
+            "WICHTIG !!! Allergie: Erdnüsse und Sesam",
         ),
         (
             "ich vertrage keine Erdnüsse, Sesam und Soja",
-            "WICHTIG: Keine Erdnüsse, Sesam und Soja. Grund: Allergie",
+            "WICHTIG !!! Allergie: Erdnüsse, Sesam und Soja",
         ),
         (
             "allergisch gegen Sesam und dann noch eine Cola",
-            "WICHTIG: Keine Sesam. Grund: Allergie",
+            "WICHTIG !!! Allergie: Sesam",
         ),
     ],
 )
@@ -691,17 +693,17 @@ def test_extra_zutat_aus_dem_namen_ist_wunsch(session, tenant_id):
     [
         (
             "ich habe eine Nuss- und Sesamallergie",
-            "WICHTIG: Keine Nuss und Sesam. Grund: Allergie",
+            "WICHTIG !!! Allergie: Nuss und Sesam",
         ),
         (
             "ich habe eine Milchallergie und eine Nussallergie",
-            "WICHTIG: Keine Milch und Nuss. Grund: Allergie",
+            "WICHTIG !!! Allergie: Milch und Nuss",
         ),
         (
             "Erdnussallergie und allergisch gegen Sesam",
-            "WICHTIG: Keine Erdnuss und Sesam. Grund: Allergie",
+            "WICHTIG !!! Allergie: Erdnuss und Sesam",
         ),
-        ("ich habe eine Erdnuss-Allergie", "WICHTIG: Keine Erdnuss. Grund: Allergie"),
+        ("ich habe eine Erdnuss-Allergie", "WICHTIG !!! Allergie: Erdnuss"),
     ],
 )
 def test_jede_allergie_im_zusammengesetzten_namen(gesagt, hinweis):
@@ -713,16 +715,16 @@ def test_jede_allergie_im_zusammengesetzten_namen(gesagt, hinweis):
 @pytest.mark.parametrize(
     ("gesagt", "hinweis"),
     [
-        ("mit Laktoseintoleranz", "WICHTIG: Keine Laktose. Grund: Allergie"),
+        ("mit Laktoseintoleranz", "WICHTIG !!! Allergie: Laktose"),
         (
             "ich habe eine Glutenunverträglichkeit",
-            "WICHTIG: Keine Gluten. Grund: Allergie",
+            "WICHTIG !!! Allergie: Gluten",
         ),
         (
             "Laktose- und Glutenintoleranz",
-            "WICHTIG: Keine Laktose und Gluten. Grund: Allergie",
+            "WICHTIG !!! Allergie: Laktose und Gluten",
         ),
-        ("ich bin intolerant gegen Laktose", "WICHTIG: Keine Laktose. Grund: Allergie"),
+        ("ich bin intolerant gegen Laktose", "WICHTIG !!! Allergie: Laktose"),
     ],
 )
 def test_intoleranz_ist_allergie(gesagt, hinweis):
@@ -735,7 +737,7 @@ def test_intoleranz_ist_allergie(gesagt, hinweis):
 def test_intoleranz_in_der_suche(session, tenant_id):
     result = suche(session, tenant_id, "die 23 mit Laktoseintoleranz")
     assert [h.number for h in result.results] == ["23"]
-    assert result.wish.text == "WICHTIG: Keine Laktose. Grund: Allergie"
+    assert result.wish.text == "WICHTIG !!! Allergie: Laktose"
 
 
 @pytest.mark.parametrize(
@@ -845,56 +847,56 @@ def test_allgemeine_allergie_fragt_nach(gesagt):
     [
         (
             "ohne Zwiebeln, ich habe eine Erdnussallergie",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln",
             "Erdnuss",
         ),
         (
             "ohne Zwiebeln ich habe eine Erdnussallergie",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln",
             "Erdnuss",
         ),
         (
             "ohne Zwiebeln und ich bin allergisch gegen Sesam",
-            "WICHTIG: Keine Sesam. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Sesam. Ohne Zwiebeln",
             "Sesam",
         ),
         (
             "keine Zwiebeln, ich vertrage keine Erdnüsse",
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Keine Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnüsse. Keine Zwiebeln",
             "Erdnüsse",
         ),
         (
             "ohne Zwiebeln, weil ich eine Erdnussallergie habe",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln",
             "Erdnuss",
         ),
         # Without a comma or "ich" the phrase still begins at its own words
         # (own review): none of them goes into the removal.
         (
             "ohne Zwiebeln hab eine Erdnussallergie",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln",
             "Erdnuss",
         ),
         (
             "ohne Zwiebeln und eine Erdnussallergie",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln",
             "Erdnuss",
         ),
         (
             "ohne Zwiebeln bin allergisch gegen Nüsse",
-            "WICHTIG: Keine Nüsse. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Nüsse. Ohne Zwiebeln",
             "Nüsse",
         ),
         (
             "ohne Zwiebeln gegen Nüsse allergisch",
-            "WICHTIG: Keine Nüsse. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Nüsse. Ohne Zwiebeln",
             "Nüsse",
         ),
         # The removal that comes with an addition stays too; the addition
         # itself is not taken next to an allergy (docs/01_STATUS.md, open point).
         (
             "ohne Zwiebeln, dafür mit Nudeln, ich habe eine Erdnussallergie",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln",
             "Erdnuss",
         ),
     ],
@@ -928,13 +930,13 @@ def test_removal_before_an_allergy_without_ingredient_waits_in_note():
 @pytest.mark.parametrize(
     ("removal", "allergy", "note"),
     [
-        ("ohne Zwiebeln", "WICHTIG: Keine Erdnuss. Grund: Allergie", None),
-        (None, "WICHTIG: Keine Erdnuss. Grund: Allergie", None),
+        ("ohne Zwiebeln", "WICHTIG !!! Allergie: Erdnuss", None),
+        (None, "WICHTIG !!! Allergie: Erdnuss", None),
         # Too long for an order line: the allergy stays, the removal goes.
         (
             "ohne " + "Zwiebeln, " * 20 + "Koriander",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie",
+            "WICHTIG !!! Allergie: Erdnuss",
+            "WICHTIG !!! Allergie: Erdnuss",
         ),
     ],
 )
@@ -1175,7 +1177,7 @@ def test_denial_next_to_an_addition_waits_for_the_dish():
 
 def test_removal_without_a_tab():
     wish = wish_of("ohne Zwiebeln\tich habe eine Erdnussallergie", [])
-    assert wish.text == "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln"
+    assert wish.text == "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln"
 
 
 @pytest.mark.parametrize(
@@ -1183,17 +1185,17 @@ def test_removal_without_a_tab():
     [
         (
             "ich bin allergisch gegen Erdnüsse, aber ohne Zwiebeln",
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln",
             None,
         ),
         (
             "ich habe eine Erdnussallergie, ohne Zwiebeln bitte",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln",
             None,
         ),
         (
             "ohne Koriander, ich habe eine Erdnussallergie, ohne Zwiebeln",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Koriander, ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss. Ohne Koriander, ohne Zwiebeln",
             None,
         ),
         (
@@ -1204,39 +1206,39 @@ def test_removal_without_a_tab():
         # Codex PR #330, round 8: "aber keine".
         (
             "ich habe eine Erdnussallergie, aber keine Zwiebeln",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Keine Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss. Keine Zwiebeln",
             None,
         ),
         # Between two allergies, and up to a new dish (own review).
         (
             "ich habe eine Erdnussallergie, ohne Zwiebeln, und eine Sesamallergie",
-            "WICHTIG: Keine Erdnuss und Sesam. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss und Sesam. Ohne Zwiebeln",
             None,
         ),
         # Codex PR #330, round 3: before every later allergy.
         (
             "ich habe eine Erdnussallergie, aber ohne Zwiebeln sowie eine Sesamallergie",
-            "WICHTIG: Keine Erdnuss und Sesam. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss und Sesam. Ohne Zwiebeln",
             None,
         ),
         (
             "ich habe eine Erdnussallergie, ohne Zwiebeln oder gegen Sesam bin ich auch allergisch",
-            "WICHTIG: Keine Erdnuss und Sesam. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss und Sesam. Ohne Zwiebeln",
             None,
         ),
         (
             "ich habe eine Erdnussallergie, ohne Zwiebeln. Ich habe auch eine Sesamallergie",
-            "WICHTIG: Keine Erdnuss und Sesam. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss und Sesam. Ohne Zwiebeln",
             None,
         ),
         (
             "ich habe eine Erdnussallergie, ohne Zwiebeln, und die Sommerrollen",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln",
             None,
         ),
         (
             "ich habe eine Allergie gegen Erdnüsse, also ohne Erdnusssauce",
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Erdnusssauce",
+            "WICHTIG !!! Allergie: Erdnüsse. Ohne Erdnusssauce",
             None,
         ),
     ],
@@ -1353,7 +1355,7 @@ def test_denies_allergy(said, denied):
     [
         (
             "ohne Zwiebeln für uns ich habe eine Erdnussallergie",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln für uns",
+            "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln für uns",
         ),
     ],
 )
@@ -1365,9 +1367,7 @@ def test_auf_in_a_removal_stays_with_it():
     """Own review: the "auf" of "ohne Zwiebeln auf Reis" was moved into the
     allergy clause."""
     wish = wish_of("ohne Zwiebeln auf Reis ich habe eine Erdnussallergie", [])
-    assert (
-        wish.text == "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln auf Reis"
-    )
+    assert wish.text == "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln auf Reis"
 
 
 def test_gegen_of_the_dish_name_is_no_allergy_phrase():
@@ -1382,16 +1382,16 @@ def test_gegen_of_the_dish_name_is_no_allergy_phrase():
     [
         (
             "mit Soße auf dem Reis ohne Zwiebeln bin allergisch gegen Erdnüsse",
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln",
         ),
         # Round 6: the verb at the end of the clause is no ingredient.
         (
             "ohne Zwiebeln, weil ich allergisch gegen Erdnüsse bin",
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Ohne Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln",
         ),
         (
             "ohne Zwiebeln für meine Frau und ich habe eine Erdnussallergie",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Ohne Zwiebeln für meine Frau",
+            "WICHTIG !!! Allergie: Erdnuss. Ohne Zwiebeln für meine Frau",
         ),
     ],
 )
@@ -1739,12 +1739,12 @@ def test_what_goes_on_with_the_call_reads_as_on_main(said, ingredient):
         # Issue #331 (Codex PR #330): "aber bitte keine".
         (
             "ich bin allergisch gegen Erdnüsse, aber bitte keine Zwiebeln",
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Keine Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnüsse. Keine Zwiebeln",
             None,
         ),
         (
             "ich habe eine Erdnussallergie, aber auch keine Zwiebeln",
-            "WICHTIG: Keine Erdnuss. Grund: Allergie. Keine Zwiebeln",
+            "WICHTIG !!! Allergie: Erdnuss. Keine Zwiebeln",
             None,
         ),
         (
@@ -1755,7 +1755,7 @@ def test_what_goes_on_with_the_call_reads_as_on_main(said, ingredient):
         # Before, the list ended at "bitte" and the request was lost.
         (
             "ich vertrage keine Erdnüsse und bitte keine Mandeln",
-            "WICHTIG: Keine Erdnüsse. Grund: Allergie. Keine Mandeln",
+            "WICHTIG !!! Allergie: Erdnüsse. Keine Mandeln",
             None,
         ),
     ],
@@ -2068,29 +2068,18 @@ def test_search_asks_about_a_counted_addition(session, tenant_id, said):
 
 
 @pytest.mark.parametrize(
-    ("said", "ingredient", "another_adult"),
+    ("said", "ingredient"),
     [
-        ("Ich habe keine Allergie, nur meine Frau gegen Sesam", "Sesam", True),
-        (
-            "Ich habe keine Allergie, aber meine Frau hat eine Sesamallergie",
-            "Sesam",
-            True,
-        ),
-        ("Ich habe keine Allergie, mein Mann aber gegen Erdnuss", "Erdnuss", True),
-        ("Ich habe keine Allergie, nur meine Tochter gegen Nüsse", "Nüsse", None),
+        ("Ich habe keine Allergie, nur meine Frau gegen Sesam", "Sesam"),
+        ("Ich habe keine Allergie, aber meine Frau hat eine Sesamallergie", "Sesam"),
+        ("Ich habe keine Allergie, mein Mann aber gegen Erdnuss", "Erdnuss"),
+        ("Ich habe keine Allergie, nur meine Tochter gegen Nüsse", "Nüsse"),
     ],
 )
-def test_an_allergy_behind_the_callers_denial_has_its_owner(
-    said, ingredient, another_adult
-):
-    """#719: the allergy of the person named behind the denial is read, with
-    that person as its owner."""
+def test_an_allergy_behind_the_callers_denial_is_read(said, ingredient):
+    """#719: the allergy of the person named behind the denial is read."""
     wish = wish_of(said, [])
-    assert (wish.kind, wish.ingredient, wish.another_adult) == (
-        "allergy",
-        ingredient,
-        another_adult,
-    )
+    assert (wish.kind, wish.ingredient) == ("allergy", ingredient)
 
 
 @pytest.mark.parametrize(
@@ -2132,7 +2121,7 @@ def test_a_doubtful_clause_behind_a_denial_gives_no_ingredient(said):
 def test_a_removal_beside_the_other_adults_allergy_stays(said):
     """Codex PR #735: the removal was dropped by the new reading."""
     wish = wish_of(said, [])
-    assert (wish.ingredient, wish.another_adult) == ("Sesam", True)
+    assert wish.ingredient == "Sesam"
     assert removal_with(wish) == "ohne Zwiebeln"
 
 

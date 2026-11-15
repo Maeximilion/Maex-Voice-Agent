@@ -34,7 +34,6 @@ from api.domain.menu import get_item_details, search_menu
 from api.domain.menu.items import card_format
 from api.domain.menu.search import (
     CLEAR_MATCHES,
-    allergy_question,
     position_parts,
     say_understood,
 )
@@ -312,9 +311,6 @@ def _search_menu(
     # about the allergy belong in the answer's sentence, otherwise they would
     # be lost in a list (Codex PR #139, P1).
     notices: list[str] = []
-    # Dishes for which "Wogegen?" is open: the first one is asked about, the
-    # others follow one by one (Codex PR #139, P1).
-    allergies: list[str] = []
     for part in parts:
         try:
             found = search_menu(
@@ -331,17 +327,10 @@ def _search_menu(
         # of the wishes, or "heute aus" would appear twice (review PR #139).
         sold_out = bool(found.results) and found.results[0].sold_out
         # Ambiguous: the choice comes first, asked in the part; the wish counts
-        # afterwards. Otherwise the choice would appear twice, or "Wogegen?"
-        # next to it (Codex and review PR #139).
+        # afterwards. Otherwise the choice would appear twice (Codex and
+        # review PR #139).
         settled = not sold_out and found.match_type in CLEAR_MATCHES
         if (
-            settled
-            and found.wish is not None
-            and found.wish.kind == "allergy"
-            and not found.wish.ingredient
-        ):
-            allergies.append(found.results[0].name)
-        elif (
             settled
             and found.wish is not None
             and found.wish.kind in ("unknown", "allergy", "open")
@@ -359,11 +348,7 @@ def _search_menu(
         )
     return PositionsResult(
         positions=positions,
-        say=_join(
-            say_understood(understood, req.query),
-            *notices,
-            allergy_question(allergies),
-        ),
+        say=_join(say_understood(understood, req.query), *notices),
     )
 
 

@@ -1,9 +1,9 @@
 {
-  "id": "allergie_0014",
-  "name": "An unclear answer to the question for the allergy is no consent",
+  "id": "allergie_0027",
+  "name": "Another person's allergy behind the caller's denial reaches the order",
   "tags": [
     "allergie",
-    "allergie_einwilligung",
+    "allergie_hinweis",
     "level-2"
   ],
   "source": "handcrafted",
@@ -14,7 +14,7 @@
     },
     {
       "role": "customer",
-      "text": "Die 13, ich habe eine Erdnussallergie."
+      "text": "Die 13 bitte. Ich habe keine Allergie, aber meine Frau gegen Sesam."
     },
     {
       "role": "customer",
@@ -30,10 +30,6 @@
     },
     {
       "role": "customer",
-      "text": "Was meinen Sie damit?"
-    },
-    {
-      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -45,12 +41,9 @@
       {
         "number": "13",
         "quantity": 1,
-        "note": "ohne Erdnuss"
+        "note": "WICHTIG !!! Allergie: Sesam"
       }
     ],
-    "customer_name": "Mueller",
-    "consent": [
-      "unclear"
-    ]
+    "consent": []
   }
 }

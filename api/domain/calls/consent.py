@@ -1,8 +1,9 @@
 """The consent log (legal check L13): one row per answer to a consent question.
 
 The conversation core asks, judges the answer and decides what the answer
-allows (`api/agent/loop.py`); this records it, so that a stored allergy note
-can be traced to the "ja" it rests on.
+allows (`api/agent/recording.py`); this records it, so that a recording can
+be traced to the "ja" it rests on. Since 15.11.2026 an allergy needs no
+question (Maxi, L13); older rows of that question stay.
 """
 
 import uuid

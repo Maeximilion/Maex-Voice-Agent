@@ -368,7 +368,7 @@ def test_reservation_loses_name_phone_and_note_90_days_after_its_date(
 
 # --- a caller's allergy: the night after the order or reservation ------------------
 
-ALLERGY = "WICHTIG: Keine Erdnuesse. Grund: Allergie"
+ALLERGY = "WICHTIG !!! Kunde ist allergisch auf Erdnüsse"
 YESTERDAY_EVENING = datetime(2026, 10, 14, 20, 0, tzinfo=BERLIN).astimezone(UTC)
 
 
@@ -413,7 +413,22 @@ def test_allergy_note_stays_until_05_00_of_the_next_morning(session, tenant_id):
 
 @pytest.mark.parametrize(
     "note",
-    ["Unverträglichkeit Laktose", "LAKTOSEINTOLERANZ", "allergisch gegen Sesam"],
+    [
+        "Unverträglichkeit Laktose",
+        "LAKTOSEINTOLERANZ",
+        "allergisch gegen Sesam",
+        # The model's notes since 15.11.2026: every health note starts so.
+        "WICHTIG !!! Kunde ist allergisch auf Nüsse",
+        "WICHTIG !!! Zöliakie, glutenfrei",
+        "wichtig!!! Allergie (Ehefrau): Sesam",
+        "WICHTIG !!! Gast sagte: Ich darf keine Nüsse essen.",
+        # A health note the model wrote without the prefix (Codex PR #788).
+        "Zöliakie",
+        "Coeliakie",
+        "verträgt keine Milch",
+        "reagiert auf Sellerie",
+        "darf kein Gluten",
+    ],
 )
 def test_other_words_for_an_allergy_count_as_well(session, tenant_id, note):
     order = _order(session, tenant_id, YESTERDAY_EVENING, note=note)
@@ -1132,3 +1147,13 @@ def test_a_file_with_a_row_is_left_to_its_row(session, tenant_id, folder):
 
     assert purge(session, NOW)["recordings"] == 0
     assert (folder / row.file_name).exists()
+
+
+@pytest.mark.parametrize("note", ["ohne Zwiebeln", "Wichtig: bitte klingeln"])
+def test_a_note_without_health_stays(session, tenant_id, note):
+    order = _order(session, tenant_id, YESTERDAY_EVENING, note=note)
+    session.commit()
+
+    purge(session, NOW)
+
+    assert _fresh(session, order).note == note

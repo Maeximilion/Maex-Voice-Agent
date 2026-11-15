@@ -10,7 +10,6 @@ import pytest
 
 from api.agent import consent, escalation
 from api.agent.consent import (
-    bare_answer,
     bare_recording_answer,
     consent_answer,
     is_yes,
@@ -44,7 +43,6 @@ def test_a_yes_with_an_address_is_a_yes(said, form):
     text = said.format(form)
     assert is_yes(text)
     assert consent_answer(text) == "yes"
-    assert bare_answer(text)
     assert recording_answer(text) == "yes"
     assert bare_recording_answer(text)
 
@@ -55,7 +53,6 @@ def test_a_no_with_an_address_is_a_no(said, form):
     text = said.format(form)
     assert not is_yes(text)
     assert consent_answer(text) == "no"
-    assert bare_answer(text)
     assert recording_answer(text) == "no"
     assert bare_recording_answer(text)
 
@@ -83,7 +80,6 @@ def test_other_spellings_of_the_form_are_cut_too(text):
 def test_the_cut_makes_no_yes_out_of_more_than_a_yes(text):
     assert not is_yes(text)
     assert consent_answer(text) != "yes"
-    assert not bare_answer(text)
     assert recording_answer(text) != "yes"
 
 

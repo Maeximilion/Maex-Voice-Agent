@@ -17,7 +17,12 @@ from typing import Literal
 
 from api.agent.consent import asks
 from api.domain.menu.pos_convert import names_an_allergen
-from api.domain.menu.wishes import denies_allergy, mentions_allergy, only_denies
+from api.domain.menu.wishes import (
+    denies_allergy,
+    mentions_allergy,
+    only_denies,
+    speaks_of_health,
+)
 
 EscalationReason = Literal["complaint", "human_requested", "cancellation"]
 
@@ -176,17 +181,53 @@ def is_question(text: str) -> bool:
     return "?" in text or asks(text.lower())
 
 
+def arms_the_net(text: str) -> bool:
+    """Does the guest speak of their health, or someone's at the table, in
+    words a draft must then carry (`guards.unnoted_allergy`)? Generous on
+    purpose (Maxi, 15.11.2026): any allergy or health word in the whole text
+    ("Ich habe Zöliakie", "darf keine Nüsse", "Keine Allergie, mein Mann gegen
+    Sesam"), unless it is a bare denial. A false arm ("Haben Sie Gerichte für
+    Allergiker?") costs one hop and a note."""
+    return speaks_of_health(text) and not bare_denial(text, asked=False)
+
+
+# What a bare "no" to a question about an allergy says ("Nein.", "Keine.",
+# "Gegen nichts.").
+_BARE_NO = frozenset(
+    {"nein", "nee", "ne", "keine", "keins", "keiner", "nichts", "gegen", "danke"}
+)
+_WORDS = re.compile(r"\w+")
+
+
+def bare_denial(text: str, *, asked: bool) -> bool:
+    """A short sentence that only denies an allergy: "Ich habe keine
+    Allergie", "Nein, keine Allergie", at most five words. "Nein" or "Keine"
+    alone only as the answer to a question about one (`asked`): after "Darf es
+    noch etwas sein?" it takes nothing back."""
+    words = _WORDS.findall(text.lower())
+    if not words or len(words) > 5:
+        return False
+    if mentions_allergy(text):
+        return denies_allergy(text) or only_denies(text)
+    return asked and set(words) <= _BARE_NO
+
+
+def _not_denied(text: str) -> list[str]:
+    """The sentences of `text` that do not only deny an allergy."""
+    return [
+        sentence
+        for sentence in SENTENCE.split(text)
+        if not (denies_allergy(sentence) or only_denies(sentence))
+    ]
+
+
 def asks_about_allergies(text: str) -> bool:
     """Does a guest with an allergy ask about one? A question that speaks of
     allergies or names an allergen, next to an allergy that is not denied:
     "Ist da Sellerie drin? Ich habe eine Allergie.", never "Haben Sie Pizza?
     Ich habe keine Allergie." or "Sind Sie ein Roboter? Die 99, ich habe eine
     Nussallergie."."""
-    said = [
-        sentence
-        for sentence in SENTENCE.split(text)
-        if not (denies_allergy(sentence) or only_denies(sentence))
-    ]
+    said = _not_denied(text)
     return any(speaks_of_allergies(sentence) for sentence in said) and any(
         is_question(sentence)
         and (speaks_of_allergies(sentence) or names_an_allergen(sentence))

@@ -164,7 +164,7 @@ class Settings(BaseSettings):
     retention_recording_days: int = Field(default=30, ge=1, le=MAX_RETENTION_DAYS)
     # An answer to a consent question goes at the end of this many calendar
     # years after the year it was given (Maxi, 26.10.2026): the proof of a
-    # stored allergy note for as long as a claim can arise (§§ 195, 199 BGB).
+    # consent for as long as a claim can arise (§§ 195, 199 BGB).
     retention_consent_log_years: int = Field(default=3, ge=1, le=10)
     # The request log of data subjects (U2, accepted 02.11.2026): the details
     # go this many months after the answer, the thin row at the end of this

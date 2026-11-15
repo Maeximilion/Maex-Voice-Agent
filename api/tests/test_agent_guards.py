@@ -1144,9 +1144,9 @@ def test_a_promise_to_the_guest_that_they_are_safe_is_a_claim(say):
 @pytest.mark.parametrize(
     "note", ["Zöliakie, ohne Gluten", "reagiert auf Sellerie", "darf keine Nüsse"]
 )
-def test_a_note_with_health_words_is_refused_like_an_allergy(note):
-    """The card's stricter health words count on a note too (#656, P2): what
-    a note stores is read back and copied onto a card without L13's question."""
+def test_a_note_with_health_words_goes_through(note):
+    """Maxi, 15.11.2026: the model writes the guest's health remark as a note;
+    a card never carries it (`loop._order_lines`)."""
     state = new_state()
     state.known_item_ids.add(PHO)
     call = ToolCall(
@@ -1156,5 +1156,4 @@ def test_a_note_with_health_words_is_refused_like_an_allergy(note):
             "items": [{"menu_item_id": PHO, "quantity": 1, "note": note}],
         },
     )
-    refused = refusal(state, begin_turn(state), "Die 13 bitte.", call)
-    assert refused is not None and "Allergie" in (refused.hint or "")
+    assert refusal(state, begin_turn(state), "Die 13 bitte.", call) is None

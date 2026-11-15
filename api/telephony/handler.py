@@ -526,16 +526,13 @@ class CallHandler:
         # against words they talked over (Codex PR #286).
         # So is the answer to "Sind Sie ein Mensch?": a yes to the offer in it
         # hands the call over (agent/loop.py, ultrareview of PR #372).
-        # The same for the question for the allergy as a kitchen note: its
-        # answer is consent only to a question heard to the end (L13; Codex
-        # PR #368). And for a remedy the core offers: a yes books it. And the
-        # way to stop a recording that has just started (L2).
+        # The same for a remedy the core offers: a yes books it. And the way
+        # to stop a recording that has just started (L2).
         counted_as_heard = (
             (before == "asked" and live.state.recording == "on")
             or live.state.asked_for_phone
             or live.state.known_item_ids != known
             or live.state.last_say == SAY_HUMAN_ANSWER
-            or live.state.held_call is not None
             or live.state.remedy_offer is not None
         )
         interruptible = (

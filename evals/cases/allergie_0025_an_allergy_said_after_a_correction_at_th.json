@@ -1,0 +1,57 @@
+{
+  "id": "allergie_0025",
+  "name": "An allergy said after a correction at the read-back reaches the order",
+  "tags": [
+    "allergie",
+    "allergie_hinweis",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Die 13 bitte."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, die 23."
+    },
+    {
+      "role": "customer",
+      "text": "Ich habe eine Erdnussallergie."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "items": [
+      {
+        "number": "23",
+        "quantity": 1
+      }
+    ],
+    "note": "WICHTIG !!! Ich habe eine Erdnussallergie",
+    "consent": []
+  }
+}

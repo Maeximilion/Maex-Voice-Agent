@@ -116,8 +116,9 @@ CONSENT_ANSWERS = ("yes", "no", "unclear")
 class ConsentLog(UUIDPrimaryKey, TenantScoped, Base):
     """One answer to a consent question of the agent (legal check L13): the
     call, when it was answered, the question word for word as it was asked
-    (its version), and the answer. Proof of the consent a stored allergy note
-    rests on; the allergy itself is not in it."""
+    (its version), and the answer: the recording (L2); until 15.11.2026 also
+    the allergy note, which needs no question since (Maxi). The allergy itself
+    is never in it."""
 
     __tablename__ = "consent_log"
     __table_args__ = (_in("answer", CONSENT_ANSWERS, "ck_consent_log_answer"),)

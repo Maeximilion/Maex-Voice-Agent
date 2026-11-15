@@ -1,9 +1,9 @@
 {
-  "id": "allergie_0013",
-  "name": "A no to the question for the allergy stores only the removal",
+  "id": "allergie_0026",
+  "name": "Coeliac disease reaches the order as a health note",
   "tags": [
     "allergie",
-    "allergie_einwilligung",
+    "allergie_hinweis",
     "level-2"
   ],
   "source": "handcrafted",
@@ -14,7 +14,7 @@
     },
     {
       "role": "customer",
-      "text": "Die 13, ich habe eine Erdnussallergie."
+      "text": "Die 13 bitte, ich habe Zöliakie."
     },
     {
       "role": "customer",
@@ -30,10 +30,6 @@
     },
     {
       "role": "customer",
-      "text": "Nein, danke."
-    },
-    {
-      "role": "customer",
       "text": "Ja, passt so."
     }
   ],
@@ -44,13 +40,10 @@
     "items": [
       {
         "number": "13",
-        "quantity": 1,
-        "note": "ohne Erdnuss"
+        "quantity": 1
       }
     ],
-    "customer_name": "Mueller",
-    "consent": [
-      "no"
-    ]
+    "note": "WICHTIG !!! Die 13 bitte, ich habe Zöliakie",
+    "consent": []
   }
 }
