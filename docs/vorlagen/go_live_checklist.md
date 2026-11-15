@@ -16,8 +16,8 @@
 ### 1.1 Stack and tenant
 
 - [ ] Stack created on the EU server: `python3 scripts/new_stack.py <customer.json> --domain <domain> --dry-run`, then without `--dry-run`, outside service hours (the shared Caddy is recreated, docs/13 §8 "What this means for the other issues"). Customer file shaped like `deploy/customer.example.json`, kept with the stack on the server, never in the repository.
-- [ ] Per-customer installer with a self-test: not built yet: #574 (`new_stack.py` above is the stack part, #573).
 - [ ] Inside the new stack's api container: `python -m api.jobs.provision check` lists what the tenant still lacks (menu, zones, print bridge). It must report nothing missing.
+- [ ] Self-test (#574, docs/13 §8): in the stack's folder `docker compose exec api python -m sim.selftest` (or `new_stack.py ... --selftest` on a rerun) ends with `connected`; it keeps no row and notifies nobody. Once, with the kitchen told: `--print-slip`, and the SELBSTTEST slip comes out of the printer.
 - [ ] Mode is `shadow` after provisioning (`provision create` writes it that way); confirm in the tablet header ("KI hört mit").
 - [ ] Team number: `TEAM_PHONE` in the stack's `.env` is E.164 and is the phone that rings at the team; extra numbers in `TRANSFER_TARGETS` (docs/13 §0a, `.env.example`).
 - [ ] Access: each tablet signed in with the setup link of the first login, restaurant password and team PIN set (docs/13 §0a, `docs/23_ACCESS_SECURITY.md`).

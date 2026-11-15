@@ -88,6 +88,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 | `confirm.py` | `draft → confirmed`, Idempotenz, `audit_log`, Outbox-Eintrag. Für Bestellung **und** Reservierung. |
 | `board.py` | the tablet's column "Neue Bestellungen": which order stands there, „Passt“, „Nochmal senden“, and the mark „In Kasse eingegeben“ with the orders nobody marked (T-11.6, L18) |
 | `ready_time.py` | zugesagte Zeit aus Wartezeit und Auslastung |
+| `selftest_slip.py` | the self-test's slip for the print bridge (#574): a kitchen event marked `self_test` with no order and no call behind it, queued only on `--print-slip`, its row removed once the bridge answered or never claimed it |
 
 ### `domain/reservations/`
 - `capacity.py` — freie Plätze je Fenster
@@ -259,6 +260,8 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `scripted_llm.py` — regelbasierter Modell-Ersatz bis T-2.4: erkennt Reservierung, Abholung und Lieferung aus `prompts/system_v3.md`, rät nie, meldet Unverstandenes an die Leiter
 - `scripted_order.py` — der Abholfluss des Modell-Ersatzes: Gerichte, Pflichtoptionen, Name, `draft_order`, vorlesen, `confirm`; what a card number is on the open allergy question it takes from the active menu (`MenuNumbers`, handed in by `session.py`), not from the import grammar
 - `noise.py` — verrauscht Eingaben absichtlich (Buchstabendreher, abgeschnittene Wörter), um die Leiter zu testen
+- `selftest.py` — the self-test of a stack (#574, docs/13 §8): `python -m sim.selftest [--print-slip]` checks health, database at head, configuration, menu, a simulated reservation and, when asked, the print path; "connected" or the first failing check, with its exit code. In `sim/`, not `jobs/`: it drives a call through the agent, and `jobs/` sits below `agent/`
+- `selftest_call.py` — the self-test's reservation call: the scripted model books a table for two through `confirm`, the tablet's day list, its event stream and the outbox must see it, all in one transaction that is rolled back, so no row is kept and the dispatcher never sees the event
 
 Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik → DB → Tablet zeigt die Bestellung. Everything is testable without a telephone.
 
