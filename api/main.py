@@ -62,7 +62,7 @@ mount_gui(app)
 
 
 @app.get("/health")
-def health() -> dict:
+def health() -> dict[str, str]:
     return {"status": "ok", "env": settings.env}
 
 

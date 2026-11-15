@@ -170,10 +170,14 @@ object as `spike.os` did. The speech spike's tests give the kit its own copy of
 `os`, so its root test patches the name by its string path instead. Behaviour
 stays the same.
 
+**Fifth step (15.11.2026): `api.kitchen`, `api.ops`, `api.services` and the
+top modules `api.config`, `api.db` and `api.main` are strict.** Five errors:
+`/health` returns `dict[str, str]`, and `api.config` names its four imports
+from `api.core.tokens` as `X as X`, so the ten modules and tests that import
+them from there keep doing so under `no_implicit_reexport`.
+
 Next steps, one reviewable change each (strict errors outside `api/tests` on
-14.11.2026): `api.kitchen`, `api.ops` and `api.services` (already clean) with
-the top modules `api.config`, `api.db` and `api.main` (the `api.config`
-re-exports), then `api.gui` (50), `printbridge` (3), `sim` (1), `db` (8),
+14.11.2026): `api.gui` (50), `printbridge` (3), `sim` (1), `db` (8),
 `evals` (28) and `scripts` (97). Count the rest again with `mypy --strict`
 before each step.
 

@@ -76,11 +76,17 @@ ignore_missing_imports = true
 # whole run. Packages join this list once they pass; each step is its own change.
 module = [
     "api.agent.*",
+    "api.config",
     "api.core.*",
     "api.dashboard.*",
+    "api.db",
     "api.domain.*",
     "api.events.*",
     "api.jobs.*",
+    "api.kitchen.*",
+    "api.main",
+    "api.ops.*",
+    "api.services.*",
     "api.models.*",
     "api.schemas.*",
     "api.telephony.*",
