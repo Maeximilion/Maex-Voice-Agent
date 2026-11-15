@@ -739,6 +739,11 @@ def test_a_call_of_one_tenant_never_hears_the_rule_of_another(
         "Ich bin unzufrieden, das Essen war kalt, ich hätte gern einen Tisch.",
         "Ich bin unzufrieden, das Essen war kalt, bitte einmal die 23.",
         "Ich bin unzufrieden, das Essen war kalt, ich will mein Geld zurück.",
+        # The order's own verb within four words of the complaint is no part
+        # of it: the dish stands between them (#744 follow-up).
+        "Ich möchte die 23, beschweren muss ich mich aber auch, die Pizza war kalt.",
+        "Ich nehme die 23, aber beschweren muss ich mich auch, die Pizza war kalt.",
+        "ich möchte eine margherita beschweren muss ich mich auch die pizza war kalt",
     ],
 )
 def test_a_sentence_with_more_in_it_goes_to_the_team(session, tenant_id, state, said):
@@ -761,6 +766,13 @@ def test_a_sentence_with_more_in_it_goes_to_the_team(session, tenant_id, state, 
         "Ich will mich über die Lieferung beschweren, das Essen war kalt.",
         "Ich möchte das reklamieren, das Essen war kalt.",
         "Ich hätte gerne eine Beschwerde, das Essen war kalt.",
+        # Filler, a person or a reason between the wish and the complaint
+        # keep it the complaint's own wish (#744 follow-up).
+        "Ich möchte mich bei Ihnen beschweren, das Essen war kalt.",
+        "Ich möchte mich wegen der Lieferung beschweren, das Essen war kalt.",
+        "Gerne würde ich mich beschweren, das Essen war kalt.",
+        "Ich möchte eine Reklamation machen, das Essen war kalt.",
+        "Wir möchten uns jetzt mal beschweren, das Essen war kalt.",
         # What already happened is no wish.
         "Die Lieferung war kalt, ich bin unzufrieden.",
         "Die Bestellung war gestern kalt, ich bin unzufrieden.",
@@ -774,6 +786,29 @@ def test_a_complaint_that_only_tells_what_happened_gets_the_offer(
     rule(session, tenant_id)
 
     assert loop(session).run_turn(state, said).say == [OFFER]
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich möchte die 23, außerdem beschwere ich mich, die Pizza war kalt.",
+        "Ich bestelle die 23, außerdem reklamiere ich die Pizza, die war kalt.",
+        "Ich hätte gern eine Cola, außerdem beschwere ich mich, die Pizza war kalt.",
+    ],
+)
+def test_an_order_in_front_of_the_models_complaint_handover_goes_to_the_team(
+    session, tenant_id, state, said
+):
+    """The model hands the sentence over as a complaint: the order's verb in
+    front of it must not be read as the complaint's wish, or the remedy ends
+    the call and the 23 is never ordered (#744 follow-up, P1)."""
+    rule(session, tenant_id)
+    call = ToolCall(name="transfer_to_team", args={"reason": "complaint"})
+
+    result = loop(session, [LLMTurn(tool_call=call)] * 3).run_turn(state, said)
+
+    assert result.say != [OFFER]
+    assert_went_to_the_team(result, session, state)
 
 
 def test_a_wish_only_the_model_saw_keeps_its_handover(session, tenant_id, state):

@@ -292,6 +292,38 @@ def test_a_modal_wish_in_the_complaint_gap_keeps_the_order_for_the_team(said):
     assert not only_a_complaint(said)
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich möchte die 23, beschweren muss ich mich aber auch, die Pizza war kalt.",
+        "Ich nehme die 23, aber beschweren muss ich mich auch, die Pizza war kalt.",
+        "Ich möchte die 23, außerdem beschwere ich mich, die Pizza war kalt.",
+        "Ich bestelle die 23, außerdem reklamiere ich die Pizza, die war kalt.",
+        "Ich möchte den Salat, reklamieren muss ich auch, die Pizza war kalt.",
+        "Ich nehme zwei Suppen, ich beschwere mich aber auch, die Pizza war kalt.",
+    ],
+)
+def test_the_orders_own_wish_word_is_no_part_of_the_complaint(said):
+    """The order's verb with its dish within four words of "beschwer" or
+    "reklam" was cut away as the complaint's wish: the remedy ended the call
+    and the order was lost (#744 follow-up, P1)."""
+    from api.agent.escalation import only_a_complaint
+
+    assert not only_a_complaint(said)
+
+
+def test_a_reason_after_ueber_or_wegen_stays_part_of_the_complaint():
+    """What the guest complains about may stand in the gap: after "über" or
+    "wegen" it is the complaint's object, not a dish ordered."""
+    from api.agent.escalation import only_a_complaint
+
+    assert only_a_complaint("Ich möchte mich über die 23 beschweren, die war kalt.")
+    assert only_a_complaint("Ich möchte mich wegen der Lieferung beschweren.")
+    assert only_a_complaint("Ich möchte mich darüber beschweren, es war kalt.")
+    # Any other object in the gap is the safe side: the team reads it.
+    assert not only_a_complaint("Ich möchte die Pizza reklamieren, die war kalt.")
+
+
 def test_gern_and_bitte_stay_allowed_inside_the_complaint_phrase():
     from api.agent.escalation import only_a_complaint
 
