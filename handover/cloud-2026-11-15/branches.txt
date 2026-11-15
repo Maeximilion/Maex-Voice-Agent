@@ -2,7 +2,11 @@ a12080d44612b258a9978a2d371c195bfc01987c refs/heads/docs/575-golive-checklist
 6cd70843f7cac36d842bd5d2bad7aa66d4207492 refs/heads/docs/status-upkeep-2026-11-15
 315cb42b14ee9475ccb2e6a6074b9ab810dc08b9 refs/heads/feat/574-selftest
 3642e5b650cfdee26c566d3d51d7a14645adb57f refs/heads/feat/576-offboarding
+bfc75f84d0effa2246e1b50e70b4830bf309e455 refs/heads/fix/207-menu-regressions
+bb80bd1831e57b326e27e0c62dd9491c718880b5 refs/heads/fix/207-phone-trunk-zero
 8e6d1e14c2c4acc4e8f16f62cd2dd6cf84455441 refs/heads/fix/207-signin-repeat-address
 f4a278e27391a04b09827aab2320966e42fb4856 refs/heads/fix/764-allergen-guard
 7699a3613a69572e2962b09fd703313638a59251 refs/heads/fix/764-dialog-batch
-2bfeb96afa496a21e8c7929393545a65a2b20515 refs/heads/fix/764-outage-path
+04bd79242e0fe6de33924826114e19784d5f0b64 refs/heads/fix/764-outage-path
+e926358643f421ae0e254938e0aa74985d91d84d refs/heads/fix/764-staff-weekday
+3c6753eb32c32fc4a2da3454613a266e33e166aa refs/heads/research/637-watermark-feasibility

@@ -72,4 +72,803 @@ bringing up nodes...
 ........................................................................ [ 52%]
 ........................................................................ [ 53%]
 ........................................................................ [ 54%]
-..............................
+........................................................................ [ 54%]
+........................................................................ [ 55%]
+........................................................................ [ 56%]
+........................................................................ [ 57%]
+......................................................................F. [ 57%]
+........................................................................ [ 58%]
+........................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 61%]
+........................................................................ [ 62%]
+........................................................................ [ 63%]
+........................................................................ [ 64%]
+........................................................................ [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 66%]
+........................................................................ [ 67%]
+........................................................................ [ 67%]
+........................................................................ [ 68%]
+........................................................................ [ 69%]
+........................................................................ [ 70%]
+........................................................................ [ 70%]
+........................................................................ [ 71%]
+........................................................................ [ 72%]
+........................................................................ [ 73%]
+........................................................................ [ 74%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 76%]
+........................................................................ [ 77%]
+........................................................................ [ 77%]
+........................................................................ [ 78%]
+........................................................................ [ 79%]
+........................................................................ [ 80%]
+........................................................................ [ 80%]
+........................................................................ [ 81%]
+........................................................................ [ 82%]
+........................................................................ [ 83%]
+........................................................................ [ 83%]
+........................................................................ [ 84%]
+........................................................................ [ 85%]
+........................................................................ [ 86%]
+......................................F................................. [ 86%]
+........................................................................ [ 87%]
+........................................................................ [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 90%]
+........................................................................ [ 90%]
+........................................................................ [ 91%]
+........................................................................ [ 92%]
+........................................................................ [ 93%]
+........................................................................ [ 93%]
+........................................................................ [ 94%]
+........................................................................ [ 95%]
+........................................................................ [ 96%]
+......................................................................EE [ 96%]
+.EE..E.EE.....................E........E.E...E.......................... [ 97%]
+........................................................................ [ 98%]
+........................................................................ [ 99%]
+........................................................................ [ 99%]
+.....                                                                    [100%]
+==================================== ERRORS ====================================
+_________ ERROR collecting api/tests/test_telephony_speech_adapters.py _________
+ImportError while importing test module '/home/user/wt-fix-staff/api/tests/test_telephony_speech_adapters.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api/tests/test_telephony_speech_adapters.py:27: in <module>
+    from api.telephony.adapters.tts_piper import PiperMouth
+api/telephony/adapters/tts_piper.py:19: in <module>
+    import audioop
+E   ModuleNotFoundError: No module named 'audioop'
+__________ ERROR collecting api/tests/test_telephony_speech_bench.py ___________
+ImportError while importing test module '/home/user/wt-fix-staff/api/tests/test_telephony_speech_bench.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api/tests/test_telephony_speech_bench.py:13: in <module>
+    from api.telephony.speech_bench import (  # noqa: E402
+api/telephony/speech_bench.py:19: in <module>
+    import audioop  # standard library up to Python 3.12; the image pins that version
+    ^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'audioop'
+____ ERROR at setup of test_the_watchdog_runs_before_the_engines_first_runs ____
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3598536190>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_______ ERROR at setup of test_a_mouth_that_makes_no_audio_is_not_loaded _______
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f358b2db4d0>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_an_engine_that_hangs_while_it_loads_ends_the_process[True] _
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3585e70360>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_an_engine_that_hangs_while_it_loads_ends_the_process[False] _
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3585cc3c40>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_an_engine_that_hangs_while_it_loads_ends_the_process[detector] _
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3585cc3070>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_a_slow_run_of_the_ear_is_a_hang_only_past_its_devices_limit[cpu] _
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3585c283d0>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_a_slow_run_of_the_ear_is_a_hang_only_past_its_devices_limit[cuda] _
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f3585c28600>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_____ ERROR at setup of test_on_the_processor_the_ear_is_not_run_at_start ______
+[gw5] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f84c82b2f90>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+__ ERROR at setup of test_each_engine_has_run_once_before_the_service_answers __
+[gw0] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fba47044fa0>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_the_mouth_speaks_the_engines_own_voice_unless_one_is_set _
+[gw0] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fba37a6f540>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_an_engine_that_loads_but_cannot_run_keeps_the_service_down _
+[gw0] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fba35d49710>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+=================================== FAILURES ===================================
+____________________ test_two_starts_at_once_leave_one_call ____________________
+[gw2] linux -- Python 3.13.18 /usr/local/bin/python3
+
+client = <starlette.testclient.TestClient object at 0x7f5c62f897f0>
+db = <sqlalchemy.orm.session.Session object at 0x7f5c6a40a210>
+tenant_id = UUID('ae0f0115-b9b0-426d-b437-f48703db6efe')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7f5c6171d400>
+
+    def test_two_starts_at_once_leave_one_call(client, db, tenant_id, monkeypatch):
+        inside, release = threading.Event(), threading.Event()
+        real = dev.resolve_tenant
+    
+        def slow_resolve(session, name):
+            inside.set()
+            assert release.wait(5)
+            return real(session, name)
+    
+        monkeypatch.setattr(dev, "resolve_tenant", slow_resolve)
+        t1 = threading.Thread(target=lambda: client.post(f"{BASE}/call", headers=HX))
+        t2 = threading.Thread(target=lambda: client.post(f"{BASE}/call", headers=HX))
+        t1.start()
+>       assert inside.wait(5)
+E       assert False
+E        +  where False = wait(5)
+E        +    where wait = <threading.Event at 0x7f5c6a49eff0: unset>.wait
+
+api/tests/test_gui_dev_console.py:247: AssertionError
+__________ test_the_login_is_checked_the_way_the_application_connects __________
+[gw4] linux -- Python 3.13.18 /usr/local/bin/python3
+
+db = 'postgresql+psycopg://maex:maex@localhost:5432/maex_test_0f2adb4d'
+role = 'app_831c0513ff'
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-50/popen-gw4/test_the_login_is_checked_the_0')
+
+    def test_the_login_is_checked_the_way_the_application_connects(db, role, tmp_path):
+        """The test server speaks no TLS. A DATABASE_URL that demands it logs in the
+        owner's way and not its own, so the API could not connect (Codex, PR #281)."""
+        app = make_url(_as(role, db)).set(query={"sslmode": "require"})
+    
+        done = _script(
+            "db_role.sh",
+            app_url=app.render_as_string(hide_password=False),
+            owner_url=db,
+            tmp_path=tmp_path,
+        )
+    
+>       assert done.returncode == 1, done.stdout
+E       AssertionError: role app_831c0513ff on maex@localhost:5432/maex_test_0f2adb4d
+E         done: app_831c0513ff logs in, is no superuser, reads and writes 39 tables and cannot change the schema
+E         restart api and dispatcher if DATABASE_URL changed
+E         
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', 'scripts/db_role.sh'], returncode=0, stdout='role app_831c0513ff on maex@local...ds and writes 39 tables and cannot change the schema\nrestart api and dispatcher if DATABASE_URL changed\n', stderr='').returncode
+
+api/tests/test_scripts_db_role.py:410: AssertionError
+=============================== warnings summary ===============================
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+  /usr/local/lib/python3.13/site-packages/_pytest/python.py:144: PytestRemovedIn10Warning: Passing a non-Collection iterable to parametrize is deprecated.
+  Test: api/tests/test_migration_backup_notes.py::test_a_migration_that_deletes_data_names_its_backup, argvalues type: generator
+  Please convert to a list or tuple.
+  See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators
+    metafunc.parametrize(*marker.args, **marker.kwargs, _param_mark=marker)
+
+api/tests/test_gui_dev_console.py::test_failed_turn_ends_the_call_and_says_so
+  /usr/local/lib/python3.13/site-packages/_pytest/threadexception.py:54: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-30 (<lambda>)
+  
+  Traceback (most recent call last):
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1977, in _exec_single_context
+      self.dialect.do_execute(
+      ~~~~~~~~~~~~~~~~~~~~~~~^
+          cursor, str_statement, effective_parameters, context
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+      cursor.execute(statement, parameters)
+      ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/local/lib/python3.13/site-packages/psycopg/cursor.py", line 117, in execute
+      raise ex.with_traceback(None)
+  psycopg.errors.UndefinedTable: relation "tenants" does not exist
+  LINE 2: FROM tenants ORDER BY tenants.created_at
+               ^
+  
+  The above exception was the direct cause of the following exception:
+  
+  Traceback (most recent call last):
+    File "/usr/local/lib/python3.13/threading.py", line 1044, in _bootstrap_inner
+      self.run()
+      ~~~~~~~~^^
+    File "/usr/local/lib/python3.13/threading.py", line 995, in run
+      self._target(*self._args, **self._kwargs)
+      ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/home/user/wt-fix-staff/api/tests/test_gui_dev_console.py", line 244, in <lambda>
+      t1 = threading.Thread(target=lambda: client.post(f"{BASE}/call", headers=HX))
+                                           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/local/lib/python3.13/site-packages/httpx2/_client.py", line 1204, in post
+      return self.request(
+             ~~~~~~~~~~~~^
+          "POST",
+          ^^^^^^^
+      ...<11 lines>...
+          extensions=extensions,
+          ^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/usr/local/lib/python3.13/site-packages/starlette/testclient.py", line 463, in request
+      return super().request(
+             ~~~~~~~~~~~~~~~^
+          method,
+          ^^^^^^^
+      ...<11 lines>...
+          extensions=extensions,
+          ^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/usr/local/lib/python3.13/site-packages/httpx2/_client.py", line 797, in request
+      return self.send(request, auth=auth, follow_redirects=follow_redirects)
+             ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/local/lib/python3.13/site-packages/httpx2/_client.py", line 980, in send
+      response = self._send_handling_auth(
+          request,
+      ...<2 lines>...
+          history=[],
+      )
+    File "/usr/local/lib/python3.13/site-packages/httpx2/_client.py", line 1008, in _send_handling_auth
+      response = self._send_handling_redirects(
+          request,
+          follow_redirects=follow_redirects,
+          history=history,
+      )
+    File "/usr/local/lib/python3.13/site-packages/httpx2/_client.py", line 1043, in _send_handling_redirects
+      response = self._send_single_request(request)
+    File "/usr/local/lib/python3.13/site-packages/httpx2/_client.py", line 1076, in _send_single_request
+      response = transport.handle_request(request)
+    File "/usr/local/lib/python3.13/site-packages/starlette/testclient.py", line 360, in handle_request
+      raise exc
+    File "/usr/local/lib/python3.13/site-packages/starlette/testclient.py", line 357, in handle_request
+      portal.call(self.app, scope, receive, send)
+      ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/local/lib/python3.13/site-packages/anyio/from_thread.py", line 340, in call
+      return cast(T_Retval, self.start_task_soon(func, *args).result())
+                            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+    File "/usr/local/lib/python3.13/concurrent/futures/_base.py", line 460, in result
+      return self.__get_result()
+             ~~~~~~~~~~~~~~~~~^^
+    File "/usr/local/lib/python3.13/concurrent/futures/_base.py", line 402, in __get_result
+      raise self._exception
+    File "/usr/local/lib/python3.13/site-packages/anyio/from_thread.py", line 265, in _call_func
+      retval = await retval_or_awaitable
+               ^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/local/lib/python3.13/site-packages/fastapi/applications.py", line 1194, in __call__
+      await super().__call__(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/starlette/applications.py", line 96, in __call__
+      await self.middleware_stack(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/starlette/middleware/errors.py", line 186, in __call__
+      raise exc
+    File "/usr/local/lib/python3.13/site-packages/starlette/middleware/errors.py", line 164, in __call__
+      await self.app(scope, receive, _send)
+    File "/usr/local/lib/python3.13/site-packages/fastapi/telemetry/_asgi.py", line 151, in __call__
+      await self.app(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+      await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+      raise exc
+    File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+      await app(scope, receive, sender)
+    File "/usr/local/lib/python3.13/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+      await self.app(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/starlette/routing.py", line 676, in __call__
+      await self.middleware_stack(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 2811, in app
+      await route.handle(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 1839, in handle
+      await self.original_router.handle(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 2894, in handle
+      await included_router._handle_selected(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 1865, in _handle_selected
+      await original_route.handle(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 1328, in handle
+      await effective_context.app(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 166, in app
+      await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+    File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+      raise exc
+    File "/usr/local/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+      await app(scope, receive, sender)
+    File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 152, in app
+      response = await f(request)
+                 ^^^^^^^^^^^^^^^^
+    File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 745, in app
+      raw_response = await run_endpoint_function(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      ...<3 lines>...
+      )
+      ^
+    File "/usr/local/lib/python3.13/site-packages/fastapi/routing.py", line 374, in run_endpoint_function
+      return await run_in_threadpool(
+             ^^^^^^^^^^^^^^^^^^^^^^^^
+          _run_sync_endpoint, function=dependant.call, arguments=values
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/usr/local/lib/python3.13/site-packages/starlette/concurrency.py", line 34, in run_in_threadpool
+      return await anyio.to_thread.run_sync(func)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/local/lib/python3.13/site-packages/anyio/to_thread.py", line 65, in run_sync
+      return await get_async_backend().run_sync_in_worker_thread(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+          func, args, abandon_on_cancel=abandon_on_cancel, limiter=limiter
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/usr/local/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 2706, in run_sync_in_worker_thread
+      return await future
+             ^^^^^^^^^^^^
+    File "/usr/local/lib/python3.13/site-packages/anyio/_backends/_asyncio.py", line 1100, in run
+      result = context.run(func, *args)
+    File "/usr/local/lib/python3.13/site-packages/fastapi/telemetry/_api.py", line 244, in _run_sync_endpoint
+      return function(**arguments)
+    File "/home/user/wt-fix-staff/api/gui/dev.py", line 119, in start
+      tenant = resolve_tenant(session, None)
+    File "/home/user/wt-fix-staff/sim/session.py", line 58, in resolve_tenant
+      tenants = session.scalars(select(Tenant).order_by(Tenant.created_at)).all()
+                ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2676, in scalars
+      return self._execute_internal(
+             ~~~~~~~~~~~~~~~~~~~~~~^
+          statement,
+          ^^^^^^^^^^
+      ...<4 lines>...
+          **kw,
+          ^^^^^
+      ).scalars()
+      ^
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/orm/session.py", line 2445, in _execute_internal
+      compile_state_cls.orm_execute_statement(
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+          self,
+          ^^^^^
+      ...<4 lines>...
+          conn,
+          ^^^^^
+      )
+      ^
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/orm/context.py", line 322, in orm_execute_statement
+      result = conn.execute(
+          statement, params or {}, execution_options=execution_options
+      )
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1494, in execute
+      return meth(
+          self,
+          distilled_parameters,
+          execution_options or NO_OPTIONS,
+      )
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/sql/elements.py", line 534, in _execute_on_connection
+      return connection._execute_clauseelement(
+             ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+          self, distilled_params, execution_options
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1714, in _execute_clauseelement
+      ret = self._execute_context(
+          dialect,
+      ...<9 lines>...
+          param_dict=param_dict,
+      )
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1868, in _execute_context
+      return self._exec_single_context(
+             ~~~~~~~~~~~~~~~~~~~~~~~~~^
+          dialect, context, statement, parameters
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1996, in _exec_single_context
+      self._handle_dbapi_exception(
+      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+          e, str_statement, effective_parameters, cursor, context
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 2351, in _handle_dbapi_exception
+      raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/base.py", line 1977, in _exec_single_context
+      self.dialect.do_execute(
+      ~~~~~~~~~~~~~~~~~~~~~~~^
+          cursor, str_statement, effective_parameters, context
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      )
+      ^
+    File "/usr/local/lib/python3.13/site-packages/sqlalchemy/engine/default.py", line 1192, in do_execute
+      cursor.execute(statement, parameters)
+      ~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+    File "/usr/local/lib/python3.13/site-packages/psycopg/cursor.py", line 117, in execute
+      raise ex.with_traceback(None)
+  sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedTable) relation "tenants" does not exist
+  LINE 2: FROM tenants ORDER BY tenants.created_at
+               ^
+  [SQL: SELECT tenants.name, tenants.timezone, tenants.customer_key, tenants.id, tenants.created_at, tenants.updated_at 
+  FROM tenants ORDER BY tenants.created_at]
+  (Background on this error at: https://sqlalche.me/e/21/f405)
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED api/tests/test_gui_dev_console.py::test_two_starts_at_once_leave_one_call
+FAILED api/tests/test_scripts_db_role.py::test_the_login_is_checked_the_way_the_application_connects
+2 failed, 9424 passed, 2 skipped, 7 warnings, 13 errors in 1349.45s (0:22:29)

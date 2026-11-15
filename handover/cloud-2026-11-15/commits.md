@@ -10,6 +10,12 @@ a12080d4 docs(vorlagen): mark every go-live item as automatic, planned, by hand 
 ## feat/576-offboarding
 3642e5b6 feat(ops): export and remove a leaving customer's stack
 
+## fix/207-menu-regressions
+bfc75f84 wip(menu): restore the two regressions of #721 and #735 (#207 batch 2)
+
+## fix/207-phone-trunk-zero
+bb80bd18 fix(phone): drop the trunk zero after every verified country code with one
+
 ## fix/207-signin-repeat-address
 8e6d1e14 fix(dashboard): a replayed sign-in code from another address stays a factor alarm
 
@@ -23,5 +29,12 @@ c3ce6486 fix(agent): read the common absence forms of an allergen as a claim
 3ae30c67 fix(agent): an order's own wish word in front of a complaint keeps the order for the team (#744 follow-up)
 
 ## fix/764-outage-path
+04bd7924 fix(callbacks): a card without the core's summary names the call's standing booking (#743 follow-up)
 2bfeb96a fix(telephony): the outage sentence plays before the team number is read again (#754 follow-up)
+
+## fix/764-staff-weekday
+e9263586 fix(staff): times for today after a held closure still wait on a "wie Sonntag" date
+
+## research/637-watermark-feasibility
+3c6753eb feat(telephony): measure whether an audio watermark survives the phone path (#637)
 

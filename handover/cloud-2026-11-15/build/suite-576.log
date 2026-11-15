@@ -130,4 +130,500 @@ bringing up nodes...
 ........................................................................ [ 96%]
 ..........................EE.EE.E..E..........E......E..E.E...E......... [ 97%]
 ........................................................................ [ 98%]
-..........................
+........................................................................ [ 99%]
+........................................................................ [ 99%]
+.....................                                                    [100%]/usr/local/lib/python3.13/site-packages/_pytest/unraisableexception.py:63: PytestUnraisableExceptionWarning: Exception ignored in: <function _collection_gced at 0x7fb8b066f380>
+
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/site-packages/sqlalchemy/event/registry.py", line 109, in _collection_gced
+    ref = cast("weakref.ref[RefCollection[EventTarget]]", ref)
+  File "/usr/local/lib/python3.13/typing.py", line 2394, in cast
+    def cast(typ, val):
+    
+KeyboardInterrupt
+
+Enable tracemalloc to get traceback where the object was allocated.
+See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+  warnings.warn(pytest.PytestUnraisableExceptionWarning(msg))
+
+==================================== ERRORS ====================================
+_________ ERROR collecting api/tests/test_telephony_speech_adapters.py _________
+ImportError while importing test module '/home/user/wt-576-offboarding/api/tests/test_telephony_speech_adapters.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api/tests/test_telephony_speech_adapters.py:27: in <module>
+    from api.telephony.adapters.tts_piper import PiperMouth
+api/telephony/adapters/tts_piper.py:19: in <module>
+    import audioop
+E   ModuleNotFoundError: No module named 'audioop'
+__________ ERROR collecting api/tests/test_telephony_speech_bench.py ___________
+ImportError while importing test module '/home/user/wt-576-offboarding/api/tests/test_telephony_speech_bench.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/usr/local/lib/python3.13/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+api/tests/test_telephony_speech_bench.py:13: in <module>
+    from api.telephony.speech_bench import (  # noqa: E402
+api/telephony/speech_bench.py:19: in <module>
+    import audioop  # standard library up to Python 3.12; the image pins that version
+    ^^^^^^^^^^^^^^
+E   ModuleNotFoundError: No module named 'audioop'
+_ ERROR at setup of test_an_engine_that_hangs_while_it_loads_ends_the_process[True] _
+[gw1] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fb3a37d2b30>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_an_engine_that_hangs_while_it_loads_ends_the_process[False] _
+[gw1] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fb39c1c2ba0>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_an_engine_that_hangs_while_it_loads_ends_the_process[detector] _
+[gw1] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fb39c1c3000>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_a_slow_run_of_the_ear_is_a_hang_only_past_its_devices_limit[cpu] _
+[gw1] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fb39c1c2f90>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_a_slow_run_of_the_ear_is_a_hang_only_past_its_devices_limit[cuda] _
+[gw1] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fb39c1c31c0>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_____ ERROR at setup of test_on_the_processor_the_ear_is_not_run_at_start ______
+[gw1] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fb39c1c3700>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+__ ERROR at setup of test_each_engine_has_run_once_before_the_service_answers __
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fc4a6c70830>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_the_mouth_speaks_the_engines_own_voice_unless_one_is_set _
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fc4a1ebfee0>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_ ERROR at setup of test_an_engine_that_loads_but_cannot_run_keeps_the_service_down _
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fc4a1ebde80>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+____ ERROR at setup of test_the_watchdog_runs_before_the_engines_first_runs ____
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fc4a1ebfc40>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+_______ ERROR at setup of test_a_mouth_that_makes_no_audio_is_not_loaded _______
+[gw3] linux -- Python 3.13.18 /usr/local/bin/python3
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x7fc4a1e9cec0>
+
+    @pytest.fixture
+    def stand_in_engines(monkeypatch):
+        """The engines' classes stand in for the packages, which only the image of
+        `voice` has; what the loaders do with them is checked here."""
+>       from api.telephony.adapters import stt_whisper, tts_piper
+
+api/tests/test_telephony_voice.py:1007: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    """Text-to-speech with Piper, the mouth of the test phase (docs/20 §6, T-10.5).
+    
+    Piper speaks at the rate of its voice (22,050 Hz for `thorsten`), the line takes
+    16 kHz (docs/20 §10), so every piece is converted on the way out. Which voice
+    is Maxi's to hear (D4); the file is a setting. The package is imported where it
+    is used: it lives in the image of the voice service, not in the API's.
+    """
+    
+    import warnings
+    from collections.abc import Iterable
+    from pathlib import Path
+    from typing import Any
+    
+    # ponytail: standard library up to Python 3.12, which every image of the
+    # project pins, and deprecated there; `audioop-lts` from PyPI is the drop-in
+    # for a later Python.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+>       import audioop
+E       ModuleNotFoundError: No module named 'audioop'
+
+api/telephony/adapters/tts_piper.py:19: ModuleNotFoundError
+=================================== FAILURES ===================================
+__________ test_the_login_is_checked_the_way_the_application_connects __________
+[gw0] linux -- Python 3.13.18 /usr/local/bin/python3
+
+db = 'postgresql+psycopg://maex:maex@localhost:5432/maex_test_e7bc4f6b'
+role = 'app_6f6b0c8027'
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-35/popen-gw0/test_the_login_is_checked_the_0')
+
+    def test_the_login_is_checked_the_way_the_application_connects(db, role, tmp_path):
+        """The test server speaks no TLS. A DATABASE_URL that demands it logs in the
+        owner's way and not its own, so the API could not connect (Codex, PR #281)."""
+        app = make_url(_as(role, db)).set(query={"sslmode": "require"})
+    
+        done = _script(
+            "db_role.sh",
+            app_url=app.render_as_string(hide_password=False),
+            owner_url=db,
+            tmp_path=tmp_path,
+        )
+    
+>       assert done.returncode == 1, done.stdout
+E       AssertionError: role app_6f6b0c8027 on maex@localhost:5432/maex_test_e7bc4f6b
+E         done: app_6f6b0c8027 logs in, is no superuser, reads and writes 39 tables and cannot change the schema
+E         restart api and dispatcher if DATABASE_URL changed
+E         
+E       assert 0 == 1
+E        +  where 0 = CompletedProcess(args=['/usr/bin/bash', 'scripts/db_role.sh'], returncode=0, stdout='role app_6f6b0c8027 on maex@local...ds and writes 39 tables and cannot change the schema\nrestart api and dispatcher if DATABASE_URL changed\n', stderr='').returncode
+
+api/tests/test_scripts_db_role.py:410: AssertionError
+=============================== warnings summary ===============================
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+../../../usr/local/lib/python3.13/site-packages/_pytest/python.py:144
+  /usr/local/lib/python3.13/site-packages/_pytest/python.py:144: PytestRemovedIn10Warning: Passing a non-Collection iterable to parametrize is deprecated.
+  Test: api/tests/test_migration_backup_notes.py::test_a_migration_that_deletes_data_names_its_backup, argvalues type: generator
+  Please convert to a list or tuple.
+  See https://docs.pytest.org/en/stable/deprecations.html#parametrize-iterators
+    metafunc.parametrize(*marker.args, **marker.kwargs, _param_mark=marker)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED api/tests/test_scripts_db_role.py::test_the_login_is_checked_the_way_the_application_connects
+ERROR api/tests/test_telephony_speech_adapters.py - ImportError while importi...
+ERROR api/tests/test_telephony_speech_bench.py - ImportError while importing ...
+ERROR api/tests/test_telephony_voice.py::test_an_engine_that_hangs_while_it_loads_ends_the_process[True]
+ERROR api/tests/test_telephony_voice.py::test_an_engine_that_hangs_while_it_loads_ends_the_process[False]
+ERROR api/tests/test_telephony_voice.py::test_an_engine_that_hangs_while_it_loads_ends_the_process[detector]
+ERROR api/tests/test_telephony_voice.py::test_a_slow_run_of_the_ear_is_a_hang_only_past_its_devices_limit[cpu]
+ERROR api/tests/test_telephony_voice.py::test_a_slow_run_of_the_ear_is_a_hang_only_past_its_devices_limit[cuda]
+ERROR api/tests/test_telephony_voice.py::test_on_the_processor_the_ear_is_not_run_at_start
+ERROR api/tests/test_telephony_voice.py::test_each_engine_has_run_once_before_the_service_answers
+ERROR api/tests/test_telephony_voice.py::test_the_mouth_speaks_the_engines_own_voice_unless_one_is_set
+ERROR api/tests/test_telephony_voice.py::test_an_engine_that_loads_but_cannot_run_keeps_the_service_down
+ERROR api/tests/test_telephony_voice.py::test_the_watchdog_runs_before_the_engines_first_runs
+ERROR api/tests/test_telephony_voice.py::test_a_mouth_that_makes_no_audio_is_not_loaded
+1 failed, 9441 passed, 2 skipped, 6 warnings, 13 errors in 1565.29s (0:26:05)
