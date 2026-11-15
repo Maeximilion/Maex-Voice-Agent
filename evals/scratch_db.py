@@ -13,7 +13,7 @@ from typing import NamedTuple
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import Engine, make_url
+from sqlalchemy.engine import Connection, Engine, make_url
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.pool import NullPool
 
@@ -99,7 +99,7 @@ SELECT md5(string_agg(line, E'\\n' ORDER BY line COLLATE "C")) FROM (
 """
 
 
-def _public_tables(conn) -> list[str]:
+def _public_tables(conn: Connection) -> list[str]:
     return list(
         conn.execute(
             text(
@@ -129,13 +129,16 @@ def scratch_db_state(url: str) -> ScratchState:
         return ScratchState(url, engine, _digest(conn, empty), empty)
 
 
-def _has_rows(conn, table: str) -> bool:
-    return conn.execute(text(f'SELECT EXISTS (SELECT FROM "{table}")')).scalar_one()
+def _has_rows(conn: Connection, table: str) -> bool:
+    found: bool = conn.execute(
+        text(f'SELECT EXISTS (SELECT FROM "{table}")')
+    ).scalar_one()
+    return found
 
 
-def _digest(conn, empty: list[str]) -> str:
+def _digest(conn: Connection, empty: list[str]) -> str:
     kept = [t for t in _public_tables(conn) if t not in empty]
-    rows = [
+    rows: list[str] = [
         conn.execute(
             text(
                 f"SELECT md5(coalesce(string_agg(t::text, ',' ORDER BY t::text), '')) FROM \"{t}\" t"
@@ -143,7 +146,8 @@ def _digest(conn, empty: list[str]) -> str:
         ).scalar_one()
         for t in kept
     ]
-    return conn.execute(text(_DIGEST)).scalar_one() + ",".join(kept) + ",".join(rows)
+    owners: str = conn.execute(text(_DIGEST)).scalar_one()
+    return owners + ",".join(kept) + ",".join(rows)
 
 
 def empty_scratch_db(state: ScratchState) -> bool:

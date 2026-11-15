@@ -24,6 +24,7 @@ Created: 2026-11-01
 """
 
 from collections.abc import Sequence
+from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
@@ -37,7 +38,7 @@ depends_on: str | Sequence[str] | None = None
 E164 = r"phone ~ '^\+[1-9][0-9]{1,14}$'"
 
 
-def _base_columns() -> list[sa.Column]:
+def _base_columns() -> list[sa.Column[Any]]:
     return [
         sa.Column(
             "id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False

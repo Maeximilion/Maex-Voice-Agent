@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from api.core import time as clock
 from api.core.auth import require_gui_proxy
 from api.core.errors import InvalidInput
+from api.core.origin import same_origin
 from api.db import get_db
 from api.domain.access.admin import AdminRefused, close_admin, unlock_admin
 from api.domain.access.sessions import (
@@ -34,7 +35,6 @@ from api.gui.session import (
     client_address,
     csrf_matches,
     device_token,
-    same_origin,
     session_token,
     set_access_cookies,
 )

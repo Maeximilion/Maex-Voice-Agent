@@ -1,7 +1,11 @@
 """Betriebsansicht: Router, Ereignisstrom, Vorlagen, eigene Dateien."""
 
+import os
+
 from fastapi import FastAPI
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Scope
 
 __all__ = ["mount_gui"]
 
@@ -13,8 +17,14 @@ class _RevalidatedStatic(StaticFiles):
     a page from a newer build then runs the script of an older one. The ETag
     turns the question into a 304 without a body."""
 
-    def file_response(self, *args, **kwargs):
-        response = super().file_response(*args, **kwargs)
+    def file_response(
+        self,
+        full_path: str | os.PathLike[str],
+        stat_result: os.stat_result,
+        scope: Scope,
+        status_code: int = 200,
+    ) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
         response.headers["Cache-Control"] = "no-cache"
         return response
 
