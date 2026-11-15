@@ -4,6 +4,7 @@
 |---|---|---|
 | `seed.py` | Tenant, hours, capacity, test config | T-1.2 |
 | `new_stack.py` | A new customer's stack on the server: clone, `.env` with fresh secrets (mode 600), role, migrations, tenant through `api.jobs.provision`, site file in the shared Caddy with the cross-site check; `--dry-run`, `--check-sites` | #573 |
+| `remove_stack.py` | A leaving customer's stack off the server (counterpart of `new_stack.py`): `--export` writes menu (docs/14 format), orders and reservations through `api.jobs.offboarding`, the default dry run lists what would go, `--confirm <key>` refuses without a whole export, then removes containers, volumes, site file, folder and local backups and appends a line without personal data to `<root>/offboarding/removed.jsonl`; usage in `docs/13_DEPLOYMENT.md` §8 | #576 |
 | `import_menu.py` | Load CSV per `docs/14_MENU_IMPORT_FORMAT.md`, `--dry-run`, `--deactivate-missing` (refuses an empty file or more than half the active menu unless `--allow-large-deactivation`) | T-4.2, T-4.11 |
 | `seed_zones.py` | Delivery zones from CSV per `docs/14_MENU_IMPORT_FORMAT.md`, `--dry-run`; an overlap or any other error writes nothing | T-6.9 |
 | `kasse_to_csv.py` | Register `.dbf` copies in `imports/kasse/` to the CSV files of docs/14, read-only | T-4.11 |
