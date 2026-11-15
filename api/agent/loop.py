@@ -60,7 +60,7 @@ from api.core.errors import SAY_TO_THE_TEAM
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
-from api.domain.callbacks.transfer import SUMMARY_MISSED
+from api.domain.callbacks.transfer import SUMMARY_BOOKED, SUMMARY_MISSED
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
 from api.domain.menu.wishes import (
@@ -190,8 +190,9 @@ SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
 # guest's sentence behind them. Draft wording.
 SUMMARY_REMEDY_BOOKED = "Beschwerde, Gast hat zugestimmt, bitte ausführen: {remedy}."
 SUMMARY_REMEDY_OPEN = "Kunde hat sich beschwert, Angebot nicht angenommen: {remedy}."
-# How a card names a booking made earlier in the call (`_handoff_summary`).
-_BOOKED = " Bereits gebucht: "
+# How a card names a booking made earlier in the call (`_handoff_summary`):
+# the same words as a card the phone line writes without the core's.
+_BOOKED = f" {SUMMARY_BOOKED} "
 SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
 # The same for a table read back and not yet confirmed (own review of PR #369).
 SAY_TABLE_NOT_BOOKED = "Ihre Reservierung ist damit noch nicht bestätigt."

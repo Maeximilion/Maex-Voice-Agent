@@ -36,7 +36,11 @@ from api.agent.loop import (
 from api.agent.state import ConversationState
 from api.config import settings
 from api.domain.callbacks.create import SAY_NOTED
-from api.domain.callbacks.transfer import SUMMARY_HUNG_UP, SUMMARY_MISSED
+from api.domain.callbacks.transfer import (
+    SUMMARY_BOOKED,
+    SUMMARY_HUNG_UP,
+    SUMMARY_MISSED,
+)
 from api.domain.menu.importer import apply
 from api.domain.menu.items import active_count
 from api.models import (
@@ -2380,6 +2384,58 @@ def test_a_guest_who_hangs_up_on_the_outage_sentence_gets_a_card(session, tenant
     [card] = session.scalars(select(Callback)).all()
     assert card.phone == "+497215551234"
     assert the_call(session, "s-1").outcome == "error"
+
+
+def _booked_then_broken(session, tenant) -> "_Wire":
+    """On the wire: a table is booked, and the line breaks while the guest
+    hears the confirmation, so the outage sentence follows it."""
+    wire = _Wire(session, tenant)
+    wire.until_the_read_back()
+    wire.played()
+    wire.says("Ja, passt so.")
+    assert _reservation_of(session, "voice-1").status == "confirmed"
+    wire.call.broken()
+    wire.call.drain()
+    assert wire.line.played()[-1] == SAY_OUTAGE
+    return wire
+
+
+def _table_on_the_card(session, tenant) -> str:
+    reservation = _reservation_of(session, "voice-1")
+    when = reservation.reserved_for.astimezone(ZoneInfo(tenant.timezone))
+    return (
+        f"{SUMMARY_BOOKED} Reservierung, {reservation.party_size} Personen, "
+        f"{when:%d.%m.%Y %H:%M} Uhr, Name {reservation.guest_name}."
+    )
+
+
+def test_a_guest_who_hangs_up_on_the_outage_sentence_after_a_booking_gets_it_named(
+    session, tenant
+):
+    """#743 follow-up: the outage path keeps no card of the core, so the card
+    named an unknown concern while the table stood; the team could book it a
+    second time. It names the booking of the call from the database."""
+    wire = _booked_then_broken(session, tenant)
+
+    wire.call.closed()
+    wire.call.drain()
+
+    [card] = session.scalars(select(Callback)).all()
+    assert card.summary == f"{SUMMARY_HUNG_UP} {_table_on_the_card(session, tenant)}"
+    assert _logged(session, "voice-1").outcome == "error"
+
+
+def test_a_missed_team_leg_of_an_outage_after_a_booking_names_it(session, tenant):
+    """The guest stays for the outage sentence, nobody takes the team leg: the
+    card the dialplan asks for names the booking too."""
+    wire = _booked_then_broken(session, tenant)
+    wire.played()
+    assert wire.line.kinds()[-1] == "transfer"
+
+    assert wire.call._events.on_team_missed("voice-1")
+
+    [card] = session.scalars(select(Callback)).all()
+    assert card.summary == f"{SUMMARY_MISSED} {_table_on_the_card(session, tenant)}"
 
 
 def test_a_withheld_guest_who_hangs_up_on_the_outage_sentence_gets_no_card(
