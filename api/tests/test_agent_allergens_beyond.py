@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from api.agent import guards
 from api.agent.escalation import (
     asks_about_allergies,
+    asks_about_an_allergen,
     asks_beyond_the_allergens,
     names_an_additive,
 )
@@ -516,6 +517,221 @@ def test_a_sentence_without_a_lookup_in_the_turn_is_left_alone(session, known_te
     assert result.say == ["Gern, was darf es sein?"]
 
 
+def unflagged(session, tenant_id, number: str) -> LLMTurn:
+    """A lookup the model sent as a plain detail question."""
+    return LLMTurn(
+        tool_call=ToolCall(
+            "get_item_details",
+            {
+                "menu_item_id": str(item(session, tenant_id, number)),
+                "allergen_question": False,
+            },
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # No allergy word: the guest only names the allergen (#764).
+        "Ist in den Frühlingsrollen Gluten?",
+        "Hat die 23 Gluten?",
+        "Ist da Gluten drin in der 23",
+    ],
+)
+def test_a_lookup_without_the_flag_still_gives_the_core_sentence(
+    session, known_tenant, said
+):
+    """#764 (rule 1): a question whether an allergen is in a dish is one,
+    whatever flag the model set; the guest hears the table of the core."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        said,
+        unflagged(session, known_tenant, "23"),
+        LLMTurn(say="Die 23 enthält Gluten und Soja."),
+    )
+
+    assert result.say == [CORE_SAY]
+
+
+def test_an_unflagged_lookup_with_no_maintained_value_goes_to_the_team(
+    session, known_tenant
+):
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Ist in der Pho Bo Sesam?",
+        unflagged(session, known_tenant, "13"),
+        LLMTurn(say="Die Pho Bo enthält Sesam."),
+    )
+
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+
+
+@pytest.mark.parametrize("number", ["23", "13"])
+def test_a_model_sentence_naming_allergens_after_any_lookup_is_the_core_s(
+    session, known_tenant, number
+):
+    """A follow-up that names no allergen ("Und die 23?"): the lookup is a
+    plain one, but what the model says of allergens comes from the table, or
+    goes to the team where the table holds nothing (#764)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    state.allergy_talk = True
+
+    result, _ = run(
+        session,
+        state,
+        f"Und die {number}?",
+        unflagged(session, known_tenant, number),
+        LLMTurn(say=f"Die {number} enthält Gluten und Soja."),
+    )
+
+    if number == "23":
+        assert result.say == [CORE_SAY]
+    else:
+        assert result.ended
+        assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+
+
+def test_an_answer_on_options_after_an_unflagged_lookup_reaches_the_guest(
+    session, known_tenant
+):
+    state = state_for(session, known_tenant, phone=CALLER)
+    answer = "Zur 23 gibt es eine süß-saure Sauce."
+
+    result, _ = run(
+        session,
+        state,
+        "Welche Sauce gibt es zur 23?",
+        unflagged(session, known_tenant, "23"),
+        LLMTurn(say=answer),
+    )
+
+    assert result.say == [answer]
+
+
+def test_a_follow_up_without_a_lookup_is_not_answered_by_the_model(
+    session, known_tenant
+):
+    """#764: turn 2 of an allergen talk asks on without a lookup; the model's
+    own "auch Soja" never reaches the guest, the lookup it is sent to does."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Welche Allergene hat die 23?",
+        details(session, known_tenant, "23"),
+        LLMTurn(say="ok"),
+    )
+
+    result, llm = run(
+        session,
+        state,
+        "Und ist da auch Soja drin?",
+        LLMTurn(say="Ja, die 23 enthält auch Soja."),
+        unflagged(session, known_tenant, "23"),
+        LLMTurn(say="Ja, auch Soja."),
+    )
+
+    assert len(llm.calls) == 3
+    assert result.say == [CORE_SAY]
+
+
+@pytest.mark.parametrize(
+    ("first", "asked", "answer"),
+    [
+        # The skeptic's probe of #764: the allergy one turn before.
+        (
+            "Ich habe eine Erdnussallergie.",
+            "Ist in der 13 Erdnuss?",
+            "Nein, in der 13 ist keine Erdnuss.",
+        ),
+        (
+            "Ich habe eine Sojaallergie.",
+            "Ist in der 23 Soja?",
+            "Die 23 enthält nur Gluten.",
+        ),
+        # No allergy at all.
+        ("Hallo.", "Ist in der Pho Bo Milch?", "Die Pho Bo enthält Soja."),
+        # The question names no allergen, the model's answer does.
+        ("Hallo.", "Und was ist mit der Pho Bo?", "Die Pho Bo enthält Milch."),
+        (
+            "Hallo.",
+            "Und sonst?",
+            "Die Frühlingsrollen enthalten laut unseren Angaben Gluten.",
+        ),
+    ],
+)
+def test_a_model_answer_on_allergens_without_a_lookup_never_reaches_the_guest(
+    session, known_tenant, first, asked, answer
+):
+    """#764: back to the model once, a second such answer goes to the team."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(session, state, first, LLMTurn(say="Gern."))
+
+    result, _ = run(session, state, asked, LLMTurn(say=answer), LLMTurn(say=answer))
+
+    assert answer not in result.say
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Gern, die 13 ohne Erdnüsse. Noch etwas?",
+        "Ihre Erdnussallergie ist notiert. Was darf es sein?",
+        "Gern, Nummer 13 Pho Bo. Noch etwas?",
+    ],
+)
+def test_a_wish_or_the_guests_allergy_said_back_is_no_allergen_answer(
+    session, known_tenant, answer
+):
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        "Die 13 ohne Erdnüsse, ich habe eine Erdnussallergie.",
+        LLMTurn(say=answer),
+    )
+
+    assert result.say == [answer]
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ist in den Frühlingsrollen Gluten?",
+        "Hat die 13 Nüsse?",
+        "Und ist da auch Soja drin?",
+        "Ist da Milch drin?",
+    ],
+)
+def test_these_ask_whether_an_allergen_is_in_a_dish(said):
+    assert asks_about_an_allergen(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        # A dish named like an allergen is a menu question.
+        "Haben Sie Erdnuss-Curry?",
+        "Die 13 ohne Erdnüsse bitte.",
+        "Was kostet die 23?",
+        "Ist in der 13 Koriander?",
+    ],
+)
+def test_these_do_not_ask_whether_an_allergen_is_in_a_dish(said):
+    assert not asks_about_an_allergen(said)
+
+
 @pytest.mark.parametrize(
     "answer",
     [
@@ -558,7 +774,8 @@ def test_a_claim_of_the_model_about_allergens_goes_to_the_team(
 @pytest.mark.parametrize(
     "answer",
     [
-        "Die Frühlingsrollen enthalten laut unseren Angaben Gluten.",
+        # No claim, but a model's sentence on allergens without a lookup goes
+        # back since #764 (`test_a_model_answer_on_allergens_without_a_lookup`).
         "Sicher, gern. Was darf es noch sein?",
         "Ist sicher notiert.",
         "Das ist sicher bis sieben fertig.",

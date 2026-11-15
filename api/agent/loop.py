@@ -61,7 +61,11 @@ from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
 from api.domain.callbacks.transfer import SUMMARY_MISSED
-from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
+from api.domain.menu.details import (
+    SAY_ALLERGENS_LEAD,
+    SAY_ALLERGENS_UNKNOWN,
+    say_allergens,
+)
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
 from api.domain.menu.wishes import (
     HEALTH_NOTE_RE,
@@ -466,6 +470,10 @@ class ConversationLoop:
         # The core's allergen sentences of this turn, one per dish looked up:
         # the only allergen words the guest hears (#669, #717, rule 1).
         allergen_says: list[str] = []
+        # Every dish a lookup that worked delivered in this turn, flagged or
+        # not, by its id: what the core says when the model's answer names
+        # allergens of its own (#764).
+        looked_up: dict[str, dict[str, Any]] = {}
         zone = self._local_now(state).tzinfo
         assert zone is not None  # `to_local` gives an aware time
         for _ in range(MAX_TOOL_HOPS):
@@ -599,7 +607,9 @@ class ConversationLoop:
                         if claim is guards.ADDITIVE_CLAIM
                         else SUMMARY_ALLERGENS,
                     )
-                refused = guards.unread_allergy_question(read, say, user_text)
+                refused = guards.unread_allergy_question(
+                    read, say, user_text
+                ) or guards.unread_allergens(state, read, say)
                 if refused is not None:
                     # Back to the model once, it may well find the dish. A
                     # second sentence without a look at the menu goes to the
@@ -631,6 +641,23 @@ class ConversationLoop:
                     # every guard. shortcut: its other words are dropped
                     # too; the guest asks on, the next turn answers.
                     say = " ".join(allergen_says)
+                elif looked_up and guards.states_allergens(state, say):
+                    # A lookup the model sent without the flag, on a question
+                    # that names no allergen ("Und die 23?"): what it says of
+                    # allergens is the table's, or the team's where the table
+                    # holds nothing (#764, rule 1, L17).
+                    unknown = next(
+                        (d for d in looked_up.values() if not d["allergens"]["known"]),
+                        None,
+                    )
+                    if unknown is not None:
+                        return self._allergens_to_team(
+                            state, _dish(unknown), table=open_table
+                        )
+                    say = " ".join(
+                        say_allergens(d["number"], d["name"], d["allergens"]["names"])
+                        for d in looked_up.values()
+                    )
                 # What the guest hears decides which offered dishes count as
                 # put to them (guards.py, rule 2).
                 guards.note_said(state, say)
@@ -776,9 +803,9 @@ class ConversationLoop:
                 # Asked for allergens the database does not hold (L17): the
                 # team answers before any `confirm`, and the model is not
                 # asked again, as for a table the team decides on.
-                data = result.data
-                dish = f"{data.get('number') or ''} {data.get('name') or ''}".strip()
-                return self._allergens_to_team(state, dish or None, table=open_table)
+                return self._allergens_to_team(
+                    state, _dish(result.data), table=open_table
+                )
             if turn.tool_call.name == "confirm" and result.ok:
                 # Booked: the core says so itself and ends the turn. A model
                 # that phrased it said what the database did not hold (a code
@@ -839,6 +866,8 @@ class ConversationLoop:
             called.append(turn.tool_call.name)
             if result.ok:
                 read.add(turn.tool_call.name)
+                if turn.tool_call.name == "get_item_details":
+                    looked_up[str(result.data["menu_item_id"])] = result.data
                 if (
                     turn.tool_call.name == "get_item_details"
                     and told.startswith(SAY_ALLERGENS_LEAD)
@@ -1604,6 +1633,11 @@ def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
     reason = str(call.args.get("reason"))
     card = _handoff_summary(reason, None, state.booking_say)
     return ToolCall(call.name, {**call.args, "summary": card})
+
+
+def _dish(data: dict[str, Any]) -> str | None:
+    """A looked-up dish as a card names it: "13 Pho Bo"."""
+    return f"{data.get('number') or ''} {data.get('name') or ''}".strip() or None
 
 
 def _found_nothing(result: ToolResult) -> bool:

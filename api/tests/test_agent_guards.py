@@ -22,6 +22,7 @@ from api.agent.guards import (
     false_booking,
     note_said,
     refusal,
+    states_allergens,
 )
 from api.agent.llm import ToolCall
 from api.agent.state import (
@@ -1139,6 +1140,43 @@ def test_a_wish_echoed_or_a_question_of_certainty_is_no_claim(say):
 def test_a_promise_to_the_guest_that_they_are_safe_is_a_claim(say):
     """Only the question that opens with the verb is cut (Codex PR #714, P1)."""
     assert allergen_claim(new_state(allergy_talk=True), say) is ALLERGEN_CLAIM
+
+
+# --- #764: a model sentence that names a dish's allergens
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Die 23 enthält Gluten und Soja.",
+        "Ja, in der 13 ist Erdnuss.",
+        "Die Pho Bo hat Sesam.",
+        "Da ist Milch drin.",
+        "Gern. In den Frühlingsrollen steckt Weizen.",
+        "Die 13 hat zwei Allergene.",
+    ],
+)
+def test_a_sentence_on_what_a_dish_holds_states_allergens(say):
+    assert states_allergens(new_state(), say)
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Gern, die 13 ohne Erdnüsse. Noch etwas?",
+        "Ihre Erdnussallergie ist notiert.",
+        "Sie haben eine Allergie gegen Sesam, notiert.",
+        "Sie haben Sesam als Extra gewählt.",
+        "Gern, Nummer 45 Erdnuss-Curry. Noch etwas?",
+        "Das Erdnuss-Curry hat 12 Euro.",
+        "Was darf es sein?",
+    ],
+)
+def test_a_wish_a_dish_name_or_the_guests_allergy_states_none(say):
+    """The dish and option names of the search are menu data (#764)."""
+    state = _found("Erdnuss-Curry")
+    state.seen_items[ENTE]["optional"] = [{"group": "Extra", "options": ["Sesam"]}]
+    assert not states_allergens(state, say)
 
 
 @pytest.mark.parametrize(

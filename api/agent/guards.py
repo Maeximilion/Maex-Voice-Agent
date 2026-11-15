@@ -43,6 +43,7 @@ from api.agent.dispatch import ToolResult, validation_hint
 from api.agent.escalation import (
     SENTENCE,
     asks_about_allergies,
+    asks_about_an_allergen,
     is_question,
     names_an_additive,
 )
@@ -665,6 +666,80 @@ _UNREAD_ALLERGY_QUESTION = ToolResult(
 )
 
 
+HINT_UNREAD_ALLERGENS = (
+    "Abgelehnt: du nennst Allergene eines Gerichts, die du in diesem Zug nicht "
+    "gelesen hast. Allergene sagt nur der Kern aus der Datenbank: lies sie mit "
+    "get_item_details, oder sag den Satz ohne sie."
+)
+_UNREAD_ALLERGENS = ToolResult(
+    ok=False, error_code="invalid_input", hint=HINT_UNREAD_ALLERGENS
+)
+# What a sentence says of a dish's contents ("Die 23 enthält Soja", "In den
+# Frühlingsrollen ist Gluten", "Die 13 hat Erdnüsse", "Da ist Milch drin").
+# "Sie haben ..." speaks of the guest.
+_SAYS_WHATS_IN = re.compile(
+    r"enth(?:ä|ae)lt|enthalten|\b(?:drin|darin|drinnen|im)\b|beinhalt|zutat"
+    r"|\bsteck(?:t|en)\b|\bin (?:der|dem|den|die|das|diese[mnr]?)\b"
+    r"|\b(?:hat|haben)\b(?!\s+(?:sie|ihr)\b)"
+)
+# A wish said back: "die 13 ohne Erdnüsse", to the end of its clause.
+_WISH_SAID_BACK = re.compile(r"\bohne\b[^.,;:!?]*")
+
+
+def states_allergens(state: ConversationState, say: str) -> bool:
+    """Does the model's sentence say which allergens a dish holds ("Die 23
+    enthält Gluten und Soja", "Ja, in der 13 ist Erdnuss")? Only the core may
+    say that, from the database (#764, rule 1). Left out: the core's own
+    sentences (read-back, booking), the names of the dishes and options the
+    search delivered ("Erdnuss-Curry"), the guest's own allergy said back
+    ("Ihre Erdnussallergie ist notiert") and a wish said back ("die 13 ohne
+    Erdnüsse"). Absence and safety are `allergen_claim`'s.
+    shortcut: an allergen next to a word of content counts, a question of
+    the model's own too ("Wollen Sie wissen, was die 13 enthält, Sesam?"):
+    it goes back once."""
+    rest = say
+    for own in (state.booking_say, state.readback):
+        if own:
+            rest = rest.replace(own, " ")
+    for name in _names_of_the_search(state):
+        rest = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", " ", rest, flags=re.I)
+    return any(
+        (names_an_allergen(part) or "allergen" in part)
+        and _SAYS_WHATS_IN.search(part) is not None
+        for part in (
+            _WISH_SAID_BACK.sub(" ", _food(sentence))
+            for sentence in _SENTENCES.split(rest.lower())
+        )
+    )
+
+
+def _names_of_the_search(state: ConversationState) -> list[str]:
+    """The dish and option names the search delivered in this call, longest
+    first, so "Erdnuss-Curry scharf" goes before "Erdnuss-Curry"."""
+    names = {seen.get("name") for seen in state.seen_items.values()}
+    names |= {name for _, name in state.offered_items.values()}
+    names |= {
+        option
+        for seen in state.seen_items.values()
+        for group in (*seen.get("required", []), *seen.get("optional", []))
+        for option in group.get("options", [])
+    }
+    return sorted((n for n in names if isinstance(n, str) and n), key=len, reverse=True)
+
+
+def unread_allergens(
+    state: ConversationState, read: set[str], say: str
+) -> ToolResult | None:
+    """The model names a dish's allergens in a turn without a lookup that
+    worked: they cannot come from the database (#764, rule 1), whatever the
+    guest asked. The loop gives it back once and hands over on a second,
+    as for `unread_allergy_question`; after a lookup the core says its own
+    sentence instead (`loop.py`)."""
+    if "get_item_details" in read or not states_allergens(state, say):
+        return None
+    return _UNREAD_ALLERGENS
+
+
 def unread_allergy_question(
     read: set[str], say: str, user_text: str
 ) -> ToolResult | None:
@@ -676,7 +751,7 @@ def unread_allergy_question(
     may only ask which dish was meant, and a sentence that says or names
     anything else goes back. An ambiguous number is no search that worked, and
     the question for it is the core's own sentence."""
-    if "get_item_details" in read or not asks_about_allergies(user_text):
+    if "get_item_details" in read or not asks_about_an_allergen(user_text):
         return None
     if say.strip() == SAY_WHICH_NUMBER:
         return None
@@ -692,8 +767,10 @@ def unread_allergy_question(
 
 def flag_the_allergy_question(call: ToolCall, user_text: str) -> ToolCall:
     """A lookup on the guest's allergy question is one, whatever flag the model
-    set: without it an unmaintained value would not go to the team (L17)."""
-    if call.name == "get_item_details" and asks_about_allergies(user_text):
+    set: without it an unmaintained value would not go to the team (L17). A
+    question whether an allergen is in a dish is one too, with no allergy
+    word ("Ist in den Frühlingsrollen Gluten?", #764)."""
+    if call.name == "get_item_details" and asks_about_an_allergen(user_text):
         return ToolCall(call.name, {**call.args, "allergen_question": True})
     return call
 

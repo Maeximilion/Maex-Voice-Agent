@@ -336,7 +336,7 @@ Für Rückfragen zu Optionen, Extras und Allergenen.
 
 **Request** `{ "call_id": "…", "tenant_id": "…", "menu_item_id": "…", "allergen_question": false }`
 
-`allergen_question` ist **Pflicht** und hat keine Vorgabe: nur der Agent weiß, ob der Gast nach Allergenen gefragt hat oder nach der Sauce. Fehlt das Feld, antwortet das Tool `invalid_input` - das fällt auf, ein stiller Vorgabewert nicht.
+`allergen_question` ist **Pflicht** und hat keine Vorgabe: nur der Agent weiß, ob der Gast nach Allergenen gefragt hat oder nach der Sauce. Fehlt das Feld, antwortet das Tool `invalid_input` - das fällt auf, ein stiller Vorgabewert nicht. The own core sets it itself on a guest sentence that asks about an allergy or whether an allergen is in a dish (`guards.flag_the_allergy_question`, #764), and after a lookup without it a model answer that names allergens is replaced by the same sentence from the table (docs/05 §4).
 
 **Response**
 ```json
