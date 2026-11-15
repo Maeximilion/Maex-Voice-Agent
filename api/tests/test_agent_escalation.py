@@ -292,6 +292,103 @@ def test_a_modal_wish_in_the_complaint_gap_keeps_the_order_for_the_team(said):
     assert not only_a_complaint(said)
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich möchte die 23, beschweren muss ich mich aber auch, die Pizza war kalt.",
+        "Ich nehme die 23, aber beschweren muss ich mich auch, die Pizza war kalt.",
+        "Ich möchte die 23, außerdem beschwere ich mich, die Pizza war kalt.",
+        "Ich bestelle die 23, außerdem reklamiere ich die Pizza, die war kalt.",
+        "Ich möchte den Salat, reklamieren muss ich auch, die Pizza war kalt.",
+        "Ich nehme zwei Suppen, ich beschwere mich aber auch, die Pizza war kalt.",
+    ],
+)
+def test_the_orders_own_wish_word_is_no_part_of_the_complaint(said):
+    """The order's verb with its dish within four words of "beschwer" or
+    "reklam" was cut away as the complaint's wish: the remedy ended the call
+    and the order was lost (#744 follow-up, P1)."""
+    from api.agent.escalation import only_a_complaint
+
+    assert not only_a_complaint(said)
+
+
+def test_a_reason_after_ueber_or_wegen_stays_part_of_the_complaint():
+    """What the guest complains about may stand in the gap: after "über" or
+    "wegen" it is the complaint's object, not a dish ordered."""
+    from api.agent.escalation import only_a_complaint
+
+    assert only_a_complaint("Ich möchte mich über die 23 beschweren, die war kalt.")
+    assert only_a_complaint("Ich möchte mich wegen der Lieferung beschweren.")
+    assert only_a_complaint("Ich möchte mich darüber beschweren, es war kalt.")
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich möchte mich beim Chef beschweren.",
+        "Ich möchte mich bei Ihrem Chef beschweren.",
+        "Ich möchte mich bei der Chefin beschweren.",
+        "Ich will mich beim Fahrer beschweren.",
+    ],
+)
+def test_the_person_complained_to_stays_part_of_the_complaint(said):
+    """After "bei" or "beim", up to two words name the person the guest
+    complains to, as on main before the #744 follow-up (Graphify on PR #793)."""
+    from api.agent.escalation import only_a_complaint
+
+    assert only_a_complaint(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich möchte bei Ihnen Pizza, beschweren muss ich mich aber auch.",
+        "Ich möchte beim Fahrer zahlen, beschweren muss ich mich auch.",
+        "Ich möchte bei Ihnen eine Pizza beschweren muss ich mich auch.",
+    ],
+)
+def test_an_order_behind_bei_stays_for_the_team(said):
+    """ "bei" does not open the gap to an order: behind a comma or before a new
+    clause the words are a dish ordered, and the order stays for the team."""
+    from api.agent.escalation import only_a_complaint
+
+    assert not only_a_complaint(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich möchte die Pizza reklamieren",
+        "Ich möchte die Pizza reklamieren, die war kalt.",
+        "ich möchte die 23 reklamieren die war kalt",
+        "Ich möchte gerne meine kalte Pizza reklamieren.",
+    ],
+)
+def test_the_dish_complained_about_stays_part_of_the_complaint(said):
+    """A dish right before "reklamieren" is what the guest complains about,
+    no order: the remedy offer comes first (Maxi, 15.11.2026)."""
+    from api.agent.escalation import only_a_complaint
+
+    assert only_a_complaint(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "ich möchte eine margherita reklamieren muss ich auch die pizza war kalt",
+        "Ich möchte die 23 und die Pizza reklamieren, die war kalt.",
+        "ich möchte die 23 die pizza reklamieren die war kalt",
+        "Ich möchte die 23 bestellen und die Pizza reklamieren.",
+    ],
+)
+def test_a_dish_with_an_order_in_front_of_reklamieren_goes_to_the_team(said):
+    """A dish before a new clause ("reklamieren muss ich auch") or behind an
+    "und" belongs to an order (#744 follow-up)."""
+    from api.agent.escalation import only_a_complaint
+
+    assert not only_a_complaint(said)
+
+
 def test_gern_and_bitte_stay_allowed_inside_the_complaint_phrase():
     from api.agent.escalation import only_a_complaint
 

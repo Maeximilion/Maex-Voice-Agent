@@ -155,8 +155,9 @@ def readback(r: Reservation, zone: ZoneInfo) -> str:
     """
     local = r.reserved_for.astimezone(zone)
     # Day and daytime word: "halb eins" is 00:30 and 12:30 alike (#681), and 00:30
-    # of "morgen" is still tonight (#742); the guest's yes confirms what is read back.
-    when = spoken_when(local, today=r.created_at.astimezone(zone).date())
+    # of "morgen" is still tonight (#742), and a draft made after midnight names the
+    # day by weekday and date (#750 follow-up); the guest's yes confirms what is read back.
+    when = spoken_when(local, now=r.created_at.astimezone(zone))
     satz = (
         f"Ein Tisch für {spoken_party_size(r.party_size)} {when}"
         f", auf den Namen {r.guest_name}"
