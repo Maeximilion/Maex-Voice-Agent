@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.10
+> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.11
 > Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
 > Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
@@ -334,6 +334,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.46.11 · 15.11.2026:** Dialplan answers of voice and the caller number are filtered before any compare, so a quoted body cannot record, hang up or drop a call (#776)
 - **v2.46.10 · 15.11.2026:** Graphify: a SessionStart hook builds a missing code graph per checkout and worktree; app worktree sessions run hooks from the main checkout
 - **v2.46.9 · 14.11.2026:** Graphify code graph for Claude: project skill, hooks and setup steps (docs/19)
 - **v2.46.8 · 14.11.2026:** Asterisk crash of #768 avoided: the dialplan asks voice with the media token before it dials it
