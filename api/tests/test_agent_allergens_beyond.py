@@ -1471,7 +1471,7 @@ def test_a_mixed_negation_keeps_the_allergy(session, known_tenant, said):
     run(session, state, said, LLMTurn(say="Gern."))
 
     assert not only_denies(said)
-    assert state.allergy_named
+    assert state.allergy_said == [said]
 
 
 @pytest.mark.parametrize(

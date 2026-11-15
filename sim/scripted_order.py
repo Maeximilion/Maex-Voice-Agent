@@ -157,6 +157,8 @@ class PickupScript:
         # A corrected order waits for the mandatory choice of its new dish:
         # with the answer it is complete again and goes back to the read-back.
         self._complete = False
+        # The note for the whole order, once the core asked for one.
+        self._order_note: str | None = None
 
     # -- Customer turn ------------------------------------------------------
 
@@ -824,8 +826,10 @@ class PickupScript:
             state_patch=state_patch,
         )
 
-    def draft_again(self, slots: dict[str, Any]) -> LLMTurn:
-        """The same draft once more, after the core sent it back."""
+    def draft_again(self, slots: dict[str, Any], note: str) -> LLMTurn:
+        """The same draft once more, after the core sent it back, with `note`
+        for the whole order, kept for every draft after it."""
+        self._order_note = note
         return LLMTurn(tool_call=ToolCall("draft_order", self._draft_args(slots)))
 
     def _draft_args(self, slots: dict[str, Any]) -> dict[str, Any]:
@@ -848,6 +852,7 @@ class PickupScript:
                 }
                 for i in self.cart
             ],
+            **({"note": self._order_note} if self._order_note else {}),
         }
 
 

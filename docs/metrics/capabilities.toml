@@ -50,7 +50,7 @@ summary = '''The core runs on a scripted stand-in by default and on any chat-com
 
 [[area]]
 name = "Privacy by design"
-summary = '''A call log without recording, deletion periods enforced every hour, a caller's allergy passed on only after explicit consent.'''
+summary = '''A call log without recording, deletion periods enforced every hour, a caller's allergy noted for the kitchen and deleted the night after the order.'''
 
 [[area]]
 name = "Data of the pilot restaurant"
@@ -166,8 +166,8 @@ tasks = ["T-6.1", "T-6.2", "T-6.3", "T-6.5"]
 
 [[capability]]
 area = "Privacy by design"
-works = '''A caller's own allergy reaches the kitchen with its reason only after their explicit consent, logged per call, and a question about allergens beyond the maintained values goes to the team before `confirm` (legal check L13, L17)'''
-missing = '''A caller's own allergy reaches the kitchen with its reason only after their explicit consent, logged per call (`consent_log`); another adult's allergy is noted as a plain removal. Still missing: the handover to the team before `confirm` when the guest asks beyond the maintained allergen values (L17)'''
+works = '''A caller's allergy reaches the kitchen as a highlighted note the model writes, never without it once named, and a question about allergens beyond the maintained values goes to the team before `confirm` (legal check L13, L17)'''
+missing = '''A caller's allergy reaches the kitchen as a highlighted note the model writes, never without it once named. Still missing: the handover to the team before `confirm` when the guest asks beyond the maintained allergen values (L17)'''
 tasks = ["T-11.1"]
 
 [[capability]]

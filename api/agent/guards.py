@@ -65,7 +65,9 @@ from api.agent.state import (
 from api.domain.menu.items import option_key
 from api.domain.menu.pos_convert import names_an_allergen
 from api.domain.menu.search import SAY_WHICH_NUMBER
-from api.domain.menu.wishes import mentions_allergy
+from api.domain.menu.wishes import HEALTH_NOTE_RE, mentions_allergy
+from api.schemas.orders import NOTE_MAX
+from api.schemas.reservations import RESERVATION_NOTE_MAX
 
 # For the model, part of what it reads next to the prompt: German like the prompt.
 HINT_CONFIRM = (
@@ -133,11 +135,17 @@ HINT_NOT_BOOKED = (
     "Buchung, sag `booking_say` aus dem Zustand wörtlich; sonst lies den "
     "readback vor und warte auf ein klares Ja."
 )
-HINT_UNNOTED_ALLERGY = (
-    "Abgelehnt: der Gast hat eine Allergie genannt, und kein `note` nennt sie. "
-    "Notiere die Allergie des Gastes als Hinweis am Gericht oder an der "
-    "Bestellung („WICHTIG !!! Kunde ist allergisch auf …“) und ruf denselben "
-    "Schritt noch einmal auf."
+# The hint of the safety net, with the guest's words behind it: the model
+# keeps nothing between turns (`unnoted_allergy`).
+HINT_UNNOTED_ALLERGY = "Abgelehnt: kein `note` nennt die Allergie des Gastes."
+_HINT_UNNOTED_SAID = (
+    " Der Gast sagte: „{said}“. Notiere die Allergie als WICHTIG-Hinweis am "
+    "Gericht, an der Bestellung oder am Tisch und ruf denselben Schritt noch "
+    "einmal auf."
+)
+HINT_NOTE_CLAIM = (
+    "Abgelehnt: ein `note` sagt, ein Gericht sei frei von etwas. Notiere nur, "
+    "was der Gast gesagt hat, und ruf denselben Schritt noch einmal auf."
 )
 # Words that tell a guest something is booked, with any ending ("Ihre
 # bestätigte Bestellung"; Codex PR #347).
@@ -698,23 +706,67 @@ HINT_STATED_ALLERGY = (
 _STATED_ALLERGY = ToolResult(
     ok=False, error_code="invalid_input", hint=HINT_STATED_ALLERGY
 )
-UNNOTED_ALLERGY = ToolResult(
-    ok=False, error_code="invalid_input", hint=HINT_UNNOTED_ALLERGY
-)
+# The longest note of the whole order and of a table.
+NOTE_MAX_FOR = {"draft_order": NOTE_MAX, "create_reservation": RESERVATION_NOTE_MAX}
+NOTE_CLAIM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_NOTE_CLAIM)
+# What the core writes onto a draft the model sent twice without the guest's
+# words (`with_the_guests_words`).
+NOTED_FOR_THE_GUEST = "WICHTIG !!! Gast sagte: {said}"
+# A note that only repeats the example of a hint names nothing.
+_TEMPLATE = ("…", "<", "WICHTIG-Hinweis")
 
 
 def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | None:
-    """A draft for a guest who named an allergy in this call, with no note
-    that names one: the kitchen would never hear of it. The words are those
-    the retention job deletes such a note by (`jobs/retention.py`), so what
-    passes here is also deleted in time (L13). The loop gives this back once
-    per turn: a model that sends the draft again without it goes through,
-    never into a loop."""
-    if not state.allergy_named or call.name not in NOTED:
+    """A draft for a guest who spoke of their health in this call
+    (`state.allergy_said`), with no note that names it: the kitchen would
+    never hear of it. A note passes by `wishes.HEALTH_NOTE`, the pattern the
+    retention job deletes such a note by, so what passes here is deleted in
+    time (L13). The hint quotes the guest. The loop gives it back once per
+    turn, and writes the guest's words on the next one itself
+    (`with_the_guests_words`), never a loop."""
+    if not state.allergy_said or call.name not in NOTED:
         return None
-    if any(_ALLERGY_WORD.search(note.lower()) for note in _notes(call)):
+    if any(
+        HEALTH_NOTE_RE.search(note) and not any(t in note for t in _TEMPLATE)
+        for note in _notes(call)
+    ):
         return None
-    return UNNOTED_ALLERGY
+    hint = HINT_UNNOTED_ALLERGY + _HINT_UNNOTED_SAID.format(said=_said(state))
+    return ToolResult(ok=False, error_code="invalid_input", hint=hint)
+
+
+def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall:
+    """The draft with the guest's own words about their health on the note of
+    the whole order or of the table, behind what the model wrote there, cut
+    to the field: the model sent it again without them. Words, never a
+    reading of them (Maxi, 15.11.2026). One that would not fit next to the
+    model's note takes the field alone: the health part is the one to keep."""
+    added = NOTED_FOR_THE_GUEST.format(said=_said(state))
+    limit = NOTE_MAX_FOR[call.name]
+    before = call.args.get("note")
+    note = (
+        f"{before.strip()}. {added}"
+        if isinstance(before, str) and before.strip()
+        else added
+    )
+    if len(note) > limit:
+        note = added[:limit].rstrip()
+    return ToolCall(call.name, {**call.args, "note": note})
+
+
+def _said(state: ConversationState) -> str:
+    # Without the closing full stop: a read-back puts its own behind a note.
+    return " ".join(sentence.strip() for sentence in state.allergy_said).rstrip(" .")
+
+
+def claims_in_a_note(state: ConversationState, call: ToolCall) -> ToolResult | None:
+    """A note of a draft that promises a dish free of an allergen ("nussfrei",
+    "keine Spuren"): read back, the guest would hear what no database value
+    answers (L17), so it goes back. The same reading as the model's sentence
+    (`allergen_claim`); an additive has its own way (`notes_an_additive`)."""
+    if any(allergen_claim(state, note) is ALLERGEN_CLAIM for note in _notes(call)):
+        return NOTE_CLAIM
+    return None
 
 
 def unheard_readback(state: ConversationState) -> str | None:

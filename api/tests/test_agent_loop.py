@@ -44,6 +44,8 @@ from api.agent.loop import (
     ConversationLoop,
     TurnResult,
     _booked_say,
+    _card_without_allergy,
+    _handoff_summary,
     _local_times,
     _order_lines,
     _still_open,
@@ -2673,3 +2675,61 @@ def test_a_long_open_sentence_is_repeated_whole(state):
     note_said(state, asked)
 
     assert _still_open(state) == asked
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "Kunde verträgt keine Milch, bitte zurückrufen.",
+        "Kunde hat Zöliakie, Rückfrage zur 13.",
+        "Gast reagiert auf Nüsse.",
+        # A word of the guest's sentence about their health (`allergy_said`).
+        "Rückfrage zu den Erdnüssen in der 13.",
+    ],
+)
+def test_a_model_card_naming_the_guests_health_is_rewritten(state, summary):
+    """L13: a card is kept for the period of a callback, the health note only
+    until the night after the order. Reason and booking stay."""
+    state.allergy_said = ["Gegen Erdnüsse."]
+    state.booking_say = "Ihr Tisch ist reserviert."
+    call = ToolCall(
+        "create_callback", {"reason": "human_requested", "summary": summary}
+    )
+
+    card = _card_without_allergy(state, call).args
+
+    assert card["reason"] == "human_requested"
+    assert card["summary"] == _handoff_summary(
+        "human_requested", None, "Ihr Tisch ist reserviert."
+    )
+    assert "Erdnüss" not in card["summary"] and "Zöliakie" not in card["summary"]
+
+
+def test_a_model_card_without_health_stays(state):
+    state.allergy_said = ["Ich habe eine Nussallergie."]
+    call = ToolCall(
+        "create_callback",
+        {
+            "reason": "human_requested",
+            "summary": "Kunde möchte einen Tisch am Freitag.",
+        },
+    )
+    assert _card_without_allergy(state, call) == call
+
+
+@pytest.mark.parametrize(
+    ("note", "shown"),
+    [
+        ("WICHTIG !!! Allergie (Ehefrau): Sesam", SUMMARY_NOTE_TO_CLEAR),
+        ("bitte alles vegan halten", "bitte alles vegan halten"),
+    ],
+)
+def test_the_order_note_on_a_card_never_names_health(state, note, shown):
+    pho = str(uuid.uuid4())
+    state.seen_items[pho] = {"number": "13", "name": "Pho Bo"}
+    state.cart = [{"menu_item_id": pho, "quantity": 1}]
+    state.order_note = note
+
+    assert _order_lines(state, 200) == (
+        f"für die ganze Bestellung: {shown}, 1x 13 Pho Bo"
+    )

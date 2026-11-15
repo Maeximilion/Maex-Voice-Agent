@@ -1114,6 +1114,17 @@ def speaks_of_health(text: str) -> bool:
     return mentions_allergy(text) or bool(_HEALTH_WORDS.search(text))
 
 
+# A note about the guest's health, as the model writes it ("WICHTIG !!! Kunde
+# ist allergisch auf Nüsse", "WICHTIG !!! Zöliakie, glutenfrei") and as the
+# team types it ("Nussallergie", "Laktoseintoleranz"). One pattern for the
+# safety net that wants such a note (`agent/guards.unnoted_allergy`) and for
+# the job that deletes it the night after its order (`jobs/retention.py`, L13):
+# a note the net lets pass is a note that is deleted. POSIX and Python alike;
+# both cases of the umlaut, since whether ~* folds one depends on the locale.
+HEALTH_NOTE = "allergi|unvertr(ä|Ä|ae)glich|intoleran|wichtig *!!!"
+HEALTH_NOTE_RE = re.compile(HEALTH_NOTE, re.IGNORECASE)
+
+
 def denies_allergy(text: str) -> bool:
     """Does the guest only deny an allergy of their own ("ich habe keine
     Allergie", "nicht allergisch")? As `classify_wish` decides without the
@@ -1556,6 +1567,9 @@ def only_denies(text: str) -> bool:
     )
 
 
+# Since 15.11.2026 the core reads no answer to "Wogegen?" (Maxi): `names_an_order`,
+# `WITHDRAWN` and `which_answer` serve the stand-in model only
+# (`sim/scripted_order.py`), kept here beside the parser they read with.
 # What an order starts with, never an ingredient ("eine Cola", "Nummer 12").
 _ORDER_LEADS = frozenset({"und", "ein", "eine", "einen", "einmal", "nummer", "noch"})
 

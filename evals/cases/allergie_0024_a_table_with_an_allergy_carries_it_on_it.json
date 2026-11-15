@@ -1,0 +1,37 @@
+{
+  "id": "allergie_0024",
+  "name": "A table with an allergy carries it on its note",
+  "tags": [
+    "allergie",
+    "reservierung",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich moechte fuer Freitag um halb acht einen Tisch fuer vier Personen reservieren."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller, ich habe eine Nussallergie."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt."
+    }
+  ],
+  "expected": {
+    "intent": "reservation",
+    "confirmed": true,
+    "escalated": false,
+    "party_size": 4,
+    "customer_name": "Mueller",
+    "note": "WICHTIG !!! Auf den Namen Mueller, ich habe eine Nussallergie",
+    "consent": []
+  }
+}

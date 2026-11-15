@@ -12,6 +12,7 @@ anzukündigen (CLAUDE.md §2 Regel 5: kein Anruf geht verloren).
 
 import json
 import logging
+import re
 import time
 from collections.abc import Callable
 from contextlib import suppress
@@ -42,6 +43,7 @@ from api.agent.ladder import (
 )
 from api.agent.llm import LLMClient, LLMError, ToolCall
 from api.agent.state import (
+    ALLERGY_SAID_MAX,
     ConversationState,
     RemedyOffer,
     apply_state_patch,
@@ -61,7 +63,7 @@ from api.domain.callbacks import matching_rule, note_remedy
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import names_an_allergen
-from api.domain.menu.wishes import names_coeliac, speaks_of_health
+from api.domain.menu.wishes import HEALTH_NOTE_RE, names_coeliac, speaks_of_health
 from api.domain.ordering.readback import spoken_euro
 from api.domain.reservations.spoken import WEEKDAYS
 from api.models import Order, Reservation, Tenant
@@ -121,7 +123,7 @@ _HEARD = {
     "cart",
     "known_item_ids",
     "seen_items",
-    "allergy_named",
+    "allergy_said",
     "callback_waits",
     "remedy_offer",
 }
@@ -341,8 +343,7 @@ class ConversationLoop:
         # The table read back, before a new allergy takes its draft back: a
         # handover in this very turn still names it (Codex PR #369).
         open_table = self._open_table(state)
-        named = escalation.names_an_allergy(user_text)
-        if named:
+        if _note_allergy_said(state, user_text):
             # The draft read out before may not carry what the guest just
             # said: a yes must not confirm it (Codex PR #368, P1). The model
             # drafts again, with the note (`guards.unnoted_allergy`).
@@ -401,7 +402,6 @@ class ConversationLoop:
         if escalated is not None:
             return escalated
         state.allergy_talk = talk
-        state.allergy_named = state.allergy_named or named
         if only_asks:
             if self._clock() - self._started > self._max_call_seconds:
                 # The answer keeps no call open past its limit: asked again
@@ -693,11 +693,22 @@ class ConversationLoop:
                     lead=SAY_ALLERGENS_BEYOND,
                     card=SUMMARY_ADDITIVES,
                 )
-            if refused is None and not allergy_hint_given:
-                # The guest named an allergy and the draft notes none: back
-                # to the model once (Maxi, 15.11.2026).
-                refused = guards.unnoted_allergy(state, turn.tool_call)
-                allergy_hint_given = refused is not None
+            call = turn.tool_call
+            if refused is None:
+                # A note read back must not promise a dish free of anything
+                # (L17).
+                refused = guards.claims_in_a_note(state, call)
+            if refused is None and (missing := guards.unnoted_allergy(state, call)):
+                if allergy_hint_given:
+                    # Sent again without it: the core writes the guest's own
+                    # words onto it and lets it go, never a loop and never a
+                    # draft without them (Maxi, 15.11.2026).
+                    call = guards.with_the_guests_words(state, call)
+                else:
+                    # Back to the model once, with the guest's words. The
+                    # draft stays on the card of a handover meanwhile.
+                    refused, allergy_hint_given = missing, True
+                    open_table = self._open_draft(state, call) or open_table
             if refused is not None:
                 log_refused(
                     self._session,
@@ -708,7 +719,7 @@ class ConversationLoop:
                 )
                 result = refused
             else:
-                call = _card_without_allergy(state, turn.tool_call)
+                call = _card_without_allergy(state, call)
                 call = guards.flag_the_allergy_question(call, user_text)
                 result = self._dispatch(state, call.name, call.args)
             if (
@@ -725,7 +736,7 @@ class ConversationLoop:
                 return self._allergens_to_team(
                     state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                 )
-            apply_tool_result(state, turn.tool_call.name, result, turn.tool_call.args)
+            apply_tool_result(state, call.name, result, call.args)
             told = result.say or ""
             if not result.ok and told.endswith(SAY_TO_THE_TEAM):
                 # The tool's sentence promises the team: a draft cancelled on
@@ -842,6 +853,7 @@ class ConversationLoop:
             or state.cart
             or state.seen_items
             or state.allergy_talk
+            or state.allergy_said
             or speaks_of_health(user_text)
             or not escalation.only_a_complaint(user_text)
         ):
@@ -1141,7 +1153,7 @@ class ConversationLoop:
         lead: str | None = SAY_ALLERGENS_BEYOND
         reason = "out_of_scope"
         if escalation.names_an_incident(user_text):
-            detail = None if speaks_of_health(user_text) else user_text
+            detail = None if _names_health(state, user_text) else user_text
             card = _handoff_summary("complaint", detail)
             lead, reason = None, "complaint"
         return self._allergens_to_team(
@@ -1187,18 +1199,25 @@ class ConversationLoop:
         team takes the call, with the order or the table the draft asked for
         on the card, and the guest hears that it is not booked, after `lead`.
         Nothing is stored."""
-        table = None
-        if call.name == "create_reservation":
-            with suppress(ValueError, TypeError):
-                table = self._table_parts(state, call.args)
-        else:
-            # The draft, also a correction the model sent without a `cart`
-            # (Codex PR #414).
-            with suppress(ValidationError):
-                state.cart = cart_lines(call.args.get("items"))
+        table = self._open_draft(state, call)
         return self._allergens_to_team(
             state, lead=lead, table=table, card=card, reason="out_of_scope"
         )
+
+    def _open_draft(self, state: ConversationState, call: ToolCall) -> str | None:
+        """A draft that never reached its tool, for the card of a handover:
+        the table it asked for, or its order as the open cart."""
+        if call.name == "create_reservation":
+            with suppress(ValueError, TypeError):
+                return self._table_parts(state, call.args)
+            return None
+        # The draft, also a correction the model sent without a `cart`
+        # (Codex PR #414).
+        with suppress(ValidationError):
+            state.cart = cart_lines(call.args.get("items"))
+            note = call.args.get("note")
+            state.order_note = note if isinstance(note, str) and note else None
+        return None
 
     def _open_table(self, state: ConversationState) -> str | None:
         """The table read back and not yet confirmed, as the team reads it on
@@ -1381,7 +1400,7 @@ class ConversationLoop:
         a table the state no longer shows (`_note_to_team`). `open_named`:
         `summary` is a card that waited for a number and names all of it
         already (`_callback_answered`)."""
-        if detail and speaks_of_health(detail):
+        if detail and _names_health(state, detail):
             # The guest's sentence names an allergy, which is health data: it
             # is not written on a card. The guest told it for the kitchen
             # (L13), and the team asks when it calls back.
@@ -1429,19 +1448,29 @@ def _order_lines(state: ConversationState, room: int) -> str:
         number, name = seen.get("number"), seen.get("name")
         chosen = [f"{o['group']}: {o['name']}" for o in line.get("options", [])]
         note = line.get("note")
-        if note and speaks_of_health(note):
+        if note and _names_health(state, note):
+            # shortcut: a removal in the same note ("ohne Zwiebeln") goes with
+            # the health part; the team calls the guest about the note anyway.
             note = SUMMARY_NOTE_TO_CLEAR
         extra = "; ".join([*chosen, *([note] if note else [])])
         tail = f" ({extra})" if extra else ""
         dish = " ".join(x for x in (number, name) if x) or "Gericht"
         full.append(f"{line['quantity']}x {dish}{tail}")
         short.append(f"{line['quantity']}x {number or name or 'Gericht'}{tail}")
-    if len(text := ", ".join(full)) <= room:
+    # What the kitchen must know for the whole order comes first and is no
+    # position: it never goes and is never counted (#656).
+    whole = state.order_note
+    if whole and _names_health(state, whole):
+        whole = SUMMARY_NOTE_TO_CLEAR
+    first = [f"für die ganze Bestellung: {whole}"] if whole else []
+    if len(text := ", ".join(first + full)) <= room:
         return text
     for kept in range(len(short), -1, -1):
         rest = len(short) - kept
-        parts = short[:kept] + (
-            [f"{rest} weitere Position{'en' * (rest > 1)}"] if rest else []
+        parts = (
+            first
+            + short[:kept]
+            + ([f"{rest} weitere Position{'en' * (rest > 1)}"] if rest else [])
         )
         if len(text := ", ".join(parts)) <= room:
             return text
@@ -1466,6 +1495,76 @@ def _booked_say(
     return placed.replace("Ihre Bestellung ist", SAY_FOR_NAME.format(name=name), 1)
 
 
+def _note_allergy_said(state: ConversationState, text: str) -> bool:
+    """Keeps the guest's sentence when it speaks of their health
+    (`escalation.arms_the_net`) or answers the model's question about an
+    allergy ("Gegen Erdnüsse."), for the safety net and the model, which
+    keeps nothing between turns (Maxi, 15.11.2026). A bare denial in answer
+    to such a question ("Keine.", "Ich habe keine Allergie") takes it back
+    (`allergie_0012`). True for a sentence that arms the net itself: a
+    read-back waiting for its yes may not carry it."""
+    asked = _asked_about_an_allergy(state)
+    if escalation.bare_denial(text, asked=asked):
+        # Not without the question: "Ich habe keine Allergie" after "meine
+        # Frau hat eine Sesamallergie" takes back no one else's.
+        if asked:
+            state.allergy_said = []
+        return False
+    armed = escalation.arms_the_net(text)
+    if armed or asked:
+        state.allergy_said = [*state.allergy_said, text.strip()][-ALLERGY_SAID_MAX:]
+    return armed
+
+
+def _asked_about_an_allergy(state: ConversationState) -> bool:
+    """Did the model's last sentence ask about an allergy ("Wogegen sind Sie
+    allergisch?", "Haben Sie eine Allergie?")? Never a read-back: its note
+    names the allergy, and the "Ja" to it answers the order."""
+    say = state.last_say or ""
+    lowered = say.lower()
+    if "?" not in say or not ("allerg" in lowered or "wogegen" in lowered):
+        return False
+    return not (state.readback and say.lstrip("…") in state.readback)
+
+
+# Words a card may share with the guest's sentences about their health
+# without naming it (`_names_health`).
+_PLAIN_WORDS = frozenset(
+    {"gegen", "keine", "keinen", "einen", "einer", "einem", "bitte", "haben"}
+    | {"meine", "meinen", "meiner", "meinem", "nicht", "schon", "danke", "guten"}
+    | {"hallo", "nummer", "abholen", "bestellen", "mochte", "heute", "morgen"}
+    | {"allergie", "allergisch"}
+)
+
+
+def _names_health(state: ConversationState, text: str) -> bool:
+    """Does `text` speak of the guest's health: in a health word or a health
+    note (`wishes.speaks_of_health`, `wishes.HEALTH_NOTE`), or by a word of a
+    sentence the guest said about it in this call (`state.allergy_said`),
+    "Erdnüsse" there and "Erdnuss" here? A card kept for a callback never
+    carries it (L13).
+    shortcut: any shared word of five letters or more counts, a name in that
+    sentence too; the card then gets the sentence of its reason, the safe
+    side."""
+    if speaks_of_health(text) or HEALTH_NOTE_RE.search(text):
+        return True
+    said = {word for sentence in state.allergy_said for word in _stems(sentence)}
+    return bool(said & _stems(text))
+
+
+def _stems(text: str) -> set[str]:
+    folded = text.casefold().replace("ß", "ss")
+    for umlaut, plain in (("ä", "a"), ("ö", "o"), ("ü", "u")):
+        folded = folded.replace(umlaut, plain).replace(f"{plain}e", plain)
+    stems = set()
+    for word in re.findall(r"\w+", folded):
+        if len(word) < 5 or word in _PLAIN_WORDS:
+            continue
+        ending = next((e for e in ("en", "er", "e", "n", "s") if word.endswith(e)), "")
+        stems.add(word.removesuffix(ending))
+    return stems
+
+
 def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
     """A callback whose `summary` the model wrote names the guest's allergy:
     health data on a card, kept longer than the kitchen note (L13). The card
@@ -1477,7 +1576,7 @@ def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
     if (
         call.name != "create_callback"
         or not isinstance(summary, str)
-        or not speaks_of_health(summary)
+        or not _names_health(state, summary)
     ):
         return call
     reason = str(call.args.get("reason"))

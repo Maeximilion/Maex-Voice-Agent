@@ -3,9 +3,10 @@
 A remark on a dish goes on its line, one for the whole order on the order, and
 an allergy is written by the model as well ("WICHTIG !!! Kunde ist allergisch
 auf Nüsse"). The core asks no consent question and reads no allergy list; it
-keeps one safety net: a guest who named an allergy gets no draft without a
-note that names it, the first one goes back to the model once per turn
-(`guards.unnoted_allergy`). Allergen answers stay with the database (L17).
+keeps one safety net: a guest who spoke of their health gets no draft without
+a note that names it; the first goes back to the model once per turn with the
+guest's words (`guards.unnoted_allergy`), the next gets them from the core
+(`guards.with_the_guests_words`). Allergen answers stay with the database (L17).
 Caller sentences in German: the core parses German.
 """
 
@@ -16,14 +17,14 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
 from api.agent import guards
-from api.agent.escalation import names_an_allergy
-from api.agent.llm import LLMTurn, ToolCall
-from api.agent.loop import SAY_ALLERGENS_BEYOND
-from api.agent.state import ConversationState
+from api.agent.escalation import arms_the_net
+from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
+from api.agent.loop import SAY_ALLERGENS_BEYOND, ConversationLoop
+from api.agent.state import ConversationState, note_guest_details
 from api.domain.menu import search_menu
 from api.domain.menu.importer import apply, parse
-from api.models import Call, Order, OrderItem, Reservation
-from api.tests.test_agent_allergens_beyond import CALLER, run, state_for
+from api.models import Call, Callback, Order, OrderItem, Reservation
+from api.tests.test_agent_allergens_beyond import CALLER, CLOSED, run, state_for
 from api.tests.test_domain_draft_order import KARTE, NOW, _tenant, item
 
 ALLERGY_NOTE = "WICHTIG !!! Kunde ist allergisch auf Nüsse"
@@ -171,7 +172,13 @@ def test_a_second_draft_without_it_goes_through_never_into_a_loop(
 
     assert result.say == ["Passt das so?"]
     assert drafts_logged(session, state) == ["invalid_input", None]
-    assert stored(session) == (None, [None])
+    # The core wrote the guest's own words on the order (Maxi, 15.11.2026).
+    assert stored(session) == (
+        "WICHTIG !!! Gast sagte: "
+        "Einmal die Pho Bo auf Müller, ich habe eine Nussallergie",
+        [None],
+    )
+    assert state.order_note == stored(session)[0]
 
 
 def test_an_allergy_said_in_an_earlier_turn_still_arms_it(session, known_tenant):
@@ -194,13 +201,16 @@ def test_an_allergy_said_in_an_earlier_turn_still_arms_it(session, known_tenant)
 @pytest.mark.parametrize(
     "said",
     [
-        "Einmal die Pho Bo auf Müller, ich habe keine Allergie.",
-        "Einmal die Pho Bo auf Müller, ich bin nicht allergisch.",
+        "Ich habe keine Allergie.",
+        "Ich bin nicht allergisch.",
         "Einmal die Pho Bo auf Müller.",
     ],
 )
 def test_a_denial_or_no_allergy_does_not_arm_it(session, known_tenant, said):
+    """A denial with more around it ("Die 13, ich habe keine Allergie") arms
+    the net: generous on purpose, the guest's words go on the note."""
     state = state_for(session, known_tenant, phone=CALLER)
+    note_guest_details(state, "Auf den Namen Müller.")
 
     run(
         session,
@@ -211,7 +221,7 @@ def test_a_denial_or_no_allergy_does_not_arm_it(session, known_tenant, said):
         LLMTurn(say="Passt das so?"),
     )
 
-    assert not state.allergy_named
+    assert state.allergy_said == []
     assert drafts_logged(session, state) == [None]
 
 
@@ -253,34 +263,60 @@ def test_a_note_that_names_the_allergy_passes_the_net(note):
     assert guards.unnoted_allergy(state, call) is None
 
 
-@pytest.mark.parametrize("note", [None, "ohne Nüsse", "WICHTIG: ohne Nüsse"])
+@pytest.mark.parametrize(
+    "note",
+    [
+        None,
+        "ohne Nüsse",
+        "WICHTIG: ohne Nüsse",
+        # Only the example of the hint repeated names nothing.
+        "WICHTIG !!! Kunde ist allergisch auf …",
+        "WICHTIG !!! Kunde ist allergisch auf <X>",
+    ],
+)
 def test_a_note_that_does_not_name_it_is_caught(note):
     """The words are the retention job's: a note that passes is deleted in
-    time (L13)."""
+    time (L13). The hint quotes the guest: the model keeps nothing."""
     state = _named()
     args = {"items": [{"menu_item_id": "x", "quantity": 1}]}
     if note is not None:
         args["note"] = note
-    assert (
-        guards.unnoted_allergy(state, ToolCall("draft_order", args))
-        is guards.UNNOTED_ALLERGY
-    )
+    refused = guards.unnoted_allergy(state, ToolCall("draft_order", args))
+    assert refused is not None and refused.error_code == "invalid_input"
+    assert (refused.hint or "").startswith(guards.HINT_UNNOTED_ALLERGY)
+    assert "„Ich habe eine Nussallergie“" in (refused.hint or "")
     assert guards.unnoted_allergy(state, ToolCall("search_menu", {})) is None
 
 
 @pytest.mark.parametrize(
-    ("said", "named"),
+    "said",
     [
-        ("Ich habe eine Nussallergie.", True),
-        ("Meine Frau ist allergisch gegen Sesam.", True),
-        ("Ich habe eine Laktoseunverträglichkeit.", True),
-        ("Ich habe keine Allergie.", False),
-        ("Welche Allergene hat die 13?", False),
-        ("Die 13 bitte.", False),
+        "Ich habe eine Nussallergie.",
+        "Meine Frau ist allergisch gegen Sesam.",
+        "Ich habe eine Laktoseunverträglichkeit.",
+        "Ich habe Zöliakie.",
+        "Ich darf keine Nüsse essen.",
+        "Ich habe keine Allergie. Mein Mann aber gegen Sesam.",
+        "Keine Allergie, mein Mann gegen Sesam",
+        "Ich bin nicht allergisch, meine Tochter schon, gegen Nüsse.",
     ],
 )
-def test_what_names_an_allergy(said, named):
-    assert names_an_allergy(said) is named
+def test_a_health_word_arms_the_net(said):
+    """Generous on purpose (Maxi, 15.11.2026): a false arm costs one hop."""
+    assert arms_the_net(said)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich habe keine Allergie.",
+        "Nein, keine Allergie.",
+        "Welche Allergene hat die 13?",
+        "Die 13 bitte.",
+    ],
+)
+def test_a_bare_denial_or_no_health_word_does_not_arm_it(said):
+    assert not arms_the_net(said)
 
 
 def test_the_claim_guard_still_refuses_a_dish_free_of_an_allergen(
@@ -315,4 +351,183 @@ def test_a_priced_addition_still_comes_from_the_menu(session, known_tenant):
 
 
 def _named() -> ConversationState:
-    return ConversationState(call_id=uuid4(), tenant_id=uuid4(), allergy_named=True)
+    return ConversationState(
+        call_id=uuid4(), tenant_id=uuid4(), allergy_said=["Ich habe eine Nussallergie."]
+    )
+
+
+def test_the_answer_to_the_models_allergy_question_is_kept(session, known_tenant):
+    """The model asks "Wogegen?" itself; "Gegen Erdnüsse." names no allergy
+    word, and the model of the next turn must still see it."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ich habe eine Allergie.",
+        LLMTurn(say="Wogegen sind Sie allergisch?"),
+    )
+
+    _, llm = run(session, state, "Gegen Erdnüsse.", LLMTurn(say="Notiert."))
+
+    assert state.allergy_said == ["Ich habe eine Allergie.", "Gegen Erdnüsse."]
+    assert llm.calls[0][1]["allergy_said"] == state.allergy_said
+
+
+@pytest.mark.parametrize("answer", ["Keine.", "Nein.", "Ich habe keine Allergie."])
+def test_a_bare_denial_to_the_question_takes_it_back(session, known_tenant, answer):
+    """`allergie_0012`: "Wogegen?" - "Keine.": nothing is left to note."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ich habe eine Allergie.",
+        LLMTurn(say="Wogegen sind Sie allergisch?"),
+    )
+
+    run(session, state, answer, LLMTurn(say="Gut."))
+
+    assert state.allergy_said == []
+
+
+def test_a_denial_without_the_question_takes_no_one_elses_back(session, known_tenant):
+    """ "Ich habe keine Allergie" after another person's names only the
+    caller: the safe side keeps the sentence."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(session, state, "Meine Frau hat eine Sesamallergie.", LLMTurn(say="Gut."))
+
+    run(session, state, "Ich habe keine Allergie.", LLMTurn(say="Gut."))
+
+    assert state.allergy_said == ["Meine Frau hat eine Sesamallergie."]
+
+
+def test_the_yes_to_a_read_back_with_an_allergy_note_is_no_answer_about_it(
+    session, known_tenant
+):
+    state = state_for(session, known_tenant, phone=CALLER)
+    state.stage = "readback_pending"
+    state.readback = (
+        "Einmal 13 Pho Bo, WICHTIG !!! Kunde ist allergisch auf Nüsse. Passt das so?"
+    )
+    guards.note_said(state, state.readback)
+
+    run(session, state, "Ja, bitte.", LLMTurn(say="Gut."))
+
+    assert state.allergy_said == []
+
+
+def test_a_newly_armed_sentence_drops_the_read_back_but_an_answer_does_not(
+    session, known_tenant
+):
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Einmal die Pho Bo auf Müller.",
+        search(),
+        draft(session, known_tenant),
+        LLMTurn(say="Haben Sie eine Allergie?"),
+    )
+    assert state.stage == "readback_pending"
+
+    run(session, state, "Gegen Erdnüsse.", LLMTurn(say="Notiert."))
+    assert state.stage == "readback_pending"
+
+    run(session, state, "Und meine Frau hat Zöliakie.", LLMTurn(say="Notiert."))
+    assert state.stage != "readback_pending"
+
+
+def test_the_core_writes_the_guests_words_on_a_table_cut_to_its_field(
+    session, known_tenant
+):
+    state = state_for(session, known_tenant, phone=CALLER)
+    table = {
+        "guest_name": "Müller",
+        "phone": CALLER,
+        "party_size": 2,
+        "reserved_for": "2026-09-16T19:00:00+02:00",
+        "note": "Fensterplatz",
+    }
+    said = "Ein Tisch für zwei auf Müller, ich habe Zöliakie " + "und so weiter " * 40
+
+    run(
+        session,
+        state,
+        said,
+        LLMTurn(tool_call=ToolCall("create_reservation", table)),
+        LLMTurn(tool_call=ToolCall("create_reservation", table)),
+        LLMTurn(say="Passt das so?"),
+    )
+
+    [note] = session.scalars(select(Reservation.note)).all()
+    assert note.startswith("WICHTIG !!! Gast sagte: Ein Tisch für zwei")
+    # Cut to the field (the schema strips the space the cut left).
+    assert len(note) >= guards.NOTE_MAX_FOR["create_reservation"] - 1
+    assert state.table_note == note
+
+
+def test_the_guests_words_go_behind_the_models_order_note():
+    state = _named()
+    call = ToolCall("draft_order", {"items": [], "note": "bitte klingeln"})
+
+    noted = guards.with_the_guests_words(state, call)
+
+    assert noted.args["note"] == (
+        "bitte klingeln. WICHTIG !!! Gast sagte: Ich habe eine Nussallergie"
+    )
+
+
+@pytest.mark.parametrize("note", ["nussfrei", "keine Spuren von Nüssen"])
+def test_a_note_that_promises_a_dish_free_of_an_allergen_goes_back(
+    session, known_tenant, note
+):
+    """L17: read back, the note would promise what no database value holds."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    run(
+        session,
+        state,
+        "Einmal die Pho Bo auf Müller.",
+        search(),
+        draft(session, known_tenant, line_note=note),
+        draft(session, known_tenant, line_note="ohne Zwiebeln"),
+        LLMTurn(say="Passt das so?"),
+    )
+
+    assert drafts_logged(session, state) == ["invalid_input", None]
+    assert stored(session) == (None, ["ohne Zwiebeln"])
+
+
+def test_a_refused_draft_stays_on_the_card_when_the_model_fails(session, known_tenant):
+    """The net sent the draft back, then the model failed: the outage card
+    still names the order the guest asked for."""
+
+    class Failing(FakeLLM):
+        def next_turn(self, *args, **kwargs):
+            if not self._turns:
+                raise LLMError("down")
+            return super().next_turn(*args, **kwargs)
+
+    state = state_for(session, known_tenant, phone=CALLER)
+    llm = Failing([search(), draft(session, known_tenant)])
+    result = ConversationLoop(session, llm, "system", now=CLOSED).run_turn(
+        state, "Einmal die Pho Bo auf Müller, ich habe eine Nussallergie."
+    )
+
+    assert result.ended
+    card = session.scalars(select(Callback.summary)).one()
+    assert "1x 13 Pho Bo" in card
+    assert "Nuss" not in card
+
+
+def test_order_and_table_notes_reach_the_model(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Einmal die Pho Bo auf Müller, bitte alles vegan halten.",
+        search(),
+        draft(session, known_tenant, order_note="bitte alles vegan halten"),
+        LLMTurn(say="Passt das so?"),
+    )
+
+    assert state.to_prompt_json()["order_note"] == "bitte alles vegan halten"

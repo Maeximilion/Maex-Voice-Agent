@@ -64,7 +64,7 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 | Team notifications | partly | Events leave through an outbox with retries, for push messages to the team's devices. |
 | Phone line and voice | partly | Our own voice layer: Asterisk, the service voice with its speech engines, and outage drills in which every failure ends at the team phone. |
 | Language model | partly | The core runs on a scripted stand-in by default and on any chat-completions server by a switch; the eval suites measure a real model against the targets. |
-| Privacy by design | built | A call log without recording, deletion periods enforced every hour, a caller's allergy passed on only after explicit consent. |
+| Privacy by design | built | A call log without recording, deletion periods enforced every hour, a caller's allergy noted for the kitchen and deleted the night after the order. |
 | Data of the pilot restaurant | open | The pilot's real menu, hours and capacity in the database. |
 | Foundation | built | One command starts the stack; migrations, seed, tests against a real Postgres, lint, CI with an image smoke test, the specs in docs. |
 
@@ -91,7 +91,7 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 - CI additionally builds API image without local CA cert and checks startup, `/health`, and token auth (missing, wrong, valid) without bind mount
 - Specs for architecture, data model, tools, dialog, GUI, and evals are in `docs/`
 - Orders for pickup and delivery: the menu can be imported, searched, asked about and ordered from, and a delivery order checks its zone, fee and minimum order
-- A caller's own allergy reaches the kitchen with its reason only after their explicit consent, logged per call, and a question about allergens beyond the maintained values goes to the team before `confirm` (legal check L13, L17)
+- A caller's allergy reaches the kitchen as a highlighted note the model writes, never without it once named, and a question about allergens beyond the maintained values goes to the team before `confirm` (legal check L13, L17)
 
 **Not yet working:**
 

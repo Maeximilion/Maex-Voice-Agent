@@ -17,7 +17,12 @@ from typing import Literal
 
 from api.agent.consent import asks
 from api.domain.menu.pos_convert import names_an_allergen
-from api.domain.menu.wishes import denies_allergy, mentions_allergy, only_denies
+from api.domain.menu.wishes import (
+    denies_allergy,
+    mentions_allergy,
+    only_denies,
+    speaks_of_health,
+)
 
 EscalationReason = Literal["complaint", "human_requested", "cancellation"]
 
@@ -176,11 +181,35 @@ def is_question(text: str) -> bool:
     return "?" in text or asks(text.lower())
 
 
-def names_an_allergy(text: str) -> bool:
-    """Does the guest name an allergy, their own or another's, in a sentence
-    that does not only deny one? "Ich habe eine Nussallergie", never "Ich
-    habe keine Allergie" (`guards.unnoted_allergy`)."""
-    return any(mentions_allergy(sentence) for sentence in _not_denied(text))
+def arms_the_net(text: str) -> bool:
+    """Does the guest speak of their health, or someone's at the table, in
+    words a draft must then carry (`guards.unnoted_allergy`)? Generous on
+    purpose (Maxi, 15.11.2026): any allergy or health word in the whole text
+    ("Ich habe Zöliakie", "darf keine Nüsse", "Keine Allergie, mein Mann gegen
+    Sesam"), unless it is a bare denial. A false arm ("Haben Sie Gerichte für
+    Allergiker?") costs one hop and a note."""
+    return speaks_of_health(text) and not bare_denial(text, asked=False)
+
+
+# What a bare "no" to a question about an allergy says ("Nein.", "Keine.",
+# "Gegen nichts.").
+_BARE_NO = frozenset(
+    {"nein", "nee", "ne", "keine", "keins", "keiner", "nichts", "gegen", "danke"}
+)
+_WORDS = re.compile(r"\w+")
+
+
+def bare_denial(text: str, *, asked: bool) -> bool:
+    """A short sentence that only denies an allergy: "Ich habe keine
+    Allergie", "Nein, keine Allergie", at most five words. "Nein" or "Keine"
+    alone only as the answer to a question about one (`asked`): after "Darf es
+    noch etwas sein?" it takes nothing back."""
+    words = _WORDS.findall(text.lower())
+    if not words or len(words) > 5:
+        return False
+    if mentions_allergy(text):
+        return denies_allergy(text) or only_denies(text)
+    return asked and set(words) <= _BARE_NO
 
 
 def _not_denied(text: str) -> list[str]:

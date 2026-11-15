@@ -39,6 +39,7 @@ from api.domain.menu.wishes import (
     mentions_allergy,
     names_coeliac,
     only_denies,
+    speaks_of_health,
 )
 from sim.scripted_order import (
     ADDRESS_FIELDS,
@@ -246,16 +247,18 @@ class ScriptedLLM:
         patch = self._extract(text, state.get("slots", {}))
         slots = {**state.get("slots", {}), **patch}
 
-        if (
-            self._pickup is not None
-            and not self._pickup.readback_for
-            and _read_out_by_the_core(state)
-        ):
-            # The draft the stand-in asked for waited for the question for the
-            # allergy, and the core read it out after the answer (`loop.py`).
-            self._pickup.readback_for = state["order_id"]
         if self._pickup is not None and self._pickup.readback_for:
             yes = _mentions_word(text, YES) and not _mentions_word(text, NO)
+            if (
+                not yes
+                and speaks_of_health(text)
+                and state.get("stage") != "readback_pending"
+            ):
+                # The guest spoke of their health at the read-back, and the
+                # core took the draft back (`loop._note_allergy_said`): the
+                # same order once more, with what the guest said on its note.
+                self._pickup.readback_for = None
+                return self._pickup.draft_again(slots, _health_note(state))
             if not yes and any(field in patch for field in ADDRESS_FIELDS):
                 return self._pickup.on_new_address(slots, patch)
             return self._pickup.on_readback(yes, text)
@@ -310,6 +313,10 @@ class ScriptedLLM:
             and _opening_dish(text) is not None
         )
         stems: tuple[str, ...] = OUT_OF_SCOPE_IN_ORDER if self._pickup else OUT_OF_SCOPE
+        if state.get("intent") == "reservation" and mentioned and "?" not in text:
+            # The guest's allergy for a table goes on its note, by the core's
+            # safety net (`guards.unnoted_allergy`, Maxi 15.11.2026).
+            stems = tuple(s for s in stems if s != ALLERGY_STEM)
         if wants_pickup:
             stems = OUT_OF_SCOPE_IN_ORDER + tuple(
                 s
@@ -427,13 +434,20 @@ class ScriptedLLM:
                 return replace(turn, say=_join(prefix, turn.say)) if turn.say else turn
         if name == "search_menu" and self._opening_prefix is not None:
             return self._after_opening_search(result, slots)
-        if not result.get("ok") and result.get("hint") == HINT_UNNOTED_ALLERGY:
-            # The stand-in notes what the search read as the allergy; an
-            # allergy it did not read it cannot word, so it sends the draft
-            # again, and the core lets the second one go (`guards.py`).
+        if not result.get("ok") and str(result.get("hint")).startswith(
+            HINT_UNNOTED_ALLERGY
+        ):
+            # The core wants the guest's health on a note: the stand-in writes
+            # what the guest said about it, from the state, onto the whole
+            # order or the table (a real model words it, the prompt).
+            note = _health_note(state)
             if self._pickup is not None:
-                return self._pickup.draft_again(slots)
-            return LLMTurn(tool_call=ToolCall("create_reservation", _draft(slots)))
+                return self._pickup.draft_again(slots, note)
+            return LLMTurn(
+                tool_call=ToolCall(
+                    "create_reservation", {**_draft(slots), "note": note}
+                )
+            )
         if not result.get("ok"):
             if self._pickup is not None:
                 # The tool's sentence offers pickup, or asks for one more dish.
@@ -686,14 +700,11 @@ def _mentions_stem(text: str, stems: tuple[str, ...]) -> bool:
     return any(stem in lowered for stem in stems)
 
 
-def _read_out_by_the_core(state: dict[str, Any]) -> bool:
-    """An order draft waits for its yes and the guest heard it last: the state
-    carries its `readback` only while it was not read out."""
-    return (
-        state.get("stage") == "readback_pending"
-        and bool(state.get("order_id"))
-        and "readback" not in state
-    )
+def _health_note(state: dict[str, Any]) -> str:
+    """The note the stand-in writes for the guest's health: their own words
+    (`allergy_said`), as the prompt asks, "WICHTIG !!!" in front."""
+    said = " ".join(state.get("allergy_said", [])).rstrip(" .")
+    return f"WICHTIG !!! {said}"
 
 
 def _mentions_word(text: str, words: tuple[str, ...]) -> bool:

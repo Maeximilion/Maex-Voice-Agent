@@ -522,4 +522,3 @@ def only_stops_recording(text: str) -> bool:
         or word in _ONLY_A_STOP
         for word in _WORD.findall(text.lower())
     )
-

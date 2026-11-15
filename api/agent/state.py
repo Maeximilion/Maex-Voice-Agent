@@ -43,6 +43,8 @@ Stage = Literal[
 # Longest `last_say` the model gets back, in characters: a read-back with
 # three dishes fits, a model that talks on is cut.
 LAST_SAY_MAX = 300
+# How many of the guest's sentences about their health the state keeps.
+ALLERGY_SAID_MAX = 5
 
 
 def last_words(say: str) -> str:
@@ -168,10 +170,17 @@ class ConversationState(BaseModel):
     # dish, an allergen named or coeliac disease (#763). A later "Ist das wirklich sicher?" asks beyond the maintained
     # values (`escalation.asks_beyond_the_allergens`, L17). Never sent.
     allergy_talk: bool = False
-    # The guest named an allergy in this call and did not only deny one: a
-    # draft then has to carry a note that names it (`guards.unnoted_allergy`,
-    # Maxi 15.11.2026). Never sent.
-    allergy_named: bool = False
+    # The guest's own sentences of this call that speak of their health, an
+    # allergy or the like, and the answer to the model's question about one
+    # (`loop._note_allergy_said`, Maxi 15.11.2026). A draft must then carry a
+    # health note (`guards.unnoted_allergy`). Sent: the model keeps nothing
+    # between turns, and a note it writes later needs the words. A bare
+    # denial clears it. At most `ALLERGY_SAID_MAX` sentences.
+    allergy_said: list[str] = Field(default_factory=list)
+    # The note of the whole order and of the table as the last draft carried
+    # it: a draft made again from `cart` or `slots` keeps it. Sent.
+    order_note: str | None = None
+    table_note: str | None = None
     # The card the core wrote for a handover the team takes live, for the
     # phone line to use when nobody answers the team leg
     # (`domain/callbacks/transfer.team_missed`). Never sent.
@@ -216,6 +225,12 @@ class ConversationState(BaseModel):
         if self.order_id:
             # Dasselbe fuer Bestellungen: confirm braucht entity_id.
             data["order_id"] = str(self.order_id)
+        if self.allergy_said:
+            data["allergy_said"] = list(self.allergy_said)
+        if self.order_note:
+            data["order_note"] = self.order_note
+        if self.table_note:
+            data["table_note"] = self.table_note
         if self.booking_say:
             # The model keeps nothing between turns: asked for the booking or
             # the pickup code later, it repeats this sentence word for word.
@@ -560,6 +575,7 @@ def apply_tool_result(
         state.order_id = None
         state.stage = "readback_pending"
         state.booking_say = None
+        state.table_note = _note_of(args)
         _to_read_out(state, result)
     elif name == "draft_order":
         state.intent = (args or {}).get("type", "pickup")
@@ -567,6 +583,7 @@ def apply_tool_result(
         state.reservation_id = None
         state.stage = "readback_pending"
         state.booking_say = None
+        state.order_note = _note_of(args)
         _to_read_out(state, result)
         # The order in the state is the one that was read out, also when the
         # model drafted without writing `cart` first: a correction after the
@@ -612,6 +629,11 @@ def apply_tool_result(
         state.transferred = True
         state.stage = "transferred"
         state.transfer_to = result.data.get("transfer_to")
+
+
+def _note_of(args: dict[str, Any] | None) -> str | None:
+    note = (args or {}).get("note")
+    return note if isinstance(note, str) and note.strip() else None
 
 
 def _to_read_out(state: ConversationState, result: ToolResult) -> None:
