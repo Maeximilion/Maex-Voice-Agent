@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import csv
 import itertools
+import json
+import os
 import re
+import shutil
+import subprocess
 import threading
 import xml.dom.minidom
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from fnmatch import fnmatch
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -824,7 +828,7 @@ def recording(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
 def write_report(folder: Path, name: str, **over: object) -> Path:
     path = folder / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(ra.json.dumps(report(**over)), encoding="utf-8")
+    path.write_text(json.dumps(report(**over)), encoding="utf-8")
     return path
 
 
@@ -912,7 +916,7 @@ def test_rows_recorded_on_a_closed_branch_still_wait_for_main(
     # A second recording on the same branch writes no line twice.
     assert ra.record_pending([here, main_folder]) == 0
     with ra.VOICE_HISTORY.open(encoding="utf-8", newline="") as fh:
-        assert len(list(ra.csv.DictReader(fh))) == 1
+        assert len(list(csv.DictReader(fh))) == 1
     # A later kit run is the only one still pending on that branch.
     later = {**drill_row("14"), "run_at": "2026-10-15T20:00:00+00:00"}
     ra.append_row(main_folder / ra.VOICE_PENDING, ra.VOICE_FIELDS, later)
@@ -931,7 +935,7 @@ def test_recording_drops_the_waiting_rows_main_already_holds(
     monkeypatch.setattr(ra, "merged_voice", lambda: merged)
     assert ra.record_pending([folder]) == 0
     with (folder / ra.VOICE_PENDING).open(encoding="utf-8", newline="") as fh:
-        assert list(ra.csv.DictReader(fh)) == [later]
+        assert list(csv.DictReader(fh)) == [later]
     merged.add(ra._voice_identity(later))
     assert ra.record_pending([folder]) == 0
     assert not (folder / ra.VOICE_PENDING).exists()
@@ -956,9 +960,9 @@ def test_a_waiting_row_that_does_not_parse_is_skipped_and_kept(
     assert ra.record_pending([folder]) == 0
     assert capsys.readouterr().err.count("does not parse") == 2
     with ra.VOICE_HISTORY.open(encoding="utf-8", newline="") as fh:
-        assert [r["value"] for r in ra.csv.DictReader(fh)] == ["15"]
+        assert [r["value"] for r in csv.DictReader(fh)] == ["15"]
     with (folder / ra.VOICE_PENDING).open(encoding="utf-8", newline="") as fh:
-        cut, kept, edited = ra.csv.DictReader(fh)
+        cut, kept, edited = csv.DictReader(fh)
     assert cut["value"] == "1" and cut["unit"] is None
     assert kept == drill_row() and edited == hand_edit
 
@@ -984,13 +988,13 @@ def test_a_pending_file_another_session_holds_open_is_pruned_later(
     def held_open(src: object, dst: object) -> None:
         raise PermissionError("in use")
 
-    monkeypatch.setattr(ra.os, "replace", held_open)
+    monkeypatch.setattr(os, "replace", held_open)
     ra.prune_pending(folder / ra.VOICE_PENDING, {ra._voice_identity(drill_row())})
     assert (folder / ra.VOICE_PENDING).read_text(encoding="utf-8") == before
     assert [p.name for p in folder.iterdir()] == [ra.VOICE_PENDING]
 
 
-@pytest.mark.skipif(ra.shutil.which("git") is None, reason="needs git")
+@pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
 def test_main_s_voice_rows_come_from_origin_main(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -998,7 +1002,7 @@ def test_main_s_voice_rows_come_from_origin_main(
 
     def git(*args: str) -> None:
         isolated = ["-c", "commit.gpgsign=false", "-c", "core.hooksPath="]
-        ra.subprocess.run(
+        subprocess.run(
             ["git", *isolated, *args], cwd=tmp_path, check=True, capture_output=True
         )
 
@@ -1148,11 +1152,11 @@ def test_a_kit_run_records_only_its_own_fresh_report(
 
 def test_recording_happens_on_a_branch_only(tmp_path: Path) -> None:
     def git(*args: str) -> None:
-        ra.subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
 
     # No repository, or no git at all (the api image has none): never a branch.
     assert ra.recording_branch(tmp_path) is None
-    if ra.shutil.which("git") is None:
+    if shutil.which("git") is None:
         pytest.skip("git is not installed here")
     git("init", "-q", "-b", "main")
     git(
@@ -1449,8 +1453,8 @@ def test_pending_record_holds_the_lock_while_it_reads(
 def test_voice_runs_sort_by_their_utc_time_across_the_repeated_hour(
     recording: dict,
 ) -> None:
-    summer = datetime(2026, 10, 25, 0, 30, tzinfo=ra.UTC)  # 02:30 CEST
-    winter = datetime(2026, 10, 25, 1, 15, tzinfo=ra.UTC)  # 02:15 CET, later
+    summer = datetime(2026, 10, 25, 0, 30, tzinfo=UTC)  # 02:30 CEST
+    winter = datetime(2026, 10, 25, 1, 15, tzinfo=UTC)  # 02:15 CET, later
     ra.record_measurements(ra.kit_rows("drill", [{"point": "a", "ok": False}], winter))
     ra.record_measurements(ra.kit_rows("drill", [{"point": "a", "ok": True}], summer))
     runs = ra.read_voice_history(ra.VOICE_HISTORY)
@@ -1500,7 +1504,7 @@ def test_a_speech_trial_with_any_limit_records_nothing(
 ) -> None:
     run = tmp_path / "run"
     run.mkdir()
-    (run / "report.json").write_text(ra.json.dumps(speech_report()))
+    (run / "report.json").write_text(json.dumps(speech_report()))
     ra.record_kit_run("speech", ["--limit", "10000", "--run-dir", str(run)], run, 0)
     assert not ra.VOICE_HISTORY.exists()
 

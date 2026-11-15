@@ -35,7 +35,12 @@ from api.core.time import business_day, to_local
 from api.db import SessionLocal, get_db
 from api.domain.access.sessions import Access, devices, end_sessions
 from api.domain.callbacks import list_history, list_open, mark_done, reopen
-from api.domain.callbacks.board import HISTORY_DAYS, NUMBER_OTHER, NUMBER_WITHHELD
+from api.domain.callbacks.board import (
+    HISTORY_DAYS,
+    NUMBER_OTHER,
+    NUMBER_WITHHELD,
+    OpenCallback,
+)
 from api.domain.confirm import confirm_tablet
 from api.domain.customers.phone import costly
 from api.domain.menu import price_check
@@ -120,7 +125,7 @@ def _tenant_snapshot() -> tuple[uuid.UUID | None, str]:
         session.close()
 
 
-def _today_rows(session: Session, tenant: Tenant) -> list[dict]:
+def _today_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     return [
         {
             "id": str(row.reservation_id),
@@ -152,7 +157,7 @@ CALLBACK_NUMBER_NOTES = {
 }
 
 
-def _callback_row(cb, tz_name: str) -> dict:
+def _callback_row(cb: OpenCallback, tz_name: str) -> dict[str, Any]:
     tone, label = CALLBACK_LABELS.get(cb.reason, ("accent", "Rückruf"))
     origin = cb.number_origin
     return {
@@ -170,19 +175,21 @@ def _callback_row(cb, tz_name: str) -> dict:
     }
 
 
-def _callback_rows(session: Session, tenant: Tenant) -> list[dict]:
+def _callback_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     return [_callback_row(cb, tenant.timezone) for cb in list_open(session, tenant.id)]
 
 
-def _done_when(done_at, tz_name: str) -> str:
+def _done_when(done_at: datetime | None, tz_name: str) -> str:
     """ "Erledigt 18:42", with the date when it was not today (local time)."""
+    # list_history filters on done_at, so a history row always carries one.
+    assert done_at is not None
     local = to_local(done_at, tz_name)
     if local.date() == to_local(clock.utcnow(), tz_name).date():
         return f"Erledigt {local:%H:%M}"
     return f"Erledigt {local:%d.%m.} {local:%H:%M}"
 
 
-def _holiday_rows(session: Session, tenant: Tenant) -> list[dict]:
+def _holiday_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     """Holidays the team has not answered yet (T-9.5), by date."""
     today = business_day(tz_name=tenant.timezone)
     return [
@@ -196,7 +203,7 @@ def _holiday_rows(session: Session, tenant: Tenant) -> list[dict]:
     ]
 
 
-def _price_rows(session: Session, tenant: Tenant) -> list[dict]:
+def _price_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     """Register prices the team has not answered yet (T-4.9), in menu order."""
     return [
         {
@@ -211,14 +218,14 @@ def _price_rows(session: Session, tenant: Tenant) -> list[dict]:
     ]
 
 
-def _order_rows(session: Session, tenant: Tenant) -> list[dict]:
+def _order_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     return [
         orders_view.card(o, tenant.timezone)
         for o in order_board.list_new(session, tenant.id, tenant.timezone)
     ]
 
 
-def _header(session: Session, tenant: Tenant) -> dict:
+def _header(session: Session, tenant: Tenant) -> dict[str, Any]:
     """Werte der Kopfzeile, immer frisch aus service_config."""
     config = session.get(ServiceConfig, tenant.id)
     base = {
@@ -290,7 +297,7 @@ def _bridge_problem(session: Session, tenant: Tenant) -> str | None:
 
 
 def _page_response(
-    request: Request, template: str, context: dict, status_code: int = 200
+    request: Request, template: str, context: dict[str, Any], status_code: int = 200
 ) -> HTMLResponse:
     """Render a full page and issue the CSRF cookie base.html sends back as a header."""
     token = request.cookies.get("csrf_token")
@@ -355,7 +362,7 @@ def _switch(
 def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
     """Betriebsansicht fürs Tablet."""
     tenant = _tenant(session)
-    context: dict = {"problem": NO_TENANT, "today": []}
+    context: dict[str, Any] = {"problem": NO_TENANT, "today": []}
     if tenant is not None:
         context = {
             "tenant": tenant,
@@ -376,7 +383,7 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
 def kennzahlen(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
     """Key figures: the four values of the last 7 days and the history (T-8.4)."""
     tenant = _tenant(session)
-    context: dict = {"problem": NO_TENANT}
+    context: dict[str, Any] = {"problem": NO_TENANT}
     if tenant is not None:
         context = {"tenant": tenant, **figures_view.page(session, tenant)}
     return _page_response(
@@ -394,7 +401,7 @@ def anrufe(
 ) -> HTMLResponse:
     """The call list of one business day, with its filters (T-8.7)."""
     tenant = _tenant(session)
-    context: dict = {"problem": NO_TENANT}
+    context: dict[str, Any] = {"problem": NO_TENANT}
     if tenant is not None:
         context = {
             "tenant": tenant,
@@ -994,7 +1001,11 @@ def _correction_panel(
     status: int = 200,
     note: str | None = None,
 ) -> HTMLResponse:
-    context: dict = {"order_id": str(order_id), "message": message, "note": note}
+    context: dict[str, Any] = {
+        "order_id": str(order_id),
+        "message": message,
+        "note": note,
+    }
     if plan is not None and edit is not None:
         try:
             context.update(orders_view.edit_lines(plan, edit))
@@ -1508,7 +1519,9 @@ def _plan_error(exc: AppError, status: int) -> JSONResponse:
     return JSONResponse(body, status_code=status)
 
 
-def _plan_write(session: Session, write: Callable[[uuid.UUID], dict]) -> JSONResponse:
+def _plan_write(
+    session: Session, write: Callable[[uuid.UUID], dict[str, Any]]
+) -> JSONResponse:
     tenant = _tenant(session)
     if tenant is None:
         return JSONResponse(fail_body("not_found", "no tenant", NO_TENANT), 503)
@@ -1528,7 +1541,7 @@ def floor_plan_page(
 ) -> HTMLResponse:
     """The floor plan editor; its data comes from /gui/raumplan/plan."""
     tenant = _tenant(session)
-    context: dict = {"tenant": tenant} if tenant else {"problem": NO_TENANT}
+    context: dict[str, Any] = {"tenant": tenant} if tenant else {"problem": NO_TENANT}
     return _page_response(
         request, "betrieb/raumplan.html", context, status_code=200 if tenant else 503
     )
@@ -1590,7 +1603,7 @@ CARD_CHANGED = "Die Karte hat sich gerade geändert. Bitte noch einmal prüfen."
 CHECK_ANSWERS = {"uebernehmen": True, "zuruecknehmen": False}
 
 
-def _check_rows(session: Session, tenant: Tenant) -> list[dict]:
+def _check_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     """The staff changes the owner has not decided, from today on, by date."""
     rows = []
     cards = staff.open_cards(session, tenant.id, business_day(tz_name=tenant.timezone))
@@ -1889,7 +1902,9 @@ def _admin_tenant(session: Session) -> Tenant:
     return tenant
 
 
-def _device_rows(session: Session, tenant: Tenant, own: uuid.UUID) -> list[dict]:
+def _device_rows(
+    session: Session, tenant: Tenant, own: uuid.UUID
+) -> list[dict[str, Any]]:
     shown = "%d.%m.%Y %H:%M"
     return [
         {

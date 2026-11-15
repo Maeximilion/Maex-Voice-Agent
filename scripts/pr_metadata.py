@@ -36,6 +36,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from typing import Any
 
 API_URL = "https://api.github.com"
 
@@ -88,7 +89,7 @@ def derive_label(title: str) -> str | None:
 
 
 def missing(
-    pull: dict, owner: str, issues: dict[int, dict] | None = None
+    pull: dict[str, Any], owner: str, issues: dict[int, dict[str, Any]] | None = None
 ) -> dict[str, list[str]]:
     """Was an einem Pull Request fehlt. Leer, wenn nichts zu tun ist.
 
@@ -126,12 +127,12 @@ def missing(
     return change
 
 
-def missing_on_issue(issue: dict, owner: str) -> dict[str, list[str]]:
+def missing_on_issue(issue: dict[str, Any], owner: str) -> dict[str, list[str]]:
     """Fill only an absent owner or a type evidenced by a conventional title."""
     return missing(issue, owner)
 
 
-def gate_milestones(milestones: list[dict]) -> dict[str, dict]:
+def gate_milestones(milestones: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """The gate milestones by the stufe-N label they belong to."""
     return {
         f"stufe-{match['stage']}": milestone
@@ -140,7 +141,9 @@ def gate_milestones(milestones: list[dict]) -> dict[str, dict]:
     }
 
 
-def gate_of(issue: dict, gates: dict[str, dict]) -> dict | None:
+def gate_of(
+    issue: dict[str, Any], gates: dict[str, dict[str, Any]]
+) -> dict[str, Any] | None:
     """The milestone an issue lacks, None if it has one or carries no stufe-N label.
     With two stufe labels the earlier gate wins: that is the one it holds up."""
     if issue.get("milestone"):
@@ -163,7 +166,7 @@ def task_issues(text: str) -> dict[str, int]:
     return tasks
 
 
-def named_tasks(pull: dict) -> set[str]:
+def named_tasks(pull: dict[str, Any]) -> set[str]:
     """The tasks in the title, else the task in the branch name."""
     tasks = set(TASK_IN_TITLE.findall(pull["title"]))
     branch = TASK_BRANCH.match(pull["head"]["ref"])
@@ -171,11 +174,11 @@ def named_tasks(pull: dict) -> set[str]:
 
 
 def milestone_of_pull(
-    pull: dict,
-    issue_gates: dict[int, dict],
+    pull: dict[str, Any],
+    issue_gates: dict[int, dict[str, Any]],
     tasks: dict[str, int],
-    milestones: dict[str, dict],
-) -> dict | None:
+    milestones: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
     """The milestone a pull request lacks, None if it has one. The earliest gate wins,
     as for an issue. Missing type milestones mean no write, not a guess."""
     if pull.get("milestone"):
@@ -191,7 +194,10 @@ def milestone_of_pull(
     return milestones.get(TYPE_MILESTONES.get(kind, OTHER_MILESTONE))
 
 
-def rest(method: str, path: str, token: str, payload: dict | None = None):
+def rest(
+    method: str, path: str, token: str, payload: dict[str, Any] | None = None
+) -> Any:
+    """The decoded JSON body: an object or a list, depending on the endpoint."""
     request = urllib.request.Request(
         f"{API_URL}{path}",
         data=json.dumps(payload).encode() if payload is not None else None,
@@ -213,8 +219,8 @@ def rest(method: str, path: str, token: str, payload: dict | None = None):
     return json.loads(raw) if raw else {}
 
 
-def pages(path: str, token: str) -> list[dict]:
-    items: list[dict] = []
+def pages(path: str, token: str) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
     page = 1
     while True:
         batch = rest(
@@ -226,11 +232,11 @@ def pages(path: str, token: str) -> list[dict]:
         page += 1
 
 
-def all_pulls(repo: str, token: str) -> list[dict]:
+def all_pulls(repo: str, token: str) -> list[dict[str, Any]]:
     return pages(f"/repos/{repo}/pulls?state=all", token)
 
 
-def all_issues(repo: str, token: str) -> list[dict]:
+def all_issues(repo: str, token: str) -> list[dict[str, Any]]:
     # The issue list also returns pull requests; those are handled above.
     items = pages(f"/repos/{repo}/issues?state=all", token)
     return [i for i in items if "pull_request" not in i]
@@ -310,7 +316,7 @@ def area_labels(title: str, paths: list[str] | None = None) -> list[str]:
     return sorted(labels)
 
 
-def label_problems(item: dict) -> list[str]:
+def label_problems(item: dict[str, Any]) -> list[str]:
     """Report uncertainty instead of assigning a guessed priority or removing labels."""
     labels = {label["name"] for label in item.get("labels", [])}
     priorities = {name for name in labels if name.startswith("priority:")}
@@ -328,13 +334,13 @@ def label_problems(item: dict) -> list[str]:
     return problems
 
 
-def content_fingerprint(item: dict) -> str:
+def content_fingerprint(item: dict[str, Any]) -> str:
     """Ignore comments/timestamps, but invalidate a reviewed plan after a scope edit."""
     value = json.dumps([item["title"], item.get("body") or ""], ensure_ascii=False)
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-def planned_labels(item: dict, entry: dict) -> list[str]:
+def planned_labels(item: dict[str, Any], entry: dict[str, Any]) -> list[str]:
     before, additions = set(entry["before"]), set(entry["add"])
     current = {label["name"] for label in item.get("labels", [])}
     if content_fingerprint(item) != entry["fingerprint"] or not (
@@ -346,12 +352,13 @@ def planned_labels(item: dict, entry: dict) -> list[str]:
     return sorted(additions - current)
 
 
-def load_catalog() -> list[dict]:
+def load_catalog() -> list[dict[str, Any]]:
     data = json.loads(CATALOG.read_text(encoding="utf-8"))
     labels = data["labels"]
     if data.get("version") != 1 or len({x["name"] for x in labels}) != len(labels):
         raise MetadataError("Invalid label catalog version or duplicate name")
-    return labels
+    catalog: list[dict[str, Any]] = labels
+    return catalog
 
 
 def sync_catalog(repo: str, token: str, *, dry_run: bool) -> int:
@@ -437,7 +444,14 @@ def apply_label_plan(path: Path, repo: str, token: str, *, dry_run: bool) -> int
     return 0
 
 
-def write_missing(item: dict, change: dict, repo: str, token: str, *, dry_run: bool):
+def write_missing(
+    item: dict[str, Any],
+    change: dict[str, Any],
+    repo: str,
+    token: str,
+    *,
+    dry_run: bool,
+) -> None:
     for key, values in change.items():
         print(f"#{item['number']}: {key}={','.join(values)}")
         if not dry_run:
