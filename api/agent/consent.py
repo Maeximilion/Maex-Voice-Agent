@@ -523,22 +523,3 @@ def only_stops_recording(text: str) -> bool:
         for word in _WORD.findall(text.lower())
     )
 
-
-# Words of an answer to "Sind Sie noch da?" besides its yes: "Ja, ich bin noch
-# da", "Bin noch dran".
-_PRESENT = frozenset({"ich", "bin", "noch", "da", "hier", "dran", "am", "apparat"})
-
-
-def bare_answer(text: str) -> bool:
-    """Is the sentence a plain yes or no and nothing more ("Ja.", "Ja, ich
-    bin noch da", "Nein")? Then a question the core still has to put is put
-    again; anything more ("Ja, aber bitte erst am 17. um 20 Uhr") is for the
-    model to read (Codex PR #368). A digit is always more: `_WORD` would
-    drop it, and "Ja, bitte 20:00" would be a bare yes (Codex PR #368)."""
-    if any(char.isdigit() for char in text):
-        return False
-    words = _WORD.findall(_lowered(text))
-    rest = " ".join(word for word in words if word not in _PRESENT)
-    if not rest:
-        return bool(words)
-    return consent_answer(rest) in ("yes", "no")

@@ -1181,25 +1181,12 @@ class ConversationLoop:
         return handed
 
     def _note_to_team(
-        self,
-        state: ConversationState,
-        call: ToolCall,
-        lead: str | None,
-        card: str,
-        reason: str = "out_of_scope",
+        self, state: ConversationState, call: ToolCall, lead: str | None, card: str
     ) -> TurnResult:
         """A `card` the team has to clear first stops the draft `call`: the
         team takes the call, with the order or the table the draft asked for
         on the card, and the guest hears that it is not booked, after `lead`.
         Nothing is stored."""
-        table = self._held_draft(state, call)
-        return self._allergens_to_team(
-            state, lead=lead, table=table, card=card, reason=reason
-        )
-
-    def _held_draft(self, state: ConversationState, call: ToolCall) -> str | None:
-        """A draft that never reached its tool, for the card of a handover:
-        the table it asked for, or its order as the open cart."""
         table = None
         if call.name == "create_reservation":
             with suppress(ValueError, TypeError):
@@ -1209,7 +1196,9 @@ class ConversationLoop:
             # (Codex PR #414).
             with suppress(ValidationError):
                 state.cart = cart_lines(call.args.get("items"))
-        return table
+        return self._allergens_to_team(
+            state, lead=lead, table=table, card=card, reason="out_of_scope"
+        )
 
     def _open_table(self, state: ConversationState) -> str | None:
         """The table read back and not yet confirmed, as the team reads it on

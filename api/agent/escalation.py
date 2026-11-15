@@ -180,11 +180,16 @@ def names_an_allergy(text: str) -> bool:
     """Does the guest name an allergy, their own or another's, in a sentence
     that does not only deny one? "Ich habe eine Nussallergie", never "Ich
     habe keine Allergie" (`guards.unnoted_allergy`)."""
-    return any(
-        mentions_allergy(sentence)
-        and not (denies_allergy(sentence) or only_denies(sentence))
+    return any(mentions_allergy(sentence) for sentence in _not_denied(text))
+
+
+def _not_denied(text: str) -> list[str]:
+    """The sentences of `text` that do not only deny an allergy."""
+    return [
+        sentence
         for sentence in SENTENCE.split(text)
-    )
+        if not (denies_allergy(sentence) or only_denies(sentence))
+    ]
 
 
 def asks_about_allergies(text: str) -> bool:
@@ -193,11 +198,7 @@ def asks_about_allergies(text: str) -> bool:
     "Ist da Sellerie drin? Ich habe eine Allergie.", never "Haben Sie Pizza?
     Ich habe keine Allergie." or "Sind Sie ein Roboter? Die 99, ich habe eine
     Nussallergie."."""
-    said = [
-        sentence
-        for sentence in SENTENCE.split(text)
-        if not (denies_allergy(sentence) or only_denies(sentence))
-    ]
+    said = _not_denied(text)
     return any(speaks_of_allergies(sentence) for sentence in said) and any(
         is_question(sentence)
         and (speaks_of_allergies(sentence) or names_an_allergen(sentence))

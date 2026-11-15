@@ -558,8 +558,8 @@ def refusal(
 def _states_an_allergy(user_text: str, call: ToolCall) -> bool:
     """An allergen lookup on a guest sentence that names an allergy of their
     own and asks nothing ("Die 13, ich habe eine Erdnussallergie."). The
-    core notes the allergy for the kitchen whatever the dish contains (Maxi,
-    27.10.2026); the lookup would find nothing maintained for most dishes and
+    allergy goes on the note for the kitchen whatever the dish contains (Maxi,
+    27.10.2026, 15.11.2026); the lookup would find nothing maintained for most dishes and
     end the order with the team (L17), though the guest asked no question
     (real-model run of 27.10.2026). Refused only where no reading finds a
     question, clause by clause too: one may ask without naming the allergy
