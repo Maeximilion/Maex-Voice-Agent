@@ -1547,3 +1547,132 @@ Replaced in section 6 "Model Routing" by the "Deep review" paragraph (Maxi, 2026
 
 - **Ultrareview** (`/code-review ultra <PR>`: billed, only Maxi starts it; the reminder names a local `/code-review max <PR>`, run on Maxi's word): reminder, ledger and filing live in `done.md` step 7a; read it before acting on such a review or a ledger batch review.
 - In the `xhigh` trigger sentence: "the ultrareview reminder" became "the deep review in `/done`".
+
+## What's Next and Open Decisions (archive, finished rows, 15.11.2026)
+
+Sub-items of item 14 (follow-ups of the security audit #252, decided 12.10.2026), the built or recorded ones, moved unchanged. The unbuilt ones (silence while the model answers, left in #252) stay in `docs/01_STATUS.md`.
+
+    - **Reservations by phone (built 13.10.2026, summary above):** up to 90 days ahead. Up to 8 guests the agent books itself; above 8, and on the same day above 5, it takes the wish and the team calls back to confirm and talk it through. Once the team has confirmed, the guest hears it by a call from a person (full text: docs/HISTORY.md)
+    - **Orders (built 13.10.2026, summary above, branch `feat/252-order-approval-threshold`):** above 150 euros the order waits for the team's approval on the tablet before a slip prints, whatever the mode.
+    - **Postgres: built 13.10.2026** (branch `feat/252-postgres-application-role`, summary above). A role without superuser for the application, the superuser for backup, restore and migrations. Opt-in by `.env`: `DATABASE_URL` names the role, `OWNER_DATABASE_URL` the owner (full text: docs/HISTORY.md)
+    - **Callback numbers: built 12.10.2026** (branch `feat/252-callback-number-mark`). The card in "Rückrufe" marks a number the call did not come from: "Andere Nummer als der Anruf" with the caller's number next to it, or "Anruf ohne Rufnummer" (docs/06 §3). The comparison is `OpenCallback.number_origin` in `domain/callbacks/board.py`.
+    - **Operations view without an access check of its own: recorded 12.10.2026** as accepted for stage 1, the proxy is the check (docs/13 §3).
+    - Order of the rest: migration 007 with the new `service_config` fields is built (13.10.2026: booking horizon, party size limits, `order_approval_above_cents`, `turn_deadline_seconds`). Left: nothing, all five fields are read. The Postgres role (#281) and the order threshold (#283) are on `main`, the silence deadline is pull request #287.
+    - The handover's steps by hand (13.10.2026): the ruleset on `main` is applied, four required checks next to the pull request rule (docs/13 §6; its name on GitHub is still `t-4.6-probebo`, because a disabled ruleset called `Main` blocks the name of the file). (full text: docs/HISTORY.md)
+
+## STATUS upkeep (archive, firm rows and stacked header lines, 16.11.2026)
+
+Moved unchanged from `docs/01_STATUS.md` (#562, Maxi's decision of 15.11.2026: the firm row set of the cloud session's row proposals and the stacked old status header lines). Rows kept on the page: every open or doubtful one.
+
+### Open Decisions rows (decided: D9, D32, D33, D34)
+
+| D9 | ~~Reopened by the compliance check of 11.11.2026 (docs/09 §1): who is the data protection officer?~~ **decided 11.11.2026 (Maxi): he stays the officer himself**, as on 20.10.2026 and now knowing what the check found: an officer is mandatory here (§ 38(1) sentence 2 BDSG), and the authorities treat an owner or managing director as officer as a conflict of interest as the rule (Hessian authority, DSK short paper 12), so the report can be rejected and the DSFA then lacks the officer's advice. The risk is accepted; if the authority objects, the route is an external officer. Not asked again without a new fact | Maxi | decided; the report and the contact in the notice stay open (docs/09 §1) |
+| D32 | ~~How do several customers run: one stack per customer, or all in one stack with `tenant_id` isolation (#568)?~~ **decided 09.11.2026 (Maxi): one Docker stack and database per customer**, with one shared Caddy on the host in front of them. (full text: docs/HISTORY.md) | Maxi | decided |
+| D33 | ~~How are the operator dashboard and menu uploads protected (#569)?~~ **decided 09.11.2026 (Maxi):** (a) the dashboard is public on its own host name behind a strong login, not VPN-only; (b) the operator's second factor is a passkey with TOTP as backup, plus recovery codes (full text: docs/HISTORY.md) | Maxi | decided |
+| D34 | ~~How does a restaurant sign in to its operations view (#570)?~~ **decided 09.11.2026 (Maxi, issue comment on #570):** (1) one login per restaurant, not per staff member; (2) the password once per device, then a session of 30 days that renews on use; after 15 minutes idle a 4 to 6 digit PIN unlocks it, five wrong PINs end the session (full text: docs/HISTORY.md) | Maxi | decided; (a) built and merged 09.11.2026 (#585), (7) and (8) for the team PIN in the follow-up PR; (b) the admin PIN with the device list (#587, migration 032) and the staff changes with the check card (migration 033); the push to owner and `ops` next |
+
+### Open Points from Reviews rows (by design, built)
+
+| The evals do not count a refused name or number (`evals/recorder.py`) | By design (12.10.2026): the recorder counts a refused attempt only where it has a rule of its own (a guessed dish, a `confirm` without a yes). | with the first full run on a real model |
+| Wish findings from the review of the merged PR #330 (`api/domain/menu/wishes.py`, `sim/scripted_llm.py`, issue #331) | Review of 19.10.2026; none loses an allergy, the three losses of that review are closed. | with the D24 work package |
+
+### Changelog entries before 13.11.2026
+
+- **v2.40.0 · 12.11.2026:** Loop D of #695, PR 1: the review rules left CLAUDE.md unchanged for docs/21 and docs/22 (58497 to 47408 bytes)
+- **v2.39.2 · 12.11.2026:** docs/19 names the Ubuntu env keys and the Fable 5.2 effort key (#695, Loop A)
+- **v2.39.1 · 12.11.2026:** Fix PR for #674: telephony failure paths end with the right team
+- **v2.39.0 · 12.11.2026:** Handover thresholds from the measured context (150k after a merge, 300k mid-task); the context is recorded per task
+- **v2.38.0 · 12.11.2026:** Handover only when unfinished work moves to a new session; the context is measured
+- **v2.37.5 · 12.11.2026:** Batch 2 review of the ultrareview ledger, first fix PR (#668): an allergy said again for everything reaches every line, a denial next to an allergy opens none
+- **v2.37.4 · 12.11.2026:** Fixes from the local max review of #660 and #662
+- **v2.37.3 · 12.11.2026:** CLAUDE.md: Claude gives the backup and migrate commands whenever a workbench migration is due
+- **v2.37.2 · 12.11.2026:** Call list filter: selects on the board get the height, font and padding of the buttons, so their text is no longer cut
+- **v2.37.1 · 12.11.2026:** fastapi 0.162.0 to 0.162.2 (Dependabot #659), patch release within the 0.162.* pin
+- **v2.37.0 · 11.11.2026:** T-8.7 (#661): the call list /gui/anrufe in its first form, with the marked number of a call without caller audio (#651)
+- **v2.36.0 · 11.11.2026:** #651 points 1 and 2: calls.line_note marks a call without caller audio (migration 036), monitor alarm after ALARM_NO_AUDIO_CALLS in a row; T-8.7 (#661) call list
+- **v2.35.0 · 11.11.2026:** #652: an outage with nobody to reach asks a withheld caller for a number, a queued transfer survives a broken line, a leg closed before the answer is no hung-up caller; #651 decided (Maxi)
+- **v2.34.4 · 11.11.2026:** #655: every handover the guest hears of is carried out, its card names the open order or table; a lost team leg counts as abandoned; cases 99 of 99
+- **v2.34.3 · 11.11.2026:** Fable checks closed: Fable subagent from Opus works, advisor stays off
+- **v2.34.2 · 11.11.2026:** STATUS upkeep (one row archived) and Fable use 4 recorded in routing_history.csv
+- **v2.34.1 · 11.11.2026:** Review fixes of #643 (#649): additive handover keeps the held draft, AI notice on every way out
+- **v2.34.0 · 11.11.2026:** Model routing: Fable 5.2 in four uses, xhigh only after a stall, usage check
+- **v2.33.1 · 11.11.2026:** T-0.12 step 3: inner layers mypy-strict, possibly-undefined on
+- **v2.33.0 · 11.11.2026:** #638 done: a sentence that names an additive goes to the team before the model, a caller who takes the agent for a person hears the truthful sentence again; four evals, cases 98 of 98 green
+- **v2.32.0 · 11.11.2026:** T-10.2: print sheet, chat words and wire-path audit for the run on the wire; drills 44 of 44
+- **v2.31.2 · 11.11.2026:** A handover after a merged PR stays in the chat, no side branch
+- **v2.31.1 · 11.11.2026:** T-0.12 step 2: mypy test baseline emptied, every path checked
+- **v2.31.0 · 11.11.2026:** D9 decided again: Maxi stays the data protection officer, the risk is accepted
+- **v2.30.0 · 11.11.2026:** Legal check verified against the sources: N1 revised, N3 new, D9 reopened, paper duties at delivery
+- **v2.29.10 · 11.11.2026:** T-0.12 first step: mypy checks every function body, strict flags on three packages
+- **v2.29.9 · 11.11.2026:** The bar Ton an keeps a gap to the columns below
+- **v2.29.8 · 10.11.2026:** n8n 2.46.6 to 2.47.2 (#628)
+- **v2.29.7 · 10.11.2026:** T-3.18 done: the dev console's script is TypeScript, #626 closed
+- **v2.29.6 · 10.11.2026:** Four medium CodeQL alerts fixed: owner page redirect and README demo proxy headers
+- **v2.29.5 · 10.11.2026:** T-3.18 app.js migrated to TypeScript
+- **v2.29.4 · 10.11.2026:** T-3.18 raumplan.js migrated to TypeScript
+- **v2.29.3 · 10.11.2026:** T-3.18 base.js migrated to TypeScript
+- **v2.29.2 · 10.11.2026:** Standing rule: browser logic is TypeScript, no language moves back (CLAUDE.md §8, guard test)
+- **v2.29.1 · 10.11.2026:** Static files of the view are revalidated (no-cache); before/after browser session on #627 identical
+- **v2.29.0 · 10.11.2026:** TypeScript toolchain for the browser code: committed ES modules, CI job browser, raumplan-geometry migrated (#553, T-3.17 done; rest T-3.18, #626)
+- **v2.28.1 · 10.11.2026:** Social preview redrawn as the banner's example call; upload in the repository settings still open (#623)
+- **v2.28.0 · 10.11.2026:** README front page rebuilt: example-call banner, demo recording, transcript call flow, two-path architecture, roadmap line, local badges; README job in the required check (#622)
+- **v2.27.18 · 10.11.2026:** chore(deps): bump compose-images group with 3 updates (#603)
+- **v2.27.17 · 10.11.2026:** chore(deps): bump python-minor-patch group in /api with 5 updates (#605)
+- **v2.27.16 · 10.11.2026:** chore(deps): bump amannn/action-semantic-pull-request to 6.1.2 (#604)
+- **v2.27.15 · 10.11.2026:** chore(deps): bump types-pyyaml to 6.0.12.20261103 (#606)
+- **v2.27.14 · 10.11.2026:** #571 second part: operator login with password, TOTP and recovery codes
+- **v2.27.13 · 10.11.2026:** STATUS upkeep rule: /done archives finished rows, /start flags size above 80 KB
+- **v2.27.12 · 10.11.2026:** #562 part 5: finished What's Next items and decided D1 to D30 archived
+- **v2.27.11 · 10.11.2026:** Handover: handover command is the single source for handover rules, session title uses middle dots, no token threshold
+- **v2.27.10 · 10.11.2026:** #562 part 4: long rows of Roadmap, Gates, Blockers and Done cut to one sentence
+- **v2.27.9 · 10.11.2026:** #562 part 3: What's Next and Open Decisions shortened to one sentence per row, full rows archived in HISTORY.md
+- **v2.27.8 · 10.11.2026:** #571 first part: ops status route of a stack
+- **v2.27.7 · 09.11.2026:** #562: cut Open Points from Reviews and open assumptions, handover start form in handover.md, no-AI-attribution rule
+- **v2.27.6 · 09.11.2026:** Required check title also fails AI attribution in commits and descriptions (#609)
+- **v2.27.5 · 09.11.2026:** CI split into checks, three pytest shards and a summary test job; Docker jobs skip for docs-only pull requests (#609)
+- **v2.27.4 · 09.11.2026:** #562: STATUS split, archive in docs/HISTORY.md
+- **v2.27.3 · 09.11.2026:** #545 done: calls left open by a dead voice process are closed as error
+- **v2.27.2 · 09.11.2026:** #573 part two: a new customer's stack in one command behind the shared Caddy
+- **v2.27.1 · 09.11.2026:** Review batch 0: fixes from the reviews of #586, #587 and #589; grouped review issues
+- **v2.27.0 · 09.11.2026:** #573 part one: a new customer's tenant in one command (migration 035)
+- **v2.26.3 · 09.11.2026:** #590 done: n8n cache tmpfs owned by node, n8n starts after a container restart
+- **v2.26.2 · 09.11.2026:** #588 push of staff and call-mode changes to owner and ops
+- **v2.26.1 · 09.11.2026:** Handover: #570 part b merged as #587 (admin PIN, device list) and #589 (staff changes, check cards); next #588 on task/588-staff-change-push
+- **v2.26.0 · 09.11.2026:** #570 part b2: staff changes and their check cards (migration 033)
+- **v2.25.0 · 09.11.2026:** #570 part b1: owner's admin PIN and device list (migration 032)
+- **v2.24.1 · 09.11.2026:** Handover: #570 part a and its follow-up merged (#585, #586), next #570 part b on task/570-b-admin-pin
+- **v2.24.0 · 09.11.2026:** D34 points 7 to 9: gentler sign-in waits, operator sees and sets the team PIN
+- **v2.23.0 · 09.11.2026:** #570 part a: restaurant login replaces Basic-Auth, D34 recorded
+- **v2.22.0 · 09.11.2026:** #569 threat model and access design (docs/23), D33
+- **v2.21.0 · 09.11.2026:** Tenancy decided: one stack per customer (D32, #568)
+- **v2.20.4 · 09.11.2026:** PR checklists keep only the items that matter; no open boxes after merge except remaining work linked to an issue (CLAUDE.md, done.md, PR template)
+
+### Stacked status header lines (the current one stays on the page)
+
+> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.17
+> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.16
+> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.15
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.35
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.34
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.33
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.32
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.31
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.30
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.29
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.28
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.27
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.25
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.24
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.23
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.22
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.21
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.20
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.19
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.18
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.17
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.16
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.15
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.14
