@@ -405,6 +405,16 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 .ops-liste th[scope=row]{color:var(--text);font-size:var(--fs-body)}
 .ops-leer{display:grid;gap:var(--s2)}
 .ops code{font-family:var(--font-mono);overflow-wrap:anywhere}
+/* Sign-in factors and step-up (#571): one card per factor, a form in a row.
+   A passkey button stays hidden until passkey.js finds WebAuthn. */
+.ops [hidden]{display:none}
+.ops-teil{display:grid;gap:var(--s3)}
+.ops-teil h2,.ops-teil h3{margin:0;font-size:var(--fs-h2)}
+.ops-zeile{display:flex;flex-wrap:wrap;gap:var(--s3);align-items:center}
+.ops-zeile label{font-weight:600}
+.ops-zeile input{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);padding:var(--s2) var(--s3);min-height:var(--tap)}
+.ops-zeile button,.ops-liste button{min-height:var(--tap)}
+.ops-geheim{user-select:all;font-size:var(--fs-body)}
 @media (max-width:899px){
   .ops-liste thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
   .ops-liste,.ops-liste tbody,.ops-liste tr,.ops-liste th,.ops-liste td{display:block}
