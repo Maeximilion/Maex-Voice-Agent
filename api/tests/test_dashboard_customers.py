@@ -6,6 +6,7 @@ transport instead of a network."""
 import copy
 import gzip
 import io
+import json
 import re
 import sys
 import threading
@@ -28,6 +29,7 @@ from api.dashboard import app as web
 from api.dashboard.customers import BadCustomer, add_customer, remove_customer
 from api.dashboard.db import get_db
 from api.dashboard.models import Customer, OperatorAudit
+from api.models.tenants import CUSTOMER_KEY
 from evals.scratch_db import create_scratch_db, drop_scratch_db
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -223,10 +225,22 @@ def test_add_customer_stores_and_a_second_run_replaces_address_and_token(session
         ]
 
 
-@pytest.mark.parametrize("key", ["Alpha", "1alpha", "al--pha", "alpha-", "al pha", ""])
+@pytest.mark.parametrize(
+    "key", ["Alpha", "1alpha", "al--pha", "alpha-", "al pha", "", "a" * 33]
+)
 def test_a_bad_key_is_refused(sessions, key):
     with sessions() as db, pytest.raises(BadCustomer):
         add_customer(db, key, "http://alpha-api:8000", TOKEN_A)
+
+
+def test_the_key_rule_is_the_one_a_stacks_tenant_has(sessions):
+    """A key the registry takes and no tenant can have would be a row that is
+    "another customer" for ever (`ck_tenants_customer_key`: the pattern, and
+    at most 32 characters)."""
+    assert f"^{customers.KEY.pattern}$" == CUSTOMER_KEY
+    with sessions() as db:
+        add_customer(db, "a" * 32, "http://alpha-api:8000", TOKEN_A)
+        assert [c.key for c in customers.list_customers(db)] == ["a" * 32]
 
 
 @pytest.mark.parametrize("token", ["a" * 31, "a" * 20 + " " + "b" * 20, ""])
@@ -244,6 +258,17 @@ def test_a_short_token_or_one_with_whitespace_is_refused(sessions, token):
         "http://user:pw@host:8000",
         "http://host:8000?x=1",
         "http://ho st:8000",
+        # An empty query or fragment is no query to `urlsplit`, and the path of
+        # the question would then be glued on behind it.
+        "http://host:8000?",
+        "http://host:8000#",
+        "http://host:8000/?",
+        "HTTP://host:8000",
+        # The `ops` network is internal, and a TLS handshake is one more wait
+        # that the deadline of the list cannot end.
+        "https://host:8000",
+        "http://Host:8000",
+        "http://host:08000",
     ],
 )
 def test_an_address_that_is_not_scheme_host_port_is_refused(sessions, url):
@@ -296,6 +321,12 @@ def test_cli_adds_lists_and_removes_without_ever_printing_the_token(
     assert "alpha" in listed.out and "http://maex-alpha-api-1:8000" in listed.out
     assert TOKEN_A not in listed.out + listed.err
 
+    # A second run is a rotation or a move, and the audit says so.
+    monkeypatch.setattr(sys, "stdin", io.StringIO(TOKEN_B + "\n"))
+    assert cli.main(["customer-add", "alpha", "http://maex-alpha-api-2:8000"]) == 0
+    changed = capsys.readouterr()
+    assert TOKEN_B not in changed.out + changed.err
+
     assert cli.main(["customer-remove", "alpha"]) == 0
     assert cli.main(["customer-remove", "alpha"]) == 1
     capsys.readouterr()
@@ -303,9 +334,12 @@ def test_cli_adds_lists_and_removes_without_ever_printing_the_token(
     rows = [r for r in _audit(sessions) if r.action.startswith("customer.")]
     assert [(r.action, r.target, r.actor) for r in rows] == [
         ("customer.added", "alpha", "cli"),
+        ("customer.changed", "alpha", "cli"),
         ("customer.removed", "alpha", "cli"),
     ]
-    assert all(TOKEN_A not in str(r.detail) for r in _audit(sessions))
+    assert rows[1].detail == {"api_url": "http://maex-alpha-api-2:8000"}
+    for token in (TOKEN_A, TOKEN_B):
+        assert all(token not in str(r.detail) for r in _audit(sessions))
 
 
 def test_cli_refuses_a_bad_key_with_exit_code_one(sessions, monkeypatch, capsys):
@@ -415,6 +449,28 @@ def _naive(d: dict) -> None:
     d["backup_at"] = "2026-11-10T09:00:00"
 
 
+class _InPieces(httpx.SyncByteStream):
+    """A body as it comes from a network, a few kB at a time."""
+
+    def __init__(self, body: bytes) -> None:
+        self.body = body
+
+    def __iter__(self):
+        for start in range(0, len(self.body), 8192):
+            yield self.body[start : start + 8192]
+
+
+def _too_long(request: httpx.Request) -> httpx.Response:
+    """A status that is valid in every field and past the size limit through
+    one the dashboard ignores: nothing but the limit can refuse it."""
+    data = _status("alpha")
+    data["padding"] = "x" * 70_000
+    body = json.dumps(_hull(data)).encode()
+    return httpx.Response(
+        200, stream=_InPieces(body), headers={"Content-Type": "application/json"}
+    )
+
+
 PROBLEMS = [
     (_raising(httpx.ConnectError("refused")), customers.UNREACHABLE, "connect"),
     (_raising(httpx.ReadTimeout("slow")), customers.UNREACHABLE, "timeout"),
@@ -439,6 +495,22 @@ PROBLEMS = [
         customers.NO_RESTAURANT,
         "not-found",
     ),
+    # Only the stack's own answer with 200 means that; a proxy's or a
+    # framework's `not_found` under another status does not.
+    (
+        lambda r: httpx.Response(
+            502, json={"ok": False, "error": {"code": "not_found", "message": "x"}}
+        ),
+        customers.NOT_A_STATUS,
+        "not-found-under-502",
+    ),
+    (
+        lambda r: httpx.Response(
+            404, json={"ok": False, "error": {"code": "not_found", "message": "x"}}
+        ),
+        customers.NOT_KNOWN,
+        "not-found-under-404",
+    ),
     (
         lambda r: httpx.Response(200, content=b"<html>hello</html>"),
         customers.NOT_A_STATUS,
@@ -460,6 +532,28 @@ PROBLEMS = [
         "string-for-number",
     ),
     (_serving("alpha", _naive), customers.NOT_A_STATUS, "naive-datetime"),
+    # A number of a thousand digits is valid JSON, and one such cell would
+    # widen the table every customer is shown in.
+    (
+        _serving("alpha", lambda d: d["today"].update(calls=10**10)),
+        customers.NOT_A_STATUS,
+        "calls-beyond-any-day",
+    ),
+    (
+        _serving("alpha", lambda d: d["menu"].update(items=10**10)),
+        customers.NOT_A_STATUS,
+        "menu-beyond-any-card",
+    ),
+    (
+        _serving(
+            "alpha",
+            lambda d: d.update(
+                alarms=[{"kind": "k", "last_at": _stamp(START), "count": 10**10}]
+            ),
+        ),
+        customers.NOT_A_STATUS,
+        "alarm-count-beyond-any",
+    ),
     (
         _serving(
             "alpha",
@@ -475,16 +569,19 @@ PROBLEMS = [
         customers.NOT_A_STATUS,
         "long-name",
     ),
-    (
-        lambda r: httpx.Response(200, content=b"x" * 70_000),
-        customers.NOT_A_STATUS,
-        "over-64k",
-    ),
+    (_too_long, customers.NOT_A_STATUS, "over-64k"),
     (_serving("alpha", code=500), customers.NOT_A_STATUS, "500-valid-body"),
     (
         _serving("alpha", lambda d: d["tenant"].update(key="beta")),
         customers.OTHER_CUSTOMER,
         "other-customer",
+    ),
+    # A tenant without `customer_key` (the seed's, or one older than migration
+    # 035): the answer cannot be tied to the customer, and the row says why.
+    (
+        _serving("alpha", lambda d: d["tenant"].update(key=None)),
+        customers.NO_KEY,
+        "no-customer-key",
     ),
 ]
 
@@ -595,6 +692,43 @@ def test_a_stack_that_keeps_sending_is_too_slow_and_delays_nobody(monkeypatch):
     ]
 
 
+def test_slow_stacks_never_keep_another_one_from_being_asked(monkeypatch):
+    """Deep review of #801: with eight workers for the whole list, eight slow
+    stacks left the ninth customer waiting in the queue, and its row then said
+    "answers too slowly" of a stack nobody had asked."""
+    monkeypatch.setattr(customers, "DEADLINE_SECONDS", 1.0)
+    held = threading.Event()
+
+    def slow(request: httpx.Request) -> httpx.Response:
+        held.wait(10)
+        return httpx.Response(200, json=_hull(_status("x")))
+
+    slow_keys = [f"slow-{n}" for n in range(1, 10)]
+    handlers = {f"{key}-api": slow for key in slow_keys} | {
+        "zeta-api": _serving("zeta")
+    }
+    try:
+        rows = customers.overview(
+            [_customer(key) for key in [*slow_keys, "zeta"]],
+            client=_factory(_by_host(handlers)),
+        )
+    finally:
+        held.set()
+    assert [(r.key, r.problem) for r in rows] == [
+        *[(key, customers.TOO_SLOW) for key in slow_keys],
+        ("zeta", ""),
+    ]
+
+
+def test_the_real_client_follows_no_redirect_and_no_proxy_variable():
+    """Every other test hands in a client of its own; this is the one the
+    dashboard asks the stacks with."""
+    with customers._client() as client:
+        assert client.follow_redirects is False
+        assert client.trust_env is False
+        assert client.timeout == httpx.Timeout(customers.TIMEOUT_SECONDS)
+
+
 @pytest.mark.parametrize("token", ["\u00e9" * 40, "a" * 39 + "\x00", "a" * 39 + "\x7f"])
 def test_a_token_no_header_can_carry_is_refused_at_the_registry(sessions, token):
     """Review of #801: 40 times an accented letter passed the token rule, and
@@ -619,7 +753,26 @@ def test_a_row_that_cannot_be_asked_leaves_the_others_standing(caplog):
         ("alpha", "ok", ""),
     ]
     assert "customer beta could not be asked" in caplog.text
-    assert "\u00e9" not in caplog.text
+
+
+def test_what_a_row_trips_over_is_logged_without_its_message(caplog):
+    """An exception's message can quote what it failed on, a header with the
+    token in it. The log names the kind of failure and where, not the text."""
+    handlers = {
+        "alpha-api": _serving("alpha"),
+        "beta-api": _raising(RuntimeError(f"illegal header Bearer {TOKEN_B}")),
+    }
+    rows = customers.overview(
+        [_customer("alpha"), _customer("beta", TOKEN_B)],
+        client=_factory(_by_host(handlers)),
+    )
+    assert [(r.key, r.problem) for r in rows] == [
+        ("beta", customers.NOT_ASKED),
+        ("alpha", ""),
+    ]
+    assert "customer beta could not be asked: RuntimeError" in caplog.text
+    assert "customers.py" in caplog.text
+    assert TOKEN_B not in caplog.text
 
 
 def test_a_packed_answer_is_refused_before_it_is_unpacked():
@@ -764,6 +917,16 @@ def test_the_page_shows_every_customer_and_the_fragment_refreshes_it(
     assert "Pizza A" in fragment.text and "Burger B" in fragment.text
     for text in (page.text, fragment.text):
         assert TOKEN_A not in text and TOKEN_B not in text
+    # After a sign-out the Back button must not show the list from the cache.
+    for answer in (page, fragment, client.get("/customers/alpha")):
+        assert answer.status_code == 200
+        assert answer.headers["cache-control"] == "no-store"
+
+
+def test_one_long_word_of_a_stack_cannot_widen_the_list_for_everyone():
+    """A stack may send 200 characters without a space; the table is shared."""
+    css = (ROOT / "api" / "gui" / "static" / "app.css").read_text(encoding="utf-8")
+    assert ".ops-liste td,.ops-liste th{overflow-wrap:anywhere}" in css
 
 
 def test_what_a_stack_says_is_shown_as_text(
@@ -829,7 +992,10 @@ def test_a_page_load_does_keep_the_session_alive(client, factors, clock):
         (START - timedelta(minutes=5), "5 min ago"),
         (START - timedelta(hours=3), "3 h ago"),
         (START - timedelta(hours=50), "2 d ago"),
-        (START + timedelta(minutes=10), "just now"),
+        # A clock a little ahead is no news; a backup "from" ten minutes ahead
+        # must not read as a fresh one.
+        (START + timedelta(minutes=2), "just now"),
+        (START + timedelta(minutes=10), "in the future"),
     ],
 )
 def test_ago_names_the_one_unit_that_says_enough(at, expected):

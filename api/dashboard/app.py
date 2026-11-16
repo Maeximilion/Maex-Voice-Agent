@@ -116,6 +116,8 @@ COPY = "a passkey answered with an old counter, a copy?"
 NO_STORE = {"Cache-Control": "no-store"}
 # Times are stored and sent in UTC and shown in the restaurants' time.
 SHOWN_IN = ZoneInfo("Europe/Berlin")
+# How far a stack's clock may be ahead of the dashboard's and still be "now".
+CLOCK_SKEW = timedelta(minutes=5)
 
 app = FastAPI(title="Maex Operator", docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=str(GUI_STATIC)), name="static")
@@ -126,6 +128,9 @@ def _ago(at: datetime | None, at_now: datetime) -> str:
     """How long ago, in the one unit that says enough for a glance."""
     if at is None:
         return "never"
+    # A stack whose clock is wrong: its backup must not read as a fresh one.
+    if at - at_now > CLOCK_SKEW:
+        return "in the future"
     minutes = max(0, int((at_now - at).total_seconds() // 60))
     if minutes < 1:
         return "just now"
@@ -232,12 +237,17 @@ def _page(
     request: Request, template: str, context: dict[str, Any], status_code: int = 200
 ) -> HTMLResponse:
     """A page with the CSRF token its form posts back, and the cookie it is
-    compared with."""
+    compared with. Never kept by the browser: after a sign-out the Back button
+    would show what the page said."""
     token = request.cookies.get(cookie("csrf"), "")
     if not token or not token.isascii():
         token = secrets.token_urlsafe(32)
     response = templates.TemplateResponse(
-        request, template, {**context, "csrf_token": token}, status_code=status_code
+        request,
+        template,
+        {**context, "csrf_token": token},
+        status_code=status_code,
+        headers=NO_STORE,
     )
     response.set_cookie(
         cookie("csrf"),
@@ -530,9 +540,7 @@ def factors_page(
         "recovery_left": access.recovery_left(db, operator.account_id),
         "note": NOTES.get(note),
     }
-    response = _page(request, "factors.html", context)
-    response.headers.update(NO_STORE)
-    return response
+    return _page(request, "factors.html", context)
 
 
 def _factors(note: str) -> Response:
@@ -673,7 +681,9 @@ def _rows(db: Session) -> dict[str, Any]:
 def customer_rows(request: Request, db: Session = Depends(get_db)) -> Response:
     """The list's rows alone, for its refresh. No cookie is set: `_page` gives
     the CSRF token to pages with a form."""
-    return templates.TemplateResponse(request, "_customers.html", _rows(db))
+    return templates.TemplateResponse(
+        request, "_customers.html", _rows(db), headers=NO_STORE
+    )
 
 
 def _stack(db: Session, key: str) -> customers.Stack:
@@ -788,6 +798,4 @@ def customer_calls(
         "calls": None if isinstance(found, str) else found,
         "problem": found if isinstance(found, str) else "",
     }
-    response = _page(request, "calls.html", context)
-    response.headers.update(NO_STORE)
-    return response
+    return _page(request, "calls.html", context)

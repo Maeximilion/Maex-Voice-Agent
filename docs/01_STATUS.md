@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.50.0
+> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.50.1
 
 ---
 
@@ -304,6 +304,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.50.1 · 16.11.2026:** Fix PR for the deep review of #801: customer list asks every stack with its own worker, address stored rebuilt, key at most 32 characters, a stack without customer key gets its own red row (Claude's choice, awaiting Maxi), log without exception message, customer.changed in the audit
 - **v2.50.0 · 16.11.2026:** Operator dashboard: a customer's page with the week's four figures, their course and the menu status; the calls of one business day behind step-up, a listed reason and both audits, without phone numbers (#571 fifth part, ops routes /v1/ops/figures and /v1/ops/calls)
 - **v2.49.2 · 16.11.2026:** Trunk zero dropped after every sourced European code (review #207 area F); E.164 check ASCII only
 - **v2.49.1 · 16.11.2026:** Staff times after a held closure of a wie-Sonntag date wait for the owner, also on a rest day; wie Sonntag on a Sunday drops nothing (#764)

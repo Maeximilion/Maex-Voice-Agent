@@ -403,6 +403,8 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 .ops-seite p{margin:0}
 .ops-key{display:block;font-family:var(--font-mono);font-weight:400}
 .ops-liste th[scope=row]{color:var(--text);font-size:var(--fs-body)}
+/* What a stack says is shown as it came: one long word must not widen the table. */
+.ops-liste td,.ops-liste th{overflow-wrap:anywhere}
 .ops-leer{display:grid;gap:var(--s2)}
 .ops code{font-family:var(--font-mono);overflow-wrap:anywhere}
 /* A customer's page (#571): the four figures two by two below 900 px. */
