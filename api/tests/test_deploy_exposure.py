@@ -30,7 +30,7 @@ PROD = REPO_ROOT / "deploy" / "docker-compose.prod.yml"
 # Services that run this repository's code from a bind mount.
 OWN_CODE = ("api", "dispatcher", "voice")
 # Everything else under these prefixes is for inside the Docker network.
-PUBLIC_PATHS = {"/gui", "/gui/*", "/v1/kitchen/*", "/health"}
+PUBLIC_PATHS = {"/", "/gui", "/gui/*", "/v1/kitchen/*", "/health"}
 ROOT_USERS = {"", "0", "root"}
 
 

@@ -4,6 +4,7 @@ The numbers come from `domain/calls/figures.py`; this file only formats them.
 """
 
 from datetime import timedelta
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -43,7 +44,7 @@ def values(figures: Figures) -> list[str]:
     ]
 
 
-def page(session: Session, tenant: Tenant) -> dict:
+def page(session: Session, tenant: Tenant) -> dict[str, Any]:
     today = business_day(tz_name=tenant.timezone)
     week = span_figures(session, tenant, today - timedelta(days=WEEK_DAYS - 1), today)
     history = []

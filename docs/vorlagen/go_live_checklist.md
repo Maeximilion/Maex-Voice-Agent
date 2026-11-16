@@ -2,7 +2,7 @@
 
 > One copy per restaurant, filled in on a second device or printed. Filled copies stay out of the repository (they name the restaurant and the people). Every step names a command, a screen or a document section that exists today; a step that is not built yet says so with its issue number.
 > Hard rule 5 applies at every step: if anything fails, the phone rings at the team. Do not go on to the next stage while the rollback of section 4 is untested.
-> Marks on every item: **auto** = a command that exists today checks it (run it, keep the output); **auto (planned)** = `python -m api.jobs.selftest` of #574 will check it, not built yet, do it by hand until then; **hand** = a person checks and ticks; **Maxi** = a legal or contract duty, Maxi's decision, this sheet holds only the pointer and no legal text.
+> Marks on every item: **auto** = a command that exists today checks it (run it, keep the output); **auto (planned, #571)** = the operator dashboard of #571 will check it, not built yet, do it by hand until then (what `python -m sim.selftest` of #574 covers is plain **auto**); **hand** = a person checks and ticks; **Maxi** = a legal or contract duty, Maxi's decision, this sheet holds only the pointer and no legal text.
 
 | Field | Entry |
 |---|---|
@@ -17,12 +17,12 @@
 ### 1.1 Stack and tenant
 
 - [ ] **[auto (`--dry-run`)]** Stack created on the EU server: `python3 scripts/new_stack.py <customer.json> --domain <domain> --dry-run`, then without `--dry-run`, outside service hours (the shared Caddy is recreated, docs/13 §8 "What this means for the other issues"). Customer file shaped like `deploy/customer.example.json`, kept with the stack on the server, never in the repository.
-- [ ] **[auto (planned, #574)]** Per-customer installer with a self-test: not built yet: #574 (`new_stack.py` above is the stack part, #573).
+- [ ] **[auto]** Self-test (#574, docs/13 §8): in the stack's folder `docker compose exec api python -m sim.selftest` (or `new_stack.py ... --selftest` on a rerun) ends with `connected`, and the tablet showed the TEST card for a minute (a table today); it keeps no row and notifies nobody. Once, with the kitchen told: `--print-slip`, and the SELBSTTEST slip comes out of the printer (the slip itself is **hand**).
 - [ ] **[auto]** Inside the new stack's api container: `python -m api.jobs.provision check` lists what the tenant still lacks (menu, zones, print bridge). It must report nothing missing.
-- [ ] **[hand; auto (planned, #574)]** Mode is `shadow` after provisioning (`provision create` writes it that way); confirm in the tablet header ("KI hört mit").
-- [ ] **[hand; auto (planned, #574)]** Team number: `TEAM_PHONE` in the stack's `.env` is E.164 and is the phone that rings at the team; extra numbers in `TRANSFER_TARGETS` (docs/13 §0a, `.env.example`).
-- [ ] **[hand]** Access: each tablet signed in with the setup link of the first login, restaurant password and team PIN set (docs/13 §0a, `docs/23_ACCESS_SECURITY.md`).
+- [ ] **[hand; auto: the selftest `configuration` line shows the call mode]** Mode is `shadow` after provisioning (`provision create` writes it that way); confirm in the tablet header ("KI hört mit").
+- [ ] **[hand]** Team number: `TEAM_PHONE` in the stack's `.env` is E.164 and is the phone that rings at the team; extra numbers in `TRANSFER_TARGETS` (docs/13 §0a, `.env.example`). The self-test does not check it.
 - [ ] **[auto (planned, #571)]** Dashboard checks that run these items automatically: not built yet: #571.
+
 
 ### 1.2 Menu and allergens
 
@@ -67,7 +67,7 @@ Pointers only; the texts are Maxi's (CLAUDE.md §10).
 
 - [ ] **[Maxi]** Every duty in the table "Where every duty stands" of `docs/09_OPERATIONS_LEGAL.md` §1 is read for this restaurant. A duty marked "first real call" blocks every real call in any mode; the others block the step they name.
 - [ ] **[Maxi]** The drafts the restaurant fills in or signs are in `docs/vorlagen/` (privacy notice, record of processing, data-protection officer notice, delivery terms, team information, procedure documentation, allergen list). Who fills in what: the "Whose" column of that table.
-- [ ] **[Maxi; auto (planned, #574) for the setting]** Recording stays off (`RECORDING_ENABLED=false`) until the team consents and L2 is met (docs/09 §1, L2 and L11).
+- [ ] **[Maxi; hand for the setting]** Recording stays off (`RECORDING_ENABLED=false`) until the team consents and L2 is met (docs/09 §1, L2 and L11).
 
 ---
 
@@ -110,7 +110,7 @@ Goal: calls ring the team's phone again and the AI takes nothing, at any stage.
 
 ---
 
-Open question for Maxi (rollback): the docs give no single command that flips a customer back to its own phone once a carrier trunk exists (T-10.12); step 4 stays empty until then. Option A (recommended): when T-10.12 is built, add the forwarding switch-back as one documented step in docs/20 and here. Option B: keep the router assignment of step 3 as the only rollback for the test phase and do not onboard a trunk customer before A exists.
+Assumption (rollback, option A, 16.11.2026): when T-10.12 is built, the forwarding switch-back becomes one documented step in docs/20 and in step 4 here; until then step 3 is the only rollback and no trunk customer is onboarded. Recorded in `docs/01_STATUS.md` Made Assumptions.
 
 ---
 

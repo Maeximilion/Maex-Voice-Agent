@@ -32,6 +32,29 @@ document.addEventListener("click", (event) => {
   }
 });
 
+// "Anzeigen" beside a password field shows what was typed and hides it again
+// (#571): `data-zeigen` names the field's id.
+document.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element)) return;
+  const button = event.target.closest("[data-zeigen]");
+  if (!(button instanceof HTMLButtonElement)) return;
+  const field = document.getElementById(button.dataset["zeigen"] ?? "");
+  if (!(field instanceof HTMLInputElement)) return;
+  const show = field.type === "password";
+  field.type = show ? "text" : "password";
+  button.setAttribute("aria-pressed", String(show));
+  button.textContent = show ? "Verbergen" : "Anzeigen";
+});
+
+// A shown password is hidden again before its form leaves: a browser may keep
+// what a text field sent in its form history, on a tablet the whole team uses.
+document.addEventListener("submit", (event) => {
+  if (!(event.target instanceof HTMLFormElement)) return;
+  for (const button of event.target.querySelectorAll('[data-zeigen][aria-pressed="true"]')) {
+    if (button instanceof HTMLButtonElement) button.click();
+  }
+});
+
 // The setup link carries its code after "#", which no request sends (#570): copy
 // it into the form, then drop it from the address bar and the history.
 (() => {

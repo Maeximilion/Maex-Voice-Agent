@@ -35,8 +35,10 @@
     # the print bridge in the restaurant and the health check. The tools and
     # the call endpoints under /v1 are used inside the Docker network only (the
     # voice layer runs on this server, docs/20) and are not proxied: a token
-    # that is never offered to the internet cannot be tried from there.
-    @public path /gui /gui/* /v1/kitchen/* /health
+    # that is never offered to the internet cannot be tried from there. `/` is
+    # the bare host name and nothing below it: the API answers it with a
+    # redirect to the view, whose sign-in is the front page (#571).
+    @public path / /gui /gui/* /v1/kitchen/* /health
     handle @public {
         # Forms and the bridge send a few hundred bytes, a room of the floor plan
         # (T-3.11) at most about 200 KB at its largest (schemas/floor_plan.py).

@@ -106,6 +106,7 @@ class SimCall:
         now: datetime | None = None,
         external_session_id: str | None = None,
         caller_id: str | None = None,
+        is_test: bool = False,
     ):
         self._session = session
         # Fester Zeitpunkt (`--now`) haelt einen Lauf reproduzierbar; ohne ihn laeuft
@@ -141,6 +142,7 @@ class SimCall:
                 caller_id=caller_id,
             ),
             now=self._now,
+            is_test=is_test,
         )
         self.call_id = started.call_id
         self.state = initial_state(self.call_id, tenant.id, caller_id=caller_id)
