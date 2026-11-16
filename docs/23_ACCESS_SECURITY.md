@@ -190,6 +190,66 @@ detail pages, the Caddy site `ops.<domain>` with its headers.
 - A sign-out or the break glass ends the session, and with it the step-up: a fresh second factor of
   a session that no longer exists opens nothing.
 
+**A customer's page, write (#571, sixth part, 16.11.2026):** the last card of a customer's page
+opens "Access and call routing" (`/customers/<key>/manage/<step>`), where the operator shows and
+sets the team PIN and the admin PIN, signs out one device or all, makes a setup link, sets the
+call mode and sets today's team number.
+
+- **Every step is a post behind `require_step_up`**, the page's CSRF token and the same-site
+  check, the read that opens the page too: a PIN and a setup link are ways into a restaurant, and
+  the call mode and the team number decide where a call goes (T12). There is no GET, so nothing of
+  it can be linked to, kept in a history or prefetched. A stale post goes to the step-up and back
+  to the customer's page, and is dropped.
+- **Every step carries a reason** (Claude's choice, docs/01 "Made Assumptions": §8 asks one only
+  for guest data): the category and ticket number the operator gave when opening the page travel
+  as hidden fields of each form and are checked again on each post. The actor is the session's
+  account, never a field or a header.
+- **Two audits per step:** the operator's own `customer.<step>_asked` (target the customer; detail
+  the reason, the reference and what is no secret: which PIN, which device, which mode) is
+  committed before the stack is asked, and a second row says what came of it: `customer.<step>_done`,
+  `customer.<step>_not_done` with the dashboard's own sentence when the stack refused before doing
+  anything, or `customer.<step>_unclear` when a step that changes something got no clear answer and
+  the stack may have done it all the same. The stack writes its own rows (§8): the reason's first,
+  the step's own when something happened.
+- **A secret is shown once and exists nowhere else on the operator's side.** A PIN and a setup
+  link are text of the one answer page (`Cache-Control: no-store`), never a field's value (a
+  browser keeps those in its form history), never part of an address, an audit row or a log line;
+  the link is text to copy, not a link the operator's browser could follow. A new PIN the operator
+  types travels in the request's body and is not repeated on the page. Looking again is a new
+  step, recorded again.
+- **Nothing odd is sent.** A form is read into one request (`customers.step`): a PIN of 4 to 6
+  ASCII digits, a device's id as the stack wrote it or the word `all`, a mode's code, a number in
+  E.164. Anything else is "nothing was sent" without a row in either audit. Whether a PIN, a mode
+  or a number is taken is the stack's decision; its refusal is said in the dashboard's own words.
+- **The stack's answer is input from outside, the state after the step as well** (§8): a PIN that
+  is not 4 to 6 digits, a link that is not `https://<host>/gui/einrichten#<token>` or the path
+  alone, more than 200 devices, a mode or a number of another form (the shown team number too:
+  digits and what stands between them) are "answer cannot be read", and everything is shown as
+  text. A taken-over stack can still answer with a link to a host of its own under that path, so
+  the page tells the operator to compare the link's start with the customer's address before
+  passing it on; it gains nothing by that, the restaurant's own sign-in page is the stack's
+  already. A stack that does not know its host (`AGENT_DOMAIN` not set) answers the path alone,
+  and the page says to put the customer's address in front.
+- **A step is sent once, and a form is taken once.** The dashboard never repeats a request to a
+  stack by itself. A form that changes something carries a token of the page it stands on, kept
+  as a passkey challenge is (one per session and customer, single use, five minutes;
+  `passkeys.issue` and `take`): the post takes it out, so a reload of the answer page, the Back
+  button or an older tab sends nothing a second time and writes no audit row (409, "this form was
+  sent before"). Without it a reload within the five minutes of the step-up would make a second
+  setup link and void the one just passed on, or end an emergency stop the owner set in between.
+  The two reads (opening the page, showing a PIN) need no token: repeating them changes nothing
+  and is recorded each time.
+- **No clear answer is said as such.** When the stack answers too slowly, is not reachable or
+  answers what cannot be read, the page says that the change may have been made all the same and
+  to look before repeating it, and the audit row is `_unclear`; after a refusal (the token, an
+  older version, the wrong stack, a rule) it says nothing of the kind, because nothing was done.
+  A refusal of the request itself (status 400) is never explained with a rule's sentence.
+- **A list starts at what holds.** The lists of modes and numbers preselect the mode and the
+  number that hold now, so a button pressed without a choice changes nothing; where what holds is
+  not in the list (the emergency stop, whose one entry is "switch the agent on again") the list
+  starts at an empty entry that the browser refuses and the dashboard does not send.
+- No script: plain forms. The lists of modes and numbers are the ones the stack answered with.
+
 **Passkeys, step-up and the push (#571, fourth part, 16.11.2026):** a passkey is the normal second
 factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webauthn`).
 
@@ -227,7 +287,8 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   `/step-up`, which takes a passkey or a TOTP code and never a recovery code. Wrong answers there
   count and wait as at the sign-in. A stale request is sent to `/step-up` and back to a path of
   this site; a stale write is dropped, never replayed. Today it stands before every change of a
-  factor and the sight of a new TOTP secret; the later parts name it on their routes.
+  factor, the sight of a new TOTP secret, a customer's call list and every step of a customer's
+  manage page; the later parts name it on their routes.
 - **Audit and push.** A new or removed passkey, a new or removed TOTP secret, a used recovery
   code, and on the host a new account and the break glass are in the operator's audit and go as a
   push to the `ops` topic from one place,
@@ -271,7 +332,7 @@ the second builds against.
   through a setup link. The PIN has 4 to 6 digits and is **one team PIN per restaurant**, set with
   the password (assumption, `docs/01_STATUS.md`): staff share the tablet, so a PIN chosen per device
   would be known only to whoever signed it in. **The operator sees and changes the team PIN, and the
-  admin PIN** (Maxi 09.11.2026): until the dashboard has it (#571) with
+  admin PIN** (Maxi 09.11.2026): in the dashboard (#571, §5 "A customer's page, write") or on the stack with
   `python -m api.jobs.gui_access pin` and `pin --set <digits>`, `--admin` for the admin PIN, each
   look and change in `audit_log` without the value. So the PINs are stored readable (migration 031): a hash of 4 to 6 digits held
   nobody with the database back anyway, since a million guesses take an afternoon offline, and
@@ -310,7 +371,7 @@ the second builds against.
   The PIN is never a login: it only unlocks a session that already exists.
 - **Devices:** each session is a device with its first and last use and the browser's name. In (a)
   the operator lists and signs them out on the stack (`python -m api.jobs.gui_access devices`,
-  `sign-out <id>` or `--all`), until the dashboard has it (#571). The owner's device list
+  `sign-out <id>` or `--all`); since 16.11.2026 the dashboard does both too (#571, §5). The owner's device list
   (`/gui/geraete`, under "Einstellungen" in the header) has "Gerät abmelden" behind the admin PIN (#570 b).
   A device signed out there loses its open event stream on the next tick (#597), and its admin PIN
   form answers with the sign-in, not with a wrong PIN.
@@ -343,13 +404,13 @@ the second builds against.
   a tap that changes nothing and the owner's own answer on a card push nothing.
 - **Password reset (D34 point 5):** a one-time setup link made by the operator, valid 24 hours,
   shown once, stored hashed; a newer link replaces an older one, and setting the password signs out
-  every other device. Until the dashboard exists (#571) the operator makes it on the stack:
+  every other device. The operator makes it in the dashboard (#571, §5) or on the stack:
   `python -m api.jobs.gui_access link`. The code travels in the link's fragment (`#...`), which no
   browser sends, so no access log or proxy sees it; the page's script puts it into the form. An
   e-mail reset link is decided too but waits for Maxi's choice of the mail service (provider, cost,
   data processing agreement): issue #584. No security questions.
 - **Lost tablet (D34 point 6, T8):** the owner signs out one device in the admin area; the
-  operator removes a device (today with `gui_access sign-out`) and makes a new setup link, which
+  operator removes a device (in the dashboard, or with `gui_access sign-out`) and makes a new setup link, which
   changes the password and signs out every device.
 - **Brute force** (Maxi 09.11.2026): counters per account (on its row) and per client address
   (`gui_login_failures`) in the customer's database. One or two wrong passwords cost nothing; every
@@ -443,6 +504,21 @@ guest's data.
 - **Writes** (settings, call mode, tokens) are separate routes, each writing `audit_log` with the
   operator as actor; changing the call mode or team number also pushes to `owner` and `ops` (T12),
   through the domain functions the tablet uses (`domain/status/config.py`, `staff_changes.py`).
+  Built (#571, sixth part, 16.11.2026; docs/04 §Ops API): `GET /v1/ops/access` and six post routes
+  for both PINs (show, set), the devices (sign out one or all), a setup link, the call mode and the
+  team number. No tokens yet ("Token erneuern", §7). Each needs the reason and the account, as
+  guest data does, and the customer's key (`X-Ops-Customer`): the answer naming its restaurant is
+  enough for a read, which the dashboard then drops, but a write to a stack registered under the
+  wrong customer would have happened by then, so the stack compares the key with its own before
+  anything, and a restaurant without a key takes no step at all. `domain/operator.py` commits a
+  row `ops.<step>` with the reason first and then calls the function the command line or the
+  tablet uses with the operator as actor: one set of rules, and the step's own audit row and push
+  are the ones that existed. The team number is today's, by the staff's rule (the standard stays,
+  the owner keeps or undoes it on the check card): the operator cannot move a restaurant's calls
+  for good without the owner seeing it. A sign-out says its device or `all` in words. No PIN and
+  no link is in an audit row, a log line or an address; the request log holds the path only.
+  An operator account cannot be named `cli`: `operator:cli` is the command line's actor in a
+  stack's audit log.
 - The actor header is trusted only because only the dashboard holds `OPS_TOKEN`; the dashboard sets
   it from the session, never from user input.
 - **A stack's answer is input from outside** (built with the customer list, 16.11.2026,

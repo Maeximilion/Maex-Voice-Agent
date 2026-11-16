@@ -157,7 +157,7 @@ The operator login needs the password and a second factor (docs/23 §5). One los
 
 ### Tablet lost, or the restaurant's password got around (#570, D34)
 
-A signed-in tablet shows the board to whoever holds it, until it is signed out (docs/23 T8). In the stack's api container (docs/13 §3 "Access to the operations view"):
+A signed-in tablet shows the board to whoever holds it, until it is signed out (docs/23 T8). In the operator dashboard (#571, docs/23 §5 "A customer's page, write"): the customer's page, "Access and call routing" with a reason and the ticket number, then "Sign out this device" or "Sign out every device", "Make a setup link", and for a PIN "Show" or "Set"; each step asks for a fresh second factor and stands in both audit logs with the reason. Or, in the stack's api container (docs/13 §3 "Access to the operations view"), which also works while the dashboard is down:
 
 1. `python -m api.jobs.gui_access devices` lists the signed-in devices with their last use.
 2. `python -m api.jobs.gui_access sign-out <the first 8 characters of its id>` ends that device at once; `--all` ends every device.

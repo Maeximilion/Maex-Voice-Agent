@@ -691,3 +691,53 @@ one equal to any other token of the stack. Caddy answers 404 for `/v1/ops/*`
 - Measured with local DB over HTTP (60 calls each, a stack with a few calls a day): `/figures` p95
   22.9 ms, `/calls` p95 8.5 ms; the latency test of `api/tests/test_ops_detail.py` holds both under
   300 ms on a busy week.
+
+**The access read and the six steps (#571, sixth part, 16.11.2026).** They show a secret or change
+the restaurant, so each needs three headers besides the token: `X-Ops-Reason` and `X-Ops-Actor` as
+for `/calls`, and `X-Ops-Customer: <customer key>`. A stack whose restaurant has another key, or
+none, answers 409 `conflict` before it reads or writes anything: an address registered for the
+wrong customer changes nobody's restaurant. A missing reason or account is 400 `invalid_input`.
+
+| Route | Body | Does |
+|---|---|---|
+| `GET /v1/ops/access` | none | the state below, nothing else |
+| `POST /v1/ops/access/pin/show` | `{"which": "team" \| "admin"}` | answers with `"pin"`, `null` when none is set |
+| `POST /v1/ops/access/pin` | `{"which", "pin"}` | sets the PIN (`set_team_pin`, `set_admin_pin`) |
+| `POST /v1/ops/access/sign-out` | `{"device": "<id>"}` or `{"all": true}` | ends one device or all; answers with `"signed_out"`, 0 for a device that is gone |
+| `POST /v1/ops/access/setup-link` | none | a new one-time link (`issue_link`); answers with `"link"` and `"link_expires_at"` |
+| `POST /v1/ops/call-mode` | `{"mode"}` | `shadow`, `overflow` or `primary` (`set_mode`), `paused` (`pause_ai`), `resume` (`resume_ai`) |
+| `POST /v1/ops/team-phone` | `{"number"}` | today's team number by the staff's rule (`change_team_phone`) |
+
+- Every route answers with the state after it: `{"tenant": {"key", "name"}, "login",
+  "team_pin_set", "admin_pin_set", "devices": [{"id", "device", "created_at", "last_seen_at"}],
+  "call_mode", "call_modes", "team_phone", "team_phone_standard", "team_phone_until",
+  "team_phones"}`. `login`: the restaurant has set its password. `devices`: the 200 last used.
+  `call_mode` is the mode that holds now and `call_modes` what can be sent from it (`["resume"]`
+  during the emergency stop). `team_phone` is where a call for the team goes now,
+  `team_phone_standard` the standard number and `team_phone_until` the end of a number set for
+  today (`null`: the standard holds). `team_phones` are the numbers the tablet's sheet offers
+  (`sheet_numbers`). A restaurant without its settings row answers with no mode, no number and
+  two empty lists. No field of the state is a secret; a shown PIN and a new link are the only
+  secrets an answer carries, and nothing but a body ever carries one.
+- The link is `https://<AGENT_DOMAIN>/gui/einrichten#<token>`. `AGENT_DOMAIN` is a setting of
+  the api since this part (`agent_domain`; `docker-compose.yml` hands it over, the provisioning
+  script writes it into the stack's `.env`); without it the answer is the path alone, and the
+  dashboard tells the operator to put the customer's address in front.
+- **The reason is in `audit_log` before the step:** a row `ops.<step>` (`access_read`, `pin_show`,
+  `pin_set`, `sign_out`, `setup_link`, `call_mode`, `team_phone`), actor `operator:<account>`,
+  payload the reason's category and number and what is no secret (which PIN, which device, which
+  mode), committed first (`domain/operator.py`). The step's own row follows when it happened
+  (`gui.team_pin_shown`, `gui.admin_pin_set`, `gui.session_ended`, `gui.setup_link_issued`,
+  `service_config.mode_changed`, `staff_change.team_phone`), with the operator as actor. No row
+  holds a PIN, a link or, in the reason's row, a telephone number.
+- The steps are the functions the command line and the tablet use, so their rules hold: a PIN has
+  4 to 6 digits and the two differ, a mode is never chosen during the emergency stop, a team number
+  is one the dialplan dials, holds until the end of the business day and shows the owner's check
+  card, and the call mode and the team number push to `owner` and `ops` (docs/23 T12). What a rule
+  refuses is `invalid_input` with status 200, as everywhere in the domain; a request the route
+  itself does not take (a header, the body's form, a mode that does not exist) is 400 or 422. The
+  dashboard tells the two apart by the status and explains only the first as a rule.
+- A sign-out names its device or says `"all": true`; a body with neither or both is refused, so a
+  missing field never signs out every device. A PIN is taken as any short text and refused by the
+  domain, so no validation message is built around one.
+- Not measured: none of these is on a call's path.
