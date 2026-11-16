@@ -410,7 +410,7 @@ def test_missing_of_a_tenant_without_hours(engine):
 def cli(engine, monkeypatch, tmp_path):
     monkeypatch.setattr(job, "SessionLocal", sessionmaker(bind=engine))
     monkeypatch.setattr(job, "utcnow", lambda: T0)
-    monkeypatch.delenv("AGENT_DOMAIN", raising=False)
+    monkeypatch.setattr(settings, "agent_domain", "")
     path = tmp_path / "customer.json"
     path.write_text(_spec().model_dump_json(), encoding="utf-8")
     return path

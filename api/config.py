@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     # comma-separated: the only ones the staff may set as today's team number
     # (#570 b), since the dialplan dials no other (T-10.13).
     transfer_targets: str = ""
+    # The public host name of the operations view, as Caddy serves it: the
+    # host of a setup link the stack makes (#571). Empty: the path alone.
+    agent_domain: str = ""
     max_call_seconds: int = 420
     # Written into a new tenant by the seed (service_config.privacy_notice_address,
     # docs/09 L4). Empty: none, and the greeting leaves the sentence out.

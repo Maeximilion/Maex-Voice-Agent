@@ -10,9 +10,32 @@ is copied into two audit logs.
 """
 
 import re
+from dataclasses import dataclass
 
 REASON_HEADER = "X-Ops-Reason"
 ACTOR_HEADER = "X-Ops-Actor"
+# The customer the dashboard means. A stack compares it with its restaurant's
+# key before it shows a secret or changes anything: an address registered for
+# the wrong customer would otherwise change the wrong restaurant.
+CUSTOMER_HEADER = "X-Ops-Customer"
+# The status of a step that one of the stack's own rules refused (a PIN like
+# the other, a number the dialplan does not dial). A request the route does
+# not take answers `invalid_input` too, with 200 (the body's form, as
+# everywhere in the API) or 400 (a header): the dashboard explains only the
+# first as a rule.
+RULE_STATUS = 422
+
+
+@dataclass(frozen=True)
+class OpsReader:
+    """Who reads guest data or changes a stack over the ops API, and why
+    (docs/23 §8)."""
+
+    # `operator:<account>`, as the audit log names the operator.
+    actor: str
+    reason: str
+    reference: str
+
 
 # Category, and the words the dashboard shows for it.
 REASONS = {

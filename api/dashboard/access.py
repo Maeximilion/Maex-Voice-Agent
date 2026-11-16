@@ -469,6 +469,10 @@ def _forgive(db: Session, account: OperatorAccount, address: str) -> None:
 
 def _checked(name: str, password: str) -> str:
     name = name.strip().lower()
+    # `operator:cli` is the command line's actor in a stack's audit log, and
+    # `cli` in this one: an account of that name would write as either.
+    if name == "cli":
+        raise ValueError("The name cli is the command line's. Choose another one.")
     if not NAME.fullmatch(name):
         raise ValueError(
             "The name has 2 to 40 characters: a to z, 0 to 9, dot, dash, underscore."
