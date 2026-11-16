@@ -32,3 +32,4 @@ date,task,session,model,calls,first,at_first_edit,last,peak
 2026-11-16,571-customer-write,3e586b10-87fa-4e0a-936a-411aadfa91bd,claude-fable-5-2,148,106104,258750,615849,615849
 2026-11-16,562-context-evaluation,52002a3b-90c6-475f-8e66-8f650a0d4795,claude-sonnet-5-5,12,104033,,139566,139566
 2026-11-17,571-dev-tools,7e18ef6b-b48f-4c6d-9e98-d7c3e8b8ff1e,claude-fable-5-2,97,105678,212215,379883,379883
+2026-11-17,816,47f96da2-6ba8-477c-bba5-32802cee4fd4,claude-opus-5-5,68,105440,200873,263271,263271

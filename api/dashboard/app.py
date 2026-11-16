@@ -722,7 +722,8 @@ def totp_remove(
 ) -> Response:
     _checked(request, form)
     try:
-        access.remove_totp(db, operator)
+        if not access.remove_totp(db, operator):
+            return _factors("")
     except access.FactorNeeded:
         return _factors("factor-needed")
     _alert(db, operator.name, "TOTP removed")

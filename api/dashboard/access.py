@@ -136,11 +136,21 @@ def sign_in(
     is the answer of a WebAuthn ceremony to the challenge this browser asked
     for under `attempt_token`; with it, `code` is not looked at. Commits."""
     name = name.strip().lower()
+    # Enter after the password: no factor at all. Refused before the password is
+    # looked at, so it tells nothing, and neither counted nor audited (#816).
+    if not passkey and not code.strip():
+        raise SignInRefused()
     stored, account_id, trusted = _count_attempt(db, name, address, device_token, now)
     # Taken before the password is looked at: a challenge is spent by the first
     # post that brings it, whatever else that post got wrong.
     challenge = (
-        passkeys.take(db, passkeys.for_attempt(attempt_token), passkeys.SIGN_IN, now)
+        passkeys.take(
+            db,
+            passkeys.for_attempt(attempt_token),
+            passkeys.SIGN_IN,
+            now,
+            passkeys.signed_challenge(passkey),
+        )
         if passkey and attempt_token
         else None
     )
@@ -245,10 +255,17 @@ def step_up(
     a TOTP code. A recovery code is a way in, not a step-up. Wrong answers
     count and wait as at the sign-in, or a stolen session could guess codes.
     Commits."""
+    # No factor at all says nothing: not counted, not audited (#816).
+    if not passkey and not code.strip():
+        raise SignInRefused()
     _, _, trusted = _count_attempt(db, operator.name, address, device_token, now)
     challenge = (
         passkeys.take(
-            db, passkeys.for_session(operator.session_id), passkeys.STEP_UP, now
+            db,
+            passkeys.for_session(operator.session_id),
+            passkeys.STEP_UP,
+            now,
+            passkeys.signed_challenge(passkey),
         )
         if passkey
         else None
@@ -358,16 +375,20 @@ def confirm_totp(db: Session, operator: Operator, code: str, now: datetime) -> b
     return True
 
 
-def remove_totp(db: Session, operator: Operator) -> None:
-    """Raises `FactorNeeded` without two passkeys. Commits."""
+def remove_totp(db: Session, operator: Operator) -> bool:
+    """Raises `FactorNeeded` without two passkeys. False when TOTP was off
+    already (a double post, an older tab): nothing to audit or push. Commits."""
     account = _locked(db, operator)
     if passkeys.count(db, account.id) < PASSKEYS_WITHOUT_TOTP:
         db.rollback()
         raise FactorNeeded()
-    if account.totp_secret is not None:
-        account.totp_secret, account.totp_last_step = None, None
-        audit(db, operator.name, "operator.totp_removed", {})
+    if account.totp_secret is None:
+        db.rollback()
+        return False
+    account.totp_secret, account.totp_last_step = None, None
+    audit(db, operator.name, "operator.totp_removed", {})
     db.commit()
+    return True
 
 
 def has_totp(db: Session, account_id: uuid.UUID) -> bool:
