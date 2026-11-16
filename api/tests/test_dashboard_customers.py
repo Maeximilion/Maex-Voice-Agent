@@ -7,6 +7,8 @@ import copy
 import io
 import re
 import sys
+import threading
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -562,6 +564,79 @@ def test_one_failing_stack_does_not_hide_the_others():
         ("gamma", "ok"),
     ]
     assert rows[0].problem == customers.UNREACHABLE
+
+
+def test_a_stack_that_keeps_sending_is_too_slow_and_delays_nobody(monkeypatch):
+    """Review of #801: the read timeout ends a wait without a byte, not an
+    answer that trickles in. A handler that does not come back stands for such
+    a stack; the healthy one beside it is still shown, and promptly."""
+    monkeypatch.setattr(customers, "DEADLINE_SECONDS", 0.3)
+    held = threading.Event()
+
+    def slow(request: httpx.Request) -> httpx.Response:
+        held.wait(10)
+        return httpx.Response(200, json=_hull(_status("beta")))
+
+    handlers = {"alpha-api": _serving("alpha"), "beta-api": slow}
+    started = time.monotonic()
+    try:
+        rows = customers.overview(
+            [_customer("alpha"), _customer("beta", TOKEN_B)],
+            client=_factory(_by_host(handlers)),
+        )
+    finally:
+        held.set()
+    assert time.monotonic() - started < 3
+    assert [(r.key, r.tone, r.problem) for r in rows] == [
+        ("beta", "danger", customers.TOO_SLOW),
+        ("alpha", "ok", ""),
+    ]
+
+
+@pytest.mark.parametrize(
+    "stamp",
+    [
+        "9999-12-31T23:59:59+00:00",
+        "0001-01-01T00:00:00+00:00",
+        "1999-12-31T23:59:59+00:00",
+        "2100-01-01T00:00:00+00:00",
+    ],
+)
+@pytest.mark.parametrize("where", ["backup_at", "last_call_at", "bridge", "alarm"])
+def test_a_time_the_page_cannot_show_is_not_a_status(stamp, where):
+    """Review of #801: the year 9999 is a valid time with an offset and
+    overflows when it is turned into the restaurants' time."""
+
+    def mutate(data: dict) -> None:
+        if where == "bridge":
+            data["print_bridge"]["last_poll_at"] = stamp
+        elif where == "alarm":
+            data["alarms"] = [{"kind": "cost", "last_at": stamp, "count": 1}]
+        else:
+            data[where] = stamp
+
+    row = _one(_serving("alpha", mutate))
+    assert (row.tone, row.problem) == ("danger", customers.NOT_A_STATUS)
+
+
+def test_one_stack_with_an_impossible_time_does_not_take_the_page_down(
+    client, factors, clock, sessions, monkeypatch
+):
+    _two_customers(sessions)
+
+    def far(data: dict) -> None:
+        data["backup_at"] = "9999-12-31T23:59:59+00:00"
+
+    _stacks(
+        monkeypatch,
+        {"alpha-api": _serving("alpha"), "beta-api": _serving("beta", far)},
+    )
+    _signed_in(client, factors, clock)
+    for path in ("/", "/customers/rows"):
+        page = client.get(path)
+        assert page.status_code == 200, path
+        assert "Restaurant alpha" in page.text
+        assert customers.NOT_A_STATUS in page.text
 
 
 # --- the pages ----------------------------------------------------------------

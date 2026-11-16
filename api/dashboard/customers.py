@@ -13,15 +13,24 @@ and nowhere else: no redirect is followed.
 """
 
 import re
+import time
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as NotInTime
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import Annotated
 from urllib.parse import urlsplit
 
 import httpx
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    AfterValidator,
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+)
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -35,17 +44,34 @@ KEY = re.compile(r"[a-z][a-z0-9]*(-[a-z0-9]+)*")
 HOST = re.compile(r"[a-z0-9]([a-z0-9._-]*[a-z0-9])?")
 STATUS_PATH = "/v1/ops/status"
 TIMEOUT_SECONDS = 3.0
+# For the whole list. TIMEOUT_SECONDS only ends a wait without a byte: a stack
+# that sends one byte every two seconds would keep the page for hours.
+DEADLINE_SECONDS = 5.0
 # The answer of a busy day is under 2 kB; more than this is not a status.
 MAX_ANSWER_BYTES = 64 * 1024
 MAX_AT_ONCE = 8
 
 UNREACHABLE = "not reachable"
+TOO_SLOW = "answers too slowly"
 REFUSED = "refuses the token"
 NOT_A_STATUS = "answer is not a status"
 NO_RESTAURANT = "no restaurant in the stack yet"
 OTHER_CUSTOMER = "another customer answers at this address"
 
 Short = Annotated[str, Field(max_length=200)]
+EARLIEST = datetime(2000, 1, 1, tzinfo=UTC)
+LATEST = datetime(2100, 1, 1, tzinfo=UTC)
+
+
+def _in_our_time(at: datetime) -> datetime:
+    """A time the page can show: the year 9999 passes as a time with an offset
+    and then overflows when it is turned into the restaurants' time."""
+    if not EARLIEST <= at < LATEST:
+        raise ValueError("a time outside 2000 to 2100")
+    return at
+
+
+Time = Annotated[AwareDatetime, AfterValidator(_in_our_time)]
 
 
 class _Answer(BaseModel):
@@ -65,13 +91,13 @@ class _Today(_Answer):
 
 class _Bridge(_Answer):
     configured: bool
-    last_poll_at: AwareDatetime | None
+    last_poll_at: Time | None
     silent: bool
 
 
 class _Alarm(_Answer):
     kind: Short
-    last_at: AwareDatetime
+    last_at: Time
     count: int = Field(ge=0)
 
 
@@ -86,11 +112,11 @@ class StackStatus(_Answer):
 
     tenant: _Tenant
     call_mode: Short | None
-    last_call_at: AwareDatetime | None
+    last_call_at: Time | None
     business_day: date
     today: _Today
     print_bridge: _Bridge
-    backup_at: AwareDatetime | None
+    backup_at: Time | None
     alarms: list[_Alarm] = Field(max_length=50)
     menu: _Menu
 
@@ -265,13 +291,24 @@ def overview(
     customers: list[Stack], client: Callable[[], httpx.Client] | None = None
 ) -> list[Row]:
     """Every customer's row, the ones to look at first. Each stack is asked at
-    once and has `TIMEOUT_SECONDS`; one that hangs delays nobody else's row."""
+    once, and the whole list has `DEADLINE_SECONDS`: a stack that is not done
+    by then is a row of its own and delays nobody else's. Closing the client
+    ends what such a stack is still sending."""
     if not customers:
         return []
-    with (
-        (client or _client)() as http,
-        ThreadPoolExecutor(max_workers=min(MAX_AT_ONCE, len(customers))) as pool,
-    ):
-        rows = list(pool.map(lambda customer: _ask(http, customer), customers))
+    http = (client or _client)()
+    pool = ThreadPoolExecutor(max_workers=min(MAX_AT_ONCE, len(customers)))
+    try:
+        asked = [pool.submit(_ask, http, customer) for customer in customers]
+        deadline = time.monotonic() + DEADLINE_SECONDS
+        rows = []
+        for customer, answer in zip(customers, asked, strict=True):
+            try:
+                rows.append(answer.result(max(0.0, deadline - time.monotonic())))
+            except NotInTime:
+                rows.append(Row(customer.key, problem=TOO_SLOW))
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+        http.close()
     order = {"danger": 0, "warn": 1, "ok": 2}
     return sorted(rows, key=lambda row: (order[row.tone], row.key))

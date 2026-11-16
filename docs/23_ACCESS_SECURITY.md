@@ -358,8 +358,9 @@ guest's data.
   it from the session, never from user input.
 - **A stack's answer is input from outside** (built with the customer list, 16.11.2026,
   `api/dashboard/customers.py`): a stack that was taken over may answer anything. The dashboard
-  reads at most 64 kB, checks every field (types, lengths, at most 50 alarms, times with an
-  offset), requires the answer to name the customer the row was asked for ("another customer
+  reads at most 64 kB, gives the whole list five seconds (a stack that trickles its answer
+  is a row "answers too slowly" and delays nobody), checks every field (types, lengths, at most 50
+  alarms, times with an offset and between 2000 and 2100, so none overflows when it is shown), requires the answer to name the customer the row was asked for ("another customer
   answers at this address" otherwise), and shows everything as text. The token goes to the
   registered address only: no redirect is followed and no proxy variable of the host is read.
 
