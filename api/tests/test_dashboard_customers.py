@@ -4,11 +4,13 @@ list page and its refresh, against a scratch operator database and a mock
 transport instead of a network."""
 
 import copy
+import gzip
 import io
 import re
 import sys
 import threading
 import time
+import tracemalloc
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -591,6 +593,40 @@ def test_a_stack_that_keeps_sending_is_too_slow_and_delays_nobody(monkeypatch):
         ("beta", "danger", customers.TOO_SLOW),
         ("alpha", "ok", ""),
     ]
+
+
+def test_a_packed_answer_is_refused_before_it_is_unpacked():
+    """Review of #801: the size limit counted bytes after HTTPX had unpacked
+    them, so 32 kB of gzip became 32 MB first. No packed answer is asked for,
+    and one that comes anyway is not read."""
+    packed = gzip.compress(b" " * (32 * 1024 * 1024))
+    assert len(packed) < customers.MAX_ANSWER_BYTES
+    seen: list[httpx.Request] = []
+
+    class AsItArrives(httpx.SyncByteStream):
+        """A body the client has not read yet, as from a network: built with
+        `content=`, HTTPX would unpack it here in the test already."""
+
+        def __iter__(self):
+            yield packed
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(
+            200,
+            stream=AsItArrives(),
+            headers={"Content-Encoding": "gzip", "Content-Type": "application/json"},
+        )
+
+    tracemalloc.start()
+    try:
+        row = _one(handler)
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert (row.tone, row.problem) == ("danger", customers.NOT_A_STATUS)
+    assert seen[0].headers["accept-encoding"] == "identity"
+    assert peak < 4 * 1024 * 1024
 
 
 @pytest.mark.parametrize(

@@ -250,10 +250,18 @@ def _ask(client: httpx.Client, customer: Stack) -> Row:
         with client.stream(
             "GET",
             customer.api_url + STATUS_PATH,
-            headers={"Authorization": f"Bearer {customer.ops_token}"},
+            headers={
+                "Authorization": f"Bearer {customer.ops_token}",
+                "Accept-Encoding": "identity",
+            },
         ) as answer:
             if answer.status_code in (401, 403):
                 return Row(key, problem=REFUSED)
+            # The limit below counts what arrives. A packed answer would be
+            # unpacked first, 32 kB into 32 MB, so none is asked for or taken:
+            # without this header HTTPX passes the bytes on as they are.
+            if answer.headers.get("content-encoding", "identity") != "identity":
+                return Row(key, problem=NOT_A_STATUS)
             body = b""
             for chunk in answer.iter_bytes():
                 body += chunk
