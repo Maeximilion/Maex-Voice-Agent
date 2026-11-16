@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.47.0
+> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.47.1
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.17
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.16
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.15
@@ -156,6 +156,7 @@ Decided D1 to D30: same archive section.
 ---
 
 ## Made Assumptions (subject to change)
+- **Go-live checklist (#575, 16.11.2026), Claude's choice, awaiting Maxi:** rollback once a SIP trunk exists (T-10.12) takes option A: when T-10.12 is built, the forwarding switch-back becomes one documented step in `docs/20_VOICE_LAYER.md` and in step 4 of `docs/vorlagen/go_live_checklist.md`; until then the router unassignment of step 3 is the only rollback and no trunk customer is onboarded. Documentation only, no code.
 - **Front page (#571 first pull request, 16.11.2026), Claude's choices, awaiting Maxi:** (a) the front page is the sign-in page `/gui/anmelden` itself and `/` only redirects to the view, instead of a second page at `/`: one page to protect, and a wrong password comes back on the same page; (b) it shows the restaurant's name from the database, which the host name tells anyway, and nothing else of the stack; (c) the three sentences under the headline name hard rules 3 and 5 and the stop button, no figure and no promise beyond them; (d) "Anzeigen" beside the password shows what was typed, for a password of 12 characters on a tablet keyboard; (e) links to an imprint and a privacy page are not on it yet: they come with the Caddy and go-live pull request (11 of the plan) and their texts are Maxi's (docs/09 §1).
 - **Reused test database (13.11.2026), Claude's choices, awaiting Maxi:** (a) the role in `DATABASE_URL` for tests is a superuser, as in CI and the local stack (the reset turns off foreign key checks with `session_replication_role`); without it every reset falls back to dropping and copying the database, correct but as slow as before; (b) a test that leaves anything but rows is detected by a digest over the catalog (objects, grants, settings, `alembic_version`), not by a list of known tests; (c) area-based test selection and skipping the test shards for docs-only pull requests are not done: the gain was small (about 3 min per docs PR, Actions minutes are free in this public repository) and a missed test would first fail on `main`.
 - **Handovers the core carries out (#655, 11.11.2026), Claude's choices, awaiting Maxi:** (a) a team leg nobody answered with no number to call back is logged `abandoned`: it counts as a missed call in the figures, and `error` stays for outages; (b) the sentence "Ihre Bestellung ist damit noch nicht aufgegeben." (or the one for a table) now comes before the handover sentence on every handover with something open, a wish for a person and a time limit included; (c) the card of a failed tool that promised the team starts with the tool's own first sentence ("Diese Reservierung wurde bereits storniert."); (d) a failed tool that promised the team and a model's `transfer_to_team`, with nobody reachable and no number, ask for the callback number, as after noise on the line, and the guest's sentence waits with the card for it (Codex PR #658); a model failure and the time limit still end on the last-resort sentence.
@@ -337,6 +338,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.47.1 · 16.11.2026:** #575: go-live checklist marks (auto/hand/Maxi) on all 35 items, rollback assumption A
 - **v2.47.0 · 16.11.2026:** Front page with the sign-in on each customer's own host: / leads to the view, the sign-in page shows the restaurant and the product (#571, D35); plan of the GUI pull requests on #571
 - **v2.46.21 · 15.11.2026:** Self-test: python -m sim.selftest checks a stack end to end; its table shows on the real tablet as a TEST card for a minute and never reaches outside (is_test, migration 039; #574)
 - **v2.46.20 · 15.11.2026:** A complaint about a dish gets the remedy offer first, the team only when the guest is still not satisfied; an order in front of a complaint stays for the team; a draft made after midnight names weekday and date (#744, #750, ledger #764)
