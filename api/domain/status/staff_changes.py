@@ -76,6 +76,10 @@ OVERNIGHT = (
     "bitte „Ende nach Mitternacht“ ankreuzen."
 )
 PAST_DAY = "Ein vergangener Tag lässt sich nicht mehr ändern."
+CARD_OPEN = (
+    "Für diesen Tag wartet eine Änderung des Teams auf der Übersicht. "
+    "Bitte erst dort übernehmen oder zurücknehmen."
+)
 NO_NUMBER = "Das ist keine Telefonnummer."
 NOT_LISTED = "Diese Nummer kann die Telefonanlage nicht anrufen. Weitere Nummern gibt der Betreiber frei."
 
@@ -265,14 +269,7 @@ def change_day_hours(
     when nothing changes. An end before the start runs past midnight and is
     refused unless the staff say so (`overnight`): swapped times would open
     the night. Raises InvalidInput. Commits."""
-    if hours.closed:
-        hours = DayHours(closed=True, note=hours.note)
-    elif (hours.opens is None) != (hours.closes is None) or (
-        hours.opens is not None and hours.opens == hours.closes
-    ):
-        raise InvalidInput("hours without a span", say=NO_SPAN)
-    elif hours.opens and hours.closes and hours.closes < hours.opens and not overnight:
-        raise InvalidInput("hours past midnight not confirmed", say=OVERNIGHT)
+    hours = _checked(hours, overnight)
     now = now or clock.utcnow()
     _config, zone = _locked(session, tenant_id)
     today = clock.business_day(now, zone)
@@ -332,6 +329,73 @@ def change_day_hours(
         _close(card, UNDONE, now)
     session.commit()
     return card
+
+
+def set_day_hours(
+    session: Session,
+    tenant_id: uuid.UUID,
+    day: date,
+    hours: DayHours,
+    now: datetime | None = None,
+    actor: str = ACTOR_OWNER,
+    overnight: bool = False,
+) -> bool:
+    """The owner sets a date's hours behind the admin PIN (#571): they hold at
+    once, also what a staff request would wait for, with an audit row and
+    without a check card or a push, which tell the owner what the staff did.
+    A date whose staff change is still open is decided on its card first
+    (Conflict): a second answer here would leave the card saying what no
+    longer holds. False when the date holds these hours already. The rules
+    for a span are the staff's (`change_day_hours`). Raises InvalidInput.
+    Commits."""
+    hours = _checked(hours, overnight)
+    now = now or clock.utcnow()
+    _config, zone = _locked(session, tenant_id)
+    if day < clock.business_day(now, zone):
+        session.rollback()
+        raise InvalidInput("a past day", say=PAST_DAY)
+    if _open_card(session, tenant_id, DAY_HOURS, day) is not None:
+        session.rollback()
+        raise Conflict(f"an open staff change for {day}", say=CARD_OPEN)
+    row = _set_row(session, tenant_id, day, lock=True)
+    holding = DayHours.of_row(row)
+    if hours.note is None:
+        hours = DayHours(hours.closed, hours.opens, hours.closes, None, holding.note)
+    if hours == holding:
+        session.commit()
+        return False
+    _write(session, tenant_id, day, hours, row)
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            actor=actor,
+            action="special_day.set",
+            entity="special_day",
+            payload={
+                "day": day.isoformat(),
+                "from": holding.as_dict(),
+                "to": hours.as_dict(),
+            },
+        )
+    )
+    session.commit()
+    return True
+
+
+def coming_days(
+    session: Session, tenant_id: uuid.UUID, today: date
+) -> list[tuple[date, DayHours]]:
+    """The dates from today on that hold hours of their own, by date."""
+    rows = session.scalars(
+        select(SpecialDay)
+        .where(
+            SpecialDay.tenant_id == tenant_id,
+            SpecialDay.status == SET,
+            SpecialDay.date >= today,
+        )
+        .order_by(SpecialDay.date)
+    )
+    return [(row.date, DayHours.of_row(row)) for row in rows]
 
 
 def decide(
@@ -495,6 +559,20 @@ def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> s
 
 
 # --- helpers ---------------------------------------------------------------------
+
+
+def _checked(hours: DayHours, overnight: bool) -> DayHours:
+    """A date's hours as they may be written: closed alone, or a span with a
+    length whose end before the start has the word for it (#596)."""
+    if hours.closed:
+        return DayHours(closed=True, note=hours.note)
+    if (hours.opens is None) != (hours.closes is None) or (
+        hours.opens is not None and hours.opens == hours.closes
+    ):
+        raise InvalidInput("hours without a span", say=NO_SPAN)
+    if hours.opens and hours.closes and hours.closes < hours.opens and not overnight:
+        raise InvalidInput("hours past midnight not confirmed", say=OVERNIGHT)
+    return hours
 
 
 def _locked(session: Session, tenant_id: uuid.UUID) -> tuple[ServiceConfig, str]:

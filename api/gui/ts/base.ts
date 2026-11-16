@@ -25,6 +25,15 @@ document.addEventListener("htmx:configRequest", (event) => {
   if (token && token[1] !== undefined && headers) headers["X-CSRF-Token"] = token[1];
 });
 
+// A tap the server refused without a page to show (a 403, a 500): the red bar
+// says so (docs/06 section 5), on every page. Without it a button of a sub
+// page looks as if it had done nothing. The board swaps the HTML of a refused
+// tap itself (app.ts) and so raises no error for those.
+document.addEventListener("htmx:responseError", () => {
+  const bar = document.getElementById("stoerung");
+  if (bar) bar.hidden = false;
+});
+
 // "Nochmal versuchen" on the red bar reloads the page.
 document.addEventListener("click", (event) => {
   if (event.target instanceof Element && event.target.closest("[data-neu-laden]")) {

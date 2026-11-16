@@ -11,7 +11,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
 from api.config import settings
@@ -24,7 +24,16 @@ from api.gui.router import router as gui_router
 from api.gui.session import csrf_matches
 from api.gui.sse import _signed_in
 from api.main import app
-from api.models import GuiAccount, GuiLoginFailure, GuiSession, StaffChange, Tenant
+from api.models import (
+    AuditLog,
+    GuiAccount,
+    GuiLoginFailure,
+    GuiSession,
+    OpeningHours,
+    SpecialDay,
+    StaffChange,
+    Tenant,
+)
 from scripts.seed import seed
 
 pytestmark = pytest.mark.gui_login
@@ -668,6 +677,92 @@ def test_the_settings_sheet_names_the_device_list(client, engine):
     _set_up_and_sign_in(client, engine)
     assert 'hx-get="/gui/einstellungen"' in client.get("/gui/", headers=HTML).text
     assert 'href="/gui/geraete"' in client.get("/gui/einstellungen", headers=HX).text
+
+
+# --- the owner's tab "Zeiten" (#571, plan number 7) -----------------------------
+
+HOURS = "/gui/zeiten"
+HOURS_WRITES = [
+    (f"{HOURS}/woche/1", {"gesehen": "x", "pickup-von-0": "10:00"}),
+    (f"{HOURS}/tag", {"datum": "2099-01-01", "art": "geschlossen"}),
+]
+
+
+def _hours_untouched(engine) -> bool:
+    """The seed's 36 spans, no special day, no audit row of the tab."""
+    with Session(engine) as session:
+        spans = session.scalar(select(func.count()).select_from(OpeningHours))
+        days = session.scalar(select(func.count()).select_from(SpecialDay))
+        audits = session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.action.in_(("opening_hours.changed", "special_day.set")))
+        )
+    return (spans, days, audits) == (36, 0, 0)
+
+
+def test_the_weekly_hours_ask_the_admin_pin_first(client, engine):
+    _set_up_and_sign_in(client, engine)
+    page = client.get(HOURS, headers=HTML)
+    assert page.status_code == 303
+    assert page.headers["location"] == "/gui/inhaber?weiter=/gui/zeiten"
+    # The parts of the page ask it too, and show nothing before.
+    for path in (f"{HOURS}/woche", f"{HOURS}/woche/1"):
+        part = client.get(path, headers=HX)
+        assert part.status_code == 401 and "11:30" not in part.text
+        assert part.headers["HX-Redirect"] == f"/gui/inhaber?weiter={path}"
+    # The team PIN opens nothing here.
+    assert _owner(client, pin=PIN, back=HOURS).status_code == 401
+    assert client.get(HOURS, headers=HTML).status_code == 303
+
+    assert _owner(client, back=HOURS).headers["location"] == HOURS
+    shown = client.get(HOURS, headers=HTML)
+    assert shown.status_code == 200 and "Öffnungszeiten der Woche" in shown.text
+    assert shown.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize(("path", "data"), HOURS_WRITES)
+def test_a_write_to_the_hours_without_the_admin_pin_writes_nothing(
+    client, engine, path, data
+):
+    _set_up_and_sign_in(client, engine)
+    answer = client.post(
+        path,
+        data=data,
+        headers={**HX, "HX-Current-URL": "http://testserver/gui/zeiten"},
+    )
+    assert answer.status_code == 401
+    assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/zeiten"
+    assert _hours_untouched(engine)
+
+
+@pytest.mark.parametrize(("path", "data"), HOURS_WRITES)
+def test_a_write_to_the_hours_from_another_site_is_refused(client, engine, path, data):
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=HOURS).status_code == 303
+    answer = client.post(
+        path, data=data, headers={**HX, "Origin": "https://evil.example"}
+    )
+    assert answer.status_code == 403
+    assert _hours_untouched(engine)
+
+
+def test_the_hours_close_again_when_the_owner_is_idle(client, engine):
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=HOURS).status_code == 303
+    assert client.get(HOURS, headers=HTML).status_code == 200
+    _age_owner_clock(engine, 16)
+    gone = client.post(HOURS_WRITES[1][0], data=HOURS_WRITES[1][1], headers=HX)
+    assert gone.status_code == 401 and _hours_untouched(engine)
+
+
+def test_the_staff_pages_of_the_frame_need_no_admin_pin(client, engine):
+    """The frame adds tabs, not a lock: "Anrufe" and "Kennzahlen" stay with
+    the restaurant's login (docs/06 section 4)."""
+    _set_up_and_sign_in(client, engine)
+    for path in ("/gui/anrufe", "/gui/kennzahlen"):
+        page = client.get(path, headers=HTML)
+        assert page.status_code == 200 and 'href="/gui/zeiten"' in page.text
 
 
 def test_a_check_card_answer_without_the_admin_pin_goes_to_the_pin_page(

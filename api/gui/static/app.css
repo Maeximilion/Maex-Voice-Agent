@@ -175,6 +175,35 @@ header.aus .seg.services .on{background:transparent;color:var(--muted)}
 .betrieb .tbl{font-size:var(--fs-body)}
 .betrieb .tbl th{font-size:var(--fs-body)}
 @media (max-width:900px){ .kz-bar{grid-template-columns:1fr 1fr} }
+/* The frame of the admin area (#571): the four figures under the header row,
+   the areas as tabs. A tab is a link, 60 px high, marked by a line and by
+   aria-current, never by colour alone. */
+.admin-bar{padding:0 var(--s4) var(--s2)}
+.admin-bar p{margin:0 0 var(--s1)}
+.tabs{display:flex;flex-wrap:wrap;gap:var(--s1);padding:0 var(--s4)}
+.tabs a{display:inline-flex;align-items:center;min-height:var(--tap);padding:0 var(--s4);color:var(--muted);font-weight:600;text-decoration:none;border-bottom:4px solid transparent}
+.tabs a[aria-current=page]{color:var(--text);border-bottom-color:var(--accent);font-weight:700}
+/* The tab "Zeiten" (#571): its parts one below the other, each form row wraps. */
+.zeiten{display:grid;gap:var(--s4)}
+.zeiten h2{margin:0 0 var(--s3);font-size:var(--fs-h2)}
+.zeiten h3{margin:var(--s4) 0 var(--s2);font-size:var(--fs-lg)}
+.zeiten .warn-card{border-color:var(--warn-line)}
+.week th[scope=row]{color:var(--text)}
+.week-form fieldset{border:2px solid var(--line);border-radius:var(--r);margin:0 0 var(--s3);padding:var(--s2) var(--s3);min-width:0}
+.week-form legend{font-weight:700;padding:0 var(--s2)}
+.span-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s4);margin:var(--s2) 0}
+.span-row label{display:inline-flex;align-items:center;gap:var(--s2);font-weight:600}
+.span-row input[type=time],.span-row input[type=date]{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);min-height:var(--tap);padding:0 var(--s2);margin:0}
+.span-row input[type=checkbox]{width:28px;height:28px;margin:0;accent-color:var(--accent)}
+.span-row .check{min-height:var(--tap)}
+@media (max-width:700px){
+  /* A phone: each weekday is a block, each service a line with its name. */
+  .week thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .week tr{display:block;padding:var(--s2) 0;border-top:2px solid var(--line)}
+  .week th[scope=row],.week td{display:block;border:0;padding:2px 0}
+  .week td[data-label]::before{content:attr(data-label) ": ";color:var(--muted)}
+  .tabs a{padding:0 var(--s3)}
+}
 .board{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
 .col{background:transparent;padding:0}
 .col h2{margin:0;padding:0 0 10px;font-size:var(--fs-h2);font-weight:700;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:1;background:var(--bg)}

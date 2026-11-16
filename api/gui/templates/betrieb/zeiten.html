@@ -1,0 +1,27 @@
+{# The tab "Zeiten" of the admin area (#571, docs/06 §4): the standard weekly
+   hours per weekday and service, the dates with hours of their own, and the
+   confirmed tables the hours no longer cover. Behind the admin PIN
+   (`require_admin`). Every hour comes from the database; the three parts are
+   fragments, swapped by the forms. #}
+{% extends "base.html" %}
+{% from "betrieb/_kopf.html" import admin_kopf with context %}
+{% block title %}Zeiten{% endblock %}
+{% block body_class %}betrieb{% endblock %}
+
+{% block header %}{{ admin_kopf("Zeiten", "Zeiten", tenant) }}{% endblock %}
+
+{% block main %}
+<div class="zeiten">
+  {% include "fragments/zeiten_gaeste.html" %}
+  <section class="card" id="zeiten-woche">
+    {% include "fragments/zeiten_woche.html" %}
+  </section>
+  <section class="card" id="zeiten-tage">
+    {% include "fragments/zeiten_tage.html" %}
+  </section>
+  <form method="post" action="/gui/inhaber/schliessen">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Inhaber-Bereich schließen</button>
+  </form>
+</div>
+{% endblock %}

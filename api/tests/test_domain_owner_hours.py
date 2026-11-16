@@ -1,0 +1,409 @@
+"""The owner's hours (#571, plan number 7): the weekly hours per weekday and
+service, a date's hours set directly behind the admin PIN, and the confirmed
+tables the hours no longer cover."""
+
+import uuid
+from datetime import UTC, date, datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
+import pytest
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.orm import Session
+
+from api.core.errors import Conflict, InvalidInput
+from api.domain.status import staff_changes as staff
+from api.domain.status import weekly
+from api.domain.status.hours import load_hours, windows_for_day
+from api.domain.status.service import service_open_at
+from api.domain.status.staff_changes import DayHours
+from api.domain.status.weekly import Span
+from api.models import (
+    AuditLog,
+    OpeningHours,
+    OutboxEvent,
+    Reservation,
+    SpecialDay,
+    StaffChange,
+)
+from scripts.seed import seed
+
+BERLIN = ZoneInfo("Europe/Berlin")
+# Seed: Monday closed, every other day 11:30-14:00 and 17:00-22:00.
+MONDAY, TUESDAY, SATURDAY = 0, 1, 5
+TODAY = date(2026, 11, 10)  # a Tuesday
+NOW = datetime.combine(TODAY, time(10, 0), tzinfo=BERLIN)
+SEEDED = [Span(time(11, 30), time(14)), Span(time(17), time(22))]
+
+
+@pytest.fixture
+def session(migrated_db_url):
+    engine = create_engine(migrated_db_url)
+    with Session(engine) as s:
+        yield s
+    engine.dispose()
+
+
+@pytest.fixture
+def tenant_id(session) -> uuid.UUID:
+    return uuid.UUID(
+        seed(session, tenant_name="Testbetrieb", timezone="Europe/Berlin").tenant_id
+    )
+
+
+def _seen(session, tenant_id, weekday) -> str:
+    return weekly.token(weekly.week(session, tenant_id)[weekday])
+
+
+def _set(session, tenant_id, weekday, spans, seen=None) -> bool:
+    seen = _seen(session, tenant_id, weekday) if seen is None else seen
+    return weekly.set_weekday(session, tenant_id, weekday, spans, seen)
+
+
+def _windows(session, tenant_id, day, service="pickup") -> list[tuple[str, str]]:
+    data = load_hours(session, tenant_id, day, days=0)
+    return [
+        (a.strftime("%H:%M"), b.strftime("%H:%M"))
+        for a, b in windows_for_day(data, day, service, BERLIN)
+    ]
+
+
+def _audits(session, action) -> list[AuditLog]:
+    return list(
+        session.scalars(
+            select(AuditLog).where(AuditLog.action == action).order_by(AuditLog.id)
+        )
+    )
+
+
+def _open(session, tenant_id, at: datetime, service="pickup") -> bool:
+    return service_open_at(session, tenant_id, at, BERLIN, service)
+
+
+# --- the weekly hours ----------------------------------------------------------
+
+
+def test_the_week_reads_every_weekday_and_service_from_the_database(session, tenant_id):
+    week = weekly.week(session, tenant_id)
+    assert sorted(week) == list(range(7))
+    assert week[MONDAY] == {"dinein": [], "pickup": [], "delivery": []}
+    assert week[TUESDAY]["pickup"] == SEEDED
+
+
+def test_the_owner_changes_one_service_of_one_weekday(session, tenant_id):
+    changed = _set(
+        session, tenant_id, TUESDAY, {"pickup": [Span(time(12), time(15, 30))]}
+    )
+    assert changed is True
+    assert _windows(session, tenant_id, TODAY) == [("12:00", "15:30")]
+    # Nothing else moved: the other services of the day, the other days.
+    assert _windows(session, tenant_id, TODAY, "dinein") == [
+        ("11:30", "14:00"),
+        ("17:00", "22:00"),
+    ]
+    assert weekly.week(session, tenant_id)[SATURDAY]["pickup"] == SEEDED
+    (audit,) = _audits(session, "opening_hours.changed")
+    assert audit.actor == "gui:owner" and audit.tenant_id == tenant_id
+    payload = audit.payload or {}
+    assert payload["weekday"] == TUESDAY
+    assert payload["from"]["pickup"] == ["11:30-14:00", "17:00-22:00"]
+    assert payload["to"]["pickup"] == ["12:00-15:30"]
+    assert payload["to"]["dinein"] == payload["from"]["dinein"]
+
+
+def test_the_same_hours_again_change_nothing_and_leave_no_audit_row(session, tenant_id):
+    spans = {service: list(SEEDED) for service in ("dinein", "pickup", "delivery")}
+    assert _set(session, tenant_id, TUESDAY, spans) is False
+    assert _audits(session, "opening_hours.changed") == []
+
+
+def test_hours_another_device_changed_since_are_not_overwritten(session, tenant_id):
+    stale = _seen(session, tenant_id, TUESDAY)
+    _set(session, tenant_id, TUESDAY, {"pickup": [Span(time(12), time(15))]})
+    with pytest.raises(Conflict):
+        _set(session, tenant_id, TUESDAY, {"pickup": []}, seen=stale)
+    assert _windows(session, tenant_id, TODAY) == [("12:00", "15:00")]
+    assert len(_audits(session, "opening_hours.changed")) == 1
+
+
+def test_a_weekday_without_hours_is_closed(session, tenant_id):
+    spans: dict[str, list[Span]] = {"dinein": [], "pickup": [], "delivery": []}
+    assert _set(session, tenant_id, TUESDAY, spans) is True
+    assert _windows(session, tenant_id, TODAY) == []
+    assert not _open(session, tenant_id, NOW.replace(hour=12))
+    # A closed day gets its hours back.
+    assert _set(session, tenant_id, TUESDAY, {"pickup": list(SEEDED)}) is True
+    assert _open(session, tenant_id, NOW.replace(hour=12))
+
+
+def test_an_end_before_the_start_needs_the_owners_word(session, tenant_id):
+    """Swapped times would open the night (#596), on every week to come."""
+    with pytest.raises(InvalidInput) as refused:
+        _set(session, tenant_id, TUESDAY, {"pickup": [Span(time(18), time(1))]})
+    assert refused.value.say == staff.OVERNIGHT
+    assert weekly.week(session, tenant_id)[TUESDAY]["pickup"] == SEEDED
+
+
+def test_a_span_past_midnight_holds_into_the_next_day(session, tenant_id):
+    night = Span(time(18), time(1), overnight=True)
+    assert _set(session, tenant_id, TUESDAY, {"pickup": [night]}) is True
+    wednesday = TODAY + timedelta(days=1)
+    assert _open(session, tenant_id, datetime.combine(wednesday, time(0, 59), BERLIN))
+    assert not _open(session, tenant_id, datetime.combine(wednesday, time(1), BERLIN))
+    # Shown again, the box is ticked: an untouched save changes nothing.
+    assert weekly.week(session, tenant_id)[TUESDAY]["pickup"] == [night]
+    assert _set(session, tenant_id, TUESDAY, {"pickup": [night]}) is False
+
+
+@pytest.mark.parametrize(
+    ("saturday", "closes_utc"),
+    [
+        # The clock goes forward at 02:00: 03:00 comes an hour early.
+        (date(2027, 3, 27), datetime(2027, 3, 28, 1, 0, tzinfo=UTC)),
+        # The clock goes back at 03:00: the night is an hour longer.
+        (date(2026, 10, 24), datetime(2026, 10, 25, 2, 0, tzinfo=UTC)),
+    ],
+)
+def test_a_night_over_a_clock_change_ends_at_the_restaurants_clock(
+    session, tenant_id, saturday, closes_utc
+):
+    night = Span(time(22), time(3), overnight=True)
+    _set(session, tenant_id, SATURDAY, {"pickup": [night]})
+    assert saturday.weekday() == SATURDAY
+    assert _open(session, tenant_id, closes_utc - timedelta(minutes=1))
+    assert not _open(session, tenant_id, closes_utc)
+
+
+def test_a_special_day_beats_the_weekly_hours_of_its_date_only(session, tenant_id):
+    _set(session, tenant_id, TUESDAY, {"pickup": [Span(time(10), time(23))]})
+    later = TODAY + timedelta(days=7)
+    staff.set_day_hours(session, tenant_id, later, DayHours(closed=True), NOW)
+    noon = time(12)
+    assert not _open(session, tenant_id, datetime.combine(later, noon, BERLIN))
+    assert _open(session, tenant_id, datetime.combine(TODAY, noon, BERLIN))
+    week_after = later + timedelta(days=7)
+    assert _open(session, tenant_id, datetime.combine(week_after, noon, BERLIN))
+
+
+@pytest.mark.parametrize(
+    ("spans", "say"),
+    [
+        ([Span(time(12), time(12))], staff.NO_SPAN),
+        ([Span(time(11), time(15)), Span(time(14), time(20))], weekly.OVERLAP),
+        # A night that starts inside the evening span.
+        (
+            [Span(time(17), time(23)), Span(time(22), time(2), overnight=True)],
+            weekly.OVERLAP,
+        ),
+        ([Span(time(h), time(h, 30)) for h in range(8, 13)], weekly.TOO_MANY),
+    ],
+)
+def test_hours_that_cannot_hold_are_refused_and_nothing_is_written(
+    session, tenant_id, spans, say
+):
+    with pytest.raises(InvalidInput) as refused:
+        _set(session, tenant_id, TUESDAY, {"pickup": spans})
+    assert refused.value.say == say
+    assert weekly.week(session, tenant_id)[TUESDAY]["pickup"] == SEEDED
+    assert _audits(session, "opening_hours.changed") == []
+
+
+def test_spans_that_only_touch_are_two_spans(session, tenant_id):
+    spans = [Span(time(11), time(14)), Span(time(14), time(20))]
+    assert _set(session, tenant_id, TUESDAY, {"pickup": spans}) is True
+    assert weekly.week(session, tenant_id)[TUESDAY]["pickup"] == spans
+
+
+@pytest.mark.parametrize(
+    ("weekday", "spans"),
+    [(7, {"pickup": []}), (-1, {"pickup": []}), (TUESDAY, {"brunch": []})],
+)
+def test_an_unknown_weekday_or_service_is_refused(session, tenant_id, weekday, spans):
+    with pytest.raises(InvalidInput):
+        weekly.set_weekday(session, tenant_id, weekday, spans, "")
+    assert session.scalar(select(func.count()).select_from(OpeningHours)) == 36
+
+
+# --- a date's hours, set by the owner --------------------------------------------
+
+
+def _special(session, tenant_id) -> list[SpecialDay]:
+    return list(
+        session.scalars(
+            select(SpecialDay)
+            .where(SpecialDay.tenant_id == tenant_id)
+            .order_by(SpecialDay.date)
+            .execution_options(populate_existing=True)
+        )
+    )
+
+
+def test_the_owner_sets_longer_hours_for_a_later_date_at_once(session, tenant_id):
+    """What the staff's request would wait for (D34 point 4) the owner decides."""
+    later = TODAY + timedelta(days=4)
+    hours = DayHours(opens=time(9), closes=time(23))
+    assert staff.set_day_hours(session, tenant_id, later, hours, NOW) is True
+    assert _windows(session, tenant_id, later) == [("09:00", "23:00")]
+    # The owner's own change: no check card and no push.
+    assert session.scalar(select(func.count()).select_from(StaffChange)) == 0
+    assert session.scalar(select(func.count()).select_from(OutboxEvent)) == 0
+    (audit,) = _audits(session, "special_day.set")
+    payload = audit.payload or {}
+    assert audit.actor == "gui:owner"
+    assert payload["day"] == later.isoformat()
+    assert payload["from"]["opens"] is None
+    assert payload["to"]["opens"] == "09:00"
+
+
+def test_the_owner_returns_a_date_to_the_weekly_hours(session, tenant_id):
+    later = TODAY + timedelta(days=4)
+    staff.set_day_hours(session, tenant_id, later, DayHours(closed=True), NOW)
+    assert _windows(session, tenant_id, later) == []
+    assert staff.set_day_hours(session, tenant_id, later, DayHours(), NOW) is True
+    assert _special(session, tenant_id) == []
+    assert _windows(session, tenant_id, later) == [
+        ("11:30", "14:00"),
+        ("17:00", "22:00"),
+    ]
+
+
+def test_what_holds_already_changes_nothing(session, tenant_id):
+    later = TODAY + timedelta(days=4)
+    assert staff.set_day_hours(session, tenant_id, later, DayHours(), NOW) is False
+    staff.set_day_hours(session, tenant_id, later, DayHours(closed=True), NOW)
+    again = staff.set_day_hours(session, tenant_id, later, DayHours(closed=True), NOW)
+    assert again is False
+    assert len(_audits(session, "special_day.set")) == 1
+
+
+def test_a_holidays_name_stays_when_the_owner_changes_its_hours(session, tenant_id):
+    later = TODAY + timedelta(days=4)
+    session.add(
+        SpecialDay(tenant_id=tenant_id, date=later, like_weekday=6, note="Feiertag")
+    )
+    session.commit()
+    hours = DayHours(opens=time(12), closes=time(18))
+    staff.set_day_hours(session, tenant_id, later, hours, NOW)
+    (row,) = _special(session, tenant_id)
+    assert (row.note, row.like_weekday, row.opens_at) == ("Feiertag", None, time(12))
+
+
+@pytest.mark.parametrize(
+    ("day", "hours", "overnight", "say"),
+    [
+        (TODAY - timedelta(days=1), DayHours(closed=True), False, staff.PAST_DAY),
+        (TODAY, DayHours(opens=time(12)), False, staff.NO_SPAN),
+        (TODAY, DayHours(opens=time(12), closes=time(12)), True, staff.NO_SPAN),
+        (TODAY, DayHours(opens=time(18), closes=time(2)), False, staff.OVERNIGHT),
+    ],
+)
+def test_a_date_the_owner_cannot_set_is_refused(
+    session, tenant_id, day, hours, overnight, say
+):
+    with pytest.raises(InvalidInput) as refused:
+        staff.set_day_hours(session, tenant_id, day, hours, NOW, overnight=overnight)
+    assert refused.value.say == say
+    assert _special(session, tenant_id) == []
+
+
+def test_a_night_on_a_date_holds_with_the_owners_word(session, tenant_id):
+    hours = DayHours(opens=time(18), closes=time(2))
+    staff.set_day_hours(session, tenant_id, TODAY, hours, NOW, overnight=True)
+    tomorrow = TODAY + timedelta(days=1)
+    assert _open(session, tenant_id, datetime.combine(tomorrow, time(1, 59), BERLIN))
+    assert not _open(session, tenant_id, datetime.combine(tomorrow, time(2), BERLIN))
+
+
+def test_a_date_with_an_open_card_is_decided_on_the_card_first(session, tenant_id):
+    """Two answers to one staff change would leave the card saying what no
+    longer holds."""
+    later = TODAY + timedelta(days=4)
+    asked = DayHours(opens=time(9), closes=time(23))
+    card = staff.change_day_hours(session, tenant_id, later, asked, NOW)
+    assert card is not None and not card.held
+    with pytest.raises(Conflict) as refused:
+        staff.set_day_hours(session, tenant_id, later, DayHours(closed=True), NOW)
+    assert refused.value.say == staff.CARD_OPEN
+    assert _special(session, tenant_id) == []
+    assert _audits(session, "special_day.set") == []
+
+
+def test_the_coming_special_days_by_date_without_suggestions(session, tenant_id):
+    for offset, status in ((-1, "set"), (9, "set"), (2, "set"), (5, "suggested")):
+        session.add(
+            SpecialDay(
+                tenant_id=tenant_id,
+                date=TODAY + timedelta(days=offset),
+                closed=status == "set",
+                like_weekday=None if status == "set" else 6,
+                status=status,
+            )
+        )
+    session.commit()
+    coming = staff.coming_days(session, tenant_id, TODAY)
+    assert [day for day, _ in coming] == [
+        TODAY + timedelta(days=2),
+        TODAY + timedelta(days=9),
+    ]
+    assert all(hours.closed for _, hours in coming)
+
+
+# --- confirmed tables the hours no longer cover -------------------------------------
+
+
+def _book(session, tenant_id, day, at, name, status="confirmed", is_test=False):
+    session.add(
+        Reservation(
+            tenant_id=tenant_id,
+            source="tablet",
+            status=status,
+            guest_name=name,
+            phone="+491701234567",
+            party_size=2,
+            reserved_for=datetime.combine(day, at, tzinfo=BERLIN),
+            idempotency_key=str(uuid.uuid4()),
+            is_test=is_test,
+        )
+    )
+    session.commit()
+
+
+def _outside(session, tenant_id) -> list[str]:
+    return [b.guest_name for b in weekly.tables_outside_hours(session, tenant_id, NOW)]
+
+
+def test_tables_the_shorter_week_leaves_without_hours_are_listed(session, tenant_id):
+    next_week = TODAY + timedelta(days=7)
+    _book(session, tenant_id, TODAY, time(21), "Heute spät")
+    _book(session, tenant_id, next_week, time(21), "Nächste Woche spät")
+    _book(session, tenant_id, next_week, time(19), "Bleibt")
+    _book(session, tenant_id, next_week, time(21, 30), "Storniert", status="cancelled")
+    _book(session, tenant_id, next_week, time(21, 30), "Selbsttest", is_test=True)
+    _book(session, tenant_id, TODAY, time(9), "Vorbei")
+    assert _outside(session, tenant_id) == []
+
+    shorter = [Span(time(11, 30), time(14)), Span(time(17), time(20))]
+    _set(session, tenant_id, TUESDAY, {"dinein": shorter})
+    assert _outside(session, tenant_id) == ["Heute spät", "Nächste Woche spät"]
+    (first, _) = weekly.tables_outside_hours(session, tenant_id, NOW)
+    # The restaurant's clock, not UTC.
+    assert first.at.utcoffset() == timedelta(hours=1) and first.at.hour == 21
+
+
+def test_a_date_with_hours_of_its_own_keeps_its_tables(session, tenant_id):
+    next_week = TODAY + timedelta(days=7)
+    _book(session, tenant_id, next_week, time(21), "Sondertag hält")
+    _book(session, tenant_id, next_week + timedelta(days=7), time(21), "Ohne Zeiten")
+    _set(session, tenant_id, TUESDAY, {"dinein": [Span(time(17), time(20))]})
+    hours = DayHours(opens=time(17), closes=time(23))
+    staff.set_day_hours(session, tenant_id, next_week, hours, NOW)
+    assert _outside(session, tenant_id) == ["Ohne Zeiten"]
+
+
+def test_a_table_in_the_night_of_the_day_before_is_kept(session, tenant_id):
+    """A span past midnight covers the table at 00:30 of the next date."""
+    wednesday = TODAY + timedelta(days=1)
+    _book(session, tenant_id, wednesday, time(0, 30), "Nachts")
+    assert _outside(session, tenant_id) == ["Nachts"]
+    night = Span(time(17), time(1), overnight=True)
+    _set(session, tenant_id, TUESDAY, {"dinein": [night]})
+    assert _outside(session, tenant_id) == []

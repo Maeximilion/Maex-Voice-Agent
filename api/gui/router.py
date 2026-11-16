@@ -51,13 +51,13 @@ from api.domain.reservations import create_tablet_reservation, floor_plan, list_
 from api.domain.reservations import notice as reservation_notice
 from api.domain.reservations.manual import SOURCE_TABLET, WindowFull, describe
 from api.domain.reservations.spoken import WEEKDAYS
-from api.domain.status import bridge
+from api.domain.status import bridge, weekly
 from api.domain.status import config as switches
 from api.domain.status import holidays as holiday_days
 from api.domain.status import staff_changes as staff
 from api.domain.status.mode import CAUTION, mode_at
 from api.domain.status.waits import current_wait, standard_wait
-from api.gui import calls_view, figures_view, orders_view
+from api.gui import calls_view, figures_view, hours_view, orders_view
 from api.gui.session import LOGIN, csrf_matches, require_admin, require_gui_session
 from api.gui.sse import today_event_stream
 from api.models import Reservation, ServiceConfig, Tenant
@@ -321,6 +321,19 @@ def _page_response(
     return response
 
 
+def _frame(session: Session, tenant: Tenant) -> dict[str, Any]:
+    """The four figures in the frame of an admin page (docs/06 section 4). They
+    are an extra there: figures that cannot be read must not take the device
+    list or the hours down with them, so the bar is left out and the error
+    logged. The page "Kennzahlen" itself still fails loudly."""
+    try:
+        return figures_view.bar(session, tenant)
+    except Exception:
+        session.rollback()
+        logger.exception("Admin frame without its figures")
+        return {}
+
+
 def _require_htmx(
     request: Request,
     hx_request: str | None = Header(default=None),
@@ -406,6 +419,7 @@ def anrufe(
     if tenant is not None:
         context = {
             "tenant": tenant,
+            **_frame(session, tenant),
             **calls_view.page(session, tenant, tag, ergebnis, anliegen),
         }
     return _page_response(
@@ -1816,25 +1830,6 @@ def _hours_sheet(
     )
 
 
-def _hhmm(text: str) -> dt_time:
-    """HH:MM only: a stored second or offset would undo to another time."""
-    if len(text) != 5:
-        raise ValueError(text)
-    # "1000Z" is five characters and 10:00 with an offset: a time with a zone
-    # cannot be compared with the stored ones.
-    parsed = dt_time.fromisoformat(text)
-    if parsed.tzinfo is not None:
-        raise ValueError(text)
-    return parsed
-
-
-def _typed_day(text: str) -> date | None:
-    try:
-        return date.fromisoformat(text)
-    except ValueError:
-        return None
-
-
 @router.get("/tageszeiten", response_class=HTMLResponse, include_in_schema=False)
 def day_hours_sheet(
     request: Request, datum: str = "", session: Session = Depends(get_db)
@@ -1842,7 +1837,7 @@ def day_hours_sheet(
     tenant = _tenant(session)
     if tenant is None:
         raise HTTPException(status_code=503)
-    return _hours_sheet(request, session, tenant, _typed_day(datum))
+    return _hours_sheet(request, session, tenant, hours_view.typed_day(datum))
 
 
 @router.post(
@@ -1860,14 +1855,15 @@ def day_hours_change(
     tenant = _tenant(session)
     if tenant is None:
         raise HTTPException(status_code=503)
-    day = _typed_day(form.get("datum", ""))
+    day = hours_view.typed_day(form.get("datum", ""))
     choice = form.get("art", "")
     if day is None or choice not in ("geschlossen", "zeiten", "normal"):
         return _hours_sheet(request, session, tenant, day, NO_DATE, status=422)
     hours = staff.DayHours(closed=choice == "geschlossen")
     if choice == "zeiten":
         try:
-            opens, closes = _hhmm(form.get("von", "")), _hhmm(form.get("bis", ""))
+            opens = hours_view.hhmm(form.get("von", ""))
+            closes = hours_view.hhmm(form.get("bis", ""))
         except ValueError:
             return _hours_sheet(request, session, tenant, day, NO_TIME, status=422)
         hours = staff.DayHours(opens=opens, closes=closes)
@@ -1928,7 +1924,9 @@ def devices_page(
     tenant = _admin_tenant(session)
     rows = _device_rows(session, tenant, access.session_id)
     return _page_response(
-        request, "betrieb/geraete.html", {"tenant": tenant, "devices": rows}
+        request,
+        "betrieb/geraete.html",
+        {"tenant": tenant, "devices": rows, **_frame(session, tenant)},
     )
 
 
@@ -1956,6 +1954,184 @@ def device_sign_out(
         "fragments/geraete.html",
         {"devices": _device_rows(session, tenant, access.session_id)},
     )
+
+
+# --- The owner's tab "Zeiten": weekly hours and special days (#571) ----------------
+
+SAVED = "Gespeichert. Gilt ab sofort."
+# The answers carry hours and guests' names and numbers: no cache keeps them.
+NO_STORE = {"Cache-Control": "no-store"}
+DAY_CHOICES = ("zeiten", "geschlossen", "normal")
+
+
+def _weekday(weekday: int) -> int:
+    if weekday not in range(7):
+        raise HTTPException(status_code=404)
+    return weekday
+
+
+def _hours_part(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    part: str,
+    message: str | None = None,
+    tone: str = "danger",
+    typed: dict[str, str] | None = None,
+) -> HTMLResponse:
+    """One part of the tab ("woche" or "tage") as it is in the database now,
+    with the list of guests to call swapped in beside it (`oob`). Always 200:
+    htmx swaps no 4xx, and a refused form must show its reason. `typed`: the
+    date and times of a refused form, shown again."""
+    return templates.TemplateResponse(
+        request,
+        f"fragments/zeiten_{part}.html",
+        {
+            **hours_view.page(session, tenant),
+            "message": message,
+            "tone": tone,
+            "typed": hours_view.echo(typed or {}),
+            "oob": True,
+        },
+        headers=NO_STORE,
+    )
+
+
+def _weekday_form(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    weekday: int,
+    message: str | None = None,
+    typed: dict[str, str] | None = None,
+) -> HTMLResponse:
+    return templates.TemplateResponse(
+        request,
+        "fragments/zeiten_tag.html",
+        {**hours_view.day_form(session, tenant, weekday, typed), "message": message},
+        headers=NO_STORE,
+    )
+
+
+@router.get("/zeiten", response_class=HTMLResponse, include_in_schema=False)
+def hours_page(
+    request: Request,
+    _access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The weekly hours and the special days, behind the admin PIN."""
+    tenant = _admin_tenant(session)
+    response = _page_response(
+        request,
+        "betrieb/zeiten.html",
+        {
+            "tenant": tenant,
+            **_frame(session, tenant),
+            **hours_view.page(session, tenant),
+        },
+    )
+    response.headers.update(NO_STORE)
+    return response
+
+
+@router.get("/zeiten/woche", response_class=HTMLResponse, include_in_schema=False)
+def hours_week(
+    request: Request,
+    _access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The week again: "Abbrechen" on a weekday's form."""
+    return _hours_part(request, session, _admin_tenant(session), "woche")
+
+
+@router.get(
+    "/zeiten/woche/{weekday}", response_class=HTMLResponse, include_in_schema=False
+)
+def hours_weekday_form(
+    request: Request,
+    weekday: int,
+    _access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    return _weekday_form(request, session, _admin_tenant(session), _weekday(weekday))
+
+
+@router.post(
+    "/zeiten/woche/{weekday}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def hours_weekday_change(
+    request: Request,
+    weekday: int,
+    _access: Access = Depends(require_admin),
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The owner replaces one weekday's hours. The form sends the token of the
+    hours it showed (`gesehen`); hours changed since are not written over."""
+    tenant = _admin_tenant(session)
+    _weekday(weekday)
+    try:
+        spans = hours_view.typed_spans(form)
+    except ValueError:
+        return _weekday_form(request, session, tenant, weekday, NO_TIME, form)
+    try:
+        changed = weekly.set_weekday(
+            session, tenant.id, weekday, spans, form.get("gesehen", "")
+        )
+    except Conflict as exc:
+        session.rollback()
+        # The fresh hours, not what was typed against the old ones.
+        return _weekday_form(request, session, tenant, weekday, exc.say)
+    except AppError as exc:
+        session.rollback()
+        return _weekday_form(
+            request, session, tenant, weekday, exc.say or SWITCH_FAILED, form
+        )
+    message = SAVED if changed else NO_CHANGE
+    return _hours_part(request, session, tenant, "woche", message, "ok")
+
+
+@router.post(
+    "/zeiten/tag",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def hours_day_change(
+    request: Request,
+    _access: Access = Depends(require_admin),
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The owner sets a date's hours: they hold at once, without a check card."""
+    tenant = _admin_tenant(session)
+    day = hours_view.typed_day(form.get("datum", ""))
+    choice = form.get("art", "")
+    if day is None or choice not in DAY_CHOICES:
+        return _hours_part(request, session, tenant, "tage", NO_DATE, typed=form)
+    hours = staff.DayHours(closed=choice == "geschlossen")
+    if choice == "zeiten":
+        try:
+            hours = staff.DayHours(
+                opens=hours_view.hhmm(form.get("von", "")),
+                closes=hours_view.hhmm(form.get("bis", "")),
+            )
+        except ValueError:
+            return _hours_part(request, session, tenant, "tage", NO_TIME, typed=form)
+    try:
+        changed = staff.set_day_hours(
+            session, tenant.id, day, hours, overnight=bool(form.get("nachts"))
+        )
+    except AppError as exc:
+        session.rollback()
+        return _hours_part(
+            request, session, tenant, "tage", exc.say or SWITCH_FAILED, typed=form
+        )
+    message = SAVED if changed else NO_CHANGE
+    return _hours_part(request, session, tenant, "tage", message, "ok")
 
 
 @router.get("/events", include_in_schema=False)

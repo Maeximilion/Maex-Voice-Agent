@@ -99,6 +99,8 @@ When the print bridge last polled, one row per tenant (T-8.3, migration 016, `do
 
 Mehrere Zeilen je Wochentag erlaubt (Mittag und Abend getrennt).
 
+The times are the restaurant's clock (`tenants.timezone`), not UTC: a span is turned into instants per date (`domain/status/hours.py`), so it keeps its clock times over a change of the clock. A row whose `closes_at` is not after its `opens_at` runs past midnight into the next date. The owner edits the rows on the tab "Zeiten" (#571, docs/06 §4, `domain/status/weekly.py`): the spans of one weekday and service are replaced as a whole, with an audit row `opening_hours.changed`; no migration came with it.
+
 ### `special_days`
 Feiertage, Urlaub, Sonderzeiten. Schlägt `opening_hours` für dieses Datum.
 

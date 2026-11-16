@@ -1,0 +1,15 @@
+{# Confirmed tables no dine-in window holds, as the hours stand (#571, after
+   #710): the team calls these guests itself, nothing is cancelled and no
+   guest is messaged. Empty when every table is covered. A write answers with
+   this list beside its own part (`oob`). #}
+<section id="zeiten-gaeste"{% if oob %} hx-swap-oob="true"{% endif %}{% if guests %} class="card warn-card"{% endif %}>
+  {% if guests %}
+  <h2>Reservierte Tische außerhalb der Öffnungszeiten</h2>
+  <p><b>Diese Gäste bitte selbst anrufen:</b> es wird nichts storniert und niemand benachrichtigt.</p>
+  <ul>
+    {% for g in guests %}
+    <li>{{ g.when }}, {{ g.name }}, {{ g.party }} Personen, {% if g.costly %}{{ g.phone }} <span class="badge danger">Teure Sondernummer &ndash; vor dem Anruf pr&uuml;fen</span>{% else %}<a href="tel:{{ g.phone }}">{{ g.phone }}</a>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>

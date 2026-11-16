@@ -9,3 +9,32 @@
   </div>
 </header>
 {% endmacro %}
+
+{# The frame of the admin area (#571, docs/06 §4): the same header, the four
+   figures of the last 7 days on every page (`week`, from `figures_view.bar`)
+   and the areas as tabs. A tab is a link to its page; `active` names the one
+   shown. "Zeiten" and "Geräte" ask the admin PIN when opened. #}
+{% macro admin_kopf(title, active, tenant) %}
+<header>
+  <div class="top">
+    <a class="button" href="/gui">Zurück</a>
+    <h1 class="kz-title">{{ title }}</h1>
+    <div class="brand"><span>{{ tenant.name if tenant else "" }}</span></div>
+  </div>
+  {% if week %}
+  <section class="admin-bar" aria-label="Kennzahlen der letzten 7 Tage">
+    <p class="muted">Letzte 7 Tage</p>
+    <div class="kz-bar">
+      {% for label, text in week %}
+      <div class="kz"><span class="muted">{{ label }}</span><b>{{ text }}</b></div>
+      {% endfor %}
+    </div>
+  </section>
+  {% endif %}
+  <nav class="tabs" aria-label="Bereiche">
+    {% for label, href in (("Zeiten", "/gui/zeiten"), ("Anrufe", "/gui/anrufe"), ("Kennzahlen", "/gui/kennzahlen"), ("Geräte", "/gui/geraete")) %}
+    <a href="{{ href }}"{% if label == active %} aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+</header>
+{% endmacro %}
