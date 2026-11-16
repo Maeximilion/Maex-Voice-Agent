@@ -51,7 +51,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # api/models/tenants.py CUSTOMER_KEY; the host needs no package of the API.
 CUSTOMER_KEY = re.compile(r"^[a-z][a-z0-9]*(-[a-z0-9]+)*$")
 # api/domain/customers/phone.py E164.
-E164 = re.compile(r"^\+[1-9]\d{6,14}$")
+E164 = re.compile(r"^\+[1-9][0-9]{6,14}$")
 DOMAIN = re.compile(r"^(?=.{1,200}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
 COMPOSE_FILES = "docker-compose.yml:deploy/docker-compose.prod.yml:deploy/docker-compose.customer.yml"
 CADDY_PROJECT = "maex-caddy"

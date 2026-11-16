@@ -66,6 +66,75 @@ def test_an_italian_number_keeps_its_zero(said, number):
     assert normalize_phone(said) == number
 
 
+# --- review #207: the trunk zero of the other countries ----------------------
+
+
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [
+        ("+33 06 12 34 56 78", "+33612345678"),  # France
+        ("0033 06 12 34 56 78", "+33612345678"),
+        ("+33 (0)6 12 34 56 78", "+33612345678"),
+        ("+44 07700 900123", "+447700900123"),  # United Kingdom
+        ("+31 06 12345678", "+31612345678"),  # Netherlands
+        ("+32 0470 12 34 56", "+32470123456"),  # Belgium
+        ("+48 0 600 123 456", "+48600123456"),  # Poland, its former trunk zero
+        ("+353 087 1234567", "+353871234567"),  # Ireland, three-digit code
+        ("+370 0612 34567", "+37061234567"),  # Lithuania, 0 since 2024
+    ],
+)
+def test_the_trunk_zero_of_another_country_is_dropped(said: str, number: str):
+    """Review #207: the fix of #683 dropped the zero after 49, 43 and 41 only.
+    A French guest who said "+33 06 ..." got a callback number that does not
+    exist, and the number the guest said beats the caller ID."""
+    assert normalize_phone(said) == number
+
+
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [
+        (
+            "+225 07 12 34 56 78",
+            "+2250712345678",
+        ),  # Cote d'Ivoire, numbers begin with 0
+        ("+229 01 23 45 67 89", "+2290123456789"),  # Benin, numbers begin with 01
+        ("+36 06 30 123 4567", "+3606301234567"),  # Hungary, trunk prefix 06
+        ("+7 8 912 345 67 89", "+789123456789"),  # Russia, trunk prefix 8
+        ("+34 0612 345 678", "+340612345678"),  # Spain, no trunk prefix
+        ("+47 01234", "+4701234"),  # Norway, a number that begins with 0
+        ("+359 00800 1234567", "+359008001234567"),  # Bulgaria, two zeros stay
+        ("+49000000000", "+49000000000"),  # the placeholder team number
+    ],
+)
+def test_a_zero_that_is_no_trunk_prefix_stays(said: str, number: str):
+    """A country whose numbers begin with 0, whose trunk prefix is another, or
+    that has none keeps the digits as said: dropping a 0 there would change a
+    number that may exist. Where the said prefix is another (Hungary 06, Russia
+    8) or there is none, the code does not guess at it either."""
+    assert normalize_phone(said) == number
+
+
+def test_a_caller_id_of_another_country_stays_as_it_came():
+    """A number already in international form has no trunk digit to drop."""
+    assert normalize_phone("+33612345678") == "+33612345678"
+    assert normalize_phone("0033612345678") == "+33612345678"
+    assert normalize_phone("+390612345678") == "+390612345678"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "+49 " + "".join(chr(0xFF10 + int(d)) for d in "171") + " 2345678",
+        "+33 0" + chr(0x0666) + " 12345678",  # Arabic-Indic six
+    ],
+)
+def test_digits_of_another_script_are_refused(said: str):
+    """`\\d` matched any Unicode digit, so a full-width or Arabic-Indic digit was
+    stored and never equalled a caller ID nor dialled (code review of #207)."""
+    with pytest.raises(InvalidInput):
+        normalize_phone(said)
+
+
 @pytest.mark.parametrize(
     ("number", "expected"),
     [
