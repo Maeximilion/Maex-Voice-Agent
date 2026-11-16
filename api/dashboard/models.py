@@ -112,6 +112,27 @@ class OperatorLoginFailure(Counted, Base):
     address: Mapped[str] = mapped_column(Text, primary_key=True)
 
 
+class Customer(Base):
+    """A customer's stack as the dashboard reaches it (docs/23 §8): the address
+    of its ops API on that stack's `ops` network and the stack's `OPS_TOKEN`.
+    The token is readable, because the dashboard sends it. No two customers
+    share an address or a token, so one row can never read another's stack."""
+
+    __tablename__ = "operator_customers"
+    __table_args__ = (
+        CheckConstraint(
+            "key ~ '^[a-z][a-z0-9]*(-[a-z0-9]+)*$'", name="ck_operator_customer_key"
+        ),
+    )
+
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    api_url: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    ops_token: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class OperatorAudit(Base):
     """Sign-ins, failures, factor changes and every action of the dashboard:
     who, what, on which customer, when. Never guest data."""

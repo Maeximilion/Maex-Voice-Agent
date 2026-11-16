@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.47.2
+> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.48.0
 
 ---
 
@@ -118,6 +118,7 @@ Decided D1 to D30: same archive section.
 ---
 
 ## Made Assumptions (subject to change)
+- **Operator dashboard, customer list (#571 third part, 16.11.2026), Claude's choices, awaiting Maxi:** (a) the customers come from a registry in the operator database that the operator fills on the host (`python -m api.dashboard.cli customer-add`), not yet from `scripts/new_stack.py`: the operator stack has no Compose file before pull request 11 of the plan, so provisioning has nothing to call; (b) a stack's `OPS_TOKEN` is stored readable there, because the dashboard sends it, as the TOTP secret is (T7); (c) the list's refresh every 30 seconds checks the session but does not keep it alive, so an open tab ends at the 30 minutes; (d) a stack's state is ok, look or down, and "look" repeats what the stack itself reports (its monitor's alarms, a silent print bridge, no backup yet): the dashboard sets no limit of its own; (e) `Origin: null` passes the same-site check only with `Sec-Fetch-Site: same-origin`: without it every plain form (sign-in, setup, PINs, operator sign-in) answers 403 in a real browser under the proxy's `no-referrer` policy, found in the browser check; the policy itself stays.
 - **Go-live checklist (#575, 16.11.2026), Claude's choice, awaiting Maxi:** rollback once a SIP trunk exists (T-10.12) takes option A: when T-10.12 is built, the forwarding switch-back becomes one documented step in `docs/20_VOICE_LAYER.md` and in step 4 of `docs/vorlagen/go_live_checklist.md`; until then the router unassignment of step 3 is the only rollback and no trunk customer is onboarded. Documentation only, no code.
 - **Front page (#571 first pull request, 16.11.2026), Claude's choices, awaiting Maxi:** (a) the front page is the sign-in page `/gui/anmelden` itself and `/` only redirects to the view, instead of a second page at `/`: one page to protect, and a wrong password comes back on the same page; (b) it shows the restaurant's name from the database, which the host name tells anyway, and nothing else of the stack; (c) the three sentences under the headline name hard rules 3 and 5 and the stop button, no figure and no promise beyond them; (d) "Anzeigen" beside the password shows what was typed, for a password of 12 characters on a tablet keyboard; (e) links to an imprint and a privacy page are not on it yet: they come with the Caddy and go-live pull request (11 of the plan) and their texts are Maxi's (docs/09 §1).
 - **Reused test database (13.11.2026), Claude's choices, awaiting Maxi:** (a) the role in `DATABASE_URL` for tests is a superuser, as in CI and the local stack (the reset turns off foreign key checks with `session_replication_role`); without it every reset falls back to dropping and copying the database, correct but as slow as before; (b) a test that leaves anything but rows is detected by a digest over the catalog (objects, grants, settings, `alembic_version`), not by a list of known tests; (c) area-based test selection and skipping the test shards for docs-only pull requests are not done: the gain was small (about 3 min per docs PR, Actions minutes are free in this public repository) and a missed test would first fail on `main`.
@@ -298,6 +299,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.48.0 · 16.11.2026:** Operator dashboard: shell, restyled sign-in and the customer list over each stack's ops status (#571 third part, migration op002); plain form posts under no-referrer pass the same-site check
 - **v2.47.2 · 16.11.2026:** STATUS upkeep 16.11.2026: firm rows, old changelog lines and stacked header lines archived to HISTORY (#562)
 - **v2.47.1 · 16.11.2026:** #575: go-live checklist marks (auto/hand/Maxi) on all 35 items, rollback assumption A
 - **v2.47.0 · 16.11.2026:** Front page with the sign-in on each customer's own host: / leads to the view, the sign-in page shows the restaurant and the product (#571, D35); plan of the GUI pull requests on #571

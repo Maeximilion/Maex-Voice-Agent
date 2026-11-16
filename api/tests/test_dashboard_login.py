@@ -138,8 +138,9 @@ def test_password_and_totp_open_the_dashboard(client, factors, clock, sessions):
     assert "HttpOnly" in answer.headers["set-cookie"]
     page = client.get("/")
     assert page.status_code == 200
-    assert "Signed in as <strong>maxi</strong>" in page.text
+    assert '<span class="muted">maxi</span>' in page.text
     assert "10 recovery codes left" in page.text
+    assert "No customer yet." in page.text
     assert _actions(sessions)[-1] == "operator.signed_in"
 
 
