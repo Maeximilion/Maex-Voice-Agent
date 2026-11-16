@@ -397,7 +397,9 @@ def _fetch[Asked: _Named](
     except ValidationError:
         return unreadable
     code = envelope.error.code if envelope.error is not None else ""
-    if code == "not_found":
+    # The stack's own `NotFound` comes with 200 (`api/core/errors.py`); the
+    # same code under another status is something else's answer.
+    if code == "not_found" and status_code == 200:
         return NO_RESTAURANT
     if code == "invalid_input":
         return NOT_TAKEN
@@ -443,8 +445,9 @@ def _at_once[Found](
     Closing the client ends what such a stack is still sending."""
     http = (client or _client)()
     # A worker for every question: in a smaller pool the slow stacks keep the
-    # others waiting in the queue, and those are then "too slow" unasked. The
-    # registry is a handful of customers the operator typed in.
+    # others waiting in the queue, and those are then "too slow" unasked.
+    # shortcut: a thread per customer and refresh, right for a registry the
+    # operator types in by hand; ask in batches once it holds hundreds.
     pool = ThreadPoolExecutor(max_workers=len(asks))
     found: list[Found | str] = []
     try:

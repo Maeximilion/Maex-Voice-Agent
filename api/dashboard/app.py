@@ -540,9 +540,7 @@ def factors_page(
         "recovery_left": access.recovery_left(db, operator.account_id),
         "note": NOTES.get(note),
     }
-    response = _page(request, "factors.html", context)
-    response.headers.update(NO_STORE)
-    return response
+    return _page(request, "factors.html", context)
 
 
 def _factors(note: str) -> Response:
@@ -800,6 +798,4 @@ def customer_calls(
         "calls": None if isinstance(found, str) else found,
         "problem": found if isinstance(found, str) else "",
     }
-    response = _page(request, "calls.html", context)
-    response.headers.update(NO_STORE)
-    return response
+    return _page(request, "calls.html", context)

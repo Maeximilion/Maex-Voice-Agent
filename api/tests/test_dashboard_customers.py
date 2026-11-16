@@ -495,6 +495,22 @@ PROBLEMS = [
         customers.NO_RESTAURANT,
         "not-found",
     ),
+    # Only the stack's own answer with 200 means that; a proxy's or a
+    # framework's `not_found` under another status does not.
+    (
+        lambda r: httpx.Response(
+            502, json={"ok": False, "error": {"code": "not_found", "message": "x"}}
+        ),
+        customers.NOT_A_STATUS,
+        "not-found-under-502",
+    ),
+    (
+        lambda r: httpx.Response(
+            404, json={"ok": False, "error": {"code": "not_found", "message": "x"}}
+        ),
+        customers.NOT_KNOWN,
+        "not-found-under-404",
+    ),
     (
         lambda r: httpx.Response(200, content=b"<html>hello</html>"),
         customers.NOT_A_STATUS,
