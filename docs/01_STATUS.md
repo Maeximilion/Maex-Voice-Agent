@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.47.0
+> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.47.1
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.17
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.16
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.15
@@ -303,6 +303,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 16.11.2026 | **The trunk zero after every European code with a single-0 trunk prefix (review #207 area F, P1 on #726), with Maxi's decision 7 of 15.11.2026.** `TRUNK_ZERO_AFTER` (`api/domain/customers/phone.py`) holds 27 sourced codes (libphonenumber 9.0.43 metadata read as text, no new dependency), so "+33 06 ...", "+44 07700 ..." and the number words "null null drei drei null sechs ..." give a callback number that exists; Italy, Hungary (06), Russia (8), Norway and the countries without a trunk prefix keep the digits as said, two zeros always stay. The local `/code-review max` found one more confirmed bug in the same check: `E164` used `\d`, which accepts any script's digits, so a full-width number was stored; it is now ASCII only (also the copy in `scripts/new_stack.py`). Left open, not built: a bracketed "(0)" is still dropped after every code (Italy too), Hungary's 06 and Lithuania's old 8 stay, a French number said in pairs with pauses is still refused (the agent asks again). |
 | 15.11.2026 | **#574 done: the self-test of a stack, with Maxi's decision 8 of 15.11.2026.** `python -m sim.selftest [--print-slip] [--card-seconds N]` checks health, the database head, the configuration, the menu, a simulated reservation call (draft, yes, `confirm`) and optionally a test slip. Migration 039 adds `is_test` to `calls` and `reservations`. The table shows on the real tablet as a TEST card for `--card-seconds` (60 by default), then the run deletes it; a card left by a killed run goes with the next run. Test rows get no outbox event and no customer contact, and figures, the call log, the day report and the hours-change cards leave them out. The downgrade refuses while a test call or test table is left. |
 | 15.11.2026 | **#744, #750 follow-ups (ledger #764), with Maxi's decision 6 of 15.11.2026.** "Ich möchte die Pizza reklamieren" gets the remedy offer of the complaint rules first, and "nein, das reicht mir nicht" then goes to the team on the existing declined-offer path. An order's own wish verb in front of a complaint keeps the order for the team. A complaint to a person ("beim Chef", "bei Ihrem Chef") stays a complaint, which fixes a regression of this branch found by Graphify and missed by Codex. A draft made from 00:00 to 04:59 names weekday and date, never heute or morgen. |
 | 15.11.2026 | **Menu parser corpus, step 1 of the conservation gate (#207, Maxi's decision of 15.11.2026).** `api/tests/test_menu_corpus.py` runs 221 rows through `search_menu` and checks four properties: N (card numbers and counts), O (free notes), A (allergies) and P (unclaimed pieces). The confirmed red probes of #720, #721, #722 and #735 are strict xfail (64 rows); the reviewers' "checked and clean" sentences and a generated dish x residue x second-element block are green where main holds. The gate PR flips the xfails; the counts are the over-ask baseline. |
@@ -337,6 +338,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.47.1 · 16.11.2026:** Trunk zero dropped after every sourced European code (review #207 area F); E.164 check ASCII only
 - **v2.47.0 · 16.11.2026:** Front page with the sign-in on each customer's own host: / leads to the view, the sign-in page shows the restaurant and the product (#571, D35); plan of the GUI pull requests on #571
 - **v2.46.21 · 15.11.2026:** Self-test: python -m sim.selftest checks a stack end to end; its table shows on the real tablet as a TEST card for a minute and never reaches outside (is_test, migration 039; #574)
 - **v2.46.20 · 15.11.2026:** A complaint about a dish gets the remedy offer first, the team only when the guest is still not satisfied; an order in front of a complaint stays for the team; a draft made after midnight names weekday and date (#744, #750, ledger #764)

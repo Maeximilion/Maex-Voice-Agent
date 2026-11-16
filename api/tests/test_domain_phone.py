@@ -109,15 +109,30 @@ def test_the_trunk_zero_of_another_country_is_dropped(said: str, number: str):
 def test_a_zero_that_is_no_trunk_prefix_stays(said: str, number: str):
     """A country whose numbers begin with 0, whose trunk prefix is another, or
     that has none keeps the digits as said: dropping a 0 there would change a
-    number that may exist."""
+    number that may exist. Where the said prefix is another (Hungary 06, Russia
+    8) or there is none, the code does not guess at it either."""
     assert normalize_phone(said) == number
 
 
 def test_a_caller_id_of_another_country_stays_as_it_came():
-    """A foreign caller ID arrives without its trunk digit (docs/20)."""
+    """A number already in international form has no trunk digit to drop."""
     assert normalize_phone("+33612345678") == "+33612345678"
     assert normalize_phone("0033612345678") == "+33612345678"
     assert normalize_phone("+390612345678") == "+390612345678"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "+49 " + "".join(chr(0xFF10 + int(d)) for d in "171") + " 2345678",
+        "+33 0" + chr(0x0666) + " 12345678",  # Arabic-Indic six
+    ],
+)
+def test_digits_of_another_script_are_refused(said: str):
+    """`\\d` matched any Unicode digit, so a full-width or Arabic-Indic digit was
+    stored and never equalled a caller ID nor dialled (code review of #207)."""
+    with pytest.raises(InvalidInput):
+        normalize_phone(said)
 
 
 @pytest.mark.parametrize(

@@ -5,7 +5,7 @@ import re
 from api.core.errors import InvalidInput
 
 DEFAULT_COUNTRY_CODE = "49"
-E164 = re.compile(r"^\+[1-9]\d{6,14}$")
+E164 = re.compile(r"^\+[1-9][0-9]{6,14}$")  # ASCII: `\d` takes any script's digits
 TRUNK_IN_BRACKETS = re.compile(r"\(\s*0\s*\)")
 # Country codes after which a said 0 is the national trunk prefix and is dropped
 # ("+33 06 12 34 56 78" is +33612345678; #683, review #207). Each country's trunk
@@ -81,7 +81,7 @@ def normalize_phone(raw: str, country_code: str = DEFAULT_COUNTRY_CODE) -> str:
     # free, so at most one length names a code.
     for size in (1, 2, 3):
         code, rest = digits[1 : 1 + size], digits[1 + size :]
-        if digits.startswith("+") and code in TRUNK_ZERO_AFTER:
+        if code in TRUNK_ZERO_AFTER:
             if rest[:1] == "0" and rest[1:2] not in ("", "0"):
                 digits = f"+{code}{rest[1:]}"
             break
