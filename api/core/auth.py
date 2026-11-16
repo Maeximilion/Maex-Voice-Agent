@@ -1,11 +1,13 @@
 """Token-Prüfung als FastAPI-Dependency. Gilt für alle /v1/tools/*-Endpunkte."""
 
 import hmac
+from dataclasses import dataclass
 
 from fastapi import Header, HTTPException
 
 from api.config import LOCAL_ENVS, settings, valid_production_token
-from api.core.errors import Unauthorized
+from api.core import ops_reason
+from api.core.errors import InvalidInput, Unauthorized
 
 
 def token_matches(authorization: str) -> bool:
@@ -57,6 +59,33 @@ def require_ops_token(authorization: str = Header(default="")) -> None:
         or not hmac.compare_digest(authorization.encode(), f"Bearer {token}".encode())
     ):
         raise Unauthorized("unauthorized")
+
+
+@dataclass(frozen=True)
+class OpsReader:
+    """Who reads guest data over the ops API, and why (docs/23 §8)."""
+
+    # `operator:<account>`, as the audit log names the reader.
+    actor: str
+    reason: str
+    reference: str
+
+
+def require_ops_reason(
+    x_ops_reason: str = Header(default=""), x_ops_actor: str = Header(default="")
+) -> OpsReader:
+    """In front of every ops route that answers with guest data: a category of
+    the fixed list with a ticket number, and the operator's account. The actor
+    is believed because only the dashboard holds `OPS_TOKEN`, which the router
+    has checked by now."""
+    found = ops_reason.parse(x_ops_reason)
+    if found is None or not ops_reason.ACTOR.fullmatch(x_ops_actor):
+        raise InvalidInput(
+            "guest data needs X-Ops-Reason (a listed category and a ticket "
+            "number) and X-Ops-Actor",
+            status=400,
+        )
+    return OpsReader(f"operator:{x_ops_actor}", *found)
 
 
 def require_gui_proxy(x_maex_proxy_secret: str = Header(default="")) -> None:

@@ -158,6 +158,33 @@ still ends at the idle limit. Still to come: the provisioning script adding the 
 itself (with the operator stack's Compose file), the operator stack's push server, the customer's
 detail pages, the Caddy site `ops.<domain>` with its headers.
 
+**A customer's page, read (#571, fifth part, 16.11.2026):** a row of the list leads to
+`/customers/<key>`; a key the registry does not hold is 404 before any stack is asked, and the key
+`rows` cannot be registered (the list's refresh lives there).
+
+- **Without a reason:** the stack's state, the four figures of docs/06 §4 over the last seven
+  business days with the course per day, and the menu status. Counts and states only (§8), behind
+  the session like the list.
+- **The calls of one business day are guest data.** The route is a post behind `require_step_up`
+  with the page's CSRF token and the same-site check. A post, not a link: the session cookie is
+  `SameSite=Strict`, but a customer's host under the same domain is the same site, so a page there
+  could make the operator's browser follow a link, and a read in the operator's name with a reason
+  someone else chose would stand in both audits. The form is only shown to a session whose second
+  factor is fresh; a stale post goes to the step-up and back to the customer's page, and is dropped.
+- **The reason** is one of four categories and a ticket or issue number (§8). The actor the stack
+  is told is the session's account, never a field or a header of the request.
+- **Two audits:** the operator's own (`customer.calls_asked`, target the customer, detail reason,
+  reference and day) is committed before the stack is asked; the stack writes its own before it
+  answers (§8). A second row of the operator's says what came of it: `customer.calls_shown` with
+  the number of calls, or `customer.calls_not_shown` with the dashboard's own sentence why (the
+  stack was too slow, refused the day, answered as another customer), so the audit tells a read
+  that was tried from one the operator saw. None of them holds guest data.
+- **What is shown:** time, a count per caller of the day, intent, outcome, duration, cost, tool
+  calls, the note about the line. No phone number (Claude's choice, docs/01 "Made Assumptions"). The
+  page is sent with `Cache-Control: no-store`, and nothing of it is kept on the operator host.
+- A sign-out or the break glass ends the session, and with it the step-up: a fresh second factor of
+  a session that no longer exists opens nothing.
+
 **Passkeys, step-up and the push (#571, fourth part, 16.11.2026):** a passkey is the normal second
 factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webauthn`).
 
@@ -402,6 +429,12 @@ guest's data.
   guest names) and `X-Ops-Actor`, and writes the customer's `audit_log` with actor
   `operator:<account>` and the reason before it answers. No bulk export over this API; an export is
   a data subject request (docs/09 §2) or offboarding (#576).
+  Built (#571, fifth part, 16.11.2026): `GET /v1/ops/calls` (docs/04 §Ops API), the calls of one
+  business day. The reason is a category of a fixed list and a ticket or issue number
+  (`api/core/ops_reason.py`, shared by both sides), never a sentence: a sentence would sooner or
+  later hold a guest's name, and the reason is copied into two audit logs. The audit row is
+  committed before a row is read. The stack sends no phone number at all, only a count per caller
+  of the day; the day must be one the team's own list reaches (14 business days).
 - **Writes** (settings, call mode, tokens) are separate routes, each writing `audit_log` with the
   operator as actor; changing the call mode or team number also pushes to `owner` and `ops` (T12),
   through the domain functions the tablet uses (`domain/status/config.py`, `staff_changes.py`).
@@ -416,7 +449,13 @@ guest's data.
   answers at this address" otherwise), and shows everything as text. The token goes to the
   registered address only: no redirect is followed and no proxy variable of the host is read. Whatever
   one customer's row trips over, the others are still shown: that row reads "could not be asked"
-  and the cause goes to the log.
+  and the cause goes to the log. The customer's page asks through the same two functions (`_fetch`,
+  `_at_once`), so the rules hold for every question: the figures have the same 64 kB, the calls of a
+  day 512 kB and at most 2000 rows, every count is at most 10^9 and every percentage at most 100 (a
+  number of a thousand digits is valid JSON too), every day lies between 2000 and 2100 (the page
+  counts days back from the stack's business day), and an answer for another day than the one asked
+  is no answer. A caller's header can never replace the token's. A 404 is "does not know this
+  question (an older version?)", not a missing restaurant: the two sides deploy apart.
 
 Rejected:
 

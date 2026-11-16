@@ -48,6 +48,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 | `time.py` | UTC ↔ `Europe/Berlin`, „heute" im Sinne des Betriebstags |
 | `tokens.py` | the rule every token meets outside dev and test (`valid_production_token`, `LOCAL_ENVS`); reads no settings, so the operator dashboard uses it too |
 | `origin.py` | `same_origin`: a browser write comes from a page of this site (docs/23 §6, T9); shared by `gui/` and `dashboard/` |
+| `ops_reason.py` | the reason an operator gives before a stack hands out guest data (docs/23 §8): the fixed list of categories, the form of the ticket number and of the account, `reason` and `parse` for the two headers; reads no settings, shared by `core/auth.py` (`require_ops_reason`) and `dashboard/` |
 
 **Regel:** Fachcode wirft `core.errors`, nie `HTTPException`. Die Übersetzung passiert einmal, in `tools/`.
 
@@ -60,7 +61,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 - `bridge.py` — the print bridge's sign of life: `note_poll` from the claim, `silence` for the alarm and the header (T-8.3)
 - `holidays.py` — the statewide statutory holidays of the 16 states (Easter by the Gregorian formula), suggested in `special_days` and answered by the team: like Sunday, closed, or the weekday's hours (T-9.5). A suggestion counts for nothing until then
 - `staff_changes.py` — the staff's changes without the owner's PIN (#570 b): today's team number among the dialable ones (`team_phone_at` is its one reader), a date's hours that hold at once or wait for the owner, and the check cards the owner keeps or undoes
-- `overview.py` — the stack's state at a glance for the operator dashboard (#571): mode, last call, today's figures, print bridge, backup, the alarms of the last day, menu status; counts and times only, never guest data
+- `overview.py` — the stack's state at a glance for the operator dashboard (#571): mode, last call, today's figures, print bridge, backup, the alarms of the last day, menu status, and `week`, the four figures of the last seven business days with their course; counts and times only, never guest data
 - Tests: Mitternacht, Sondertag schlägt Wochentag, Sommerzeit-Umstellung
 
 ### `domain/menu/`
@@ -125,7 +126,7 @@ Anruf, ganz gleich wie er ausgeht.
 - `routing.py` — whether the agent answers a call (only in `overflow` and `primary`), the team extension and the tenant name for the greeting; the mode is read fresh, so the emergency stop holds for the next call (T-1.13); `tenant_named`, the one tenant of a name, which the service `voice` serves (T-1.11); `call_limit`, the limit of concurrent AI calls at the restaurant's local time (the lowest window of `call_limit_windows`, else `max_concurrent_calls`), and `takes_call`, whether the agent takes a call with that many of its own open (T-10.9)
 - `consent.py` — `record_consent`: one `consent_log` row per answer to a consent question of the agent (call, time, question, answer), committed before anything is stored on the strength of it (T-11.1, L13)
 - `recordings.py` — the `recordings` row of a call and where its file lies: written before a byte is recorded, marked on a withdrawal, deleted by `jobs/retention.py` (T-11.3, L2)
-- `log.py` — `list_calls`: the calls of one business day as rows for the call list (T-8.7), read only, with the note about the line (`calls.line_note`, #651)
+- `log.py` — `list_calls`: the calls of one business day as rows for the call list (T-8.7), read only, with the note about the line (`calls.line_note`, #651); `calls_for_support`: the same day for the operator (#571), the read in `audit_log` before a row is read, a count per caller instead of the number, only the days the team's list reaches (`DAYS_LISTED`)
 
 Die Zeile pro einzelnem Tool-Aufruf (`calls.tool_calls`, docs/04 §Gemeinsame
 Regeln) kommt nicht von hier: `core/tool_log.py` schreibt sie generisch für jeden
@@ -204,7 +205,7 @@ Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `doma
 - `router.py` — `POST /v1/kitchen/claim` und `/ack`, eigenes Token `KITCHEN_BRIDGE_TOKEN`, dünne Hülle um `domain/ordering/handover.py` (Abholen, Rückmeldung, Wächter)
 
 ### `ops/` – Eingang des Operator-Dashboards (#571)
-- `router.py` — `GET /v1/ops/status`, own token `OPS_TOKEN`, reached only over the stack's internal `ops` network; thin shell around `domain/status/overview.py`
+- `router.py` — `GET /v1/ops/status` and `GET /v1/ops/figures` (the week's four figures and their course), own token `OPS_TOKEN`, reached only over the stack's internal `ops` network; thin shells around `domain/status/overview.py`. `GET /v1/ops/calls` (one business day's calls) is guest data: it also needs a reason and the operator's account (`core/auth.py` `require_ops_reason`) and goes through `domain/calls/log.py` `calls_for_support`
 
 ### `dashboard/` – the operator dashboard, an app of its own (#571, docs/23 §5)
 Run from the API's image as `uvicorn api.dashboard.app:app`, with its own database (`OPERATOR_DATABASE_URL`) and migrations (`db/dashboard/`). It never imports `api.config` or `api.db`, which build a customer stack's settings and connection (`api/tests/test_dashboard_login.py` checks it); from the customer side it uses only `core/` helpers that read no settings and `domain/access/hashing.py` and the wait rule of `domain/access/sessions.py`.
@@ -215,8 +216,8 @@ Run from the API's image as `uvicorn api.dashboard.app:app`, with its own databa
 - `passkeys.py` — WebAuthn with `py_webauthn`: challenges (one holder, one purpose, single use, five minutes), registration and assertion against `OPERATOR_ORIGIN`, the signature counter; no FastAPI, the only module that imports `webauthn`
 - `push.py` — the one place the dashboard sends a push from: a changed factor to the `ops` topic, only logged while no push server is set
 - `access.py` — sign-in (password plus passkey, TOTP or recovery code), waits, sessions (30 minutes idle, 12 hours), step-up (a second factor of the last five minutes), the changes of a factor with the rule "TOTP or two passkeys", account creation and the break-glass reset; no FastAPI
-- `customers.py` — the registry of customers (key, address of the stack's ops API, its `OPS_TOKEN`) and `overview`: every stack's `GET /v1/ops/status` at once, each answer checked as input from outside and turned into one row; no FastAPI
-- `app.py` — the pages: `/login`, `/logout`, `/` (the customer list), `/customers/rows` (its rows for the refresh, which does not keep the session alive), `/factors` (passkeys and TOTP), `/step-up`, the `.../options` routes that hand a ceremony its challenge, `/health`; CSRF, cookies, the proxy check, and `require_step_up`, the one dependency before a dangerous action
+- `customers.py` — the registry of customers (key, address of the stack's ops API, its `OPS_TOKEN`) and `overview`: every stack's `GET /v1/ops/status` at once, each answer checked as input from outside and turned into one row; `detail` (one stack's status and week) and `calls` (one business day, with the reason and the account) ask through the same `_fetch` and `_at_once`; no FastAPI
+- `app.py` — the pages: `/login`, `/logout`, `/` (the customer list), `/customers/rows` (its rows for the refresh, which does not keep the session alive), `/customers/<key>` (one customer: state, figures, menu status) and the post `/customers/<key>/calls` (guest data: step-up, reason, both audits), `/factors` (passkeys and TOTP), `/step-up`, the `.../options` routes that hand a ceremony its challenge, `/health`; CSRF, cookies, the proxy check, and `require_step_up`, the one dependency before a dangerous action
 - `cli.py` — `python -m api.dashboard.cli add|reset <name>` and `customer-add <key> <url>|customer-remove <key>|customers` on the operator host
 - `templates/` — the pages; scripts only as files, compiled from `api/gui/ts/` (`passkey.js` runs the passkey ceremonies on the sign-in, step-up and factors pages), beside the two of the operations view (`htmx` for the list's refresh, `base.js` for "Show" beside the password), no inline script
 
@@ -310,7 +311,7 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 | `agent/` | mit Fake-LLM (vorgegebene Antworten), prüft Loop und Dispatch | fertig |
 | `events/` | Outbox schreiben, Dispatcher gegen Fake-n8n, Retry-Verhalten | offen |
 | `telephony/adapters` | against the fake adapter; later against recorded media events and fake speech engines (docs/20) | fertig |
-| `dashboard/` | `totp.py` against the RFC 6238 test values without a database; the login, CLI and migrations against a scratch operator database, the customer registry and the list against stacks played by a mock transport; passkeys, step-up and the factor changes with a software authenticator whose answers the tests bend (`api/tests/passkey_device.py`), the ceremonies themselves once in a real browser with a virtual authenticator (`api/tests/test_dashboard_*.py`) | fertig |
+| `dashboard/` | `totp.py` against the RFC 6238 test values without a database; the login, CLI and migrations against a scratch operator database, the customer registry, the list, a customer's page and its call list against stacks played by a mock transport; passkeys, step-up and the factor changes with a software authenticator whose answers the tests bend (`api/tests/passkey_device.py`), the ceremonies themselves once in a real browser with a virtual authenticator (`api/tests/test_dashboard_*.py`) | fertig |
 | Ende-zu-Ende | `sim/replay` gegen echte API mit Test-DB | offen |
 
 **Ziel:** Die schnellen Tests laufen bei jedem Speichern, die DB-Tests vor jedem Commit, die Evals vor jedem Merge.

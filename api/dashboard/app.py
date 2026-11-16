@@ -4,7 +4,9 @@
 
 Plain forms and no inline script (the CSP of ops.<domain> forbids it); the one
 use of HTMX is the customer list, which asks for its rows again every 30
-seconds. Every post must come from this site and carry the page's CSRF token,
+seconds. A customer's page (`/customers/<key>`) shows counts and states; its
+call list is guest data and stands behind the step-up, a reason and both
+audits (docs/23 §8). Every post must come from this site and carry the page's CSRF token,
 the sign-in too (login CSRF). Outside dev and test every request but /health must
 come through Caddy, which sets the proxy secret; only then is the client
 address from X-Forwarded-For trusted. The checks themselves live in
@@ -21,9 +23,10 @@ names it and nothing else.
 
 import hmac
 import logging
+import re
 import secrets
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
@@ -36,6 +39,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from starlette.responses import Response
 
+from api.core import ops_reason
 from api.core.logging import (
     configure_logging,
     error_text,
@@ -79,7 +83,34 @@ NOTES = {
         "danger",
         "Not removed: the account keeps TOTP or at least two passkeys.",
     ),
+    "reason-needed": (
+        "danger",
+        "No calls shown: choose a reason, a ticket or issue number and a day.",
+    ),
 }
+REASON_NEEDED = "reason-needed"
+# The call list's days, as `domain/calls/log.py` DAYS_LISTED; the stack decides.
+DAYS_OFFERED = 14
+DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+DASH = "\N{EN DASH}"
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+# A stack's codes in the operator's words (the team's: `gui/calls_view.py`).
+OUTCOMES = {
+    "completed": "completed",
+    "transferred": "handed to the team",
+    "callback": "callback noted",
+    "abandoned": "abandoned",
+    "error": "error",
+}
+INTENTS = {
+    "reservation": "reservation",
+    "pickup": "pickup",
+    "delivery": "delivery",
+    "info": "information",
+    "complaint": "complaint",
+    "unknown": "unclear",
+}
+LINE_NOTES = {"no_caller_audio": "caller not audible (no sound arrived)"}
 PUSH_TITLE = "Operator sign-in changed"
 COPY = "a passkey answered with an old counter, a copy?"
 NO_STORE = {"Cache-Control": "no-store"}
@@ -109,8 +140,42 @@ def _shown(at: datetime | None) -> str:
     return at.astimezone(SHOWN_IN).strftime("%d.%m.%Y %H:%M") if at else ""
 
 
+def _clock(at: datetime) -> str:
+    return at.astimezone(SHOWN_IN).strftime("%H:%M")
+
+
+def _weekday(day: date) -> str:
+    return f"{WEEKDAYS[day.weekday()]} {day:%d.%m.%Y}"
+
+
+def _percent(value: int | None) -> str:
+    return DASH if value is None else f"{value} %"
+
+
+def _euro(cents: int | None) -> str:
+    return DASH if cents is None else f"{cents // 100}.{cents % 100:02d} EUR"
+
+
+def _duration(seconds: int | None) -> str:
+    return DASH if seconds is None else f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def _word(code: str | None, words: dict[str, str], missing: str) -> str:
+    """A stack's code in words; one this page does not know is shown as it
+    came (as text, like everything a stack says)."""
+    return missing if not code else words.get(code, code)
+
+
 templates.env.filters["ago"] = _ago
 templates.env.filters["shown"] = _shown
+templates.env.filters["clock"] = _clock
+templates.env.filters["weekday"] = _weekday
+templates.env.filters["percent"] = _percent
+templates.env.filters["euro"] = _euro
+templates.env.filters["duration"] = _duration
+templates.env.filters["intent"] = lambda code: _word(code, INTENTS, DASH)
+templates.env.filters["outcome"] = lambda code: _word(code, OUTCOMES, "running")
+templates.env.filters["line_note"] = lambda code: _word(code, LINE_NOTES, "")
 
 
 def now() -> datetime:
@@ -609,3 +674,120 @@ def customer_rows(request: Request, db: Session = Depends(get_db)) -> Response:
     """The list's rows alone, for its refresh. No cookie is set: `_page` gives
     the CSRF token to pages with a form."""
     return templates.TemplateResponse(request, "_customers.html", _rows(db))
+
+
+def _stack(db: Session, key: str) -> customers.Stack:
+    found = customers.stack(db, key)
+    if found is None:
+        raise HTTPException(status_code=404, detail="No such customer")
+    return found
+
+
+def _day(text: str) -> date | None:
+    """A day as the form's list sends it, or None."""
+    if not DAY.fullmatch(text):
+        return None
+    try:
+        day = date.fromisoformat(text)
+    except ValueError:
+        return None
+    return day if customers.EARLIEST.date() <= day < customers.LATEST.date() else None
+
+
+@app.get("/customers/{key}", response_class=HTMLResponse)
+def customer_page(
+    request: Request,
+    key: str,
+    note: str = "",
+    operator: access.Operator = Depends(require_operator),
+    db: Session = Depends(get_db),
+) -> Response:
+    """One customer: the stack's state, the four figures of the last seven
+    business days with their course, the menu status. None of it is guest
+    data. The form for the call list is offered only to a session with a fresh
+    second factor."""
+    stack = _stack(db, key)
+    found = customers.detail(stack)
+    status = found.row.status
+    context = {
+        "operator": operator,
+        "key": stack.key,
+        "detail": found,
+        "now": now(),
+        "fresh": operator.fresh(now()),
+        "reasons": ops_reason.REASONS,
+        "days": [
+            status.business_day - timedelta(days=back) for back in range(DAYS_OFFERED)
+        ]
+        if status
+        else [],
+        # This page's own sentence only: a link must not make it say that a
+        # factor changed.
+        "note": NOTES[REASON_NEEDED] if note == REASON_NEEDED else None,
+    }
+    return _page(request, "customer.html", context)
+
+
+@app.post("/customers/{key}/calls", response_class=HTMLResponse)
+def customer_calls(
+    request: Request,
+    key: str,
+    form: dict[str, str] = Depends(_form),
+    operator: access.Operator = Depends(require_step_up),
+    db: Session = Depends(get_db),
+) -> Response:
+    """The calls of one business day: guest data (docs/23 §8). A post, so the
+    page's CSRF token stands before it: a link from another page of the same
+    site could not ask in the operator's name. The reason is a listed category
+    and a ticket number, the actor is the session's account, and the question
+    is in the operator's audit before the stack is asked; what came of it
+    (how many calls were shown, or why none) is a second row. Nothing is
+    kept: the answer is one page, not stored by the browser."""
+    _checked(request, form)
+    stack = _stack(db, key)
+    category, day = form.get("reason", ""), _day(form.get("day", ""))
+    reason = ops_reason.reason(category, form.get("reference", ""))
+    if reason is None or day is None:
+        return RedirectResponse(
+            f"/customers/{stack.key}?{urlencode({'note': REASON_NEEDED})}",
+            status_code=303,
+        )
+    reference = reason.partition(" ")[2]
+    access.audit(
+        db,
+        operator.name,
+        "customer.calls_asked",
+        {"reason": category, "reference": reference, "day": day.isoformat()},
+        target=stack.key,
+    )
+    db.commit()
+    found = customers.calls(stack, day, operator.name, reason)
+    # The row above says a read was tried. This one says what the operator
+    # saw: a count, or one of this module's own sentences, nothing of a guest.
+    access.audit(
+        db,
+        operator.name,
+        "customer.calls_not_shown"
+        if isinstance(found, str)
+        else "customer.calls_shown",
+        {"day": day.isoformat()}
+        | (
+            {"problem": found}
+            if isinstance(found, str)
+            else {"calls": len(found.calls)}
+        ),
+        target=stack.key,
+    )
+    db.commit()
+    context = {
+        "operator": operator,
+        "key": stack.key,
+        "day": day,
+        "reason": ops_reason.REASONS[category],
+        "reference": reference,
+        "calls": None if isinstance(found, str) else found,
+        "problem": found if isinstance(found, str) else "",
+    }
+    response = _page(request, "calls.html", context)
+    response.headers.update(NO_STORE)
+    return response

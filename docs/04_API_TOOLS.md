@@ -661,3 +661,33 @@ one equal to any other token of the stack. Caddy answers 404 for `/v1/ops/*`
   which the agent says "no information".
 - No restaurant in the stack yet: `not_found`.
 - Measured: p95 13.4 ms with local DB (20 rounds, busy day of the test).
+
+**`GET /v1/ops/figures`** → `{"tenant": {"key", "name"}, "business_day", "week": {...}, "days": [{"day", ...}, ...]}`
+
+- The four figures of docs/06 §4 over the last seven business days, today included
+  (`domain/status/overview.py` `week`): `week` is the span in one, `days` each business day by
+  itself, the newest first. Each holds what `today` of the status holds: calls, orders, corrected,
+  handed over, missed, cost, calls of unknown cost, and the three derived values (`null`: nothing to
+  divide by).
+- Counts only, no guest data, so no reason is asked.
+
+**`GET /v1/ops/calls?day=YYYY-MM-DD`** → `{"tenant": {"key", "name"}, "business_day", "calls": [{"started_at", "caller", "intent", "outcome", "duration_seconds", "cost_cents", "tool_calls", "line_note"}]}`
+
+- Guest data, so two more headers are required (docs/23 §8, `core/ops_reason.py`):
+  `X-Ops-Reason: <category> #<number>`, the category one of `restaurant_report`, `guest_complaint`,
+  `alarm`, `data_request` and the number a ticket or issue number of one to nine digits, never free
+  text; and `X-Ops-Actor: <operator account>`. A missing or malformed header: 400 `invalid_input`,
+  nothing read, nothing written.
+- Before a row is read the stack writes and commits `audit_log`: actor `operator:<account>`, action
+  `ops.calls_read`, entity `call`, payload `{"reason", "reference", "day"}`. Nothing of a guest is
+  in it.
+- One business day per request, and only a day the team's own list reaches: today and the 13
+  business days before (`domain/calls/log.py` `DAYS_LISTED`). Another day: 400 `invalid_input`. No
+  span, no export.
+- **No phone number leaves the stack.** `caller` counts the day's callers in the order of their
+  first call (1, 2, 3, the same value for the same number), `null` for a withheld number: support
+  sees that one guest called three times, and not who. Test calls are left out, as on the tablet.
+- The calls of the day, newest first, times in UTC; `line_note` as on the tablet (#651).
+- Measured with local DB over HTTP (60 calls each, a stack with a few calls a day): `/figures` p95
+  22.9 ms, `/calls` p95 8.5 ms; the latency test of `api/tests/test_ops_detail.py` holds both under
+  300 ms on a busy week.
