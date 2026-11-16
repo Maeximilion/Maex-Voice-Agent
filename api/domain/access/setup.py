@@ -52,9 +52,10 @@ def setup_url(token: str, base_url: str = "") -> str:
     """The setup link for `token`: under `base_url`, else `https://$AGENT_DOMAIN`
     (the stack's setting), else the path alone. The token is the fragment,
     which no browser sends."""
-    base = base_url or (
-        f"https://{settings.agent_domain}" if settings.agent_domain else ""
-    )
+    # A name typed with its scheme, a slash or the root's dot is still that
+    # name: Caddy serves it either way, and "https://https://..." is no link.
+    host = settings.agent_domain.strip().removeprefix("https://").strip("/.")
+    base = base_url or (f"https://{host}" if host else "")
     return f"{base.rstrip('/')}{SETUP_PATH}{token}"
 
 

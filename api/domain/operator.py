@@ -15,6 +15,8 @@ holds a PIN, a link or a telephone number.
 """
 
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -23,7 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput
-from api.core.ops_reason import OpsReader
+from api.core.ops_reason import RULE_STATUS, OpsReader
 from api.domain.access.admin import set_admin_pin, shown_pin
 from api.domain.access.sessions import audit, end_sessions
 from api.domain.access.setup import issue_link, set_team_pin, setup_url
@@ -42,6 +44,8 @@ Which = Literal["team", "admin"]
 RESUME = "resume"
 # The newest devices. A restaurant has a handful; the dashboard takes no more.
 MAX_DEVICES = 200
+# And no more numbers to choose from; a dialplan has a few.
+MAX_NUMBERS = 20
 
 
 @dataclass(frozen=True)
@@ -88,6 +92,18 @@ def _asked(
     session.commit()
 
 
+@contextmanager
+def _by_rule() -> Iterator[None]:
+    """Around the function a step calls: what one of its rules refuses gets a
+    status of its own (`RULE_STATUS`), so the dashboard can tell "this PIN is
+    the other PIN" from a request the route itself did not take."""
+    try:
+        yield
+    except InvalidInput as refused:
+        refused.status = RULE_STATUS
+        raise
+
+
 def access(session: Session, tenant: Tenant, now: datetime) -> Access:
     """The state every answer of a step carries. Not recorded by itself: the
     step that asks for it is."""
@@ -122,12 +138,13 @@ def access(session: Session, tenant: Tenant, now: datetime) -> Access:
         ],
         call_mode=mode,
         call_modes=modes,
-        team_phone=holding,
-        team_phone_standard=config.team_phone if config else None,
+        # An empty number (a blank TEAM_PHONE) is no number.
+        team_phone=holding or None,
+        team_phone_standard=(config.team_phone or None) if config else None,
         team_phone_until=config.team_phone_today_until
         if config and holding != config.team_phone
         else None,
-        team_phones=sheet_numbers() if config else [],
+        team_phones=sheet_numbers()[:MAX_NUMBERS] if config else [],
     )
 
 
@@ -153,10 +170,11 @@ def set_pin(
     """Raises InvalidInput for a PIN the rules refuse (4 to 6 digits, never
     the other PIN, a restaurant without a login)."""
     _asked(session, tenant, by, "pin_set", which=which)
-    if which == "admin":
-        set_admin_pin(session, tenant.id, pin, by.actor)
-    else:
-        set_team_pin(session, tenant.id, pin, by.actor)
+    with _by_rule():
+        if which == "admin":
+            set_admin_pin(session, tenant.id, pin, by.actor)
+        else:
+            set_team_pin(session, tenant.id, pin, by.actor)
 
 
 def sign_out(
@@ -190,12 +208,13 @@ def set_call_mode(
     _asked(session, tenant, by, "call_mode", mode=mode)
     if mode not in (*CAUTION, PAUSED, RESUME):
         raise InvalidInput(f"No mode {mode!r} for the operator", status=400)
-    if mode == PAUSED:
-        pause_ai(session, tenant.id, by.actor, now)
-    elif mode == RESUME:
-        resume_ai(session, tenant.id, by.actor, now)
-    else:
-        set_mode(session, tenant.id, mode, by.actor, now)
+    with _by_rule():
+        if mode == PAUSED:
+            pause_ai(session, tenant.id, by.actor, now)
+        elif mode == RESUME:
+            resume_ai(session, tenant.id, by.actor, now)
+        else:
+            set_mode(session, tenant.id, mode, by.actor, now)
 
 
 def set_team_phone(
@@ -205,4 +224,5 @@ def set_team_phone(
     one of the numbers the telephone system dials, the standard number stays,
     and the owner keeps or undoes it on the tablet's card."""
     _asked(session, tenant, by, "team_phone")
-    change_team_phone(session, tenant.id, number, now, by.actor)
+    with _by_rule():
+        change_team_phone(session, tenant.id, number, now, by.actor)

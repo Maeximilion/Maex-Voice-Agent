@@ -957,13 +957,12 @@ def customer_manage(
         return _page(request, "manage.html", context, 400)
     holder = passkeys.for_session(operator.session_id)
     if step.changes:
-        kept = passkeys.take(db, holder, _form_token(stack.key), now())
-        sent = form.get("once", "")
-        if (
-            kept is None
-            or not sent.isascii()
-            or not secrets.compare_digest(sent, kept.hex())
-        ):
+        try:
+            sent = bytes.fromhex(form.get("once", ""))
+        except ValueError:
+            sent = b""
+        purpose = _form_token(stack.key)
+        if not sent or passkeys.take(db, holder, purpose, now(), sent) is None:
             context["said"] = ("danger", SENT_BEFORE, "")
             return _page(request, "manage.html", context, 409)
     name = f"customer.{step.name}"

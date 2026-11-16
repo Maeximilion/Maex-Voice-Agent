@@ -112,15 +112,27 @@ def issue(db: Session, bound_to: str, purpose: str, now: datetime) -> bytes:
     return challenge
 
 
-def take(db: Session, bound_to: str, purpose: str, now: datetime) -> bytes | None:
+def take(
+    db: Session,
+    bound_to: str,
+    purpose: str,
+    now: datetime,
+    expected: bytes | None = None,
+) -> bytes | None:
     """The live challenge of this holder, taken out for good: whatever the
     answer turns out to be, nothing is checked against it a second time.
-    Commits."""
+    With `expected` only that very value is taken (a form's token, which the
+    browser sends back as it is): another value takes nothing, so an older
+    tab's form does not spend the newer tab's token. Commits."""
+    wanted = [
+        OperatorChallenge.bound_to == bound_to,
+        OperatorChallenge.purpose == purpose,
+    ]
+    if expected is not None:
+        wanted.append(OperatorChallenge.challenge == expected)
     row = db.execute(
         delete(OperatorChallenge)
-        .where(
-            OperatorChallenge.bound_to == bound_to, OperatorChallenge.purpose == purpose
-        )
+        .where(*wanted)
         .returning(OperatorChallenge.challenge, OperatorChallenge.expires_at)
     ).first()
     db.commit()

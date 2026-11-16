@@ -716,7 +716,8 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
   during the emergency stop). `team_phone` is where a call for the team goes now,
   `team_phone_standard` the standard number and `team_phone_until` the end of a number set for
   today (`null`: the standard holds). `team_phones` are the numbers the tablet's sheet offers
-  (`sheet_numbers`). A restaurant without its settings row answers with no mode, no number and
+  (`sheet_numbers`), 20 at most; an empty number is `null`. A restaurant without its settings row
+  answers with no mode, no number and
   two empty lists. No field of the state is a secret; a shown PIN and a new link are the only
   secrets an answer carries, and nothing but a body ever carries one.
 - The link is `https://<AGENT_DOMAIN>/gui/einrichten#<token>`. `AGENT_DOMAIN` is a setting of
@@ -734,8 +735,9 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
   4 to 6 digits and the two differ, a mode is never chosen during the emergency stop, a team number
   is one the dialplan dials, holds until the end of the business day and shows the owner's check
   card, and the call mode and the team number push to `owner` and `ops` (docs/23 T12). What a rule
-  refuses is `invalid_input` with status 200, as everywhere in the domain; a request the route
-  itself does not take (a header, the body's form, a mode that does not exist) is 400 or 422. The
+  refuses is `invalid_input` with status 422 (`core/ops_reason.py` `RULE_STATUS`, set by `_by_rule`
+  in `domain/operator.py`); a request the route itself does not take is `invalid_input` with 200
+  (the body's form, as everywhere in the API) or 400 (a header, a mode that does not exist). The
   dashboard tells the two apart by the status and explains only the first as a rule.
 - A sign-out names its device or says `"all": true`; a body with neither or both is refused, so a
   missing field never signs out every device. A PIN is taken as any short text and refused by the

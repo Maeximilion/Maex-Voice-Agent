@@ -12,7 +12,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 
 from api.config import settings
 from api.domain import operator
@@ -584,3 +584,67 @@ def test_the_link_is_the_stacks_path_when_it_does_not_know_its_host(
     """`AGENT_DOMAIN` reaches the api through its settings (docker-compose.yml
     hands it over); without it the answer is the path, and the dashboard says so."""
     assert _data(_ask(http, "POST", LINK))["link"].startswith("/gui/einrichten#")
+
+
+def test_a_rule_refuses_with_a_status_of_its_own(http, session, login, stack):
+    """422: one of the stack's rules refused the step. A request the route
+    itself does not take is `invalid_input` too, with 200 (the body's form) or
+    400 (a header, a mode that does not exist): the dashboard must not explain
+    that with a rule's sentence."""
+    assert (
+        _ask(http, "POST", PIN_SET, {"which": "team", "pin": ADMIN}).status_code == 422
+    )
+    assert (
+        _ask(http, "POST", PIN_SET, {"which": "team", "pin": "12"}).status_code == 422
+    )
+    assert (
+        _ask(http, "POST", TEAM_PHONE, {"number": "+4915112345678"}).status_code == 422
+    )
+    _data(_ask(http, "POST", CALL_MODE, {"mode": "paused"}))
+    assert _ask(http, "POST", CALL_MODE, {"mode": "primary"}).status_code == 422
+
+    assert _ask(http, "POST", CALL_MODE, {"mode": "ai_first"}).status_code == 400
+    assert (
+        _ask(http, "POST", PIN_SET, {"which": "owner", "pin": NEW}).status_code == 200
+    )
+    assert (
+        _ask(http, "POST", PIN_SET, {"which": "team", "pin": NEW, "x": 1}).status_code
+        == 200
+    )
+    assert (
+        _ask(http, "POST", PIN_SET, None, **{"X-Ops-Reason": None}).status_code == 400
+    )
+
+
+def test_a_blank_team_number_is_no_number(http, session, stack):
+    """A blank TEAM_PHONE is stored as an empty text: sent as it is, the
+    dashboard would read the whole answer as "cannot be read"."""
+    session.execute(update(ServiceConfig).values(team_phone=""))
+    session.commit()
+
+    data = _data(_ask(http, "GET", ACCESS))
+
+    assert (data["team_phone"], data["team_phone_standard"]) == (None, None)
+
+
+def test_no_more_numbers_are_offered_than_the_dashboard_reads(
+    http, session, stack, monkeypatch
+):
+    many = ",".join(f"+4972155510{n:02d}" for n in range(operator.MAX_NUMBERS + 5))
+    monkeypatch.setattr(settings, "transfer_targets", many)
+
+    assert len(_data(_ask(http, "GET", ACCESS))["team_phones"]) == operator.MAX_NUMBERS
+
+
+@pytest.mark.parametrize(
+    "written",
+    [" https://agent.example.com/ ", "agent.example.com.", "agent.example.com"],
+)
+def test_a_host_typed_with_its_scheme_or_dot_is_still_that_host(
+    http, session, stack, monkeypatch, written
+):
+    monkeypatch.setattr(settings, "agent_domain", written)
+
+    link = _data(_ask(http, "POST", LINK))["link"]
+
+    assert link.startswith("https://agent.example.com/gui/einrichten#")

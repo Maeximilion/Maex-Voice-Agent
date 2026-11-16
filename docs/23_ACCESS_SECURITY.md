@@ -235,7 +235,8 @@ call mode and sets today's team number.
   as a passkey challenge is (one per session and customer, single use, five minutes;
   `passkeys.issue` and `take`): the post takes it out, so a reload of the answer page, the Back
   button or an older tab sends nothing a second time and writes no audit row (409, "this form was
-  sent before"). Without it a reload within the five minutes of the step-up would make a second
+  sent before"); only the very token is taken out, so an older tab's form does not spend the
+  newer page's. Without it a reload within the five minutes of the step-up would make a second
   setup link and void the one just passed on, or end an emergency stop the owner set in between.
   The two reads (opening the page, showing a PIN) need no token: repeating them changes nothing
   and is recorded each time.
@@ -243,7 +244,8 @@ call mode and sets today's team number.
   answers what cannot be read, the page says that the change may have been made all the same and
   to look before repeating it, and the audit row is `_unclear`; after a refusal (the token, an
   older version, the wrong stack, a rule) it says nothing of the kind, because nothing was done.
-  A refusal of the request itself (status 400) is never explained with a rule's sentence.
+  Only what one of the stack's rules refused (status 422, docs/04) is explained with that rule's
+  sentence; a refusal of the request itself is "does not take this request".
 - **A list starts at what holds.** The lists of modes and numbers preselect the mode and the
   number that hold now, so a button pressed without a choice changes nothing; where what holds is
   not in the list (the emergency stop, whose one entry is "switch the agent on again") the list

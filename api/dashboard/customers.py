@@ -79,6 +79,8 @@ MAX_CALLS = 2000
 MAX_CALLS_BYTES = 512 * 1024
 # As `domain/operator.py` MAX_DEVICES: a stack sends its newest devices.
 MAX_DEVICES = 200
+# And as its MAX_NUMBERS: the numbers a team number can be chosen from.
+MAX_NUMBERS = 20
 # What a form of the manage page may send and a stack may answer, each in
 # full; a PIN by the stack's own rule (`domain/access/hashing.py` PIN).
 PINS = ("team", "admin")
@@ -278,7 +280,7 @@ class StackAccess(_Named):
     team_phone_standard: Annotated[str, _full(SHOWN_PHONE)] | None
     # When a number set for today ends; None: the standard number holds.
     team_phone_until: Time | None
-    team_phones: list[Annotated[str, _full(PHONE)]] = Field(max_length=20)
+    team_phones: list[Annotated[str, _full(PHONE)]] = Field(max_length=MAX_NUMBERS)
     pin: Annotated[str, _full(PIN)] | None = None
     link: Annotated[str, _full(SETUP_LINK)] | None = None
     link_expires_at: Time | None = None
@@ -487,11 +489,12 @@ def _fetch[Asked: _Named](
     # same code under another status is something else's answer.
     if code == "not_found" and status_code == 200:
         return NO_RESTAURANT
-    # With 200 it is the stack's domain that refused (`AppError`'s status);
-    # with any other status the request itself was not taken: a header, the
-    # body's form. A step names the first by a sentence of its own.
+    # A step marks what one of the stack's rules refused with a status of its
+    # own (`domain/operator.py` `_by_rule`); with any other the request itself
+    # was not taken: a header, the body's form. Only the first is explained as
+    # a rule.
     if code == "invalid_input":
-        return by_rule if status_code == 200 else NOT_TAKEN
+        return by_rule if status_code == ops_reason.RULE_STATUS else NOT_TAKEN
     # `_customer` of the stack's router: its restaurant is not the customer
     # this request names. With any other status the code is something else's.
     if code == "conflict" and status_code == 409:

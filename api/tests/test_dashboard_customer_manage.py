@@ -343,9 +343,9 @@ HOSTILE = [
     (_says(_access("beta")), customers.OTHER_CUSTOMER),
     (_says(_access(), lambda d: d["tenant"].update(key=None)), customers.NO_KEY),
     (_error("conflict", 409), customers.WRONG_STACK),
-    (_error("invalid_input"), customers.REFUSED_BY_RULE),
+    (_error("invalid_input"), customers.NOT_TAKEN),
     (_error("invalid_input", 400), customers.NOT_TAKEN),
-    (_error("invalid_input", 422), customers.NOT_TAKEN),
+    (_error("invalid_input", 422), customers.REFUSED_BY_RULE),
     (_with(team_phone="Ruf 0900 an"), customers.NOT_AN_ANSWER),
     (_with(team_phone_standard="<b>07221</b>"), customers.NOT_AN_ANSWER),
     (_with(team_phone_until="9999-12-31T23:59:59+00:00"), customers.NOT_AN_ANSWER),
@@ -830,7 +830,7 @@ def test_a_step_that_gave_no_answer_is_said_in_words_and_in_the_audit(
 def test_a_refusal_of_the_stack_names_what_it_can_be(
     client, factors, clock, sessions, monkeypatch, action, words
 ):
-    _world(sessions, monkeypatch, alpha=_managed(answer=_error("invalid_input")))
+    _world(sessions, monkeypatch, alpha=_managed(answer=_error("invalid_input", 422)))
     _signed_in(client, factors, clock)
 
     answer = _post(client, action)
@@ -920,16 +920,20 @@ def test_the_words_of_the_modes_cover_what_a_stack_offers():
 def test_a_request_the_stack_does_not_take_is_not_called_a_rule(
     client, factors, clock, sessions, monkeypatch
 ):
-    """400 is the stack refusing the request itself (a header, the body's
-    form), as after a deploy of one side only; 200 is one of its rules. The
-    page must not explain the first with the second's sentence."""
-    _world(sessions, monkeypatch, alpha=_managed(answer=_error("invalid_input", 400)))
+    """200 or 400 is the stack refusing the request itself (the body's form,
+    a header), as after a deploy of one side only; 422 is one of its rules.
+    The page must not explain the first with the second's sentence."""
     _signed_in(client, factors, clock)
-
-    for action in ("pin-set", "call-mode", "team-phone"):
-        text = _post(client, action).text
-        assert customers.NOT_TAKEN in text, action
-        assert "refused this" not in text and "may have been made" not in text
+    base._two_customers(sessions)
+    for status in (200, 400):
+        base._stacks(
+            monkeypatch,
+            {"alpha-api": _managed(answer=_error("invalid_input", status))},
+        )
+        for action in ("pin-set", "call-mode", "team-phone"):
+            text = _post(client, action).text
+            assert customers.NOT_TAKEN in text, (action, status)
+            assert "refused this" not in text and "may have been made" not in text
 
 
 # --- a step is taken once ---------------------------------------------------------
@@ -1144,9 +1148,26 @@ def test_the_stack_is_named_in_front_of_a_problem(
 def test_both_sides_cap_the_devices_alike():
     """A stack that sends more than the dashboard reads is "cannot be read"."""
     assert customers.MAX_DEVICES == operator.MAX_DEVICES
+    assert customers.MAX_NUMBERS == operator.MAX_NUMBERS
 
 
 def test_no_account_can_be_named_like_the_command_line(sessions):
     """`operator:cli` is the command line's actor in a stack's audit log."""
     with sessions() as db, pytest.raises(ValueError, match="command line"):
         access.create_account(db, "CLI ", base.PASSWORD)
+
+
+def test_an_older_tabs_form_does_not_spend_the_newer_tabs_token(
+    client, factors, clock, sessions, monkeypatch
+):
+    """Two pages of one customer: the second one's token replaces the first.
+    The first page's form sends nothing, and the second page still works."""
+    seen: list[httpx.Request] = []
+    _world(sessions, monkeypatch, alpha=_managed(seen))
+    _signed_in(client, factors, clock)
+    older, newer = _once(), _once()
+
+    assert _post(client, "call-mode", once=older).status_code == 409
+    assert seen == []
+    assert _post(client, "call-mode", once=newer).status_code == 200
+    assert len(seen) == 1
