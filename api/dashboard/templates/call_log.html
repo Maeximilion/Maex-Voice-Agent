@@ -1,0 +1,55 @@
+{# The log of one call of one customer (#571, docs/23 §5 "Dev tools"): guest
+   data, shown once and not stored by the browser. No phone number: the stack
+   sends none. Everything a stack says is shown as text. #}
+{% extends "base.html" %}
+{% block title %}Call log of {{ key }}{% endblock %}
+
+{% block main %}
+<section class="ops-seite" aria-labelledby="log-title">
+  <p><a href="/dev">Back to the dev tools</a></p>
+  <h1 id="log-title">{{ name or key }}<span class="muted ops-key">{{ key }}</span></h1>
+  <p>Call <code>{{ call_id }}</code>. Reason: {{ reason }}, {{ reference }}. Recorded with your account {{ operator.name }}.</p>
+  {% if not answered %}
+  <p class="banner danger" role="alert"><span class="badge danger">down</span> {{ problem }}</p>
+  {% elif not call %}
+  <p class="card">The stack {{ problem }}.</p>
+  {% else %}
+  <table class="tbl ops-liste">
+    <thead>
+      <tr><th scope="col">Started</th><th scope="col">Ended</th><th scope="col">Duration</th><th scope="col">Intent</th><th scope="col">Outcome</th><th scope="col">Cost</th><th scope="col">Model</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th scope="row" data-label="Started">{{ call.started_at | shown }}</th>
+        <td data-label="Ended">{{ call.ended_at | shown }}</td>
+        <td data-label="Duration">{{ call.duration_seconds | duration }}</td>
+        <td data-label="Intent">{{ call.intent | intent }}</td>
+        <td data-label="Outcome">{{ call.outcome | outcome }}{% if call.transfer_reason %} ({{ call.transfer_reason }}){% endif %}{% if call.line_note %} <span class="badge warn">{{ call.line_note | line_note }}</span>{% endif %}{% if call.is_test %} <span class="badge warn">self-test call</span>{% endif %}</td>
+        <td data-label="Cost">{{ call.cost_cents | euro }}</td>
+        <td data-label="Model">{{ call.model or "not noted" }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% if not call.tool_calls %}
+  <p class="card">The call made no tool call.</p>
+  {% else %}
+  <table class="tbl ops-liste">
+    <thead>
+      <tr><th scope="col">No.</th><th scope="col">Tool</th><th scope="col">Duration</th><th scope="col">Answer</th></tr>
+    </thead>
+    <tbody>
+      {% for tool in call.tool_calls %}
+      <tr>
+        <th scope="row" data-label="No.">{{ loop.index }}</th>
+        <td data-label="Tool"><code>{{ tool.name }}</code></td>
+        <td data-label="Duration">{% if tool.duration_ms is none %}not noted{% else %}{{ "%.0f" | format(tool.duration_ms) }} ms{% endif %}</td>
+        <td data-label="Answer">{% if tool.ok %}ok{% else %}<span class="badge danger">failed</span>{% if tool.error_code %} <code>{{ tool.error_code }}</code>{% endif %}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">{% if call.tool_calls_total > call.tool_calls | length %}The first {{ call.tool_calls | length }} of {{ call.tool_calls_total }} tool calls{% else %}{{ call.tool_calls | length }} tool calls{% endif %}, in their order. Times in the restaurants' time.</p>
+  {% endif %}
+  {% endif %}
+</section>
+{% endblock %}

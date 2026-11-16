@@ -198,7 +198,9 @@ def _tool_call(entry: Any) -> ToolCall:
     timed = isinstance(ms, int | float) and not isinstance(ms, bool)
     return ToolCall(
         name=name[:_CODE_LENGTH] if isinstance(name, str) and name else "?",
-        duration_ms=float(ms) if timed and 0 <= ms <= _LONGEST_MS else None,
+        duration_ms=float(ms)
+        if isinstance(ms, int | float) and timed and 0 <= ms <= _LONGEST_MS
+        else None,
         ok=found.get("ok") is True,
         error_code=code[:_CODE_LENGTH] if isinstance(code, str) and code else None,
     )

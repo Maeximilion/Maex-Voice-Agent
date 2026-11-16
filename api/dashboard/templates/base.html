@@ -23,6 +23,8 @@
   <a class="ops-marke" href="/">Maex Operator</a>
   <nav aria-label="Main">
     <a href="/"{% if nav | default("customers") == "customers" %} aria-current="page"{% endif %}>Customers</a>
+    <a href="/new-customer"{% if nav | default("") == "new" %} aria-current="page"{% endif %}>New customer</a>
+    <a href="/dev"{% if nav | default("") == "dev" %} aria-current="page"{% endif %}>Dev tools</a>
     <a href="/factors"{% if nav | default("") == "factors" %} aria-current="page"{% endif %}>Sign-in factors</a>
   </nav>
   <form method="post" action="/logout">

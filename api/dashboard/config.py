@@ -35,6 +35,10 @@ class DashboardSettings(BaseSettings):
     # only logged (`dashboard/push.py`).
     operator_push_url: str = ""
     operator_push_token: str = ""
+    # The folder with the eval and measurement records the dev tools show
+    # (`docs/metrics/` of a checkout, docs/08 §4); only read. The image holds
+    # none: the operator stack's Compose file mounts it (#571).
+    operator_metrics_dir: str = "docs/metrics"
 
     @property
     def relying_party_id(self) -> str:

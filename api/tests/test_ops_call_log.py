@@ -26,7 +26,12 @@ tenant = base.tenant
 
 TOOLS = [
     {"name": "lookup_menu", "duration_ms": 41.5, "ok": True},
-    {"name": "draft_order", "duration_ms": 12.0, "ok": False, "error_code": "not_found"},
+    {
+        "name": "draft_order",
+        "duration_ms": 12.0,
+        "ok": False,
+        "error_code": "not_found",
+    },
     {"name": "confirm", "duration_ms": 30.2, "ok": True},
 ]
 
@@ -63,7 +68,9 @@ def _reads(session, tenant) -> list[AuditLog]:
 
 
 def _get(http, call_id: object, headers: dict | None = None):
-    return http.get(_path(call_id), headers=AUTH | REASON if headers is None else headers)
+    return http.get(
+        _path(call_id), headers=AUTH | REASON if headers is None else headers
+    )
 
 
 # --- who may ask --------------------------------------------------------------
@@ -197,8 +204,7 @@ def test_the_route_writes_nothing_but_its_audit_row(http, session, tenant):
 
     session.expire_all()
     assert session.scalar(select(func.count()).select_from(AuditLog)) == before + 1
-    assert session.get(Call, call.id).updated_at == updated
-    assert session.scalar(select(func.count()).select_from(Call)) == 1
+    assert session.scalars(select(Call.updated_at)).all() == [updated]
 
 
 # --- no such call -------------------------------------------------------------
@@ -216,7 +222,7 @@ def test_an_unknown_call_is_no_call_and_still_a_recorded_read(http, session, ten
     assert data["call_id"] == str(unknown)
     assert data["call"] is None
     (row,) = _reads(session, tenant)
-    assert row.payload["call"] == str(unknown)
+    assert (row.payload or {})["call"] == str(unknown)
 
 
 def test_another_restaurants_call_is_no_call(http, session, tenant):

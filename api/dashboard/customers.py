@@ -79,6 +79,8 @@ MAX_CALLS = 2000
 MAX_CALLS_BYTES = 512 * 1024
 # As `domain/operator.py` MAX_DEVICES: a stack sends its newest devices.
 MAX_DEVICES = 200
+# One call's tool calls; the stack sends no more (`domain/calls/log.py`).
+MAX_TOOL_CALLS = 200
 # And as its MAX_NUMBERS: the numbers a team number can be chosen from.
 MAX_NUMBERS = 20
 # What a form of the manage page may send and a stack may answer, each in
@@ -114,6 +116,9 @@ NO_KEY = "its restaurant has no customer key yet"
 WRONG_STACK = "is not this customer's stack (another key, or none): nothing was done"
 REFUSED_BY_RULE = "refuses this by a rule of its own"
 NO_LINK = "answered without a link"
+NO_SUCH_CALL = (
+    "knows no call of this id (or the call is older than the call list reaches)"
+)
 # After these the stack did nothing; after any other problem of a step that
 # changes something, nobody knows.
 NOTHING_DONE = frozenset(
@@ -243,6 +248,36 @@ class StackCalls(_Named):
 
     business_day: Day
     calls: list[_Call] = Field(max_length=MAX_CALLS)
+
+
+class _ToolCall(_Answer):
+    name: Short
+    duration_ms: Annotated[float, Field(ge=0, le=3_600_000, allow_inf_nan=False)] | None
+    ok: bool
+    error_code: Short | None
+
+
+class _CallLog(_Answer):
+    started_at: Time
+    ended_at: Time | None
+    duration_seconds: Annotated[int, Field(ge=0, le=7 * 24 * 3600)] | None
+    intent: Short | None
+    outcome: Short | None
+    transfer_reason: Short | None
+    line_note: Short | None
+    cost_cents: Count | None
+    model: Short | None
+    is_test: bool
+    tool_calls: list[_ToolCall] = Field(max_length=MAX_TOOL_CALLS)
+    tool_calls_total: Count
+
+
+class StackCall(_Named):
+    """`GET /v1/ops/calls/<call_id>`: one call with its tool calls, or none
+    of that id."""
+
+    call_id: uuid.UUID
+    call: _CallLog | None
 
 
 def _full(pattern: re.Pattern[str]) -> AfterValidator:
@@ -639,6 +674,32 @@ def calls(
     )
     found = _at_once([(customer.key, ask)], client)[0]
     if isinstance(found, StackCalls) and found.business_day != day:
+        return NOT_AN_ANSWER
+    return found
+
+
+def call_log(
+    customer: Stack,
+    call_id: uuid.UUID,
+    actor: str,
+    reason: str,
+    client: Callable[[], httpx.Client] | None = None,
+) -> StackCall | str:
+    """One call with its tool calls, for the dev tools (docs/23 §5): what a
+    guest did, so the stack is told who asks and why, as for `calls`. A read:
+    the question is a GET, and the stack writes its audit row and nothing
+    else. An answer about another call than the one asked is no answer."""
+    if not ops_reason.ACTOR.fullmatch(actor) or ops_reason.parse(reason) is None:
+        raise ValueError("no account or no reason: nothing is asked")
+    ask = partial(
+        _fetch,
+        customer=customer,
+        path=f"{CALLS_PATH}/{call_id}",
+        hull=_Envelope[StackCall],
+        headers={ops_reason.REASON_HEADER: reason, ops_reason.ACTOR_HEADER: actor},
+    )
+    found = _at_once([(customer.key, ask)], client)[0]
+    if isinstance(found, StackCall) and found.call_id != call_id:
         return NOT_AN_ANSWER
     return found
 
