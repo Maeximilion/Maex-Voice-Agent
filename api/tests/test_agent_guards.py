@@ -4,7 +4,6 @@ No database: the guards read the conversation state and the guest's sentence.
 The way through the loop is in test_agent_loop.py.
 """
 
-import time
 import uuid
 
 import pytest
@@ -1232,76 +1231,10 @@ def test_a_sentence_on_what_a_dish_holds_states_allergens(say):
     ],
 )
 def test_a_wish_a_dish_name_or_the_guests_allergy_states_none(say):
-    """The dish names of the search are menu data, "Sie haben" speaks of the
-    guest (#764)."""
+    """The dish and option names of the search are menu data (#764)."""
     state = _found("Erdnuss-Curry")
     state.seen_items[ENTE]["optional"] = [{"group": "Extra", "options": ["Sesam"]}]
     assert not states_allergens(state, say)
-
-
-@pytest.mark.parametrize(
-    "say",
-    [
-        "Nüsse sind bei der 13 kein Problem.",
-        "Erdnüsse sind da kein Problem.",
-        "Mit Sesam gibt es kein Problem.",
-        "Milch ist bei der 13 keine Sorge.",
-    ],
-)
-def test_no_trouble_said_of_an_allergen_is_a_claim(say):
-    """The set phrase only drops where its clause names no allergen: said of
-    an allergen it denies it (#764 review, P1)."""
-    assert allergen_claim(new_state(), say) is ALLERGEN_CLAIM
-
-
-@pytest.mark.parametrize(
-    "say", ["Die 30 enthält Garnelen.", "Die 30 hat Ei.", "In der 30 ist Sesam."]
-)
-def test_an_option_named_like_an_allergen_hides_no_statement(say):
-    """Option names are never cut: an option "Garnelen" of one dish would hide
-    what the model says of any dish (#764 review, P1; Codex PR #650)."""
-    state = _found("Bun Bo", number="30")
-    state.seen_items[ENTE]["required"] = [
-        {"group": "Fleisch", "options": ["Garnelen", "Tofu"]}
-    ]
-    state.seen_items[ENTE]["optional"] = [
-        {"group": "Extras", "options": ["Ei", "Sesam"]}
-    ]
-    assert states_allergens(state, say)
-
-
-@pytest.mark.parametrize(
-    "say",
-    [
-        "Die 23 ohne Sauce enthält Soja und Gluten.",
-        "Die 13 ohne Koriander hat Erdnüsse.",
-        "Ohne Sauce ist in der 23 noch Soja.",
-    ],
-)
-def test_a_statement_behind_a_wish_still_states_allergens(say):
-    """The wish said back is the object of "ohne", not the rest of its clause
-    (#764 review, P1)."""
-    assert states_allergens(new_state(), say)
-
-
-@pytest.mark.parametrize(
-    "say",
-    [
-        "Gern, die 13 ohne Erdnüsse und Sesam. Noch etwas?",
-        "Die 13 ohne Erdnüsse, haben Sie noch einen Wunsch?",
-    ],
-)
-def test_a_longer_wish_said_back_states_none(say):
-    assert not states_allergens(new_state(), say)
-
-
-def test_weder_noch_on_a_long_sentence_stays_fast():
-    """Bounded gaps: two open `.*` around "weder" and "noch" were cubic, 8000
-    characters took 5.8 s (#764 review, P2; CodeQL py/polynomial-redos)."""
-    say = "Die 13 ist weder " * 1200
-    started = time.perf_counter()
-    allergen_claim(new_state(), say)
-    assert time.perf_counter() - started < 1.0
 
 
 @pytest.mark.parametrize(

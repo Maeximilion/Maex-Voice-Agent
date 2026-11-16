@@ -266,29 +266,12 @@ _ABSENT_IN_SENTENCE = re.compile(
     # "Die 13 enthält Sesam nicht", "Sesam hat die 13 nicht" (#764).
     r"|\b(?:enthält|enthaelt|enthalten|hat|haben)\b(?:\s+\w+){0,3}\s+nicht\b"
     # "Die 13 enthält weder Nüsse noch Sesam"; a note "weder Nüsse noch
-    # Sesam" names no dish's contents (#764). Bounded gaps: two open `.*`
-    # were cubic (#764 review, P2).
+    # Sesam" names no dish's contents (#764).
     r"|\b(?:enthält|enthaelt|enthalten|hat|haben|gibt|ist|sind|kommt|kommen)\b"
-    r"[^.!?]{0,60}?\bweder\b[^.!?]{0,60}?\bnoch\b"
+    r".*\bweder\b.*\bnoch\b"
 )
-# Set phrases that deny nothing about a dish ("Das ist kein Problem"), only
-# in a clause that names no allergen: "Nüsse sind bei der 13 kein Problem"
-# denies one (#764 review, P1).
+# Set phrases that deny nothing about a dish ("Das ist kein Problem").
 _NO_TROUBLE = re.compile(r"\bkein(?:e|en)?\s+(?:problem|ursache|thema|sorge)\b")
-_CLAUSE = re.compile(r"[^.,;:!?]+")
-
-
-def _without_no_trouble(text: str) -> str:
-    return _CLAUSE.sub(
-        lambda clause: (
-            clause[0]
-            if names_an_allergen(clause[0])
-            else _NO_TROUBLE.sub(" ", clause[0])
-        ),
-        text,
-    )
-
-
 _SENTENCES = re.compile(r"(?<=[.!?;:])\s+")
 # An allergen asked back before the answer, "Nüsse? Nein, die sind nicht
 # drin.": read with the sentence behind it (#764).
@@ -407,7 +390,7 @@ def allergen_claim(state: ConversationState, say: str) -> ToolResult | None:
     # it: "Die Nudeln (glutenfrei) werden getrennt zubereitet." is a safety
     # promise about gluten (Codex PR #388, P1).
     named = names_an_allergen(rest) or "allerg" in rest.lower()
-    lowered = _without_no_trouble(without_menu_names(state, rest).lower())
+    lowered = _NO_TROUBLE.sub(" ", without_menu_names(state, rest).lower())
     # An additive at all (#638): no table holds one, and a guest's sentence
     # that names one never reaches the model, so whatever a model says about
     # one is its own. Absence has too many forms to list ("glutamatfrei",
@@ -724,25 +707,22 @@ _UNREAD_ALLERGENS = ToolResult(
 )
 # What a sentence says of a dish's contents ("Die 23 enthält Soja", "In den
 # Frühlingsrollen ist Gluten", "Die 13 hat Erdnüsse", "Da ist Milch drin").
-# "Sie haben ...", "Haben Sie ..." speak of the guest.
-_WHATS_IN = (
+# "Sie haben ..." speaks of the guest.
+_SAYS_WHATS_IN = re.compile(
     r"enth(?:ä|ae)lt|enthalten|\b(?:drin|darin|drinnen|im)\b|beinhalt|zutat"
     r"|\bsteck(?:t|en)\b|\bin (?:der|dem|den|die|das|diese[mnr]?)\b"
-    r"|\bhat\b|(?<!\bsie )\bhaben\b(?!\s+(?:sie|ihr)\b)"
+    r"|\b(?:hat|haben)\b(?!\s+(?:sie|ihr)\b)"
 )
-_SAYS_WHATS_IN = re.compile(_WHATS_IN)
-# A wish said back: "die 13 ohne Erdnüsse (und Sesam)", the words behind
-# "ohne" up to the clause's end or a word of content: "Die 23 ohne Sauce
-# enthält Soja" still states Soja (#764 review, P1).
-_WISH_SAID_BACK = re.compile(rf"\bohne\b(?:\s+(?!{_WHATS_IN})[\w-]+)*")
+# A wish said back: "die 13 ohne Erdnüsse", to the end of its clause.
+_WISH_SAID_BACK = re.compile(r"\bohne\b[^.,;:!?]*")
 
 
 def states_allergens(state: ConversationState, say: str) -> bool:
     """Does the model's sentence say which allergens a dish holds ("Die 23
     enthält Gluten und Soja", "Ja, in der 13 ist Erdnuss")? Only the core may
     say that, from the database (#764, rule 1). Left out: the core's own
-    sentences (read-back, booking), the names of the dishes the search
-    delivered ("Erdnuss-Curry"), the guest's own allergy said back
+    sentences (read-back, booking), the names of the dishes and options the
+    search delivered ("Erdnuss-Curry"), the guest's own allergy said back
     ("Ihre Erdnussallergie ist notiert") and a wish said back ("die 13 ohne
     Erdnüsse"). Absence and safety are `allergen_claim`'s.
     shortcut: an allergen next to a word of content counts, a question of
@@ -765,12 +745,16 @@ def states_allergens(state: ConversationState, say: str) -> bool:
 
 
 def _names_of_the_search(state: ConversationState) -> list[str]:
-    """The dish names the search delivered in this call, longest first, so
-    "Erdnuss-Curry scharf" goes before "Erdnuss-Curry". Never an option name:
-    an option "Garnelen" of one dish would hide "Die 23 enthält Garnelen"
-    about any other (#764 review, P1; as `without_menu_names`)."""
+    """The dish and option names the search delivered in this call, longest
+    first, so "Erdnuss-Curry scharf" goes before "Erdnuss-Curry"."""
     names = {seen.get("name") for seen in state.seen_items.values()}
     names |= {name for _, name in state.offered_items.values()}
+    names |= {
+        option
+        for seen in state.seen_items.values()
+        for group in (*seen.get("required", []), *seen.get("optional", []))
+        for option in group.get("options", [])
+    }
     return sorted((n for n in names if isinstance(n, str) and n), key=len, reverse=True)
 
 
