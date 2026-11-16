@@ -3,9 +3,10 @@
 Own token (`OPS_TOKEN`), held only by the operator dashboard, which reaches the
 stack's api over the internal `ops` network; the proxy answers 404 for the path.
 
-`/status` and `/figures` answer with counts, times and codes. `/calls` answers
-with what guests did, so it needs a reason and the operator's account
-(`require_ops_reason`) and is in the audit log before it answers.
+`/status` and `/figures` answer with counts, times and codes. `/calls` and
+`/calls/<call_id>` (one call with its tool calls, for the dev tools) answer
+with what guests did, so they need a reason and the operator's account
+(`require_ops_reason`) and are in the audit log before they answer.
 
 `/access` and the steps behind it (both PINs, devices, a setup link) and
 `/call-mode` and `/team-phone` show a secret or change the restaurant. Each
@@ -16,6 +17,7 @@ anything is read or written. Each answers with the state after the step
 setup link are the only secrets an answer carries, once.
 """
 
+import uuid
 from dataclasses import asdict
 from datetime import date
 from typing import Any
@@ -34,7 +36,7 @@ from api.db import get_db
 from api.domain import operator
 from api.domain.access.sessions import stack_tenant_id
 from api.domain.calls.figures import Figures
-from api.domain.calls.log import calls_for_support
+from api.domain.calls.log import call_for_support, calls_for_support
 from api.domain.status import overview
 from api.models import Tenant
 from api.schemas.ops import CallMode, PinSet, PinShown, SignOut, TeamPhone
@@ -111,6 +113,37 @@ def calls(
     return envelope.ok(
         jsonable_encoder(
             {"tenant": names, "business_day": day, "calls": [asdict(r) for r in rows]}
+        )
+    )
+
+
+@router.get("/calls/{call_id}")
+def call(
+    call_id: uuid.UUID,
+    reader: OpsReader = Depends(require_ops_reason),
+    session: Session = Depends(get_db),
+) -> JSONResponse:
+    """One call and its tool calls (docs/23 §5 "Dev tools"). A call this
+    restaurant does not have is `call: null` under the restaurant's name, not
+    `not_found`: that code says the stack has no restaurant."""
+    tenant = _tenant(session)
+    names = _names(tenant)
+    found = call_for_support(
+        session,
+        tenant,
+        call_id,
+        clock.utcnow(),
+        actor=reader.actor,
+        reason=reader.reason,
+        reference=reader.reference,
+    )
+    return envelope.ok(
+        jsonable_encoder(
+            {
+                "tenant": names,
+                "call_id": call_id,
+                "call": asdict(found) if found else None,
+            }
         )
     )
 

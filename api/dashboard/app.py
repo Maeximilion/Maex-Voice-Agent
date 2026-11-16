@@ -8,7 +8,11 @@ seconds. A customer's page (`/customers/<key>`) shows counts and states; its
 call list is guest data and stands behind the step-up, a reason and both
 audits (docs/23 §8), and so does every step of its manage page
 (`/customers/<key>/manage/<step>`: both PINs, devices, a setup link, the call
-mode, the team number). Every post must come from this site and carry the page's CSRF token,
+mode, the team number). The dev tools (`/dev`) show the recorded eval and
+measurement results and, behind the same step-up, reason and audits, the log
+of one call; outside dev and test nothing under `/dev` can write
+(`_dev_tools_only_read`). `/new-customer` names the steps and the commands and
+runs none. Every post must come from this site and carry the page's CSRF token,
 the sign-in too (login CSRF). Outside dev and test every request but /health must
 come through Caddy, which sets the proxy secret; only then is the client
 address from X-Forwarded-For trusted. The checks themselves live in
@@ -27,6 +31,7 @@ import hmac
 import logging
 import re
 import secrets
+import uuid
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -51,7 +56,7 @@ from api.core.logging import (
 )
 from api.core.origin import same_origin
 from api.core.tokens import LOCAL_ENVS
-from api.dashboard import access, customers, passkeys, push, totp
+from api.dashboard import access, customers, passkeys, push, results, totp
 from api.dashboard.config import settings
 from api.dashboard.db import get_db
 
@@ -93,6 +98,11 @@ NOTES = {
         "danger",
         "Nothing opened or changed: choose a reason and a ticket or issue number.",
     ),
+    "call-needed": (
+        "danger",
+        "No call shown: choose a customer and a reason, and give a ticket or "
+        "issue number and the call's id as a log line writes it.",
+    ),
 }
 REASON_NEEDED = "reason-needed"
 STEP_REASON_NEEDED = "step-reason-needed"
@@ -100,6 +110,15 @@ STEP_REASON_NEEDED = "step-reason-needed"
 CUSTOMER_NOTES = frozenset({REASON_NEEDED, STEP_REASON_NEEDED})
 # The call list's days, as `domain/calls/log.py` DAYS_LISTED; the stack decides.
 DAYS_OFFERED = 14
+DEV = "/dev"
+NEW_CUSTOMER = "/new-customer"
+CALL_NEEDED = "call-needed"
+# The posts under /dev that only read; a post for the CSRF token's sake, as
+# the call list's (docs/23 §5). Every other write there is refused outside
+# dev and test.
+DEV_READS = frozenset({DEV + "/call"})
+# A call's id as the logs and the database write it.
+CALL_ID = re.compile(r"[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 DASH = "\N{EN DASH}"
 WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
@@ -244,6 +263,28 @@ def cookie(kind: str) -> str:
     return f"__Host-ops_{kind}" if secure() else f"ops_{kind}"
 
 
+@app.middleware("http")
+async def _dev_tools_only_read(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """The dev tools are read-only in production (docs/23 §5). The rule
+    stands here and not in a template: whatever is added under /dev later (a
+    simulated call writes real rows), a write there is refused outside dev and
+    test unless it is one of the named reads."""
+    # The path the router matches, without a prefix the app may be mounted under.
+    path = request.scope["path"]
+    if (
+        secure()
+        and (path == DEV or path.startswith(DEV + "/"))
+        and request.method not in ("GET", "HEAD")
+        and path not in DEV_READS
+    ):
+        return PlainTextResponse("the dev tools only read", status_code=405)
+    return await call_next(request)
+
+
+# Added after the rule above, so it runs before it: what did not come through
+# the proxy learns nothing about the paths behind it.
 @app.middleware("http")
 async def _through_the_proxy(
     request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -847,6 +888,113 @@ def customer_calls(
         "problem": found if isinstance(found, str) else "",
     }
     return _page(request, "calls.html", context)
+
+
+@app.get(DEV, response_class=HTMLResponse)
+def dev_tools(
+    request: Request,
+    note: str = "",
+    operator: access.Operator = Depends(require_operator),
+    db: Session = Depends(get_db),
+) -> Response:
+    """The dev tools (docs/23 §5): the recorded eval runs and measurements,
+    which hold nothing of a guest, and the form for the log of one call, which
+    is offered only to a session with a fresh second factor."""
+    context = {
+        "operator": operator,
+        "nav": "dev",
+        "evals": results.table(settings.operator_metrics_dir, results.EVALS),
+        "measurements": results.table(
+            settings.operator_metrics_dir, results.MEASUREMENTS
+        ),
+        "keys": [stack.key for stack in customers.stacks(db)],
+        "fresh": operator.fresh(now()),
+        "reasons": ops_reason.REASONS,
+        "note": NOTES[note] if note == CALL_NEEDED else None,
+    }
+    return _page(request, "dev.html", context)
+
+
+@app.post(DEV + "/call", response_class=HTMLResponse)
+def dev_call(
+    request: Request,
+    form: dict[str, str] = Depends(_form),
+    operator: access.Operator = Depends(require_step_up),
+    db: Session = Depends(get_db),
+) -> Response:
+    """The log of one call by its id: what a guest did, so everything of the
+    call list holds here (`customer_calls`): a post with the page's CSRF
+    token, the step-up, a listed reason, the session's account as the actor,
+    the question in the operator's audit before the stack is asked and what
+    came of it as a second row. The stack is asked with a GET; nothing is
+    changed there or kept here."""
+    _checked(request, form)
+    category, key = form.get("reason", ""), form.get("customer", "")
+    reason = ops_reason.reason(category, form.get("reference", ""))
+    wanted = form.get("call_id", "").strip().lower()
+    if reason is None or not key or not CALL_ID.fullmatch(wanted):
+        return RedirectResponse(
+            f"{DEV}?{urlencode({'note': CALL_NEEDED})}", status_code=303
+        )
+    stack = _stack(db, key)
+    call_id = uuid.UUID(wanted)
+    reference = reason.partition(" ")[2]
+    access.audit(
+        db,
+        operator.name,
+        "customer.call_log_asked",
+        {"reason": category, "reference": reference, "call": str(call_id)},
+        target=stack.key,
+    )
+    db.commit()
+    found = customers.call_log(stack, call_id, operator.name, reason)
+    if isinstance(found, str):
+        call, problem = None, found
+    else:
+        call = found.call
+        problem = "" if call else customers.NO_SUCH_CALL
+    # What the operator saw: a number of tool calls, or one of this module's
+    # own sentences. Nothing of a guest.
+    access.audit(
+        db,
+        operator.name,
+        "customer.call_log_shown" if call else "customer.call_log_not_shown",
+        {"call": str(call_id)}
+        | ({"tool_calls": len(call.tool_calls)} if call else {"problem": problem}),
+        target=stack.key,
+    )
+    db.commit()
+    context = {
+        "operator": operator,
+        "nav": "dev",
+        "key": stack.key,
+        "call_id": str(call_id),
+        "reason": ops_reason.REASONS[category],
+        "reference": reference,
+        "name": "" if isinstance(found, str) else found.tenant.name,
+        "answered": not isinstance(found, str),
+        "call": call,
+        "problem": problem,
+    }
+    return _page(request, "call_log.html", context)
+
+
+@app.get(NEW_CUSTOMER, response_class=HTMLResponse)
+def new_customer(
+    request: Request, operator: access.Operator = Depends(require_operator)
+) -> Response:
+    """The steps to a new customer and their commands, as text (the plan of
+    #571: the browser never runs provisioning). No form and no field: a stack
+    is made by `scripts/new_stack.py` on the host and enters the registry by
+    the command line, which hold the rules for a key, an address and a
+    token."""
+    context = {
+        "operator": operator,
+        "nav": "new",
+        "key_length": customers.KEY_MAX_LENGTH,
+        "reserved": sorted(customers.RESERVED_KEYS),
+    }
+    return _page(request, "new_customer.html", context)
 
 
 def _said(

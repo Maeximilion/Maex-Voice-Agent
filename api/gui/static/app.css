@@ -394,7 +394,7 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
    below 900 px, one card per customer with each value named by its column. */
 .ops-kopf{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s4);padding:var(--s2) var(--s4)}
 .ops-marke{font-family:var(--font-mono);font-weight:700;color:var(--accent);text-decoration:none}
-.ops-kopf nav{display:flex;gap:var(--s3);flex:1 1 auto}
+.ops-kopf nav{display:flex;flex-wrap:wrap;gap:var(--s3);flex:1 1 auto}
 .ops-kopf nav a{display:inline-flex;align-items:center;min-height:var(--tap);padding:0 var(--s3);color:var(--text);text-decoration:none;border-bottom:3px solid transparent}
 .ops-kopf nav a[aria-current]{border-bottom-color:var(--accent);font-weight:700}
 .ops-kopf form{display:flex;align-items:center;gap:var(--s3)}
