@@ -21,7 +21,7 @@
     <tbody>
       <tr>
         <th scope="row" data-label="Started">{{ call.started_at | shown }}</th>
-        <td data-label="Ended">{{ call.ended_at | shown }}</td>
+        <td data-label="Ended">{{ call.ended_at | shown or "not ended" }}</td>
         <td data-label="Duration">{{ call.duration_seconds | duration }}</td>
         <td data-label="Intent">{{ call.intent | intent }}</td>
         <td data-label="Outcome">{{ call.outcome | outcome }}{% if call.transfer_reason %} ({{ call.transfer_reason }}){% endif %}{% if call.line_note %} <span class="badge warn">{{ call.line_note | line_note }}</span>{% endif %}{% if call.is_test %} <span class="badge warn">self-test call</span>{% endif %}</td>

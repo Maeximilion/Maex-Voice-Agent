@@ -813,6 +813,23 @@ def test_what_the_stack_says_is_markup_shown_as_text(
     assert answer.text.count("&lt;img src=x onerror=alert(1)&gt;") == 7
 
 
+def test_a_call_that_has_not_ended_says_so(
+    client, factors, clock, sessions, monkeypatch
+):
+    def running(d: dict) -> None:
+        _call(d).update(ended_at=None, duration_seconds=None, outcome=None)
+        _call(d)["tool_calls"] = []
+
+    _world(sessions, monkeypatch, alpha=_ans(running))
+    _signed_in(client, factors, clock)
+    client.get("/dev")
+
+    answer = _post(client)
+
+    for expected in ("not ended", "running", "The call made no tool call."):
+        assert expected in answer.text, expected
+
+
 def test_more_tool_calls_than_were_sent_are_said(
     client, factors, clock, sessions, monkeypatch
 ):

@@ -195,12 +195,13 @@ def _tool_call(entry: Any) -> ToolCall:
     whatever else stands there is left out, not passed on."""
     found = entry if isinstance(entry, dict) else {}
     name, ms, code = (found.get(k) for k in ("name", "duration_ms", "error_code"))
-    timed = isinstance(ms, int | float) and not isinstance(ms, bool)
+    duration = None
+    # A bool is an int to Python and no duration.
+    if isinstance(ms, int | float) and not isinstance(ms, bool):
+        duration = float(ms) if 0 <= ms <= _LONGEST_MS else None
     return ToolCall(
         name=name[:_CODE_LENGTH] if isinstance(name, str) and name else "?",
-        duration_ms=float(ms)
-        if isinstance(ms, int | float) and timed and 0 <= ms <= _LONGEST_MS
-        else None,
+        duration_ms=duration,
         ok=found.get("ok") is True,
         error_code=code[:_CODE_LENGTH] if isinstance(code, str) and code else None,
     )
