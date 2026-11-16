@@ -414,7 +414,10 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 .ops [hidden]{display:none}
 .ops-teil{display:grid;gap:var(--s3)}
 .ops-teil h2,.ops-teil h3{margin:0;font-size:var(--fs-h2)}
-.ops-zeile{display:flex;flex-wrap:wrap;gap:var(--s3);align-items:center}
+/* A list is as wide as its longest entry: in a card (a grid) it would widen the
+   page on a phone, so the row may shrink and its fields end at the row. */
+.ops-zeile{display:flex;flex-wrap:wrap;gap:var(--s3);align-items:center;min-width:0}
+.ops-zeile select,.ops-zeile input{max-width:100%}
 .ops-zeile label{font-weight:600}
 .ops-zeile input{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);padding:var(--s2) var(--s3);min-height:var(--tap)}
 .ops-zeile button,.ops-liste button{min-height:var(--tap)}
