@@ -61,7 +61,7 @@ def upgrade() -> None:
         sa.Column("bound_to", sa.Text(), nullable=False),
         sa.Column("purpose", sa.Text(), nullable=False),
         sa.Column("challenge", sa.LargeBinary(), nullable=False),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False, index=True),
         sa.UniqueConstraint("bound_to", "purpose", name="uq_operator_challenge_holder"),
     )
     op.add_column(

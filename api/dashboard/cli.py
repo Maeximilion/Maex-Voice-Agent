@@ -12,7 +12,8 @@ looks after.
 in the shell history and the process list), and print the TOTP link for the
 authenticator app and ten recovery codes, once. `reset` also ends every session,
 removes every passkey and forgets every device of the account. SSH to the host is root anyway, so
-this needs no second factor of its own.
+this needs no second factor of its own. Both go as a push to the `ops`
+topic, like every changed factor.
 
 `customer-add` takes the stack's `OPS_TOKEN` the same way: asked for, or read
 from standard input when it is piped in, never as an argument. Run again for a
@@ -24,7 +25,7 @@ import argparse
 import sys
 from getpass import getpass
 
-from api.dashboard import totp
+from api.dashboard import push, totp
 from api.dashboard.access import audit, create_account, reset_account
 from api.dashboard.customers import (
     BadCustomer,
@@ -50,6 +51,11 @@ def _account(command: str, name: str) -> int:
             print(problem, file=sys.stderr)
             return 1
     name = name.strip().lower()
+    did = "account created" if command == "add" else "every factor reset"
+    try:
+        push.notify("Operator sign-in changed", f"{name}: {did} on the operator host")
+    except Exception as problem:  # noqa: BLE001  the break glass works without the push
+        print(f"The push to ops failed: {type(problem).__name__}", file=sys.stderr)
     # The one place the secret is shown: inside the link (its `secret=` value is
     # what an app without link import takes typed in).
     print("Add this link to the authenticator app, or type in its secret= value:")

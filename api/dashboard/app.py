@@ -29,7 +29,6 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode
 from zoneinfo import ZoneInfo
 
-import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -82,6 +81,7 @@ NOTES = {
     ),
 }
 PUSH_TITLE = "Operator sign-in changed"
+COPY = "a passkey answered with an old counter, a copy?"
 JSON_ONCE = {"Cache-Control": "no-store"}
 # Times are stored and sent in UTC and shown in the restaurants' time.
 SHOWN_IN = ZoneInfo("Europe/Berlin")
@@ -249,10 +249,12 @@ def require_step_up(
 
 def _alert(db: Session, operator: str, what: str) -> None:
     """Tell the `ops` topic that a way into the dashboard changed. The change
-    is committed and audited already; a push that fails is audited too."""
+    is committed and audited already; a push that fails, for whatever reason,
+    is audited too and never fails the request (a recovery code is spent by
+    then, and its sign-in must still get its session)."""
     try:
         push.notify(PUSH_TITLE, f"{operator}: {what}")
-    except httpx.HTTPError as problem:
+    except Exception as problem:  # noqa: BLE001  the push must not undo what it reports
         log(logger, logging.ERROR, "Operator push failed", error=error_text(problem))
         access.audit(db, operator, "operator.push_failed", {"what": what})
         db.commit()
@@ -312,6 +314,8 @@ def login_post(
             attempt_token=request.cookies.get(cookie("attempt"), ""),
         )
     except access.SignInRefused as refused:
+        if refused.copy:
+            _alert(db, form.get("name", "").strip().lower(), COPY)
         return _page(request, "login.html", {"message": _refusal(refused)}, 401)
     if signed.factor == "recovery":
         _alert(db, form.get("name", "").strip().lower(), "a recovery code was used")
@@ -406,6 +410,8 @@ def step_up_post(
             passkey=form.get("passkey", ""),
         )
     except access.SignInRefused as refused:
+        if refused.copy:
+            _alert(db, operator.name, COPY)
         context = {"next": back, "message": _refusal(refused), **_ways(db, operator)}
         return _page(request, "step_up.html", context, 401)
     return RedirectResponse(back, status_code=303)

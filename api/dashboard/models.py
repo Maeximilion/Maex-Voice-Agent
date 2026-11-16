@@ -135,7 +135,10 @@ class OperatorChallenge(Base):
     bound_to: Mapped[str] = mapped_column(Text, nullable=False)
     purpose: Mapped[str] = mapped_column(Text, nullable=False)
     challenge: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    expires_at: Mapped[datetime] = _at()
+    # Indexed: every new challenge sweeps the expired ones out first.
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True
+    )
 
 
 class OperatorDevice(Counted, Base):

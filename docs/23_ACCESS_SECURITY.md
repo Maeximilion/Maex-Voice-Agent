@@ -168,17 +168,22 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   purpose: the session for a registration or a step-up, a cookie of the sign-in attempt
   (`__Host-ops_attempt`) for a sign-in. The challenge is taken out by the first post that brings
   it, whatever else that post got wrong, and is worthless after five minutes. A challenge of one
-  purpose answers no other. Anyone may ask for a sign-in challenge, so only the newest 1,000 are
-  kept.
+  purpose answers no other. Nobody's challenge is removed to make room for another's: anyone may
+  ask for a sign-in challenge, and a flood of them must not take the operator's away. Unanswered
+  ones are swept out after their five minutes; a limit on how often the route may be asked belongs
+  to the proxy's site (still to come).
+- **An answer is input from outside.** At most 32,768 characters are parsed, and whatever the
+  parsing or the check raises is a refusal, never a server error: at the sign-in that runs after
+  the password check, and an error there would tell that the password was right.
 - **Sign-in.** Name and password travel with the passkey's answer in one post, checked in the old
   order: count the attempt, the password, then the factor. The operator is verified on the device
   (PIN, finger, face) at every use and the passkey is stored on it (discoverable), so the challenge
   names no credential and the sign-in page tells nothing about any account. A wrong password, a
   wrong or foreign passkey, a spent or expired challenge and another site's origin get the one
   sentence of every refusal and count toward the same waits.
-- **A copy shows.** A signature counter that does not grow is refused and audited as
-  `operator.sign_in_failed` with `reason` `counter`; passkeys a platform syncs send 0 every time
-  and are exempt. A device that holds a passkey of the account is left out of the next
+- **A copy shows.** A signature counter that does not grow is refused, audited as
+  `operator.sign_in_failed` (at the step-up `operator.step_up_failed`) with `reason` `counter`
+  and pushed to `ops`; passkeys a platform syncs send 0 every time and are exempt. A device that holds a passkey of the account is left out of the next
   registration, so two passkeys are two devices.
 - **The page `/factors`** lists the passkeys and registers, names and removes them, proposes a new
   TOTP secret (in force only after a code of it came back, so a secret that never reached the app
@@ -191,12 +196,14 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   count and wait as at the sign-in. A stale request is sent to `/step-up` and back to a path of
   this site; a stale write is dropped, never replayed. Today it stands before every change of a
   factor and the sight of a new TOTP secret; the later parts name it on their routes.
-- **Audit and push.** A new or removed passkey, a new or removed TOTP secret and a used recovery
-  code are in the operator's audit and go as a push to the `ops` topic from one place,
+- **Audit and push.** A new or removed passkey, a new or removed TOTP secret, a used recovery
+  code, and on the host a new account and the break glass are in the operator's audit and go as a
+  push to the `ops` topic from one place,
   `dashboard/push.py`, which publishes as a stack's monitor does (`api/jobs/monitor.py`) once
   `OPERATOR_PUSH_URL` and `OPERATOR_PUSH_TOKEN` are set. Until the operator stack has its Compose
-  file both are empty and the push is only logged; a push the server refuses is audited as
-  `operator.push_failed`. The break glass removes every passkey too.
+  file both are empty and the push is only logged; a push that fails, for whatever reason, is
+  audited as `operator.push_failed` and never fails the request it reports. The break glass
+  removes every passkey too.
 - **Browser side.** `api/gui/ts/passkey.ts`, compiled, no inline script: it fetches the options,
   runs the ceremony and puts the answer into a hidden field of an ordinary form. A browser without
   the WebAuthn JSON helpers (before Chrome 129, Firefox 119, Safari 18.4) shows no passkey button;

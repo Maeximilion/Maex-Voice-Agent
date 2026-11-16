@@ -73,11 +73,14 @@ NAME = re.compile(r"[a-z0-9._-]{2,40}")
 
 
 class SignInRefused(Exception):
-    """Any wrong input, or a wait that still runs (`wait_minutes`)."""
+    """Any wrong input, or a wait that still runs (`wait_minutes`). `copy`
+    says that a passkey of the account answered with a counter that did not
+    grow: the browser hears nothing of it, the operator must."""
 
-    def __init__(self, wait_minutes: int | None = None):
+    def __init__(self, wait_minutes: int | None = None, copy: bool = False):
         super().__init__("sign-in refused")
         self.wait_minutes = wait_minutes
+        self.copy = copy
 
 
 class FactorNeeded(Exception):
@@ -156,7 +159,7 @@ def sign_in(
         repeat = not passkey and _just_signed_in(db, account, code, now)
         db.rollback()
         _note_failure(db, name, address, "repeat" if repeat else why)
-        raise SignInRefused()
+        raise SignInRefused(copy=why == "counter")
     if not trusted:
         _forgive(db, account, address)
     device_token = _trust_device(db, account, device_token, now)
@@ -272,7 +275,7 @@ def step_up(
             {"reason": why, "address": address},
         )
         db.commit()
-        raise SignInRefused()
+        raise SignInRefused(copy=why == "counter")
     if trusted:
         device = _device(db, account.id, device_token)
         if device is not None:

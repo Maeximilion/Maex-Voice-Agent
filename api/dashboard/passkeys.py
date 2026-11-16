@@ -9,7 +9,13 @@ this module holds to:
 - A challenge is 32 random bytes, kept in the database for one holder and one
   purpose: the session for a registration or a step-up, the sign-in attempt's
   cookie for a sign-in. It is taken out before its answer is looked at, so it
-  is never checked twice, and it is worthless after five minutes.
+  is never checked twice, and it is worthless after five minutes. Nobody's
+  challenge is ever removed to make room for another's: anyone may ask for a
+  sign-in challenge, and a flood must not take the operator's away.
+- An answer is input from outside until it is verified. Whatever its parsing
+  or its check raises is a refusal, never a server error: at the sign-in that
+  runs after the password check, and an error there would tell that the
+  password was right.
 - The operator is verified on the device (PIN, finger, face) at every use, and
   the passkey is stored on it (discoverable), so the sign-in page hands out no
   list of credentials to someone who only knows a name.
@@ -40,7 +46,6 @@ from webauthn.helpers import (
     parse_client_data_json,
     parse_registration_credential_json,
 )
-from webauthn.helpers.exceptions import WebAuthnException
 from webauthn.helpers.structs import (
     AuthenticatorSelectionCriteria,
     PublicKeyCredentialDescriptor,
@@ -49,21 +54,20 @@ from webauthn.helpers.structs import (
 )
 
 from api.dashboard.config import settings
-from api.dashboard.models import OperatorChallenge, OperatorPasskey
+from api.dashboard.models import OperatorAccount, OperatorChallenge, OperatorPasskey
 from api.domain.access.hashing import token_hash
 
 CHALLENGE_LIFE = timedelta(minutes=5)
 CHALLENGE_BYTES = 32
 # The browser's own limit for one ceremony, in milliseconds.
 TIMEOUT_MS = 120_000
-# Anyone may ask for a sign-in challenge; only this many are kept.
-ATTEMPTS_KEPT = 1000
+# Characters of an answer. A device's is one to four thousand; nothing
+# longer is parsed.
+ANSWER_MAX = 32_768
 PASSKEYS_MAX = 10
 NAME_MAX = 40
 RP_NAME = "Maex Operator"
 REGISTER, SIGN_IN, STEP_UP = "register", "sign-in", "step-up"
-# What a broken or forged answer makes the library and its parsers raise.
-BROKEN = (WebAuthnException, ValueError, TypeError, KeyError)
 
 
 class Refused(Exception):
@@ -99,19 +103,6 @@ def issue(db: Session, bound_to: str, purpose: str, now: datetime) -> bytes:
             set_={"challenge": challenge, "expires_at": expires},
         )
     )
-    if purpose == SIGN_IN:
-        newest = (
-            select(OperatorChallenge.id)
-            .where(OperatorChallenge.purpose == SIGN_IN)
-            .order_by(OperatorChallenge.expires_at.desc(), OperatorChallenge.id.desc())
-            .limit(ATTEMPTS_KEPT)
-        )
-        db.execute(
-            delete(OperatorChallenge).where(
-                OperatorChallenge.purpose == SIGN_IN,
-                OperatorChallenge.id.not_in(newest),
-            )
-        )
     db.commit()
     return challenge
 
@@ -204,7 +195,14 @@ def register(
     name = " ".join(name.split())
     if not 1 <= len(name) <= NAME_MAX or not name.isprintable():
         raise Refused("name")
-    if challenge is None or count(db, account_id) >= PASSKEYS_MAX:
+    # The account's row is held, so two registrations at once count each other.
+    db.get(OperatorAccount, account_id, with_for_update=True)
+    if (
+        challenge is None
+        or len(answer) > ANSWER_MAX
+        or count(db, account_id) >= PASSKEYS_MAX
+    ):
+        db.rollback()
         raise Refused()
     try:
         credential = parse_registration_credential_json(answer)
@@ -216,11 +214,13 @@ def register(
             expected_origin=settings.operator_origin,
             require_user_verification=True,
         )
-    except BROKEN as problem:
+    except Exception as problem:  # any error here is a refusal (module docstring)
+        db.rollback()
         raise Refused() from problem
     # A page of this site inside another site's frame: the library reads the
     # flag and leaves the decision to us.
     if client.cross_origin:
+        db.rollback()
         raise Refused()
     row = OperatorPasskey(
         account_id=account_id,
@@ -270,25 +270,28 @@ def verify(
     """Check an assertion against the challenge taken for it: a passkey of
     this account, this site's origin, the operator verified on the device, a
     counter that grew. Raises `Refused`; the caller commits."""
-    if challenge is None:
+    if challenge is None or len(answer) > ANSWER_MAX:
         raise Refused()
     try:
         credential = parse_authentication_credential_json(answer)
         client = parse_client_data_json(credential.response.client_data_json)
-        row = db.scalars(
-            select(OperatorPasskey)
-            .where(
-                OperatorPasskey.credential_id == credential.raw_id,
-                OperatorPasskey.account_id == account_id,
-            )
-            .with_for_update()
-        ).first()
-        if (
-            row is None
-            or client.cross_origin
-            or credential.response.user_handle not in (None, account_id.bytes)
-        ):
-            raise Refused()
+    except Exception as problem:  # any error here is a refusal (module docstring)
+        raise Refused() from problem
+    row = db.scalars(
+        select(OperatorPasskey)
+        .where(
+            OperatorPasskey.credential_id == credential.raw_id,
+            OperatorPasskey.account_id == account_id,
+        )
+        .with_for_update()
+    ).first()
+    if (
+        row is None
+        or client.cross_origin
+        or credential.response.user_handle not in (None, account_id.bytes)
+    ):
+        raise Refused()
+    try:
         # The counter is compared below, not by the library, so that a copy
         # gets its own word in the audit.
         verified = verify_authentication_response(
@@ -300,7 +303,7 @@ def verify(
             credential_current_sign_count=0,
             require_user_verification=True,
         )
-    except BROKEN as problem:
+    except Exception as problem:  # any error here is a refusal (module docstring)
         raise Refused() from problem
     # Passkeys synced by a platform never count and send 0 every time.
     if (verified.new_sign_count or row.sign_count) and (

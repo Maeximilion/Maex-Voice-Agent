@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import sessionmaker
 
-from api.dashboard import access, passkeys, push
+from api.dashboard import access, cli, passkeys, push
 from api.dashboard import app as web
 from api.dashboard.config import settings
 from api.dashboard.db import get_db
@@ -1100,21 +1100,21 @@ def test_expired_challenges_of_anyone_are_pruned_by_the_next_one(sessions):
     assert holders == {"session:b", "session:c"}
 
 
-def test_only_the_newest_sign_in_challenges_are_kept(sessions, monkeypatch):
-    monkeypatch.setattr(passkeys, "ATTEMPTS_KEPT", 3)
+def test_a_flood_of_sign_in_challenges_takes_nobody_elses_away(
+    client, factors, clock, sessions
+):
+    """Security review of 16.11.2026: only the newest 1,000 sign-in challenges
+    were kept, so anyone could push the operator's out while the device was
+    being touched; the refusal then counted toward the operator's wait."""
+    device = _with_passkey(client, factors, clock)
+    passkey = device.get(_asked(client), ORIGIN)
     with sessions() as db:
-        for number in range(2):
-            passkeys.issue(db, f"session:{number}", passkeys.REGISTER, START)
-            passkeys.issue(db, f"session:{number}", passkeys.STEP_UP, START)
-        for number in range(5):
-            at = START + timedelta(seconds=number)
-            passkeys.issue(db, passkeys.for_attempt(f"t{number}"), passkeys.SIGN_IN, at)
-        rows = list(db.scalars(select(OperatorChallenge)))
-    purposes = [row.purpose for row in rows]
-    assert purposes.count(passkeys.REGISTER) == 2
-    assert purposes.count(passkeys.STEP_UP) == 2
-    kept = {row.bound_to for row in rows if row.purpose == passkeys.SIGN_IN}
-    assert kept == {passkeys.for_attempt(f"t{number}") for number in (2, 3, 4)}
+        for number in range(1001):
+            passkeys.issue(
+                db, passkeys.for_attempt(f"flood{number}"), passkeys.SIGN_IN, clock.at
+            )
+    answer = _post(client, "/login", name="maxi", password=PASSWORD, passkey=passkey)
+    assert answer.status_code == 303
 
 
 def test_a_challenge_is_taken_once(sessions):
@@ -1231,3 +1231,112 @@ def test_the_start_page_asks_for_a_passkey_until_there_is_one(client, factors, c
     assert "No passkey yet" in client.get("/").text
     assert "passkey-added" in _register(client, Device()).headers["location"]
     assert "No passkey yet" not in client.get("/").text
+
+
+# --- security review of 16.11.2026 --------------------------------------------------
+
+# Deep enough for json.loads to give up with RecursionError, which is no
+# ValueError; small enough for the proxy's body limit.
+NESTED = "[" * 50_000
+
+
+@pytest.mark.parametrize("password", [PASSWORD, "falsches-passwort"])
+def test_a_passkey_field_the_parser_chokes_on_tells_nothing_about_the_password(
+    client, factors, clock, sessions, password
+):
+    """The parse runs after the password check: a server error there answered
+    500 for a right password and 401 for a wrong one, and skipped the audit."""
+    _asked(client)
+    answer = _post(client, "/login", name="maxi", password=password, passkey=NESTED)
+    _refused(client, answer)
+    reasons = [
+        row.detail["reason"] for row in _audited(sessions, "operator.sign_in_failed")
+    ]
+    assert reasons == ["factor" if password == PASSWORD else "password"]
+
+
+def test_a_passkey_field_the_parser_chokes_on_registers_and_steps_up_nothing(
+    client, factors, clock, sessions
+):
+    _signed_in(client, factors, clock)
+    _post(client, "/factors/passkeys/options")
+    answer = _post(client, "/factors/passkeys", name="Laptop", passkey=NESTED)
+    assert answer.headers["location"] == "/factors?note=passkey-refused"
+    _post(client, "/step-up/passkey/options")
+    answer = _post(client, "/step-up", next="/factors", passkey=NESTED)
+    assert answer.status_code == 401 and web.FAILED in answer.text
+    assert _rows(sessions) == []
+
+
+def test_an_answer_longer_than_any_device_gives_is_not_parsed(
+    client, factors, clock, monkeypatch
+):
+    device = _with_passkey(client, factors, clock)
+    monkeypatch.setattr(passkeys, "ANSWER_MAX", 100)
+    _refused(client, _passkey_sign_in(client, device))
+
+
+@pytest.mark.parametrize(
+    "broken", [httpx.InvalidURL("no scheme"), RuntimeError("anything")]
+)
+def test_a_push_that_breaks_in_any_way_does_not_cost_the_recovery_code_its_session(
+    client, factors, sessions, monkeypatch, broken
+):
+    """`httpx.InvalidURL` (a mistyped OPERATOR_PUSH_URL) is no `HTTPError`: the
+    code was spent and the answer was a 500 without the session cookie."""
+
+    def notify(title: str, text: str) -> bool:
+        raise broken
+
+    monkeypatch.setattr(push, "notify", notify)
+    answer = _sign_in(client, factors.recovery_codes[0])
+    assert answer.status_code == 303 and client.cookies.get("ops_session")
+    assert len(_audited(sessions, "operator.push_failed")) == 1
+
+
+def test_a_copy_of_a_passkey_is_pushed(client, factors, clock, pushes):
+    device = _with_passkey(client, factors, clock)
+    pushes.clear()
+    _refused(client, _passkey_sign_in(client, device, sign_count=1))
+    assert pushes == ["maxi: a passkey answered with an old counter, a copy?"]
+    # A refusal for any other reason stays silent.
+    clock.at += timedelta(seconds=1)
+    _refused(client, _passkey_sign_in(client, device, verified=False))
+    assert len(pushes) == 1
+
+
+def test_a_copy_of_a_passkey_at_the_step_up_is_pushed(client, factors, clock, pushes):
+    _signed_in(client, factors, clock)
+    device = Device()
+    _register(client, device)
+    pushes.clear()
+    options = _post(client, "/step-up/passkey/options").text
+    passkey = device.get(options, ORIGIN, sign_count=1)
+    answer = _post(client, "/step-up", next="/factors", passkey=passkey)
+    assert answer.status_code == 401
+    assert pushes == ["maxi: a passkey answered with an old counter, a copy?"]
+
+
+def test_the_break_glass_and_a_new_account_are_pushed(sessions, monkeypatch, pushes):
+    monkeypatch.setattr(cli, "SessionLocal", sessions)
+    monkeypatch.setattr(cli, "getpass", lambda _prompt: PASSWORD)
+    assert cli.main(["add", "maxi"]) == 0
+    assert cli.main(["reset", "Maxi"]) == 0
+    assert pushes == [
+        "maxi: account created on the operator host",
+        "maxi: every factor reset on the operator host",
+    ]
+
+
+def test_the_break_glass_works_when_the_push_does_not(
+    sessions, monkeypatch, capsys, factors
+):
+    def notify(title: str, text: str) -> bool:
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr(push, "notify", notify)
+    monkeypatch.setattr(cli, "SessionLocal", sessions)
+    monkeypatch.setattr(cli, "getpass", lambda _prompt: PASSWORD)
+    assert cli.main(["reset", "maxi"]) == 0
+    printed = capsys.readouterr()
+    assert "otpauth://" in printed.out and "push" in printed.err
