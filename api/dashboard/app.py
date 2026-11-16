@@ -82,7 +82,7 @@ NOTES = {
 }
 PUSH_TITLE = "Operator sign-in changed"
 COPY = "a passkey answered with an old counter, a copy?"
-JSON_ONCE = {"Cache-Control": "no-store"}
+NO_STORE = {"Cache-Control": "no-store"}
 # Times are stored and sent in UTC and shown in the restaurants' time.
 SHOWN_IN = ZoneInfo("Europe/Berlin")
 
@@ -267,7 +267,7 @@ def _refusal(refused: access.SignInRefused) -> str:
 
 
 def _json(body: str) -> Response:
-    return Response(body, media_type="application/json", headers=JSON_ONCE)
+    return Response(body, media_type="application/json", headers=NO_STORE)
 
 
 def watching_operator(request: Request, db: Session = Depends(get_db)) -> None:
@@ -462,7 +462,7 @@ def factors_page(
         "note": NOTES.get(note),
     }
     response = _page(request, "factors.html", context)
-    response.headers.update(JSON_ONCE)
+    response.headers.update(NO_STORE)
     return response
 
 
