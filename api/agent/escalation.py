@@ -293,11 +293,15 @@ def asks_about_allergies(text: str) -> bool:
 
 # A question about what is in a dish: "Ist in den Frühlingsrollen Gluten?",
 # "Hat die 13 Nüsse?", "Ist da Milch drin?". "Haben Sie ..." asks for a dish
-# ("Haben Sie Erdnuss-Curry?"), not about one.
+# ("Haben Sie Erdnuss-Curry?"), not about one. A bare "in" is a time ("in 20
+# Minuten abholen"), and an extra asked for is an order ("Hat die 42
+# Erdnusssauce als Extra?", #764 review, P2).
 _ASKS_WHATS_IN = re.compile(
-    r"\b(?:drin|darin|drinnen|enth(?:ä|ae)lt|enthalten|in|im)\b"
+    r"\b(?:drin|darin|drinnen|enth(?:ä|ae)lt|enthalten|im)\b"
+    r"|\bin (?:der|dem|den|die|das|diese[mnr]?|nummer|nr)\b"
     r"|\b(?:hat|haben)\b(?!\s+(?:sie|ihr)\b)"
 )
+_ASKS_FOR_AN_EXTRA = re.compile(r"\bextra\b|\bdazu\b|\bals beilage\b")
 
 
 def asks_about_an_allergen(text: str) -> bool:
@@ -314,6 +318,7 @@ def asks_about_an_allergen(text: str) -> bool:
         is_question(sentence)
         and names_an_allergen(sentence)
         and _ASKS_WHATS_IN.search(sentence.lower()) is not None
+        and _ASKS_FOR_AN_EXTRA.search(sentence.lower()) is None
         for sentence in _not_denied(text)
     )
 

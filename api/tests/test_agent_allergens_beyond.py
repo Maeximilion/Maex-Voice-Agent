@@ -736,6 +736,8 @@ def test_a_wish_or_the_guests_allergy_said_back_is_no_allergen_answer(
         "Hat die 13 Nüsse?",
         "Und ist da auch Soja drin?",
         "Ist da Milch drin?",
+        "Ist im Curry Erdnuss?",
+        "Ist in Nummer 13 Sesam?",
     ],
 )
 def test_these_ask_whether_an_allergen_is_in_a_dish(said):
@@ -750,6 +752,10 @@ def test_these_ask_whether_an_allergen_is_in_a_dish(said):
         "Die 13 ohne Erdnüsse bitte.",
         "Was kostet die 23?",
         "Ist in der 13 Koriander?",
+        # Ordering questions that name an allergen (#764 review, P2).
+        "Kann ich die 30 mit Garnelen in 20 Minuten abholen?",
+        "Hat die 42 Erdnusssauce als Extra?",
+        "Kann ich Erdnusssauce dazu haben?",
     ],
 )
 def test_these_do_not_ask_whether_an_allergen_is_in_a_dish(said):

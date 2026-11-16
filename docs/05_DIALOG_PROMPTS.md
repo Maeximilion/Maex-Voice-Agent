@@ -202,7 +202,8 @@ noch Sesam", "da kommen keine Nüsse rein", "da ist nix von Sesam drin" and an
 allergen asked back before the answer ("Nüsse? Nein, die sind nicht drin."),
 in a sentence and in a note alike; "Das ist kein Problem", a kitchen note
 "Gast ist allergisch, keine Nüsse" and "weder Nüsse noch Sesam" with no verb
-of content are none. A wish said back ("die 13 ohne Erdnüsse, notiert") and the
+of content are none, but "Nüsse sind bei der 13 kein Problem" is one: the set
+phrase drops only in a clause that names no allergen. A wish said back ("die 13 ohne Erdnüsse, notiert") and the
 model asking "Sind Sie sicher, dass ...?" do not (#656). A card never
 carries a note with a health word (`wishes.speaks_of_health`: an allergy
 word, "Zöliakie", "reagiert auf", "darf kein"): its line reads "Hinweis für
