@@ -34,6 +34,7 @@ from api.dashboard.customers import (
     remove_customer,
 )
 from api.dashboard.db import SessionLocal
+from api.dashboard.models import Customer
 
 ACTOR = "cli"
 
@@ -73,12 +74,15 @@ def _customer_add(key: str, url: str) -> int:
         else sys.stdin.readline()
     )
     with SessionLocal() as db:
+        known = db.get(Customer, key.strip()) is not None
         try:
             row = add_customer(db, key, url, token)
         except BadCustomer as problem:
             print(problem, file=sys.stderr)
             return 1
-        audit(db, ACTOR, "customer.added", {"api_url": row.api_url}, target=row.key)
+        # A second run moves the address or rotates the token: not an addition.
+        action = "customer.changed" if known else "customer.added"
+        audit(db, ACTOR, action, {"api_url": row.api_url}, target=row.key)
         db.commit()
     print(f"{row.key}: {row.api_url}")
     return 0

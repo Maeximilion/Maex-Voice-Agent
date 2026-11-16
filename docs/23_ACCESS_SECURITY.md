@@ -150,7 +150,12 @@ from a registry in the operator database (`operator_customers`, migration op002)
 of the stack's ops API on its `ops` network and its `OPS_TOKEN`, added on the operator host with
 `python -m api.dashboard.cli customer-add <key> http://<api container>:8000`, which asks for the
 token or reads it from standard input, never from an argument, and never prints it;
-`customer-remove` and `customers` beside it, each change in the operator's audit. The token is
+`customer-remove` and `customers` beside it, each change in the operator's audit (`customer.added`,
+`customer.changed` for a second run that moves the address or rotates the token,
+`customer.removed`). The key follows the rule of a stack's `tenants.customer_key`, at most 32
+characters, and the address is stored as `http://<host>:<port>` rebuilt from its parts; `https` is
+not taken, the `ops` network is internal and a handshake is one more wait the list's deadline
+cannot end. The token is
 stored readable, because the dashboard sends it (as the TOTP secret, T7); no two customers share an
 address or a token. Each stack is asked at once with three seconds to answer (§8). The rows come
 again every 30 seconds; that request checks the session but does not keep it alive, so an open tab
@@ -444,12 +449,18 @@ guest's data.
   `api/dashboard/customers.py`): a stack that was taken over may answer anything. The dashboard
   reads at most 64 kB as they arrive (it asks for no packed answer and takes none, so nothing
   is unpacked before the limit), gives the whole list five seconds (a stack that trickles its answer
-  is a row "answers too slowly" and delays nobody), checks every field (types, lengths, at most 50
+  is a row "answers too slowly" and delays nobody: every stack has a worker of its own, so none
+  waits unasked behind slow ones), checks every field (types, lengths, at most 50
   alarms, times with an offset and between 2000 and 2100, so none overflows when it is shown), requires the answer to name the customer the row was asked for ("another customer
-  answers at this address" otherwise), and shows everything as text. The token goes to the
+  answers at this address" otherwise; a stack whose restaurant has no `customer_key` is a red row
+  "its restaurant has no customer key yet", because nothing ties its answer to the customer), and
+  shows everything as text. Counts are at most 10^9 and the list's cells break a long word, so one
+  stack cannot widen the table for all. Every page and the list's refresh are sent with
+  `Cache-Control: no-store`: after a sign-out the Back button shows nothing from the cache. The token goes to the
   registered address only: no redirect is followed and no proxy variable of the host is read. Whatever
   one customer's row trips over, the others are still shown: that row reads "could not be asked"
-  and the cause goes to the log. The customer's page asks through the same two functions (`_fetch`,
+  and the kind of failure with its place in the code goes to the log, never its message (that can
+  quote a header with the token). The customer's page asks through the same two functions (`_fetch`,
   `_at_once`), so the rules hold for every question: the figures have the same 64 kB, the calls of a
   day 512 kB and at most 2000 rows, every count is at most 10^9 and every percentage at most 100 (a
   number of a thousand digits is valid JSON too), every day lies between 2000 and 2100 (the page

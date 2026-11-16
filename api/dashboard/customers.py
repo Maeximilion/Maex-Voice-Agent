@@ -17,6 +17,7 @@ and `_at_once`, which hold these rules; there is no second way to a stack.
 import logging
 import re
 import time
+import traceback
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as NotInTime
@@ -47,6 +48,8 @@ logger = logging.getLogger(__name__)
 
 # api/models/tenants.py CUSTOMER_KEY.
 KEY = re.compile(r"[a-z][a-z0-9]*(-[a-z0-9]+)*")
+# `ck_tenants_customer_key`: a longer key is one no stack's tenant can have.
+KEY_MAX_LENGTH = 32
 # A container name or host on the stack's `ops` network, with a port.
 HOST = re.compile(r"[a-z0-9]([a-z0-9._-]*[a-z0-9])?")
 STATUS_PATH = "/v1/ops/status"
@@ -63,7 +66,6 @@ MAX_ANSWER_BYTES = 64 * 1024
 # A call is under 250 bytes, and a restaurant does not take 2000 calls a day.
 MAX_CALLS = 2000
 MAX_CALLS_BYTES = 512 * 1024
-MAX_AT_ONCE = 8
 
 UNREACHABLE = "not reachable"
 TOO_SLOW = "answers too slowly"
@@ -75,6 +77,7 @@ NOT_TAKEN = "does not take this request"
 NOT_KNOWN = "does not know this question (an older version?)"
 NO_RESTAURANT = "no restaurant in the stack yet"
 OTHER_CUSTOMER = "another customer answers at this address"
+NO_KEY = "its restaurant has no customer key yet"
 
 Short = Annotated[str, Field(max_length=200)]
 EARLIEST = datetime(2000, 1, 1, tzinfo=UTC)
@@ -116,8 +119,8 @@ class _Tenant(_Answer):
 
 
 class _Today(_Answer):
-    calls: int = Field(ge=0)
-    orders: int = Field(ge=0)
+    calls: Count
+    orders: Count
 
 
 class _Bridge(_Answer):
@@ -129,13 +132,13 @@ class _Bridge(_Answer):
 class _Alarm(_Answer):
     kind: Short
     last_at: Time
-    count: int = Field(ge=0)
+    count: Count
 
 
 class _Menu(_Answer):
-    items: int = Field(ge=0)
-    price_differences: int = Field(ge=0)
-    without_allergen_information: int = Field(ge=0)
+    items: Count
+    price_differences: Count
+    without_allergen_information: Count
 
 
 class _Named(_Answer):
@@ -258,7 +261,8 @@ class BadCustomer(ValueError):
 def checked_url(api_url: str) -> str:
     """`http://host:port`, nothing else: no path, no query, no user or password
     in it. Plain HTTP is right here, the `ops` network is internal to the host
-    (docs/23 §8); `https` is taken too."""
+    (docs/23 §8), and `https` is not taken: its handshake is one more wait
+    that the deadline of the list cannot end."""
     url = api_url.strip().rstrip("/")
     try:
         parts = urlsplit(url)
@@ -266,26 +270,27 @@ def checked_url(api_url: str) -> str:
     except ValueError as problem:
         raise BadCustomer(f"not an address: {problem}") from problem
     host = parts.hostname or ""
+    # What is stored is built from the parts, and the input must be that and
+    # nothing more: `http://api:8000?` has an empty query, which is no query
+    # to `urlsplit`, and the question's path would be glued on behind the `?`.
+    built = f"{parts.scheme}://{host}:{port}"
     if (
-        parts.scheme not in ("http", "https")
+        parts.scheme != "http"
         or not HOST.fullmatch(host)
         or port is None
-        or parts.netloc != f"{host}:{port}"
-        or parts.path
-        or parts.query
-        or parts.fragment
+        or url != built
     ):
         raise BadCustomer("the address is http://<host>:<port>, nothing after it")
-    return url
+    return built
 
 
 def add_customer(db: Session, key: str, api_url: str, token: str) -> Customer:
     """Add a customer or replace its address and token (a rotated `OPS_TOKEN`)."""
     key, token = key.strip(), token.strip()
-    if not KEY.fullmatch(key) or key in RESERVED_KEYS:
+    if not KEY.fullmatch(key) or len(key) > KEY_MAX_LENGTH or key in RESERVED_KEYS:
         raise BadCustomer(
-            "the key is lower case letters, digits and single hyphens, and not "
-            + ", ".join(sorted(RESERVED_KEYS))
+            "the key is lower case letters, digits and single hyphens, at most "
+            f"{KEY_MAX_LENGTH} characters, and not " + ", ".join(sorted(RESERVED_KEYS))
         )
     # ASCII: the token travels in a header, which takes nothing else.
     if not (valid_production_token(token) and token.isascii() and token.isprintable()):
@@ -399,6 +404,10 @@ def _fetch[Asked: _Named](
     data = envelope.data
     if status_code != 200 or not envelope.ok or data is None:
         return unreadable
+    # A tenant without a key (the seed's, or one older than migration 035) is
+    # not another customer, and still nothing ties its answer to this one.
+    if data.tenant.key is None:
+        return NO_KEY
     if data.tenant.key != customer.key:
         return OTHER_CUSTOMER
     return data
@@ -433,7 +442,10 @@ def _at_once[Found](
     `DEADLINE_SECONDS`: a stack that is not done by then delays nobody else.
     Closing the client ends what such a stack is still sending."""
     http = (client or _client)()
-    pool = ThreadPoolExecutor(max_workers=min(MAX_AT_ONCE, len(asks)))
+    # A worker for every question: in a smaller pool the slow stacks keep the
+    # others waiting in the queue, and those are then "too slow" unasked. The
+    # registry is a handful of customers the operator typed in.
+    pool = ThreadPoolExecutor(max_workers=len(asks))
     found: list[Found | str] = []
     try:
         asked = [pool.submit(ask, http) for _, ask in asks]
@@ -443,10 +455,18 @@ def _at_once[Found](
                 found.append(answer.result(max(0.0, deadline - time.monotonic())))
             except NotInTime:
                 found.append(TOO_SLOW)
-            except Exception:
-                # Whatever one customer's row trips over, the others are still
-                # shown (review of #801: twice one stack took the page down).
-                logger.exception("customer %s could not be asked", key)
+            except Exception as problem:  # noqa: BLE001  one row, not the list
+                # Whatever one customer's question trips over while it is
+                # asked, the others are still shown. (What a stack answers is
+                # kept from breaking the drawn page by the checks above.)
+                # The kind of failure and where, not its message: that can
+                # quote the header it failed on, and the token is in it.
+                logger.error(
+                    "customer %s could not be asked: %s\n%s",
+                    key,
+                    type(problem).__name__,
+                    "".join(traceback.format_tb(problem.__traceback__)),
+                )
                 found.append(NOT_ASKED)
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
