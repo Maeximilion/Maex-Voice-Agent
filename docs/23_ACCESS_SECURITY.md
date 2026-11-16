@@ -363,7 +363,9 @@ guest's data.
   is a row "answers too slowly" and delays nobody), checks every field (types, lengths, at most 50
   alarms, times with an offset and between 2000 and 2100, so none overflows when it is shown), requires the answer to name the customer the row was asked for ("another customer
   answers at this address" otherwise), and shows everything as text. The token goes to the
-  registered address only: no redirect is followed and no proxy variable of the host is read.
+  registered address only: no redirect is followed and no proxy variable of the host is read. Whatever
+  one customer's row trips over, the others are still shown: that row reads "could not be asked"
+  and the cause goes to the log.
 
 Rejected:
 

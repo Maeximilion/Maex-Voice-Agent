@@ -595,6 +595,33 @@ def test_a_stack_that_keeps_sending_is_too_slow_and_delays_nobody(monkeypatch):
     ]
 
 
+@pytest.mark.parametrize("token", ["\u00e9" * 40, "a" * 39 + "\x00", "a" * 39 + "\x7f"])
+def test_a_token_no_header_can_carry_is_refused_at_the_registry(sessions, token):
+    """Review of #801: 40 times an accented letter passed the token rule, and
+    HTTPX then failed on the header, for the whole page."""
+    with sessions() as db:
+        add_customer(db, "alpha", _url("alpha"), TOKEN_A)
+        with pytest.raises(BadCustomer):
+            add_customer(db, "beta", _url("beta"), token)
+        assert [c.key for c in customers.list_customers(db)] == ["alpha"]
+
+
+def test_a_row_that_cannot_be_asked_leaves_the_others_standing(caplog):
+    """The same from the other side: a row of the registry no header can carry
+    (written before the rule above) is one row, not the end of the list."""
+    handlers = {"alpha-api": _serving("alpha"), "beta-api": _serving("beta")}
+    rows = customers.overview(
+        [_customer("alpha"), _customer("beta", "\u00e9" * 40)],
+        client=_factory(_by_host(handlers)),
+    )
+    assert [(r.key, r.tone, r.problem) for r in rows] == [
+        ("beta", "danger", customers.NOT_ASKED),
+        ("alpha", "ok", ""),
+    ]
+    assert "customer beta could not be asked" in caplog.text
+    assert "\u00e9" not in caplog.text
+
+
 def test_a_packed_answer_is_refused_before_it_is_unpacked():
     """Review of #801: the size limit counted bytes after HTTPX had unpacked
     them, so 32 kB of gzip became 32 MB first. No packed answer is asked for,

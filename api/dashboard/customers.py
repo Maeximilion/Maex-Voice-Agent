@@ -12,6 +12,7 @@ asked for, and is shown as text only. The token goes to the registered address
 and nowhere else: no redirect is followed.
 """
 
+import logging
 import re
 import time
 from collections.abc import Callable
@@ -38,6 +39,8 @@ from sqlalchemy.orm import Session
 from api.core.tokens import TOKEN_MIN_LENGTH, valid_production_token
 from api.dashboard.models import Customer
 
+logger = logging.getLogger(__name__)
+
 # api/models/tenants.py CUSTOMER_KEY.
 KEY = re.compile(r"[a-z][a-z0-9]*(-[a-z0-9]+)*")
 # A container name or host on the stack's `ops` network, with a port.
@@ -53,6 +56,7 @@ MAX_AT_ONCE = 8
 
 UNREACHABLE = "not reachable"
 TOO_SLOW = "answers too slowly"
+NOT_ASKED = "could not be asked"
 REFUSED = "refuses the token"
 NOT_A_STATUS = "answer is not a status"
 NO_RESTAURANT = "no restaurant in the stack yet"
@@ -194,10 +198,11 @@ def add_customer(db: Session, key: str, api_url: str, token: str) -> Customer:
     key, token = key.strip(), token.strip()
     if not KEY.fullmatch(key):
         raise BadCustomer("the key is lower case letters, digits and single hyphens")
-    if not valid_production_token(token):
+    # ASCII: the token travels in a header, which takes nothing else.
+    if not (valid_production_token(token) and token.isascii() and token.isprintable()):
         raise BadCustomer(
             f"the token is the stack's OPS_TOKEN: at least {TOKEN_MIN_LENGTH} "
-            "characters, no whitespace, not the placeholder"
+            "characters, plain ASCII, no whitespace, not the placeholder"
         )
     url = checked_url(api_url)
     row = db.get(Customer, key)
@@ -315,6 +320,11 @@ def overview(
                 rows.append(answer.result(max(0.0, deadline - time.monotonic())))
             except NotInTime:
                 rows.append(Row(customer.key, problem=TOO_SLOW))
+            except Exception:
+                # Whatever one customer's row trips over, the others are still
+                # shown (review of #801: twice one stack took the page down).
+                logger.exception("customer %s could not be asked", customer.key)
+                rows.append(Row(customer.key, problem=NOT_ASKED))
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
         http.close()
