@@ -1,5 +1,8 @@
-{# Frame of the operator dashboard (#571). The stylesheet of the operations view;
-   no script at all, so the CSP of ops.<domain> holds without exceptions. #}
+{# Frame of the operator dashboard (#571). The stylesheet and the two scripts of
+   the operations view, as files of this site: no inline script, so the CSP of
+   ops.<domain> holds without exceptions. HTMX is used for one thing, the
+   refresh of the customer list. A page with a passkey button adds
+   passkey.js in `scripts`; a page sets `nav` to mark its entry. #}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,8 +11,27 @@
 <meta name="referrer" content="no-referrer">
 <title>{% block title %}Operator{% endblock %} - Maex</title>
 <link rel="stylesheet" href="/static/app.css">
+{# The CSP refuses the style element htmx inserts for indicators; none is used. #}
+<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+<script src="/static/htmx.min.js" defer></script>
+<script type="module" src="/static/base.js"></script>
+{% block scripts %}{% endblock %}
 </head>
-<body class="betrieb zugang">
+<body class="betrieb ops {% block body_class %}{% endblock %}">
+{% if operator %}
+<header class="ops-kopf">
+  <a class="ops-marke" href="/">Maex Operator</a>
+  <nav aria-label="Main">
+    <a href="/"{% if nav | default("customers") == "customers" %} aria-current="page"{% endif %}>Customers</a>
+    <a href="/factors"{% if nav | default("") == "factors" %} aria-current="page"{% endif %}>Sign-in factors</a>
+  </nav>
+  <form method="post" action="/logout">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <span class="muted">{{ operator.name }}</span>
+    <button type="submit">Sign out</button>
+  </form>
+</header>
+{% endif %}
 <main>{% block main %}{% endblock %}</main>
 </body>
 </html>

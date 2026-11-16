@@ -32,6 +32,7 @@ ROOT = Path(__file__).resolve().parents[2]
 INI = ROOT / "db" / "dashboard" / "alembic.ini"
 PASSWORD = "lange-geheime-phrase"
 START = datetime(2026, 11, 10, 9, 0, tzinfo=UTC)
+ORIGIN = "https://ops.example.com"
 TABLES = {
     "operator_accounts",
     "operator_recovery_codes",
@@ -39,6 +40,9 @@ TABLES = {
     "operator_devices",
     "operator_login_failures",
     "operator_audit",
+    "operator_customers",
+    "operator_passkeys",
+    "operator_challenges",
 }
 
 
@@ -138,8 +142,9 @@ def test_password_and_totp_open_the_dashboard(client, factors, clock, sessions):
     assert "HttpOnly" in answer.headers["set-cookie"]
     page = client.get("/")
     assert page.status_code == 200
-    assert "Signed in as <strong>maxi</strong>" in page.text
+    assert '<span class="muted">maxi</span>' in page.text
     assert "10 recovery codes left" in page.text
+    assert "No customer yet." in page.text
     assert _actions(sessions)[-1] == "operator.signed_in"
 
 
@@ -418,9 +423,40 @@ def test_outside_dev_and_test_only_the_proxy_gets_in(
 def test_production_settings_need_a_strong_proxy_secret():
     for weak in ("", "short", "change_me_long_random", " " * 40):
         with pytest.raises(ValueError, match="OPERATOR_PROXY_SECRET"):
-            DashboardSettings(env="prod", operator_proxy_secret=weak)
-    DashboardSettings(env="prod", operator_proxy_secret="x" * 40)
+            DashboardSettings(
+                env="prod", operator_proxy_secret=weak, operator_origin=ORIGIN
+            )
+    DashboardSettings(
+        env="prod", operator_proxy_secret="x" * 40, operator_origin=ORIGIN
+    )
     DashboardSettings(env="dev", operator_proxy_secret="")
+
+
+def test_production_settings_need_the_origin_of_the_dashboard():
+    """A passkey is bound to it, so it is never a default and never read from a
+    request (docs/23 §5)."""
+    secret = {"env": "prod", "operator_proxy_secret": "x" * 40}
+    with pytest.raises(ValueError, match="OPERATOR_ORIGIN is missing"):
+        DashboardSettings(**secret)
+    for wrong in (
+        "",
+        "ops.example.com",
+        "http://ops.example.com",
+        "https://ops.example.com/",
+        "https://ops.example.com/login",
+        "https://OPS.example.com",
+        "https://user@ops.example.com",
+        "https://ops.example.com:port",
+        "https://",
+    ):
+        with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
+            DashboardSettings(**secret, operator_origin=wrong)
+    there = DashboardSettings(**secret, operator_origin="https://ops.example.com:8443")
+    assert there.relying_party_id == "ops.example.com"
+    # Dev and test run over plain HTTP on localhost.
+    assert DashboardSettings(env="dev").relying_party_id == "localhost"
+    with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
+        DashboardSettings(env="dev", operator_origin="ftp://localhost")
 
 
 def test_the_dashboard_never_builds_the_customer_settings():
@@ -431,6 +467,7 @@ def test_the_dashboard_never_builds_the_customer_settings():
         "HOME": os.environ.get("HOME", "/tmp"),
         "ENV": "prod",
         "OPERATOR_PROXY_SECRET": "z" * 40,
+        "OPERATOR_ORIGIN": ORIGIN,
     }
     probe = (
         "import sys, api.dashboard.app, api.dashboard.cli;"

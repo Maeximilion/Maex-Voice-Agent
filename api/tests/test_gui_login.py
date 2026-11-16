@@ -241,6 +241,37 @@ def test_a_wrong_password_says_so_and_sets_no_session(client, engine):
     assert "<h1>Testbetrieb</h1>" in answer.text
 
 
+def test_a_form_post_under_no_referrer_signs_in(client, engine):
+    """A browser sends `Origin: null` with a plain form post when the page's
+    referrer policy is `no-referrer` (Fetch, "append a request `Origin`
+    header"), and Caddy sets that policy on the whole site. The browser still
+    says `Sec-Fetch-Site: same-origin`, which no page can set or change. Found
+    16.11.2026: the operator's sign-in answered 403 in a real browser."""
+    _set_up_and_sign_in(client, engine)
+    client.cookies.clear()
+    client.cookies.set("csrf_token", "testtoken")
+    answer = client.post(
+        "/gui/anmelden",
+        data={"csrf_token": "testtoken", "passwort": PASSWORD},
+        headers={"Origin": "null", "Sec-Fetch-Site": "same-origin"},
+    )
+    assert answer.status_code == 303 and answer.headers["location"] == "/gui/"
+
+
+@pytest.mark.parametrize("site", ["cross-site", "same-site", "none", ""])
+def test_a_null_origin_that_is_not_this_site_stays_refused(client, engine, site):
+    """`null` is also what a sandboxed frame and a cross-site redirect send."""
+    _set_up_and_sign_in(client, engine)
+    client.cookies.clear()
+    client.cookies.set("csrf_token", "testtoken")
+    answer = client.post(
+        "/gui/anmelden",
+        data={"csrf_token": "testtoken", "passwort": PASSWORD},
+        headers={"Origin": "null", "Sec-Fetch-Site": site},
+    )
+    assert answer.status_code == 403
+
+
 @pytest.mark.parametrize(
     ("form", "headers"),
     [
