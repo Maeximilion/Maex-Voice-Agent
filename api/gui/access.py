@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 from api.core import time as clock
 from api.core.auth import require_gui_proxy
 from api.core.errors import InvalidInput
+from api.core.origin import same_origin
 from api.db import get_db
 from api.domain.access.admin import AdminRefused, close_admin, unlock_admin
 from api.domain.access.sessions import (
@@ -28,13 +29,12 @@ from api.domain.access.sessions import (
     unlock,
 )
 from api.domain.access.setup import use_link
-from api.gui.router import NO_TENANT, _form, _page_response
+from api.gui.router import NO_TENANT, _form, _page_response, _tenant
 from api.gui.session import (
     LOGIN,
     client_address,
     csrf_matches,
     device_token,
-    same_origin,
     session_token,
     set_access_cookies,
 )
@@ -42,6 +42,11 @@ from api.gui.session import (
 router = APIRouter(
     prefix="/gui", tags=["gui"], dependencies=[Depends(require_gui_proxy)]
 )
+
+# The bare host name leads to the view (#571): a signed-in device lands on the
+# board, any other on the sign-in, which is the front page. A redirect only, so
+# the site gains no second page that could show anything.
+front = APIRouter(tags=["gui"], dependencies=[Depends(require_gui_proxy)])
 
 BOARD = "/gui/"
 WRONG_PASSWORD = "Das Passwort stimmt nicht."
@@ -72,11 +77,29 @@ def _access(request: Request, db: Session, now: datetime) -> Access | None:
     return resolve(db, session_token(request), stack_tenant_id(db), now)
 
 
+@front.get("/", include_in_schema=False)
+def front_page() -> Response:
+    return RedirectResponse(BOARD, status_code=303)
+
+
+def _sign_in_page(
+    request: Request, db: Session, message: str = "", status_code: int = 200
+) -> Response:
+    """The front page: the restaurant's name, the product in a few words and
+    the sign-in. The name is all it reads; anyone may open this page."""
+    return _page_response(
+        request,
+        "zugang/anmelden.html",
+        {"tenant": _tenant(db), "message": message},
+        status_code,
+    )
+
+
 @router.get("/anmelden", response_class=HTMLResponse, include_in_schema=False)
 def sign_in_page(request: Request, db: Session = Depends(get_db)) -> Response:
     if _access(request, db, clock.utcnow()):
         return RedirectResponse(BOARD, status_code=303)
-    return _page_response(request, "zugang/anmelden.html", {})
+    return _sign_in_page(request, db)
 
 
 @router.post("/anmelden", response_class=HTMLResponse, include_in_schema=False)
@@ -88,9 +111,7 @@ def sign_in_post(
     _checked(request, form)
     tenant_id = stack_tenant_id(db)
     if tenant_id is None:
-        return _page_response(
-            request, "zugang/anmelden.html", {"message": NO_TENANT}, 503
-        )
+        return _sign_in_page(request, db, NO_TENANT, 503)
     try:
         signed = sign_in(
             db,
@@ -107,9 +128,7 @@ def sign_in_post(
             if refused.wait_minutes
             else WRONG_PASSWORD
         )
-        return _page_response(
-            request, "zugang/anmelden.html", {"message": message}, 401
-        )
+        return _sign_in_page(request, db, message, 401)
     response = RedirectResponse(BOARD, status_code=303)
     set_access_cookies(response, signed)
     return response
@@ -195,9 +214,7 @@ def unlock_post(
     if left is None:
         return RedirectResponse(BOARD, status_code=303)
     if left == 0:
-        return _page_response(
-            request, "zugang/anmelden.html", {"message": PIN_ENDED}, 401
-        )
+        return _sign_in_page(request, db, PIN_ENDED, 401)
     return _page_response(
         request,
         "zugang/entsperren.html",

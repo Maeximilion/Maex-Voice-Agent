@@ -180,7 +180,7 @@ def test_a_failing_compose_command_says_what_it_printed(
         assert kwargs["check"] is False
         return subprocess.CompletedProcess(cmd, 3, "", "boom: image build failed")
 
-    monkeypatch.setattr(rd.subprocess, "run", fake_run)
+    monkeypatch.setattr(subprocess, "run", fake_run)
     stack = rd.Stack(tmp_path, 12345)
     with pytest.raises(SystemExit) as failed:
         stack.run("up", "-d", "--build")

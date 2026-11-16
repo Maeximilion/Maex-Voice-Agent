@@ -448,6 +448,8 @@ def bookings_outside_hours(
             Reservation.deleted_at.is_(None),
             Reservation.reserved_for >= min(a for a, _ in span),
             Reservation.reserved_for < max(b for _, b in span),
+            # The team never calls a self-test's guest (#574).
+            Reservation.is_test.is_(False),
         )
         .order_by(Reservation.reserved_for)
     )
