@@ -298,6 +298,16 @@ Full roadmap from here to the target state: section "Roadmap" below. Full detail
 
 | Date | What |
 |---|---|
+| 14.11.2026 | **The outage map ran on the wire (T-10.2): six rows go, two no-go.** Maxi called the test number from the restaurant, the session at the workbench switched the outages on and off. Every outage on our side reached the restaurant's telephone: `voice` down 4 s after the call arrived, `voice` killed mid-call in the same second, the model down after 17 s with the outage sentence, a handover asked for after 15 s with audio both ways, an unanswered team leg as a callback card and the sentence, and the main number rings as always with the software off. No-go: Asterisk down ("not reachable", no telephone is assigned to the test number besides the AI's) and a second caller during an AI call (the router rings nothing). Asterisk crashed once after a team leg (#768); the other findings are #769. Before the run: the wire-path audit on `10ec06a` (no P1, no P2) and the drills, 49 of 49 |
+| 14.11.2026 | **#763, part: a health word without an allergy word is clarified by the model, not read by the core (Maxi, 14.11.2026).** A first attempt that had the core open an allergy for "Zöliakie" was dropped after `/code-review max` confirmed four L13 and rule 1 defects (findings on #763). Now the refusal of a note with a health word tells the model to ask the guest first what is meant and what must stay out of the food, and to note only the removal. "Zöliakie" and "Cöliakie" arm the allergen claim check (L17); before, "die 13 ist für Sie unbedenklich" reached a coeliac unchecked. Other health phrases ("darf kein Gluten") name their allergen and armed it already. "bedarf keiner" and "darf keiner wissen" no longer read as health. Red first. No prompt change: the core's prompt budget has 6 tokens left (2594 of 2600). Open on #763: a model that writes no note gets no hint. |
+| 14.11.2026 | **Review rule narrowed and the ultrareview ledger #546 closed (Maxi, 14.11.2026).** A diff with an `xhigh` trigger now gets a local `/code-review max` in `/done` before its PR opens, findings fixed in that PR; the 400-line trigger is gone. Only in auto mode (Maxi away) a skipped review goes into a new ledger, #764 "Review candidates from auto mode". Data behind it, from #546: 77 reviews, 42 finding issues, 19 P1 on hard-rule PRs that Codex had passed; the five lines-only candidates gave no P1 of their own. `scripts/ultrareview_ledger.py` reads open ledgers only and no longer reopens a closed one (red first: it wrote into the closed issue). `CLAUDE.md` "Deep review", `done.md` steps 1 and 7a, `start.md` 5d. The 12 open lines of #546 (#743 to #760) move to the new ledger. |
+| 13.11.2026 | **Batch 9 of the ultrareview ledger (#546), fix PR for #740 (stacked on #739): a second person's allergy behind the caller's own is read on its own.** Red first (8 agent cases red). "Ich bin allergisch gegen Nüsse, meine Frau gegen Sesam", "Erdnussallergie, mein Mann Sesam" and the same in the answer to "Wogegen?" no longer lose the other person's sesame: the caller's own is read in full (no "Wogegen?" needed), the adult's goes to the kitchen as "ohne Sesam" without a reason, a child's is asked about with the caller's consent. Read only at the end of the whole text, one person and one single-word ingredient (a time, a name or a clause that is no list is asked about as before). Still open: such a clause in the middle of a longer text. |
+| 13.11.2026 | **Batch 9 of the ultrareview ledger (#546), fix PR for #739: the allergen claim guard reads more absence forms, a noted plural matches its singular on a card.** Red first (guard and plural cases red). "Die 13 hat keine Nüsse", "Es gibt kein Gluten", "Nüsse sind da nicht drin" are claims and go to the team; noted "Erdnüsse" keeps "Erdnuss" off a callback card, each part of a noted list on its own. Moved out: health words that name no allergy ("Zöliakie", "darf kein", "meiden") and whose allergy it is, after four Codex ownership findings, to #763 (the L13 owner reading stays as on `main`). Still open: "ist ... kein" and other absence forms the call log does not show yet. |
+| 13.11.2026 | **Batch 9 of the ultrareview ledger (#546), fix PR for #710: the open items of #596 and two from the batch 9 review.** Red first (6 tests). A staff change for today on a "wie Sonntag" date waits for the owner like a later date, since times cannot keep `like_weekday` (`ck_special_days_like_weekday_alone`) and Sunday's seats, call mode and call limit would go to the plain weekday's; closing still holds at once. `_hhmm` takes `strptime("%H:%M")`, so `1000Z` is a 422, not a 500. The sheet offers only E.164 numbers of `TEAM_PHONE` and `TRANSFER_TARGETS` (`sheet_numbers`); a hard start check in `api/config.py` was not built, since the dialplan dials national forms and the voice drill lists one on purpose. An outage or a shadow leg reads the team number again (`CallHandler._team_phone`, savepoint, the line's 2 s bound, after the outage sentence) and falls back to the number read at the start of the call. The check card of a held closure or shortening lists the confirmed tables outside the new hours (name, time, party, phone with a call link, `staff_changes.bookings_outside_hours`), so the team calls those guests itself (Maxi 13.11.2026): nothing is cancelled, no guest is messaged. |
+| 13.11.2026 | **Ultrareview ledger (#546, batch 9), fix PR for #742: a booking read-back names the night after midnight by its two days.** Red first (6 cases red). "Morgen um halb eins nachts" for 00:30 of tomorrow is still tonight, so the guest's yes booked 24 hours early. Hours 00:00 to 04:59 are now read "in der Nacht von Dienstag auf Mittwoch um halb eins" (`spoken_when` in `spoken.py`, the date added beyond a week); 23:30 and 05:30 keep "heute/morgen ... nachts/morgens". |
+| 13.11.2026 | **Batch 9 follow-up of #669 (candidate #717, rule 1): the guest hears the core's allergen sentence, not the model's.** Red first (4 of 7 new loop tests red). A turn that looked up a dish with maintained allergens (`get_item_details`, sentence from `ALLERGEN_SPOKEN`) now ends with those sentences word for word (`loop.py`, after the guards); a model sentence that dropped, added or renamed an allergen no longer reaches the guest. Own function, `guards.py` untouched. Open on #669: an eval case, since the stand-in model looks up no allergens. |
+| 13.11.2026 | **Follow-up of #670 (Codex on #718), fix PR for #719: an allergy named behind the caller's own denial is read with its owner.** Red first (4 agent cases red, a plain denial with a removal guards). "Ich habe keine Allergie, nur meine Frau gegen Sesam" (and "aber meine Frau hat eine Sesamallergie") is another adult's allergy: the kitchen gets "ohne Sesam" without its reason, nothing is asked (L13). A child behind the denial ("nur meine Tochter gegen Nüsse") is read as if said directly, the caller's to consent to. Still open: a person named without an ingredient ("..., nur meine Frau") is not asked about. |
+| 13.11.2026 | **Ultrareview ledger (#546, catch-up wave: data and privacy), fix PR for #693: a recording file without a row is deleted after the period too.** Red first (1 of 2 new tests red, the other guards a file with a row). The deletion job read only the `recordings` rows; a restore of last night's dump drops today's rows but leaves their WAV files. `retention._files_without_a_row` deletes a file no row names once its own time is past `RETENTION_RECORDING_DAYS`, and logs one it cannot delete; docs/03 and the restore runbook in docs/13 say so. Latent while recording is off. |
 | 13.11.2026 | **Ultrareview ledger (#546), fix PR for #691 (Maxi decided B): a premium-rate, service or satellite callback number keeps its card, with a warning and without the one-tap call link.** Red first (3 GUI cases red; 10 new domain cases for `customers.phone.costly`). German 0900, 0137, 0180, 0118 and 012 and the international +870, +881, +882 and +883 get the danger badge "Teure Sondernummer – vor dem Anruf prüfen" on the open and the done cards, and no `tel:` link; docs/06 says so. Foreign mobile and landline numbers keep the link. |
 | 13.11.2026 | **Batch 7 of the ultrareview ledger (#546: operating test and repository automation), fix PR for #689: the throwaway stack never reopens a LAN bind on its own, and the daily board maintenance cannot be cancelled by a sync.** Red first (2 of 3 new or changed fixture tests red; the workflow change is two config lines without a test, as `.github/workflows` is not mounted in the test container). `bedientest_fixture.py`: `reset` keeps a LAN bind of the last `up` only with `--allow-lan` in the same call, `down` removes the bind, and the printed link and note name the address actually bound. `project-maintenance.yml` waits in a concurrency group of its own (`projektpflege-maintenance`); docs/16 says so. |
 | 13.11.2026 | **Batch 7 of the ultrareview ledger (#546: operator login), fix PR for #688: the sign-in wait no longer tells which operator names exist, and a double-submitted sign-in raises no takeover alarm.** Red first (3 of 5 new or changed test cases red). An unknown name now has its own failure counter (in `operator_login_failures` under `name:` and the hash of the name, forgotten after a day like an address), so it waits like a known one (docs/23 §5). A refused code that is the one the account signed in with in the last two minutes is audited with `reason` `repeat`, not `factor`; docs/09 says so. No migration. |
@@ -1549,3 +1559,120 @@ Sub-items of item 14 (follow-ups of the security audit #252, decided 12.10.2026)
     - **Operations view without an access check of its own: recorded 12.10.2026** as accepted for stage 1, the proxy is the check (docs/13 §3).
     - Order of the rest: migration 007 with the new `service_config` fields is built (13.10.2026: booking horizon, party size limits, `order_approval_above_cents`, `turn_deadline_seconds`). Left: nothing, all five fields are read. The Postgres role (#281) and the order threshold (#283) are on `main`, the silence deadline is pull request #287.
     - The handover's steps by hand (13.10.2026): the ruleset on `main` is applied, four required checks next to the pull request rule (docs/13 §6; its name on GitHub is still `t-4.6-probebo`, because a disabled ruleset called `Main` blocks the name of the file). (full text: docs/HISTORY.md)
+
+## STATUS upkeep (archive, firm rows and stacked header lines, 16.11.2026)
+
+Moved unchanged from `docs/01_STATUS.md` (#562, Maxi's decision of 15.11.2026: the firm row set of the cloud session's row proposals and the stacked old status header lines). Rows kept on the page: every open or doubtful one.
+
+### Open Decisions rows (decided: D9, D32, D33, D34)
+
+| D9 | ~~Reopened by the compliance check of 11.11.2026 (docs/09 §1): who is the data protection officer?~~ **decided 11.11.2026 (Maxi): he stays the officer himself**, as on 20.10.2026 and now knowing what the check found: an officer is mandatory here (§ 38(1) sentence 2 BDSG), and the authorities treat an owner or managing director as officer as a conflict of interest as the rule (Hessian authority, DSK short paper 12), so the report can be rejected and the DSFA then lacks the officer's advice. The risk is accepted; if the authority objects, the route is an external officer. Not asked again without a new fact | Maxi | decided; the report and the contact in the notice stay open (docs/09 §1) |
+| D32 | ~~How do several customers run: one stack per customer, or all in one stack with `tenant_id` isolation (#568)?~~ **decided 09.11.2026 (Maxi): one Docker stack and database per customer**, with one shared Caddy on the host in front of them. (full text: docs/HISTORY.md) | Maxi | decided |
+| D33 | ~~How are the operator dashboard and menu uploads protected (#569)?~~ **decided 09.11.2026 (Maxi):** (a) the dashboard is public on its own host name behind a strong login, not VPN-only; (b) the operator's second factor is a passkey with TOTP as backup, plus recovery codes (full text: docs/HISTORY.md) | Maxi | decided |
+| D34 | ~~How does a restaurant sign in to its operations view (#570)?~~ **decided 09.11.2026 (Maxi, issue comment on #570):** (1) one login per restaurant, not per staff member; (2) the password once per device, then a session of 30 days that renews on use; after 15 minutes idle a 4 to 6 digit PIN unlocks it, five wrong PINs end the session (full text: docs/HISTORY.md) | Maxi | decided; (a) built and merged 09.11.2026 (#585), (7) and (8) for the team PIN in the follow-up PR; (b) the admin PIN with the device list (#587, migration 032) and the staff changes with the check card (migration 033); the push to owner and `ops` next |
+
+### Open Points from Reviews rows (by design, built)
+
+| The evals do not count a refused name or number (`evals/recorder.py`) | By design (12.10.2026): the recorder counts a refused attempt only where it has a rule of its own (a guessed dish, a `confirm` without a yes). | with the first full run on a real model |
+| Wish findings from the review of the merged PR #330 (`api/domain/menu/wishes.py`, `sim/scripted_llm.py`, issue #331) | Review of 19.10.2026; none loses an allergy, the three losses of that review are closed. | with the D24 work package |
+
+### Changelog entries before 13.11.2026
+
+- **v2.40.0 · 12.11.2026:** Loop D of #695, PR 1: the review rules left CLAUDE.md unchanged for docs/21 and docs/22 (58497 to 47408 bytes)
+- **v2.39.2 · 12.11.2026:** docs/19 names the Ubuntu env keys and the Fable 5.2 effort key (#695, Loop A)
+- **v2.39.1 · 12.11.2026:** Fix PR for #674: telephony failure paths end with the right team
+- **v2.39.0 · 12.11.2026:** Handover thresholds from the measured context (150k after a merge, 300k mid-task); the context is recorded per task
+- **v2.38.0 · 12.11.2026:** Handover only when unfinished work moves to a new session; the context is measured
+- **v2.37.5 · 12.11.2026:** Batch 2 review of the ultrareview ledger, first fix PR (#668): an allergy said again for everything reaches every line, a denial next to an allergy opens none
+- **v2.37.4 · 12.11.2026:** Fixes from the local max review of #660 and #662
+- **v2.37.3 · 12.11.2026:** CLAUDE.md: Claude gives the backup and migrate commands whenever a workbench migration is due
+- **v2.37.2 · 12.11.2026:** Call list filter: selects on the board get the height, font and padding of the buttons, so their text is no longer cut
+- **v2.37.1 · 12.11.2026:** fastapi 0.162.0 to 0.162.2 (Dependabot #659), patch release within the 0.162.* pin
+- **v2.37.0 · 11.11.2026:** T-8.7 (#661): the call list /gui/anrufe in its first form, with the marked number of a call without caller audio (#651)
+- **v2.36.0 · 11.11.2026:** #651 points 1 and 2: calls.line_note marks a call without caller audio (migration 036), monitor alarm after ALARM_NO_AUDIO_CALLS in a row; T-8.7 (#661) call list
+- **v2.35.0 · 11.11.2026:** #652: an outage with nobody to reach asks a withheld caller for a number, a queued transfer survives a broken line, a leg closed before the answer is no hung-up caller; #651 decided (Maxi)
+- **v2.34.4 · 11.11.2026:** #655: every handover the guest hears of is carried out, its card names the open order or table; a lost team leg counts as abandoned; cases 99 of 99
+- **v2.34.3 · 11.11.2026:** Fable checks closed: Fable subagent from Opus works, advisor stays off
+- **v2.34.2 · 11.11.2026:** STATUS upkeep (one row archived) and Fable use 4 recorded in routing_history.csv
+- **v2.34.1 · 11.11.2026:** Review fixes of #643 (#649): additive handover keeps the held draft, AI notice on every way out
+- **v2.34.0 · 11.11.2026:** Model routing: Fable 5.2 in four uses, xhigh only after a stall, usage check
+- **v2.33.1 · 11.11.2026:** T-0.12 step 3: inner layers mypy-strict, possibly-undefined on
+- **v2.33.0 · 11.11.2026:** #638 done: a sentence that names an additive goes to the team before the model, a caller who takes the agent for a person hears the truthful sentence again; four evals, cases 98 of 98 green
+- **v2.32.0 · 11.11.2026:** T-10.2: print sheet, chat words and wire-path audit for the run on the wire; drills 44 of 44
+- **v2.31.2 · 11.11.2026:** A handover after a merged PR stays in the chat, no side branch
+- **v2.31.1 · 11.11.2026:** T-0.12 step 2: mypy test baseline emptied, every path checked
+- **v2.31.0 · 11.11.2026:** D9 decided again: Maxi stays the data protection officer, the risk is accepted
+- **v2.30.0 · 11.11.2026:** Legal check verified against the sources: N1 revised, N3 new, D9 reopened, paper duties at delivery
+- **v2.29.10 · 11.11.2026:** T-0.12 first step: mypy checks every function body, strict flags on three packages
+- **v2.29.9 · 11.11.2026:** The bar Ton an keeps a gap to the columns below
+- **v2.29.8 · 10.11.2026:** n8n 2.46.6 to 2.47.2 (#628)
+- **v2.29.7 · 10.11.2026:** T-3.18 done: the dev console's script is TypeScript, #626 closed
+- **v2.29.6 · 10.11.2026:** Four medium CodeQL alerts fixed: owner page redirect and README demo proxy headers
+- **v2.29.5 · 10.11.2026:** T-3.18 app.js migrated to TypeScript
+- **v2.29.4 · 10.11.2026:** T-3.18 raumplan.js migrated to TypeScript
+- **v2.29.3 · 10.11.2026:** T-3.18 base.js migrated to TypeScript
+- **v2.29.2 · 10.11.2026:** Standing rule: browser logic is TypeScript, no language moves back (CLAUDE.md §8, guard test)
+- **v2.29.1 · 10.11.2026:** Static files of the view are revalidated (no-cache); before/after browser session on #627 identical
+- **v2.29.0 · 10.11.2026:** TypeScript toolchain for the browser code: committed ES modules, CI job browser, raumplan-geometry migrated (#553, T-3.17 done; rest T-3.18, #626)
+- **v2.28.1 · 10.11.2026:** Social preview redrawn as the banner's example call; upload in the repository settings still open (#623)
+- **v2.28.0 · 10.11.2026:** README front page rebuilt: example-call banner, demo recording, transcript call flow, two-path architecture, roadmap line, local badges; README job in the required check (#622)
+- **v2.27.18 · 10.11.2026:** chore(deps): bump compose-images group with 3 updates (#603)
+- **v2.27.17 · 10.11.2026:** chore(deps): bump python-minor-patch group in /api with 5 updates (#605)
+- **v2.27.16 · 10.11.2026:** chore(deps): bump amannn/action-semantic-pull-request to 6.1.2 (#604)
+- **v2.27.15 · 10.11.2026:** chore(deps): bump types-pyyaml to 6.0.12.20261103 (#606)
+- **v2.27.14 · 10.11.2026:** #571 second part: operator login with password, TOTP and recovery codes
+- **v2.27.13 · 10.11.2026:** STATUS upkeep rule: /done archives finished rows, /start flags size above 80 KB
+- **v2.27.12 · 10.11.2026:** #562 part 5: finished What's Next items and decided D1 to D30 archived
+- **v2.27.11 · 10.11.2026:** Handover: handover command is the single source for handover rules, session title uses middle dots, no token threshold
+- **v2.27.10 · 10.11.2026:** #562 part 4: long rows of Roadmap, Gates, Blockers and Done cut to one sentence
+- **v2.27.9 · 10.11.2026:** #562 part 3: What's Next and Open Decisions shortened to one sentence per row, full rows archived in HISTORY.md
+- **v2.27.8 · 10.11.2026:** #571 first part: ops status route of a stack
+- **v2.27.7 · 09.11.2026:** #562: cut Open Points from Reviews and open assumptions, handover start form in handover.md, no-AI-attribution rule
+- **v2.27.6 · 09.11.2026:** Required check title also fails AI attribution in commits and descriptions (#609)
+- **v2.27.5 · 09.11.2026:** CI split into checks, three pytest shards and a summary test job; Docker jobs skip for docs-only pull requests (#609)
+- **v2.27.4 · 09.11.2026:** #562: STATUS split, archive in docs/HISTORY.md
+- **v2.27.3 · 09.11.2026:** #545 done: calls left open by a dead voice process are closed as error
+- **v2.27.2 · 09.11.2026:** #573 part two: a new customer's stack in one command behind the shared Caddy
+- **v2.27.1 · 09.11.2026:** Review batch 0: fixes from the reviews of #586, #587 and #589; grouped review issues
+- **v2.27.0 · 09.11.2026:** #573 part one: a new customer's tenant in one command (migration 035)
+- **v2.26.3 · 09.11.2026:** #590 done: n8n cache tmpfs owned by node, n8n starts after a container restart
+- **v2.26.2 · 09.11.2026:** #588 push of staff and call-mode changes to owner and ops
+- **v2.26.1 · 09.11.2026:** Handover: #570 part b merged as #587 (admin PIN, device list) and #589 (staff changes, check cards); next #588 on task/588-staff-change-push
+- **v2.26.0 · 09.11.2026:** #570 part b2: staff changes and their check cards (migration 033)
+- **v2.25.0 · 09.11.2026:** #570 part b1: owner's admin PIN and device list (migration 032)
+- **v2.24.1 · 09.11.2026:** Handover: #570 part a and its follow-up merged (#585, #586), next #570 part b on task/570-b-admin-pin
+- **v2.24.0 · 09.11.2026:** D34 points 7 to 9: gentler sign-in waits, operator sees and sets the team PIN
+- **v2.23.0 · 09.11.2026:** #570 part a: restaurant login replaces Basic-Auth, D34 recorded
+- **v2.22.0 · 09.11.2026:** #569 threat model and access design (docs/23), D33
+- **v2.21.0 · 09.11.2026:** Tenancy decided: one stack per customer (D32, #568)
+- **v2.20.4 · 09.11.2026:** PR checklists keep only the items that matter; no open boxes after merge except remaining work linked to an issue (CLAUDE.md, done.md, PR template)
+
+### Stacked status header lines (the current one stays on the page)
+
+> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.17
+> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.16
+> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.15
+> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.35
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.34
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.33
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.32
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.31
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.30
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.29
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.28
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.27
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.25
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.24
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.23
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.22
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.21
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.20
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.19
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.18
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.17
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.16
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.15
+> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.14

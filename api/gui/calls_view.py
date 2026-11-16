@@ -5,6 +5,7 @@ reads the three filters of the page.
 """
 
 from datetime import date, timedelta
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -62,7 +63,7 @@ def page(
     day: str | None = None,
     outcome: str | None = None,
     intent: str | None = None,
-) -> dict:
+) -> dict[str, Any]:
     """The page's context. A filter value the page did not offer is ignored."""
     today = business_day(tz_name=tenant.timezone)
     days = [today - timedelta(days=back) for back in range(DAYS)]

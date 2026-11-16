@@ -10,7 +10,10 @@ Revises:
 Created: 2026-11-10
 """
 
+import uuid
 from collections.abc import Sequence
+from datetime import datetime
+from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
@@ -22,7 +25,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def _id() -> sa.Column:
+def _id() -> sa.Column[uuid.UUID]:
     return sa.Column(
         "id",
         UUID(as_uuid=True),
@@ -31,7 +34,7 @@ def _id() -> sa.Column:
     )
 
 
-def _account() -> sa.Column:
+def _account() -> sa.Column[uuid.UUID]:
     return sa.Column(
         "account_id",
         UUID(as_uuid=True),
@@ -41,11 +44,11 @@ def _account() -> sa.Column:
     )
 
 
-def _at(name: str, nullable: bool = False) -> sa.Column:
+def _at(name: str, nullable: bool = False) -> sa.Column[datetime]:
     return sa.Column(name, sa.DateTime(timezone=True), nullable=nullable)
 
 
-def _counted() -> list[sa.Column]:
+def _counted() -> list[sa.Column[Any]]:
     return [
         sa.Column("failures", sa.Integer(), nullable=False, server_default="0"),
         _at("last_failed_at", nullable=True),

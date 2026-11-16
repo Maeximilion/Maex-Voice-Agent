@@ -78,14 +78,22 @@ def spoken_date(dt: datetime, today: date | None = None) -> str:
     return f"am {WEEKDAYS[day.weekday()]}, den {day.day}. {MONTHS[day.month - 1]}"
 
 
-def spoken_when(dt: datetime, today: date) -> str:
+def spoken_when(dt: datetime, now: datetime) -> str:
     """Date and time of day: the hours after midnight belong to the night that began the evening before.
 
     "morgen um halb eins nachts" is heard as tomorrow night, a day late; the night
-    is named by both days instead (#742). dt and today in local time.
+    is named by both days instead (#742). The same holds for the moment the
+    sentence is made: at 00:15 "heute" and "morgen" mean a day earlier to most
+    guests than to the calendar, so the day is named by weekday and date
+    (#750 follow-up). dt and now in local time.
     """
+    today = now.date()
     if dt.hour >= NIGHT_ENDS:
-        return f"{spoken_date(dt, today)} um {spoken_time(dt)} {daytime_word(dt.hour)}"
+        by_calendar = today if now.hour >= NIGHT_ENDS else None
+        return (
+            f"{spoken_date(dt, by_calendar)} um {spoken_time(dt)} "
+            f"{daytime_word(dt.hour)}"
+        )
     day = dt.date()
     start = WEEKDAYS[(day - timedelta(days=1)).weekday()]
     named = f"in der Nacht von {start} auf {WEEKDAYS[day.weekday()]}"

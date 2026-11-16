@@ -27,6 +27,7 @@ import urllib.request
 from collections import Counter
 from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 GRAPHQL_URL = "https://api.github.com/graphql"
@@ -348,7 +349,7 @@ class Item:
         return (now - self.updated_at).days
 
 
-def graphql(query: str, variables: dict, token: str) -> dict:
+def graphql(query: str, variables: dict[str, Any], token: str) -> dict[str, Any]:
     """Eine GraphQL-Anfrage stellen. Fehler kommen als ProjectError mit Klartext zurueck."""
     payload = json.dumps({"query": query, "variables": variables}).encode()
     request = urllib.request.Request(
@@ -376,14 +377,15 @@ def graphql(query: str, variables: dict, token: str) -> dict:
         # Historical backfills can contain hundreds of field writes. Pace every
         # mutation, including status and dates, below the secondary write limit.
         time.sleep(1)
-    return body["data"]
+    data: dict[str, Any] = body["data"]
+    return data
 
 
 def _timestamp(raw: str | None) -> datetime | None:
     return datetime.fromisoformat(raw.replace("Z", "+00:00")) if raw else None
 
 
-def parse_item(node: dict) -> Item | None:
+def parse_item(node: dict[str, Any]) -> Item | None:
     """Einen GraphQL-Knoten in ein Item uebersetzen.
 
     Archivierte Eintraege werden markiert, nicht verworfen: der Abgleich mit dem Repo
@@ -440,7 +442,7 @@ def parse_item(node: dict) -> Item | None:
 READABLE_CONTENT = frozenset({"Issue", "PullRequest", "DraftIssue"})
 
 
-def _is_unreadable(node: dict) -> bool:
+def _is_unreadable(node: dict[str, Any]) -> bool:
     """Ob der Token den Inhalt eines Board-Eintrags sehen darf.
 
     Das offizielle Signal ist ProjectV2Item.type = REDACTED. Dazu kommt content = null,
@@ -495,7 +497,7 @@ def fetch_items(owner: str, number: int, token: str) -> tuple[str, str, list[Ite
     return project_id, project_title, items
 
 
-def complete_closing_refs(content: dict, token: str) -> None:
+def complete_closing_refs(content: dict[str, Any], token: str) -> None:
     """Do not derive a start from a truncated list of linked implementations."""
     closing = content.get("closedByPullRequestsReferences") or {}
     next_page = closing.get("pageInfo", {})
@@ -597,7 +599,7 @@ def reconcile_history(
         if missing.is_maintenance:
             continue
         cursor = None
-        memberships: list[dict] = []
+        memberships: list[dict[str, Any]] = []
         while True:
             page = graphql(
                 MEMBERSHIP_QUERY, {"id": missing.content_id, "cursor": cursor}, token
@@ -756,7 +758,9 @@ def find_issues(
     return findings
 
 
-def findings_to_json(findings: dict[str, list[Item]]) -> dict[str, list[dict]]:
+def findings_to_json(
+    findings: dict[str, list[Item]],
+) -> dict[str, list[dict[str, Any]]]:
     """Befunde als schlichtes JSON: Ueberschrift -> Eintraege mit Label und URL.
     Leere Befunde fallen weg, damit 'nichts offen' eindeutig ein leeres Objekt ist."""
     return {
@@ -839,18 +843,21 @@ def status_moves(items: list[Item]) -> dict[str, list[Item]]:
     return moves
 
 
-def pick_option(options: list[dict], names: frozenset[str], wanted: str) -> str:
+def pick_option(
+    options: list[dict[str, Any]], names: frozenset[str], wanted: str
+) -> str:
     """The status option for `wanted`, whatever its spelling on the board."""
     for option in options:
         if _normalized(option.get("name")) in names:
-            return option["id"]
+            option_id: str = option["id"]
+            return option_id
     present = ", ".join(option.get("name", "?") for option in options) or "keine"
     raise ProjectError(
         f"Status-Feld hat keine Option fuer {wanted} (vorhanden: {present})"
     )
 
 
-def pick_done_option(options: list[dict]) -> str:
+def pick_done_option(options: list[dict[str, Any]]) -> str:
     """Die Done-Option des Status-Felds finden, gleich welche Schreibweise sie hat."""
     return pick_option(options, DONE_NAMES, "Done")
 
@@ -901,13 +908,14 @@ def set_status(
     return fixed
 
 
-def pick_iteration(iterations: list[dict], day: date) -> str | None:
+def pick_iteration(iterations: list[dict[str, Any]], day: date) -> str | None:
     """Die Iteration, in deren Zeitraum der Tag liegt. Keine, wenn er davor oder
     dazwischen liegt - dann wird nichts erfunden."""
     for iteration in iterations:
         start = date.fromisoformat(iteration["startDate"])
         if start <= day < start + timedelta(days=iteration["duration"]):
-            return iteration["id"]
+            iteration_id: str = iteration["id"]
+            return iteration_id
     return None
 
 
@@ -991,7 +999,7 @@ def fill_fields(
 ITERATIONS_AHEAD_DAYS = 28
 
 
-def next_iterations(known: list[dict], today: date) -> list[dict]:
+def next_iterations(known: list[dict[str, Any]], today: date) -> list[dict[str, Any]]:
     """Iterations to append so that one covers `today + ITERATIONS_AHEAD_DAYS`.
 
     Each new one continues the last: same duration, the next number in the title

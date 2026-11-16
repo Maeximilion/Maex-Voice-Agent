@@ -11,6 +11,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from api.agent.consent import is_yes
 from api.agent.llm import ChatCompletionsLLM, FakeLLM, LLMTurn, ToolCall, Usage
 from api.config import settings
 from api.domain.confirm import confirm
@@ -32,7 +33,7 @@ from evals.judge import (
     unsaid,
     validate_case,
 )
-from evals.recorder import DRAFT_TOOLS, RecordingLLM, is_yes
+from evals.recorder import DRAFT_TOOLS, RecordingLLM
 from evals.report import CaseResult, RunReport, previous_run, write
 from sim.scripted_order import MenuNumbers
 from sim.session import SimCall, Turn

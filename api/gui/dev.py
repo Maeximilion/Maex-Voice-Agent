@@ -6,6 +6,7 @@ API, like `sim.cli`, so a booking made here shows up on the tablet. Logic stays 
 """
 
 import threading
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 
@@ -18,6 +19,7 @@ from api.core.logging import get_logger
 from api.db import SessionLocal
 from api.gui.router import _form, _page_response, _require_htmx, templates
 from api.gui.session import require_gui_session
+from api.schemas.calls import CallEnded
 from sim.session import SimCall, Turn, resolve_tenant
 
 # Dev only, but it writes real rows like the view: the same device session (#570).
@@ -49,14 +51,14 @@ OPEN_CALLS: dict[str, OpenCall] = {}
 _START_LOCK = threading.Lock()
 
 
-def _view(request: Request, entry: OpenCall | None, **extra):
+def _view(request: Request, entry: OpenCall | None, **extra: object) -> HTMLResponse:
     context = {"entry": entry, "call_id": entry and str(entry.call.call_id), **extra}
     # Always 200: htmx does not swap a 4xx, and the problem text with its
     # "Neuer Anruf" button would never be shown (Codex PR #236).
     return templates.TemplateResponse(request, "fragments/dev_anruf.html", context)
 
 
-def _finish(call_id: str):
+def _finish(call_id: str) -> CallEnded:
     """Hang up and forget the call; the browser may have lost it (reload, restart).
 
     The entry stays until the call row is closed: if the database fails here, a
@@ -73,7 +75,7 @@ def _finish(call_id: str):
 
 
 @contextmanager
-def _locked(call_id: str):
+def _locked(call_id: str) -> Iterator[OpenCall | None]:
     """The open call under its own lock, or None. The hang-up may have won the
     lock while this request waited for it, hence the second look."""
     entry = OPEN_CALLS.get(call_id)

@@ -503,7 +503,9 @@ def _recording_state(row: Recording | None) -> str:
     return "running" if row.withdrawn_at is None else "withdrawn"
 
 
-def _reserved_local(session: Session, call, done_res) -> str | None:
+def _reserved_local(
+    session: Session, call: Call | None, done_res: list[Reservation]
+) -> str | None:
     if not done_res or call is None:
         return None
     # get_one: the call's foreign key guarantees the tenant.
@@ -557,7 +559,9 @@ def _address_diff(want: dict[str, str], got: dict[str, str] | None) -> str | Non
     return f"address: erwartet {want!r}, gebucht {got!r}"
 
 
-def _duplicate_confirms(session: Session, orders, reservations) -> int:
+def _duplicate_confirms(
+    session: Session, orders: Sequence[Order], reservations: Sequence[Reservation]
+) -> int:
     """Wie oft ein Vorgang dieses Anrufs mehr als einmal bestaetigt wurde."""
     ids = [o.id for o in orders] + [r.id for r in reservations]
     if not ids:
@@ -611,7 +615,9 @@ def _same_text(want: str | None, got: str | None) -> bool:
     return norm(want) == norm(got)
 
 
-def _compare_items(want_items: list[dict], got_items: list[dict]) -> str | None:
+def _compare_items(
+    want_items: list[dict[str, Any]], got_items: list[dict[str, Any]]
+) -> str | None:
     """Jede erwartete Position trifft genau eine gebuchte; Reihenfolge egal.
 
     Positionen mit Optionen zuerst: sonst nähme "47 ohne Angabe" die Zeile
