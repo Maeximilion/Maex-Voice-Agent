@@ -10,8 +10,8 @@ looks after.
 
 `add` and `reset` ask the password twice, never as an argument (it would stay
 in the shell history and the process list), and print the TOTP link for the
-authenticator app and ten recovery codes, once. `reset` also ends every session
-and forgets every device of the account. SSH to the host is root anyway, so
+authenticator app and ten recovery codes, once. `reset` also ends every session,
+removes every passkey and forgets every device of the account. SSH to the host is root anyway, so
 this needs no second factor of its own.
 
 `customer-add` takes the stack's `OPS_TOKEN` the same way: asked for, or read

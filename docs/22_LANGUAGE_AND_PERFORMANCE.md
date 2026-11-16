@@ -263,6 +263,7 @@ the geometry on 10.11.2026: 20,000 rounds over every exported function, identica
 | `raumplan` | TypeScript since 10.11.2026 (#626), loaded as a module that imports the compiled geometry |
 | `app` | TypeScript since 10.11.2026 (#626), loaded as a module by `betrieb/index.html`. What htmx and the server's `HX-Trigger` hand over in an event's detail is read as `unknown` and checked field by field; a notice that is no text is not shown, and a question whose request cannot be released sends nothing and shows the red bar. Old and new file ran the same 47-step session in a headless browser against a mocked server: page, focus, scroll positions and tones identical in the 45 steps with real events; the two steps with a deliberately empty detail differ as intended (the old file threw and drew an empty note) |
 | `dev-console` | TypeScript since 10.11.2026 (#626): the red bar of the simulator console, an inline script before; loaded as a module by `dev/console.html` |
+| `passkey` | TypeScript from its first line (16.11.2026, #571): the passkey ceremonies of the operator dashboard, loaded as a module by its sign-in, step-up and factors pages. The options are the server's JSON and go through the browser's own parser; nothing is decided in the browser |
 
 No handwritten script is left in `api/gui/static/`; the list in
 `api/tests/test_browser_code_language.py` is empty. No template carries a script
