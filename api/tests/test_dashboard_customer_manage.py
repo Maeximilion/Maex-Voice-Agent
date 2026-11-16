@@ -12,10 +12,15 @@ from typing import Any
 
 import httpx
 import pytest
+from sqlalchemy import select, update
 
 from api.core import ops_reason
+from api.dashboard import access, customers, passkeys
 from api.dashboard import app as web
-from api.dashboard import customers
+from api.dashboard.db import get_db
+from api.dashboard.models import OperatorSession
+from api.domain import operator
+from api.domain.status.mode import CAUTION, PAUSED
 from api.tests import test_dashboard_customers as base
 from api.tests.test_dashboard_customer_detail import (
     STALE,
@@ -99,6 +104,8 @@ def _access(key: str = "alpha", **over: Any) -> dict:
         "call_mode": "shadow",
         "call_modes": ["shadow", "overflow", "primary", "paused"],
         "team_phone": "+4972215550100",
+        "team_phone_standard": "+4972215550100",
+        "team_phone_until": None,
         "team_phones": ["+4972215550100", NUMBER],
     } | over
 
@@ -121,13 +128,33 @@ def _managed(
     return handler
 
 
+def _once(key: str = "alpha") -> str | None:
+    """The token a manage page of this customer would hold for the signed-in
+    session, made without asking a stack. None: nobody is signed in."""
+    held = web.app.dependency_overrides[get_db]()
+    db = next(held)
+    try:
+        session_id = db.scalar(select(OperatorSession.id))
+        if session_id is None:
+            return None
+        holder = passkeys.for_session(session_id)
+        return passkeys.issue(db, holder, f"manage:{key}", web.now()).hex()
+    finally:
+        held.close()
+
+
 def _post(client, action: str = "open", key: str = "alpha", headers=None, **fields):
+    step = customers.step(action, GOOD.get(action, {}))
     data: dict[str, Any] = (
         {
             "csrf_token": _csrf(client),
             "back": f"/customers/{key}",
             "reason": "restaurant_report",
             "reference": "812",
+            # A form that changes something carries its page's token.
+            "once": _once(key)
+            if step and step.changes and "once" not in fields
+            else None,
         }
         | GOOD.get(action, {})
         | fields
@@ -228,7 +255,7 @@ def test_a_step_carries_token_actor_reason_customer_and_nothing_in_the_address(
 ):
     seen: list[httpx.Request] = []
 
-    found = _result(_managed(seen), action)
+    found = _result(_managed(seen, link=LINK), action)
 
     assert isinstance(found, customers.StackAccess)
     (request,) = seen
@@ -316,8 +343,12 @@ HOSTILE = [
     (_says(_access("beta")), customers.OTHER_CUSTOMER),
     (_says(_access(), lambda d: d["tenant"].update(key=None)), customers.NO_KEY),
     (_error("conflict", 409), customers.WRONG_STACK),
-    (_error("invalid_input"), customers.NOT_TAKEN),
+    (_error("invalid_input"), customers.REFUSED_BY_RULE),
     (_error("invalid_input", 400), customers.NOT_TAKEN),
+    (_error("invalid_input", 422), customers.NOT_TAKEN),
+    (_with(team_phone="Ruf 0900 an"), customers.NOT_AN_ANSWER),
+    (_with(team_phone_standard="<b>07221</b>"), customers.NOT_AN_ANSWER),
+    (_with(team_phone_until="9999-12-31T23:59:59+00:00"), customers.NOT_AN_ANSWER),
     (_error("invalid_input", 401), customers.REFUSED),
     (_error("not_found", 404), customers.NOT_KNOWN),
     (_error("not_found"), customers.NO_RESTAURANT),
@@ -532,12 +563,12 @@ def test_a_form_that_is_no_step_is_said_and_sent_nowhere(
 # --- the steps ------------------------------------------------------------------
 
 
-def _took(sessions, action: str, done: bool = True) -> tuple[Any, Any]:
+def _took(sessions, action: str, outcome: str = "done") -> tuple[Any, Any]:
     """The two rows of one step in the operator's audit."""
     name = AUDIT_NAMES[action]
     asked, after = _rows(sessions)[-2:]
     assert asked.action == f"customer.{name}_asked"
-    assert after.action == f"customer.{name}_{'done' if done else 'not_done'}"
+    assert after.action == f"customer.{name}_{outcome}"
     for row in (asked, after):
         assert (row.actor, row.target) == ("maxi", "alpha")
     assert asked.detail["reason"] == "restaurant_report"
@@ -732,7 +763,8 @@ def test_a_stack_that_answers_a_link_step_without_a_link_is_said(
     answer = _post(client, "setup-link")
 
     assert "answered without a link" in answer.text
-    _took(sessions, "setup-link", done=False)
+    # A link may have been made and the older one voided: nobody knows.
+    _took(sessions, "setup-link", "unclear")
 
 
 def test_the_call_mode_and_the_team_number_are_read_from_the_answer(
@@ -779,7 +811,8 @@ def test_a_step_that_gave_no_answer_is_said_in_words_and_in_the_audit(
     # Only a change the stack may have made after all gets the warning.
     unsure = action != "open" and (handler, problem) in UNSURE
     assert ("may have been made" in answer.text) is unsure
-    _, after = _took(sessions, action, done=False)
+    # The audit says the same as the page: not done, or nobody knows.
+    _, after = _took(sessions, action, "unclear" if unsure else "not_done")
     assert after.detail["problem"] == problem
     assert 'action="/customers/alpha/manage/open"' in answer.text
     assert "Restaurant beta" not in answer.text
@@ -791,7 +824,7 @@ def test_a_step_that_gave_no_answer_is_said_in_words_and_in_the_audit(
         ("pin-set", "refused this PIN"),
         ("call-mode", "refused this mode"),
         ("team-phone", "refused this number"),
-        ("sign-out", customers.NOT_TAKEN),
+        ("sign-out", customers.REFUSED_BY_RULE),
     ],
 )
 def test_a_refusal_of_the_stack_names_what_it_can_be(
@@ -803,7 +836,7 @@ def test_a_refusal_of_the_stack_names_what_it_can_be(
     answer = _post(client, action)
 
     assert words in answer.text and "may have been made" not in answer.text
-    _took(sessions, action, done=False)
+    _took(sessions, action, "not_done")
 
 
 def test_the_operators_audit_is_there_before_the_stack_is_asked(
@@ -827,14 +860,13 @@ def test_what_a_stack_says_about_a_device_is_shown_as_text(
     client, factors, clock, sessions, monkeypatch
 ):
     name = '<img src=x onerror=alert(1)>"'
-    hostile = _managed(devices=[_device(device=name)], team_phone="<b>+49</b>")
+    hostile = _managed(devices=[_device(device=name)])
     _world(sessions, monkeypatch, alpha=hostile)
     _signed_in(client, factors, clock)
 
     text = _post(client).text
 
     assert "<img" not in text and "&lt;img src=x onerror=alert(1)&gt;" in text
-    assert "<b>+49</b>" not in text
 
 
 def test_a_step_on_one_customer_never_reaches_another(
@@ -881,5 +913,240 @@ def test_the_page_has_no_script_and_no_secret_in_a_field(
 
 
 def test_the_words_of_the_modes_cover_what_a_stack_offers():
-    for mode in ("shadow", "overflow", "primary", "paused", "resume"):
+    for mode in (*CAUTION, PAUSED, operator.RESUME):
         assert mode in web.MODES
+
+
+def test_a_request_the_stack_does_not_take_is_not_called_a_rule(
+    client, factors, clock, sessions, monkeypatch
+):
+    """400 is the stack refusing the request itself (a header, the body's
+    form), as after a deploy of one side only; 200 is one of its rules. The
+    page must not explain the first with the second's sentence."""
+    _world(sessions, monkeypatch, alpha=_managed(answer=_error("invalid_input", 400)))
+    _signed_in(client, factors, clock)
+
+    for action in ("pin-set", "call-mode", "team-phone"):
+        text = _post(client, action).text
+        assert customers.NOT_TAKEN in text, action
+        assert "refused this" not in text and "may have been made" not in text
+
+
+# --- a step is taken once ---------------------------------------------------------
+
+CHANGING = ["pin-set", "sign-out", "setup-link", "call-mode", "team-phone"]
+
+
+def _token(text: str) -> str:
+    found = set(re.findall(r'name="once" value="([0-9a-f]{64})"', text))
+    assert len(found) == 1, found
+    return found.pop()
+
+
+@pytest.mark.parametrize("action", CHANGING)
+def test_a_form_that_changes_something_is_taken_once(
+    client, factors, clock, sessions, monkeypatch, action
+):
+    """A reload of the answer page, or the Back button, sends the same form
+    again: the second setup link would void the one just passed on."""
+    seen: list[httpx.Request] = []
+    _world(sessions, monkeypatch, alpha=_managed(seen, link=LINK, signed_out=1))
+    _signed_in(client, factors, clock)
+    token = _token(_post(client).text)
+
+    first = _post(client, action, once=token)
+    # The answer page holds the next token: the operator goes on from there.
+    onward = _post(client, action, once=_token(first.text))
+    rows = len(_rows(sessions))
+    again = _post(client, action, once=token)
+
+    assert first.status_code == onward.status_code == 200 and len(seen) == 3
+    assert again.status_code == 409 and "sent before" in again.text
+    assert len(seen) == 3 and len(_rows(sessions)) == rows
+    assert 'action="/customers/alpha/manage/open"' in again.text
+
+
+@pytest.mark.parametrize("action", CHANGING)
+@pytest.mark.parametrize("token", [None, "", "0" * 64, "x" * 64, "ü" * 8])
+def test_a_changing_form_without_the_pages_token_sends_nothing(
+    client, factors, clock, sessions, monkeypatch, action, token
+):
+    seen: list[httpx.Request] = []
+    _world(sessions, monkeypatch, alpha=_managed(seen))
+    _signed_in(client, factors, clock)
+    _post(client)
+    seen.clear()
+    rows = len(_rows(sessions))
+
+    answer = _post(client, action, once=token)
+
+    assert answer.status_code == 409 and "Nothing was sent" in answer.text
+    assert seen == [] and len(_rows(sessions)) == rows
+
+
+def test_one_customers_token_opens_no_step_on_another(
+    client, factors, clock, sessions, monkeypatch
+):
+    seen: list[httpx.Request] = []
+    _world(sessions, monkeypatch, alpha=_managed(seen))
+    _signed_in(client, factors, clock)
+
+    assert _post(client, "call-mode", once=_once("beta")).status_code == 409
+    assert seen == []
+
+
+def test_a_token_is_worth_five_minutes(client, factors, clock, sessions, monkeypatch):
+    seen: list[httpx.Request] = []
+    _world(sessions, monkeypatch, alpha=_managed(seen))
+    _signed_in(client, factors, clock)
+    token = _once()
+    clock.at += passkeys.CHALLENGE_LIFE
+    # The second factor is stale by then as well: confirm it, the token stays old.
+    with sessions() as db:
+        db.execute(update(OperatorSession).values(stepped_up_at=clock.at))
+        db.commit()
+
+    answer = _post(client, "call-mode", once=token)
+
+    assert answer.status_code == 409 and seen == []
+
+
+@pytest.mark.parametrize("action", ["open", "pin-show"])
+def test_a_read_needs_no_token_and_can_be_repeated(
+    client, factors, clock, sessions, monkeypatch, action
+):
+    _world(sessions, monkeypatch, alpha=_managed(pin=PIN))
+    _signed_in(client, factors, clock)
+
+    for _ in range(2):
+        assert _post(client, action, once=None).status_code == 200
+
+
+# --- the lists start at what holds -------------------------------------------------
+
+
+def test_the_lists_start_at_what_holds_so_a_stray_tap_changes_nothing(
+    client, factors, clock, sessions, monkeypatch
+):
+    """The first entry of a list is what a button sends when nobody chose:
+    "shadow" would switch a restaurant's agent off."""
+    primary = _managed(
+        call_mode="primary",
+        team_phone=NUMBER,
+        team_phone_until="2026-11-11T04:00:00+00:00",
+    )
+    _world(sessions, monkeypatch, alpha=primary)
+    _signed_in(client, factors, clock)
+
+    text = _post(client).text
+
+    assert '<option value="primary" selected>' in text
+    assert f'<option value="{NUMBER}" selected>' in text
+    assert text.count(" selected>") == 2
+    # Today's number is said to be today's, with its end and the standard.
+    assert "until 11.11.2026 05:00" in text and "+4972215550100 holds again" in text
+
+
+def test_a_mode_or_number_that_is_not_in_its_list_starts_at_no_choice(
+    client, factors, clock, sessions, monkeypatch
+):
+    """During the emergency stop the one entry is "switch on again": it must
+    not be what an untouched list sends."""
+    paused = _managed(
+        call_mode="paused", call_modes=["resume"], team_phone="0721 5550000"
+    )
+    _world(sessions, monkeypatch, alpha=paused)
+    _signed_in(client, factors, clock)
+
+    text = _post(client).text
+
+    assert '<option value="" selected>Leave it as it is</option>' in text
+    assert '<option value="" selected>Choose a number</option>' in text
+    assert '<option value="resume">' in text
+    # And the empty choice is no step: nothing is sent for it.
+    seen: list[httpx.Request] = []
+    _world_again = _managed(seen)
+    monkeypatch.setattr(
+        customers,
+        "_client",
+        base._factory(
+            base._by_host({"alpha-api": _world_again, "beta-api": _world_again})
+        ),
+    )
+    assert _post(client, "call-mode", mode="").status_code == 400 and seen == []
+
+
+def test_a_stack_without_settings_offers_no_mode_and_no_number(
+    client, factors, clock, sessions, monkeypatch
+):
+    bare = _managed(
+        call_mode=None,
+        call_modes=[],
+        team_phone=None,
+        team_phone_standard=None,
+        team_phones=[],
+    )
+    _world(sessions, monkeypatch, alpha=bare)
+    _signed_in(client, factors, clock)
+
+    text = _post(client).text
+
+    assert "/manage/call-mode" not in text and "/manage/team-phone" not in text
+    assert "no mode to set" in text and "lists no number" in text
+
+
+# --- what the page says ------------------------------------------------------------
+
+
+def test_a_link_without_a_host_is_said_to_need_one(
+    client, factors, clock, sessions, monkeypatch
+):
+    _world(sessions, monkeypatch, alpha=_managed(link=f"/gui/einrichten#{TOKEN}"))
+    _signed_in(client, factors, clock)
+
+    text = _post(client, "setup-link").text
+
+    assert "does not know its public address" in text and text.count(TOKEN) == 1
+
+
+def test_a_host_as_a_stack_may_write_it_is_a_link():
+    for host in ("Agent.Example.com", "agent.example.com:8443", "a.de"):
+        found = _result(
+            _with(link=f"https://{host}/gui/einrichten#{TOKEN}"), "setup-link"
+        )
+        assert isinstance(found, customers.StackAccess), host
+
+
+def test_an_answer_without_a_number_is_not_shown_as_none(
+    client, factors, clock, sessions, monkeypatch
+):
+    _world(sessions, monkeypatch, alpha=_managed(team_phone=None))
+    _signed_in(client, factors, clock)
+
+    text = _post(client, "team-phone").text
+
+    assert "go to no number today" in text and "None" not in text
+
+
+def test_the_stack_is_named_in_front_of_a_problem(
+    client, factors, clock, sessions, monkeypatch
+):
+    down = _managed(answer=_raising(httpx.ConnectError("down")))
+    _world(sessions, monkeypatch, alpha=down)
+    _signed_in(client, factors, clock)
+
+    assert f"The stack: {customers.UNREACHABLE}." in _post(client).text
+
+
+# --- both sides, one number --------------------------------------------------------
+
+
+def test_both_sides_cap_the_devices_alike():
+    """A stack that sends more than the dashboard reads is "cannot be read"."""
+    assert customers.MAX_DEVICES == operator.MAX_DEVICES
+
+
+def test_no_account_can_be_named_like_the_command_line(sessions):
+    """`operator:cli` is the command line's actor in a stack's audit log."""
+    with sessions() as db, pytest.raises(ValueError, match="command line"):
+        access.create_account(db, "CLI ", base.PASSWORD)

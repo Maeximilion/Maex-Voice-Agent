@@ -4,7 +4,10 @@
    second factor, and the reason the operator gave when opening the page, so
    each step is recorded with it on both sides. A shown PIN or a new setup
    link is text of this one answer, never a field's value and never a link;
-   the page is not stored. Everything a stack says is shown as text. #}
+   the page is not stored. A form that changes something also carries the
+   page's token (`once`) and is taken one time: a reload sends nothing again.
+   The lists start at what holds now, so a tap on a button without a choice
+   changes nothing. Everything a stack says is shown as text. #}
 {% extends "base.html" %}
 {% block title %}Access of {{ key }}{% endblock %}
 
@@ -13,6 +16,7 @@
 <input type="hidden" name="back" value="/customers/{{ key }}">
 <input type="hidden" name="reason" value="{{ category }}">
 <input type="hidden" name="reference" value="{{ reference }}">
+<input type="hidden" name="once" value="{{ once }}">
 {% endmacro %}
 
 {% block main %}
@@ -31,41 +35,42 @@
   </div>
   {% endif %}
 
-  {% if not access %}
   <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/open" autocomplete="off">
     {{ hidden() }}
-    <button type="submit" class="primary">Open access and call routing again</button>
+    <button type="submit"{% if not access %} class="primary"{% endif %}>{% if access %}Read the state again{% else %}Open access and call routing again{% endif %}</button>
   </form>
-  {% else %}
-  <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/open" autocomplete="off">
-    {{ hidden() }}
-    <button type="submit">Read the state again</button>
-  </form>
+  {% if access %}
 
   <div class="card ops-teil">
     <h2>Call mode</h2>
     <p>Now: <b>{{ access.call_mode | mode }}</b></p>
     <p class="muted">Holds from the next call on. The owner and the ops topic get a push, and the change stands in the customer's audit log with your account.</p>
+    {% if access.call_modes %}
     <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/call-mode" autocomplete="off">
       {{ hidden() }}
       <label for="mode">Set to</label>
       <select id="mode" name="mode" required>
-        {% for code in access.call_modes %}<option value="{{ code }}">{{ code | mode }}</option>{% endfor %}
+        {% if access.call_mode not in access.call_modes %}<option value="" selected>Leave it as it is</option>{% endif %}
+        {% for code in access.call_modes %}<option value="{{ code }}"{% if code == access.call_mode %} selected{% endif %}>{{ code | mode }}</option>{% endfor %}
       </select>
       <button type="submit">Set the call mode</button>
     </form>
+    {% else %}
+    <p>The stack has no settings for this restaurant yet, so there is no mode to set.</p>
+    {% endif %}
   </div>
 
   <div class="card ops-teil">
     <h2>Team number</h2>
-    <p>Calls for the team go to <b>{{ access.team_phone or "no number" }}</b> now.</p>
+    <p>Calls for the team go to <b>{{ access.team_phone or "no number" }}</b> now.{% if access.team_phone_until %} That is today's number, until {{ access.team_phone_until | shown }}; then the standard number {{ access.team_phone_standard or "" }} holds again, unless the owner keeps today's.{% endif %}</p>
     <p class="muted">A number set here holds until the end of the business day, as one the staff set on the tablet: the owner keeps or undoes it on the tablet's card, and the owner and the ops topic get a push. Only numbers the stack's telephone system dials can be chosen.</p>
     {% if access.team_phones %}
     <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/team-phone" autocomplete="off">
       {{ hidden() }}
       <label for="number">Number for today</label>
       <select id="number" name="number" required>
-        {% for number in access.team_phones %}<option value="{{ number }}">{{ number }}</option>{% endfor %}
+        {% if access.team_phone not in access.team_phones %}<option value="" selected>Choose a number</option>{% endif %}
+        {% for number in access.team_phones %}<option value="{{ number }}"{% if number == access.team_phone %} selected{% endif %}>{{ number }}</option>{% endfor %}
       </select>
       <button type="submit">Use this number today</button>
     </form>

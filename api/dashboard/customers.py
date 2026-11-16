@@ -46,6 +46,7 @@ from sqlalchemy.orm import Session
 from api.core import ops_reason
 from api.core.tokens import TOKEN_MIN_LENGTH, valid_production_token
 from api.dashboard.models import Customer
+from api.domain.access.hashing import PIN
 
 logger = logging.getLogger(__name__)
 
@@ -78,18 +79,21 @@ MAX_CALLS = 2000
 MAX_CALLS_BYTES = 512 * 1024
 # As `domain/operator.py` MAX_DEVICES: a stack sends its newest devices.
 MAX_DEVICES = 200
-# What a form of the manage page may send and a stack may answer, each in full.
-# `domain/access/hashing.py` PIN, ASCII digits only.
-PIN = re.compile(r"[0-9]{4,6}")
+# What a form of the manage page may send and a stack may answer, each in
+# full; a PIN by the stack's own rule (`domain/access/hashing.py` PIN).
 PINS = ("team", "admin")
 # A mode of the switch as a code; which codes there are is the stack's word.
 MODE = re.compile(r"[a-z_]{1,20}")
 # `domain/customers/phone.py` E164.
 PHONE = re.compile(r"\+[1-9][0-9]{6,14}")
+# A number as a stack's settings write it, which is not always E.164
+# ("0721 555-1234"): digits and what stands between them, nothing to read.
+SHOWN_PHONE = re.compile(r"[0-9+(][0-9 ()/.+-]{2,39}")
 # The setup link as `domain/access/setup.py` builds it: the customer's own
-# https host or none, the one path, and the token as the fragment.
+# https host (as `AGENT_DOMAIN` writes it) or none, the one path, and the
+# token as the fragment.
 SETUP_LINK = re.compile(
-    r"(https://[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?)?"
+    r"(https://[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?(:[0-9]{1,5})?)?"
     r"/gui/einrichten#[A-Za-z0-9_-]{20,100}"
 )
 ALL_DEVICES = "all"
@@ -106,9 +110,13 @@ NO_RESTAURANT = "no restaurant in the stack yet"
 OTHER_CUSTOMER = "another customer answers at this address"
 NO_KEY = "its restaurant has no customer key yet"
 WRONG_STACK = "is not this customer's stack (another key, or none): nothing was done"
+REFUSED_BY_RULE = "refuses this by a rule of its own"
+NO_LINK = "answered without a link"
 # After these the stack did nothing; after any other problem of a step that
 # changes something, nobody knows.
-NOTHING_DONE = frozenset({REFUSED, NOT_KNOWN, NOT_TAKEN, NO_RESTAURANT, WRONG_STACK})
+NOTHING_DONE = frozenset(
+    {REFUSED, NOT_KNOWN, NOT_TAKEN, NO_RESTAURANT, WRONG_STACK, REFUSED_BY_RULE}
+)
 
 Short = Annotated[str, Field(max_length=200)]
 EARLIEST = datetime(2000, 1, 1, tzinfo=UTC)
@@ -266,8 +274,10 @@ class StackAccess(_Named):
     devices: list[_Device] = Field(max_length=MAX_DEVICES)
     call_mode: Annotated[str, _full(MODE)] | None
     call_modes: list[Annotated[str, _full(MODE)]] = Field(max_length=10)
-    # As written in the stack's settings, so not always E.164.
-    team_phone: Annotated[str, Field(max_length=40)] | None
+    team_phone: Annotated[str, _full(SHOWN_PHONE)] | None
+    team_phone_standard: Annotated[str, _full(SHOWN_PHONE)] | None
+    # When a number set for today ends; None: the standard number holds.
+    team_phone_until: Time | None
     team_phones: list[Annotated[str, _full(PHONE)]] = Field(max_length=20)
     pin: Annotated[str, _full(PIN)] | None = None
     link: Annotated[str, _full(SETUP_LINK)] | None = None
@@ -434,6 +444,7 @@ def _fetch[Asked: _Named](
     unreadable: str = NOT_AN_ANSWER,
     method: str = "GET",
     sent: dict[str, Any] | None = None,
+    by_rule: str = NOT_TAKEN,
 ) -> Asked | str:
     """One answer of a stack, checked, or the one sentence why there is none.
     Asked once: a step that got no answer is never sent again by itself."""
@@ -476,8 +487,11 @@ def _fetch[Asked: _Named](
     # same code under another status is something else's answer.
     if code == "not_found" and status_code == 200:
         return NO_RESTAURANT
+    # With 200 it is the stack's domain that refused (`AppError`'s status);
+    # with any other status the request itself was not taken: a header, the
+    # body's form. A step names the first by a sentence of its own.
     if code == "invalid_input":
-        return NOT_TAKEN
+        return by_rule if status_code == 200 else NOT_TAKEN
     # `_customer` of the stack's router: its restaurant is not the customer
     # this request names. With any other status the code is something else's.
     if code == "conflict" and status_code == 409:
@@ -748,5 +762,11 @@ def manage(
         },
         method=asked.method,
         sent=asked.body,
+        by_rule=REFUSED_BY_RULE,
     )
-    return _at_once([(customer.key, ask)], client)[0]
+    found = _at_once([(customer.key, ask)], client)[0]
+    # The step that exists for the link: an answer without one is no answer,
+    # though the stack may have made a link and voided the one before.
+    if asked.path == SETUP_LINK_PATH and isinstance(found, StackAccess):
+        return found if found.link else NO_LINK
+    return found

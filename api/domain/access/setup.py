@@ -8,7 +8,6 @@ every device, because a reset usually means a lost tablet or a password that
 got around, and signs in the device that used the link.
 """
 
-import os
 import secrets
 import uuid
 from datetime import datetime, timedelta
@@ -17,6 +16,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api.core.errors import InvalidInput
 from api.domain.access.admin import (
     SAME_AS_TEAM,
@@ -49,12 +49,11 @@ SETUP_PATH = "/gui/einrichten#"
 
 
 def setup_url(token: str, base_url: str = "") -> str:
-    """The setup link for `token`: under `base_url`, else `https://$AGENT_DOMAIN`,
-    else the path alone. The token is the fragment, which no browser sends."""
+    """The setup link for `token`: under `base_url`, else `https://$AGENT_DOMAIN`
+    (the stack's setting), else the path alone. The token is the fragment,
+    which no browser sends."""
     base = base_url or (
-        f"https://{os.environ['AGENT_DOMAIN']}"
-        if os.environ.get("AGENT_DOMAIN")
-        else ""
+        f"https://{settings.agent_domain}" if settings.agent_domain else ""
     )
     return f"{base.rstrip('/')}{SETUP_PATH}{token}"
 

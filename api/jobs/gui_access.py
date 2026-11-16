@@ -1,4 +1,5 @@
-"""The operator's side of the restaurant's login, until the dashboard has it (#570, #571).
+"""The operator's side of the restaurant's login on the stack itself (#570); the
+dashboard takes the same steps over the ops API (#571, `domain/operator.py`).
 
 Call, in the stack's api container:
     python -m api.jobs.gui_access link [--base-url https://agent.example.com]

@@ -129,7 +129,15 @@ MODES = {
     "resume": "switch the agent on again, in the mode it had before the pause",
 }
 NOT_SENT = "Nothing was sent: the form was not complete. Open the page again."
-NO_LINK = "answered without a link"
+# A form of the manage page that changes something is taken once.
+SENT_BEFORE = (
+    "Nothing was sent: this form was sent before, or its page is older than "
+    "five minutes. Open the page again and look at what holds now."
+)
+NO_HOST = (
+    " The stack does not know its public address (AGENT_DOMAIN is not set "
+    "there): put the customer's own address in front of this path."
+)
 # A step that changes something and got no clear answer: nobody knows.
 UNSURE = (
     " The change may have been made all the same: open the page again and "
@@ -848,10 +856,12 @@ def _said(
     secret the step shows once. Read from the stack's answer, not from what
     was asked for; a problem is this module's or `customers`' own sentence."""
     if isinstance(found, str):
-        problem = (
-            REFUSALS.get(step.name, found) if found == customers.NOT_TAKEN else found
-        )
-        if step.changes and found not in customers.NOTHING_DONE:
+        # `customers`' sentences are the ends of a row of the list ("alpha:
+        # not reachable"); here the stack is named in front of them.
+        by_rule = found == customers.REFUSED_BY_RULE
+        problem = REFUSALS.get(step.name) if by_rule else None
+        problem = problem or f"The stack: {found}."
+        if _unclear(step, found):
             problem += UNSURE
         return "danger", problem, ""
     which = step.detail.get("which", "")
@@ -871,12 +881,29 @@ def _said(
     if step.name == "setup_link" and found.link:
         until = _shown(found.link_expires_at)
         valid = f", valid until {until}" if until else ""
-        return "ok", f"The setup link, shown once{valid}:", found.link
+        no_host = NO_HOST if found.link.startswith("/") else ""
+        return "ok", f"The setup link, shown once{valid}.{no_host}", found.link
     if step.name == "call_mode":
         return "ok", f"The call mode is now {found.call_mode or 'not set'}.", ""
     if step.name == "team_phone":
-        return "ok", f"Calls for the team go to {found.team_phone} today.", ""
+        number = found.team_phone or "no number"
+        return "ok", f"Calls for the team go to {number} today.", ""
     return None
+
+
+def _unclear(step: customers.Step, found: customers.StackAccess | str) -> bool:
+    """Whether nobody knows what a step did: it changes something, and the
+    stack gave neither its answer nor one of the refusals that come before
+    anything is done."""
+    return (
+        isinstance(found, str) and step.changes and found not in customers.NOTHING_DONE
+    )
+
+
+def _form_token(key: str) -> str:
+    """The purpose a manage page's token is kept under: one per session and
+    customer, so the page of one customer sends nothing to another."""
+    return f"manage:{key}"
 
 
 @app.post("/customers/{key}/manage/{action}", response_class=HTMLResponse)
@@ -893,9 +920,15 @@ def customer_manage(
     setup link, the call mode, the team number. Each is a post behind the
     step-up with the page's CSRF token and a reason, as the call list; the
     actor is the session's account; the step is in the operator's audit before
-    the stack is asked, and what came of it is a second row. Neither row holds
-    a PIN, a link or a number. The answer is one page that is not stored: a
-    shown PIN or a new link exists nowhere on the operator's side after it."""
+    the stack is asked, and what came of it is a second row (done, not done,
+    or unclear when nobody knows). Neither row holds a PIN, a link or a
+    number. The answer is one page that is not stored: a shown PIN or a new
+    link exists nowhere on the operator's side after it.
+
+    A step that changes something is taken once: its form carries a token of
+    the page it came from (kept like a passkey challenge: one per session and
+    customer, single use, five minutes), so a reload of the answer, the Back
+    button or a second tab's older page sends nothing a second time."""
     _checked(request, form)
     stack = _stack(db, key)
     if action not in customers.STEPS:
@@ -916,11 +949,23 @@ def customer_manage(
         "reference": reference,
         "max_devices": customers.MAX_DEVICES,
         "access": None,
+        "once": "",
     }
     step = customers.step(action, form)
     if step is None:
         context["said"] = ("danger", NOT_SENT, "")
         return _page(request, "manage.html", context, 400)
+    holder = passkeys.for_session(operator.session_id)
+    if step.changes:
+        kept = passkeys.take(db, holder, _form_token(stack.key), now())
+        sent = form.get("once", "")
+        if (
+            kept is None
+            or not sent.isascii()
+            or not secrets.compare_digest(sent, kept.hex())
+        ):
+            context["said"] = ("danger", SENT_BEFORE, "")
+            return _page(request, "manage.html", context, 409)
     name = f"customer.{step.name}"
     access.audit(
         db,
@@ -931,19 +976,24 @@ def customer_manage(
     )
     db.commit()
     found = customers.manage(stack, step, operator.name, reason)
-    if isinstance(found, customers.StackAccess) and (
-        step.name == "setup_link" and found.link is None
-    ):
-        found = NO_LINK
-    # What the operator saw of it: done, or one of our own sentences why not.
+    # What the operator saw of it: done, one of our own sentences why not, or
+    # that sentence under "unclear" when the stack may have done it all the same.
+    if not isinstance(found, str):
+        outcome = "done"
+    else:
+        outcome = "unclear" if _unclear(step, found) else "not_done"
     access.audit(
         db,
         operator.name,
-        f"{name}_not_done" if isinstance(found, str) else f"{name}_done",
+        f"{name}_{outcome}",
         step.detail | ({"problem": found} if isinstance(found, str) else {}),
         target=stack.key,
     )
     db.commit()
     context["said"] = _said(step, found)
-    context["access"] = None if isinstance(found, str) else found
+    if not isinstance(found, str):
+        context["access"] = found
+        context["once"] = passkeys.issue(
+            db, holder, _form_token(stack.key), now()
+        ).hex()
     return _page(request, "manage.html", context)

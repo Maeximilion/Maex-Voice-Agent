@@ -12,7 +12,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from api.config import settings
 from api.domain import operator
@@ -71,7 +71,7 @@ def stack(session, tenant, monkeypatch):
     tenant.customer_key = KEY
     session.commit()
     monkeypatch.setattr(settings, "transfer_targets", f"{NUMBER}, 0721 5550000")
-    monkeypatch.delenv("AGENT_DOMAIN", raising=False)
+    monkeypatch.setattr(settings, "agent_domain", "")
     return tenant
 
 
@@ -150,7 +150,7 @@ REFUSALS = [
     ({"X-Ops-Reason": "curiosity #1"}, 400),
     ({"X-Ops-Reason": "restaurant_report Mueller"}, 400),
     ({"X-Ops-Actor": None}, 400),
-    ({"X-Ops-Actor": "Maxi Dumler"}, 400),
+    ({"X-Ops-Actor": "Erika Muster"}, 400),
     ({"X-Ops-Customer": None}, 409),
     ({"X-Ops-Customer": "pizzeria-sued"}, 409),
     ({"X-Ops-Customer": ""}, 409),
@@ -201,7 +201,7 @@ def test_every_step_is_in_the_audit_log_before_it_happens(
 
     for name in (
         "access",
-        "team_pin",
+        "shown_pin",
         "set_team_pin",
         "end_sessions",
         "issue_link",
@@ -237,7 +237,8 @@ def test_a_stack_without_a_login_says_so(http, session, stack):
     assert data["call_mode"] == "shadow"
     assert data["call_modes"] == ["shadow", "overflow", "primary", "paused"]
     config = session.scalars(select(ServiceConfig)).one()
-    assert data["team_phone"] == config.team_phone
+    assert data["team_phone"] == data["team_phone_standard"] == config.team_phone
+    assert data["team_phone_until"] is None
     # Only numbers written in E.164 can be chosen (`sheet_numbers`).
     assert NUMBER in data["team_phones"] and "0721 5550000" not in data["team_phones"]
 
@@ -417,7 +418,7 @@ def test_a_setup_link_is_answered_once_and_stored_nowhere_readable(
     http, session, login, stack, caplog, monkeypatch
 ):
     caplog.set_level(logging.DEBUG)
-    monkeypatch.setenv("AGENT_DOMAIN", "agent.example.com")
+    monkeypatch.setattr(settings, "agent_domain", "agent.example.com")
 
     data = _data(_ask(http, "POST", LINK))
 
@@ -512,6 +513,9 @@ def test_the_team_number_is_todays_with_a_card_for_the_owner_and_a_push(
     data = _data(_ask(http, "POST", TEAM_PHONE, {"number": NUMBER}))
 
     assert data["team_phone"] == NUMBER
+    # The operator sees that it is today's only, and what holds after it.
+    assert data["team_phone_standard"] == standard
+    assert data["team_phone_until"] is not None
     session.expire_all()
     config = session.scalars(select(ServiceConfig)).one()
     # The staff's rule holds for the operator too: today's number, the
@@ -548,3 +552,35 @@ def test_a_number_the_telephone_system_does_not_dial_is_refused(
     session.expire_all()
     assert session.scalars(select(ServiceConfig)).one().team_phone_today is None
     assert _count(session, StaffChange) == 0 and _count(session, OutboxEvent) == 0
+
+
+def test_a_refused_mode_is_still_a_step_somebody_asked_for(http, session, stack):
+    """As a refused PIN or number: the reason's row is written first."""
+    _refused(_ask(http, "POST", CALL_MODE, {"mode": "ai_first"}))
+
+    (row,) = _audit(session, "ops.")
+    assert (row.action, row.actor) == ("ops.call_mode", ACTOR)
+    assert _payload(row)["mode"] == "ai_first"
+    assert _mode(session) == "shadow"
+
+
+def test_a_restaurant_without_settings_offers_no_mode_and_no_number(
+    http, session, stack
+):
+    """Both steps would end in "not found" after their reason was written."""
+    session.execute(delete(ServiceConfig))
+    session.commit()
+
+    data = _data(_ask(http, "GET", ACCESS))
+
+    assert (data["call_mode"], data["call_modes"]) == (None, [])
+    assert (data["team_phone"], data["team_phone_standard"]) == (None, None)
+    assert data["team_phones"] == []
+
+
+def test_the_link_is_the_stacks_path_when_it_does_not_know_its_host(
+    http, session, stack
+):
+    """`AGENT_DOMAIN` reaches the api through its settings (docker-compose.yml
+    hands it over); without it the answer is the path, and the dashboard says so."""
+    assert _data(_ask(http, "POST", LINK))["link"].startswith("/gui/einrichten#")

@@ -17,16 +17,16 @@ holds a PIN, a link or a telephone number.
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput
 from api.core.ops_reason import OpsReader
-from api.domain.access.admin import admin_pin, set_admin_pin
-from api.domain.access.sessions import end_sessions
-from api.domain.access.setup import issue_link, set_team_pin, setup_url, team_pin
+from api.domain.access.admin import set_admin_pin, shown_pin
+from api.domain.access.sessions import audit, end_sessions
+from api.domain.access.setup import issue_link, set_team_pin, setup_url
 from api.domain.status.config import pause_ai, resume_ai, set_mode
 from api.domain.status.mode import CAUTION, PAUSED, mode_at
 from api.domain.status.staff_changes import (
@@ -34,7 +34,7 @@ from api.domain.status.staff_changes import (
     sheet_numbers,
     team_phone_at,
 )
-from api.models import AuditLog, GuiAccount, GuiSession, ServiceConfig, Tenant
+from api.models import GuiAccount, GuiSession, ServiceConfig, Tenant
 
 Which = Literal["team", "admin"]
 # What the operator sends to end the emergency stop: no mode, the agent goes
@@ -64,8 +64,11 @@ class Access:
     # The mode that holds now, and what the switch can be set to from it.
     call_mode: str | None
     call_modes: list[str]
-    # Where a call for the team goes now, and the numbers that can be chosen.
+    # Where a call for the team goes now, the standard number, when a number
+    # set for today ends (None: the standard holds), and what can be chosen.
     team_phone: str | None
+    team_phone_standard: str | None
+    team_phone_until: datetime | None
     team_phones: list[str]
 
 
@@ -73,16 +76,14 @@ def _asked(
     session: Session, tenant: Tenant, by: OpsReader, step: str, **detail: str
 ) -> None:
     """Who asked for which step and why, committed before the step."""
-    payload: dict[str, Any] = {"reason": by.reason, "reference": by.reference}
-    session.add(
-        AuditLog(
-            tenant_id=tenant.id,
-            actor=by.actor,
-            action=f"ops.{step}",
-            entity="tenant",
-            entity_id=tenant.id,
-            payload=payload | detail,
-        )
+    audit(
+        session,
+        tenant.id,
+        by.actor,
+        f"ops.{step}",
+        tenant.id,
+        {"reason": by.reason, "reference": by.reference} | detail,
+        entity="tenant",
     )
     session.commit()
 
@@ -103,6 +104,15 @@ def access(session: Session, tenant: Tenant, now: datetime) -> Access:
         select(ServiceConfig).where(ServiceConfig.tenant_id == tenant.id)
     ).first()
     mode = mode_at(session, tenant, config, now).mode if config else None
+    holding = team_phone_at(config, now) if config else None
+    # Without its settings row a restaurant has no switch and no number to
+    # set: both steps would end in "not found" after their reason was written.
+    if config is None:
+        modes: list[str] = []
+    elif mode == PAUSED:
+        modes = [RESUME]
+    else:
+        modes = [*CAUTION, PAUSED]
     return Access(
         login=account is not None and account.password_hash is not None,
         team_pin_set=bool(account and account.team_pin),
@@ -111,9 +121,13 @@ def access(session: Session, tenant: Tenant, now: datetime) -> Access:
             Device(row.id, row.device, row.created_at, row.last_seen_at) for row in rows
         ],
         call_mode=mode,
-        call_modes=[RESUME] if mode == PAUSED else [*CAUTION, PAUSED],
-        team_phone=team_phone_at(config, now) if config else None,
-        team_phones=sheet_numbers(),
+        call_modes=modes,
+        team_phone=holding,
+        team_phone_standard=config.team_phone if config else None,
+        team_phone_until=config.team_phone_today_until
+        if config and holding != config.team_phone
+        else None,
+        team_phones=sheet_numbers() if config else [],
     )
 
 
@@ -130,9 +144,7 @@ def show_pin(
     """The team or admin PIN, or None when none is set. Two rows: the reason
     here, the look itself from the function the command line uses."""
     _asked(session, tenant, by, "pin_show", which=which)
-    if which == "admin":
-        return admin_pin(session, tenant.id, by.actor)
-    return team_pin(session, tenant.id, by.actor)
+    return shown_pin(session, tenant.id, by.actor, which)
 
 
 def set_pin(
@@ -173,10 +185,11 @@ def set_call_mode(
     session: Session, tenant: Tenant, mode: str, now: datetime, by: OpsReader
 ) -> None:
     """A mode of the switch, the emergency stop, or its end. Raises
-    InvalidInput for anything else and for a mode chosen during the stop."""
+    InvalidInput for anything else and for a mode chosen during the stop; the
+    reason is written first all the same, as for every refused step."""
+    _asked(session, tenant, by, "call_mode", mode=mode)
     if mode not in (*CAUTION, PAUSED, RESUME):
         raise InvalidInput(f"No mode {mode!r} for the operator", status=400)
-    _asked(session, tenant, by, "call_mode", mode=mode)
     if mode == PAUSED:
         pause_ai(session, tenant.id, by.actor, now)
     elif mode == RESUME:
