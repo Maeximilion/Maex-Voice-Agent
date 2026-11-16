@@ -692,6 +692,13 @@ one equal to any other token of the stack. Caddy answers 404 for `/v1/ops/*`
   22.9 ms, `/calls` p95 8.5 ms; the latency test of `api/tests/test_ops_detail.py` holds both under
   300 ms on a busy week.
 
+**`GET /v1/ops/calls/<call_id>`** → `{"tenant": {"key", "name"}, "call_id", "call": {"started_at", "ended_at", "duration_seconds", "intent", "outcome", "transfer_reason", "line_note", "cost_cents", "model", "is_test", "tool_calls": [{"name", "duration_ms", "ok", "error_code"}], "tool_calls_total"} | null}`
+
+- One call for the dashboard's dev tools (docs/23 §5), by the id the logs write. Guest data: the headers `X-Ops-Reason` and `X-Ops-Actor` as for `/calls`, and the audit row `ops.call_read` (actor `operator:<account>`, payload reason, reference and the call's id) is committed before the row is read.
+- No caller number and no session id. `tool_calls` are the entries of `calls.tool_calls` in their order, the first 200, each as its four values (a name of at most 64 characters or `?`, a duration between 0 and an hour or null, `ok` true only when the entry says so, an error code or null); `tool_calls_total` counts all of them.
+- `"call": null` for an id this restaurant does not have and for a call older than the 14 business days of `/calls`; a self-test call is answered and marked `is_test`. What is no UUID is `invalid_input` without an audit row.
+- Read only: the route writes its audit row and nothing else. Measured under 300 ms (`api/tests/test_ops_call_log.py`).
+
 **The access read and the six steps (#571, sixth part, 16.11.2026).** They show a secret or change
 the restaurant, so each needs three headers besides the token: `X-Ops-Reason` and `X-Ops-Actor` as
 for `/calls`, and `X-Ops-Customer: <customer key>`. A stack whose restaurant has another key, or

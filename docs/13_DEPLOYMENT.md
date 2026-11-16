@@ -443,6 +443,9 @@ EUR; isolation and the unchanged code decide it.
   codes still open, the passkeys are then registered again). `OPERATOR_PUSH_URL` and
   `OPERATOR_PUSH_TOKEN` name the push server and a token that may publish to its `ops` topic for
   the push on a changed sign-in factor; empty, the push is only logged (docs/23 §5).
+  `OPERATOR_METRICS_DIR` names the folder with the recorded eval and measurement results
+  (`docs/metrics/` of a checkout) that the dev tools show; the image holds none, so the
+  operator stack mounts it read-only, and without it the page says that the files are missing.
 - #576 offboarding is export, then removal of the stack and its volumes.
 
 ### Reassess

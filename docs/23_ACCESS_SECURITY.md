@@ -252,6 +252,39 @@ call mode and sets today's team number.
   starts at an empty entry that the browser refuses and the dashboard does not send.
 - No script: plain forms. The lists of modes and numbers are the ones the stack answered with.
 
+**The dev tools and "New customer" (#571, seventh part, 16.11.2026):** two entries of the
+navigation, `/dev` and `/new-customer`.
+
+- **Eval runs and measurements** are the records the repository keeps (`docs/metrics/`, docs/08
+  §4): `eval_history.csv` and `voice_history.csv`, read from the folder `OPERATOR_METRICS_DIR`
+  (`dashboard/results.py`). No stack is asked: an eval belongs to a version of the code, not to a
+  customer, and the files hold nothing of a guest, so the session is enough. The files are the
+  operator's own and still read as input: at most 512 kB, the newest 50 rows, the named columns,
+  each cell cut to 200 characters and shown as text; a file that is missing or cannot be read is
+  one sentence in its place. The dashboard never writes there.
+- **The log of one call is guest data** and stands where the call list stands: a post
+  (`/dev/call`) behind `require_step_up` with the page's CSRF token and the same-site check, a
+  reason of the four categories with a ticket number, the session's account as the actor, and
+  two rows in the operator's audit (`customer.call_log_asked` before the stack is asked, then
+  `customer.call_log_shown` with the number of tool calls or `customer.call_log_not_shown` with
+  the dashboard's own sentence). The customer is one of the registry, chosen from a list that
+  starts empty; the call's id is typed as a log line writes it and is sent only when it is a
+  UUID. The stack answers with the call's row without its number and its session id and with
+  the tool calls (which tool, how long, whether it answered, an error code), never with what
+  was asked or said (§8). The page is sent with `Cache-Control: no-store`.
+- **Read-only in production is a rule in the code** (`_dev_tools_only_read` in
+  `dashboard/app.py`): outside dev and test every request under `/dev` that is not a GET is
+  refused with 405 before any route, except the posts named in `DEV_READS`, today the call log
+  alone, whose post exists for the CSRF token and whose question to the stack is a GET. A tool
+  added under `/dev` later cannot write in production by being forgotten: a test compares the
+  route table with that list. The simulator console is not part of the dashboard.
+- **"New customer" runs nothing.** The page names the steps and their commands as text: the
+  customer file, `scripts/new_stack.py` (first with `--dry-run`), the menu and the self-test,
+  `python -m api.dashboard.cli customer-add`, the check in the list. It has no form and no field
+  and takes no write, so the rules for a key, an address (`http://<host>:<port>`) and a token
+  (asked for or read from standard input, never an argument, never shown) stay where they are
+  enforced: in the script and the command line.
+
 **Passkeys, step-up and the push (#571, fourth part, 16.11.2026):** a passkey is the normal second
 factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webauthn`).
 
@@ -289,8 +322,8 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   `/step-up`, which takes a passkey or a TOTP code and never a recovery code. Wrong answers there
   count and wait as at the sign-in. A stale request is sent to `/step-up` and back to a path of
   this site; a stale write is dropped, never replayed. Today it stands before every change of a
-  factor, the sight of a new TOTP secret, a customer's call list and every step of a customer's
-  manage page; the later parts name it on their routes.
+  factor, the sight of a new TOTP secret, a customer's call list, the log of one call and every
+  step of a customer's manage page; the later parts name it on their routes.
 - **Audit and push.** A new or removed passkey, a new or removed TOTP secret, a used recovery
   code, and on the host a new account and the break glass are in the operator's audit and go as a
   push to the `ops` topic from one place,
@@ -503,6 +536,14 @@ guest's data.
   later hold a guest's name, and the reason is copied into two audit logs. The audit row is
   committed before a row is read. The stack sends no phone number at all, only a count per caller
   of the day; the day must be one the team's own list reaches (14 business days).
+  Built (#571, seventh part, 16.11.2026): `GET /v1/ops/calls/<call_id>` (docs/04 §Ops API), one
+  call for the dev tools (§5): its row without the number and the session id, and its tool calls
+  as name, duration, ok and error code, at most 200 of them, each value cut to what it should be
+  (the column is JSON). Same headers, and the audit row `ops.call_read` with the reason and the
+  call's id is committed before the row is read. A call the restaurant does not have, another
+  restaurant's, or one older than the call list reaches is `"call": null` under the restaurant's
+  name: the code `not_found` already says "no restaurant in the stack", and the dashboard must
+  not read one as the other. The route writes nothing but its audit row.
 - **Writes** (settings, call mode, tokens) are separate routes, each writing `audit_log` with the
   operator as actor; changing the call mode or team number also pushes to `owner` and `ops` (T12),
   through the domain functions the tablet uses (`domain/status/config.py`, `staff_changes.py`).
@@ -543,7 +584,9 @@ guest's data.
   day 512 kB and at most 2000 rows, every count is at most 10^9 and every percentage at most 100 (a
   number of a thousand digits is valid JSON too), every day lies between 2000 and 2100 (the page
   counts days back from the stack's business day), and an answer for another day than the one asked
-  is no answer. A caller's header can never replace the token's. A 404 is "does not know this
+  is no answer. The log of one call has the 64 kB, at most 200 tool calls, a duration that is a
+  number between 0 and an hour (no NaN), and an answer about another call than the one asked is no
+  answer. A caller's header can never replace the token's. A 404 is "does not know this
   question (an older version?)", not a missing restaurant: the two sides deploy apart.
 
 Rejected:
