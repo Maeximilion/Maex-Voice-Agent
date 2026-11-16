@@ -1,34 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.47.1
-> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.17
-> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.16
-> Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.15
-> Status: 14.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.40
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.37
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.36
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.35
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.34
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.33
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.32
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.31
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.30
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.29
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.28
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.27
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.25
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.24
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.23
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.22
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.21
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.20
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.19
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.18
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.17
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.16
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.15
-> Status: 13.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.44.14
+> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.47.2
 
 ---
 
@@ -106,15 +79,8 @@ docs/21. Historical session details are in `docs/00_PCF.md` section 13.
 9. **By hand, Maxi, after the AI review workflow is gone** (PR #217): stop and remove the runner service `ghrunner-wsl` on the WSL machine, remove the runner under Settings, Actions, Runners, and delete the secret `ZAI_API_KEY` and the variables `ZAI_API_BASE` and `REVIEW_MODEL` if they were set. Also open: the Codex review quota, see the changelog row of 06.10.2026
 12. **T-11.1 done 25.10.2026 (two PRs, #368 and the L17 PR):** left with it, each a decision or a run, not code: the real-model targets `allergie_0001`, `allergie_0019`, `abholung_0066`, `lieferung_0013` and `reservierung_0038` on the local llama-server (GPU, Maxi names the start), and Maxi's word on the assumptions under "Consent to the allergy note". The allergen list on the website (L17) stays Maxi's
 14. **Follow-ups of the security audit (#252), decided by Maxi on 12.10.2026. Built 13.10.2026: the reservation limits with their migration (first bullet). Not built: the rest.** One pull request each, routed by the table in CLAUDE.md §6; the values go into `service_config`, never into code (rule 1). (full text: docs/HISTORY.md)
-    - **Reservations by phone (built 13.10.2026, summary above):** up to 90 days ahead. Up to 8 guests the agent books itself; above 8, and on the same day above 5, it takes the wish and the team calls back to confirm and talk it through. Once the team has confirmed, the guest hears it by a call from a person (full text: docs/HISTORY.md)
-    - **Orders (built 13.10.2026, summary above, branch `feat/252-order-approval-threshold`):** above 150 euros the order waits for the team's approval on the tablet before a slip prints, whatever the mode.
     - **Silence while the model answers (built 13.10.2026 for the 10 seconds, summary above, branch `feat/252-turn-deadline`):** 15 seconds until the handover if the agent can say "Bitte warten Sie einen Moment" in between, 10 seconds if it cannot. Saying a sentence while a turn runs needs the voice layer (T-1.11); until then 10.
-    - **Postgres: built 13.10.2026** (branch `feat/252-postgres-application-role`, summary above). A role without superuser for the application, the superuser for backup, restore and migrations. Opt-in by `.env`: `DATABASE_URL` names the role, `OWNER_DATABASE_URL` the owner (full text: docs/HISTORY.md)
-    - **Callback numbers: built 12.10.2026** (branch `feat/252-callback-number-mark`). The card in "Rückrufe" marks a number the call did not come from: "Andere Nummer als der Anruf" with the caller's number next to it, or "Anruf ohne Rufnummer" (docs/06 §3). The comparison is `OpenCallback.number_origin` in `domain/callbacks/board.py`.
-    - **Operations view without an access check of its own: recorded 12.10.2026** as accepted for stage 1, the proxy is the check (docs/13 §3).
-    - Order of the rest: migration 007 with the new `service_config` fields is built (13.10.2026: booking horizon, party size limits, `order_approval_above_cents`, `turn_deadline_seconds`). Left: nothing, all five fields are read. The Postgres role (#281) and the order threshold (#283) are on `main`, the silence deadline is pull request #287.
     - Left in #252 for later: `USER` in the Dockerfile (PR #359 left it: the dev container writes into the mounted checkout); the installer and the Ollama archive are checked by SHA-256 since PR #360; with T-1.11 the lock per call and the call limit for a silent caller; with #64 the deletion of outbox payloads and caller numbers (full text: docs/HISTORY.md)
-    - The handover's steps by hand (13.10.2026): the ruleset on `main` is applied, four required checks next to the pull request rule (docs/13 §6; its name on GitHub is still `t-4.6-probebo`, because a disabled ruleset called `Main` blocks the name of the file). (full text: docs/HISTORY.md)
 14. **T-11.1 done 27.10.2026** (#368, #369 on main). Real-model run on main 18a725f (qwen3.6-35b-a3b): cases 33/56, targets 2/29. It showed the model looking up allergens when the guest only named an allergy, which ended the order with the team in 11 of 15 allergy cases (full text: docs/HISTORY.md)
 18. **Maxi's order of 02.11.2026: work through every open issue that needs no money and no hardware.** State and order: `docs/00_PCF.md` §13, handover of 02.11.2026. Next: the GPU result for #472, then #472, then T-6.8, T-11.3, T-10.11, then T-9.6, T-4.9, T-9.8 from their branches. T-6.4 stays unbuilt while D5 needs no polygon.
 
@@ -142,16 +108,12 @@ Decided D1 to D30: same archive section.
 | # | Question | Who | When needed |
 |---|---|---|---|
 | D4 | Voice: natural or audibly synthetic. **12.10.2026:** Maxi heard the test-phase voice (Piper `thorsten`) and finds it not clean, also before the telephone line; it stays for building and testing only. His idea, kept for later: his own voice, synthesized. (full text: docs/HISTORY.md) | Maxi | Stage 1, dialog test |
-| D9 | ~~Reopened by the compliance check of 11.11.2026 (docs/09 §1): who is the data protection officer?~~ **decided 11.11.2026 (Maxi): he stays the officer himself**, as on 20.10.2026 and now knowing what the check found: an officer is mandatory here (§ 38(1) sentence 2 BDSG), and the authorities treat an owner or managing director as officer as a conflict of interest as the rule (Hessian authority, DSK short paper 12), so the report can be rejected and the DSFA then lacks the officer's advice. The risk is accepted; if the authority objects, the route is an external officer. Not asked again without a new fact | Maxi | decided; the report and the contact in the notice stay open (docs/09 §1) |
 | D15 | Operation model: which of the shortlist (Mistral Small, Claude Haiku 4.5, Gemini Flash via Vertex EU) goes into operation, and the vendor's DPA. Shortlist decided 06.10.2026 (Maxi); the pick is the smallest model with all hard eval metrics at 0 and latency in budget (`docs/18_MODEL_SELECTION.md` §3) | T-5.3 measures, Maxi decides | before G1 |
 | D22 | Status and history layout (Claude setup audit, 19.10.2026). `/start` now reads only the current sections of this file (about 49 KB instead of 476 KB). Done in #562: the Summary, older Done rows, older Changelog lines and settled assumptions moved into `docs/HISTORY.md`, merged with git's built-in `union` driver (tested: two parallel entries merge (full text: docs/HISTORY.md) | Maxi | before the status is restructured |
 | D23 | A `deny` rule for `.env` in `.claude/settings.json` (Claude setup audit, 19.10.2026). Since 19.10.2026 an `ask` rule makes Claude ask before its Read tool opens a `.env`; tested headless, the Grep tool and `cat .env` still read it. (full text: docs/HISTORY.md) | Maxi | after the next gates (Maxi, 19.10.2026) |
 | D31 | Which further mechanics of MaexSocial's labels and gates are taken over (Maxi asked 05.11.2026 to look; names stay this repo's)? Already the same here: assignee, type label and milestone per PR and issue, project status sync, daily maintenance. (full text: docs/HISTORY.md) | Maxi | open |
-| D32 | ~~How do several customers run: one stack per customer, or all in one stack with `tenant_id` isolation (#568)?~~ **decided 09.11.2026 (Maxi): one Docker stack and database per customer**, with one shared Caddy on the host in front of them. (full text: docs/HISTORY.md) | Maxi | decided |
-| D33 | ~~How are the operator dashboard and menu uploads protected (#569)?~~ **decided 09.11.2026 (Maxi):** (a) the dashboard is public on its own host name behind a strong login, not VPN-only; (b) the operator's second factor is a passkey with TOTP as backup, plus recovery codes (full text: docs/HISTORY.md) | Maxi | decided |
 | D36 | An external penetration test before the first paying customer (found while planning #571, 16.11.2026)? It costs money, so it is Maxi's; the security audit of docs/23 §11 comes before anything is reachable from outside either way | Maxi | before the first paying customer |
 | D35 | ~~Where does a restaurant's front page with the sign-in live (#571)?~~ **decided 16.11.2026 (Maxi):** on each customer's own host name, not on one central site: a central login would hold every customer's credentials or hand a session across stacks (against D32), and a passkey, bound to its host name, would force that central login. The operator's dev login stays on `ops.<domain>` (D33). Later, each an issue of its own: an owner passkey on the customer's own host (scope the full host name, never a shared parent domain) and a central product page without any login. The plan of the eleven pull requests is the comment of 16.11.2026 on #571 | Maxi | decided |
-| D34 | ~~How does a restaurant sign in to its operations view (#570)?~~ **decided 09.11.2026 (Maxi, issue comment on #570):** (1) one login per restaurant, not per staff member; (2) the password once per device, then a session of 30 days that renews on use; after 15 minutes idle a 4 to 6 digit PIN unlocks it, five wrong PINs end the session (full text: docs/HISTORY.md) | Maxi | decided; (a) built and merged 09.11.2026 (#585), (7) and (8) for the team PIN in the follow-up PR; (b) the admin PIN with the device list (#587, migration 032) and the staff changes with the check card (migration 033); the push to owner and `ops` next |
 
 ---
 
@@ -238,7 +200,6 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 | A caller who hangs up while the team rings gets no callback card (`deploy/asterisk/conf/extensions.conf`, extension `team`) | T-10.8, 20.10.2026: the dialplan ends with the caller, and the report runs only after a leg nobody answered. | Maxi decides; before the first call from a real customer |
 | A phone number taken from speech is not read back (`api/domain/reservations/create.py` `readback`, `api/domain/ordering/readback.py`, `prompts/system_v2.md`) | Codex PR #244 (12.10.2026). | Maxi decides; before a real call with a withheld number |
 | The check on name and number hears digits and whole words only (`api/agent/guest_details.py`) | By design (12.10.2026), a number said in words read as digits since 02.11.2026: a number in words that runs into a word that does not close it or has a word inside it, a number without its area code or with a country code and no plus, a ... | T-10.7, with real voices |
-| The evals do not count a refused name or number (`evals/recorder.py`) | By design (12.10.2026): the recorder counts a refused attempt only where it has a rule of its own (a guessed dish, a `confirm` without a yes). | with the first full run on a real model |
 | A wish for the other flow, heard while a draft waits for its yes, does not drop the draft (`api/agent/loop.py` `run_turn`, `state.note_intent`) | Own review of PR #241 (08.10.2026), older than that PR: a table is read back, the guest says "ach, lieber nur etwas zum Abholen", the model answers with a question and no tool call, so nothing supersedes the draft. | Maxi decides; with the guard for guest details or after the first full run |
 | A wish the guest takes back in words stays in the state (`api/agent/intent.py` `heard`, `state.note_intent`) | Codex PR #241 (P2, recorded): after "ich möchte etwas zum Abholen bestellen" the guest says "doch nicht zum Abholen, ich möchte einen Tisch für vier". | with the first full run on a real model, which shows whether the hint helps at all |
 | Table details of the same turn come too late for the heard wish (`api/agent/loop.py` `run_turn`) | Review of the head of PR #241 (P2, after three fully worked rounds, rule 24.09.2026: recorded, not blocking): `note_intent` runs before the model, so in "wir würden gern morgen um sieben zu sechst kommen, kann man da was vorbestellen?" the ... | with the first full run on a real model, which shows whether the hint helps at all |
@@ -261,7 +222,6 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 | The real model joins `wish.note` and the answer to "Wogegen?" (`prompts/tools_v2.md`) | #252 follow-up, 18.10.2026: while the ingredient is asked for, a removal said before the allergy waits in `wish.note`. | the next eval run on the real model |
 | A filler before an allergy goes on the kitchen note (`api/domain/menu/wishes.py` `_with_allergy`) | Own review, #252 follow-up, 18.10.2026: "Keine Ahnung, ich bin gegen Erdnuesse allergisch" gives "WICHTIG: Keine Erdnuesse. | with the next wish change |
 | Allergy wording the parser does not read (`api/domain/menu/wishes.py`) | Own review, #252 follow-up, 19.10.2026, each older than the follow-up: (1) fixed here: "Erdnussallergie, aber Sesam vertrage ich nicht" noted the peanuts only; a "vertrage" whose ingredient comes before it is now asked about ("Wogegen?") ... | with the next wish change |
-| Wish findings from the review of the merged PR #330 (`api/domain/menu/wishes.py`, `sim/scripted_llm.py`, issue #331) | Review of 19.10.2026; none loses an allergy, the three losses of that review are closed. | with the D24 work package |
 | Allergy wording seen while fixing #207 and #331 (`api/domain/menu/wishes.py`) | Own check of 21.10.2026 and the Codex rounds on PR #361, left as it is: (1) a list behind the allergy word is not read but asked about (option C, Maxi 22.10.2026), so "Erdnussallergie und Sesam" costs one more question; reading it put new ... | with the D24 work package |
 | German identifiers in the older GUI code (PR #140 review, conventions) | CLAUDE.md §8 asks for English identifiers. | rename in one refactor commit, no behaviour change |
 | Index for `outbox.payload->>'order_id'` (T-4.6) | Own review PR #143 (P2): `send_ticket` and the print bridge look up a ticket's newest revision by scanning the outbox for the order id; fine at pilot volume, but the outbox has no retention yet. | with the next migration after PR #139 |
@@ -338,6 +298,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.47.2 · 16.11.2026:** STATUS upkeep 16.11.2026: firm rows, old changelog lines and stacked header lines archived to HISTORY (#562)
 - **v2.47.1 · 16.11.2026:** #575: go-live checklist marks (auto/hand/Maxi) on all 35 items, rollback assumption A
 - **v2.47.0 · 16.11.2026:** Front page with the sign-in on each customer's own host: / leads to the view, the sign-in page shows the restaurant and the product (#571, D35); plan of the GUI pull requests on #571
 - **v2.46.21 · 15.11.2026:** Self-test: python -m sim.selftest checks a stack end to end; its table shows on the real tablet as a TEST card for a minute and never reaches outside (is_test, migration 039; #574)
@@ -409,75 +370,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 - **v2.42.1 · 13.11.2026:** Fix PR for #692: migration 037, a complaint rule holds no NULL phrase, and the matcher skips one
 - **v2.42.0 · 13.11.2026:** Loop D PR 3 of #695: routing rules trimmed in CLAUDE.md, Haiku routes at medium
 - **v2.41.0 · 13.11.2026:** Loop D of #695, PR 2: the session-flow rules left CLAUDE.md for the commands (47408 to 36759 bytes)
-- **v2.40.0 · 12.11.2026:** Loop D of #695, PR 1: the review rules left CLAUDE.md unchanged for docs/21 and docs/22 (58497 to 47408 bytes)
 - **v2.39.4 · 13.11.2026:** docs/19 synced to the live user hooks (#695, Loop B)
 - **v2.39.3 · 13.11.2026:** Fix PR for #690: a handover keeps the held draft or read-back table and asks a withheld caller for a number
-- **v2.39.2 · 12.11.2026:** docs/19 names the Ubuntu env keys and the Fable 5.2 effort key (#695, Loop A)
-- **v2.39.1 · 12.11.2026:** Fix PR for #674: telephony failure paths end with the right team
-- **v2.39.0 · 12.11.2026:** Handover thresholds from the measured context (150k after a merge, 300k mid-task); the context is recorded per task
-- **v2.38.0 · 12.11.2026:** Handover only when unfinished work moves to a new session; the context is measured
-- **v2.37.5 · 12.11.2026:** Batch 2 review of the ultrareview ledger, first fix PR (#668): an allergy said again for everything reaches every line, a denial next to an allergy opens none
-- **v2.37.4 · 12.11.2026:** Fixes from the local max review of #660 and #662
-- **v2.37.3 · 12.11.2026:** CLAUDE.md: Claude gives the backup and migrate commands whenever a workbench migration is due
-- **v2.37.2 · 12.11.2026:** Call list filter: selects on the board get the height, font and padding of the buttons, so their text is no longer cut
-- **v2.37.1 · 12.11.2026:** fastapi 0.162.0 to 0.162.2 (Dependabot #659), patch release within the 0.162.* pin
-- **v2.37.0 · 11.11.2026:** T-8.7 (#661): the call list /gui/anrufe in its first form, with the marked number of a call without caller audio (#651)
-- **v2.36.0 · 11.11.2026:** #651 points 1 and 2: calls.line_note marks a call without caller audio (migration 036), monitor alarm after ALARM_NO_AUDIO_CALLS in a row; T-8.7 (#661) call list
-- **v2.35.0 · 11.11.2026:** #652: an outage with nobody to reach asks a withheld caller for a number, a queued transfer survives a broken line, a leg closed before the answer is no hung-up caller; #651 decided (Maxi)
-- **v2.34.4 · 11.11.2026:** #655: every handover the guest hears of is carried out, its card names the open order or table; a lost team leg counts as abandoned; cases 99 of 99
-- **v2.34.3 · 11.11.2026:** Fable checks closed: Fable subagent from Opus works, advisor stays off
-- **v2.34.2 · 11.11.2026:** STATUS upkeep (one row archived) and Fable use 4 recorded in routing_history.csv
-- **v2.34.1 · 11.11.2026:** Review fixes of #643 (#649): additive handover keeps the held draft, AI notice on every way out
-- **v2.34.0 · 11.11.2026:** Model routing: Fable 5.2 in four uses, xhigh only after a stall, usage check
-- **v2.33.1 · 11.11.2026:** T-0.12 step 3: inner layers mypy-strict, possibly-undefined on
-- **v2.33.0 · 11.11.2026:** #638 done: a sentence that names an additive goes to the team before the model, a caller who takes the agent for a person hears the truthful sentence again; four evals, cases 98 of 98 green
-- **v2.32.0 · 11.11.2026:** T-10.2: print sheet, chat words and wire-path audit for the run on the wire; drills 44 of 44
-- **v2.31.2 · 11.11.2026:** A handover after a merged PR stays in the chat, no side branch
-- **v2.31.1 · 11.11.2026:** T-0.12 step 2: mypy test baseline emptied, every path checked
-- **v2.31.0 · 11.11.2026:** D9 decided again: Maxi stays the data protection officer, the risk is accepted
-- **v2.30.0 · 11.11.2026:** Legal check verified against the sources: N1 revised, N3 new, D9 reopened, paper duties at delivery
-- **v2.29.10 · 11.11.2026:** T-0.12 first step: mypy checks every function body, strict flags on three packages
-- **v2.29.9 · 11.11.2026:** The bar Ton an keeps a gap to the columns below
-- **v2.29.8 · 10.11.2026:** n8n 2.46.6 to 2.47.2 (#628)
-- **v2.29.7 · 10.11.2026:** T-3.18 done: the dev console's script is TypeScript, #626 closed
-- **v2.29.6 · 10.11.2026:** Four medium CodeQL alerts fixed: owner page redirect and README demo proxy headers
-- **v2.29.5 · 10.11.2026:** T-3.18 app.js migrated to TypeScript
-- **v2.29.4 · 10.11.2026:** T-3.18 raumplan.js migrated to TypeScript
-- **v2.29.3 · 10.11.2026:** T-3.18 base.js migrated to TypeScript
-- **v2.29.2 · 10.11.2026:** Standing rule: browser logic is TypeScript, no language moves back (CLAUDE.md §8, guard test)
-- **v2.29.1 · 10.11.2026:** Static files of the view are revalidated (no-cache); before/after browser session on #627 identical
-- **v2.29.0 · 10.11.2026:** TypeScript toolchain for the browser code: committed ES modules, CI job browser, raumplan-geometry migrated (#553, T-3.17 done; rest T-3.18, #626)
-- **v2.28.1 · 10.11.2026:** Social preview redrawn as the banner's example call; upload in the repository settings still open (#623)
-- **v2.28.0 · 10.11.2026:** README front page rebuilt: example-call banner, demo recording, transcript call flow, two-path architecture, roadmap line, local badges; README job in the required check (#622)
-- **v2.27.18 · 10.11.2026:** chore(deps): bump compose-images group with 3 updates (#603)
-- **v2.27.17 · 10.11.2026:** chore(deps): bump python-minor-patch group in /api with 5 updates (#605)
-- **v2.27.16 · 10.11.2026:** chore(deps): bump amannn/action-semantic-pull-request to 6.1.2 (#604)
-- **v2.27.15 · 10.11.2026:** chore(deps): bump types-pyyaml to 6.0.12.20261103 (#606)
-- **v2.27.14 · 10.11.2026:** #571 second part: operator login with password, TOTP and recovery codes
-- **v2.27.13 · 10.11.2026:** STATUS upkeep rule: /done archives finished rows, /start flags size above 80 KB
-- **v2.27.12 · 10.11.2026:** #562 part 5: finished What's Next items and decided D1 to D30 archived
-- **v2.27.11 · 10.11.2026:** Handover: handover command is the single source for handover rules, session title uses middle dots, no token threshold
-- **v2.27.10 · 10.11.2026:** #562 part 4: long rows of Roadmap, Gates, Blockers and Done cut to one sentence
-- **v2.27.9 · 10.11.2026:** #562 part 3: What's Next and Open Decisions shortened to one sentence per row, full rows archived in HISTORY.md
-- **v2.27.8 · 10.11.2026:** #571 first part: ops status route of a stack
-- **v2.27.7 · 09.11.2026:** #562: cut Open Points from Reviews and open assumptions, handover start form in handover.md, no-AI-attribution rule
-- **v2.27.6 · 09.11.2026:** Required check title also fails AI attribution in commits and descriptions (#609)
-- **v2.27.5 · 09.11.2026:** CI split into checks, three pytest shards and a summary test job; Docker jobs skip for docs-only pull requests (#609)
-- **v2.27.4 · 09.11.2026:** #562: STATUS split, archive in docs/HISTORY.md
-- **v2.27.3 · 09.11.2026:** #545 done: calls left open by a dead voice process are closed as error
-- **v2.27.2 · 09.11.2026:** #573 part two: a new customer's stack in one command behind the shared Caddy
-- **v2.27.1 · 09.11.2026:** Review batch 0: fixes from the reviews of #586, #587 and #589; grouped review issues
-- **v2.27.0 · 09.11.2026:** #573 part one: a new customer's tenant in one command (migration 035)
-- **v2.26.3 · 09.11.2026:** #590 done: n8n cache tmpfs owned by node, n8n starts after a container restart
-- **v2.26.2 · 09.11.2026:** #588 push of staff and call-mode changes to owner and ops
-- **v2.26.1 · 09.11.2026:** Handover: #570 part b merged as #587 (admin PIN, device list) and #589 (staff changes, check cards); next #588 on task/588-staff-change-push
-- **v2.26.0 · 09.11.2026:** #570 part b2: staff changes and their check cards (migration 033)
-- **v2.25.0 · 09.11.2026:** #570 part b1: owner's admin PIN and device list (migration 032)
-- **v2.24.1 · 09.11.2026:** Handover: #570 part a and its follow-up merged (#585, #586), next #570 part b on task/570-b-admin-pin
-- **v2.24.0 · 09.11.2026:** D34 points 7 to 9: gentler sign-in waits, operator sees and sets the team PIN
-- **v2.23.0 · 09.11.2026:** #570 part a: restaurant login replaces Basic-Auth, D34 recorded
-- **v2.22.0 · 09.11.2026:** #569 threat model and access design (docs/23), D33
-- **v2.21.0 · 09.11.2026:** Tenancy decided: one stack per customer (D32, #568)
-- **v2.20.4 · 09.11.2026:** PR checklists keep only the items that matter; no open boxes after merge except remaining work linked to an issue (CLAUDE.md, done.md, PR template)
 
 Older lines: `docs/HISTORY.md` section "Changelog (archive)".
