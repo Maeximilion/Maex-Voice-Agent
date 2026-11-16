@@ -11,6 +11,7 @@
 | Entry | Who uses it | Check today | Where |
 |---|---|---|---|
 | `agent.<domain>/gui/*` | the restaurant's tablet | the restaurant's device login (#570, §6; Caddy Basic-Auth until then), then `X-Maex-Proxy-Secret` set by Caddy and checked in constant time (`require_gui_proxy`), CSRF double submit plus `HX-Request` and a same-origin check on every write (docs/06 §9) | `deploy/Caddyfile`, `api/core/auth.py`, `api/gui/session.py` |
+| `agent.<domain>/` | anyone who types the host name | none, no data: a redirect to `/gui/` with a fixed target, behind `X-Maex-Proxy-Secret` like the view; the sign-in page it ends on is the front page and shows the restaurant's name only (#571, D35) | `api/gui/access.py` |
 | `agent.<domain>/v1/kitchen/*` | the print bridge | `KITCHEN_BRIDGE_TOKEN`, bound to `KITCHEN_BRIDGE_TENANT_ID` | `require_kitchen_token` |
 | `agent.<domain>/health` | uptime check | none, no data | |
 | every other path on that name | nobody | 404 from Caddy | `api/tests/test_deploy_exposure.py` |
@@ -157,6 +158,12 @@ the second builds against.
   `/gui`). `GUI_PROXY_SECRET` stays: it keeps requests from inside the Docker networks out of the
   view, independent of the login. The login holds in every environment, dev and test included, so a
   stack started with the wrong `ENV` is not open.
+- **The front page is the sign-in page (#571, D35, Maxi 16.11.2026):** it lives on the customer's
+  own host name, never on a site shared by several customers. `/` answers with a redirect to the
+  view and carries nothing; `/gui/anmelden` shows the restaurant's name, three sentences about the
+  product and the password field, and sets no cookie but the CSRF token. No second sign-in code
+  exists: the form posts to the route above, with its waits, device cookie, CSRF token and
+  same-site check. The redirect's target is fixed, so no link can send a browser elsewhere.
 - **The account lives in the customer's own database** (`gui_accounts`, one row per tenant, unique),
   bound to the stack's `tenant_id`. Every GUI route (`gui/session.py`, a dependency of the whole
   router) resolves the session and checks that its tenant is the stack's tenant; the session of one

@@ -34,6 +34,7 @@ from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from api.config import Settings
@@ -313,7 +314,7 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
         row = {k: (v or "").strip() for k, v in raw.items() if k in COLUMNS}
         # Vor der Leerzeilen-Pruefung: ";;;;;;;;07215551234" hat acht leere
         # Spalten, der Wert im neunten Feld darf trotzdem nicht ungeprueft bleiben.
-        if raw.get(None):  # type: ignore[call-overload]
+        if raw.get(None):
             # Ein Semikolon im Freitext verschiebt jede Spalte dahinter still.
             errors.append(
                 f"Zeile {line}: mehr Felder als Spalten, Semikolon im Text? "
@@ -409,7 +410,11 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
     return _with_ordinals(entries), errors
 
 
-def _body(e: Entry) -> tuple:
+# What a row says, without where and when: two rows with the same body read the same.
+Body = tuple[str, str, tuple[str, ...], str, str, float | None]
+
+
+def _body(e: Entry) -> Body:
     return (e.intent, e.outcome, tuple(e.phrases), e.items, e.problems, e.duration_min)
 
 
@@ -418,8 +423,8 @@ def _with_ordinals(entries: list[Entry]) -> list[Entry]:
     row is a call: without the minute a row typed twice looks like two calls
     with the same content, and merging them would lose the second real one;
     the report names such rows instead (_twins)."""
-    hours: Counter[tuple] = Counter()
-    minutes: dict[tuple, list[tuple]] = {}
+    hours: Counter[tuple[date, int]] = Counter()
+    minutes: dict[tuple[date, int, int], list[Body]] = {}
     out = []
     for e in entries:
         minute_ordinal = None
@@ -440,7 +445,7 @@ def _with_ordinals(entries: list[Entry]) -> list[Entry]:
 def _twins(entries: list[Entry]) -> list[list[int]]:
     """Lines with the same content in the same hour, maybe typed twice. Only
     rows with free text: two bare rows ("frage", "erledigt") are common."""
-    groups: dict[tuple, list[int]] = {}
+    groups: dict[tuple[date, int, Body], list[int]] = {}
     for e in entries:
         if e.phrases or e.items or e.problems:
             groups.setdefault((e.day, e.hour, _body(e)), []).append(e.line)
@@ -555,7 +560,7 @@ def _remap(entries: list[Entry], salt: str, known: dict[str, dict[str, str]]) ->
     return changed
 
 
-def to_case(entry: Entry, salt: str = "") -> dict | None:
+def to_case(entry: Entry, salt: str = "") -> dict[str, Any] | None:
     """Entwurf eines Eval-Falls (docs/08 §1) oder None, wenn nichts pruefbar ist.
 
     Erwartet wird nur, was das Protokoll sicher hergibt: Anliegen, bestaetigt
@@ -724,7 +729,7 @@ def _report_orphans(entries: list[Entry], salt: str, done: dict[str, Path]) -> N
     drops out, the next one moves up, and the reviewed case of the last place
     has no row any more: check and report the places behind the last one taken
     for every hour in the log."""
-    last: dict[tuple, Entry] = {}
+    last: dict[tuple[date, int], Entry] = {}
     for e in entries:
         key = (e.day, e.hour)
         if key not in last or e.ordinal > last[key].ordinal:
@@ -741,7 +746,7 @@ def _report_orphans(entries: list[Entry], salt: str, done: dict[str, Path]) -> N
                 )
 
 
-def _report_correction(case: dict, reviewed: Path) -> None:
+def _report_correction(case: dict[str, Any], reviewed: Path) -> None:
     """Ein durchgesehener Fall wird nie ueberschrieben, eine spaetere Korrektur
     der Zeile darf aber nicht still bleiben: Abweichungen im Ergebnis melden.
     items fehlen im Entwurf und traegt der Mensch nach, sie zaehlen nicht."""

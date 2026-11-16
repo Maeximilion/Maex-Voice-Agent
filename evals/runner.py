@@ -30,6 +30,7 @@ import argparse
 import hashlib
 import json
 import sys
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -42,7 +43,7 @@ from api.agent.dispatch import dispatch
 from api.agent.llm import LLMClient, Usage
 from api.config import settings
 from api.core.time import business_day, business_day_bounds_utc
-from api.domain.menu.importer import apply, parse
+from api.domain.menu.importer import Plan, apply, parse
 from api.domain.reservations import notice as notices
 from api.models import (
     Address,
@@ -51,6 +52,7 @@ from api.models import (
     MenuItem,
     RecognitionObjection,
     ServiceConfig,
+    Tenant,
 )
 from evals.judge import (
     CaseError,
@@ -72,7 +74,7 @@ from scripts.import_menu import read_files
 from scripts.seed import seed
 from sim.replay import customer_lines, replay
 from sim.scripted_order import MenuNumbers
-from sim.session import SCRIPTED, make_llm, menu_numbers, resolve_tenant
+from sim.session import SCRIPTED, SimCall, make_llm, menu_numbers, resolve_tenant
 
 HERE = Path(__file__).resolve().parent
 # The zone of the delivery cases: every other postal code is out of it. Fee,
@@ -90,6 +92,8 @@ MENU = HERE / "menu"
 REPORTS = HERE / "reports"
 TENANT = "Evalbetrieb"
 TIMEZONE = "Europe/Berlin"
+# A case's model: built per case from its clock and its card numbers.
+MakeLLM = Callable[[datetime, Callable[[], MenuNumbers]], LLMClient]
 # Ein Dienstag im Abendfenster: Abholung und Reservierung offen. Ein Fall kann
 # mit "now" einen eigenen Zeitpunkt setzen (Schliesszeit, Tageswechsel).
 DEFAULT_NOW = datetime.fromisoformat("2026-09-15T18:00:00+02:00")
@@ -120,9 +124,7 @@ def load_cases(folder: Path, tags: list[str]) -> list[dict[str, Any]]:
     return [c for c in cases if not tags or set(tags) & set(c.get("tags", []))]
 
 
-def model_factory(
-    model: str,
-) -> Callable[[datetime, Callable[[], MenuNumbers]], LLMClient]:
+def model_factory(model: str) -> MakeLLM:
     """`menu` reads the card numbers of the case's tenant: the scripted model
     gets them as in the text phone (`sim/session.py`). Any other name is a
     model on the server of `LLM_BASE_URL`; every case gets its own client, so
@@ -135,7 +137,7 @@ def model_factory(
     return lambda now, menu: make_llm(model, now=now, timezone=TIMEZONE, menu=menu)
 
 
-def menu_plan():
+def menu_plan() -> Plan:
     """Evalkarte einmal lesen und pruefen; je Fall wird sie nur angewendet."""
     plan = parse(read_files(MENU))
     if not plan.ok:
@@ -143,7 +145,7 @@ def menu_plan():
     return plan
 
 
-def _prepare(session: Session, now: datetime, plan, name: str = TENANT):
+def _prepare(session: Session, now: datetime, plan: Plan, name: str = TENANT) -> Tenant:
     """Mandant mit Öffnungszeiten, Kapazität und Evalkarte.
 
     Je Fall ein eigener: sonst füllen frühere Fälle die Kapazität eines Slots,
@@ -164,7 +166,9 @@ def _end_of_business_day(now: datetime) -> datetime:
     return business_day_bounds_utc(day, TIMEZONE)[1]
 
 
-def _sell_out(session: Session, tenant_id, numbers: list[str], now: datetime) -> None:
+def _sell_out(
+    session: Session, tenant_id: uuid.UUID, numbers: list[str], now: datetime
+) -> None:
     """ "Heute aus" wie im Tablet (T-4.8): bis zum Ende des Betriebstags (05:00).
 
     Die Evalkarte im Importformat kennt keinen Tagesstand, deshalb setzt ihn der
@@ -190,7 +194,9 @@ def _sell_out(session: Session, tenant_id, numbers: list[str], now: datetime) ->
     session.commit()
 
 
-def _seed_customers(session: Session, tenant_id, case: dict[str, Any]) -> None:
+def _seed_customers(
+    session: Session, tenant_id: uuid.UUID, case: dict[str, Any]
+) -> None:
     """A guest who ordered before: `"customers"` with their default address and
     `"objections"`, the numbers recognition is off for (L12)."""
     for row in case.get("customers", []):
@@ -214,7 +220,14 @@ def _seed_customers(session: Session, tenant_id, case: dict[str, Any]) -> None:
     session.commit()
 
 
-def _repeat_confirm(session: Session, case, call, tenant, llm, now) -> list[str]:
+def _repeat_confirm(
+    session: Session,
+    case: dict[str, Any],
+    call: SimCall,
+    tenant: Tenant,
+    llm: RecordingLLM,
+    now: datetime,
+) -> list[str]:
     """`"repeat_confirm": true`: den letzten confirm des Modells ein zweites Mal
     senden, wie eine Plattform, die nach einem Timeout wiederholt. Das Replay
     endet mit der Bestaetigung, ein zweites Ja des Gasts kaeme nie beim Modell
@@ -245,7 +258,11 @@ def _count_usage(result: CaseResult, llm: RecordingLLM | None) -> None:
 
 
 def run_case(
-    session: Session, case: dict[str, Any], make_llm, plan, hear=None
+    session: Session,
+    case: dict[str, Any],
+    make_llm: MakeLLM,
+    plan: Plan,
+    hear: Callable[[str], str | None] | None = None,
 ) -> CaseResult:
     now = datetime.fromisoformat(case["now"]) if case.get("now") else DEFAULT_NOW
     expected = case["expected"]
@@ -362,7 +379,7 @@ def run(
     keep_db: bool = False,
     stamp: datetime | None = None,
     cases: list[dict[str, Any]] | None = None,
-    hear=None,
+    hear: Callable[[str], str | None] | None = None,
 ) -> RunReport:
     """Ein ganzer Lauf. `db_url` setzt eine migrierte Datenbank von aussen (Tests).
     `cases` plays these instead of the folder's, `hear` the lines as an ear heard

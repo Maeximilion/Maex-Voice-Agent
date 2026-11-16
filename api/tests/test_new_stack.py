@@ -79,7 +79,7 @@ def test_two_customers_get_sites_of_their_own():
     assert "(transport-alpha)" in alpha and "import transport-alpha" in alpha
     # The security headers and the public path list come along unchanged.
     assert "frame-ancestors 'none'" in alpha
-    assert "@public path /gui /gui/* /v1/kitchen/* /health" in alpha
+    assert "@public path / /gui /gui/* /v1/kitchen/* /health" in alpha
     assert "{$" not in alpha and "{env." not in alpha
 
 
@@ -410,3 +410,39 @@ def test_a_rerun_that_fails_puts_the_working_site_back(tmp_path, monkeypatch):
     assert site.read_text() == working
     networks = json.loads((root / "caddy" / "networks.json").read_text())
     assert set(networks["networks"]) == {"maex-pilot_edge"}
+
+
+def test_the_self_test_is_named_at_the_end_and_runs_only_when_asked(
+    tmp_path, monkeypatch, capsys
+):
+    """#574: right after the first run the menu is missing, so the self-test
+    is printed; `--selftest` runs it in the stack's api container."""
+    root = tmp_path / "srv"
+    _stack(root)
+    docker = FakeDocker()
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    selftest = list(new_stack.SELFTEST)
+    assert selftest not in docker.commands
+    assert f"cd {root / 'pilot'} && {' '.join(selftest)}" in capsys.readouterr().out
+
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False, True)
+
+    assert docker.commands[-2:] == [
+        ["docker", "compose", "up", "-d", "--wait", "api"],
+        selftest,
+    ]
+
+
+def test_a_failed_self_test_names_the_command_to_run_again(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _stack(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker(refuse="sim.selftest"))
+
+    with pytest.raises(new_stack.Refused, match="self-test failed") as refused:
+        new_stack.create(_customer(tmp_path), "a.example.org", root, False, True)
+
+    assert "python -m sim.selftest" in str(refused.value)
+    assert (root / "caddy" / "sites" / "pilot.caddy").exists()

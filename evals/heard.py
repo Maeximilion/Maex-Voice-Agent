@@ -138,7 +138,9 @@ def positions(heard: str, menu: Menu = EVAL) -> list[str]:
     return pieces
 
 
-def order_verdict(expect: list[list], heard: str, menu: Menu = EVAL) -> dict[str, Any]:
+def order_verdict(
+    expect: list[list[Any]], heard: str, menu: Menu = EVAL
+) -> dict[str, Any]:
     """An order of several dishes said in one sentence, judged as a whole.
 
     The transcript is split into positions the way the conversation splits a
@@ -192,7 +194,7 @@ def _letters(text: str) -> str:
     return "".join(ch for ch in text.lower() if ch.isalnum())
 
 
-def judge(plan: dict, heard: dict) -> list[dict]:
+def judge(plan: dict[str, Any], heard: dict[str, Any]) -> list[dict[str, Any]]:
     sentences = {row["id"]: row for row in plan["sentences"]}
     rows = plan.get("menu")
     menu = Menu.from_rows((r["number"], r["category"]) for r in rows) if rows else EVAL

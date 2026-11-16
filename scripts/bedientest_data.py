@@ -12,6 +12,7 @@ import json
 import sys
 import uuid
 from datetime import datetime, time, timedelta
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, update
@@ -117,7 +118,7 @@ def _order(
     tenant_id: uuid.UUID,
     who: str,
     phone: str,
-    lines: list[dict],
+    lines: list[dict[str, Any]],
 ) -> tuple[uuid.UUID, str]:
     """A confirmed pickup, made by the same two domain steps a call ends with."""
     now = utcnow()
@@ -170,7 +171,7 @@ def _callback(session: Session, tenant_id: uuid.UUID, summary: str) -> uuid.UUID
     return task.callback_id
 
 
-def fill(session: Session, now: datetime | None = None) -> dict:
+def fill(session: Session, now: datetime | None = None) -> dict[str, Any]:
     """The start state of section 0. Refuses a stack that already holds orders, because
     `reset` (a fresh volume) is how the protocol rebuilds, never a patch on top."""
     result = seed(session, tenant_name=TENANT, timezone="Europe/Berlin")
@@ -309,7 +310,7 @@ def fill(session: Session, now: datetime | None = None) -> dict:
     }
 
 
-def arrive(session: Session, what: str) -> dict:
+def arrive(session: Session, what: str) -> dict[str, Any]:
     """The live arrivals of protocol section 2a, made while the tester works."""
     tenant_id = _tenant_id(session)
     if what == "callback":

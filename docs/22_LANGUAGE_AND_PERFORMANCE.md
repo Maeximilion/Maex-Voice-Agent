@@ -183,9 +183,30 @@ their home modules (`api.domain.calls`, `api.agent.loop`) instead of from
 `sim.session`, which only imports them; the patches by name on `sim.session`
 stay.
 
-Next steps, one reviewable change each (strict errors outside `api/tests` on
-14.11.2026): `api.gui` (50), `db` (8), `evals` (28) and `scripts` (97). Count the rest again with `mypy --strict`
-before each step.
+**Seventh step (15.11.2026): `api.gui`, `db`, `evals` and `scripts` are
+strict, and so is the package root `api`.** Measured on `main` at 69ef367 with
+the new strict list: 222 errors in 37 files (48 in `api/gui`, 8 in `db`, 28 in
+`evals`, 97 in `scripts`, 41 in `api/tests`). Most were annotations again: a
+JSON value or page context is `dict[str, Any]`, a `gh` runner is
+`Callable[[str], list[dict[str, Any]]]`, a value that comes as `Any` (a JSON
+body, `scalar_one()`, `getsockname()`, numpy's `tobytes()`) is bound to an
+annotated name before it is returned. `_RevalidatedStatic.file_response` spells
+out the signature of Starlette's `StaticFiles.file_response`. `_done_when`
+asserts `done_at`, which `list_history` only returns when set; the old code
+failed on `None` in `to_local` as well. `api/gui/access.py` imports
+`same_origin` from `api.core.origin` instead of through `api.gui.session`, and
+the 41 test errors were all `no_implicit_reexport`: the tests patch `os`,
+`subprocess`, `time`, `SimCall` and `resolve_tenant` on their home modules and
+import `is_yes` from `api.agent.consent` and `ProjectError` from
+`scripts.project_report`, the same objects as before. One `type: ignore` went
+(`scripts/call_log.py`, no longer needed). Behaviour stays the same; the whole suite ran
+green against a scratch database before the change was opened.
+
+Every path in `files` is now in the strict list except `api/tests`, which stays
+at `check_untyped_defs`: test doubles, monkeypatched callables and fixtures
+without annotations are the bulk of the remaining `--strict` errors there, and
+annotating them would add noise without catching production bugs. That ends
+T-0.12; a new package joins the strict list in the change that adds it.
 
 ## Browser code in TypeScript
 
