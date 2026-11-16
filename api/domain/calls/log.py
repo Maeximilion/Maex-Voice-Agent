@@ -5,8 +5,10 @@ job takes it after its period (docs/03 "Löschkonzept"), and how much of it a
 screen shows is the screen's decision.
 """
 
+import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,6 +23,12 @@ from api.models import AuditLog, Call, Tenant
 DAYS_LISTED = 14
 # The operator read a day's call list over the ops API (docs/23 §8).
 SUPPORT_READ = "ops.calls_read"
+# The operator read one call with its tool calls (the dev tools, docs/23 §5).
+SUPPORT_CALL_READ = "ops.call_read"
+# A call makes a handful of tool calls; what a broken loop wrote is cut here.
+TOOL_CALLS_SENT = 200
+_CODE_LENGTH = 64
+_LONGEST_MS = 3_600_000
 
 
 @dataclass(frozen=True)
@@ -87,6 +95,28 @@ class SupportCall:
     line_note: str | None
 
 
+def _recorded(
+    session: Session,
+    tenant: Tenant,
+    action: str,
+    actor: str,
+    reason: str,
+    reference: str,
+    **what: str,
+) -> None:
+    """The operator's read in the audit log, committed before a row is read."""
+    session.add(
+        AuditLog(
+            tenant_id=tenant.id,
+            actor=actor,
+            action=action,
+            entity="call",
+            payload={"reason": reason, "reference": reference, **what},
+        )
+    )
+    session.commit()
+
+
 def calls_for_support(
     session: Session,
     tenant: Tenant,
@@ -106,20 +136,9 @@ def calls_for_support(
         raise InvalidInput(
             f"the call list reaches back {DAYS_LISTED} business days", status=400
         )
-    session.add(
-        AuditLog(
-            tenant_id=tenant.id,
-            actor=actor,
-            action=SUPPORT_READ,
-            entity="call",
-            payload={
-                "reason": reason,
-                "reference": reference,
-                "day": day.isoformat(),
-            },
-        )
+    _recorded(
+        session, tenant, SUPPORT_READ, actor, reason, reference, day=day.isoformat()
     )
-    session.commit()
     rows = list_calls(session, tenant, day)
     callers: dict[str, int] = {}
     for row in reversed(rows):
@@ -138,3 +157,96 @@ def calls_for_support(
         )
         for row in rows
     ]
+
+
+@dataclass(frozen=True)
+class ToolCall:
+    """One entry of `calls.tool_calls` (`core/tool_log.py`): which tool, how
+    long, whether it answered ok. Never what was asked or answered."""
+
+    name: str
+    duration_ms: float | None
+    ok: bool
+    error_code: str | None
+
+
+@dataclass(frozen=True)
+class SupportCallLog:
+    """One call as the operator's dev tools see it (docs/23 §5): the row
+    without its number and its session id, and the tool calls in their order."""
+
+    started_at: datetime
+    ended_at: datetime | None
+    duration_seconds: int | None
+    intent: str | None
+    outcome: str | None
+    transfer_reason: str | None
+    line_note: str | None
+    cost_cents: int | None
+    model: str | None
+    is_test: bool
+    tool_calls: list[ToolCall]
+    # All of them; `tool_calls` holds the first TOOL_CALLS_SENT.
+    tool_calls_total: int
+
+
+def _tool_call(entry: Any) -> ToolCall:
+    """An entry as the four values it should hold. The column is JSON, so
+    whatever else stands there is left out, not passed on."""
+    found = entry if isinstance(entry, dict) else {}
+    name, ms, code = (found.get(k) for k in ("name", "duration_ms", "error_code"))
+    timed = isinstance(ms, int | float) and not isinstance(ms, bool)
+    return ToolCall(
+        name=name[:_CODE_LENGTH] if isinstance(name, str) and name else "?",
+        duration_ms=float(ms) if timed and 0 <= ms <= _LONGEST_MS else None,
+        ok=found.get("ok") is True,
+        error_code=code[:_CODE_LENGTH] if isinstance(code, str) and code else None,
+    )
+
+
+def _one_call(session: Session, tenant: Tenant, call_id: uuid.UUID) -> Call | None:
+    return session.scalar(
+        select(Call).where(Call.id == call_id, Call.tenant_id == tenant.id)
+    )
+
+
+def call_for_support(
+    session: Session,
+    tenant: Tenant,
+    call_id: uuid.UUID,
+    now: datetime,
+    *,
+    actor: str,
+    reason: str,
+    reference: str,
+) -> SupportCallLog | None:
+    """One call for the operator, by its id; a self-test call too. The read is
+    in the audit log, committed, before the row is read. None for an id this
+    restaurant does not have and for a call older than the call list reaches:
+    the operator sees no more days here than there."""
+    _recorded(
+        session, tenant, SUPPORT_CALL_READ, actor, reason, reference, call=str(call_id)
+    )
+    call = _one_call(session, tenant, call_id)
+    if call is None:
+        return None
+    age = business_day(now, tenant.timezone) - business_day(
+        call.started_at, tenant.timezone
+    )
+    if not timedelta(0) <= age < timedelta(days=DAYS_LISTED):
+        return None
+    entries = call.tool_calls or []
+    return SupportCallLog(
+        started_at=call.started_at,
+        ended_at=call.ended_at,
+        duration_seconds=call.duration_seconds,
+        intent=call.intent,
+        outcome=call.outcome,
+        transfer_reason=call.transfer_reason,
+        line_note=call.line_note,
+        cost_cents=call.cost_cents,
+        model=call.model,
+        is_test=call.is_test,
+        tool_calls=[_tool_call(entry) for entry in entries[:TOOL_CALLS_SENT]],
+        tool_calls_total=len(entries),
+    )
