@@ -64,10 +64,15 @@ async function run(button: HTMLButtonElement): Promise<void> {
       body: new URLSearchParams({ csrf_token: token.value, back: location.pathname }),
       credentials: "same-origin",
     });
-    // The session ended or needs a fresh second factor: the server sent us to
-    // the page that deals with it.
+    // The session needs a fresh second factor: the server sent us to the page
+    // that deals with it.
     if (response.redirected) {
       location.assign(response.url);
+      return;
+    }
+    // The session ended: a post behind the sign-in gets 401, not a redirect.
+    if (response.status === 401) {
+      location.assign("/login");
       return;
     }
     if (!response.ok) throw new Error(`options refused: ${response.status}`);
