@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.49.1
+> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.49.2
 
 ---
 
@@ -268,6 +268,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 | Date | What |
 |---|---|
 | 16.11.2026 | **The trunk zero after every European code with a single-0 trunk prefix (review #207 area F, P1 on #726), with Maxi's decision 7 of 15.11.2026.** `TRUNK_ZERO_AFTER` (`api/domain/customers/phone.py`) holds 27 sourced codes (libphonenumber 9.0.43 metadata read as text, no new dependency), so "+33 06 ...", "+44 07700 ..." and the number words "null null drei drei null sechs ..." give a callback number that exists; Italy, Hungary (06), Russia (8), Norway and the countries without a trunk prefix keep the digits as said, two zeros always stay. The local `/code-review max` found one more confirmed bug in the same check: `E164` used `\d`, which accepts any script's digits, so a full-width number was stored; it is now ASCII only (also the copy in `scripts/new_stack.py`). Left open, not built: a bracketed "(0)" is still dropped after every code (Italy too), Hungary's 06 and Lithuania's old 8 stay, a French number said in pairs with pauses is still refused (the agent asks again). |
+| 16.11.2026 | **#764 batch finding on #754: staff times after a held closure of a "wie Sonntag" date wait for the owner (#710).** `change_day_hours` checks the weekday rule against the card's origin as well as the row that holds now, once and before `_within`, so own times or "Normale Zeiten" after the staff closed such a date wait, today and later, a rest day like Monday included; "wie Sonntag" on a Sunday drops nothing. docs/06, docs/23 and the sheet's hint name the case. The `/code-review max` run found two older cases filed as #802 (the card's origin goes stale under a holiday answer, the note is taken from the row) and one decision, #803 (staff cannot reopen their own closure of such a date; A, keep it, taken as the assumption). |
 | 15.11.2026 | **#574 done: the self-test of a stack, with Maxi's decision 8 of 15.11.2026.** `python -m sim.selftest [--print-slip] [--card-seconds N]` checks health, the database head, the configuration, the menu, a simulated reservation call (draft, yes, `confirm`) and optionally a test slip. Migration 039 adds `is_test` to `calls` and `reservations`. The table shows on the real tablet as a TEST card for `--card-seconds` (60 by default), then the run deletes it; a card left by a killed run goes with the next run. Test rows get no outbox event and no customer contact, and figures, the call log, the day report and the hours-change cards leave them out. The downgrade refuses while a test call or test table is left. |
 | 15.11.2026 | **#744, #750 follow-ups (ledger #764), with Maxi's decision 6 of 15.11.2026.** "Ich möchte die Pizza reklamieren" gets the remedy offer of the complaint rules first, and "nein, das reicht mir nicht" then goes to the team on the existing declined-offer path. An order's own wish verb in front of a complaint keeps the order for the team. A complaint to a person ("beim Chef", "bei Ihrem Chef") stays a complaint, which fixes a regression of this branch found by Graphify and missed by Codex. A draft made from 00:00 to 04:59 names weekday and date, never heute or morgen. |
 | 15.11.2026 | **Menu parser corpus, step 1 of the conservation gate (#207, Maxi's decision of 15.11.2026).** `api/tests/test_menu_corpus.py` runs 221 rows through `search_menu` and checks four properties: N (card numbers and counts), O (free notes), A (allergies) and P (unclaimed pieces). The confirmed red probes of #720, #721, #722 and #735 are strict xfail (64 rows); the reviewers' "checked and clean" sentences and a generated dish x residue x second-element block are green where main holds. The gate PR flips the xfails; the counts are the over-ask baseline. |
@@ -302,7 +303,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.49.1 · 16.11.2026:** Trunk zero dropped after every sourced European code (review #207 area F); E.164 check ASCII only
+- **v2.49.2 · 16.11.2026:** Trunk zero dropped after every sourced European code (review #207 area F); E.164 check ASCII only
+- **v2.49.1 · 16.11.2026:** Staff times after a held closure of a wie-Sonntag date wait for the owner, also on a rest day; wie Sonntag on a Sunday drops nothing (#764)
 - **v2.49.0 · 16.11.2026:** Operator dashboard: passkeys as the normal second factor, step-up before a change of a factor, audit and push on every changed factor (#571 fourth part, migration op003, new setting OPERATOR_ORIGIN)
 - **v2.48.0 · 16.11.2026:** Operator dashboard: shell, restyled sign-in and the customer list over each stack's ops status (#571 third part, migration op002); plain form posts under no-referrer pass the same-site check
 - **v2.47.2 · 16.11.2026:** STATUS upkeep 16.11.2026: firm rows, old changelog lines and stacked header lines archived to HISTORY (#562)

@@ -9,7 +9,8 @@ hours of a given date. Both are temporary and reviewed:
 - A date's hours hold at once for today, and for a later date when they close
   it or shorten it. Longer or extra hours for a later date wait for the owner.
   Asking for what held before the staff touched the date holds at once too: it
-  takes a staff change back.
+  takes a staff change back. Times on a date "like" another weekday wait for
+  the owner, today's too and after a held closure of that date (#710).
 
 Every change shows a check card (`staff_changes`, one open card per kind and
 day) until the owner keeps it or undoes it with the admin PIN. A second change
@@ -259,7 +260,8 @@ def change_day_hours(
     """The staff change a date's hours. Held at once for today, when shorter,
     or when back to what held before the staff came; otherwise the card waits
     for the owner, today's too when times on a date "like" another weekday
-    would drop that weekday and its seats (#710). Asking for what holds now withdraws a waiting request. None
+    would drop that weekday and its seats (#710), also after a held closure
+    of that date. Asking for what holds now withdraws a waiting request. None
     when nothing changes. An end before the start runs past midnight and is
     refused unless the staff say so (`overnight`): swapped times would open
     the night. Raises InvalidInput. Commits."""
@@ -290,10 +292,13 @@ def change_day_hours(
     # What the card showed until now: what held, or the request that waited.
     shown = DayHours.of(card.after)
     origin = DayHours.of(card.before)
-    held = (
-        hours in (holding, origin)
-        or (day == today and not _drops_weekday(hours, holding))
-        or _within(session, tenant_id, day, hours, holding, zone)
+    # The weekday the card started from counts too: after a held closure the
+    # row reads closed, and times then would still drop "wie Sonntag", also
+    # on a rest day whose closed row they fit in.
+    drops = _drops_weekday(hours, holding, day) or _drops_weekday(hours, origin, day)
+    held = hours in (holding, origin) or (
+        not drops
+        and (day == today or _within(session, tenant_id, day, hours, holding, zone))
     )
     if hours == shown and held == card.held:
         # The request that waits already, sent again: nothing changes.
@@ -586,15 +591,16 @@ def _write(
     session.flush()
 
 
-def _drops_weekday(after: DayHours, before: DayHours) -> bool:
+def _drops_weekday(after: DayHours, before: DayHours, day: date) -> bool:
     """Times on a date "like" another weekday cannot keep that weekday (one
     meaning per row, `ck_special_days_like_weekday_alone`): its seats, call
-    mode and call limit go to the plain weekday's. Closing drops nothing."""
-    return (
-        before.like_weekday is not None
-        and not after.closed
-        and after.like_weekday != before.like_weekday
-    )
+    mode and call limit go to the plain weekday's (`hours.weekday_of`).
+    Closing drops nothing, nor does "wie Sonntag" on a Sunday."""
+
+    def weekday(hours: DayHours) -> int:
+        return day.weekday() if hours.like_weekday is None else hours.like_weekday
+
+    return not after.closed and weekday(after) != weekday(before)
 
 
 def _within(
@@ -606,11 +612,8 @@ def _within(
     zone: str,
 ) -> bool:
     """Whether every service is open at most when it was before: closed, or
-    shorter hours. Then the change holds at once (D34 point 4). Times on a
-    date "like" another weekday drop that weekday and with it its seats
-    (`reservations/capacity.py`), so they wait for the owner (#596)."""
-    if _drops_weekday(after, before):
-        return False
+    shorter hours. Then the change holds at once (D34 point 4). The caller
+    checks first that no "wie <Wochentag>" is dropped (#596)."""
     regular = regular_hours(session, tenant_id)
     tz = ZoneInfo(zone)
 

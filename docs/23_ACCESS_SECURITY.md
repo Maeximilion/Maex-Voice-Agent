@@ -300,7 +300,8 @@ the second builds against.
   `TRANSFER_TARGETS`, T-10.13), so the tablet can never name a number that would not ring; the
   transfer and the call routing read it. A date's hours: today's and shorter ones hold at once, and so
   does a return to what held before the staff came (the staff take their own change back); longer
-  or extra hours for a later date wait on the card. One open card per kind and date: a second
+  or extra hours for a later date wait on the card, and so do times on a date "like" another
+  weekday, today's too and after a held closure of that date (#710). One open card per kind and date: a second
   change moves its "after" and keeps the "before" of the first, so "Zurücknehmen" always returns to
   what held before the staff came. The holiday answers of T-9.5 stay as they are (Maxi 09.11.2026).
   The call mode gets the push but no card (Maxi 09.11.2026). The push (#588): an outbox event in
