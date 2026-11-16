@@ -76,7 +76,8 @@ Internet
   │ 443 only (80 answers the certificate challenge and redirects to 443)
   ▼
 Caddy (TLS automatisch, Reverse Proxy)
-  ├── agent.example.com/gui/*        → api:8000  (device login of the view, #570)
+  ├── agent.example.com/             → api:8000  (exactly this path: a redirect to the view, #571)
+  ├── agent.example.com/gui/*        → api:8000  (device login of the view, #570; its sign-in is the front page)
   ├── agent.example.com/v1/kitchen/* → api:8000  (token of the print bridge)
   ├── agent.example.com/health       → api:8000
   │      every other path on that name: 404 from the proxy

@@ -362,6 +362,34 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 .zugang-form input{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);min-height:var(--tap);padding:0 var(--s3)}
 .zugang-form .badge{font-size:var(--fs-body);white-space:normal;padding:var(--s2) var(--s3)}
 .zugang-form a.button{display:flex;align-items:center;justify-content:center;min-height:var(--tap)}
+.zugang-form h2{margin:0;font-size:var(--fs-h2)}
+/* A password field with "Anzeigen" beside it (base.ts): twelve characters on a
+   tablet keyboard are typed once and read before they are sent. */
+.zugang-feld{display:flex;gap:var(--s2)}
+.zugang-feld input{flex:1 1 auto;min-width:0}
+.zugang-feld button{flex:none}
+/* Front page (#571): the sign-in with the product in a few words. One column on
+   a phone, in the order headline, form, points; from 900 px the form stands
+   beside the text. The violet glow is the brand's "waiting" tone and carries no
+   meaning here. */
+.start{background:radial-gradient(60rem 40rem at 10% 0%,var(--warn-bg),transparent 70%) no-repeat,var(--bg)}
+.start main{min-height:100dvh;padding:var(--s5) var(--s4)}
+.start-seite{width:min(68rem,100%);display:grid;gap:var(--s5);grid-template-areas:"kopf" "form" "punkte"}
+.start-kopf{grid-area:kopf}
+.start-seite .zugang-form{grid-area:form;width:100%;padding:var(--s5)}
+.start-punkte{grid-area:punkte}
+.start-marke{margin:0;font-family:var(--font-mono);font-weight:700;color:var(--accent)}
+.start-kopf h1{margin:var(--s2) 0 var(--s3);font-size:clamp(var(--fs-code),6vw,56px);line-height:1.1;text-wrap:balance;overflow-wrap:anywhere}
+.start-satz{margin:0;font-size:var(--fs-h2);max-width:34ch}
+.start-punkte{list-style:none;margin:0;padding:0;display:grid;gap:var(--s3);color:var(--muted)}
+.start-punkte li{display:grid;grid-template-columns:auto 1fr;gap:var(--s3);align-items:baseline}
+.start-punkte li::before{content:"\2713";color:var(--accent);font-weight:700}
+@media (min-width:900px){
+  .start-seite{grid-template-columns:1.2fr 1fr;grid-template-areas:"kopf form" "punkte form";column-gap:64px}
+  .start-kopf{align-self:end}
+  .start-punkte{align-self:start}
+  .start-seite .zugang-form{align-self:center}
+}
 /* T-3.16: an order that only waits for "In Kasse eingegeben" is one line; a red
    card also sticks to the top of the column as a ~50 px bar, below the sticky h2. */
 .order.compact{padding-top:6px;padding-bottom:6px}
