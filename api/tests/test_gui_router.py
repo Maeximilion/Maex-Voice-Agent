@@ -259,7 +259,7 @@ def test_the_view_has_its_own_login_not_caddys_basic_auth():
     site = caddyfile.read_text().split("{$N8N_DOMAIN")[0]
 
     assert "basic_auth" not in site
-    assert "@public path /gui /gui/*" in site
+    assert "@public path / /gui /gui/*" in site
     assert "GUI_BASIC_AUTH" not in (caddyfile.parents[1] / ".env.example").read_text()
 
 

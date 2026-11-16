@@ -79,7 +79,7 @@ def test_two_customers_get_sites_of_their_own():
     assert "(transport-alpha)" in alpha and "import transport-alpha" in alpha
     # The security headers and the public path list come along unchanged.
     assert "frame-ancestors 'none'" in alpha
-    assert "@public path /gui /gui/* /v1/kitchen/* /health" in alpha
+    assert "@public path / /gui /gui/* /v1/kitchen/* /health" in alpha
     assert "{$" not in alpha and "{env." not in alpha
 
 
