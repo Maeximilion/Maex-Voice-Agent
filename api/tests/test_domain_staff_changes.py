@@ -659,6 +659,50 @@ def test_reopening_today_after_a_closure_on_a_plain_day_holds_at_once(
     assert not row.closed and row.opens_at == time(12)
 
 
+@pytest.mark.parametrize(
+    "now",
+    [NOW, datetime.combine(MONDAY, time(10, 0), tzinfo=BERLIN)],
+    ids=["later-date", "today"],
+)
+def test_reopening_a_rest_day_like_another_weekday_after_a_closure_waits(
+    session, tenant_id, now
+):
+    """Monday has no weekly windows, so the weekly hours after a closure fit
+    inside the closed row; the dropped "wie Sonntag" still waits for the
+    owner (review of the #764 fix)."""
+    session.add(
+        SpecialDay(tenant_id=tenant_id, date=MONDAY, like_weekday=6, status="set")
+    )
+    session.commit()
+    closed = staff.change_day_hours(
+        session, tenant_id, MONDAY, DayHours(closed=True), now
+    )
+    assert closed is not None and closed.held
+    card = staff.change_day_hours(session, tenant_id, MONDAY, DayHours(), now)
+    assert card is not None and not card.held
+    row = session.scalars(select(SpecialDay).where(SpecialDay.date == MONDAY)).one()
+    session.refresh(row)
+    assert row.closed and row.like_weekday is None
+
+
+def test_times_on_a_sunday_set_like_sunday_drop_nothing(session, tenant_id):
+    """A holiday on a Sunday keeps Sunday's seats with its own times, so
+    today's times after a closure hold at once (review of the #764 fix)."""
+    sunday = date(2026, 11, 15)
+    now = datetime.combine(sunday, time(10, 0), tzinfo=BERLIN)
+    session.add(
+        SpecialDay(tenant_id=tenant_id, date=sunday, like_weekday=6, status="set")
+    )
+    session.commit()
+    closed = staff.change_day_hours(
+        session, tenant_id, sunday, DayHours(closed=True), now
+    )
+    assert closed is not None and closed.held
+    times = DayHours(opens=time(12), closes=time(13))
+    card = staff.change_day_hours(session, tenant_id, sunday, times, now)
+    assert card is not None and card.held
+
+
 def test_a_listed_national_number_is_never_offered_on_the_sheet(
     session, tenant_id, monkeypatch
 ):

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.47.0
+> Status: 16.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.47.1
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.17
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.16
 > Status: 15.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.46.15
@@ -303,6 +303,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 16.11.2026 | **#764 batch finding on #754: staff times after a held closure of a "wie Sonntag" date wait for the owner (#710).** `change_day_hours` checks the weekday rule against the card's origin as well as the row that holds now, once and before `_within`, so own times or "Normale Zeiten" after the staff closed such a date wait, today and later, a rest day like Monday included; "wie Sonntag" on a Sunday drops nothing. docs/06, docs/23 and the sheet's hint name the case. The `/code-review max` run found two older cases filed as #802 (the card's origin goes stale under a holiday answer, the note is taken from the row) and one decision, #803 (staff cannot reopen their own closure of such a date; A, keep it, taken as the assumption). |
 | 15.11.2026 | **#574 done: the self-test of a stack, with Maxi's decision 8 of 15.11.2026.** `python -m sim.selftest [--print-slip] [--card-seconds N]` checks health, the database head, the configuration, the menu, a simulated reservation call (draft, yes, `confirm`) and optionally a test slip. Migration 039 adds `is_test` to `calls` and `reservations`. The table shows on the real tablet as a TEST card for `--card-seconds` (60 by default), then the run deletes it; a card left by a killed run goes with the next run. Test rows get no outbox event and no customer contact, and figures, the call log, the day report and the hours-change cards leave them out. The downgrade refuses while a test call or test table is left. |
 | 15.11.2026 | **#744, #750 follow-ups (ledger #764), with Maxi's decision 6 of 15.11.2026.** "Ich möchte die Pizza reklamieren" gets the remedy offer of the complaint rules first, and "nein, das reicht mir nicht" then goes to the team on the existing declined-offer path. An order's own wish verb in front of a complaint keeps the order for the team. A complaint to a person ("beim Chef", "bei Ihrem Chef") stays a complaint, which fixes a regression of this branch found by Graphify and missed by Codex. A draft made from 00:00 to 04:59 names weekday and date, never heute or morgen. |
 | 15.11.2026 | **Menu parser corpus, step 1 of the conservation gate (#207, Maxi's decision of 15.11.2026).** `api/tests/test_menu_corpus.py` runs 221 rows through `search_menu` and checks four properties: N (card numbers and counts), O (free notes), A (allergies) and P (unclaimed pieces). The confirmed red probes of #720, #721, #722 and #735 are strict xfail (64 rows); the reviewers' "checked and clean" sentences and a generated dish x residue x second-element block are green where main holds. The gate PR flips the xfails; the counts are the over-ask baseline. |
@@ -337,6 +338,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.47.1 · 16.11.2026:** Staff times after a held closure of a wie-Sonntag date wait for the owner, also on a rest day; wie Sonntag on a Sunday drops nothing (#764)
 - **v2.47.0 · 16.11.2026:** Front page with the sign-in on each customer's own host: / leads to the view, the sign-in page shows the restaurant and the product (#571, D35); plan of the GUI pull requests on #571
 - **v2.46.21 · 15.11.2026:** Self-test: python -m sim.selftest checks a stack end to end; its table shows on the real tablet as a TEST card for a minute and never reaches outside (is_test, migration 039; #574)
 - **v2.46.20 · 15.11.2026:** A complaint about a dish gets the remedy offer first, the team only when the guest is still not satisfied; an order in front of a complaint stays for the team; a draft made after midnight names weekday and date (#744, #750, ledger #764)
