@@ -208,14 +208,17 @@ Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `doma
 
 ### `dashboard/` – the operator dashboard, an app of its own (#571, docs/23 §5)
 Run from the API's image as `uvicorn api.dashboard.app:app`, with its own database (`OPERATOR_DATABASE_URL`) and migrations (`db/dashboard/`). It never imports `api.config` or `api.db`, which build a customer stack's settings and connection (`api/tests/test_dashboard_login.py` checks it); from the customer side it uses only `core/` helpers that read no settings and `domain/access/hashing.py` and the wait rule of `domain/access/sessions.py`.
-- `config.py` — its settings: `ENV`, `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET` (refused at start outside dev and test when weak)
+- `config.py` — its settings: `ENV`, `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET` (refused at start outside dev and test when weak), `OPERATOR_ORIGIN` (the dashboard's own address, which passkeys are bound to; refused at start outside dev and test when missing), `OPERATOR_PUSH_URL` and `OPERATOR_PUSH_TOKEN`
 - `db.py` — engine and request session of the operator database
-- `models.py` — accounts, recovery codes, sessions, devices, failures per address, the operator's own audit
+- `models.py` — accounts, recovery codes, sessions (with the last second factor's time), passkeys, their challenges, devices, failures per address, the operator's own audit
 - `totp.py` — RFC 6238 codes, standard library, a code never taken twice
-- `access.py` — sign-in (password plus TOTP or recovery code), waits, sessions (30 minutes idle, 12 hours), account creation and the break-glass reset; no FastAPI
-- `app.py` — the pages: `/login`, `/logout`, `/`, `/health`; CSRF, cookies, the proxy check
-- `cli.py` — `python -m api.dashboard.cli add|reset <name>` on the operator host
-- `templates/` — the pages, no script
+- `passkeys.py` — WebAuthn with `py_webauthn`: challenges (one holder, one purpose, single use, five minutes), registration and assertion against `OPERATOR_ORIGIN`, the signature counter; no FastAPI, the only module that imports `webauthn`
+- `push.py` — the one place the dashboard sends a push from: a changed factor to the `ops` topic, only logged while no push server is set
+- `access.py` — sign-in (password plus passkey, TOTP or recovery code), waits, sessions (30 minutes idle, 12 hours), step-up (a second factor of the last five minutes), the changes of a factor with the rule "TOTP or two passkeys", account creation and the break-glass reset; no FastAPI
+- `customers.py` — the registry of customers (key, address of the stack's ops API, its `OPS_TOKEN`) and `overview`: every stack's `GET /v1/ops/status` at once, each answer checked as input from outside and turned into one row; no FastAPI
+- `app.py` — the pages: `/login`, `/logout`, `/` (the customer list), `/customers/rows` (its rows for the refresh, which does not keep the session alive), `/factors` (passkeys and TOTP), `/step-up`, the `.../options` routes that hand a ceremony its challenge, `/health`; CSRF, cookies, the proxy check, and `require_step_up`, the one dependency before a dangerous action
+- `cli.py` — `python -m api.dashboard.cli add|reset <name>` and `customer-add <key> <url>|customer-remove <key>|customers` on the operator host
+- `templates/` — the pages; scripts only as files, compiled from `api/gui/ts/` (`passkey.js` runs the passkey ceremonies on the sign-in, step-up and factors pages), beside the two of the operations view (`htmx` for the list's refresh, `base.js` for "Show" beside the password), no inline script
 
 ### `printbridge/` – die Druckbrücke im Lokal (T-4.6)
 Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht mit dem Server nur über HTTPS. Läuft auf einem Rechner im Lokal (`printbridge/README.md`).
@@ -307,7 +310,7 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 | `agent/` | mit Fake-LLM (vorgegebene Antworten), prüft Loop und Dispatch | fertig |
 | `events/` | Outbox schreiben, Dispatcher gegen Fake-n8n, Retry-Verhalten | offen |
 | `telephony/adapters` | against the fake adapter; later against recorded media events and fake speech engines (docs/20) | fertig |
-| `dashboard/` | `totp.py` against the RFC 6238 test values without a database; the login, CLI and migration against a scratch operator database (`api/tests/test_dashboard_*.py`) | fertig |
+| `dashboard/` | `totp.py` against the RFC 6238 test values without a database; the login, CLI and migrations against a scratch operator database, the customer registry and the list against stacks played by a mock transport; passkeys, step-up and the factor changes with a software authenticator whose answers the tests bend (`api/tests/passkey_device.py`), the ceremonies themselves once in a real browser with a virtual authenticator (`api/tests/test_dashboard_*.py`) | fertig |
 | Ende-zu-Ende | `sim/replay` gegen echte API mit Test-DB | offen |
 
 **Ziel:** Die schnellen Tests laufen bei jedem Speichern, die DB-Tests vor jedem Commit, die Evals vor jedem Merge.

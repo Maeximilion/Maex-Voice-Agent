@@ -1,0 +1,31 @@
+{# Step-up (docs/23 §5): a dangerous action needs a second factor of the last
+   five minutes. A passkey or a TOTP code, never a recovery code; the same
+   sentence for every refusal. `next` is a path of this site, checked by the
+   route. #}
+{% extends "base.html" %}
+{% block title %}Confirm it is you{% endblock %}
+{% set nav = "" %}
+{% block scripts %}<script type="module" src="/static/passkey.js"></script>{% endblock %}
+
+{% block main %}
+<section class="ops-seite">
+  <form class="card zugang-form" method="post" action="/step-up">
+    <h1>Confirm it is you</h1>
+    <p>This needs a second factor from the last five minutes.</p>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="next" value="{{ next }}">
+    <input type="hidden" name="passkey">
+    {% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
+    {% if has_passkey %}
+    <button type="button" class="primary" hidden data-passkey="get" data-passkey-options="/step-up/passkey/options">Confirm with a passkey</button>
+    <p class="badge danger" role="alert" hidden data-passkey-message>The passkey was not used. Try again{% if has_totp %}, or use a code{% endif %}.</p>
+    {% endif %}
+    {% if has_totp %}
+    <label for="code">{% if has_passkey %}Or a code{% else %}A code{% endif %} from the authenticator app</label>
+    <input id="code" name="code" autocomplete="one-time-code" inputmode="numeric"{% if not has_passkey %} required autofocus{% endif %}>
+    <button type="submit"{% if not has_passkey %} class="primary"{% endif %}>Confirm with the code</button>
+    {% endif %}
+    <p><a href="{{ next }}">Back</a></p>
+  </form>
+</section>
+{% endblock %}

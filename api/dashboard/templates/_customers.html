@@ -1,0 +1,51 @@
+{# The rows of the customer list, also sent alone for the refresh. Everything a
+   stack says is shown as text. A state is a glyph and a word, never a colour
+   alone; below 900 px each row is a card and `data-label` names its values. #}
+{% if not rows %}
+<div class="card ops-leer">
+  <p><strong>No customer yet.</strong></p>
+  <p>Add a stack on the operator host; the command asks for the stack's <code>OPS_TOKEN</code>:</p>
+  <p><code>python -m api.dashboard.cli customer-add &lt;key&gt; http://&lt;api container&gt;:8000</code></p>
+</div>
+{% else %}
+<table class="tbl ops-liste">
+  <thead>
+    <tr>
+      <th scope="col">Customer</th>
+      <th scope="col">Stack</th>
+      <th scope="col">Call mode</th>
+      <th scope="col">Last call</th>
+      <th scope="col">Today</th>
+      <th scope="col">Print bridge</th>
+      <th scope="col">Backup</th>
+      <th scope="col">Menu</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    {% set s = row.status %}
+    <tr>
+      <th scope="row" data-label="Customer">{% if s %}{{ s.tenant.name }}{% else %}{{ row.key }}{% endif %}<span class="muted ops-key">{{ row.key }}</span></th>
+      {% if not s %}
+      <td data-label="Stack" colspan="7"><span class="badge danger">down</span> {{ row.problem }}</td>
+      {% else %}
+      <td data-label="Stack">
+        {% if row.notes %}<span class="badge warn">look</span> {{ row.notes | join(", ") }}{% else %}<span class="badge ok">ok</span>{% endif %}
+      </td>
+      <td data-label="Call mode">{{ s.call_mode or "not set" }}</td>
+      <td data-label="Last call" title="{{ s.last_call_at | shown }}">{{ s.last_call_at | ago(now) }}</td>
+      <td data-label="Today">{{ s.today.calls }} calls, {{ s.today.orders }} orders</td>
+      <td data-label="Print bridge" title="{{ s.print_bridge.last_poll_at | shown }}">
+        {% if not s.print_bridge.configured %}not set up{% elif s.print_bridge.silent %}silent{% else %}connected{% endif %}
+      </td>
+      <td data-label="Backup" title="{{ s.backup_at | shown }}">{{ s.backup_at | ago(now) }}</td>
+      <td data-label="Menu">
+        {{ s.menu.items }} dishes{% if s.menu.without_allergen_information %}, {{ s.menu.without_allergen_information }} without allergens{% endif %}{% if s.menu.price_differences %}, {{ s.menu.price_differences }} price differences{% endif %}
+      </td>
+      {% endif %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<p class="muted">As of {{ now | shown }}, refreshed every 30 seconds.</p>

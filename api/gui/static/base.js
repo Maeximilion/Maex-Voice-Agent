@@ -32,7 +32,8 @@ document.addEventListener("click", (event) => {
     }
 });
 // "Anzeigen" beside a password field shows what was typed and hides it again
-// (#571): `data-zeigen` names the field's id.
+// (#571): `data-zeigen` names the field's id. The operator dashboard, which is
+// English, names its two labels in `data-zeigen-an` and `data-zeigen-aus`.
 document.addEventListener("click", (event) => {
     if (!(event.target instanceof Element))
         return;
@@ -45,7 +46,9 @@ document.addEventListener("click", (event) => {
     const show = field.type === "password";
     field.type = show ? "text" : "password";
     button.setAttribute("aria-pressed", String(show));
-    button.textContent = show ? "Verbergen" : "Anzeigen";
+    button.textContent = show
+        ? (button.dataset["zeigenAn"] ?? "Verbergen")
+        : (button.dataset["zeigenAus"] ?? "Anzeigen");
 });
 // A shown password is hidden again before its form leaves: a browser may keep
 // what a text field sent in its form history, on a tablet the whole team uses.

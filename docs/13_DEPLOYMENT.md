@@ -435,7 +435,14 @@ EUR; isolation and the unchanged code decide it.
   not answer stays (it may still print); one it never claimed is removed.
 - #570 logins are per stack; the GUI's tenant choice may stay as it is.
 - #571 operator dashboard reads several stacks over an ops API per stack on an internal `ops`
-  network (docs/23 §8).
+  network (docs/23 §8). Its own settings, in the operator stack's `.env` (its Compose file comes
+  with the last part of #571): `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET`, and
+  `OPERATOR_ORIGIN`, the address the operator's browser uses (`https://ops.<domain>`, no path).
+  Passkeys are bound to it: the dashboard refuses to start without it outside dev and test, and a
+  later change of the host name makes every registered passkey useless (TOTP and the recovery
+  codes still open, the passkeys are then registered again). `OPERATOR_PUSH_URL` and
+  `OPERATOR_PUSH_TOKEN` name the push server and a token that may publish to its `ops` topic for
+  the push on a changed sign-in factor; empty, the push is only logged (docs/23 §5).
 - #576 offboarding is export, then removal of the stack and its volumes.
 
 ### Reassess

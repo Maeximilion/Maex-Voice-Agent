@@ -1,19 +1,37 @@
 {# Operator sign-in: name, password and a second factor in one form (docs/23 §5).
-   One sentence for every refusal, whatever was wrong. #}
+   The second factor is a passkey (the button, shown by passkey.js where the
+   browser knows WebAuthn; its answer travels in the hidden field) or a code.
+   One sentence for every refusal, whatever was wrong. The layout is the front
+   page's of a customer's site (`.start`, api/gui/static/app.css). #}
 {% extends "base.html" %}
 {% block title %}Sign in{% endblock %}
+{% block body_class %}zugang start{% endblock %}
+{% block scripts %}<script type="module" src="/static/passkey.js"></script>{% endblock %}
 
 {% block main %}
-<form class="card zugang-form" method="post" action="/login">
-  <h1>Operator sign-in</h1>
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <label for="name">Name</label>
-  <input id="name" name="name" autocomplete="username" autocapitalize="none" required autofocus>
-  <label for="password">Password</label>
-  <input type="password" id="password" name="password" autocomplete="current-password" required>
-  <label for="code">Code from the authenticator app, or a recovery code</label>
-  <input id="code" name="code" autocomplete="one-time-code" inputmode="text" required>
-  {% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
-  <button type="submit" class="primary">Sign in</button>
-</form>
+<div class="start-seite">
+  <div class="start-kopf">
+    <p class="start-marke">Maex Operator</p>
+    <h1>Every customer at a glance.</h1>
+    <p class="start-satz">For the operator only. Password and a second factor, always.</p>
+  </div>
+  <form class="card zugang-form" method="post" action="/login">
+    <h2>Sign in</h2>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="passkey">
+    <label for="name">Name</label>
+    <input id="name" name="name" autocomplete="username" autocapitalize="none" required autofocus>
+    <label for="password">Password</label>
+    <div class="zugang-feld">
+      <input type="password" id="password" name="password" autocomplete="current-password" required>
+      <button type="button" data-zeigen="password" data-zeigen-an="Hide" data-zeigen-aus="Show" aria-pressed="false">Show</button>
+    </div>
+    {% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
+    <button type="button" class="primary" hidden data-passkey="get" data-passkey-options="/login/passkey/options">Sign in with a passkey</button>
+    <p class="badge danger" role="alert" hidden data-passkey-message>The passkey was not used. Try again, or sign in with a code.</p>
+    <label for="code">Or a code from the authenticator app, or a recovery code</label>
+    <input id="code" name="code" autocomplete="one-time-code" inputmode="text">
+    <button type="submit">Sign in with the code</button>
+  </form>
+</div>
 {% endblock %}

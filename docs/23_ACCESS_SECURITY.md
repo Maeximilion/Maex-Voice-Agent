@@ -141,10 +141,73 @@ names cannot fill the table, and an address is forgotten a day after its last fa
 request but `/health` needs `OPERATOR_PROXY_SECRET` from Caddy outside dev and test (as
 `GUI_PROXY_SECRET`, T10): every customer's `api` shares an `ops` network with the dashboard. The
 TOTP secret is stored readable, because the code is an HMAC of it; the operator database and its
-encrypted backups stay on the operator host (T7). Still to come: passkeys (`py_webauthn`, the
-dashboard's own image target), the push to `ops` on a new factor or a used recovery code, step-up
-before dangerous actions, the operator stack's Compose file and the Caddy site `ops.<domain>`
-with its headers, then the customer list over the ops API (§8).
+encrypted backups stay on the operator host (T7).
+
+**The customer list (#571, third part, 16.11.2026):** the start page shows every customer's stack
+in one row: the stack's state as a glyph and a word (ok, look, down) with what to look at, call
+mode, last call, calls and orders today, print bridge, backup age, menu status. The customers come
+from a registry in the operator database (`operator_customers`, migration op002): key, the address
+of the stack's ops API on its `ops` network and its `OPS_TOKEN`, added on the operator host with
+`python -m api.dashboard.cli customer-add <key> http://<api container>:8000`, which asks for the
+token or reads it from standard input, never from an argument, and never prints it;
+`customer-remove` and `customers` beside it, each change in the operator's audit. The token is
+stored readable, because the dashboard sends it (as the TOTP secret, T7); no two customers share an
+address or a token. Each stack is asked at once with three seconds to answer (§8). The rows come
+again every 30 seconds; that request checks the session but does not keep it alive, so an open tab
+still ends at the idle limit. Still to come: the provisioning script adding the registry row
+itself (with the operator stack's Compose file), the operator stack's push server, the customer's
+detail pages, the Caddy site `ops.<domain>` with its headers.
+
+**Passkeys, step-up and the push (#571, fourth part, 16.11.2026):** a passkey is the normal second
+factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webauthn`).
+
+- **Bound to the site by the settings.** The relying party id and the origin come from
+  `OPERATOR_ORIGIN` (`https://ops.<domain>`; outside dev and test the dashboard refuses to start
+  when it is missing or not a bare https origin), never from a request's Host header.
+- **Challenges.** Every ceremony signs 32 random bytes that the server keeps for one holder and one
+  purpose: the session for a registration or a step-up, a cookie of the sign-in attempt
+  (`__Host-ops_attempt`) for a sign-in. The challenge is taken out by the first post that brings
+  it, whatever else that post got wrong, and is worthless after five minutes. A challenge of one
+  purpose answers no other. Nobody's challenge is removed to make room for another's: anyone may
+  ask for a sign-in challenge, and a flood of them must not take the operator's away. Unanswered
+  ones are swept out after their five minutes; a limit on how often the route may be asked belongs
+  to the proxy's site (still to come).
+- **An answer is input from outside.** At most 32,768 characters are parsed, and whatever the
+  parsing or the check raises is a refusal, never a server error: at the sign-in that runs after
+  the password check, and an error there would tell that the password was right.
+- **Sign-in.** Name and password travel with the passkey's answer in one post, checked in the old
+  order: count the attempt, the password, then the factor. The operator is verified on the device
+  (PIN, finger, face) at every use and the passkey is stored on it (discoverable), so the challenge
+  names no credential and the sign-in page tells nothing about any account. A wrong password, a
+  wrong or foreign passkey, a spent or expired challenge and another site's origin get the one
+  sentence of every refusal and count toward the same waits.
+- **A copy shows.** A signature counter that does not grow is refused, audited as
+  `operator.sign_in_failed` (at the step-up `operator.step_up_failed`) with `reason` `counter`
+  and pushed to `ops`; passkeys a platform syncs send 0 every time and are exempt. A device that holds a passkey of the account is left out of the next
+  registration, so two passkeys are two devices.
+- **The page `/factors`** lists the passkeys and registers, names and removes them, proposes a new
+  TOTP secret (in force only after a code of it came back, so a secret that never reached the app
+  replaces nothing) and removes TOTP. The account always keeps TOTP or two passkeys; at most ten
+  passkeys.
+- **Step-up is one dependency**, `require_step_up` in `dashboard/app.py`: the session showed a
+  second factor in the last five minutes, the sign-in's (a recovery code too, or an operator who
+  lost every device could register a new one only through the break glass) or one given on
+  `/step-up`, which takes a passkey or a TOTP code and never a recovery code. Wrong answers there
+  count and wait as at the sign-in. A stale request is sent to `/step-up` and back to a path of
+  this site; a stale write is dropped, never replayed. Today it stands before every change of a
+  factor and the sight of a new TOTP secret; the later parts name it on their routes.
+- **Audit and push.** A new or removed passkey, a new or removed TOTP secret, a used recovery
+  code, and on the host a new account and the break glass are in the operator's audit and go as a
+  push to the `ops` topic from one place,
+  `dashboard/push.py`, which publishes as a stack's monitor does (`api/jobs/monitor.py`) once
+  `OPERATOR_PUSH_URL` and `OPERATOR_PUSH_TOKEN` are set. Until the operator stack has its Compose
+  file both are empty and the push is only logged; a push that fails, for whatever reason, is
+  audited as `operator.push_failed` and never fails the request it reports. The break glass
+  removes every passkey too.
+- **Browser side.** `api/gui/ts/passkey.ts`, compiled, no inline script: it fetches the options,
+  runs the ceremony and puts the answer into a hidden field of an ordinary form. A browser without
+  the WebAuthn JSON helpers (before Chrome 129, Firefox 119, Safari 18.4) shows no passkey button;
+  the code still signs in.
 
 ## 6. Customer login (#570)
 
@@ -272,8 +335,12 @@ the second builds against.
   Down Online Guessing Attacks with Device Cookies"). A new browser during such an attack waits. The client address is the last entry of Caddy's
   `X-Forwarded-For`, trusted only outside dev and test, where only Caddy reaches the view.
 - **CSRF** as today (docs/06 §9) plus a check on every write that `Origin` (or, without it,
-  `Sec-Fetch-Site`) names this site; a browser sends one of them on every cross-site write, and
-  `Origin: null` is refused. The sign-in, setup and PIN forms carry the page's CSRF token as a field
+  `Sec-Fetch-Site`) names this site; a browser sends one of them on every cross-site write. `Origin: null` passes
+  only with `Sec-Fetch-Site: same-origin` (16.11.2026, `api/core/origin.py`): under the proxy's
+  `no-referrer` policy a browser sends `null` with a plain form post of the site itself, so every
+  plain form (sign-in, setup, PINs, and the operator's sign-in) was refused in a real browser;
+  `null` from a sandboxed frame or a cross-site redirect comes without `same-origin`, which no
+  page can set, and stays refused, as does a browser too old to send the header. The sign-in, setup and PIN forms carry the page's CSRF token as a field
   (login CSRF).
 - **Second factor for customers:** not required at start; the tablet session is long and the admin
   area has the admin PIN. Offered later as an option if a customer asks.
@@ -340,6 +407,16 @@ guest's data.
   through the domain functions the tablet uses (`domain/status/config.py`, `staff_changes.py`).
 - The actor header is trusted only because only the dashboard holds `OPS_TOKEN`; the dashboard sets
   it from the session, never from user input.
+- **A stack's answer is input from outside** (built with the customer list, 16.11.2026,
+  `api/dashboard/customers.py`): a stack that was taken over may answer anything. The dashboard
+  reads at most 64 kB as they arrive (it asks for no packed answer and takes none, so nothing
+  is unpacked before the limit), gives the whole list five seconds (a stack that trickles its answer
+  is a row "answers too slowly" and delays nobody), checks every field (types, lengths, at most 50
+  alarms, times with an offset and between 2000 and 2100, so none overflows when it is shown), requires the answer to name the customer the row was asked for ("another customer
+  answers at this address" otherwise), and shows everything as text. The token goes to the
+  registered address only: no redirect is followed and no proxy variable of the host is read. Whatever
+  one customer's row trips over, the others are still shown: that row reads "could not be asked"
+  and the cause goes to the log.
 
 Rejected:
 
@@ -387,7 +464,7 @@ exploit, which sanitising in a sealed container addresses.
 
 | Library | For | Where |
 |---|---|---|
-| `webauthn` (py_webauthn) and what it pulls in | passkeys, operator dashboard | operator stack only |
+| `webauthn` (py_webauthn) and what it pulls in (`cbor2`, `cryptography`, `pyOpenSSL`, `pyasn1`) | passkeys, operator dashboard | in the shared lock file since 16.11.2026, because the dashboard runs from the API's image; imported by `api/dashboard/` only |
 | Pillow, a PDF rasteriser | sanitising uploads | the sanitiser image only |
 
 Each goes into `requirements.in` with hashes (`make lock`) in the PR that first uses it. TOTP, scrypt

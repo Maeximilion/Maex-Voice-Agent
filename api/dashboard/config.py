@@ -1,6 +1,7 @@
 """Settings of the operator dashboard, from its own stack's environment."""
 
 from typing import Self
+from urllib.parse import urlsplit
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,6 +25,20 @@ class DashboardSettings(BaseSettings):
     # a customer's site): every customer's api shares a network with the
     # dashboard (docs/23 §8) and must not reach its sign-in past the proxy.
     operator_proxy_secret: str = ""
+    # Where the operator's browser reaches the dashboard, `https://ops.<domain>`.
+    # A passkey is bound to this origin and to its host name (the relying party
+    # id); both come from here, never from a request's Host header, which the
+    # sender chooses (docs/23 §5).
+    operator_origin: str = "http://localhost:8002"
+    # The push server and the token that may publish to its `ops` topic. Empty
+    # until the operator stack has its Compose file (#571): a push is then
+    # only logged (`dashboard/push.py`).
+    operator_push_url: str = ""
+    operator_push_token: str = ""
+
+    @property
+    def relying_party_id(self) -> str:
+        return urlsplit(self.operator_origin).hostname or ""
 
     @model_validator(mode="after")
     def _production_needs_the_proxy_secret(self) -> Self:
@@ -33,6 +48,29 @@ class DashboardSettings(BaseSettings):
             raise ValueError(
                 "OPERATOR_PROXY_SECRET is missing, the placeholder, contains "
                 f"whitespace, or is shorter than {TOKEN_MIN_LENGTH} characters"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _the_origin_is_an_origin(self) -> Self:
+        local = self.env in LOCAL_ENVS
+        if not local and "operator_origin" not in self.model_fields_set:
+            raise ValueError("OPERATOR_ORIGIN is missing: https://ops.<domain>")
+        try:
+            parts = urlsplit(self.operator_origin)
+            port = f":{parts.port}" if parts.port else ""
+            # Scheme, host and port and nothing else, as a browser writes it.
+            fine = (
+                bool(parts.hostname)
+                and self.operator_origin == f"{parts.scheme}://{parts.hostname}{port}"
+                and parts.scheme in (("http", "https") if local else ("https",))
+            )
+        except ValueError:
+            fine = False
+        if not fine:
+            raise ValueError(
+                "OPERATOR_ORIGIN must be an origin like https://ops.example.com: "
+                "https outside dev and test, lower case, no path, no trailing slash"
             )
         return self
 
