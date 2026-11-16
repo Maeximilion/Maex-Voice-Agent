@@ -1340,3 +1340,27 @@ def test_the_break_glass_works_when_the_push_does_not(
     assert cli.main(["reset", "maxi"]) == 0
     printed = capsys.readouterr()
     assert "otpauth://" in printed.out and "push" in printed.err
+
+
+def test_a_registration_overtaken_by_the_break_glass_adds_nothing(
+    client, factors, clock, sessions, monkeypatch
+):
+    """Codex on #807: a registration that had passed the step-up check and then
+    waited for the account's row while the reset ran added its passkey to the
+    account the reset had just cleared."""
+    _signed_in(client, factors, clock)
+    options = _post(client, "/factors/passkeys/options").text
+    answer = Device().create(options, ORIGIN)
+    take = passkeys.take
+
+    def reset_runs_first(db, bound_to, purpose, now):
+        challenge = take(db, bound_to, purpose, now)
+        with sessions() as host:
+            access.reset_account(host, "maxi", PASSWORD)
+        return challenge
+
+    monkeypatch.setattr(passkeys, "take", reset_runs_first)
+    refused = _post(client, "/factors/passkeys", name="Late", passkey=answer)
+    assert refused.headers["location"] == "/factors?note=passkey-refused"
+    assert _rows(sessions) == []
+    assert "operator.passkey_added" not in _actions(sessions)

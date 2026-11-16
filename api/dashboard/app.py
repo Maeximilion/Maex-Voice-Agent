@@ -26,7 +26,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -212,15 +212,19 @@ def require_operator(
 
 def _local(path: str) -> str:
     """A path of this site, or the start page: where a step-up leads back to
-    is never another site."""
+    is never another site. No backslash (a browser reads it as a slash), no
+    host, no scheme, then our own narrower rule."""
+    clean = path.replace("\\", "")
     if (
-        path.startswith("/")
-        and not path.startswith("//")
-        and "\\" not in path
-        and path.isascii()
-        and path.isprintable()
+        clean == path
+        and not urlparse(clean).netloc
+        and not urlparse(clean).scheme
+        and clean.startswith("/")
+        and not clean.startswith("//")
+        and clean.isascii()
+        and clean.isprintable()
     ):
-        return path
+        return clean
     return HOME
 
 

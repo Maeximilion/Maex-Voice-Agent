@@ -54,7 +54,12 @@ from webauthn.helpers.structs import (
 )
 
 from api.dashboard.config import settings
-from api.dashboard.models import OperatorAccount, OperatorChallenge, OperatorPasskey
+from api.dashboard.models import (
+    OperatorAccount,
+    OperatorChallenge,
+    OperatorPasskey,
+    OperatorSession,
+)
 from api.domain.access.hashing import token_hash
 
 CHALLENGE_LIFE = timedelta(minutes=5)
@@ -196,9 +201,15 @@ def register(
     if not 1 <= len(name) <= NAME_MAX or not name.isprintable():
         raise Refused("name")
     # The account's row is held, so two registrations at once count each other.
+    # The break glass holds it too: a registration that waited for it here
+    # finds its session gone and must not put a passkey back.
     db.get(OperatorAccount, account_id, with_for_update=True)
+    alive = db.scalar(
+        select(OperatorSession.id).where(OperatorSession.id == session_id)
+    )
     if (
         challenge is None
+        or alive is None
         or len(answer) > ANSWER_MAX
         or count(db, account_id) >= PASSKEYS_MAX
     ):
