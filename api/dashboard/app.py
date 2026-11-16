@@ -271,7 +271,8 @@ async def _dev_tools_only_read(
     stands here and not in a template: whatever is added under /dev later (a
     simulated call writes real rows), a write there is refused outside dev and
     test unless it is one of the named reads."""
-    path = request.url.path
+    # The path the router matches, without a prefix the app may be mounted under.
+    path = request.scope["path"]
     if (
         secure()
         and (path == DEV or path.startswith(DEV + "/"))
