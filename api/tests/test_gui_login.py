@@ -24,7 +24,7 @@ from api.gui.router import router as gui_router
 from api.gui.session import csrf_matches
 from api.gui.sse import _signed_in
 from api.main import app
-from api.models import GuiAccount, GuiLoginFailure, GuiSession, StaffChange
+from api.models import GuiAccount, GuiLoginFailure, GuiSession, StaffChange, Tenant
 from scripts.seed import seed
 
 pytestmark = pytest.mark.gui_login
@@ -128,6 +128,44 @@ def test_the_sign_in_pages_and_static_files_need_no_session(client):
         assert client.get(path, headers=HTML).status_code == 200, path
 
 
+def test_the_bare_host_name_leads_to_the_view(client, engine):
+    """#571: `/` is the way in. Without a session it ends on the front page,
+    with one on the board; the answer itself is a redirect and shows nothing."""
+    answer = client.get("/", headers=HTML)
+    assert answer.status_code == 303 and answer.headers["location"] == "/gui/"
+    assert answer.text == "" and "set-cookie" not in answer.headers
+    assert client.get("/gui/", headers=HTML).headers["location"] == "/gui/anmelden"
+    _set_up_and_sign_in(client, engine)
+    assert client.get("/gui/", headers=HTML).status_code == 200
+
+
+def test_the_bare_host_name_takes_no_write_and_opens_no_other_path(client):
+    assert client.post("/", headers=HX).status_code == 405
+    for path in ("/anmelden", "/static/app.css", "/index.html"):
+        assert client.get(path, headers=HTML).status_code == 404, path
+    # The way on is fixed: nothing a link carries can send the browser elsewhere.
+    answer = client.get("/?next=//example.org&back=https://example.org")
+    assert answer.headers["location"] == "/gui/"
+
+
+def test_the_front_page_shows_the_name_and_sets_only_the_csrf_cookie(client):
+    page = client.get("/gui/anmelden", headers=HTML)
+    assert "<h1>Testbetrieb</h1>" in page.text
+    assert 'autocomplete="current-password"' in page.text
+    assert 'data-zeigen="passwort"' in page.text
+    cookies = page.headers.get_list("set-cookie")
+    assert [c.split("=")[0] for c in cookies] == ["csrf_token"]
+
+
+def test_a_name_with_markup_is_shown_as_text(client, engine):
+    with Session(engine) as session:
+        session.execute(update(Tenant).values(name="<script>alert(1)</script>"))
+        session.commit()
+    page = client.get("/gui/anmelden", headers=HTML)
+    assert "<script>alert(1)" not in page.text
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in page.text
+
+
 def test_a_forged_cookie_opens_nothing(client, engine):
     _set_up_and_sign_in(client, engine)
     client.cookies.clear()
@@ -199,6 +237,8 @@ def test_a_wrong_password_says_so_and_sets_no_session(client, engine):
     )
     assert answer.status_code == 401 and "Das Passwort stimmt nicht." in answer.text
     assert "maex_session" not in answer.headers.get("set-cookie", "")
+    # The refusal comes back on the front page, not on a second, bare one.
+    assert "<h1>Testbetrieb</h1>" in answer.text
 
 
 @pytest.mark.parametrize(
@@ -287,6 +327,7 @@ def test_five_wrong_pins_sign_the_device_out(client, engine):
         "/gui/entsperren", data={"csrf_token": "testtoken", "pin": "0000"}
     )
     assert last.status_code == 401 and "abgemeldet" in last.text
+    assert "<h1>Testbetrieb</h1>" in last.text
     assert client.get("/gui/", headers=HTML).headers["location"] == "/gui/anmelden"
     assert (
         client.post(
@@ -350,6 +391,7 @@ def test_in_production_failures_count_for_the_address_caddy_saw(production, engi
 def test_in_production_the_sign_in_still_needs_the_proxy(production):
     del production.headers["X-Maex-Proxy-Secret"]
     assert production.get("/gui/anmelden").status_code == 403
+    assert production.get("/").status_code == 403
 
 
 def test_the_check_leaves_no_transaction_open_for_the_event_stream(engine):
