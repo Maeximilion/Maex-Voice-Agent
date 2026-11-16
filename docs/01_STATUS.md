@@ -308,6 +308,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 ## Changelog
 
 - **v2.52.0 · 16.11.2026:** Operator dashboard: dev tools with the recorded eval and measurement results and the log of one call behind step-up, a reason and both audits, read-only in production by a rule in the code; the New customer page with the steps and commands (#571 seventh part)
+- **v2.51.1 · 16.11.2026:** Context series of 25 evaluated: handover thresholds 300k and 450k kept (#562)
 - **v2.51.0 · 16.11.2026:** Operator dashboard: a customer's access and call routing (both PINs, devices, setup link, call mode, team number) behind step-up, a reason and both audits, each changing form taken once; the api reads AGENT_DOMAIN for the setup link; D38 and #811 from the deep review (#571 sixth part)
 - **v2.50.1 · 16.11.2026:** Fix PR for the deep review of #801: customer list asks every stack with its own worker, address stored rebuilt, key at most 32 characters, a stack without customer key gets its own red row (Claude's choice, awaiting Maxi), log without exception message, customer.changed in the audit
 - **v2.50.0 · 16.11.2026:** Operator dashboard: a customer's page with the week's four figures, their course and the menu status; the calls of one business day behind step-up, a listed reason and both audits, without phone numbers (#571 fifth part, ops routes /v1/ops/figures and /v1/ops/calls)
