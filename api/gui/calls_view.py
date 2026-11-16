@@ -10,13 +10,12 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from api.core.time import business_day, to_local
-from api.domain.calls.log import list_calls
+from api.domain.calls.log import DAYS_LISTED, list_calls
 from api.gui.figures_view import DASH, WEEKDAYS
 from api.models import Tenant
 
-# The days the page offers: the caller id is kept far longer (docs/03), a
-# list of the last two weeks is what the team looks back at.
-DAYS = 14
+# The days the page offers: what the team looks back at.
+DAYS = DAYS_LISTED
 OUTCOMES = {
     "completed": "abgeschlossen",
     "transferred": "an Team übergeben",

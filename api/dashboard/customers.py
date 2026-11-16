@@ -3,13 +3,15 @@
 The registry (`operator_customers`) says where a stack's ops API answers and
 which token it takes; the operator fills it on the host (`dashboard/cli.py`).
 `overview` asks every stack for `GET /v1/ops/status` at once and turns each
-answer into one row of the list. No FastAPI here.
+answer into one row of the list; `detail` asks one stack for its status and its
+week's figures, `calls` for the calls of one business day. No FastAPI here.
 
 A stack's answer is input from outside: a customer's stack that was taken over
 may answer anything. So the answer is read up to a size limit, checked field by
 field (types, lengths, the list of alarms), must name the customer the row was
 asked for, and is shown as text only. The token goes to the registered address
-and nowhere else: no redirect is followed.
+and nowhere else: no redirect is followed. Every question goes through `_fetch`
+and `_at_once`, which hold these rules; there is no second way to a stack.
 """
 
 import logging
@@ -20,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as NotInTime
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
+from functools import partial
 from typing import Annotated
 from urllib.parse import urlsplit
 
@@ -36,6 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from api.core import ops_reason
 from api.core.tokens import TOKEN_MIN_LENGTH, valid_production_token
 from api.dashboard.models import Customer
 
@@ -46,12 +50,19 @@ KEY = re.compile(r"[a-z][a-z0-9]*(-[a-z0-9]+)*")
 # A container name or host on the stack's `ops` network, with a port.
 HOST = re.compile(r"[a-z0-9]([a-z0-9._-]*[a-z0-9])?")
 STATUS_PATH = "/v1/ops/status"
+FIGURES_PATH = "/v1/ops/figures"
+CALLS_PATH = "/v1/ops/calls"
+# `/customers/rows` is the list's refresh, so no customer's page can be there.
+RESERVED_KEYS = frozenset({"rows"})
 TIMEOUT_SECONDS = 3.0
 # For the whole list. TIMEOUT_SECONDS only ends a wait without a byte: a stack
 # that sends one byte every two seconds would keep the page for hours.
 DEADLINE_SECONDS = 5.0
 # The answer of a busy day is under 2 kB; more than this is not a status.
 MAX_ANSWER_BYTES = 64 * 1024
+# A call is under 250 bytes, and a restaurant does not take 2000 calls a day.
+MAX_CALLS = 2000
+MAX_CALLS_BYTES = 512 * 1024
 MAX_AT_ONCE = 8
 
 UNREACHABLE = "not reachable"
@@ -59,6 +70,9 @@ TOO_SLOW = "answers too slowly"
 NOT_ASKED = "could not be asked"
 REFUSED = "refuses the token"
 NOT_A_STATUS = "answer is not a status"
+NOT_AN_ANSWER = "answer cannot be read"
+NOT_TAKEN = "does not take this request"
+NOT_KNOWN = "does not know this question (an older version?)"
 NO_RESTAURANT = "no restaurant in the stack yet"
 OTHER_CUSTOMER = "another customer answers at this address"
 
@@ -75,7 +89,20 @@ def _in_our_time(at: datetime) -> datetime:
     return at
 
 
+def _in_our_days(day: date) -> date:
+    """The same for a day: the page counts back from it, and the year 1 has no
+    day before it."""
+    if not EARLIEST.date() <= day < LATEST.date():
+        raise ValueError("a day outside 2000 to 2100")
+    return day
+
+
 Time = Annotated[AwareDatetime, AfterValidator(_in_our_time)]
+Day = Annotated[date, AfterValidator(_in_our_days)]
+# What a count or an amount in cents can be: a number of a thousand digits is
+# valid JSON too, and the page would show it.
+Count = Annotated[int, Field(ge=0, le=10**9)]
+Percent = Annotated[int, Field(ge=0, le=100)]
 
 
 class _Answer(BaseModel):
@@ -111,13 +138,18 @@ class _Menu(_Answer):
     without_allergen_information: int = Field(ge=0)
 
 
-class StackStatus(_Answer):
-    """`GET /v1/ops/status` as docs/04 "Ops API" gives it."""
+class _Named(_Answer):
+    """Every answer names its restaurant, and `_fetch` compares it."""
 
     tenant: _Tenant
+
+
+class StackStatus(_Named):
+    """`GET /v1/ops/status` as docs/04 "Ops API" gives it."""
+
     call_mode: Short | None
     last_call_at: Time | None
-    business_day: date
+    business_day: Day
     today: _Today
     print_bridge: _Bridge
     backup_at: Time | None
@@ -125,15 +157,59 @@ class StackStatus(_Answer):
     menu: _Menu
 
 
+class _Figures(_Answer):
+    """The four figures of docs/06 §4 with what they are counted from. None:
+    nothing to divide by."""
+
+    calls: Count
+    orders: Count
+    missed: Count
+    unknown_cost_calls: Count
+    accuracy_percent: Percent | None
+    cost_per_order_cents: Count | None
+    handed_over_percent: Percent | None
+
+
+class _DayFigures(_Figures):
+    day: Day
+
+
+class StackFigures(_Named):
+    """`GET /v1/ops/figures`: the last seven business days in one, and each."""
+
+    business_day: Day
+    week: _Figures
+    days: list[_DayFigures] = Field(max_length=31)
+
+
+class _Call(_Answer):
+    started_at: Time
+    # The day's callers counted, never a number (`domain/calls/log.py`).
+    caller: Annotated[int, Field(ge=1, le=MAX_CALLS)] | None
+    intent: Short | None
+    outcome: Short | None
+    duration_seconds: Annotated[int, Field(ge=0, le=7 * 24 * 3600)] | None
+    cost_cents: Count | None
+    tool_calls: Count
+    line_note: Short | None
+
+
+class StackCalls(_Named):
+    """`GET /v1/ops/calls`: the calls of one business day."""
+
+    business_day: Day
+    calls: list[_Call] = Field(max_length=MAX_CALLS)
+
+
 class _Error(_Answer):
     code: Short
 
 
-class _Envelope(_Answer):
+class _Envelope[Asked: _Named](_Answer):
     """The API's answer hull (`api/core/envelope.py`): data, or an error code."""
 
     ok: bool
-    data: StackStatus | None = None
+    data: Asked | None = None
     error: _Error | None = None
 
 
@@ -153,6 +229,16 @@ class Row:
         if self.status is None:
             return "danger"
         return "warn" if self.notes else "ok"
+
+
+@dataclass(frozen=True)
+class Detail:
+    """One customer's page: its row of the list, and the week's figures or the
+    one sentence why there are none."""
+
+    row: Row
+    figures: StackFigures | None = None
+    figures_problem: str = ""
 
 
 @dataclass(frozen=True)
@@ -196,8 +282,11 @@ def checked_url(api_url: str) -> str:
 def add_customer(db: Session, key: str, api_url: str, token: str) -> Customer:
     """Add a customer or replace its address and token (a rotated `OPS_TOKEN`)."""
     key, token = key.strip(), token.strip()
-    if not KEY.fullmatch(key):
-        raise BadCustomer("the key is lower case letters, digits and single hyphens")
+    if not KEY.fullmatch(key) or key in RESERVED_KEYS:
+        raise BadCustomer(
+            "the key is lower case letters, digits and single hyphens, and not "
+            + ", ".join(sorted(RESERVED_KEYS))
+        )
     # ASCII: the token travels in a header, which takes nothing else.
     if not (valid_production_token(token) and token.isascii() and token.isprintable()):
         raise BadCustomer(
@@ -242,6 +331,15 @@ def stacks(db: Session) -> list[Stack]:
     return found
 
 
+def stack(db: Session, key: str) -> Stack | None:
+    """One customer as plain values, or None for a key the registry does not
+    hold. The key is part of an address the browser asked for."""
+    row = db.get(Customer, key) if KEY.fullmatch(key) else None
+    found = Stack(row.key, row.api_url, row.ops_token) if row else None
+    db.rollback()
+    return found
+
+
 def _client() -> httpx.Client:
     # trust_env off: no proxy variable of the host may carry a token elsewhere.
     return httpx.Client(
@@ -249,44 +347,70 @@ def _client() -> httpx.Client:
     )
 
 
-def _ask(client: httpx.Client, customer: Stack) -> Row:
-    key = customer.key
+def _fetch[Asked: _Named](
+    client: httpx.Client,
+    customer: Stack,
+    path: str,
+    hull: type[_Envelope[Asked]],
+    *,
+    headers: dict[str, str] | None = None,
+    limit: int = MAX_ANSWER_BYTES,
+    unreadable: str = NOT_AN_ANSWER,
+) -> Asked | str:
+    """One answer of a stack, checked, or the one sentence why there is none."""
     try:
         with client.stream(
             "GET",
-            customer.api_url + STATUS_PATH,
+            customer.api_url + path,
             headers={
+                **(headers or {}),
                 "Authorization": f"Bearer {customer.ops_token}",
                 "Accept-Encoding": "identity",
             },
         ) as answer:
             if answer.status_code in (401, 403):
-                return Row(key, problem=REFUSED)
+                return REFUSED
+            # A path the stack does not have, not `not_found` in a 200: the
+            # two sides deploy apart, and that is no missing restaurant.
+            if answer.status_code == 404:
+                return NOT_KNOWN
             # The limit below counts what arrives. A packed answer would be
             # unpacked first, 32 kB into 32 MB, so none is asked for or taken:
             # without this header HTTPX passes the bytes on as they are.
             if answer.headers.get("content-encoding", "identity") != "identity":
-                return Row(key, problem=NOT_A_STATUS)
+                return unreadable
             body = b""
             for chunk in answer.iter_bytes():
                 body += chunk
-                if len(body) > MAX_ANSWER_BYTES:
-                    return Row(key, problem=NOT_A_STATUS)
+                if len(body) > limit:
+                    return unreadable
             status_code = answer.status_code
     except httpx.HTTPError:
-        return Row(key, problem=UNREACHABLE)
+        return UNREACHABLE
     try:
-        envelope = _Envelope.model_validate_json(body)
+        envelope = hull.model_validate_json(body)
     except ValidationError:
-        return Row(key, problem=NOT_A_STATUS)
-    if envelope.error is not None and envelope.error.code == "not_found":
-        return Row(key, problem=NO_RESTAURANT)
-    status = envelope.data
-    if status_code != 200 or not envelope.ok or status is None:
-        return Row(key, problem=NOT_A_STATUS)
-    if status.tenant.key != key:
-        return Row(key, problem=OTHER_CUSTOMER)
-    return Row(key, status=status, notes=_notes(status))
+        return unreadable
+    code = envelope.error.code if envelope.error is not None else ""
+    if code == "not_found":
+        return NO_RESTAURANT
+    if code == "invalid_input":
+        return NOT_TAKEN
+    data = envelope.data
+    if status_code != 200 or not envelope.ok or data is None:
+        return unreadable
+    if data.tenant.key != customer.key:
+        return OTHER_CUSTOMER
+    return data
+
+
+def _ask(client: httpx.Client, customer: Stack) -> Row:
+    found = _fetch(
+        client, customer, STATUS_PATH, _Envelope[StackStatus], unreadable=NOT_A_STATUS
+    )
+    if isinstance(found, str):
+        return Row(customer.key, problem=found)
+    return Row(customer.key, status=found, notes=_notes(found))
 
 
 def _notes(status: StackStatus) -> list[str]:
@@ -300,33 +424,101 @@ def _notes(status: StackStatus) -> list[str]:
     return notes
 
 
-def overview(
-    customers: list[Stack], client: Callable[[], httpx.Client] | None = None
-) -> list[Row]:
-    """Every customer's row, the ones to look at first. Each stack is asked at
-    once, and the whole list has `DEADLINE_SECONDS`: a stack that is not done
-    by then is a row of its own and delays nobody else's. Closing the client
-    ends what such a stack is still sending."""
-    if not customers:
-        return []
+def _at_once[Found](
+    asks: list[tuple[str, Callable[[httpx.Client], Found]]],
+    client: Callable[[], httpx.Client] | None = None,
+) -> list[Found | str]:
+    """Every question (a customer's key and what to ask) at once: each one's
+    answer, or the sentence why there is none. All of them together have
+    `DEADLINE_SECONDS`: a stack that is not done by then delays nobody else.
+    Closing the client ends what such a stack is still sending."""
     http = (client or _client)()
-    pool = ThreadPoolExecutor(max_workers=min(MAX_AT_ONCE, len(customers)))
+    pool = ThreadPoolExecutor(max_workers=min(MAX_AT_ONCE, len(asks)))
+    found: list[Found | str] = []
     try:
-        asked = [pool.submit(_ask, http, customer) for customer in customers]
+        asked = [pool.submit(ask, http) for _, ask in asks]
         deadline = time.monotonic() + DEADLINE_SECONDS
-        rows = []
-        for customer, answer in zip(customers, asked, strict=True):
+        for (key, _), answer in zip(asks, asked, strict=True):
             try:
-                rows.append(answer.result(max(0.0, deadline - time.monotonic())))
+                found.append(answer.result(max(0.0, deadline - time.monotonic())))
             except NotInTime:
-                rows.append(Row(customer.key, problem=TOO_SLOW))
+                found.append(TOO_SLOW)
             except Exception:
                 # Whatever one customer's row trips over, the others are still
                 # shown (review of #801: twice one stack took the page down).
-                logger.exception("customer %s could not be asked", customer.key)
-                rows.append(Row(customer.key, problem=NOT_ASKED))
+                logger.exception("customer %s could not be asked", key)
+                found.append(NOT_ASKED)
     finally:
         pool.shutdown(wait=False, cancel_futures=True)
         http.close()
+    return found
+
+
+def _row(key: str, found: object) -> Row:
+    if isinstance(found, Row):
+        return found
+    return Row(key, problem=found if isinstance(found, str) else NOT_ASKED)
+
+
+def overview(
+    customers: list[Stack], client: Callable[[], httpx.Client] | None = None
+) -> list[Row]:
+    """Every customer's row, the ones to look at first; a stack that is not
+    done in time is a row of its own."""
+    if not customers:
+        return []
+    found = _at_once(
+        [(customer.key, partial(_ask, customer=customer)) for customer in customers],
+        client,
+    )
+    rows = [_row(c.key, one) for c, one in zip(customers, found, strict=True)]
     order = {"danger": 0, "warn": 1, "ok": 2}
     return sorted(rows, key=lambda row: (order[row.tone], row.key))
+
+
+def detail(customer: Stack, client: Callable[[], httpx.Client] | None = None) -> Detail:
+    """One customer's status and week, asked at once. Neither holds guest data,
+    so neither needs a reason (docs/23 §8)."""
+    asks: list[tuple[str, Callable[[httpx.Client], Row | StackFigures | str]]] = [
+        (customer.key, partial(_ask, customer=customer)),
+        (
+            customer.key,
+            partial(
+                _fetch,
+                customer=customer,
+                path=FIGURES_PATH,
+                hull=_Envelope[StackFigures],
+            ),
+        ),
+    ]
+    status, week = _at_once(asks, client)
+    row = _row(customer.key, status)
+    if isinstance(week, StackFigures):
+        return Detail(row, figures=week)
+    return Detail(row, figures_problem=week if isinstance(week, str) else NOT_ASKED)
+
+
+def calls(
+    customer: Stack,
+    day: date,
+    actor: str,
+    reason: str,
+    client: Callable[[], httpx.Client] | None = None,
+) -> StackCalls | str:
+    """The calls of one business day: guest data, so the stack is told who
+    asks and why (`api/core/ops_reason.py`) and writes that down before it
+    answers. `actor` is the session's account, never something a form sent."""
+    if not ops_reason.ACTOR.fullmatch(actor) or ops_reason.parse(reason) is None:
+        raise ValueError("no account or no reason: nothing is asked")
+    ask = partial(
+        _fetch,
+        customer=customer,
+        path=f"{CALLS_PATH}?day={day.isoformat()}",
+        hull=_Envelope[StackCalls],
+        headers={ops_reason.REASON_HEADER: reason, ops_reason.ACTOR_HEADER: actor},
+        limit=MAX_CALLS_BYTES,
+    )
+    found = _at_once([(customer.key, ask)], client)[0]
+    if isinstance(found, StackCalls) and found.business_day != day:
+        return NOT_AN_ANSWER
+    return found

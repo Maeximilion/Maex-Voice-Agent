@@ -405,6 +405,8 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 .ops-liste th[scope=row]{color:var(--text);font-size:var(--fs-body)}
 .ops-leer{display:grid;gap:var(--s2)}
 .ops code{font-family:var(--font-mono);overflow-wrap:anywhere}
+/* A customer's page (#571): the four figures two by two below 900 px. */
+@media (max-width:899px){.ops .kz-bar{grid-template-columns:repeat(2,1fr)}}
 /* Sign-in factors and step-up (#571): one card per factor, a form in a row.
    A passkey button stays hidden until passkey.js finds WebAuthn. */
 .ops [hidden]{display:none}

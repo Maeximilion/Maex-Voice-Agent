@@ -1,0 +1,112 @@
+{# One customer (#571, docs/23 §8): the stack's state, the four figures of
+   docs/06 §4 over the last seven business days with their course, the menu
+   status. Counts and states only, so no reason is asked. The call list is
+   guest data: its form is shown to a session with a fresh second factor and
+   posts a listed reason, a ticket number and one business day. Everything a
+   stack says is shown as text. #}
+{% extends "base.html" %}
+{% block title %}{{ key }}{% endblock %}
+{% set s = detail.row.status %}
+{% set f = detail.figures %}
+
+{% block main %}
+<section class="ops-seite" aria-labelledby="customer-title">
+  <p><a href="/">All customers</a></p>
+  <h1 id="customer-title">{% if s %}{{ s.tenant.name }}{% else %}{{ key }}{% endif %}<span class="muted ops-key">{{ key }}</span></h1>
+  {% if note %}<p class="banner {{ note[0] }}" role="status">{{ note[1] }}</p>{% endif %}
+
+  <div class="card ops-teil">
+    <h2>Stack</h2>
+    {% if not s %}
+    <p><span class="badge danger">down</span> {{ detail.row.problem }}</p>
+    {% else %}
+    <p>{% if detail.row.notes %}<span class="badge warn">look</span> {{ detail.row.notes | join(", ") }}{% else %}<span class="badge ok">ok</span>{% endif %}</p>
+    <table class="tbl ops-liste">
+      <thead>
+        <tr><th scope="col">Call mode</th><th scope="col">Last call</th><th scope="col">Today</th><th scope="col">Print bridge</th><th scope="col">Backup</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td data-label="Call mode">{{ s.call_mode or "not set" }}</td>
+          <td data-label="Last call" title="{{ s.last_call_at | shown }}">{{ s.last_call_at | ago(now) }}</td>
+          <td data-label="Today">{{ s.today.calls }} calls, {{ s.today.orders }} orders</td>
+          <td data-label="Print bridge" title="{{ s.print_bridge.last_poll_at | shown }}">{% if not s.print_bridge.configured %}not set up{% elif s.print_bridge.silent %}silent{% else %}connected{% endif %}</td>
+          <td data-label="Backup" title="{{ s.backup_at | shown }}">{{ s.backup_at | ago(now) }}</td>
+        </tr>
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+
+  <div class="card ops-teil">
+    <h2>Last 7 business days</h2>
+    {% if not f %}
+    <p><span class="badge danger">down</span> {{ detail.figures_problem }}</p>
+    {% else %}
+    <div class="kz-bar">
+      <div class="kz"><span class="muted">Accuracy</span><b>{{ f.week.accuracy_percent | percent }}</b></div>
+      <div class="kz"><span class="muted">Cost per order</span><b>{{ f.week.cost_per_order_cents | euro }}</b></div>
+      <div class="kz"><span class="muted">Handed to the team</span><b>{{ f.week.handed_over_percent | percent }}</b></div>
+      <div class="kz"><span class="muted">Missed calls</span><b>{{ f.week.missed }}</b></div>
+    </div>
+    <p class="muted">{{ f.week.calls }} calls, {{ f.week.orders }} orders. A dash: nothing to divide by.{% if f.week.unknown_cost_calls %} Calls of unknown cost, not counted: {{ f.week.unknown_cost_calls }}.{% endif %}</p>
+    <table class="tbl ops-liste">
+      <thead>
+        <tr><th scope="col">Business day</th><th scope="col">Calls</th><th scope="col">Orders</th><th scope="col">Accuracy</th><th scope="col">Cost per order</th><th scope="col">Handed to the team</th><th scope="col">Missed calls</th></tr>
+      </thead>
+      <tbody>
+        {% for d in f.days %}
+        <tr>
+          <th scope="row" data-label="Business day">{{ d.day | weekday }}</th>
+          <td data-label="Calls">{{ d.calls }}</td>
+          <td data-label="Orders">{{ d.orders }}</td>
+          <td data-label="Accuracy">{{ d.accuracy_percent | percent }}</td>
+          <td data-label="Cost per order">{{ d.cost_per_order_cents | euro }}{% if d.unknown_cost_calls %} *{% endif %}</td>
+          <td data-label="Handed to the team">{{ d.handed_over_percent | percent }}</td>
+          <td data-label="Missed calls">{{ d.missed }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if f.days | selectattr("unknown_cost_calls") | list %}
+    <p class="muted">* The cost of some calls of that day is not known and not counted.</p>
+    {% endif %}
+    {% endif %}
+  </div>
+
+  {% if s %}
+  <div class="card ops-teil">
+    <h2>Menu</h2>
+    <p>{{ s.menu.items }} dishes, {{ s.menu.price_differences }} price differences to the register, {{ s.menu.without_allergen_information }} dishes without allergen information.</p>
+    {% if s.menu.without_allergen_information %}<p class="muted">For a dish without allergen information the agent says that it has none.</p>{% endif %}
+  </div>
+  {% endif %}
+
+  <div class="card ops-teil">
+    <h2>Calls of one business day</h2>
+    <p class="muted">Guest data. Each request is recorded with your account and the reason, here and in the customer's own audit log. No phone number is shown: callers are counted per day, so repeated calls of one guest still show.</p>
+    {% if not days %}
+    <p>The stack gives no status, so no day can be chosen.</p>
+    {% elif not fresh %}
+    <p class="banner warn">This needs a fresh second factor. <a href="/step-up?next=/customers/{{ key }}">Confirm it is you</a></p>
+    {% else %}
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/calls">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="back" value="/customers/{{ key }}">
+      <label for="reason">Reason</label>
+      <select id="reason" name="reason" required>
+        <option value="">Choose a reason</option>
+        {% for code, words in reasons.items() %}<option value="{{ code }}">{{ words }}</option>{% endfor %}
+      </select>
+      <label for="reference">Ticket or issue number</label>
+      <input id="reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
+      <label for="day">Business day</label>
+      <select id="day" name="day">
+        {% for d in days %}<option value="{{ d.isoformat() }}">{{ d | weekday }}</option>{% endfor %}
+      </select>
+      <button type="submit" class="primary">Show the calls</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

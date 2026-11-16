@@ -36,6 +36,8 @@ BACKUP_DONE = "backup.done"
 # An alarm pushed within this span counts as open: the monitor repeats one that
 # still holds every clock hour or every day.
 ALARMS_OPEN_FOR = timedelta(hours=24)
+# The span of the four figures, as on the team's page (docs/06 §4).
+WEEK_DAYS = 7
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,27 @@ def status(session: Session, tenant: Tenant, now: datetime) -> Status:
         ),
         alarms=_alarms(session, tenant, now),
         menu=_menu(session, tenant),
+    )
+
+
+@dataclass(frozen=True)
+class Week:
+    business_day: date
+    # The whole span in one: a week's accuracy is not the mean of its days'.
+    week: Figures
+    # Each business day by itself, the newest first.
+    days: list[tuple[date, Figures]]
+
+
+def week(session: Session, tenant: Tenant, now: datetime) -> Week:
+    """The four figures of docs/06 §4 over the last `WEEK_DAYS` business days,
+    today included, and their course per day."""
+    today = business_day(now, tenant.timezone)
+    days = [today - timedelta(days=back) for back in range(WEEK_DAYS)]
+    return Week(
+        business_day=today,
+        week=span_figures(session, tenant, days[-1], today),
+        days=[(day, span_figures(session, tenant, day, day)) for day in days],
     )
 
 

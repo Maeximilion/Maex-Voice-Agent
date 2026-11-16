@@ -6,13 +6,21 @@ screen shows is the screen's decision.
 """
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.core.time import business_day_bounds_utc
-from api.models import Call, Tenant
+from api.core.errors import InvalidInput
+from api.core.time import business_day, business_day_bounds_utc
+from api.models import AuditLog, Call, Tenant
+
+# The business days a call list reaches back, today included: for the team's
+# page and for the operator, who sees no more days than the team does. The
+# caller id is kept far longer (docs/03).
+DAYS_LISTED = 14
+# The operator read a day's call list over the ops API (docs/23 §8).
+SUPPORT_READ = "ops.calls_read"
 
 
 @dataclass(frozen=True)
@@ -60,4 +68,73 @@ def list_calls(
             line_note=call.line_note,
         )
         for call in session.scalars(query.order_by(Call.started_at.desc()))
+    ]
+
+
+@dataclass(frozen=True)
+class SupportCall:
+    """A call as the operator sees it (docs/23 §8): no number leaves the stack.
+    `caller` counts the day's callers in the order of their first call, so the
+    same guest calling three times shows; None for a withheld number."""
+
+    started_at: datetime
+    caller: int | None
+    intent: str | None
+    outcome: str | None
+    duration_seconds: int | None
+    cost_cents: int | None
+    tool_calls: int
+    line_note: str | None
+
+
+def calls_for_support(
+    session: Session,
+    tenant: Tenant,
+    day: date,
+    now: datetime,
+    *,
+    actor: str,
+    reason: str,
+    reference: str,
+) -> list[SupportCall]:
+    """One business day's calls for the operator, newest first. The read is in
+    the audit log, committed, before a row is read: who, why and which day,
+    nothing of a guest. A day the team's own list does not reach is refused, so
+    is one that has not begun."""
+    today = business_day(now, tenant.timezone)
+    if not timedelta(0) <= today - day < timedelta(days=DAYS_LISTED):
+        raise InvalidInput(
+            f"the call list reaches back {DAYS_LISTED} business days", status=400
+        )
+    session.add(
+        AuditLog(
+            tenant_id=tenant.id,
+            actor=actor,
+            action=SUPPORT_READ,
+            entity="call",
+            payload={
+                "reason": reason,
+                "reference": reference,
+                "day": day.isoformat(),
+            },
+        )
+    )
+    session.commit()
+    rows = list_calls(session, tenant, day)
+    callers: dict[str, int] = {}
+    for row in reversed(rows):
+        if row.caller_id:
+            callers.setdefault(row.caller_id, len(callers) + 1)
+    return [
+        SupportCall(
+            started_at=row.started_at,
+            caller=callers.get(row.caller_id or ""),
+            intent=row.intent,
+            outcome=row.outcome,
+            duration_seconds=row.duration_seconds,
+            cost_cents=row.cost_cents,
+            tool_calls=row.tool_calls,
+            line_note=row.line_note,
+        )
+        for row in rows
     ]
