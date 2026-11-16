@@ -2,8 +2,9 @@
    docs/06 §4 over the last seven business days with their course, the menu
    status. Counts and states only, so no reason is asked. The call list is
    guest data: its form is shown to a session with a fresh second factor and
-   posts a listed reason, a ticket number and one business day. Everything a
-   stack says is shown as text. #}
+   posts a listed reason, a ticket number and one business day. The last card
+   opens the manage page (PINs, devices, setup link, call mode, team number)
+   the same way. Everything a stack says is shown as text. #}
 {% extends "base.html" %}
 {% block title %}{{ key }}{% endblock %}
 {% set s = detail.row.status %}
@@ -105,6 +106,27 @@
         {% for d in days %}<option value="{{ d.isoformat() }}">{{ d | weekday }}</option>{% endfor %}
       </select>
       <button type="submit" class="primary">Show the calls</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="card ops-teil">
+    <h2>Access and call routing</h2>
+    <p class="muted">Both PINs, the signed-in devices, a setup link, the call mode and the team number. Opening the page and every step on it is recorded with your account and the reason, here and in the customer's own audit log.</p>
+    {% if not fresh %}
+    <p class="banner warn">This needs a fresh second factor. <a href="/step-up?next=/customers/{{ key }}">Confirm it is you</a></p>
+    {% else %}
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/open">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="back" value="/customers/{{ key }}">
+      <label for="manage-reason">Reason</label>
+      <select id="manage-reason" name="reason" required>
+        <option value="">Choose a reason</option>
+        {% for code, words in reasons.items() %}<option value="{{ code }}">{{ words }}</option>{% endfor %}
+      </select>
+      <label for="manage-reference">Ticket or issue number</label>
+      <input id="manage-reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
+      <button type="submit" class="primary">Open access and call routing</button>
     </form>
     {% endif %}
   </div>

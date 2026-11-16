@@ -4,7 +4,9 @@ The registry (`operator_customers`) says where a stack's ops API answers and
 which token it takes; the operator fills it on the host (`dashboard/cli.py`).
 `overview` asks every stack for `GET /v1/ops/status` at once and turns each
 answer into one row of the list; `detail` asks one stack for its status and its
-week's figures, `calls` for the calls of one business day. No FastAPI here.
+week's figures, `calls` for the calls of one business day. `step` reads a form
+of the manage page as one request and `manage` sends it: the access read and
+the six steps that show a secret or change the restaurant. No FastAPI here.
 
 A stack's answer is input from outside: a customer's stack that was taken over
 may answer anything. So the answer is read up to a size limit, checked field by
@@ -18,13 +20,14 @@ import logging
 import re
 import time
 import traceback
+import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as NotInTime
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from functools import partial
-from typing import Annotated
+from typing import Annotated, Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -55,6 +58,13 @@ HOST = re.compile(r"[a-z0-9]([a-z0-9._-]*[a-z0-9])?")
 STATUS_PATH = "/v1/ops/status"
 FIGURES_PATH = "/v1/ops/figures"
 CALLS_PATH = "/v1/ops/calls"
+ACCESS_PATH = "/v1/ops/access"
+PIN_SHOW_PATH = "/v1/ops/access/pin/show"
+PIN_SET_PATH = "/v1/ops/access/pin"
+SIGN_OUT_PATH = "/v1/ops/access/sign-out"
+SETUP_LINK_PATH = "/v1/ops/access/setup-link"
+CALL_MODE_PATH = "/v1/ops/call-mode"
+TEAM_PHONE_PATH = "/v1/ops/team-phone"
 # `/customers/rows` is the list's refresh, so no customer's page can be there.
 RESERVED_KEYS = frozenset({"rows"})
 TIMEOUT_SECONDS = 3.0
@@ -66,6 +76,23 @@ MAX_ANSWER_BYTES = 64 * 1024
 # A call is under 250 bytes, and a restaurant does not take 2000 calls a day.
 MAX_CALLS = 2000
 MAX_CALLS_BYTES = 512 * 1024
+# As `domain/operator.py` MAX_DEVICES: a stack sends its newest devices.
+MAX_DEVICES = 200
+# What a form of the manage page may send and a stack may answer, each in full.
+# `domain/access/hashing.py` PIN, ASCII digits only.
+PIN = re.compile(r"[0-9]{4,6}")
+PINS = ("team", "admin")
+# A mode of the switch as a code; which codes there are is the stack's word.
+MODE = re.compile(r"[a-z_]{1,20}")
+# `domain/customers/phone.py` E164.
+PHONE = re.compile(r"\+[1-9][0-9]{6,14}")
+# The setup link as `domain/access/setup.py` builds it: the customer's own
+# https host or none, the one path, and the token as the fragment.
+SETUP_LINK = re.compile(
+    r"(https://[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?)?"
+    r"/gui/einrichten#[A-Za-z0-9_-]{20,100}"
+)
+ALL_DEVICES = "all"
 
 UNREACHABLE = "not reachable"
 TOO_SLOW = "answers too slowly"
@@ -78,6 +105,10 @@ NOT_KNOWN = "does not know this question (an older version?)"
 NO_RESTAURANT = "no restaurant in the stack yet"
 OTHER_CUSTOMER = "another customer answers at this address"
 NO_KEY = "its restaurant has no customer key yet"
+WRONG_STACK = "is not this customer's stack (another key, or none): nothing was done"
+# After these the stack did nothing; after any other problem of a step that
+# changes something, nobody knows.
+NOTHING_DONE = frozenset({REFUSED, NOT_KNOWN, NOT_TAKEN, NO_RESTAURANT, WRONG_STACK})
 
 Short = Annotated[str, Field(max_length=200)]
 EARLIEST = datetime(2000, 1, 1, tzinfo=UTC)
@@ -202,6 +233,46 @@ class StackCalls(_Named):
 
     business_day: Day
     calls: list[_Call] = Field(max_length=MAX_CALLS)
+
+
+def _full(pattern: re.Pattern[str]) -> AfterValidator:
+    """The whole text is the pattern, by Python's rule: no line break after it."""
+
+    def check(text: str) -> str:
+        if not pattern.fullmatch(text):
+            raise ValueError("not of the expected form")
+        return text
+
+    return AfterValidator(check)
+
+
+class _Device(_Answer):
+    id: uuid.UUID
+    # What the browser called itself, cut by the stack (`DEVICE_CHARS`).
+    device: Short
+    created_at: Time
+    last_seen_at: Time
+
+
+class StackAccess(_Named):
+    """`GET /v1/ops/access` and the answer of every step: the restaurant's
+    login, devices, call mode and team number after it. `pin`, `link` and
+    `signed_out` are what one step shows besides; no other field is a secret,
+    and a field this page does not know is dropped."""
+
+    login: bool
+    team_pin_set: bool
+    admin_pin_set: bool
+    devices: list[_Device] = Field(max_length=MAX_DEVICES)
+    call_mode: Annotated[str, _full(MODE)] | None
+    call_modes: list[Annotated[str, _full(MODE)]] = Field(max_length=10)
+    # As written in the stack's settings, so not always E.164.
+    team_phone: Annotated[str, Field(max_length=40)] | None
+    team_phones: list[Annotated[str, _full(PHONE)]] = Field(max_length=20)
+    pin: Annotated[str, _full(PIN)] | None = None
+    link: Annotated[str, _full(SETUP_LINK)] | None = None
+    link_expires_at: Time | None = None
+    signed_out: Count | None = None
 
 
 class _Error(_Answer):
@@ -361,12 +432,16 @@ def _fetch[Asked: _Named](
     headers: dict[str, str] | None = None,
     limit: int = MAX_ANSWER_BYTES,
     unreadable: str = NOT_AN_ANSWER,
+    method: str = "GET",
+    sent: dict[str, Any] | None = None,
 ) -> Asked | str:
-    """One answer of a stack, checked, or the one sentence why there is none."""
+    """One answer of a stack, checked, or the one sentence why there is none.
+    Asked once: a step that got no answer is never sent again by itself."""
     try:
         with client.stream(
-            "GET",
+            method,
             customer.api_url + path,
+            json=sent,
             headers={
                 **(headers or {}),
                 "Authorization": f"Bearer {customer.ops_token}",
@@ -403,6 +478,10 @@ def _fetch[Asked: _Named](
         return NO_RESTAURANT
     if code == "invalid_input":
         return NOT_TAKEN
+    # `_customer` of the stack's router: its restaurant is not the customer
+    # this request names. With any other status the code is something else's.
+    if code == "conflict" and status_code == 409:
+        return WRONG_STACK
     data = envelope.data
     if status_code != 200 or not envelope.ok or data is None:
         return unreadable
@@ -545,3 +624,129 @@ def calls(
     if isinstance(found, StackCalls) and found.business_day != day:
         return NOT_AN_ANSWER
     return found
+
+
+@dataclass(frozen=True)
+class Step:
+    """One request of the manage page: where it goes, what it carries, and
+    what both audits may say of it. `body` can hold a new PIN and is in no
+    printed form; `detail` never holds a PIN, a link or a telephone number."""
+
+    name: str
+    path: str
+    body: dict[str, Any] | None = field(default=None, repr=False)
+    detail: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def method(self) -> str:
+        return "GET" if self.path == ACCESS_PATH else "POST"
+
+    @property
+    def changes(self) -> bool:
+        """Whether the stack may be another after it: everything but the read
+        and the look at a PIN."""
+        return self.path not in (ACCESS_PATH, PIN_SHOW_PATH)
+
+
+def _device(text: str) -> str | None:
+    """A device's id as the stack wrote it, or None."""
+    try:
+        found = str(uuid.UUID(text))
+    except ValueError:
+        return None
+    return found if found == text else None
+
+
+def _open(form: dict[str, str]) -> Step | None:
+    return Step("access", ACCESS_PATH)
+
+
+def _pin_show(form: dict[str, str]) -> Step | None:
+    which = form.get("which", "")
+    if which not in PINS:
+        return None
+    return Step("pin_show", PIN_SHOW_PATH, {"which": which}, {"which": which})
+
+
+def _pin_set(form: dict[str, str]) -> Step | None:
+    which, pin = form.get("which", ""), form.get("pin", "")
+    if which not in PINS or not PIN.fullmatch(pin):
+        return None
+    return Step("pin_set", PIN_SET_PATH, {"which": which, "pin": pin}, {"which": which})
+
+
+def _sign_out(form: dict[str, str]) -> Step | None:
+    device = form.get("device", "")
+    if device == ALL_DEVICES:
+        return Step("sign_out", SIGN_OUT_PATH, {"all": True}, {"device": device})
+    if _device(device) is None:
+        return None
+    return Step("sign_out", SIGN_OUT_PATH, {"device": device}, {"device": device})
+
+
+def _setup_link(form: dict[str, str]) -> Step | None:
+    return Step("setup_link", SETUP_LINK_PATH)
+
+
+def _call_mode(form: dict[str, str]) -> Step | None:
+    mode = form.get("mode", "")
+    if not MODE.fullmatch(mode):
+        return None
+    return Step("call_mode", CALL_MODE_PATH, {"mode": mode}, {"mode": mode})
+
+
+def _team_phone(form: dict[str, str]) -> Step | None:
+    number = form.get("number", "")
+    if not PHONE.fullmatch(number):
+        return None
+    return Step("team_phone", TEAM_PHONE_PATH, {"number": number})
+
+
+# The last part of the manage page's addresses, and how each reads its form.
+STEPS: dict[str, Callable[[dict[str, str]], Step | None]] = {
+    "open": _open,
+    "pin-show": _pin_show,
+    "pin-set": _pin_set,
+    "sign-out": _sign_out,
+    "setup-link": _setup_link,
+    "call-mode": _call_mode,
+    "team-phone": _team_phone,
+}
+
+
+def step(action: str, form: dict[str, str]) -> Step | None:
+    """What a form of the manage page asks for, or None when it is no step:
+    the shape is checked here, so nothing odd is sent; whether a PIN, a mode
+    or a number is taken is the stack's decision."""
+    read = STEPS.get(action)
+    return read(form) if read else None
+
+
+def manage(
+    customer: Stack,
+    asked: Step,
+    actor: str,
+    reason: str,
+    client: Callable[[], httpx.Client] | None = None,
+) -> StackAccess | str:
+    """One step on a customer's access or call routing, and the state after
+    it. The stack is told who asks and why, as for guest data, and which
+    customer is meant: it compares that with its own restaurant before it
+    shows or changes anything. `actor` is the session's account, never
+    something a form sent."""
+    if not ops_reason.ACTOR.fullmatch(actor) or ops_reason.parse(reason) is None:
+        raise ValueError("no account or no reason: nothing is asked")
+    ask = partial(
+        _fetch,
+        customer=customer,
+        path=asked.path,
+        hull=_Envelope[StackAccess],
+        headers={
+            ops_reason.REASON_HEADER: reason,
+            ops_reason.ACTOR_HEADER: actor,
+            ops_reason.CUSTOMER_HEADER: customer.key,
+        },
+        method=asked.method,
+        sent=asked.body,
+    )
+    return _at_once([(customer.key, ask)], client)[0]

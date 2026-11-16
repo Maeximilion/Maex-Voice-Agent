@@ -25,7 +25,6 @@ Exit code: 0 done, 1 nothing matched or refused, 2 no tenant.
 """
 
 import argparse
-import os
 import sys
 from collections.abc import Callable
 
@@ -36,22 +35,15 @@ from api.core.time import to_local, utcnow
 from api.db import SessionLocal
 from api.domain.access.admin import admin_pin, set_admin_pin
 from api.domain.access.sessions import devices, end_sessions, stack_tenant_id
-from api.domain.access.setup import issue_link, set_team_pin, team_pin
+from api.domain.access.setup import (
+    issue_link,
+    set_team_pin,
+    setup_url,
+    team_pin,
+)
 from api.models import Tenant
 
 ACTOR = "operator:cli"
-SETUP_PATH = "/gui/einrichten#"
-
-
-def setup_url(token: str, base_url: str = "") -> str:
-    """The setup link for `token`: under `base_url`, else `https://$AGENT_DOMAIN`,
-    else the path alone."""
-    base = base_url or (
-        f"https://{os.environ['AGENT_DOMAIN']}"
-        if os.environ.get("AGENT_DOMAIN")
-        else ""
-    )
-    return f"{base.rstrip('/')}{SETUP_PATH}{token}"
 
 
 def _link(session: Session, tenant: Tenant, args: argparse.Namespace) -> int:

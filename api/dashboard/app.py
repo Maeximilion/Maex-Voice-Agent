@@ -6,7 +6,9 @@ Plain forms and no inline script (the CSP of ops.<domain> forbids it); the one
 use of HTMX is the customer list, which asks for its rows again every 30
 seconds. A customer's page (`/customers/<key>`) shows counts and states; its
 call list is guest data and stands behind the step-up, a reason and both
-audits (docs/23 §8). Every post must come from this site and carry the page's CSRF token,
+audits (docs/23 §8), and so does every step of its manage page
+(`/customers/<key>/manage/<step>`: both PINs, devices, a setup link, the call
+mode, the team number). Every post must come from this site and carry the page's CSRF token,
 the sign-in too (login CSRF). Outside dev and test every request but /health must
 come through Caddy, which sets the proxy secret; only then is the client
 address from X-Forwarded-For trusted. The checks themselves live in
@@ -87,8 +89,15 @@ NOTES = {
         "danger",
         "No calls shown: choose a reason, a ticket or issue number and a day.",
     ),
+    "step-reason-needed": (
+        "danger",
+        "Nothing opened or changed: choose a reason and a ticket or issue number.",
+    ),
 }
 REASON_NEEDED = "reason-needed"
+STEP_REASON_NEEDED = "step-reason-needed"
+# What a customer's page may say of itself: a link must not make it say more.
+CUSTOMER_NOTES = frozenset({REASON_NEEDED, STEP_REASON_NEEDED})
 # The call list's days, as `domain/calls/log.py` DAYS_LISTED; the stack decides.
 DAYS_OFFERED = 14
 DAY = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
@@ -111,6 +120,36 @@ INTENTS = {
     "unknown": "unclear",
 }
 LINE_NOTES = {"no_caller_audio": "caller not audible (no sound arrived)"}
+# The call modes of docs/02 §4, and the two steps around the emergency stop.
+MODES = {
+    "shadow": "shadow: the agent takes no call, the team answers as before",
+    "overflow": "overflow: the team's phones ring first, then the agent answers",
+    "primary": "primary: the agent answers first",
+    "paused": "paused: the agent takes no call (emergency stop)",
+    "resume": "switch the agent on again, in the mode it had before the pause",
+}
+NOT_SENT = "Nothing was sent: the form was not complete. Open the page again."
+NO_LINK = "answered without a link"
+# A step that changes something and got no clear answer: nobody knows.
+UNSURE = (
+    " The change may have been made all the same: open the page again and "
+    "look before you repeat it."
+)
+# What a stack's refusal of a step can mean, said by this page: the stack's
+# own sentence is the team's and German.
+REFUSALS = {
+    "pin_set": (
+        "The stack refused this PIN: a PIN has 4 to 6 digits and differs from "
+        "the other PIN, and the restaurant needs its login first (a setup link)."
+    ),
+    "call_mode": (
+        "The stack refused this mode: a paused agent can only be switched on again."
+    ),
+    "team_phone": (
+        "The stack refused this number: it takes only numbers its telephone "
+        "system dials."
+    ),
+}
 PUSH_TITLE = "Operator sign-in changed"
 COPY = "a passkey answered with an old counter, a copy?"
 NO_STORE = {"Cache-Control": "no-store"}
@@ -181,6 +220,7 @@ templates.env.filters["duration"] = _duration
 templates.env.filters["intent"] = lambda code: _word(code, INTENTS, DASH)
 templates.env.filters["outcome"] = lambda code: _word(code, OUTCOMES, "running")
 templates.env.filters["line_note"] = lambda code: _word(code, LINE_NOTES, "")
+templates.env.filters["mode"] = lambda code: _word(code, MODES, "not set")
 
 
 def now() -> datetime:
@@ -731,9 +771,9 @@ def customer_page(
         ]
         if status
         else [],
-        # This page's own sentence only: a link must not make it say that a
+        # This page's own sentences only: a link must not make it say that a
         # factor changed.
-        "note": NOTES[REASON_NEEDED] if note == REASON_NEEDED else None,
+        "note": NOTES[note] if note in CUSTOMER_NOTES else None,
     }
     return _page(request, "customer.html", context)
 
@@ -799,3 +839,111 @@ def customer_calls(
         "problem": found if isinstance(found, str) else "",
     }
     return _page(request, "calls.html", context)
+
+
+def _said(
+    step: customers.Step, found: customers.StackAccess | str
+) -> tuple[str, str, str] | None:
+    """What the manage page says after a step: a tone, a sentence, and the
+    secret the step shows once. Read from the stack's answer, not from what
+    was asked for; a problem is this module's or `customers`' own sentence."""
+    if isinstance(found, str):
+        problem = (
+            REFUSALS.get(step.name, found) if found == customers.NOT_TAKEN else found
+        )
+        if step.changes and found not in customers.NOTHING_DONE:
+            problem += UNSURE
+        return "danger", problem, ""
+    which = step.detail.get("which", "")
+    if step.name == "pin_show":
+        if found.pin is None:
+            return "warn", f"No {which} PIN is set.", ""
+        return "ok", f"The {which} PIN, shown once:", found.pin
+    if step.name == "pin_set":
+        return "ok", f"The {which} PIN is changed.", ""
+    if step.name == "sign_out":
+        if found.signed_out is None:
+            return "warn", "The stack did not say how many devices it signed out.", ""
+        if not found.signed_out:
+            return "warn", "No device was signed out: it was gone already.", ""
+        many = "" if found.signed_out == 1 else "s"
+        return "ok", f"Signed out: {found.signed_out} device{many}.", ""
+    if step.name == "setup_link" and found.link:
+        until = _shown(found.link_expires_at)
+        valid = f", valid until {until}" if until else ""
+        return "ok", f"The setup link, shown once{valid}:", found.link
+    if step.name == "call_mode":
+        return "ok", f"The call mode is now {found.call_mode or 'not set'}.", ""
+    if step.name == "team_phone":
+        return "ok", f"Calls for the team go to {found.team_phone} today.", ""
+    return None
+
+
+@app.post("/customers/{key}/manage/{action}", response_class=HTMLResponse)
+def customer_manage(
+    request: Request,
+    key: str,
+    action: str,
+    form: dict[str, str] = Depends(_form),
+    operator: access.Operator = Depends(require_step_up),
+    db: Session = Depends(get_db),
+) -> Response:
+    """One step on a customer's access or call routing (docs/23 §5 and §8):
+    the read that opens the page, a PIN shown or set, devices signed out, a
+    setup link, the call mode, the team number. Each is a post behind the
+    step-up with the page's CSRF token and a reason, as the call list; the
+    actor is the session's account; the step is in the operator's audit before
+    the stack is asked, and what came of it is a second row. Neither row holds
+    a PIN, a link or a number. The answer is one page that is not stored: a
+    shown PIN or a new link exists nowhere on the operator's side after it."""
+    _checked(request, form)
+    stack = _stack(db, key)
+    if action not in customers.STEPS:
+        raise HTTPException(status_code=404, detail="No such step")
+    category = form.get("reason", "")
+    reason = ops_reason.reason(category, form.get("reference", ""))
+    if reason is None:
+        return RedirectResponse(
+            f"/customers/{stack.key}?{urlencode({'note': STEP_REASON_NEEDED})}",
+            status_code=303,
+        )
+    reference = reason.partition(" ")[2]
+    context: dict[str, Any] = {
+        "operator": operator,
+        "key": stack.key,
+        "category": category,
+        "reason": ops_reason.REASONS[category],
+        "reference": reference,
+        "max_devices": customers.MAX_DEVICES,
+        "access": None,
+    }
+    step = customers.step(action, form)
+    if step is None:
+        context["said"] = ("danger", NOT_SENT, "")
+        return _page(request, "manage.html", context, 400)
+    name = f"customer.{step.name}"
+    access.audit(
+        db,
+        operator.name,
+        f"{name}_asked",
+        {"reason": category, "reference": reference} | step.detail,
+        target=stack.key,
+    )
+    db.commit()
+    found = customers.manage(stack, step, operator.name, reason)
+    if isinstance(found, customers.StackAccess) and (
+        step.name == "setup_link" and found.link is None
+    ):
+        found = NO_LINK
+    # What the operator saw of it: done, or one of our own sentences why not.
+    access.audit(
+        db,
+        operator.name,
+        f"{name}_not_done" if isinstance(found, str) else f"{name}_done",
+        step.detail | ({"problem": found} if isinstance(found, str) else {}),
+        target=stack.key,
+    )
+    db.commit()
+    context["said"] = _said(step, found)
+    context["access"] = None if isinstance(found, str) else found
+    return _page(request, "manage.html", context)

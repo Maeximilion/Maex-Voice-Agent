@@ -8,6 +8,7 @@ every device, because a reset usually means a lost tablet or a password that
 got around, and signs in the device that used the link.
 """
 
+import os
 import secrets
 import uuid
 from datetime import datetime, timedelta
@@ -44,6 +45,18 @@ from api.models import GuiAccount, GuiSession, GuiSetupLink
 LINK_HOURS = 24
 LINK_GONE = "Dieser Link gilt nicht mehr. Bitte beim Betreiber einen neuen anfordern."
 ADMIN_PIN_DIGITS = "Die Inhaber-PIN hat 4 bis 6 Ziffern."
+SETUP_PATH = "/gui/einrichten#"
+
+
+def setup_url(token: str, base_url: str = "") -> str:
+    """The setup link for `token`: under `base_url`, else `https://$AGENT_DOMAIN`,
+    else the path alone. The token is the fragment, which no browser sends."""
+    base = base_url or (
+        f"https://{os.environ['AGENT_DOMAIN']}"
+        if os.environ.get("AGENT_DOMAIN")
+        else ""
+    )
+    return f"{base.rstrip('/')}{SETUP_PATH}{token}"
 
 
 def issue_link(
