@@ -2,9 +2,10 @@
 
     uvicorn api.dashboard.app:app --port 8002
 
-Plain forms, no HTMX and no inline script (the CSP of ops.<domain> forbids it).
-Every post must come from this site and carry the page's CSRF token, the
-sign-in too (login CSRF). Outside dev and test every request but /health must
+Plain forms and no inline script (the CSP of ops.<domain> forbids it); the one
+use of HTMX is the customer list, which asks for its rows again every 30
+seconds. Every post must come from this site and carry the page's CSRF token,
+the sign-in too (login CSRF). Outside dev and test every request but /health must
 come through Caddy, which sets the proxy secret; only then is the client
 address from X-Forwarded-For trusted. The checks themselves live in
 `dashboard/access.py`.
@@ -17,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
+from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
@@ -28,7 +30,7 @@ from starlette.responses import Response
 from api.core.logging import configure_logging, request_context_middleware
 from api.core.origin import same_origin
 from api.core.tokens import LOCAL_ENVS
-from api.dashboard import access
+from api.dashboard import access, customers
 from api.dashboard.config import settings
 from api.dashboard.db import get_db
 
@@ -43,10 +45,34 @@ WRITES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 FAILED = "Sign-in failed."
 WAIT = "Too many attempts. Try again in {minutes} min."
 DEVICE_DAYS = 400
+# Times are stored and sent in UTC and shown in the restaurants' time.
+SHOWN_IN = ZoneInfo("Europe/Berlin")
 
 app = FastAPI(title="Maex Operator", docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=str(GUI_STATIC)), name="static")
 templates = Jinja2Templates(directory=str(HERE / "templates"))
+
+
+def _ago(at: datetime | None, at_now: datetime) -> str:
+    """How long ago, in the one unit that says enough for a glance."""
+    if at is None:
+        return "never"
+    minutes = max(0, int((at_now - at).total_seconds() // 60))
+    if minutes < 1:
+        return "just now"
+    if minutes < 60:
+        return f"{minutes} min ago"
+    if minutes < 48 * 60:
+        return f"{minutes // 60} h ago"
+    return f"{minutes // (24 * 60)} d ago"
+
+
+def _shown(at: datetime | None) -> str:
+    return at.astimezone(SHOWN_IN).strftime("%d.%m.%Y %H:%M") if at else ""
+
+
+templates.env.filters["ago"] = _ago
+templates.env.filters["shown"] = _shown
 
 
 def now() -> datetime:
@@ -146,6 +172,17 @@ def require_operator(
     return operator
 
 
+def watching_operator(request: Request, db: Session = Depends(get_db)) -> None:
+    """For what the page asks by itself: the session must still hold, and the
+    request does not keep it alive (`access.resolve`). Once it ended, HTMX goes
+    to the sign-in."""
+    token = request.cookies.get(cookie("session"), "")
+    if access.resolve(db, token, now(), touch=False) is None:
+        raise HTTPException(
+            status_code=401, detail="Signed out", headers={"HX-Redirect": LOGIN}
+        )
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -226,4 +263,23 @@ def home(
     db: Session = Depends(get_db),
 ) -> Response:
     left = access.recovery_left(db, operator.account_id)
-    return _page(request, "home.html", {"operator": operator, "recovery_left": left})
+    return _page(
+        request,
+        "home.html",
+        {"operator": operator, "recovery_left": left, **_rows(db)},
+    )
+
+
+def _rows(db: Session) -> dict[str, Any]:
+    return {"rows": customers.overview(customers.stacks(db)), "now": now()}
+
+
+@app.get(
+    "/customers/rows",
+    response_class=HTMLResponse,
+    dependencies=[Depends(watching_operator)],
+)
+def customer_rows(request: Request, db: Session = Depends(get_db)) -> Response:
+    """The list's rows alone, for its refresh. No cookie is set: `_page` gives
+    the CSRF token to pages with a form."""
+    return templates.TemplateResponse(request, "_customers.html", _rows(db))

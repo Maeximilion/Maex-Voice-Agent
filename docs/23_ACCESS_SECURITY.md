@@ -141,10 +141,23 @@ names cannot fill the table, and an address is forgotten a day after its last fa
 request but `/health` needs `OPERATOR_PROXY_SECRET` from Caddy outside dev and test (as
 `GUI_PROXY_SECRET`, T10): every customer's `api` shares an `ops` network with the dashboard. The
 TOTP secret is stored readable, because the code is an HMAC of it; the operator database and its
-encrypted backups stay on the operator host (T7). Still to come: passkeys (`py_webauthn`, the
-dashboard's own image target), the push to `ops` on a new factor or a used recovery code, step-up
-before dangerous actions, the operator stack's Compose file and the Caddy site `ops.<domain>`
-with its headers, then the customer list over the ops API (§8).
+encrypted backups stay on the operator host (T7).
+
+**The customer list (#571, third part, 16.11.2026):** the start page shows every customer's stack
+in one row: the stack's state as a glyph and a word (ok, look, down) with what to look at, call
+mode, last call, calls and orders today, print bridge, backup age, menu status. The customers come
+from a registry in the operator database (`operator_customers`, migration op002): key, the address
+of the stack's ops API on its `ops` network and its `OPS_TOKEN`, added on the operator host with
+`python -m api.dashboard.cli customer-add <key> http://<api container>:8000`, which asks for the
+token or reads it from standard input, never from an argument, and never prints it;
+`customer-remove` and `customers` beside it, each change in the operator's audit. The token is
+stored readable, because the dashboard sends it (as the TOTP secret, T7); no two customers share an
+address or a token. Each stack is asked at once with three seconds to answer (§8). The rows come
+again every 30 seconds; that request checks the session but does not keep it alive, so an open tab
+still ends at the idle limit. Still to come: the provisioning script adding the registry row
+itself (with the operator stack's Compose file), passkeys (`py_webauthn`, the dashboard's own
+image target), the push to `ops` on a new factor or a used recovery code, step-up before
+dangerous actions, the customer's detail pages, the Caddy site `ops.<domain>` with its headers.
 
 ## 6. Customer login (#570)
 
@@ -271,8 +284,12 @@ the second builds against.
   Down Online Guessing Attacks with Device Cookies"). A new browser during such an attack waits. The client address is the last entry of Caddy's
   `X-Forwarded-For`, trusted only outside dev and test, where only Caddy reaches the view.
 - **CSRF** as today (docs/06 §9) plus a check on every write that `Origin` (or, without it,
-  `Sec-Fetch-Site`) names this site; a browser sends one of them on every cross-site write, and
-  `Origin: null` is refused. The sign-in, setup and PIN forms carry the page's CSRF token as a field
+  `Sec-Fetch-Site`) names this site; a browser sends one of them on every cross-site write. `Origin: null` passes
+  only with `Sec-Fetch-Site: same-origin` (16.11.2026, `api/core/origin.py`): under the proxy's
+  `no-referrer` policy a browser sends `null` with a plain form post of the site itself, so every
+  plain form (sign-in, setup, PINs, and the operator's sign-in) was refused in a real browser;
+  `null` from a sandboxed frame or a cross-site redirect comes without `same-origin`, which no
+  page can set, and stays refused, as does a browser too old to send the header. The sign-in, setup and PIN forms carry the page's CSRF token as a field
   (login CSRF).
 - **Second factor for customers:** not required at start; the tablet session is long and the admin
   area has the admin PIN. Offered later as an option if a customer asks.
@@ -339,6 +356,12 @@ guest's data.
   through the domain functions the tablet uses (`domain/status/config.py`, `staff_changes.py`).
 - The actor header is trusted only because only the dashboard holds `OPS_TOKEN`; the dashboard sets
   it from the session, never from user input.
+- **A stack's answer is input from outside** (built with the customer list, 16.11.2026,
+  `api/dashboard/customers.py`): a stack that was taken over may answer anything. The dashboard
+  reads at most 64 kB, checks every field (types, lengths, at most 50 alarms, times with an
+  offset), requires the answer to name the customer the row was asked for ("another customer
+  answers at this address" otherwise), and shows everything as text. The token goes to the
+  registered address only: no redirect is followed and no proxy variable of the host is read.
 
 Rejected:
 

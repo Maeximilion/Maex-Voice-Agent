@@ -160,9 +160,14 @@ def sign_in(
     return Signed(token, device_token)
 
 
-def resolve(db: Session, token: str, now: datetime) -> Operator | None:
+def resolve(
+    db: Session, token: str, now: datetime, touch: bool = True
+) -> Operator | None:
     """The operator behind a session cookie, or None once it ended. Commits
-    when it moves last_seen_at or drops an ended session."""
+    when it moves last_seen_at or drops an ended session. `touch=False` is for
+    a request the page sends by itself (the list's refresh): it must not count
+    as the operator being there, or an open tab would never reach the idle
+    limit."""
     if not token:
         return None
     found = db.execute(
@@ -177,7 +182,7 @@ def resolve(db: Session, token: str, now: datetime) -> Operator | None:
         db.delete(row)
         db.commit()
         return None
-    if now - row.last_seen_at >= TOUCH_EVERY:
+    if touch and now - row.last_seen_at >= TOUCH_EVERY:
         row.last_seen_at = now
         db.commit()
     return Operator(row.id, row.account_id, name)

@@ -213,9 +213,10 @@ Run from the API's image as `uvicorn api.dashboard.app:app`, with its own databa
 - `models.py` — accounts, recovery codes, sessions, devices, failures per address, the operator's own audit
 - `totp.py` — RFC 6238 codes, standard library, a code never taken twice
 - `access.py` — sign-in (password plus TOTP or recovery code), waits, sessions (30 minutes idle, 12 hours), account creation and the break-glass reset; no FastAPI
-- `app.py` — the pages: `/login`, `/logout`, `/`, `/health`; CSRF, cookies, the proxy check
-- `cli.py` — `python -m api.dashboard.cli add|reset <name>` on the operator host
-- `templates/` — the pages, no script
+- `customers.py` — the registry of customers (key, address of the stack's ops API, its `OPS_TOKEN`) and `overview`: every stack's `GET /v1/ops/status` at once, each answer checked as input from outside and turned into one row; no FastAPI
+- `app.py` — the pages: `/login`, `/logout`, `/` (the customer list), `/customers/rows` (its rows for the refresh, which does not keep the session alive), `/health`; CSRF, cookies, the proxy check
+- `cli.py` — `python -m api.dashboard.cli add|reset <name>` and `customer-add <key> <url>|customer-remove <key>|customers` on the operator host
+- `templates/` — the pages; the two scripts of the operations view as files (`htmx` for the list's refresh, `base.js` for "Show" beside the password), no inline script
 
 ### `printbridge/` – die Druckbrücke im Lokal (T-4.6)
 Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht mit dem Server nur über HTTPS. Läuft auf einem Rechner im Lokal (`printbridge/README.md`).
@@ -307,7 +308,7 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 | `agent/` | mit Fake-LLM (vorgegebene Antworten), prüft Loop und Dispatch | fertig |
 | `events/` | Outbox schreiben, Dispatcher gegen Fake-n8n, Retry-Verhalten | offen |
 | `telephony/adapters` | against the fake adapter; later against recorded media events and fake speech engines (docs/20) | fertig |
-| `dashboard/` | `totp.py` against the RFC 6238 test values without a database; the login, CLI and migration against a scratch operator database (`api/tests/test_dashboard_*.py`) | fertig |
+| `dashboard/` | `totp.py` against the RFC 6238 test values without a database; the login, CLI and migrations against a scratch operator database, the customer registry and the list against stacks played by a mock transport (`api/tests/test_dashboard_*.py`) | fertig |
 | Ende-zu-Ende | `sim/replay` gegen echte API mit Test-DB | offen |
 
 **Ziel:** Die schnellen Tests laufen bei jedem Speichern, die DB-Tests vor jedem Commit, die Evals vor jedem Merge.
