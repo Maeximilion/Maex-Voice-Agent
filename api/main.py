@@ -17,10 +17,11 @@ from starlette.exceptions import HTTPException
 from api.config import LOCAL_ENVS, settings
 from api.core import envelope
 from api.core.auth import require_token
+from api.core.database_role import refuse_a_superuser_role
 from api.core.errors import AppError
 from api.core.logging import configure_logging, get_logger, request_context_middleware
 from api.core.tool_log import tool_call_log_middleware
-from api.db import engine, get_db, refuse_a_superuser_role
+from api.db import engine, get_db
 from api.domain.calls import end_call, start_call
 from api.gui import mount_gui
 from api.gui.session import slide_cookies

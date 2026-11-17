@@ -36,8 +36,9 @@ from fastapi import FastAPI
 
 from api.agent.llm import ChatCompletionsLLM
 from api.config import LOCAL_ENVS, TOKEN_MIN_LENGTH, settings
+from api.core.database_role import refuse_a_superuser_role
 from api.core.logging import configure_logging, get_logger
-from api.db import SessionLocal, bounded_sessions, engine, refuse_a_superuser_role
+from api.db import SessionLocal, bounded_sessions, engine
 from api.domain.calls import call_routing, tenant_named
 from api.domain.customers.phone import E164
 from api.telephony.adapters.fake_speech import DrillEar, FakeEar, FakeMouth

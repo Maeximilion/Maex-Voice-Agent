@@ -89,9 +89,14 @@ echo "written: $final ($(wc -c <"$final" | tr -d ' ') bytes, $tables tables)"
 
 # The operator's alarm misses this row when backups stop (api/jobs/monitor.py).
 # The dump is good either way, so a failure here is a warning, not an exit.
-pg_sql "$PGDATABASE" "insert into audit_log (tenant_id, actor, action, entity)
-    select id, 'backup', 'backup.done', 'database' from tenants" >/dev/null ||
-    echo "warning: backup not recorded in audit_log, the backup alarm will fire" >&2
+# The operator stack's database (#827 F9) has no tenants and no such alarm.
+if [ "$(pg_sql "$PGDATABASE" "select to_regclass('public.tenants') is null" 2>/dev/null)" = t ]; then
+    echo "no tenants table (the operator database): no mark for the backup alarm"
+else
+    pg_sql "$PGDATABASE" "insert into audit_log (tenant_id, actor, action, entity)
+        select id, 'backup', 'backup.done', 'database' from tenants" >/dev/null ||
+        echo "warning: backup not recorded in audit_log, the backup alarm will fire" >&2
+fi
 
 # Only after a good run, and only dumps of this database, labelled ones included.
 # A label is lower case; another database whose name starts with this one and a

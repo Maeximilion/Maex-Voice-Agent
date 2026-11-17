@@ -128,4 +128,4 @@ IFS='|' read -r above same_role member new_schema creates locked beyond_rows own
 [ "$beyond_rows" = 0 ] ||
     die 1 "$APP_ROLE holds a right above reading and writing rows on $beyond_rows table(s) or sequence(s): truncate, references or trigger on a table, update on a sequence (granted to PUBLIC?)"
 echo "done: $APP_ROLE logs in, is no superuser, reads and writes $count tables and cannot change the schema"
-echo "restart api and dispatcher if DATABASE_URL changed"
+echo "restart api and dispatcher (the dashboard in the operator stack) if DATABASE_URL changed"

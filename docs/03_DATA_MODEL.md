@@ -638,7 +638,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 
 ### Operator database (#571, docs/23 §5)
 
-Not a customer's database: the operator stack's own, migrated with `alembic -c db/dashboard/alembic.ini` from `OPERATOR_DATABASE_URL`, revisions `op001` on (`db/dashboard/migrations/`). It holds no guest data.
+Not a customer's database: the operator stack's own, migrated as its owner with `bash scripts/migrate.sh --operator` (`alembic -c db/dashboard/alembic.ini`, the dashboard itself connects as a role of its own, #827 F5), revisions `op001` on (`db/dashboard/migrations/`). It holds no guest data.
 
 | Migration | Content |
 |---|---|
