@@ -419,14 +419,20 @@ def test_each_team_number_change_pushes_once(session, tenant_id):
     staff.change_team_phone(session, tenant_id, "+4972215550000", NOW)
     staff.change_team_phone(session, tenant_id, standard, NOW)
     day = TUESDAY.isoformat()
-    # Nothing but the day and the numbers: no device, no name.
+    # The day, the numbers and the team as who changed it: no device, no name.
     assert _by_content(_events(session, tenant_id)) == _by_content(
         [
-            (TEAM_PHONE_CHANGED, {"day": day, "from": standard, "to": NUMBER}),
-            (TEAM_PHONE_CHANGED, {"day": day, "from": NUMBER, "to": "+4972215550000"}),
             (
                 TEAM_PHONE_CHANGED,
-                {"day": day, "from": "+4972215550000", "to": standard},
+                {"day": day, "from": standard, "to": NUMBER, "by": "team"},
+            ),
+            (
+                TEAM_PHONE_CHANGED,
+                {"day": day, "from": NUMBER, "to": "+4972215550000", "by": "team"},
+            ),
+            (
+                TEAM_PHONE_CHANGED,
+                {"day": day, "from": "+4972215550000", "to": standard, "by": "team"},
             ),
         ]
     )
@@ -953,6 +959,161 @@ def test_the_window_table_lists_what_the_old_windows_held_and_the_new_ones_do_no
         session, tenant_id, SATURDAY, after, "Europe/Berlin", before
     )
     assert [b.guest_name for b in found] == listed
+
+
+# --- who changed the number, and the standard number (#811) ---------------------
+
+OPERATOR = "operator:maxi"
+
+
+def test_the_push_says_whether_the_team_or_the_operator_changed_the_number(
+    session, tenant_id
+):
+    """The team as a role (no device, no name); the operator with its
+    account, as the operator's access pushes."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    staff.change_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+    actors = [payload.get("actor") for _, payload in _events(session, tenant_id)]
+    assert sorted(actors, key=str) == [None, OPERATOR]
+
+    assert sorted(payload["by"] for _, payload in _events(session, tenant_id)) == [
+        "operator",
+        "team",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("actors", "by"),
+    [
+        (["gui:tablet"], "team"),
+        ([OPERATOR], "operator"),
+        (["gui:tablet", OPERATOR], "operator"),
+        ([OPERATOR, "gui:tablet"], "team"),
+    ],
+)
+def test_a_card_names_who_changed_it_last(session, tenant_id, actors, by):
+    numbers = [NUMBER, "+4972215550000"]
+    for actor, number in zip(actors, numbers, strict=False):
+        staff.change_team_phone(session, tenant_id, number, NOW, actor)
+
+    (card,) = staff.open_cards(session, tenant_id, TUESDAY)
+    assert staff.changed_by(session, tenant_id, [card]) == {card.id: by}
+
+
+def test_the_operator_sets_the_standard_number(session, tenant_id):
+    standard = _config(session, tenant_id).team_phone
+
+    assert staff.set_standard_team_phone(session, tenant_id, NUMBER, NOW, OPERATOR)
+
+    config = _config(session, tenant_id)
+    assert (config.team_phone, config.team_phone_today) == (NUMBER, None)
+    assert _cards(session, tenant_id) == []
+    assert _events(session, tenant_id) == [
+        (
+            TEAM_PHONE_CHANGED,
+            {
+                "day": TUESDAY.isoformat(),
+                "from": standard,
+                "to": NUMBER,
+                "standard": True,
+                "by": "operator",
+                "actor": OPERATOR,
+            },
+        )
+    ]
+    row = session.scalars(
+        select(AuditLog).where(AuditLog.action == "service_config.team_phone_standard")
+    ).one()
+    assert (row.actor, row.payload) == (OPERATOR, {"from": standard, "to": NUMBER})
+
+
+@pytest.mark.parametrize(
+    ("raw", "says"),
+    [("12", staff.NO_NUMBER), ("+4930123456", staff.NOT_LISTED), ("", staff.NO_NUMBER)],
+)
+def test_the_standard_number_is_checked_as_the_number_for_today(
+    session, tenant_id, raw, says
+):
+    standard = _config(session, tenant_id).team_phone
+
+    with pytest.raises(InvalidInput) as refused:
+        staff.set_standard_team_phone(session, tenant_id, raw, NOW, OPERATOR)
+
+    assert refused.value.say == says
+    assert _config(session, tenant_id).team_phone == standard
+    assert _events(session, tenant_id) == []
+
+
+def test_the_standard_that_holds_already_is_no_change(session, tenant_id, monkeypatch):
+    standard = _config(session, tenant_id).team_phone
+    monkeypatch.setattr(settings, "transfer_targets", f"{NUMBER}, {standard}")
+
+    assert not staff.set_standard_team_phone(
+        session, tenant_id, standard, NOW, OPERATOR
+    )
+    assert _events(session, tenant_id) == []
+
+
+def test_a_new_standard_holds_after_todays_number(session, tenant_id):
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    staff.set_standard_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+
+    config = _config(session, tenant_id)
+    assert staff.team_phone_at(config, NOW) == NUMBER
+    tomorrow = NOW + timedelta(days=1)
+    assert staff.team_phone_at(config, tomorrow) == "+4972215550000"
+
+
+def test_a_new_standard_moves_the_before_of_todays_card(session, tenant_id):
+    """Review of #811: the card said "Vorher" the old standard, undo went to
+    the new one, and a tablet that showed it could keep it unseen."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    (shown,) = _cards(session, tenant_id)
+    seen = shown.updated_at
+
+    staff.set_standard_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+
+    (card,) = _cards(session, tenant_id)
+    assert (card.before, card.after) == (
+        {"number": "+4972215550000"},
+        {"number": NUMBER},
+    )
+    with pytest.raises(Conflict):
+        staff.decide(session, tenant_id, card.id, keep=True, now=NOW, seen=seen)
+    staff.decide(session, tenant_id, card.id, keep=False, now=NOW, seen=card.updated_at)
+    assert staff.team_phone_at(_config(session, tenant_id), NOW) == "+4972215550000"
+
+
+def test_todays_number_made_the_standard_closes_its_card(session, tenant_id):
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+
+    staff.set_standard_team_phone(session, tenant_id, NUMBER, NOW, OPERATOR)
+
+    config = _config(session, tenant_id)
+    assert (config.team_phone, config.team_phone_today) == (NUMBER, None)
+    assert [card.status for card in _cards(session, tenant_id)] == ["undone"]
+    assert staff.open_cards(session, tenant_id, TUESDAY) == []
+
+
+def test_a_change_begun_before_the_card_still_names_who_made_it(session, tenant_id):
+    """Review of #811: `at` is a transaction's start, so a tablet change that
+    began a moment before the card's transaction is stamped before it."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW, OPERATOR)
+    (card,) = staff.open_cards(session, tenant_id, TUESDAY)
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            at=card.created_at - timedelta(seconds=2),
+            actor="gui:tablet",
+            action=staff.ACTION_TEAM_PHONE,
+            entity="staff_change",
+            entity_id=card.id,
+            payload={},
+        )
+    )
+    session.commit()
+
+    assert staff.changed_by(session, tenant_id, [card]) == {card.id: "team"}
 
 
 def test_the_check_token_follows_the_hours_behind_a_card(session, tenant_id):

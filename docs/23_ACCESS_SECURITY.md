@@ -205,7 +205,8 @@ file, and since #827 F3 (17.11.2026) its own push server (below, "Audit and push
 **A customer's page, write (#571, sixth part, 16.11.2026):** the last card of a customer's page
 opens "Access and call routing" (`/customers/<key>/manage/<step>`), where the operator shows and
 sets the team PIN and the admin PIN, signs out one device or all, makes a setup link, sets the
-call mode and sets today's team number.
+call mode, sets today's team number and (Maxi 17.11.2026, #811 question 2) the standard team
+number.
 
 - **Every step is a post behind `require_step_up`**, the page's CSRF token and the same-site
   check, the read that opens the page too: a PIN and a setup link are ways into a restaurant, and
@@ -229,9 +230,18 @@ call mode and sets today's team number.
   the link is text to copy, not a link the operator's browser could follow. A new PIN the operator
   types travels in the request's body and is not repeated on the page. Looking again is a new
   step, recorded again.
+- **A step acts on the page it came from (#811).** Every form that changes something carries the
+  version of the state its page showed (`gesehen`, 16 hex digits from the stack), and the stack
+  refuses the step with 412 when the restaurant changed since: the owner on the tablet, the staff
+  or a second operator. The page then says nothing was done and reads the state again by itself,
+  with the same reason (two more rows in each audit, `customer.access_*`), so the operator looks
+  at what holds before repeating it. The one-time form token stops a reload; this stops an old
+  page, for example "switch the agent on again" from a page opened before the owner's newer
+  emergency stop. A stack older than this sends no version: its page warns that nothing is
+  checked and its steps go out as before, so its agent can still be stopped from here.
 - **Nothing odd is sent.** A form is read into one request (`customers.step`): a PIN of 4 to 6
   ASCII digits, a device's id as the stack wrote it or the word `all`, a mode's code, a number in
-  E.164. Anything else is "nothing was sent" without a row in either audit. Whether a PIN, a mode
+  E.164, and for a step that changes something a version of 16 hex digits. Anything else is "nothing was sent" without a row in either audit. Whether a PIN, a mode
   or a number is taken is the stack's decision; its refusal is said in the dashboard's own words.
 - **The stack's answer is input from outside, the state after the step as well** (§8): a PIN that
   is not 4 to 6 digits, a link that is not `https://<host>/gui/einrichten#<token>` or the path
@@ -629,9 +639,9 @@ guest's data.
 - **Writes** (settings, call mode, tokens) are separate routes, each writing `audit_log` with the
   operator as actor; changing the call mode or team number also pushes to `owner` and `ops` (T12),
   through the domain functions the tablet uses (`domain/status/config.py`, `staff_changes.py`).
-  Built (#571, sixth part, 16.11.2026; docs/04 §Ops API): `GET /v1/ops/access` and six post routes
-  for both PINs (show, set), the devices (sign out one or all), a setup link, the call mode and the
-  team number. No tokens yet ("Token erneuern", §7). Each needs the reason and the account, as
+  Built (#571, sixth part, 16.11.2026; docs/04 §Ops API): `GET /v1/ops/access` and seven post
+  routes for both PINs (show, set), the devices (sign out one or all), a setup link, the call mode,
+  today's team number and (#811) the standard team number. No tokens yet ("Token erneuern", §7). Each needs the reason and the account, as
   guest data does, and the customer's key (`X-Ops-Customer`): a write to a stack registered under
   the wrong customer would have happened before the dashboard read the answer's name, so the stack
   compares the key with its own before anything, and a restaurant without a key takes no step at
@@ -641,9 +651,16 @@ guest's data.
   function the command line or the tablet uses with the operator as actor: one set of rules, and
   the step's own audit row and push are the ones that existed. A row `ops.<step>.outcome` with
   the ask's id and `done`, `refused` or `failed` follows (#811), so an ask is never left to be
-  read as a refusal, a crash or a no-op by guessing. The team number is today's, by the staff's rule (the standard stays,
-  the owner keeps or undoes it on the check card): the operator cannot move a restaurant's calls
-  for good without the owner seeing it. A sign-out says its device or `all` in words.
+  read as a refusal, a crash or a no-op by guessing. Today's team number follows the staff's rule (the standard stays,
+  the owner keeps or undoes it on the check card, which reads "Vom Betreiber geändert", #811
+  question 1). The standard number (#811 question 2, Maxi 17.11.2026) has a route of its own,
+  checked as today's and pushed to `owner` and `ops` with `"standard": true`, without a card: a
+  dead standard line no longer holds again every morning because the owner did not answer the
+  card (hard rule 5). Both pushes say the operator changed it (`"by": "operator"`) and name the
+  operator's account (`"actor"`), as the access pushes do. Every step that changes something sends the version of its page
+  (`seen`) and is refused with 412 when the restaurant changed since; the check runs after the
+  reason's row, with the settings row and the login locked, so a change by the owner waits for
+  the step or the step sees it. A sign-out says its device or `all` in words.
   A setup link, a PIN set and a sign-out that ended a session also push to the owner and to `ops`
   (`operator_access.changed`, migration 041; #811 question 3, decided 17.11.2026), naming the
   operator's account and the step (which PIN, how many devices), never the PIN, the link or a

@@ -10,11 +10,14 @@ written. `/status` and `/figures` answer with counts, times and codes.
 tools) answer with what guests did, so they need a reason and the operator's
 account (`require_ops_reason`) and are in the audit log before they answer.
 
-`/access` and the steps behind it (both PINs, devices, a setup link) and
-`/call-mode` and `/team-phone` show a secret or change the restaurant. Each
-needs the reason and the account too. Each answers with the state after the step
-(`domain/operator.py` `access`), which holds no secret; a shown PIN and a new
-setup link are the only secrets an answer carries, once.
+`/access` and the steps behind it (both PINs, devices, a setup link),
+`/call-mode`, `/team-phone` and `/team-phone/standard` show a secret or change
+the restaurant. Each needs the reason and the account too. Each answers with
+the state after the step (`domain/operator.py` `access`), which holds no
+secret; a shown PIN and a new setup link are the only secrets an answer
+carries, once. The state carries its version, and a step that changes
+something sends back the version of its page (`seen`): from a page the
+restaurant changed since, it is refused with 412 (#811).
 """
 
 import uuid
@@ -39,7 +42,7 @@ from api.domain.calls.figures import Figures
 from api.domain.calls.log import call_for_support, calls_for_support
 from api.domain.status import overview
 from api.models import Tenant
-from api.schemas.ops import CallMode, PinSet, PinShown, SignOut, TeamPhone
+from api.schemas.ops import CallMode, PinSet, PinShown, SetupLink, SignOut, TeamPhone
 
 router = APIRouter(prefix="/v1/ops", dependencies=[Depends(require_ops_token)])
 
@@ -198,7 +201,9 @@ def pin_set(
     tenant: Tenant = Depends(_customer),
     session: Session = Depends(get_db),
 ) -> JSONResponse:
-    operator.set_pin(session, tenant, body.which, body.pin, by)
+    operator.set_pin(
+        session, tenant, body.which, body.pin, clock.utcnow(), by, seen=body.seen
+    )
     return _access(session, tenant)
 
 
@@ -209,17 +214,22 @@ def sign_out(
     tenant: Tenant = Depends(_customer),
     session: Session = Depends(get_db),
 ) -> JSONResponse:
-    ended = operator.sign_out(session, tenant, body.device, by)
+    ended = operator.sign_out(
+        session, tenant, body.device, clock.utcnow(), by, seen=body.seen
+    )
     return _access(session, tenant, signed_out=ended)
 
 
 @router.post("/access/setup-link")
 def setup_link(
+    body: SetupLink,
     by: OpsReader = Depends(require_ops_reason),
     tenant: Tenant = Depends(_customer),
     session: Session = Depends(get_db),
 ) -> JSONResponse:
-    link, expires_at = operator.setup_link(session, tenant, clock.utcnow(), by)
+    link, expires_at = operator.setup_link(
+        session, tenant, clock.utcnow(), by, seen=body.seen
+    )
     return _access(session, tenant, link=link, link_expires_at=expires_at)
 
 
@@ -230,7 +240,9 @@ def call_mode(
     tenant: Tenant = Depends(_customer),
     session: Session = Depends(get_db),
 ) -> JSONResponse:
-    operator.set_call_mode(session, tenant, body.mode, clock.utcnow(), by)
+    operator.set_call_mode(
+        session, tenant, body.mode, clock.utcnow(), by, seen=body.seen
+    )
     return _access(session, tenant)
 
 
@@ -241,5 +253,20 @@ def team_phone(
     tenant: Tenant = Depends(_customer),
     session: Session = Depends(get_db),
 ) -> JSONResponse:
-    operator.set_team_phone(session, tenant, body.number, clock.utcnow(), by)
+    operator.set_team_phone(
+        session, tenant, body.number, clock.utcnow(), by, seen=body.seen
+    )
+    return _access(session, tenant)
+
+
+@router.post("/team-phone/standard")
+def team_phone_standard(
+    body: TeamPhone,
+    by: OpsReader = Depends(require_ops_reason),
+    tenant: Tenant = Depends(_customer),
+    session: Session = Depends(get_db),
+) -> JSONResponse:
+    operator.set_standard_team_phone(
+        session, tenant, body.number, clock.utcnow(), by, seen=body.seen
+    )
     return _access(session, tenant)

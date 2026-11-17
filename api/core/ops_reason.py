@@ -24,6 +24,11 @@ CUSTOMER_HEADER = "X-Ops-Customer"
 # everywhere in the API) or 400 (a header): the dashboard explains only the
 # first as a rule.
 RULE_STATUS = 422
+# The status and words of a step from a page the restaurant has changed since
+# (#811): nothing was done, and the dashboard reads the state again. A status
+# of its own: `conflict` with 409 is a stack that is not the customer's.
+STALE_STATUS = 412
+STALE = "the restaurant changed since the page was read"
 # What a stack says, with `not_found` and 200, when it has no restaurant yet.
 # Any other `not_found` is a row the restaurant lacks (its settings), not the
 # restaurant: the dashboard tells the two apart by these words. They are the

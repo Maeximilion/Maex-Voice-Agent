@@ -1,6 +1,6 @@
 """The write side of a customer's page in the operator dashboard (#571,
-docs/23 §5 and §8): both PINs, devices, a setup link, the call mode and the
-team number. Every step stands behind the step-up, the page's CSRF token, a
+docs/23 §5 and §8): both PINs, devices, a setup link, the call mode, the
+team number for today and the standard number (#811). Every step stands behind the step-up, the page's CSRF token, a
 reason and both audits; no PIN and no link reaches an audit row, a log line or
 an address; and the stack is a hostile source, as in the read tests. Against a
 scratch operator database and a mock transport."""
@@ -53,26 +53,33 @@ NUMBER = "+497215551234"
 TABLET = "0b6f0c0e-52f1-4d0a-9d55-6f2f8f3f1a01"
 TOKEN = "kT3vZ0yJq1mXw8Rr5uN2aQ7cB6dE9fGhLpOiUsVtYxA"
 LINK = f"https://agent.example.com/gui/einrichten#{TOKEN}"
+# The version of the state a page shows; a step sends it back (#811).
+SEEN, NEWER = "0123456789abcdef", "fedcba9876543210"
 ACTIONS = sorted(customers.STEPS)
 # A form each step takes.
 GOOD: dict[str, dict[str, str]] = {
     "open": {},
     "pin-show": {"which": "team"},
-    "pin-set": {"which": "admin", "pin": NEW},
-    "sign-out": {"device": TABLET},
-    "setup-link": {},
-    "call-mode": {"mode": "primary"},
-    "team-phone": {"number": NUMBER},
+    "pin-set": {"which": "admin", "pin": NEW, "gesehen": SEEN},
+    "sign-out": {"device": TABLET, "gesehen": SEEN},
+    "setup-link": {"gesehen": SEEN},
+    "call-mode": {"mode": "primary", "gesehen": SEEN},
+    "team-phone": {"number": NUMBER, "gesehen": SEEN},
+    "team-phone-standard": {"number": NUMBER, "gesehen": SEEN},
 }
 # What reaches the stack for it: path and body.
 SENT: dict[str, tuple[str, dict[str, Any] | None]] = {
     "open": ("/v1/ops/access", None),
     "pin-show": ("/v1/ops/access/pin/show", {"which": "team"}),
-    "pin-set": ("/v1/ops/access/pin", {"which": "admin", "pin": NEW}),
-    "sign-out": ("/v1/ops/access/sign-out", {"device": TABLET}),
-    "setup-link": ("/v1/ops/access/setup-link", None),
-    "call-mode": ("/v1/ops/call-mode", {"mode": "primary"}),
-    "team-phone": ("/v1/ops/team-phone", {"number": NUMBER}),
+    "pin-set": ("/v1/ops/access/pin", {"which": "admin", "pin": NEW, "seen": SEEN}),
+    "sign-out": ("/v1/ops/access/sign-out", {"device": TABLET, "seen": SEEN}),
+    "setup-link": ("/v1/ops/access/setup-link", {"seen": SEEN}),
+    "call-mode": ("/v1/ops/call-mode", {"mode": "primary", "seen": SEEN}),
+    "team-phone": ("/v1/ops/team-phone", {"number": NUMBER, "seen": SEEN}),
+    "team-phone-standard": (
+        "/v1/ops/team-phone/standard",
+        {"number": NUMBER, "seen": SEEN},
+    ),
 }
 AUDIT_NAMES = {
     "open": "access",
@@ -82,6 +89,7 @@ AUDIT_NAMES = {
     "setup-link": "setup_link",
     "call-mode": "call_mode",
     "team-phone": "team_phone",
+    "team-phone-standard": "team_phone_standard",
 }
 
 
@@ -107,6 +115,7 @@ def _access(key: str = "alpha", **over: Any) -> dict:
         "team_phone_standard": "+4972215550100",
         "team_phone_until": None,
         "team_phones": ["+4972215550100", NUMBER],
+        "version": SEEN,
     } | over
 
 
@@ -203,7 +212,8 @@ def test_a_good_form_is_one_request_to_the_stack(action):
 def test_all_devices_are_asked_for_in_words():
     step = _step("sign-out", device="all")
     assert step is not None
-    assert step.body == {"all": True} and step.detail == {"device": "all"}
+    assert step.body == {"all": True, "seen": SEEN}
+    assert step.detail == {"device": "all"}
 
 
 BAD_FORMS = [
@@ -227,6 +237,14 @@ BAD_FORMS = [
     ("team-phone", {"number": "0721 5551234"}),
     ("team-phone", {"number": "+49 721 5551234"}),
     ("team-phone", {"number": "+4972155512341234567"}),
+    ("team-phone-standard", {"number": ""}),
+    ("team-phone-standard", {"number": "0721 5551234"}),
+    # A step that changes something without the version of its page (#811).
+    ("sign-out", {"gesehen": "0123456789ABCDEF"}),
+    ("setup-link", {"gesehen": SEEN + "0"}),
+    ("call-mode", {"gesehen": "<b>"}),
+    ("team-phone", {"gesehen": SEEN + "\n"}),
+    ("team-phone-standard", {"gesehen": "x" * 16}),
     ("delete-everything", {}),
     ("", {}),
 ]
@@ -340,6 +358,8 @@ HOSTILE = [
     (_with(signed_out=10**10), customers.NOT_AN_ANSWER),
     (_with(signed_out=-1), customers.NOT_AN_ANSWER),
     (_with(login="yes, certainly"), customers.NOT_AN_ANSWER),
+    (_with(version="<b>"), customers.NOT_AN_ANSWER),
+    (_error("conflict", 412), customers.STALE),
     (_says(_access("beta")), customers.OTHER_CUSTOMER),
     (_says(_access(), lambda d: d["tenant"].update(key=None)), customers.NO_KEY),
     (_error("conflict", 409), customers.WRONG_STACK),
@@ -614,6 +634,8 @@ def test_open_shows_the_state_and_every_form_carries_the_reason(
     assert text.count('name="reason" value="restaurant_report"') == forms - 1
     assert text.count('name="reference" value="#812"') == forms - 1
     assert text.count('name="back" value="/customers/alpha"') == forms - 1
+    # And the version of what it shows: a step from it acts on that (#811).
+    assert text.count(f'name="gesehen" value="{SEEN}"') == forms - 1
     assert PIN not in text and TOKEN_A not in text
     assert len(seen) == 1
     _took(sessions, "open")
@@ -711,15 +733,15 @@ def test_a_new_pin_goes_in_the_body_and_is_not_repeated_or_logged(
     assert NEW not in answer.text and NEW not in caplog.text
     (request,) = seen
     assert NEW not in str(request.url) and NEW not in str(request.headers)
-    assert json.loads(request.content) == {"which": "admin", "pin": NEW}
+    assert json.loads(request.content) == {"which": "admin", "pin": NEW, "seen": SEEN}
 
 
 @pytest.mark.parametrize(
     ("device", "body", "ended", "words"),
     [
-        (TABLET, {"device": TABLET}, 1, "Signed out: 1 device."),
-        (TABLET, {"device": TABLET}, 0, "No device was signed out"),
-        ("all", {"all": True}, 3, "Signed out: 3 devices."),
+        (TABLET, {"device": TABLET, "seen": SEEN}, 1, "Signed out: 1 device."),
+        (TABLET, {"device": TABLET, "seen": SEEN}, 0, "No device was signed out"),
+        ("all", {"all": True, "seen": SEEN}, 3, "Signed out: 3 devices."),
     ],
 )
 def test_devices_are_signed_out_one_or_all(
@@ -781,6 +803,98 @@ def test_the_call_mode_and_the_team_number_are_read_from_the_answer(
     assert f"go to {NUMBER} today" in _post(client, "team-phone").text
 
 
+def test_the_standard_number_is_read_from_the_answer(
+    client, factors, clock, sessions, monkeypatch
+):
+    """#811 question 2: the standard number, set behind the step-up and a
+    reason, as every step; the stack pushes to the owner."""
+    seen: list[httpx.Request] = []
+    _world(sessions, monkeypatch, alpha=_managed(seen, team_phone_standard=NUMBER))
+    _signed_in(client, factors, clock)
+
+    answer = _post(client, "team-phone-standard")
+
+    assert f"The standard team number is now {NUMBER}" in answer.text
+    (request,) = seen
+    assert request.url.path == "/v1/ops/team-phone/standard"
+    asked, _ = _took(sessions, "team-phone-standard")
+    assert NUMBER not in json.dumps(asked.detail)
+
+
+def test_the_page_offers_the_standard_number_apart_from_todays(
+    client, factors, clock, sessions, monkeypatch
+):
+    _world(sessions, monkeypatch, alpha=_managed())
+    _signed_in(client, factors, clock)
+
+    text = _post(client).text
+
+    assert 'action="/customers/alpha/manage/team-phone-standard"' in text
+    assert "Make this the standard number" in text
+    assert "Use this number today" in text
+
+
+# --- a page the restaurant changed since (#811) -----------------------------------
+
+
+def test_a_step_from_an_old_page_does_nothing_and_the_page_reads_the_state_again(
+    client, factors, clock, sessions, monkeypatch
+):
+    """The owner stopped the agent after the page was read: the stack refuses
+    the step, and the page shows what holds now, with its new version."""
+    seen: list[httpx.Request] = []
+    stale = _error("conflict", 412)
+    fresh = _says(_access(call_mode="paused", call_modes=["resume"], version=NEWER))
+
+    def stack(request: httpx.Request) -> httpx.Response:
+        return (stale if request.method == "POST" else fresh)(request)
+
+    _world(sessions, monkeypatch, alpha=_managed(seen, answer=stack))
+    _signed_in(client, factors, clock)
+
+    answer = _post(client, "call-mode", mode="resume")
+
+    assert answer.status_code == 200
+    text = answer.text
+    assert "Nothing was done" in text and "changed since" in text
+    assert "may have been made" not in text
+    assert [(r.method, r.url.path) for r in seen] == [
+        ("POST", "/v1/ops/call-mode"),
+        ("GET", "/v1/ops/access"),
+    ]
+    assert f'name="gesehen" value="{NEWER}"' in text
+    assert '<option value="resume">' in text and '<option value="primary"' not in text
+    actions = [r.action for r in _rows(sessions)][-4:]
+    assert actions == [
+        "customer.call_mode_asked",
+        "customer.call_mode_not_done",
+        "customer.access_asked",
+        "customer.access_done",
+    ]
+    assert _rows(sessions)[-3].detail["problem"] == customers.STALE
+    # The new page may take the next step: it holds a new form token.
+    assert 'name="once" value=""' not in text
+
+
+def test_an_old_page_whose_new_read_fails_says_both(
+    client, factors, clock, sessions, monkeypatch
+):
+    def stack(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return _error("conflict", 412)(request)
+        raise httpx.ConnectError("down")
+
+    _world(sessions, monkeypatch, alpha=_managed(answer=stack))
+    _signed_in(client, factors, clock)
+
+    text = _post(client, "team-phone").text
+
+    assert "Nothing was done" in text and "changed since" in text
+    assert f"Read again: {customers.UNREACHABLE}." in text
+    assert 'action="/customers/alpha/manage/open"' in text
+    assert 'action="/customers/alpha/manage/team-phone"' not in text
+
+
 # --- a stack that cannot or will not ---------------------------------------------
 
 DEFINITE = [
@@ -826,6 +940,7 @@ def test_a_step_that_gave_no_answer_is_said_in_words_and_in_the_audit(
         ("pin-set", "refused this PIN"),
         ("call-mode", "refused this mode"),
         ("team-phone", "refused this number"),
+        ("team-phone-standard", "refused this number"),
         ("sign-out", customers.REFUSED_BY_RULE),
     ],
 )
@@ -1048,7 +1163,9 @@ def test_the_lists_start_at_what_holds_so_a_stray_tap_changes_nothing(
 
     assert '<option value="primary" selected>' in text
     assert f'<option value="{NUMBER}" selected>' in text
-    assert text.count(" selected>") == 2
+    # The standard number's list starts at the standard (#811).
+    assert '<option value="+4972215550100" selected>' in text
+    assert text.count(" selected>") == 3
     # Today's number is said to be today's, with its end and the standard.
     assert "until 11.11.2026 05:00" in text and "+4972215550100 holds again" in text
 
@@ -1173,3 +1290,32 @@ def test_an_older_tabs_form_does_not_spend_the_newer_tabs_token(
     assert seen == []
     assert _post(client, "call-mode", once=newer).status_code == 200
     assert len(seen) == 1
+
+
+def test_a_step_without_a_version_is_sent_as_before():
+    """A page of a stack older than #811 has no version: its steps go out
+    without one, and a newer stack refuses such a step itself."""
+    step = _step("call-mode", gesehen="")
+    assert step is not None
+    assert step.body == {"mode": "primary"}
+
+
+def test_an_older_stack_is_managed_and_the_page_says_it_checks_nothing(
+    client, factors, clock, sessions, monkeypatch
+):
+    """Review of #811: a required version left the operator without the
+    emergency stop for every stack not updated yet."""
+    seen: list[httpx.Request] = []
+    older = _managed(seen, answer=_says(_access(), lambda d: d.pop("version")))
+    _world(sessions, monkeypatch, alpha=older)
+    _signed_in(client, factors, clock)
+
+    page = _post(client).text
+    assert "This stack is older" in page
+    assert 'name="gesehen" value=""' in page
+
+    answer = _post(client, "call-mode", mode="paused", gesehen="")
+
+    assert answer.status_code == 200
+    assert json.loads(seen[-1].content) == {"mode": "paused"}
+    _took(sessions, "call-mode")

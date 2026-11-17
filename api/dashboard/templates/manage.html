@@ -6,6 +6,8 @@
    link is text of this one answer, never a field's value and never a link;
    the page is not stored. A form that changes something also carries the
    page's token (`once`) and is taken one time: a reload sends nothing again.
+   It carries the version of what the page shows (`gesehen`) too: the stack
+   refuses a step when the restaurant changed since (#811).
    The lists start at what holds now, so a tap on a button without a choice
    changes nothing. Everything a stack says is shown as text. #}
 {% extends "base.html" %}
@@ -17,6 +19,7 @@
 <input type="hidden" name="reason" value="{{ category }}">
 <input type="hidden" name="reference" value="{{ reference }}">
 <input type="hidden" name="once" value="{{ once }}">
+<input type="hidden" name="gesehen" value="{{ access.version if access and access.version else '' }}">
 {% endmacro %}
 
 {% block main %}
@@ -40,6 +43,9 @@
     <button type="submit"{% if not access %} class="primary"{% endif %}>{% if access %}Read the state again{% else %}Open access and call routing again{% endif %}</button>
   </form>
   {% if access %}
+  {% if not access.version %}
+  <p class="banner warn" role="status">This stack is older: it does not check whether this page is still current, so a step from it can undo a change the restaurant made meanwhile. Read the state again right before a step, and update the stack.</p>
+  {% endif %}
 
   <div class="card ops-teil">
     <h2>Call mode</h2>
@@ -73,6 +79,16 @@
         {% for number in access.team_phones %}<option value="{{ number }}"{% if number == access.team_phone %} selected{% endif %}>{{ number }}</option>{% endfor %}
       </select>
       <button type="submit">Use this number today</button>
+    </form>
+    <p class="muted">The standard number holds every day, from the next call on when no number is set for today. A new one is pushed to the owner and the ops topic; a number for today still holds until its end. Use it when the standard line no longer answers.</p>
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/team-phone-standard" autocomplete="off">
+      {{ hidden() }}
+      <label for="standard">Standard number</label>
+      <select id="standard" name="number" required>
+        {% if access.team_phone_standard not in access.team_phones %}<option value="" selected>Choose a number</option>{% endif %}
+        {% for number in access.team_phones %}<option value="{{ number }}"{% if number == access.team_phone_standard %} selected{% endif %}>{{ number }}</option>{% endfor %}
+      </select>
+      <button type="submit">Make this the standard number</button>
     </form>
     {% else %}
     <p>The stack lists no number that could be chosen.</p>
