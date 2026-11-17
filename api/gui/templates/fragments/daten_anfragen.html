@@ -1,0 +1,69 @@
+{# The request log of the tab "Daten" (#571, T-11.8): the open requests of
+   guests by deadline, the form for a new one, the newest answers. No name and
+   no verification note here: those are shown with their request. `gesehen` is
+   the token of the log as the form showed it, so a second tap on "Eintragen"
+   writes no second line. #}
+<h2>Anfragen von Gästen</h2>
+{% if message %}<p class="badge {{ tone }}" role="{{ 'alert' if tone == 'danger' else 'status' }}">{{ message }}</p>{% endif %}
+<p class="muted">Ein Gast fragt, was über ihn gespeichert ist, will es gelöscht haben oder widerspricht dem Wiedererkennen seiner Nummer: am selben Tag hier eintragen. Die schriftliche Antwort muss innerhalb eines Monats beim Gast sein.</p>
+{% if open %}
+<table class="tbl week">
+  <thead>
+    <tr><th>Zeichen</th><th>Art</th><th>Eingang</th><th>Frist</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for row in open %}
+    <tr>
+      <th scope="row">{{ row.reference }}</th>
+      <td data-label="Art">{{ row.kind }}</td>
+      <td data-label="Eingang">{{ row.received }}</td>
+      <td data-label="Frist">{{ row.deadline }} <span class="badge {{ 'warn' if row.soon else 'ok' }}">{{ row.left }}</span></td>
+      <td><button hx-get="/gui/daten/anfrage/{{ row.reference }}" hx-target="#daten-anfragen" hx-swap="innerHTML" aria-label="Anfrage {{ row.reference }} öffnen">Öffnen</button></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">Keine offene Anfrage.</p>
+{% endif %}
+
+<h3 id="daten-neu-titel">Neue Anfrage eintragen</h3>
+<form class="week-form zone-form" novalidate hx-post="/gui/daten/anfrage" hx-target="#daten-anfragen" hx-swap="innerHTML" aria-labelledby="daten-neu-titel">
+  <input type="hidden" name="gesehen" value="{{ sent.gesehen or seen }}">
+  <label>Art der Anfrage
+    <select name="art">
+      {% for value, label in kinds %}<option value="{{ value }}"{% if sent.art == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Gekommen über
+    <select name="weg">
+      {% for value, label in channels %}<option value="{{ value }}"{% if sent.weg == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Eingegangen am <input type="date" name="eingang" value="{{ sent.eingang or today }}" max="{{ today }}"></label>
+  <label>Angaben des Gastes zu seiner Person <textarea name="notiz" rows="4" maxlength="{{ note_max }}" autocomplete="off">{{ sent.notiz }}</textarea></label>
+  <p class="muted">Der Name mit dem Tag einer Bestellung oder Reservierung oder mit der Lieferadresse, und jede Nummer, von der der Gast angerufen hat. Die Notiz wird {{ note_months }} Monate nach der Antwort gelöscht.</p>
+  <div class="cb-actions">
+    <button type="submit" class="primary">Eintragen</button>
+  </div>
+</form>
+
+{% if answered %}
+<h3>Zuletzt beantwortet</h3>
+<table class="tbl week">
+  <thead>
+    <tr><th>Zeichen</th><th>Art</th><th>Ergebnis</th><th>Beantwortet am</th><th>Zeile bleibt bis</th></tr>
+  </thead>
+  <tbody>
+    {% for row in answered %}
+    <tr>
+      <th scope="row">{{ row.reference }}</th>
+      <td data-label="Art">{{ row.kind }}</td>
+      <td data-label="Ergebnis">{{ row.outcome }}</td>
+      <td data-label="Beantwortet am">{{ row.answered }}</td>
+      <td data-label="Zeile bleibt bis">{{ row.delete_after }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}

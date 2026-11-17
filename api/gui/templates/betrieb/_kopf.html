@@ -13,8 +13,8 @@
 {# The frame of the admin area (#571, docs/06 §4): the same header, the four
    figures of the last 7 days on every page (`week`, from `figures_view.bar`)
    and the areas as tabs. A tab is a link to its page; `active` names the one
-   shown. "Zeiten", "Lieferung" and "Geräte" ask the admin PIN when opened;
-   "Menü" only reads and does not. #}
+   shown. "Zeiten", "Lieferung", "Daten" and "Geräte" ask the admin PIN when
+   opened; "Menü" only reads and does not. #}
 {% macro admin_kopf(title, active, tenant) %}
 <header>
   <div class="top">
@@ -36,7 +36,7 @@
   </section>
   {% endif %}
   <nav class="tabs" aria-label="Bereiche">
-    {% for label, href in (("Zeiten", "/gui/zeiten"), ("Lieferung", "/gui/lieferung"), ("Menü", "/gui/menue"), ("Anrufe", "/gui/anrufe"), ("Kennzahlen", "/gui/kennzahlen"), ("Geräte", "/gui/geraete")) %}
+    {% for label, href in (("Zeiten", "/gui/zeiten"), ("Lieferung", "/gui/lieferung"), ("Menü", "/gui/menue"), ("Anrufe", "/gui/anrufe"), ("Kennzahlen", "/gui/kennzahlen"), ("Daten", "/gui/daten"), ("Geräte", "/gui/geraete")) %}
     <a href="{{ href }}"{% if label == active %} aria-current="page"{% endif %}>{{ label }}</a>
     {% endfor %}
   </nav>

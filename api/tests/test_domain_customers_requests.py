@@ -16,14 +16,21 @@ from api.domain.confirm import confirm
 from api.domain.customers import find_customer
 from api.domain.customers.phone import number_or_none
 from api.domain.customers.requests import (
+    NOTE_MAX,
     Details,
     LedgerEntry,
     access_copy,
     answer_request,
+    answered_requests,
+    can_extend,
     erase,
     extend_deadline,
     get_request,
+    has_run,
     log_request,
+    log_request_once,
+    log_token,
+    look,
     open_requests,
     record_objection,
     verify,
@@ -1580,3 +1587,237 @@ def test_an_objection_wants_an_objection_request(session, tenant_id):
     person = verify(session, tenant_id, MUELLER, ZONE, NOW)
     with pytest.raises(Conflict):
         record_objection(session, _request(session, tenant_id), person)
+
+
+# The tab "Daten" (#571, plan number 10): what the page's writes and its look add
+
+OWNER = "gui:owner"
+
+
+def _once(session, tenant_id, seen=None, **overrides) -> DataSubjectRequest:
+    fields = {
+        "kind": "access",
+        "channel": "phone",
+        "note": "Frau Müller, Bestellung vom 12.10.",
+        "received_on": None,
+        "now": NOW,
+        "actor": OWNER,
+    } | overrides
+    if seen is None:
+        seen = log_token(session, tenant_id)
+    return log_request_once(session, tenant_id, seen, **fields)
+
+
+def test_a_request_from_the_page_is_logged_once_per_form(session, tenant_id):
+    seen = log_token(session, tenant_id)
+    first = _once(session, tenant_id, seen)
+    assert (first.reference, first.received_at, first.deadline) == (
+        "dsr_2026_001",
+        NOW,
+        date(2026, 12, 2),
+    )
+    with pytest.raises(Conflict) as refused:
+        _once(session, tenant_id, seen)
+    assert "gerade geändert" in str(refused.value.say)
+    assert _once(session, tenant_id).reference == "dsr_2026_002"
+    actors = session.scalars(
+        select(AuditLog.actor).where(AuditLog.action == "data_subject.request_logged")
+    ).all()
+    assert actors == [OWNER, OWNER]
+
+
+def test_a_request_received_last_year_changes_the_token_too(session, tenant_id):
+    """Its reference counts in the old year, the next one of this year stays."""
+    seen = log_token(session, tenant_id)
+    old = _once(session, tenant_id, seen, received_on=date(2025, 12, 30))
+    assert old.reference == "dsr_2025_001"
+    with pytest.raises(Conflict):
+        _once(session, tenant_id, seen, received_on=date(2025, 12, 30))
+    assert session.scalar(select(func.count()).select_from(DataSubjectRequest)) == 1
+
+
+def test_from_the_page_the_deadline_moves_only_inside_the_first_month(
+    session, tenant_id
+):
+    request = _request(session, tenant_id, kind="access")
+    last_day = datetime(2026, 12, 2, 20, 0, tzinfo=UTC)
+    too_late = last_day + timedelta(days=1)
+    assert can_extend(request, ZONE, last_day) and not can_extend(
+        request, ZONE, too_late
+    )
+    with pytest.raises(Conflict):
+        extend_deadline(session, request, ZONE, OWNER, too_late)
+    assert request.deadline == date(2026, 12, 2)
+    # The server command enters late what the guest was told in time.
+    extend_deadline(session, request, ZONE)
+    assert request.deadline == date(2027, 2, 2)
+
+
+@pytest.mark.parametrize("seen", ["", "1", "dsr_2026_001", "0-0.0", "x" * 5000])
+def test_a_token_that_is_not_the_logs_writes_nothing(session, tenant_id, seen):
+    with pytest.raises(Conflict):
+        _once(session, tenant_id, seen)
+    assert session.scalar(select(func.count()).select_from(DataSubjectRequest)) == 0
+
+
+def test_a_day_of_receipt_is_the_restaurants_and_never_ahead(session, tenant_id):
+    # 23:30 UTC is the next day in Berlin: that day is today there, not ahead.
+    late = datetime(2026, 11, 2, 23, 30, tzinfo=UTC)
+    today = _once(session, tenant_id, received_on=date(2026, 11, 3), now=late)
+    assert today.received_at == late and today.deadline == date(2026, 12, 3)
+    with pytest.raises(InvalidInput) as refused:
+        _once(session, tenant_id, received_on=date(2026, 11, 4), now=late)
+    assert "Zukunft" in str(refused.value.say)
+    past = _once(session, tenant_id, received_on=date(2026, 10, 30), now=late)
+    # Local midnight of that day, so the deadline counts from it.
+    assert past.received_at == datetime(2026, 10, 29, 23, 0, tzinfo=UTC)
+    assert past.deadline == date(2026, 11, 30)
+
+
+@pytest.mark.parametrize("field", ["kind", "channel"])
+def test_a_kind_or_a_channel_nobody_offered_is_refused(session, tenant_id, field):
+    with pytest.raises(InvalidInput):
+        _once(session, tenant_id, **{field: "fax"})
+    assert session.scalar(select(func.count()).select_from(DataSubjectRequest)) == 0
+
+
+def test_a_note_is_a_few_lines(session, tenant_id):
+    assert _request(session, tenant_id, note="  Frau Müller \n").verification_note == (
+        "Frau Müller"
+    )
+    assert _request(session, tenant_id, note="   ").verification_note is None
+    assert _request(session, tenant_id, note="x" * NOTE_MAX).verification_note
+    with pytest.raises(InvalidInput) as refused:
+        _request(session, tenant_id, note="x" * (NOTE_MAX + 1))
+    assert "zu lang" in str(refused.value.say)
+
+
+def test_the_owner_is_the_actor_of_an_extension_and_an_answer(session, tenant_id):
+    request = _request(session, tenant_id, kind="access")
+    assert can_extend(request, ZONE)
+    extend_deadline(session, request, ZONE, OWNER)
+    assert not can_extend(request, ZONE)
+    answer_request(session, request, "done", NOW, ZONE, OWNER, needs_run=True)
+    assert not can_extend(request, ZONE)
+    actors = session.scalars(
+        select(AuditLog.actor)
+        .where(AuditLog.entity_id == request.id)
+        .order_by(AuditLog.id)
+    ).all()
+    assert actors == ["job:data_requests", OWNER, OWNER]
+
+
+def test_an_outcome_the_table_does_not_know_is_refused_before_the_table(
+    session, tenant_id
+):
+    request = _request(session, tenant_id)
+    with pytest.raises(InvalidInput):
+        answer_request(session, request, "erased", NOW, ZONE)
+    assert request.answered_at is None
+
+
+@pytest.mark.parametrize("kind", ["erasure", "objection"])
+def test_from_the_page_done_needs_the_run_on_the_server(session, tenant_id, kind):
+    _order(session, tenant_id)
+    request = _request(session, tenant_id, kind=kind)
+    assert not has_run(session, request)
+    with pytest.raises(Conflict) as refused:
+        answer_request(session, request, "done", NOW, ZONE, OWNER, needs_run=True)
+    assert "noch nichts gelaufen" in str(refused.value.say)
+    assert request.answered_at is None
+
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+    (erase if kind == "erasure" else record_objection)(session, request, person)
+    request = get_request(session, tenant_id, request.reference, lock=True)
+    assert has_run(session, request)
+    answer_request(session, request, "done", NOW, ZONE, OWNER, needs_run=True)
+    assert request.outcome == "done"
+
+
+def test_the_run_of_another_request_is_not_this_ones(session, tenant_id):
+    _order(session, tenant_id)
+    ran = _request(session, tenant_id)
+    waiting = _request(session, tenant_id)
+    erase(session, ran, verify(session, tenant_id, MUELLER, ZONE, NOW))
+    assert has_run(session, ran) and not has_run(session, waiting)
+
+
+def test_the_job_answers_an_erasure_as_before(session, tenant_id):
+    """The server command decides for itself: nothing left to erase is done."""
+    request = _request(session, tenant_id)
+    answer_request(session, request, "done", NOW, ZONE)
+    assert request.outcome == "done"
+
+
+def test_a_look_is_audited_before_a_row_is_read(session, tenant_id):
+    order = _order(session, tenant_id)
+    request = _request(session, tenant_id, kind="access")
+    session.commit()
+
+    copy = look(session, request, MUELLER, ZONE, NOW, actor=OWNER)
+
+    assert [row["id"] for row in copy["copy"]["orders"]] == [order.id]
+    # A look that verifies nobody is a look all the same, and it is kept.
+    with pytest.raises(NotFound) as refused:
+        look(session, request, replace(MUELLER, name="Schmidt"), ZONE, NOW, actor=OWNER)
+    assert "Nicht bestätigt" in str(refused.value.say)
+    session.rollback()
+    looks = session.scalars(
+        select(AuditLog).where(AuditLog.action == "data_subject.rows_read")
+    ).all()
+    assert [(entry.actor, entry.entity_id, entry.payload) for entry in looks] == [
+        (OWNER, request.id, {}),
+        (OWNER, request.id, {}),
+    ]
+
+
+def test_nobody_is_looked_at_for_an_answered_request(session, tenant_id):
+    _order(session, tenant_id)
+    request = _request(session, tenant_id, kind="access")
+    answer_request(session, request, "done", NOW, ZONE)
+    with pytest.raises(Conflict):
+        look(session, request, MUELLER, ZONE, NOW, actor=OWNER)
+    assert (
+        session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.action == "data_subject.rows_read")
+        )
+        == 0
+    )
+
+
+def test_the_newest_answers_come_first_and_stay_in_their_tenant(session, tenant_id):
+    first = _request(session, tenant_id, kind="access")
+    second = _request(session, tenant_id, kind="access")
+    _request(session, tenant_id, kind="access")
+    other = _request(session, _tenant(session, "Zwei"), kind="access")
+    answer_request(session, first, "done", NOW, ZONE)
+    answer_request(session, second, "refused", NOW + timedelta(hours=1), ZONE)
+    answer_request(session, other, "done", NOW, ZONE)
+    answered = answered_requests(session, tenant_id)
+    assert [row.reference for row in answered] == ["dsr_2026_002", "dsr_2026_001"]
+    assert len(answered_requests(session, tenant_id, limit=1)) == 1
+
+
+def test_every_refusal_of_the_check_has_a_sentence_for_the_owner(session, tenant_id):
+    _order(session, tenant_id)
+    _order(session, tenant_id, phone=OTHER_PHONE)
+    for details, error in (
+        (Details(name="Müller"), InvalidInput),
+        (replace(MUELLER, name="Schmidt"), NotFound),
+        (MUELLER, Ambiguous),
+    ):
+        with pytest.raises(error) as refused:
+            verify(session, tenant_id, details, ZONE, NOW)
+        assert refused.value.say, details
+    with pytest.raises(InvalidInput) as refused:
+        verify(
+            session,
+            tenant_id,
+            replace(MUELLER, phones=(PHONE,)),
+            ZONE,
+            NOW,
+            claimed=[uuid.uuid4()],
+        )
+    assert "angekreuzte" in str(refused.value.say)

@@ -20,12 +20,15 @@ from api.db import get_db
 from api.domain.access.admin import AdminRefused
 from api.domain.access.sessions import IDLE, stack_tenant_id
 from api.domain.access.setup import issue_link, use_link
+from api.domain.customers.requests import log_request
 from api.gui.router import router as gui_router
 from api.gui.session import csrf_matches
 from api.gui.sse import _signed_in
 from api.main import app
 from api.models import (
     AuditLog,
+    Call,
+    DataSubjectRequest,
     DeliveryZone,
     GuiAccount,
     GuiLoginFailure,
@@ -685,7 +688,13 @@ def test_the_settings_sheet_names_the_device_list(client, engine):
     _set_up_and_sign_in(client, engine)
     assert 'hx-get="/gui/einstellungen"' in client.get("/gui/", headers=HTML).text
     sheet = client.get("/gui/einstellungen", headers=HX).text
-    for page in ("/gui/zeiten", "/gui/lieferung", "/gui/menue", "/gui/geraete"):
+    for page in (
+        "/gui/zeiten",
+        "/gui/lieferung",
+        "/gui/menue",
+        "/gui/daten",
+        "/gui/geraete",
+    ):
         assert f'href="{page}"' in sheet
 
 
@@ -914,6 +923,177 @@ def test_a_locked_device_opens_nothing_of_the_zones(client, engine):
     assert client.get(DELIVERY, headers=HTML).status_code == 200
     _lock(engine)
     _nothing_of_the_zones_opens(client, engine, zone)
+
+
+# --- the owner's tab "Daten" (#571, plan number 10) ------------------------------
+
+DATA = "/gui/daten"
+DATA_PAGE = {**HX, "HX-Current-URL": "http://testserver/gui/daten"}
+DATA_NOTE = "Frau Beispiel, Bestellung vom 12.10."
+DATA_WRITES = [
+    ("anfrage", {"gesehen": "", "art": "access", "weg": "mail", "notiz": "neu"}),
+    ("anfrage/dsr_2026_001/frist", {}),
+    ("anfrage/dsr_2026_001/antwort", {"ergebnis": "refused"}),
+    ("anfrage/dsr_2026_001/pruefen", {"name": "Beispiel", "tag-1": "2026-10-12"}),
+]
+
+
+def _a_request(engine) -> DataSubjectRequest:
+    with Session(engine) as session:
+        tenant_id = session.scalars(select(Tenant.id)).one()
+        row = log_request(
+            session,
+            tenant_id,
+            kind="access",
+            channel="mail",
+            note=DATA_NOTE,
+            received_at=clock.utcnow().replace(year=2026, month=11, day=2),
+            zone="Europe/Berlin",
+        )
+        session.commit()
+        session.refresh(row)
+        session.expunge(row)
+        return row
+
+
+def _requests_untouched(engine, before: DataSubjectRequest) -> bool:
+    """The one request as `_a_request` wrote it, and its one audit row."""
+    with Session(engine) as session:
+        rows = [
+            (row.reference, row.deadline, row.answered_at)
+            for row in session.scalars(select(DataSubjectRequest))
+        ]
+        audits = session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.entity == "data_subject_request")
+        )
+    return rows == [("dsr_2026_001", before.deadline, None)] and audits == 1
+
+
+def _nothing_of_the_requests_opens(client, engine, before) -> None:
+    """The page, each of its parts and every write lead to the admin PIN, show
+    nothing and write nothing."""
+    assert client.get(DATA, headers=HTML).status_code == 303
+    for part in ("anfragen", "anfrage/dsr_2026_001"):
+        answer = client.get(f"{DATA}/{part}", headers=DATA_PAGE)
+        assert answer.status_code == 401, part
+        assert "Beispiel" not in answer.text and "dsr_2026_001" not in answer.text
+        assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/daten"
+    for path, data in DATA_WRITES:
+        write = client.post(f"{DATA}/{path}", data=data, headers=DATA_PAGE)
+        assert write.status_code == 401, path
+        assert write.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/daten"
+        assert "Beispiel" not in write.text
+    assert _requests_untouched(engine, before)
+
+
+def test_the_requests_of_guests_ask_the_admin_pin_first(client, engine):
+    before = _a_request(engine)
+    _set_up_and_sign_in(client, engine)
+    page = client.get(DATA, headers=HTML)
+    assert page.status_code == 303
+    assert page.headers["location"] == "/gui/inhaber?weiter=/gui/daten"
+    _nothing_of_the_requests_opens(client, engine, before)
+    # The team PIN opens nothing here.
+    assert _owner(client, pin=PIN, back=DATA).status_code == 401
+    assert client.get(DATA, headers=HTML).status_code == 303
+
+    assert _owner(client, back=DATA).headers["location"] == DATA
+    shown = client.get(DATA, headers=HTML)
+    assert shown.status_code == 200 and "dsr_2026_001" in shown.text
+    assert shown.headers["Cache-Control"] == "no-store"
+    opened = client.get(f"{DATA}/anfrage/dsr_2026_001", headers=HX)
+    assert opened.status_code == 200 and DATA_NOTE in opened.text
+    assert opened.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize(("path", "data"), DATA_WRITES)
+def test_a_write_to_the_requests_from_another_site_is_refused(
+    client, engine, path, data
+):
+    before = _a_request(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DATA).status_code == 303
+    answer = client.post(
+        f"{DATA}/{path}", data=data, headers={**HX, "Origin": "https://evil.example"}
+    )
+    assert answer.status_code == 403
+    assert _requests_untouched(engine, before)
+
+
+def test_the_requests_close_again_when_the_owner_is_idle(client, engine):
+    before = _a_request(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DATA).status_code == 303
+    assert client.get(DATA, headers=HTML).status_code == 200
+    _age_owner_clock(engine, 16)
+    _nothing_of_the_requests_opens(client, engine, before)
+
+
+def test_a_locked_device_opens_nothing_of_the_requests(client, engine):
+    """The team's idle lock ends the owner's rights on the device too."""
+    before = _a_request(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DATA).status_code == 303
+    assert client.get(DATA, headers=HTML).status_code == 200
+    _lock(engine)
+    _nothing_of_the_requests_opens(client, engine, before)
+
+
+# --- one row of the call list in detail (#571, plan number 10) -------------------
+
+CALL_DETAIL = "/gui/anrufe/anruf"
+
+
+def _a_call(engine) -> str:
+    with Session(engine) as session:
+        call = Call(
+            tenant_id=session.scalars(select(Tenant.id)).one(),
+            external_session_id="s-detail",
+            started_at=clock.utcnow() - timedelta(minutes=5),
+            delete_after=clock.utcnow().date(),
+            tool_calls=[{"name": "draft_order", "duration_ms": 80, "ok": True}],
+        )
+        session.add(call)
+        session.commit()
+        return str(call.id)
+
+
+def _call_looks(engine) -> int | None:
+    with Session(engine) as session:
+        return session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.action == "gui.call_read")
+        )
+
+
+def test_the_staff_open_a_calls_detail_with_the_restaurants_login(client, engine):
+    call_id = _a_call(engine)
+    _set_up_and_sign_in(client, engine)
+    answer = client.post(CALL_DETAIL, data={"anruf": call_id}, headers=HX)
+    assert answer.status_code == 200 and "1. draft_order" in answer.text
+    assert answer.headers["Cache-Control"] == "no-store"
+    assert _call_looks(engine) == 1
+
+
+def test_a_calls_detail_from_another_site_or_a_locked_device_shows_nothing(
+    client, engine
+):
+    call_id = _a_call(engine)
+    _set_up_and_sign_in(client, engine)
+    forged = client.post(
+        CALL_DETAIL,
+        data={"anruf": call_id},
+        headers={**HX, "Origin": "https://evil.example"},
+    )
+    assert forged.status_code == 403 and "draft_order" not in forged.text
+    _lock(engine)
+    locked = client.post(CALL_DETAIL, data={"anruf": call_id}, headers=HX)
+    assert locked.status_code == 401 and "draft_order" not in locked.text
+    assert locked.headers["HX-Redirect"] == "/gui/entsperren"
+    assert _call_looks(engine) == 0
 
 
 def test_the_staff_pages_of_the_frame_need_no_admin_pin(client, engine):

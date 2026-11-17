@@ -1,0 +1,126 @@
+{# One request of a guest (#571, T-11.8, docs/09 §2): its dates, the note the
+   owner typed, the check of the person and the answer. The check asks for a
+   name with a day or the address, never for a number alone (legal check U2:
+   a number is no person), and shows the rows of the verified person only.
+   Rows that carry only the number are the guest's to confirm: each ticked box
+   goes back with the same details. Everything shown here is personal data: the
+   answer is never cached, and nothing of it is in an address. Erasing and the
+   objection itself run on the server (backup first, erasure ledger). #}
+<h2 id="daten-anfrage-titel">Anfrage {{ reference }}</h2>
+{% if message %}<p class="badge {{ tone }}" role="{{ 'alert' if tone == 'danger' else 'status' }}">{{ message }}</p>{% endif %}
+<table class="tbl week">
+  <tbody>
+    <tr><th scope="row">Art</th><td>{{ kind }}</td></tr>
+    <tr><th scope="row">Gekommen über</th><td>{{ channel }}</td></tr>
+    <tr><th scope="row">Eingegangen am</th><td>{{ received }}</td></tr>
+    <tr><th scope="row">Frist</th><td>{{ deadline }}{% if is_open %} <span class="badge {{ 'warn' if soon else 'ok' }}">{{ left }}</span>{% endif %}</td></tr>
+    <tr><th scope="row">Zustand</th><td>{% if is_open %}offen{% else %}beantwortet: {{ outcome }}{% endif %}</td></tr>
+    <tr><th scope="row">Angaben des Gastes</th><td class="codes">{% if note %}{{ note }}{% else %}<span class="muted">Keine Notiz.</span>{% endif %}</td></tr>
+  </tbody>
+</table>
+
+{% if is_open %}
+<h3 id="daten-pruefen-titel">Person prüfen</h3>
+<p class="muted">Eine Nummer ist keine Person: mehrere Gäste können eine Nummer teilen. Gefragt ist der Name mit dem Tag einer Bestellung oder Reservierung oder mit der Lieferadresse. Jede Prüfung wird im Protokoll vermerkt.</p>
+<form class="week-form zone-form" novalidate hx-post="/gui/daten/anfrage/{{ reference }}/pruefen" hx-target="#daten-anfragen" hx-swap="innerHTML" aria-labelledby="daten-pruefen-titel">
+  <label>Name, wie bei der Bestellung genannt <input type="text" name="name" value="{{ sent.name }}" autocomplete="off"></label>
+  {% for field in day_fields %}
+  <label>{% if loop.first %}Tag einer Bestellung oder Reservierung{% else %}Weiterer Tag (wenn genannt){% endif %} <input type="date" name="{{ field }}" value="{{ sent[field] }}"></label>
+  {% endfor %}
+  <label>Straße der Lieferadresse <input type="text" name="strasse" value="{{ sent.strasse }}" autocomplete="off"></label>
+  <label>Hausnummer <input type="text" name="hausnummer" value="{{ sent.hausnummer }}" autocomplete="off"></label>
+  <label>Postleitzahl <input type="text" name="plz" value="{{ sent.plz }}" inputmode="numeric" autocomplete="off"></label>
+  <label>Nummern, von denen der Gast angerufen hat <input type="text" name="nummern" value="{{ sent.nummern }}" autocomplete="off"></label>
+  <p class="muted">Mehrere Nummern mit Komma trennen. Eine Nummer grenzt nur ein, was Tag oder Adresse öffnen; sie allein öffnet nichts.</p>
+  <div class="cb-actions">
+    <button type="submit" class="primary">Prüfen</button>
+  </div>
+  {% if found and (found.ask_calls or found.ask_callbacks or found.confirmed) %}
+  <fieldset>
+    <legend>Beim Gast nachfragen</legend>
+    <p class="muted">Diese Zeilen tragen nur die Nummer oder gehören zu einem Anruf mit einem zweiten Gast. Sie können von jemand anderem sein: nicht herausgeben. Den Gast nach Tag, Uhrzeit und Anliegen fragen und nur ankreuzen, was er bestätigt.</p>
+    {% for row in found.confirmed %}
+    <div class="span-row">
+      <label class="check"><input type="checkbox" name="claim-{{ row.id }}" value="1" checked> {{ row.word }}, vom Gast bestätigt: {% for label, text in row.fields %}{{ label }} <bdi>{{ text }}</bdi>{% if not loop.last %}, {% endif %}{% endfor %}</label>
+    </div>
+    {% endfor %}
+    {% for row in found.ask_calls %}
+    <div class="span-row">
+      <label class="check"><input type="checkbox" name="claim-{{ row.id }}" value="1"> Anruf: {% for label, text in row.fields %}{{ label }} <bdi>{{ text }}</bdi>{% if not loop.last %}, {% endif %}{% endfor %}{% if row.recorded %} <span class="badge warn">mit Aufnahme</span>{% endif %}</label>
+    </div>
+    {% endfor %}
+    {% for row in found.ask_callbacks %}
+    <div class="span-row">
+      <label class="check"><input type="checkbox" name="claim-{{ row.id }}" value="1"> Rückruf: {% for label, text in row.fields %}{{ label }} <bdi>{{ text }}</bdi>{% if not loop.last %}, {% endif %}{% endfor %}</label>
+    </div>
+    {% endfor %}
+    <div class="cb-actions">
+      <button type="submit">Mit den angekreuzten Zeilen neu prüfen</button>
+    </div>
+  </fieldset>
+  {% endif %}
+</form>
+
+{% if found %}
+<h3>Bestätigt: die Zeilen dieser Person</h3>
+{% if found.sections %}
+<p class="muted">Das gehört in die Auskunft an den Gast, und das trifft eine Löschung. Nichts davon gehört einem anderen Gast.</p>
+{% for section in found.sections %}
+<h3>{{ section.title }} ({{ section.rows|length }})</h3>
+<table class="tbl week">
+  <tbody>
+    {% for row in section.rows %}
+    <tr><td class="codes">{% for label, text in row %}<span class="muted">{{ label }}:</span> <bdi>{{ text }}</bdi>{% if not loop.last %} · {% endif %}{% endfor %}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endfor %}
+{% else %}
+<p class="muted">Zu dieser Person ist nichts mehr gespeichert.</p>
+{% endif %}
+{% if found.objections %}
+<p class="badge warn" role="status">Für eine Nummer dieser Person liegt ein Widerspruch gegen das Wiedererkennen vor.</p>
+<p class="muted">Er hängt an der Nummer und kann von jemand anderem stammen: nur nennen, wenn der Gast ihn bestätigt.</p>
+{% endif %}
+{% if found.blocking %}
+<h3>Das hält eine Löschung noch auf</h3>
+<ul>
+  {% for line in found.blocking %}<li>{{ line }}</li>{% endfor %}
+</ul>
+<p class="muted">Diese Vorgänge laufen noch (ein Tisch, der noch kommt, ein offener Rückruf, eine Bestellung in der Küche). Erst mit dem Gast abschließen, dann löschen.</p>
+{% endif %}
+{% endif %}
+
+{% if runs_on_server %}
+<h3>{% if kind_code == "erasure" %}Löschen{% else %}Widerspruch eintragen{% endif %}</h3>
+{% if has_run %}
+<p class="badge ok" role="status">Auf dem Server gelaufen.</p>
+{% else %}
+<p class="badge warn" role="status">Auf dem Server noch nicht gelaufen.</p>
+{% endif %}
+<p>Das läuft auf dem Server, nicht von diesem Gerät: vorher wird gesichert, und jede gelöschte Zeile kommt in eine Liste außerhalb der Datenbank, damit eine Sicherung sie nicht zurückbringt. Bitte dem Betreiber das Zeichen <b>{{ reference }}</b> nennen, die Angaben, mit denen die Prüfung oben geklappt hat, und jede Zeile, die der Gast bestätigt hat (Tag und Uhrzeit).</p>
+{% endif %}
+
+<h3>Frist und Antwort</h3>
+{% if can_extend %}
+<div class="cb-actions">
+  <button hx-post="/gui/daten/anfrage/{{ reference }}/frist" hx-target="#daten-anfragen" hx-swap="innerHTML"
+          hx-confirm="Frist auf drei Monate nach Eingang verlängern? Das geht nur einmal, und der Gast muss den Grund innerhalb des ersten Monats erfahren.">Frist verlängern (schwierige Anfrage)</button>
+</div>
+{% endif %}
+<form class="week-form zone-form" novalidate hx-post="/gui/daten/anfrage/{{ reference }}/antwort" hx-target="#daten-anfragen" hx-swap="innerHTML"
+      hx-confirm="Anfrage {{ reference }} als beantwortet eintragen? Das lässt sich hier nicht zurücknehmen." aria-label="Antwort eintragen">
+  <label>Ergebnis
+    <select name="ergebnis">
+      {% for value, label in outcomes %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <p class="muted">Erst eintragen, wenn die schriftliche Antwort an den Gast gegangen ist. Auch eine Ablehnung oder „nicht bestätigt“ wird schriftlich beantwortet, mit dem Grund und dem Hinweis auf das Beschwerderecht bei der Aufsichtsbehörde.</p>
+  <div class="cb-actions">
+    <button type="submit" class="primary">Als beantwortet eintragen</button>
+  </div>
+</form>
+{% endif %}
+<div class="cb-actions">
+  <button type="button" hx-get="/gui/daten/anfragen" hx-target="#daten-anfragen" hx-swap="innerHTML">Zurück zur Liste</button>
+</div>

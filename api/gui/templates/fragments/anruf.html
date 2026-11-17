@@ -1,0 +1,37 @@
+{# One call of the list in detail (#571, docs/06 §4): what the row says, when
+   it ended, why it went to the team, and its tool calls in their order with
+   how long each took. Never what was asked or answered, and no number: the row
+   above shows what the list shows. No transcript is stored. #}
+{% if problem %}
+<p class="note" role="status">{{ problem }}</p>
+{% else %}
+<h2 id="anruf-detail-titel">Anruf im Einzelnen</h2>
+<table class="tbl week">
+  <tbody>
+    {% for label, text in facts %}
+    <tr><th scope="row">{{ label }}</th><td>{{ text }}</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+<h3>Tool-Aufrufe</h3>
+{% if tools %}
+<table class="tbl week">
+  <thead>
+    <tr><th>Tool</th><th>Dauer</th><th>Antwort</th></tr>
+  </thead>
+  <tbody>
+    {% for tool in tools %}
+    <tr>
+      <th scope="row">{{ loop.index }}. {{ tool.name }}</th>
+      <td data-label="Dauer">{{ tool.duration }}</td>
+      <td data-label="Antwort">{% if tool.ok %}ok{% else %}<span class="badge warn">Fehler{% if tool.error %}: {{ tool.error }}{% endif %}</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% if tools_left > 0 %}<p class="muted">und {{ tools_left }} weitere.</p>{% endif %}
+{% else %}
+<p class="muted">Keine Tool-Aufrufe.</p>
+{% endif %}
+<p class="muted">Ein Transkript wird nicht gespeichert.</p>
+{% endif %}

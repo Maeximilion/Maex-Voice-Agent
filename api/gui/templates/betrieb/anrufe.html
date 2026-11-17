@@ -1,7 +1,9 @@
 {# The call list (T-8.7, docs/06 §4, mockup gui/mockups/admin-desktop.html):
    the calls of one business day, newest first, with three filters. A call
    with a note about its line (#651) shows its number marked and the note in
-   words. The number is cut (`calls_view.NUMBER_SHOWN`). #}
+   words. The number is cut (`calls_view.NUMBER_SHOWN`). "Details" fetches
+   one call's detail below the list (#571): a POST with the id in its body,
+   because every look leaves an audit row. #}
 {% extends "base.html" %}
 {% from "betrieb/_kopf.html" import admin_kopf with context %}
 {% block title %}Anrufe{% endblock %}
@@ -11,7 +13,7 @@
 
 {% block main %}
 {% if tenant %}
-<section class="card kz-history">
+<section class="card kz-history calls">
   <form class="call-filter" method="get" action="/gui/anrufe">
     <select name="tag" aria-label="Tag">
       {% for value, label, chosen in days %}<option value="{{ value }}"{% if chosen %} selected{% endif %}>{{ label }}</option>{% endfor %}
@@ -30,18 +32,19 @@
   {% if rows %}
   <table class="tbl">
     <thead>
-      <tr><th>Zeit</th><th>Nummer</th><th>Anliegen</th><th>Ergebnis</th><th>Dauer</th><th>Kosten</th><th>Tools</th></tr>
+      <tr><th>Zeit</th><th>Nummer</th><th>Anliegen</th><th>Ergebnis</th><th>Dauer</th><th>Kosten</th><th>Tools</th><th></th></tr>
     </thead>
     <tbody>
       {% for row in rows %}
       <tr>
-        <td>{{ row.time }}</td>
-        <td{% if row.note %} class="call-note"{% endif %}>{{ row.number }}</td>
-        <td>{{ row.intent }}</td>
-        <td>{{ row.outcome }}{% if row.note %} <span class="badge warn">{{ row.note }}</span>{% endif %}</td>
-        <td>{{ row.duration }}</td>
-        <td>{{ row.cost }}</td>
-        <td>{{ row.tools }}</td>
+        <th scope="row">{{ row.time }}</th>
+        <td data-label="Nummer"{% if row.note %} class="call-note"{% endif %}>{{ row.number }}</td>
+        <td data-label="Anliegen">{{ row.intent }}</td>
+        <td data-label="Ergebnis">{{ row.outcome }}{% if row.note %} <span class="badge warn">{{ row.note }}</span>{% endif %}</td>
+        <td data-label="Dauer">{{ row.duration }}</td>
+        <td data-label="Kosten">{{ row.cost }}</td>
+        <td data-label="Tools">{{ row.tools }}</td>
+        <td><button hx-post="/gui/anrufe/anruf" hx-vals='{"anruf": "{{ row.id }}"}' hx-target="#anruf-detail" hx-swap="innerHTML" aria-label="Anruf von {{ row.time }} Uhr im Einzelnen">Details</button></td>
       </tr>
       {% endfor %}
     </tbody>
@@ -49,6 +52,7 @@
   {% else %}
   <p class="note">Keine Anrufe für diese Auswahl.</p>
   {% endif %}
+  <div class="zeiten" id="anruf-detail" aria-live="polite"></div>
 </section>
 {% endif %}
 {% endblock %}

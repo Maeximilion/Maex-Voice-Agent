@@ -1,0 +1,37 @@
+{# The tab "Daten" of the admin area (#571, T-11.8, docs/06 §4): the requests
+   of guests (access, erasure, objection; legal check U2) and the deletion
+   periods. Behind the admin PIN (`require_admin`). The request log is a
+   fragment, swapped for one request and back. Nothing is erased from here:
+   that runs on the server, where the backup and the erasure ledger are. #}
+{% extends "base.html" %}
+{% from "betrieb/_kopf.html" import admin_kopf with context %}
+{% block title %}Daten{% endblock %}
+{% block body_class %}betrieb{% endblock %}
+
+{% block header %}{{ admin_kopf("Daten", "Daten", tenant) }}{% endblock %}
+
+{% block main %}
+<div class="zeiten daten">
+  <section class="card" id="daten-anfragen">
+    {% include "fragments/daten_anfragen.html" %}
+  </section>
+  <section class="card">
+    <h2>Löschfristen</h2>
+    <p class="muted">Das System löscht von selbst, sobald eine Frist abgelaufen ist. Die Fristen stellt der Betreiber ein.</p>
+    <table class="tbl week">
+      <thead>
+        <tr><th>Was</th><th>Wird gelöscht</th></tr>
+      </thead>
+      <tbody>
+        {% for what, period in periods %}
+        <tr><th scope="row">{{ what }}</th><td data-label="Wird gelöscht">{{ period }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <form method="post" action="/gui/inhaber/schliessen">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Inhaber-Bereich schließen</button>
+  </form>
+</div>
+{% endblock %}
