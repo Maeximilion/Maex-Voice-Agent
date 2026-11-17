@@ -24,8 +24,8 @@ topic (T12): an outbox event in the same transaction, sent by n8n
 the owner's own answer on a card.
 
 The operator may set today's team number the same way, over the ops API
-(`domain/operator.py`): the card and the push then say it was the operator,
-not the team (#811). Only the operator sets the standard number directly
+(`domain/operator.py`): the card then says it was the operator, not the team,
+and the push names the operator's account (#811). Only the operator sets the standard number directly
 (`set_standard_team_phone`), with a push and without a card; the owner makes a
 number the standard by keeping a card.
 
@@ -243,7 +243,7 @@ def change_team_phone(
             "day": today.isoformat(),
             "from": holding,
             "to": number,
-            "by": _by(actor),
+            **_who(actor),
         },
     )
     card.after, card.held = {"number": number}, True
@@ -297,7 +297,7 @@ def set_standard_team_phone(
             "from": before,
             "to": number,
             "standard": True,
-            "by": _by(actor),
+            **_who(actor),
         },
     )
     session.commit()
@@ -722,6 +722,13 @@ def _dialable(raw: str) -> str:
 
 def _by(actor: str) -> str:
     return BY_OPERATOR if actor.startswith(OPERATOR_ACTOR) else BY_TEAM
+
+
+def _who(actor: str) -> dict[str, str]:
+    """Who a push names: the team, or the operator with its account, as the
+    operator's access pushes do (`domain/operator.py` `_tell_owner`)."""
+    by = _by(actor)
+    return {"by": by, "actor": actor} if by == BY_OPERATOR else {"by": by}
 
 
 def past_midnight(closes: time) -> str:

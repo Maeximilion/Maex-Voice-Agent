@@ -419,7 +419,7 @@ def test_each_team_number_change_pushes_once(session, tenant_id):
     staff.change_team_phone(session, tenant_id, "+4972215550000", NOW)
     staff.change_team_phone(session, tenant_id, standard, NOW)
     day = TUESDAY.isoformat()
-    # The day, the numbers and who changed it as a role: no device, no name.
+    # The day, the numbers and the team as who changed it: no device, no name.
     assert _by_content(_events(session, tenant_id)) == _by_content(
         [
             (
@@ -952,10 +952,12 @@ OPERATOR = "operator:maxi"
 def test_the_push_says_whether_the_team_or_the_operator_changed_the_number(
     session, tenant_id
 ):
-    """A role, never a name: the push goes to a topic, the account is in the
-    audit log."""
+    """The team as a role (no device, no name); the operator with its
+    account, as the operator's access pushes."""
     staff.change_team_phone(session, tenant_id, NUMBER, NOW)
     staff.change_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+    actors = [payload.get("actor") for _, payload in _events(session, tenant_id)]
+    assert sorted(actors, key=str) == [None, OPERATOR]
 
     assert sorted(payload["by"] for _, payload in _events(session, tenant_id)) == [
         "operator",
@@ -998,6 +1000,7 @@ def test_the_operator_sets_the_standard_number(session, tenant_id):
                 "to": NUMBER,
                 "standard": True,
                 "by": "operator",
+                "actor": OPERATOR,
             },
         )
     ]

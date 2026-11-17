@@ -30,9 +30,9 @@ class DashboardSettings(BaseSettings):
     # id); both come from here, never from a request's Host header, which the
     # sender chooses (docs/23 §5).
     operator_origin: str = "http://localhost:8002"
-    # The push server and the token that may publish to its `ops` topic. Empty
-    # until the operator stack has its Compose file (#571): a push is then
-    # only logged (`dashboard/push.py`).
+    # The push server and the token of its user `dashboard`, which may publish
+    # to `ops` (#827 F3). Outside dev and test both are required: without them
+    # the pushes would only wait in the database and a takeover stay silent.
     operator_push_url: str = ""
     operator_push_token: str = ""
     # The folder with the eval and measurement records the dev tools show
@@ -78,6 +78,18 @@ class DashboardSettings(BaseSettings):
             raise ValueError(
                 "OPERATOR_ORIGIN must be an origin like https://ops.example.com: "
                 "https outside dev and test, lower case, no path, no trailing slash"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _production_needs_the_push_server(self) -> Self:
+        if self.env not in LOCAL_ENVS and not (
+            self.operator_push_url and valid_production_token(self.operator_push_token)
+        ):
+            raise ValueError(
+                "OPERATOR_PUSH_URL or OPERATOR_PUSH_TOKEN is missing, or the token "
+                f"is shorter than {TOKEN_MIN_LENGTH} characters: the token of the "
+                "push server's user `dashboard` (docs/13 §8)"
             )
         return self
 

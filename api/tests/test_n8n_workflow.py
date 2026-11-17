@@ -55,6 +55,7 @@ TO_OWNER = {
     types.DAY_HOURS_CHANGED,
     types.CALL_MODE_CHANGED,
     types.ADMIN_PIN_WRONG,
+    types.OPERATOR_ACCESS_CHANGED,
 }
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.\w+")
 
@@ -336,10 +337,26 @@ def test_the_team_number_push_says_who_changed_it_and_which_number() -> None:
     and a new standard number is not "today's"."""
     node = _nodes()[_branches()[types.TEAM_PHONE_CHANGED]]
     text = _assignment(node, "text")
-    assert f"{staff.BY_OPERATOR}: ' Geändert vom Betreiber.'" in text
+    assert (
+        f"{staff.BY_OPERATOR}: ' Geändert vom Betreiber ' + String($json.payload.actor)"
+        in text
+    )
     assert f"{staff.BY_TEAM}: ' Geändert vom Team.'" in text
     assert "$json.payload.standard ?" in text
     assert "$json.payload.standard ?" in _assignment(node, "title")
+
+
+def test_an_operator_step_names_the_operator_and_what_was_done() -> None:
+    """#811 question 3: the owner hears of a setup link, a PIN set and devices
+    signed out by the operator, with the operator's account named."""
+    node = _nodes()[_branches()[types.OPERATOR_ACCESS_CHANGED]]
+    text = _assignment(node, "text")
+    assert "$json.payload.actor" in text
+    for step in ("setup_link", "pin_set", "sign_out"):
+        assert f"{step}:" in text, step
+    assert "$json.payload.signed_out" in text and "$json.payload.which" in text
+    # A way into the restaurant's view changed: the phone makes itself heard.
+    assert _assignment(node, "priority") == "high"
 
 
 def test_no_secrets_or_personal_data_in_the_export() -> None:

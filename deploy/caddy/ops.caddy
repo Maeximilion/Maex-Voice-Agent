@@ -1,7 +1,8 @@
 # The site of the operator dashboard (#571, docs/23 §5), served by the shared
 # Caddy. A template: `scripts/new_stack.py --ops-site` writes it to
-# <root>/caddy/operator/ops.caddy (mode 640) with the host name of
-# OPERATOR_ORIGIN and the OPERATOR_PROXY_SECRET of the operator stack's .env,
+# <root>/caddy/operator/ops.caddy (mode 640) with the host names of
+# OPERATOR_ORIGIN and NTFY_BASE_URL and the OPERATOR_PROXY_SECRET of the
+# operator stack's .env,
 # then lets the shared Caddy check and load it. Nothing else installs it.
 #
 # CLOSED UNTIL THE AUDIT: run --ops-site only after the security audit of
@@ -41,4 +42,16 @@
             response_header_timeout 30s
         }
     }
+}
+
+# The operator's push server (#827 F3), the host of NTFY_BASE_URL in the
+# operator stack's .env. As each customer's push.<domain> (deploy/Caddyfile):
+# the server checks access itself, closed by default; only the user `ops`
+# reads the topic `ops`. It never gets the dashboard's proxy secret.
+{$OPS_PUSH_DOMAIN} {
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        -Server
+    }
+    reverse_proxy maex-ops-push-1:80
 }

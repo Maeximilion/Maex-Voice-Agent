@@ -767,7 +767,8 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
   4 to 6 digits and the two differ, a mode is never chosen during the emergency stop, a team number
   is one the dialplan dials, holds until the end of the business day and shows the owner's check
   card, and the call mode and the team number push to `owner` and `ops` (docs/23 T12). The
-  push `team_phone.changed` carries `"by": "operator" | "team"` (a role, never a name) and,
+  push `team_phone.changed` carries `"by": "operator" | "team"`, for the operator its account
+  (`"actor"`, as the access pushes), and,
   for the standard number, `"standard": true`; the card reads "Vom Betreiber geändert" when the
   operator made its last change (#811). What a rule
   refuses is `invalid_input` with status 422 (`core/ops_reason.py` `RULE_STATUS`, set by `_by_rule`

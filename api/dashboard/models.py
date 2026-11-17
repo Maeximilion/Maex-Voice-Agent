@@ -201,3 +201,25 @@ class OperatorAudit(Base):
     detail: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
+
+
+class OperatorPush(Base):
+    """A push to the operator's `ops` topic, held until the push server took it
+    (#827 F3, docs/23 §5): written in the request that changed a factor and
+    sent by the dashboard's sender (`dashboard/push.py`), as a customer's
+    outbox is by its dispatcher. A row is never dropped: a push server that is
+    down only makes it wait."""
+
+    __tablename__ = "operator_pushes"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    next_attempt_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
+    )
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)

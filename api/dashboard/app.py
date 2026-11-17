@@ -192,7 +192,6 @@ STALE_PAGE = (
     "owner, the staff or another operator). The page shows what holds now; "
     "look at it before you repeat the step."
 )
-PUSH_TITLE = "Operator sign-in changed"
 COPY = "a passkey answered with an old counter, a copy?"
 NO_STORE = {"Cache-Control": "no-store"}
 # Times are stored and sent in UTC and shown in the restaurants' time.
@@ -206,7 +205,10 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     # As the API's start (#827 F5): the operator's tables hold every OPS_TOKEN
     # and the TOTP secrets, so a flaw here must not get a superuser.
     refuse_a_superuser_role(settings.env, engine, "OPERATOR_DATABASE_URL")
+    sender = push.start()
     yield
+    if sender is not None:
+        sender.set()
 
 
 app = FastAPI(
@@ -455,12 +457,15 @@ def require_step_up(
 
 def _alert(db: Session, operator: str, what: str) -> None:
     """Tell the `ops` topic that a way into the dashboard changed. The change
-    is committed and audited already; a push that fails, for whatever reason,
-    is audited too and never fails the request (a recovery code is spent by
-    then, and its sign-in must still get its session)."""
+    is committed and audited already; the push only waits in the operator's
+    outbox (`push.queue`), so a push server that is down never holds the
+    request up. A push that cannot even be queued is audited and never fails
+    the request (a recovery code is spent by then, and its sign-in must still
+    get its session)."""
     try:
-        push.notify(PUSH_TITLE, f"{operator}: {what}")
+        push.queue(db, f"{operator}: {what}", now())
     except Exception as problem:  # noqa: BLE001  the push must not undo what it reports
+        db.rollback()
         log(logger, logging.ERROR, "Operator push failed", error=error_text(problem))
         access.audit(db, operator, "operator.push_failed", {"what": what})
         db.commit()

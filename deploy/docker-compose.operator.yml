@@ -1,5 +1,5 @@
-# The operator stack (#571, docs/23 §3 and §5): the dashboard and its own small
-# database, nothing else. Its own checkout <root>/ops with its own .env
+# The operator stack (#571, docs/23 §3 and §5): the dashboard, its own small
+# database and its own push server (#827 F3), nothing else. Its own checkout <root>/ops with its own .env
 # (docs/13 §8), started from there:
 #   docker compose up -d --build
 # with COMPOSE_FILE=deploy/docker-compose.operator.yml:networks.json in that
@@ -76,9 +76,10 @@ services:
       # Checked on every request but /health; Caddy sends it (ops.caddy).
       OPERATOR_PROXY_SECRET:
       OPERATOR_ORIGIN:
-      # Both networks are internal, so a push server must stand on one of
-      # them; this stack has none yet and the push is only logged (docs/23 §5).
-      OPERATOR_PUSH_URL:
+      # The stack's own push server below, over `edge` (#827 F3); the token of
+      # its user `dashboard`. With ENV=prod the dashboard does not start
+      # without both (dashboard/config.py).
+      OPERATOR_PUSH_URL: ${OPERATOR_PUSH_URL:-http://maex-ops-push-1/}
       OPERATOR_PUSH_TOKEN:
       OPERATOR_METRICS_DIR: /app/docs/metrics
     # Not root, read-only, no capability, as the customer stacks' api
@@ -103,6 +104,50 @@ services:
       db:
         condition: service_healthy
 
+  push:
+    # The operator's push server (#827 F3, docs/23 §5): the dashboard publishes
+    # a changed sign-in factor to the topic `ops`, the operator's phone reads
+    # it through the shared Caddy at the host of NTFY_BASE_URL (ops.caddy).
+    # The same image and the same closed start as a customer's push server
+    # (docker-compose.yml); nothing is forwarded to an upstream relay.
+    image: binwiederhier/ntfy:v2.37.2
+    restart: always
+    logging:
+      driver: journald
+    networks: [edge]
+    # Rules only when users exist: the server refuses rules for users it does
+    # not know, and with no users it starts closed for everyone. `dashboard`
+    # may only write `ops`, `ops` only read it; both users come together.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -n "$$NTFY_AUTH_USERS" ]; then
+          export NTFY_AUTH_ACCESS="dashboard:ops:wo,ops:ops:ro"
+        else
+          unset NTFY_AUTH_USERS NTFY_AUTH_TOKENS
+        fi
+        exec ntfy serve
+    environment:
+      - NTFY_CACHE_FILE=/var/lib/ntfy/cache.db
+      - NTFY_AUTH_FILE=/var/lib/ntfy/auth.db
+      - NTFY_AUTH_DEFAULT_ACCESS=deny-all
+      - NTFY_ENABLE_LOGIN=true
+      # Caddy stands in front: take the visitor address from its header.
+      - NTFY_BEHIND_PROXY=true
+      # From the operator stack's .env (docs/13 §8).
+      - NTFY_BASE_URL
+      - NTFY_AUTH_USERS
+      - NTFY_AUTH_TOKENS
+    volumes:
+      - operator_pushdata:/var/lib/ntfy
+    # Root in the image, but it only listens and writes into its volume.
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    mem_limit: 128m
+    cpus: 0.5
+
 # Both internal: neither container has a way out of the server, and no port
 # is published. The shared Caddy joins `edge` from outside.
 networks:
@@ -113,3 +158,4 @@ networks:
 
 volumes:
   operator_pgdata:
+  operator_pushdata:
