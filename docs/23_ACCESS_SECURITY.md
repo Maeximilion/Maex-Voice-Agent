@@ -313,9 +313,12 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   the first tab's answer is refused and leaves the second tab's challenge in place (#816). A
   challenge of one purpose answers no other. Nobody's challenge is removed to make room for another's: anyone may
   ask for a sign-in challenge, and a flood of them must not take the operator's away. Unanswered
-  ones are swept out after their five minutes; a limit on how often the route may be asked belongs
-  to the proxy, and the pinned Caddy image has no rate limiter: open for the audit of §11 (a
-  plugin build or a limit in the dashboard).
+  ones are swept out after their five minutes. One client address holds at most ten live sign-in
+  challenges of other attempts (`passkeys.SIGN_IN_PER_ADDRESS`, the column `client_address`,
+  migration op004); above that it gets 429 and no row, while an attempt asking again replaces its
+  own (#827 F1: the audit of §11 filled the table with 3,000 rows from one client). The cap is per
+  address, not global: a global one would let a flood shut out the operator's passkey. An IPv6
+  client owns many addresses; the per-account waits still hold.
 - **An answer is input from outside.** At most 32,768 characters are parsed, and whatever the
   parsing or the check raises is a refusal, never a server error: at the sign-in that runs after
   the password check, and an error there would tell that the password was right.
@@ -602,13 +605,16 @@ guest's data.
   Built (#571, sixth part, 16.11.2026; docs/04 §Ops API): `GET /v1/ops/access` and six post routes
   for both PINs (show, set), the devices (sign out one or all), a setup link, the call mode and the
   team number. No tokens yet ("Token erneuern", §7). Each needs the reason and the account, as
-  guest data does, and the customer's key (`X-Ops-Customer`): the answer naming its restaurant is
-  enough for a read, which the dashboard then drops, but a write to a stack registered under the
-  wrong customer would have happened by then, so the stack compares the key with its own before
-  anything, and a restaurant without a key takes no step at all. `domain/operator.py` commits a
-  row `ops.<step>` with the reason first and then calls the function the command line or the
-  tablet uses with the operator as actor: one set of rules, and the step's own audit row and push
-  are the ones that existed. The team number is today's, by the staff's rule (the standard stays,
+  guest data does, and the customer's key (`X-Ops-Customer`): a write to a stack registered under
+  the wrong customer would have happened before the dashboard read the answer's name, so the stack
+  compares the key with its own before anything, and a restaurant without a key takes no step at
+  all. Since #811 the reads (`/status`, `/figures`, `/calls`, `/calls/<id>`) check it the same
+  way, so a read of guest data from the wrong stack writes no audit row and sends no call.
+  `domain/operator.py` commits a row `ops.<step>` with the reason first and then calls the
+  function the command line or the tablet uses with the operator as actor: one set of rules, and
+  the step's own audit row and push are the ones that existed. A row `ops.<step>.outcome` with
+  the ask's id and `done`, `refused` or `failed` follows (#811), so an ask is never left to be
+  read as a refusal, a crash or a no-op by guessing. The team number is today's, by the staff's rule (the standard stays,
   the owner keeps or undoes it on the check card): the operator cannot move a restaurant's calls
   for good without the owner seeing it. A sign-out says its device or `all` in words. No PIN and
   no link is in an audit row, a log line or an address; the request log holds the path only.
