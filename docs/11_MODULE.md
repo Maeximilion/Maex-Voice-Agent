@@ -73,12 +73,12 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 | `normalize.py` | Kleinschreibung, Umlaute, Füllwörter raus („einmal die … bitte") |
 | `search.py` | die Auflösungsreihenfolge aus 04: Nummer → Alias → Trigram, mit Schwellen aus der Konfiguration |
 | `aliases.py` | Alias anlegen, Treffer zählen, Vorschläge aus Anrufen |
-| `details.py` | Optionen, Allergene mit der Regel „unbekannt ≠ keine" |
+| `details.py` | Optionen, Allergene mit der Regel „unbekannt ≠ keine"; `without_allergens`: the same rule over the whole menu (the active dishes without an allergen row), read by `listing.py` and `domain/status/overview.py` |
 | `sold_out.py` | Schalter „Gericht aus": bis Ende des Betriebstags, `audit_log`, Alternativen derselben Kategorie (T-4.8) |
 | `importer.py` | CSV nach 14 lesen, prüfen, einspielen, Bericht; mit `deactivate_missing` werden fehlende Gerichte inaktiv |
 | `pos_dbf.py` | dBase-Tabellen der Kasse lesen, nur lesend, Bytes rein, Zeilen raus (T-4.11) |
 | `pos_convert.py` | Kassenartikel in die CSV nach 14: Größen, Extras, Allergen-Umsetztabelle, Bericht (T-4.11) |
-| `listing.py` | the menu as the tab "Menü" reads it (#571): active dishes in card order, the search of the tablet (`sold_out.matches`), pages of 50, and the two notes of a row decided here: no allergen row (`without_allergens`, also the operator's count in `domain/status/overview.py`) and the register's open price (`price_check.open_differences`); it only reads |
+| `listing.py` | the menu as the tab "Menü" reads it (#571): active dishes in card order, the search of the tablet (`sold_out.matches`), pages of 50, and the two notes of a row: no allergen row (`details.without_allergens`, the rule of `get_item_details` over the whole menu, also the operator's count in `domain/status/overview.py`) and the register's open price (`price_check.open_differences`); it only reads |
 | `price_check.py` | what the price check found on the dish, the team's answer on the tablet, `audit_log`, the report; the comparison itself is `importer.apply` in a dry run (T-4.9) |
 
 ### `domain/ordering/`

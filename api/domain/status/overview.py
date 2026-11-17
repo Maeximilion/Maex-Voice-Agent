@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core.time import business_day
 from api.domain.calls.figures import Figures, span_figures
-from api.domain.menu.listing import without_allergens
+from api.domain.menu.details import without_allergens
 from api.domain.menu.price_check import open_differences
 from api.domain.status import bridge
 from api.domain.status.mode import mode_at

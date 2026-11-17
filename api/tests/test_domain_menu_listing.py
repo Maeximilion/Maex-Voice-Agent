@@ -9,8 +9,7 @@ import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 
-from api.domain.menu import listing, price_check
-from api.domain.menu.details import get_item_details
+from api.domain.menu import details, listing, price_check, sold_out
 from api.domain.status import overview
 from api.models import ItemAllergen, MenuItem, Tenant
 from scripts.seed import seed
@@ -141,6 +140,12 @@ def test_another_restaurant_shows_nothing_of_its_menu(session, tenant_id):
     shown = listing.listing(session, tenant_id)
     assert [r.name for r in shown.rows] == ["Eigen"]
     assert (shown.items, shown.allergens_missing, shown.price_differences) == (1, 0, 0)
+    # The rules themselves, not only the list that reads them: the list
+    # keeps to its own dishes and would hide a rule that does not.
+    assert details.without_allergens(session, tenant_id) == set()
+    assert price_check.open_differences(session, tenant_id) == []
+    own = session.get(Tenant, tenant_id)
+    assert overview.status(session, own, NOW).menu == overview.MenuStatus(1, 0, 0)
 
 
 # --- the two notes ----------------------------------------------------------------
@@ -162,11 +167,18 @@ def test_the_note_says_what_the_agent_says_about_the_dish(session, tenant_id):
     """One rule, two readers: a dish is marked exactly when `get_item_details`
     has no allergen information for it, and the count is the operator's."""
     dish(session, tenant_id, "1", allergens=("C",))
-    dish(session, tenant_id, "2")
+    missing = dish(session, tenant_id, "2")
+    # Neither counts anywhere: a dish nobody is offered, another restaurant's.
+    dish(session, tenant_id, "3", active=False)
+    other = Tenant(name="Nachbar", timezone="Europe/Berlin")
+    session.add(other)
+    session.flush()
+    dish(session, other.id, "2")
+    assert details.without_allergens(session, tenant_id) == {missing}
     shown = listing.listing(session, tenant_id)
     for row in shown.rows:
-        details = get_item_details(session, tenant_id, row.menu_item_id, True)
-        assert row.allergens_missing is (not details.allergens.known)
+        said = details.get_item_details(session, tenant_id, row.menu_item_id, True)
+        assert row.allergens_missing is (not said.allergens.known)
     tenant = session.get(Tenant, tenant_id)
     status = overview.status(session, tenant, NOW).menu
     assert status.without_allergen_information == shown.allergens_missing == 1
@@ -226,18 +238,43 @@ def test_the_filter_keeps_the_dishes_with_that_note(session, tenant_id):
     dish(session, tenant_id, "1", "Ente", register=700)
     dish(session, tenant_id, "2", "Suppe", allergens=("A",), register=500)
     dish(session, tenant_id, "3", "Reis", allergens=("A",))
+    # 0 is a price the register can say.
+    dish(session, tenant_id, "4", "Tee", allergens=("A",), register=0)
     find = listing.listing
     assert numbers(find(session, tenant_id, only=listing.ONLY_ALLERGENS)) == ["1"]
-    assert numbers(find(session, tenant_id, only=listing.ONLY_PRICE)) == ["1", "2"]
+    assert numbers(find(session, tenant_id, only=listing.ONLY_PRICE)) == [
+        "1",
+        "2",
+        "4",
+    ]
     assert numbers(find(session, tenant_id, "suppe", listing.ONLY_PRICE)) == ["2"]
     # A filter nobody offers filters nothing.
-    assert numbers(find(session, tenant_id, only="alles")) == ["1", "2", "3"]
+    assert numbers(find(session, tenant_id, only="alles")) == ["1", "2", "3", "4"]
 
 
 def test_a_long_search_text_is_cut_before_it_is_compared(session, tenant_id):
     dish(session, tenant_id, "1", "Ente")
-    long = "ente" + " " * listing.QUERY_MAX + "pizza"
-    assert numbers(listing.listing(session, tenant_id, long)) == ["1"]
+    long = "ente" + " " * sold_out.QUERY_MAX + "pizza" * 2000
+    shown = listing.listing(session, tenant_id, long)
+    assert numbers(shown) == ["1"] and shown.query == "ente"
+    # The list "Gericht aus" shares the rule and its bound.
+    assert [d.number for d in sold_out.list_switches(session, tenant_id, long)] == ["1"]
+
+
+def test_what_nobody_sees_stands_between_no_search_and_its_dish(session, tenant_id):
+    """A zero-width space or a direction override typed with the text, a soft
+    hyphen an export left in a name: neither is compared, in this list and in
+    the list "Gericht aus"."""
+    dish(session, tenant_id, "1", "Frühlings" + chr(0xAD) + "rolle")
+    dish(session, tenant_id, "2", "Suppe")
+    typed = chr(0x202E) + "früh" + chr(0x200B) + "lingsrolle" + chr(0)
+    shown = listing.listing(session, tenant_id, typed)
+    assert numbers(shown) == ["1"] and shown.query == "frühlingsrolle"
+    found = sold_out.list_switches(session, tenant_id, typed)
+    assert [d.number for d in found] == ["1"]
+    # A space of any kind is a space, and stays one.
+    spaced = listing.listing(session, tenant_id, "8" + chr(0xA0) + "Kostbar" + chr(9))
+    assert spaced.query == "8 Kostbar"
 
 
 # --- pages ------------------------------------------------------------------------

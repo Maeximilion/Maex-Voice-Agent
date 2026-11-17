@@ -87,10 +87,30 @@ def _active(session: Session, tenant_id: uuid.UUID) -> list[MenuItem]:
     return sorted(items, key=lambda i: number_key(i.number))
 
 
+# What is compared of a typed search text: no dish number or name needs more,
+# and every dish of the list is compared with it.
+QUERY_MAX = 60
+
+
+def _seen(text: str) -> str:
+    """A text without what nobody sees: control and format characters (a
+    zero-width space, a soft hyphen, a direction override) are dropped, a
+    space of any kind (a tab, a no-break space) is a plain space."""
+    return "".join(
+        " " if ch.isspace() else ch for ch in text if ch.isspace() or ch.isprintable()
+    )
+
+
+def searched(query: str) -> str:
+    """A typed search text as it is compared, and as a page shows it again:
+    without what nobody sees, at most `QUERY_MAX` characters."""
+    return _seen(query).strip()[:QUERY_MAX].rstrip()
+
+
 def matches(number: str, name: str, query: str) -> bool:
     """Search field on the tablet ("Gericht aus", the tab "Menü"): a number
     ("7" finds 07) or a part of the name."""
-    said = query.strip()
+    said = searched(query)
     if not said:
         return True
     # A leading digit can also be a name ("8 Kostbarkeiten", Codex PR #146).
@@ -102,7 +122,8 @@ def matches(number: str, name: str, query: str) -> bool:
     # normalize_query drops numbers: "8 Kostbar" becomes "kostbar", "2" becomes
     # empty - and an empty text must not match every name.
     name_part = normalize_query(said)
-    return bool(name_part) and name_part in normalize_query(name)
+    # A name can carry what nobody sees too (a soft hyphen from an export).
+    return bool(name_part) and name_part in normalize_query(_seen(name))
 
 
 def list_switches(

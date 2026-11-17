@@ -13,7 +13,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from api.db import get_db
-from api.domain.menu import listing
+from api.domain.menu import listing, sold_out
 from api.main import app
 from api.models import AuditLog, MenuItem
 from api.tests.test_domain_menu_listing import dish
@@ -218,7 +218,7 @@ def test_an_address_nobody_offers_still_shows_a_page(client, db, tenant_id, addr
     dish(db, tenant_id, "1", "Ente")
     page = client.get(PAGE + address)
     assert page.status_code == 200
-    assert "a" * (listing.QUERY_MAX + 1) not in page.text
+    assert "a" * (sold_out.QUERY_MAX + 1) not in page.text
 
 
 def test_a_filter_that_finds_nothing_says_so(client, db, tenant_id):

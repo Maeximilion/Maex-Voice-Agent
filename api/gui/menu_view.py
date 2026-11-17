@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 from sqlalchemy.orm import Session
 
 from api.domain.menu import listing
+from api.domain.menu.sold_out import QUERY_MAX
 from api.gui.orders_view import euro
 from api.models import Tenant
 
@@ -38,19 +39,17 @@ def _page_number(text: str) -> int:
 def page(
     session: Session, tenant: Tenant, q: str, hinweis: str, seite: str
 ) -> dict[str, Any]:
-    # What nobody sees (a control character, a direction override) is not
-    # searched for and not sent back into the field; a space of any kind (a
-    # tab, a no-break space from a pasted name) stays a space.
-    seen = (" " if ch.isspace() else ch for ch in q if ch.isspace() or ch.isprintable())
-    query = "".join(seen)[: listing.QUERY_MAX].strip()
     only = hinweis if hinweis in FILTERS else ""
     shown = listing.listing(
         session,
         tenant.id,
-        query,
+        q,
         FILTERS[only][0] if only else None,
         _page_number(seite),
     )
+    # The text as the domain compared it (cut, without what nobody sees), so
+    # the field and the links of the pages show what was searched.
+    query = shown.query
 
     def address(number: int) -> str:
         kept = {"q": query, "hinweis": only, "seite": str(number)}
@@ -59,7 +58,7 @@ def page(
     narrowed = bool(query or only)
     return {
         "query": query,
-        "query_max": listing.QUERY_MAX,
+        "query_max": QUERY_MAX,
         "filters": [
             (value, label, value == only) for value, (_, label) in FILTERS.items()
         ],

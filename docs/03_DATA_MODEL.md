@@ -411,7 +411,7 @@ Varianten und Extras mit Preisdifferenz.
 | confirmed_by | TEXT | wer den Wert gepflegt hat |
 | confirmed_at | TIMESTAMPTZ | |
 
-**Regel:** Kein Eintrag bedeutet *keine Auskunft*, nicht *kein Allergen*. Der Agent sagt dann: Rückruf durch das Team. The owner's tab "Menü" marks such a dish "Allergene fehlen" and the operator's customer list counts it, both by `domain/menu/listing.without_allergens` (#571, 17.11.2026).
+**Regel:** Kein Eintrag bedeutet *keine Auskunft*, nicht *kein Allergen*. Der Agent sagt dann: Rückruf durch das Team. The owner's tab "Menü" marks such a dish "Allergene fehlen" and the operator's customer list counts it, both by `domain/menu/details.without_allergens` (#571, 17.11.2026).
 
 ### `item_aliases`
 Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.

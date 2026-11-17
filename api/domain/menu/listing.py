@@ -5,8 +5,9 @@ a row can carry. Both are decided here and nowhere in `gui/`, because they say
 what the agent does with a dish (CLAUDE.md §2 rule 1):
 
 - `allergens_missing`: the dish has no row in `item_allergens`, so
-  `get_item_details` gives no allergen information for it. No row never means
-  "contains none" (docs/03), and this module never names an allergen.
+  `get_item_details` gives no allergen information for it
+  (`details.without_allergens`). No row never means "contains none"
+  (docs/03), and this module never names an allergen.
 - `register_cents`: the register's price where the last price check found
   another one and the team has not answered (`price_check.open_differences`).
   The agent keeps saying `price_cents` until somebody answers on the board.
@@ -17,18 +18,17 @@ It only reads: no price, no allergen and no audit row is written from here.
 import uuid
 from dataclasses import dataclass
 
-from sqlalchemy import exists, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from api.domain.menu.details import without_allergens
 from api.domain.menu.price_check import open_differences
-from api.domain.menu.sold_out import matches, number_key
-from api.models import ItemAllergen, MenuItem
+from api.domain.menu.sold_out import matches, number_key, searched
+from api.models import MenuItem
 
 # Rows on one page: a menu of a few hundred dishes is read whole from the
 # database (as the list "Gericht aus" does), but never sent whole.
 PAGE_SIZE = 50
-# What is compared of a typed search text. No dish number or name needs more.
-QUERY_MAX = 60
 # The filters: only the dishes that carry that note.
 ONLY_ALLERGENS = "allergens"
 ONLY_PRICE = "price"
@@ -48,6 +48,8 @@ class Row:
 @dataclass(frozen=True)
 class Listing:
     rows: list[Row]
+    # The search text as it was compared (`sold_out.searched`), to show again.
+    query: str
     page: int
     pages: int
     # Dishes the search and the filter leave, over all pages.
@@ -56,20 +58,6 @@ class Listing:
     items: int
     allergens_missing: int
     price_differences: int
-
-
-def without_allergens(session: Session, tenant_id: uuid.UUID) -> set[uuid.UUID]:
-    """The active dishes without one maintained allergen: the agent says "no
-    information" for them (`details.SAY_ALLERGENS_UNKNOWN`)."""
-    return set(
-        session.scalars(
-            select(MenuItem.id).where(
-                MenuItem.tenant_id == tenant_id,
-                MenuItem.active.is_(True),
-                ~exists().where(ItemAllergen.menu_item_id == MenuItem.id),
-            )
-        )
-    )
 
 
 def listing(
@@ -81,7 +69,7 @@ def listing(
 ) -> Listing:
     """One page of the active menu. A page that does not exist is the nearest
     one that does; a filter nobody offers filters nothing."""
-    query = query[:QUERY_MAX]
+    query = searched(query)
     items = session.execute(
         select(MenuItem.id, MenuItem.number, MenuItem.name, MenuItem.price_cents).where(
             MenuItem.tenant_id == tenant_id, MenuItem.active.is_(True)
@@ -115,6 +103,7 @@ def listing(
     page = min(max(page, 1), pages)
     return Listing(
         rows=rows[(page - 1) * PAGE_SIZE : page * PAGE_SIZE],
+        query=query,
         page=page,
         pages=pages,
         matching=len(rows),
