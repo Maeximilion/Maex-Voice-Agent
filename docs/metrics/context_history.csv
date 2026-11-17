@@ -33,3 +33,4 @@ date,task,session,model,calls,first,at_first_edit,last,peak
 2026-11-16,562-context-evaluation,52002a3b-90c6-475f-8e66-8f650a0d4795,claude-sonnet-5-5,12,104033,,139566,139566
 2026-11-17,571-dev-tools,7e18ef6b-b48f-4c6d-9e98-d7c3e8b8ff1e,claude-fable-5-2,97,105678,212215,379883,379883
 2026-11-17,816,47f96da2-6ba8-477c-bba5-32802cee4fd4,claude-opus-5-5,68,105440,200873,263271,263271
+2026-11-17,571-admin-zeiten,7db6d798-fbfc-4e84-a67a-5b86299af774,claude-fable-5-2,135,107411,232425,539603,539603
