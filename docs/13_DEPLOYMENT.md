@@ -439,9 +439,12 @@ EUR; isolation and the unchanged code decide it.
   `OPERATOR_ORIGIN`, the address the operator's browser uses (`https://ops.<domain>`, no path).
   Passkeys are bound to it: the dashboard refuses to start without it outside dev and test, and a
   later change of the host name makes every registered passkey useless (TOTP and the recovery
-  codes still open, the passkeys are then registered again). `OPERATOR_PUSH_URL` and
-  `OPERATOR_PUSH_TOKEN` name the push server and a token that may publish to its `ops` topic for
-  the push on a changed sign-in factor; empty, the push is only logged (docs/23 §5).
+  codes still open, the passkeys are then registered again). `OPERATOR_PUSH_URL` (by
+  default the operator stack's own push server, `http://maex-ops-push-1/`) and
+  `OPERATOR_PUSH_TOKEN` (the token of its user `dashboard`) are where the push on a changed
+  sign-in factor goes, topic `ops`; the request queues it in the operator database and the
+  dashboard sends it, retried until the server takes it. Outside dev and test the dashboard
+  refuses to start without both (docs/23 §5, #827 F3).
   `OPERATOR_METRICS_DIR` names the folder with the recorded eval and measurement results
   (`docs/metrics/` of a checkout) that the dev tools show; the image holds none, so the
   operator stack mounts it read-only, and without it the page says that the files are missing.
@@ -449,13 +452,17 @@ EUR; isolation and the unchanged code decide it.
   Compose project `maex-ops`, run from a checkout of its own in `<root>/ops`: the dashboard
   (the API's image, `uvicorn api.dashboard.app:app` on port 8002, `ENV=prod`, not root, read-only,
   no capability, `api/`, `db/` and `docs/metrics/` mounted read-only) and a `postgres:16-alpine`
-  of its own. Both networks are internal and nothing publishes a port: `backend` holds the
-  database and the dashboard, `edge` the dashboard and, once its site is installed, the shared
-  Caddy. Its `.env` (mode 600, `.env.example` names each line): `POSTGRES_USER`,
+  of its own, and its own push server `push` (`binwiederhier/ntfy`, the image and closed start
+  of a customer's, #827 F3). Both networks are internal and nothing publishes a port: `backend`
+  holds the database and the dashboard, `edge` the dashboard, the push server and, once its site
+  is installed, the shared Caddy. Its `.env` (mode 600, `.env.example` names each line): `POSTGRES_USER`,
   `POSTGRES_PASSWORD`, `POSTGRES_DB` (for example `maex_operator`), `DATABASE_URL` (the
   dashboard's own role, for example `maex_ops`) and `OWNER_DATABASE_URL` (the owner, as in §3),
   `BACKUP_DOCKER_NETWORK=maex-ops_backend` and `BACKUP_PASSPHRASE_FILE` (§4),
-  `OPERATOR_PROXY_SECRET` and `OPERATOR_ORIGIN`, and
+  `OPERATOR_PROXY_SECRET` and `OPERATOR_ORIGIN`, the push server's `NTFY_BASE_URL` (a host of
+  its own, for example `https://push.ops.<domain>`), `NTFY_AUTH_USERS` (the users `dashboard`
+  and `ops`, each with a bcrypt hash from `ntfy user hash`), `NTFY_AUTH_TOKENS`
+  (`dashboard:<token>:dashboard`) and the same token as `OPERATOR_PUSH_TOKEN`, and
   `COMPOSE_FILE=deploy/docker-compose.operator.yml:networks.json`. The dashboard connects as its
   own role and, outside dev and test, refuses to start as a superuser; the owner migrates, dumps and
   restores, and never reaches the dashboard's container (#827 F5). Setting it up, in `<root>/ops`:
@@ -465,18 +472,21 @@ EUR; isolation and the unchanged code decide it.
   `scripts/new_stack.py` rewrites `networks.json` from the site files (the dashboard on every
   customer's `ops` network, on no other of theirs), recreates the dashboard and registers each
   new customer with `customer-add`, the stack's `OPS_TOKEN` on standard input; without
-  `<root>/ops/.env` it prints that command instead. The push on a changed factor stays a log
-  line: both networks are internal, and this stack has no push server of its own yet.
-  Each of its two services may take at most 512 MiB and one CPU, so the operator side never takes
+  `<root>/ops/.env` it prints that command instead. The operator's phone subscribes to the topic
+  `ops` at `NTFY_BASE_URL` with the user `ops`; `dashboard` may only publish there, `ops` only
+  read, and nobody else either (shown on a real ntfy 2.37.2, 17.11.2026).
+  The dashboard and its database may each take at most 512 MiB and one CPU, the push server
+  128 MiB and half a CPU, so the operator side never takes
   memory from a stack's call path (#827 F7). Its database is dumped every night at 03:15 by the
   second line of `deploy/backup.cron`, run in `<root>/ops`; a dump there writes no `backup.done`
   (the operator database has no tenants and no backup alarm) and says so in the log (#827 F9).
   **ops.<domain> stays closed until the security audit of docs/23 §11 found no open P1.** Without
   a site file the shared Caddy has no site for that name, gets no certificate and answers
   nothing. After the audit `python3 scripts/new_stack.py --ops-site [--root /srv/maex]` renders
-  `deploy/caddy/ops.caddy` with the host of `OPERATOR_ORIGIN` and `OPERATOR_PROXY_SECRET` into
+  `deploy/caddy/ops.caddy` with the hosts of `OPERATOR_ORIGIN` and `NTFY_BASE_URL` (the push
+  server's site, which gets no proxy secret) and `OPERATOR_PROXY_SECRET` into
   `<root>/caddy/operator/ops.caddy` (mode 640; refused when the secret is short, odd or a
-  customer's), joins the shared Caddy to `maex-ops_edge` and reloads it, and takes the file out
+  customer's, or when the push server has no https host of its own), joins the shared Caddy to `maex-ops_edge` and reloads it, and takes the file out
   again when Caddy refuses it. From then on every customer's run and `--check-sites` also refuse a
   customer site with the proxy secret or a host name of `ops.caddy`: that stack's `api` shares an
   `ops` network with the dashboard and would pass its proxy check. The site sends HSTS, `nosniff`, `no-referrer`, the CSP without

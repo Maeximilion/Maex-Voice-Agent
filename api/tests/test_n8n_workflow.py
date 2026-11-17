@@ -54,6 +54,7 @@ TO_OWNER = {
     types.DAY_HOURS_CHANGED,
     types.CALL_MODE_CHANGED,
     types.ADMIN_PIN_WRONG,
+    types.OPERATOR_ACCESS_CHANGED,
 }
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.\w+")
 
@@ -328,6 +329,19 @@ def test_call_modes_read_as_in_the_tablets_header() -> None:
     assert _assignment(node, "priority") == (
         f"={{{{ $json.payload.to === '{PAUSED}' ? 'high' : 'normal' }}}}"
     )
+
+
+def test_an_operator_step_names_the_operator_and_what_was_done() -> None:
+    """#811 question 3: the owner hears of a setup link, a PIN set and devices
+    signed out by the operator, with the operator's account named."""
+    node = _nodes()[_branches()[types.OPERATOR_ACCESS_CHANGED]]
+    text = _assignment(node, "text")
+    assert "$json.payload.actor" in text
+    for step in ("setup_link", "pin_set", "sign_out"):
+        assert f"{step}:" in text, step
+    assert "$json.payload.signed_out" in text and "$json.payload.which" in text
+    # A way into the restaurant's view changed: the phone makes itself heard.
+    assert _assignment(node, "priority") == "high"
 
 
 def test_no_secrets_or_personal_data_in_the_export() -> None:

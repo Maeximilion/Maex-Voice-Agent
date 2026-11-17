@@ -23,6 +23,7 @@ never printed; `customers` lists keys and addresses only.
 
 import argparse
 import sys
+from datetime import UTC, datetime
 from getpass import getpass
 
 from api.dashboard import push, totp
@@ -54,7 +55,8 @@ def _account(command: str, name: str) -> int:
     name = name.strip().lower()
     did = "account created" if command == "add" else "every factor reset"
     try:
-        push.notify("Operator sign-in changed", f"{name}: {did} on the operator host")
+        with SessionLocal() as db:
+            push.queue(db, f"{name}: {did} on the operator host", datetime.now(UTC))
     except Exception as problem:  # noqa: BLE001  the break glass works without the push
         print(f"The push to ops failed: {type(problem).__name__}", file=sys.stderr)
     # The one place the secret is shown: inside the link (its `secret=` value is

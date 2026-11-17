@@ -1,0 +1,52 @@
+"""Migration 041: the outbox takes the push of an operator step on the access (#811), up and down."""
+
+import pytest
+from alembic import command
+from sqlalchemy import create_engine, text
+from sqlalchemy.exc import IntegrityError
+
+from api.tests.conftest import alembic_config as _config
+
+
+@pytest.fixture
+def engine(scratch_db_url):
+    command.upgrade(_config(scratch_db_url), "040")
+    engine = create_engine(scratch_db_url)
+    yield engine
+    engine.dispose()
+
+
+def _insert(conn, tenant, event_type: str) -> None:
+    conn.execute(
+        text(
+            "INSERT INTO outbox (tenant_id, event_type, payload)"
+            " VALUES (:t, :e, '{}'::jsonb)"
+        ),
+        {"t": tenant, "e": event_type},
+    )
+
+
+def test_up_admits_the_operator_access_push_and_down_drops_only_it(
+    engine, scratch_db_url
+):
+    with engine.begin() as conn:
+        tenant = conn.execute(
+            text("INSERT INTO tenants (name) VALUES ('T') RETURNING id")
+        ).scalar_one()
+        _insert(conn, tenant, "call_mode.changed")
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        _insert(conn, tenant, "operator_access.changed")
+
+    command.upgrade(_config(scratch_db_url), "041")
+    with engine.begin() as conn:
+        _insert(conn, tenant, "operator_access.changed")
+    # Still closed to a type nobody named.
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        _insert(conn, tenant, "operator_access.whatever")
+
+    command.downgrade(_config(scratch_db_url), "040")
+    with engine.connect() as conn:
+        left = conn.execute(text("SELECT event_type FROM outbox")).scalars().all()
+    assert left == ["call_mode.changed"]
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        _insert(conn, tenant, "operator_access.changed")

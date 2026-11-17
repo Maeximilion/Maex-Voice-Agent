@@ -281,7 +281,7 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 |---|---|---|
 | id | UUID PK | dient n8n als Idempotenz-Schlüssel; `order.confirmed` holt die Druckbrücke ab, nicht der Dispatcher (T-4.6) |
 | tenant_id | UUID FK | |
-| event_type | TEXT | `order.confirmed` / `reservation.confirmed` / `callback.created` / `order.handover_failed` / `daily.report` / `team_phone.changed` / `day_hours.changed` / `call_mode.changed` (the last three since migration 034, #588) / `admin_pin.wrong` (since migration 040, #827 F4) |
+| event_type | TEXT | `order.confirmed` / `reservation.confirmed` / `callback.created` / `order.handover_failed` / `daily.report` / `team_phone.changed` / `day_hours.changed` / `call_mode.changed` (the last three since migration 034, #588) / `admin_pin.wrong` (since migration 040, #827 F4) / `operator_access.changed` (since migration 041, #811) |
 | payload | JSONB | vollständiger Vorgang, damit n8n nicht zurückfragen muss |
 | status | TEXT | `pending` / `sent` / `failed` |
 | attempts | INT | |
@@ -634,6 +634,8 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 037 | `complaint_rules.phrases` holds no NULL element (CHECK with `array_position(phrases, NULL) IS NULL`, #692). Up drops the NULLs of an existing row and fails on a row of NULLs only, which is fixed by hand; down restores the old check and changes no row |
 | 038 | `gui_sessions.admin_active_at`: the owner's idle clock, 15 minutes without an owner page or write ends owner rights (#600); new column only, rights open at the upgrade end at once; down drops it |
 | 039 | `calls.is_test` and `reservations.is_test` (BOOL NOT NULL, default false): the rows of a self-test call (#574); new columns only, false for every row; down drops them and refuses while a test call is left |
+| 040 | The outbox type `admin_pin.wrong` (CHECK `ck_outbox_event_type` extended, #827 F4); the downgrade deletes the rows of that type |
+| 041 | The outbox type `operator_access.changed`: a setup link, a PIN set or devices signed out by the operator, pushed to the owner and to `ops` (#811); the downgrade deletes the rows of that type |
 | planned, next free number | `eval_cases`, `eval_runs` |
 
 ### Operator database (#571, docs/23 §5)
@@ -646,3 +648,4 @@ Not a customer's database: the operator stack's own, migrated as its owner with 
 | op002 | `operator_customers` (`key` with the CHECK of a customer key, `api_url` and `ops_token` each unique, `added_at`): the stacks the dashboard reads (docs/23 §8); the downgrade drops the table |
 | op003 | `operator_passkeys` (`credential_id` unique, `public_key`, `sign_count`, `name`, `created_at`, `last_used_at`), `operator_challenges` (`bound_to`, `purpose`, unique together; `challenge`, `expires_at`), `operator_sessions.stepped_up_at` and `.pending_totp`, `operator_accounts.totp_secret` nullable (an operator with two passkeys may remove TOTP). The downgrade drops every passkey and gives an account without TOTP a random secret nobody has seen: its recovery codes still open it, `python -m api.dashboard.cli reset` gives it new factors |
 | op004 | `operator_challenges.client_address` (text, indexed): the client address of a sign-in challenge, so one address holds at most ten live ones (#827 F1, docs/23 §5); empty for a session's challenge. The downgrade drops the column |
+| op005 | `operator_pushes` (`message`, `created_at`, `next_attempt_at` indexed, `attempts`, `sent_at`, `last_error`): the operator's pushes to `ops`, written by the request and sent by the dashboard's sender, never dropped (#827 F3, docs/23 §5). The downgrade drops the table with what still waits |

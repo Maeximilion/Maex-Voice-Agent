@@ -172,7 +172,7 @@ address or a token. Each stack is asked at once with three seconds to answer (§
 again every 30 seconds; that request checks the session but does not keep it alive, so an open tab
 still ends at the idle limit. Since plan number 11 provisioning adds the registry row itself
 (`scripts/new_stack.py`, the token on standard input) and the operator stack has its Compose
-file; still to come: the operator stack's push server.
+file, and since #827 F3 (17.11.2026) its own push server (below, "Audit and push").
 
 **A customer's page, read (#571, fifth part, 16.11.2026):** a row of the list leads to
 `/customers/<key>`; a key the registry does not hold is 404 before any stack is asked, and the key
@@ -349,11 +349,24 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   step of a customer's manage page; the later parts name it on their routes.
 - **Audit and push.** A new or removed passkey, a new or removed TOTP secret, a used recovery
   code, and on the host a new account and the break glass are in the operator's audit and go as a
-  push to the `ops` topic from one place,
-  `dashboard/push.py`, which publishes as a stack's monitor does (`api/jobs/monitor.py`) once
-  `OPERATOR_PUSH_URL` and `OPERATOR_PUSH_TOKEN` are set. Until the operator stack has its Compose
-  file both are empty and the push is only logged; a push that fails, for whatever reason, is
-  audited as `operator.push_failed` and never fails the request it reports. A removal of TOTP
+  push to the `ops` topic from one place, `dashboard/push.py` (#827 F3, 17.11.2026). It is the
+  outbox pattern of a customer's stack in the operator database: the request writes a row of
+  `operator_pushes` (migration op005) right after the change and its audit row, and a sender
+  thread of the dashboard's process posts it every five seconds to the operator stack's own push
+  server (`push`, ntfy, the image and closed start of a customer's; `OPERATOR_PUSH_URL`, by
+  default `http://maex-ops-push-1/` over the internal `edge`) with the token of its user
+  `dashboard`, as a stack's monitor publishes (`api/jobs/monitor.py`). A push server that is
+  down or refuses never holds the request up and never loses the push: the row is retried with
+  the outbox's waits (5 s, 30 s, 2 min, then every 10 min) for as long as it takes, oldest first,
+  and each failure is a warning in the log. Outside dev and test the dashboard refuses to start
+  without `OPERATOR_PUSH_URL` and a token of at least 32 characters (the review of this pull
+  request: a stack started without them would only queue, and a takeover stay silent); in dev
+  and test the rows wait and no sender runs.
+  The operator's phone reads `ops` with the user `ops` through the shared Caddy at the host of
+  `NTFY_BASE_URL`, a site of `ops.caddy` that gets no proxy secret; `dashboard` may only write
+  there, `ops` only read, nobody else either. The push names the account and the change, never a
+  secret. A push that cannot even be queued (the database refused) is audited as
+  `operator.push_failed` and never fails the request it reports. A removal of TOTP
   that was off already (a double post, an older tab) is neither audited nor pushed (#816). The
   break glass removes every passkey too.
 - **Browser side.** `api/gui/ts/passkey.ts`, compiled, no inline script: it fetches the options,
@@ -630,7 +643,13 @@ guest's data.
   the ask's id and `done`, `refused` or `failed` follows (#811), so an ask is never left to be
   read as a refusal, a crash or a no-op by guessing. The team number is today's, by the staff's rule (the standard stays,
   the owner keeps or undoes it on the check card): the operator cannot move a restaurant's calls
-  for good without the owner seeing it. A sign-out says its device or `all` in words. No PIN and
+  for good without the owner seeing it. A sign-out says its device or `all` in words.
+  A setup link, a PIN set and a sign-out that ended a session also push to the owner and to `ops`
+  (`operator_access.changed`, migration 041; #811 question 3, decided 17.11.2026), naming the
+  operator's account and the step (which PIN, how many devices), never the PIN, the link or a
+  device's name: the owner sees at once what the operator did, and a taken-over dashboard is
+  seen sooner (T11). The push goes with the step's outcome row, so a step that was refused or
+  broke pushes nothing; a sign-out of a device that was gone already pushes nothing either. No PIN and
   no link is in an audit row, a log line or an address; the request log holds the path only.
   An operator account cannot be named `cli`: `operator:cli` is the command line's actor in a
   stack's audit log.

@@ -467,19 +467,30 @@ def join_operator(root: Path, key: str, token: str) -> None:
 
 
 def ops_site_text(template: str, env: dict[str, str]) -> str:
-    """deploy/caddy/ops.caddy with the operator stack's host name and proxy
-    secret written in, as a customer's site file carries its own."""
+    """deploy/caddy/ops.caddy with the operator stack's host names (the
+    dashboard's and its push server's, #827 F3) and proxy secret written in,
+    as a customer's site file carries its own."""
     origin = env.get("OPERATOR_ORIGIN", "")
     host = origin.removeprefix("https://")
     if not origin.startswith("https://") or not DOMAIN.fullmatch(host):
         raise BadInput("OPERATOR_ORIGIN must be https://ops.<domain>, nothing more")
+    pushed = env.get("NTFY_BASE_URL", "")
+    push_host = pushed.removeprefix("https://")
+    if not pushed.startswith("https://") or not DOMAIN.fullmatch(push_host):
+        raise BadInput("NTFY_BASE_URL must be https://<push host>, nothing more")
+    if push_host == host:
+        raise BadInput("NTFY_BASE_URL needs a host of its own, not the dashboard's")
     secret = env.get("OPERATOR_PROXY_SECRET", "")
     if len(secret) < 32 or not re.fullmatch(r"[A-Za-z0-9_-]+", secret):
         raise BadInput("OPERATOR_PROXY_SECRET: 32 or more letters and digits")
-    for placeholder in ("{$OPS_DOMAIN}", OPERATOR_SECRET):
+    for placeholder in ("{$OPS_DOMAIN}", "{$OPS_PUSH_DOMAIN}", OPERATOR_SECRET):
         if placeholder not in template:
             raise Refused(f"deploy/caddy/ops.caddy no longer contains {placeholder}")
-    return template.replace("{$OPS_DOMAIN}", host).replace(OPERATOR_SECRET, secret)
+    return (
+        template.replace("{$OPS_DOMAIN}", host)
+        .replace("{$OPS_PUSH_DOMAIN}", push_host)
+        .replace(OPERATOR_SECRET, secret)
+    )
 
 
 def ops_site(root: Path) -> None:
