@@ -183,7 +183,18 @@ REFUSALS = {
         "The stack refused this number: it takes only numbers its telephone "
         "system dials."
     ),
+    "team_phone_standard": (
+        "The stack refused this number: it takes only numbers its telephone "
+        "system dials."
+    ),
 }
+# A step from a page the restaurant changed since (#811). The page then reads
+# the state again by itself.
+STALE_PAGE = (
+    "Nothing was done: the restaurant changed since this page was read (the "
+    "owner, the staff or another operator). The page shows what holds now; "
+    "look at it before you repeat the step."
+)
 PUSH_TITLE = "Operator sign-in changed"
 COPY = "a passkey answered with an old counter, a copy?"
 NO_STORE = {"Cache-Control": "no-store"}
@@ -1052,6 +1063,8 @@ def _said(
     if isinstance(found, str):
         # `customers`' sentences are the ends of a row of the list ("alpha:
         # not reachable"); here the stack is named in front of them.
+        if found == customers.STALE:
+            return "danger", STALE_PAGE, ""
         by_rule = found == customers.REFUSED_BY_RULE
         problem = REFUSALS.get(step.name) if by_rule else None
         problem = problem or f"The stack: {found}."
@@ -1082,6 +1095,9 @@ def _said(
     if step.name == "team_phone":
         number = found.team_phone or "no number"
         return "ok", f"Calls for the team go to {number} today.", ""
+    if step.name == "team_phone_standard":
+        number = found.team_phone_standard or "no number"
+        return "ok", f"The standard team number is now {number}.", ""
     return None
 
 
@@ -1122,7 +1138,10 @@ def customer_manage(
     A step that changes something is taken once: its form carries a token of
     the page it came from (kept like a passkey challenge: one per session and
     customer, single use, five minutes), so a reload of the answer, the Back
-    button or a second tab's older page sends nothing a second time."""
+    button or a second tab's older page sends nothing a second time. It also
+    carries the version of the state its page showed: a step from a page the
+    restaurant changed since is refused by the stack, and the page then reads
+    the state again by itself (#811)."""
     _checked(request, form)
     stack = _stack(db, key)
     if action not in customers.STEPS:
@@ -1159,31 +1178,40 @@ def customer_manage(
         if not sent or passkeys.take(db, holder, purpose, now(), sent) is None:
             context["said"] = ("danger", SENT_BEFORE, "")
             return _page(request, "manage.html", context, 409)
-    name = f"customer.{step.name}"
-    access.audit(
-        db,
-        operator.name,
-        f"{name}_asked",
-        {"reason": category, "reference": reference} | step.detail,
-        target=stack.key,
-    )
-    db.commit()
-    found = customers.manage(stack, step, operator.name, reason)
-    # What the operator saw of it: done, one of our own sentences why not, or
-    # that sentence under "unclear" when the stack may have done it all the same.
-    if not isinstance(found, str):
-        outcome = "done"
-    else:
-        outcome = "unclear" if _unclear(step, found) else "not_done"
-    access.audit(
-        db,
-        operator.name,
-        f"{name}_{outcome}",
-        step.detail | ({"problem": found} if isinstance(found, str) else {}),
-        target=stack.key,
-    )
-    db.commit()
+
+    def ask(step: customers.Step) -> customers.StackAccess | str:
+        name = f"customer.{step.name}"
+        access.audit(
+            db,
+            operator.name,
+            f"{name}_asked",
+            {"reason": category, "reference": reference} | step.detail,
+            target=stack.key,
+        )
+        db.commit()
+        found = customers.manage(stack, step, operator.name, reason)
+        # What the operator saw of it: done, one of our own sentences why not,
+        # or that sentence under "unclear" when the stack may have done it.
+        if not isinstance(found, str):
+            outcome = "done"
+        else:
+            outcome = "unclear" if _unclear(step, found) else "not_done"
+        access.audit(
+            db,
+            operator.name,
+            f"{name}_{outcome}",
+            step.detail | ({"problem": found} if isinstance(found, str) else {}),
+            target=stack.key,
+        )
+        db.commit()
+        return found
+
+    found = ask(step)
     context["said"] = _said(step, found)
+    if found == customers.STALE:
+        # Nothing was done; the page reads what holds now, as "Read the state
+        # again" would, with the same reason (#811).
+        found = ask(customers.Step("access", customers.ACCESS_PATH))
     if not isinstance(found, str):
         context["access"] = found
         context["once"] = passkeys.issue(

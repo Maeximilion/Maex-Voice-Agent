@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core.time import business_day
 from api.db import get_db
+from api.domain.status.staff_changes import change_team_phone
 from api.main import app
 from api.models import Reservation, ServiceConfig, SpecialDay, StaffChange
 from scripts.seed import seed
@@ -323,3 +324,21 @@ def test_weekly_hours_back_on_a_longer_date_list_the_late_table(client, engine):
         headers=HX,
     )
     assert "Late" in client.get("/gui/fragments/pruefen", headers=HX).text
+
+
+@pytest.mark.parametrize(
+    ("actor", "says", "not_says"),
+    [
+        ("operator:maxi", "Vom Betreiber geändert", "Vom Team geändert"),
+        ("gui:tablet", "Vom Team geändert", "Vom Betreiber geändert"),
+    ],
+)
+def test_the_card_names_who_set_the_number(client, engine, actor, says, not_says):
+    """#811 question 1: the operator's number for today is not the team's."""
+    with Session(engine) as session:
+        tenant_id = session.scalars(select(ServiceConfig)).one().tenant_id
+        change_team_phone(session, tenant_id, NUMBER, actor=actor)
+
+    cards = client.get("/gui/fragments/pruefen", headers=HX).text
+
+    assert says in cards and not_says not in cards

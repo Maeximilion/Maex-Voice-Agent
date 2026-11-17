@@ -7,6 +7,7 @@ before it happens, and never puts a PIN or a link into a log or an audit row.
 
 import json
 import logging
+import re
 import uuid
 from datetime import timedelta
 from typing import Any
@@ -18,7 +19,9 @@ from api.config import settings
 from api.core import ops_reason
 from api.domain import operator
 from api.domain.access.sessions import DEVICE_CHARS, locked_account, open_session
-from api.domain.access.setup import issue_link, use_link
+from api.domain.access.setup import issue_link, set_team_pin, use_link
+from api.domain.status.config import pause_ai, resume_ai
+from api.domain.status.staff_changes import change_team_phone
 from api.models import (
     AuditLog,
     GuiAccount,
@@ -27,6 +30,7 @@ from api.models import (
     OutboxEvent,
     ServiceConfig,
     StaffChange,
+    Tenant,
 )
 from api.tests import test_ops_status as base
 from api.tests.test_ops_status import AUTH, NOW
@@ -55,6 +59,10 @@ SIGN_OUT = "/v1/ops/access/sign-out"
 LINK = "/v1/ops/access/setup-link"
 CALL_MODE = "/v1/ops/call-mode"
 TEAM_PHONE = "/v1/ops/team-phone"
+TEAM_PHONE_STANDARD = "/v1/ops/team-phone/standard"
+# The steps that change the restaurant: each sends the version of the page it
+# came from (`seen`, #811).
+CHANGING = {PIN_SET, SIGN_OUT, LINK, CALL_MODE, TEAM_PHONE, TEAM_PHONE_STANDARD}
 STEPS: list[tuple[str, str, dict[str, Any] | None]] = [
     ("GET", ACCESS, None),
     ("POST", PIN_SHOW, {"which": "team"}),
@@ -63,7 +71,11 @@ STEPS: list[tuple[str, str, dict[str, Any] | None]] = [
     ("POST", LINK, None),
     ("POST", CALL_MODE, {"mode": "primary"}),
     ("POST", TEAM_PHONE, {"number": NUMBER}),
+    ("POST", TEAM_PHONE_STANDARD, {"number": NUMBER}),
 ]
+# The real read: a test may replace `operator.access` to break a step.
+_FRESH = operator.access
+_PAGE: dict[str, Any] = {}
 
 
 @pytest.fixture
@@ -89,8 +101,28 @@ def login(session, stack) -> GuiAccount:
     return account
 
 
+@pytest.fixture(autouse=True)
+def _page(session):
+    """The session `_ask` reads the page's version with."""
+    _PAGE["session"] = session
+    yield
+    _PAGE.clear()
+
+
+def _version() -> str:
+    """The version a page read now shows, as the dashboard sends it back."""
+    session = _PAGE["session"]
+    session.expire_all()
+    tenant = session.scalars(select(Tenant)).first()
+    return _FRESH(session, tenant, NOW).version if tenant else "0" * 16
+
+
 def _ask(http, method: str, path: str, body=None, **headers: str | None):
+    """A request as the dashboard sends it: a step that changes something
+    carries the version of a page read just before, unless the test says."""
     sent = {k: v for k, v in (ASK | headers).items() if v is not None}
+    if path in CHANGING and (body is None or isinstance(body, dict)):
+        body = {"seen": _version()} | (body or {})
     return http.request(method, path, headers=sent, json=body)
 
 
@@ -215,6 +247,7 @@ def test_every_step_is_in_the_audit_log_before_it_happens(
         "issue_link",
         "set_mode",
         "change_team_phone",
+        "set_standard",
     ):
         monkeypatch.setattr(operator, name, failing)
 
@@ -814,3 +847,214 @@ def test_the_access_read_has_no_outcome_row(http, session, stack):
     assert _audit(session, "ops.access_read", outcomes=True)[-1].action == (
         "ops.access_read"
     )
+
+
+# --- the standard team number (#811 question 2) ---------------------------------
+
+SECOND = "+4972215550000"
+
+
+def _config(session) -> ServiceConfig:
+    session.expire_all()
+    return session.scalars(select(ServiceConfig)).one()
+
+
+def test_the_operator_sets_the_standard_number_with_a_push_and_no_card(
+    http, session, stack
+):
+    """A dead standard line held again every morning without a push when the
+    owner did not answer the card (hard rule 5)."""
+    standard = _config(session).team_phone
+
+    data = _data(_ask(http, "POST", TEAM_PHONE_STANDARD, {"number": NUMBER}))
+
+    assert (data["team_phone"], data["team_phone_standard"]) == (NUMBER, NUMBER)
+    assert data["team_phone_until"] is None
+    config = _config(session)
+    assert (config.team_phone, config.team_phone_today) == (NUMBER, None)
+    assert _count(session, StaffChange) == 0
+    (row,) = _audit(session, "service_config.team_phone_standard")
+    assert row.actor == ACTOR
+    assert row.payload == {"from": standard, "to": NUMBER}
+    (event,) = session.scalars(select(OutboxEvent)).all()
+    assert event.event_type == "team_phone.changed"
+    assert event.payload == {
+        "day": "2026-10-29",
+        "from": standard,
+        "to": NUMBER,
+        "standard": True,
+        "by": "operator",
+    }
+    ask, outcome = _pair(session, "team_phone_standard")
+    assert outcome["outcome"] == "done"
+    # The reason's row names no number: the step's own row does.
+    assert NUMBER not in json.dumps(_payload(ask))
+
+
+@pytest.mark.parametrize(
+    "number", ["+4915112345678", "0721 5550000", "Mueller", "+49" + "1" * 30]
+)
+def test_a_standard_number_takes_the_staffs_rule(http, session, stack, number):
+    """The same check as the number for today: E.164 and one the telephone
+    system dials. A rule's refusal has its own status."""
+    before = _state(session, stack)
+
+    answer = _ask(http, "POST", TEAM_PHONE_STANDARD, {"number": number})
+
+    assert answer.status_code == 422
+    _refused(answer)
+    after = _state(session, stack)
+    assert after[:4] == before[:4] and after[5] == before[5]
+    assert _pair(session, "team_phone_standard")[1]["outcome"] == "refused"
+
+
+def test_the_standard_that_holds_already_changes_and_pushes_nothing(
+    http, session, stack, monkeypatch
+):
+    standard = _config(session).team_phone
+    monkeypatch.setattr(settings, "transfer_targets", f"{NUMBER}, {standard}")
+
+    _data(_ask(http, "POST", TEAM_PHONE_STANDARD, {"number": standard}))
+
+    assert _audit(session, "service_config.") == []
+    assert _count(session, OutboxEvent) == 0
+
+
+def test_a_new_standard_leaves_todays_number_to_the_end_of_the_day(
+    http, session, stack, monkeypatch
+):
+    """Today's number and its card stay: the staff chose it for today, and
+    the owner still keeps or undoes it."""
+    monkeypatch.setattr(settings, "transfer_targets", f"{NUMBER}, {SECOND}")
+    change_team_phone(session, stack.id, NUMBER, NOW)
+
+    data = _data(_ask(http, "POST", TEAM_PHONE_STANDARD, {"number": SECOND}))
+
+    assert (data["team_phone"], data["team_phone_standard"]) == (NUMBER, SECOND)
+    assert data["team_phone_until"] is not None
+    config = _config(session)
+    assert (config.team_phone, config.team_phone_today) == (SECOND, NUMBER)
+    (card,) = session.scalars(select(StaffChange)).all()
+    assert card.status == "open"
+
+
+def test_the_number_for_today_names_the_operator_in_its_push(http, session, stack):
+    """#811 question 1: the owner reads who changed it."""
+    _data(_ask(http, "POST", TEAM_PHONE, {"number": NUMBER}))
+
+    (event,) = session.scalars(select(OutboxEvent)).all()
+    assert event.payload["by"] == "operator"
+    assert "standard" not in event.payload
+
+
+# --- the page the operator saw (#811) -------------------------------------------
+
+VERSION = re.compile(r"[0-9a-f]{16}")
+CHANGING_STEPS = [step for step in STEPS if step[1] in CHANGING]
+
+
+def test_every_answer_carries_the_version_of_what_it_shows(http, session, login, stack):
+    first = _data(_ask(http, "GET", ACCESS))["version"]
+    assert VERSION.fullmatch(first)
+    assert _data(_ask(http, "GET", ACCESS))["version"] == first
+
+    after = _data(_ask(http, "POST", CALL_MODE, {"mode": "primary", "seen": first}))
+
+    assert after["version"] != first
+    # The answer is the page the next step comes from.
+    _data(_ask(http, "POST", CALL_MODE, {"mode": "overflow", "seen": after["version"]}))
+    assert _mode(session) == "overflow"
+
+
+def test_a_device_in_use_does_not_make_the_page_old(http, session, login, stack):
+    """A tablet moves its `last_seen_at` all day: that alone must not refuse
+    every step."""
+    first = _data(_ask(http, "GET", ACCESS))["version"]
+    session.execute(
+        update(GuiSession).values(
+            last_seen_at=GuiSession.last_seen_at + timedelta(minutes=5)
+        )
+    )
+    session.commit()
+
+    assert _data(_ask(http, "GET", ACCESS))["version"] == first
+
+
+def _stale(answer) -> None:
+    assert answer.status_code == 412, answer.text
+    _refused(answer, "conflict")
+
+
+def test_a_page_from_before_the_owners_emergency_stop_does_not_end_it(
+    http, session, stack
+):
+    """The page showed the agent paused and offered to switch it on. The owner
+    switched it on and stopped it again since: the stop on the page is not the
+    stop that holds."""
+    pause_ai(session, stack.id, "gui:owner", NOW)
+    seen = _data(_ask(http, "GET", ACCESS))["version"]
+    resume_ai(session, stack.id, "gui:owner", NOW)
+    pause_ai(session, stack.id, "gui:owner", NOW)
+    pushes = _count(session, OutboxEvent)
+
+    _stale(_ask(http, "POST", CALL_MODE, {"mode": "resume", "seen": seen}))
+
+    assert _mode(session) == "paused"
+    assert _count(session, OutboxEvent) == pushes
+    assert _pair(session, "call_mode")[1]["outcome"] == "refused"
+
+
+def test_a_page_from_before_the_owners_stop_cannot_choose_a_mode(http, session, stack):
+    seen = _data(_ask(http, "GET", ACCESS))["version"]
+    pause_ai(session, stack.id, "gui:owner", NOW)
+
+    _stale(_ask(http, "POST", CALL_MODE, {"mode": "primary", "seen": seen}))
+
+    assert _mode(session) == "paused"
+
+
+CHANGES_SINCE = [
+    ("a team PIN", lambda s, t: set_team_pin(s, t.id, "246813", "gui:owner")),
+    ("a number for today", lambda s, t: change_team_phone(s, t.id, NUMBER, NOW)),
+    ("the emergency stop", lambda s, t: pause_ai(s, t.id, "gui:owner", NOW)),
+]
+
+
+@pytest.mark.parametrize(("method", "path", "body"), CHANGING_STEPS)
+@pytest.mark.parametrize(("what", "change"), CHANGES_SINCE)
+def test_a_step_from_a_page_older_than_a_change_does_nothing(
+    http, session, login, stack, method, path, body, what, change
+):
+    seen = _data(_ask(http, "GET", ACCESS))["version"]
+    change(session, stack)
+    session.commit()
+    before = _state(session, stack)
+
+    _stale(_ask(http, method, path, (body or {}) | {"seen": seen}))
+
+    after = _state(session, stack)
+    # Two audit rows more, the ask and its refusal; nothing else moved.
+    assert after[:4] == before[:4] and after[5] == before[5]
+    assert after[4] == before[4] + 2
+
+
+@pytest.mark.parametrize(("method", "path", "body"), CHANGING_STEPS)
+@pytest.mark.parametrize("seen", [None, "", "x" * 65])
+def test_a_step_without_the_pages_version_is_not_taken(
+    http, session, login, stack, method, path, body, seen
+):
+    before = _state(session, stack)
+    sent = dict(body or {})
+    if seen is not None:
+        sent["seen"] = seen
+
+    answer = http.request(method, path, headers=ASK, json=sent)
+
+    assert answer.status_code == 200
+    _refused(answer)
+    assert _state(session, stack) == before
+
+
+def test_a_pin_shown_needs_no_version(http, session, login, stack):
+    """A look changes nothing: no page goes old over it."""
+    assert _data(_ask(http, "POST", PIN_SHOW, {"which": "team"}))["pin"] == TEAM

@@ -418,14 +418,20 @@ def test_each_team_number_change_pushes_once(session, tenant_id):
     staff.change_team_phone(session, tenant_id, "+4972215550000", NOW)
     staff.change_team_phone(session, tenant_id, standard, NOW)
     day = TUESDAY.isoformat()
-    # Nothing but the day and the numbers: no device, no name.
+    # The day, the numbers and who changed it as a role: no device, no name.
     assert _by_content(_events(session, tenant_id)) == _by_content(
         [
-            (TEAM_PHONE_CHANGED, {"day": day, "from": standard, "to": NUMBER}),
-            (TEAM_PHONE_CHANGED, {"day": day, "from": NUMBER, "to": "+4972215550000"}),
             (
                 TEAM_PHONE_CHANGED,
-                {"day": day, "from": "+4972215550000", "to": standard},
+                {"day": day, "from": standard, "to": NUMBER, "by": "team"},
+            ),
+            (
+                TEAM_PHONE_CHANGED,
+                {"day": day, "from": NUMBER, "to": "+4972215550000", "by": "team"},
+            ),
+            (
+                TEAM_PHONE_CHANGED,
+                {"day": day, "from": "+4972215550000", "to": standard, "by": "team"},
             ),
         ]
     )
@@ -935,3 +941,103 @@ def test_the_window_table_lists_what_the_old_windows_held_and_the_new_ones_do_no
         session, tenant_id, SATURDAY, after, "Europe/Berlin", before
     )
     assert [b.guest_name for b in found] == listed
+
+
+# --- who changed the number, and the standard number (#811) ---------------------
+
+OPERATOR = "operator:maxi"
+
+
+def test_the_push_says_whether_the_team_or_the_operator_changed_the_number(
+    session, tenant_id
+):
+    """A role, never a name: the push goes to a topic, the account is in the
+    audit log."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    staff.change_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+
+    assert sorted(payload["by"] for _, payload in _events(session, tenant_id)) == [
+        "operator",
+        "team",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("actors", "by"),
+    [
+        (["gui:tablet"], "team"),
+        ([OPERATOR], "operator"),
+        (["gui:tablet", OPERATOR], "operator"),
+        ([OPERATOR, "gui:tablet"], "team"),
+    ],
+)
+def test_a_card_names_who_changed_it_last(session, tenant_id, actors, by):
+    numbers = [NUMBER, "+4972215550000"]
+    for actor, number in zip(actors, numbers, strict=False):
+        staff.change_team_phone(session, tenant_id, number, NOW, actor)
+
+    (card,) = staff.open_cards(session, tenant_id, TUESDAY)
+    assert staff.changed_by(session, [card]) == {card.id: by}
+
+
+def test_the_operator_sets_the_standard_number(session, tenant_id):
+    standard = _config(session, tenant_id).team_phone
+
+    assert staff.set_standard_team_phone(session, tenant_id, NUMBER, NOW, OPERATOR)
+
+    config = _config(session, tenant_id)
+    assert (config.team_phone, config.team_phone_today) == (NUMBER, None)
+    assert _cards(session, tenant_id) == []
+    assert _events(session, tenant_id) == [
+        (
+            TEAM_PHONE_CHANGED,
+            {
+                "day": TUESDAY.isoformat(),
+                "from": standard,
+                "to": NUMBER,
+                "standard": True,
+                "by": "operator",
+            },
+        )
+    ]
+    row = session.scalars(
+        select(AuditLog).where(AuditLog.action == "service_config.team_phone_standard")
+    ).one()
+    assert (row.actor, row.payload) == (OPERATOR, {"from": standard, "to": NUMBER})
+
+
+@pytest.mark.parametrize(
+    ("raw", "says"),
+    [("12", staff.NO_NUMBER), ("+4930123456", staff.NOT_LISTED), ("", staff.NO_NUMBER)],
+)
+def test_the_standard_number_is_checked_as_the_number_for_today(
+    session, tenant_id, raw, says
+):
+    standard = _config(session, tenant_id).team_phone
+
+    with pytest.raises(InvalidInput) as refused:
+        staff.set_standard_team_phone(session, tenant_id, raw, NOW, OPERATOR)
+
+    assert refused.value.say == says
+    assert _config(session, tenant_id).team_phone == standard
+    assert _events(session, tenant_id) == []
+
+
+def test_the_standard_that_holds_already_is_no_change(session, tenant_id, monkeypatch):
+    standard = _config(session, tenant_id).team_phone
+    monkeypatch.setattr(settings, "transfer_targets", f"{NUMBER}, {standard}")
+
+    assert not staff.set_standard_team_phone(
+        session, tenant_id, standard, NOW, OPERATOR
+    )
+    assert _events(session, tenant_id) == []
+
+
+def test_a_new_standard_holds_after_todays_number(session, tenant_id):
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    staff.set_standard_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+
+    config = _config(session, tenant_id)
+    assert staff.team_phone_at(config, NOW) == NUMBER
+    tomorrow = NOW + timedelta(days=1)
+    assert staff.team_phone_at(config, tomorrow) == "+4972215550000"

@@ -15,31 +15,47 @@ then a row `ops.<step>.outcome` with the id of the ask (`_step`, #811):
 `done`, `refused` (a rule or the stack said no) or `failed` (it broke). An ask
 without its outcome is a crash that took the process down. No row holds a
 PIN, a link or a telephone number.
+
+And the page (#811): every answer carries a version of what it shows
+(`Access.version`), and a step that changes something sends back the version
+of the page it came from (`seen`). When the restaurant changed since, the
+owner on the tablet, the staff or a second operator, the step is refused
+before anything happens (`_as_seen`): an old page that offered to switch the
+agent on again must not end the owner's newer emergency stop.
 """
 
+import hashlib
+import json
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from api.core.errors import AppError, InvalidInput
-from api.core.ops_reason import RULE_STATUS, OpsReader
+from api.core.errors import AppError, Conflict, InvalidInput
+from api.core.ops_reason import RULE_STATUS, STALE, STALE_STATUS, OpsReader
 from api.domain.access.admin import set_admin_pin, shown_pin
-from api.domain.access.sessions import audit, end_sessions
+from api.domain.access.sessions import audit, end_sessions, locked_account
 from api.domain.access.setup import issue_link, set_team_pin, setup_url
-from api.domain.status.config import pause_ai, resume_ai, set_mode
+from api.domain.status.config import ACTION_MODE, pause_ai, resume_ai, set_mode
 from api.domain.status.mode import CAUTION, PAUSED, mode_at
 from api.domain.status.staff_changes import (
+    ACTION_STANDARD,
+    ACTION_TEAM_PHONE,
+    KEPT,
+    UNDONE,
     change_team_phone,
     sheet_numbers,
     team_phone_at,
 )
-from api.models import GuiAccount, GuiSession, ServiceConfig, Tenant
+from api.domain.status.staff_changes import (
+    set_standard_team_phone as set_standard,
+)
+from api.models import AuditLog, GuiAccount, GuiSession, ServiceConfig, Tenant
 
 Which = Literal["team", "admin"]
 # What the operator sends to end the emergency stop: no mode, the agent goes
@@ -49,6 +65,20 @@ RESUME = "resume"
 MAX_DEVICES = 200
 # And no more numbers to choose from; a dialplan has a few.
 MAX_NUMBERS = 20
+# The audit rows of a change to what the page shows. A state can come back to
+# what a page showed (the agent switched on and stopped again): the newest of
+# these rows tells the newer stop from the one on the page.
+MARKS = (
+    ACTION_MODE,
+    ACTION_TEAM_PHONE,
+    ACTION_STANDARD,
+    f"staff_change.{KEPT}",
+    f"staff_change.{UNDONE}",
+    "gui.team_pin_set",
+    "gui.admin_pin_set",
+    "gui.password_set",
+    "gui.setup_link_issued",
+)
 
 
 @dataclass(frozen=True)
@@ -77,6 +107,8 @@ class Access:
     team_phone_standard: str | None
     team_phone_until: datetime | None
     team_phones: list[str]
+    # What a step sends back as `seen` (#811); it holds nothing of a secret.
+    version: str
 
 
 def _asked(
@@ -151,8 +183,8 @@ def _by_rule() -> Iterator[None]:
 
 
 def access(session: Session, tenant: Tenant, now: datetime) -> Access:
-    """The state every answer of a step carries. Not recorded by itself: the
-    step that asks for it is."""
+    """The state every answer of a step carries, and its version. Not
+    recorded by itself: the step that asks for it is."""
     account = session.scalars(
         select(GuiAccount).where(GuiAccount.tenant_id == tenant.id)
     ).first()
@@ -175,7 +207,7 @@ def access(session: Session, tenant: Tenant, now: datetime) -> Access:
         modes = [RESUME]
     else:
         modes = [*CAUTION, PAUSED]
-    return Access(
+    found = Access(
         login=account is not None and account.password_hash is not None,
         team_pin_set=bool(account and account.team_pin),
         admin_pin_set=bool(account and account.admin_pin),
@@ -191,7 +223,48 @@ def access(session: Session, tenant: Tenant, now: datetime) -> Access:
         if config and holding != config.team_phone
         else None,
         team_phones=sheet_numbers()[:MAX_NUMBERS] if config else [],
+        version="",
     )
+    return replace(found, version=_version(session, tenant, found))
+
+
+def _version(session: Session, tenant: Tenant, found: Access) -> str:
+    """What the page shows and the newest change to it, as 16 hex digits. A
+    device's last use is left out: a tablet in use would make every page old."""
+    mark = session.scalar(
+        select(func.max(AuditLog.id)).where(
+            AuditLog.tenant_id == tenant.id, AuditLog.action.in_(MARKS)
+        )
+    )
+    shown = [
+        found.login,
+        found.team_pin_set,
+        found.admin_pin_set,
+        sorted(str(device.id) for device in found.devices),
+        found.call_mode,
+        found.team_phone,
+        found.team_phone_standard,
+        found.team_phone_until,
+        mark,
+    ]
+    text = json.dumps(shown, default=str)
+    return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def _as_seen(session: Session, tenant: Tenant, now: datetime, seen: str) -> None:
+    """Refuses a step from a page the restaurant has changed since (#811).
+    The settings row and the login are locked first, as the changes of the
+    mode, the number and the PINs lock them: such a change waits for the step,
+    or the step sees it."""
+    session.scalars(
+        select(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).first()
+    locked_account(session, tenant.id)
+    if access(session, tenant, now).version != seen:
+        raise Conflict(STALE, status=STALE_STATUS)
 
 
 def read_access(
@@ -212,11 +285,19 @@ def show_pin(
 
 
 def set_pin(
-    session: Session, tenant: Tenant, which: Which, pin: str, by: OpsReader
+    session: Session,
+    tenant: Tenant,
+    which: Which,
+    pin: str,
+    now: datetime,
+    by: OpsReader,
+    *,
+    seen: str,
 ) -> None:
     """Raises InvalidInput for a PIN the rules refuse (4 to 6 digits, never
-    the other PIN, a restaurant without a login)."""
+    the other PIN, a restaurant without a login), Conflict for an old page."""
     with _step(session, tenant, by, "pin_set", which=which), _by_rule():
+        _as_seen(session, tenant, now, seen)
         if which == "admin":
             set_admin_pin(session, tenant.id, pin, by.actor)
         else:
@@ -224,7 +305,13 @@ def set_pin(
 
 
 def sign_out(
-    session: Session, tenant: Tenant, device: uuid.UUID | None, by: OpsReader
+    session: Session,
+    tenant: Tenant,
+    device: uuid.UUID | None,
+    now: datetime,
+    by: OpsReader,
+    *,
+    seen: str,
 ) -> int:
     """Sign out one device, or with None every device of the restaurant (the
     route makes sure None was asked for in words). How many were signed out:
@@ -232,28 +319,38 @@ def sign_out(
     with _step(
         session, tenant, by, "sign_out", device=str(device) if device else "all"
     ):
+        _as_seen(session, tenant, now, seen)
         ended = end_sessions(session, tenant.id, by.actor, "operator", device)
         session.commit()
     return ended
 
 
 def setup_link(
-    session: Session, tenant: Tenant, now: datetime, by: OpsReader
+    session: Session, tenant: Tenant, now: datetime, by: OpsReader, *, seen: str
 ) -> tuple[str, datetime]:
     """A new one-time setup link and its end. It replaces an older link and
     creates the restaurant's login the first time (`issue_link`)."""
     with _step(session, tenant, by, "setup_link"):
+        _as_seen(session, tenant, now, seen)
         token, expires_at = issue_link(session, tenant.id, by.actor, now)
     return setup_url(token), expires_at
 
 
 def set_call_mode(
-    session: Session, tenant: Tenant, mode: str, now: datetime, by: OpsReader
+    session: Session,
+    tenant: Tenant,
+    mode: str,
+    now: datetime,
+    by: OpsReader,
+    *,
+    seen: str,
 ) -> None:
     """A mode of the switch, the emergency stop, or its end. Raises
-    InvalidInput for anything else and for a mode chosen during the stop; the
-    reason is written first all the same, as for every refused step."""
+    InvalidInput for anything else and for a mode chosen during the stop,
+    Conflict for an old page; the reason is written first all the same, as for
+    every refused step."""
     with _step(session, tenant, by, "call_mode", mode=mode):
+        _as_seen(session, tenant, now, seen)
         if mode not in (*CAUTION, PAUSED, RESUME):
             raise InvalidInput(f"No mode {mode!r} for the operator", status=400)
         with _by_rule():
@@ -266,10 +363,35 @@ def set_call_mode(
 
 
 def set_team_phone(
-    session: Session, tenant: Tenant, number: str, now: datetime, by: OpsReader
+    session: Session,
+    tenant: Tenant,
+    number: str,
+    now: datetime,
+    by: OpsReader,
+    *,
+    seen: str,
 ) -> None:
     """The team number for today, by the staff's rule (`change_team_phone`):
     one of the numbers the telephone system dials, the standard number stays,
-    and the owner keeps or undoes it on the tablet's card."""
+    and the owner keeps or undoes it on the tablet's card, which names the
+    operator (#811)."""
     with _step(session, tenant, by, "team_phone"), _by_rule():
+        _as_seen(session, tenant, now, seen)
         change_team_phone(session, tenant.id, number, now, by.actor)
+
+
+def set_standard_team_phone(
+    session: Session,
+    tenant: Tenant,
+    number: str,
+    now: datetime,
+    by: OpsReader,
+    *,
+    seen: str,
+) -> None:
+    """The standard team number (#811 question 2), checked as the number for
+    today, with a push to the owner and no card (`staff_changes`). A number
+    set for today still holds to the end of its day."""
+    with _step(session, tenant, by, "team_phone_standard"), _by_rule():
+        _as_seen(session, tenant, now, seen)
+        set_standard(session, tenant.id, number, now, by.actor)

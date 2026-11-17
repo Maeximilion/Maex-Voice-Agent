@@ -17,6 +17,7 @@ from typing import get_args
 from urllib.parse import urlparse
 
 from api.config import Settings
+from api.domain.status import staff_changes as staff
 from api.domain.status.mode import CAUTION, PAUSED
 from api.events import types
 from api.gui.router import CALLBACK_LABELS, MODE_LABELS
@@ -328,6 +329,17 @@ def test_call_modes_read_as_in_the_tablets_header() -> None:
     assert _assignment(node, "priority") == (
         f"={{{{ $json.payload.to === '{PAUSED}' ? 'high' : 'normal' }}}}"
     )
+
+
+def test_the_team_number_push_says_who_changed_it_and_which_number() -> None:
+    """#811: the operator's change reads as the operator's, as on the card,
+    and a new standard number is not "today's"."""
+    node = _nodes()[_branches()[types.TEAM_PHONE_CHANGED]]
+    text = _assignment(node, "text")
+    assert f"{staff.BY_OPERATOR}: ' Geändert vom Betreiber.'" in text
+    assert f"{staff.BY_TEAM}: ' Geändert vom Team.'" in text
+    assert "$json.payload.standard ?" in text
+    assert "$json.payload.standard ?" in _assignment(node, "title")
 
 
 def test_no_secrets_or_personal_data_in_the_export() -> None:

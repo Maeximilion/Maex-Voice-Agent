@@ -15,15 +15,28 @@ class _Step(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class _Change(_Step):
+    """A step that changes the restaurant: it carries the version of the page
+    it came from (`domain/operator.py` `Access.version`, #811). Required: a
+    step without it could act on any page."""
+
+    seen: str = Field(min_length=1, max_length=64)
+
+
 class PinShown(_Step):
     which: Literal["team", "admin"]
 
 
-class PinSet(PinShown):
+class PinSet(_Change):
+    which: Literal["team", "admin"]
     pin: str = Field(max_length=16)
 
 
-class SignOut(_Step):
+class SetupLink(_Change):
+    pass
+
+
+class SignOut(_Change):
     """One device, or all of them said in words: a missing field never means
     "every device"."""
 
@@ -37,9 +50,11 @@ class SignOut(_Step):
         return self
 
 
-class CallMode(_Step):
+class CallMode(_Change):
     mode: str = Field(max_length=20)
 
 
-class TeamPhone(_Step):
+class TeamPhone(_Change):
+    """Today's number, or the standard number (#811): the same shape."""
+
     number: str = Field(max_length=40)

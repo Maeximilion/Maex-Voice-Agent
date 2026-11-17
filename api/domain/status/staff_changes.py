@@ -23,6 +23,12 @@ topic (T12): an outbox event in the same transaction, sent by n8n
 (`n8n/team_events.json`). A tap that changes nothing pushes nothing, nor does
 the owner's own answer on a card.
 
+The operator may set today's team number the same way, over the ops API
+(`domain/operator.py`): the card and the push then say it was the operator,
+not the team (#811). Only the operator sets the standard number directly
+(`set_standard_team_phone`), with a push and without a card; the owner makes a
+number the standard by keeping a card.
+
 Holiday answers (T-9.5) stay as they are (Maxi, 09.11.2026): the system
 suggested the date, the staff only confirm it.
 """
@@ -68,6 +74,12 @@ from api.models.tenants import SERVICES
 ACTOR_TABLET = "gui:tablet"
 ACTOR_OWNER = "gui:owner"
 TEAM_PHONE = "team_phone"
+# Whose change a card and a push name (#811): the operator's actors begin so
+# (`core/auth.py`, `jobs/gui_access.py`), every other change is the team's.
+OPERATOR_ACTOR = "operator:"
+BY_OPERATOR, BY_TEAM = "operator", "team"
+ACTION_TEAM_PHONE = "staff_change.team_phone"
+ACTION_STANDARD = "service_config.team_phone_standard"
 DAY_HOURS = "day_hours"
 OPEN, KEPT, UNDONE = "open", "kept", "undone"
 SET = "set"
@@ -197,14 +209,9 @@ def change_team_phone(
     now: datetime | None = None,
     actor: str = ACTOR_TABLET,
 ) -> StaffChange | None:
-    """The staff set the team number for today. None when it is the number
-    that holds already. Raises InvalidInput. Commits."""
-    try:
-        number = normalize_phone(raw)
-    except InvalidInput:
-        raise InvalidInput("team number refused", say=NO_NUMBER) from None
-    if number not in sheet_numbers():
-        raise InvalidInput("team number not dialable", say=NOT_LISTED)
+    """The staff, or the operator, set the team number for today. None when
+    it is the number that holds already. Raises InvalidInput. Commits."""
+    number = _dialable(raw)
     now = now or clock.utcnow()
     config, zone = _locked(session, tenant_id)
     holding = team_phone_at(config, now)
@@ -220,18 +227,80 @@ def change_team_phone(
     card = _open_card(session, tenant_id, TEAM_PHONE, today) or _new_card(
         session, tenant_id, TEAM_PHONE, today, {"number": holding}
     )
-    _audit(session, tenant_id, actor, "staff_change.team_phone", card, holding, number)
+    _audit(session, tenant_id, actor, ACTION_TEAM_PHONE, card, holding, number)
     enqueue(
         session,
         tenant_id=tenant_id,
         event_type=TEAM_PHONE_CHANGED,
-        payload={"day": today.isoformat(), "from": holding, "to": number},
+        payload={
+            "day": today.isoformat(),
+            "from": holding,
+            "to": number,
+            "by": _by(actor),
+        },
     )
     card.after, card.held = {"number": number}, True
     if card.after == card.before:
         _close(card, UNDONE, now)
     session.commit()
     return card
+
+
+def set_standard_team_phone(
+    session: Session, tenant_id: uuid.UUID, raw: str, now: datetime, actor: str
+) -> bool:
+    """The operator sets the standard team number (#811 question 2), checked
+    as the number for today. A number set for today still holds to the end of
+    its day, and its card stays: the staff chose it for today. No card of its
+    own: the owner gets the push. False when it is the standard already.
+    Raises InvalidInput. Commits."""
+    number = _dialable(raw)
+    config, zone = _locked(session, tenant_id)
+    before = config.team_phone
+    if number == before:
+        session.commit()
+        return False
+    config.team_phone = number
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            actor=actor,
+            action=ACTION_STANDARD,
+            entity="service_config",
+            entity_id=tenant_id,
+            payload={"from": before, "to": number},
+        )
+    )
+    enqueue(
+        session,
+        tenant_id=tenant_id,
+        event_type=TEAM_PHONE_CHANGED,
+        payload={
+            "day": clock.business_day(now, zone).isoformat(),
+            "from": before,
+            "to": number,
+            "standard": True,
+            "by": _by(actor),
+        },
+    )
+    session.commit()
+    return True
+
+
+def changed_by(session: Session, cards: list[StaffChange]) -> dict[uuid.UUID, str]:
+    """Who made the last change of each team number card, the team or the
+    operator (#811 question 1), read from the cards' audit rows: the card
+    itself keeps only what changed."""
+    ids = [card.id for card in cards if card.kind == TEAM_PHONE]
+    if not ids:
+        return {}
+    rows = session.execute(
+        select(AuditLog.entity_id, AuditLog.actor)
+        .where(AuditLog.action == ACTION_TEAM_PHONE, AuditLog.entity_id.in_(ids))
+        .order_by(AuditLog.id)
+    ).all()
+    # A card holds one day's changes, a handful of rows: the last one wins.
+    return {card_id: _by(actor) for card_id, actor in rows if card_id is not None}
 
 
 def day_hours(session: Session, tenant_id: uuid.UUID, day: date) -> DayHours:
@@ -575,6 +644,22 @@ def _checked(hours: DayHours, overnight: bool) -> DayHours:
     if hours.opens and hours.closes and hours.closes < hours.opens and not overnight:
         raise InvalidInput("hours past midnight not confirmed", say=OVERNIGHT)
     return hours
+
+
+def _dialable(raw: str) -> str:
+    """A team number as the staff and the operator may set it: in E.164 and one
+    the dialplan dials (`sheet_numbers`). Raises InvalidInput."""
+    try:
+        number = normalize_phone(raw)
+    except InvalidInput:
+        raise InvalidInput("team number refused", say=NO_NUMBER) from None
+    if number not in sheet_numbers():
+        raise InvalidInput("team number not dialable", say=NOT_LISTED)
+    return number
+
+
+def _by(actor: str) -> str:
+    return BY_OPERATOR if actor.startswith(OPERATOR_ACTOR) else BY_TEAM
 
 
 def _locked(session: Session, tenant_id: uuid.UUID) -> tuple[ServiceConfig, str]:
