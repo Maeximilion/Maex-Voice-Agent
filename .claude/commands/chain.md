@@ -76,8 +76,13 @@ before naming a base.
   waits, say in one line that it starts with his next message.
 - Never routes a new task into an existing idle session to get around a
   refused start.
-- No timer, no heartbeat `sleep` in the coordinator: its wake is an automated
-  turn and blocks the starts.
+- Cache: a coordinator woken after more than an hour of silence rereads its
+  whole context at the cache write price, about 40 times a warm read. While
+  a child runs and no start waits for a note turn, keep it warm with one
+  background `sleep` of 50 minutes, re-armed on each wake; a timer turn
+  cannot start a session, so drop it when the next start should come from a
+  child's note. Over Remote Control every start waits for Maxi's message
+  anyway, so there the heartbeat costs nothing. No `CronCreate`.
 - On every child note: read `get_usage`, check the merge with `gh pr view`,
   answer in one or two lines. A note is the child's report, not proof.
 - Archives a session only on Maxi's word.
@@ -110,7 +115,9 @@ agent waves and deep reviews when they fit into what is left of the window.
 When the last item is merged: the reviews the plan asks for (security audit,
 UI review) as read-only sessions that end in one issue each; a triage of the
 issues the chain left open (fixable, needs Maxi, done); Maxi's decisions in
-one record on the plan issue; the fix items as the next chain. The last item
+one record on the plan issue; the fix items as the next chain, run on at once
+(Maxi, 2026-11-18): the questions that need him go out as one bundle, and the
+fix items that need no answer start without waiting for it. The last item
 of every chain that merged a migration: the workbench migration with a backup
 first (the migration path rule), run by Claude. Then close the issues the
 chain finished and report: merged pull requests, open decisions, usage.
