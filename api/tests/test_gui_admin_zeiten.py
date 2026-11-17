@@ -6,6 +6,7 @@ the admin PIN. These tests act as a signed-in device with the admin PIN
 import re
 import uuid
 from datetime import UTC, datetime, time, timedelta
+from html import unescape
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -108,15 +109,20 @@ def _count(engine, model) -> int:
 
 
 def _fields(html: str) -> dict[str, str]:
-    """What an untouched submit of the form in `html` sends: every named
-    input with its value, a checkbox only when ticked."""
+    """What an untouched submit of the form in `html` sends, as a browser
+    reads the markup: every named input and text area with its value, a
+    checkbox only when ticked."""
     sent = {}
     for tag in re.findall(r"<input\b[^>]*>", html):
         name = re.search(r'name="([^"]+)"', tag)
         value = re.search(r'value="([^"]*)"', tag)
         if name is None or ('type="checkbox"' in tag and " checked" not in tag):
             continue
-        sent[name.group(1)] = value.group(1) if value else ""
+        sent[name.group(1)] = unescape(value.group(1)) if value else ""
+    for name, text in re.findall(
+        r'<textarea\b[^>]*name="([^"]+)"[^>]*>([^<]*)</textarea>', html
+    ):
+        sent[name] = unescape(text)
     return sent
 
 

@@ -13,12 +13,14 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from api.domain.delivery import owner_zones
+from api.domain.menu.importer import format_eur
 from api.gui.orders_view import euro
 from api.models import DeliveryZone, Tenant
 
-# What a refused form echoes back at most, per field: a little more than the
-# domain takes, so a typing error is still there to correct.
-ECHO = {"name": 60, "plz": 2000, "pauschale": 12, "mindestwert": 12, "lieferzeit": 12}
+# What a refused form echoes back at most of a field the owner typed: more
+# than the domain takes, so a typing error is still there to correct. The
+# postal codes get room for the most a zone takes with any separators.
+ECHO = {"name": 60, "plz": 8000, "pauschale": 12, "mindestwert": 12, "lieferzeit": 12}
 # The length of `owner_zones.token`.
 TOKEN = 16
 
@@ -33,11 +35,6 @@ def typed(form: dict[str, str]) -> owner_zones.Typed:
         eta=form.get("lieferzeit", ""),
         active=bool(form.get("aktiv")),
     )
-
-
-def _amount(cents: int) -> str:
-    """Cents as a form field takes them: "2,50", without the sign."""
-    return f"{cents // 100},{cents % 100:02d}"
 
 
 def zone_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
@@ -55,6 +52,19 @@ def zone_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     ]
 
 
+def _shown(row: DeliveryZone) -> dict[str, Any]:
+    """A zone as its form shows it: what an untouched save sends back."""
+    return {
+        "name": row.name,
+        "plz": ", ".join(row.postal_codes or []),
+        "pauschale": format_eur(row.fee_cents),
+        "mindestwert": format_eur(row.min_order_cents),
+        "lieferzeit": str(row.eta_minutes),
+        "aktiv": row.active,
+        "seen": owner_zones.token(row),
+    }
+
+
 def zone_form(
     row: DeliveryZone | None, sent: dict[str, str] | None = None
 ) -> dict[str, Any]:
@@ -64,9 +74,14 @@ def zone_form(
     fresh token: its fields come from the old state, and with a new token the
     corrected save would write over what another device changed meanwhile."""
     if sent is not None:
-        fields: dict[str, Any] = {
-            key: sent.get(key, "")[:most] for key, most in ECHO.items()
-        }
+        shown = _shown(row) if row is not None else {}
+        # A field sent back as the form showed it comes back whole: a name or
+        # a list of codes the import wrote longer than the echo would come
+        # back cut, and the corrected save would change it.
+        fields: dict[str, Any] = {}
+        for key, most in ECHO.items():
+            value = sent.get(key, "")
+            fields[key] = value if value == shown.get(key) else value[:most]
         fields["aktiv"] = bool(sent.get("aktiv"))
         fields["seen"] = sent.get("gesehen", "")[:TOKEN]
     elif row is None:
@@ -74,15 +89,7 @@ def zone_form(
         fields["aktiv"] = True
         fields["seen"] = ""
     else:
-        fields = {
-            "name": row.name,
-            "plz": ", ".join(row.postal_codes or []),
-            "pauschale": _amount(row.fee_cents),
-            "mindestwert": _amount(row.min_order_cents),
-            "lieferzeit": str(row.eta_minutes),
-            "aktiv": row.active,
-            "seen": owner_zones.token(row),
-        }
+        fields = _shown(row)
     return {
         **fields,
         "title": "Neue Lieferzone" if row is None else f"Lieferzone „{row.name}“",

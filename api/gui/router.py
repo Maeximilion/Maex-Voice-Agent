@@ -2142,17 +2142,13 @@ def hours_day_change(
 
 
 def _zones_part(
-    request: Request,
-    session: Session,
-    tenant: Tenant,
-    message: str | None = None,
-    tone: str = "ok",
+    request: Request, session: Session, tenant: Tenant, message: str | None = None
 ) -> HTMLResponse:
     """The list of zones as it is in the database now."""
     return templates.TemplateResponse(
         request,
         "fragments/lieferung_zonen.html",
-        {**delivery_view.page(session, tenant), "message": message, "tone": tone},
+        {**delivery_view.page(session, tenant), "message": message},
         headers=NO_STORE,
     )
 
@@ -2201,11 +2197,10 @@ def _zone_save(
             delivery_view.typed(form),
             form.get("gesehen", ""),
         )
-    except NotFound:
-        session.rollback()
-        raise HTTPException(status_code=404) from None
     except AppError as exc:
         session.rollback()
+        if isinstance(exc, NotFound):
+            raise HTTPException(status_code=404) from None
         # After a conflict the fresh zone with its token, not what was typed
         # against the old one; any other refusal shows the typed fields again
         # with the token they were typed against.

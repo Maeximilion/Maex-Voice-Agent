@@ -102,7 +102,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 
 ### `domain/delivery/`
 - `zones.py` — PLZ-Match, später Polygon (`shapely`), ein Interface für beides
-- `owner_zones.py` — the owner's zones behind the admin PIN (#571): `zones` lists the postal code zones, `save_zone` writes one (new or changed) under the lock of the settings row and checks it against what `check_delivery` and `scripts/seed_zones.py` do with the rows: five-digit codes, a code in one active zone only, a name once per restaurant, amounts in cents from euros with a comma, the delivery time up to `config.MAX_WAIT_MINUTES`; a token of the zone shown refuses a save against a zone changed since; an audit row per save; nothing is deleted
+- `owner_zones.py` — the owner's zones behind the admin PIN (#571): `zones` lists the postal code zones, `save_zone` writes one (new or changed) under the lock of the settings row and checks it against what `check_delivery` and `scripts/seed_zones.py` do with the rows: five-digit codes, a code in one active zone only, a name once per restaurant, amounts in cents from euros with a comma, the delivery time up to `config.MAX_WAIT_MINUTES`; a value sent back as it is stored skips its bound; a token of the zone shown refuses a save against a zone changed since; an audit row per save; nothing is deleted
 - `address.py` — wer, wohin, welche Zone (T-6.5): `place` liest nur und wirft, `keep` schreibt Kunde und Adresse; Zone auflösen und an der Adresse speichern. Mindestbestellwert und „Lieferung offen" stehen in `domain/ordering/validation.py`, neben den übrigen Prüfungen vor der Summe
 
 ### `domain/customers/`

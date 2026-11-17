@@ -3,12 +3,11 @@ zones with their postal codes, fee, minimum order and delivery time behind the
 admin PIN. These tests act as a signed-in device with the admin PIN
 (conftest); the refusal without it is in test_gui_login.py."""
 
-import re
 import uuid
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.db import get_db
@@ -16,6 +15,7 @@ from api.domain.delivery import owner_zones
 from api.domain.delivery.zones import check_delivery
 from api.main import app
 from api.models import AuditLog, DeliveryZone, Tenant
+from api.tests.test_gui_admin_zeiten import _fields
 from scripts.seed import seed
 
 HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
@@ -81,23 +81,6 @@ def _audits(engine) -> list[AuditLog]:
         )
 
 
-def _fields(html: str) -> dict[str, str]:
-    """What an untouched submit of the form in `html` sends: every named
-    input and text area with its value, a checkbox only when ticked."""
-    sent = {}
-    for tag in re.findall(r"<input\b[^>]*>", html):
-        name = re.search(r'name="([^"]+)"', tag)
-        value = re.search(r'value="([^"]*)"', tag)
-        if name is None or ('type="checkbox"' in tag and " checked" not in tag):
-            continue
-        sent[name.group(1)] = value.group(1) if value else ""
-    for name, text in re.findall(
-        r'<textarea\b[^>]*name="([^"]+)"[^>]*>([^<]*)</textarea>', html
-    ):
-        sent[name] = text
-    return sent
-
-
 def _create(client, **changes) -> None:
     answer = client.post(NEW, data={**ZONE, **changes}, headers=HX)
     assert answer.status_code == 200 and "Gespeichert" in answer.text, answer.text
@@ -106,7 +89,11 @@ def _create(client, **changes) -> None:
 def _edit(client, zone) -> dict[str, str]:
     form = client.get(f"{PAGE}/zone/{zone.id}", headers=HX)
     assert form.status_code == 200
-    return _fields(form.text)
+    fields = _fields(form.text)
+    # The helper reads the markup with patterns: a form it no longer
+    # matches must not pass as an empty one.
+    assert {"gesehen", "name", "plz", "pauschale"} <= set(fields)
+    return fields
 
 
 # --- the page ---------------------------------------------------------------------
@@ -203,13 +190,13 @@ def test_a_refused_form_shows_what_was_typed_and_its_reason(client, engine):
 def test_a_refused_form_echoes_no_more_than_a_field_holds(client, engine):
     answer = client.post(
         NEW,
-        data={**ZONE, "pauschale": "9" * 500, "plz": "7" * 5000, "name": "n" * 500},
+        data={**ZONE, "pauschale": "9" * 500, "plz": "7" * 20000, "name": "n" * 500},
         headers=HX,
     )
     assert answer.status_code == 200 and 'role="alert"' in answer.text
     fields = _fields(answer.text)
     assert len(fields["pauschale"]) <= 12 and len(fields["name"]) <= 60
-    assert len(fields["plz"]) <= 2000
+    assert len(fields["plz"]) <= 8000
 
 
 # --- a change ---------------------------------------------------------------------
@@ -346,3 +333,73 @@ def test_another_restaurants_zone_is_no_zone_here(client, engine):
 def test_a_write_without_the_pages_token_is_refused(client, engine, headers):
     assert client.post(NEW, data=ZONE, headers=headers).status_code == 403
     assert _zones(engine) == []
+
+
+# --- found by the review --------------------------------------------------------------
+
+
+def test_a_name_with_signs_of_html_goes_through_the_form_unchanged(client, engine):
+    name = 'Müller & Söhne "Nord" <1>'
+    _create(client, name=name)
+    (zone,) = _zones(engine)
+    assert zone.name == name
+    page = client.get(PAGE).text
+    assert "<1>" not in page and "Müller &amp; Söhne" in page
+    form = client.get(f"{PAGE}/zone/{zone.id}", headers=HX).text
+    assert "<1>" not in form and '"Nord"' not in form
+    fields = _edit(client, zone)
+    assert fields["name"] == name
+    answer = client.post(f"{PAGE}/zone/{zone.id}", data=fields, headers=HX)
+    assert answer.status_code == 200 and "Keine Änderung" in answer.text
+    # In a message built from the stored name, too.
+    taken = client.post(NEW, data={**ZONE, "name": "Zone 2"}, headers=HX)
+    assert 'role="alert"' in taken.text and "Müller &amp; Söhne" in taken.text
+    assert "<1>" not in taken.text
+    assert len(_zones(engine)) == 1
+
+
+def test_a_long_name_of_the_import_survives_a_refused_form(client, engine):
+    """The import knows no limit for a name. A refused form shows the field
+    whole when it came back as it was shown, so the corrected save neither
+    shortens the name nor is refused for it."""
+    _create(client)
+    (zone,) = _zones(engine)
+    long_name = "Zone " + "x" * 70
+    with Session(engine) as session:
+        session.execute(
+            update(DeliveryZone)
+            .where(DeliveryZone.id == zone.id)
+            .values(name=long_name)
+        )
+        session.commit()
+    fields = _edit(client, zone)
+    assert fields["name"] == long_name
+    refused = client.post(
+        f"{PAGE}/zone/{zone.id}", data={**fields, "pauschale": "2.50"}, headers=HX
+    )
+    assert refused.status_code == 200 and 'role="alert"' in refused.text
+    again = _fields(refused.text)
+    assert again["name"] == long_name and again["pauschale"] == "2.50"
+    saved = client.post(
+        f"{PAGE}/zone/{zone.id}", data={**again, "pauschale": "3"}, headers=HX
+    )
+    assert "Gespeichert" in saved.text and _fee(engine, "76530") == 300
+    (zone,) = _zones(engine)
+    assert zone.name == long_name
+    # A name the owner types that long is still cut and refused.
+    typed = client.post(
+        f"{PAGE}/zone/{zone.id}",
+        data={**_edit(client, zone), "name": "Neu " + "y" * 90},
+        headers=HX,
+    )
+    assert "40 Zeichen" in typed.text and len(_fields(typed.text)["name"]) == 60
+
+
+def test_the_form_asks_for_no_number_pad_where_a_comma_or_a_space_is_typed(
+    client, engine
+):
+    """A number pad has no space on any phone and no comma on some, so the
+    postal codes and the amounts take the full keyboard."""
+    form = client.get(NEW, headers=HX).text
+    assert form.count("inputmode=") == 1
+    assert 'name="lieferzeit" value="" inputmode="numeric"' in form

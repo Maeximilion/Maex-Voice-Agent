@@ -677,7 +677,9 @@ def test_the_admin_pin_unlocks_a_locked_device(client, engine):
 def test_the_settings_sheet_names_the_device_list(client, engine):
     _set_up_and_sign_in(client, engine)
     assert 'hx-get="/gui/einstellungen"' in client.get("/gui/", headers=HTML).text
-    assert 'href="/gui/geraete"' in client.get("/gui/einstellungen", headers=HX).text
+    sheet = client.get("/gui/einstellungen", headers=HX).text
+    for page in ("/gui/zeiten", "/gui/lieferung", "/gui/geraete"):
+        assert f'href="{page}"' in sheet
 
 
 # --- the owner's tab "Zeiten" (#571, plan number 7) -----------------------------
@@ -867,15 +869,44 @@ def test_a_write_to_the_zones_from_another_site_is_refused(client, engine, targe
     assert _zones_untouched(engine)
 
 
+def _nothing_of_the_zones_opens(client, engine, zone) -> None:
+    """The page, each of its parts and both writes lead to the admin PIN, show
+    nothing and write nothing."""
+    on_page = {**HX, "HX-Current-URL": "http://testserver/gui/lieferung"}
+    assert client.get(DELIVERY, headers=HTML).status_code == 303
+    for path in (
+        f"{DELIVERY}/zonen",
+        f"{DELIVERY}/neu",
+        f"{DELIVERY}/zone/{zone.id}",
+    ):
+        part = client.get(path, headers=on_page)
+        assert part.status_code == 401, path
+        assert "Zone 9" not in part.text and "76599" not in part.text
+        assert part.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/lieferung"
+    for path in (f"{DELIVERY}/neu", f"{DELIVERY}/zone/{zone.id}"):
+        write = client.post(path, data=ZONE_FORM, headers=on_page)
+        assert write.status_code == 401, path
+        assert write.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/lieferung"
+    assert _zones_untouched(engine)
+
+
 def test_the_zones_close_again_when_the_owner_is_idle(client, engine):
-    _a_zone(engine)
+    zone = _a_zone(engine)
     _set_up_and_sign_in(client, engine)
     assert _owner(client, back=DELIVERY).status_code == 303
     assert client.get(DELIVERY, headers=HTML).status_code == 200
     _age_owner_clock(engine, 16)
-    gone = client.post(f"{DELIVERY}/neu", data=ZONE_FORM, headers=HX)
-    assert gone.status_code == 401 and _zones_untouched(engine)
-    assert client.get(DELIVERY, headers=HTML).status_code == 303
+    _nothing_of_the_zones_opens(client, engine, zone)
+
+
+def test_a_locked_device_opens_nothing_of_the_zones(client, engine):
+    """The team's idle lock ends the owner's rights on the device too."""
+    zone = _a_zone(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DELIVERY).status_code == 303
+    assert client.get(DELIVERY, headers=HTML).status_code == 200
+    _lock(engine)
+    _nothing_of_the_zones_opens(client, engine, zone)
 
 
 def test_the_staff_pages_of_the_frame_need_no_admin_pin(client, engine):

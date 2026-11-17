@@ -3,7 +3,7 @@
    of the list, "Neue Zone" an empty one. Without an active zone the page says
    what callers hear, because no switch shows it. #}
 <h2>Lieferzonen</h2>
-{% if message %}<p class="badge {{ tone }}" role="status">{{ message }}</p>{% endif %}
+{% if message %}<p class="badge ok" role="status">{{ message }}</p>{% endif %}
 {% if not delivers %}
 <p class="badge warn" role="status">Keine aktive Lieferzone.</p>
 <p>Ohne aktive Zone nimmt die KI keine Lieferung an.</p>

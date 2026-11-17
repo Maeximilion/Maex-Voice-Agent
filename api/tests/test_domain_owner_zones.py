@@ -223,8 +223,11 @@ def test_a_zone_needs_a_postal_code_and_a_name(session, tenant_id):
         ({"postal_codes": " , "}, "Postleitzahl"),
         ({"name": "   "}, "Namen"),
         ({"name": "x" * 41}, "40 Zeichen"),
-        ({"name": "Zone\x001"}, "Namen"),
-        ({"name": "Zone‮1"}, "Namen"),
+        ({"name": "Zone\x001"}, "nicht angezeigt"),
+        ({"name": "Zone\u202e1"}, "nicht angezeigt"),
+        ({"name": "\u200bZone 1"}, "nicht angezeigt"),
+        ({"name": "---"}, "Namen"),
+        ({"name": "\u2800"}, "Namen"),
     ):
         with pytest.raises(InvalidInput) as error:
             owner_zones.save_zone(session, tenant_id, None, _typed(**changes), "")
@@ -621,3 +624,188 @@ def test_a_save_waits_for_the_other_save_of_the_restaurant(
     finally:
         engine.dispose()
     assert len(owner_zones.zones(session, tenant_id)) == 1
+
+
+# --- found by the review --------------------------------------------------------------
+
+
+def test_the_import_waits_for_a_save_on_the_tablet(session, tenant_id, migrated_db_url):
+    """The import takes the lock of the tab, so its rows and the tab's check
+    for a code in two zones never interleave."""
+    zones, errors = seed_zones.parse(
+        "name;postal_codes;fee;min_order;eta_minutes\nZone 1;76530;3,00;20,00;30\n"
+    )
+    assert errors == []
+    engine = create_engine(migrated_db_url)
+    try:
+        with Session(engine) as other:
+            other.execute(
+                select(ServiceConfig)
+                .where(ServiceConfig.tenant_id == tenant_id)
+                .with_for_update()
+            )
+            session.execute(text("SET lock_timeout = '300ms'"))
+            with pytest.raises(OperationalError):
+                seed_zones.apply(session, tenant_id, zones)
+            session.rollback()
+    finally:
+        engine.dispose()
+    assert owner_zones.zones(session, tenant_id) == []
+    # Without a save in its way it writes as before.
+    assert seed_zones.apply(session, tenant_id, zones)["created"] == 1
+    session.commit()
+    assert check_delivery(session, tenant_id, "76530").fee_cents == 300
+
+
+def test_stored_postal_codes_beyond_the_bounds_stay_until_they_are_changed(
+    session, tenant_id
+):
+    """The import knows no limit of codes per zone. Such a zone still takes a
+    new fee and, above all, can be switched off."""
+    zone = _new(session, tenant_id)
+    many = [f"{code:05d}" for code in range(20000, 20000 + 201)]
+    session.execute(
+        update(DeliveryZone).where(DeliveryZone.id == zone.id).values(postal_codes=many)
+    )
+    session.commit()
+    stored = ", ".join(many)
+    assert _change(session, tenant_id, zone, postal_codes=stored) is False
+    assert _change(session, tenant_id, zone, postal_codes=stored, fee="3")
+    assert _change(session, tenant_id, zone, postal_codes=stored, fee="3", active=False)
+    assert _change(session, tenant_id, zone, postal_codes=stored, fee="3", active=True)
+    assert check_delivery(session, tenant_id, "20200").fee_cents == 300
+    # One code more is a change of the list, and meets the bound.
+    with pytest.raises(InvalidInput) as error:
+        _change(session, tenant_id, zone, postal_codes=stored + ", 30000", fee="3")
+    assert "200" in _say(error)
+
+
+def test_a_stored_code_that_is_no_postal_code_does_not_block_the_zone(
+    session, tenant_id
+):
+    zone = _new(session, tenant_id)
+    session.execute(
+        update(DeliveryZone)
+        .where(DeliveryZone.id == zone.id)
+        .values(postal_codes=["76530", "7653"])
+    )
+    session.commit()
+    assert _change(session, tenant_id, zone, postal_codes="76530, 7653", active=False)
+    with pytest.raises(InvalidInput) as error:
+        _change(session, tenant_id, zone, postal_codes="76530, 7653, 765", active=False)
+    assert "fünf Ziffern" in _say(error)
+
+
+def test_two_ways_to_write_an_umlaut_are_one_name(session, tenant_id):
+    """A file from a Mac spells an umlaut as a letter and two dots, the tablet
+    as one sign. Both are one name, and a typed name is kept as one sign."""
+    two_signs, one_sign = "Su\u0308d", "Süd"
+    assert owner_zones.save_zone(session, tenant_id, None, _typed(name=two_signs), "")
+    (zone,) = owner_zones.zones(session, tenant_id)
+    assert zone.name == one_sign
+    # As the import would have written it:
+    session.execute(
+        update(DeliveryZone).where(DeliveryZone.id == zone.id).values(name=two_signs)
+    )
+    session.commit()
+    for name in (one_sign, "SÜD", two_signs.upper()):
+        with pytest.raises(InvalidInput) as error:
+            owner_zones.save_zone(
+                session, tenant_id, None, _typed(name=name, postal_codes="76534"), ""
+            )
+        assert "Namen gibt es schon" in _say(error)
+    # Sent back as it is stored, the name stays as it is.
+    assert _change(session, tenant_id, zone, name=two_signs, fee="3")
+    session.refresh(zone)
+    assert zone.name == two_signs
+
+
+def test_names_stored_twice_in_another_case_do_not_block_a_fee(session, tenant_id):
+    """The import matches names exactly, so "Nord" and "nord" can both exist.
+    Each still takes a change that leaves its name alone."""
+    first = _new(session, tenant_id, name="Nord")
+    second = _new(session, tenant_id, name="West", postal_codes="76534")
+    session.execute(
+        update(DeliveryZone).where(DeliveryZone.id == second.id).values(name="nord")
+    )
+    session.commit()
+    assert _change(session, tenant_id, first, name="Nord", fee="3")
+    assert _change(
+        session, tenant_id, second, name="nord", postal_codes="76534", fee="4"
+    )
+    assert check_delivery(session, tenant_id, "76534").fee_cents == 400
+    # A rename onto the other's name is refused as ever.
+    with pytest.raises(InvalidInput) as error:
+        _change(session, tenant_id, second, name="NORD", postal_codes="76534", fee="4")
+    assert "Namen gibt es schon" in _say(error)
+
+
+def test_a_form_typed_against_a_state_that_is_gone_gets_the_conflict(
+    session, tenant_id
+):
+    """Whatever else is wrong with it: its fields were checked against values
+    the owner never saw, so the fresh form is the answer."""
+    zone = _new(session, tenant_id)
+    shown = owner_zones.token(zone)
+    assert _change(session, tenant_id, zone, fee="3")
+    for changes in (
+        {"fee": "viel"},
+        {"postal_codes": "7653"},
+        {"eta": "999"},
+        {"name": ""},
+    ):
+        with pytest.raises(Conflict) as error:
+            _change(session, tenant_id, zone, seen=shown, **changes)
+        assert "gerade geändert" in _say(error)
+
+    # A fee the import wrote above the bound, lowered on another device: the
+    # first device sends the old fee back and is told of the change, not of a
+    # bound on a value it did not touch.
+    session.execute(
+        update(DeliveryZone).where(DeliveryZone.id == zone.id).values(fee_cents=8000)
+    )
+    session.commit()
+    shown = owner_zones.token(owner_zones.zone(session, tenant_id, zone.id))
+    assert _change(session, tenant_id, zone, fee="3", eta="45")
+    with pytest.raises(Conflict):
+        _change(session, tenant_id, zone, seen=shown, fee="80,00", eta="50")
+    assert check_delivery(session, tenant_id, "76530").fee_cents == 300
+
+
+def test_a_name_is_kept_with_single_spaces(session, tenant_id):
+    """A space copied from a page is often not the plain one."""
+    assert owner_zones.save_zone(
+        session,
+        tenant_id,
+        None,
+        _typed(name=" Zone\xa0\xa0 1\t"),
+        "",
+    )
+    assert [zone.name for zone in owner_zones.zones(session, tenant_id)] == ["Zone 1"]
+    with pytest.raises(InvalidInput) as error:
+        owner_zones.save_zone(
+            session,
+            tenant_id,
+            None,
+            _typed(name="zone  1", postal_codes="76534"),
+            "",
+        )
+    assert "Namen gibt es schon" in _say(error)
+
+
+def test_invisible_signs_in_a_number_are_not_the_owners_typing_error(
+    session, tenant_id
+):
+    """Copied from a page or a file, a number often carries a zero-width
+    space or a soft hyphen that nobody sees: the refusal would repeat a
+    postal code that looks right."""
+    zone = _new(
+        session,
+        tenant_id,
+        postal_codes="76530\u200b, 765\xad32\ufeff",
+        fee="\u200b2,50",
+        min_order="15\u200b",
+        eta="\ufeff40",
+    )
+    assert zone.postal_codes == ["76530", "76532"]
+    assert (zone.fee_cents, zone.min_order_cents, zone.eta_minutes) == (250, 1500, 40)

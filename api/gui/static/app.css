@@ -210,7 +210,7 @@ header.aus .seg.services .on{background:transparent;color:var(--muted)}
   .zonen .tbl th[scope=row],.zonen .tbl td{display:block;border:0;padding:2px 0}
   .zonen .tbl td[data-label]::before{content:attr(data-label) ": ";color:var(--muted)}
 }
-.tbl .codes{overflow-wrap:anywhere}
+.tbl .codes,.zonen .tbl th[scope=row]{overflow-wrap:anywhere}
 @media (max-width:700px){
   /* A phone: each row of the tab's tables is a block (a weekday with each
      service on a line with its name, a special day with its button below),
