@@ -615,7 +615,8 @@ def _migrate(tmp_path, *args, **env):
     stub.parent.mkdir()
     seen = tmp_path / "seen"
     stub.write_text(
-        '#!/bin/sh\nprintf "%s\\n" "$*" "${DATABASE_URL-unset}" >"$SEEN"\n',
+        '#!/bin/sh\nprintf "%s\\n" "$*" "${DATABASE_URL-unset}" '
+        '"${OPERATOR_DATABASE_URL-unset}" >"$SEEN"\n',
         encoding="utf-8",
         newline="\n",
     )
@@ -623,7 +624,7 @@ def _migrate(tmp_path, *args, **env):
     environment = {
         k: v
         for k, v in os.environ.items()
-        if k not in {"DATABASE_URL", "OWNER_DATABASE_URL"}
+        if k not in {"DATABASE_URL", "OWNER_DATABASE_URL", "OPERATOR_DATABASE_URL"}
     }
     environment.update(
         PATH=f"{stub.parent.as_posix()}{os.pathsep}{os.environ['PATH']}",
@@ -656,7 +657,7 @@ def test_migrate_hands_the_owners_url_to_alembic_and_never_as_an_argument(tmp_pa
     done, called = _migrate(tmp_path, DATABASE_URL=APP_URL, OWNER_DATABASE_URL=owner)
 
     assert done.returncode == 0, done.stderr
-    call, url = called
+    call, url, _ = called
 
     assert call == (
         "compose run --rm -T -e DATABASE_URL api alembic -c db/alembic.ini upgrade head"
@@ -674,7 +675,7 @@ def test_migrate_reads_the_owner_from_the_env_file(tmp_path):
     done, called = _migrate(tmp_path, "current", BACKUP_ENV_FILE=env_file.as_posix())
 
     assert done.returncode == 0, done.stderr
-    call, url = called
+    call, url, _ = called
     assert (
         call
         == "compose run --rm -T -e DATABASE_URL api alembic -c db/alembic.ini current"
@@ -705,7 +706,28 @@ def test_migrate_without_an_owner_leaves_the_containers_url_alone(tmp_path):
     done, called = _migrate(tmp_path, "downgrade", "-1")
 
     assert done.returncode == 0, done.stderr
-    call, url = called
+    call, url, _ = called
 
     assert call == "compose run --rm -T api alembic -c db/alembic.ini downgrade -1"
     assert url == "unset"
+
+
+def test_migrate_for_the_operator_stack_runs_the_dashboards_migrations(tmp_path):
+    """#827 F5: the dashboard connects as its own role, so its migrations need
+    the owner, under the name the dashboard reads."""
+    owner = "postgresql+psycopg://maex:owner-secret@db:5432/maex_operator"
+    app = "postgresql+psycopg://maex_ops:app-secret@db:5432/maex_operator"
+
+    done, called = _migrate(
+        tmp_path, "--operator", DATABASE_URL=app, OWNER_DATABASE_URL=owner
+    )
+
+    assert done.returncode == 0, done.stderr
+    call, url, operator_url = called
+    assert call == (
+        "compose run --rm -T -e OPERATOR_DATABASE_URL dashboard "
+        "alembic -c db/dashboard/alembic.ini upgrade head"
+    )
+    assert operator_url == owner
+    # DATABASE_URL itself stays the dashboard's role.
+    assert url == app

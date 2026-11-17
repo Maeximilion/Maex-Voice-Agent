@@ -716,7 +716,8 @@ and tokens use the standard library.
    the cross-site test of §8.
 3. #571 dashboard with the operator login of §5 and the ops API of §8.
 4. #572 menu intake with the upload rules of §9.
-5. **Security audit, kind component (docs/09 §5), on Opus 5.5 at `xhigh`**, before `ops.<domain>`
+5. **Security audit, kind component (docs/09 §5), on Opus 5.5 at `high`** (`xhigh` only after a
+   stall, CLAUDE.md "Model Routing"), before `ops.<domain>`
    or a customer login is reachable from outside; covers §5 to §9 against this threat table. A P1
    blocks the go-live of that part.
 

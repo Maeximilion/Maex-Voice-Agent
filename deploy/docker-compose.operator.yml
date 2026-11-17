@@ -27,6 +27,10 @@ services:
     read_only: true
     tmpfs: [/var/run/postgresql, /tmp]
     command: ["postgres", "-c", "log_error_verbosity=terse"]
+    # The stacks share one host (#827 F7): the operator side never takes
+    # memory or CPU from a stack's call path.
+    mem_limit: 512m
+    cpus: 1.0
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?set in the operator stack's .env}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in the operator stack's .env}
@@ -64,7 +68,11 @@ services:
       ENV: prod
       PYTHONPATH: /app
       LOG_LEVEL:
-      OPERATOR_DATABASE_URL: ${OPERATOR_DATABASE_URL:?set in the operator stack's .env}
+      # The dashboard's own role, no superuser (#827 F5): DATABASE_URL of this
+      # stack's .env, so scripts/db_role.sh, backup.sh and migrate.sh --operator
+      # work here as in a customer's checkout. The owner (OWNER_DATABASE_URL)
+      # never reaches this container.
+      OPERATOR_DATABASE_URL: ${DATABASE_URL:?set in the operator stack's .env}
       # Checked on every request but /health; Caddy sends it (ops.caddy).
       OPERATOR_PROXY_SECRET:
       OPERATOR_ORIGIN:
@@ -80,10 +88,14 @@ services:
     cap_drop: [ALL]
     read_only: true
     tmpfs: [/tmp]
+    # A sign-in flood runs one scrypt (32 MiB) per attempt; 200 at once peaked
+    # at about 176 MiB in the audit (#827 F7).
+    mem_limit: 512m
+    cpus: 1.0
     volumes:
       - ../api:/app/api:ro
-      # The dashboard's migrations (db/dashboard), run with
-      # `docker compose run --rm dashboard alembic -c db/dashboard/alembic.ini upgrade head`.
+      # The dashboard's migrations (db/dashboard), run as the owner with
+      # `bash scripts/migrate.sh --operator`.
       - ../db:/app/db:ro
       # The eval and measurement records the dev tools show, only read.
       - ../docs/metrics:/app/docs/metrics:ro
