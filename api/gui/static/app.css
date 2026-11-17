@@ -196,6 +196,13 @@ header.aus .seg.services .on{background:transparent;color:var(--muted)}
 .span-row input[type=time],.span-row input[type=date]{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);min-height:var(--tap);padding:0 var(--s2);margin:0}
 .span-row input[type=checkbox]{width:28px;height:28px;margin:0;accent-color:var(--accent)}
 .span-row .check{min-height:var(--tap)}
+/* A refused form of the owner's tabs (#821, #829-3): the list above it, and each
+   faulty field with its sentence beside it; a mark and a word, never colour alone. */
+.fehler-liste{border:2px solid var(--danger);border-radius:var(--r);padding:var(--s2) var(--s3);margin:0 0 var(--s3)}
+.fehler-liste ul{margin:var(--s2) 0 0;padding-left:var(--s5)}
+.fehler-liste a{color:var(--text)}
+.feld-fehler{color:var(--danger);font-weight:600;margin:0;flex-basis:100%}
+.feld-fehler::before{content:"\2715\00a0"}
 /* The tab "Lieferung" (#571): a zone's fields one below the other. */
 .zone-form{display:grid;gap:var(--s2);max-width:560px}
 .zone-form > label{display:grid;gap:var(--s1);font-weight:600}
@@ -205,6 +212,8 @@ header.aus .seg.services .on{background:transparent;color:var(--muted)}
 /* The tab "Daten" (#571): the choices and the day of a request look like
    the text fields beside them; a row of the call list names its time. */
 .zone-form select,.zone-form input[type=date]{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);min-height:var(--tap);padding:0 var(--s2);margin:0;width:100%;box-sizing:border-box}
+/* After the field rules above: a refused field wins over their border. */
+.betrieb input[aria-invalid=true],.betrieb textarea[aria-invalid=true]{border-color:var(--danger);border-width:3px}
 .calls .tbl th[scope=row]{color:var(--text);font-weight:600}
 #anruf-detail:not(:empty){margin-top:var(--s4)}
 @media (max-width:900px){

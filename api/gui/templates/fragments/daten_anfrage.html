@@ -6,8 +6,8 @@
    goes back with the same details. Everything shown here is personal data: the
    answer is never cached, and nothing of it is in an address. Erasing and the
    objection itself run on the server (backup first, erasure ledger). #}
-<h2 id="daten-anfrage-titel">Anfrage {{ reference }}</h2>
-{% if message %}<p class="badge {{ tone }}" role="{{ 'alert' if tone == 'danger' else 'status' }}">{{ message }}</p>{% endif %}
+<h2 id="daten-anfrage-titel" tabindex="-1"{% if not message %} data-fokus{% endif %}>Anfrage {{ reference }}</h2>
+{% if message %}<p class="badge {{ tone }}" role="{{ 'alert' if tone == 'danger' else 'status' }}" tabindex="-1" data-fokus>{{ message }}</p>{% endif %}
 <table class="tbl week">
   <tbody>
     <tr><th scope="row">Art</th><td>{{ kind }}</td></tr>
@@ -22,7 +22,7 @@
 {% if is_open %}
 <h3 id="daten-pruefen-titel">Person prüfen</h3>
 <p class="muted">Eine Nummer ist keine Person: mehrere Gäste können eine Nummer teilen. Gefragt ist der Name mit dem Tag einer Bestellung oder Reservierung oder mit der Lieferadresse. Jede Prüfung wird im Protokoll vermerkt.</p>
-<form class="week-form zone-form" novalidate hx-post="/gui/daten/anfrage/{{ reference }}/pruefen" hx-target="#daten-anfragen" hx-swap="innerHTML" aria-labelledby="daten-pruefen-titel">
+<form class="week-form zone-form" novalidate hx-post="/gui/daten/anfrage/{{ reference }}/pruefen" hx-target="#daten-anfragen" hx-swap="innerHTML" hx-disabled-elt="find button" aria-labelledby="daten-pruefen-titel">
   <label>Name, wie bei der Bestellung genannt <input type="text" name="name" value="{{ sent.name }}" autocomplete="off"></label>
   {% for field in day_fields %}
   <label>{% if loop.first %}Tag einer Bestellung oder Reservierung{% else %}Weiterer Tag (wenn genannt){% endif %} <input type="date" name="{{ field }}" value="{{ sent[field] }}"></label>
@@ -104,11 +104,11 @@
 <h3>Frist und Antwort</h3>
 {% if can_extend %}
 <div class="cb-actions">
-  <button hx-post="/gui/daten/anfrage/{{ reference }}/frist" hx-target="#daten-anfragen" hx-swap="innerHTML"
+  <button hx-post="/gui/daten/anfrage/{{ reference }}/frist" hx-target="#daten-anfragen" hx-swap="innerHTML" hx-disabled-elt="this"
           hx-confirm="Frist auf drei Monate nach Eingang verlängern? Das geht nur einmal, und der Gast muss den Grund innerhalb des ersten Monats erfahren.">Frist verlängern (schwierige Anfrage)</button>
 </div>
 {% endif %}
-<form class="week-form zone-form" novalidate hx-post="/gui/daten/anfrage/{{ reference }}/antwort" hx-target="#daten-anfragen" hx-swap="innerHTML"
+<form class="week-form zone-form" novalidate hx-post="/gui/daten/anfrage/{{ reference }}/antwort" hx-target="#daten-anfragen" hx-swap="innerHTML" hx-disabled-elt="find button"
       hx-confirm="Anfrage {{ reference }} als beantwortet eintragen? Das lässt sich hier nicht zurücknehmen." aria-label="Antwort eintragen">
   <label>Ergebnis
     <select name="ergebnis">
