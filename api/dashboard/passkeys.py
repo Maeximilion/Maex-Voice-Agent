@@ -119,9 +119,7 @@ def issue(
     db.execute(delete(OperatorChallenge).where(OperatorChallenge.expires_at <= now))
     if client_address is not None:
         # One address at a time, so parallel asks cannot all pass the count.
-        db.execute(
-            select(func.pg_advisory_xact_lock(func.hashtext(client_address)))
-        )
+        db.execute(select(func.pg_advisory_xact_lock(func.hashtext(client_address))))
         live = db.scalar(
             select(func.count())
             .select_from(OperatorChallenge)

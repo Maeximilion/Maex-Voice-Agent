@@ -411,7 +411,8 @@ def test_the_pin_form_refuses_another_site(client, engine, headers):
 
 
 @pytest.mark.parametrize(
-    ("token", "headers"), [(None, {}), ("other", {}), *(("testtoken", h) for h in FOREIGN)]
+    ("token", "headers"),
+    [(None, {}), ("other", {}), *(("testtoken", h) for h in FOREIGN)],
 )
 def test_the_setup_form_needs_its_csrf_token_and_this_site(
     client, engine, token, headers
@@ -440,7 +441,8 @@ def test_the_setup_form_needs_its_csrf_token_and_this_site(
 
 
 @pytest.mark.parametrize(
-    ("token", "headers"), [(None, {}), ("other", {}), *(("testtoken", h) for h in FOREIGN)]
+    ("token", "headers"),
+    [(None, {}), ("other", {}), *(("testtoken", h) for h in FOREIGN)],
 )
 def test_closing_the_owner_part_needs_its_csrf_token_and_this_site(
     client, engine, token, headers

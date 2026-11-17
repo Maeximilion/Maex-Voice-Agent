@@ -13,6 +13,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from api.core import ops_reason
 from api.dashboard import app as web
 from api.dashboard import customers, results
 from api.dashboard.config import settings
@@ -196,7 +197,8 @@ HOSTILE = [
     (_ans(code=500), customers.NOT_AN_ANSWER),
     (_ans(code=401), customers.REFUSED),
     (_ans(code=404), customers.NOT_KNOWN),
-    (_error("not_found"), customers.NO_RESTAURANT),
+    (_error("not_found", message=ops_reason.NO_RESTAURANT), customers.NO_RESTAURANT),
+    (_error("not_found"), customers.NO_SETTINGS),
     (_error("invalid_input", 400), customers.NOT_TAKEN),
     (
         lambda r: httpx.Response(200, content=b"x" * (65 * 1024)),

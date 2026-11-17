@@ -406,7 +406,7 @@ def test_every_route_of_the_dashboard_refuses_without_a_session(client, factors)
     session, also a route added later. The list of public routes is fixed
     here: a new route is either behind the session or named above."""
     routes = _routes()
-    assert PUBLIC <= set(routes)
+    assert set(routes) >= PUBLIC
     for cookies in ({}, {"ops_session": "forged"}):
         client.cookies.clear()
         client.cookies.update(cookies)
