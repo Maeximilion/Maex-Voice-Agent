@@ -25,6 +25,34 @@ document.addEventListener("htmx:configRequest", (event) => {
     if (token && token[1] !== undefined && headers)
         headers["X-CSRF-Token"] = token[1];
 });
+// A tap the server refused without a page to show (a 403, a 500), or one that
+// never arrived: the red bar says so (docs/06 section 5), on every page.
+// Without it a button of a sub page looks as if it had done nothing. The next
+// tap that works takes the bar away again, so the page never says both. The
+// board swaps the HTML of a refused tap itself (app.ts) and so raises no error
+// for those, and it reports a lost connection in its own yellow bar: its
+// listener sits on the body and has run before this one.
+function failed(show) {
+    const bar = document.getElementById("stoerung");
+    if (bar)
+        bar.hidden = !show;
+}
+document.addEventListener("htmx:responseError", () => failed(true));
+document.addEventListener("htmx:sendError", () => {
+    const offline = document.getElementById("verbindung");
+    if (offline && !offline.hidden)
+        return;
+    failed(true);
+});
+document.addEventListener("htmx:afterRequest", (event) => {
+    if (!(event instanceof CustomEvent))
+        return;
+    const detail = event.detail;
+    if (typeof detail !== "object" || detail === null)
+        return;
+    if (detail.successful === true)
+        failed(false);
+});
 // "Nochmal versuchen" on the red bar reloads the page.
 document.addEventListener("click", (event) => {
     if (event.target instanceof Element && event.target.closest("[data-neu-laden]")) {

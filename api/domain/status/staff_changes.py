@@ -44,6 +44,7 @@ from api.core.errors import Conflict, InvalidInput, NotFound
 from api.core.time import business_day_bounds_utc
 from api.domain.customers.phone import E164, costly, normalize_phone
 from api.domain.reservations.spoken import WEEKDAYS
+from api.domain.status.holidays import holidays as statutory_holidays
 from api.domain.status.hours import (
     HoursData,
     Window,
@@ -70,12 +71,17 @@ TEAM_PHONE = "team_phone"
 DAY_HOURS = "day_hours"
 OPEN, KEPT, UNDONE = "open", "kept", "undone"
 SET = "set"
+DISMISSED = "dismissed"
 NO_SPAN = "Bitte Beginn und Ende angeben, das Ende nicht gleich dem Beginn."
 OVERNIGHT = (
     "Das Ende liegt vor dem Beginn. Geht der Tag über Mitternacht, "
     "bitte „Ende nach Mitternacht“ ankreuzen."
 )
 PAST_DAY = "Ein vergangener Tag lässt sich nicht mehr ändern."
+CARD_OPEN = (
+    "Für diesen Tag wartet eine Änderung des Teams auf der Übersicht. "
+    "Bitte erst dort übernehmen oder zurücknehmen."
+)
 NO_NUMBER = "Das ist keine Telefonnummer."
 NOT_LISTED = "Diese Nummer kann die Telefonanlage nicht anrufen. Weitere Nummern gibt der Betreiber frei."
 
@@ -265,14 +271,7 @@ def change_day_hours(
     when nothing changes. An end before the start runs past midnight and is
     refused unless the staff say so (`overnight`): swapped times would open
     the night. Raises InvalidInput. Commits."""
-    if hours.closed:
-        hours = DayHours(closed=True, note=hours.note)
-    elif (hours.opens is None) != (hours.closes is None) or (
-        hours.opens is not None and hours.opens == hours.closes
-    ):
-        raise InvalidInput("hours without a span", say=NO_SPAN)
-    elif hours.opens and hours.closes and hours.closes < hours.opens and not overnight:
-        raise InvalidInput("hours past midnight not confirmed", say=OVERNIGHT)
+    hours = _checked(hours, overnight)
     now = now or clock.utcnow()
     _config, zone = _locked(session, tenant_id)
     today = clock.business_day(now, zone)
@@ -332,6 +331,73 @@ def change_day_hours(
         _close(card, UNDONE, now)
     session.commit()
     return card
+
+
+def set_day_hours(
+    session: Session,
+    tenant_id: uuid.UUID,
+    day: date,
+    hours: DayHours,
+    now: datetime | None = None,
+    actor: str = ACTOR_OWNER,
+    overnight: bool = False,
+) -> bool:
+    """The owner sets a date's hours behind the admin PIN (#571): they hold at
+    once, also what a staff request would wait for, with an audit row and
+    without a check card or a push, which tell the owner what the staff did.
+    A date whose staff change is still open is decided on its card first
+    (Conflict): a second answer here would leave the card saying what no
+    longer holds. False when the date holds these hours already. The rules
+    for a span are the staff's (`change_day_hours`). Raises InvalidInput.
+    Commits."""
+    hours = _checked(hours, overnight)
+    now = now or clock.utcnow()
+    _config, zone = _locked(session, tenant_id)
+    if day < clock.business_day(now, zone):
+        session.rollback()
+        raise InvalidInput("a past day", say=PAST_DAY)
+    if _open_card(session, tenant_id, DAY_HOURS, day) is not None:
+        session.rollback()
+        raise Conflict(f"an open staff change for {day}", say=CARD_OPEN)
+    row = _set_row(session, tenant_id, day, lock=True)
+    holding = DayHours.of_row(row)
+    if hours.note is None:
+        hours = DayHours(hours.closed, hours.opens, hours.closes, None, holding.note)
+    if hours == holding:
+        session.commit()
+        return False
+    _write(session, tenant_id, day, hours, row)
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            actor=actor,
+            action="special_day.set",
+            entity="special_day",
+            payload={
+                "day": day.isoformat(),
+                "from": holding.as_dict(),
+                "to": hours.as_dict(),
+            },
+        )
+    )
+    session.commit()
+    return True
+
+
+def coming_days(
+    session: Session, tenant_id: uuid.UUID, today: date
+) -> list[tuple[date, DayHours]]:
+    """The dates from today on that hold hours of their own, by date."""
+    rows = session.scalars(
+        select(SpecialDay)
+        .where(
+            SpecialDay.tenant_id == tenant_id,
+            SpecialDay.status == SET,
+            SpecialDay.date >= today,
+        )
+        .order_by(SpecialDay.date)
+    )
+    return [(row.date, DayHours.of_row(row)) for row in rows]
 
 
 def decide(
@@ -497,6 +563,20 @@ def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> s
 # --- helpers ---------------------------------------------------------------------
 
 
+def _checked(hours: DayHours, overnight: bool) -> DayHours:
+    """A date's hours as they may be written: closed alone, or a span with a
+    length whose end before the start has the word for it (#596)."""
+    if hours.closed:
+        return DayHours(closed=True, note=hours.note)
+    if (hours.opens is None) != (hours.closes is None) or (
+        hours.opens is not None and hours.opens == hours.closes
+    ):
+        raise InvalidInput("hours without a span", say=NO_SPAN)
+    if hours.opens and hours.closes and hours.closes < hours.opens and not overnight:
+        raise InvalidInput("hours past midnight not confirmed", say=OVERNIGHT)
+    return hours
+
+
 def _locked(session: Session, tenant_id: uuid.UUID) -> tuple[ServiceConfig, str]:
     """The restaurant's settings row, locked: every staff change and decision
     of one restaurant runs one after the other."""
@@ -571,11 +651,36 @@ def _write(
     row: SpecialDay | None = None,
 ) -> None:
     """Make the date hold `hours`: no counting row for the weekly hours. `row`
-    is the date's locked row when the caller has it already."""
+    is the date's locked row when the caller has it already. A holiday (a row
+    with its name, or a date that is a statutory holiday in the restaurant's
+    state) returned to the weekly hours stays as the answer "open as always"
+    (`dismissed`, T-9.5): deleted, the holiday job would suggest it again and
+    one tap on the board would undo what was decided here. For the same reason
+    a suggestion still waiting beside the row is answered with it (review of
+    #820): left open, "closed" tapped on its card would close the date again."""
     row = row or _set_row(session, tenant_id, day, lock=True)
     if hours.normal:
         if row is not None:
-            session.delete(row)
+            # The date's suggestion or dismissal, one at most
+            # (`uq_special_days_suggestion`).
+            other = session.scalars(
+                select(SpecialDay)
+                .where(
+                    SpecialDay.tenant_id == tenant_id,
+                    SpecialDay.date == day,
+                    SpecialDay.status != SET,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).first()
+            if other is not None:
+                other.status = DISMISSED
+                session.delete(row)
+            elif name := row.note or _holiday_name(session, tenant_id, day):
+                row.status, row.note = DISMISSED, name
+                row.closed, row.opens_at, row.closes_at = False, None, None
+            else:
+                session.delete(row)
         session.flush()
         return
     if row is None:
@@ -589,6 +694,15 @@ def _write(
         )
         row.like_weekday, row.note = hours.like_weekday, hours.note
     session.flush()
+
+
+def _holiday_name(session: Session, tenant_id: uuid.UUID, day: date) -> str | None:
+    """The statutory holiday `day` is in the restaurant's state, if it is one
+    and the state is named: the dates the holiday job suggests."""
+    region = session.scalar(
+        select(ServiceConfig.holiday_region).where(ServiceConfig.tenant_id == tenant_id)
+    )
+    return dict(statutory_holidays(region, day.year)).get(day) if region else None
 
 
 def _drops_weekday(after: DayHours, before: DayHours, day: date) -> bool:

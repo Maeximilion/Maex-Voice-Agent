@@ -2,11 +2,11 @@
    signed-in device with its first and last use; "Gerät abmelden" is the lost
    tablet. Behind the admin PIN (`require_admin`). #}
 {% extends "base.html" %}
-{% from "betrieb/_kopf.html" import kopf with context %}
+{% from "betrieb/_kopf.html" import admin_kopf with context %}
 {% block title %}Geräte{% endblock %}
 {% block body_class %}betrieb{% endblock %}
 
-{% block header %}{{ kopf("Angemeldete Geräte", tenant) }}{% endblock %}
+{% block header %}{{ admin_kopf("Angemeldete Geräte", "Geräte", tenant) }}{% endblock %}
 
 {% block main %}
 <section class="card">

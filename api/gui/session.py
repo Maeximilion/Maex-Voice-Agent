@@ -160,8 +160,10 @@ def require_admin(
 
 def _owner_page(request: Request) -> str:
     back = request.url.path
-    if request.method != "GET":
-        # A write returns to the page it came from, not to its own path.
+    if request.method != "GET" or request.headers.get("hx-request") == "true":
+        # A write returns to the page it came from, not to its own path, and
+        # so does a part of a page htmx fetched: alone it is no page (no
+        # stylesheet, no script, a form that cannot save).
         try:
             back = urlsplit(request.headers.get("hx-current-url", "")).path
         except ValueError:  # "http://[" and the like: the owner page leads to the board

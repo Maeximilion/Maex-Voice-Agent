@@ -435,8 +435,19 @@ the second builds against.
   mode, team number and the hours of a given date (a special day). The owner, with an admin PIN
   asked when a protected part is first opened and then unlocked on that device for 60 minutes:
   delivery zones, fees and minimum order, the standard weekly hours, the device list. Built: the
-  device list; the other pages do not exist yet and take `require_admin` (`gui/session.py`) when
-  they come.
+  device list, and since 17.11.2026 the standard weekly hours (the tab "Zeiten", `/gui/zeiten`, #571):
+  the page, each of its parts and both writes take `require_admin` (`gui/session.py`), so nothing
+  of it is read or written without the admin PIN, and each write carries the CSRF token and
+  `HX-Request` and leaves an audit row with the actor `gui:owner` and the hours before and after.
+  A weekday's form sends a token of the hours it showed; a save against hours changed since is
+  refused, and a form refused for a typing error keeps the token it was typed against, so its
+  corrected save cannot write over another device's change. Every page of the view answers
+  `Cache-Control: no-store` (`_page_response`), the parts of this tab too, and a part fetched by
+  htmx without the PIN leads back to its page after the PIN, never to itself. On that tab the owner also sets a date's hours directly: they hold at once without a
+  check card or a push, which exist to tell the owner what the staff did, and a date whose staff
+  change is still open is decided on its card first. The staff's own way to a date's hours (the
+  sheet, next point) is unchanged, and so is what waits for the owner. The pages for zones and
+  fees do not exist yet and take `require_admin` when they come.
 - **Staff changes are temporary and reviewed (D34 point 4, built in (b), the push in #588):** a staff change to a date's hours
   expires with that date. Today's changes hold at once; for a later date the restrictive direction
   (closed, shorter hours) holds at once, while longer or extra hours beyond today wait for the

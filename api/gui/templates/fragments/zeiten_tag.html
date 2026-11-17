@@ -1,0 +1,27 @@
+{# The form of one weekday (#571): per service the spans that hold and one
+   empty row to add one. Every field shows what the database holds, so an
+   untouched save changes nothing; a row emptied in both fields is removed.
+   `gesehen` is the token of the hours shown: hours another device changed
+   since are not written over. An end before the start needs its box (#596). #}
+<h2 id="zeiten-tag-titel">{{ name }}: Öffnungszeiten</h2>
+{% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
+<form class="week-form" novalidate hx-post="/gui/zeiten/woche/{{ weekday }}" hx-target="#zeiten-woche" hx-swap="innerHTML" aria-labelledby="zeiten-tag-titel">
+  <input type="hidden" name="gesehen" value="{{ seen }}">
+  {% for group in groups %}
+  <fieldset>
+    <legend>{{ group.label }}</legend>
+    {% for row in group.rows %}
+    <div class="span-row">
+      <label>Von <input type="time" name="{{ group.key }}-von-{{ loop.index0 }}" value="{{ row.von }}" step="900"></label>
+      <label>Bis <input type="time" name="{{ group.key }}-bis-{{ loop.index0 }}" value="{{ row.bis }}" step="900"></label>
+      <label class="check"><input type="checkbox" name="{{ group.key }}-nachts-{{ loop.index0 }}" value="1"{% if row.nachts %} checked{% endif %}> Ende nach Mitternacht</label>
+    </div>
+    {% endfor %}
+  </fieldset>
+  {% endfor %}
+  <p class="muted">Ohne Zeiten ist der Bereich an diesem Wochentag geschlossen. Beide Felder einer Zeile leeren entfernt sie. Eine weitere Zeile erscheint nach dem Speichern.</p>
+  <div class="cb-actions">
+    <button type="submit" class="primary">Speichern</button>
+    <button type="button" hx-get="/gui/zeiten/woche" hx-target="#zeiten-woche" hx-swap="innerHTML">Abbrechen</button>
+  </div>
+</form>
