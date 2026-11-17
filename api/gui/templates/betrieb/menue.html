@@ -34,8 +34,10 @@
   <ul class="menu-list">
     {% for row in rows %}
     <li>
-      <span class="nr">{{ row.number }}</span>
-      <span class="menu-name">{{ row.name }}</span>
+      {# bdi: a name with a character that turns the reading direction must
+         not turn the price beside it. #}
+      <bdi class="nr">{{ row.number }}</bdi>
+      <bdi class="menu-name">{{ row.name }}</bdi>
       <span class="menu-price">{{ row.price }}</span>
       {% if row.allergens_missing %}<span class="badge warn">Allergene fehlen</span>{% endif %}
       {% if row.register is not none %}<span class="badge danger">Kasse: {{ row.register }}</span>{% endif %}
@@ -59,6 +61,7 @@
   <h2>Was die Hinweise bedeuten</h2>
   <p><span class="badge warn">Allergene fehlen</span> Zu diesem Gericht ist kein Allergen hinterlegt. Die KI gibt dazu keine Auskunft. Auch ein Gericht, das keines enthält, steht so da: hinterlegt wird nur, was ein Gericht enthält.</p>
   <p><span class="badge danger">Kasse: Preis</span> Die Kasse nennt einen anderen Preis als die Karte. Die KI nennt weiter den Preis der Karte, bis jemand in der Übersicht unter „Preise“ antwortet.</p>
+  <p>Der Preis ist der Grundpreis des Gerichts. Aufpreise für Größen oder Extras stehen hier nicht.</p>
   <p class="muted">Diese Seite zeigt die Karte nur. Geändert wird hier nichts.</p>
 </section>
 {% endif %}

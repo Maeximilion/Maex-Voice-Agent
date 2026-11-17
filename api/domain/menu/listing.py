@@ -100,8 +100,10 @@ def listing(
             allergens_missing=item_id in unknown,
             register_cents=register.get(item_id),
         )
+        # The number itself breaks a tie ("07" and "7" are one place in card
+        # order): without it two requests could cut the pages differently.
         for item_id, number, name, price_cents in sorted(
-            items, key=lambda item: number_key(item.number)
+            items, key=lambda item: (number_key(item.number), item.number)
         )
         if matches(number, name, query)
     ]

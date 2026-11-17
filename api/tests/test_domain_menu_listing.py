@@ -97,6 +97,15 @@ def test_active_dishes_in_card_order_with_the_price_of_the_database(session, ten
     assert (shown.items, shown.matching, shown.page, shown.pages) == (4, 4, 1, 1)
 
 
+def test_two_numbers_of_one_place_keep_their_order(session, tenant_id):
+    """ "7" and "07" sort alike: the number itself decides, not the order the
+    database happens to answer in, so a page boundary never moves."""
+    dish(session, tenant_id, "7", "Zweite")
+    dish(session, tenant_id, "07", "Erste")
+    dish(session, tenant_id, "007", "Nullte")
+    assert numbers(listing.listing(session, tenant_id)) == ["007", "07", "7"]
+
+
 def test_an_empty_menu_is_one_empty_page(session, tenant_id):
     shown = listing.listing(session, tenant_id, "ente", listing.ONLY_PRICE, 7)
     assert shown.rows == []

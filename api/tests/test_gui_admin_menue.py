@@ -137,6 +137,19 @@ def test_a_name_with_markup_is_shown_as_text(client, db, tenant_id):
     assert 'name="q" value="&#34;&gt;&lt;script&gt;x"' in typed
 
 
+def test_a_name_that_turns_the_reading_direction_stays_in_its_own_box(
+    client, db, tenant_id
+):
+    """A direction override in a name would show the price beside it
+    backwards ("08,31" for 13,80): number and name are isolated."""
+    turned = "Ente" + chr(0x202E)
+    dish(db, tenant_id, "1", turned, 1380)
+    page = client.get(PAGE).text
+    assert f'<bdi class="menu-name">{turned}</bdi>' in page
+    assert '<bdi class="nr">1</bdi>' in page
+    assert '<span class="menu-price">13,80 €</span>' in page
+
+
 def test_without_a_dish_the_page_says_so(client, tenant_id):
     page = client.get(PAGE)
     assert page.status_code == 200
@@ -162,6 +175,11 @@ def test_the_search_filters_and_keeps_what_was_typed(client, db, tenant_id):
         "07 Wan-Tan-Suppe 6,90 €",
         "70 Knusprige Ente 6,90 €",
     ]
+    # A no-break space from a pasted name is a space, a character nobody
+    # sees is dropped.
+    pasted = client.get(f"{PAGE}?q=knusprige%C2%A0en%E2%80%8Bte").text
+    assert _rows(pasted) == ["70 Knusprige Ente 6,90 €"]
+    assert 'name="q" value="knusprige ente"' in pasted
     nothing = client.get(f"{PAGE}?q=pizza").text
     assert _rows(nothing) == [] and "Kein Gericht gefunden." in nothing
 

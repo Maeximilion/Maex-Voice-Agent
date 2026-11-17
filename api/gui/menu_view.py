@@ -37,8 +37,10 @@ def page(
     session: Session, tenant: Tenant, q: str, hinweis: str, seite: str
 ) -> dict[str, Any]:
     # What nobody sees (a control character, a direction override) is not
-    # searched for and not sent back into the field.
-    query = "".join(ch for ch in q if ch.isprintable())[: listing.QUERY_MAX].strip()
+    # searched for and not sent back into the field; a space of any kind (a
+    # tab, a no-break space from a pasted name) stays a space.
+    seen = (" " if ch.isspace() else ch for ch in q if ch.isspace() or ch.isprintable())
+    query = "".join(seen)[: listing.QUERY_MAX].strip()
     only = hinweis if hinweis in FILTERS else ""
     shown = listing.listing(
         session,
