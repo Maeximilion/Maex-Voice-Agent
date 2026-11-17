@@ -549,7 +549,6 @@ def test_the_operator_stack_publishes_nothing_and_has_no_way_out():
     # Uvicorn trusts no forwarded header; the dashboard reads it behind the secret.
     assert "--no-proxy-headers" in dashboard["command"]
     assert dashboard["command"][dashboard["command"].index("--port") + 1] == "8002"
-    assert new_stack.OPERATOR_DASHBOARD == "maex-ops-dashboard-1:8002"
 
 
 def test_provisioning_registers_the_customer_with_the_operator(tmp_path, monkeypatch):
@@ -636,3 +635,24 @@ def test_the_operator_secret_is_no_customers(tmp_path, monkeypatch):
 def test_without_an_operator_stack_no_site_is_written(tmp_path):
     assert new_stack.main(["--ops-site", "--root", str(tmp_path)]) == 2
     assert not (tmp_path / "caddy").exists()
+
+
+def test_a_customer_with_the_operator_secret_does_not_go_live(tmp_path, monkeypatch):
+    """The security review of plan number 11: the api of such a stack shares an
+    `ops` network with the dashboard and would pass its proxy check."""
+    root = tmp_path / "srv"
+    _operator(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker())
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 0
+    stack = _stack(root)
+    env = new_stack.fresh_env({"key": "pilot", "name": "Pizzeria"}, "a.example.org")
+    env["GUI_PROXY_SECRET"] = OPS_SECRET
+    (stack / ".env").write_text(new_stack.env_text(EXAMPLE, env))
+
+    with pytest.raises(new_stack.Refused, match=r"ops\.caddy"):
+        new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    assert not (root / "caddy" / "sites" / "pilot.caddy").exists()
+    site = new_stack.site_text(CADDYFILE, "pilot", env)
+    (root / "caddy" / "sites" / "pilot.caddy").write_text(site)
+    assert new_stack.main(["--check-sites", "--root", str(root)]) == 1

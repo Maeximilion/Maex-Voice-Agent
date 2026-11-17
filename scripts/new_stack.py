@@ -72,7 +72,6 @@ CADDY_PROJECT = "maex-caddy"
 RESERVED_KEYS = frozenset({"caddy", "ops"})
 # deploy/docker-compose.operator.yml, run from <root>/ops.
 OPERATOR_PROJECT = "maex-ops"
-OPERATOR_DASHBOARD = f"{OPERATOR_PROJECT}-dashboard-1:8002"
 OPERATOR_SECRET = "{env.OPERATOR_PROXY_SECRET}"
 # What deploy/Caddyfile names, and what a site of one stack becomes.
 UPSTREAMS = {"api:8000", "n8n:5678", "push:80"}
@@ -284,6 +283,21 @@ def check_sites(sites: dict[str, str]) -> list[str]:
                 problems.append(f"{key}: host {name} is also {seen_names[name]}'s")
             seen_names[name] = key
     return problems
+
+
+def operator_conflicts(root: Path, sites: dict[str, str]) -> list[str]:
+    """No customer's site shares the proxy secret or a host name of the
+    installed ops.caddy: a stack's api that knew the dashboard's secret could
+    pass its proxy check over the `ops` network (docs/23 §8)."""
+    path = root / "caddy" / "operator" / "ops.caddy"
+    if not path.exists():
+        return []
+    _, secret, names = _site_facts(path.read_text())
+    return [
+        f"{key}: shares the proxy secret or a host name with ops.caddy"
+        for key, text in sorted(sites.items())
+        if _site_facts(text)[1] & secret or _site_facts(text)[2] & names
+    ]
 
 
 def site_files(sites_dir: Path) -> dict[str, str]:
@@ -521,7 +535,7 @@ def _create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     stack = root / key
     sites_dir = root / "caddy" / "sites"
     others = {k: t for k, t in site_files(sites_dir).items() if k != key}
-    if problems := check_sites(others):
+    if problems := check_sites(others) + operator_conflicts(root, others):
         raise Refused("site files already wrong: " + "; ".join(problems))
     for other, text in others.items():
         if f"agent.{domain}" in _site_facts(text)[2]:
@@ -582,7 +596,7 @@ def _create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     # Checked before anything starts: a refused site leaves no stack behind.
     caddyfile = (stack / "deploy" / "Caddyfile").read_text(encoding="utf-8")
     sites = {**others, key: site_text(caddyfile, key, env)}
-    if problems := check_sites(sites):
+    if problems := check_sites(sites) + operator_conflicts(root, sites):
         raise Refused("site file refused, nothing started: " + "; ".join(problems))
 
     run(["docker", "compose", "up", "-d", "--wait", "db"], stack)
@@ -633,7 +647,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         if args.check_sites:
-            problems = check_sites(site_files(args.root / "caddy" / "sites"))
+            sites = site_files(args.root / "caddy" / "sites")
+            problems = check_sites(sites) + operator_conflicts(args.root, sites)
             for problem in problems:
                 print(problem)
             return 1 if problems else 0

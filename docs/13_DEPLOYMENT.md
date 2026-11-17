@@ -470,7 +470,9 @@ EUR; isolation and the unchanged code decide it.
   `deploy/caddy/ops.caddy` with the host of `OPERATOR_ORIGIN` and `OPERATOR_PROXY_SECRET` into
   `<root>/caddy/operator/ops.caddy` (mode 640; refused when the secret is short, odd or a
   customer's), joins the shared Caddy to `maex-ops_edge` and reloads it, and takes the file out
-  again when Caddy refuses it. The site sends HSTS, `nosniff`, `no-referrer`, the CSP without
+  again when Caddy refuses it. From then on every customer's run and `--check-sites` also refuse a
+  customer site with the proxy secret or a host name of `ops.caddy`: that stack's `api` shares an
+  `ops` network with the dashboard and would pass its proxy check. The site sends HSTS, `nosniff`, `no-referrer`, the CSP without
   inline code and `frame-ancestors 'none'`, limits a body to 256 kB, proxies to the dashboard
   alone with the proxy secret and serves no file of its own. Caddy drops an `X-Forwarded-For`
   a client sent (no `trusted_proxies`); the dashboard reads that header only next to the secret,
