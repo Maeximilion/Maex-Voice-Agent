@@ -71,6 +71,7 @@ def list_today(
             note=row.note,
             tables=seated.get(row.id, []),
             is_test=row.is_test,
+            off_hours=row.off_hours,
         )
         for row in rows
     ]

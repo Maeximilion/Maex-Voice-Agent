@@ -581,7 +581,10 @@ def bookings_outside_hours(
     """The confirmed tables of the business day that `hours` would leave
     without a dine-in window: all of them when closed, the ones outside the
     times when shortened. The team calls these guests itself (#710, Maxi
-    2026-11-13): nothing is cancelled and no guest is messaged. By time."""
+    2026-11-13): nothing is cancelled and no guest is messaged. By time.
+    A table the team booked outside the hours on purpose (`off_hours`, #819)
+    is listed only when a window held it before the change: one the hours
+    never held is no news to its guest."""
     tz = ZoneInfo(zone)
     after = load_hours(session, tenant_id, day, days=1)
 
@@ -592,7 +595,8 @@ def bookings_outside_hours(
     # The date's span: its business day plus the windows that held before the
     # change, which may start before or end after the cutoff (02:00 to 04:00,
     # 22:00 to 10:00). The query bounds come from this span, never a constant.
-    span = [business_day_bounds_utc(day, zone), *dinein(before or DayHours())]
+    held_before = dinein(before or DayHours())
+    span = [business_day_bounds_utc(day, zone), *held_before]
     # After the change: the date with its new hours, its neighbours as set. A
     # table counts as kept when any window still holds it, also one of the day
     # before or after (open_window_at checks the previous day too).
@@ -620,6 +624,7 @@ def bookings_outside_hours(
         for r in rows
         if any(a <= r.reserved_for < b for a, b in span)
         and open_window_at(after, r.reserved_for, "dinein", tz) is None
+        and (not r.off_hours or any(a <= r.reserved_for < b for a, b in held_before))
     ]
 
 

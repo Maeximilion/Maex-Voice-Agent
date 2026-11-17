@@ -739,7 +739,9 @@ def test_a_span_over_midnight_needs_the_staff_to_say_so(session, tenant_id):
 # --- the guests a held closure or shortening leaves (#710) ---------------------
 
 
-def _table(session, tenant_id, day, at: time, name, status="confirmed"):
+def _table(
+    session, tenant_id, day, at: time, name, status="confirmed", off_hours=False
+):
     session.add(
         Reservation(
             tenant_id=tenant_id,
@@ -750,6 +752,7 @@ def _table(session, tenant_id, day, at: time, name, status="confirmed"):
             party_size=2,
             reserved_for=datetime.combine(day, at, tzinfo=BERLIN),
             idempotency_key=str(uuid.uuid4()),
+            off_hours=off_hours,
         )
     )
     session.commit()
@@ -760,6 +763,20 @@ def _guests(session, tenant_id, day, hours) -> list[str]:
         session, tenant_id, day, hours, "Europe/Berlin"
     )
     return [b.guest_name for b in found]
+
+
+def test_a_table_booked_outside_the_hours_is_listed_only_if_they_held_it(
+    session, tenant_id
+):
+    """#819: the hours never held the 15:00 table, so a closure is no news to
+    its guest; the 19:00 one was marked while the date had other hours, and
+    the weekly hours before the closure held it."""
+    _table(session, tenant_id, SATURDAY, time(15), "Nie geöffnet", off_hours=True)
+    _table(session, tenant_id, SATURDAY, time(19), "Damals markiert", off_hours=True)
+
+    assert _guests(session, tenant_id, SATURDAY, DayHours(closed=True)) == [
+        "Damals markiert"
+    ]
 
 
 def test_a_closure_lists_every_confirmed_table_of_the_date(session, tenant_id):
