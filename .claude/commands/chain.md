@@ -37,7 +37,7 @@ separate ship session (Maxi, 2026-11-17; it worked for every pull request of
 
 The brief is the session's only context. It has, in this order:
 
-1. `Route: <model-id> <effort>` as the first line (hook `route_advice.sh`).
+1. `Route: <model-id> <effort>` as the first line (hook `.claude/hooks/route_advice.sh`).
 2. Background of at least two sentences: the chain, the plan link, what is
    merged, which sessions run in parallel and in which folders.
 3. The task: items with issue and finding ids; "a finding is a claim, check it
@@ -46,10 +46,10 @@ The brief is the session's only context. It has, in this order:
    A write path also gets this line: look for a write that passes validation
    but puts a reader into a wrong state, and for a write that leaves a stale
    sibling row (the two P1 shapes Codex found on #820).
-4. GUI work also loads the skill `ui-ux-pro-max`; `docs/06_GUI.md` and
-   `.claude/rules/gui.md` win where they differ.
+4. GUI work also loads the skill `ui-ux-pro-max`; `docs/06_GUI.md` and the
+   GUI path rule win where they differ.
 5. Base: `origin/main`, or a stack on an open item's branch when both touch
-   the same files and the base is not merged yet (`done.md` step 7c).
+   the same files and the base is not merged yet (`/done` step 7c).
 6. "Wait inside the turn for tests, CI and Codex; do not end the turn with a
    status line." Every ended turn of a child wakes the coordinator.
 7. "Report once, at the end": PR number, merge commit, choices, usage.
@@ -112,5 +112,5 @@ UI review) as read-only sessions that end in one issue each; a triage of the
 issues the chain left open (fixable, needs Maxi, done); Maxi's decisions in
 one record on the plan issue; the fix items as the next chain. The last item
 of every chain that merged a migration: the workbench migration with a backup
-first (`.claude/rules/migrations.md`), run by Claude. Then close the issues the
+first (the migration path rule), run by Claude. Then close the issues the
 chain finished and report: merged pull requests, open decisions, usage.
