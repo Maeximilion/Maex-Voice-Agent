@@ -63,6 +63,7 @@ from api.events import enqueue
 from api.events.types import DAY_HOURS_CHANGED, TEAM_PHONE_CHANGED
 from api.models import (
     AuditLog,
+    OpeningHours,
     Reservation,
     ServiceConfig,
     SpecialDay,
@@ -88,6 +89,12 @@ NO_SPAN = "Bitte Beginn und Ende angeben, das Ende nicht gleich dem Beginn."
 OVERNIGHT = (
     "Das Ende liegt vor dem Beginn. Geht der Tag über Mitternacht, "
     "bitte „Ende nach Mitternacht“ ankreuzen."
+)
+# The same refusal for an end at 00:00, which reads as the end of the day and
+# is the start of the next one (#819): the rule is unchanged, the reason named.
+AT_MIDNIGHT = (
+    "Ein Ende um 00:00 Uhr liegt schon am nächsten Tag. Bitte „Ende nach "
+    "Mitternacht“ ankreuzen."
 )
 PAST_DAY = "Ein vergangener Tag lässt sich nicht mehr ändern."
 CARD_OPEN = (
@@ -637,7 +644,9 @@ def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> s
     )
     if digest == hashlib.md5(b"").hexdigest():  # no open card, nothing to list
         return ""
-    # The guest lists on the cards hang on the confirmed tables (#710).
+    # The guest lists on the cards hang on the confirmed tables (#710) and on
+    # the hours as they stand: the weekly ones and every date's (#819). The
+    # hours by their content: a save replaces its rows within one transaction.
     tables = session.execute(
         select(func.count(), func.max(Reservation.updated_at)).where(
             Reservation.tenant_id == tenant_id,
@@ -646,7 +655,38 @@ def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> s
             Reservation.reserved_for >= business_day_bounds_utc(today)[0],
         )
     ).one()
-    return str(digest)[:16] + hashlib.md5(repr(tuple(tables)).encode()).hexdigest()[:8]
+    weekly = func.concat(
+        OpeningHours.weekday,
+        OpeningHours.service,
+        cast(OpeningHours.opens_at, Text),
+        cast(OpeningHours.closes_at, Text),
+    )
+    dated = func.concat(
+        cast(SpecialDay.date, Text),
+        cast(SpecialDay.closed, Text),
+        cast(SpecialDay.opens_at, Text),
+        cast(SpecialDay.closes_at, Text),
+        SpecialDay.like_weekday,
+    )
+    hours = (
+        session.scalar(
+            select(_digest(weekly)).where(OpeningHours.tenant_id == tenant_id)
+        ),
+        session.scalar(
+            select(_digest(dated)).where(
+                SpecialDay.tenant_id == tenant_id, SpecialDay.status == SET
+            )
+        ),
+    )
+    behind = repr((tuple(tables), hours)).encode()
+    return str(digest)[:16] + hashlib.md5(behind).hexdigest()[:8]
+
+
+def _digest(each: Any) -> Any:
+    """The md5 of every row's text in one order, computed in the database."""
+    return func.md5(
+        func.coalesce(func.string_agg(each, aggregate_order_by(literal(";"), each)), "")
+    )
 
 
 # --- helpers ---------------------------------------------------------------------
@@ -662,7 +702,9 @@ def _checked(hours: DayHours, overnight: bool) -> DayHours:
     ):
         raise InvalidInput("hours without a span", say=NO_SPAN)
     if hours.opens and hours.closes and hours.closes < hours.opens and not overnight:
-        raise InvalidInput("hours past midnight not confirmed", say=OVERNIGHT)
+        raise InvalidInput(
+            "hours past midnight not confirmed", say=past_midnight(hours.closes)
+        )
     return hours
 
 
@@ -680,6 +722,11 @@ def _dialable(raw: str) -> str:
 
 def _by(actor: str) -> str:
     return BY_OPERATOR if actor.startswith(OPERATOR_ACTOR) else BY_TEAM
+
+
+def past_midnight(closes: time) -> str:
+    """Why an end before the start is refused without the owner's word."""
+    return AT_MIDNIGHT if closes == time(0) else OVERNIGHT
 
 
 def _locked(session: Session, tenant_id: uuid.UUID) -> tuple[ServiceConfig, str]:

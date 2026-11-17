@@ -3,13 +3,14 @@
    no verification note here: those are shown with their request. `gesehen` is
    the token of the log as the form showed it, so a second tap on "Eintragen"
    writes no second line. #}
-<h2>Anfragen von Gästen</h2>
-{% if message %}<p class="badge {{ tone }}" role="{{ 'alert' if tone == 'danger' else 'status' }}">{{ message }}</p>{% endif %}
+{% import "fragments/_fehler.html" as fehler %}
+<h2 tabindex="-1"{% if not message and not summary %} data-fokus{% endif %}>Anfragen von Gästen</h2>
+{% if message %}<p class="badge {{ tone }}" role="{{ 'alert' if tone == 'danger' else 'status' }}" tabindex="-1" data-fokus>{{ message }}</p>{% endif %}
 <p class="muted">Ein Gast fragt, was über ihn gespeichert ist, will es gelöscht haben oder widerspricht dem Wiedererkennen seiner Nummer: am selben Tag hier eintragen. Die schriftliche Antwort muss innerhalb eines Monats beim Gast sein.</p>
 {% if open %}
 <table class="tbl week">
   <thead>
-    <tr><th>Zeichen</th><th>Art</th><th>Eingang</th><th>Frist</th><th></th></tr>
+    <tr><th>Zeichen</th><th>Art</th><th>Eingang</th><th>Frist</th><th>Öffnen</th></tr>
   </thead>
   <tbody>
     {% for row in open %}
@@ -28,7 +29,8 @@
 {% endif %}
 
 <h3 id="daten-neu-titel">Neue Anfrage eintragen</h3>
-<form class="week-form zone-form" novalidate hx-post="/gui/daten/anfrage" hx-target="#daten-anfragen" hx-swap="innerHTML" aria-labelledby="daten-neu-titel">
+{{ fehler.summary(summary) }}
+<form class="week-form zone-form" novalidate hx-post="/gui/daten/anfrage" hx-target="#daten-anfragen" hx-swap="innerHTML" hx-disabled-elt="find button" aria-labelledby="daten-neu-titel">
   <input type="hidden" name="gesehen" value="{{ sent.gesehen or seen }}">
   <label>Art der Anfrage
     <select name="art">
@@ -40,9 +42,11 @@
       {% for value, label in channels %}<option value="{{ value }}"{% if sent.weg == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
   </label>
-  <label>Eingegangen am <input type="date" name="eingang" value="{{ sent.eingang or today }}" max="{{ today }}"></label>
-  <label>Angaben des Gastes zu seiner Person <textarea name="notiz" rows="4" maxlength="{{ note_max }}" autocomplete="off">{{ sent.notiz }}</textarea></label>
-  <p class="muted">Der Name mit dem Tag einer Bestellung oder Reservierung oder mit der Lieferadresse, und jede Nummer, von der der Gast angerufen hat. Die Notiz wird {{ note_months }} Monate nach der Antwort gelöscht.</p>
+  <label>Eingegangen am <input type="date" id="f-eingang" name="eingang" value="{{ sent.eingang or today }}" max="{{ today }}"{{ fehler.attrs(["eingang"], errors) }}></label>
+  {{ fehler.beside("eingang", errors) }}
+  <label>Angaben des Gastes zu seiner Person (Pflichtfeld) <textarea id="f-notiz" name="notiz" rows="4" maxlength="{{ note_max }}" autocomplete="off" aria-required="true"{{ fehler.attrs(["notiz"], errors, "hilfe-notiz") }}>{{ sent.notiz }}</textarea></label>
+  {{ fehler.beside("notiz", errors) }}
+  <p class="muted" id="hilfe-notiz">Der Name mit dem Tag einer Bestellung oder Reservierung oder mit der Lieferadresse, und jede Nummer, von der der Gast angerufen hat. Ohne diese Angaben wird die Anfrage nicht eingetragen. Die Notiz wird {{ note_months }} Monate nach der Antwort gelöscht.</p>
   <div class="cb-actions">
     <button type="submit" class="primary">Eintragen</button>
   </div>

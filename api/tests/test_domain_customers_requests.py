@@ -11,12 +11,13 @@ import pytest
 from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
-from api.core.errors import Ambiguous, Conflict, InvalidInput, NotFound
+from api.core.errors import Ambiguous, Conflict, FieldErrors, InvalidInput, NotFound
 from api.domain.confirm import confirm
 from api.domain.customers import find_customer
 from api.domain.customers.phone import number_or_none
 from api.domain.customers.requests import (
     NOTE_MAX,
+    SAY_NO_DETAILS,
     Details,
     LedgerEntry,
     access_copy,
@@ -1821,3 +1822,19 @@ def test_every_refusal_of_the_check_has_a_sentence_for_the_owner(session, tenant
             claimed=[uuid.uuid4()],
         )
     assert "angekreuzte" in str(refused.value.say)
+
+
+@pytest.mark.parametrize("note", [None, "", "   \n "])
+def test_a_request_from_the_page_needs_the_guests_details(session, tenant_id, note):
+    """Without them nobody can find the guest's rows: no request is logged and
+    no deadline runs (#829-11, Maxi 2026-11-17)."""
+    with pytest.raises(FieldErrors) as refused:
+        _once(session, tenant_id, note=note)
+    assert refused.value.faults == {"note": SAY_NO_DETAILS}
+    assert session.scalar(select(func.count()).select_from(DataSubjectRequest)) == 0
+
+
+def test_details_missing_and_a_day_ahead_are_named_together(session, tenant_id):
+    with pytest.raises(FieldErrors) as refused:
+        _once(session, tenant_id, note="", received_on=date(2026, 12, 24))
+    assert set(refused.value.faults) == {"note", "received"}

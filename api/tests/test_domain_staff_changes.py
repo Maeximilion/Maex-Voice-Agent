@@ -17,6 +17,7 @@ from api.core.errors import Conflict, InvalidInput
 from api.domain.callbacks import transfer_to_team
 from api.domain.calls.routing import call_routing
 from api.domain.status import staff_changes as staff
+from api.domain.status import weekly
 from api.domain.status.hours import load_hours, windows_for_day
 from api.domain.status.staff_changes import DayHours
 from api.events.types import DAY_HOURS_CHANGED, TEAM_PHONE_CHANGED
@@ -1093,3 +1094,19 @@ def test_a_change_begun_before_the_card_still_names_who_made_it(session, tenant_
     session.commit()
 
     assert staff.changed_by(session, tenant_id, [card]) == {card.id: "team"}
+
+
+def test_the_check_token_follows_the_hours_behind_a_card(session, tenant_id):
+    """The guests to call on a card hang on the hours too (#819): a change of
+    the weekly hours or of another date's hours refreshes the card."""
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    token = staff.cards_change_token(session, tenant_id, TUESDAY)
+    sunday = SATURDAY.weekday() + 1
+    shown = weekly.token(weekly.week(session, tenant_id)[sunday])
+    lunch = weekly.Span(time(11, 30), time(14))
+    assert weekly.set_weekday(session, tenant_id, sunday, {"pickup": [lunch]}, shown)
+    changed = staff.cards_change_token(session, tenant_id, TUESDAY)
+    assert changed != token
+    later = SATURDAY + timedelta(days=7)
+    staff.set_day_hours(session, tenant_id, later, DayHours(closed=True), NOW)
+    assert staff.cards_change_token(session, tenant_id, TUESDAY) != changed
