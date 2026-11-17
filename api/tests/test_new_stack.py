@@ -160,6 +160,28 @@ def test_a_team_number_not_in_e164_is_refused_before_anything_starts(tmp_path, p
     assert not (tmp_path / "srv").exists()
 
 
+@pytest.mark.parametrize(
+    "timezone", ["Europe/Berlin\nAGENT_API_TOKEN=x", "Mars/Olympus", "../etc", ["x"]]
+)
+def test_a_timezone_that_is_no_zone_name_is_refused(tmp_path, timezone):
+    """#827 F8: it goes into .env as written."""
+    path = tmp_path / "customer.json"
+    path.write_text(json.dumps({"key": "pilot", "name": "x", "timezone": timezone}))
+    with pytest.raises(new_stack.BadInput, match="timezone"):
+        new_stack.read_customer(path)
+
+
+@pytest.mark.parametrize(
+    ("timezone", "expected"),
+    [("Europe/Vienna", "Europe/Vienna"), (None, "Europe/Berlin")],
+)
+def test_a_zone_name_or_none_is_taken(tmp_path, timezone, expected):
+    path = tmp_path / "customer.json"
+    path.write_text(json.dumps({"key": "pilot", "name": "x", "timezone": timezone}))
+    spec = new_stack.read_customer(path)
+    assert new_stack.fresh_env(spec, "a.example.org")["TENANT_TIMEZONE"] == expected
+
+
 def test_an_e164_team_number_becomes_team_phone():
     spec = {"key": "pilot", "name": "x", "team_phone": "+4972215551234"}
     assert new_stack.fresh_env(spec, "a.example.org")["TEAM_PHONE"] == "+4972215551234"
@@ -549,6 +571,14 @@ def test_the_operator_stack_publishes_nothing_and_has_no_way_out():
     # Uvicorn trusts no forwarded header; the dashboard reads it behind the secret.
     assert "--no-proxy-headers" in dashboard["command"]
     assert dashboard["command"][dashboard["command"].index("--port") + 1] == "8002"
+    # #827 F7: neither service takes the host's memory or CPU from a stack.
+    for service in services.values():
+        assert service["mem_limit"] == "512m" and service["cpus"] == 1.0
+    # #827 F5: the dashboard's role from DATABASE_URL, never the owner's.
+    environment = dashboard["environment"]
+    assert environment["OPERATOR_DATABASE_URL"].startswith("${DATABASE_URL:?")
+    assert not {"OWNER_DATABASE_URL", "POSTGRES_PASSWORD"} & set(environment)
+    assert "env_file" not in dashboard
 
 
 def test_provisioning_registers_the_customer_with_the_operator(tmp_path, monkeypatch):

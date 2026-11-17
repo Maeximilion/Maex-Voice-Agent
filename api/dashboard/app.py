@@ -32,7 +32,8 @@ import logging
 import re
 import secrets
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,7 @@ from sqlalchemy.orm import Session
 from starlette.responses import Response
 
 from api.core import ops_reason
+from api.core.database_role import refuse_a_superuser_role
 from api.core.logging import (
     configure_logging,
     error_text,
@@ -63,7 +65,7 @@ from api.core.origin import same_origin
 from api.core.tokens import LOCAL_ENVS
 from api.dashboard import access, customers, passkeys, push, results, totp
 from api.dashboard.config import settings
-from api.dashboard.db import get_db
+from api.dashboard.db import engine, get_db
 
 configure_logging(settings.log_level)
 logger = get_logger("api.dashboard.app")
@@ -190,7 +192,22 @@ SHOWN_IN = ZoneInfo("Europe/Berlin")
 # How far a stack's clock may be ahead of the dashboard's and still be "now".
 CLOCK_SKEW = timedelta(minutes=5)
 
-app = FastAPI(title="Maex Operator", docs_url=None, redoc_url=None, openapi_url=None)
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # As the API's start (#827 F5): the operator's tables hold every OPS_TOKEN
+    # and the TOTP secrets, so a flaw here must not get a superuser.
+    refuse_a_superuser_role(settings.env, engine, "OPERATOR_DATABASE_URL")
+    yield
+
+
+app = FastAPI(
+    title="Maex Operator",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+    lifespan=_lifespan,
+)
 app.mount("/static", StaticFiles(directory=str(GUI_STATIC)), name="static")
 templates = Jinja2Templates(directory=str(HERE / "templates"))
 

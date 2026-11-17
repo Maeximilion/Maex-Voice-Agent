@@ -47,6 +47,7 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 | `ids.py` | Idempotenz-Schlüssel, Abholcode („A17") |
 | `time.py` | UTC ↔ `Europe/Berlin`, „heute" im Sinne des Betriebstags |
 | `tokens.py` | the rule every token meets outside dev and test (`valid_production_token`, `LOCAL_ENVS`); reads no settings, so the operator dashboard uses it too |
+| `database_role.py` | `refuse_a_superuser_role`: outside dev and test a start as a Postgres superuser is refused (#252); takes the engine, reads no settings, so the API, the voice service and the operator dashboard all call it (#827 F5) |
 | `origin.py` | `same_origin`: a browser write comes from a page of this site (docs/23 §6, T9); shared by `gui/` and `dashboard/` |
 | `ops_reason.py` | the reason an operator gives before a stack hands out guest data (docs/23 §8): the fixed list of categories, the form of the ticket number and of the account, `reason` and `parse` for the two headers, the header that names the customer a step is meant for (`X-Ops-Customer`) and `OpsReader` (who asks and why); reads no settings, shared by `core/auth.py` (`require_ops_reason`), `domain/operator.py` and `dashboard/` |
 
@@ -219,7 +220,7 @@ Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `doma
 ### `dashboard/` – the operator dashboard, an app of its own (#571, docs/23 §5)
 Run from the API's image as `uvicorn api.dashboard.app:app`, with its own database (`OPERATOR_DATABASE_URL`) and migrations (`db/dashboard/`). It never imports `api.config` or `api.db`, which build a customer stack's settings and connection (`api/tests/test_dashboard_login.py` checks it); from the customer side it uses only `core/` helpers that read no settings and `domain/access/hashing.py` and the wait rule of `domain/access/sessions.py`.
 - `config.py` — its settings: `ENV`, `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET` (refused at start outside dev and test when weak), `OPERATOR_ORIGIN` (the dashboard's own address, which passkeys are bound to; refused at start outside dev and test when missing), `OPERATOR_PUSH_URL` and `OPERATOR_PUSH_TOKEN`, `OPERATOR_METRICS_DIR` (the folder of the recorded eval and measurement results)
-- `db.py` — engine and request session of the operator database
+- `db.py` — engine and request session of the operator database; `app.py` refuses a superuser role at start outside dev and test (#827 F5)
 - `models.py` — accounts, recovery codes, sessions (with the last second factor's time), passkeys, their challenges, devices, failures per address, the operator's own audit
 - `totp.py` — RFC 6238 codes, standard library, a code never taken twice
 - `passkeys.py` — WebAuthn with `py_webauthn`: challenges (one holder, one purpose, single use, five minutes), registration and assertion against `OPERATOR_ORIGIN`, the signature counter; no FastAPI, the only module that imports `webauthn`

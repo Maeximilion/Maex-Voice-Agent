@@ -435,7 +435,7 @@ EUR; isolation and the unchanged code decide it.
   not answer stays (it may still print); one it never claimed is removed.
 - #570 logins are per stack; the GUI's tenant choice may stay as it is.
 - #571 operator dashboard reads several stacks over an ops API per stack on an internal `ops`
-  network (docs/23 §8). Its own settings, in the operator stack's `.env`: `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET`, and
+  network (docs/23 §8). Its own settings, in the operator stack's `.env`: `DATABASE_URL` (handed to the dashboard as `OPERATOR_DATABASE_URL`), `OPERATOR_PROXY_SECRET`, and
   `OPERATOR_ORIGIN`, the address the operator's browser uses (`https://ops.<domain>`, no path).
   Passkeys are bound to it: the dashboard refuses to start without it outside dev and test, and a
   later change of the host name makes every registered passkey useless (TOTP and the recovery
@@ -452,18 +452,25 @@ EUR; isolation and the unchanged code decide it.
   of its own. Both networks are internal and nothing publishes a port: `backend` holds the
   database and the dashboard, `edge` the dashboard and, once its site is installed, the shared
   Caddy. Its `.env` (mode 600, `.env.example` names each line): `POSTGRES_USER`,
-  `POSTGRES_PASSWORD`, `POSTGRES_DB` (for example `maex_operator`), `OPERATOR_DATABASE_URL`,
+  `POSTGRES_PASSWORD`, `POSTGRES_DB` (for example `maex_operator`), `DATABASE_URL` (the
+  dashboard's own role, for example `maex_ops`) and `OWNER_DATABASE_URL` (the owner, as in §3),
+  `BACKUP_DOCKER_NETWORK=maex-ops_backend` and `BACKUP_PASSPHRASE_FILE` (§4),
   `OPERATOR_PROXY_SECRET` and `OPERATOR_ORIGIN`, and
-  `COMPOSE_FILE=deploy/docker-compose.operator.yml:networks.json`. Setting it up, in `<root>/ops`:
-  `echo '{}' > networks.json` once, then `docker compose up -d --wait db`,
-  `docker compose run --rm dashboard alembic -c db/dashboard/alembic.ini upgrade head`,
-  `docker compose up -d --build` and the first account with
+  `COMPOSE_FILE=deploy/docker-compose.operator.yml:networks.json`. The dashboard connects as its
+  own role and, outside dev and test, refuses to start as a superuser; the owner migrates, dumps and
+  restores, and never reaches the dashboard's container (#827 F5). Setting it up, in `<root>/ops`:
+  `echo '{}' > networks.json` once, then `docker compose up -d --wait db`, `bash scripts/db_role.sh`,
+  `bash scripts/migrate.sh --operator`, `docker compose up -d --build` and the first account with
   `docker compose exec dashboard python -m api.dashboard.cli add <name>`. From then on
   `scripts/new_stack.py` rewrites `networks.json` from the site files (the dashboard on every
   customer's `ops` network, on no other of theirs), recreates the dashboard and registers each
   new customer with `customer-add`, the stack's `OPS_TOKEN` on standard input; without
   `<root>/ops/.env` it prints that command instead. The push on a changed factor stays a log
   line: both networks are internal, and this stack has no push server of its own yet.
+  Each of its two services may take at most 512 MiB and one CPU, so the operator side never takes
+  memory from a stack's call path (#827 F7). Its database is dumped every night at 03:15 by the
+  second line of `deploy/backup.cron`, run in `<root>/ops`; a dump there writes no `backup.done`
+  (the operator database has no tenants and no backup alarm) and says so in the log (#827 F9).
   **ops.<domain> stays closed until the security audit of docs/23 §11 found no open P1.** Without
   a site file the shared Caddy has no site for that name, gets no certificate and answers
   nothing. After the audit `python3 scripts/new_stack.py --ops-site [--root /srv/maex]` renders

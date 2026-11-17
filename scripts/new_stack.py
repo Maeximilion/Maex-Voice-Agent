@@ -58,6 +58,7 @@ import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+from zoneinfo import available_timezones
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 # api/models/tenants.py CUSTOMER_KEY; the host needs no package of the API.
@@ -374,6 +375,13 @@ def read_customer(path: Path) -> dict[str, Any]:
         # It becomes TEAM_PHONE as written, and provisioning compares the
         # normalized number with it exactly: only E.164 reads the same both ways.
         raise BadInput("customer file: team_phone must be E.164, like +4972215551234")
+    timezone = spec.get("timezone")
+    if timezone and (
+        not isinstance(timezone, str) or timezone not in available_timezones()
+    ):
+        # It becomes TENANT_TIMEZONE as written (#827 F8): a line break would
+        # split the .env line, and an unknown zone fails the stack's start.
+        raise BadInput("customer file: timezone must be a zone name like Europe/Berlin")
     customer: dict[str, Any] = spec
     return customer
 
