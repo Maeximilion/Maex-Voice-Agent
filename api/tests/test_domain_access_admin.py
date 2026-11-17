@@ -28,7 +28,8 @@ from api.domain.access.sessions import (
     unlock,
 )
 from api.domain.access.setup import issue_link, set_team_pin, use_link
-from api.models import AuditLog, GuiAccount, Tenant
+from api.events.types import ADMIN_PIN_WRONG
+from api.models import AuditLog, GuiAccount, OutboxEvent, Tenant
 
 T0 = datetime(2026, 11, 9, 10, 0, tzinfo=UTC)
 PASSWORD = "Kuechentablet-2026"
@@ -314,3 +315,57 @@ def test_a_device_signed_out_meanwhile_is_told_so_not_a_wrong_pin(
     refused = _refused(session, uuid.uuid4(), ADMIN, T0)
     assert refused.ended and not refused.missing and refused.wait_minutes is None
     assert session.scalars(select(GuiAccount)).one().admin_failures == 0
+
+
+# --- wrong admin PINs on a locked device, and their push (#827 F4) -------------
+
+
+def _pushes(session) -> list[OutboxEvent]:
+    return list(session.scalars(select(OutboxEvent).order_by(OutboxEvent.created_at)))
+
+
+def test_on_a_locked_device_wrong_admin_pins_end_the_session_at_five(
+    session, tenant_id, token
+):
+    """The admin PIN page unlocks a locked device, so its wrong PINs count on
+    the lock page's five tries, with the team PIN's (#827 F4)."""
+    access = _access(session, tenant_id, token, T0)
+    later = T0 + IDLE
+    assert unlock(session, access.session_id, "0000", later) == 4
+    for pin in ("0001", "0002"):
+        assert not _refused(session, access.session_id, pin, later).ended
+    # The third wrong admin PIN brings a wait, which counts no try; after it,
+    # the fifth try ends the session.
+    assert _refused(session, access.session_id, "0003", later).wait_minutes == 1
+    assert not _refused(session, access.session_id, "0004", later).ended
+    after = later + timedelta(minutes=1)
+    assert _refused(session, access.session_id, "0004", after).ended
+    assert resolve(session, token, tenant_id, after) is None
+    ended = session.scalars(
+        select(AuditLog).where(AuditLog.action == "gui.session_ended")
+    ).one()
+    assert ended.payload["reason"] == "admin_pin_failures"
+
+
+def test_every_third_wrong_admin_pin_and_a_sign_out_push_to_owner_and_ops(
+    session, tenant_id, token
+):
+    access = _access(session, tenant_id, token, T0)
+    for pin in ("0000", "0001"):
+        _refused(session, access.session_id, pin, T0)
+    assert _pushes(session) == []
+    _refused(session, access.session_id, "0002", T0)
+    (push,) = _pushes(session)
+    assert push.event_type == ADMIN_PIN_WRONG
+    assert push.payload == {"failures": 3, "device": "Tablet", "ended": False}
+    # A wrong PIN itself never leaves the stack.
+    assert "0002" not in str(push.payload)
+    # On a locked device the fifth try ends the session and says so.
+    later = T0 + IDLE + timedelta(minutes=1)
+    for pin in ("0003", "0004", "0005"):
+        unlock(session, access.session_id, pin, later)
+    assert not _refused(session, access.session_id, "0006", later).ended
+    assert len(_pushes(session)) == 1
+    assert _refused(session, access.session_id, "0007", later).ended
+    last = _pushes(session)[-1]
+    assert last.payload == {"failures": 5, "device": "Tablet", "ended": True}

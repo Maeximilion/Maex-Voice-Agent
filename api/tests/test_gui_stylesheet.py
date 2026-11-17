@@ -81,3 +81,15 @@ def test_tap_targets_do_not_wait_for_a_double_tap_zoom():
     assert "touch-action:manipulation" in rule
     floor_plan = (STATIC / "raumplan.css").read_text(encoding="utf-8")
     assert floor_plan.count("touch-action: none") == 3
+
+
+def test_every_form_control_shows_the_same_focus_ring():
+    """#829-17: a focused select or textarea kept the browser's thin ring."""
+    rule = re.search(
+        r"\n([^{}\n]*:focus-visible[^{}]*)\{([^}]*outline:3px[^}]*)\}", CSS
+    )
+    assert rule is not None
+    selectors, body = rule.groups()
+    listed = {s.strip().removesuffix(":focus-visible") for s in selectors.split(",")}
+    assert {"button", "a", "input", "select", "textarea", "summary"} <= listed
+    assert "var(--accent)" in body

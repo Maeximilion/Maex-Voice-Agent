@@ -1291,3 +1291,95 @@ def test_csrf_matches_needs_both_ascii_and_equal():
     assert not csrf_matches("", "")
     assert not csrf_matches(None, "abc") and not csrf_matches("abc", None)
     assert not csrf_matches("äbc", "äbc")  # compare_digest takes no non-ASCII str
+
+
+# --- customer view hardening (#827 F2, F4, F6) ---------------------------------
+
+
+def test_every_answer_of_the_view_but_its_files_says_no_store(client, engine):
+    """#827 F2: the board's parts hold guests' names, numbers and addresses,
+    and a refusal is no page to keep either (#821). One middleware sets it;
+    the view's own files keep their `no-cache`."""
+    refused = client.get("/gui/fragments/heute", headers=HX)
+    assert refused.status_code == 401
+    assert refused.headers["Cache-Control"] == "no-store"
+    _set_up_and_sign_in(client, engine)
+    for path in (
+        "/gui/fragments/heute",
+        "/gui/fragments/rueckrufe",
+        "/gui/rueckrufe/verlauf",
+        "/gui/fragments/bestellungen",
+        "/gui/fragments/pruefen",
+        "/gui/gibt-es-nicht",
+    ):
+        answer = client.get(path, headers=HX)
+        assert answer.headers.get("Cache-Control") == "no-store", path
+    foreign = client.post(
+        "/gui/kopfzeile/ki-pausieren",
+        headers={**HX, "Origin": "https://evil.example"},
+    )
+    assert foreign.status_code == 403
+    assert foreign.headers["Cache-Control"] == "no-store"
+    static = client.get("/gui/static/app.css")
+    assert static.status_code == 200 and static.headers["Cache-Control"] == "no-cache"
+
+
+def test_wrong_admin_pins_on_a_locked_device_count_on_its_five_tries(client, engine):
+    """#827 F4: the admin PIN page unlocks a locked device too, so it takes no
+    more tries than the lock page: three wrong team PINs and two wrong admin
+    PINs sign the device out."""
+    _set_up_and_sign_in(client, engine)
+    _lock(engine)
+    for _ in range(3):
+        wrong = client.post(
+            "/gui/entsperren", data={"csrf_token": "testtoken", "pin": "0000"}
+        )
+        assert wrong.status_code == 401
+    assert _owner(client, pin="1111").status_code == 401
+    ended = _owner(client, pin="2222")
+    assert ended.status_code == 303 and ended.headers["location"] == "/gui/anmelden"
+    assert _sessions(engine) == []
+
+
+def test_wrong_admin_pins_on_a_device_in_use_never_sign_it_out(client, engine):
+    """The decision of 09.11.2026 stays: on a device in use the admin PIN only
+    brings waits."""
+    _set_up_and_sign_in(client, engine)
+    for pin in ("0000", "0001"):
+        assert _owner(client, pin=pin).status_code == 401
+    assert "Zu viele Versuche" in _owner(client, pin="0002").text
+    assert len(_sessions(engine)) == 1
+
+
+FLOOR_PLAN_AND_NOTICE = [
+    ("GET", "/gui/raumplan"),
+    ("GET", "/gui/raumplan/plan"),
+    ("POST", "/gui/raumplan/bereiche"),
+    ("PUT", f"/gui/raumplan/bereiche/{ANY_ID}"),
+    ("GET", "/gui/vorlauf"),
+    ("POST", "/gui/vorlauf"),
+]
+
+
+@pytest.mark.parametrize(("method", "path"), FLOOR_PLAN_AND_NOTICE)
+def test_the_floor_plan_and_the_notice_ask_the_admin_pin(client, engine, method, path):
+    """#827 F6 (Maxi, 2026-11-17): tables, seats and the notice per weekday
+    turn callers away when wrong, so they are the owner's like the weekly
+    hours; the standard wait and the price answer stay with the staff."""
+    _set_up_and_sign_in(client, engine)
+    answer = client.request(
+        method, path, headers={**HX, "HX-Current-URL": "http://testserver/gui/"}
+    )
+    assert answer.status_code == 401
+    assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/"
+
+
+def test_the_floor_plan_opens_after_the_admin_pin(client, engine):
+    _set_up_and_sign_in(client, engine)
+    page = client.get("/gui/raumplan", headers=HTML)
+    assert page.status_code == 303
+    assert page.headers["location"] == "/gui/inhaber?weiter=/gui/raumplan"
+    assert _owner(client, back="/gui/raumplan").headers["location"] == "/gui/raumplan"
+    assert client.get("/gui/raumplan", headers=HTML).status_code == 200
+    assert client.get("/gui/raumplan/plan").json()["ok"] is True
+    assert client.get("/gui/vorlauf", headers=HX).status_code == 200
