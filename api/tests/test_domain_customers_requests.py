@@ -29,8 +29,8 @@ from api.domain.customers.requests import (
     has_run,
     log_request,
     log_request_once,
+    log_token,
     look,
-    next_reference,
     open_requests,
     record_objection,
     verify,
@@ -1604,12 +1604,12 @@ def _once(session, tenant_id, seen=None, **overrides) -> DataSubjectRequest:
         "actor": OWNER,
     } | overrides
     if seen is None:
-        seen = next_reference(session, tenant_id, ZONE, fields["now"])
+        seen = log_token(session, tenant_id)
     return log_request_once(session, tenant_id, seen, **fields)
 
 
 def test_a_request_from_the_page_is_logged_once_per_form(session, tenant_id):
-    seen = next_reference(session, tenant_id, ZONE, NOW)
+    seen = log_token(session, tenant_id)
     first = _once(session, tenant_id, seen)
     assert (first.reference, first.received_at, first.deadline) == (
         "dsr_2026_001",
@@ -1626,7 +1626,34 @@ def test_a_request_from_the_page_is_logged_once_per_form(session, tenant_id):
     assert actors == [OWNER, OWNER]
 
 
-@pytest.mark.parametrize("seen", ["", "dsr_2026_000", "dsr_2026_002", "x" * 5000])
+def test_a_request_received_last_year_changes_the_token_too(session, tenant_id):
+    """Its reference counts in the old year, the next one of this year stays."""
+    seen = log_token(session, tenant_id)
+    old = _once(session, tenant_id, seen, received_on=date(2025, 12, 30))
+    assert old.reference == "dsr_2025_001"
+    with pytest.raises(Conflict):
+        _once(session, tenant_id, seen, received_on=date(2025, 12, 30))
+    assert session.scalar(select(func.count()).select_from(DataSubjectRequest)) == 1
+
+
+def test_from_the_page_the_deadline_moves_only_inside_the_first_month(
+    session, tenant_id
+):
+    request = _request(session, tenant_id, kind="access")
+    last_day = datetime(2026, 12, 2, 20, 0, tzinfo=UTC)
+    too_late = last_day + timedelta(days=1)
+    assert can_extend(request, ZONE, last_day) and not can_extend(
+        request, ZONE, too_late
+    )
+    with pytest.raises(Conflict):
+        extend_deadline(session, request, ZONE, OWNER, too_late)
+    assert request.deadline == date(2026, 12, 2)
+    # The server command enters late what the guest was told in time.
+    extend_deadline(session, request, ZONE)
+    assert request.deadline == date(2027, 2, 2)
+
+
+@pytest.mark.parametrize("seen", ["", "1", "dsr_2026_001", "0-0.0", "x" * 5000])
 def test_a_token_that_is_not_the_logs_writes_nothing(session, tenant_id, seen):
     with pytest.raises(Conflict):
         _once(session, tenant_id, seen)

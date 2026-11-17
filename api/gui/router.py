@@ -2366,8 +2366,8 @@ DEADLINE_MOVED = (
     "Frist verlängert. Der Gast muss den Grund innerhalb des ersten Monats erfahren."
 )
 REQUEST_ANSWERED = "Als beantwortet eingetragen."
-# The token of the request log a form sends back, no longer than a reference.
-SEEN_MAX = 20
+# The token of the request log a form sends back (`requests.log_token`).
+SEEN_MAX = 40
 
 
 def _requests_part(
@@ -2415,7 +2415,6 @@ def _request_part(
     tone: str = "ok",
     sent: dict[str, str] | None = None,
     found: dict[str, Any] | None = None,
-    claimed: frozenset[str] = frozenset(),
 ) -> HTMLResponse:
     """One request with what can still be done to it; `found` is what a check
     of the person returned, `sent` the details it was typed with."""
@@ -2429,7 +2428,6 @@ def _request_part(
             "tone": tone,
             "sent": sent or {},
             "found": found,
-            "claimed": claimed,
         },
         headers=NO_STORE,
     )
@@ -2554,7 +2552,9 @@ def data_request_extend(
     tenant = _admin_tenant(session)
     row = _guest_request(session, tenant, reference, lock=True)
     try:
-        guest_requests.extend_deadline(session, row, tenant.timezone, staff.ACTOR_OWNER)
+        guest_requests.extend_deadline(
+            session, row, tenant.timezone, staff.ACTOR_OWNER, clock.utcnow()
+        )
         session.commit()
     except AppError:
         session.rollback()
@@ -2637,14 +2637,14 @@ def data_request_check(
         return _request_part(
             request, session, tenant, reference, _refusal(exc), "danger", sent
         )
+    ticked = frozenset(str(row_id) for row_id in claimed)
     return _request_part(
         request,
         session,
         tenant,
         reference,
         sent=sent,
-        found=data_view.found(copy, tenant),
-        claimed=frozenset(str(row_id) for row_id in claimed),
+        found=data_view.found(copy, tenant, ticked),
     )
 
 

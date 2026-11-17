@@ -208,12 +208,16 @@ def log_request(
     return request
 
 
-def next_reference(
-    session: Session, tenant_id: uuid.UUID, zone: str, now: datetime
-) -> str:
-    """The reference the next request of today gets: the token of the log as a
-    form showed it (`log_request_once`)."""
-    return _next_reference(session, tenant_id, to_local(now, zone).year)
+def log_token(session: Session, tenant_id: uuid.UUID) -> str:
+    """The request log as a form showed it (`log_request_once`): how many lines
+    it has and when the newest was written. Every new line changes it, whatever
+    year its reference counts in."""
+    count, newest = session.execute(
+        select(func.count(), func.max(DataSubjectRequest.created_at)).where(
+            DataSubjectRequest.tenant_id == tenant_id
+        )
+    ).one()
+    return f"{count}-{newest.timestamp():.6f}" if newest else "0"
 
 
 def log_request_once(
@@ -228,13 +232,13 @@ def log_request_once(
     now: datetime,
     actor: str,
 ) -> DataSubjectRequest:
-    """A request typed into the tab "Daten". `seen` is `next_reference` as the
+    """A request typed into the tab "Daten". `seen` is `log_token` as the
     form showed it: a second tap on "Eintragen", or a request another device
     logged in between, writes no second line. One request after the other, under
     the lock of the settings row. A day of receipt that has not come is refused:
     its deadline would be later than the law's."""
     _, zone = _locked(session, tenant_id)
-    if seen != next_reference(session, tenant_id, zone, now):
+    if seen != log_token(session, tenant_id):
         raise Conflict("the request log changed", say=SAY_LOG_CHANGED)
     if kind not in REQUEST_KINDS or channel not in REQUEST_CHANNELS:
         raise InvalidInput("no such kind or channel")
@@ -366,18 +370,30 @@ def open_requests(
     ).all()
 
 
-def can_extend(request: DataSubjectRequest, zone: str) -> bool:
-    longest = add_months(
-        to_local(request.received_at, zone).date(), LONGEST_DEADLINE_MONTHS
+def can_extend(
+    request: DataSubjectRequest, zone: str, now: datetime | None = None
+) -> bool:
+    """`now`, for the tab "Daten": the guest has to learn of the extension inside
+    the first month (Art. 12(3)), so after it the page moves nothing, or an
+    overdue request would read as in time. The job passes none: there the
+    operator enters late what was told in time."""
+    received = to_local(request.received_at, zone).date()
+    if now is not None and to_local(now, zone).date() > add_months(received, 1):
+        return False
+    return request.answered_at is None and request.deadline < add_months(
+        received, LONGEST_DEADLINE_MONTHS
     )
-    return request.answered_at is None and request.deadline < longest
 
 
 def extend_deadline(
-    session: Session, request: DataSubjectRequest, zone: str, actor: str = ACTOR_JOB
+    session: Session,
+    request: DataSubjectRequest,
+    zone: str,
+    actor: str = ACTOR_JOB,
+    now: datetime | None = None,
 ) -> None:
     """Art. 12(3): a complex request may take two more months, once."""
-    if not can_extend(request, zone):
+    if not can_extend(request, zone, now):
         raise Conflict(f"the deadline of {request.reference} cannot move")
     request.deadline = add_months(
         to_local(request.received_at, zone).date(), LONGEST_DEADLINE_MONTHS

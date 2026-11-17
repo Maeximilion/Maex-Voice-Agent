@@ -35,18 +35,23 @@
   <div class="cb-actions">
     <button type="submit" class="primary">Prüfen</button>
   </div>
-  {% if found and (found.ask_calls or found.ask_callbacks) %}
+  {% if found and (found.ask_calls or found.ask_callbacks or found.confirmed) %}
   <fieldset>
     <legend>Beim Gast nachfragen</legend>
     <p class="muted">Diese Zeilen tragen nur die Nummer oder gehören zu einem Anruf mit einem zweiten Gast. Sie können von jemand anderem sein: nicht herausgeben. Den Gast nach Tag, Uhrzeit und Anliegen fragen und nur ankreuzen, was er bestätigt.</p>
+    {% for row in found.confirmed %}
+    <div class="span-row">
+      <label class="check"><input type="checkbox" name="claim-{{ row.id }}" value="1" checked> {{ row.word }}, vom Gast bestätigt: {% for label, text in row.fields %}{{ label }} <bdi>{{ text }}</bdi>{% if not loop.last %}, {% endif %}{% endfor %}</label>
+    </div>
+    {% endfor %}
     {% for row in found.ask_calls %}
     <div class="span-row">
-      <label class="check"><input type="checkbox" name="claim-{{ row.id }}" value="1"{% if row.id in claimed %} checked{% endif %}> Anruf: {% for label, text in row.fields %}{{ label }} {{ text }}{% if not loop.last %}, {% endif %}{% endfor %}{% if row.recorded %} <span class="badge warn">mit Aufnahme</span>{% endif %}</label>
+      <label class="check"><input type="checkbox" name="claim-{{ row.id }}" value="1"> Anruf: {% for label, text in row.fields %}{{ label }} <bdi>{{ text }}</bdi>{% if not loop.last %}, {% endif %}{% endfor %}{% if row.recorded %} <span class="badge warn">mit Aufnahme</span>{% endif %}</label>
     </div>
     {% endfor %}
     {% for row in found.ask_callbacks %}
     <div class="span-row">
-      <label class="check"><input type="checkbox" name="claim-{{ row.id }}" value="1"{% if row.id in claimed %} checked{% endif %}> Rückruf: {% for label, text in row.fields %}{{ label }} {{ text }}{% if not loop.last %}, {% endif %}{% endfor %}</label>
+      <label class="check"><input type="checkbox" name="claim-{{ row.id }}" value="1"> Rückruf: {% for label, text in row.fields %}{{ label }} <bdi>{{ text }}</bdi>{% if not loop.last %}, {% endif %}{% endfor %}</label>
     </div>
     {% endfor %}
     <div class="cb-actions">
@@ -93,7 +98,7 @@
 {% else %}
 <p class="badge warn" role="status">Auf dem Server noch nicht gelaufen.</p>
 {% endif %}
-<p>Das läuft auf dem Server, nicht von diesem Gerät: vorher wird gesichert, und jede gelöschte Zeile kommt in eine Liste außerhalb der Datenbank, damit eine Sicherung sie nicht zurückbringt. Bitte dem Betreiber das Zeichen <b>{{ reference }}</b> nennen und die Angaben, mit denen die Prüfung oben geklappt hat.</p>
+<p>Das läuft auf dem Server, nicht von diesem Gerät: vorher wird gesichert, und jede gelöschte Zeile kommt in eine Liste außerhalb der Datenbank, damit eine Sicherung sie nicht zurückbringt. Bitte dem Betreiber das Zeichen <b>{{ reference }}</b> nennen, die Angaben, mit denen die Prüfung oben geklappt hat, und jede Zeile, die der Gast bestätigt hat (Tag und Uhrzeit).</p>
 {% endif %}
 
 <h3>Frist und Antwort</h3>

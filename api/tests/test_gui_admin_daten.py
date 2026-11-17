@@ -286,9 +286,21 @@ def test_the_deadline_moves_once(client, engine):
     assert _requests(engine)[0].deadline == add_months(received, 3)
     assert "Frist verlängern (" not in moved.text
     again = client.post(f"{NEW}/{reference}/frist", headers=HX)
-    assert "nicht weiter verlängern" in again.text
+    assert "nicht verlängern" in again.text
     (audit,) = _audits(engine, "data_subject.deadline_extended")
     assert audit.actor == "gui:owner"
+
+
+def test_after_the_first_month_the_page_moves_no_deadline(client, engine):
+    """An overdue request must not read as in time after one tap."""
+    day = to_local(datetime.now(UTC), ZONE).date() - timedelta(days=40)
+    reference = _logged(client, engine, eingang=day.isoformat())
+    shown = client.get(f"{NEW}/{reference}", headers=HX).text
+    assert "überfällig" in shown and "Frist verlängern (" not in shown
+    answer = client.post(f"{NEW}/{reference}/frist", headers=HX)
+    assert "nicht verlängern" in answer.text
+    assert _requests(engine)[0].deadline == add_months(day, 1)
+    assert _audits(engine, "data_subject.deadline_extended") == []
 
 
 # --- the answer -------------------------------------------------------------------
@@ -387,6 +399,7 @@ def test_a_name_with_the_day_shows_the_persons_rows_and_audits_the_look(client, 
     for text in ("Bestätigt", "Bestellungen (1)", "Müller", PHONE, "Bitte klingeln"):
         assert text in answer.text, text
     assert "12,00 €" in answer.text and "übergeben" in answer.text
+    assert "Gerichte:</span> <bdi>1 x 23 " in answer.text
     # What was typed stays in the form for the next check.
     assert _fields(answer.text)["name"] == "Müller"
     (look,) = _audits(engine, "data_subject.rows_read")
@@ -474,7 +487,14 @@ def test_a_call_with_only_the_number_waits_for_the_guests_word(client, engine):
     form = {**_fields(offered.text), f"claim-{call_id}": "1"}
     claimed = client.post(f"{NEW}/{reference}/pruefen", data=form, headers=HX)
     assert "Anrufe (2)" in claimed.text
-    assert f'name="claim-{call_id}"' not in claimed.text
+    # Its box stays, ticked: the next check sends it again, and the owner sees
+    # which rows to name to the operator.
+    assert f'name="claim-{call_id}" value="1" checked' in claimed.text
+    assert "vom Gast bestätigt" in claimed.text
+    again = client.post(
+        f"{NEW}/{reference}/pruefen", data=_fields(claimed.text), headers=HX
+    )
+    assert "Anrufe (2)" in again.text
 
 
 def test_an_open_table_is_named_as_what_stops_an_erasure(client, engine):

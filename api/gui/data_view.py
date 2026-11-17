@@ -40,7 +40,10 @@ OUTCOMES = {
 }
 FAILED = "Das hat nicht geklappt. Bitte nochmal tippen."
 ANSWERED = "Diese Anfrage ist schon beantwortet."
-NO_EXTENSION = "Die Frist dieser Anfrage lässt sich nicht weiter verlängern."
+NO_EXTENSION = (
+    "Die Frist dieser Anfrage lässt sich hier nicht verlängern: das geht einmal "
+    "und nur im ersten Monat."
+)
 BAD_DAY = "Bitte jeden Tag als Datum angeben."
 BAD_PHONE = "Eine der Rufnummern ist nicht lesbar. Bitte mit Vorwahl eintragen."
 TOO_MUCH = "Ein Feld ist zu lang oder es sind zu viele Angaben."
@@ -277,7 +280,7 @@ def page(session: Session, tenant: Tenant, now: datetime) -> dict[str, Any]:
         "periods": periods(),
         "open": open_rows,
         "answered": answered,
-        "seen": requests.next_reference(session, tenant.id, zone, now),
+        "seen": requests.log_token(session, tenant.id),
         "kinds": list(KINDS.items()),
         "channels": list(CHANNELS.items()),
         "today": today.isoformat(),
@@ -304,7 +307,7 @@ def request_context(
         "note": row.verification_note,
         "is_open": row.answered_at is None,
         "outcome": OUTCOMES.get(row.outcome or "", DASH),
-        "can_extend": requests.can_extend(row, zone),
+        "can_extend": requests.can_extend(row, zone, now),
         "runs_on_server": row.kind in requests.RUN_ACTIONS,
         "has_run": requests.has_run(session, row),
         "outcomes": list(OUTCOMES.items()),
@@ -404,9 +407,14 @@ def _labelled(
     return [(label, _text(key, row.get(key), zone)) for key, label in fields]
 
 
-def found(copy: dict[str, Any], tenant: Tenant) -> dict[str, Any]:
+def found(
+    copy: dict[str, Any], tenant: Tenant, claimed: frozenset[str] = frozenset()
+) -> dict[str, Any]:
     """`requests.access_copy` for the page: the person's rows part by part, the
-    rows only the guest can confirm, and what stops an erasure."""
+    rows only the guest can confirm, and what stops an erasure. `claimed` are
+    the rows the guest confirmed: they count as the person's now, and the page
+    keeps their boxes ticked, so the next check sends them again and the owner
+    sees which ones to name to the operator."""
     zone = tenant.timezone
     person = copy["copy"]
     sections = [
@@ -433,6 +441,15 @@ def found(copy: dict[str, Any], tenant: Tenant) -> dict[str, Any]:
         }
         for row in ask["callbacks"]
     ]
+    confirmed = [
+        {"id": str(row["id"]), "word": word, "fields": _labelled(row, fields, zone)}
+        for key, word, fields in (
+            ("calls", "Anruf", CALL_FIELDS),
+            ("callbacks", "Rückruf", CALLBACK_FIELDS),
+        )
+        for row in person[key]
+        if str(row["id"]) in claimed
+    ]
     blocking = []
     for row in copy["open_rows"]:
         word, part, moment = OPEN_WORDS.get(row["table"], (row["table"], "", ""))
@@ -445,6 +462,7 @@ def found(copy: dict[str, Any], tenant: Tenant) -> dict[str, Any]:
         "sections": sections,
         "ask_calls": ask_calls,
         "ask_callbacks": ask_callbacks,
+        "confirmed": confirmed,
         "objections": list(ask["recognition_objections"]),
         "blocking": blocking,
     }
