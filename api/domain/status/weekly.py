@@ -9,7 +9,10 @@ word (`overnight`), as for a date's hours (#596): swapped times would open the
 night of every week to come. Two spans of one service neither overlap nor
 touch: every reader takes a span's end for a closing time, so 11:30 to 14:00
 and 14:00 to 22:00 would close the kitchen at 14:00 for the agent and refuse
-the last tables before it.
+the last tables before it. For the same reason a span past midnight ends
+before the next weekday's first span of the service starts, Sunday's before
+Monday's: every reader looks at the day before first, so a night that reached
+into the next day's span would close it at the night's end.
 
 Hours are compared as the form shows them, to the minute, and service by
 service: a service the owner did not change is neither checked nor written, so
@@ -32,6 +35,7 @@ from sqlalchemy.orm import Session
 
 from api.core import time as clock
 from api.core.errors import Conflict, InvalidInput
+from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.hours import load_hours, open_window_at
 from api.domain.status.staff_changes import (
     ACTOR_OWNER,
@@ -50,6 +54,10 @@ DINEIN = "dinein"
 OVERLAP = (
     "Zwei Zeiten überschneiden sich oder schließen direkt aneinander an. "
     "Bitte als eine Zeit eintragen."
+)
+NIGHT_OVERLAP = (
+    "Die Zeit über Mitternacht am {night} reicht in die Zeiten am {next} hinein "
+    "oder schließt direkt daran an. Bitte eine der beiden Zeiten ändern."
 )
 TOO_MANY = f"Höchstens {MAX_SPANS} Zeiten je Tag und Bereich."
 CHANGED_SINCE = (
@@ -120,7 +128,8 @@ def set_weekday(
         raise InvalidInput(f"no such weekday or service: {weekday}, {sorted(spans)}")
     # The lock of the staff changes: their "shorter than now" reads these rows.
     _locked(session, tenant_id)
-    before = week(session, tenant_id)[weekday]
+    stored = week(session, tenant_id)
+    before = stored[weekday]
     after = {**before, **{service: sorted(typed) for service, typed in spans.items()}}
     shown, asked = _texts(before), _texts(after)
     changed = [service for service in SERVICES if asked[service] != shown[service]]
@@ -133,6 +142,7 @@ def set_weekday(
     try:
         for service in changed:
             _checked(after[service])
+            _checked_nights(stored, weekday, service, after[service])
     except InvalidInput:
         session.rollback()
         raise
@@ -228,6 +238,30 @@ def _checked(spans: list[Span]) -> None:
     ends = sorted(_minutes(span) for span in spans)
     if any(later[0] <= earlier[1] for earlier, later in pairwise(ends)):
         raise InvalidInput("spans overlap or touch", say=OVERLAP)
+
+
+def _checked_nights(
+    stored: dict[int, Day], weekday: int, service: str, spans: list[Span]
+) -> None:
+    """A span past midnight ends before the next weekday's first span of the
+    service starts, and the night of the weekday before ends before these
+    start. `hours.open_window_at` reads the day before first: a night that
+    reached into the next day's span would be the window found there, and its
+    end the closing time (review of #820). The neighbours as they are stored."""
+    before, after = (weekday - 1) % 7, (weekday + 1) % 7
+    for night, late, early in (
+        (before, stored[before][service], spans),
+        (weekday, spans, stored[after][service]),
+    ):
+        # Minutes into the next day; below zero without a span past midnight.
+        reach = max((_minutes(span)[1] for span in late), default=0) - DAY_MINUTES
+        if any(_minutes(span)[0] <= reach for span in early):
+            raise InvalidInput(
+                "a span past midnight reaches the next weekday's spans",
+                say=NIGHT_OVERLAP.format(
+                    night=WEEKDAYS[night], next=WEEKDAYS[(night + 1) % 7]
+                ),
+            )
 
 
 def _texts(day: Day) -> dict[str, list[str]]:

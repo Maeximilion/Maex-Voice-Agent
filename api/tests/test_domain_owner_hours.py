@@ -30,7 +30,7 @@ from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
 # Seed: Monday closed, every other day 11:30-14:00 and 17:00-22:00.
-MONDAY, TUESDAY, SATURDAY = 0, 1, 5
+MONDAY, TUESDAY, WEDNESDAY, SATURDAY, SUNDAY = 0, 1, 2, 5, 6
 TODAY = date(2026, 11, 10)  # a Tuesday
 NOW = datetime.combine(TODAY, time(10, 0), tzinfo=BERLIN)
 SEEDED = [Span(time(11, 30), time(14)), Span(time(17), time(22))]
@@ -216,6 +216,89 @@ def test_spans_that_touch_are_refused_as_one_opening_split_in_two(session, tenan
         _set(session, tenant_id, TUESDAY, {"pickup": spans})
     assert refused.value.say == weekly.OVERLAP
     assert _set(session, tenant_id, TUESDAY, {"pickup": [Span(time(11), time(20))]})
+
+
+def _night(closes: time) -> list[Span]:
+    return [Span(time(18), closes, overnight=True)]
+
+
+def _refused_night(session, tenant_id, weekday, spans, night, following) -> None:
+    before = weekly.week(session, tenant_id)[weekday]
+    with pytest.raises(InvalidInput) as refused:
+        _set(session, tenant_id, weekday, spans)
+    assert refused.value.say == weekly.NIGHT_OVERLAP.format(night=night, next=following)
+    assert weekly.week(session, tenant_id)[weekday] == before
+
+
+@pytest.mark.parametrize("service", ["dinein", "pickup"])
+def test_a_night_that_reaches_the_next_weekdays_hours_is_refused(
+    session, tenant_id, service
+):
+    """Wednesday opens 11:30 to 14:00. A Tuesday night to 13:00 is the window
+    every reader finds first on Wednesday at 12:30 (`hours.open_window_at`
+    reads the day before first), and its end would close Wednesday's lunch an
+    hour early for the agent (review of #820)."""
+    _refused_night(
+        session, tenant_id, TUESDAY, {service: _night(time(13))}, "Dienstag", "Mittwoch"
+    )
+    assert _audits(session, "opening_hours.changed") == []
+    # A night that ends as Wednesday opens touches it: refused like two spans
+    # of one day. One minute earlier it holds.
+    _refused_night(
+        session,
+        tenant_id,
+        TUESDAY,
+        {service: _night(time(11, 30))},
+        "Dienstag",
+        "Mittwoch",
+    )
+    assert _set(session, tenant_id, TUESDAY, {service: _night(time(11, 29))}) is True
+
+
+def test_hours_that_start_inside_the_night_before_are_refused(session, tenant_id):
+    """The same overlap from the other weekday's form."""
+    assert _set(session, tenant_id, TUESDAY, {"pickup": _night(time(2))}) is True
+    early = {"pickup": [Span(time(1), time(14))]}
+    _refused_night(session, tenant_id, WEDNESDAY, early, "Dienstag", "Mittwoch")
+    touching = {"pickup": [Span(time(2), time(14))]}
+    _refused_night(session, tenant_id, WEDNESDAY, touching, "Dienstag", "Mittwoch")
+    after = {"pickup": [Span(time(2, 1), time(14))]}
+    assert _set(session, tenant_id, WEDNESDAY, after) is True
+
+
+def test_a_sunday_night_is_checked_against_monday(session, tenant_id):
+    """The week wraps: Sunday's night runs into Monday."""
+    # Monday is closed in the seed: any Sunday night holds.
+    assert _set(session, tenant_id, SUNDAY, {"pickup": _night(time(9))}) is True
+    monday = {"pickup": [Span(time(8), time(12))]}
+    _refused_night(session, tenant_id, MONDAY, monday, "Sonntag", "Montag")
+    assert _set(session, tenant_id, SUNDAY, {"pickup": _night(time(3))}) is True
+    assert _set(session, tenant_id, MONDAY, monday) is True
+    _refused_night(
+        session, tenant_id, SUNDAY, {"pickup": _night(time(8))}, "Sonntag", "Montag"
+    )
+
+
+def test_a_night_is_checked_against_its_own_service_only(session, tenant_id):
+    """Hours are per service: delivery through the night says nothing about
+    Wednesday's lunch in the house. Midnight itself is an end like any other."""
+    assert _set(session, tenant_id, TUESDAY, {"delivery": _night(time(0))}) is True
+    assert _set(session, tenant_id, WEDNESDAY, {"delivery": []}) is True
+    assert _set(session, tenant_id, TUESDAY, {"delivery": _night(time(13))}) is True
+    # Wednesday's delivery cannot come back inside that night.
+    lunch = {"delivery": [Span(time(11, 30), time(14))]}
+    _refused_night(session, tenant_id, WEDNESDAY, lunch, "Dienstag", "Mittwoch")
+
+
+def test_a_stored_night_into_the_next_day_does_not_block_other_services(
+    session, tenant_id
+):
+    """A service the owner did not change is not checked: rows from
+    provisioning that overlap already stay until that service is edited."""
+    _store(session, tenant_id, TUESDAY, "delivery", [(time(18), time(13))])
+    shown = weekly.week(session, tenant_id)[TUESDAY]
+    sent = {**shown, "pickup": [Span(time(12), time(15))]}
+    assert _set(session, tenant_id, TUESDAY, sent) is True
 
 
 def _store(session, tenant_id, weekday, service, spans) -> None:
@@ -586,6 +669,74 @@ def test_a_holiday_closed_before_the_job_named_it_is_answered_too(session, tenan
     staff.set_day_hours(session, tenant_id, plain, DayHours(closed=True), NOW)
     staff.set_day_hours(session, tenant_id, plain, DayHours(), NOW)
     assert [r.date for r in _special(session, tenant_id) if r.date == plain] == []
+
+
+LUNCH_AND_EVENING = [("11:30", "14:00"), ("17:00", "22:00")]
+
+
+def _christmas(session, tenant_id) -> list[tuple[str, bool]]:
+    rows = _special(session, tenant_id)
+    return [(r.status, r.closed) for r in rows if r.date == CHRISTMAS]
+
+
+def _suggest(session, tenant_id) -> None:
+    config = session.get_one(ServiceConfig, tenant_id)
+    config.holiday_region = "BW"
+    holidays.suggest(session, tenant_id, "BW", TODAY)
+    session.commit()
+
+
+def _open_suggestion(session, tenant_id) -> list[uuid.UUID]:
+    suggestions = holidays.open_suggestions(session, tenant_id, TODAY)
+    return [s.id for s in suggestions if s.date == CHRISTMAS]
+
+
+def test_a_suggested_holiday_returned_to_the_weekly_hours_is_answered(
+    session, tenant_id
+):
+    """The job suggested 25.12., the owner closes the date and then returns it
+    to the weekly hours: that answers the suggestion too. Left open, "closed"
+    tapped on its card would close the date again (review of #820)."""
+    _suggest(session, tenant_id)
+    (card,) = _open_suggestion(session, tenant_id)
+    staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(closed=True), NOW)
+    # Both rows: the owner's counts, the suggestion still waits.
+    assert sorted(_christmas(session, tenant_id)) == [
+        ("set", True),
+        ("suggested", False),
+    ]
+    assert staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(), NOW) is True
+    assert _christmas(session, tenant_id) == [("dismissed", False)]
+    assert _open_suggestion(session, tenant_id) == []
+    # A tablet that still shows the card: its answer changes nothing.
+    holidays.answer(session, tenant_id, card, holidays.CLOSED)
+    assert _christmas(session, tenant_id) == [("dismissed", False)]
+    assert _windows(session, tenant_id, CHRISTMAS) == LUNCH_AND_EVENING
+    _suggest(session, tenant_id)
+    assert _open_suggestion(session, tenant_id) == []
+
+
+def test_a_holiday_the_owner_closed_first_gets_no_suggestion_later(session, tenant_id):
+    """The other order: the owner's row is there when the job runs, so the
+    job writes none, and the date returned to the weekly hours stays answered."""
+    staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(closed=True), NOW)
+    _suggest(session, tenant_id)
+    assert _christmas(session, tenant_id) == [("set", True)]
+    assert staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(), NOW) is True
+    _suggest(session, tenant_id)
+    assert _christmas(session, tenant_id) == [("dismissed", False)]
+    assert _open_suggestion(session, tenant_id) == []
+    assert _windows(session, tenant_id, CHRISTMAS) == LUNCH_AND_EVENING
+
+
+def test_a_suggested_holiday_the_staff_reopen_is_answered_too(session, tenant_id):
+    """The staff's way through the same write: closing holds at once, taking
+    it back returns the date to the weekly hours and answers the suggestion."""
+    _suggest(session, tenant_id)
+    staff.change_day_hours(session, tenant_id, CHRISTMAS, DayHours(closed=True), NOW)
+    staff.change_day_hours(session, tenant_id, CHRISTMAS, DayHours(), NOW)
+    assert _christmas(session, tenant_id) == [("dismissed", False)]
+    assert _open_suggestion(session, tenant_id) == []
 
 
 def test_rows_that_differ_only_by_seconds_are_no_change(session, tenant_id):

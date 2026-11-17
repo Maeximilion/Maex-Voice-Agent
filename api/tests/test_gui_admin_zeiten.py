@@ -292,6 +292,11 @@ def test_a_night_needs_its_box_and_shows_it_ticked_afterwards(client, engine):
         ({"pickup-bis-0": "11:30"}, "das Ende nicht gleich dem Beginn"),
         ({"pickup-bis-0": "18:00"}, "Zwei Zeiten überschneiden sich"),
         ({"pickup-bis-0": "17:00"}, "schließen direkt aneinander an"),
+        # A night to 13:00 runs into Wednesday's lunch.
+        (
+            {"pickup-bis-1": "13:00", "pickup-nachts-1": "1"},
+            "Die Zeit über Mitternacht am Dienstag reicht in die Zeiten am Mittwoch",
+        ),
     ],
 )
 def test_times_that_cannot_hold_are_refused_with_the_reason(

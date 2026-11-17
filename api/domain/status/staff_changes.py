@@ -655,19 +655,29 @@ def _write(
     with its name, or a date that is a statutory holiday in the restaurant's
     state) returned to the weekly hours stays as the answer "open as always"
     (`dismissed`, T-9.5): deleted, the holiday job would suggest it again and
-    one tap on the board would undo what was decided here."""
+    one tap on the board would undo what was decided here. For the same reason
+    a suggestion still waiting beside the row is answered with it (review of
+    #820): left open, "closed" tapped on its card would close the date again."""
     row = row or _set_row(session, tenant_id, day, lock=True)
     if hours.normal:
         if row is not None:
-            answered = session.scalar(
-                select(SpecialDay.id).where(
+            # The date's suggestion or dismissal, one at most
+            # (`uq_special_days_suggestion`).
+            other = session.scalars(
+                select(SpecialDay)
+                .where(
                     SpecialDay.tenant_id == tenant_id,
                     SpecialDay.date == day,
                     SpecialDay.status != SET,
                 )
-            )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            ).first()
             name = row.note or _holiday_name(session, tenant_id, day)
-            if name and answered is None:
+            if other is not None:
+                other.status = DISMISSED
+                session.delete(row)
+            elif name:
                 row.status, row.note = DISMISSED, name
                 row.closed, row.opens_at, row.closes_at = False, None, None
             else:
