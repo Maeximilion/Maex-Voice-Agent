@@ -691,9 +691,41 @@ def test_a_stored_code_that_is_no_postal_code_does_not_block_the_zone(
     )
     session.commit()
     assert _change(session, tenant_id, zone, postal_codes="76530, 7653", active=False)
+    # A changed list is read whole: the stored code that is none is named, and
+    # has to go before another code is added.
     with pytest.raises(InvalidInput) as error:
-        _change(session, tenant_id, zone, postal_codes="76530, 7653, 765", active=False)
-    assert "fünf Ziffern" in _say(error)
+        _change(
+            session, tenant_id, zone, postal_codes="76530, 7653, 76532", active=False
+        )
+    assert "„7653“" in _say(error)
+    assert _change(session, tenant_id, zone, postal_codes="76530, 76532", active=False)
+    with pytest.raises(InvalidInput) as error:
+        _change(
+            session, tenant_id, zone, postal_codes="76530, 76532, 765", active=False
+        )
+    assert "„765“" in _say(error)
+
+
+def test_a_sign_that_turns_the_order_of_a_number_is_refused(session, tenant_id):
+    """A direction override shows "05,2" as "2,50". Dropped like a zero-width
+    space, the fee saved would be 5,20 where the owner read 2,50."""
+    override = chr(0x202E)
+    for changes in (
+        {"fee": override + "05,2"},
+        {"min_order": override + "51"},
+        {"postal_codes": override + "03567"},
+        {"eta": override + "04"},
+    ):
+        with pytest.raises(InvalidInput):
+            owner_zones.save_zone(session, tenant_id, None, _typed(**changes), "")
+    # Every other mark of direction is refused too: only the six characters
+    # of `UNSEEN` are dropped.
+    for mark in (0x200E, 0x200F, 0x202A, 0x202D, 0x2066, 0x2067, 0x2069, 0x061C):
+        with pytest.raises(InvalidInput):
+            owner_zones.save_zone(
+                session, tenant_id, None, _typed(fee=chr(mark) + "2,50"), ""
+            )
+    assert owner_zones.zones(session, tenant_id) == []
 
 
 def test_two_ways_to_write_an_umlaut_are_one_name(session, tenant_id):

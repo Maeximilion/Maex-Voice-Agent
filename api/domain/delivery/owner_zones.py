@@ -60,6 +60,12 @@ MAX_MIN_ORDER_CENTS = 500_00
 # How much of a typed postal code a message repeats.
 ECHO = 12
 MINUTES = re.compile(r"[0-9]{1,4}")
+# Dropped from a typed number: zero-width space, non-joiner and joiner, word
+# joiner, byte order mark, soft hyphen. By code point, so that this file
+# holds no character nobody sees.
+UNSEEN = str.maketrans(
+    "", "", "".join(map(chr, (0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF, 0xAD)))
+)
 # `draft_order` promises the longer of the zone's time and the team's wait.
 MAX_ETA_MINUTES = MAX_WAIT_MINUTES
 
@@ -295,8 +301,10 @@ def _read(typed: Typed, kept: dict[str, Any]) -> dict[str, Any]:
 def _plain(text: str) -> str:
     """Without the characters nobody sees: a number copied from a page or a
     file often carries a zero-width space or a soft hyphen, and the refusal
-    would repeat a postal code that looks right."""
-    return "".join(ch for ch in text if unicodedata.category(ch) != "Cf").strip()
+    would repeat a postal code that looks right. Only those few: a character
+    that turns the order of what is shown (a direction override) stays and is
+    refused, or "05,2" shown as "2,50" would be saved as 5,20."""
+    return text.translate(UNSEEN).strip()
 
 
 def _folded(name: str) -> str:

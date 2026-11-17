@@ -453,7 +453,7 @@ the second builds against.
   `gui:owner` and the zone before and after. Every value is checked in `domain/delivery/owner_zones.py`
   (money decides there, never in the form), a zone is found by its id and this restaurant's tenant
   only, and a save runs under the lock of the settings row, so two devices cannot each add one postal
-  code to a different zone; the import (`scripts/seed_zones.py`) takes the same lock. Typed text comes back escaped and cut to a field's length.
+  code to a different zone; the import (`scripts/seed_zones.py`) takes the same lock. Typed text comes back escaped, and a field the owner changed is cut to a bound (a field sent back as it was shown comes back whole).
 - **Staff changes are temporary and reviewed (D34 point 4, built in (b), the push in #588):** a staff change to a date's hours
   expires with that date. Today's changes hold at once; for a later date the restrictive direction
   (closed, shorter hours) holds at once, while longer or extra hours beyond today wait for the
