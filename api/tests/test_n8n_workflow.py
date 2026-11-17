@@ -49,7 +49,12 @@ ITEM_TOPICS_RE = re.compile(r"return\s*\[([^\]]*)\]\.map\(\(topic\)")
 # operator of a change made without the owner's PIN or of the call mode (T12).
 TEAM_TOPIC = "team"
 OWNER_TOPICS = {"owner", "ops"}
-TO_OWNER = {types.TEAM_PHONE_CHANGED, types.DAY_HOURS_CHANGED, types.CALL_MODE_CHANGED}
+TO_OWNER = {
+    types.TEAM_PHONE_CHANGED,
+    types.DAY_HOURS_CHANGED,
+    types.CALL_MODE_CHANGED,
+    types.ADMIN_PIN_WRONG,
+}
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.\w+")
 
 

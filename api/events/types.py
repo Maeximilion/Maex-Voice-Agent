@@ -14,6 +14,9 @@ DAILY_REPORT = "daily.report"
 TEAM_PHONE_CHANGED = "team_phone.changed"
 DAY_HOURS_CHANGED = "day_hours.changed"
 CALL_MODE_CHANGED = "call_mode.changed"
+# Every third wrong admin PIN in a row, and a device the wrong PINs signed
+# out: a push to the owner and to the operator (#827 F4).
+ADMIN_PIN_WRONG = "admin_pin.wrong"
 
 ALL = (
     ORDER_CONFIRMED,
@@ -24,6 +27,7 @@ ALL = (
     TEAM_PHONE_CHANGED,
     DAY_HOURS_CHANGED,
     CALL_MODE_CHANGED,
+    ADMIN_PIN_WRONG,
 )
 
 # Diese Ereignisse holt die Druckbruecke im Restaurant ab (T-4.6), nicht der

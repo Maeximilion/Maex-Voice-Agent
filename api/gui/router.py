@@ -325,10 +325,6 @@ def _page_response(
         template,
         {**context, "csrf_token": token},
         status_code=status_code,
-        # Every page of the view shows the restaurant's data, the owner's
-        # pages more: the browser asks again instead of showing a kept copy
-        # after "Inhaber-Bereich schließen" or a sign-out.
-        headers={"Cache-Control": "no-store"},
     )
     response.set_cookie(
         "csrf_token",
@@ -1262,9 +1258,15 @@ def _notice_sheet(
     )
 
 
-@router.get("/vorlauf", response_class=HTMLResponse, include_in_schema=False)
+@router.get(
+    "/vorlauf",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(require_admin)],
+)
 def vorlauf(request: Request, session: Session = Depends(get_db)) -> HTMLResponse:
-    """The sheet with the notice per weekday (T-3.13)."""
+    """The sheet with the notice per weekday (T-3.13). Behind the admin PIN
+    with its write: a notice too long turns callers away (#827 F6)."""
     tenant = _tenant(session)
     if tenant is None:
         raise HTTPException(status_code=503)
@@ -1275,7 +1277,7 @@ def vorlauf(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
     "/vorlauf",
     response_class=HTMLResponse,
     include_in_schema=False,
-    dependencies=[Depends(_require_htmx)],
+    dependencies=[Depends(_require_htmx), Depends(require_admin)],
 )
 def vorlauf_speichern(
     request: Request,
@@ -1596,11 +1598,18 @@ def _plan_write(
         return _plan_error(exc, exc.status if exc.status >= 400 else 422)
 
 
-@router.get("/raumplan", response_class=HTMLResponse, include_in_schema=False)
+@router.get(
+    "/raumplan",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(require_admin)],
+)
 def floor_plan_page(
     request: Request, session: Session = Depends(get_db)
 ) -> HTMLResponse:
-    """The floor plan editor; its data comes from /gui/raumplan/plan."""
+    """The floor plan editor; its data comes from /gui/raumplan/plan. Behind
+    the admin PIN with its data and writes: the bookings use its tables and
+    seats (#827 F6)."""
     tenant = _tenant(session)
     context: dict[str, Any] = {"tenant": tenant} if tenant else {"problem": NO_TENANT}
     return _page_response(
@@ -1608,19 +1617,22 @@ def floor_plan_page(
     )
 
 
-@router.get("/raumplan/plan", include_in_schema=False)
+@router.get(
+    "/raumplan/plan", include_in_schema=False, dependencies=[Depends(require_admin)]
+)
 def floor_plan_data(session: Session = Depends(get_db)) -> JSONResponse:
     tenant = _tenant(session)
     if tenant is None:
         return JSONResponse(fail_body("not_found", "no tenant", NO_TENANT), 503)
     return JSONResponse(
         {"ok": True, "areas": floor_plan.plan(session, tenant.id)},
-        headers={"Cache-Control": "no-store"},
     )
 
 
 @router.post(
-    "/raumplan/bereiche", include_in_schema=False, dependencies=[Depends(_require_htmx)]
+    "/raumplan/bereiche",
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx), Depends(require_admin)],
 )
 def floor_plan_new_area(
     body: bytes = Depends(_body), session: Session = Depends(get_db)
@@ -1636,7 +1648,7 @@ def floor_plan_new_area(
 @router.put(
     "/raumplan/bereiche/{area_id}",
     include_in_schema=False,
-    dependencies=[Depends(_require_htmx)],
+    dependencies=[Depends(_require_htmx), Depends(require_admin)],
 )
 def floor_plan_save(
     area_id: uuid.UUID,
@@ -2001,8 +2013,6 @@ def device_sign_out(
 # --- The owner's tab "Zeiten": weekly hours and special days (#571) ----------------
 
 SAVED = "Gespeichert. Gilt ab sofort."
-# The answers carry hours and guests' names and numbers: no cache keeps them.
-NO_STORE = {"Cache-Control": "no-store"}
 DAY_CHOICES = ("zeiten", "geschlossen", "normal")
 
 
@@ -2036,7 +2046,6 @@ def _hours_part(
             "typed": hours_view.echo(typed or {}),
             "oob": True,
         },
-        headers=NO_STORE,
     )
 
 
@@ -2052,7 +2061,6 @@ def _weekday_form(
         request,
         "fragments/zeiten_tag.html",
         {**hours_view.day_form(session, tenant, weekday, typed), "message": message},
-        headers=NO_STORE,
     )
 
 
@@ -2181,7 +2189,6 @@ def _zones_part(
         request,
         "fragments/lieferung_zonen.html",
         {**delivery_view.page(session, tenant), "message": message},
-        headers=NO_STORE,
     )
 
 
@@ -2208,7 +2215,6 @@ def _zone_form(
         request,
         "fragments/lieferung_zone.html",
         {**delivery_view.zone_form(row, sent), "message": message},
-        headers=NO_STORE,
     )
 
 
@@ -2357,9 +2363,7 @@ def call_detail(
         )
         if found is not None:
             context = calls_view.detail(found, tenant)
-    return templates.TemplateResponse(
-        request, "fragments/anruf.html", context, headers=NO_STORE
-    )
+    return templates.TemplateResponse(request, "fragments/anruf.html", context)
 
 
 # --- The owner's tab "Daten": periods and requests of guests (#571, T-11.8) -------
@@ -2392,7 +2396,6 @@ def _requests_part(
             "tone": tone,
             "sent": sent or {},
         },
-        headers=NO_STORE,
     )
 
 
@@ -2432,7 +2435,6 @@ def _request_part(
             "sent": sent or {},
             "found": found,
         },
-        headers=NO_STORE,
     )
 
 
@@ -2674,5 +2676,5 @@ def events(
         media_type="text/event-stream",
         # Ein puffernder Proxy haelt Ereignisse sonst zurueck, bis genug
         # Bytes zusammen sind - die Live-Ansicht waere dann nicht live.
-        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+        headers={"X-Accel-Buffering": "no"},
     )
