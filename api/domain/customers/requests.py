@@ -14,7 +14,10 @@ is the guest's to confirm: it stays under `unclaimed_*` until the team passes it
 id in `claimed`.
 
 Nothing here commits: the job (`api/jobs/data_requests.py`) writes the erasure
-ledger first, so an erasure that commits is always in the ledger.
+ledger first, so an erasure that commits is always in the ledger. The one
+exception is `look`, the owner's read on the tab "Daten" (#571): its audit row
+is committed before a row is read. That tab logs, extends, answers and reads;
+`erase` and `record_objection` stay with the job, which has the ledger file.
 """
 
 import re
@@ -41,7 +44,7 @@ from sqlalchemy.orm import Session
 
 from api.config import settings
 from api.core.errors import Ambiguous, Conflict, InvalidInput, NotFound
-from api.core.time import add_months, to_local
+from api.core.time import add_months, to_local, tz
 from api.domain.customers.personal import (
     CALLBACK_GONE,
     ORDER_DAY,
@@ -52,6 +55,7 @@ from api.domain.customers.phone import DEFAULT_COUNTRY_CODE, normalize_phone
 from api.domain.menu.numberwords import fold
 from api.domain.ordering.handover import SENT
 from api.domain.ordering.labels import current_labels_many, labels_for_rows
+from api.domain.status.staff_changes import _locked
 from api.models import (
     Address,
     AuditLog,
@@ -68,9 +72,46 @@ from api.models import (
     Reservation,
     ServiceConfig,
 )
+from api.models.customers import REQUEST_CHANNELS, REQUEST_KINDS, REQUEST_OUTCOMES
 
 ACTOR_JOB = "job:data_requests"
 REFERENCE = re.compile(r"dsr_[0-9]{4}_[0-9]{3,}")
+# The verification details as the guest gave them: a few lines, never a file.
+NOTE_MAX = 2000
+# What `erase` and `record_objection` leave in the audit log, by request kind.
+RUN_ACTIONS = {
+    "erasure": "data_subject.erased",
+    "objection": "data_subject.objection_recorded",
+}
+ROWS_READ = "data_subject.rows_read"
+SAY_LOG_CHANGED = (
+    "Die Liste hat sich gerade geändert. Bitte prüfen, ob die Anfrage schon "
+    "eingetragen ist."
+)
+SAY_NOTE_LONG = f"Die Notiz ist zu lang (höchstens {NOTE_MAX} Zeichen)."
+SAY_FUTURE = "Der Eingang kann nicht in der Zukunft liegen."
+SAY_DETAILS = (
+    "Bitte einen Namen mit dem Tag einer Bestellung oder Reservierung oder mit "
+    "der vollständigen Lieferadresse angeben. Eine Nummer oder ein Name allein "
+    "reicht nie."
+)
+SAY_NOBODY = (
+    "Nicht bestätigt: zu diesen Angaben gibt es keine Zeile. Bitte die "
+    "Schreibweise des Namens und den Tag prüfen."
+)
+SAY_NUMBERS = (
+    "Nicht bestätigt: die Angaben passen zu mehreren Rufnummern. Bitte den Gast "
+    "nach jeder Nummer fragen, von der er angerufen hat, und alle eintragen."
+)
+SAY_CLAIM = (
+    "Eine angekreuzte Zeile gehört nicht mehr zu dieser Person. Bitte ohne "
+    "Kreuze neu prüfen."
+)
+SAY_NOT_RUN = (
+    "Für diese Anfrage ist auf dem Server noch nichts gelaufen. „Erledigt“ "
+    "geht erst danach; konnte die Person nicht bestätigt werden, ist das "
+    "Ergebnis „nicht bestätigt“."
+)
 # A complex request: two more months, told to the guest inside the first.
 LONGEST_DEADLINE_MONTHS = 3
 OPEN_ORDER_STATUSES = ("confirmed", "approved")
@@ -132,8 +173,12 @@ def log_request(
     received_at: datetime,
     zone: str,
     reference: str | None = None,
+    actor: str = ACTOR_JOB,
 ) -> DataSubjectRequest:
     """`reference` keeps the number a line of the interim file already has."""
+    note = (note or "").strip() or None
+    if note is not None and len(note) > NOTE_MAX:
+        raise InvalidInput("the note is too long", say=SAY_NOTE_LONG)
     day = to_local(received_at, zone).date()
     if reference is None:
         reference = _next_reference(session, tenant_id, day.year)
@@ -152,8 +197,65 @@ def log_request(
     )
     session.add(request)
     session.flush()
-    _audit(session, request, "data_subject.request_logged", kind=kind, channel=channel)
+    _audit(
+        session,
+        request,
+        "data_subject.request_logged",
+        actor,
+        kind=kind,
+        channel=channel,
+    )
     return request
+
+
+def next_reference(
+    session: Session, tenant_id: uuid.UUID, zone: str, now: datetime
+) -> str:
+    """The reference the next request of today gets: the token of the log as a
+    form showed it (`log_request_once`)."""
+    return _next_reference(session, tenant_id, to_local(now, zone).year)
+
+
+def log_request_once(
+    session: Session,
+    tenant_id: uuid.UUID,
+    seen: str,
+    *,
+    kind: str,
+    channel: str,
+    note: str | None,
+    received_on: date | None,
+    now: datetime,
+    actor: str,
+) -> DataSubjectRequest:
+    """A request typed into the tab "Daten". `seen` is `next_reference` as the
+    form showed it: a second tap on "Eintragen", or a request another device
+    logged in between, writes no second line. One request after the other, under
+    the lock of the settings row. A day of receipt that has not come is refused:
+    its deadline would be later than the law's."""
+    _, zone = _locked(session, tenant_id)
+    if seen != next_reference(session, tenant_id, zone, now):
+        raise Conflict("the request log changed", say=SAY_LOG_CHANGED)
+    if kind not in REQUEST_KINDS or channel not in REQUEST_CHANNELS:
+        raise InvalidInput("no such kind or channel")
+    today = to_local(now, zone).date()
+    received_at = now
+    if received_on is not None and received_on != today:
+        if received_on > today:
+            raise InvalidInput("received in the future", say=SAY_FUTURE)
+        received_at = datetime(
+            received_on.year, received_on.month, received_on.day, tzinfo=tz(zone)
+        )
+    return log_request(
+        session,
+        tenant_id,
+        kind=kind,
+        channel=channel,
+        note=note,
+        received_at=received_at,
+        zone=zone,
+        actor=actor,
+    )
 
 
 def _next_reference(session: Session, tenant_id: uuid.UUID, year: int) -> str:
@@ -168,23 +270,87 @@ def _next_reference(session: Session, tenant_id: uuid.UUID, year: int) -> str:
 
 
 def _find(
-    session: Session, tenant_id: uuid.UUID, reference: str
+    session: Session, tenant_id: uuid.UUID, reference: str, lock: bool = False
 ) -> DataSubjectRequest | None:
-    return session.scalar(
-        select(DataSubjectRequest).where(
-            DataSubjectRequest.tenant_id == tenant_id,
-            DataSubjectRequest.reference == reference,
-        )
+    query = select(DataSubjectRequest).where(
+        DataSubjectRequest.tenant_id == tenant_id,
+        DataSubjectRequest.reference == reference,
     )
+    if lock:
+        query = query.with_for_update().execution_options(populate_existing=True)
+    return session.scalar(query)
 
 
 def get_request(
-    session: Session, tenant_id: uuid.UUID, reference: str
+    session: Session, tenant_id: uuid.UUID, reference: str, *, lock: bool = False
 ) -> DataSubjectRequest:
-    request = _find(session, tenant_id, reference)
+    """`lock` for a write from the tab "Daten": two devices answer or extend one
+    request one after the other, and the second sees what the first wrote."""
+    request = _find(session, tenant_id, reference, lock)
     if request is None:
         raise NotFound(f"no request {reference}")
     return request
+
+
+def answered_requests(
+    session: Session, tenant_id: uuid.UUID, limit: int = 10
+) -> Sequence[DataSubjectRequest]:
+    """The newest answers, for the tab "Daten": the proof stays visible."""
+    return session.scalars(
+        select(DataSubjectRequest)
+        .where(
+            DataSubjectRequest.tenant_id == tenant_id,
+            DataSubjectRequest.answered_at.is_not(None),
+        )
+        .order_by(
+            DataSubjectRequest.answered_at.desc(), DataSubjectRequest.reference.desc()
+        )
+        .limit(limit)
+    ).all()
+
+
+def has_run(session: Session, request: DataSubjectRequest) -> bool:
+    """Whether the erasure or the objection of this request ran on the server
+    (`erase`, `record_objection`). An access request has no run."""
+    action = RUN_ACTIONS.get(request.kind)
+    if action is None:
+        return False
+    return (
+        session.scalar(
+            select(AuditLog.id)
+            .where(
+                AuditLog.tenant_id == request.tenant_id,
+                AuditLog.entity == "data_subject_request",
+                AuditLog.entity_id == request.id,
+                AuditLog.action == action,
+            )
+            .limit(1)
+        )
+        is not None
+    )
+
+
+def look(
+    session: Session,
+    request: DataSubjectRequest,
+    details: Details,
+    zone: str,
+    now: datetime,
+    *,
+    claimed: Collection[uuid.UUID] = (),
+    actor: str,
+) -> dict[str, Any]:
+    """What `access_copy` holds for the person behind the details, for the tab
+    "Daten". The look is in the audit log, committed, before a row is read:
+    which request and who, nothing of the guest. Only for a request still open:
+    without one nobody's rows are looked at."""
+    if request.answered_at is not None:
+        raise Conflict(f"{request.reference} is already answered")
+    tenant_id = request.tenant_id
+    _audit(session, request, ROWS_READ, actor)
+    session.commit()
+    person = verify(session, tenant_id, details, zone, now, claimed=claimed)
+    return access_copy(session, tenant_id, person)
 
 
 def open_requests(
@@ -200,15 +366,23 @@ def open_requests(
     ).all()
 
 
-def extend_deadline(session: Session, request: DataSubjectRequest, zone: str) -> None:
-    """Art. 12(3): a complex request may take two more months, once."""
+def can_extend(request: DataSubjectRequest, zone: str) -> bool:
     longest = add_months(
         to_local(request.received_at, zone).date(), LONGEST_DEADLINE_MONTHS
     )
-    if request.answered_at is not None or request.deadline >= longest:
+    return request.answered_at is None and request.deadline < longest
+
+
+def extend_deadline(
+    session: Session, request: DataSubjectRequest, zone: str, actor: str = ACTOR_JOB
+) -> None:
+    """Art. 12(3): a complex request may take two more months, once."""
+    if not can_extend(request, zone):
         raise Conflict(f"the deadline of {request.reference} cannot move")
-    request.deadline = longest
-    _audit(session, request, "data_subject.deadline_extended")
+    request.deadline = add_months(
+        to_local(request.received_at, zone).date(), LONGEST_DEADLINE_MONTHS
+    )
+    _audit(session, request, "data_subject.deadline_extended", actor)
     session.flush()
 
 
@@ -218,29 +392,48 @@ def answer_request(
     outcome: str,
     answered_at: datetime,
     zone: str,
+    actor: str = ACTOR_JOB,
+    *,
+    needs_run: bool = False,
 ) -> None:
     """Closes the line and starts its periods (docs/03 Löschkonzept). The year is
-    the restaurant's: a claim runs from the end of it (§ 199(1) BGB)."""
+    the restaurant's: a claim runs from the end of it (§ 199(1) BGB).
+    `needs_run`, for the tab "Daten": an erasure or objection is not `done`
+    before its run on the server, or the log would say erased while every row
+    is still there."""
     if request.answered_at is not None:
         raise Conflict(f"{request.reference} is already answered")
+    if outcome not in REQUEST_OUTCOMES:
+        raise InvalidInput(f"no outcome {outcome!r}")
+    if (
+        needs_run
+        and outcome == "done"
+        and request.kind in RUN_ACTIONS
+        and not has_run(session, request)
+    ):
+        raise Conflict(f"{request.reference} has not run", say=SAY_NOT_RUN)
     day = to_local(answered_at, zone).date()
     if day < to_local(request.received_at, zone).date():
         raise InvalidInput(f"{request.reference} cannot be answered before it came")
     request.answered_at = answered_at
     request.outcome = outcome
     request.delete_after = date(day.year + settings.retention_request_log_years, 12, 31)
-    _audit(session, request, "data_subject.request_answered", outcome=outcome)
+    _audit(session, request, "data_subject.request_answered", actor, outcome=outcome)
     session.flush()
 
 
 def _audit(
-    session: Session, request: DataSubjectRequest, action: str, **payload: Any
+    session: Session,
+    request: DataSubjectRequest,
+    action: str,
+    actor: str = ACTOR_JOB,
+    **payload: Any,
 ) -> None:
     """No name and no number: only `verification_note` holds those."""
     session.add(
         AuditLog(
             tenant_id=request.tenant_id,
-            actor=ACTOR_JOB,
+            actor=actor,
             action=action,
             entity="data_subject_request",
             entity_id=request.id,
@@ -425,7 +618,10 @@ def _calls_and_callbacks(
         sort_out(callback, callback.call_id, callbacks, unclaimed_callbacks)
 
     if unknown := set(claimed) - offered:
-        raise InvalidInput(f"not on offer for this person: {sorted(map(str, unknown))}")
+        raise InvalidInput(
+            f"not on offer for this person: {sorted(map(str, unknown))}",
+            say=SAY_CLAIM,
+        )
     return calls, callbacks, unclaimed_calls, unclaimed_callbacks
 
 
@@ -439,7 +635,8 @@ def _one_person(
     if len({row.phone for row in rows}) > 1:
         raise Ambiguous(
             "not verified: one detail opens the name on several numbers; ask the "
-            "guest for the number they called from (--phone)"
+            "guest for the number they called from (--phone)",
+            say=SAY_NUMBERS,
         )
     return rows
 
@@ -460,7 +657,8 @@ def verify(
     if not name or not (details.days or all(address)):
         raise InvalidInput(
             "a name with the date of an order or reservation, or with the "
-            "delivery address: never a number or a name alone"
+            "delivery address: never a number or a name alone",
+            say=SAY_DETAILS,
         )
     said = {normalize_phone(phone) for phone in details.phones}
     found: list[Order | Reservation | Customer] = []
@@ -469,7 +667,7 @@ def verify(
     if all(address):
         found += _one_person(_by_address(session, tenant_id, details, name), said)
     if not found:
-        raise NotFound("not verified: no row carries these details")
+        raise NotFound("not verified: no row carries these details", say=SAY_NOBODY)
 
     phones = {row.phone for row in found}
     # Two details on two numbers can be two namesakes as well (security re-audit
@@ -477,7 +675,8 @@ def verify(
     if len(phones) > 1 and not said:
         raise Ambiguous(
             "not verified: the details open the name on several numbers; ask the "
-            "guest for every number they called from and pass each with --phone"
+            "guest for every number they called from and pass each with --phone",
+            say=SAY_NUMBERS,
         )
     linked = {row.id for row in found if isinstance(row, Customer)}
     linked |= {
@@ -966,6 +1165,7 @@ def erase(
         session,
         request,
         "data_subject.erased",
+        ACTOR_JOB,
         **Counter(entry.table for entry in ledger),
     )
     session.flush()

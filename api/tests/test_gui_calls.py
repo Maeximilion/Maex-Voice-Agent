@@ -10,9 +10,9 @@ from sqlalchemy.orm import Session
 
 from api.core.time import business_day
 from api.db import get_db
-from api.domain.calls.log import list_calls
+from api.domain.calls.log import call_for_team, list_calls
 from api.main import app
-from api.models import Call
+from api.models import AuditLog, Call
 from api.tests.test_gui_figures import _tenant
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -123,7 +123,7 @@ def test_the_page_lists_a_call_as_the_mockup_does(db, client, now):
     # The number is cut as in the mockup: enough to tell callers apart.
     assert "+4917655\N{HORIZONTAL ELLIPSIS}" in html and "+4917655512345" not in html
     for cell in ("Abholung", "abgeschlossen", "2:14", "0,29 €"):
-        assert f"<td>{cell}</td>" in html.split("<tbody>")[1]
+        assert f">{cell}</td>" in html.split("<tbody>")[1]
     assert "call-note" not in html
 
 
@@ -144,7 +144,10 @@ def test_a_call_without_caller_audio_shows_its_number_marked_with_the_note(
 
     html = client.get("/gui/anrufe").text
 
-    assert '<td class="call-note">+4917655\N{HORIZONTAL ELLIPSIS}</td>' in html
+    assert (
+        '<td data-label="Nummer" class="call-note">+4917655\N{HORIZONTAL ELLIPSIS}</td>'
+        in html
+    )
     assert "Anrufer nicht hörbar (kein Ton angekommen)" in html
     assert "abgebrochen" in html
 
@@ -184,3 +187,150 @@ def test_the_page_without_tenant_is_503_and_the_operations_view_links_to_it(
     assert client.get("/gui/anrufe").status_code == 503
     _tenant(db, "Eins")
     assert 'href="/gui/anrufe"' in client.get("/gui").text
+
+
+# --- one row in detail (#571, plan number 10) ---------------------------------------
+
+HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
+DETAIL = "/gui/anrufe/anruf"
+TOOLS = [
+    {"name": "get_item_details", "duration_ms": 41.6, "ok": True},
+    {"name": "draft_order", "duration_ms": 120, "ok": False, "error_code": "ambiguous"},
+]
+
+
+def _looks(db) -> list[AuditLog]:
+    db.expire_all()
+    return list(db.query(AuditLog).filter(AuditLog.action == "gui.call_read"))
+
+
+def _detail(client, call_id, headers=HX):
+    client.cookies.set("csrf_token", "testtoken")
+    return client.post(DETAIL, data={"anruf": str(call_id)}, headers=headers)
+
+
+def test_a_look_at_one_call_is_in_the_audit_log_before_the_row_is_read(db, now):
+    tenant = _tenant(db, "Eins")
+    call = _call(
+        db,
+        tenant,
+        now - timedelta(hours=1),
+        caller_id="+4917655512345",
+        tool_calls=TOOLS,
+    )
+
+    found = call_for_team(db, tenant, call.id, now, actor="gui:tablet")
+
+    assert found is not None and found.tool_calls_total == 2
+    assert [tool.name for tool in found.tool_calls] == [
+        "get_item_details",
+        "draft_order",
+    ]
+    (look,) = _looks(db)
+    assert (look.actor, look.entity) == ("gui:tablet", "call")
+    # Which call, nothing of the guest.
+    assert look.payload == {"call": str(call.id)}
+
+
+def test_a_call_the_list_does_not_show_has_no_detail(db, now):
+    one = _tenant(db, "Eins")
+    two = _tenant(db, "Zwei")
+    theirs = _call(db, two, now - timedelta(hours=1))
+    test_call = _call(db, one, now - timedelta(hours=1), is_test=True)
+    old = _call(db, one, now - timedelta(days=14))
+    last_listed = _call(db, one, now - timedelta(days=13))
+
+    for call in (theirs, test_call, old):
+        assert call_for_team(db, one, call.id, now, actor="gui:tablet") is None
+    assert call_for_team(db, one, last_listed.id, now, actor="gui:tablet") is not None
+    # A look that found nothing is a look all the same.
+    assert len(_looks(db)) == 4
+
+
+def test_the_row_carries_its_id_in_the_button_and_in_no_address(db, client, now):
+    tenant = _tenant(db, "Eins")
+    call = _call(db, tenant, now - timedelta(hours=1))
+
+    html = client.get("/gui/anrufe").text
+
+    assert 'hx-post="/gui/anrufe/anruf"' in html
+    assert 'hx-vals=\'{"anruf": "' + str(call.id) + "\"}'" in html
+    assert f"/{call.id}" not in html and f"={call.id}" not in html
+    assert 'id="anruf-detail"' in html
+
+
+def test_the_detail_shows_the_call_and_its_tool_calls(db, client, now):
+    tenant = _tenant(db, "Eins")
+    call = _call(
+        db,
+        tenant,
+        now - timedelta(hours=1),
+        caller_id="+4917655512345",
+        cost_cents=29,
+        tool_calls=TOOLS,
+        outcome="transferred",
+        transfer_reason="human_requested",
+        line_note="no_caller_audio",
+    )
+
+    answer = _detail(client, call.id)
+
+    assert answer.status_code == 200
+    assert answer.headers["Cache-Control"] == "no-store"
+    for text in (
+        "11:00:00",
+        "11:02:14",
+        "2:14",
+        "an Team übergeben",
+        "Will Mitarbeiter sprechen",
+        "Anrufer nicht hörbar",
+        "0,29 €",
+        "1. get_item_details",
+        "42 ms",
+        "2. draft_order",
+        "Fehler: ambiguous",
+        "Ein Transkript wird nicht gespeichert",
+    ):
+        assert text in answer.text, text
+    # The detail adds no number to what the list shows.
+    assert "+4917655" not in answer.text
+    assert len(_looks(db)) == 1
+
+
+def test_whatever_stands_in_the_tool_calls_does_not_break_the_detail(db, client, now):
+    tenant = _tenant(db, "Eins")
+    junk = [None, "text", {"name": "<b>x</b>", "duration_ms": True}, {"ok": "yes"}, 7]
+    call = _call(db, tenant, now - timedelta(hours=1), tool_calls=junk)
+
+    answer = _detail(client, call.id)
+
+    assert answer.status_code == 200
+    assert "&lt;b&gt;x&lt;/b&gt;" in answer.text and "<b>x</b>" not in answer.text
+    assert "5. ?" in answer.text
+
+
+@pytest.mark.parametrize("sent", ["", "x", "00000000-0000-4000-8000-000000000001"])
+def test_an_id_that_is_no_call_of_the_list_gets_one_answer(db, client, now, sent):
+    _tenant(db, "Eins")
+
+    answer = _detail(client, sent)
+
+    assert answer.status_code == 200
+    assert "Dieser Anruf ist nicht mehr in der Liste." in answer.text
+    assert answer.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [{}, {"HX-Request": "true"}, {"HX-Request": "true", "X-CSRF-Token": "wrong"}],
+)
+def test_the_detail_without_the_pages_token_is_refused_and_not_audited(
+    db, client, now, headers
+):
+    tenant = _tenant(db, "Eins")
+    call = _call(db, tenant, now - timedelta(hours=1), tool_calls=TOOLS)
+
+    answer = _detail(client, call.id, headers)
+
+    assert answer.status_code == 403 and "draft_order" not in answer.text
+    assert _looks(db) == []

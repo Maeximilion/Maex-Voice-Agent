@@ -41,7 +41,9 @@ from api.domain.callbacks.board import (
     NUMBER_WITHHELD,
     OpenCallback,
 )
+from api.domain.calls.log import call_for_team
 from api.domain.confirm import confirm_tablet
+from api.domain.customers import requests as guest_requests
 from api.domain.customers.phone import costly
 from api.domain.delivery import owner_zones
 from api.domain.menu import price_check
@@ -60,6 +62,7 @@ from api.domain.status.mode import CAUTION, mode_at
 from api.domain.status.waits import current_wait, standard_wait
 from api.gui import (
     calls_view,
+    data_view,
     delivery_view,
     figures_view,
     hours_view,
@@ -68,7 +71,7 @@ from api.gui import (
 )
 from api.gui.session import LOGIN, csrf_matches, require_admin, require_gui_session
 from api.gui.sse import today_event_stream
-from api.models import Reservation, ServiceConfig, Tenant
+from api.models import DataSubjectRequest, Reservation, ServiceConfig, Tenant
 from api.schemas.floor_plan import NewArea, SaveArea
 from api.schemas.reservations import TabletDraft, TabletReservationRequest
 
@@ -2314,6 +2317,335 @@ def delivery_zone_change(
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     return _zone_save(request, session, zone_id, form)
+
+
+# --- One row of the call list in detail (#571) ------------------------------------
+
+CALL_GONE = "Dieser Anruf ist nicht mehr in der Liste."
+
+
+@router.post(
+    "/anrufe/anruf",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def call_detail(
+    request: Request,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """One row of the call list in detail (#571): when it ended, why it went to
+    the team, its tool calls. A POST with the id in its body: every look leaves
+    an audit row, so it is a write, it needs the page's token and an unlocked
+    device, and no address carries the id. An id that is no call of the list
+    (another restaurant's, too old, a self-test, no id at all) gets one answer."""
+    tenant = _tenant(session)
+    found = None
+    try:
+        call_id = uuid.UUID(form.get("anruf", ""))
+    except ValueError:
+        call_id = None
+    if tenant is not None and call_id is not None:
+        found = call_for_team(
+            session, tenant, call_id, clock.utcnow(), actor=staff.ACTOR_TABLET
+        )
+    context: dict[str, Any] = {"problem": CALL_GONE}
+    if tenant is not None and found is not None:
+        reasons = {code: label for code, (_, label) in CALLBACK_LABELS.items()}
+        context = calls_view.detail(found, tenant, reasons)
+    return templates.TemplateResponse(
+        request, "fragments/anruf.html", context, headers=NO_STORE
+    )
+
+
+# --- The owner's tab "Daten": periods and requests of guests (#571, T-11.8) -------
+
+REQUEST_LOGGED = "Eingetragen. Die Frist läuft."
+DEADLINE_MOVED = (
+    "Frist verlängert. Der Gast muss den Grund innerhalb des ersten Monats erfahren."
+)
+REQUEST_ANSWERED = "Als beantwortet eingetragen."
+# The token of the request log a form sends back, no longer than a reference.
+SEEN_MAX = 20
+
+
+def _requests_part(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    message: str | None = None,
+    tone: str = "ok",
+    sent: dict[str, str] | None = None,
+) -> HTMLResponse:
+    """The request log as it is in the database now, with the form for a new
+    request; `sent` shows a refused form again as it was typed."""
+    return templates.TemplateResponse(
+        request,
+        "fragments/daten_anfragen.html",
+        {
+            **data_view.page(session, tenant, clock.utcnow()),
+            "message": message,
+            "tone": tone,
+            "sent": sent or {},
+        },
+        headers=NO_STORE,
+    )
+
+
+def _guest_request(
+    session: Session, tenant: Tenant, reference: str, lock: bool = False
+) -> DataSubjectRequest:
+    """A request of this restaurant by its reference, or a 404: for a text that
+    is no reference and for another restaurant's."""
+    if not guest_requests.REFERENCE.fullmatch(reference):
+        raise HTTPException(status_code=404)
+    try:
+        return guest_requests.get_request(session, tenant.id, reference, lock=lock)
+    except NotFound:
+        raise HTTPException(status_code=404) from None
+
+
+def _request_part(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    reference: str,
+    message: str | None = None,
+    tone: str = "ok",
+    sent: dict[str, str] | None = None,
+    found: dict[str, Any] | None = None,
+    claimed: frozenset[str] = frozenset(),
+) -> HTMLResponse:
+    """One request with what can still be done to it; `found` is what a check
+    of the person returned, `sent` the details it was typed with."""
+    row = _guest_request(session, tenant, reference)
+    return templates.TemplateResponse(
+        request,
+        "fragments/daten_anfrage.html",
+        {
+            **data_view.request_context(session, tenant, row, clock.utcnow()),
+            "message": message,
+            "tone": tone,
+            "sent": sent or {},
+            "found": found,
+            "claimed": claimed,
+        },
+        headers=NO_STORE,
+    )
+
+
+def _refusal(exc: AppError) -> str:
+    """A conflict without a sentence of its own is a request answered since."""
+    if isinstance(exc, Conflict) and not exc.say:
+        return data_view.ANSWERED
+    return data_view.words(exc)
+
+
+@router.get("/daten", response_class=HTMLResponse, include_in_schema=False)
+def data_page(
+    request: Request,
+    _access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The deletion periods and the requests of guests (legal check U2), behind
+    the admin PIN."""
+    tenant = _admin_tenant(session)
+    return _page_response(
+        request,
+        "betrieb/daten.html",
+        {
+            "tenant": tenant,
+            **_frame(session, tenant),
+            **data_view.page(session, tenant, clock.utcnow()),
+            "sent": {},
+        },
+    )
+
+
+@router.get("/daten/anfragen", response_class=HTMLResponse, include_in_schema=False)
+def data_requests(
+    request: Request,
+    _access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The list again: "Zurück zur Liste" on a request."""
+    return _requests_part(request, session, _admin_tenant(session))
+
+
+@router.post(
+    "/daten/anfrage",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def data_request_new(
+    request: Request,
+    _access: Access = Depends(require_admin),
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The owner logs a request the day it came. The form sends the token of
+    the log it showed (`gesehen`): a second tap writes no second line."""
+    tenant = _admin_tenant(session)
+    sent = {
+        "gesehen": form.get("gesehen", "")[:SEEN_MAX],
+        "art": form.get("art", ""),
+        "weg": form.get("weg", ""),
+        "eingang": form.get("eingang", "")[:10],
+        "notiz": form.get("notiz", "")[: guest_requests.NOTE_MAX],
+    }
+    try:
+        typed_day = form.get("eingang", "").strip()
+        received = date.fromisoformat(typed_day) if typed_day else None
+    except ValueError:
+        return _requests_part(
+            request, session, tenant, data_view.BAD_DAY, "danger", sent
+        )
+    try:
+        guest_requests.log_request_once(
+            session,
+            tenant.id,
+            form.get("gesehen", ""),
+            kind=form.get("art", ""),
+            channel=form.get("weg", ""),
+            note=form.get("notiz"),
+            received_on=received,
+            now=clock.utcnow(),
+            actor=staff.ACTOR_OWNER,
+        )
+        session.commit()
+    except AppError as exc:
+        session.rollback()
+        # After a conflict the fresh log with its token; any other refusal
+        # shows what was typed with the token it was typed against.
+        again = None if isinstance(exc, Conflict) else sent
+        return _requests_part(
+            request, session, tenant, data_view.words(exc), "danger", again
+        )
+    return _requests_part(request, session, tenant, REQUEST_LOGGED)
+
+
+@router.get(
+    "/daten/anfrage/{reference}", response_class=HTMLResponse, include_in_schema=False
+)
+def data_request(
+    request: Request,
+    reference: str,
+    _access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    return _request_part(request, session, _admin_tenant(session), reference)
+
+
+@router.post(
+    "/daten/anfrage/{reference}/frist",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def data_request_extend(
+    request: Request,
+    reference: str,
+    _access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """A complex request: two more months, once (Art. 12(3))."""
+    tenant = _admin_tenant(session)
+    row = _guest_request(session, tenant, reference, lock=True)
+    try:
+        guest_requests.extend_deadline(session, row, tenant.timezone, staff.ACTOR_OWNER)
+        session.commit()
+    except AppError:
+        session.rollback()
+        return _request_part(
+            request, session, tenant, reference, data_view.NO_EXTENSION, "danger"
+        )
+    return _request_part(request, session, tenant, reference, DEADLINE_MOVED)
+
+
+@router.post(
+    "/daten/anfrage/{reference}/antwort",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def data_request_answer(
+    request: Request,
+    reference: str,
+    _access: Access = Depends(require_admin),
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The written answer went out: the line is closed and its periods start.
+    An erasure or objection is "erledigt" only after its run on the server."""
+    tenant = _admin_tenant(session)
+    row = _guest_request(session, tenant, reference, lock=True)
+    try:
+        guest_requests.answer_request(
+            session,
+            row,
+            form.get("ergebnis", ""),
+            clock.utcnow(),
+            tenant.timezone,
+            staff.ACTOR_OWNER,
+            needs_run=True,
+        )
+        session.commit()
+    except AppError as exc:
+        session.rollback()
+        return _request_part(
+            request, session, tenant, reference, _refusal(exc), "danger"
+        )
+    return _requests_part(request, session, tenant, REQUEST_ANSWERED)
+
+
+@router.post(
+    "/daten/anfrage/{reference}/pruefen",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def data_request_check(
+    request: Request,
+    reference: str,
+    _access: Access = Depends(require_admin),
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """Who the person is and which rows are theirs (`requests.verify`): a name
+    with a day or the address, never a number alone. The details travel in the
+    body and come back only in this answer; the look is in the audit log before
+    a row is read. Nothing is changed: erasing stays on the server, where the
+    backup and the erasure ledger are (docs/09 section 2)."""
+    tenant = _admin_tenant(session)
+    row = _guest_request(session, tenant, reference)
+    sent = data_view.sent_back(form)
+    try:
+        details, claimed = data_view.typed(form)
+        copy = guest_requests.look(
+            session,
+            row,
+            details,
+            tenant.timezone,
+            clock.utcnow(),
+            claimed=claimed,
+            actor=staff.ACTOR_OWNER,
+        )
+    except AppError as exc:
+        session.rollback()
+        return _request_part(
+            request, session, tenant, reference, _refusal(exc), "danger", sent
+        )
+    return _request_part(
+        request,
+        session,
+        tenant,
+        reference,
+        sent=sent,
+        found=data_view.found(copy, tenant),
+        claimed=frozenset(str(row_id) for row_id in claimed),
+    )
 
 
 @router.get("/events", include_in_schema=False)

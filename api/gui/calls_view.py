@@ -10,7 +10,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from api.core.time import business_day, to_local
-from api.domain.calls.log import DAYS_LISTED, list_calls
+from api.domain.calls.log import DAYS_LISTED, SupportCallLog, list_calls
 from api.gui.figures_view import DASH, WEEKDAYS
 from api.models import Tenant
 
@@ -71,6 +71,7 @@ def page(
     intent = intent if intent in INTENTS else None
     rows = [
         {
+            "id": row.id,
             "time": f"{to_local(row.started_at, tenant.timezone):%H:%M}",
             "number": _number(row.caller_id),
             "intent": INTENTS.get(row.intent or "", DASH),
@@ -97,3 +98,43 @@ def page(
 
 def _day(day: date) -> str:
     return f"{WEEKDAYS[day.weekday()]} {day:%d.%m.}"
+
+
+def detail(
+    log: SupportCallLog, tenant: Tenant, reasons: dict[str, str]
+) -> dict[str, Any]:
+    """One call for the row detail (#571): what the row says, when it ended, why
+    it went to the team, and its tool calls in their order with how long each
+    took. No number: the row above it shows what the list shows. No transcript
+    is stored, and the page says so."""
+    started = to_local(log.started_at, tenant.timezone)
+    ended = to_local(log.ended_at, tenant.timezone) if log.ended_at else None
+    facts = [
+        ("Beginn", f"{started:%d.%m.%Y %H:%M:%S}"),
+        ("Ende", f"{ended:%H:%M:%S}" if ended else RUNNING),
+        ("Dauer", _duration(log.duration_seconds)),
+        ("Anliegen", INTENTS.get(log.intent or "", DASH)),
+        ("Ergebnis", OUTCOMES.get(log.outcome or "", RUNNING)),
+        ("Kosten", _euro(log.cost_cents)),
+    ]
+    if log.transfer_reason:
+        reason = reasons.get(log.transfer_reason, log.transfer_reason[:64])
+        facts.append(("An das Team wegen", reason))
+    if log.line_note:
+        facts.append(("Leitung", NOTES.get(log.line_note, log.line_note[:64])))
+    tools = [
+        {
+            "name": tool.name,
+            "duration": DASH
+            if tool.duration_ms is None
+            else f"{round(tool.duration_ms)} ms",
+            "ok": tool.ok,
+            "error": tool.error_code,
+        }
+        for tool in log.tool_calls
+    ]
+    return {
+        "facts": facts,
+        "tools": tools,
+        "tools_left": log.tool_calls_total - len(tools),
+    }

@@ -1,6 +1,8 @@
-"""The calls of one business day, for the call list (T-8.7, docs/06 §4).
+"""The calls of one business day, for the call list (T-8.7, docs/06 §4), and
+one call with its tool calls: for the team's row detail (#571) and for the
+operator's dev tools.
 
-Read only. The number is the caller id as the call log holds it; the deletion
+Read only, but every look at one call leaves an audit row. The number is the caller id as the call log holds it; the deletion
 job takes it after its period (docs/03 "Löschkonzept"), and how much of it a
 screen shows is the screen's decision.
 """
@@ -25,6 +27,8 @@ DAYS_LISTED = 14
 SUPPORT_READ = "ops.calls_read"
 # The operator read one call with its tool calls (the dev tools, docs/23 §5).
 SUPPORT_CALL_READ = "ops.call_read"
+# The team opened the detail of one row of its call list (docs/06 §4).
+TEAM_CALL_READ = "gui.call_read"
 # A call makes a handful of tool calls; what a broken loop wrote is cut here.
 TOOL_CALLS_SENT = 200
 _CODE_LENGTH = 64
@@ -33,6 +37,7 @@ _LONGEST_MS = 3_600_000
 
 @dataclass(frozen=True)
 class CallRow:
+    id: uuid.UUID
     started_at: datetime
     caller_id: str | None
     intent: str | None
@@ -66,6 +71,7 @@ def list_calls(
         query = query.where(Call.intent == intent)
     return [
         CallRow(
+            id=call.id,
             started_at=call.started_at,
             caller_id=call.caller_id,
             intent=call.intent,
@@ -100,18 +106,17 @@ def _recorded(
     tenant: Tenant,
     action: str,
     actor: str,
-    reason: str,
-    reference: str,
     **what: str,
 ) -> None:
-    """The operator's read in the audit log, committed before a row is read."""
+    """A read in the audit log, committed before a row is read: who and which
+    day or call, for the operator also why. Nothing of a guest."""
     session.add(
         AuditLog(
             tenant_id=tenant.id,
             actor=actor,
             action=action,
             entity="call",
-            payload={"reason": reason, "reference": reference, **what},
+            payload=what,
         )
     )
     session.commit()
@@ -137,7 +142,13 @@ def calls_for_support(
             f"the call list reaches back {DAYS_LISTED} business days", status=400
         )
     _recorded(
-        session, tenant, SUPPORT_READ, actor, reason, reference, day=day.isoformat()
+        session,
+        tenant,
+        SUPPORT_READ,
+        actor,
+        reason=reason,
+        reference=reference,
+        day=day.isoformat(),
     )
     rows = list_calls(session, tenant, day)
     callers: dict[str, int] = {}
@@ -172,8 +183,9 @@ class ToolCall:
 
 @dataclass(frozen=True)
 class SupportCallLog:
-    """One call as the operator's dev tools see it (docs/23 §5): the row
-    without its number and its session id, and the tool calls in their order."""
+    """One call as the operator's dev tools (docs/23 §5) and the team's row
+    detail see it: the row without its number and its session id, and the
+    tool calls in their order."""
 
     started_at: datetime
     ended_at: datetime | None
@@ -228,9 +240,37 @@ def call_for_support(
     restaurant does not have and for a call older than the call list reaches:
     the operator sees no more days here than there."""
     _recorded(
-        session, tenant, SUPPORT_CALL_READ, actor, reason, reference, call=str(call_id)
+        session,
+        tenant,
+        SUPPORT_CALL_READ,
+        actor,
+        reason=reason,
+        reference=reference,
+        call=str(call_id),
     )
+    return _call_log(_one_call(session, tenant, call_id), tenant, now)
+
+
+def call_for_team(
+    session: Session,
+    tenant: Tenant,
+    call_id: uuid.UUID,
+    now: datetime,
+    *,
+    actor: str,
+) -> SupportCallLog | None:
+    """One call of the team's own list, by its id. The look is in the audit
+    log, committed, before the row is read. None for an id this restaurant
+    does not have, for a call older than the list reaches and for a self-test
+    call, which the list does not show either."""
+    _recorded(session, tenant, TEAM_CALL_READ, actor, call=str(call_id))
     call = _one_call(session, tenant, call_id)
+    return None if call is None or call.is_test else _call_log(call, tenant, now)
+
+
+def _call_log(
+    call: Call | None, tenant: Tenant, now: datetime
+) -> SupportCallLog | None:
     if call is None:
         return None
     age = business_day(now, tenant.timezone) - business_day(
