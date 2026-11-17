@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 17.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.63.0
+> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.64.0
 
 ---
 
@@ -314,6 +314,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.64.0 · 18.11.2026:** `/chain` (`.claude/commands/chain.md`): several tasks or issues worked off by one coordinator and one fresh session per pull request that builds and ships it, with usage pacing; the definition of a chain and what the GUI plan chain of #571 taught (Maxi, 2026-11-17)
 - **v2.63.0 · 18.11.2026:** Off-hours mark on a reservation (#819, migration 042): the tablet asks "Trotzdem eintragen" on closed hours and marks the table, the board's card names it, the tab "Zeiten" no longer lists it
 - **v2.62.0 · 17.11.2026:** Operator push publisher (#827 F3, #811 question 3): the dashboard's pushes wait in operator_pushes (migration op005) and a sender posts them to the operator stack's own push server, retried and never dropped; the owner and ops hear of a setup link, a PIN set or a sign-out by the operator (operator_access.changed, migration 041)
 - **v2.61.0 · 17.11.2026:** The owner's forms (#819, #821, #829-2, 3, 5, 6, 7, 11): every fault by its field with aria marks and a linked list, focus and scroll after a swap, in-flight state, decimal pad, the 00:00 message, card refresh on hours changes, a 64 KB form limit, zone names without invisible signs, a request needs the guest's details
