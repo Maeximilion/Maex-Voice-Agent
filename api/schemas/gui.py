@@ -21,3 +21,5 @@ class TodayReservation(BaseModel):
     tables: list[str] = Field(default_factory=list)
     # The self-test's card (#574): marked TEST on the tablet.
     is_test: bool = False
+    # Booked by the team outside the opening hours on purpose (#819).
+    off_hours: bool = False

@@ -8,14 +8,17 @@ booking: the team's second tap, on the summary of what it entered, stands for
 the guest's yes (CLAUDE.md §2 rule 3, Maxi 05.11.2026).
 
 It counts against the same seats the agent books from (D28). A window that is
-full, or a time outside every window, is booked only on the team's word
-(`override`); a table that another reservation holds in the same window is
-refused, whatever the team says. A tablet draft holds no seats and no table:
+full, a time outside every window, or a time the opening hours hold no dine-in
+window for, is booked only on the team's word (`override`). The last is booked
+with the mark `off_hours` (#819): the team meant it, and the list of tables
+outside the hours leaves it out. A table that another reservation holds in the
+same window is refused, whatever the team says. A tablet draft holds no seats and no table:
 `confirm_tablet` checks both again under the day lock.
 
 The agent's limits are the agent's: the party sizes, how far ahead, the notice,
-the opening hours and the reservation switch (T-3.10) do not stop the team,
-which decides by hand what the agent may not (assumption, docs/01).
+the reservation switch (T-3.10) do not stop the team, which decides by hand
+what the agent may not (assumption, docs/01). The opening hours do not stop it
+either; they only ask.
 """
 
 import uuid
@@ -31,7 +34,9 @@ from api.core.errors import Conflict, InvalidInput, NotFound
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone
 from api.domain.reservations.capacity import CapacityWindow, window_load
+from api.domain.reservations.slots import DINEIN
 from api.domain.status.config import ACTOR_TABLET
+from api.domain.status.hours import load_hours, open_window_at
 from api.models import (
     AuditLog,
     DiningTable,
@@ -54,11 +59,13 @@ SAY_NO_NAME = "Bitte einen Namen eintragen."
 SAY_TABLE_GONE = "Diesen Tisch gibt es im Raumplan nicht mehr."
 SAY_NOT_COMBINED = "Diese beiden Tische sind im Raumplan nicht kombiniert."
 SAY_SAME_TABLE = "Ein Tisch kann nur einmal gewählt werden."
+SAY_CLOSED = "Zu dieser Zeit ist laut Öffnungszeiten geschlossen."
 
 
 class WindowFull(Conflict):
-    """The window holds no room for the party, or the time lies outside every
-    window: booked only when the team says so (`override`)."""
+    """The window holds no room for the party, the time lies outside every
+    window, or the opening hours are closed then: booked only when the team
+    says so (`override`)."""
 
 
 def create_tablet_reservation(
@@ -167,6 +174,10 @@ def describe(
         now=now,
         draft_lifetime=draft_lifetime(session, reservation.tenant_id),
     )
+    off_hours = outside_hours(
+        session, reservation.tenant_id, reservation.reserved_for, zone
+    )
+    full = not fits(window, booked, reservation.party_size)
     return TabletDraft(
         reservation_id=reservation.id,
         # ck_reservations_status keeps the text to these values, TabletDraft again.
@@ -181,7 +192,22 @@ def describe(
         window_end=window.end if window else None,
         booked_guests=booked,
         max_guests=window.max_guests if window else None,
-        needs_override=not fits(window, booked, reservation.party_size),
+        window_full=full,
+        off_hours=off_hours,
+        needs_override=full or off_hours,
+    )
+
+
+def outside_hours(
+    session: Session, tenant_id: uuid.UUID, at: datetime, zone: ZoneInfo
+) -> bool:
+    """True when no dine-in window of the opening hours, as they stand, holds
+    `at`: the weekly hours and a special day of the date or the day before,
+    whose night may reach past midnight (hard rule 1, hours from the database)."""
+    day = at.astimezone(zone).date()
+    return (
+        open_window_at(load_hours(session, tenant_id, day, days=0), at, DINEIN, zone)
+        is None
     )
 
 

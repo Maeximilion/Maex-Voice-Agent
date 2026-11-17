@@ -1,7 +1,9 @@
 {# A table the team enters by hand (T-3.12, D30, docs/06 §3): first the form, then
    the summary with the window's load. "Weiter" writes a draft, which books
-   nothing; "Eintragen" on the summary is the confirming tap. A full window or a
-   time outside every window needs "Trotzdem eintragen", asked on the button. A
+   nothing; "Eintragen" on the summary is the confirming tap. A full window, a
+   time outside every window or a time the opening hours are closed needs
+   "Trotzdem eintragen", asked on the button; the last books with the mark
+   `off_hours` (#819). A
    refusal keeps what was typed; the answer stands above the buttons. #}
 <section class="sheet reservierung" role="dialog" aria-labelledby="reservierung-titel">
   <div class="sheet-head">
@@ -18,13 +20,16 @@
       {% if draft.note %}<dt>Hinweis</dt><dd>{{ draft.note }}</dd>{% endif %}
       <dt>Tisch</dt><dd>{% if draft.tables %}Tisch {{ draft.tables|join(" + ") }}{% else %}Ohne Tisch{% endif %}</dd>
     </dl>
-    <p class="badge {{ 'warn' if draft.needs_override else 'ok' }}">{{ load }}</p>
+    <p class="badge {{ 'warn' if draft.window_full else 'ok' }}">{{ load }}</p>
+    {% if draft.off_hours %}<p class="badge warn">Zu dieser Zeit ist laut Öffnungszeiten geschlossen.</p>{% endif %}
     <div class="sheet-foot">
       {% if message %}<p class="badge danger">{{ message }}</p>{% endif %}
       {% if not blocked %}
       <form hx-post="/gui/reservierung/{{ draft.reservation_id }}/eintragen" hx-target="#reservierung" hx-swap="innerHTML"
-            {% if draft.needs_override %}hx-confirm="Laut Reservierungen ist dafür kein Platz frei. Trotzdem eintragen?"{% endif %}>
-        {% if draft.needs_override %}<input type="hidden" name="trotzdem" value="1">{% endif %}
+            {% if draft.off_hours %}hx-confirm="Laut Öffnungszeiten ist zu dieser Zeit geschlossen. Trotzdem eintragen?"{% elif draft.needs_override %}hx-confirm="Laut Reservierungen ist dafür kein Platz frei. Trotzdem eintragen?"{% endif %}>
+        {# Each word only for what the summary asked (#819). #}
+        {% if draft.window_full %}<input type="hidden" name="trotzdem" value="1">{% endif %}
+        {% if draft.off_hours %}<input type="hidden" name="geschlossen" value="1">{% endif %}
         <button type="submit" class="primary">{{ "Trotzdem eintragen" if draft.needs_override else "Eintragen" }}</button>
       </form>
       {% endif %}
