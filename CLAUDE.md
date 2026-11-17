@@ -95,7 +95,7 @@ An independent review of the exact head commit by the other model gates every me
 The rules live in `docs/21_REVIEW_AUTOMATION.md` "Working rules in force" (reviewer and bot identity, follow-up scope, manual review, "Repeated findings become rules", "Review comment format", "Evaluate feedback before changing code", "Review loop limits") and `docs/22_LANGUAGE_AND_PERFORMANCE.md` "Review signals for both reviewers". Read the applying sections by range before reviewing a PR as the independent reviewer or answering a review outside `/ship` (step 3 there reads them).
 
 ### Slash Commands (`.claude/commands/`)
-`/start` · `/task T-x.y` · `/done` close out · `/ship <PR>` CI and review to the merge · `/bug "…"` red test first · `/eval` · `/gate Gx` close gate, README, version · `/project` the only board writer · `/handover` to a new session. After `/done` opens or updates its PR, the session goes on with `/ship` itself (`done.md` "Automatic handoff").
+`/start` · `/task T-x.y` · `/done` close out · `/ship <PR>` CI and review to the merge · `/bug "…"` red test first · `/eval` · `/gate Gx` close gate, README, version · `/project` the only board writer · `/handover` to a new session · `/chain` several tasks, one session per PR. After `/done` opens or updates its PR, the session goes on with `/ship` itself (`done.md` "Automatic handoff").
 
 ### Model Routing
 Start on the model you expect to need: `/start` recommends model and effort, `/task` checks both against the table before reading anything else and asks the user to switch on a mismatch (only the user can).
