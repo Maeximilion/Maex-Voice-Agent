@@ -43,7 +43,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from api.config import settings
-from api.core.errors import Ambiguous, Conflict, InvalidInput, NotFound
+from api.core.errors import Ambiguous, Conflict, FieldErrors, InvalidInput, NotFound
 from api.core.time import add_months, to_local, tz
 from api.domain.customers.personal import (
     CALLBACK_GONE,
@@ -93,6 +93,13 @@ SAY_NOTE_SIGN = "Die Notiz enthält ein Zeichen, das sich nicht speichern lässt
 # The database takes no NUL in a text; a typed one is refused, not a 500.
 NUL = chr(0)
 SAY_FUTURE = "Der Eingang kann nicht in der Zukunft liegen."
+# On the tab a request needs the guest's details: without them nobody can find
+# the guest's rows, so no request is logged and no deadline runs (#829-11,
+# Maxi 2026-11-17). The job's interim file may still log a line without them.
+SAY_NO_DETAILS = (
+    "Bitte die Angaben des Gastes zu seiner Person eintragen. Ohne sie wird "
+    "die Anfrage nicht eingetragen."
+)
 SAY_DETAILS = (
     "Bitte einen Namen mit dem Tag einer Bestellung oder Reservierung oder mit "
     "der vollständigen Lieferadresse angeben. Eine Nummer oder ein Name allein "
@@ -181,9 +188,9 @@ def log_request(
     """`reference` keeps the number a line of the interim file already has."""
     note = (note or "").strip() or None
     if note is not None and len(note) > NOTE_MAX:
-        raise InvalidInput("the note is too long", say=SAY_NOTE_LONG)
+        raise FieldErrors("the note is too long", {"note": SAY_NOTE_LONG})
     if note is not None and NUL in note:
-        raise InvalidInput("the note holds a NUL", say=SAY_NOTE_SIGN)
+        raise FieldErrors("the note holds a NUL", {"note": SAY_NOTE_SIGN})
     day = to_local(received_at, zone).date()
     if reference is None:
         reference = _next_reference(session, tenant_id, day.year)
@@ -248,10 +255,15 @@ def log_request_once(
     if kind not in REQUEST_KINDS or channel not in REQUEST_CHANNELS:
         raise InvalidInput("no such kind or channel")
     today = to_local(now, zone).date()
+    faults = {}
+    if not (note or "").strip():
+        faults["note"] = SAY_NO_DETAILS
+    if received_on is not None and received_on > today:
+        faults["received"] = SAY_FUTURE
+    if faults:
+        raise FieldErrors(f"request refused: {sorted(faults)}", faults)
     received_at = now
     if received_on is not None and received_on != today:
-        if received_on > today:
-            raise InvalidInput("received in the future", say=SAY_FUTURE)
         received_at = datetime(
             received_on.year, received_on.month, received_on.day, tzinfo=tz(zone)
         )

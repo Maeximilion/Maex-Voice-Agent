@@ -41,6 +41,17 @@ class InvalidInput(AppError):
     code = "invalid_input"
 
 
+class FieldErrors(InvalidInput):
+    """Every fault of one form at once, each by the field it is about (#821):
+    `faults` maps a key the caller's form knows to the sentence for it, in the
+    order the fields were checked. `say` is the first, for a reader that shows
+    one sentence. Never empty."""
+
+    def __init__(self, message: str, faults: dict[str, str]):
+        super().__init__(message, say=next(iter(faults.values())))
+        self.faults = faults
+
+
 class NotFound(AppError):
     code = "not_found"
 

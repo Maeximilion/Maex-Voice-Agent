@@ -45,6 +45,13 @@ NO_EXTENSION = (
     "und nur im ersten Monat."
 )
 BAD_DAY = "Bitte jeden Tag als Datum angeben."
+# The new request's inputs: by the domain's name of a fault (`requests`), and
+# by their id and words in the list of faults.
+REQUEST_INPUTS = {"note": "notiz", "received": "eingang"}
+REQUEST_FIELDS = {
+    "notiz": ("f-notiz", "Angaben des Gastes"),
+    "eingang": ("f-eingang", "Eingegangen am"),
+}
 BAD_PHONE = "Eine der Rufnummern ist nicht lesbar. Bitte mit Vorwahl eintragen."
 TOO_MUCH = "Ein Feld ist zu lang oder es sind zu viele Angaben."
 BAD_SIGN = "Ein Feld enthält ein Zeichen, das hier nicht vorkommen kann."
@@ -359,6 +366,11 @@ def sent_back(form: dict[str, str]) -> dict[str, str]:
     """The typed details for the form shown again, each cut to what its field
     holds. Only into the answer of this request, which no cache keeps."""
     return {name: form.get(name, "")[:FIELD_MAX] for name in DETAIL_FIELDS}
+
+
+def request_errors(faults: dict[str, str]) -> dict[str, str]:
+    """The domain's faults of a new request by the inputs of its form."""
+    return {REQUEST_INPUTS.get(key, key): say for key, say in faults.items()}
 
 
 def words(exc: AppError) -> str:

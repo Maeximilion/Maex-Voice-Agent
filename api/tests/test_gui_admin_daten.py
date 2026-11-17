@@ -28,13 +28,15 @@ from api.tests.test_domain_customers_requests import (
     _order,
 )
 from api.tests.test_domain_draft_order import _tenant
-from api.tests.test_gui_admin_zeiten import _fields
+from api.tests.test_gui_admin_zeiten import _described, _fields, _tag
 from scripts.seed import seed
 
 HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
 PAGE = "/gui/daten"
 NEW = f"{PAGE}/anfrage"
 NOTE = "Frau Müller, Bestellung vom 12.10., rief von 07221 555123 an"
+# Details that name nobody: the answers below must not show a name from them.
+NEUTRAL = "Angaben per Brief, liegen im Ordner"
 DAY = "2026-10-12"
 ZONE = "Europe/Berlin"
 
@@ -436,7 +438,7 @@ def test_a_name_with_the_day_shows_the_persons_rows_and_audits_the_look(client, 
 def test_details_that_verify_nobody_show_nothing_of_a_guest(
     client, engine, details, said
 ):
-    reference = _logged(client, engine, notiz="")
+    reference = _logged(client, engine, notiz=NEUTRAL)
     _a_guest(engine)
     answer = _check(client, reference, **details)
     assert answer.status_code == 200 and said in answer.text, answer.text
@@ -446,14 +448,14 @@ def test_details_that_verify_nobody_show_nothing_of_a_guest(
 
 def test_a_number_alone_opens_nothing_also_when_it_is_the_guests(client, engine):
     """Legal check U2: a number is no person."""
-    reference = _logged(client, engine, notiz="")
+    reference = _logged(client, engine, notiz=NEUTRAL)
     _a_guest(engine)
     answer = _check(client, reference, **{"name": "", "tag-1": "", "nummern": PHONE})
     assert "Bestätigt" not in answer.text and "Müller" not in answer.text
 
 
 def test_a_namesake_on_another_number_is_not_in_the_rows(client, engine):
-    reference = _logged(client, engine, notiz="")
+    reference = _logged(client, engine, notiz=NEUTRAL)
     _a_guest(engine)
     with Session(engine) as session:
         _order(
@@ -469,7 +471,7 @@ def test_a_namesake_on_another_number_is_not_in_the_rows(client, engine):
 
 
 def test_the_name_on_two_numbers_on_one_day_asks_for_the_number(client, engine):
-    reference = _logged(client, engine, notiz="")
+    reference = _logged(client, engine, notiz=NEUTRAL)
     _a_guest(engine)
     _a_guest(engine, phone=OTHER_PHONE)
     asked = _check(client, reference)
@@ -479,7 +481,7 @@ def test_the_name_on_two_numbers_on_one_day_asks_for_the_number(client, engine):
 
 
 def test_a_call_with_only_the_number_waits_for_the_guests_word(client, engine):
-    reference = _logged(client, engine, notiz="")
+    reference = _logged(client, engine, notiz=NEUTRAL)
     _a_guest(engine)
     with Session(engine) as session:
         call = _call(session, _tenant_id(engine), started_at=PAST + timedelta(days=1))
@@ -506,7 +508,7 @@ def test_a_call_with_only_the_number_waits_for_the_guests_word(client, engine):
 def test_an_open_table_is_named_as_what_stops_an_erasure(client, engine):
     from api.tests.test_domain_customers_requests import _reservation
 
-    reference = _logged(client, engine, notiz="")
+    reference = _logged(client, engine, notiz=NEUTRAL)
     _a_guest(engine)
     with Session(engine) as session:
         _reservation(
@@ -523,7 +525,7 @@ def test_an_open_table_is_named_as_what_stops_an_erasure(client, engine):
 def test_the_address_verifies_the_person_too(client, engine):
     from api.tests.test_domain_customers_requests import _address, _customer
 
-    reference = _logged(client, engine, notiz="")
+    reference = _logged(client, engine, notiz=NEUTRAL)
     with Session(engine) as session:
         tenant_id = _tenant_id(engine)
         _address(session, tenant_id, _customer(session, tenant_id))
@@ -566,7 +568,7 @@ def test_no_typed_detail_and_no_row_goes_to_a_log(client, engine, caplog):
 
 
 def test_a_typed_name_with_signs_of_html_is_shown_as_text(client, engine):
-    reference = _logged(client, engine, notiz="")
+    reference = _logged(client, engine, notiz=NEUTRAL)
     answer = _check(client, reference, name='"><script>alert(1)</script>')
     assert "<script>alert" not in answer.text
     assert "&lt;script&gt;" in answer.text
@@ -595,3 +597,31 @@ def test_a_write_without_the_pages_token_is_refused(client, engine, headers):
         assert "Bitte klingeln" not in answer.text
     (row,) = _requests(engine)
     assert row.answered_at is None and len(_audits(engine)) == before
+
+
+# --- forms and accessibility (#829) -----------------------------------------------
+
+
+@pytest.mark.parametrize("note", ["", "  \n "])
+def test_a_request_without_the_guests_details_is_not_logged(client, engine, note):
+    """#829-11 as Maxi decided: no details, no request and no deadline."""
+    answer = _log(client, notiz=note)
+    html = answer.text
+    assert answer.status_code == 200 and "Eingetragen" not in html
+    assert 'aria-invalid="true"' in _tag(html, "notiz")
+    assert "Angaben des Gastes" in _described(html, "notiz")
+    assert "data-fokus" in html
+    assert _requests(engine) == [] and _audits(engine) == []
+
+
+def test_the_details_field_is_marked_as_needed_and_tied_to_its_help(client):
+    html = client.get(PAGE).text
+    tag = _tag(html, "notiz")
+    assert 'aria-required="true"' in tag
+    assert "Der Name mit dem Tag" in _described(html, "notiz")
+    form = html.split('hx-post="/gui/daten/anfrage"', 1)[1].split("</form>", 1)[0]
+    assert "(Pflichtfeld)" in form
+    assert (
+        'hx-disabled-elt="find button"'
+        in html.split('hx-post="/gui/daten/anfrage"', 1)[1]
+    )

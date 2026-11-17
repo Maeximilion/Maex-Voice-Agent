@@ -19,6 +19,11 @@ service: a service the owner did not change is neither checked nor written, so
 a row the form cannot show exactly (a second, more spans than the form takes)
 stays as it is and never blocks the other services.
 
+A refusal names every fault of the save at once (`FieldErrors`), each by its
+service and, where it is about one span, that span ("pickup 18:00-01:00"), so
+the form can mark the row it came from. The rules are the same whichever fault
+comes first: a save is written only when none stands.
+
 A change leaves an audit row with the hours before and after. It pushes
 nothing: the push of D34 point 4 tells the owner what the staff changed.
 """
@@ -34,15 +39,15 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from api.core import time as clock
-from api.core.errors import Conflict, InvalidInput
+from api.core.errors import Conflict, FieldErrors, InvalidInput
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.hours import load_hours, open_window_at
 from api.domain.status.staff_changes import (
     ACTOR_OWNER,
     NO_SPAN,
-    OVERNIGHT,
     BookingToCall,
     _locked,
+    past_midnight,
 )
 from api.models import AuditLog, OpeningHours, Reservation, Tenant
 from api.models.tenants import SERVICES
@@ -139,13 +144,15 @@ def set_weekday(
     if seen != token(before):
         session.rollback()
         raise Conflict(f"weekday {weekday} changed since shown", say=CHANGED_SINCE)
-    try:
-        for service in changed:
-            _checked(after[service])
-            _checked_nights(stored, weekday, service, after[service])
-    except InvalidInput:
+    faults: dict[str, str] = {}
+    for service in changed:
+        found = _faults(service, after[service])
+        if not found:
+            found = _night_faults(stored, weekday, service, after[service])
+        faults.update(found)
+    if faults:
         session.rollback()
-        raise
+        raise FieldErrors(f"weekday {weekday}: {sorted(faults)}", faults)
     session.execute(
         delete(OpeningHours).where(
             OpeningHours.tenant_id == tenant_id,
@@ -227,22 +234,35 @@ def _minutes(span: Span) -> tuple[int, int]:
     return start, end + DAY_MINUTES if end <= start else end
 
 
-def _checked(spans: list[Span]) -> None:
+def _faults(service: str, spans: list[Span]) -> dict[str, str]:
+    """What keeps the spans of one service from being written, by span where
+    a fault is about one: too many, one without a length, an end before the
+    start without the owner's word; then, when each span holds alone, two
+    that overlap or touch (the later one is named)."""
     if len(spans) > MAX_SPANS:
-        raise InvalidInput("too many spans", say=TOO_MANY)
+        return {service: TOO_MANY}
+    faults = {}
     for span in spans:
         if span.opens == span.closes:
-            raise InvalidInput("a span without a length", say=NO_SPAN)
-        if span.closes < span.opens and not span.overnight:
-            raise InvalidInput("a span past midnight not confirmed", say=OVERNIGHT)
-    ends = sorted(_minutes(span) for span in spans)
-    if any(later[0] <= earlier[1] for earlier, later in pairwise(ends)):
-        raise InvalidInput("spans overlap or touch", say=OVERLAP)
+            faults[_key(service, span)] = NO_SPAN
+        elif span.closes < span.opens and not span.overnight:
+            faults[_key(service, span)] = past_midnight(span.closes)
+    if faults:
+        return faults
+    ordered = sorted(spans, key=_minutes)
+    for earlier, later in pairwise(ordered):
+        if _minutes(later)[0] <= _minutes(earlier)[1]:
+            faults.setdefault(_key(service, later), OVERLAP)
+    return faults
 
 
-def _checked_nights(
+def _key(service: str, span: Span) -> str:
+    return f"{service} {span.text()}"
+
+
+def _night_faults(
     stored: dict[int, Day], weekday: int, service: str, spans: list[Span]
-) -> None:
+) -> dict[str, str]:
     """A span past midnight ends before the next weekday's first span of the
     service starts, and the night of the weekday before ends before these
     start. `hours.open_window_at` reads the day before first: a night that
@@ -256,12 +276,11 @@ def _checked_nights(
         # Minutes into the next day; below zero without a span past midnight.
         reach = max((_minutes(span)[1] for span in late), default=0) - DAY_MINUTES
         if any(_minutes(span)[0] <= reach for span in early):
-            raise InvalidInput(
-                "a span past midnight reaches the next weekday's spans",
-                say=NIGHT_OVERLAP.format(
-                    night=WEEKDAYS[night], next=WEEKDAYS[(night + 1) % 7]
-                ),
+            say = NIGHT_OVERLAP.format(
+                night=WEEKDAYS[night], next=WEEKDAYS[(night + 1) % 7]
             )
+            return {service: say}
+    return {}
 
 
 def _texts(day: Day) -> dict[str, list[str]]:

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import (
     Conflict,
+    FieldErrors,
     InvalidInput,
     NotFound,
     OutOfZone,
@@ -841,3 +842,50 @@ def test_invisible_signs_in_a_number_are_not_the_owners_typing_error(
     )
     assert zone.postal_codes == ["76530", "76532"]
     assert (zone.fee_cents, zone.min_order_cents, zone.eta_minutes) == (250, 1500, 40)
+
+
+def test_every_fault_of_a_zone_is_named_at_once_by_its_field(session, tenant_id):
+    """All faults of one save, each by its field (#821, #829-3): the owner
+    corrects them in one go instead of one per save."""
+    typed = _typed(name="", postal_codes="abc", fee="2.5x", min_order="", eta="500")
+    with pytest.raises(FieldErrors) as refused:
+        owner_zones.save_zone(session, tenant_id, None, typed, "")
+    assert refused.value.faults == {
+        "name": owner_zones.NO_NAME,
+        "postal_codes": owner_zones.NO_CODE.format(code="abc"),
+        "fee": owner_zones.NO_AMOUNT.format(field="die Lieferpauschale"),
+        "min_order": owner_zones.NO_AMOUNT.format(field="den Mindestbestellwert"),
+        "eta": owner_zones.NO_MINUTES,
+    }
+    assert refused.value.say == owner_zones.NO_NAME
+    assert owner_zones.zones(session, tenant_id) == []
+
+
+def test_a_taken_name_and_a_taken_code_are_named_together(session, tenant_id):
+    _new(session, tenant_id)
+    with pytest.raises(FieldErrors) as refused:
+        owner_zones.save_zone(
+            session, tenant_id, None, _typed(name="zone 1", postal_codes="76532"), ""
+        )
+    assert set(refused.value.faults) == {"name", "postal_codes"}
+    assert "Zone 1" in refused.value.faults["postal_codes"]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        # Hangul fillers: letters by their category that draw nothing (#821).
+        chr(0x3164),
+        "Zone" + chr(0x3164),
+        chr(0x115F) + "Nord",
+        "Nord" + chr(0xFFA0),
+        # A variation selector after a letter, a combining grapheme joiner.
+        "Nord" + chr(0xFE0F),
+        "No" + chr(0x034F) + "rd",
+    ],
+)
+def test_a_name_with_a_sign_that_draws_nothing_is_refused(session, tenant_id, name):
+    with pytest.raises(InvalidInput) as refused:
+        _new(session, tenant_id, name=name)
+    assert _say(refused) == owner_zones.NAME_UNREADABLE
+    assert owner_zones.zones(session, tenant_id) == []

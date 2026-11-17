@@ -639,3 +639,125 @@ def test_a_service_stored_with_more_spans_than_the_form_adds_comes_back_whole(
     assert "Gespeichert" in saved.text
     assert _spans(engine, TUESDAY, "dinein") == ["11:30-14:00", "17:00-21:00"]
     assert len(_spans(engine, TUESDAY, "delivery")) == 6
+
+
+# --- forms and accessibility (#819, #821, #829) -----------------------------------
+
+
+def _tag(html: str, name: str) -> str:
+    """The opening tag of the field `name`."""
+    found = re.search(rf'<(?:input|textarea|select)\b[^>]*name="{name}"[^>]*>', html)
+    assert found, name
+    return found.group(0)
+
+
+def _described(html: str, name: str) -> str:
+    """The text of every element the field `name` names in aria-describedby."""
+    ids = re.search(r'aria-describedby="([^"]+)"', _tag(html, name))
+    assert ids, name
+    texts = []
+    for each in ids.group(1).split():
+        found = re.search(rf'<p\b[^>]*id="{each}"[^>]*>(.*?)</p>', html, re.S)
+        assert found, each
+        texts.append(unescape(re.sub(r"<[^>]+>", "", found.group(1))))
+    return " ".join(texts)
+
+
+def test_a_form_body_beyond_the_limit_is_refused_before_it_is_read(client, engine):
+    """`_form` reads at most FORM_MAX bytes, in every setup, not only behind
+    the proxy (#819)."""
+    sent = {**_edit(client), "pickup-bis-1": "21:00", "pad": "x" * 70_000}
+    answer = client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX)
+    assert answer.status_code == 413
+    assert _spans(engine, TUESDAY) == ["11:30-14:00", "17:00-22:00"]
+    # A form within the limit still saves.
+    sent.pop("pad")
+    assert (
+        "Gespeichert"
+        in client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX).text
+    )
+
+
+def test_every_refused_row_is_marked_and_named_by_area_and_row(client, engine):
+    sent = {
+        **_edit(client),
+        "pickup-bis-1": "01:00",
+        "delivery-von-1": "13:00",
+        "delivery-bis-1": "20:00",
+    }
+    answer = client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX)
+    html = answer.text
+    for name in ("pickup-von-1", "pickup-bis-1", "delivery-von-1", "delivery-bis-1"):
+        assert 'aria-invalid="true"' in _tag(html, name), name
+    assert "Ende nach Mitternacht" in _described(html, "pickup-bis-1")
+    assert "überschneiden sich" in _described(html, "delivery-von-1")
+    for name in ("pickup-von-0", "dinein-von-0", "delivery-von-0"):
+        assert "aria-invalid" not in _tag(html, name), name
+    # The summary names area and row, links to the field and takes the focus.
+    summary = html.split("data-fokus", 1)[1].split("</div>", 1)[0]
+    assert "Abholung, Zeile 2" in summary and "Lieferung, Zeile 2" in summary
+    assert 'href="#f-pickup-von-1"' in summary and 'id="f-pickup-von-1"' in html
+    assert 'role="alert"' in html.split("data-fokus", 1)[0].rsplit("<", 1)[1]
+    assert _spans(engine, TUESDAY) == ["11:30-14:00", "17:00-22:00"]
+
+
+def test_rows_that_are_no_time_are_all_marked_at_once(client):
+    sent = {**_edit(client), "pickup-von-0": "25:00", "dinein-bis-1": "9"}
+    html = client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX).text
+    assert 'aria-invalid="true"' in _tag(html, "pickup-von-0")
+    assert 'aria-invalid="true"' in _tag(html, "dinein-bis-1")
+    assert "als Uhrzeit" in _described(html, "dinein-von-1")
+    assert "aria-invalid" not in _tag(html, "delivery-von-0")
+
+
+def test_an_end_at_midnight_is_named_on_the_form(client, engine):
+    sent = {**_edit(client), "pickup-bis-1": "00:00"}
+    html = client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX).text
+    assert "00:00" in _described(html, "pickup-bis-1")
+    assert _spans(engine, TUESDAY) == ["11:30-14:00", "17:00-22:00"]
+
+
+def test_a_save_says_so_where_the_eye_and_the_focus_go(client):
+    """The result of a save is moved into view and takes the focus (#829-2):
+    the message carries `data-fokus` and can be focused."""
+    sent = {**_edit(client), "pickup-bis-1": "21:00"}
+    html = client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX).text
+    message = re.search(r"<p\b[^>]*data-fokus[^>]*>([^<]*)</p>", html)
+    assert message and message.group(1) == "Gespeichert. Gilt ab sofort."
+    assert 'tabindex="-1"' in message.group(0) and 'role="status"' in message.group(0)
+    # An opened form takes the focus on its heading (#821).
+    form = client.get(f"{PAGE}/woche/{TUESDAY}", headers=HX).text
+    assert re.search(r'<h2\b[^>]*tabindex="-1"[^>]*data-fokus', form)
+
+
+def test_the_forms_are_greyed_while_their_answer_is_on_its_way(client):
+    """No second tap while a save travels (#829-5)."""
+    form = client.get(f"{PAGE}/woche/{TUESDAY}", headers=HX).text
+    page = client.get(PAGE).text
+    day = page.split('<form class="day-form"', 1)[1].split(">", 1)[0]
+    for html in (form, day):
+        assert 'hx-disabled-elt="find button"' in html
+
+
+def test_the_column_of_the_change_buttons_has_a_header(client):
+    table = _week_table(client.get(PAGE).text)
+    head = table.split("</thead>", 1)[0]
+    assert "<th></th>" not in head and ">Ändern</th>" in head
+
+
+@pytest.mark.parametrize(
+    ("data", "fields"),
+    [
+        ({"art": "zeiten", "von": "09:00"}, ("von", "bis")),
+        ({"art": "zeiten", "von": "18:00", "bis": "02:00"}, ("bis",)),
+        ({"art": "geschlossen", "datum": "2020-01-01"}, ("datum",)),
+    ],
+)
+def test_a_refused_date_marks_its_field(client, data, fields):
+    later = (_today() + timedelta(days=9)).isoformat()
+    html = _day(client, **{"datum": later, **data}).text
+    form = html.split('class="day-form"', 1)[1]
+    for name in ("datum", "von", "bis"):
+        marked = 'aria-invalid="true"' in _tag(form, name)
+        assert marked == (name in fields), name
+    assert "data-fokus" in html

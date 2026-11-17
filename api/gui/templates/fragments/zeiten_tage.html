@@ -2,12 +2,13 @@
    and the owner's form. Set here they hold at once, without a check card
    (the staff's way is the sheet "Öffnungszeit für einen Tag"). The form
    preselects nothing: no date, no times, and the choice is the button; only a
-   refused form shows again what was typed (`typed`). #}
-<h2>Sondertage</h2>
-{% if message %}<p class="badge {{ tone }}" role="status">{{ message }}</p>{% endif %}
+   refused form shows again what was typed (`typed`), its faulty inputs
+   marked and tied to the message (`errors`, #821). #}
+<h2 tabindex="-1"{% if not message %} data-fokus{% endif %}>Sondertage</h2>
+{% if message %}<p class="badge {{ tone }}" id="tage-meldung" role="{{ 'alert' if tone == 'danger' else 'status' }}" tabindex="-1" data-fokus>{{ message }}</p>{% endif %}
 {% if days %}
 <table class="tbl">
-  <thead><tr><th>Datum</th><th>Was gilt</th><th></th></tr></thead>
+  <thead><tr><th>Datum</th><th>Was gilt</th><th>Normale Zeiten</th></tr></thead>
   <tbody>
     {% for d in days %}
     <tr>
@@ -22,12 +23,12 @@
 {% else %}
 <p class="empty">Kein Sondertag eingetragen.</p>
 {% endif %}
-<form class="day-form" novalidate hx-post="/gui/zeiten/tag" hx-target="#zeiten-tage" hx-swap="innerHTML">
+<form class="day-form" novalidate hx-post="/gui/zeiten/tag" hx-target="#zeiten-tage" hx-swap="innerHTML" hx-disabled-elt="find button">
   <h3>Einen Tag ändern</h3>
   <div class="span-row">
-    <label>Tag <input type="date" name="datum" value="{{ typed.datum if typed else '' }}" min="{{ today }}"></label>
-    <label>Von <input type="time" name="von" value="{{ typed.von if typed else '' }}" step="900"></label>
-    <label>Bis <input type="time" name="bis" value="{{ typed.bis if typed else '' }}" step="900"></label>
+    <label>Tag <input type="date" name="datum" value="{{ typed.datum if typed else '' }}"{% if errors and errors.get("datum") %} aria-invalid="true" aria-describedby="tage-meldung"{% endif %} min="{{ today }}"></label>
+    <label>Von <input type="time" name="von" value="{{ typed.von if typed else '' }}"{% if errors and errors.get("von") %} aria-invalid="true" aria-describedby="tage-meldung"{% endif %} step="900"></label>
+    <label>Bis <input type="time" name="bis" value="{{ typed.bis if typed else '' }}"{% if errors and errors.get("bis") %} aria-invalid="true" aria-describedby="tage-meldung"{% endif %} step="900"></label>
     <label class="check"><input type="checkbox" name="nachts" value="1"{% if typed and typed.nachts %} checked{% endif %}> Ende nach Mitternacht</label>
   </div>
   <div class="cb-actions">
