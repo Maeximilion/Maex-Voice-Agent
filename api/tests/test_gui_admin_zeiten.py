@@ -148,6 +148,7 @@ def _week_table(html: str) -> str:
         ("/gui/menue", "Menü"),
         ("/gui/anrufe", "Anrufe"),
         ("/gui/kennzahlen", "Kennzahlen"),
+        ("/gui/daten", "Daten"),
         ("/gui/geraete", "Geräte"),
     ],
 )
@@ -161,6 +162,7 @@ def test_every_admin_page_has_the_tabs_and_the_four_figures(client, path, tab):
         "Menü",
         "Anrufe",
         "Kennzahlen",
+        "Daten",
         "Geräte",
     ]
     assert re.search(rf'aria-current="page"[^>]*>{tab}</a>', nav)
