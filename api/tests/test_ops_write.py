@@ -19,6 +19,7 @@ from api.core import ops_reason
 from api.domain import operator
 from api.domain.access.sessions import DEVICE_CHARS, locked_account, open_session
 from api.domain.access.setup import issue_link, use_link
+from api.events.types import OPERATOR_ACCESS_CHANGED
 from api.models import (
     AuditLog,
     GuiAccount,
@@ -814,3 +815,80 @@ def test_the_access_read_has_no_outcome_row(http, session, stack):
     assert _audit(session, "ops.access_read", outcomes=True)[-1].action == (
         "ops.access_read"
     )
+
+
+# --- the push to the owner (#811 question 3) ------------------------------------
+
+
+def _pushed(session) -> list[dict[str, Any]]:
+    session.expire_all()
+    return [
+        event.payload
+        for event in session.scalars(
+            select(OutboxEvent)
+            .where(OutboxEvent.event_type == OPERATOR_ACCESS_CHANGED)
+            .order_by(OutboxEvent.created_at)
+        )
+    ]
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "payload"),
+    [
+        (LINK, None, {"step": "setup_link", "actor": ACTOR}),
+        (
+            PIN_SET,
+            {"which": "team", "pin": NEW},
+            {"step": "pin_set", "actor": ACTOR, "which": "team"},
+        ),
+        (
+            PIN_SET,
+            {"which": "admin", "pin": NEW},
+            {"step": "pin_set", "actor": ACTOR, "which": "admin"},
+        ),
+        (
+            SIGN_OUT,
+            {"all": True},
+            {"step": "sign_out", "actor": ACTOR, "signed_out": 2},
+        ),
+    ],
+)
+def test_a_step_on_the_restaurants_access_pushes_to_the_owner_naming_the_operator(
+    http, session, login, stack, path, body, payload
+):
+    answer = _ask(http, "POST", path, body)
+
+    _data(answer)
+    # The operator by name, what was done, and never the PIN or the link.
+    assert _pushed(session) == [payload]
+
+
+def test_one_device_signed_out_is_pushed_as_one(http, session, login, stack):
+    tablet = str(
+        session.scalars(
+            select(GuiSession.id).where(GuiSession.device == "Tablet")
+        ).one()
+    )
+    _data(_ask(http, "POST", SIGN_OUT, {"device": tablet}))
+    assert _pushed(session) == [{"step": "sign_out", "actor": ACTOR, "signed_out": 1}]
+
+
+def test_a_step_that_changed_nothing_pushes_nothing(http, session, login, stack):
+    """A refused PIN, a device that is gone already, a look and a read change
+    nothing the owner must hear of."""
+    _refused(_ask(http, "POST", PIN_SET, {"which": "team", "pin": ADMIN}))
+    gone = {"device": str(uuid.uuid4())}
+    assert _data(_ask(http, "POST", SIGN_OUT, gone))["signed_out"] == 0
+    _data(_ask(http, "POST", PIN_SHOW, {"which": "team"}))
+    _data(_ask(http, "GET", ACCESS))
+    assert _pushed(session) == []
+
+
+def test_a_step_that_broke_pushes_nothing(http, session, login, stack, monkeypatch):
+    def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("the step broke")
+
+    monkeypatch.setattr(operator, "issue_link", broken)
+    with pytest.raises(RuntimeError, match="the step broke"):
+        _ask(http, "POST", LINK)
+    assert _pushed(session) == []

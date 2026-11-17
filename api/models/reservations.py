@@ -64,7 +64,7 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
         Boolean, nullable=False, server_default="false"
     )
     # The team booked it outside the opening hours on purpose (#819, migration
-    # 041): set by `confirm_tablet` from the hours at the tap, never afterwards.
+    # 042): set by `confirm_tablet` from the hours at the tap, never afterwards.
     off_hours: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )

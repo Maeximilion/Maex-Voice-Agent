@@ -36,6 +36,7 @@ PASSWORD = "lange-geheime-phrase"
 START = datetime(2026, 11, 10, 9, 0, tzinfo=UTC)
 ORIGIN = "https://ops.example.com"
 TABLES = {
+    "operator_pushes",
     "operator_accounts",
     "operator_recovery_codes",
     "operator_sessions",
@@ -460,6 +461,13 @@ def test_outside_dev_and_test_only_the_proxy_gets_in(
     assert row.detail["address"] == "5.6.7.8"
 
 
+# The push server of the operator stack and its user's token (#827 F3).
+PUSH = {
+    "operator_push_url": "http://maex-ops-push-1/",
+    "operator_push_token": "tk_" + "a" * 29,
+}
+
+
 def test_production_settings_need_a_strong_proxy_secret():
     for weak in ("", "short", "change_me_long_random", " " * 40):
         with pytest.raises(ValueError, match="OPERATOR_PROXY_SECRET"):
@@ -467,7 +475,7 @@ def test_production_settings_need_a_strong_proxy_secret():
                 env="prod", operator_proxy_secret=weak, operator_origin=ORIGIN
             )
     DashboardSettings(
-        env="prod", operator_proxy_secret="x" * 40, operator_origin=ORIGIN
+        env="prod", operator_proxy_secret="x" * 40, operator_origin=ORIGIN, **PUSH
     )
     DashboardSettings(env="dev", operator_proxy_secret="")
 
@@ -494,7 +502,9 @@ def test_production_settings_need_the_origin_of_the_dashboard():
     ):
         with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
             DashboardSettings(**secret, operator_origin=wrong)
-    there = DashboardSettings(**secret, operator_origin="https://ops.example.com:8443")
+    there = DashboardSettings(
+        **secret, operator_origin="https://ops.example.com:8443", **PUSH
+    )
     assert there.relying_party_id == "ops.example.com"
     # Dev and test run over plain HTTP on localhost.
     assert DashboardSettings(env="dev").relying_party_id == "localhost"
@@ -502,6 +512,28 @@ def test_production_settings_need_the_origin_of_the_dashboard():
         DashboardSettings(env="dev", operator_origin="ftp://localhost")
     with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
         DashboardSettings(env="dev", operator_origin="http://localhost:80")
+
+
+def test_production_settings_need_the_push_server_and_its_token():
+    """Without them the pushes would only wait in the database, and a takeover
+    that adds a passkey would reach no phone (#827 F3)."""
+    ready = {
+        "env": "prod",
+        "operator_proxy_secret": "x" * 40,
+        "operator_origin": ORIGIN,
+    }
+    for wrong in (
+        {},
+        {**PUSH, "operator_push_url": ""},
+        {**PUSH, "operator_push_token": ""},
+        {**PUSH, "operator_push_token": "tk_short"},
+        {**PUSH, "operator_push_token": "tk_" + "a" * 14 + " " + "a" * 14},
+    ):
+        with pytest.raises(ValueError, match="OPERATOR_PUSH"):
+            DashboardSettings(**ready, **wrong)
+    DashboardSettings(**ready, **PUSH)
+    # Dev and test start without one; the pushes then wait.
+    DashboardSettings(env="test")
 
 
 def test_the_dashboard_never_builds_the_customer_settings():
@@ -513,6 +545,8 @@ def test_the_dashboard_never_builds_the_customer_settings():
         "ENV": "prod",
         "OPERATOR_PROXY_SECRET": "z" * 40,
         "OPERATOR_ORIGIN": ORIGIN,
+        "OPERATOR_PUSH_URL": PUSH["operator_push_url"],
+        "OPERATOR_PUSH_TOKEN": PUSH["operator_push_token"],
     }
     probe = (
         "import sys, api.dashboard.app, api.dashboard.cli;"

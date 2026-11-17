@@ -127,11 +127,10 @@ def pushes(monkeypatch):
     """What would have gone to the `ops` topic."""
     sent: list[str] = []
 
-    def notify(title: str, text: str) -> bool:
+    def queue(db: Any, text: str, at: Any) -> None:
         sent.append(text)
-        return True
 
-    monkeypatch.setattr(push, "notify", notify)
+    monkeypatch.setattr(push, "queue", queue)
     return sent
 
 
@@ -1019,10 +1018,10 @@ def test_a_recovery_code_at_sign_in_is_audited_and_pushed(
 def test_a_failed_push_leaves_the_change_in_place_and_is_audited(
     client, factors, clock, sessions, monkeypatch
 ):
-    def notify(title: str, text: str) -> bool:
+    def queue(db: Any, text: str, at: Any) -> None:
         raise httpx.ConnectError("down")
 
-    monkeypatch.setattr(push, "notify", notify)
+    monkeypatch.setattr(push, "queue", queue)
     _signed_in(client, factors, clock)
     answer = _register(client, Device())
     assert answer.headers["location"] == "/factors?note=passkey-added"
@@ -1034,48 +1033,13 @@ def test_a_failed_push_leaves_the_change_in_place_and_is_audited(
 def test_a_failed_push_does_not_stop_a_recovery_sign_in(
     client, factors, sessions, monkeypatch
 ):
-    def notify(title: str, text: str) -> bool:
+    def queue(db: Any, text: str, at: Any) -> None:
         raise httpx.ConnectError("down")
 
-    monkeypatch.setattr(push, "notify", notify)
+    monkeypatch.setattr(push, "queue", queue)
     assert _sign_in(client, factors.recovery_codes[0]).status_code == 303
     failed = _audited(sessions, "operator.push_failed")
     assert [row.detail["what"] for row in failed] == ["a recovery code was used"]
-
-
-@pytest.mark.parametrize(
-    ("url", "token"), [("", ""), ("http://push.test/", ""), ("", "secret")]
-)
-def test_the_push_sends_nothing_without_a_server_and_a_token(monkeypatch, url, token):
-    def post(*args: Any, **kwargs: Any) -> Any:
-        raise AssertionError("a push was sent")
-
-    monkeypatch.setattr(settings, "operator_push_url", url)
-    monkeypatch.setattr(settings, "operator_push_token", token)
-    monkeypatch.setattr(httpx, "post", post)
-    assert push.notify("Title", "Text") is False
-
-
-def test_the_push_posts_to_the_ops_topic_with_the_token(monkeypatch):
-    calls: list[tuple[str, dict[str, Any]]] = []
-
-    class Answer:
-        def raise_for_status(self) -> None:
-            return None
-
-    def post(url: str, **kwargs: Any) -> Answer:
-        calls.append((url, kwargs))
-        return Answer()
-
-    monkeypatch.setattr(settings, "operator_push_url", "http://push.test/")
-    monkeypatch.setattr(settings, "operator_push_token", "secret")
-    monkeypatch.setattr(httpx, "post", post)
-    assert push.notify("Title", "Text") is True
-    ((url, kwargs),) = calls
-    assert url == "http://push.test/"
-    assert kwargs["json"]["topic"] == "ops"
-    assert kwargs["json"]["title"] == "Title" and kwargs["json"]["message"] == "Text"
-    assert kwargs["headers"] == {"Authorization": "Bearer secret"}
 
 
 # --- the challenges table ---------------------------------------------------------
@@ -1337,10 +1301,10 @@ def test_a_push_that_breaks_in_any_way_does_not_cost_the_recovery_code_its_sessi
     """`httpx.InvalidURL` (a mistyped OPERATOR_PUSH_URL) is no `HTTPError`: the
     code was spent and the answer was a 500 without the session cookie."""
 
-    def notify(title: str, text: str) -> bool:
+    def queue(db: Any, text: str, at: Any) -> None:
         raise broken
 
-    monkeypatch.setattr(push, "notify", notify)
+    monkeypatch.setattr(push, "queue", queue)
     answer = _sign_in(client, factors.recovery_codes[0])
     assert answer.status_code == 303 and client.cookies.get("ops_session")
     assert len(_audited(sessions, "operator.push_failed")) == 1
@@ -1383,10 +1347,10 @@ def test_the_break_glass_and_a_new_account_are_pushed(sessions, monkeypatch, pus
 def test_the_break_glass_works_when_the_push_does_not(
     sessions, monkeypatch, capsys, factors
 ):
-    def notify(title: str, text: str) -> bool:
+    def queue(db: Any, text: str, at: Any) -> None:
         raise httpx.ConnectError("down")
 
-    monkeypatch.setattr(push, "notify", notify)
+    monkeypatch.setattr(push, "queue", queue)
     monkeypatch.setattr(cli, "SessionLocal", sessions)
     monkeypatch.setattr(cli, "getpass", lambda _prompt: PASSWORD)
     assert cli.main(["reset", "maxi"]) == 0
@@ -1576,10 +1540,10 @@ def test_a_failed_push_does_not_bring_the_ended_sessions_back(
     other = _other_browser(factors, clock)
     _signed_in_with(client, factors, clock, 3)
 
-    def notify(title: str, text: str) -> bool:
+    def queue(db: Any, text: str, at: Any) -> None:
         raise httpx.ConnectError("down")
 
-    monkeypatch.setattr(push, "notify", notify)
+    monkeypatch.setattr(push, "queue", queue)
     answer = _remove_a_passkey(client, sessions, clock)
     assert answer.headers["location"] == "/factors?note=passkey-removed"
     assert not _still_signed_in(other) and len(_rows(sessions)) == 2

@@ -11,11 +11,11 @@ entered outside the hours on purpose cannot be read back, so it stays on the
 list for the team to check. The downgrade drops the column, and with it the
 marks: marked tables come back on the list, the side that calls a guest too
 many rather than none. On a database a restaurant signs in to, take a backup
-first with `bash scripts/backup.sh --label before_migration_041` (CLAUDE.md §8,
+first with `bash scripts/backup.sh --label before_migration_042` (CLAUDE.md §8,
 docs/13 §4).
 
-Revision: 041
-Revises: 040
+Revision: 042
+Revises: 041
 Created: 2026-11-17
 """
 
@@ -24,8 +24,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "041"
-down_revision: str | None = "040"
+revision: str = "042"
+down_revision: str | None = "041"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
