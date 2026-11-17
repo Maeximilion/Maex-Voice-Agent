@@ -22,6 +22,7 @@ from api.models import (
     OpeningHours,
     OutboxEvent,
     Reservation,
+    ServiceConfig,
     SpecialDay,
     StaffChange,
 )
@@ -563,3 +564,35 @@ def test_a_date_without_a_holidays_name_is_simply_removed(session, tenant_id):
     staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(closed=True), NOW)
     staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(), NOW)
     assert _special(session, tenant_id) == []
+
+
+def test_a_holiday_closed_before_the_job_named_it_is_answered_too(session, tenant_id):
+    """The owner closes 25.12. before any suggestion exists (no name on the
+    row), then returns it to the weekly hours: the date is a holiday of the
+    restaurant's state, so the answer is kept and the job does not ask again."""
+    config = session.get_one(ServiceConfig, tenant_id)
+    config.holiday_region = "BW"
+    session.commit()
+    staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(closed=True), NOW)
+    staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(), NOW)
+    (row,) = _special(session, tenant_id)
+    assert (row.status, row.note) == ("dismissed", "1. Weihnachtstag")
+    holidays.suggest(session, tenant_id, "BW", TODAY)
+    session.commit()
+    statuses = [r.status for r in _special(session, tenant_id) if r.date == CHRISTMAS]
+    assert statuses == ["dismissed"]
+    # A date that is no holiday there is removed without a trace.
+    plain = CHRISTMAS - timedelta(days=4)
+    staff.set_day_hours(session, tenant_id, plain, DayHours(closed=True), NOW)
+    staff.set_day_hours(session, tenant_id, plain, DayHours(), NOW)
+    assert [r.date for r in _special(session, tenant_id) if r.date == plain] == []
+
+
+def test_rows_that_differ_only_by_seconds_are_no_change(session, tenant_id):
+    """Stored rows sort by their seconds, typed ones cannot: the comparison
+    must not depend on that order."""
+    odd = [(time(11, 30, 30), time(12)), (time(11, 30, 10), time(14))]
+    _store(session, tenant_id, TUESDAY, "delivery", odd)
+    shown = weekly.week(session, tenant_id)[TUESDAY]
+    typed = [Span(time(11, 30), time(12)), Span(time(11, 30), time(14))]
+    assert _set(session, tenant_id, TUESDAY, {**shown, "delivery": typed}) is False

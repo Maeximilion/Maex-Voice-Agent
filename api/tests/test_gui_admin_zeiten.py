@@ -18,6 +18,7 @@ from api.db import get_db
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status import staff_changes as staff
 from api.domain.status import weekly
+from api.gui import hours_view
 from api.main import app
 from api.models import (
     AuditLog,
@@ -285,6 +286,8 @@ def test_a_night_needs_its_box_and_shows_it_ticked_afterwards(client, engine):
     [
         ({"pickup-von-0": "25:00"}, "Bitte Beginn und Ende als Uhrzeit angeben."),
         ({"pickup-von-0": "11:30:30"}, "Bitte Beginn und Ende als Uhrzeit angeben."),
+        # A dot is no colon: read as an ISO time it would be 11:00 and a fraction.
+        ({"pickup-von-0": "11.30"}, "Bitte Beginn und Ende als Uhrzeit angeben."),
         ({"pickup-bis-0": ""}, "Bitte Beginn und Ende als Uhrzeit angeben."),
         ({"pickup-bis-0": "11:30"}, "das Ende nicht gleich dem Beginn"),
         ({"pickup-bis-0": "18:00"}, "Zwei Zeiten überschneiden sich"),
@@ -577,3 +580,45 @@ def test_a_table_without_a_number_gets_no_call_link(client, engine):
     assert "Ohne Nummer" in page and "keine Nummer eingetragen" in page
     assert 'href="tel:"' not in page
     assert "Hat das Team einen Tisch bewusst so eingetragen" in page
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["10.30", "T1000", "1000Z", "24:00", "1:30", "10:3o", "10:30:00", " 10:30", ""],
+)
+def test_only_a_clock_time_of_digits_and_a_colon_is_a_time(text):
+    with pytest.raises(ValueError):
+        hours_view.hhmm(text)
+    assert hours_view.hhmm("10:30") == time(10, 30)
+
+
+def test_a_service_stored_with_more_spans_than_the_form_adds_comes_back_whole(
+    client, engine
+):
+    """Six spans from provisioning: the form shows and sends all six, so the
+    service reads as untouched and the other services can be saved."""
+    with Session(engine) as session:
+        tenant_id = _tenant_id(engine)
+        session.query(OpeningHours).filter_by(
+            tenant_id=tenant_id, weekday=TUESDAY, service="delivery"
+        ).delete()
+        session.add_all(
+            OpeningHours(
+                tenant_id=tenant_id,
+                weekday=TUESDAY,
+                service="delivery",
+                opens_at=time(hour),
+                closes_at=time(hour, 30),
+            )
+            for hour in range(8, 14)
+        )
+        session.commit()
+    sent = _edit(client)
+    assert sent["delivery-von-5"] == "13:00" and "delivery-von-6" not in sent
+    untouched = client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX)
+    assert "Keine Änderung." in untouched.text
+    sent["dinein-bis-1"] = "21:00"
+    saved = client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX)
+    assert "Gespeichert" in saved.text
+    assert _spans(engine, TUESDAY, "dinein") == ["11:30-14:00", "17:00-21:00"]
+    assert len(_spans(engine, TUESDAY, "delivery")) == 6

@@ -44,6 +44,7 @@ from api.core.errors import Conflict, InvalidInput, NotFound
 from api.core.time import business_day_bounds_utc
 from api.domain.customers.phone import E164, costly, normalize_phone
 from api.domain.reservations.spoken import WEEKDAYS
+from api.domain.status.holidays import holidays as statutory_holidays
 from api.domain.status.hours import (
     HoursData,
     Window,
@@ -651,9 +652,10 @@ def _write(
 ) -> None:
     """Make the date hold `hours`: no counting row for the weekly hours. `row`
     is the date's locked row when the caller has it already. A holiday (a row
-    with its name) returned to the weekly hours stays as the answer "open as
-    always" (`dismissed`, T-9.5): deleted, the holiday job would suggest it
-    again and one tap on the board would undo what was decided here."""
+    with its name, or a date that is a statutory holiday in the restaurant's
+    state) returned to the weekly hours stays as the answer "open as always"
+    (`dismissed`, T-9.5): deleted, the holiday job would suggest it again and
+    one tap on the board would undo what was decided here."""
     row = row or _set_row(session, tenant_id, day, lock=True)
     if hours.normal:
         if row is not None:
@@ -664,8 +666,9 @@ def _write(
                     SpecialDay.status != SET,
                 )
             )
-            if row.note and answered is None:
-                row.status = DISMISSED
+            name = row.note or _holiday_name(session, tenant_id, day)
+            if name and answered is None:
+                row.status, row.note = DISMISSED, name
                 row.closed, row.opens_at, row.closes_at = False, None, None
             else:
                 session.delete(row)
@@ -682,6 +685,15 @@ def _write(
         )
         row.like_weekday, row.note = hours.like_weekday, hours.note
     session.flush()
+
+
+def _holiday_name(session: Session, tenant_id: uuid.UUID, day: date) -> str | None:
+    """The statutory holiday `day` is in the restaurant's state, if it is one
+    and the state is named: the dates the holiday job suggests."""
+    region = session.scalar(
+        select(ServiceConfig.holiday_region).where(ServiceConfig.tenant_id == tenant_id)
+    )
+    return dict(statutory_holidays(region, day.year)).get(day) if region else None
 
 
 def _drops_weekday(after: DayHours, before: DayHours, day: date) -> bool:

@@ -231,4 +231,8 @@ def _checked(spans: list[Span]) -> None:
 
 
 def _texts(day: Day) -> dict[str, list[str]]:
-    return {service: [span.text() for span in day[service]] for service in SERVICES}
+    """Each service's spans to the minute, in the order of the texts: stored
+    rows sort by their seconds too, typed ones cannot."""
+    return {
+        service: sorted(span.text() for span in day[service]) for service in SERVICES
+    }

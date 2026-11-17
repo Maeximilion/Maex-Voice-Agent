@@ -5,6 +5,7 @@ Every hour shown comes from the database through `domain/status/weekly.py`
 and `staff_changes.py`; this file formats them and reads the forms.
 """
 
+import re
 from datetime import date
 from datetime import time as dt_time
 from typing import Any
@@ -30,18 +31,21 @@ CLOSED = "geschlossen"
 ECHO = 8
 # The length of `weekly.token`.
 TOKEN = 16
+# The most rows of one service a form is read for: a bound on the loop,
+# far above what a restaurant stores (a span per half hour of the day).
+ROWS = 48
+HHMM = re.compile(r"[0-9]{2}:[0-9]{2}")
 
 
 def hhmm(text: str) -> dt_time:
-    """HH:MM only: a stored second or offset would undo to another time."""
-    if len(text) != 5:
+    """HH:MM only, digits and a colon: a stored second or offset would undo
+    to another time, and `fromisoformat` alone reads far more than a clock
+    time. "10.30" is 10:00 and three tenths of a second to it, so the German
+    way to write half past ten would open the restaurant half an hour early;
+    "1000Z" is 10:00 with an offset, "T1000" a time with a prefix."""
+    if not HHMM.fullmatch(text):
         raise ValueError(text)
-    # "1000Z" is five characters and 10:00 with an offset: a time with a zone
-    # cannot be compared with the stored ones.
-    parsed = dt_time.fromisoformat(text)
-    if parsed.tzinfo is not None:
-        raise ValueError(text)
-    return parsed
+    return dt_time.fromisoformat(text)
 
 
 def typed_day(text: str) -> date | None:
@@ -110,10 +114,13 @@ def day_form(
 
 
 def _rows(form: dict[str, str], key: str) -> range:
-    """The rows of one service a form sent, counted from 0 without a gap; one
-    more than the domain takes, so a row too many is refused there by name."""
+    """The rows of one service a form sent, counted from 0 without a gap. All
+    of them, also more than the domain takes: a service stored with more
+    spans than the form adds (provisioning, SQL) must come back whole, or it
+    would read as changed and block the weekday; a row too many that the
+    owner typed is refused in the domain by name. `ROWS` only bounds the loop."""
     count = 0
-    while count <= weekly.MAX_SPANS and f"{key}-von-{count}" in form:
+    while count < ROWS and f"{key}-von-{count}" in form:
         count += 1
     return range(count)
 
