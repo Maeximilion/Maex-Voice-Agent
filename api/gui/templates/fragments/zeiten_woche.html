@@ -1,11 +1,11 @@
 {# The standard weekly hours (#571): one row per weekday, one column per
    service, as `opening_hours` holds them. "Ändern" opens the form of that
    weekday in place of the table. #}
-<h2>Öffnungszeiten der Woche</h2>
-{% if message %}<p class="badge {{ tone }}" role="status">{{ message }}</p>{% endif %}
+<h2 id="zeiten-woche-titel" tabindex="-1"{% if not message %} data-fokus{% endif %}>Öffnungszeiten der Woche</h2>
+{% if message %}<p class="badge {{ tone }}" role="status" tabindex="-1" data-fokus>{{ message }}</p>{% endif %}
 <table class="tbl week">
   <thead>
-    <tr><th>Tag</th>{% for label, _text in hours[0].cells %}<th>{{ label }}</th>{% endfor %}<th></th></tr>
+    <tr><th>Tag</th>{% for label, _text in hours[0].cells %}<th>{{ label }}</th>{% endfor %}<th>Ändern</th></tr>
   </thead>
   <tbody>
     {% for row in hours %}

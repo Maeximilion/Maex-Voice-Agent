@@ -29,7 +29,7 @@ from api.config import LOCAL_ENVS, settings
 from api.core import time as clock
 from api.core.auth import require_gui_proxy
 from api.core.envelope import fail_body
-from api.core.errors import AppError, Conflict, InvalidInput, NotFound
+from api.core.errors import AppError, Conflict, FieldErrors, InvalidInput, NotFound
 from api.core.logging import get_logger
 from api.core.time import business_day, to_local
 from api.db import SessionLocal, get_db
@@ -65,6 +65,7 @@ from api.gui import (
     data_view,
     delivery_view,
     figures_view,
+    form_view,
     hours_view,
     menu_view,
     orders_view,
@@ -923,15 +924,33 @@ def cancel_order_tap(
     )
 
 
+# The most a form of the view sends: far above its longest field (a zone's
+# postal codes, the 2,000 characters of a request's note in percent-encoding),
+# far below the proxy's 256 KB (#819). Held here, so it holds in every setup.
+FORM_MAX = 64 * 1024
+
+
 async def _form(request: Request) -> dict[str, str]:
     """Formularfelder eines HTMX-Taps (application/x-www-form-urlencoded).
 
     Mit der Standardbibliothek statt ueber Form(): das braeuchte python-multipart
     als zusaetzliche Abhaengigkeit, nur um drei Textfelder zu lesen. Async, damit
     der Koerper im Event-Loop gelesen wird und der Endpunkt selbst synchron bleibt.
+    A body beyond FORM_MAX is a 413, refused by its announced length or while
+    it streams in, before more of it is held in memory.
     """
-    body = (await request.body()).decode("utf-8", errors="replace")
-    return {k: v[-1] for k, v in parse_qs(body, keep_blank_values=True).items()}
+    length = request.headers.get("content-length", "")
+    # More than nine digits is beyond the limit anyway, and `int` refuses a
+    # number of thousands of digits.
+    if length.isdigit() and (len(length) > 9 or int(length) > FORM_MAX):
+        raise HTTPException(status_code=413)
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > FORM_MAX:
+            raise HTTPException(status_code=413)
+    text = body.decode("utf-8", errors="replace")
+    return {k: v[-1] for k, v in parse_qs(text, keep_blank_values=True).items()}
 
 
 @router.get(
@@ -2020,6 +2039,14 @@ def device_sign_out(
 
 SAVED = "Gespeichert. Gilt ab sofort."
 DAY_CHOICES = ("zeiten", "geschlossen", "normal")
+TIMES = ("von", "bis")
+# The inputs of the form for a date that a refusal of the domain is about.
+DAY_FAULTS = {
+    staff.PAST_DAY: ("datum",),
+    staff.NO_SPAN: TIMES,
+    staff.OVERNIGHT: ("bis",),
+    staff.AT_MIDNIGHT: ("bis",),
+}
 
 
 def _weekday(weekday: int) -> int:
@@ -2036,11 +2063,13 @@ def _hours_part(
     message: str | None = None,
     tone: str = "danger",
     typed: dict[str, str] | None = None,
+    fields: tuple[str, ...] = (),
 ) -> HTMLResponse:
     """One part of the tab ("woche" or "tage") as it is in the database now,
     with the list of guests to call swapped in beside it (`oob`). Always 200:
     htmx swaps no 4xx, and a refused form must show its reason. `typed`: the
-    date and times of a refused form, shown again."""
+    date and times of a refused form, shown again; `fields`: its inputs the
+    refusal is about, marked and tied to the message (#821)."""
     return templates.TemplateResponse(
         request,
         f"fragments/zeiten_{part}.html",
@@ -2050,6 +2079,7 @@ def _hours_part(
             "message": message,
             "tone": tone,
             "typed": hours_view.echo(typed or {}),
+            "errors": dict.fromkeys(fields, message),
             "oob": True,
         },
     )
@@ -2060,13 +2090,13 @@ def _weekday_form(
     session: Session,
     tenant: Tenant,
     weekday: int,
-    message: str | None = None,
+    errors: dict[str, str] | None = None,
     typed: dict[str, str] | None = None,
 ) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "fragments/zeiten_tag.html",
-        {**hours_view.day_form(session, tenant, weekday, typed), "message": message},
+        hours_view.day_form(session, tenant, weekday, typed, errors),
     )
 
 
@@ -2128,10 +2158,10 @@ def hours_weekday_change(
     hours it showed (`gesehen`); hours changed since are not written over."""
     tenant = _admin_tenant(session)
     _weekday(weekday)
-    try:
-        spans = hours_view.typed_spans(form)
-    except ValueError:
-        return _weekday_form(request, session, tenant, weekday, NO_TIME, form)
+    spans, bad = hours_view.typed_spans(form)
+    if bad:
+        errors = dict.fromkeys(bad, NO_TIME)
+        return _weekday_form(request, session, tenant, weekday, errors, form)
     try:
         changed = weekly.set_weekday(
             session, tenant.id, weekday, spans, form.get("gesehen", "")
@@ -2140,11 +2170,13 @@ def hours_weekday_change(
         session.rollback()
         # After a conflict the fresh hours with their token, not what was
         # typed against the old ones; any other refusal shows the typed rows
-        # again with the token they were typed against.
+        # again with the token they were typed against, each fault by its row.
+        if isinstance(exc, FieldErrors):
+            errors = hours_view.row_errors(form, exc.faults)
+        else:
+            errors = {"": exc.say or SWITCH_FAILED}
         typed = None if isinstance(exc, Conflict) else form
-        return _weekday_form(
-            request, session, tenant, weekday, exc.say or SWITCH_FAILED, typed
-        )
+        return _weekday_form(request, session, tenant, weekday, errors, typed)
     message = SAVED if changed else NO_CHANGE
     return _hours_part(request, session, tenant, "woche", message, "ok")
 
@@ -2166,19 +2198,25 @@ def hours_day_change(
     day = hours_view.typed_day(form.get("datum", ""))
     choice = form.get("art", "")
     if day is None or choice not in DAY_CHOICES:
-        return _hours_part(request, session, tenant, "tage", NO_DATE, typed=form)
+        return _hours_part(
+            request, session, tenant, "tage", NO_DATE, typed=form, fields=("datum",)
+        )
     try:
         hours = hours_view.typed_hours(form)
     except ValueError:
-        return _hours_part(request, session, tenant, "tage", NO_TIME, typed=form)
+        return _hours_part(
+            request, session, tenant, "tage", NO_TIME, typed=form, fields=TIMES
+        )
     try:
         changed = staff.set_day_hours(
             session, tenant.id, day, hours, overnight=bool(form.get("nachts"))
         )
     except AppError as exc:
         session.rollback()
+        say = exc.say or SWITCH_FAILED
+        fields = DAY_FAULTS.get(say, ())
         return _hours_part(
-            request, session, tenant, "tage", exc.say or SWITCH_FAILED, typed=form
+            request, session, tenant, "tage", say, typed=form, fields=fields
         )
     message = SAVED if changed else NO_CHANGE
     return _hours_part(request, session, tenant, "tage", message, "ok")
@@ -2203,12 +2241,12 @@ def _zone_form(
     session: Session,
     tenant: Tenant,
     zone_id: uuid.UUID | None,
-    message: str | None = None,
+    errors: dict[str, str] | None = None,
     sent: dict[str, str] | None = None,
 ) -> HTMLResponse:
     """A zone's form, or an empty one without `zone_id`. Always 200 for a
-    refused save: htmx swaps no 4xx, and the form must show its reason. A zone
-    that is not this restaurant's is a 404."""
+    refused save: htmx swaps no 4xx, and the form must show its reasons, each
+    by its field. A zone that is not this restaurant's is a 404."""
     try:
         row = (
             owner_zones.zone(session, tenant.id, zone_id)
@@ -2220,7 +2258,7 @@ def _zone_form(
     return templates.TemplateResponse(
         request,
         "fragments/lieferung_zone.html",
-        {**delivery_view.zone_form(row, sent), "message": message},
+        delivery_view.zone_form(row, sent, errors),
     )
 
 
@@ -2249,9 +2287,11 @@ def _zone_save(
         # against the old one; any other refusal shows the typed fields again
         # with the token they were typed against.
         sent = None if isinstance(exc, Conflict) else form
-        return _zone_form(
-            request, session, tenant, zone_id, exc.say or SWITCH_FAILED, sent
-        )
+        if isinstance(exc, FieldErrors):
+            errors = delivery_view.field_errors(exc.faults)
+        else:
+            errors = {"": exc.say or SWITCH_FAILED}
+        return _zone_form(request, session, tenant, zone_id, errors, sent)
     return _zones_part(request, session, tenant, SAVED if changed else NO_CHANGE)
 
 
@@ -2390,9 +2430,12 @@ def _requests_part(
     message: str | None = None,
     tone: str = "ok",
     sent: dict[str, str] | None = None,
+    errors: dict[str, str] | None = None,
 ) -> HTMLResponse:
     """The request log as it is in the database now, with the form for a new
-    request; `sent` shows a refused form again as it was typed."""
+    request; `sent` shows a refused form again as it was typed, `errors` its
+    faults by field (#821)."""
+    errors = errors or {}
     return templates.TemplateResponse(
         request,
         "fragments/daten_anfragen.html",
@@ -2401,6 +2444,8 @@ def _requests_part(
             "message": message,
             "tone": tone,
             "sent": sent or {},
+            "errors": errors,
+            "summary": form_view.summary(errors, data_view.REQUEST_FIELDS),
         },
     )
 
@@ -2508,9 +2553,8 @@ def data_request_new(
         typed_day = form.get("eingang", "").strip()
         received = date.fromisoformat(typed_day) if typed_day else None
     except ValueError:
-        return _requests_part(
-            request, session, tenant, data_view.BAD_DAY, "danger", sent
-        )
+        errors = {"eingang": data_view.BAD_DAY}
+        return _requests_part(request, session, tenant, sent=sent, errors=errors)
     try:
         guest_requests.log_request_once(
             session,
@@ -2529,6 +2573,9 @@ def data_request_new(
         # After a conflict the fresh log with its token; any other refusal
         # shows what was typed with the token it was typed against.
         again = None if isinstance(exc, Conflict) else sent
+        if isinstance(exc, FieldErrors):
+            errors = data_view.request_errors(exc.faults)
+            return _requests_part(request, session, tenant, sent=again, errors=errors)
         return _requests_part(
             request, session, tenant, data_view.words(exc), "danger", again
         )

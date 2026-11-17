@@ -171,8 +171,12 @@ def missing(session: Session, tenant_id: uuid.UUID) -> list[str]:
         gaps.append("opening hours")
     if "dinein" in services and not some(Capacity, Capacity.max_guests > 0):
         gaps.append("seats for reservations")
-    if "delivery" in services and not some(DeliveryZone, DeliveryZone.active):
-        gaps.append("delivery zones (python -m scripts.seed_zones)")
+    # A zone on a map counts for nothing: neither `check_delivery` nor the
+    # owner's tab uses one (#821).
+    if "delivery" in services and not some(
+        DeliveryZone, DeliveryZone.active, DeliveryZone.match_type == "postal_code"
+    ):
+        gaps.append("delivery zones (tab Lieferung, or python -m scripts.seed_zones)")
     if not some(MenuItem, MenuItem.active):
         gaps.append("menu (python -m scripts.import_menu)")
     if session.get(BridgeHeartbeat, tenant_id) is None:

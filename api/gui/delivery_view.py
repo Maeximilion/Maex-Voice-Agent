@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from api.domain.delivery import owner_zones
 from api.domain.menu.importer import format_eur
+from api.gui import form_view
 from api.gui.orders_view import euro
 from api.models import DeliveryZone, Tenant
 
@@ -23,6 +24,22 @@ from api.models import DeliveryZone, Tenant
 ECHO = {"name": 60, "plz": 8000, "pauschale": 12, "mindestwert": 12, "lieferzeit": 12}
 # The length of `owner_zones.token`.
 TOKEN = 16
+# A field of `owner_zones.Typed`, as the domain names a fault, by its input.
+FIELDS = {
+    "name": "name",
+    "postal_codes": "plz",
+    "fee": "pauschale",
+    "min_order": "mindestwert",
+    "eta": "lieferzeit",
+}
+# Each input by its id and its words in the list of faults.
+NAMES: form_view.Fields = {
+    "name": ("f-name", "Name der Zone"),
+    "plz": ("f-plz", "Postleitzahlen"),
+    "pauschale": ("f-pauschale", "Lieferpauschale"),
+    "mindestwert": ("f-mindestwert", "Mindestbestellwert"),
+    "lieferzeit": ("f-lieferzeit", "Lieferzeit"),
+}
 
 
 def typed(form: dict[str, str]) -> owner_zones.Typed:
@@ -65,8 +82,15 @@ def _shown(row: DeliveryZone) -> dict[str, Any]:
     }
 
 
+def field_errors(faults: dict[str, str]) -> dict[str, str]:
+    """The domain's faults by the inputs of the form."""
+    return {FIELDS.get(key, key): say for key, say in faults.items()}
+
+
 def zone_form(
-    row: DeliveryZone | None, sent: dict[str, str] | None = None
+    row: DeliveryZone | None,
+    sent: dict[str, str] | None = None,
+    errors: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """The form of one zone, or of a new one without `row`: what the database
     holds with the token of that state; or what was typed and refused
@@ -90,8 +114,11 @@ def zone_form(
         fields["seen"] = ""
     else:
         fields = _shown(row)
+    errors = errors or {}
     return {
         **fields,
+        "errors": errors,
+        "summary": form_view.summary(errors, NAMES),
         "title": "Neue Lieferzone" if row is None else f"Lieferzone „{row.name}“",
         "action": _action(row.id if row is not None else None),
         "wait_max": owner_zones.MAX_ETA_MINUTES,

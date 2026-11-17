@@ -10,7 +10,7 @@ import pytest
 from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, InvalidInput
+from api.core.errors import Conflict, FieldErrors, InvalidInput
 from api.domain.status import holidays, weekly
 from api.domain.status import staff_changes as staff
 from api.domain.status.hours import load_hours, windows_for_day
@@ -766,3 +766,52 @@ def test_rows_that_differ_only_by_seconds_are_no_change(session, tenant_id):
     shown = weekly.week(session, tenant_id)[TUESDAY]
     typed = [Span(time(11, 30), time(12)), Span(time(11, 30), time(14))]
     assert _set(session, tenant_id, TUESDAY, {**shown, "delivery": typed}) is False
+
+
+def test_an_end_at_midnight_without_the_box_is_named_as_such(session, tenant_id):
+    """18:00 to 00:00 ends after midnight; the refusal says why (#819)."""
+    with pytest.raises(InvalidInput) as refused:
+        _set(session, tenant_id, TUESDAY, {"pickup": [Span(time(18), time(0))]})
+    assert refused.value.say == staff.AT_MIDNIGHT
+    assert "00:00" in staff.AT_MIDNIGHT and "Ende nach Mitternacht" in (
+        staff.AT_MIDNIGHT
+    )
+    # The rule itself is unchanged: with the box the span holds.
+    night = Span(time(18), time(0), overnight=True)
+    assert _set(session, tenant_id, TUESDAY, {"pickup": [night]}) is True
+
+
+def test_a_date_ending_at_midnight_without_the_box_is_named_as_such(session, tenant_id):
+    hours = DayHours(opens=time(18), closes=time(0))
+    with pytest.raises(InvalidInput) as refused:
+        staff.set_day_hours(session, tenant_id, TODAY, hours, NOW)
+    assert refused.value.say == staff.AT_MIDNIGHT
+    assert staff.set_day_hours(session, tenant_id, TODAY, hours, NOW, overnight=True)
+
+
+def test_every_fault_of_a_weekday_is_named_at_once_by_its_span(session, tenant_id):
+    """All faults of one save, each by the service and span it is about
+    (#821, #829-3); nothing is written while one stands."""
+    spans = {
+        "pickup": [Span(time(18), time(1))],
+        "delivery": [Span(time(11), time(15)), Span(time(14), time(20))],
+        "dinein": [Span(time(h), time(h, 30)) for h in range(8, 13)],
+    }
+    with pytest.raises(FieldErrors) as refused:
+        _set(session, tenant_id, TUESDAY, spans)
+    assert refused.value.faults == {
+        "pickup 18:00-01:00": staff.OVERNIGHT,
+        "delivery 14:00-20:00": weekly.OVERLAP,
+        "dinein": weekly.TOO_MANY,
+    }
+    # The first fault in the order of the services, for a reader of one line.
+    assert refused.value.say == weekly.TOO_MANY
+    assert weekly.week(session, tenant_id)[TUESDAY]["pickup"] == SEEDED
+
+
+def test_a_night_into_the_next_weekday_is_named_by_its_service(session, tenant_id):
+    night = Span(time(18), time(13), overnight=True)
+    with pytest.raises(FieldErrors) as refused:
+        _set(session, tenant_id, TUESDAY, {"pickup": [night]})
+    assert list(refused.value.faults) == ["pickup"]
+    assert "Dienstag" in refused.value.faults["pickup"]

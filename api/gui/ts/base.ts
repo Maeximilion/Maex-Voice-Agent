@@ -49,6 +49,19 @@ document.addEventListener("htmx:afterRequest", (event) => {
   if ((detail as { successful?: unknown }).successful === true) failed(false);
 });
 
+// After a swap the answer's mark `data-fokus` (its message or list of faults,
+// else its heading) takes the keyboard focus and comes into view (#821,
+// #829-2): the tapped button is gone with the old HTML, and the message of a
+// long form would sit above the screen. Only the owner's forms carry the mark;
+// the board's live updates never move the focus.
+document.addEventListener("htmx:afterSwap", (event) => {
+  if (!(event.target instanceof Element)) return;
+  const mark = event.target.querySelector("[data-fokus]");
+  if (!(mark instanceof HTMLElement)) return;
+  mark.focus({ preventScroll: true });
+  mark.scrollIntoView({ block: "nearest" });
+});
+
 // "Nochmal versuchen" on the red bar reloads the page.
 document.addEventListener("click", (event) => {
   if (event.target instanceof Element && event.target.closest("[data-neu-laden]")) {
