@@ -106,6 +106,25 @@ def test_two_numbers_of_one_place_keep_their_order(session, tenant_id):
     assert numbers(listing.listing(session, tenant_id)) == ["007", "07", "7"]
 
 
+@pytest.mark.parametrize(
+    ("number", "place"),
+    [("0" * 5000 + "7", 0), ("9" * 5000, 2), ("s" + "1" * 5000, 2)],
+)
+def test_a_number_no_card_has_does_not_take_the_list_down(
+    session, tenant_id, number, place
+):
+    """Python converts no run of thousands of digits. Leading zeros are no
+    place of their own, any other such run sorts last, and the list and the
+    price differences, which sort by the same key, are still there."""
+    dish(session, tenant_id, "12", "Ente")
+    dish(session, tenant_id, number, "Seltsam", register=700)
+    dish(session, tenant_id, "8", "Suppe")
+    shown = listing.listing(session, tenant_id)
+    assert numbers(shown).index(number) == place and shown.items == 3
+    assert shown.price_differences == 1
+    assert numbers(listing.listing(session, tenant_id, "seltsam")) == [number]
+
+
 def test_an_empty_menu_is_one_empty_page(session, tenant_id):
     shown = listing.listing(session, tenant_id, "ente", listing.ONLY_PRICE, 7)
     assert shown.rows == []

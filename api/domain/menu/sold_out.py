@@ -60,13 +60,22 @@ class DishGroup:
 _NUMBER_START = re.compile(r"[a-z]{0,2}\d")
 
 
+# The digits of a card number that still sort as a number: far more than a
+# card has.
+_SORTED_DIGITS = 18
+
+
 def number_key(number: str) -> tuple[str, int, str]:
     """Menu order: 2 before 12, 23 before 23a, numbers without a prefix before
     S2 before S12 before SM1. Numbers are text (docs/14)."""
     match = CARD_PARTS.fullmatch(number.lower())
-    if match is None:
+    # Leading zeros are no place of their own ("007" sorts as 7). A run of
+    # digits no card has sorts last and is never converted: Python refuses a
+    # number of thousands of digits, and one such row took every list down.
+    digits = match.group(2).lstrip("0") if match else ""
+    if match is None or len(digits) > _SORTED_DIGITS:
         return ("\uffff", 10**9, number)
-    return (match.group(1), int(match.group(2)), match.group(3))
+    return (match.group(1), int(digits or "0"), match.group(3))
 
 
 def _active(session: Session, tenant_id: uuid.UUID) -> list[MenuItem]:

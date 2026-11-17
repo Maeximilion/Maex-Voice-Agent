@@ -90,7 +90,8 @@ def test_the_page_shows_the_frame_and_the_dishes_from_the_database(
     assert "Nicht mehr da" not in page.text
     assert "3 Gerichte" in page.text
     assert (
-        "1 ohne Allergen-Angabe" in page.text and "1 mit Preisabweichung" in page.text
+        "1 ohne Allergen-Angabe" in page.text
+        and "1 mit offener Preisabweichung" in page.text
     )
 
 
@@ -112,7 +113,11 @@ def test_a_rejected_register_price_is_no_note(client, db, tenant_id):
     )
     page = client.get(PAGE).text
     assert _rows(page) == ["1 Suppe 4,50 €"]
-    assert "5,00" not in page and "0 mit Preisabweichung" in page
+    # The words say "open": a rejected price that still differs is no
+    # difference the page counts, and the legend says where it went.
+    assert "5,00" not in page and "0 mit offener Preisabweichung" in page
+    assert "Ein verworfener Kassenpreis steht hier nicht mehr." in page
+    assert '<option value="preis">Preisabweichung offen</option>' in page
 
 
 def test_the_page_names_no_allergen(client, db, tenant_id):
@@ -201,6 +206,7 @@ def test_the_filter_shows_the_dishes_with_that_note(client, db, tenant_id):
         "?hinweis=alles&seite=x&q=",
         "?seite=-1",
         "?seite=99999999999999999999999999",
+        "?seite=" + "9" * 5000,
         "?seite=1e3",
         "?seite=%C2%B2",
         "?q=" + "a" * 5000,
@@ -213,6 +219,15 @@ def test_an_address_nobody_offers_still_shows_a_page(client, db, tenant_id, addr
     page = client.get(PAGE + address)
     assert page.status_code == 200
     assert "a" * (listing.QUERY_MAX + 1) not in page.text
+
+
+def test_a_filter_that_finds_nothing_says_so(client, db, tenant_id):
+    dish(db, tenant_id, "1", "Ente", allergens=("A",))
+    page = client.get(f"{PAGE}?hinweis=preis").text
+    assert _rows(page) == [] and "Kein Gericht gefunden." in page
+    assert "Noch kein Gericht" not in page
+    assert "0 von 1 Gericht" in page
+    assert 'href="/gui/menue">Alle zeigen</a>' in page
 
 
 # --- pages ------------------------------------------------------------------------
@@ -236,6 +251,8 @@ def test_a_large_menu_comes_in_pages_that_keep_the_search(
     far = client.get(f"{PAGE}?hinweis=allergene&seite=40").text
     assert "Seite 3 von 3" in far
     assert 'href="/gui/menue?hinweis=allergene&amp;seite=2"' in far
+    # So is a number longer than any page count.
+    assert "Seite 3 von 3" in client.get(f"{PAGE}?seite=" + "9" * 30).text
 
 
 def test_one_page_has_no_pager(client, db, tenant_id):

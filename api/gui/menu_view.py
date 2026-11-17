@@ -20,17 +20,19 @@ PATH = "/gui/menue"
 # The value in the address -> the filter of the domain and its words.
 FILTERS = {
     "allergene": (listing.ONLY_ALLERGENS, "Allergene fehlen"),
-    "preis": (listing.ONLY_PRICE, "Kasse nennt anderen Preis"),
+    "preis": (listing.ONLY_PRICE, "Preisabweichung offen"),
 }
-# The digits read of a page number: far more pages than a menu has.
+# The digits read of a page number: far more pages than a menu has. A longer
+# number is past the end.
 PAGE_DIGITS = 6
 
 
 def _page_number(text: str) -> int:
     # ASCII only: "²" is a digit to `isdigit` and no number to `int`.
-    if text.isascii() and text.isdigit() and len(text) <= PAGE_DIGITS:
-        return int(text)
-    return 1
+    if not (text.isascii() and text.isdigit()):
+        return 1
+    # Never converted beyond that: `int` refuses a run of thousands of digits.
+    return int(text) if len(text) <= PAGE_DIGITS else 10**PAGE_DIGITS
 
 
 def page(

@@ -16,7 +16,7 @@
 {% if tenant %}
 <section class="card menue">
   <h2>Speisekarte</h2>
-  <p class="muted">So kennt die KI die Karte. {{ items }} {{ "Gericht" if items == 1 else "Gerichte" }}, {{ allergens_missing }} ohne Allergen-Angabe, {{ price_differences }} mit Preisabweichung.</p>
+  <p class="muted">So kennt die KI die Karte. {{ items }} {{ "Gericht" if items == 1 else "Gerichte" }}, {{ allergens_missing }} ohne Allergen-Angabe, {{ price_differences }} mit offener Preisabweichung.</p>
   <form class="call-filter" method="get" action="/gui/menue" role="search">
     <input type="search" name="q" value="{{ query }}" maxlength="{{ query_max }}"
            placeholder="Nummer oder Name" aria-label="Nummer oder Name" autocomplete="off">
@@ -60,7 +60,7 @@
 <section class="card menue">
   <h2>Was die Hinweise bedeuten</h2>
   <p><span class="badge warn">Allergene fehlen</span> Zu diesem Gericht ist kein Allergen hinterlegt. Die KI gibt dazu keine Auskunft. Auch ein Gericht, das keines enthält, steht so da: hinterlegt wird nur, was ein Gericht enthält.</p>
-  <p><span class="badge danger">Kasse: Preis</span> Die Kasse nennt einen anderen Preis als die Karte. Die KI nennt weiter den Preis der Karte, bis jemand in der Übersicht unter „Preise“ antwortet.</p>
+  <p><span class="badge danger">Kasse: Preis</span> Die Kasse nennt einen anderen Preis als die Karte, und noch niemand hat darauf geantwortet. Die KI nennt weiter den Preis der Karte, bis jemand in der Übersicht unter „Preise“ antwortet. Ein verworfener Kassenpreis steht hier nicht mehr.</p>
   <p>Der Preis ist der Grundpreis des Gerichts. Aufpreise für Größen oder Extras stehen hier nicht.</p>
   <p class="muted">Diese Seite zeigt die Karte nur. Geändert wird hier nichts.</p>
 </section>
