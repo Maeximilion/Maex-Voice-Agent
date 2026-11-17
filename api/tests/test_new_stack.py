@@ -477,6 +477,7 @@ def test_a_failed_self_test_names_the_command_to_run_again(tmp_path, monkeypatch
 
 OPS_TEMPLATE = (REPO_ROOT / "deploy" / "caddy" / "ops.caddy").read_text()
 OPS_SECRET = "c" * 64
+OPS_PUSH = "https://push.ops.example.org"
 OPS_CSP = (
     "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
@@ -487,6 +488,7 @@ def _operator(root, origin="https://ops.example.org", secret=OPS_SECRET):
     ops.mkdir(parents=True)
     (ops / ".env").write_text(
         f'OPERATOR_ORIGIN="{origin}"\nOPERATOR_PROXY_SECRET="{secret}"\n'
+        f'NTFY_BASE_URL="{OPS_PUSH}"\n'
     )
     return ops
 
@@ -497,11 +499,21 @@ def test_the_operator_site_is_its_host_its_secret_and_the_dashboard_alone():
         {
             "OPERATOR_ORIGIN": "https://ops.example.org",
             "OPERATOR_PROXY_SECRET": OPS_SECRET,
+            "NTFY_BASE_URL": OPS_PUSH,
         },
     )
     code = "\n".join(line.split("#", 1)[0] for line in site.splitlines())
-    assert re.findall(r"^(\S+)\s*\{\s*$", code, re.MULTILINE) == ["ops.example.org"]
-    assert re.findall(r"reverse_proxy\s+(\S+)", code) == ["maex-ops-dashboard-1:8002"]
+    # The dashboard, and the operator's push server for the phone (#827 F3).
+    assert re.findall(r"^(\S+)\s*\{\s*$", code, re.MULTILINE) == [
+        "ops.example.org",
+        "push.ops.example.org",
+    ]
+    assert re.findall(r"reverse_proxy\s+(\S+)", code) == [
+        "maex-ops-dashboard-1:8002",
+        "maex-ops-push-1:80",
+    ]
+    # The secret goes to the dashboard only, never to the push server.
+    assert code.count("X-Maex-Proxy-Secret") == 1
     assert f'header_up X-Maex-Proxy-Secret "{OPS_SECRET}"' in code
     for header in (
         'Strict-Transport-Security "max-age=31536000"',
@@ -526,12 +538,18 @@ def test_the_operator_site_is_its_host_its_secret_and_the_dashboard_alone():
         {"OPERATOR_PROXY_SECRET": "short"},
         {"OPERATOR_PROXY_SECRET": "c" * 40 + '" evil'},
         {"OPERATOR_PROXY_SECRET": ""},
+        {"NTFY_BASE_URL": ""},
+        {"NTFY_BASE_URL": "http://push.ops.example.org"},
+        {"NTFY_BASE_URL": "https://push.ops.example.org/"},
+        {"NTFY_BASE_URL": "https://ops.example.org"},
+        {"NTFY_BASE_URL": "https://push.ops.example.org\n}"},
     ],
 )
 def test_an_odd_origin_or_secret_writes_no_site(env):
     values = {
         "OPERATOR_ORIGIN": "https://ops.example.org",
         "OPERATOR_PROXY_SECRET": OPS_SECRET,
+        "NTFY_BASE_URL": OPS_PUSH,
         **env,
     }
     with pytest.raises(new_stack.BadInput):
@@ -555,7 +573,7 @@ def test_the_operator_stack_publishes_nothing_and_has_no_way_out():
     layout = _load(REPO_ROOT / "deploy" / "docker-compose.operator.yml")
     services = _services(layout)
     assert layout["name"] == new_stack.OPERATOR_PROJECT
-    assert set(services) == {"db", "dashboard"}
+    assert set(services) == {"db", "dashboard", "push"}
     assert all("ports" not in s and "expose" not in s for s in services.values())
     assert layout["networks"] == {
         "backend": {"internal": True},
@@ -571,9 +589,20 @@ def test_the_operator_stack_publishes_nothing_and_has_no_way_out():
     # Uvicorn trusts no forwarded header; the dashboard reads it behind the secret.
     assert "--no-proxy-headers" in dashboard["command"]
     assert dashboard["command"][dashboard["command"].index("--port") + 1] == "8002"
-    # #827 F7: neither service takes the host's memory or CPU from a stack.
-    for service in services.values():
-        assert service["mem_limit"] == "512m" and service["cpus"] == 1.0
+    # #827 F7: no service takes the host's memory or CPU from a stack.
+    for name in ("db", "dashboard"):
+        assert services[name]["mem_limit"] == "512m" and services[name]["cpus"] == 1.0
+    # #827 F3: the operator's own push server, on `edge` only, closed by
+    # default and pinned like each customer's; the dashboard publishes to it.
+    push = services["push"]
+    customers = _load(REPO_ROOT / "docker-compose.yml")["services"]["push"]
+    assert push["networks"] == ["edge"] and push["read_only"] is True
+    assert push["image"] == customers["image"] and "ports" not in push
+    assert "NTFY_AUTH_DEFAULT_ACCESS=deny-all" in push["environment"]
+    assert push["mem_limit"] == "128m" and push["cap_drop"] == ["ALL"]
+    assert dashboard["environment"]["OPERATOR_PUSH_URL"] == (
+        "${OPERATOR_PUSH_URL:-http://maex-ops-push-1/}"
+    )
     # #827 F5: the dashboard's role from DATABASE_URL, never the owner's.
     environment = dashboard["environment"]
     assert environment["OPERATOR_DATABASE_URL"].startswith("${DATABASE_URL:?")

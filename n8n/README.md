@@ -26,6 +26,7 @@ Event from dispatcher (webhook, POST /webhook/maex, basic auth)
 | `team_phone.changed` | To `owner` and `ops`: "Teamnummer geändert", today's number and the one before; the check card waits on the tablet | `to`, `from` |
 | `day_hours.changed` | To `owner` and `ops`: "Öffnungszeit geändert" with the date, the new and the earlier hours as the tablet words them; "Öffnungszeit wartet auf Freigabe" when longer hours for a later date wait for the admin PIN | `day`, `to`, `from`, `held` |
 | `call_mode.changed` | To `owner` and `ops`: "Anrufmodus geändert", the mode now and before with the words of the tablet's header; priority `high` when the agent is switched off | `to`, `from` |
+| `operator_access.changed` | To `owner` and `ops`: "Zugang vom Betreiber geändert", the operator's account and the step: a setup link made, the team or owner PIN set, or how many devices were signed out (#811 question 3); priority `high` | `step`, `actor`, `which` or `signed_out` |
 | `admin_pin.wrong` | To `owner` and `ops`: "Inhaber-PIN falsch", how many wrong admin PINs in a row and on which device, at every third and when the fifth try on a locked device signed it out (#827 F4); priority `high` when it did | `failures`, `device`, `ended` |
 
 `order.confirmed` never arrives here: the print bridge collects it (`api/events/types.py`, `KITCHEN`). `api/tests/test_n8n_workflow.py` fails as soon as an event type reaches n8n without a branch.

@@ -36,6 +36,7 @@ PASSWORD = "lange-geheime-phrase"
 START = datetime(2026, 11, 10, 9, 0, tzinfo=UTC)
 ORIGIN = "https://ops.example.com"
 TABLES = {
+    "operator_pushes",
     "operator_accounts",
     "operator_recovery_codes",
     "operator_sessions",

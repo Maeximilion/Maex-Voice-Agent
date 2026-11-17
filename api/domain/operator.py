@@ -39,6 +39,8 @@ from api.domain.status.staff_changes import (
     sheet_numbers,
     team_phone_at,
 )
+from api.events.outbox import enqueue
+from api.events.types import OPERATOR_ACCESS_CHANGED
 from api.models import GuiAccount, GuiSession, ServiceConfig, Tenant
 
 Which = Literal["team", "admin"]
@@ -211,6 +213,22 @@ def show_pin(
     return pin
 
 
+def _tell_owner(
+    session: Session, tenant: Tenant, by: OpsReader, step: str, **detail: str | int
+) -> None:
+    """A push to the owner and to `ops` that the operator, by name, changed a
+    way into the restaurant's view (#811 question 3, docs/23 T11): a taken-over
+    dashboard is seen sooner. Not committed here: it goes with the step's own
+    commit, or with its outcome row (`_step`), and a step that broke takes it
+    back. Never a PIN, a link or a device's name."""
+    enqueue(
+        session,
+        tenant_id=tenant.id,
+        event_type=OPERATOR_ACCESS_CHANGED,
+        payload={"step": step, "actor": by.actor} | detail,
+    )
+
+
 def set_pin(
     session: Session, tenant: Tenant, which: Which, pin: str, by: OpsReader
 ) -> None:
@@ -221,6 +239,7 @@ def set_pin(
             set_admin_pin(session, tenant.id, pin, by.actor)
         else:
             set_team_pin(session, tenant.id, pin, by.actor)
+        _tell_owner(session, tenant, by, "pin_set", which=which)
 
 
 def sign_out(
@@ -228,11 +247,13 @@ def sign_out(
 ) -> int:
     """Sign out one device, or with None every device of the restaurant (the
     route makes sure None was asked for in words). How many were signed out:
-    0 for a device that is gone already."""
+    0 for a device that is gone already, which pushes nothing."""
     with _step(
         session, tenant, by, "sign_out", device=str(device) if device else "all"
     ):
         ended = end_sessions(session, tenant.id, by.actor, "operator", device)
+        if ended:
+            _tell_owner(session, tenant, by, "sign_out", signed_out=ended)
         session.commit()
     return ended
 
@@ -244,6 +265,7 @@ def setup_link(
     creates the restaurant's login the first time (`issue_link`)."""
     with _step(session, tenant, by, "setup_link"):
         token, expires_at = issue_link(session, tenant.id, by.actor, now)
+        _tell_owner(session, tenant, by, "setup_link")
     return setup_url(token), expires_at
 
 
