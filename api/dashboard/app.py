@@ -40,7 +40,12 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -374,6 +379,14 @@ def require_operator(
     return operator
 
 
+@app.exception_handler(access.SignInRefused)
+def _session_ended(request: Request, refused: Exception) -> Response:
+    """A factor change whose session ended while it waited for the account's
+    row (`access._locked`): answered as `require_operator` answers the write of
+    a browser that is signed out. The sign-in and the step-up catch their own."""
+    return JSONResponse({"detail": "Signed out"}, status_code=401)
+
+
 def _local(path: str) -> str:
     """A path of this site, or the start page: where a step-up leads back to
     is never another site. No backslash (a browser reads it as a slash), no
@@ -426,6 +439,11 @@ def _alert(db: Session, operator: str, what: str) -> None:
         log(logger, logging.ERROR, "Operator push failed", error=error_text(problem))
         access.audit(db, operator, "operator.push_failed", {"what": what})
         db.commit()
+
+
+def _with_ended(what: str, ended: int) -> str:
+    """The push of a factor change names the sessions it ended (D39)."""
+    return f"{what}, other sessions ended: {ended}" if ended else what
 
 
 def _refusal(refused: access.SignInRefused) -> str:
@@ -678,12 +696,12 @@ def passkey_remove(
 ) -> Response:
     _checked(request, form)
     try:
-        name = access.remove_passkey(db, operator, form.get("id", ""))
+        name, ended = access.remove_passkey(db, operator, form.get("id", ""))
     except access.FactorNeeded:
         return _factors("factor-needed")
     except LookupError:
         return _factors("")
-    _alert(db, operator.name, f"passkey {name!r} removed")
+    _alert(db, operator.name, _with_ended(f"passkey {name!r} removed", ended))
     return _factors("passkey-removed")
 
 
@@ -707,9 +725,10 @@ def totp_confirm(
     db: Session = Depends(get_db),
 ) -> Response:
     _checked(request, form)
-    if not access.confirm_totp(db, operator, form.get("code", ""), now()):
+    ended = access.confirm_totp(db, operator, form.get("code", ""), now())
+    if ended is None:
         return _factors("code-wrong")
-    _alert(db, operator.name, "new TOTP secret")
+    _alert(db, operator.name, _with_ended("new TOTP secret", ended))
     return _factors("totp-set")
 
 
@@ -722,11 +741,12 @@ def totp_remove(
 ) -> Response:
     _checked(request, form)
     try:
-        if not access.remove_totp(db, operator):
-            return _factors("")
+        ended = access.remove_totp(db, operator)
     except access.FactorNeeded:
         return _factors("factor-needed")
-    _alert(db, operator.name, "TOTP removed")
+    if ended is None:
+        return _factors("")
+    _alert(db, operator.name, _with_ended("TOTP removed", ended))
     return _factors("totp-removed")
 
 
