@@ -6,7 +6,7 @@ which token it takes; the operator fills it on the host (`dashboard/cli.py`).
 answer into one row of the list; `detail` asks one stack for its status and its
 week's figures, `calls` for the calls of one business day. `step` reads a form
 of the manage page as one request and `manage` sends it: the access read and
-the six steps that show a secret or change the restaurant. No FastAPI here.
+the seven steps that show a secret or change the restaurant. No FastAPI here.
 
 A stack's answer is input from outside: a customer's stack that was taken over
 may answer anything. So the answer is read up to a size limit, checked field by
@@ -24,7 +24,7 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as NotInTime
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime
 from functools import partial
 from typing import Annotated, Any
@@ -66,6 +66,7 @@ SIGN_OUT_PATH = "/v1/ops/access/sign-out"
 SETUP_LINK_PATH = "/v1/ops/access/setup-link"
 CALL_MODE_PATH = "/v1/ops/call-mode"
 TEAM_PHONE_PATH = "/v1/ops/team-phone"
+TEAM_PHONE_STANDARD_PATH = "/v1/ops/team-phone/standard"
 # `/customers/rows` is the list's refresh, so no customer's page can be there.
 RESERVED_KEYS = frozenset({"rows"})
 TIMEOUT_SECONDS = 3.0
@@ -101,6 +102,10 @@ SETUP_LINK = re.compile(
     r"/gui/einrichten#[A-Za-z0-9_-]{20,100}"
 )
 ALL_DEVICES = "all"
+# The version of the state a page shows (`domain/operator.py` `Access.version`):
+# a step that changes something sends it back, and the stack refuses it when
+# the restaurant changed since (#811).
+VERSION = re.compile(r"[0-9a-f]{16}")
 
 UNREACHABLE = "not reachable"
 TOO_SLOW = "answers too slowly"
@@ -116,6 +121,7 @@ OTHER_CUSTOMER = "another customer answers at this address"
 NO_KEY = "its restaurant has no customer key yet"
 WRONG_STACK = "is not this customer's stack (another key, or none): nothing was done"
 REFUSED_BY_RULE = "refuses this by a rule of its own"
+STALE = "says the restaurant changed since this page was read"
 NO_LINK = "answered without a link"
 NO_SUCH_CALL = (
     "knows no call of this id (or the call is older than the call list reaches)"
@@ -131,6 +137,7 @@ NOTHING_DONE = frozenset(
         NO_SETTINGS,
         WRONG_STACK,
         REFUSED_BY_RULE,
+        STALE,
     }
 )
 
@@ -325,6 +332,9 @@ class StackAccess(_Named):
     # When a number set for today ends; None: the standard number holds.
     team_phone_until: Time | None
     team_phones: list[Annotated[str, _full(PHONE)]] = Field(max_length=MAX_NUMBERS)
+    # None from a stack older than #811: it checks no page, and its steps are
+    # sent as before, so the operator can still stop its agent.
+    version: Annotated[str, _full(VERSION)] | None = None
     pin: Annotated[str, _full(PIN)] | None = None
     link: Annotated[str, _full(SETUP_LINK)] | None = None
     link_expires_at: Time | None = None
@@ -547,6 +557,9 @@ def _fetch[Asked: _Named](
     # this request names. With any other status the code is something else's.
     if code == "conflict" and status_code == 409:
         return WRONG_STACK
+    # A step from a page the restaurant changed since (#811): nothing was done.
+    if code == "conflict" and status_code == ops_reason.STALE_STATUS:
+        return STALE
     data = envelope.data
     if status_code != 200 or not envelope.ok or data is None:
         return unreadable
@@ -812,6 +825,13 @@ def _team_phone(form: dict[str, str]) -> Step | None:
     return Step("team_phone", TEAM_PHONE_PATH, {"number": number})
 
 
+def _team_phone_standard(form: dict[str, str]) -> Step | None:
+    number = form.get("number", "")
+    if not PHONE.fullmatch(number):
+        return None
+    return Step("team_phone_standard", TEAM_PHONE_STANDARD_PATH, {"number": number})
+
+
 # The last part of the manage page's addresses, and how each reads its form.
 STEPS: dict[str, Callable[[dict[str, str]], Step | None]] = {
     "open": _open,
@@ -821,15 +841,25 @@ STEPS: dict[str, Callable[[dict[str, str]], Step | None]] = {
     "setup-link": _setup_link,
     "call-mode": _call_mode,
     "team-phone": _team_phone,
+    "team-phone-standard": _team_phone_standard,
 }
 
 
 def step(action: str, form: dict[str, str]) -> Step | None:
     """What a form of the manage page asks for, or None when it is no step:
     the shape is checked here, so nothing odd is sent; whether a PIN, a mode
-    or a number is taken is the stack's decision."""
+    or a number is taken is the stack's decision. A step that changes
+    something carries the version of the page it came from (#811); a page of
+    a stack older than that has none, and such a stack takes its steps as
+    before. A stack that sends a version refuses a step without one."""
     read = STEPS.get(action)
-    return read(form) if read else None
+    found = read(form) if read else None
+    seen = form.get("gesehen", "")
+    if found is None or not found.changes or not seen:
+        return found
+    if not VERSION.fullmatch(seen):
+        return None
+    return replace(found, body=(found.body or {}) | {"seen": seen})
 
 
 def manage(

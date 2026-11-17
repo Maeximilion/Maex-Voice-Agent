@@ -707,7 +707,7 @@ as every other request (the token is checked before the body's error is, also fo
 - `"call": null` for an id this restaurant does not have and for a call older than the 14 business days of `/calls`; a self-test call is answered and marked `is_test`. What is no UUID is `invalid_input` without an audit row.
 - Read only: the route writes its audit row and nothing else. Measured under 300 ms (`api/tests/test_ops_call_log.py`).
 
-**The access read and the six steps (#571, sixth part, 16.11.2026).** They show a secret or change
+**The access read and the seven steps (#571, sixth part, 16.11.2026; the standard number and the page's version, #811).** They show a secret or change
 the restaurant, so each needs three headers besides the token: `X-Ops-Reason` and `X-Ops-Actor` as
 for `/calls`, and `X-Ops-Customer: <customer key>`. A stack whose restaurant has another key, or
 none, answers 409 `conflict` before it reads or writes anything: an address registered for the
@@ -717,34 +717,48 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
 |---|---|---|
 | `GET /v1/ops/access` | none | the state below, nothing else |
 | `POST /v1/ops/access/pin/show` | `{"which": "team" \| "admin"}` | answers with `"pin"`, `null` when none is set |
-| `POST /v1/ops/access/pin` | `{"which", "pin"}` | sets the PIN (`set_team_pin`, `set_admin_pin`) |
-| `POST /v1/ops/access/sign-out` | `{"device": "<id>"}` or `{"all": true}` | ends one device or all; answers with `"signed_out"`, 0 for a device that is gone |
-| `POST /v1/ops/access/setup-link` | none | a new one-time link (`issue_link`); answers with `"link"` and `"link_expires_at"` |
-| `POST /v1/ops/call-mode` | `{"mode"}` | `shadow`, `overflow` or `primary` (`set_mode`), `paused` (`pause_ai`), `resume` (`resume_ai`) |
-| `POST /v1/ops/team-phone` | `{"number"}` | today's team number by the staff's rule (`change_team_phone`) |
+| `POST /v1/ops/access/pin` | `{"which", "pin", "seen"}` | sets the PIN (`set_team_pin`, `set_admin_pin`) |
+| `POST /v1/ops/access/sign-out` | `{"device": "<id>", "seen"}` or `{"all": true, "seen"}` | ends one device or all; answers with `"signed_out"`, 0 for a device that is gone |
+| `POST /v1/ops/access/setup-link` | `{"seen"}` | a new one-time link (`issue_link`); answers with `"link"` and `"link_expires_at"` |
+| `POST /v1/ops/call-mode` | `{"mode", "seen"}` | `shadow`, `overflow` or `primary` (`set_mode`), `paused` (`pause_ai`), `resume` (`resume_ai`) |
+| `POST /v1/ops/team-phone` | `{"number", "seen"}` | today's team number by the staff's rule (`change_team_phone`); the owner's card and the push name the operator |
+| `POST /v1/ops/team-phone/standard` | `{"number", "seen"}` | the standard team number (`set_standard_team_phone`), checked as today's; no card, a push to `owner` and `ops`; a number set for today still holds to its end |
 
 - Every route answers with the state after it: `{"tenant": {"key", "name"}, "login",
   "team_pin_set", "admin_pin_set", "devices": [{"id", "device", "created_at", "last_seen_at"}],
   "call_mode", "call_modes", "team_phone", "team_phone_standard", "team_phone_until",
-  "team_phones"}`. `login`: the restaurant has set its password. `devices`: the 200 last used.
+  "team_phones", "version"}`. `login`: the restaurant has set its password. `devices`: the 200 last used.
   `call_mode` is the mode that holds now and `call_modes` what can be sent from it (`["resume"]`
   during the emergency stop). `team_phone` is where a call for the team goes now,
   `team_phone_standard` the standard number and `team_phone_until` the end of a number set for
   today (`null`: the standard holds). `team_phones` are the numbers the tablet's sheet offers
   (`sheet_numbers`), 20 at most; an empty number is `null`. A restaurant without its settings row
   answers with no mode, no number and
-  two empty lists. No field of the state is a secret; a shown PIN and a new link are the only
+  two empty lists. `version` is 16 hex digits over what the state shows and the newest audit row
+  of a change to it (`domain/operator.py` `MARKS`, and the owner's answer on a team number
+  card); a device's last use is not in it. No field of
+  the state is a secret; a shown PIN and a new link are the only
   secrets an answer carries, and nothing but a body ever carries one.
 - The link is `https://<AGENT_DOMAIN>/gui/einrichten#<token>`. `AGENT_DOMAIN` is a setting of
   the api since this part (`agent_domain`; `docker-compose.yml` hands it over, the provisioning
   script writes it into the stack's `.env`); without it the answer is the path alone, and the
   dashboard tells the operator to put the customer's address in front.
+- **A step that changes something acts on the page it came from (#811).** It sends the `version`
+  of the state its page showed as `seen` (required by the stack, 1 to 64 characters; a look at
+  a PIN sends none; the dashboard sends none only to a stack older than this, whose answer has
+  no `version`). After the reason's row the stack locks the settings row and the login, reads the
+  version again and refuses with 412 `conflict` ("the restaurant changed since the page was
+  read", `core/ops_reason.py` `STALE_STATUS`) when it moved: the owner, the staff or a second
+  operator changed the restaurant since, and a step from an old page, such as switching the
+  agent on again, must not undo the owner's newer emergency stop. The outcome is `refused`;
+  nothing else is written. 409 stays the stack that is not the customer's.
 - **The reason is in `audit_log` before the step:** a row `ops.<step>` (`access_read`, `pin_show`,
-  `pin_set`, `sign_out`, `setup_link`, `call_mode`, `team_phone`), actor `operator:<account>`,
+  `pin_set`, `sign_out`, `setup_link`, `call_mode`, `team_phone`, `team_phone_standard`), actor `operator:<account>`,
   payload the reason's category and number and what is no secret (which PIN, which device, which
   mode), committed first (`domain/operator.py`). The step's own row follows when it happened
   (`gui.team_pin_shown`, `gui.admin_pin_set`, `gui.session_ended`, `gui.setup_link_issued`,
-  `service_config.mode_changed`, `staff_change.team_phone`), with the operator as actor. Then
+  `service_config.mode_changed`, `staff_change.team_phone`,
+  `service_config.team_phone_standard`), with the operator as actor. Then
   every step but the access read writes `ops.<step>.outcome` with payload `{"ask": <id of the
   reason's row>, "outcome": "done" | "refused" | "failed"}` (#811): `refused` when a rule or the
   stack said no, `failed` when the step broke; a reason's row without its outcome is a crash that
@@ -752,7 +766,11 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
 - The steps are the functions the command line and the tablet use, so their rules hold: a PIN has
   4 to 6 digits and the two differ, a mode is never chosen during the emergency stop, a team number
   is one the dialplan dials, holds until the end of the business day and shows the owner's check
-  card, and the call mode and the team number push to `owner` and `ops` (docs/23 T12). What a rule
+  card, and the call mode and the team number push to `owner` and `ops` (docs/23 T12). The
+  push `team_phone.changed` carries `"by": "operator" | "team"`, for the operator its account
+  (`"actor"`, as the access pushes), and,
+  for the standard number, `"standard": true`; the card reads "Vom Betreiber geändert" when the
+  operator made its last change (#811). What a rule
   refuses is `invalid_input` with status 422 (`core/ops_reason.py` `RULE_STATUS`, set by `_by_rule`
   in `domain/operator.py`); a request the route itself does not take is `invalid_input` with 200
   (the body's form, as everywhere in the API) or 400 (a header, a mode that does not exist). The

@@ -1705,6 +1705,8 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     """The staff changes the owner has not decided, from today on, by date."""
     rows = []
     cards = staff.open_cards(session, tenant.id, business_day(tz_name=tenant.timezone))
+    # A number the operator set reads as the operator's, not the team's (#811).
+    by = staff.changed_by(session, tenant.id, cards)
     holding_on = staff.days_hours(
         session, tenant.id, [c.day for c in cards if c.kind == staff.DAY_HOURS]
     )
@@ -1741,6 +1743,7 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
                 "now": holding,
                 "waiting": not card.held,
                 "calls": calls,
+                "by_operator": by.get(card.id) == staff.BY_OPERATOR,
                 "seen": card.updated_at.isoformat(),
             }
         )
