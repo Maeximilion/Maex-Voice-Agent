@@ -254,6 +254,30 @@
               },
               "renameOutput": true,
               "outputKey": "call_mode.changed"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "d2f8f636-f524-4abc-823f-48ce25b30acd",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "admin_pin.wrong",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "admin_pin.wrong"
             }
           ]
         },
@@ -595,6 +619,42 @@
     },
     {
       "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5a2a7927-b62d-48cb-9528-18a79d995279",
+              "name": "title",
+              "value": "Inhaber-PIN falsch",
+              "type": "string"
+            },
+            {
+              "id": "f3f0ef7b-9461-4f55-90e1-0448d1c80b22",
+              "name": "text",
+              "value": "={{ $json.payload.failures }} falsche Inhaber-PINs in Folge auf dem Gerät {{ $json.payload.device }}.{{ $json.payload.ended ? ' Das Gerät ist abgemeldet.' : '' }}",
+              "type": "string"
+            },
+            {
+              "id": "c97deb12-3bf7-4026-b56a-e804ebabf9fe",
+              "name": "priority",
+              "value": "={{ $json.payload.ended ? 'high' : 'normal' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "59920b91-848c-44b8-8fbf-dae99922ee12",
+      "name": "Message: admin PIN wrong",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        1520
+      ]
+    },
+    {
+      "parameters": {
         "jsCode": "// One message, two readers: the owner of the restaurant and the\n// operator (docs/23_ACCESS_SECURITY.md, T12). The channel node sends\n// one push per item and fails the run if either fails.\nconst { title, text, priority } = $input.first().json;\nreturn ['owner', 'ops'].map((topic) => ({\n  json: { topic, title, text, priority },\n}));\n"
       },
       "id": "72680f16-d25c-5234-98c1-f9a20f589adc",
@@ -757,6 +817,13 @@
         ],
         [
           {
+            "node": "Message: admin PIN wrong",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
             "node": "Respond: unknown event type",
             "type": "main",
             "index": 0
@@ -879,6 +946,17 @@
         [
           {
             "node": "Remember event id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message: admin PIN wrong": {
+      "main": [
+        [
+          {
+            "node": "To owner and ops",
             "type": "main",
             "index": 0
           }

@@ -24,7 +24,7 @@ from api.core.tool_log import tool_call_log_middleware
 from api.db import engine, get_db
 from api.domain.calls import end_call, start_call
 from api.gui import mount_gui
-from api.gui.session import slide_cookies
+from api.gui.session import no_store, slide_cookies
 from api.kitchen.router import router as kitchen_router
 from api.ops.router import router as ops_router
 from api.schemas.calls import EndCallRequest, StartCallRequest
@@ -56,6 +56,7 @@ app = FastAPI(
 app.middleware("http")(tool_call_log_middleware)
 app.middleware("http")(request_context_middleware)
 app.middleware("http")(slide_cookies)
+app.middleware("http")(no_store)
 app.include_router(tools_router)
 app.include_router(kitchen_router)
 app.include_router(ops_router)
