@@ -6,7 +6,15 @@ restaurant's clock. The owner replaces the spans of one weekday; every reader
 (`status/hours.py`) sees the new rows from its next read on. A span whose end
 is not after its start runs past midnight, and is taken only with the owner's
 word (`overnight`), as for a date's hours (#596): swapped times would open the
-night of every week to come.
+night of every week to come. Two spans of one service neither overlap nor
+touch: every reader takes a span's end for a closing time, so 11:30 to 14:00
+and 14:00 to 22:00 would close the kitchen at 14:00 for the agent and refuse
+the last tables before it.
+
+Hours are compared as the form shows them, to the minute, and service by
+service: a service the owner did not change is neither checked nor written, so
+a row the form cannot show exactly (a second, more spans than the form takes)
+stays as it is and never blocks the other services.
 
 A change leaves an audit row with the hours before and after. It pushes
 nothing: the push of D34 point 4 tells the owner what the staff changed.
@@ -14,7 +22,7 @@ nothing: the push of D34 point 4 tells the owner what the staff changed.
 
 import hashlib
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, time
 from itertools import pairwise
 from zoneinfo import ZoneInfo
@@ -39,7 +47,10 @@ DAY_MINUTES = 24 * 60
 # A bound on what one form can write, not a rule about the restaurant.
 MAX_SPANS = 4
 DINEIN = "dinein"
-OVERLAP = "Zwei Zeiten überschneiden sich. Bitte Beginn und Ende prüfen."
+OVERLAP = (
+    "Zwei Zeiten überschneiden sich oder schließen direkt aneinander an. "
+    "Bitte als eine Zeit eintragen."
+)
 TOO_MANY = f"Höchstens {MAX_SPANS} Zeiten je Tag und Bereich."
 CHANGED_SINCE = (
     "Die Zeiten dieses Tages haben sich gerade geändert. Bitte noch einmal prüfen."
@@ -49,11 +60,12 @@ CHANGED_SINCE = (
 @dataclass(frozen=True, order=True)
 class Span:
     """One opening span on the restaurant's clock. `overnight` is the owner's
-    word that an end before the start means the next day."""
+    word that an end before the start means the next day; it is no part of
+    what a span is, so two spans with the same times are the same span."""
 
     opens: time
     closes: time
-    overnight: bool = False
+    overnight: bool = field(default=False, compare=False)
 
     def text(self) -> str:
         return f"{self.opens:%H:%M}-{self.closes:%H:%M}"
@@ -98,28 +110,32 @@ def set_weekday(
     actor: str = ACTOR_OWNER,
 ) -> bool:
     """Replace the spans of one weekday for the services named; a service left
-    out keeps its hours. `seen` is the `token` of the hours the form showed:
-    hours changed since (a second device) raise Conflict, so a save never
-    writes over hours the owner did not see. False when nothing changes, and
-    then no row is written. Raises InvalidInput. Commits."""
+    out keeps its hours, and so does one whose spans read as they are stored.
+    `seen` is the `token` of the hours the form showed: hours changed since (a
+    second device) raise Conflict, so a save never writes over hours the owner
+    did not see. False when nothing changes, whatever the token: then no row
+    is written, and a save tapped twice is no conflict. Raises InvalidInput.
+    Commits."""
     if weekday not in range(7) or not set(spans) <= set(SERVICES):
         raise InvalidInput(f"no such weekday or service: {weekday}, {sorted(spans)}")
-    for typed in spans.values():
-        _checked(typed)
     # The lock of the staff changes: their "shorter than now" reads these rows.
     _locked(session, tenant_id)
     before = week(session, tenant_id)[weekday]
+    after = {**before, **{service: sorted(typed) for service, typed in spans.items()}}
+    shown, asked = _texts(before), _texts(after)
+    changed = [service for service in SERVICES if asked[service] != shown[service]]
+    if not changed:
+        session.commit()
+        return False
     if seen != token(before):
         session.rollback()
         raise Conflict(f"weekday {weekday} changed since shown", say=CHANGED_SINCE)
-    after = {
-        service: sorted(_stored(span) for span in spans.get(service, before[service]))
-        for service in SERVICES
-    }
-    if after == before:
-        session.commit()
-        return False
-    changed = [service for service in SERVICES if after[service] != before[service]]
+    try:
+        for service in changed:
+            _checked(after[service])
+    except InvalidInput:
+        session.rollback()
+        raise
     session.execute(
         delete(OpeningHours).where(
             OpeningHours.tenant_id == tenant_id,
@@ -144,11 +160,7 @@ def set_weekday(
             actor=actor,
             action="opening_hours.changed",
             entity="opening_hours",
-            payload={
-                "weekday": weekday,
-                "from": _texts(before),
-                "to": _texts(after),
-            },
+            payload={"weekday": weekday, "from": shown, "to": asked},
         )
     )
     session.commit()
@@ -199,11 +211,6 @@ def _span(row: OpeningHours) -> Span:
     return Span(row.opens_at, row.closes_at, row.closes_at <= row.opens_at)
 
 
-def _stored(span: Span) -> Span:
-    """As `week` reads it back, so "nothing changed" compares like with like."""
-    return Span(span.opens, span.closes, span.closes <= span.opens)
-
-
 def _minutes(span: Span) -> tuple[int, int]:
     start = span.opens.hour * 60 + span.opens.minute
     end = span.closes.hour * 60 + span.closes.minute
@@ -219,8 +226,8 @@ def _checked(spans: list[Span]) -> None:
         if span.closes < span.opens and not span.overnight:
             raise InvalidInput("a span past midnight not confirmed", say=OVERNIGHT)
     ends = sorted(_minutes(span) for span in spans)
-    if any(later[0] < earlier[1] for earlier, later in pairwise(ends)):
-        raise InvalidInput("spans overlap", say=OVERLAP)
+    if any(later[0] <= earlier[1] for earlier, later in pairwise(ends)):
+        raise InvalidInput("spans overlap or touch", say=OVERLAP)
 
 
 def _texts(day: Day) -> dict[str, list[str]]:

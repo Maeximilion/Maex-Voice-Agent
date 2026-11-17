@@ -197,11 +197,13 @@ header.aus .seg.services .on{background:transparent;color:var(--muted)}
 .span-row input[type=checkbox]{width:28px;height:28px;margin:0;accent-color:var(--accent)}
 .span-row .check{min-height:var(--tap)}
 @media (max-width:700px){
-  /* A phone: each weekday is a block, each service a line with its name. */
-  .week thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
-  .week tr{display:block;padding:var(--s2) 0;border-top:2px solid var(--line)}
-  .week th[scope=row],.week td{display:block;border:0;padding:2px 0}
-  .week td[data-label]::before{content:attr(data-label) ": ";color:var(--muted)}
+  /* A phone: each row of the tab's tables is a block (a weekday with each
+     service on a line with its name, a special day with its button below),
+     so no table is wider than the page. */
+  .zeiten .tbl thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .zeiten .tbl tr{display:block;padding:var(--s2) 0;border-top:2px solid var(--line)}
+  .zeiten .tbl th[scope=row],.zeiten .tbl td{display:block;border:0;padding:2px 0}
+  .zeiten .tbl td[data-label]::before{content:attr(data-label) ": ";color:var(--muted)}
   .tabs a{padding:0 var(--s3)}
 }
 .board{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}

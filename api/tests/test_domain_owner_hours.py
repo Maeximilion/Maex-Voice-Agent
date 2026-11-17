@@ -7,12 +7,12 @@ from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, InvalidInput
+from api.domain.status import holidays, weekly
 from api.domain.status import staff_changes as staff
-from api.domain.status import weekly
 from api.domain.status.hours import load_hours, windows_for_day
 from api.domain.status.service import service_open_at
 from api.domain.status.staff_changes import DayHours
@@ -207,10 +207,97 @@ def test_hours_that_cannot_hold_are_refused_and_nothing_is_written(
     assert _audits(session, "opening_hours.changed") == []
 
 
-def test_spans_that_only_touch_are_two_spans(session, tenant_id):
+def test_spans_that_touch_are_refused_as_one_opening_split_in_two(session, tenant_id):
+    """Every reader takes a span's end for a closing time: 11:00 to 14:00 and
+    14:00 to 20:00 would close the kitchen at 14:00 for the agent."""
     spans = [Span(time(11), time(14)), Span(time(14), time(20))]
-    assert _set(session, tenant_id, TUESDAY, {"pickup": spans}) is True
-    assert weekly.week(session, tenant_id)[TUESDAY]["pickup"] == spans
+    with pytest.raises(InvalidInput) as refused:
+        _set(session, tenant_id, TUESDAY, {"pickup": spans})
+    assert refused.value.say == weekly.OVERLAP
+    assert _set(session, tenant_id, TUESDAY, {"pickup": [Span(time(11), time(20))]})
+
+
+def _store(session, tenant_id, weekday, service, spans) -> None:
+    """Rows as provisioning or SQL may have left them, past the editor's rules."""
+    session.execute(
+        delete(OpeningHours).where(
+            OpeningHours.tenant_id == tenant_id,
+            OpeningHours.weekday == weekday,
+            OpeningHours.service == service,
+        )
+    )
+    session.add_all(
+        OpeningHours(
+            tenant_id=tenant_id,
+            weekday=weekday,
+            service=service,
+            opens_at=opens,
+            closes_at=closes,
+        )
+        for opens, closes in spans
+    )
+    session.commit()
+
+
+def test_a_stored_second_is_no_change_the_owner_typed(session, tenant_id):
+    """The form shows and sends minutes. An untouched save must not rewrite a
+    row stored with seconds, nor claim a change."""
+    odd = [(time(11, 30, 30), time(14)), (time(17), time(22))]
+    _store(session, tenant_id, TUESDAY, "pickup", odd)
+    untouched = {service: list(SEEDED) for service in ("dinein", "pickup", "delivery")}
+    assert _set(session, tenant_id, TUESDAY, untouched) is False
+    assert _audits(session, "opening_hours.changed") == []
+    # Another service changed: the row with its second stays as it is.
+    untouched["dinein"] = [Span(time(12), time(15))]
+    assert _set(session, tenant_id, TUESDAY, untouched) is True
+    stored = weekly.week(session, tenant_id)[TUESDAY]["pickup"]
+    assert stored[0].opens == time(11, 30, 30)
+
+
+@pytest.mark.parametrize(
+    "odd",
+    [
+        # A day and a night without a break: an end equal to the start.
+        [(time(0), time(0))],
+        # More spans than the form takes.
+        [(time(h), time(h, 30)) for h in range(8, 14)],
+        # Two spans that touch.
+        [(time(11), time(14)), (time(14), time(20))],
+    ],
+)
+def test_rows_the_editor_would_refuse_do_not_block_the_other_services(
+    session, tenant_id, odd
+):
+    _store(session, tenant_id, TUESDAY, "delivery", odd)
+    shown = weekly.week(session, tenant_id)[TUESDAY]
+    sent = {**shown, "dinein": [Span(time(12), time(15))]}
+    assert _set(session, tenant_id, TUESDAY, sent) is True
+    after = weekly.week(session, tenant_id)[TUESDAY]
+    assert after["dinein"] == [Span(time(12), time(15))]
+    assert after["delivery"] == shown["delivery"]
+    # Changing that service itself is checked like any other.
+    more = [*shown["delivery"], Span(time(22), time(23))]
+    if len(more) > weekly.MAX_SPANS:
+        with pytest.raises(InvalidInput):
+            _set(session, tenant_id, TUESDAY, {"delivery": more})
+
+
+def test_a_save_tapped_twice_is_no_conflict(session, tenant_id):
+    seen = _seen(session, tenant_id, TUESDAY)
+    spans = {"pickup": [Span(time(12), time(15))]}
+    assert _set(session, tenant_id, TUESDAY, spans, seen=seen) is True
+    # The second tap carries the old token and asks for what holds now.
+    assert _set(session, tenant_id, TUESDAY, spans, seen=seen) is False
+    assert len(_audits(session, "opening_hours.changed")) == 1
+
+
+def test_a_stale_form_is_refused_as_stale_whatever_it_typed(session, tenant_id):
+    """The token is checked before the spans: a typing error in a stale form
+    must not come back as a form that then saves over the other device."""
+    stale = _seen(session, tenant_id, TUESDAY)
+    _set(session, tenant_id, TUESDAY, {"pickup": [Span(time(12), time(15))]})
+    with pytest.raises(Conflict):
+        _set(session, tenant_id, TUESDAY, {"pickup": [Span(time(9), time(9))]}, stale)
 
 
 @pytest.mark.parametrize(
@@ -379,6 +466,12 @@ def test_tables_the_shorter_week_leaves_without_hours_are_listed(session, tenant
     _book(session, tenant_id, next_week, time(21, 30), "Storniert", status="cancelled")
     _book(session, tenant_id, next_week, time(21, 30), "Selbsttest", is_test=True)
     _book(session, tenant_id, TODAY, time(9), "Vorbei")
+    _book(session, tenant_id, next_week, time(21, 15), "Gelöscht")
+    gone = session.scalars(
+        select(Reservation).where(Reservation.guest_name == "Gelöscht")
+    ).one()
+    gone.deleted_at = NOW
+    session.commit()
     assert _outside(session, tenant_id) == []
 
     shorter = [Span(time(11, 30), time(14)), Span(time(17), time(20))]
@@ -407,3 +500,66 @@ def test_a_table_in_the_night_of_the_day_before_is_kept(session, tenant_id):
     night = Span(time(17), time(1), overnight=True)
     _set(session, tenant_id, TUESDAY, {"dinein": [night]})
     assert _outside(session, tenant_id) == []
+
+
+# --- a holiday returned to the weekly hours -----------------------------------------
+
+CHRISTMAS = date(2026, 12, 25)
+
+
+def _answered_holiday(session, tenant_id) -> None:
+    """The holiday job's row after the team's answer "wie Sonntag"."""
+    session.add(
+        SpecialDay(
+            tenant_id=tenant_id,
+            date=CHRISTMAS,
+            like_weekday=6,
+            note="1. Weihnachtstag",
+            status="set",
+        )
+    )
+    session.commit()
+
+
+def test_a_holiday_returned_to_the_weekly_hours_is_not_suggested_again(
+    session, tenant_id
+):
+    """Deleted, the row would let the holiday job suggest the date again, and
+    one tap on the board would undo the owner's decision without a card."""
+    _answered_holiday(session, tenant_id)
+    assert staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(), NOW) is True
+    (row,) = _special(session, tenant_id)
+    assert (row.status, row.note, row.closed) == (
+        "dismissed",
+        "1. Weihnachtstag",
+        False,
+    )
+    # The weekly hours hold (a Friday), and nothing is listed as a special day.
+    assert _windows(session, tenant_id, CHRISTMAS) == [
+        ("11:30", "14:00"),
+        ("17:00", "22:00"),
+    ]
+    assert staff.coming_days(session, tenant_id, TODAY) == []
+    holidays.suggest(session, tenant_id, "BW", TODAY)
+    session.commit()
+    statuses = [r.status for r in _special(session, tenant_id) if r.date == CHRISTMAS]
+    assert statuses == ["dismissed"]
+
+
+def test_a_holiday_with_an_older_answer_is_returned_without_a_second_one(
+    session, tenant_id
+):
+    """One suggestion or dismissal per date (`uq_special_days_suggestion`)."""
+    _answered_holiday(session, tenant_id)
+    staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(), NOW)
+    # The owner closes the date after all, then opens it again.
+    staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(closed=True), NOW)
+    assert staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(), NOW) is True
+    rows = [(r.status, r.closed) for r in _special(session, tenant_id)]
+    assert rows == [("dismissed", False)]
+
+
+def test_a_date_without_a_holidays_name_is_simply_removed(session, tenant_id):
+    staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(closed=True), NOW)
+    staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(), NOW)
+    assert _special(session, tenant_id) == []

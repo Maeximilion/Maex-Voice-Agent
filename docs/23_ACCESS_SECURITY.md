@@ -431,7 +431,10 @@ the second builds against.
   of it is read or written without the admin PIN, and each write carries the CSRF token and
   `HX-Request` and leaves an audit row with the actor `gui:owner` and the hours before and after.
   A weekday's form sends a token of the hours it showed; a save against hours changed since is
-  refused. On that tab the owner also sets a date's hours directly: they hold at once without a
+  refused, and a form refused for a typing error keeps the token it was typed against, so its
+  corrected save cannot write over another device's change. Every page of the view answers
+  `Cache-Control: no-store` (`_page_response`), the parts of this tab too, and a part fetched by
+  htmx without the PIN leads back to its page after the PIN, never to itself. On that tab the owner also sets a date's hours directly: they hold at once without a
   check card or a push, which exist to tell the owner what the staff did, and a date whose staff
   change is still open is decided on its card first. The staff's own way to a date's hours (the
   sheet, next point) is unchanged, and so is what waits for the owner. The pages for zones and

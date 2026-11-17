@@ -29,6 +29,9 @@
       <div class="kz"><span class="muted">{{ label }}</span><b>{{ text }}</b></div>
       {% endfor %}
     </div>
+    {% if week_unknown_cost %}
+    <p class="note">Bei {{ week_unknown_cost }} Anrufen sind die Kosten nicht bekannt und nicht mitgezählt.</p>
+    {% endif %}
   </section>
   {% endif %}
   <nav class="tabs" aria-label="Bereiche">

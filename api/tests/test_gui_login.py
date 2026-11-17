@@ -707,10 +707,16 @@ def test_the_weekly_hours_ask_the_admin_pin_first(client, engine):
     assert page.status_code == 303
     assert page.headers["location"] == "/gui/inhaber?weiter=/gui/zeiten"
     # The parts of the page ask it too, and show nothing before.
+    # After the PIN they lead back to the page they are a part of, never to
+    # themselves: alone a part is no page (no stylesheet, no script).
+    on_page = {**HX, "HX-Current-URL": "http://testserver/gui/zeiten"}
     for path in (f"{HOURS}/woche", f"{HOURS}/woche/1"):
-        part = client.get(path, headers=HX)
+        part = client.get(path, headers=on_page)
         assert part.status_code == 401 and "11:30" not in part.text
-        assert part.headers["HX-Redirect"] == f"/gui/inhaber?weiter={path}"
+        assert part.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/zeiten"
+        # Without the page's address the PIN page leads to the board.
+        bare = client.get(path, headers=HX)
+        assert bare.headers["HX-Redirect"] == "/gui/inhaber?weiter="
     # The team PIN opens nothing here.
     assert _owner(client, pin=PIN, back=HOURS).status_code == 401
     assert client.get(HOURS, headers=HTML).status_code == 303

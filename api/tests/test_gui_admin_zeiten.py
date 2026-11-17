@@ -122,7 +122,12 @@ def _fields(html: str) -> dict[str, str]:
 def _edit(client, weekday=TUESDAY) -> dict[str, str]:
     form = client.get(f"{PAGE}/woche/{weekday}", headers=HX)
     assert form.status_code == 200
+    assert form.headers["Cache-Control"] == "no-store"
     return _fields(form.text)
+
+
+def _week_table(html: str) -> str:
+    return html.split('<table class="tbl week">', 1)[1].split("</table>", 1)[0]
 
 
 # --- the frame: tabs and the four figures -------------------------------------------
@@ -149,9 +154,13 @@ def test_every_admin_page_has_the_tabs_and_the_four_figures(client, path, tab):
     ]
     assert re.search(rf'aria-current="page"[^>]*>{tab}</a>', nav)
     assert nav.count('aria-current="page"') == 1
-    bar = page.text.split('class="kz-bar"', 1)[1].split("</div>\n</", 1)[0]
+    # In the frame, not somewhere on the page: Kennzahlen names them again
+    # in its history table.
+    frame = page.text.split("<header>", 1)[1].split("</header>", 1)[0]
+    bar = frame.split('class="kz-bar"', 1)[1]
     for label in FIGURES:
         assert label in bar
+    assert page.headers["Cache-Control"] == "no-store"
 
 
 @pytest.mark.parametrize("path", [PAGE, "/gui/anrufe", "/gui/geraete"])
@@ -189,7 +198,8 @@ def test_the_page_shows_the_week_from_the_database(client, engine):
         assert weekday in page.text
     # Seed: Monday closed, every other day 11:30-14:00 and 17:00-22:00.
     assert _shown("11:30-14:00, 17:00-22:00") in page.text
-    assert "geschlossen" in page.text
+    # Monday's three cells, and no other.
+    assert _week_table(page.text).count("geschlossen") == 3
     # A change in the database is what the next load shows: nothing is kept
     # in the page or the process.
     with Session(engine) as session:
@@ -231,6 +241,7 @@ def test_the_owner_changes_a_weekday(client, engine):
     answer = client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX)
     assert answer.status_code == 200
     assert "Gespeichert. Gilt ab sofort." in answer.text
+    assert "badge ok" in answer.text and "badge danger" not in answer.text
     assert _shown("08:00-10:00, 11:30-14:00, 17:00-21:30") in answer.text
     assert answer.headers["Cache-Control"] == "no-store"
     assert _spans(engine, TUESDAY) == ["08:00-10:00", "11:30-14:00", "17:00-21:30"]
@@ -276,7 +287,8 @@ def test_a_night_needs_its_box_and_shows_it_ticked_afterwards(client, engine):
         ({"pickup-von-0": "11:30:30"}, "Bitte Beginn und Ende als Uhrzeit angeben."),
         ({"pickup-bis-0": ""}, "Bitte Beginn und Ende als Uhrzeit angeben."),
         ({"pickup-bis-0": "11:30"}, "das Ende nicht gleich dem Beginn"),
-        ({"pickup-bis-0": "18:00"}, "Zwei Zeiten überschneiden sich."),
+        ({"pickup-bis-0": "18:00"}, "Zwei Zeiten überschneiden sich"),
+        ({"pickup-bis-0": "17:00"}, "schließen direkt aneinander an"),
     ],
 )
 def test_times_that_cannot_hold_are_refused_with_the_reason(
@@ -285,7 +297,10 @@ def test_times_that_cannot_hold_are_refused_with_the_reason(
     sent = {**_edit(client), **change}
     answer = client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX)
     assert answer.status_code == 200 and message in answer.text
-    assert 'name="gesehen"' in answer.text
+    assert "badge danger" in answer.text and "badge ok" not in answer.text
+    assert answer.headers["Cache-Control"] == "no-store"
+    # The refused form keeps the token it was typed against.
+    assert _fields(answer.text)["gesehen"] == sent["gesehen"]
     assert _spans(engine, TUESDAY) == ["11:30-14:00", "17:00-22:00"]
     assert _audits(engine, "opening_hours.changed") == []
 
@@ -397,6 +412,8 @@ def test_a_date_that_cannot_be_set_is_refused_with_the_reason(
     later = (_today() + timedelta(days=9)).isoformat()
     answer = _day(client, **{"datum": later, **data})
     assert answer.status_code == 200 and message in answer.text
+    assert "badge danger" in answer.text and "badge ok" not in answer.text
+    assert answer.headers["Cache-Control"] == "no-store"
     assert _count(engine, SpecialDay) == 0
     assert _audits(engine, "special_day.set") == []
     # What was typed is shown again; a saved form starts empty (other tests).
@@ -480,4 +497,83 @@ def test_a_restaurant_without_hours_reads_closed_everywhere(client, engine):
         session.query(OpeningHours).delete()
         session.commit()
     page = client.get(PAGE)
-    assert page.status_code == 200 and page.text.count("geschlossen") >= 21
+    assert page.status_code == 200
+    assert _week_table(page.text).count("geschlossen") == 21
+
+
+# --- found by the deep review ----------------------------------------------------------
+
+
+def test_a_refused_stale_form_cannot_save_over_another_device(client, engine):
+    """A form refused for a typing error keeps its old token: corrected and
+    sent again, it meets the conflict, not the other device's hours."""
+    stale = _edit(client)
+    other = {**stale, "pickup-bis-1": "21:00"}
+    client.post(f"{PAGE}/woche/{TUESDAY}", data=other, headers=HX)
+
+    typo = {**stale, "pickup-bis-1": "23:00", "pickup-von-0": ""}
+    refused = client.post(f"{PAGE}/woche/{TUESDAY}", data=typo, headers=HX)
+    assert "Bitte Beginn und Ende als Uhrzeit angeben." in refused.text
+    again = {**_fields(refused.text), "pickup-von-0": "11:30"}
+    assert again["gesehen"] == stale["gesehen"] and again["pickup-bis-1"] == "23:00"
+    answer = client.post(f"{PAGE}/woche/{TUESDAY}", data=again, headers=HX)
+    assert "haben sich gerade geändert" in answer.text
+    assert _spans(engine, TUESDAY) == ["11:30-14:00", "17:00-21:00"]
+    assert len(_audits(engine, "opening_hours.changed")) == 1
+
+
+def test_the_week_again_after_abbrechen(client):
+    answer = client.get(f"{PAGE}/woche", headers=HX)
+    assert answer.status_code == 200
+    assert answer.headers["Cache-Control"] == "no-store"
+    assert _week_table(answer.text).count("geschlossen") == 3
+    assert 'id="zeiten-gaeste" hx-swap-oob="true"' in answer.text
+
+
+def test_a_service_the_form_does_not_name_keeps_its_hours(client, engine):
+    sent = {
+        name: value
+        for name, value in _edit(client).items()
+        if not name.startswith("delivery-")
+    }
+    sent["pickup-bis-1"] = "21:00"
+    answer = client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX)
+    assert "Gespeichert" in answer.text
+    assert _spans(engine, TUESDAY, "delivery") == ["11:30-14:00", "17:00-22:00"]
+    assert _spans(engine, TUESDAY) == ["11:30-14:00", "17:00-21:00"]
+
+
+def test_a_fifth_span_is_refused_by_name(client, engine):
+    sent = _edit(client)
+    for row, (von, bis) in enumerate(
+        [("06:00", "07:00"), ("08:00", "09:00"), ("10:00", "11:00")], start=2
+    ):
+        sent[f"pickup-von-{row}"], sent[f"pickup-bis-{row}"] = von, bis
+    answer = client.post(f"{PAGE}/woche/{TUESDAY}", data=sent, headers=HX)
+    assert "Höchstens 4 Zeiten je Tag und Bereich." in answer.text
+    assert _spans(engine, TUESDAY) == ["11:30-14:00", "17:00-22:00"]
+
+
+def test_a_date_saved_again_says_no_change_and_a_night_holds_with_its_box(
+    client, engine
+):
+    later = (_today() + timedelta(days=9)).isoformat()
+    night = {"datum": later, "art": "zeiten", "von": "18:00", "bis": "02:00"}
+    refused = _day(client, **night)
+    form = _fields(refused.text.split('class="day-form"', 1)[1])
+    assert form == {"datum": later, "von": "18:00", "bis": "02:00"}
+    saved = _day(client, **night, nachts="1")
+    assert "Gespeichert" in saved.text and "badge ok" in saved.text
+    assert "18:00 bis 02:00 Uhr" in saved.text
+    again = _day(client, **night, nachts="1")
+    assert "Keine Änderung." in again.text and "badge ok" in again.text
+    assert len(_audits(engine, "special_day.set")) == 1
+
+
+def test_a_table_without_a_number_gets_no_call_link(client, engine):
+    """The team may enter a table without a number ("Trotzdem eintragen")."""
+    _book(engine, _next(0), time(19), "Ohne Nummer", phone="")
+    page = client.get(PAGE).text
+    assert "Ohne Nummer" in page and "keine Nummer eingetragen" in page
+    assert 'href="tel:"' not in page
+    assert "Hat das Team einen Tisch bewusst so eingetragen" in page

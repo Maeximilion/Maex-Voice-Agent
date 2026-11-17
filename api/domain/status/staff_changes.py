@@ -70,6 +70,7 @@ TEAM_PHONE = "team_phone"
 DAY_HOURS = "day_hours"
 OPEN, KEPT, UNDONE = "open", "kept", "undone"
 SET = "set"
+DISMISSED = "dismissed"
 NO_SPAN = "Bitte Beginn und Ende angeben, das Ende nicht gleich dem Beginn."
 OVERNIGHT = (
     "Das Ende liegt vor dem Beginn. Geht der Tag über Mitternacht, "
@@ -649,11 +650,25 @@ def _write(
     row: SpecialDay | None = None,
 ) -> None:
     """Make the date hold `hours`: no counting row for the weekly hours. `row`
-    is the date's locked row when the caller has it already."""
+    is the date's locked row when the caller has it already. A holiday (a row
+    with its name) returned to the weekly hours stays as the answer "open as
+    always" (`dismissed`, T-9.5): deleted, the holiday job would suggest it
+    again and one tap on the board would undo what was decided here."""
     row = row or _set_row(session, tenant_id, day, lock=True)
     if hours.normal:
         if row is not None:
-            session.delete(row)
+            answered = session.scalar(
+                select(SpecialDay.id).where(
+                    SpecialDay.tenant_id == tenant_id,
+                    SpecialDay.date == day,
+                    SpecialDay.status != SET,
+                )
+            )
+            if row.note and answered is None:
+                row.status = DISMISSED
+                row.closed, row.opens_at, row.closes_at = False, None, None
+            else:
+                session.delete(row)
         session.flush()
         return
     if row is None:

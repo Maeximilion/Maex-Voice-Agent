@@ -307,7 +307,14 @@ def _page_response(
         token = secrets.token_urlsafe(32)
     # The sign-in forms post it as a field (gui/access.py), HTMX as a header.
     response = templates.TemplateResponse(
-        request, template, {**context, "csrf_token": token}, status_code=status_code
+        request,
+        template,
+        {**context, "csrf_token": token},
+        status_code=status_code,
+        # Every page of the view shows the restaurant's data, the owner's
+        # pages more: the browser asks again instead of showing a kept copy
+        # after "Inhaber-Bereich schließen" or a sign-out.
+        headers={"Cache-Control": "no-store"},
     )
     response.set_cookie(
         "csrf_token",
@@ -1859,14 +1866,10 @@ def day_hours_change(
     choice = form.get("art", "")
     if day is None or choice not in ("geschlossen", "zeiten", "normal"):
         return _hours_sheet(request, session, tenant, day, NO_DATE, status=422)
-    hours = staff.DayHours(closed=choice == "geschlossen")
-    if choice == "zeiten":
-        try:
-            opens = hours_view.hhmm(form.get("von", ""))
-            closes = hours_view.hhmm(form.get("bis", ""))
-        except ValueError:
-            return _hours_sheet(request, session, tenant, day, NO_TIME, status=422)
-        hours = staff.DayHours(opens=opens, closes=closes)
+    try:
+        hours = hours_view.typed_hours(form)
+    except ValueError:
+        return _hours_sheet(request, session, tenant, day, NO_TIME, status=422)
     try:
         card = staff.change_day_hours(
             session, tenant.id, day, hours, overnight=bool(form.get("nachts"))
@@ -1987,7 +1990,8 @@ def _hours_part(
         request,
         f"fragments/zeiten_{part}.html",
         {
-            **hours_view.page(session, tenant),
+            **hours_view.PARTS[part](session, tenant),
+            "guests": hours_view.guest_rows(session, tenant),
             "message": message,
             "tone": tone,
             "typed": hours_view.echo(typed or {}),
@@ -2021,7 +2025,7 @@ def hours_page(
 ) -> HTMLResponse:
     """The weekly hours and the special days, behind the admin PIN."""
     tenant = _admin_tenant(session)
-    response = _page_response(
+    return _page_response(
         request,
         "betrieb/zeiten.html",
         {
@@ -2030,8 +2034,6 @@ def hours_page(
             **hours_view.page(session, tenant),
         },
     )
-    response.headers.update(NO_STORE)
-    return response
 
 
 @router.get("/zeiten/woche", response_class=HTMLResponse, include_in_schema=False)
@@ -2081,14 +2083,14 @@ def hours_weekday_change(
         changed = weekly.set_weekday(
             session, tenant.id, weekday, spans, form.get("gesehen", "")
         )
-    except Conflict as exc:
-        session.rollback()
-        # The fresh hours, not what was typed against the old ones.
-        return _weekday_form(request, session, tenant, weekday, exc.say)
     except AppError as exc:
         session.rollback()
+        # After a conflict the fresh hours with their token, not what was
+        # typed against the old ones; any other refusal shows the typed rows
+        # again with the token they were typed against.
+        typed = None if isinstance(exc, Conflict) else form
         return _weekday_form(
-            request, session, tenant, weekday, exc.say or SWITCH_FAILED, form
+            request, session, tenant, weekday, exc.say or SWITCH_FAILED, typed
         )
     message = SAVED if changed else NO_CHANGE
     return _hours_part(request, session, tenant, "woche", message, "ok")
@@ -2112,15 +2114,10 @@ def hours_day_change(
     choice = form.get("art", "")
     if day is None or choice not in DAY_CHOICES:
         return _hours_part(request, session, tenant, "tage", NO_DATE, typed=form)
-    hours = staff.DayHours(closed=choice == "geschlossen")
-    if choice == "zeiten":
-        try:
-            hours = staff.DayHours(
-                opens=hours_view.hhmm(form.get("von", "")),
-                closes=hours_view.hhmm(form.get("bis", "")),
-            )
-        except ValueError:
-            return _hours_part(request, session, tenant, "tage", NO_TIME, typed=form)
+    try:
+        hours = hours_view.typed_hours(form)
+    except ValueError:
+        return _hours_part(request, session, tenant, "tage", NO_TIME, typed=form)
     try:
         changed = staff.set_day_hours(
             session, tenant.id, day, hours, overnight=bool(form.get("nachts"))

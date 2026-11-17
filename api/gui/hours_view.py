@@ -18,12 +18,18 @@ from api.domain.status import weekly
 from api.gui.figures_view import DASH
 from api.gui.figures_view import WEEKDAYS as SHORT
 from api.models import Tenant
+from api.models.tenants import SERVICES as MODEL_SERVICES
 
-# The columns of the week, in the order of the mockup.
-SERVICES = (("dinein", "Im Haus"), ("pickup", "Abholung"), ("delivery", "Lieferung"))
+# The columns of the week: every service the model knows, with its word on
+# the tablet. A service added to the model without a word fails here, at the
+# start, instead of being saved by a form that never showed it.
+LABELS = {"dinein": "Im Haus", "pickup": "Abholung", "delivery": "Lieferung"}
+SERVICES = tuple((key, LABELS[key]) for key in MODEL_SERVICES)
 CLOSED = "geschlossen"
 # What a field echoes back at most: "HH:MM" and a little of a typing error.
 ECHO = 8
+# The length of `weekly.token`.
+TOKEN = 16
 
 
 def hhmm(text: str) -> dt_time:
@@ -65,8 +71,10 @@ def day_form(
     session: Session, tenant: Tenant, weekday: int, typed: dict[str, str] | None = None
 ) -> dict[str, Any]:
     """The form of one weekday: what holds, with one empty row per service to
-    add a span, or what was typed and refused (`typed`). The token is always
-    the one of the hours in the database now."""
+    add a span and the token of these hours; or what was typed and refused
+    (`typed`), with the token it was typed against. A refused form never gets
+    a fresh token: its rows come from the old hours, and with a new token the
+    corrected save would write over what another device changed meanwhile."""
     day = weekly.week(session, tenant.id)[weekday]
     groups = []
     for key, label in SERVICES:
@@ -95,7 +103,9 @@ def day_form(
         "weekday": weekday,
         "name": WEEKDAYS[weekday],
         "groups": groups,
-        "seen": weekly.token(day),
+        "seen": weekly.token(day)
+        if typed is None
+        else typed.get("gesehen", "")[:TOKEN],
     }
 
 
@@ -126,6 +136,17 @@ def typed_spans(form: dict[str, str]) -> weekly.Day:
             overnight = bool(form.get(f"{key}-nachts-{i}"))
             spans[key].append(weekly.Span(hhmm(von), hhmm(bis), overnight))
     return spans
+
+
+def typed_hours(form: dict[str, str]) -> staff.DayHours:
+    """What a form for one date asks for by its button (`art`): its two times,
+    closed, or the weekly hours. Raises ValueError on a time that is no HH:MM."""
+    choice = form.get("art", "")
+    if choice == "zeiten":
+        return staff.DayHours(
+            opens=hhmm(form.get("von", "")), closes=hhmm(form.get("bis", ""))
+        )
+    return staff.DayHours(closed=choice == "geschlossen")
 
 
 def echo(form: dict[str, str]) -> dict[str, Any]:
@@ -169,10 +190,24 @@ def guest_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     ]
 
 
+def _week_part(session: Session, tenant: Tenant) -> dict[str, Any]:
+    return {"hours": week_rows(session, tenant)}
+
+
+def _days_part(session: Session, tenant: Tenant) -> dict[str, Any]:
+    return {
+        "days": day_rows(session, tenant),
+        "today": business_day(tz_name=tenant.timezone).isoformat(),
+    }
+
+
+# What each part of the tab reads; a write answers with its own part only.
+PARTS = {"woche": _week_part, "tage": _days_part}
+
+
 def page(session: Session, tenant: Tenant) -> dict[str, Any]:
     return {
-        "hours": week_rows(session, tenant),
-        "days": day_rows(session, tenant),
+        **_week_part(session, tenant),
+        **_days_part(session, tenant),
         "guests": guest_rows(session, tenant),
-        "today": business_day(tz_name=tenant.timezone).isoformat(),
     }
