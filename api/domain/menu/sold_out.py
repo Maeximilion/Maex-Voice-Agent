@@ -134,6 +134,8 @@ def list_switches(
 ) -> list[DishSwitch]:
     """Aktive Gerichte fuer die Liste am Tablet, in Kartenreihenfolge."""
     now = now or clock.utcnow()
+    # Cleaned and cut once, not once per dish: the typed text can be long.
+    query = searched(query)
     return [
         DishSwitch(
             menu_item_id=item.id,

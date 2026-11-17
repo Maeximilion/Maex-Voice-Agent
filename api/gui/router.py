@@ -1224,6 +1224,8 @@ def _dish_list(
             {"groups": [], "query": query, "dish_problem": NO_TENANT},
             503,
         )
+    # The text as it is compared: a search of nothing visible is no search.
+    query = dishes.searched(query)
     return templates.TemplateResponse(
         request,
         template,
