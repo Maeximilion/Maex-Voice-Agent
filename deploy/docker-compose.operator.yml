@@ -77,8 +77,8 @@ services:
       OPERATOR_PROXY_SECRET:
       OPERATOR_ORIGIN:
       # The stack's own push server below, over `edge` (#827 F3); the token of
-      # its user `dashboard`. Without the token the pushes wait in the
-      # database (dashboard/push.py).
+      # its user `dashboard`. With ENV=prod the dashboard does not start
+      # without both (dashboard/config.py).
       OPERATOR_PUSH_URL: ${OPERATOR_PUSH_URL:-http://maex-ops-push-1/}
       OPERATOR_PUSH_TOKEN:
       OPERATOR_METRICS_DIR: /app/docs/metrics

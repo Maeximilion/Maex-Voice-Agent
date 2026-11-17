@@ -218,9 +218,9 @@ def _tell_owner(
 ) -> None:
     """A push to the owner and to `ops` that the operator, by name, changed a
     way into the restaurant's view (#811 question 3, docs/23 T11): a taken-over
-    dashboard is seen sooner. Not committed here: it goes with the step's own
-    commit, or with its outcome row (`_step`), and a step that broke takes it
-    back. Never a PIN, a link or a device's name."""
+    dashboard is seen sooner. Not committed here: it is added before the step's
+    own commit and goes with it, so a step that is refused or broke takes it
+    back (`_step` rolls back). Never a PIN, a link or a device's name."""
     enqueue(
         session,
         tenant_id=tenant.id,
@@ -235,11 +235,12 @@ def set_pin(
     """Raises InvalidInput for a PIN the rules refuse (4 to 6 digits, never
     the other PIN, a restaurant without a login)."""
     with _step(session, tenant, by, "pin_set", which=which), _by_rule():
+        # Before the call: the function commits the PIN, and the push with it.
+        _tell_owner(session, tenant, by, "pin_set", which=which)
         if which == "admin":
             set_admin_pin(session, tenant.id, pin, by.actor)
         else:
             set_team_pin(session, tenant.id, pin, by.actor)
-        _tell_owner(session, tenant, by, "pin_set", which=which)
 
 
 def sign_out(
@@ -264,8 +265,9 @@ def setup_link(
     """A new one-time setup link and its end. It replaces an older link and
     creates the restaurant's login the first time (`issue_link`)."""
     with _step(session, tenant, by, "setup_link"):
-        token, expires_at = issue_link(session, tenant.id, by.actor, now)
+        # Before the call: `issue_link` commits the link, and the push with it.
         _tell_owner(session, tenant, by, "setup_link")
+        token, expires_at = issue_link(session, tenant.id, by.actor, now)
     return setup_url(token), expires_at
 
 

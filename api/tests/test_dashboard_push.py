@@ -205,3 +205,13 @@ def test_the_waits_are_the_customer_outboxs():
 
     assert push.BACKOFF_SECONDS == outbox.BACKOFF_SECONDS
     assert push.LAST_ERROR_MAX == outbox.LAST_ERROR_MAX
+
+
+def test_a_round_stops_at_the_first_failure(sessions, server):
+    """A server that is down costs one timeout per round, not one per row."""
+    server.stop()
+    with sessions() as db:
+        push.queue(db, "first", START)
+        push.queue(db, "second", START)
+        assert push.deliver_once(db, START) == 0
+    assert [row.attempts for row in _queued(sessions)] == [1, 0]

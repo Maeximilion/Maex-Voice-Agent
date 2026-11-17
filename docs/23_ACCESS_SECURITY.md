@@ -358,7 +358,10 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   `dashboard`, as a stack's monitor publishes (`api/jobs/monitor.py`). A push server that is
   down or refuses never holds the request up and never loses the push: the row is retried with
   the outbox's waits (5 s, 30 s, 2 min, then every 10 min) for as long as it takes, oldest first,
-  and each failure is a warning in the log. Without the token the rows wait and no sender runs.
+  and each failure is a warning in the log. Outside dev and test the dashboard refuses to start
+  without `OPERATOR_PUSH_URL` and a token of at least 32 characters (the review of this pull
+  request: a stack started without them would only queue, and a takeover stay silent); in dev
+  and test the rows wait and no sender runs.
   The operator's phone reads `ops` with the user `ops` through the shared Caddy at the host of
   `NTFY_BASE_URL`, a site of `ops.caddy` that gets no proxy secret; `dashboard` may only write
   there, `ops` only read, nobody else either. The push names the account and the change, never a

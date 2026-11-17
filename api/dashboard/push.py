@@ -10,8 +10,9 @@ a thread of the dashboard's own process, posts it to the push server later
 A push server that is down or refuses never blocks the request and never
 loses the push: the row waits with growing pauses, up to ten minutes, for as
 long as it takes. The push server is the operator stack's own `push`
-(`deploy/docker-compose.operator.yml`); without `OPERATOR_PUSH_URL` and
-`OPERATOR_PUSH_TOKEN` the rows wait and the sender does not run.
+(`deploy/docker-compose.operator.yml`). Outside dev and test the dashboard
+does not start without `OPERATOR_PUSH_URL` and `OPERATOR_PUSH_TOKEN`
+(`config.py`); in dev and test the rows then wait and no sender runs.
 """
 
 import logging
@@ -106,10 +107,13 @@ def deliver_once(db: Session, now: datetime) -> int:
                 attempts=row.attempts,
                 error=row.last_error,
             )
-        else:
-            row.sent_at = now
-            row.last_error = None
-            sent += 1
+            # The server is down or refuses: the next round tries again,
+            # instead of every due row waiting out its own timeout now.
+            db.commit()
+            break
+        row.sent_at = now
+        row.last_error = None
+        sent += 1
         db.commit()
     db.commit()
     return sent

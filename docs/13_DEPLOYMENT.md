@@ -443,8 +443,8 @@ EUR; isolation and the unchanged code decide it.
   default the operator stack's own push server, `http://maex-ops-push-1/`) and
   `OPERATOR_PUSH_TOKEN` (the token of its user `dashboard`) are where the push on a changed
   sign-in factor goes, topic `ops`; the request queues it in the operator database and the
-  dashboard sends it, retried until the server takes it. Without the token the pushes wait and
-  nothing is sent (docs/23 §5, #827 F3).
+  dashboard sends it, retried until the server takes it. Outside dev and test the dashboard
+  refuses to start without both (docs/23 §5, #827 F3).
   `OPERATOR_METRICS_DIR` names the folder with the recorded eval and measurement results
   (`docs/metrics/` of a checkout) that the dev tools show; the image holds none, so the
   operator stack mounts it read-only, and without it the page says that the files are missing.
