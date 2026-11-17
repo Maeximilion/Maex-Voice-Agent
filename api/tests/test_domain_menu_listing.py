@@ -99,8 +99,9 @@ def test_active_dishes_in_card_order_with_the_price_of_the_database(session, ten
 def test_two_numbers_of_one_place_keep_their_order(session, tenant_id):
     """ "7" and "07" sort alike: the number itself decides, not the order the
     database happens to answer in, so a page boundary never moves."""
-    dish(session, tenant_id, "7", "Zweite")
+    # Inserted in an order that is neither the expected one nor its reverse.
     dish(session, tenant_id, "07", "Erste")
+    dish(session, tenant_id, "7", "Zweite")
     dish(session, tenant_id, "007", "Nullte")
     assert numbers(listing.listing(session, tenant_id)) == ["007", "07", "7"]
 
@@ -275,6 +276,9 @@ def test_what_nobody_sees_stands_between_no_search_and_its_dish(session, tenant_
     # A space of any kind is a space, and stays one.
     spaced = listing.listing(session, tenant_id, "8" + chr(0xA0) + "Kostbar" + chr(9))
     assert spaced.query == "8 Kostbar"
+    # Cleaned first, cut second: what nobody sees uses up none of the 60.
+    hidden = chr(0x200B) * (2 * sold_out.QUERY_MAX)
+    assert sold_out.searched(hidden + "ente") == "ente"
 
 
 # --- pages ------------------------------------------------------------------------
@@ -292,6 +296,14 @@ def test_a_large_menu_comes_in_pages(session, tenant_id, monkeypatch):
         5,
     )
     assert numbers(listing.listing(session, tenant_id, page=3)) == ["5"]
+
+
+def test_a_page_holds_fifty_dishes(session, tenant_id):
+    for number in range(1, 52):
+        dish(session, tenant_id, str(number))
+    first = listing.listing(session, tenant_id)
+    assert (len(first.rows), first.pages, first.matching) == (50, 2, 51)
+    assert numbers(listing.listing(session, tenant_id, page=2)) == ["51"]
 
 
 @pytest.mark.parametrize(("asked", "page"), [(0, 1), (-4, 1), (4, 3), (10**30, 3)])
