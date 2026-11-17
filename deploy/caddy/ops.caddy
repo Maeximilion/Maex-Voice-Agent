@@ -1,0 +1,44 @@
+# The site of the operator dashboard (#571, docs/23 §5), served by the shared
+# Caddy. A template: `scripts/new_stack.py --ops-site` writes it to
+# <root>/caddy/operator/ops.caddy (mode 640) with the host name of
+# OPERATOR_ORIGIN and the OPERATOR_PROXY_SECRET of the operator stack's .env,
+# then lets the shared Caddy check and load it. Nothing else installs it.
+#
+# CLOSED UNTIL THE AUDIT: run --ops-site only after the security audit of
+# docs/23 §11 found no open P1. Without the rendered file ops.<domain> has no
+# site, gets no certificate and answers nothing.
+#
+# No `log` directive, as deploy/Caddyfile: no access log.
+{$OPS_DOMAIN} {
+    # The headers of the operations view (docs/23 §5): never plain HTTP again,
+    # no type guessed from content, no address in a Referer header, only the
+    # dashboard's own files and no inline code, no frame around it.
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        Content-Security-Policy "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+        -Server
+    }
+
+    # Forms and a passkey's answer are a few kilobytes (the dashboard parses at
+    # most 32,768 characters of one).
+    request_body {
+        max_size 256KB
+    }
+
+    # Set here, it replaces a header a client sent; the dashboard refuses every
+    # request but /health without it (api/dashboard/app.py, `_through_the_proxy`).
+    # Caddy sets X-Forwarded-For to the client it saw and drops what a client
+    # sent, because no `trusted_proxies` is configured; the dashboard trusts
+    # that header only next to the secret.
+    reverse_proxy maex-ops-dashboard-1:8002 {
+        header_up X-Maex-Proxy-Secret "{env.OPERATOR_PROXY_SECRET}"
+        transport http {
+            dial_timeout 5s
+            # The slowest page asks every customer's stack with a deadline of
+            # five seconds; a sign-in runs scrypt.
+            response_header_timeout 30s
+        }
+    }
+}

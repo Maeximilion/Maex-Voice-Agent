@@ -88,7 +88,12 @@ medium is accepted with the named limit, low is noise.
 **Where (D33, Maxi 09.11.2026): public, behind a strong login.** Its own host name `ops.<domain>`,
 never a path on a customer's host. Caddy adds the security headers of the operations view (CSP
 without inline script, `frame-ancestors 'none'`, HSTS, `nosniff`, `no-referrer`) and the 256 kB
-body limit; uploads (§9) get their own, larger limit on their one route.
+body limit; uploads (§9) get their own, larger limit on their one route. **Built (#571, plan
+number 11, 17.11.2026), closed until the audit of §11:** the site template `deploy/caddy/ops.caddy`
+and the operator stack `deploy/docker-compose.operator.yml` (docs/13 §8). Nothing installs the
+site but `scripts/new_stack.py --ops-site`, run after the audit; until then the name has no site
+and the operator stack publishes no port. The referrer policy stays `no-referrer` with the
+`Origin: null` rule of `core/origin.py` (#809: `same-origin` instead is Maxi's to decide).
 
 **Accounts:** one named account per person (today only Maxi), never a shared one. Stored in the
 operator stack's own database, not in a customer's. Password hashed with `hashlib.scrypt`
@@ -165,9 +170,9 @@ cannot end. The token is
 stored readable, because the dashboard sends it (as the TOTP secret, T7); no two customers share an
 address or a token. Each stack is asked at once with three seconds to answer (§8). The rows come
 again every 30 seconds; that request checks the session but does not keep it alive, so an open tab
-still ends at the idle limit. Still to come: the provisioning script adding the registry row
-itself (with the operator stack's Compose file), the operator stack's push server, the customer's
-detail pages, the Caddy site `ops.<domain>` with its headers.
+still ends at the idle limit. Since plan number 11 provisioning adds the registry row itself
+(`scripts/new_stack.py`, the token on standard input) and the operator stack has its Compose
+file; still to come: the operator stack's push server.
 
 **A customer's page, read (#571, fifth part, 16.11.2026):** a row of the list leads to
 `/customers/<key>`; a key the registry does not hold is 404 before any stack is asked, and the key
@@ -309,7 +314,8 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   challenge of one purpose answers no other. Nobody's challenge is removed to make room for another's: anyone may
   ask for a sign-in challenge, and a flood of them must not take the operator's away. Unanswered
   ones are swept out after their five minutes; a limit on how often the route may be asked belongs
-  to the proxy's site (still to come).
+  to the proxy, and the pinned Caddy image has no rate limiter: open for the audit of §11 (a
+  plugin build or a limit in the dashboard).
 - **An answer is input from outside.** At most 32,768 characters are parsed, and whatever the
   parsing or the check raises is a refusal, never a server error: at the sign-in that runs after
   the password check, and an error there would tell that the password was right.

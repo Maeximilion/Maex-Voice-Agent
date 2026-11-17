@@ -8,6 +8,7 @@ files rendered from the real deploy/Caddyfile for two customers.
 """
 
 import json
+import re
 import stat
 
 import pytest
@@ -275,12 +276,14 @@ class FakeDocker:
 
     def __init__(self, refuse: str | None = None):
         self.commands: list[list[str]] = []
+        self.inputs: list[str | None] = []
         self.refuse = refuse
 
     def __call__(self, command, cwd, **options):
         import subprocess
 
         self.commands.append(command)
+        self.inputs.append(options.get("input"))
         text = " ".join(command)
         if self.refuse and self.refuse in text:
             raise new_stack.Refused(f"failed: {text}")
@@ -446,3 +449,210 @@ def test_a_failed_self_test_names_the_command_to_run_again(tmp_path, monkeypatch
 
     assert "python -m sim.selftest" in str(refused.value)
     assert (root / "caddy" / "sites" / "pilot.caddy").exists()
+
+
+# --- #571: the operator stack and its site ops.<domain> ------------------------
+
+OPS_TEMPLATE = (REPO_ROOT / "deploy" / "caddy" / "ops.caddy").read_text()
+OPS_SECRET = "c" * 64
+OPS_CSP = (
+    "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
+
+
+def _operator(root, origin="https://ops.example.org", secret=OPS_SECRET):
+    ops = root / "ops"
+    ops.mkdir(parents=True)
+    (ops / ".env").write_text(
+        f'OPERATOR_ORIGIN="{origin}"\nOPERATOR_PROXY_SECRET="{secret}"\n'
+    )
+    return ops
+
+
+def test_the_operator_site_is_its_host_its_secret_and_the_dashboard_alone():
+    site = new_stack.ops_site_text(
+        OPS_TEMPLATE,
+        {
+            "OPERATOR_ORIGIN": "https://ops.example.org",
+            "OPERATOR_PROXY_SECRET": OPS_SECRET,
+        },
+    )
+    code = "\n".join(line.split("#", 1)[0] for line in site.splitlines())
+    assert re.findall(r"^(\S+)\s*\{\s*$", code, re.MULTILINE) == ["ops.example.org"]
+    assert re.findall(r"reverse_proxy\s+(\S+)", code) == ["maex-ops-dashboard-1:8002"]
+    assert f'header_up X-Maex-Proxy-Secret "{OPS_SECRET}"' in code
+    for header in (
+        'Strict-Transport-Security "max-age=31536000"',
+        'X-Content-Type-Options "nosniff"',
+        'Referrer-Policy "no-referrer"',
+        f'Content-Security-Policy "{OPS_CSP}"',
+    ):
+        assert header in code, header
+    assert "max_size 256KB" in code
+    # No admin, no file server, no listing, no trusted forwarders.
+    for absent in ("{$", "{env.", "file_server", "browse", "admin", "trusted_proxies"):
+        assert absent not in code, absent
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"OPERATOR_ORIGIN": "http://ops.example.org"},
+        {"OPERATOR_ORIGIN": "https://ops.example.org/"},
+        {"OPERATOR_ORIGIN": "https://ops.example.org:8443"},
+        {"OPERATOR_ORIGIN": "https://ops.example.org\n}"},
+        {"OPERATOR_PROXY_SECRET": "short"},
+        {"OPERATOR_PROXY_SECRET": "c" * 40 + '" evil'},
+        {"OPERATOR_PROXY_SECRET": ""},
+    ],
+)
+def test_an_odd_origin_or_secret_writes_no_site(env):
+    values = {
+        "OPERATOR_ORIGIN": "https://ops.example.org",
+        "OPERATOR_PROXY_SECRET": OPS_SECRET,
+        **env,
+    }
+    with pytest.raises(new_stack.BadInput):
+        new_stack.ops_site_text(OPS_TEMPLATE, values)
+
+
+def test_the_key_of_the_operator_stack_is_refused(tmp_path):
+    with pytest.raises(new_stack.BadInput, match="operator"):
+        new_stack.read_customer(_customer(tmp_path, key="ops"))
+
+
+def test_the_dashboard_joins_each_stacks_ops_network_and_no_other():
+    compose = json.loads(new_stack.operator_networks_file(["beta", "alpha"]))
+    assert compose["services"] == {
+        "dashboard": {"networks": ["maex-alpha_ops", "maex-beta_ops"]}
+    }
+    assert set(compose["networks"]) == {"maex-alpha_ops", "maex-beta_ops"}
+
+
+def test_the_operator_stack_publishes_nothing_and_has_no_way_out():
+    layout = _load(REPO_ROOT / "deploy" / "docker-compose.operator.yml")
+    services = _services(layout)
+    assert layout["name"] == new_stack.OPERATOR_PROJECT
+    assert set(services) == {"db", "dashboard"}
+    assert all("ports" not in s and "expose" not in s for s in services.values())
+    assert layout["networks"] == {
+        "backend": {"internal": True},
+        "edge": {"internal": True},
+    }
+    assert services["db"]["networks"] == ["backend"]
+    dashboard = services["dashboard"]
+    assert dashboard["networks"] == ["backend", "edge"]
+    assert dashboard["environment"]["ENV"] == "prod"
+    assert dashboard["user"] != "root" and dashboard["read_only"] is True
+    assert dashboard["cap_drop"] == ["ALL"] and "cap_add" not in dashboard
+    assert all(str(v).endswith(":ro") for v in dashboard["volumes"])
+    # Uvicorn trusts no forwarded header; the dashboard reads it behind the secret.
+    assert "--no-proxy-headers" in dashboard["command"]
+    assert dashboard["command"][dashboard["command"].index("--port") + 1] == "8002"
+
+
+def test_provisioning_registers_the_customer_with_the_operator(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _stack(root)
+    ops = _operator(root)
+    docker = FakeDocker()
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    register = [
+        *("docker", "compose", "exec", "-T", "dashboard", "python", "-m"),
+        *("api.dashboard.cli", "customer-add", "pilot", "http://maex-pilot-api-1:8000"),
+    ]
+    at = docker.commands.index(register)
+    assert docker.commands[at - 1] == [
+        *("docker", "compose", "up", "-d", "--wait", "dashboard")
+    ]
+    token = new_stack.read_env(root / "pilot" / ".env")["OPS_TOKEN"]
+    # On standard input, never on the command line.
+    assert docker.inputs[at] == token + "\n"
+    assert not any(token in " ".join(c) for c in docker.commands)
+    joined = json.loads((ops / "networks.json").read_text())
+    assert joined["services"]["dashboard"]["networks"] == ["maex-pilot_ops"]
+    # The site ops.<domain> is not installed by provisioning.
+    assert not (root / "caddy" / "operator" / "ops.caddy").exists()
+    shared = json.loads((root / "caddy" / "networks.json").read_text())
+    assert "maex-ops_edge" not in shared["networks"]
+
+
+def test_without_an_operator_stack_the_command_is_printed(
+    tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "srv"
+    _stack(root)
+    docker = FakeDocker()
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    assert not any("customer-add" in " ".join(c) for c in docker.commands)
+    assert "customer-add pilot http://maex-pilot-api-1:8000" in capsys.readouterr().out
+
+
+def test_the_operator_site_goes_live_only_when_asked(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _operator(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker())
+
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 0
+
+    path = root / "caddy" / "operator" / "ops.caddy"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    assert "ops.example.org {" in path.read_text()
+    shared = json.loads((root / "caddy" / "networks.json").read_text())
+    assert shared["services"]["caddy"]["networks"] == ["maex-ops_edge"]
+
+
+def test_an_operator_site_the_shared_caddy_refuses_is_taken_out(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _operator(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker(refuse="caddy validate"))
+
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 1
+
+    assert not (root / "caddy" / "operator" / "ops.caddy").exists()
+    shared = json.loads((root / "caddy" / "networks.json").read_text())
+    assert shared["networks"] == {}
+
+
+def test_the_operator_secret_is_no_customers(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _stack(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker())
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+    taken = new_stack.read_env(root / "pilot" / ".env")["GUI_PROXY_SECRET"]
+    _operator(root, secret=taken)
+
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 2
+    assert not (root / "caddy" / "operator" / "ops.caddy").exists()
+
+
+def test_without_an_operator_stack_no_site_is_written(tmp_path):
+    assert new_stack.main(["--ops-site", "--root", str(tmp_path)]) == 2
+    assert not (tmp_path / "caddy").exists()
+
+
+def test_a_customer_with_the_operator_secret_does_not_go_live(tmp_path, monkeypatch):
+    """The security review of plan number 11: the api of such a stack shares an
+    `ops` network with the dashboard and would pass its proxy check."""
+    root = tmp_path / "srv"
+    _operator(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker())
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 0
+    stack = _stack(root)
+    env = new_stack.fresh_env({"key": "pilot", "name": "Pizzeria"}, "a.example.org")
+    env["GUI_PROXY_SECRET"] = OPS_SECRET
+    (stack / ".env").write_text(new_stack.env_text(EXAMPLE, env))
+
+    with pytest.raises(new_stack.Refused, match=r"ops\.caddy"):
+        new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    assert not (root / "caddy" / "sites" / "pilot.caddy").exists()
+    site = new_stack.site_text(CADDYFILE, "pilot", env)
+    (root / "caddy" / "sites" / "pilot.caddy").write_text(site)
+    assert new_stack.main(["--check-sites", "--root", str(root)]) == 1

@@ -2,6 +2,7 @@
 
     python3 scripts/new_stack.py customer.json --domain example.org [--root /srv/maex] [--dry-run] [--selftest]
     python3 scripts/new_stack.py --check-sites [--root /srv/maex]
+    python3 scripts/new_stack.py --ops-site [--root /srv/maex]
 
 Run on the host as the deploy user, from any checkout of this repository. For
 the customer whose key the file names (format: deploy/customer.example.json):
@@ -21,7 +22,13 @@ the customer whose key the file names (format: deploy/customer.example.json):
    other (docs/23 §8) before the shared Caddy (deploy/caddy) joins the stack's
    `edge` network and reloads.
 
-6. With `--selftest`, the stack's self-test (`python -m sim.selftest` in its api
+6. When the operator stack runs in `<root>/ops` (deploy/docker-compose.operator.yml,
+   docs/13 §8): its dashboard joins this stack's `ops` network
+   (`<root>/ops/networks.json`, written from the site files) and registers the
+   customer with the stack's OPS_TOKEN on standard input (docs/23 §5). Without
+   it the command to do so later is printed.
+
+7. With `--selftest`, the stack's self-test (`python -m sim.selftest` in its api
    container, docs/13 §8). Without it the command is printed: right after the
    first run the menu is still missing, so a rerun with `--selftest` once the
    menu is in is the usual way; a rerun keeps every token.
@@ -30,6 +37,11 @@ The setup link of the first login is printed once and stored nowhere. Values of
 secrets are never printed, only the names of what was written. `--dry-run`
 checks the file, the names and the other site files and writes nothing.
 `--check-sites` runs the cross-site check alone.
+
+`--ops-site` makes ops.<domain> reachable from outside: it renders
+deploy/caddy/ops.caddy with OPERATOR_ORIGIN and OPERATOR_PROXY_SECRET of
+`<root>/ops/.env` into `<root>/caddy/operator/ops.caddy` and loads it. Run it
+only after the security audit of docs/23 §11; nothing else writes that file.
 
 Exit code: 0 done, 1 a step or the check failed, 2 wrong call or input.
 """
@@ -55,8 +67,12 @@ E164 = re.compile(r"^\+[1-9][0-9]{6,14}$")
 DOMAIN = re.compile(r"^(?=.{1,200}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
 COMPOSE_FILES = "docker-compose.yml:deploy/docker-compose.prod.yml:deploy/docker-compose.customer.yml"
 CADDY_PROJECT = "maex-caddy"
-# Keys that would take the shared Caddy's folder or Compose project (#687).
-RESERVED_KEYS = frozenset({"caddy"})
+# Keys that would take the shared Caddy's or the operator stack's folder or
+# Compose project (#687, #571).
+RESERVED_KEYS = frozenset({"caddy", "ops"})
+# deploy/docker-compose.operator.yml, run from <root>/ops.
+OPERATOR_PROJECT = "maex-ops"
+OPERATOR_SECRET = "{env.OPERATOR_PROXY_SECRET}"
 # What deploy/Caddyfile names, and what a site of one stack becomes.
 UPSTREAMS = {"api:8000", "n8n:5678", "push:80"}
 FRESH_VARIABLES = (
@@ -269,23 +285,58 @@ def check_sites(sites: dict[str, str]) -> list[str]:
     return problems
 
 
+def operator_conflicts(root: Path, sites: dict[str, str]) -> list[str]:
+    """No customer's site shares the proxy secret or a host name of the
+    installed ops.caddy: a stack's api that knew the dashboard's secret could
+    pass its proxy check over the `ops` network (docs/23 §8)."""
+    path = root / "caddy" / "operator" / "ops.caddy"
+    if not path.exists():
+        return []
+    _, secret, names = _site_facts(path.read_text())
+    return [
+        f"{key}: shares the proxy secret or a host name with ops.caddy"
+        for key, text in sorted(sites.items())
+        if _site_facts(text)[1] & secret or _site_facts(text)[2] & names
+    ]
+
+
 def site_files(sites_dir: Path) -> dict[str, str]:
     if not sites_dir.is_dir():
         return {}
     return {path.stem: path.read_text() for path in sorted(sites_dir.glob("*.caddy"))}
 
 
-def networks_file(keys: list[str]) -> str:
-    """Compose file (JSON is YAML) that puts the shared Caddy on each stack's
-    `edge` network, regenerated from the site files on every run."""
-    nets = [f"{project(key)}_edge" for key in sorted(keys)]
+def _joins(service: str, nets: list[str]) -> str:
+    """Compose file (JSON is YAML) that puts one service on external networks."""
     return json.dumps(
         {
-            "services": {"caddy": {"networks": nets}},
+            "services": {service: {"networks": nets}},
             "networks": {net: {"external": True} for net in nets},
         },
         indent=2,
     )
+
+
+def networks_file(keys: list[str], operator: bool = False) -> str:
+    """The shared Caddy on each stack's `edge` network, and on the operator
+    stack's once its site is installed; regenerated on every run."""
+    nets = [f"{project(key)}_edge" for key in sorted(keys)]
+    return _joins("caddy", nets + ([f"{OPERATOR_PROJECT}_edge"] if operator else []))
+
+
+def operator_networks_file(keys: list[str]) -> str:
+    """The dashboard on each stack's internal `ops` network and on no other of
+    it (docs/23 §8)."""
+    return _joins("dashboard", [f"{project(key)}_ops" for key in sorted(keys)])
+
+
+def _write_networks(root: Path) -> None:
+    """Both networks files from the files on disk as they are now."""
+    keys = list(site_files(root / "caddy" / "sites"))
+    operator = (root / "caddy" / "operator" / "ops.caddy").exists()
+    (root / "caddy" / "networks.json").write_text(networks_file(keys, operator))
+    if (root / "ops").is_dir():
+        (root / "ops" / "networks.json").write_text(operator_networks_file(keys))
 
 
 # `options` are subprocess.run keywords (env, input, stdout), passed on as given.
@@ -311,7 +362,8 @@ def read_customer(path: Path) -> dict[str, Any]:
         raise BadInput("customer file: key must look like `pilot` or `pizza-nord`")
     if key in RESERVED_KEYS:
         raise BadInput(
-            f"customer file: key {key!r} is the shared Caddy's, choose another"
+            f"customer file: key {key!r} is the shared Caddy's or the operator "
+            "stack's, choose another"
         )
     name = spec.get("name")
     if not isinstance(name, str) or not name.strip() or not name.isprintable():
@@ -339,23 +391,30 @@ def caddy(root: Path, *args: str) -> tuple[list[str], dict[str, str]]:
         "-f",
         str(root / "caddy" / "networks.json"),
         *args,
-    ], {**os.environ, "MAEX_SITES": str(sites), "MAEX_SITES_GID": str(os.getgid())}
+    ], {
+        **os.environ,
+        "MAEX_SITES": str(sites),
+        "MAEX_OPERATOR_SITE": str(root / "caddy" / "operator"),
+        "MAEX_SITES_GID": str(os.getgid()),
+    }
 
 
 def go_live(root: Path, key: str, site: str) -> None:
+    load_site(root, root / "caddy" / "sites" / f"{key}.caddy", site)
+
+
+def load_site(root: Path, path: Path, site: str) -> None:
     """Put the site file in, then let the shared Caddy check and load it. A
     file it refuses is taken out again, so the next start of the shared Caddy
     does not fail for every customer on it (#687). The networks come from the
     files on disk when they are written, not from a list read earlier."""
-    sites_dir = root / "caddy" / "sites"
-    sites_dir.mkdir(parents=True, exist_ok=True, mode=0o750)
-    path = sites_dir / f"{key}.caddy"
+    for folder in ("sites", "operator"):
+        (root / "caddy" / folder).mkdir(parents=True, exist_ok=True, mode=0o750)
     # A rerun replaces a working site: that one comes back on a failure, a new
     # one goes (Codex PR #730).
     before = path.read_text() if path.exists() else None
     write_private(path, site, 0o640)
-    networks = root / "caddy" / "networks.json"
-    networks.write_text(networks_file(list(site_files(sites_dir))))
+    _write_networks(root)
     config = ("--config", "/etc/caddy/Caddyfile")
     try:
         command, caddy_env = caddy(root, "up", "-d")
@@ -368,12 +427,70 @@ def go_live(root: Path, key: str, site: str) -> None:
             path.unlink(missing_ok=True)
         else:
             write_private(path, before, 0o640)
-        networks.write_text(networks_file(list(site_files(sites_dir))))
+        _write_networks(root)
         undone = "removed again" if before is None else "put back as it was"
         raise Refused(
             f"the shared Caddy refused {path.name}; it is {undone}, the other "
             "sites are as they were. Fix the stack's .env and run again."
         ) from None
+
+
+def join_operator(root: Path, key: str, token: str) -> None:
+    """The dashboard joins the new stack's `ops` network and the registry
+    gets the customer (docs/23 §5 and §8). The token goes on standard input,
+    never on a command line; a rerun only changes what moved."""
+    ops = root / "ops"
+    address = f"http://{project(key)}-api-1:8000"
+    register = ("python", "-m", "api.dashboard.cli", "customer-add", key, address)
+    if not (ops / ".env").is_file():
+        print(
+            f"No operator stack in {ops}: once it runs, run this script again "
+            f"or, in {ops}: docker compose exec dashboard {' '.join(register)}"
+        )
+        return
+    # go_live wrote networks.json; COMPOSE_FILE of the operator stack's .env
+    # names it (docs/13 §8).
+    run(["docker", "compose", "up", "-d", "--wait", "dashboard"], ops)
+    run(
+        ["docker", "compose", "exec", "-T", "dashboard", *register],
+        ops,
+        input=token + "\n",
+    )
+
+
+def ops_site_text(template: str, env: dict[str, str]) -> str:
+    """deploy/caddy/ops.caddy with the operator stack's host name and proxy
+    secret written in, as a customer's site file carries its own."""
+    origin = env.get("OPERATOR_ORIGIN", "")
+    host = origin.removeprefix("https://")
+    if not origin.startswith("https://") or not DOMAIN.fullmatch(host):
+        raise BadInput("OPERATOR_ORIGIN must be https://ops.<domain>, nothing more")
+    secret = env.get("OPERATOR_PROXY_SECRET", "")
+    if len(secret) < 32 or not re.fullmatch(r"[A-Za-z0-9_-]+", secret):
+        raise BadInput("OPERATOR_PROXY_SECRET: 32 or more letters and digits")
+    for placeholder in ("{$OPS_DOMAIN}", OPERATOR_SECRET):
+        if placeholder not in template:
+            raise Refused(f"deploy/caddy/ops.caddy no longer contains {placeholder}")
+    return template.replace("{$OPS_DOMAIN}", host).replace(OPERATOR_SECRET, secret)
+
+
+def ops_site(root: Path) -> None:
+    """Install and load the site ops.<domain>: after the audit only (docs/23 §11)."""
+    env_path = root / "ops" / ".env"
+    if not env_path.is_file():
+        raise BadInput(f"no operator stack: {env_path} is missing")
+    env = read_env(env_path)
+    template = (REPO_ROOT / "deploy" / "caddy" / "ops.caddy").read_text()
+    site = ops_site_text(template, env)
+    secret = env["OPERATOR_PROXY_SECRET"]
+    # The same lock as a customer's run: both write the networks files.
+    with open(root / ".new_stack.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        for key, text in site_files(root / "caddy" / "sites").items():
+            if secret in _site_facts(text)[1]:
+                raise BadInput(f"OPERATOR_PROXY_SECRET is also {key}'s proxy secret")
+        load_site(root, root / "caddy" / "operator" / "ops.caddy", site)
+    print(f"{env['OPERATOR_ORIGIN']} is served by the shared Caddy.")
 
 
 SELFTEST = ("docker", "compose", "exec", "-T", "api", "python", "-m", "sim.selftest")
@@ -418,7 +535,7 @@ def _create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     stack = root / key
     sites_dir = root / "caddy" / "sites"
     others = {k: t for k, t in site_files(sites_dir).items() if k != key}
-    if problems := check_sites(others):
+    if problems := check_sites(others) + operator_conflicts(root, others):
         raise Refused("site files already wrong: " + "; ".join(problems))
     for other, text in others.items():
         if f"agent.{domain}" in _site_facts(text)[2]:
@@ -479,7 +596,7 @@ def _create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     # Checked before anything starts: a refused site leaves no stack behind.
     caddyfile = (stack / "deploy" / "Caddyfile").read_text(encoding="utf-8")
     sites = {**others, key: site_text(caddyfile, key, env)}
-    if problems := check_sites(sites):
+    if problems := check_sites(sites) + operator_conflicts(root, sites):
         raise Refused("site file refused, nothing started: " + "; ".join(problems))
 
     run(["docker", "compose", "up", "-d", "--wait", "db"], stack)
@@ -503,6 +620,7 @@ def _create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     run(["docker", "compose", "up", "-d", "--build"], stack)
 
     go_live(root, key, sites[key])
+    join_operator(root, key, env["OPS_TOKEN"])
 
     print(f"Stack {project(key)} runs, tenant {report['tenant_id']}.")
     if report.get("setup_link"):
@@ -519,15 +637,24 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--check-sites", action="store_true")
     parser.add_argument(
+        "--ops-site",
+        action="store_true",
+        help="serve ops.<domain>; only after the security audit of docs/23 §11",
+    )
+    parser.add_argument(
         "--selftest", action="store_true", help="run the stack's self-test at the end"
     )
     args = parser.parse_args(argv)
     try:
         if args.check_sites:
-            problems = check_sites(site_files(args.root / "caddy" / "sites"))
+            sites = site_files(args.root / "caddy" / "sites")
+            problems = check_sites(sites) + operator_conflicts(args.root, sites)
             for problem in problems:
                 print(problem)
             return 1 if problems else 0
+        if args.ops_site:
+            ops_site(args.root)
+            return 0
         if not args.customer or not args.domain:
             parser.error("a customer file and --domain are needed")
         create(args.customer, args.domain, args.root, args.dry_run, args.selftest)
