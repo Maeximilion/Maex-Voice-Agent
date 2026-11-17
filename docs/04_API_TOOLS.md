@@ -735,7 +735,8 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
   (`sheet_numbers`), 20 at most; an empty number is `null`. A restaurant without its settings row
   answers with no mode, no number and
   two empty lists. `version` is 16 hex digits over what the state shows and the newest audit row
-  of a change to it (`domain/operator.py` `MARKS`); a device's last use is not in it. No field of
+  of a change to it (`domain/operator.py` `MARKS`, and the owner's answer on a team number
+  card); a device's last use is not in it. No field of
   the state is a secret; a shown PIN and a new link are the only
   secrets an answer carries, and nothing but a body ever carries one.
 - The link is `https://<AGENT_DOMAIN>/gui/einrichten#<token>`. `AGENT_DOMAIN` is a setting of
@@ -743,8 +744,9 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
   script writes it into the stack's `.env`); without it the answer is the path alone, and the
   dashboard tells the operator to put the customer's address in front.
 - **A step that changes something acts on the page it came from (#811).** It sends the `version`
-  of the state its page showed as `seen` (required, 1 to 64 characters; a look at a PIN sends
-  none). After the reason's row the stack locks the settings row and the login, reads the
+  of the state its page showed as `seen` (required by the stack, 1 to 64 characters; a look at
+  a PIN sends none; the dashboard sends none only to a stack older than this, whose answer has
+  no `version`). After the reason's row the stack locks the settings row and the login, reads the
   version again and refuses with 412 `conflict` ("the restaurant changed since the page was
   read", `core/ops_reason.py` `STALE_STATUS`) when it moved: the owner, the staff or a second
   operator changed the restaurant since, and a step from an old page, such as switching the

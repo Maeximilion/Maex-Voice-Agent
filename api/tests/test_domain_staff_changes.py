@@ -977,7 +977,7 @@ def test_a_card_names_who_changed_it_last(session, tenant_id, actors, by):
         staff.change_team_phone(session, tenant_id, number, NOW, actor)
 
     (card,) = staff.open_cards(session, tenant_id, TUESDAY)
-    assert staff.changed_by(session, [card]) == {card.id: by}
+    assert staff.changed_by(session, tenant_id, [card]) == {card.id: by}
 
 
 def test_the_operator_sets_the_standard_number(session, tenant_id):
@@ -1041,3 +1041,34 @@ def test_a_new_standard_holds_after_todays_number(session, tenant_id):
     assert staff.team_phone_at(config, NOW) == NUMBER
     tomorrow = NOW + timedelta(days=1)
     assert staff.team_phone_at(config, tomorrow) == "+4972215550000"
+
+
+def test_a_new_standard_moves_the_before_of_todays_card(session, tenant_id):
+    """Review of #811: the card said "Vorher" the old standard, undo went to
+    the new one, and a tablet that showed it could keep it unseen."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    (shown,) = _cards(session, tenant_id)
+    seen = shown.updated_at
+
+    staff.set_standard_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+
+    (card,) = _cards(session, tenant_id)
+    assert (card.before, card.after) == (
+        {"number": "+4972215550000"},
+        {"number": NUMBER},
+    )
+    with pytest.raises(Conflict):
+        staff.decide(session, tenant_id, card.id, keep=True, now=NOW, seen=seen)
+    staff.decide(session, tenant_id, card.id, keep=False, now=NOW, seen=card.updated_at)
+    assert staff.team_phone_at(_config(session, tenant_id), NOW) == "+4972215550000"
+
+
+def test_todays_number_made_the_standard_closes_its_card(session, tenant_id):
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+
+    staff.set_standard_team_phone(session, tenant_id, NUMBER, NOW, OPERATOR)
+
+    config = _config(session, tenant_id)
+    assert (config.team_phone, config.team_phone_today) == (NUMBER, None)
+    assert [card.status for card in _cards(session, tenant_id)] == ["undone"]
+    assert staff.open_cards(session, tenant_id, TUESDAY) == []

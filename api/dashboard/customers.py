@@ -332,7 +332,9 @@ class StackAccess(_Named):
     # When a number set for today ends; None: the standard number holds.
     team_phone_until: Time | None
     team_phones: list[Annotated[str, _full(PHONE)]] = Field(max_length=MAX_NUMBERS)
-    version: Annotated[str, _full(VERSION)]
+    # None from a stack older than #811: it checks no page, and its steps are
+    # sent as before, so the operator can still stop its agent.
+    version: Annotated[str, _full(VERSION)] | None = None
     pin: Annotated[str, _full(PIN)] | None = None
     link: Annotated[str, _full(SETUP_LINK)] | None = None
     link_expires_at: Time | None = None
@@ -847,12 +849,14 @@ def step(action: str, form: dict[str, str]) -> Step | None:
     """What a form of the manage page asks for, or None when it is no step:
     the shape is checked here, so nothing odd is sent; whether a PIN, a mode
     or a number is taken is the stack's decision. A step that changes
-    something carries the version of the page it came from (#811)."""
+    something carries the version of the page it came from (#811); a page of
+    a stack older than that has none, and such a stack takes its steps as
+    before. A stack that sends a version refuses a step without one."""
     read = STEPS.get(action)
     found = read(form) if read else None
-    if found is None or not found.changes:
-        return found
     seen = form.get("gesehen", "")
+    if found is None or not found.changes or not seen:
+        return found
     if not VERSION.fullmatch(seen):
         return None
     return replace(found, body=(found.body or {}) | {"seen": seen})

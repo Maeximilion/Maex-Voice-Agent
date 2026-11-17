@@ -171,6 +171,9 @@ UNSURE = (
 )
 # What a stack's refusal of a step can mean, said by this page: the stack's
 # own sentence is the team's and German.
+NUMBER_REFUSED = (
+    "The stack refused this number: it takes only numbers its telephone system dials."
+)
 REFUSALS = {
     "pin_set": (
         "The stack refused this PIN: a PIN has 4 to 6 digits and differs from "
@@ -179,14 +182,8 @@ REFUSALS = {
     "call_mode": (
         "The stack refused this mode: a paused agent can only be switched on again."
     ),
-    "team_phone": (
-        "The stack refused this number: it takes only numbers its telephone "
-        "system dials."
-    ),
-    "team_phone_standard": (
-        "The stack refused this number: it takes only numbers its telephone "
-        "system dials."
-    ),
+    "team_phone": NUMBER_REFUSED,
+    "team_phone_standard": NUMBER_REFUSED,
 }
 # A step from a page the restaurant changed since (#811). The page then reads
 # the state again by itself.
@@ -1212,6 +1209,8 @@ def customer_manage(
         # Nothing was done; the page reads what holds now, as "Read the state
         # again" would, with the same reason (#811).
         found = ask(customers.Step("access", customers.ACCESS_PATH))
+        if isinstance(found, str):
+            context["said"] = ("danger", f"{STALE_PAGE} Read again: {found}.", "")
     if not isinstance(found, str):
         context["access"] = found
         context["once"] = passkeys.issue(

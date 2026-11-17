@@ -14,7 +14,8 @@ step somebody asked for. The step's own row follows when it happened, and
 then a row `ops.<step>.outcome` with the id of the ask (`_step`, #811):
 `done`, `refused` (a rule or the stack said no) or `failed` (it broke). An ask
 without its outcome is a crash that took the process down. No row holds a
-PIN, a link or a telephone number.
+PIN or a link, and no `ops.*` row a telephone number (the step's own row
+does, as the tablet's).
 
 And the page (#811): every answer carries a version of what it shows
 (`Access.version`), and a step that changes something sends back the version
@@ -33,7 +34,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from api.core.errors import AppError, Conflict, InvalidInput
@@ -47,6 +48,7 @@ from api.domain.status.staff_changes import (
     ACTION_STANDARD,
     ACTION_TEAM_PHONE,
     KEPT,
+    TEAM_PHONE,
     UNDONE,
     change_team_phone,
     sheet_numbers,
@@ -67,18 +69,19 @@ MAX_DEVICES = 200
 MAX_NUMBERS = 20
 # The audit rows of a change to what the page shows. A state can come back to
 # what a page showed (the agent switched on and stopped again): the newest of
-# these rows tells the newer stop from the one on the page.
+# these rows tells the newer stop from the one on the page. The owner's answer
+# on a card counts only for a team number card (`DECIDED`): the page shows no
+# opening hours.
 MARKS = (
     ACTION_MODE,
     ACTION_TEAM_PHONE,
     ACTION_STANDARD,
-    f"staff_change.{KEPT}",
-    f"staff_change.{UNDONE}",
     "gui.team_pin_set",
     "gui.admin_pin_set",
     "gui.password_set",
     "gui.setup_link_issued",
 )
+DECIDED = (f"staff_change.{KEPT}", f"staff_change.{UNDONE}")
 
 
 @dataclass(frozen=True)
@@ -233,7 +236,14 @@ def _version(session: Session, tenant: Tenant, found: Access) -> str:
     device's last use is left out: a tablet in use would make every page old."""
     mark = session.scalar(
         select(func.max(AuditLog.id)).where(
-            AuditLog.tenant_id == tenant.id, AuditLog.action.in_(MARKS)
+            AuditLog.tenant_id == tenant.id,
+            or_(
+                AuditLog.action.in_(MARKS),
+                and_(
+                    AuditLog.action.in_(DECIDED),
+                    AuditLog.payload["kind"].astext == TEAM_PHONE,
+                ),
+            ),
         )
     )
     shown = [
@@ -244,7 +254,8 @@ def _version(session: Session, tenant: Tenant, found: Access) -> str:
         found.call_mode,
         found.team_phone,
         found.team_phone_standard,
-        found.team_phone_until,
+        # An instant, not its text: the offset read back follows the database.
+        found.team_phone_until.timestamp() if found.team_phone_until else None,
         mark,
     ]
     text = json.dumps(shown, default=str)

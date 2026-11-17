@@ -19,7 +19,7 @@
 <input type="hidden" name="reason" value="{{ category }}">
 <input type="hidden" name="reference" value="{{ reference }}">
 <input type="hidden" name="once" value="{{ once }}">
-<input type="hidden" name="gesehen" value="{{ access.version if access else '' }}">
+<input type="hidden" name="gesehen" value="{{ access.version if access and access.version else '' }}">
 {% endmacro %}
 
 {% block main %}
@@ -43,6 +43,9 @@
     <button type="submit"{% if not access %} class="primary"{% endif %}>{% if access %}Read the state again{% else %}Open access and call routing again{% endif %}</button>
   </form>
   {% if access %}
+  {% if not access.version %}
+  <p class="banner warn" role="status">This stack is older: it does not check whether this page is still current, so a step from it can undo a change the restaurant made meanwhile. Read the state again right before a step, and update the stack.</p>
+  {% endif %}
 
   <div class="card ops-teil">
     <h2>Call mode</h2>

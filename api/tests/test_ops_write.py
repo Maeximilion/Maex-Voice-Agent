@@ -1058,3 +1058,22 @@ def test_a_step_without_the_pages_version_is_not_taken(
 def test_a_pin_shown_needs_no_version(http, session, login, stack):
     """A look changes nothing: no page goes old over it."""
     assert _data(_ask(http, "POST", PIN_SHOW, {"which": "team"}))["pin"] == TEAM
+
+
+def test_the_owners_answer_on_an_hours_card_does_not_make_the_page_old(
+    http, session, stack
+):
+    """Review of #811: the page shows no opening hours."""
+    from datetime import time as clock_time
+
+    from api.domain.status import staff_changes as staff
+
+    later = NOW.date() + timedelta(days=7)
+    longer = staff.DayHours(opens=clock_time(9), closes=clock_time(23))
+    staff.change_day_hours(session, stack.id, later, longer, NOW)
+    (card,) = session.scalars(select(StaffChange)).all()
+    seen = _data(_ask(http, "GET", ACCESS))["version"]
+
+    staff.decide(session, stack.id, card.id, keep=True, now=NOW)
+
+    assert _data(_ask(http, "GET", ACCESS))["version"] == seen

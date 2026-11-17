@@ -1681,7 +1681,7 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     rows = []
     cards = staff.open_cards(session, tenant.id, business_day(tz_name=tenant.timezone))
     # A number the operator set reads as the operator's, not the team's (#811).
-    by = staff.changed_by(session, cards)
+    by = staff.changed_by(session, tenant.id, cards)
     holding_on = staff.days_hours(
         session, tenant.id, [c.day for c in cards if c.kind == staff.DAY_HOURS]
     )

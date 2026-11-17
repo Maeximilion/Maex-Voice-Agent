@@ -240,7 +240,6 @@ BAD_FORMS = [
     ("team-phone-standard", {"number": ""}),
     ("team-phone-standard", {"number": "0721 5551234"}),
     # A step that changes something without the version of its page (#811).
-    ("pin-set", {"gesehen": ""}),
     ("sign-out", {"gesehen": "0123456789ABCDEF"}),
     ("setup-link", {"gesehen": SEEN + "0"}),
     ("call-mode", {"gesehen": "<b>"}),
@@ -360,8 +359,6 @@ HOSTILE = [
     (_with(signed_out=-1), customers.NOT_AN_ANSWER),
     (_with(login="yes, certainly"), customers.NOT_AN_ANSWER),
     (_with(version="<b>"), customers.NOT_AN_ANSWER),
-    (_with(version=None), customers.NOT_AN_ANSWER),
-    (_says(_access(), lambda d: d.pop("version")), customers.NOT_AN_ANSWER),
     (_error("conflict", 412), customers.STALE),
     (_says(_access("beta")), customers.OTHER_CUSTOMER),
     (_says(_access(), lambda d: d["tenant"].update(key=None)), customers.NO_KEY),
@@ -893,6 +890,7 @@ def test_an_old_page_whose_new_read_fails_says_both(
     text = _post(client, "team-phone").text
 
     assert "Nothing was done" in text and "changed since" in text
+    assert f"Read again: {customers.UNREACHABLE}." in text
     assert 'action="/customers/alpha/manage/open"' in text
     assert 'action="/customers/alpha/manage/team-phone"' not in text
 
@@ -1292,3 +1290,32 @@ def test_an_older_tabs_form_does_not_spend_the_newer_tabs_token(
     assert seen == []
     assert _post(client, "call-mode", once=newer).status_code == 200
     assert len(seen) == 1
+
+
+def test_a_step_without_a_version_is_sent_as_before():
+    """A page of a stack older than #811 has no version: its steps go out
+    without one, and a newer stack refuses such a step itself."""
+    step = _step("call-mode", gesehen="")
+    assert step is not None
+    assert step.body == {"mode": "primary"}
+
+
+def test_an_older_stack_is_managed_and_the_page_says_it_checks_nothing(
+    client, factors, clock, sessions, monkeypatch
+):
+    """Review of #811: a required version left the operator without the
+    emergency stop for every stack not updated yet."""
+    seen: list[httpx.Request] = []
+    older = _managed(seen, answer=_says(_access(), lambda d: d.pop("version")))
+    _world(sessions, monkeypatch, alpha=older)
+    _signed_in(client, factors, clock)
+
+    page = _post(client).text
+    assert "This stack is older" in page
+    assert 'name="gesehen" value=""' in page
+
+    answer = _post(client, "call-mode", mode="paused", gesehen="")
+
+    assert answer.status_code == 200
+    assert json.loads(seen[-1].content) == {"mode": "paused"}
+    _took(sessions, "call-mode")

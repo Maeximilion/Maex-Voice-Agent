@@ -251,9 +251,12 @@ def set_standard_team_phone(
 ) -> bool:
     """The operator sets the standard team number (#811 question 2), checked
     as the number for today. A number set for today still holds to the end of
-    its day, and its card stays: the staff chose it for today. No card of its
-    own: the owner gets the push. False when it is the standard already.
-    Raises InvalidInput. Commits."""
+    its day: the staff chose it for today. No card of its own: the owner gets
+    the push. Today's open card now starts from the new standard, so undo
+    returns to it and a tablet showing the old card is refused (`decide`);
+    when today's number is the new standard, nothing is left to decide and
+    the card closes. False when it is the standard already. Raises
+    InvalidInput. Commits."""
     number = _dialable(raw)
     config, zone = _locked(session, tenant_id)
     before = config.team_phone
@@ -261,6 +264,13 @@ def set_standard_team_phone(
         session.commit()
         return False
     config.team_phone = number
+    today = clock.business_day(now, zone)
+    card = _open_card(session, tenant_id, TEAM_PHONE, today)
+    if card is not None:
+        card.before = {"number": number}
+        if card.after == card.before:
+            config.team_phone_today = config.team_phone_today_until = None
+            _close(card, UNDONE, now)
     session.add(
         AuditLog(
             tenant_id=tenant_id,
@@ -276,7 +286,7 @@ def set_standard_team_phone(
         tenant_id=tenant_id,
         event_type=TEAM_PHONE_CHANGED,
         payload={
-            "day": clock.business_day(now, zone).isoformat(),
+            "day": today.isoformat(),
             "from": before,
             "to": number,
             "standard": True,
@@ -287,16 +297,24 @@ def set_standard_team_phone(
     return True
 
 
-def changed_by(session: Session, cards: list[StaffChange]) -> dict[uuid.UUID, str]:
+def changed_by(
+    session: Session, tenant_id: uuid.UUID, cards: list[StaffChange]
+) -> dict[uuid.UUID, str]:
     """Who made the last change of each team number card, the team or the
     operator (#811 question 1), read from the cards' audit rows: the card
     itself keeps only what changed."""
-    ids = [card.id for card in cards if card.kind == TEAM_PHONE]
-    if not ids:
+    phones = [card for card in cards if card.kind == TEAM_PHONE]
+    if not phones:
         return {}
     rows = session.execute(
         select(AuditLog.entity_id, AuditLog.actor)
-        .where(AuditLog.action == ACTION_TEAM_PHONE, AuditLog.entity_id.in_(ids))
+        .where(
+            # The tenant and the time first: `ix_audit_log_tenant_at`.
+            AuditLog.tenant_id == tenant_id,
+            AuditLog.at >= min(card.created_at for card in phones),
+            AuditLog.action == ACTION_TEAM_PHONE,
+            AuditLog.entity_id.in_([card.id for card in phones]),
+        )
         .order_by(AuditLog.id)
     ).all()
     # A card holds one day's changes, a handful of rows: the last one wins.

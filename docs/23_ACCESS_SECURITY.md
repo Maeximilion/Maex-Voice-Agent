@@ -237,7 +237,8 @@ number.
   with the same reason (two more rows in each audit, `customer.access_*`), so the operator looks
   at what holds before repeating it. The one-time form token stops a reload; this stops an old
   page, for example "switch the agent on again" from a page opened before the owner's newer
-  emergency stop.
+  emergency stop. A stack older than this sends no version: its page warns that nothing is
+  checked and its steps go out as before, so its agent can still be stopped from here.
 - **Nothing odd is sent.** A form is read into one request (`customers.step`): a PIN of 4 to 6
   ASCII digits, a device's id as the stack wrote it or the word `all`, a mode's code, a number in
   E.164, and for a step that changes something a version of 16 hex digits. Anything else is "nothing was sent" without a row in either audit. Whether a PIN, a mode
