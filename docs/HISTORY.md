@@ -1548,6 +1548,14 @@ Replaced in section 6 "Model Routing" by the "Deep review" paragraph (Maxi, 2026
 - **Ultrareview** (`/code-review ultra <PR>`: billed, only Maxi starts it; the reminder names a local `/code-review max <PR>`, run on Maxi's word): reminder, ledger and filing live in `done.md` step 7a; read it before acting on such a review or a ledger batch review.
 - In the `xhigh` trigger sentence: "the ultrareview reminder" became "the deep review in `/done`".
 
+## CLAUDE.md (archive, 17.11.2026)
+
+Replaced in section 6 "Usage check" (Maxi, 2026-11-17, during the GUI plan chain of #571: "never block Fable, I intend to use Fable up to 100 percent completely and then use the rest"):
+
+- "no Fable use at or above 80 of the Fable week (consult: 95)"
+
+---
+
 ## What's Next and Open Decisions (archive, finished rows, 15.11.2026)
 
 Sub-items of item 14 (follow-ups of the security audit #252, decided 12.10.2026), the built or recorded ones, moved unchanged. The unbuilt ones (silence while the model answers, left in #252) stay in `docs/01_STATUS.md`.

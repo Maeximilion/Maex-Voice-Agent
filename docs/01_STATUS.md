@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 17.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.58.0
+> Status: 17.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.58.1
 
 ---
 
@@ -314,6 +314,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.58.1 · 17.11.2026:** `CLAUDE.md` "Usage check": the Fable week no longer stops a Fable use at 80 percent; it is used up to 100, then the work goes on with the other models (Maxi, 2026-11-17); old clause in `docs/HISTORY.md`
 - **v2.58.0 · 17.11.2026:** Operator stack (`deploy/docker-compose.operator.yml`: dashboard and its database on internal networks, no port) and the site ops.<domain> as a template that `new_stack.py --ops-site` installs only after the security audit; provisioning joins the dashboard to each stack's `ops` network and registers the customer (#571 twelfth part, plan number 11)
 - **v2.57.0 · 17.11.2026:** Tab Daten behind the admin PIN (the request log of data subjects: log, extend, check the person, answer; erasure stays the server command) and the row detail of Anrufe with an audit row per look (#571 eleventh part, plan number 10)
 - **v2.56.0 · 17.11.2026:** Tab Menü with the restaurant's login, read-only: the active dishes in card order with a search, pages and the notes "Allergene fehlen" and "Kasse"; one rule for dishes without allergen information for the tab and the operator's count; a dish number no card has no longer takes the lists down (#571 tenth part, plan number 9)
