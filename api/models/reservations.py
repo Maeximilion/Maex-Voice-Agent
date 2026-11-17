@@ -33,6 +33,11 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
             name="ck_reservations_call_source",
         ),
         CheckConstraint("party_size > 0", name="ck_reservations_party_size"),
+        # Only the team books outside the hours (#819): the agent never does.
+        CheckConstraint(
+            "NOT off_hours OR source = 'tablet'",
+            name="ck_reservations_off_hours_tablet",
+        ),
         Index("ix_reservations_tenant_reserved_for", "tenant_id", "reserved_for"),
     )
 
@@ -56,6 +61,11 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     idempotency_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
     # A self-test's card (#574): shown on the tablet as TEST, never sent out.
     is_test: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    # The team booked it outside the opening hours on purpose (#819, migration
+    # 041): set by `confirm_tablet` from the hours at the tap, never afterwards.
+    off_hours: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
 

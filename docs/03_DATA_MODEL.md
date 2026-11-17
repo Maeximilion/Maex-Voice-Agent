@@ -189,6 +189,7 @@ Two tables of one room the team may push together. One row per pair, the smaller
 | note | TEXT | Kinderstuhl, Allergie, Anlass |
 | idempotency_key | TEXT UNIQUE | |
 | is_test | BOOL, default false | the table of a self-test call (#574, migration 039), copied from `calls.is_test` by `create_reservation`: the tablet shows it as a card marked TEST, its `confirm` writes no outbox event and no customer contact, the hours change cards never list it; `sim.selftest` deletes it again |
+| off_hours | BOOL, default false | the team booked the table outside the opening hours on purpose (#819, migration 041): `confirm_tablet` sets it when no dine-in window of the hours, as they stand at the confirming tap, holds `reserved_for`, after the sheet asked „Trotzdem eintragen“; never set afterwards and never by the agent, which books inside the hours only (CHECK `ck_reservations_off_hours_tablet`: only a `tablet` row carries it). The board's card says „Bewusst außerhalb der Öffnungszeiten eingetragen.“, and the tab „Zeiten“ leaves the table off its list of guests to call; rows from before 041 stay false |
 
 ### `reservation_tables`
 The table, or the two tables of a combination, a reservation the team entered sits on (T-3.12, migration 029). An agent's reservation has none: it books seats of a window, not a table (D28). A table is taken for the capacity window of its reservation, the turn; outside every window only the same start time collides (assumption, docs/01).
@@ -634,6 +635,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 037 | `complaint_rules.phrases` holds no NULL element (CHECK with `array_position(phrases, NULL) IS NULL`, #692). Up drops the NULLs of an existing row and fails on a row of NULLs only, which is fixed by hand; down restores the old check and changes no row |
 | 038 | `gui_sessions.admin_active_at`: the owner's idle clock, 15 minutes without an owner page or write ends owner rights (#600); new column only, rights open at the upgrade end at once; down drops it |
 | 039 | `calls.is_test` and `reservations.is_test` (BOOL NOT NULL, default false): the rows of a self-test call (#574); new columns only, false for every row; down drops them and refuses while a test call is left |
+| 041 | `reservations.off_hours` (BOOL NOT NULL, default false) with CHECK `ck_reservations_off_hours_tablet` (only a `tablet` row is marked): a table the team booked outside the opening hours on purpose (#819); a new column only, false for every existing row, since whether an older table was meant cannot be read back; down drops it, and the marked tables come back on the list of guests to call (backup label `before_migration_041`) |
 | planned, next free number | `eval_cases`, `eval_runs` |
 
 ### Operator database (#571, docs/23 §5)

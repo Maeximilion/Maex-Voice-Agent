@@ -147,6 +147,7 @@ def _today_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
             "note": row.note,
             "tables": row.tables,
             "is_test": row.is_test,
+            "off_hours": row.off_hours,
         }
         for row in list_today(session, tenant.id, tenant.timezone)
     ]
@@ -1468,7 +1469,8 @@ def reservierung_eintragen(
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """The team's confirming tap (`confirm_tablet`); "trotzdem" is the word for a
-    full window, asked on the button. Any refusal shows the summary again."""
+    full window or closed hours, asked on the button. Any refusal shows the
+    summary again."""
     tenant = _tenant(session)
     if tenant is None:
         raise HTTPException(status_code=503)

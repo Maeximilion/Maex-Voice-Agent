@@ -521,7 +521,16 @@ def test_the_coming_special_days_by_date_without_suggestions(session, tenant_id)
 # --- confirmed tables the hours no longer cover -------------------------------------
 
 
-def _book(session, tenant_id, day, at, name, status="confirmed", is_test=False):
+def _book(
+    session,
+    tenant_id,
+    day,
+    at,
+    name,
+    status="confirmed",
+    is_test=False,
+    off_hours=False,
+):
     session.add(
         Reservation(
             tenant_id=tenant_id,
@@ -533,6 +542,7 @@ def _book(session, tenant_id, day, at, name, status="confirmed", is_test=False):
             reserved_for=datetime.combine(day, at, tzinfo=BERLIN),
             idempotency_key=str(uuid.uuid4()),
             is_test=is_test,
+            off_hours=off_hours,
         )
     )
     session.commit()
@@ -564,6 +574,15 @@ def test_tables_the_shorter_week_leaves_without_hours_are_listed(session, tenant
     (first, _) = weekly.tables_outside_hours(session, tenant_id, NOW)
     # The restaurant's clock, not UTC.
     assert first.at.utcoffset() == timedelta(hours=1) and first.at.hour == 21
+
+
+def test_a_table_booked_outside_the_hours_on_purpose_is_not_listed(session, tenant_id):
+    """The team entered it on purpose ("Trotzdem eintragen", #819): no call."""
+    next_week = TODAY + timedelta(days=7)
+    _book(session, tenant_id, next_week, time(15), "Bewusst", off_hours=True)
+    _book(session, tenant_id, next_week, time(15, 30), "Zu prüfen")
+
+    assert _outside(session, tenant_id) == ["Zu prüfen"]
 
 
 def test_a_date_with_hours_of_its_own_keeps_its_tables(session, tenant_id):

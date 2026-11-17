@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, InvalidInput, NotFound
@@ -29,6 +30,7 @@ from api.models import (
     Reservation,
     ReservationTable,
     ServiceConfig,
+    SpecialDay,
     TableCombination,
 )
 from api.schemas.confirm import ConfirmRequest
@@ -164,7 +166,12 @@ def test_the_team_enters_and_confirms_a_table_without_a_call(
         ("gui:tablet", "reservation.confirmed"),
     ]
     assert audit[0].payload["tables"] == ["T1"]
-    assert audit[1].payload == {"source": "tablet", "override": False}
+    assert audit[1].payload == {
+        "source": "tablet",
+        "override": False,
+        "off_hours": False,
+    }
+    assert session.get(Reservation, draft.reservation_id).off_hours is False
     assert [
         r.reservation_id
         for r in list_today(session, tenant_id, "Europe/Berlin", now=NOW)
@@ -232,7 +239,9 @@ def test_a_full_window_is_booked_only_on_the_teams_word(session, tenant_id):
     confirm_tablet(session, tenant_id, draft.reservation_id, override=True, now=NOW)
     assert session.get(Reservation, draft.reservation_id).status == "confirmed"
     last = session.scalars(select(AuditLog).order_by(AuditLog.id.desc())).first()
-    assert last.payload == {"source": "tablet", "override": True}
+    # A full window inside the hours carries no off-hours mark (#819).
+    assert last.payload == {"source": "tablet", "override": True, "off_hours": False}
+    assert session.get(Reservation, draft.reservation_id).off_hours is False
 
 
 def test_a_live_agent_draft_fills_the_window_for_the_tablet_too(session, tenant_id):
@@ -476,3 +485,87 @@ def test_the_agents_limits_do_not_stop_the_team(session, tenant_id):
     confirm_tablet(session, tenant_id, draft.reservation_id, now=NOW)
 
     assert session.get(Reservation, draft.reservation_id).status == "confirmed"
+
+
+# --- a table outside the opening hours on purpose (#819) ---------------------------
+
+SAY_CLOSED = "Zu dieser Zeit ist laut Öffnungszeiten geschlossen."
+
+
+def close_the_day(session, tenant_id, day: date = DIENSTAG) -> None:
+    """A closed special day: the hours hold nothing, the seats of the weekday stay."""
+    session.add(SpecialDay(tenant_id=tenant_id, date=day, closed=True, status="set"))
+    session.commit()
+
+
+def test_a_table_inside_a_free_window_on_a_closed_day_is_asked_and_marked(
+    session, tenant_id
+):
+    close_the_day(session, tenant_id)
+    draft = enter(session, tenant_id, party_size=2)
+
+    # The seats are free, the hours say closed: the team is asked all the same.
+    assert (draft.booked_guests, draft.max_guests) == (0, 40)
+    assert draft.off_hours and draft.needs_override
+    with pytest.raises(WindowFull) as refused:
+        confirm_tablet(session, tenant_id, draft.reservation_id, now=NOW)
+    assert refused.value.say == SAY_CLOSED
+    row = session.get(Reservation, draft.reservation_id)
+    assert (row.status, row.off_hours) == ("draft", False)
+
+    confirm_tablet(session, tenant_id, draft.reservation_id, override=True, now=NOW)
+
+    session.expire_all()
+    row = session.get(Reservation, draft.reservation_id)
+    assert (row.status, row.off_hours) == ("confirmed", True)
+    last = session.scalars(select(AuditLog).order_by(AuditLog.id.desc())).first()
+    assert last.payload == {"source": "tablet", "override": True, "off_hours": True}
+
+
+def test_a_time_outside_the_hours_and_every_window_is_marked(session, tenant_id):
+    draft = enter(session, tenant_id, reserved_for=berlin(15))
+    assert draft.off_hours
+
+    confirm_tablet(session, tenant_id, draft.reservation_id, override=True, now=NOW)
+
+    assert session.get(Reservation, draft.reservation_id).off_hours is True
+
+
+def test_hours_closed_after_the_draft_ask_again_at_the_tap(session, tenant_id):
+    """The summary showed open hours; the tap without the team's word is refused."""
+    draft = enter(session, tenant_id)
+    assert not draft.off_hours and not draft.needs_override
+    close_the_day(session, tenant_id)
+
+    with pytest.raises(WindowFull) as refused:
+        confirm_tablet(session, tenant_id, draft.reservation_id, now=NOW)
+
+    assert refused.value.say == SAY_CLOSED
+    assert session.get(Reservation, draft.reservation_id).status == "draft"
+
+
+def test_a_table_inside_the_hours_is_never_marked_even_on_the_teams_word(
+    session, tenant_id
+):
+    draft = enter(session, tenant_id)
+
+    confirm_tablet(session, tenant_id, draft.reservation_id, override=True, now=NOW)
+
+    assert session.get(Reservation, draft.reservation_id).off_hours is False
+
+
+def test_the_agent_still_refuses_a_closed_day_and_its_tables_carry_no_mark(
+    session, tenant_id
+):
+    _, agent_id = agent_table(session, tenant_id, 2, berlin(19))
+    assert session.get(Reservation, agent_id).off_hours is False
+    close_the_day(session, tenant_id)
+
+    # Hard rule 1: the agent reads the hours from the database and books nothing.
+    assert not check_slot(session, tenant_id, berlin(19), 2, now=NOW).available
+
+    # The mark belongs to the team's tables only, the database says so too.
+    session.get(Reservation, agent_id).off_hours = True
+    with pytest.raises(IntegrityError, match="ck_reservations_off_hours_tablet"):
+        session.commit()
+    session.rollback()

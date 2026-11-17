@@ -181,9 +181,10 @@ def tables_outside_hours(
     session: Session, tenant_id: uuid.UUID, now: datetime | None = None
 ) -> list[BookingToCall]:
     """The confirmed tables from now on that no dine-in window holds, as the
-    hours stand: the weekly ones and every special day. The team calls these
-    guests itself (#710, Maxi 2026-11-13): nothing is cancelled and no guest
-    is messaged. By time, on the restaurant's clock."""
+    hours stand: the weekly ones and every special day, less the tables the
+    team booked outside the hours on purpose (`off_hours`, #819). The team
+    calls these guests itself (#710, Maxi 2026-11-13): nothing is cancelled
+    and no guest is messaged. By time, on the restaurant's clock."""
     now = now or clock.utcnow()
     tz = ZoneInfo(session.get_one(Tenant, tenant_id).timezone)
     rows = session.scalars(
@@ -195,6 +196,8 @@ def tables_outside_hours(
             Reservation.reserved_for >= now,
             # The team never calls a self-test's guest (#574).
             Reservation.is_test.is_(False),
+            # Nor one it booked outside the hours on purpose (#819).
+            Reservation.off_hours.is_(False),
         )
         .order_by(Reservation.reserved_for)
     ).all()

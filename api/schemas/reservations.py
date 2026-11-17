@@ -105,4 +105,8 @@ class TabletDraft(BaseModel):
     window_end: datetime | None = None
     booked_guests: int = 0
     max_guests: int | None = None
+    window_full: bool = False
+    # No dine-in window of the opening hours holds the time (#819): the team
+    # is asked too, and the confirmed table carries the mark `off_hours`.
+    off_hours: bool = False
     needs_override: bool = False
