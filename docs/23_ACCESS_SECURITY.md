@@ -414,9 +414,15 @@ the second builds against.
   the staff could sign in again at will, so ending the session would cost a guesser nothing. Nor
   do they end it on a lost tablet (Maxi 09.11.2026, review of #587): the board stays usable for the
   team, the admin PIN guards the owner's settings only, and a lost tablet is signed out by the
-  operator (T8). A new admin PIN from the operator starts without a wait and ends owner rights still
-  open on any device. Each right and wrong admin PIN stands in `audit_log` (`gui.admin_unlocked`,
-  `gui.admin_pin_wrong`).
+  operator (T8). On a locked device it is different (#827 F4, 17.11.2026): the admin PIN page
+  unlocks it too, so a wrong admin PIN there also counts on the lock page's five tries
+  (`gui_sessions.pin_failures`), together with wrong team PINs, and the fifth ends the session; a
+  guesser on a lost tablet gets five tries, not about 860 a day. Every third wrong admin PIN in a row,
+  and a session they ended, push to the owner and to `ops` (`admin_pin.wrong`, migration 040, with
+  the count, the device's name and whether it was signed out; never the PIN typed). A new admin PIN
+  from the operator starts without a wait and ends owner rights still open on any device. Each right
+  and wrong admin PIN stands in `audit_log` (`gui.admin_unlocked`, `gui.admin_pin_wrong`, and
+  `gui.session_ended` with the reason `admin_pin_failures`).
 - **Sessions per device:** cookie `__Host-session` (`Secure`, `HttpOnly`, `SameSite=Lax`, path `/`;
   `maex_session` without `Secure` in dev and test, which run over plain HTTP), a random 32-byte
   token whose SHA-256 is the server-side row (`gui_sessions`). The session slides for 30 days on use
@@ -429,7 +435,8 @@ the second builds against.
   always visible; new orders with their sound), and the next change goes to the PIN page
   (`/gui/entsperren`, `HX-Redirect` on a 401); a change behind the admin PIN goes to the admin PIN
   page instead, which unlocks too, so the owner's click is not lost to the team PIN (#597). Only a change moves the 15 minutes; reading and the
-  event stream do not. Five wrong PINs in a row end the session; the device then needs the password.
+  event stream do not. Five wrong PINs in a row end the session, wrong admin PINs typed on the
+  locked device counted with them; the device then needs the password.
   The PIN is never a login: it only unlocks a session that already exists.
 - **Devices:** each session is a device with its first and last use and the browser's name. In (a)
   the operator lists and signs them out on the stack (`python -m api.jobs.gui_access devices`,
@@ -438,17 +445,24 @@ the second builds against.
   A device signed out there loses its open event stream on the next tick (#597), and its admin PIN
   form answers with the sign-in, not with a wrong PIN.
 - **Two levels in the admin area (D34 point 3, the admin PIN built in (b)):** staff with the shared login, no PIN: call
-  mode, team number and the hours of a given date (a special day). The owner, with an admin PIN
+  mode, team number and the hours of a given date (a special day), and (Maxi 17.11.2026, #827 F6)
+  the standard wait per service in the header and the answer to the register's open price on the
+  board, which takes only the price the register stored. The owner, with an admin PIN
   asked when a protected part is first opened and then unlocked on that device for 60 minutes:
-  delivery zones, fees and minimum order, the standard weekly hours, the device list. Built: the
+  delivery zones, fees and minimum order, the standard weekly hours, the device list, and since
+  17.11.2026 (#827 F6) the floor plan (`/gui/raumplan`: the page, its data and both writes) and the
+  reservation notice per weekday (`/gui/vorlauf`: the sheet and its write), since tables, seats and
+  a notice too long turn callers away. Built: the
   device list, and since 17.11.2026 the standard weekly hours (the tab "Zeiten", `/gui/zeiten`, #571):
   the page, each of its parts and both writes take `require_admin` (`gui/session.py`), so nothing
   of it is read or written without the admin PIN, and each write carries the CSRF token and
   `HX-Request` and leaves an audit row with the actor `gui:owner` and the hours before and after.
   A weekday's form sends a token of the hours it showed; a save against hours changed since is
   refused, and a form refused for a typing error keeps the token it was typed against, so its
-  corrected save cannot write over another device's change. Every page of the view answers
-  `Cache-Control: no-store` (`_page_response`), the parts of this tab too, and a part fetched by
+  corrected save cannot write over another device's change. Every answer under `/gui/` says
+  `Cache-Control: no-store`, the parts htmx fetches and the refusals too, set in one place (the
+  middleware `no_store` in `gui/session.py`, #827 F2); only the view's own files under `/gui/static/`
+  keep `no-cache`. A part fetched by
   htmx without the PIN leads back to its page after the PIN, never to itself. On that tab the owner also sets a date's hours directly: they hold at once without a
   check card or a push, which exist to tell the owner what the staff did, and a date whose staff
   change is still open is decided on its card first. The staff's own way to a date's hours (the
@@ -486,7 +500,7 @@ the second builds against.
   what held before the staff came. The holiday answers of T-9.5 stay as they are (Maxi 09.11.2026).
   The call mode gets the push but no card (Maxi 09.11.2026). The push (#588): an outbox event in
   the same transaction as the change (`team_phone.changed`, `day_hours.changed`,
-  `call_mode.changed`, migration 034), which n8n publishes to the topics `owner` and `ops`
+  `call_mode.changed`, migration 034; `admin_pin.wrong` of the admin PIN above, migration 040), which n8n publishes to the topics `owner` and `ops`
   (`n8n/team_events.json`). It carries the day and the change only, the team number the one number;
   a tap that changes nothing and the owner's own answer on a card push nothing.
 - **Password reset (D34 point 5):** a one-time setup link made by the operator, valid 24 hours,
