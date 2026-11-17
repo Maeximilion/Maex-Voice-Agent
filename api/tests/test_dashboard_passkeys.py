@@ -1537,3 +1537,47 @@ def test_a_failed_push_does_not_bring_the_ended_sessions_back(
     assert failed[-1].detail["what"] == (
         "passkey 'Key 0' removed, other sessions ended: 1"
     )
+
+
+# --- Codex on #818: a session ended while its change waited for the account's row ---
+
+
+def _factors_now(sessions) -> tuple[list[str], str | None]:
+    with sessions() as db:
+        secret = db.scalars(
+            select(OperatorAccount.totp_secret).where(OperatorAccount.name == "maxi")
+        ).one()
+    return [row.name for row in _rows(sessions)], secret
+
+
+@pytest.mark.parametrize(
+    ("late", "owners"),
+    [
+        pytest.param(_remove_a_passkey, _remove_totp, id="passkey"),
+        pytest.param(_remove_totp, _remove_a_passkey, id="totp"),
+        pytest.param(_new_totp_secret, _remove_a_passkey, id="new secret"),
+    ],
+)
+def test_a_change_of_a_session_ended_while_it_waited_changes_nothing(
+    client, factors, clock, sessions, pushes, monkeypatch, late, owners
+):
+    """A stolen session's change that had passed the step-up check and then
+    waited for the account's row, while the owner's change ended that session,
+    went on to change a factor and to end the owner's session."""
+    thief = _other_browser(factors, clock)
+    _signed_in_with(client, factors, clock, 3)
+    locked = access._locked
+    after: list[Any] = []
+
+    def the_owner_commits_first(db, operator):
+        if not after:
+            after.append(None)  # the owner's own request passes straight through
+            assert owners(client, sessions, clock).status_code == 303
+            after[0] = (_factors_now(sessions), list(pushes))
+        return locked(db, operator)
+
+    monkeypatch.setattr(access, "_locked", the_owner_commits_first)
+    assert late(thief, sessions, clock).status_code == 401
+    assert (_factors_now(sessions), pushes) == after[0]
+    assert _still_signed_in(client) and not _still_signed_in(thief)
+    assert len(_audited(sessions, "operator.other_sessions_ended")) == 1

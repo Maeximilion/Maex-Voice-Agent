@@ -106,7 +106,10 @@ is the backup. Ten single-use recovery codes, stored hashed, are the last way in
   push to the `ops` topic ("new device"), so a silent takeover is visible.
 - A removed passkey, removed TOTP or a new TOTP secret ends every other session of the account;
   only the session making the change stays, and the push says how many ended (D39, Maxi,
-  17.11.2026): a thief's session must not outlive the change made after a loss.
+  17.11.2026): a thief's session must not outlive the change made after a loss. A change of that
+  ended session that was already waiting for the account's row is refused once it gets the row
+  (`access._locked` looks for the session again): it changes no factor, ends no session and is
+  answered 401.
 - Break glass when every factor is lost: SSH to the host and a CLI command in the operator stack
   that resets the factors of one account. SSH is the real root anyway.
 

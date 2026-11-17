@@ -40,7 +40,12 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
@@ -372,6 +377,14 @@ def require_operator(
     if request.method in WRITES and not same_origin(request):
         raise HTTPException(status_code=403, detail="Only from this site")
     return operator
+
+
+@app.exception_handler(access.SignInRefused)
+def _session_ended(request: Request, refused: Exception) -> Response:
+    """A factor change whose session ended while it waited for the account's
+    row (`access._locked`): answered as `require_operator` answers the write of
+    a browser that is signed out. The sign-in and the step-up catch their own."""
+    return JSONResponse({"detail": "Signed out"}, status_code=401)
 
 
 def _local(path: str) -> str:

@@ -309,7 +309,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.53.0 · 17.11.2026:** D39 decided (Maxi, 17.11.2026): a removed passkey or TOTP or a new TOTP secret ends every other session of the operator's account, named in the push and audited (#816 finding 6)
+- **v2.53.0 · 17.11.2026:** D39 decided (Maxi, 17.11.2026): a removed passkey or TOTP or a new TOTP secret ends every other session of the operator's account, named in the push and audited (#816 finding 6); a change of a session that ended while it waited for the account's row is refused (review of #818)
 - **v2.52.1 · 17.11.2026:** Fix PR for the deep review of #807 (#816): an older tab's passkey answer leaves the newer tab's challenge, a post without any factor is neither counted nor audited, no push for TOTP that was off already, OPERATOR_ORIGIN without default port, an ended session goes to the sign-in; whether a factor change ends other sessions awaits Maxi
 - **v2.52.0 · 16.11.2026:** Operator dashboard: dev tools with the recorded eval and measurement results and the log of one call behind step-up, a reason and both audits, read-only in production by a rule in the code; the New customer page with the steps and commands (#571 seventh part)
 - **v2.51.1 · 16.11.2026:** Context series of 25 evaluated: handover thresholds 300k and 450k kept (#562)

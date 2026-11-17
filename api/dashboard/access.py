@@ -476,14 +476,19 @@ def audit(
 
 def _locked(db: Session, operator: Operator) -> OperatorAccount:
     """The operator's account, held until the commit: two changes of its
-    factors at once must not each see the other's factor as still there."""
+    factors at once must not each see the other's factor as still there. A
+    change that waited here while another one ended its session (D39, the
+    break glass) is refused: it changes no factor and ends nobody's session."""
     account = db.get(
         OperatorAccount,
         operator.account_id,
         with_for_update=True,
         populate_existing=True,
     )
-    if account is None:
+    alive = db.scalar(
+        select(OperatorSession.id).where(OperatorSession.id == operator.session_id)
+    )
+    if account is None or alive is None:
         db.rollback()
         raise SignInRefused()
     return account
