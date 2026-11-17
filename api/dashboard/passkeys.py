@@ -9,7 +9,9 @@ this module holds to:
 - A challenge is 32 random bytes, kept in the database for one holder and one
   purpose: the session for a registration or a step-up, the sign-in attempt's
   cookie for a sign-in. It is taken out before its answer is looked at, so it
-  is never checked twice, and it is worthless after five minutes. Nobody's
+  is never checked twice, and it is worthless after five minutes. Only the
+  challenge the answer names is taken: an older tab's answer leaves the newer
+  tab's challenge in place (`signed_challenge`). Nobody's
   challenge is ever removed to make room for another's: anyone may ask for a
   sign-in challenge, and a flood must not take the operator's away.
 - An answer is input from outside until it is verified. Whatever its parsing
@@ -26,6 +28,7 @@ No FastAPI. `access.py` decides when a passkey counts; this module only says
 whether the answer of a ceremony holds.
 """
 
+import json
 import secrets
 import uuid
 from datetime import datetime, timedelta
@@ -41,6 +44,7 @@ from webauthn import (
     verify_registration_response,
 )
 from webauthn.helpers import (
+    base64url_to_bytes,
     options_to_json,
     parse_authentication_credential_json,
     parse_client_data_json,
@@ -141,6 +145,20 @@ def take(
     return bytes(row.challenge)
 
 
+def signed_challenge(answer: str) -> bytes:
+    """The challenge an answer says it signed, for `take(expected=...)`: an
+    older tab's answer then spends nothing of the newer tab's (#816). Empty,
+    which matches no challenge, when the answer cannot be read; never raises
+    (module docstring). Whether the answer holds is `verify`'s question."""
+    if len(answer) > ANSWER_MAX:
+        return b""
+    try:
+        sent = json.loads(answer)["response"]["clientDataJSON"]
+        return parse_client_data_json(base64url_to_bytes(sent)).challenge
+    except Exception:  # noqa: BLE001  any error is a refusal (module docstring)
+        return b""
+
+
 def of_account(db: Session, account_id: uuid.UUID) -> list[OperatorPasskey]:
     return list(
         db.scalars(
@@ -206,9 +224,11 @@ def register(
     now: datetime,
 ) -> OperatorPasskey:
     """Check the answer of a registration and add the passkey. Raises
-    `Refused`. The challenge is gone either way; the new row waits for the
-    caller's commit, beside its audit."""
-    challenge = take(db, for_session(session_id), REGISTER, now)
+    `Refused`. The challenge the answer names is gone either way; the new row
+    waits for the caller's commit, beside its audit."""
+    challenge = take(
+        db, for_session(session_id), REGISTER, now, signed_challenge(answer)
+    )
     name = " ".join(name.split())
     if not 1 <= len(name) <= NAME_MAX or not name.isprintable():
         raise Refused("name")

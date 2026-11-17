@@ -448,6 +448,9 @@ def test_production_settings_need_the_origin_of_the_dashboard():
         "https://user@ops.example.com",
         "https://ops.example.com:port",
         "https://",
+        # A browser writes the origin without the default port, and the passkey
+        # library compares it as it is (#816).
+        "https://ops.example.com:443",
     ):
         with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
             DashboardSettings(**secret, operator_origin=wrong)
@@ -457,6 +460,8 @@ def test_production_settings_need_the_origin_of_the_dashboard():
     assert DashboardSettings(env="dev").relying_party_id == "localhost"
     with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
         DashboardSettings(env="dev", operator_origin="ftp://localhost")
+    with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
+        DashboardSettings(env="dev", operator_origin="http://localhost:80")
 
 
 def test_the_dashboard_never_builds_the_customer_settings():

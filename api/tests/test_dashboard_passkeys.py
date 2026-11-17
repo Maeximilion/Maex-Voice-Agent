@@ -1353,8 +1353,8 @@ def test_a_registration_overtaken_by_the_break_glass_adds_nothing(
     answer = Device().create(options, ORIGIN)
     take = passkeys.take
 
-    def reset_runs_first(db, bound_to, purpose, now):
-        challenge = take(db, bound_to, purpose, now)
+    def reset_runs_first(db, bound_to, purpose, now, expected=None):
+        challenge = take(db, bound_to, purpose, now, expected)
         with sessions() as host:
             access.reset_account(host, "maxi", PASSWORD)
         return challenge
@@ -1364,3 +1364,90 @@ def test_a_registration_overtaken_by_the_break_glass_adds_nothing(
     assert refused.headers["location"] == "/factors?note=passkey-refused"
     assert _rows(sessions) == []
     assert "operator.passkey_added" not in _actions(sessions)
+
+
+# --- the deep review of #807 (#816) ------------------------------------------------
+
+
+def test_an_older_tabs_sign_in_leaves_the_newer_tabs_challenge(client, factors, clock):
+    """Two tabs share the attempt cookie; the second one's options replace the
+    first one's challenge. The first tab's answer must not spend it."""
+    device = _with_passkey(client, factors, clock)
+    older = device.get(_asked(client), ORIGIN)
+    newer = device.get(_asked(client), ORIGIN)
+    fields = {"name": "maxi", "password": PASSWORD}
+    _refused(client, _post(client, "/login", **fields, passkey=older))
+    assert _post(client, "/login", **fields, passkey=newer).status_code == 303
+
+
+def test_an_older_tabs_step_up_leaves_the_newer_tabs_challenge(client, factors, clock):
+    device = _signed_in_with(client, factors, clock, 1)[0]
+    clock.at += timedelta(minutes=5)
+    older = device.get(_post(client, "/step-up/passkey/options").text, ORIGIN)
+    newer = device.get(_post(client, "/step-up/passkey/options").text, ORIGIN)
+    assert _post(client, "/step-up", passkey=older).status_code == 401
+    answer = _post(client, "/step-up", next="/factors", passkey=newer)
+    assert answer.status_code == 303 and answer.headers["location"] == "/factors"
+
+
+def test_an_older_tabs_registration_leaves_the_newer_tabs_challenge(
+    client, factors, clock, sessions
+):
+    _signed_in(client, factors, clock)
+    older = Device().create(_post(client, "/factors/passkeys/options").text, ORIGIN)
+    newer = Device().create(_post(client, "/factors/passkeys/options").text, ORIGIN)
+    refused = _post(client, "/factors/passkeys", name="Old", passkey=older)
+    assert refused.headers["location"] == "/factors?note=passkey-refused"
+    added = _post(client, "/factors/passkeys", name="New", passkey=newer)
+    assert added.headers["location"] == "/factors?note=passkey-added"
+    assert [row.name for row in _rows(sessions)] == ["New"]
+
+
+@pytest.mark.parametrize("challenge", ["", "unreadable"])
+def test_an_answer_without_a_readable_challenge_spends_nothing(
+    sessions, clock, challenge
+):
+    with sessions() as db:
+        passkeys.issue(db, "session:x", passkeys.STEP_UP, clock.at)
+        assert passkeys.signed_challenge(challenge) == b""
+        assert passkeys.take(db, "session:x", passkeys.STEP_UP, clock.at, b"") is None
+        assert passkeys.take(db, "session:x", passkeys.STEP_UP, clock.at) is not None
+
+
+@pytest.mark.parametrize("password", [PASSWORD, "not the password"])
+def test_a_sign_in_without_any_factor_counts_and_audits_nothing(
+    client, factors, clock, sessions, password
+):
+    """Enter after the password posts no code and no passkey: that says
+    nothing about the password, so it is not checked, counted or audited."""
+    for _ in range(3):
+        _refused(client, _sign_in(client, " ", password=password))
+    assert _audited(sessions, "operator.sign_in_failed") == []
+    _signed_in(client, factors, clock)
+
+
+def test_a_step_up_without_any_factor_counts_and_audits_nothing(
+    client, factors, clock, sessions
+):
+    _signed_in(client, factors, clock)
+    clock.at += timedelta(minutes=5)
+    for _ in range(3):
+        assert _post(client, "/step-up", code="").status_code == 401
+    assert _audited(sessions, "operator.step_up_failed") == []
+    assert _step_up_with_code(client, factors, clock).status_code == 303
+
+
+def test_removing_totp_that_is_off_already_pushes_nothing(
+    client, factors, clock, sessions, pushes
+):
+    _signed_in_with(client, factors, clock, 2, totp=False)
+    again = _post(client, "/factors/totp/remove")
+    assert again.headers["location"] == "/factors?note="
+    assert pushes.count("maxi: TOTP removed") == 1
+    assert len(_audited(sessions, "operator.totp_removed")) == 1
+
+
+def test_an_answer_naming_another_user_is_refused(client, factors, clock):
+    device = _with_passkey(client, factors, clock)
+    device.user_handle = uuid.uuid4().bytes
+    _refused(client, _passkey_sign_in(client, device))

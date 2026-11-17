@@ -63,11 +63,14 @@ class DashboardSettings(BaseSettings):
         try:
             parts = urlsplit(self.operator_origin)
             port = f":{parts.port}" if parts.port else ""
-            # Scheme, host and port and nothing else, as a browser writes it.
+            # Scheme, host and port and nothing else, as a browser writes it:
+            # without the scheme's default port, which the passkey library
+            # would compare as it is and so refuse every passkey (#816).
             fine = (
                 bool(parts.hostname)
                 and self.operator_origin == f"{parts.scheme}://{parts.hostname}{port}"
                 and parts.scheme in (("http", "https") if local else ("https",))
+                and parts.port != {"http": 80, "https": 443}.get(parts.scheme)
             )
         except ValueError:
             fine = False

@@ -290,12 +290,16 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
 
 - **Bound to the site by the settings.** The relying party id and the origin come from
   `OPERATOR_ORIGIN` (`https://ops.<domain>`; outside dev and test the dashboard refuses to start
-  when it is missing or not a bare https origin), never from a request's Host header.
+  when it is missing or not a bare https origin), never from a request's Host header. The
+  origin is written as a browser writes it, without the scheme's default port: `webauthn`
+  compares it as it is, and `:443` would turn every passkey away (#816).
 - **Challenges.** Every ceremony signs 32 random bytes that the server keeps for one holder and one
   purpose: the session for a registration or a step-up, a cookie of the sign-in attempt
   (`__Host-ops_attempt`) for a sign-in. The challenge is taken out by the first post that brings
-  it, whatever else that post got wrong, and is worthless after five minutes. A challenge of one
-  purpose answers no other. Nobody's challenge is removed to make room for another's: anyone may
+  it, whatever else that post got wrong, and is worthless after five minutes. Only the challenge
+  an answer names is taken (`passkeys.signed_challenge`): when a second tab asked for options,
+  the first tab's answer is refused and leaves the second tab's challenge in place (#816). A
+  challenge of one purpose answers no other. Nobody's challenge is removed to make room for another's: anyone may
   ask for a sign-in challenge, and a flood of them must not take the operator's away. Unanswered
   ones are swept out after their five minutes; a limit on how often the route may be asked belongs
   to the proxy's site (still to come).
@@ -307,7 +311,10 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   (PIN, finger, face) at every use and the passkey is stored on it (discoverable), so the challenge
   names no credential and the sign-in page tells nothing about any account. A wrong password, a
   wrong or foreign passkey, a spent or expired challenge and another site's origin get the one
-  sentence of every refusal and count toward the same waits.
+  sentence of every refusal and count toward the same waits. A post with no factor at all (Enter
+  after the password) gets the same sentence before anything is counted or looked at: the
+  password is not checked, so it tells nothing, and it is no "password known" in the audit
+  (#816; the step-up does the same).
 - **A copy shows.** A signature counter that does not grow is refused, audited as
   `operator.sign_in_failed` (at the step-up `operator.step_up_failed`) with `reason` `counter`
   and pushed to `ops`; passkeys a platform syncs send 0 every time and are exempt. A device that holds a passkey of the account is left out of the next
@@ -330,12 +337,17 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   `dashboard/push.py`, which publishes as a stack's monitor does (`api/jobs/monitor.py`) once
   `OPERATOR_PUSH_URL` and `OPERATOR_PUSH_TOKEN` are set. Until the operator stack has its Compose
   file both are empty and the push is only logged; a push that fails, for whatever reason, is
-  audited as `operator.push_failed` and never fails the request it reports. The break glass
-  removes every passkey too.
+  audited as `operator.push_failed` and never fails the request it reports. A removal of TOTP
+  that was off already (a double post, an older tab) is neither audited nor pushed (#816). The
+  break glass removes every passkey too.
 - **Browser side.** `api/gui/ts/passkey.ts`, compiled, no inline script: it fetches the options,
   runs the ceremony and puts the answer into a hidden field of an ordinary form. A browser without
   the WebAuthn JSON helpers (before Chrome 129, Firefox 119, Safari 18.4) shows no passkey button;
-  the code still signs in.
+  the code still signs in. A session that ended while the page was open (the options answer 401)
+  sends the browser to the sign-in.
+- **Deep review (#816, 17.11.2026).** The catch-up review of #807 found no security hole; five
+  robustness findings are fixed above. Open there: whether a factor change should end the
+  account's other sessions (a question for Maxi), and three plausible P3 kept as they are.
 
 ## 6. Customer login (#570)
 
