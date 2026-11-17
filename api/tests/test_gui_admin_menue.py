@@ -116,7 +116,7 @@ def test_a_rejected_register_price_is_no_note(client, db, tenant_id):
     # The words say "open": a rejected price that still differs is no
     # difference the page counts, and the legend says where it went.
     assert "5,00" not in page and "0 mit offener Preisabweichung" in page
-    assert "Ein verworfener Kassenpreis steht hier nicht mehr." in page
+    assert "Ein verworfener Kassenpreis steht hier nicht mehr, und auch" in page
     assert '<option value="preis">Preisabweichung offen</option>' in page
 
 
@@ -159,7 +159,14 @@ def test_without_a_dish_the_page_says_so(client, tenant_id):
     page = client.get(PAGE)
     assert page.status_code == 200
     assert _rows(page.text) == []
-    assert "Noch kein Gericht in der Karte." in page.text
+    assert "Kein aktives Gericht in der Karte." in page.text
+
+
+def test_a_menu_with_every_dish_switched_off_is_not_called_empty(client, db, tenant_id):
+    dish(db, tenant_id, "1", "Ente", active=False)
+    page = client.get(PAGE).text
+    assert _rows(page) == [] and "Kein aktives Gericht in der Karte." in page
+    assert "Noch kein Gericht" not in page
 
 
 def test_without_a_restaurant_the_page_is_a_503(client):
@@ -225,7 +232,7 @@ def test_a_filter_that_finds_nothing_says_so(client, db, tenant_id):
     dish(db, tenant_id, "1", "Ente", allergens=("A",))
     page = client.get(f"{PAGE}?hinweis=preis").text
     assert _rows(page) == [] and "Kein Gericht gefunden." in page
-    assert "Noch kein Gericht" not in page
+    assert "Kein aktives Gericht" not in page
     assert "0 von 1 Gericht" in page
     assert 'href="/gui/menue">Alle zeigen</a>' in page
 

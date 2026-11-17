@@ -108,8 +108,9 @@ def listing(
         pages=pages,
         matching=len(rows),
         items=len(items),
-        # Counted over the dishes read above: a dish switched off between the
-        # statements is in neither count.
+        # Counted over the dishes read above, so no count exceeds the list.
+        # The three statements are not one snapshot: a dish switched off or a
+        # price answered in between shows without its note until the next load.
         allergens_missing=sum(item.id in unknown for item in items),
         price_differences=sum(item.id in register for item in items),
     )
