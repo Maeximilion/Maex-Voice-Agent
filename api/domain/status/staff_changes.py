@@ -673,11 +673,10 @@ def _write(
                 .with_for_update()
                 .execution_options(populate_existing=True)
             ).first()
-            name = row.note or _holiday_name(session, tenant_id, day)
             if other is not None:
                 other.status = DISMISSED
                 session.delete(row)
-            elif name:
+            elif name := row.note or _holiday_name(session, tenant_id, day):
                 row.status, row.note = DISMISSED, name
                 row.closed, row.opens_at, row.closes_at = False, None, None
             else:
