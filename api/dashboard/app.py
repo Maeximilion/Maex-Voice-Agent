@@ -428,6 +428,11 @@ def _alert(db: Session, operator: str, what: str) -> None:
         db.commit()
 
 
+def _with_ended(what: str, ended: int) -> str:
+    """The push of a factor change names the sessions it ended (D39)."""
+    return f"{what}, other sessions ended: {ended}" if ended else what
+
+
 def _refusal(refused: access.SignInRefused) -> str:
     if refused.wait_minutes:
         return WAIT.format(minutes=refused.wait_minutes)
@@ -678,12 +683,12 @@ def passkey_remove(
 ) -> Response:
     _checked(request, form)
     try:
-        name = access.remove_passkey(db, operator, form.get("id", ""))
+        name, ended = access.remove_passkey(db, operator, form.get("id", ""))
     except access.FactorNeeded:
         return _factors("factor-needed")
     except LookupError:
         return _factors("")
-    _alert(db, operator.name, f"passkey {name!r} removed")
+    _alert(db, operator.name, _with_ended(f"passkey {name!r} removed", ended))
     return _factors("passkey-removed")
 
 
@@ -707,9 +712,10 @@ def totp_confirm(
     db: Session = Depends(get_db),
 ) -> Response:
     _checked(request, form)
-    if not access.confirm_totp(db, operator, form.get("code", ""), now()):
+    ended = access.confirm_totp(db, operator, form.get("code", ""), now())
+    if ended is None:
         return _factors("code-wrong")
-    _alert(db, operator.name, "new TOTP secret")
+    _alert(db, operator.name, _with_ended("new TOTP secret", ended))
     return _factors("totp-set")
 
 
@@ -722,11 +728,12 @@ def totp_remove(
 ) -> Response:
     _checked(request, form)
     try:
-        if not access.remove_totp(db, operator):
-            return _factors("")
+        ended = access.remove_totp(db, operator)
     except access.FactorNeeded:
         return _factors("factor-needed")
-    _alert(db, operator.name, "TOTP removed")
+    if ended is None:
+        return _factors("")
+    _alert(db, operator.name, _with_ended("TOTP removed", ended))
     return _factors("totp-removed")
 
 

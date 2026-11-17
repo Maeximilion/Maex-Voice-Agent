@@ -961,7 +961,9 @@ def test_a_new_totp_secret_replaces_the_old_one_after_its_own_code(
     assert _sign_in(TestClient(web.app), _code(old, clock.at)).status_code == 303
     answer = _post(client, "/factors/totp", code=_code(pending, clock.at))
     assert answer.headers["location"] == "/factors?note=totp-set"
-    assert pushes == ["maxi: new TOTP secret"] and _pending(sessions) is None
+    # The sign-in with the old code above is a session of its own, and D39 ends it.
+    assert pushes == ["maxi: new TOTP secret, other sessions ended: 1"]
+    assert _pending(sessions) is None
     assert len(_audited(sessions, "operator.totp_set")) == 1
     clock.at += timedelta(seconds=30)
     before, after = TestClient(web.app), TestClient(web.app)
@@ -1451,3 +1453,87 @@ def test_an_answer_naming_another_user_is_refused(client, factors, clock):
     device = _with_passkey(client, factors, clock)
     device.user_handle = uuid.uuid4().bytes
     _refused(client, _passkey_sign_in(client, device))
+
+
+# --- D39: a factor change ends the account's other sessions (#816) ------------------
+
+
+def _remove_a_passkey(client, sessions, clock):
+    return _post(client, "/factors/passkeys/remove", id=str(_rows(sessions)[0].id))
+
+
+def _remove_totp(client, sessions, clock):
+    return _post(client, "/factors/totp/remove")
+
+
+def _new_totp_secret(client, sessions, clock):
+    _post(client, "/factors/totp/new")
+    return _post(
+        client, "/factors/totp", code=_code(_pending(sessions) or "", clock.at)
+    )
+
+
+FACTOR_CHANGES = [
+    pytest.param(
+        _remove_a_passkey, "passkey-removed", "passkey 'Key 0' removed", id="passkey"
+    ),
+    pytest.param(_remove_totp, "totp-removed", "TOTP removed", id="totp"),
+    pytest.param(_new_totp_secret, "totp-set", "new TOTP secret", id="new secret"),
+]
+
+
+def _other_browser(factors, clock) -> TestClient:
+    """A second session of the same account, signed in half a minute before
+    the one that makes the change (a TOTP code opens one sign-in only)."""
+    browser = TestClient(web.app)
+    assert _sign_in(browser, _code(factors.totp_secret, clock.at)).status_code == 303
+    clock.at += timedelta(seconds=30)
+    return browser
+
+
+def _still_signed_in(browser) -> bool:
+    return browser.get("/", follow_redirects=False).status_code == 200
+
+
+@pytest.mark.parametrize(("change", "note", "what"), FACTOR_CHANGES)
+def test_a_factor_change_ends_the_other_sessions_of_the_account(
+    client, factors, clock, sessions, pushes, change, note, what
+):
+    other = _other_browser(factors, clock)
+    anna = _anna(sessions, clock)
+    _signed_in_with(client, factors, clock, 3)
+    assert _still_signed_in(other)
+    answer = change(client, sessions, clock)
+    assert answer.headers["location"] == f"/factors?note={note}"
+    assert not _still_signed_in(other)
+    assert _still_signed_in(client) and _still_signed_in(anna)
+    assert pushes[-1] == f"maxi: {what}, other sessions ended: 1"
+    changed = _audited(sessions, "operator.other_sessions_ended")
+    assert [row.detail["ended"] for row in changed] == [1]
+
+
+def test_adding_a_passkey_ends_no_other_session(client, factors, clock, pushes):
+    other = _other_browser(factors, clock)
+    _signed_in(client, factors, clock)
+    assert _register(client, Device()).headers["location"].endswith("passkey-added")
+    assert _still_signed_in(other)
+    assert pushes == ["maxi: new passkey 'Laptop'"]
+
+
+def test_a_failed_push_does_not_bring_the_ended_sessions_back(
+    client, factors, clock, sessions, monkeypatch
+):
+    other = _other_browser(factors, clock)
+    _signed_in_with(client, factors, clock, 3)
+
+    def notify(title: str, text: str) -> bool:
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr(push, "notify", notify)
+    answer = _remove_a_passkey(client, sessions, clock)
+    assert answer.headers["location"] == "/factors?note=passkey-removed"
+    assert not _still_signed_in(other) and len(_rows(sessions)) == 2
+    failed = _audited(sessions, "operator.push_failed")
+    assert failed[-1].detail["what"] == (
+        "passkey 'Key 0' removed, other sessions ended: 1"
+    )
