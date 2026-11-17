@@ -19,7 +19,7 @@ PIN, a link or a telephone number.
 
 import uuid
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -129,11 +129,11 @@ def _step(
         _outcome(session, tenant, by, step, ask, "refused")
         raise
     except Exception:
-        session.rollback()
-        try:
-            _outcome(session, tenant, by, step, ask, "failed")
-        except Exception:  # noqa: BLE001  the step's own error is the one to raise
+        # The step's own error is the one to raise. Should the database be
+        # gone too, the ask without its outcome says the same: it broke.
+        with suppress(Exception):
             session.rollback()
+            _outcome(session, tenant, by, step, ask, "failed")
         raise
     _outcome(session, tenant, by, step, ask, "done")
 

@@ -794,6 +794,21 @@ def test_a_step_that_broke_has_the_outcome_failed(
     assert _pair(session, "call_mode")[1]["outcome"] == "failed"
 
 
+def test_a_step_that_broke_raises_its_own_error_when_its_outcome_cannot_be_written(
+    http, session, login, stack, monkeypatch
+):
+    def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("the step broke")
+
+    def gone(*args: object, **kwargs: object) -> None:
+        raise ConnectionError("the database is gone")
+
+    monkeypatch.setattr(operator, "set_mode", broken)
+    monkeypatch.setattr(operator, "_outcome", gone)
+    with pytest.raises(RuntimeError, match="the step broke"):
+        _ask(http, "POST", CALL_MODE, {"mode": "primary"})
+
+
 def test_the_access_read_has_no_outcome_row(http, session, stack):
     _data(_ask(http, "GET", ACCESS))
     assert _audit(session, "ops.access_read", outcomes=True)[-1].action == (
