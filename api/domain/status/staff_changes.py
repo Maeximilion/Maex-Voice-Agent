@@ -36,7 +36,7 @@ suggested the date, the staff only confirm it.
 import hashlib
 import uuid
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -309,9 +309,11 @@ def changed_by(
     rows = session.execute(
         select(AuditLog.entity_id, AuditLog.actor)
         .where(
-            # The tenant and the time first: `ix_audit_log_tenant_at`.
+            # The tenant and the time first: `ix_audit_log_tenant_at`. Both
+            # times are a transaction's start, and a change begun just before
+            # the card's own transaction may still write to it: a margin.
             AuditLog.tenant_id == tenant_id,
-            AuditLog.at >= min(card.created_at for card in phones),
+            AuditLog.at >= min(card.created_at for card in phones) - timedelta(hours=1),
             AuditLog.action == ACTION_TEAM_PHONE,
             AuditLog.entity_id.in_([card.id for card in phones]),
         )

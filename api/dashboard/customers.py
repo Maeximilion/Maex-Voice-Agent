@@ -6,7 +6,7 @@ which token it takes; the operator fills it on the host (`dashboard/cli.py`).
 answer into one row of the list; `detail` asks one stack for its status and its
 week's figures, `calls` for the calls of one business day. `step` reads a form
 of the manage page as one request and `manage` sends it: the access read and
-the six steps that show a secret or change the restaurant. No FastAPI here.
+the seven steps that show a secret or change the restaurant. No FastAPI here.
 
 A stack's answer is input from outside: a customer's stack that was taken over
 may answer anything. So the answer is read up to a size limit, checked field by

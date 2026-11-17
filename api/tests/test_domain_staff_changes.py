@@ -1072,3 +1072,24 @@ def test_todays_number_made_the_standard_closes_its_card(session, tenant_id):
     assert (config.team_phone, config.team_phone_today) == (NUMBER, None)
     assert [card.status for card in _cards(session, tenant_id)] == ["undone"]
     assert staff.open_cards(session, tenant_id, TUESDAY) == []
+
+
+def test_a_change_begun_before_the_card_still_names_who_made_it(session, tenant_id):
+    """Review of #811: `at` is a transaction's start, so a tablet change that
+    began a moment before the card's transaction is stamped before it."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW, OPERATOR)
+    (card,) = staff.open_cards(session, tenant_id, TUESDAY)
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            at=card.created_at - timedelta(seconds=2),
+            actor="gui:tablet",
+            action=staff.ACTION_TEAM_PHONE,
+            entity="staff_change",
+            entity_id=card.id,
+            payload={},
+        )
+    )
+    session.commit()
+
+    assert staff.changed_by(session, tenant_id, [card]) == {card.id: "team"}
