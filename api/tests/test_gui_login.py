@@ -394,6 +394,66 @@ def test_the_pin_form_needs_its_csrf_token(client, engine):
     assert client.post("/gui/entsperren", data={"pin": PIN}).status_code == 403
 
 
+FOREIGN = [{"Origin": "https://evil.example"}, {"Sec-Fetch-Site": "cross-site"}]
+
+
+@pytest.mark.parametrize("headers", FOREIGN)
+def test_the_pin_form_refuses_another_site(client, engine, headers):
+    """#827 F10: a foreign page cannot unlock the tablet with a PIN it holds."""
+    _set_up_and_sign_in(client, engine)
+    _lock(engine)
+    answer = client.post(
+        "/gui/entsperren", data={"csrf_token": "testtoken", "pin": PIN}, headers=headers
+    )
+    assert answer.status_code == 403
+    write = client.post("/gui/kopfzeile/ki-pausieren", headers=HX)
+    assert write.headers["HX-Redirect"] == "/gui/entsperren"
+
+
+@pytest.mark.parametrize(
+    ("token", "headers"), [(None, {}), ("other", {}), *(("testtoken", h) for h in FOREIGN)]
+)
+def test_the_setup_form_needs_its_csrf_token_and_this_site(
+    client, engine, token, headers
+):
+    """#827 F10, proved live by the audit: a foreign page cannot use a setup
+    link it knows to give the tablet a password of its choosing. The link
+    stays unused."""
+    code = _setup(engine)
+    form = {
+        "code": code,
+        "passwort": PASSWORD,
+        "passwort2": PASSWORD,
+        "pin": PIN,
+        "pin2": PIN,
+        "admin_pin": ADMIN_PIN,
+        "admin_pin2": ADMIN_PIN,
+    }
+    if token is not None:
+        form["csrf_token"] = token
+    answer = client.post("/gui/einrichten", data=form, headers=headers)
+    assert answer.status_code == 403
+    with Session(engine) as session:
+        assert session.scalar(select(func.count()).select_from(GuiSession)) == 0
+    form["csrf_token"] = "testtoken"
+    assert client.post("/gui/einrichten", data=form).status_code == 303
+
+
+@pytest.mark.parametrize(
+    ("token", "headers"), [(None, {}), ("other", {}), *(("testtoken", h) for h in FOREIGN)]
+)
+def test_closing_the_owner_part_needs_its_csrf_token_and_this_site(
+    client, engine, token, headers
+):
+    """#827 F10: a foreign page cannot end the owner's hour on the tablet."""
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client).status_code == 303
+    form = {} if token is None else {"csrf_token": token}
+    answer = client.post("/gui/inhaber/schliessen", data=form, headers=headers)
+    assert answer.status_code == 403
+    assert client.get(DEVICES, headers=HTML).status_code == 200
+
+
 # --- production: cookie flags, client address -----------------------------------
 
 
