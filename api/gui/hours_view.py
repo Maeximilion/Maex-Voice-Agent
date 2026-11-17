@@ -16,6 +16,7 @@ from api.core.time import business_day
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status import staff_changes as staff
 from api.domain.status import weekly
+from api.gui import form_view
 from api.gui.figures_view import DASH
 from api.gui.figures_view import WEEKDAYS as SHORT
 from api.models import Tenant
@@ -72,13 +73,18 @@ def week_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
 
 
 def day_form(
-    session: Session, tenant: Tenant, weekday: int, typed: dict[str, str] | None = None
+    session: Session,
+    tenant: Tenant,
+    weekday: int,
+    typed: dict[str, str] | None = None,
+    errors: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """The form of one weekday: what holds, with one empty row per service to
     add a span and the token of these hours; or what was typed and refused
     (`typed`), with the token it was typed against. A refused form never gets
     a fresh token: its rows come from the old hours, and with a new token the
-    corrected save would write over what another device changed meanwhile."""
+    corrected save would write over what another device changed meanwhile.
+    `errors`: the faults by row ("pickup-1") or service ("pickup")."""
     day = weekly.week(session, tenant.id)[weekday]
     groups = []
     for key, label in SERVICES:
@@ -103,10 +109,13 @@ def day_form(
                 for i in _rows(typed, key)
             ]
         groups.append({"key": key, "label": label, "rows": rows})
+    errors = errors or {}
     return {
         "weekday": weekday,
         "name": WEEKDAYS[weekday],
         "groups": groups,
+        "errors": errors,
+        "summary": form_view.summary(errors, _row_names(groups)),
         "seen": weekly.token(day)
         if typed is None
         else typed.get("gesehen", "")[:TOKEN],
@@ -125,24 +134,63 @@ def _rows(form: dict[str, str], key: str) -> range:
     return range(count)
 
 
-def typed_spans(form: dict[str, str]) -> weekly.Day:
-    """The spans a weekday's form sent. A row with both fields empty is no
-    span; a service the form does not name is left out and keeps its hours.
-    Raises ValueError on a field that is no HH:MM."""
+def typed_spans(form: dict[str, str]) -> tuple[weekly.Day, list[str]]:
+    """The spans a weekday's form sent, and every row ("pickup-1") with a
+    field that is no HH:MM; with one of those, nothing is to be saved. A row
+    with both fields empty is no span; a service the form does not name is
+    left out and keeps its hours."""
     spans: weekly.Day = {}
+    bad = []
     for key, _label in SERVICES:
         rows = _rows(form, key)
         if not rows:
             continue
         spans[key] = []
         for i in rows:
-            von = form.get(f"{key}-von-{i}", "").strip()
-            bis = form.get(f"{key}-bis-{i}", "").strip()
+            von, bis = _typed_row(form, key, i)
             if not von and not bis:
                 continue
             overnight = bool(form.get(f"{key}-nachts-{i}"))
-            spans[key].append(weekly.Span(hhmm(von), hhmm(bis), overnight))
-    return spans
+            try:
+                spans[key].append(weekly.Span(hhmm(von), hhmm(bis), overnight))
+            except ValueError:
+                bad.append(f"{key}-{i}")
+    return spans, bad
+
+
+def row_errors(form: dict[str, str], faults: dict[str, str]) -> dict[str, str]:
+    """The domain's faults ("pickup 18:00-01:00", or "pickup" for the whole
+    service) by the rows of the form that typed them ("pickup-1"); a span
+    typed twice marks both rows."""
+    errors: dict[str, str] = {}
+    for key, say in faults.items():
+        service, _, span = key.partition(" ")
+        rows = [
+            f"{service}-{i}"
+            for i in _rows(form, service)
+            if span and "-".join(_typed_row(form, service, i)) == span
+        ]
+        for row in rows or [service]:
+            errors.setdefault(row, say)
+    return errors
+
+
+def _typed_row(form: dict[str, str], key: str, i: int) -> tuple[str, str]:
+    return form.get(f"{key}-von-{i}", "").strip(), form.get(
+        f"{key}-bis-{i}", ""
+    ).strip()
+
+
+def _row_names(groups: list[dict[str, Any]]) -> form_view.Fields:
+    """Each row and each service by its words in the list of faults; a link
+    jumps to the row's first field."""
+    names: form_view.Fields = {}
+    for group in groups:
+        key, label = group["key"], group["label"]
+        names[key] = (f"f-{key}-von-0", label)
+        for i in range(len(group["rows"])):
+            names[f"{key}-{i}"] = (f"f-{key}-von-{i}", f"{label}, Zeile {i + 1}")
+    return names
 
 
 def typed_hours(form: dict[str, str]) -> staff.DayHours:

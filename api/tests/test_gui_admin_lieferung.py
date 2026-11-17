@@ -3,6 +3,7 @@ zones with their postal codes, fee, minimum order and delivery time behind the
 admin PIN. These tests act as a signed-in device with the admin PIN
 (conftest); the refusal without it is in test_gui_login.py."""
 
+import re
 import uuid
 
 import pytest
@@ -15,7 +16,7 @@ from api.domain.delivery import owner_zones
 from api.domain.delivery.zones import check_delivery
 from api.main import app
 from api.models import AuditLog, DeliveryZone, Tenant
-from api.tests.test_gui_admin_zeiten import _fields
+from api.tests.test_gui_admin_zeiten import _described, _fields, _tag
 from scripts.seed import seed
 
 HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
@@ -395,11 +396,52 @@ def test_a_long_name_of_the_import_survives_a_refused_form(client, engine):
     assert "40 Zeichen" in typed.text and len(_fields(typed.text)["name"]) == 60
 
 
-def test_the_form_asks_for_no_number_pad_where_a_comma_or_a_space_is_typed(
-    client, engine
-):
-    """A number pad has no space on any phone and no comma on some, so the
-    postal codes and the amounts take the full keyboard."""
+def test_the_postal_codes_keep_the_full_keyboard(client):
+    """A number pad has no space to part the codes; the amounts take the
+    decimal pad, whose separator is the device's (#829-6, below)."""
     form = client.get(NEW, headers=HX).text
-    assert form.count("inputmode=") == 1
-    assert 'name="lieferzeit" value="" inputmode="numeric"' in form
+    assert "inputmode" not in _tag(form, "plz")
+
+
+# --- forms and accessibility (#821, #829) -----------------------------------------
+
+
+def test_every_fault_of_a_zone_is_shown_by_its_field(client, engine):
+    sent = {**ZONE, "plz": "abc", "pauschale": "2.5x", "lieferzeit": "500"}
+    html = client.post(NEW, data=sent, headers=HX).text
+    for name in ("plz", "pauschale", "lieferzeit"):
+        assert 'aria-invalid="true"' in _tag(html, name), name
+    for name in ("name", "mindestwert"):
+        assert "aria-invalid" not in _tag(html, name), name
+    assert "„abc“ ist keine Postleitzahl" in _described(html, "plz")
+    assert "Lieferpauschale" in _described(html, "pauschale")
+    assert "ganzen Minuten" in _described(html, "lieferzeit")
+    summary = html.split("data-fokus", 1)[1].split("</div>", 1)[0]
+    assert summary.count("<li>") == 3 and 'href="#f-plz"' in summary
+    assert _zones(engine) == []
+
+
+def test_the_helper_texts_belong_to_their_fields(client):
+    """A screen reader reads a field with its rule (#829-7)."""
+    html = client.get(NEW, headers=HX).text
+    assert "Preise und Bedingungen" in _described(html, "name")
+    assert "nur in einer aktiven Zone" in _described(html, "plz")
+    assert "zum Beispiel 2,50" in _described(html, "pauschale")
+    assert "zum Beispiel 2,50" in _described(html, "mindestwert")
+    assert "Höchstens" in _described(html, "lieferzeit")
+
+
+def test_amounts_open_the_number_pad_with_a_comma(client):
+    """#829-6: the decimal pad has the comma of the device's language."""
+    html = client.get(NEW, headers=HX).text
+    assert 'inputmode="decimal"' in _tag(html, "pauschale")
+    assert 'inputmode="decimal"' in _tag(html, "mindestwert")
+    assert 'inputmode="numeric"' in _tag(html, "lieferzeit")
+    assert 'hx-disabled-elt="find button"' in html
+
+
+def test_the_zone_list_has_a_header_on_its_buttons_and_a_focused_result(client):
+    answer = client.post(NEW, data=ZONE, headers=HX).text
+    head = answer.split("</thead>", 1)[0]
+    assert "<th></th>" not in head and ">Ändern</th>" in head
+    assert re.search(r'<p\b[^>]*tabindex="-1"[^>]*data-fokus[^>]*>Gespeichert', answer)

@@ -27,6 +27,9 @@ Nothing is deleted: addresses point at their zone, so a zone no longer wanted
 is switched off, as the import does. A zone on a map (`polygon`) is neither
 listed nor changed here.
 
+A refusal names every fault of the form at once (`FieldErrors`), keyed by the
+field of `Typed` it is about; the rules are the same whichever comes first.
+
 Every save runs under the lock of the restaurant's settings row, so two
 devices cannot each add the same code to a different zone; the import takes
 the same lock (`scripts/seed_zones.py` `apply`). It leaves an audit
@@ -38,13 +41,14 @@ import json
 import re
 import unicodedata
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.core.errors import Conflict, InvalidInput, NotFound
+from api.core.errors import Conflict, FieldErrors, InvalidInput, NotFound
 from api.domain.delivery.zones import POSTAL_CODE
 from api.domain.menu.importer import format_eur, parse_eur
 from api.domain.status.config import MAX_WAIT_MINUTES
@@ -65,6 +69,30 @@ MINUTES = re.compile(r"[0-9]{1,4}")
 # holds no character nobody sees.
 UNSEEN = str.maketrans(
     "", "", "".join(map(chr, (0x200B, 0x200C, 0x200D, 0x2060, 0xFEFF, 0xAD)))
+)
+# Signs a renderer draws as nothing although `isprintable` takes them: the
+# Unicode property Default_Ignorable_Code_Point (DerivedCoreProperties.txt).
+# Most are format characters `isprintable` refuses already; the rest are the
+# Hangul fillers, which count as letters, and the variation selectors and
+# other marks (#821). A name of them would read as no name, or as another.
+DRAWS_NOTHING = (
+    (0x00AD, 0x00AD),
+    (0x034F, 0x034F),
+    (0x061C, 0x061C),
+    (0x115F, 0x1160),
+    (0x17B4, 0x17B5),
+    (0x180B, 0x180F),
+    (0x200B, 0x200F),
+    (0x202A, 0x202E),
+    (0x2060, 0x206F),
+    (0x3164, 0x3164),
+    (0xFE00, 0xFE0F),
+    (0xFEFF, 0xFEFF),
+    (0xFFA0, 0xFFA0),
+    (0xFFF0, 0xFFF8),
+    (0x1BCA0, 0x1BCA3),
+    (0x1D173, 0x1D17A),
+    (0xE0000, 0xE0FFF),
 )
 # `draft_order` promises the longer of the zone's time and the team's wait.
 MAX_ETA_MINUTES = MAX_WAIT_MINUTES
@@ -228,8 +256,9 @@ def _save(
     others = [row for row in every if stored is None or row.id != stored.id]
     name = after["name"]
     renamed = stored is None or name != stored.name
+    faults = {}
     if renamed and any(_folded(row.name) == _folded(name) for row in others):
-        raise InvalidInput(f"zone name taken: {name!r}", say=NAME_TAKEN)
+        faults["name"] = NAME_TAKEN
     if after["active"]:
         for row in others:
             if not row.active or row.match_type != POSTAL:
@@ -237,10 +266,10 @@ def _save(
             shared = set(after["postal_codes"]) & set(row.postal_codes or [])
             if shared:
                 code = min(shared)
-                raise InvalidInput(
-                    f"postal code {code} is in zone {row.id} too",
-                    say=CODE_TAKEN.format(code=code, zone=row.name),
-                )
+                faults["postal_codes"] = CODE_TAKEN.format(code=code, zone=row.name)
+                break
+    if faults:
+        raise FieldErrors(f"zone {name!r} clashes: {sorted(faults)}", faults)
 
     if stored is None:
         stored = DeliveryZone(tenant_id=tenant_id, match_type=POSTAL)
@@ -286,16 +315,44 @@ def _read(typed: Typed, kept: dict[str, Any]) -> dict[str, Any]:
     it is stored is taken as it is: the bounds catch a typing error, and a
     zone the import or SQL wrote beyond them must not block a change of its
     other fields, least of all switching it off."""
-    return {
-        "name": typed.name if typed.name == kept.get("name") else _name(typed.name),
-        "postal_codes": _codes(typed.postal_codes, kept.get("postal_codes")),
-        "fee_cents": _amount(typed.fee, FEE, kept.get("fee_cents")),
-        "min_order_cents": _amount(
-            typed.min_order, MIN_ORDER, kept.get("min_order_cents")
+    faults: dict[str, str] = {}
+    values = {
+        "name": typed.name
+        if typed.name == kept.get("name")
+        else _collect(faults, "name", _name, typed.name),
+        "postal_codes": _collect(
+            faults, "postal_codes", _codes, typed.postal_codes, kept.get("postal_codes")
         ),
-        "eta_minutes": _minutes(typed.eta, kept.get("eta_minutes")),
+        "fee_cents": _collect(
+            faults, "fee", _amount, typed.fee, FEE, kept.get("fee_cents")
+        ),
+        "min_order_cents": _collect(
+            faults,
+            "min_order",
+            _amount,
+            typed.min_order,
+            MIN_ORDER,
+            kept.get("min_order_cents"),
+        ),
+        "eta_minutes": _collect(
+            faults, "eta", _minutes, typed.eta, kept.get("eta_minutes")
+        ),
         "active": typed.active,
     }
+    if faults:
+        raise FieldErrors(f"zone fields refused: {sorted(faults)}", faults)
+    return values
+
+
+def _collect(
+    faults: dict[str, str], field: str, read: Callable[..., Any], *args: Any
+) -> Any:
+    """What `read` makes of a field, or None with its refusal in `faults`."""
+    try:
+        return read(*args)
+    except InvalidInput as exc:
+        faults[field] = exc.say or exc.message
+        return None
 
 
 def _plain(text: str) -> str:
@@ -316,8 +373,9 @@ def _folded(name: str) -> str:
 def _name(text: str) -> str:
     name = " ".join(unicodedata.normalize("NFC", text).split())
     # Printable only: the name goes to the model with every zone answer and
-    # onto the tablet, so no control or direction character rides along.
-    if not name.isprintable():
+    # onto the tablet, so no control or direction character rides along, nor
+    # a sign that draws nothing.
+    if not name.isprintable() or any(_draws_nothing(ch) for ch in name):
         raise InvalidInput("zone name with an invisible sign", say=NAME_UNREADABLE)
     # A letter or a digit: a name of signs alone reads as no name in the list.
     if not any(ch.isalnum() for ch in name):
@@ -325,6 +383,11 @@ def _name(text: str) -> str:
     if len(name) > MAX_NAME:
         raise InvalidInput("zone name too long", say=NAME_TOO_LONG)
     return name
+
+
+def _draws_nothing(ch: str) -> bool:
+    point = ord(ch)
+    return any(low <= point <= high for low, high in DRAWS_NOTHING)
 
 
 def _codes(text: str, kept: list[str] | None) -> list[str]:

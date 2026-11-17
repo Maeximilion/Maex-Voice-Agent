@@ -2,19 +2,24 @@
    empty row to add one. Every field shows what the database holds, so an
    untouched save changes nothing; a row emptied in both fields is removed.
    `gesehen` is the token of the hours shown: hours another device changed
-   since are not written over. An end before the start needs its box (#596). #}
-<h2 id="zeiten-tag-titel">{{ name }}: Öffnungszeiten</h2>
-{% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
-<form class="week-form" novalidate hx-post="/gui/zeiten/woche/{{ weekday }}" hx-target="#zeiten-woche" hx-swap="innerHTML" aria-labelledby="zeiten-tag-titel">
+   since are not written over. An end before the start needs its box (#596).
+   A refused save marks every faulty row and lists them above (#821, #829-3). #}
+{% import "fragments/_fehler.html" as fehler %}
+<h2 id="zeiten-tag-titel" tabindex="-1"{% if not summary %} data-fokus{% endif %}>{{ name }}: Öffnungszeiten</h2>
+{{ fehler.summary(summary) }}
+<form class="week-form" novalidate hx-post="/gui/zeiten/woche/{{ weekday }}" hx-target="#zeiten-woche" hx-swap="innerHTML" hx-disabled-elt="find button" aria-labelledby="zeiten-tag-titel">
   <input type="hidden" name="gesehen" value="{{ seen }}">
   {% for group in groups %}
   <fieldset>
     <legend>{{ group.label }}</legend>
+    {{ fehler.beside(group.key, errors) }}
     {% for row in group.rows %}
+    {% set rid = group.key ~ "-" ~ loop.index0 %}
     <div class="span-row">
-      <label>Von <input type="time" name="{{ group.key }}-von-{{ loop.index0 }}" value="{{ row.von }}" step="900"></label>
-      <label>Bis <input type="time" name="{{ group.key }}-bis-{{ loop.index0 }}" value="{{ row.bis }}" step="900"></label>
+      <label>Von <input type="time" id="f-{{ group.key }}-von-{{ loop.index0 }}" name="{{ group.key }}-von-{{ loop.index0 }}" value="{{ row.von }}" step="900"{{ fehler.attrs([rid, group.key], errors) }}></label>
+      <label>Bis <input type="time" name="{{ group.key }}-bis-{{ loop.index0 }}" value="{{ row.bis }}" step="900"{{ fehler.attrs([rid, group.key], errors) }}></label>
       <label class="check"><input type="checkbox" name="{{ group.key }}-nachts-{{ loop.index0 }}" value="1"{% if row.nachts %} checked{% endif %}> Ende nach Mitternacht</label>
+      {{ fehler.beside(rid, errors) }}
     </div>
     {% endfor %}
   </fieldset>
