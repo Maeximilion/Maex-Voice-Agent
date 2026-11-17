@@ -395,14 +395,14 @@ def audit(
     entity_id: uuid.UUID,
     payload: dict[str, Any],
     entity: str = "gui_account",
-) -> None:
-    session.add(
-        AuditLog(
-            tenant_id=tenant_id,
-            actor=actor,
-            action=action,
-            entity=entity,
-            entity_id=entity_id,
-            payload=payload,
-        )
+) -> AuditLog:
+    row = AuditLog(
+        tenant_id=tenant_id,
+        actor=actor,
+        action=action,
+        entity=entity,
+        entity_id=entity_id,
+        payload=payload,
     )
+    session.add(row)
+    return row

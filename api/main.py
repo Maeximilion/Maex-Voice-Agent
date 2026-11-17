@@ -16,7 +16,7 @@ from starlette.exceptions import HTTPException
 
 from api.config import LOCAL_ENVS, settings
 from api.core import envelope
-from api.core.auth import require_token
+from api.core.auth import require_kitchen_token, require_ops_token, require_token
 from api.core.database_role import refuse_a_superuser_role
 from api.core.errors import AppError
 from api.core.logging import configure_logging, get_logger, request_context_middleware
@@ -131,10 +131,27 @@ def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     return response
 
 
+# The token check of each prefix. FastAPI parses a body before the router's
+# dependencies run, so a body it cannot parse reached the handler below
+# without any token check (#811): a stranger's `{` got `invalid_input`.
+_TOKEN_CHECKS = (
+    ("/v1/tools/", require_token),
+    ("/v1/calls/", require_token),
+    ("/v1/kitchen/", require_kitchen_token),
+    ("/v1/ops/", require_ops_token),
+)
+
+
 @app.exception_handler(RequestValidationError)
 def validation_error_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
+    for prefix, check in _TOKEN_CHECKS:
+        if request.url.path.startswith(prefix):
+            try:
+                check(request.headers.get("authorization", ""))
+            except AppError as refused:
+                return app_error_handler(request, refused)
     first = exc.errors()[0] if exc.errors() else {}
     field = ".".join(str(p) for p in first.get("loc", ()) if p != "body")
     return envelope.fail(

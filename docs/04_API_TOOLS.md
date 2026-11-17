@@ -648,6 +648,14 @@ compare); empty closes the route, and outside dev and test the API refuses to st
 one equal to any other token of the stack. Caddy answers 404 for `/v1/ops/*`
 (`api/tests/test_deploy_exposure.py`).
 
+Every route also takes `X-Ops-Customer: <customer key>` (#811): a stack whose restaurant has
+another key, or none, answers 409 `conflict` before it reads or writes anything, a read of guest
+data and its audit row included. A body that cannot be parsed is answered 401 without the token,
+as every other request (the token is checked before the body's error is, also for `/v1/tools/*`).
+`not_found` with 200 and the message `this stack has no restaurant yet`
+(`api/core/ops_reason.py` `NO_RESTAURANT`) means the stack has no restaurant; any other
+`not_found` is a row the restaurant lacks, its settings.
+
 **`GET /v1/ops/status`** → `{"tenant": {"key", "name"}, "call_mode", "last_call_at", "business_day", "today": {...}, "print_bridge": {"configured", "last_poll_at", "silent"}, "backup_at", "alarms": [{"kind", "last_at", "count"}], "menu": {"items", "price_differences", "without_allergen_information"}}`
 
 - Counts, times (UTC) and codes only, no guest data: the route records no reason, so it has none to
@@ -659,7 +667,7 @@ one equal to any other token of the stack. Caddy answers 404 for `/v1/ops/*`
   time and count (`audit_log` `monitor.alarm`); it repeats one that still holds every hour or day.
 - `menu.without_allergen_information`: active dishes without one confirmed allergen value, for
   which the agent says "no information".
-- No restaurant in the stack yet: `not_found`.
+- No restaurant in the stack yet: `not_found` with the words of `NO_RESTAURANT`.
 - Measured: p95 13.4 ms with local DB (20 rounds, busy day of the test).
 
 **`GET /v1/ops/figures`** → `{"tenant": {"key", "name"}, "business_day", "week": {...}, "days": [{"day", ...}, ...]}`
@@ -736,8 +744,11 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
   payload the reason's category and number and what is no secret (which PIN, which device, which
   mode), committed first (`domain/operator.py`). The step's own row follows when it happened
   (`gui.team_pin_shown`, `gui.admin_pin_set`, `gui.session_ended`, `gui.setup_link_issued`,
-  `service_config.mode_changed`, `staff_change.team_phone`), with the operator as actor. No row
-  holds a PIN, a link or, in the reason's row, a telephone number.
+  `service_config.mode_changed`, `staff_change.team_phone`), with the operator as actor. Then
+  every step but the access read writes `ops.<step>.outcome` with payload `{"ask": <id of the
+  reason's row>, "outcome": "done" | "refused" | "failed"}` (#811): `refused` when a rule or the
+  stack said no, `failed` when the step broke; a reason's row without its outcome is a crash that
+  took the process down. No row holds a PIN, a link or, in the reason's row, a telephone number.
 - The steps are the functions the command line and the tablet use, so their rules hold: a PIN has
   4 to 6 digits and the two differ, a mode is never chosen during the emergency stop, a team number
   is one the dialplan dials, holds until the end of the business day and shows the owner's check

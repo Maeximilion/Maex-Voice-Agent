@@ -111,6 +111,7 @@ NOT_AN_ANSWER = "answer cannot be read"
 NOT_TAKEN = "does not take this request"
 NOT_KNOWN = "does not know this question (an older version?)"
 NO_RESTAURANT = "no restaurant in the stack yet"
+NO_SETTINGS = "its restaurant has no settings yet"
 OTHER_CUSTOMER = "another customer answers at this address"
 NO_KEY = "its restaurant has no customer key yet"
 WRONG_STACK = "is not this customer's stack (another key, or none): nothing was done"
@@ -122,7 +123,15 @@ NO_SUCH_CALL = (
 # After these the stack did nothing; after any other problem of a step that
 # changes something, nobody knows.
 NOTHING_DONE = frozenset(
-    {REFUSED, NOT_KNOWN, NOT_TAKEN, NO_RESTAURANT, WRONG_STACK, REFUSED_BY_RULE}
+    {
+        REFUSED,
+        NOT_KNOWN,
+        NOT_TAKEN,
+        NO_RESTAURANT,
+        NO_SETTINGS,
+        WRONG_STACK,
+        REFUSED_BY_RULE,
+    }
 )
 
 Short = Annotated[str, Field(max_length=200)]
@@ -324,6 +333,7 @@ class StackAccess(_Named):
 
 class _Error(_Answer):
     code: Short
+    message: str = ""
 
 
 class _Envelope[Asked: _Named](_Answer):
@@ -520,10 +530,13 @@ def _fetch[Asked: _Named](
     except ValidationError:
         return unreadable
     code = envelope.error.code if envelope.error is not None else ""
+    message = envelope.error.message if envelope.error is not None else ""
     # The stack's own `NotFound` comes with 200 (`api/core/errors.py`); the
-    # same code under another status is something else's answer.
+    # same code under another status is something else's answer. Only the
+    # stack's own words mean the restaurant is missing; any other `not_found`
+    # is a row the restaurant lacks, its settings (#811).
     if code == "not_found" and status_code == 200:
-        return NO_RESTAURANT
+        return NO_RESTAURANT if message == ops_reason.NO_RESTAURANT else NO_SETTINGS
     # A step marks what one of the stack's rules refused with a status of its
     # own (`domain/operator.py` `_by_rule`); with any other the request itself
     # was not taken: a header, the body's form. Only the first is explained as
@@ -546,9 +559,21 @@ def _fetch[Asked: _Named](
     return data
 
 
+def _named(customer: Stack, **headers: str) -> dict[str, str]:
+    """The headers of a question: every one names the customer meant, and the
+    stack refuses before it reads or writes anything when that is not its own
+    (#811)."""
+    return {ops_reason.CUSTOMER_HEADER: customer.key, **headers}
+
+
 def _ask(client: httpx.Client, customer: Stack) -> Row:
     found = _fetch(
-        client, customer, STATUS_PATH, _Envelope[StackStatus], unreadable=NOT_A_STATUS
+        client,
+        customer,
+        STATUS_PATH,
+        _Envelope[StackStatus],
+        headers=_named(customer),
+        unreadable=NOT_A_STATUS,
     )
     if isinstance(found, str):
         return Row(customer.key, problem=found)
@@ -642,6 +667,7 @@ def detail(customer: Stack, client: Callable[[], httpx.Client] | None = None) ->
                 customer=customer,
                 path=FIGURES_PATH,
                 hull=_Envelope[StackFigures],
+                headers=_named(customer),
             ),
         ),
     ]
@@ -669,7 +695,10 @@ def calls(
         customer=customer,
         path=f"{CALLS_PATH}?day={day.isoformat()}",
         hull=_Envelope[StackCalls],
-        headers={ops_reason.REASON_HEADER: reason, ops_reason.ACTOR_HEADER: actor},
+        headers=_named(
+            customer,
+            **{ops_reason.REASON_HEADER: reason, ops_reason.ACTOR_HEADER: actor},
+        ),
         limit=MAX_CALLS_BYTES,
     )
     found = _at_once([(customer.key, ask)], client)[0]
@@ -696,7 +725,10 @@ def call_log(
         customer=customer,
         path=f"{CALLS_PATH}/{call_id}",
         hull=_Envelope[StackCall],
-        headers={ops_reason.REASON_HEADER: reason, ops_reason.ACTOR_HEADER: actor},
+        headers=_named(
+            customer,
+            **{ops_reason.REASON_HEADER: reason, ops_reason.ACTOR_HEADER: actor},
+        ),
     )
     found = _at_once([(customer.key, ask)], client)[0]
     if isinstance(found, StackCall) and found.call_id != call_id:
@@ -819,11 +851,10 @@ def manage(
         customer=customer,
         path=asked.path,
         hull=_Envelope[StackAccess],
-        headers={
-            ops_reason.REASON_HEADER: reason,
-            ops_reason.ACTOR_HEADER: actor,
-            ops_reason.CUSTOMER_HEADER: customer.key,
-        },
+        headers=_named(
+            customer,
+            **{ops_reason.REASON_HEADER: reason, ops_reason.ACTOR_HEADER: actor},
+        ),
         method=asked.method,
         sent=asked.body,
         by_rule=REFUSED_BY_RULE,

@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import sessionmaker
 
+from api.core import ops_reason
 from api.dashboard import access, cli, customers, totp
 from api.dashboard import app as web
 from api.dashboard.customers import BadCustomer, add_customer, remove_customer
@@ -489,11 +490,23 @@ PROBLEMS = [
             200,
             json={
                 "ok": False,
-                "error": {"code": "not_found", "message": "no restaurant"},
+                "error": {"code": "not_found", "message": ops_reason.NO_RESTAURANT},
             },
         ),
         customers.NO_RESTAURANT,
         "not-found",
+    ),
+    # Any other `not_found` is a row the restaurant lacks (#811).
+    (
+        lambda r: httpx.Response(
+            200,
+            json={
+                "ok": False,
+                "error": {"code": "not_found", "message": "service_config missing"},
+            },
+        ),
+        customers.NO_SETTINGS,
+        "no-settings",
     ),
     # Only the stack's own answer with 200 means that; a proxy's or a
     # framework's `not_found` under another status does not.
