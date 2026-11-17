@@ -1,0 +1,22 @@
+{# The tab "Lieferung" of the admin area (#571, docs/06 §4): the delivery zones
+   with their postal codes, fee, minimum order and delivery time. Behind the
+   admin PIN (`require_admin`). Every value comes from the database; the list
+   is a fragment, swapped for a zone's form and back. #}
+{% extends "base.html" %}
+{% from "betrieb/_kopf.html" import admin_kopf with context %}
+{% block title %}Lieferung{% endblock %}
+{% block body_class %}betrieb{% endblock %}
+
+{% block header %}{{ admin_kopf("Lieferung", "Lieferung", tenant) }}{% endblock %}
+
+{% block main %}
+<div class="zeiten zonen">
+  <section class="card" id="lieferung-zonen">
+    {% include "fragments/lieferung_zonen.html" %}
+  </section>
+  <form method="post" action="/gui/inhaber/schliessen">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button type="submit">Inhaber-Bereich schließen</button>
+  </form>
+</div>
+{% endblock %}

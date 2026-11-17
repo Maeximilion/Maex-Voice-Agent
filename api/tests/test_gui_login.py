@@ -26,6 +26,7 @@ from api.gui.sse import _signed_in
 from api.main import app
 from api.models import (
     AuditLog,
+    DeliveryZone,
     GuiAccount,
     GuiLoginFailure,
     GuiSession,
@@ -676,7 +677,9 @@ def test_the_admin_pin_unlocks_a_locked_device(client, engine):
 def test_the_settings_sheet_names_the_device_list(client, engine):
     _set_up_and_sign_in(client, engine)
     assert 'hx-get="/gui/einstellungen"' in client.get("/gui/", headers=HTML).text
-    assert 'href="/gui/geraete"' in client.get("/gui/einstellungen", headers=HX).text
+    sheet = client.get("/gui/einstellungen", headers=HX).text
+    for page in ("/gui/zeiten", "/gui/lieferung", "/gui/geraete"):
+        assert f'href="{page}"' in sheet
 
 
 # --- the owner's tab "Zeiten" (#571, plan number 7) -----------------------------
@@ -760,6 +763,150 @@ def test_the_hours_close_again_when_the_owner_is_idle(client, engine):
     _age_owner_clock(engine, 16)
     gone = client.post(HOURS_WRITES[1][0], data=HOURS_WRITES[1][1], headers=HX)
     assert gone.status_code == 401 and _hours_untouched(engine)
+
+
+# --- the owner's tab "Lieferung" (#571, plan number 8) --------------------------
+
+DELIVERY = "/gui/lieferung"
+ZONE_FORM = {
+    "name": "Zone 1",
+    "plz": "76530",
+    "pauschale": "2,50",
+    "mindestwert": "15",
+    "lieferzeit": "40",
+    "aktiv": "1",
+}
+
+
+def _a_zone(engine) -> DeliveryZone:
+    with Session(engine) as session:
+        zone = DeliveryZone(
+            tenant_id=session.scalars(select(Tenant.id)).one(),
+            name="Zone 9",
+            match_type="postal_code",
+            postal_codes=["76599"],
+            fee_cents=190,
+            min_order_cents=1200,
+            eta_minutes=35,
+        )
+        session.add(zone)
+        session.commit()
+        session.refresh(zone)
+        session.expunge(zone)
+        return zone
+
+
+def _zones_untouched(engine) -> bool:
+    """The one zone as `_a_zone` wrote it, no audit row of the tab."""
+    with Session(engine) as session:
+        zones = [
+            (zone.name, zone.fee_cents, zone.active)
+            for zone in session.scalars(select(DeliveryZone))
+        ]
+        audits = session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.entity == "delivery_zones")
+        )
+    return zones == [("Zone 9", 190, True)] and audits == 0
+
+
+def test_the_delivery_zones_ask_the_admin_pin_first(client, engine):
+    zone = _a_zone(engine)
+    _set_up_and_sign_in(client, engine)
+    page = client.get(DELIVERY, headers=HTML)
+    assert page.status_code == 303
+    assert page.headers["location"] == "/gui/inhaber?weiter=/gui/lieferung"
+    # The parts of the page ask it too, show nothing before and lead back to
+    # the page after the PIN, never to themselves.
+    on_page = {**HX, "HX-Current-URL": "http://testserver/gui/lieferung"}
+    for path in (
+        f"{DELIVERY}/zonen",
+        f"{DELIVERY}/neu",
+        f"{DELIVERY}/zone/{zone.id}",
+    ):
+        part = client.get(path, headers=on_page)
+        assert part.status_code == 401, path
+        assert "Zone 9" not in part.text and "76599" not in part.text
+        assert part.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/lieferung"
+    # The team PIN opens nothing here.
+    assert _owner(client, pin=PIN, back=DELIVERY).status_code == 401
+    assert client.get(DELIVERY, headers=HTML).status_code == 303
+
+    assert _owner(client, back=DELIVERY).headers["location"] == DELIVERY
+    shown = client.get(DELIVERY, headers=HTML)
+    assert shown.status_code == 200 and "Zone 9" in shown.text
+    assert shown.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize("target", ["neu", "zone"])
+def test_a_write_to_the_zones_without_the_admin_pin_writes_nothing(
+    client, engine, target
+):
+    zone = _a_zone(engine)
+    _set_up_and_sign_in(client, engine)
+    path = f"{DELIVERY}/neu" if target == "neu" else f"{DELIVERY}/zone/{zone.id}"
+    answer = client.post(
+        path,
+        data=ZONE_FORM,
+        headers={**HX, "HX-Current-URL": "http://testserver/gui/lieferung"},
+    )
+    assert answer.status_code == 401
+    assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/lieferung"
+    assert _zones_untouched(engine)
+
+
+@pytest.mark.parametrize("target", ["neu", "zone"])
+def test_a_write_to_the_zones_from_another_site_is_refused(client, engine, target):
+    zone = _a_zone(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DELIVERY).status_code == 303
+    path = f"{DELIVERY}/neu" if target == "neu" else f"{DELIVERY}/zone/{zone.id}"
+    answer = client.post(
+        path, data=ZONE_FORM, headers={**HX, "Origin": "https://evil.example"}
+    )
+    assert answer.status_code == 403
+    assert _zones_untouched(engine)
+
+
+def _nothing_of_the_zones_opens(client, engine, zone) -> None:
+    """The page, each of its parts and both writes lead to the admin PIN, show
+    nothing and write nothing."""
+    on_page = {**HX, "HX-Current-URL": "http://testserver/gui/lieferung"}
+    assert client.get(DELIVERY, headers=HTML).status_code == 303
+    for path in (
+        f"{DELIVERY}/zonen",
+        f"{DELIVERY}/neu",
+        f"{DELIVERY}/zone/{zone.id}",
+    ):
+        part = client.get(path, headers=on_page)
+        assert part.status_code == 401, path
+        assert "Zone 9" not in part.text and "76599" not in part.text
+        assert part.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/lieferung"
+    for path in (f"{DELIVERY}/neu", f"{DELIVERY}/zone/{zone.id}"):
+        write = client.post(path, data=ZONE_FORM, headers=on_page)
+        assert write.status_code == 401, path
+        assert write.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/lieferung"
+    assert _zones_untouched(engine)
+
+
+def test_the_zones_close_again_when_the_owner_is_idle(client, engine):
+    zone = _a_zone(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DELIVERY).status_code == 303
+    assert client.get(DELIVERY, headers=HTML).status_code == 200
+    _age_owner_clock(engine, 16)
+    _nothing_of_the_zones_opens(client, engine, zone)
+
+
+def test_a_locked_device_opens_nothing_of_the_zones(client, engine):
+    """The team's idle lock ends the owner's rights on the device too."""
+    zone = _a_zone(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DELIVERY).status_code == 303
+    assert client.get(DELIVERY, headers=HTML).status_code == 200
+    _lock(engine)
+    _nothing_of_the_zones_opens(client, engine, zone)
 
 
 def test_the_staff_pages_of_the_frame_need_no_admin_pin(client, engine):

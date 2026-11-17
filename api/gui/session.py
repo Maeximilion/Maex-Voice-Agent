@@ -149,9 +149,9 @@ def require_admin(
     access: Access = Depends(require_gui_session),
     db: Session = Depends(get_db),
 ) -> Access:
-    """The owner's part of the admin area: the device list now, zones, fees and
-    weekly hours when their pages come (D34 point 3). Without the admin PIN on
-    this device it goes to the PIN page, which leads back here."""
+    """The owner's part of the admin area: the device list, the weekly hours and
+    the delivery zones with fee and minimum order (D34 point 3). Without the
+    admin PIN on this device it goes to the PIN page, which leads back here."""
     if not access.admin:
         raise _away(request, _owner_page(request))
     mark_admin_active(db, access.session_id, clock.utcnow())

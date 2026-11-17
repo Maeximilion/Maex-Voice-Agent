@@ -446,8 +446,14 @@ the second builds against.
   htmx without the PIN leads back to its page after the PIN, never to itself. On that tab the owner also sets a date's hours directly: they hold at once without a
   check card or a push, which exist to tell the owner what the staff did, and a date whose staff
   change is still open is decided on its card first. The staff's own way to a date's hours (the
-  sheet, next point) is unchanged, and so is what waits for the owner. The pages for zones and
-  fees do not exist yet and take `require_admin` when they come.
+  sheet, next point) is unchanged, and so is what waits for the owner. Since 17.11.2026 the
+  delivery zones with fee and minimum order are built too (the tab "Lieferung", `/gui/lieferung`, #571
+  plan number 8): the page, the list, both forms and both writes take `require_admin`, each write
+  carries the CSRF token and `HX-Request`, answers `no-store` and leaves an audit row with the actor
+  `gui:owner` and the zone before and after. Every value is checked in `domain/delivery/owner_zones.py`
+  (money decides there, never in the form), a zone is found by its id and this restaurant's tenant
+  only, and a save runs under the lock of the settings row, so two devices cannot each add one postal
+  code to a different zone; the import (`scripts/seed_zones.py`) takes the same lock. Typed text comes back escaped, and a field the owner changed is cut to a bound (a field sent back as it was shown comes back whole).
 - **Staff changes are temporary and reviewed (D34 point 4, built in (b), the push in #588):** a staff change to a date's hours
   expires with that date. Today's changes hold at once; for a later date the restrictive direction
   (closed, shorter hours) holds at once, while longer or extra hours beyond today wait for the

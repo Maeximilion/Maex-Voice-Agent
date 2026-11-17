@@ -102,6 +102,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 
 ### `domain/delivery/`
 - `zones.py` — PLZ-Match, später Polygon (`shapely`), ein Interface für beides
+- `owner_zones.py` — the owner's zones behind the admin PIN (#571): `zones` lists the postal code zones, `save_zone` writes one (new or changed) under the lock of the settings row and checks it against what `check_delivery` and `scripts/seed_zones.py` do with the rows: five-digit codes, a code in one active zone only, a name once per restaurant, amounts in cents from euros with a comma, the delivery time up to `config.MAX_WAIT_MINUTES`; a value sent back as it is stored skips its bound; a token of the zone shown refuses a save against a zone changed since; an audit row per save; nothing is deleted
 - `address.py` — wer, wohin, welche Zone (T-6.5): `place` liest nur und wirft, `keep` schreibt Kunde und Adresse; Zone auflösen und an der Adresse speichern. Mindestbestellwert und „Lieferung offen" stehen in `domain/ordering/validation.py`, neben den übrigen Prüfungen vor der Summe
 
 ### `domain/customers/`
@@ -259,6 +260,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `access.py` — the sign-in, setup link, PIN and admin PIN pages (`/gui/anmelden`, `/gui/einrichten`, `/gui/entsperren`, `/gui/inhaber`), plain forms with the CSRF token as a field
 - `dev.py` — router of the simulator console (`/gui/dev/console`), mounted by `mount_gui` only when `ENV=dev`; keeps the open calls in the process, the logic stays in `sim/session.py` (the one place where `gui` imports `sim`, because the console is the simulator page)
 - `calls_view.py` — the words and numbers of the call list `/gui/anrufe` (T-8.7): outcome, intent and line note in German, the number cut, the three filters; rows from `domain/calls/log.py`
+- `delivery_view.py` — the words and form fields of the tab `/gui/lieferung` (#571): the zones as rows with amounts in euros, a zone's form with what holds or what was typed and refused, the fields handed to `domain/delivery/owner_zones.py` as text; it reads no amount and checks nothing
 - `hours_view.py` — the words and form reading of the tab `/gui/zeiten` (#571): the week as rows, a weekday's form with what holds or what was typed and refused, the fields turned into `weekly.Span`s (`typed_spans`, `hhmm`), the coming special days and the guests to call; every hour from `domain/status/weekly.py` and `staff_changes.py`
 - `templates/` — `base.html`, `betrieb/`, `admin/`, `fragments/`
 - `static/` — Pico.css, HTMX lokal, eigene Töne; served with `Cache-Control: no-cache` (`__init__.py`), so the browser asks again on every use

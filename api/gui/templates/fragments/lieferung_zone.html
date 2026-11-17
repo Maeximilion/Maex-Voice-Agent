@@ -1,0 +1,29 @@
+{# The form of one delivery zone (#571), or of a new one. Every field shows
+   what the database holds, so an untouched save changes nothing. `gesehen` is
+   the token of the zone shown: a zone another device changed since is not
+   written over. Amounts are typed in euros with a comma; what a field may
+   hold is checked in `domain/delivery/owner_zones.py`, not here. The amounts
+   and the postal codes take the full keyboard: a number pad has no comma on
+   every phone, and none has a space. #}
+<h2 id="lieferung-zone-titel">{{ title }}</h2>
+{% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
+<form class="week-form zone-form" novalidate hx-post="{{ action }}" hx-target="#lieferung-zonen" hx-swap="innerHTML" aria-labelledby="lieferung-zone-titel">
+  <input type="hidden" name="gesehen" value="{{ seen }}">
+  <label>Name der Zone <input type="text" name="name" value="{{ name }}" autocomplete="off"></label>
+  <p class="muted">Nur der Name, zum Beispiel „Innenstadt“. Preise und Bedingungen gehören in die Felder darunter, nicht in den Namen: die KI liest ihn mit.</p>
+  <label>Postleitzahlen <textarea name="plz" rows="3" autocomplete="off">{{ plz }}</textarea></label>
+  <p class="muted">Mit Komma oder Leerzeichen trennen. Eine Postleitzahl kann nur in einer aktiven Zone stehen.</p>
+  <label>Lieferpauschale in Euro <input type="text" name="pauschale" value="{{ pauschale }}" autocomplete="off"></label>
+  <label>Mindestbestellwert in Euro <input type="text" name="mindestwert" value="{{ mindestwert }}" autocomplete="off"></label>
+  <p class="muted">Beträge mit Komma, zum Beispiel 2,50. Kostenlos oder kein Mindestbestellwert: 0. Für den Mindestbestellwert zählen die Gerichte ohne die Lieferpauschale.</p>
+  <label>Lieferzeit in Minuten <input type="text" name="lieferzeit" value="{{ lieferzeit }}" inputmode="numeric" autocomplete="off"></label>
+  <p class="muted">Höchstens {{ wait_max }} Minuten. Die KI nennt die längere Zeit: diese oder die Wartezeit Lieferung.</p>
+  <div class="span-row">
+    <label class="check"><input type="checkbox" name="aktiv" value="1"{% if aktiv %} checked{% endif %}> Zone aktiv: die KI nimmt Lieferungen dorthin an</label>
+  </div>
+  <p class="muted">Eine Zone wird nicht gelöscht, nur ausgeschaltet: frühere Adressen gehören zu ihr.</p>
+  <div class="cb-actions">
+    <button type="submit" class="primary">Speichern</button>
+    <button type="button" hx-get="/gui/lieferung/zonen" hx-target="#lieferung-zonen" hx-swap="innerHTML">Abbrechen</button>
+  </div>
+</form>
