@@ -3,6 +3,7 @@ same answer to every wrong input, waits after failures, sessions, CSRF, the
 proxy check and the break-glass command, against a scratch operator database."""
 
 import os
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -11,6 +12,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import sessionmaker
@@ -379,6 +381,44 @@ def test_a_post_without_the_page_token_or_from_another_site_is_refused(
     )
     assert other.status_code == 403
     assert client.post("/logout", data={"csrf_token": token}).status_code == 401
+
+
+# What answers without a session: the sign-in and the health check, no more.
+PUBLIC = {
+    ("GET", "/health"),
+    ("GET", "/login"),
+    ("POST", "/login"),
+    ("POST", "/login/passkey/options"),
+}
+
+
+def _routes() -> list[tuple[str, str]]:
+    found = set()
+    for route in web.app.routes:
+        if isinstance(route, APIRoute):
+            path = re.sub(r"\{[^}]+\}", "x", route.path)
+            found |= {(method, path) for method in route.methods or ()}
+    return sorted(found)
+
+
+def test_every_route_of_the_dashboard_refuses_without_a_session(client, factors):
+    """#827 F10: the plan's gate asks for every route refused without a
+    session, also a route added later. The list of public routes is fixed
+    here: a new route is either behind the session or named above."""
+    routes = _routes()
+    assert set(routes) >= PUBLIC
+    for cookies in ({}, {"ops_session": "forged"}):
+        client.cookies.clear()
+        client.cookies.update(cookies)
+        for method, path in routes:
+            if (method, path) in PUBLIC:
+                continue
+            answer = client.request(method, path, follow_redirects=False)
+            if method == "GET" and answer.status_code == 303:
+                assert answer.headers["location"] == "/login", path
+            else:
+                assert answer.status_code == 401, (method, path)
+            assert "maxi" not in answer.text, path
 
 
 def test_outside_dev_and_test_only_the_proxy_gets_in(

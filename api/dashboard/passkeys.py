@@ -13,7 +13,9 @@ this module holds to:
   challenge the answer names is taken: an older tab's answer leaves the newer
   tab's challenge in place (`signed_challenge`). Nobody's
   challenge is ever removed to make room for another's: anyone may ask for a
-  sign-in challenge, and a flood must not take the operator's away.
+  sign-in challenge, and a flood must not take the operator's away. One client
+  address holds at most `SIGN_IN_PER_ADDRESS` live sign-in challenges; more
+  are refused (#827 F1).
 - An answer is input from outside until it is verified. Whatever its parsing
   or its check raises is a refusal, never a server error: at the sign-in that
   runs after the password check, and an error there would tell that the
@@ -68,6 +70,9 @@ from api.domain.access.hashing import token_hash
 
 CHALLENGE_LIFE = timedelta(minutes=5)
 CHALLENGE_BYTES = 32
+# Live sign-in challenges of one client address. A person has a tab or two; a
+# global cap instead would let a flood shut out the operator's passkey.
+SIGN_IN_PER_ADDRESS = 10
 # The browser's own limit for one ceremony, in milliseconds.
 TIMEOUT_MS = 120_000
 # Characters of an answer. A device's is one to four thousand; nothing
@@ -96,20 +101,54 @@ def for_attempt(token: str) -> str:
     return f"attempt:{token_hash(token)}"
 
 
-def issue(db: Session, bound_to: str, purpose: str, now: datetime) -> bytes:
+class TooMany(Exception):
+    """This address holds `SIGN_IN_PER_ADDRESS` live sign-in challenges."""
+
+
+def issue(
+    db: Session,
+    bound_to: str,
+    purpose: str,
+    now: datetime,
+    client_address: str | None = None,
+) -> bytes:
     """A new challenge for this holder and purpose, in place of the one it
-    had. Commits."""
+    had. Commits. With `client_address` (a sign-in) raises `TooMany` when that
+    address holds the cap of live challenges of other holders already: a
+    flood is refused, nobody's challenge is taken away (#827 F1)."""
     db.execute(delete(OperatorChallenge).where(OperatorChallenge.expires_at <= now))
+    if client_address is not None:
+        # One address at a time, so parallel asks cannot all pass the count.
+        db.execute(select(func.pg_advisory_xact_lock(func.hashtext(client_address))))
+        live = db.scalar(
+            select(func.count())
+            .select_from(OperatorChallenge)
+            .where(
+                OperatorChallenge.client_address == client_address,
+                OperatorChallenge.bound_to != bound_to,
+            )
+        )
+        if (live or 0) >= SIGN_IN_PER_ADDRESS:
+            db.rollback()
+            raise TooMany
     challenge = secrets.token_bytes(CHALLENGE_BYTES)
     expires = now + CHALLENGE_LIFE
     db.execute(
         insert(OperatorChallenge)
         .values(
-            bound_to=bound_to, purpose=purpose, challenge=challenge, expires_at=expires
+            bound_to=bound_to,
+            purpose=purpose,
+            challenge=challenge,
+            expires_at=expires,
+            client_address=client_address,
         )
         .on_conflict_do_update(
             constraint="uq_operator_challenge_holder",
-            set_={"challenge": challenge, "expires_at": expires},
+            set_={
+                "challenge": challenge,
+                "expires_at": expires,
+                "client_address": client_address,
+            },
         )
     )
     db.commit()
@@ -289,13 +328,15 @@ def assertion_options(
     purpose: str,
     now: datetime,
     account_id: uuid.UUID | None = None,
+    client_address: str | None = None,
 ) -> str:
     """What `navigator.credentials.get` takes, as JSON. Without an account (the
     sign-in page, where nobody is known yet) it names no credential: the
-    device offers the passkeys it holds for this site. Commits."""
+    device offers the passkeys it holds for this site. Commits; raises
+    `TooMany` as `issue` does."""
     options = generate_authentication_options(
         rp_id=settings.relying_party_id,
-        challenge=issue(db, bound_to, purpose, now),
+        challenge=issue(db, bound_to, purpose, now, client_address),
         timeout=TIMEOUT_MS,
         allow_credentials=_descriptors(db, account_id) if account_id else None,
         user_verification=UserVerificationRequirement.REQUIRED,

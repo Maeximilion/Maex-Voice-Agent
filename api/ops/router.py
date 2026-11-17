@@ -3,16 +3,16 @@
 Own token (`OPS_TOKEN`), held only by the operator dashboard, which reaches the
 stack's api over the internal `ops` network; the proxy answers 404 for the path.
 
-`/status` and `/figures` answer with counts, times and codes. `/calls` and
-`/calls/<call_id>` (one call with its tool calls, for the dev tools) answer
-with what guests did, so they need a reason and the operator's account
-(`require_ops_reason`) and are in the audit log before they answer.
+Every route needs the key of the customer the dashboard means (`_customer`,
+#811): a stack that is not that customer's refuses before anything is read or
+written. `/status` and `/figures` answer with counts, times and codes.
+`/calls` and `/calls/<call_id>` (one call with its tool calls, for the dev
+tools) answer with what guests did, so they need a reason and the operator's
+account (`require_ops_reason`) and are in the audit log before they answer.
 
 `/access` and the steps behind it (both PINs, devices, a setup link) and
 `/call-mode` and `/team-phone` show a secret or change the restaurant. Each
-needs the reason and the account too, and the key of the customer the dashboard
-means (`_customer`): a stack that is not that customer's refuses before
-anything is read or written. Each answers with the state after the step
+needs the reason and the account too. Each answers with the state after the step
 (`domain/operator.py` `access`), which holds no secret; a shown PIN and a new
 setup link are the only secrets an answer carries, once.
 """
@@ -31,7 +31,7 @@ from api.core import envelope
 from api.core import time as clock
 from api.core.auth import require_ops_reason, require_ops_token
 from api.core.errors import Conflict, NotFound
-from api.core.ops_reason import OpsReader
+from api.core.ops_reason import NO_RESTAURANT, OpsReader
 from api.db import get_db
 from api.domain import operator
 from api.domain.access.sessions import stack_tenant_id
@@ -48,7 +48,7 @@ def _tenant(session: Session) -> Tenant:
     tenant_id = stack_tenant_id(session)
     tenant = session.get(Tenant, tenant_id) if tenant_id else None
     if tenant is None:
-        raise NotFound("this stack has no restaurant yet")
+        raise NotFound(NO_RESTAURANT)
     return tenant
 
 
@@ -56,6 +56,17 @@ def _names(tenant: Tenant) -> dict[str, Any]:
     """Every answer names its restaurant: the dashboard checks that the stack
     it asked is the one that answers."""
     return {"key": tenant.customer_key, "name": tenant.name}
+
+
+def _customer(
+    x_ops_customer: str = Header(default=""), session: Session = Depends(get_db)
+) -> Tenant:
+    """The stack's restaurant, when it is the customer the dashboard means.
+    A restaurant without a key is nobody's: nothing ties it to that customer."""
+    tenant = _tenant(session)
+    if not tenant.customer_key or tenant.customer_key != x_ops_customer:
+        raise Conflict("this stack is not that customer's", status=409)
+    return tenant
 
 
 def _figures(figures: Figures) -> dict[str, Any]:
@@ -67,8 +78,9 @@ def _figures(figures: Figures) -> dict[str, Any]:
 
 
 @router.get("/status")
-def status(session: Session = Depends(get_db)) -> JSONResponse:
-    tenant = _tenant(session)
+def status(
+    tenant: Tenant = Depends(_customer), session: Session = Depends(get_db)
+) -> JSONResponse:
     found = overview.status(session, tenant, clock.utcnow())
     data = asdict(found) | {"today": _figures(found.today)}
     del data["tenant_key"], data["tenant_name"]
@@ -76,8 +88,9 @@ def status(session: Session = Depends(get_db)) -> JSONResponse:
 
 
 @router.get("/figures")
-def figures(session: Session = Depends(get_db)) -> JSONResponse:
-    tenant = _tenant(session)
+def figures(
+    tenant: Tenant = Depends(_customer), session: Session = Depends(get_db)
+) -> JSONResponse:
     found = overview.week(session, tenant, clock.utcnow())
     return envelope.ok(
         jsonable_encoder(
@@ -95,11 +108,11 @@ def figures(session: Session = Depends(get_db)) -> JSONResponse:
 def calls(
     day: date,
     reader: OpsReader = Depends(require_ops_reason),
+    tenant: Tenant = Depends(_customer),
     session: Session = Depends(get_db),
 ) -> JSONResponse:
     """The calls of one business day, never a span: no bulk export over this
     API (docs/23 §8)."""
-    tenant = _tenant(session)
     names = _names(tenant)
     rows = calls_for_support(
         session,
@@ -121,12 +134,12 @@ def calls(
 def call(
     call_id: uuid.UUID,
     reader: OpsReader = Depends(require_ops_reason),
+    tenant: Tenant = Depends(_customer),
     session: Session = Depends(get_db),
 ) -> JSONResponse:
     """One call and its tool calls (docs/23 §5 "Dev tools"). A call this
     restaurant does not have is `call: null` under the restaurant's name, not
     `not_found`: that code says the stack has no restaurant."""
-    tenant = _tenant(session)
     names = _names(tenant)
     found = call_for_support(
         session,
@@ -146,17 +159,6 @@ def call(
             }
         )
     )
-
-
-def _customer(
-    x_ops_customer: str = Header(default=""), session: Session = Depends(get_db)
-) -> Tenant:
-    """The stack's restaurant, when it is the customer the dashboard means.
-    A restaurant without a key is nobody's: nothing ties it to that customer."""
-    tenant = _tenant(session)
-    if not tenant.customer_key or tenant.customer_key != x_ops_customer:
-        raise Conflict("this stack is not that customer's", status=409)
-    return tenant
 
 
 def _access(session: Session, tenant: Tenant, **shown: Any) -> JSONResponse:

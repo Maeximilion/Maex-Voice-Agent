@@ -124,9 +124,9 @@ def _cal(mutate: Mutate | None = None, code: int = 200, key: str = "alpha") -> H
     return _says(_calls(key), mutate, code)
 
 
-def _error(code: str, status: int = 200) -> Handler:
+def _error(code: str, status: int = 200, message: str = "x") -> Handler:
     return lambda r: httpx.Response(
-        status, json={"ok": False, "error": {"code": code, "message": "x"}}
+        status, json={"ok": False, "error": {"code": code, "message": message}}
     )
 
 
@@ -243,7 +243,12 @@ FIGURES_PROBLEMS = [
     pytest.param(
         lambda r: httpx.Response(403, json={"ok": False}), customers.REFUSED, id="403"
     ),
-    pytest.param(_error("not_found"), customers.NO_RESTAURANT, id="not-found"),
+    pytest.param(
+        _error("not_found", message=ops_reason.NO_RESTAURANT),
+        customers.NO_RESTAURANT,
+        id="not-found",
+    ),
+    pytest.param(_error("not_found"), customers.NO_SETTINGS, id="no-settings"),
     pytest.param(_error("invalid_input"), customers.NOT_TAKEN, id="invalid-input"),
     pytest.param(
         lambda r: httpx.Response(200, content=b"<html>x</html>"),

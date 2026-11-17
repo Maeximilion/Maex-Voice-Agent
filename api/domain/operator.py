@@ -10,13 +10,16 @@ What this module adds is the reason. Before a step is tried, a row
 `ops.<step>` with the operator's account, the reason's category and the ticket
 number is committed (`_asked`), as for a read of guest data
 (`domain/calls/log.py`): a step that fails or is refused afterwards is still a
-step somebody asked for. The step's own row follows when it happened. No row
-holds a PIN, a link or a telephone number.
+step somebody asked for. The step's own row follows when it happened, and
+then a row `ops.<step>.outcome` with the id of the ask (`_step`, #811):
+`done`, `refused` (a rule or the stack said no) or `failed` (it broke). An ask
+without its outcome is a crash that took the process down. No row holds a
+PIN, a link or a telephone number.
 """
 
 import uuid
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
@@ -24,7 +27,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.core.errors import InvalidInput
+from api.core.errors import AppError, InvalidInput
 from api.core.ops_reason import RULE_STATUS, OpsReader
 from api.domain.access.admin import set_admin_pin, shown_pin
 from api.domain.access.sessions import audit, end_sessions
@@ -78,9 +81,10 @@ class Access:
 
 def _asked(
     session: Session, tenant: Tenant, by: OpsReader, step: str, **detail: str
-) -> None:
-    """Who asked for which step and why, committed before the step."""
-    audit(
+) -> int:
+    """Who asked for which step and why, committed before the step. The id
+    of its row."""
+    row = audit(
         session,
         tenant.id,
         by.actor,
@@ -89,7 +93,49 @@ def _asked(
         {"reason": by.reason, "reference": by.reference} | detail,
         entity="tenant",
     )
+    session.flush()
+    asked = row.id
     session.commit()
+    return asked
+
+
+def _outcome(
+    session: Session, tenant: Tenant, by: OpsReader, step: str, ask: int, how: str
+) -> None:
+    audit(
+        session,
+        tenant.id,
+        by.actor,
+        f"ops.{step}.outcome",
+        tenant.id,
+        {"ask": ask, "outcome": how},
+        entity="tenant",
+    )
+    session.commit()
+
+
+@contextmanager
+def _step(
+    session: Session, tenant: Tenant, by: OpsReader, step: str, **detail: str
+) -> Iterator[None]:
+    """The ask, then the step, then its outcome paired with the ask: the
+    step's own row (`gui.team_pin_set`, say) shares only actor and time with
+    the ask, and its absence alone does not tell a refusal from a crash."""
+    ask = _asked(session, tenant, by, step, **detail)
+    try:
+        yield
+    except AppError:
+        session.rollback()
+        _outcome(session, tenant, by, step, ask, "refused")
+        raise
+    except Exception:
+        # The step's own error is the one to raise. Should the database be
+        # gone too, the ask without its outcome says the same: it broke.
+        with suppress(Exception):
+            session.rollback()
+            _outcome(session, tenant, by, step, ask, "failed")
+        raise
+    _outcome(session, tenant, by, step, ask, "done")
 
 
 @contextmanager
@@ -160,8 +206,9 @@ def show_pin(
 ) -> str | None:
     """The team or admin PIN, or None when none is set. Two rows: the reason
     here, the look itself from the function the command line uses."""
-    _asked(session, tenant, by, "pin_show", which=which)
-    return shown_pin(session, tenant.id, by.actor, which)
+    with _step(session, tenant, by, "pin_show", which=which):
+        pin = shown_pin(session, tenant.id, by.actor, which)
+    return pin
 
 
 def set_pin(
@@ -169,8 +216,7 @@ def set_pin(
 ) -> None:
     """Raises InvalidInput for a PIN the rules refuse (4 to 6 digits, never
     the other PIN, a restaurant without a login)."""
-    _asked(session, tenant, by, "pin_set", which=which)
-    with _by_rule():
+    with _step(session, tenant, by, "pin_set", which=which), _by_rule():
         if which == "admin":
             set_admin_pin(session, tenant.id, pin, by.actor)
         else:
@@ -183,9 +229,11 @@ def sign_out(
     """Sign out one device, or with None every device of the restaurant (the
     route makes sure None was asked for in words). How many were signed out:
     0 for a device that is gone already."""
-    _asked(session, tenant, by, "sign_out", device=str(device) if device else "all")
-    ended = end_sessions(session, tenant.id, by.actor, "operator", device)
-    session.commit()
+    with _step(
+        session, tenant, by, "sign_out", device=str(device) if device else "all"
+    ):
+        ended = end_sessions(session, tenant.id, by.actor, "operator", device)
+        session.commit()
     return ended
 
 
@@ -194,8 +242,8 @@ def setup_link(
 ) -> tuple[str, datetime]:
     """A new one-time setup link and its end. It replaces an older link and
     creates the restaurant's login the first time (`issue_link`)."""
-    _asked(session, tenant, by, "setup_link")
-    token, expires_at = issue_link(session, tenant.id, by.actor, now)
+    with _step(session, tenant, by, "setup_link"):
+        token, expires_at = issue_link(session, tenant.id, by.actor, now)
     return setup_url(token), expires_at
 
 
@@ -205,16 +253,16 @@ def set_call_mode(
     """A mode of the switch, the emergency stop, or its end. Raises
     InvalidInput for anything else and for a mode chosen during the stop; the
     reason is written first all the same, as for every refused step."""
-    _asked(session, tenant, by, "call_mode", mode=mode)
-    if mode not in (*CAUTION, PAUSED, RESUME):
-        raise InvalidInput(f"No mode {mode!r} for the operator", status=400)
-    with _by_rule():
-        if mode == PAUSED:
-            pause_ai(session, tenant.id, by.actor, now)
-        elif mode == RESUME:
-            resume_ai(session, tenant.id, by.actor, now)
-        else:
-            set_mode(session, tenant.id, mode, by.actor, now)
+    with _step(session, tenant, by, "call_mode", mode=mode):
+        if mode not in (*CAUTION, PAUSED, RESUME):
+            raise InvalidInput(f"No mode {mode!r} for the operator", status=400)
+        with _by_rule():
+            if mode == PAUSED:
+                pause_ai(session, tenant.id, by.actor, now)
+            elif mode == RESUME:
+                resume_ai(session, tenant.id, by.actor, now)
+            else:
+                set_mode(session, tenant.id, mode, by.actor, now)
 
 
 def set_team_phone(
@@ -223,6 +271,5 @@ def set_team_phone(
     """The team number for today, by the staff's rule (`change_team_phone`):
     one of the numbers the telephone system dials, the standard number stays,
     and the owner keeps or undoes it on the tablet's card."""
-    _asked(session, tenant, by, "team_phone")
-    with _by_rule():
+    with _step(session, tenant, by, "team_phone"), _by_rule():
         change_team_phone(session, tenant.id, number, now, by.actor)

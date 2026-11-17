@@ -351,7 +351,8 @@ HOSTILE = [
     (_with(team_phone_until="9999-12-31T23:59:59+00:00"), customers.NOT_AN_ANSWER),
     (_error("invalid_input", 401), customers.REFUSED),
     (_error("not_found", 404), customers.NOT_KNOWN),
-    (_error("not_found"), customers.NO_RESTAURANT),
+    (_error("not_found", message=ops_reason.NO_RESTAURANT), customers.NO_RESTAURANT),
+    (_error("not_found"), customers.NO_SETTINGS),
     (_error("service_unavailable", 500), customers.NOT_AN_ANSWER),
     (lambda r: httpx.Response(200, content=b"x" * 70_000), customers.NOT_AN_ANSWER),
     (
@@ -786,7 +787,8 @@ DEFINITE = [
     (_error("invalid_input", 401), customers.REFUSED),
     (_error("not_found", 404), customers.NOT_KNOWN),
     (_error("conflict", 409), customers.WRONG_STACK),
-    (_error("not_found"), customers.NO_RESTAURANT),
+    (_error("not_found", message=ops_reason.NO_RESTAURANT), customers.NO_RESTAURANT),
+    (_error("not_found"), customers.NO_SETTINGS),
 ]
 UNSURE = [
     (_raising(httpx.ReadTimeout("slow")), customers.UNREACHABLE),

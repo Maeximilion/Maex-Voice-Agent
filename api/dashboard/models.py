@@ -135,6 +135,9 @@ class OperatorChallenge(Base):
     bound_to: Mapped[str] = mapped_column(Text, nullable=False)
     purpose: Mapped[str] = mapped_column(Text, nullable=False)
     challenge: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # Who asked for a sign-in challenge; the live ones of one address are
+    # capped (`passkeys.SIGN_IN_PER_ADDRESS`). Empty for a session's.
+    client_address: Mapped[str | None] = mapped_column(Text, index=True)
     # Indexed: every new challenge sweeps the expired ones out first.
     expires_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, index=True

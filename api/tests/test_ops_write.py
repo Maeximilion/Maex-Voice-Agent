@@ -15,6 +15,7 @@ import pytest
 from sqlalchemy import delete, func, select, update
 
 from api.config import settings
+from api.core import ops_reason
 from api.domain import operator
 from api.domain.access.sessions import DEVICE_CHARS, locked_account, open_session
 from api.domain.access.setup import issue_link, use_link
@@ -43,6 +44,7 @@ ASK = AUTH | {
     "X-Ops-Customer": KEY,
 }
 ACTOR = "operator:maxi"
+OUTCOME = ".outcome"
 PASSWORD = "lange-geheime-phrase"
 TEAM, ADMIN, NEW = "471123", "080815", "573921"
 NUMBER = "+497215551234"
@@ -123,10 +125,16 @@ def _state(session, tenant) -> tuple:
     )
 
 
-def _audit(session, prefix: str = "") -> list[AuditLog]:
+def _audit(session, prefix: str = "", outcomes: bool = False) -> list[AuditLog]:
+    """The audit rows in order; a step's outcome row only when asked for."""
     session.expire_all()
     rows = session.scalars(select(AuditLog).order_by(AuditLog.id)).all()
-    return [row for row in rows if row.action.startswith(prefix)]
+    return [
+        row
+        for row in rows
+        if row.action.startswith(prefix)
+        and (outcomes or not row.action.endswith(OUTCOME))
+    ]
 
 
 def _payload(row: AuditLog) -> dict[str, Any]:
@@ -648,3 +656,161 @@ def test_a_host_typed_with_its_scheme_or_dot_is_still_that_host(
     link = _data(_ask(http, "POST", LINK))["link"]
 
     assert link.startswith("https://agent.example.com/gui/einrichten#")
+
+
+# --- the reads name their customer too (#811) -----------------------------------
+
+READS = [
+    "/v1/ops/status",
+    "/v1/ops/figures",
+    "/v1/ops/calls?day=2026-10-29",
+    f"/v1/ops/calls/{uuid.UUID(int=1)}",
+]
+
+
+@pytest.mark.parametrize("path", READS)
+def test_a_read_answers_only_for_its_customer(http, session, stack, path):
+    """#811: `/calls` wrote its audit row and sent a day of calls before the
+    dashboard noticed another customer answered. Every read now checks the
+    key first, as the steps do, and writes nothing when it is not this one."""
+    before = _count(session, AuditLog)
+    for key in ("pizzeria-sued", "", None):
+        answer = _ask(http, "GET", path, **{"X-Ops-Customer": key})
+        assert answer.status_code == 409, path
+        _refused(answer, "conflict")
+    assert _count(session, AuditLog) == before
+    assert _data(_ask(http, "GET", path))["tenant"]["key"] == KEY
+
+
+@pytest.mark.parametrize("path", READS)
+def test_a_read_of_a_restaurant_without_a_key_is_refused(http, session, stack, path):
+    stack.customer_key = None
+    session.commit()
+    answer = _ask(http, "GET", path)
+    assert answer.status_code == 409
+    _refused(answer, "conflict")
+
+
+# --- a body nobody may send is not read (#811) ----------------------------------
+
+
+@pytest.mark.parametrize(
+    "path", [PIN_SET, CALL_MODE, "/v1/tools/search_menu", "/v1/tools/confirm"]
+)
+@pytest.mark.parametrize("token", [None, "Bearer " + "e" * 64])
+def test_a_body_that_cannot_be_read_is_refused_by_the_token_first(
+    http, stack, path, token
+):
+    """FastAPI parses the body before the router's dependencies run, so an
+    unauthenticated `{` got 200 `invalid_input` instead of 401."""
+    headers = {"Content-Type": "application/json"}
+    if token is not None:
+        headers["Authorization"] = token
+    answer = http.post(path, content=b"{", headers=headers)
+    assert answer.status_code == 401
+    assert answer.json()["error"]["message"] == "unauthorized"
+
+
+def test_a_body_that_cannot_be_read_with_the_token_is_still_invalid_input(http, stack):
+    answer = http.post(
+        PIN_SET,
+        content=b"{",
+        headers=ASK | {"Content-Type": "application/json"},
+    )
+    assert answer.status_code == 200
+    _refused(answer)
+
+
+# --- a missing settings row is no missing restaurant (#811) ---------------------
+
+
+def test_a_stack_without_its_settings_row_does_not_say_no_restaurant(
+    http, session, stack
+):
+    """The dashboard reads `not_found` with the stack's own words for a
+    missing restaurant as "no restaurant"; a missing settings row says
+    something else."""
+    session.execute(delete(ServiceConfig))
+    session.commit()
+
+    answer = _ask(http, "POST", CALL_MODE, {"mode": "primary"})
+
+    _refused(answer, "not_found")
+    assert answer.json()["error"]["message"] != ops_reason.NO_RESTAURANT
+
+
+def test_a_stack_without_its_restaurant_says_so_in_the_shared_words(http):
+    for method, path, body in [("GET", "/v1/ops/status", None), *STEPS]:
+        answer = _ask(http, method, path, body)
+        _refused(answer, "not_found")
+        assert answer.json()["error"]["message"] == ops_reason.NO_RESTAURANT, path
+
+
+# --- every ask has its outcome (#811) -------------------------------------------
+
+
+def _pair(session, step: str) -> tuple[AuditLog, dict[str, Any]]:
+    (ask,) = _audit(session, f"ops.{step}")
+    (outcome,) = _audit(session, f"ops.{step}{OUTCOME}", outcomes=True)
+    assert (outcome.actor, outcome.tenant_id) == (ask.actor, ask.tenant_id)
+    payload = _payload(outcome)
+    assert payload["ask"] == ask.id
+    return ask, payload
+
+
+@pytest.mark.parametrize(("method", "path", "body"), STEPS[1:])
+def test_a_step_that_happened_has_the_outcome_done(
+    http, session, login, stack, method, path, body
+):
+    _data(_ask(http, method, path, body))
+    step = _audit(session, "ops.")[-1].action.removeprefix("ops.")
+    assert _pair(session, step)[1]["outcome"] == "done"
+
+
+@pytest.mark.parametrize(
+    ("path", "body", "step"),
+    [
+        (PIN_SET, {"which": "team", "pin": ADMIN}, "pin_set"),
+        (CALL_MODE, {"mode": "nonsense"}, "call_mode"),
+        (TEAM_PHONE, {"number": "+491701234567"}, "team_phone"),
+    ],
+)
+def test_a_refused_step_has_the_outcome_refused(
+    http, session, login, stack, path, body, step
+):
+    _refused(_ask(http, "POST", path, body))
+    assert _pair(session, step)[1]["outcome"] == "refused"
+
+
+def test_a_step_that_broke_has_the_outcome_failed(
+    http, session, login, stack, monkeypatch
+):
+    def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("the step broke")
+
+    monkeypatch.setattr(operator, "set_mode", broken)
+    with pytest.raises(RuntimeError):
+        _ask(http, "POST", CALL_MODE, {"mode": "primary"})
+    assert _pair(session, "call_mode")[1]["outcome"] == "failed"
+
+
+def test_a_step_that_broke_raises_its_own_error_when_its_outcome_cannot_be_written(
+    http, session, login, stack, monkeypatch
+):
+    def broken(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("the step broke")
+
+    def gone(*args: object, **kwargs: object) -> None:
+        raise ConnectionError("the database is gone")
+
+    monkeypatch.setattr(operator, "set_mode", broken)
+    monkeypatch.setattr(operator, "_outcome", gone)
+    with pytest.raises(RuntimeError, match="the step broke"):
+        _ask(http, "POST", CALL_MODE, {"mode": "primary"})
+
+
+def test_the_access_read_has_no_outcome_row(http, session, stack):
+    _data(_ask(http, "GET", ACCESS))
+    assert _audit(session, "ops.access_read", outcomes=True)[-1].action == (
+        "ops.access_read"
+    )

@@ -1119,6 +1119,56 @@ def test_a_flood_of_sign_in_challenges_takes_nobody_elses_away(
     assert answer.status_code == 303
 
 
+def test_one_address_holds_only_so_many_live_sign_in_challenges(client, clock):
+    """#827 F1: one client sent 3,000 posts and got 3,000 rows. Above the cap
+    the address is refused with 429; its own attempt may still ask again."""
+    client.get("/login")
+    for _ in range(passkeys.SIGN_IN_PER_ADDRESS):
+        client.cookies.delete("ops_attempt")
+        assert _post(client, "/login/passkey/options").status_code == 200
+    # The last attempt asks again: it replaces its own challenge.
+    assert _post(client, "/login/passkey/options").status_code == 200
+    client.cookies.delete("ops_attempt")
+    refused = _post(client, "/login/passkey/options")
+    assert refused.status_code == 429
+    assert "ops_attempt" not in refused.cookies
+    assert refused.headers["cache-control"] == "no-store"
+    clock.at += passkeys.CHALLENGE_LIFE
+    assert _post(client, "/login/passkey/options").status_code == 200
+
+
+def test_the_cap_counts_one_address_and_sign_in_challenges_only(sessions):
+    with sessions() as db:
+        for number in range(passkeys.SIGN_IN_PER_ADDRESS):
+            passkeys.issue(db, f"attempt:{number}", passkeys.SIGN_IN, START, "1.2.3.4")
+        with pytest.raises(passkeys.TooMany):
+            passkeys.issue(db, "attempt:more", passkeys.SIGN_IN, START, "1.2.3.4")
+        passkeys.issue(db, "attempt:other", passkeys.SIGN_IN, START, "5.6.7.8")
+        passkeys.issue(db, "session:a", passkeys.STEP_UP, START)
+        rows = list(db.scalars(select(OperatorChallenge)))
+    assert len(rows) == passkeys.SIGN_IN_PER_ADDRESS + 2
+    assert "attempt:more" not in {row.bound_to for row in rows}
+
+
+def test_the_challenge_address_migration_goes_down_and_up(operator_url):
+    cfg = _config(operator_url)
+    command.upgrade(cfg, "head")
+    engine = create_engine(operator_url)
+
+    def columns() -> set[str]:
+        found = inspect(engine).get_columns("operator_challenges")
+        return {col["name"] for col in found}
+
+    try:
+        assert "client_address" in columns()
+        command.downgrade(cfg, "op003")
+        assert "client_address" not in columns()
+        command.upgrade(cfg, "head")
+        assert "client_address" in columns()
+    finally:
+        engine.dispose()
+
+
 def test_a_challenge_is_taken_once(sessions):
     with sessions() as db:
         issued = passkeys.issue(db, "session:a", passkeys.REGISTER, START)

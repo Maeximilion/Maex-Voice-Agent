@@ -558,11 +558,19 @@ def login_passkey_options(
     attempt = request.cookies.get(cookie("attempt"), "")
     if not attempt or not attempt.isascii():
         attempt = secrets.token_urlsafe(access.TOKEN_BYTES)
-    response = _json(
-        passkeys.assertion_options(
-            db, passkeys.for_attempt(attempt), passkeys.SIGN_IN, now()
+    try:
+        options = passkeys.assertion_options(
+            db,
+            passkeys.for_attempt(attempt),
+            passkeys.SIGN_IN,
+            now(),
+            client_address=client_address(request),
         )
-    )
+    except passkeys.TooMany:
+        return JSONResponse(
+            {"detail": "Too many sign-in attempts"}, status_code=429, headers=NO_STORE
+        )
+    response = _json(options)
     response.set_cookie(
         cookie("attempt"),
         attempt,
