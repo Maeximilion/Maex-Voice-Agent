@@ -27,7 +27,9 @@
       {% if not blocked %}
       <form hx-post="/gui/reservierung/{{ draft.reservation_id }}/eintragen" hx-target="#reservierung" hx-swap="innerHTML"
             {% if draft.off_hours %}hx-confirm="Laut Öffnungszeiten ist zu dieser Zeit geschlossen. Trotzdem eintragen?"{% elif draft.needs_override %}hx-confirm="Laut Reservierungen ist dafür kein Platz frei. Trotzdem eintragen?"{% endif %}>
-        {% if draft.needs_override %}<input type="hidden" name="trotzdem" value="1">{% endif %}
+        {# Each word only for what the summary asked (#819). #}
+        {% if draft.window_full %}<input type="hidden" name="trotzdem" value="1">{% endif %}
+        {% if draft.off_hours %}<input type="hidden" name="geschlossen" value="1">{% endif %}
         <button type="submit" class="primary">{{ "Trotzdem eintragen" if draft.needs_override else "Eintragen" }}</button>
       </form>
       {% endif %}

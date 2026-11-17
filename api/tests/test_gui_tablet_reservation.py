@@ -369,7 +369,13 @@ def test_a_closed_day_is_entered_only_after_trotzdem_and_marked(
     assert refused.status_code == 409
     assert drafts(engine)[-1].status == "draft"
 
-    taken = client.post(path, content="trotzdem=1", headers=TYPED)
+    assert '<input type="hidden" name="geschlossen" value="1">' in summary.text
+    assert 'name="trotzdem"' not in summary.text
+    seats_only = client.post(path, content="trotzdem=1", headers=TYPED)
+    assert seats_only.status_code == 409
+    assert drafts(engine)[-1].status == "draft"
+
+    taken = client.post(path, content="geschlossen=1", headers=TYPED)
     assert taken.status_code == 200
     booked = drafts(engine)[-1]
     assert (booked.status, booked.off_hours) == ("confirmed", True)

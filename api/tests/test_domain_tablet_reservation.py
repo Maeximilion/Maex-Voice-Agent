@@ -513,7 +513,12 @@ def test_a_table_inside_a_free_window_on_a_closed_day_is_asked_and_marked(
     row = session.get(Reservation, draft.reservation_id)
     assert (row.status, row.off_hours) == ("draft", False)
 
-    confirm_tablet(session, tenant_id, draft.reservation_id, override=True, now=NOW)
+    # A word on a full window is no word on closed hours.
+    with pytest.raises(WindowFull):
+        confirm_tablet(session, tenant_id, draft.reservation_id, override=True, now=NOW)
+    confirm_tablet(
+        session, tenant_id, draft.reservation_id, override_hours=True, now=NOW
+    )
 
     session.expire_all()
     row = session.get(Reservation, draft.reservation_id)
@@ -524,9 +529,16 @@ def test_a_table_inside_a_free_window_on_a_closed_day_is_asked_and_marked(
 
 def test_a_time_outside_the_hours_and_every_window_is_marked(session, tenant_id):
     draft = enter(session, tenant_id, reserved_for=berlin(15))
-    assert draft.off_hours
+    assert draft.off_hours and draft.window_full
 
-    confirm_tablet(session, tenant_id, draft.reservation_id, override=True, now=NOW)
+    confirm_tablet(
+        session,
+        tenant_id,
+        draft.reservation_id,
+        override=True,
+        override_hours=True,
+        now=NOW,
+    )
 
     assert session.get(Reservation, draft.reservation_id).off_hours is True
 
@@ -569,3 +581,29 @@ def test_the_agent_still_refuses_a_closed_day_and_its_tables_carry_no_mark(
     with pytest.raises(IntegrityError, match="ck_reservations_off_hours_tablet"):
         session.commit()
     session.rollback()
+
+
+def test_a_word_on_a_full_window_does_not_book_hours_closed_since(session, tenant_id):
+    """Review of #819: the sheet asked about the seats only; the hours closed
+    before the tap. The tap is refused, nobody books a closed day unasked."""
+    agent_call, agent_id = agent_table(session, tenant_id, 38, berlin(18))
+    confirm(
+        session,
+        ConfirmRequest(
+            call_id=agent_call,
+            tenant_id=tenant_id,
+            entity="reservation",
+            entity_id=agent_id,
+            idempotency_key=uuid.uuid4().hex,
+        ),
+        now=NOW,
+    )
+    draft = enter(session, tenant_id)
+    assert draft.window_full and not draft.off_hours
+    close_the_day(session, tenant_id)
+
+    with pytest.raises(WindowFull) as refused:
+        confirm_tablet(session, tenant_id, draft.reservation_id, override=True, now=NOW)
+
+    assert refused.value.say == SAY_CLOSED
+    assert session.get(Reservation, draft.reservation_id).status == "draft"

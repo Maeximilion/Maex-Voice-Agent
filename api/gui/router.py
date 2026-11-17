@@ -1469,8 +1469,8 @@ def reservierung_eintragen(
     session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """The team's confirming tap (`confirm_tablet`); "trotzdem" is the word for a
-    full window or closed hours, asked on the button. Any refusal shows the
-    summary again."""
+    full window, "geschlossen" for closed hours, each sent only when the
+    summary asked it. Any refusal shows the summary again."""
     tenant = _tenant(session)
     if tenant is None:
         raise HTTPException(status_code=503)
@@ -1480,7 +1480,11 @@ def reservierung_eintragen(
     name = row.guest_name
     try:
         confirm_tablet(
-            session, tenant.id, reservation_id, override=form.get("trotzdem") == "1"
+            session,
+            tenant.id,
+            reservation_id,
+            override=form.get("trotzdem") == "1",
+            override_hours=form.get("geschlossen") == "1",
         )
     except AppError as exc:
         session.rollback()

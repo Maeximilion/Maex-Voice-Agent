@@ -158,6 +158,7 @@ def confirm_tablet(
     reservation_id: uuid.UUID,
     *,
     override: bool = False,
+    override_hours: bool = False,
     actor: str = ACTOR_TABLET,
     now: datetime | None = None,
 ) -> Confirmation:
@@ -166,10 +167,12 @@ def confirm_tablet(
     word instead of a call's. The guest said yes to the employee; the tap on
     the summary stands for it (CLAUDE.md §2 rule 3).
 
-    `override` books a window that is full, a time outside every window or a
-    time the opening hours are closed, after the team was asked (`WindowFull`).
-    The last is set as `off_hours` from the hours at this tap (#819), never
-    from the draft and never afterwards. A table another reservation holds
+    `override` books a window that is full or a time outside every window,
+    `override_hours` a time the opening hours are closed, each after the team
+    was asked that very question (`WindowFull`): a word on a full window does
+    not book closed hours, nor the other way round. Closed hours are read at
+    this tap and set as `off_hours` (#819), never from the draft and never
+    afterwards. A table another reservation holds
     in the same window is refused either way, and so are a time that has
     passed and a table or pair the plan no longer has.
     """
@@ -231,7 +234,7 @@ def confirm_tablet(
     off_hours = outside_hours(session, tenant_id, reservation.reserved_for, zone)
     if full and not override:
         raise WindowFull("window full", say=say_full(window, booked, zone))
-    if off_hours and not override:
+    if off_hours and not override_hours:
         raise WindowFull("outside the opening hours", say=SAY_CLOSED)
 
     reservation.off_hours = off_hours
