@@ -21,7 +21,7 @@ from api.core.time import to_local
 from api.domain.customers import requests
 from api.domain.customers.phone import normalize_phone
 from api.gui.calls_view import OUTCOMES as CALL_OUTCOMES
-from api.gui.calls_view import _duration, _euro
+from api.gui.calls_view import REASONS, duration, euro
 from api.gui.figures_view import DASH
 from api.gui.orders_view import TYPE_LABELS
 from api.models import DataSubjectRequest, Tenant
@@ -47,6 +47,7 @@ NO_EXTENSION = (
 BAD_DAY = "Bitte jeden Tag als Datum angeben."
 BAD_PHONE = "Eine der Rufnummern ist nicht lesbar. Bitte mit Vorwahl eintragen."
 TOO_MUCH = "Ein Feld ist zu lang oder es sind zu viele Angaben."
+BAD_SIGN = "Ein Feld enthält ein Zeichen, das hier nicht vorkommen kann."
 # What one field of the forms may hold; a name or a street is never longer.
 FIELD_MAX = 120
 DAY_FIELDS = ("tag-1", "tag-2", "tag-3")
@@ -66,12 +67,6 @@ STATUSES = {
     "cancelled": "storniert",
     "open": "offen",
     "done": "erledigt",
-}
-REASONS = {
-    "complaint": "Beschwerde",
-    "not_understood": "Nicht verstanden",
-    "human_requested": "Will Mitarbeiter sprechen",
-    "out_of_scope": "Anderes Anliegen",
 }
 ANSWERS = {"yes": "ja", "no": "nein", "unclear": "unklar"}
 CODES = {
@@ -312,7 +307,6 @@ def request_context(
         "has_run": requests.has_run(session, row),
         "outcomes": list(OUTCOMES.items()),
         "day_fields": DAY_FIELDS,
-        "today": to_local(now, zone).date().isoformat(),
     }
 
 
@@ -322,6 +316,9 @@ def typed(form: dict[str, str]) -> tuple[requests.Details, list[uuid.UUID]]:
     nobody can read; who the person is, is decided by `requests.verify`."""
     if any(len(form.get(name, "")) > FIELD_MAX for name in DETAIL_FIELDS):
         raise InvalidInput("a field is too long", say=TOO_MUCH)
+    if any(requests.NUL in form.get(name, "") for name in DETAIL_FIELDS):
+        # The postal code is compared in the database, which takes no NUL.
+        raise InvalidInput("a field holds a NUL", say=BAD_SIGN)
     try:
         days = tuple(
             date.fromisoformat(text)
@@ -377,9 +374,9 @@ def _text(key: str, value: Any, zone: str) -> str:
     if isinstance(value, date):
         return f"{value:{DAY}}"
     if key.endswith("_cents") and isinstance(value, int):
-        return _euro(value)
+        return euro(value)
     if key == "duration_seconds" and isinstance(value, int):
-        return _duration(value)
+        return duration(value)
     if key == "items":
         return "; ".join(_item(line) for line in value)
     if key in CODES:

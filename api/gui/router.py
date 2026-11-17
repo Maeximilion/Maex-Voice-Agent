@@ -154,10 +154,13 @@ def _today_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
 
 # Anlass des Rückrufs in Worten des Teams (docs/06 §1 Regel 2), nie der Code-Wert.
 CALLBACK_LABELS = {
-    "complaint": ("danger", "Beschwerde"),
-    "not_understood": ("warn", "Nicht verstanden"),
-    "human_requested": ("accent", "Will Mitarbeiter sprechen"),
-    "out_of_scope": ("accent", "Anderes Anliegen"),
+    reason: (tone, calls_view.REASONS[reason])
+    for reason, tone in (
+        ("complaint", "danger"),
+        ("not_understood", "warn"),
+        ("human_requested", "accent"),
+        ("out_of_scope", "accent"),
+    )
 }
 
 
@@ -2341,7 +2344,7 @@ def call_detail(
     device, and no address carries the id. An id that is no call of the list
     (another restaurant's, too old, a self-test, no id at all) gets one answer."""
     tenant = _tenant(session)
-    found = None
+    context: dict[str, Any] = {"problem": CALL_GONE}
     try:
         call_id = uuid.UUID(form.get("anruf", ""))
     except ValueError:
@@ -2350,10 +2353,8 @@ def call_detail(
         found = call_for_team(
             session, tenant, call_id, clock.utcnow(), actor=staff.ACTOR_TABLET
         )
-    context: dict[str, Any] = {"problem": CALL_GONE}
-    if tenant is not None and found is not None:
-        reasons = {code: label for code, (_, label) in CALLBACK_LABELS.items()}
-        context = calls_view.detail(found, tenant, reasons)
+        if found is not None:
+            context = calls_view.detail(found, tenant)
     return templates.TemplateResponse(
         request, "fragments/anruf.html", context, headers=NO_STORE
     )

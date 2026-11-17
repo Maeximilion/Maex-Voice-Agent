@@ -89,6 +89,9 @@ SAY_LOG_CHANGED = (
     "eingetragen ist."
 )
 SAY_NOTE_LONG = f"Die Notiz ist zu lang (höchstens {NOTE_MAX} Zeichen)."
+SAY_NOTE_SIGN = "Die Notiz enthält ein Zeichen, das sich nicht speichern lässt."
+# The database takes no NUL in a text; a typed one is refused, not a 500.
+NUL = chr(0)
 SAY_FUTURE = "Der Eingang kann nicht in der Zukunft liegen."
 SAY_DETAILS = (
     "Bitte einen Namen mit dem Tag einer Bestellung oder Reservierung oder mit "
@@ -179,6 +182,8 @@ def log_request(
     note = (note or "").strip() or None
     if note is not None and len(note) > NOTE_MAX:
         raise InvalidInput("the note is too long", say=SAY_NOTE_LONG)
+    if note is not None and NUL in note:
+        raise InvalidInput("the note holds a NUL", say=SAY_NOTE_SIGN)
     day = to_local(received_at, zone).date()
     if reference is None:
         reference = _next_reference(session, tenant_id, day.year)

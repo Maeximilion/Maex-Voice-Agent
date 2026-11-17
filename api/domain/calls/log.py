@@ -2,9 +2,10 @@
 one call with its tool calls: for the team's row detail (#571) and for the
 operator's dev tools.
 
-Read only, but every look at one call leaves an audit row. The number is the caller id as the call log holds it; the deletion
-job takes it after its period (docs/03 "Löschkonzept"), and how much of it a
-screen shows is the screen's decision.
+Read only, but every look at one call leaves an audit row. The number is the
+caller id as the call log holds it; the deletion job takes it after its period
+(docs/03 "Löschkonzept"), and how much of it a screen shows is the screen's
+decision.
 """
 
 import uuid
