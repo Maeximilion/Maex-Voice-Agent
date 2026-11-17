@@ -123,7 +123,14 @@ def test_every_route_of_the_view_refuses_without_a_session(client, method, path)
 
 
 def test_a_page_load_goes_to_the_sign_in(client):
-    for path in ("/gui", "/gui/", "/gui/kennzahlen", "/gui/anrufe", "/gui/raumplan"):
+    for path in (
+        "/gui",
+        "/gui/",
+        "/gui/kennzahlen",
+        "/gui/anrufe",
+        "/gui/menue",
+        "/gui/raumplan",
+    ):
         answer = client.get(path, headers=HTML)
         assert answer.status_code == 303, path
         assert answer.headers["location"] == "/gui/anmelden"
@@ -678,7 +685,7 @@ def test_the_settings_sheet_names_the_device_list(client, engine):
     _set_up_and_sign_in(client, engine)
     assert 'hx-get="/gui/einstellungen"' in client.get("/gui/", headers=HTML).text
     sheet = client.get("/gui/einstellungen", headers=HX).text
-    for page in ("/gui/zeiten", "/gui/lieferung", "/gui/geraete"):
+    for page in ("/gui/zeiten", "/gui/lieferung", "/gui/menue", "/gui/geraete"):
         assert f'href="{page}"' in sheet
 
 
@@ -910,10 +917,10 @@ def test_a_locked_device_opens_nothing_of_the_zones(client, engine):
 
 
 def test_the_staff_pages_of_the_frame_need_no_admin_pin(client, engine):
-    """The frame adds tabs, not a lock: "Anrufe" and "Kennzahlen" stay with
-    the restaurant's login (docs/06 section 4)."""
+    """The frame adds tabs, not a lock: "Anrufe", "Kennzahlen" and the
+    read-only "Menü" stay with the restaurant's login (docs/06 section 4)."""
     _set_up_and_sign_in(client, engine)
-    for path in ("/gui/anrufe", "/gui/kennzahlen"):
+    for path in ("/gui/anrufe", "/gui/kennzahlen", "/gui/menue"):
         page = client.get(path, headers=HTML)
         assert page.status_code == 200 and 'href="/gui/zeiten"' in page.text
 

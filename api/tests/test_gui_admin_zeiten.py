@@ -145,6 +145,7 @@ def _week_table(html: str) -> str:
     [
         (PAGE, "Zeiten"),
         ("/gui/lieferung", "Lieferung"),
+        ("/gui/menue", "Menü"),
         ("/gui/anrufe", "Anrufe"),
         ("/gui/kennzahlen", "Kennzahlen"),
         ("/gui/geraete", "Geräte"),
@@ -157,6 +158,7 @@ def test_every_admin_page_has_the_tabs_and_the_four_figures(client, path, tab):
     assert re.findall(r">([^<>]+)</a>", nav) == [
         "Zeiten",
         "Lieferung",
+        "Menü",
         "Anrufe",
         "Kennzahlen",
         "Geräte",

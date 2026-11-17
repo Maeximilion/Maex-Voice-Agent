@@ -63,6 +63,7 @@ from api.gui import (
     delivery_view,
     figures_view,
     hours_view,
+    menu_view,
     orders_view,
 )
 from api.gui.session import LOGIN, csrf_matches, require_admin, require_gui_session
@@ -438,6 +439,29 @@ def anrufe(
         }
     return _page_response(
         request, "betrieb/anrufe.html", context, status_code=200 if tenant else 503
+    )
+
+
+@router.get("/menue", response_class=HTMLResponse, include_in_schema=False)
+def menu_page(
+    request: Request,
+    q: str = "",
+    hinweis: str = "",
+    seite: str = "",
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The menu as the agent knows it, with its search and the two notes
+    (#571). It only reads, so the restaurant's login is enough."""
+    tenant = _tenant(session)
+    context: dict[str, Any] = {"problem": NO_TENANT}
+    if tenant is not None:
+        context = {
+            "tenant": tenant,
+            **_frame(session, tenant),
+            **menu_view.page(session, tenant, q, hinweis, seite),
+        }
+    return _page_response(
+        request, "betrieb/menue.html", context, status_code=200 if tenant else 503
     )
 
 

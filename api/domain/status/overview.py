@@ -8,12 +8,13 @@ order's content. Read by `GET /v1/ops/status` (api/ops/router.py).
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
 from api.core.time import business_day
 from api.domain.calls.figures import Figures, span_figures
+from api.domain.menu.listing import without_allergens
 from api.domain.menu.price_check import open_differences
 from api.domain.status import bridge
 from api.domain.status.mode import mode_at
@@ -21,7 +22,6 @@ from api.models import (
     AuditLog,
     BridgeHeartbeat,
     Call,
-    ItemAllergen,
     MenuItem,
     ServiceConfig,
     Tenant,
@@ -154,16 +154,9 @@ def _alarms(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
 def _menu(session: Session, tenant: Tenant) -> MenuStatus:
     active = (MenuItem.tenant_id == tenant.id, MenuItem.active.is_(True))
     items = session.scalar(select(func.count()).select_from(MenuItem).where(*active))
-    unknown = session.scalar(
-        select(func.count())
-        .select_from(MenuItem)
-        .where(
-            *active,
-            ~exists().where(ItemAllergen.menu_item_id == MenuItem.id),
-        )
-    )
     return MenuStatus(
         items=items or 0,
         price_differences=len(open_differences(session, tenant.id)),
-        without_allergen_information=unknown or 0,
+        # The rule of the owner's tab "Menü", so both show the same dishes.
+        without_allergen_information=len(without_allergens(session, tenant.id)),
     )

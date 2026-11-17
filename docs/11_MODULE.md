@@ -78,6 +78,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 | `importer.py` | CSV nach 14 lesen, prüfen, einspielen, Bericht; mit `deactivate_missing` werden fehlende Gerichte inaktiv |
 | `pos_dbf.py` | dBase-Tabellen der Kasse lesen, nur lesend, Bytes rein, Zeilen raus (T-4.11) |
 | `pos_convert.py` | Kassenartikel in die CSV nach 14: Größen, Extras, Allergen-Umsetztabelle, Bericht (T-4.11) |
+| `listing.py` | the menu as the tab "Menü" reads it (#571): active dishes in card order, the search of the tablet (`sold_out.matches`), pages of 50, and the two notes of a row decided here: no allergen row (`without_allergens`, also the operator's count in `domain/status/overview.py`) and the register's open price (`price_check.open_differences`); it only reads |
 | `price_check.py` | what the price check found on the dish, the team's answer on the tablet, `audit_log`, the report; the comparison itself is `importer.apply` in a dry run (T-4.9) |
 
 ### `domain/ordering/`
@@ -261,6 +262,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `dev.py` — router of the simulator console (`/gui/dev/console`), mounted by `mount_gui` only when `ENV=dev`; keeps the open calls in the process, the logic stays in `sim/session.py` (the one place where `gui` imports `sim`, because the console is the simulator page)
 - `calls_view.py` — the words and numbers of the call list `/gui/anrufe` (T-8.7): outcome, intent and line note in German, the number cut, the three filters; rows from `domain/calls/log.py`
 - `delivery_view.py` — the words and form fields of the tab `/gui/lieferung` (#571): the zones as rows with amounts in euros, a zone's form with what holds or what was typed and refused, the fields handed to `domain/delivery/owner_zones.py` as text; it reads no amount and checks nothing
+- `menu_view.py` — the words of the tab `/gui/menue` (#571): the rows with amounts in euros, the three fields of the address (`q`, `hinweis`, `seite`) read leniently, the links of the pages; the dishes and both notes come from `domain/menu/listing.py`
 - `hours_view.py` — the words and form reading of the tab `/gui/zeiten` (#571): the week as rows, a weekday's form with what holds or what was typed and refused, the fields turned into `weekly.Span`s (`typed_spans`, `hhmm`), the coming special days and the guests to call; every hour from `domain/status/weekly.py` and `staff_changes.py`
 - `templates/` — `base.html`, `betrieb/`, `admin/`, `fragments/`
 - `static/` — Pico.css, HTMX lokal, eigene Töne; served with `Cache-Control: no-cache` (`__init__.py`), so the browser asks again on every use

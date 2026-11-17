@@ -78,21 +78,22 @@ def _active(session: Session, tenant_id: uuid.UUID) -> list[MenuItem]:
     return sorted(items, key=lambda i: number_key(i.number))
 
 
-def _matches(item: MenuItem, query: str) -> bool:
-    """Suchfeld am Tablet: Nummer ("7" findet 07) oder ein Teil des Namens."""
+def matches(number: str, name: str, query: str) -> bool:
+    """Search field on the tablet ("Gericht aus", the tab "Menü"): a number
+    ("7" finds 07) or a part of the name."""
     said = query.strip()
     if not said:
         return True
     # A leading digit can also be a name ("8 Kostbarkeiten", Codex PR #146).
     by_number = bool(_NUMBER_START.match(said.lower())) and canonical_card(
-        item.number
+        number
     ).startswith(canonical_card(said))
     if by_number:
         return True
     # normalize_query drops numbers: "8 Kostbar" becomes "kostbar", "2" becomes
     # empty - and an empty text must not match every name.
     name_part = normalize_query(said)
-    return bool(name_part) and name_part in normalize_query(item.name)
+    return bool(name_part) and name_part in normalize_query(name)
 
 
 def list_switches(
@@ -112,7 +113,7 @@ def list_switches(
             sold_out=is_sold_out(item, now),
         )
         for item in _active(session, tenant_id)
-        if _matches(item, query)
+        if matches(item.number, item.name, query)
     ]
 
 

@@ -454,6 +454,14 @@ the second builds against.
   (money decides there, never in the form), a zone is found by its id and this restaurant's tenant
   only, and a save runs under the lock of the settings row, so two devices cannot each add one postal
   code to a different zone; the import (`scripts/seed_zones.py`) takes the same lock. Typed text comes back escaped, and a field the owner changed is cut to a bound (a field sent back as it was shown comes back whole).
+  The tab "Menü" (`/gui/menue`, #571 plan number 9, 17.11.2026) is one GET route that only reads and
+  takes the restaurant's login without the admin PIN, like the call list: it shows the active dishes
+  with their prices, which the restaurant publishes, whether an allergen row is kept (never which),
+  and the register's open price, which the board shows the same staff already. Its three address
+  fields are read leniently and bounded (60 characters of search text, six digits of a page number),
+  the search runs in the process over this restaurant's rows and never reaches SQL as text, every
+  value is escaped, and the page writes nothing, so it needs no CSRF token. A later write on it
+  (an alias, a price answered from the row) is decided then, with its own lock.
 - **Staff changes are temporary and reviewed (D34 point 4, built in (b), the push in #588):** a staff change to a date's hours
   expires with that date. Today's changes hold at once; for a later date the restrictive direction
   (closed, shorter hours) holds at once, while longer or extra hours beyond today wait for the
