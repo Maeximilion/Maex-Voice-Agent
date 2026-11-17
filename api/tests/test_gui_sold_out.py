@@ -85,6 +85,13 @@ def test_ausgeschaltete_gerichte_stehen_zuerst_ohne_suche(client, db, tenant_id)
     # A search keeps the dish in its category.
     found = client.get("/gui/fragments/gericht-aus", params={"q": "pho"}).text
     assert "Heute aus</h3>" not in found
+    # A search of nothing anybody sees is no search: the same list, the
+    # dishes that are out first, nothing sent back into the field.
+    unseen = client.get(
+        "/gui/fragments/gericht-aus", params={"q": chr(0x200B) + " "}
+    ).text
+    assert "Heute aus</h3>" in unseen and "Frühlingsrollen" in unseen
+    assert chr(0x200B) not in unseen
 
 
 def test_gerichte_stehen_unter_ihrer_kategorie(client, tenant_id):

@@ -1,0 +1,68 @@
+{# The tab "Menü" of the admin area (#571, plan number 9, docs/06 §4): the
+   active dishes as the agent knows them, in card order, with a search by
+   number or name and two notes per row: "Allergene fehlen" (no allergen is
+   kept, the agent gives no information) and "Kasse: …" (the register says
+   another price, open on the board). The page only reads, with the
+   restaurant's login like "Anrufe". Every value comes from the database
+   (`domain/menu/listing.py`); the page names no allergen. #}
+{% extends "base.html" %}
+{% from "betrieb/_kopf.html" import admin_kopf with context %}
+{% block title %}Menü{% endblock %}
+{% block body_class %}betrieb{% endblock %}
+
+{% block header %}{{ admin_kopf("Menü", "Menü", tenant) }}{% endblock %}
+
+{% block main %}
+{% if tenant %}
+<section class="card menue">
+  <h2>Speisekarte</h2>
+  <p class="muted">So kennt die KI die Karte. {{ items }} {{ "Gericht" if items == 1 else "Gerichte" }}, {{ allergens_missing }} ohne Allergen-Angabe, {{ price_differences }} mit offener Preisabweichung.</p>
+  <form class="call-filter" method="get" action="/gui/menue" role="search">
+    <input type="search" name="q" value="{{ query }}" maxlength="{{ query_max }}"
+           placeholder="Nummer oder Name" aria-label="Nummer oder Name" autocomplete="off">
+    <select name="hinweis" aria-label="Hinweis">
+      <option value="">Alle Gerichte</option>
+      {% for value, label, chosen in filters %}<option value="{{ value }}"{% if chosen %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <button type="submit">Anzeigen</button>
+    {% if narrowed %}
+    <a class="button" href="/gui/menue">Alle zeigen</a>
+    <span class="muted" role="status">{{ found }}</span>
+    {% endif %}
+  </form>
+  {% if rows %}
+  <ul class="menu-list">
+    {% for row in rows %}
+    <li>
+      {# bdi: a name with a character that turns the reading direction must
+         not turn the price beside it. #}
+      <bdi class="nr">{{ row.number }}</bdi>
+      <bdi class="menu-name">{{ row.name }}</bdi>
+      <span class="menu-price">{{ row.price }}</span>
+      {% if row.allergens_missing %}<span class="badge warn">Allergene fehlen</span>{% endif %}
+      {% if row.register is not none %}<span class="badge danger">Kasse: {{ row.register }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if pages > 1 %}
+  <nav class="pager" aria-label="Seiten">
+    {% if previous %}<a class="button" href="{{ previous }}">Vorherige Seite</a>{% endif %}
+    <span class="muted">Seite {{ page }} von {{ pages }}</span>
+    {% if next %}<a class="button" href="{{ next }}">Nächste Seite</a>{% endif %}
+  </nav>
+  {% endif %}
+  {% elif narrowed %}
+  <p class="empty">Kein Gericht gefunden.</p>
+  {% else %}
+  <p class="empty">Kein aktives Gericht in der Karte.</p>
+  {% endif %}
+</section>
+<section class="card menue">
+  <h2>Was die Hinweise bedeuten</h2>
+  <p><span class="badge warn">Allergene fehlen</span> Zu diesem Gericht ist kein Allergen hinterlegt. Die KI gibt dazu keine Auskunft. Auch ein Gericht, das keines enthält, steht so da: hinterlegt wird nur, was ein Gericht enthält.</p>
+  <p><span class="badge danger">Kasse: Preis</span> Die Kasse nennt einen anderen Preis als die Karte, und noch niemand hat darauf geantwortet. Die KI nennt weiter den Preis der Karte, bis jemand in der Übersicht unter „Preise“ antwortet. Ein verworfener Kassenpreis steht hier nicht mehr, und auch kein Gericht, bei dem zusätzlich ein Aufpreis abweicht: das klärt der Betreiber mit dem nächsten Import.</p>
+  <p>Der Preis ist der Grundpreis des Gerichts. Aufpreise für Größen oder Extras stehen hier nicht.</p>
+  <p class="muted">Diese Seite zeigt die Karte nur. Geändert wird hier nichts.</p>
+</section>
+{% endif %}
+{% endblock %}

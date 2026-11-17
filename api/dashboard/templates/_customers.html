@@ -40,7 +40,7 @@
       </td>
       <td data-label="Backup" title="{{ s.backup_at | shown }}">{{ s.backup_at | ago(now) }}</td>
       <td data-label="Menu">
-        {{ s.menu.items }} dishes{% if s.menu.without_allergen_information %}, {{ s.menu.without_allergen_information }} without allergens{% endif %}{% if s.menu.price_differences %}, {{ s.menu.price_differences }} price differences{% endif %}
+        {{ s.menu.items }} dishes{% if s.menu.without_allergen_information %}, {{ s.menu.without_allergen_information }} without allergen information{% endif %}{% if s.menu.price_differences %}, {{ s.menu.price_differences }} price differences{% endif %}
       </td>
       {% endif %}
     </tr>
