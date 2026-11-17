@@ -1,0 +1,103 @@
+# The operator stack (#571, docs/23 §3 and §5): the dashboard and its own small
+# database, nothing else. Its own checkout <root>/ops with its own .env
+# (docs/13 §8), started from there:
+#   docker compose up -d --build
+# with COMPOSE_FILE=deploy/docker-compose.operator.yml:networks.json in that
+# .env. networks.json is written by scripts/new_stack.py: it puts the dashboard
+# on each customer stack's internal `ops` network.
+#
+# No service publishes a port. The shared Caddy (deploy/caddy) reaches the
+# dashboard over `edge`, and only once the site ops.<domain> is installed with
+# `scripts/new_stack.py --ops-site`, which waits for the security audit of
+# docs/23 §11. Until then nothing of this stack is reachable from outside.
+name: maex-ops
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: always
+    logging:
+      driver: journald
+    networks: [backend]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    # As the customer stacks' db (docker-compose.yml): the entrypoint makes the
+    # data directory the postgres user's and drops to it.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    read_only: true
+    tmpfs: [/var/run/postgresql, /tmp]
+    command: ["postgres", "-c", "log_error_verbosity=terse"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in the operator stack's .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in the operator stack's .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in the operator stack's .env}
+    volumes:
+      - operator_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  dashboard:
+    # The API's image (docs/23 §5), an app of its own.
+    build: ../api
+    restart: always
+    logging:
+      driver: journald
+    # `backend` to its database, `edge` for the shared Caddy; networks.json
+    # adds each customer's `ops`.
+    networks: [backend, edge]
+    # One worker, as docs/23 §5 assumes. Uvicorn takes no forwarded header on
+    # purpose: the dashboard reads X-Forwarded-For itself, and only from a
+    # request that carries the proxy secret (`client_address`).
+    command:
+      - uvicorn
+      - api.dashboard.app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8002"
+      - --no-proxy-headers
+      - --no-server-header
+    environment:
+      ENV: prod
+      PYTHONPATH: /app
+      LOG_LEVEL:
+      OPERATOR_DATABASE_URL: ${OPERATOR_DATABASE_URL:?set in the operator stack's .env}
+      # Checked on every request but /health; Caddy sends it (ops.caddy).
+      OPERATOR_PROXY_SECRET:
+      OPERATOR_ORIGIN:
+      # Both networks are internal, so a push server must stand on one of
+      # them; this stack has none yet and the push is only logged (docs/23 §5).
+      OPERATOR_PUSH_URL:
+      OPERATOR_PUSH_TOKEN:
+      OPERATOR_METRICS_DIR: /app/docs/metrics
+    # Not root, read-only, no capability, as the customer stacks' api
+    # (deploy/docker-compose.prod.yml).
+    user: "10001:10001"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    volumes:
+      - ../api:/app/api:ro
+      # The dashboard's migrations (db/dashboard), run with
+      # `docker compose run --rm dashboard alembic -c db/dashboard/alembic.ini upgrade head`.
+      - ../db:/app/db:ro
+      # The eval and measurement records the dev tools show, only read.
+      - ../docs/metrics:/app/docs/metrics:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+# Both internal: neither container has a way out of the server, and no port
+# is published. The shared Caddy joins `edge` from outside.
+networks:
+  backend:
+    internal: true
+  edge:
+    internal: true
+
+volumes:
+  operator_pgdata:

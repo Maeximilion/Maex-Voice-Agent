@@ -435,8 +435,7 @@ EUR; isolation and the unchanged code decide it.
   not answer stays (it may still print); one it never claimed is removed.
 - #570 logins are per stack; the GUI's tenant choice may stay as it is.
 - #571 operator dashboard reads several stacks over an ops API per stack on an internal `ops`
-  network (docs/23 §8). Its own settings, in the operator stack's `.env` (its Compose file comes
-  with the last part of #571): `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET`, and
+  network (docs/23 §8). Its own settings, in the operator stack's `.env`: `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET`, and
   `OPERATOR_ORIGIN`, the address the operator's browser uses (`https://ops.<domain>`, no path).
   Passkeys are bound to it: the dashboard refuses to start without it outside dev and test, and a
   later change of the host name makes every registered passkey useless (TOTP and the recovery
@@ -446,6 +445,44 @@ EUR; isolation and the unchanged code decide it.
   `OPERATOR_METRICS_DIR` names the folder with the recorded eval and measurement results
   (`docs/metrics/` of a checkout) that the dev tools show; the image holds none, so the
   operator stack mounts it read-only, and without it the page says that the files are missing.
+  **The operator stack (#571, plan number 11, 17.11.2026):** `deploy/docker-compose.operator.yml`,
+  Compose project `maex-ops`, run from a checkout of its own in `<root>/ops`: the dashboard
+  (the API's image, `uvicorn api.dashboard.app:app` on port 8002, `ENV=prod`, not root, read-only,
+  no capability, `api/`, `db/` and `docs/metrics/` mounted read-only) and a `postgres:16-alpine`
+  of its own. Both networks are internal and nothing publishes a port: `backend` holds the
+  database and the dashboard, `edge` the dashboard and, once its site is installed, the shared
+  Caddy. Its `.env` (mode 600, `.env.example` names each line): `POSTGRES_USER`,
+  `POSTGRES_PASSWORD`, `POSTGRES_DB` (for example `maex_operator`), `OPERATOR_DATABASE_URL`,
+  `OPERATOR_PROXY_SECRET` and `OPERATOR_ORIGIN`, and
+  `COMPOSE_FILE=deploy/docker-compose.operator.yml:networks.json`. Setting it up, in `<root>/ops`:
+  `echo '{}' > networks.json` once, then `docker compose up -d --wait db`,
+  `docker compose run --rm dashboard alembic -c db/dashboard/alembic.ini upgrade head`,
+  `docker compose up -d --build` and the first account with
+  `docker compose exec dashboard python -m api.dashboard.cli add <name>`. From then on
+  `scripts/new_stack.py` rewrites `networks.json` from the site files (the dashboard on every
+  customer's `ops` network, on no other of theirs), recreates the dashboard and registers each
+  new customer with `customer-add`, the stack's `OPS_TOKEN` on standard input; without
+  `<root>/ops/.env` it prints that command instead. The push on a changed factor stays a log
+  line: both networks are internal, and this stack has no push server of its own yet.
+  **ops.<domain> stays closed until the security audit of docs/23 §11 found no open P1.** Without
+  a site file the shared Caddy has no site for that name, gets no certificate and answers
+  nothing. After the audit `python3 scripts/new_stack.py --ops-site [--root /srv/maex]` renders
+  `deploy/caddy/ops.caddy` with the host of `OPERATOR_ORIGIN` and `OPERATOR_PROXY_SECRET` into
+  `<root>/caddy/operator/ops.caddy` (mode 640; refused when the secret is short, odd or a
+  customer's), joins the shared Caddy to `maex-ops_edge` and reloads it, and takes the file out
+  again when Caddy refuses it. The site sends HSTS, `nosniff`, `no-referrer`, the CSP without
+  inline code and `frame-ancestors 'none'`, limits a body to 256 kB, proxies to the dashboard
+  alone with the proxy secret and serves no file of its own. Caddy drops an `X-Forwarded-For`
+  a client sent (no `trusted_proxies`); the dashboard reads that header only next to the secret,
+  and Uvicorn reads none (`--no-proxy-headers`). The shared Caddy gives a client ten seconds for
+  its request headers and closes idle connections after two minutes; its admin endpoint stays on
+  the container's own loopback. Tested on 17.11.2026 with throwaway values and the host name
+  `ops.localhost` (Caddy's own local certificate, no request to a real certificate authority):
+  the sign-in page answers 200 with every header above, a page behind the session 303 to the
+  sign-in, `/docs` and `/openapi.json` 404, plain HTTP 308, a 300 kB post 413, another host name
+  and the admin port from another container nothing, the dashboard past Caddy 403 with or without
+  a guessed secret, and a forged `X-Forwarded-For: 6.6.6.6` left the client's real address in the
+  dashboard's counter. With the operator folder empty, `ops.localhost` answered nothing.
 - #576 offboarding is export, then removal of the stack and its volumes.
 
 ### Reassess
