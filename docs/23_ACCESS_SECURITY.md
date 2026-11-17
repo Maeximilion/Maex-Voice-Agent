@@ -104,6 +104,12 @@ is the backup. Ten single-use recovery codes, stored hashed, are the last way in
   the operator out.
 - A new passkey, a new TOTP secret or a used recovery code needs a fresh second factor and sends a
   push to the `ops` topic ("new device"), so a silent takeover is visible.
+- A removed passkey, removed TOTP or a new TOTP secret ends every other session of the account;
+  only the session making the change stays, and the push says how many ended (D39, Maxi,
+  17.11.2026): a thief's session must not outlive the change made after a loss. A change of that
+  ended session that was already waiting for the account's row is refused once it gets the row
+  (`access._locked` looks for the session again): it changes no factor, ends no session and is
+  answered 401.
 - Break glass when every factor is lost: SSH to the host and a CLI command in the operator stack
   that resets the factors of one account. SSH is the real root anyway.
 
@@ -187,8 +193,9 @@ detail pages, the Caddy site `ops.<domain>` with its headers.
 - **What is shown:** time, a count per caller of the day, intent, outcome, duration, cost, tool
   calls, the note about the line. No phone number (Claude's choice, docs/01 "Made Assumptions"). The
   page is sent with `Cache-Control: no-store`, and nothing of it is kept on the operator host.
-- A sign-out or the break glass ends the session, and with it the step-up: a fresh second factor of
-  a session that no longer exists opens nothing.
+- A sign-out or the break glass ends the session, and so does a removed factor or a new TOTP secret
+  on another session of the account (D39), and with it the step-up: a fresh second factor of a
+  session that no longer exists opens nothing.
 
 **A customer's page, write (#571, sixth part, 16.11.2026):** the last card of a customer's page
 opens "Access and call routing" (`/customers/<key>/manage/<step>`), where the operator shows and
@@ -346,8 +353,10 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   the code still signs in. A session that ended while the page was open (the options answer 401)
   sends the browser to the sign-in.
 - **Deep review (#816, 17.11.2026).** The catch-up review of #807 found no security hole; five
-  robustness findings are fixed above. Open there: whether a factor change should end the
-  account's other sessions (a question for Maxi), and three plausible P3 kept as they are.
+  robustness findings are fixed above, and Maxi's answer to its question is built: a removed
+  factor or a new TOTP secret ends the account's other sessions (`access._end_other_sessions`,
+  audited as `operator.other_sessions_ended`, named in the push; D39). Three plausible P3 are
+  kept as they are (docs/01 "Made Assumptions").
 
 ## 6. Customer login (#570)
 

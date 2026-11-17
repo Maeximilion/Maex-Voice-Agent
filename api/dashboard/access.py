@@ -317,9 +317,10 @@ def add_passkey(
     return row.name
 
 
-def remove_passkey(db: Session, operator: Operator, passkey_id: str) -> str:
-    """Returns the removed passkey's name. Raises `LookupError` for one that
-    is not this account's and `FactorNeeded` when it must stay. Commits."""
+def remove_passkey(db: Session, operator: Operator, passkey_id: str) -> tuple[str, int]:
+    """Returns the removed passkey's name and how many other sessions ended
+    (`_end_other_sessions`). Raises `LookupError` for one that is not this
+    account's and `FactorNeeded` when it must stay. Commits."""
     account = _locked(db, operator)
     try:
         wanted = uuid.UUID(passkey_id)
@@ -337,8 +338,9 @@ def remove_passkey(db: Session, operator: Operator, passkey_id: str) -> str:
         raise FactorNeeded()
     db.delete(row)
     audit(db, operator.name, "operator.passkey_removed", {"passkey": row.name})
+    ended = _end_other_sessions(db, operator)
     db.commit()
-    return row.name
+    return row.name, ended
 
 
 def propose_totp(db: Session, operator: Operator) -> None:
@@ -358,37 +360,43 @@ def pending_totp(db: Session, operator: Operator) -> str | None:
     )
 
 
-def confirm_totp(db: Session, operator: Operator, code: str, now: datetime) -> bool:
+def confirm_totp(
+    db: Session, operator: Operator, code: str, now: datetime
+) -> int | None:
     """Put the proposed secret in force once a code of it came back, so a
-    secret that never reached the app replaces nothing. Commits."""
+    secret that never reached the app replaces nothing. Returns how many other
+    sessions ended, None for a wrong code. Commits."""
     account = _locked(db, operator)
     session = db.get(OperatorSession, operator.session_id, with_for_update=True)
     secret = session.pending_totp if session is not None else None
     step = totp.matching_step(secret, code, now.timestamp(), None) if secret else None
     if session is None or step is None:
         db.rollback()
-        return False
+        return None
     account.totp_secret, account.totp_last_step = secret, step
     session.pending_totp = None
     audit(db, operator.name, "operator.totp_set", {})
+    ended = _end_other_sessions(db, operator)
     db.commit()
-    return True
+    return ended
 
 
-def remove_totp(db: Session, operator: Operator) -> bool:
-    """Raises `FactorNeeded` without two passkeys. False when TOTP was off
-    already (a double post, an older tab): nothing to audit or push. Commits."""
+def remove_totp(db: Session, operator: Operator) -> int | None:
+    """Returns how many other sessions ended; None when TOTP was off already
+    (a double post, an older tab): nothing to audit or push. Raises
+    `FactorNeeded` without two passkeys. Commits."""
     account = _locked(db, operator)
     if passkeys.count(db, account.id) < PASSKEYS_WITHOUT_TOTP:
         db.rollback()
         raise FactorNeeded()
     if account.totp_secret is None:
         db.rollback()
-        return False
+        return None
     account.totp_secret, account.totp_last_step = None, None
     audit(db, operator.name, "operator.totp_removed", {})
+    ended = _end_other_sessions(db, operator)
     db.commit()
-    return True
+    return ended
 
 
 def has_totp(db: Session, account_id: uuid.UUID) -> bool:
@@ -468,17 +476,41 @@ def audit(
 
 def _locked(db: Session, operator: Operator) -> OperatorAccount:
     """The operator's account, held until the commit: two changes of its
-    factors at once must not each see the other's factor as still there."""
+    factors at once must not each see the other's factor as still there. A
+    change that waited here while another one ended its session (D39, the
+    break glass) is refused: it changes no factor and ends nobody's session."""
     account = db.get(
         OperatorAccount,
         operator.account_id,
         with_for_update=True,
         populate_existing=True,
     )
-    if account is None:
+    alive = db.scalar(
+        select(OperatorSession.id).where(OperatorSession.id == operator.session_id)
+    )
+    if account is None or alive is None:
         db.rollback()
         raise SignInRefused()
     return account
+
+
+def _end_other_sessions(db: Session, operator: Operator) -> int:
+    """D39 (Maxi, 17.11.2026): a removed factor or a new TOTP secret is what
+    one does after a loss, so every other session of the account ends with it;
+    a thief's session must not outlive the change. The session making it stays.
+    Returns how many ended; the caller holds the account's row and commits."""
+    ended = cast(
+        CursorResult[*tuple[Any, ...]],
+        db.execute(
+            delete(OperatorSession).where(
+                OperatorSession.account_id == operator.account_id,
+                OperatorSession.id != operator.session_id,
+            )
+        ),
+    ).rowcount
+    if ended:
+        audit(db, operator.name, "operator.other_sessions_ended", {"ended": ended})
+    return ended
 
 
 def _forgive(db: Session, account: OperatorAccount, address: str) -> None:
