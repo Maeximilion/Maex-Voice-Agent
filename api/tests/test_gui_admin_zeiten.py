@@ -138,6 +138,7 @@ def _week_table(html: str) -> str:
     ("path", "tab"),
     [
         (PAGE, "Zeiten"),
+        ("/gui/lieferung", "Lieferung"),
         ("/gui/anrufe", "Anrufe"),
         ("/gui/kennzahlen", "Kennzahlen"),
         ("/gui/geraete", "Geräte"),
@@ -149,6 +150,7 @@ def test_every_admin_page_has_the_tabs_and_the_four_figures(client, path, tab):
     nav = page.text.split('<nav class="tabs"', 1)[1].split("</nav>", 1)[0]
     assert re.findall(r">([^<>]+)</a>", nav) == [
         "Zeiten",
+        "Lieferung",
         "Anrufe",
         "Kennzahlen",
         "Geräte",

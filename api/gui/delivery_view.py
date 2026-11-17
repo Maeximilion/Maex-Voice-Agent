@@ -1,0 +1,100 @@
+"""Display and form reading of the tab "Lieferung" (#571, docs/06 §4): German
+words, and the typed fields handed to `domain/delivery/owner_zones.py` as
+text.
+
+Every amount shown comes from the database through that module, in cents; this
+file writes them as euros and names the fields. It reads no amount and checks
+nothing: what a field may hold is decided in the domain.
+"""
+
+import uuid
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from api.domain.delivery import owner_zones
+from api.gui.orders_view import euro
+from api.models import DeliveryZone, Tenant
+
+# What a refused form echoes back at most, per field: a little more than the
+# domain takes, so a typing error is still there to correct.
+ECHO = {"name": 60, "plz": 2000, "pauschale": 12, "mindestwert": 12, "lieferzeit": 12}
+# The length of `owner_zones.token`.
+TOKEN = 16
+
+
+def typed(form: dict[str, str]) -> owner_zones.Typed:
+    """The fields of a zone's form, as text."""
+    return owner_zones.Typed(
+        name=form.get("name", ""),
+        postal_codes=form.get("plz", ""),
+        fee=form.get("pauschale", ""),
+        min_order=form.get("mindestwert", ""),
+        eta=form.get("lieferzeit", ""),
+        active=bool(form.get("aktiv")),
+    )
+
+
+def _amount(cents: int) -> str:
+    """Cents as a form field takes them: "2,50", without the sign."""
+    return f"{cents // 100},{cents % 100:02d}"
+
+
+def zone_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": row.id,
+            "name": row.name,
+            "codes": ", ".join(row.postal_codes or []),
+            "fee": euro(row.fee_cents),
+            "min_order": euro(row.min_order_cents),
+            "eta": f"{row.eta_minutes} Min",
+            "active": row.active,
+        }
+        for row in owner_zones.zones(session, tenant.id)
+    ]
+
+
+def zone_form(
+    row: DeliveryZone | None, sent: dict[str, str] | None = None
+) -> dict[str, Any]:
+    """The form of one zone, or of a new one without `row`: what the database
+    holds with the token of that state; or what was typed and refused
+    (`sent`), with the token it was typed against. A refused form never gets a
+    fresh token: its fields come from the old state, and with a new token the
+    corrected save would write over what another device changed meanwhile."""
+    if sent is not None:
+        fields: dict[str, Any] = {
+            key: sent.get(key, "")[:most] for key, most in ECHO.items()
+        }
+        fields["aktiv"] = bool(sent.get("aktiv"))
+        fields["seen"] = sent.get("gesehen", "")[:TOKEN]
+    elif row is None:
+        fields = dict.fromkeys(ECHO, "")
+        fields["aktiv"] = True
+        fields["seen"] = ""
+    else:
+        fields = {
+            "name": row.name,
+            "plz": ", ".join(row.postal_codes or []),
+            "pauschale": _amount(row.fee_cents),
+            "mindestwert": _amount(row.min_order_cents),
+            "lieferzeit": str(row.eta_minutes),
+            "aktiv": row.active,
+            "seen": owner_zones.token(row),
+        }
+    return {
+        **fields,
+        "title": "Neue Lieferzone" if row is None else f"Lieferzone „{row.name}“",
+        "action": _action(row.id if row is not None else None),
+        "wait_max": owner_zones.MAX_ETA_MINUTES,
+    }
+
+
+def _action(zone_id: uuid.UUID | None) -> str:
+    return "/gui/lieferung/neu" if zone_id is None else f"/gui/lieferung/zone/{zone_id}"
+
+
+def page(session: Session, tenant: Tenant) -> dict[str, Any]:
+    rows = zone_rows(session, tenant)
+    return {"zones": rows, "delivers": any(row["active"] for row in rows)}

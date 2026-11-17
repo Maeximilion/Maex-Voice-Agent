@@ -533,6 +533,8 @@ The request log (legal check U2, T-11.8, migration 019): the proof of the one-mo
 | eta_minutes | INT | |
 | active | BOOL | |
 
+Written by the import `scripts/seed_zones.py` (T-6.9) and, since 17.11.2026, by the owner's tab "Lieferung" (`domain/delivery/owner_zones.py`, #571), which keeps what the table itself does not: a postal code in one active zone only, and a name once per restaurant. Each save of the tab writes `delivery_zone.created` or `delivery_zone.changed` to `audit_log` with the zone before and after (no personal data). No row is deleted: `addresses.zone_id` points here.
+
 **Start:** `postal_code` genügt und ist ohne Geo-Erweiterung testbar. Polygone erst, wenn die Liefergebiets-Kalkulation sie liefert. Dann ist PostGIS eine Option, `shapely` im Python-Code reicht aber für diese Datenmenge.
 
 ---

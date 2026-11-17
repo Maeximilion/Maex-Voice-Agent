@@ -29,7 +29,7 @@ from api.config import LOCAL_ENVS, settings
 from api.core import time as clock
 from api.core.auth import require_gui_proxy
 from api.core.envelope import fail_body
-from api.core.errors import AppError, Conflict, InvalidInput
+from api.core.errors import AppError, Conflict, InvalidInput, NotFound
 from api.core.logging import get_logger
 from api.core.time import business_day, to_local
 from api.db import SessionLocal, get_db
@@ -43,6 +43,7 @@ from api.domain.callbacks.board import (
 )
 from api.domain.confirm import confirm_tablet
 from api.domain.customers.phone import costly
+from api.domain.delivery import owner_zones
 from api.domain.menu import price_check
 from api.domain.menu import sold_out as dishes
 from api.domain.ordering import board as order_board
@@ -57,7 +58,13 @@ from api.domain.status import holidays as holiday_days
 from api.domain.status import staff_changes as staff
 from api.domain.status.mode import CAUTION, mode_at
 from api.domain.status.waits import current_wait, standard_wait
-from api.gui import calls_view, figures_view, hours_view, orders_view
+from api.gui import (
+    calls_view,
+    delivery_view,
+    figures_view,
+    hours_view,
+    orders_view,
+)
 from api.gui.session import LOGIN, csrf_matches, require_admin, require_gui_session
 from api.gui.sse import today_event_stream
 from api.models import Reservation, ServiceConfig, Tenant
@@ -2129,6 +2136,165 @@ def hours_day_change(
         )
     message = SAVED if changed else NO_CHANGE
     return _hours_part(request, session, tenant, "tage", message, "ok")
+
+
+# --- The owner's tab "Lieferung": zones, fee, minimum order (#571) ----------------
+
+
+def _zones_part(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    message: str | None = None,
+    tone: str = "ok",
+) -> HTMLResponse:
+    """The list of zones as it is in the database now."""
+    return templates.TemplateResponse(
+        request,
+        "fragments/lieferung_zonen.html",
+        {**delivery_view.page(session, tenant), "message": message, "tone": tone},
+        headers=NO_STORE,
+    )
+
+
+def _zone_form(
+    request: Request,
+    session: Session,
+    tenant: Tenant,
+    zone_id: uuid.UUID | None,
+    message: str | None = None,
+    sent: dict[str, str] | None = None,
+) -> HTMLResponse:
+    """A zone's form, or an empty one without `zone_id`. Always 200 for a
+    refused save: htmx swaps no 4xx, and the form must show its reason. A zone
+    that is not this restaurant's is a 404."""
+    try:
+        row = (
+            owner_zones.zone(session, tenant.id, zone_id)
+            if zone_id is not None
+            else None
+        )
+    except NotFound:
+        raise HTTPException(status_code=404) from None
+    return templates.TemplateResponse(
+        request,
+        "fragments/lieferung_zone.html",
+        {**delivery_view.zone_form(row, sent), "message": message},
+        headers=NO_STORE,
+    )
+
+
+def _zone_save(
+    request: Request,
+    session: Session,
+    zone_id: uuid.UUID | None,
+    form: dict[str, str],
+) -> HTMLResponse:
+    """The owner writes one zone. The form sends the token of the zone it
+    showed (`gesehen`); a zone changed since is not written over."""
+    tenant = _admin_tenant(session)
+    try:
+        changed = owner_zones.save_zone(
+            session,
+            tenant.id,
+            zone_id,
+            delivery_view.typed(form),
+            form.get("gesehen", ""),
+        )
+    except NotFound:
+        session.rollback()
+        raise HTTPException(status_code=404) from None
+    except AppError as exc:
+        session.rollback()
+        # After a conflict the fresh zone with its token, not what was typed
+        # against the old one; any other refusal shows the typed fields again
+        # with the token they were typed against.
+        sent = None if isinstance(exc, Conflict) else form
+        return _zone_form(
+            request, session, tenant, zone_id, exc.say or SWITCH_FAILED, sent
+        )
+    return _zones_part(request, session, tenant, SAVED if changed else NO_CHANGE)
+
+
+@router.get("/lieferung", response_class=HTMLResponse, include_in_schema=False)
+def delivery_page(
+    request: Request,
+    _access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The delivery zones with fee and minimum order, behind the admin PIN."""
+    tenant = _admin_tenant(session)
+    return _page_response(
+        request,
+        "betrieb/lieferung.html",
+        {
+            "tenant": tenant,
+            **_frame(session, tenant),
+            **delivery_view.page(session, tenant),
+        },
+    )
+
+
+@router.get("/lieferung/zonen", response_class=HTMLResponse, include_in_schema=False)
+def delivery_zones(
+    request: Request,
+    _access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    """The list again: "Abbrechen" on a zone's form."""
+    return _zones_part(request, session, _admin_tenant(session))
+
+
+@router.get("/lieferung/neu", response_class=HTMLResponse, include_in_schema=False)
+def delivery_zone_new_form(
+    request: Request,
+    _access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    return _zone_form(request, session, _admin_tenant(session), None)
+
+
+@router.post(
+    "/lieferung/neu",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def delivery_zone_new(
+    request: Request,
+    _access: Access = Depends(require_admin),
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    return _zone_save(request, session, None, form)
+
+
+@router.get(
+    "/lieferung/zone/{zone_id}", response_class=HTMLResponse, include_in_schema=False
+)
+def delivery_zone_form(
+    request: Request,
+    zone_id: uuid.UUID,
+    _access: Access = Depends(require_admin),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    return _zone_form(request, session, _admin_tenant(session), zone_id)
+
+
+@router.post(
+    "/lieferung/zone/{zone_id}",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(_require_htmx)],
+)
+def delivery_zone_change(
+    request: Request,
+    zone_id: uuid.UUID,
+    _access: Access = Depends(require_admin),
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
+) -> HTMLResponse:
+    return _zone_save(request, session, zone_id, form)
 
 
 @router.get("/events", include_in_schema=False)
