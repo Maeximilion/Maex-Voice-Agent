@@ -317,6 +317,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 ## Changelog
 
 - **v2.66.0 · 18.11.2026:** UI polish of the #571 pages (#829): sign-in fits 375 px, sticky tab row, confirms before far-reaching steps, live menu search, call details in view, table headers whole, PIN fields hidden, unknown cost as a dash, smaller wording fixes
+- **v2.65.1 · 18.11.2026:** Briefs name code locations found with Graphify
 - **v2.65.0 · 18.11.2026:** `/chain` (`.claude/commands/chain.md`): several tasks or issues worked off by one coordinator and one fresh session per pull request that builds and ships it, with usage pacing; the definition of a chain and what the GUI plan chain of #571 taught (Maxi, 2026-11-17)
 - **v2.64.0 · 18.11.2026:** Operator write steps (#811): the operator's change reads as the operator's on the owner's card and in the push, the operator sets the standard team number (step-up, reason, audit row, push), and a step from a page the restaurant changed since is refused with 412 and the page reads the state again
 - **v2.63.0 · 18.11.2026:** Off-hours mark on a reservation (#819, migration 042): the tablet asks "Trotzdem eintragen" on closed hours and marks the table, the board's card names it, the tab "Zeiten" no longer lists it
