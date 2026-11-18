@@ -38,7 +38,7 @@ Know: <only what lives in this chat: Maxi's word not yet in the repo, an approac
 Start with /task T-x.y
 ```
 
-The last line names the command that resumes it: `/task <id>` for a task (it continues the named branch), `/ship <PR>` for a PR in review; other work leaves it out. The block opens with `## Handover`, never with the command, so the command gets only its own argument and the route hook (`.claude/hooks/route_advice.sh`) reads the block as a handover. Leave out a line that would be empty.
+The last line names the command that resumes it: `/task <id>` for a task (it continues the named branch), `/ship <PR>` for a PR in review; other work leaves it out. The block opens with `## Handover`, never with the command, so the command gets only its own argument and the route hook (`.claude/hooks/route_advice.sh`) reads the block as a handover. Where a `Next` step is code work, it names the files and functions to start at, as found with Graphify (`CLAUDE.md` "graphify"), so the new session reads there first. Leave out a line that would be empty.
 
 ## Next start after a merge
 
