@@ -311,7 +311,7 @@ A change the staff made without the owner's PIN, shown as a check card until the
 | tenant_id | UUID FK | |
 | kind | TEXT CHECK | `team_phone` / `day_hours` |
 | day | DATE | the date whose hours changed, or the business day a team number holds for; a card of a past day is not shown |
-| before / after | JSONB | what held before the staff came, and what they asked for last |
+| before / after | JSONB | what held before the staff came (for `day_hours`: or the team's holiday answer given while the card waits, #802), and what they asked for last |
 | held | BOOL | whether `after` holds; longer or extra hours for a later date wait for the owner |
 | status | TEXT CHECK, default `open` | `open` / `kept` / `undone`; one open card per tenant, kind and day (partial unique index) |
 | decided_at | TIMESTAMPTZ NULL | |

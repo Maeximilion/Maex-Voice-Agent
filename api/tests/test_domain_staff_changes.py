@@ -16,8 +16,8 @@ from api.config import settings
 from api.core.errors import Conflict, InvalidInput
 from api.domain.callbacks import transfer_to_team
 from api.domain.calls.routing import call_routing
+from api.domain.status import holidays, weekly
 from api.domain.status import staff_changes as staff
-from api.domain.status import weekly
 from api.domain.status.hours import load_hours, windows_for_day
 from api.domain.status.staff_changes import DayHours
 from api.events.types import DAY_HOURS_CHANGED, TEAM_PHONE_CHANGED
@@ -1173,3 +1173,125 @@ def test_a_tablet_undoing_the_card_a_new_standard_kept_is_refused(session, tenan
     staff.decide(session, tenant_id, shown.id, keep=True, now=NOW, seen=seen)
 
     assert _config(session, tenant_id).team_phone == NUMBER
+
+
+# --- the card's origin under a holiday answer, and its note (#802) ----------
+
+SATURDAY_MORNING = datetime.combine(SATURDAY, time(10, 0), tzinfo=BERLIN)
+
+
+def _holiday_answered(session, tenant_id, day, choice=holidays.LIKE) -> None:
+    """The team answers the date's holiday suggestion on the tablet."""
+    suggestion = SpecialDay(
+        tenant_id=tenant_id,
+        date=day,
+        note="Feiertag",
+        like_weekday=6,
+        status=holidays.SUGGESTED,
+    )
+    session.add(suggestion)
+    session.commit()
+    holidays.answer(session, tenant_id, suggestion.id, choice)
+
+
+def _set_row(session, day) -> SpecialDay:
+    return session.scalars(
+        select(SpecialDay)
+        .where(SpecialDay.date == day, SpecialDay.status == "set")
+        .execution_options(populate_existing=True)
+    ).one()
+
+
+def _waiting_card(session, tenant_id) -> StaffChange:
+    card = staff.change_day_hours(
+        session, tenant_id, SATURDAY, DayHours(opens=time(11), closes=time(23)), NOW
+    )
+    assert card is not None and not card.held
+    return card
+
+
+@pytest.mark.parametrize(
+    "reopen",
+    [DayHours(opens=time(12), closes=time(13)), DayHours()],
+    ids=["own-times", "weekly-hours"],
+)
+@pytest.mark.parametrize("now", [NOW, SATURDAY_MORNING], ids=["later-date", "today"])
+def test_a_holiday_answer_under_a_waiting_card_becomes_its_origin(
+    session, tenant_id, reopen, now
+):
+    """A holiday answered "wie Sonntag" while the date's card waits: the card
+    starts from that answer, so times after a held closure still drop Sunday's
+    seats, call mode and call limit and wait for the owner (#802)."""
+    waiting = _waiting_card(session, tenant_id)
+    _holiday_answered(session, tenant_id, SATURDAY)
+    session.refresh(waiting)
+    assert DayHours.of(waiting.before) == DayHours(like_weekday=6, note="Feiertag")
+    closed = staff.change_day_hours(
+        session, tenant_id, SATURDAY, DayHours(closed=True), now
+    )
+    assert closed is not None and closed.id == waiting.id and closed.held
+    card = staff.change_day_hours(session, tenant_id, SATURDAY, reopen, now)
+    assert card is not None and card.status == "open" and not card.held
+    row = _set_row(session, SATURDAY)
+    assert row.closed and row.note == "Feiertag"
+
+
+def test_the_owners_undo_returns_to_a_holiday_answer_given_under_the_card(
+    session, tenant_id
+):
+    """Undo writes the origin: the team's holiday answer, not the weekly hours
+    the card opened on, which would delete it (#802)."""
+    card = _waiting_card(session, tenant_id)
+    _holiday_answered(session, tenant_id, SATURDAY)
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
+    row = _set_row(session, SATURDAY)
+    assert (row.closed, row.like_weekday, row.note) == (False, 6, "Feiertag")
+
+
+def test_the_owners_keep_after_a_holiday_answer_keeps_the_holidays_name(
+    session, tenant_id
+):
+    """The waiting request takes the holiday's name, as one sent after the
+    answer would: kept, the date still says which holiday it is."""
+    card = _waiting_card(session, tenant_id)
+    _holiday_answered(session, tenant_id, SATURDAY, holidays.CLOSED)
+    staff.decide(session, tenant_id, card.id, keep=True, now=NOW)
+    row = _set_row(session, SATURDAY)
+    assert (row.opens_at, row.closes_at, row.note) == (time(11), time(23), "Feiertag")
+
+
+def test_a_holiday_answer_without_a_card_opens_none(session, tenant_id):
+    _holiday_answered(session, tenant_id, SATURDAY)
+    assert _cards(session, tenant_id) == []
+    assert _set_row(session, SATURDAY).like_weekday == 6
+
+
+@pytest.mark.parametrize(
+    ("origin", "now"),
+    [
+        (DayHours(opens=time(10), closes=time(23)), NOW),
+        (DayHours(opens=time(10), closes=time(23)), SATURDAY_MORNING),
+        (DayHours(closed=True), SATURDAY_MORNING),
+    ],
+    ids=["times-later-date", "times-today", "closed-today"],
+)
+def test_back_to_the_origin_after_the_weekly_hours_holds_and_keeps_its_name(
+    session, tenant_id, origin, now
+):
+    """The weekly hours held over a holiday row, then the staff ask for the
+    row's hours again: that is the origin, its name included, so it holds at
+    once and the card ends (#802)."""
+    row = origin.row(tenant_id, SATURDAY)
+    row.note = "Feiertag"
+    session.add(row)
+    session.commit()
+    weekly_hours = staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(), now)
+    assert weekly_hours is not None and weekly_hours.held
+    back = DayHours(origin.closed, origin.opens, origin.closes)
+    card = staff.change_day_hours(session, tenant_id, SATURDAY, back, now)
+    assert card is not None and card.held and card.status == "undone"
+    row = _set_row(session, SATURDAY)
+    assert DayHours.of_row(row) == DayHours(
+        origin.closed, origin.opens, origin.closes, note="Feiertag"
+    )

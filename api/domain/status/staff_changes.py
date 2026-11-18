@@ -35,7 +35,7 @@ suggested the date, the staff only confirm it.
 
 import hashlib
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -396,9 +396,14 @@ def change_day_hours(
         raise InvalidInput("a past day", say=PAST_DAY)
     row = _set_row(session, tenant_id, day, lock=True)
     holding = DayHours.of_row(row)
+    card = _open_card(session, tenant_id, DAY_HOURS, day)
+    origin = holding if card is None else DayHours.of(card.before)
     if hours.note is None:
         hours = DayHours(hours.closed, hours.opens, hours.closes, None, holding.note)
-    card = _open_card(session, tenant_id, DAY_HOURS, day)
+        if replace(hours, note=origin.note) == origin:
+            # Back to the origin's hours is the origin, its holiday name too:
+            # after held weekly hours the row holds no name to take (#802).
+            hours = origin
     if hours == holding and (card is None or card.after == hours.as_dict()):
         session.commit()
         return None
@@ -406,7 +411,6 @@ def change_day_hours(
         card = _new_card(session, tenant_id, DAY_HOURS, day, holding.as_dict())
     # What the card showed until now: what held, or the request that waited.
     shown = DayHours.of(card.after)
-    origin = DayHours.of(card.before)
     # The weekday the card started from counts too: after a held closure the
     # row reads closed, and times then would still drop "wie Sonntag", also
     # on a rest day whose closed row they fit in.
@@ -447,6 +451,22 @@ def change_day_hours(
         _close(card, UNDONE, now)
     session.commit()
     return card
+
+
+def holiday_answered(session: Session, tenant_id: uuid.UUID, row: SpecialDay) -> None:
+    """The team's holiday answer set the date's row (`holidays.answer`) while
+    a staff card for it waits: the answer is what held before the staff's
+    request now. The card starts from it, so the owner's undo returns to it
+    and later times are checked against its weekday's seats, call mode and
+    call limit (#802); a request without a name takes the holiday's, as one
+    sent now would. The caller holds the restaurant's lock. Flushes."""
+    card = _open_card(session, tenant_id, DAY_HOURS, row.date)
+    if card is None:
+        return
+    card.before = DayHours.of_row(row).as_dict()
+    if card.after["note"] is None:
+        card.after = {**card.after, "note": row.note}
+    session.flush()
 
 
 def set_day_hours(

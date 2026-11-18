@@ -241,6 +241,10 @@ def answer(
             else:
                 # What the card offered, also for a row written without one.
                 day.like_weekday = _like(day)
+            # Imported here: staff_changes reads this module's calendar.
+            from api.domain.status.staff_changes import holiday_answered
+
+            holiday_answered(session, tenant_id, day)
         session.add(
             AuditLog(
                 tenant_id=tenant_id,
