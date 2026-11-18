@@ -404,7 +404,7 @@ def betrieb(request: Request, session: Session = Depends(get_db)) -> HTMLRespons
             "orders": _order_rows(session, tenant),
             "holidays": _holiday_rows(session, tenant),
             "prices": _price_rows(session, tenant),
-            "checks": _check_rows(session, tenant),
+            **_checks(session, tenant),
             **_header(session, tenant),
         }
     return _page_response(
@@ -1750,6 +1750,16 @@ def _check_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     return rows
 
 
+def _checks(session: Session, tenant: Tenant) -> dict[str, Any]:
+    """The check cards and, below them, every confirmed table the hours as
+    they stand leave out that no card lists (#764): an answered card, a
+    holiday answered "Geschlossen" or a date set behind the PIN opens none,
+    and the team still calls those guests itself."""
+    checks = _check_rows(session, tenant)
+    shown = {b for c in checks for b in c["calls"]}
+    return {"checks": checks, "guests": hours_view.guest_rows(session, tenant, shown)}
+
+
 def _checks_fragment(
     request: Request, session: Session, note: str | None = None
 ) -> HTMLResponse:
@@ -1761,7 +1771,7 @@ def _checks_fragment(
     return templates.TemplateResponse(
         request,
         "fragments/pruefen.html",
-        {"checks": _check_rows(session, tenant), "checks_note": note},
+        {**_checks(session, tenant), "checks_note": note},
     )
 
 

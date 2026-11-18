@@ -1295,3 +1295,59 @@ def test_back_to_the_origin_after_the_weekly_hours_holds_and_keeps_its_name(
     assert DayHours.of_row(row) == DayHours(
         origin.closed, origin.opens, origin.closes, note="Feiertag"
     )
+
+
+# --- a hand-written date answers its holiday suggestion (#764, B1) ----------
+
+
+def _suggestion(session, tenant_id, day) -> SpecialDay:
+    """The holiday job's card for `day`, not answered yet."""
+    row = SpecialDay(
+        tenant_id=tenant_id,
+        date=day,
+        note="Feiertag",
+        like_weekday=6,
+        status=holidays.SUGGESTED,
+    )
+    session.add(row)
+    session.commit()
+    return row
+
+
+@pytest.mark.parametrize(
+    "hours",
+    [DayHours(opens=time(12), closes=time(13)), DayHours(closed=True)],
+    ids=["shorter", "closed"],
+)
+def test_a_held_staff_change_answers_the_dates_holiday_suggestion(
+    session, tenant_id, hours
+):
+    """Staff who set a holiday's hours by hand have answered its card: left
+    open, the board would say the weekly hours hold, and a later tap on it
+    would be dropped next to the staff's row without a word (#764)."""
+    suggestion = _suggestion(session, tenant_id, SATURDAY)
+    card = staff.change_day_hours(session, tenant_id, SATURDAY, hours, NOW)
+    assert card is not None and card.held
+    assert holidays.open_suggestions(session, tenant_id, TUESDAY) == []
+    session.refresh(suggestion)
+    assert suggestion.status == "dismissed"
+    assert DayHours.of_row(_set_row(session, SATURDAY)) == hours
+
+
+def test_a_waiting_staff_request_leaves_the_holiday_suggestion_open(session, tenant_id):
+    """Nothing holds yet while the card waits: the team may still answer the
+    holiday, which then becomes the card's origin (#802)."""
+    _suggestion(session, tenant_id, SATURDAY)
+    _waiting_card(session, tenant_id)
+    assert [s.date for s in holidays.open_suggestions(session, tenant_id, TUESDAY)] == [
+        SATURDAY
+    ]
+
+
+def test_the_owners_date_hours_answer_the_holiday_suggestion(session, tenant_id):
+    suggestion = _suggestion(session, tenant_id, SATURDAY)
+    assert staff.set_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    assert holidays.open_suggestions(session, tenant_id, TUESDAY) == []
+    session.refresh(suggestion)
+    assert suggestion.status == "dismissed"
+    assert _set_row(session, SATURDAY).closed
