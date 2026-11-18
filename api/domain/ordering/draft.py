@@ -28,6 +28,7 @@ from api.core.errors import (
     ServiceUnavailable,
 )
 from api.core.time import utcnow
+from api.domain.calls.drafts import key_for_request
 from api.domain.customers.phone import normalize_phone, number_or_none
 from api.domain.delivery.address import SAY_WHICH_NAME, keep, place
 from api.domain.ordering.labels import ACTION_DRAFT_CREATED, current_labels
@@ -60,7 +61,12 @@ def draft_order(
         raise NotFound("Mandant unbekannt")
     zone = ZoneInfo(tenant.timezone)
 
-    # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1).
+    # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1),
+    # while its draft is the call's latest (#862).
+    key = key_for_request(
+        session, req.idempotency_key, req.tenant_id, req.call_id, "draft_order", _by_key
+    )
+    req = req.model_copy(update={"idempotency_key": key})
     existing = _by_key(session, req.idempotency_key)
     if existing is not None:
         return _replay(session, existing, req.tenant_id, req.call_id)

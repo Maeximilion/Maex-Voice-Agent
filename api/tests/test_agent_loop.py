@@ -12,7 +12,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.agent.guards import (
@@ -53,7 +53,7 @@ from api.agent.loop import (
 from api.agent.outcome import call_outcome
 from api.agent.state import ConversationState, initial_state
 from api.domain.confirm import SAY_CANCELLED
-from api.models import Call, Callback, Reservation
+from api.models import Call, Callback, Reservation, ServiceConfig
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -2596,6 +2596,63 @@ def test_a_new_allergy_and_a_callback_without_a_number_name_the_table(session, s
     assert f"{SUMMARY_OPEN_TABLE} 4 Personen, 16.09.2026 19:00 Uhr" in _card(
         session, state
     )
+
+
+def _then_to_the_team(first: ToolCall) -> FakeLLM:
+    """One tool call, then the model hands the call over itself."""
+    return FakeLLM(
+        [
+            LLMTurn(tool_call=first),
+            LLMTurn(
+                tool_call=ToolCall(
+                    name="transfer_to_team", args={"reason": "human_requested"}
+                )
+            ),
+            LLMTurn(say="Ich verbinde Sie mit dem Team."),
+        ]
+    )
+
+
+@HANDED_OVER
+@pytest.mark.parametrize(
+    ("said", "first", "switch_off"),
+    [
+        # The guest corrects the time: the table read back is no longer wanted.
+        (
+            "Lieber um acht",
+            ToolCall(
+                "check_slot",
+                {"party_size": 4, "reserved_for": "2026-09-16T20:00:00+02:00"},
+            ),
+            False,
+        ),
+        # The team switched reservations off: the yes can never book it.
+        ("Ja", None, True),
+    ],
+)
+def test_a_table_the_domain_took_back_this_turn_is_not_on_the_card(
+    session, state, now, stage, said, first, switch_off
+):
+    """#862: the table read back at the turn's start went on the card after a
+    tool of the same turn took it back for good, and the team called a guest
+    back about a table that could never be booked."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    if switch_off:
+        session.execute(update(ServiceConfig).values(reservations_enabled=False))
+        session.commit()
+        first = ToolCall(
+            "confirm", {"entity": "reservation", "entity_id": str(state.reservation_id)}
+        )
+    loop = ConversationLoop(
+        session, _then_to_the_team(first), "system", now=now, clock=clock_from([0])
+    )
+
+    result = loop.run_turn(state, said)
+
+    assert result.ended is True and state.stage == stage
+    assert SAY_TABLE_NOT_BOOKED not in result.say
+    assert SUMMARY_OPEN_TABLE not in _card(session, state)
 
 
 @pytest.mark.parametrize(

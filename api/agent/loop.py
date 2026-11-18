@@ -144,6 +144,8 @@ CART = "cart"
 SAY = "say"
 # What the model hands a complaint over with. The core reads a rule first (D19).
 _COMPLAINT_TOOLS = ("transfer_to_team", "create_callback")
+# The tools whose result can take a table read back away for good.
+_TABLE_TOOLS = frozenset({"check_slot", "create_reservation", "confirm"})
 # The model's handover did not go out: a rule of the catalogue was offered.
 _RULE_FIRST = ToolResult(ok=False, error_code="conflict")
 
@@ -746,7 +748,19 @@ class ConversationLoop:
                 return self._allergens_to_team(
                     state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                 )
+            read_back = state.reservation_id
             apply_tool_result(state, call.name, result, call.args)
+            if (
+                refused is None
+                and call.name in _TABLE_TOOLS
+                and read_back is not None
+                and state.reservation_id is None
+            ):
+                # The domain took the table read back away for good: its
+                # seats are gone, reservations are off, or the guest corrected
+                # it. A card naming it would offer the team a table nobody can
+                # book (#862).
+                open_table = None
             told = result.say or ""
             if not result.ok and told.endswith(SAY_TO_THE_TEAM):
                 # The tool's sentence promises the team: a draft cancelled on

@@ -83,5 +83,33 @@ def test_the_cut_makes_no_yes_out_of_more_than_a_yes(text):
     assert recording_answer(text) != "yes"
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Ja, das Fräulein",
+        "Ja das Fraeulein",
+        "Das Fräulein, ja",
+        "Ja, das Fräulein bitte",
+        "Ja, der junge Mann",
+        "Ja, ein junger Mann",
+        "Ja, die gute Frau",
+    ],
+)
+def test_a_person_named_with_an_article_is_no_address(text):
+    """After an article the form names a third person, it does not speak to
+    the agent: cut, the article alone ("das") is filler and the sentence read
+    as a yes (#862)."""
+    assert not is_yes(text)
+    assert consent_answer(text) != "yes"
+    assert recording_answer(text) != "yes"
+
+
+@pytest.mark.parametrize("text", ["Ja, das passt, Fräulein", "Ja, das, junge Frau"])
+def test_an_address_after_a_filler_word_is_still_cut(text):
+    """Only an article right before the form keeps it: "das passt" or a
+    comma between still leave the form an address."""
+    assert is_yes(text)
+
+
 def test_a_question_about_the_recording_stays_a_question_behind_the_address():
     assert recording_answer("Bin ich damit einverstanden, junge Frau") == "unclear"

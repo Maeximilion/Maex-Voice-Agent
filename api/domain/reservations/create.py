@@ -17,6 +17,7 @@ from api.core.errors import (
     TeamDecides,
 )
 from api.core.time import utcnow
+from api.domain.calls.drafts import key_for_request
 from api.domain.customers.phone import normalize_phone, number_or_none
 from api.domain.reservations.capacity import lock_capacity_days
 from api.domain.reservations.slots import check_slot
@@ -44,7 +45,17 @@ def create_reservation(
         raise NotFound("Mandant unbekannt")
     zone = ZoneInfo(tenant.timezone)
 
-    # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1).
+    # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1),
+    # while its draft is the call's latest (#862).
+    key = key_for_request(
+        session,
+        req.idempotency_key,
+        req.tenant_id,
+        req.call_id,
+        "create_reservation",
+        _by_key,
+    )
+    req = req.model_copy(update={"idempotency_key": key})
     existing = _by_key(session, req.idempotency_key)
     if existing is not None:
         return _replay(existing, req.tenant_id, req.call_id, zone)
