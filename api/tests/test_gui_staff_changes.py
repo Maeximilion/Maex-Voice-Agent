@@ -386,7 +386,7 @@ def test_a_keep_refused_for_the_date_beside_says_why(client, engine):
     with Session(engine) as session:
         set_day_hours(
             session,
-            session.scalar(select(ServiceConfig.tenant_id)),
+            session.scalars(select(ServiceConfig.tenant_id)).one(),
             later + timedelta(days=1),
             DayHours(opens=time(10), closes=time(14)),
         )
