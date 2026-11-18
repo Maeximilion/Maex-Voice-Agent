@@ -177,6 +177,10 @@ class ConversationState(BaseModel):
     # between turns, and a note it writes later needs the words. A bare
     # denial clears it. At most `ALLERGY_SAID_MAX` sentences.
     allergy_said: list[str] = Field(default_factory=list)
+    # The guest's allergy or allergen of the last turn was not taken up: that
+    # turn ended in a core sentence (`guards.leaves_a_question`, #798). Lasts
+    # one turn; a second such turn goes to the team. Never sent.
+    allergen_question_open: bool = False
     # The note of the whole order and of the table as the last draft carried
     # it: a draft made again from `cart` or `slots` keeps it. Sent.
     order_note: str | None = None

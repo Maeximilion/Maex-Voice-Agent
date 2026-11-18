@@ -291,33 +291,6 @@ def asks_about_allergies(text: str) -> bool:
     )
 
 
-# A question about what is in a dish: "Ist in den Frühlingsrollen Gluten?",
-# "Hat die 13 Nüsse?", "Ist da Milch drin?". "Haben Sie ..." asks for a dish
-# ("Haben Sie Erdnuss-Curry?"), not about one.
-_ASKS_WHATS_IN = re.compile(
-    r"\b(?:drin|darin|drinnen|enth(?:ä|ae)lt|enthalten|in|im)\b"
-    r"|\b(?:hat|haben)\b(?!\s+(?:sie|ihr)\b)"
-)
-
-
-def asks_about_an_allergen(text: str) -> bool:
-    """Does the guest ask about an allergen, with or without an allergy of
-    their own (#764)? `asks_about_allergies`, or a question that names an
-    allergen and asks what is in a dish ("Ist in den Frühlingsrollen
-    Gluten?", "Hat die 13 Nüsse?", "Und ist da auch Soja drin?"). Not a
-    wish ("Die 13 ohne Erdnüsse bitte") nor a question for a dish named like
-    an allergen ("Haben Sie Erdnuss-Curry?").
-    shortcut: a dish named like an allergen in such a question ("Hat das
-    Erdnuss-Curry Koriander?") counts as one; the guest hears the table of
-    the dish or the team, the careful side."""
-    return asks_about_allergies(text) or any(
-        is_question(sentence)
-        and names_an_allergen(sentence)
-        and _ASKS_WHATS_IN.search(sentence.lower()) is not None
-        for sentence in _not_denied(text)
-    )
-
-
 def asks_beyond_the_allergens(text: str) -> bool:
     """Does the guest ask about allergens what no database value answers, in
     words that say nothing else: traces, contamination, the same oil, pan or
