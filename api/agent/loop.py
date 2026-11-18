@@ -56,7 +56,7 @@ from api.agent.state import (
 )
 from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
-from api.core.errors import SAY_TO_THE_TEAM
+from api.core.errors import SAY_TO_THE_TEAM, Conflict
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
@@ -196,6 +196,17 @@ SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
 # The same for a table read back and not yet confirmed (own review of PR #369).
 SAY_TABLE_NOT_BOOKED = "Ihre Reservierung ist damit noch nicht bestätigt."
 SUMMARY_OPEN_TABLE = "Offene Reservierung, nicht bestätigt:"
+# A table the domain refused in the same turn: no team can book it as it
+# stands, the card names it as what the guest asked for (#862).
+SUMMARY_REFUSED_TABLE = "Reservierung nicht möglich, nicht gebucht:"
+
+
+class RefusedTable(str):
+    """The text of a table on the card that the domain refused for good."""
+
+    __slots__ = ()
+
+
 # The lead of the handover for a question beyond the database (traces,
 # contact, a promise of safety, L17): nothing about what is stored, which may
 # be maintained for that dish (own review of PR #369). Draft wording, checked
@@ -803,8 +814,34 @@ class ConversationLoop:
                 return self._allergens_to_team(
                     state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                 )
+            read_back = state.reservation_id
             apply_tool_result(state, call.name, result, call.args)
             guards.note_tool(aturn, call.name, result, call.args)
+            if (
+                refused is None
+                and open_table is not None
+                and result.error_code == Conflict.code
+                and not result.data.get("team_callback")
+                and (
+                    # The yes to the table read back: its seats are gone,
+                    # reservations are off, the tablet cancelled it. Not a
+                    # failed correction: the table read back still holds.
+                    (
+                        call.name == "confirm"
+                        and read_back is not None
+                        and state.reservation_id is None
+                    )
+                    # The draft on the card after an allergy hint (above).
+                    or (
+                        call.name == "create_reservation"
+                        and open_table == self._open_draft(state, call)
+                    )
+                )
+            ):
+                # The domain refused the very table on the card: it is named
+                # as refused, never as open, and the guest still hears that it
+                # is not booked (#862).
+                open_table = RefusedTable(open_table)
             told = result.say or ""
             if not result.ok and told.endswith(SAY_TO_THE_TEAM):
                 # The tool's sentence promises the team: a draft cancelled on
@@ -1479,7 +1516,12 @@ class ConversationLoop:
             return head + said, booked, []
         table = self._open_table(state) or table
         if table:
-            head += f" {SUMMARY_OPEN_TABLE} {table}."
+            label = (
+                SUMMARY_REFUSED_TABLE
+                if isinstance(table, RefusedTable)
+                else SUMMARY_OPEN_TABLE
+            )
+            head += f" {label} {table}."
         # Room for what follows the order, and for the line's first sentence
         # on a team leg nobody answered: all of it stands on that card (#207).
         reserve = len(said + booked + SUMMARY_MISSED) + 1

@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from psycopg.errors import QueryCanceled
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import create_engine, func, select, text, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -454,6 +454,87 @@ def test_a_draft_made_after_midnight_never_says_heute_or_morgen():
             assert " heute " not in said and " morgen " not in said, said
 
 
+def _at(y: int, m: int, d: int, hh: int, mm: int = 0, fold: int = 0) -> datetime:
+    return datetime(y, m, d, hh, mm, tzinfo=BERLIN, fold=fold)
+
+
+@pytest.mark.parametrize(
+    ("created", "table", "said"),
+    [
+        # Month end: Wednesday 30 September to Thursday 1 October.
+        (
+            _at(2026, 9, 30, 20),
+            _at(2026, 10, 1, 0, 30),
+            "in der Nacht von Mittwoch auf Donnerstag um halb eins",
+        ),
+        (_at(2026, 9, 30, 20), _at(2026, 10, 1, 19), "morgen um sieben Uhr abends"),
+        (
+            _at(2026, 10, 1, 0, 15),
+            _at(2026, 10, 1, 19),
+            "am Donnerstag, den 1. Oktober um sieben Uhr abends",
+        ),
+        # Year end: Thursday 31 December 2026 to Friday 1 January 2027.
+        (
+            _at(2026, 12, 31, 20),
+            _at(2027, 1, 1, 0, 30),
+            "in der Nacht von Donnerstag auf Freitag um halb eins",
+        ),
+        (_at(2026, 12, 31, 20), _at(2027, 1, 1, 19), "morgen um sieben Uhr abends"),
+        (
+            _at(2027, 1, 1, 0, 15),
+            _at(2027, 1, 1, 19),
+            "am Freitag, den 1. Januar um sieben Uhr abends",
+        ),
+        (
+            _at(2026, 12, 28, 20),
+            _at(2027, 1, 2, 0, 30),
+            "in der Nacht von Freitag auf Samstag",
+        ),
+        # Clocks go back in the night of Saturday 24 to Sunday 25 October 2026
+        # (03:00 summer time is 02:00 winter time): the night has 25 hours.
+        (
+            _at(2026, 10, 24, 20),
+            _at(2026, 10, 25, 1, 30),
+            "in der Nacht von Samstag auf Sonntag um halb zwei",
+        ),
+        (
+            _at(2026, 10, 24, 20),
+            _at(2026, 10, 25, 2, 30, fold=1),
+            "in der Nacht von Samstag auf Sonntag um halb drei",
+        ),
+        (_at(2026, 10, 24, 20), _at(2026, 10, 25, 19), "morgen um sieben Uhr abends"),
+        (
+            _at(2026, 10, 25, 2, 15, fold=1),
+            _at(2026, 10, 25, 19),
+            "am Sonntag, den 25. Oktober um sieben Uhr abends",
+        ),
+        # Clocks go forward in the night of Saturday 27 to Sunday 28 March 2027
+        # (02:00 winter time is 03:00 summer time): the night has 23 hours.
+        (
+            _at(2027, 3, 27, 20),
+            _at(2027, 3, 28, 3, 30),
+            "in der Nacht von Samstag auf Sonntag um halb vier",
+        ),
+        (_at(2027, 3, 27, 20), _at(2027, 3, 28, 19), "morgen um sieben Uhr abends"),
+        (_at(2027, 3, 28, 5), _at(2027, 3, 28, 19), "heute um sieben Uhr abends"),
+    ],
+)
+def test_the_night_read_back_holds_across_month_year_and_clock_change(
+    created, table, said
+):
+    """#862: the read-back counts local days with `ZoneInfo`, never hours from
+    UTC; stored in UTC, as the database returns them."""
+    utc = ZoneInfo("UTC")
+    row = Reservation(
+        reserved_for=table.astimezone(utc),
+        created_at=created.astimezone(utc),
+        party_size=2,
+        guest_name="Müller",
+        note=None,
+    )
+    assert f"Ein Tisch für zwei Personen {said}" in readback(row, BERLIN)
+
+
 def test_entwurf_zaehlt_sofort_gegen_die_kapazitaet(session, tenant_id, call_id):
     # For every other call: a call's own drafts do not count against it (#207).
     lift_party_limits(session, tenant_id)
@@ -692,6 +773,103 @@ def test_replay_behaelt_readback_ueber_mitternacht(session, tenant_id, call_id):
     second = create_reservation(session, req, now=nach_mitternacht)
     assert second.readback == first.readback
     assert second == first
+
+
+def _seven_then_eight(session, tenant_id, call_id):
+    """A table at seven, corrected to eight: the request that goes back."""
+    seven = request(
+        tenant_id, call_id, idempotency_key="k-seven", reserved_for=berlin(DIENSTAG, 19)
+    )
+    first = create_reservation(session, seven, now=NOW)
+    create_reservation(
+        session,
+        request(
+            tenant_id,
+            call_id,
+            idempotency_key="k-eight",
+            reserved_for=berlin(DIENSTAG, 20),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    return first, seven
+
+
+def test_going_back_to_an_earlier_draft_checks_the_slot_again(
+    session, tenant_id, call_id
+):
+    """#862: the earlier draft's key replayed it without `check_slot`, so the
+    notice that has run out since (or hours closed since) was never read."""
+    _first, seven = _seven_then_eight(session, tenant_id, call_id)
+    session.execute(update(Capacity).values(notice_minutes=60))
+    session.commit()
+
+    with pytest.raises(Conflict):
+        create_reservation(session, seven, now=berlin(DIENSTAG, 18, 30))
+
+
+def test_going_back_replays_the_same_draft_and_holds_no_second(
+    session, tenant_id, call_id
+):
+    """Checked again, the earlier draft is the one replayed: no second row
+    holds the same seats against other calls."""
+    first, seven = _seven_then_eight(session, tenant_id, call_id)
+
+    back = create_reservation(session, seven, now=NOW + timedelta(minutes=2))
+    again = create_reservation(session, seven, now=NOW + timedelta(minutes=3))
+
+    assert back == first and again == first
+    assert session.scalar(select(func.count()).select_from(Reservation)) == 2
+
+
+def test_a_retry_is_checked_again_too(session, tenant_id, call_id):
+    """The same request after the notice was raised: the slot no longer
+    holds, and the draft is not read back again."""
+    req = request(tenant_id, call_id, idempotency_key="k-same")
+    create_reservation(session, req, now=NOW)
+    session.execute(update(Capacity).values(notice_minutes=60 * 24))
+    session.commit()
+
+    with pytest.raises(Conflict):
+        create_reservation(session, req, now=NOW + timedelta(minutes=5))
+    assert session.scalar(select(func.count()).select_from(Reservation)) == 1
+
+
+def test_a_draft_cancelled_elsewhere_is_replayed_as_cancelled(
+    session, tenant_id, call_id
+):
+    """The call's session keeps its rows past a commit: read without a fresh
+    look, the tablet's cancel was not seen and the draft was checked and read
+    back as a draft again."""
+    req = request(tenant_id, call_id, idempotency_key="k-tablet")
+    first = create_reservation(session, req, now=NOW)
+    with Session(session.get_bind()) as tablet:
+        tablet.execute(
+            update(Reservation)
+            .where(Reservation.id == first.reservation_id)
+            .values(status="cancelled")
+        )
+        tablet.commit()
+
+    again = create_reservation(session, req, now=NOW + timedelta(minutes=1))
+
+    assert again.reservation_id == first.reservation_id
+    assert again.status == "cancelled"
+
+
+def test_a_confirmed_table_is_replayed_as_it_stands(session, tenant_id, call_id):
+    """Its yes was given: the same request after it books nothing again."""
+    first, seven = _seven_then_eight(session, tenant_id, call_id)
+    session.execute(
+        update(Reservation)
+        .where(Reservation.id == first.reservation_id)
+        .values(status="confirmed")
+    )
+    session.commit()
+
+    again = create_reservation(session, seven, now=NOW + timedelta(minutes=2))
+
+    assert again.reservation_id == first.reservation_id
+    assert again.status == "confirmed"
 
 
 def test_parallele_anlagen_ueberbuchen_nicht(migrated_db_url):

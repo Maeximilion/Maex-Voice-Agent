@@ -44,9 +44,28 @@ def create_reservation(
         raise NotFound("Mandant unbekannt")
     zone = ZoneInfo(tenant.timezone)
 
-    # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1).
+    # Same key, same draft, no second one (docs/04 §1).
     existing = _by_key(session, req.idempotency_key)
     if existing is not None:
+        if (
+            existing.status == "draft"
+            and existing.tenant_id == req.tenant_id
+            and existing.call_id == req.call_id
+        ):
+            # Its slot is checked again, as for a new draft: the guest who
+            # goes back to an earlier table, or asks again after a while, is
+            # read back a time the notice, the hours and the seats allow now
+            # (#862). The same row, so no second draft holds the seats.
+            _check(
+                session,
+                req.tenant_id,
+                req.call_id,
+                existing.reserved_for,
+                existing.party_size,
+                zone,
+                now,
+            )
+            session.commit()
         return _replay(existing, req.tenant_id, req.call_id, zone)
 
     call = session.get(Call, req.call_id)
@@ -59,19 +78,15 @@ def create_reservation(
     phone = normalize_phone(req.phone)
     note = (req.note or "").strip() or None
 
-    lock_capacity_days(session, req.tenant_id, req.reserved_for.astimezone(zone).date())
-    slot = check_slot(
+    _check(
         session,
         req.tenant_id,
+        req.call_id,
         req.reserved_for,
         req.party_size,
-        now=now,
-        call_id=req.call_id,
+        zone,
+        now,
     )
-    if slot.team_callback:
-        raise TeamDecides("party above what the agent books itself", say=slot.say)
-    if not slot.available:
-        raise Conflict("Zeitpunkt nicht mehr verfügbar", say=slot.say)
 
     reservation = Reservation(
         tenant_id=req.tenant_id,
@@ -120,8 +135,34 @@ def create_reservation(
     return _draft(reservation, zone)
 
 
+def _check(
+    session: Session,
+    tenant_id: uuid.UUID,
+    call_id: uuid.UUID,
+    reserved_for: datetime,
+    party_size: int,
+    zone: ZoneInfo,
+    now: datetime,
+) -> None:
+    """The slot by the rules of `check_slot`, under the capacity lock that is
+    held to the commit."""
+    lock_capacity_days(session, tenant_id, reserved_for.astimezone(zone).date())
+    slot = check_slot(
+        session, tenant_id, reserved_for, party_size, now=now, call_id=call_id
+    )
+    if slot.team_callback:
+        raise TeamDecides("party above what the agent books itself", say=slot.say)
+    if not slot.available:
+        raise Conflict("Zeitpunkt nicht mehr verfügbar", say=slot.say)
+
+
 def _by_key(session: Session, key: str) -> Reservation | None:
-    return session.scalar(select(Reservation).where(Reservation.idempotency_key == key))
+    # Read fresh: the call's session keeps its rows past a commit, and a draft
+    # the tablet cancelled meanwhile must not be replayed as a draft (#862).
+    return session.scalar(
+        select(Reservation).where(Reservation.idempotency_key == key),
+        execution_options={"populate_existing": True},
+    )
 
 
 def _replay(
