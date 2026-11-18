@@ -7,6 +7,7 @@ instead of 401, or the wrong token to the right route.
 import pytest
 
 from api import main
+from api.core.auth import require_kitchen_token
 from api.tests import test_ops_status as base
 
 http = base.http
@@ -74,11 +75,11 @@ def test_a_guarded_route_outside_the_list_is_found():
 
     mutant = APIRouter()
     mutant.add_api_route(
-        "/v1/other/x", lambda: None, dependencies=[Depends(main.require_kitchen_token)]
+        "/v1/other/x", lambda: None, dependencies=[Depends(require_kitchen_token)]
     )
     wrong_prefix = APIRouter()
     wrong_prefix.add_api_route(
-        "/v1/ops/y", lambda: None, dependencies=[Depends(main.require_kitchen_token)]
+        "/v1/ops/y", lambda: None, dependencies=[Depends(require_kitchen_token)]
     )
     assert _guarded_outside_their_prefix(mutant.routes + wrong_prefix.routes) == [
         "/v1/other/x carries require_kitchen_token",
