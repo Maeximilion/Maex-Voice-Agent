@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.12
+> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.13
 
 ---
 
@@ -315,6 +315,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.66.13 · 18.11.2026:** Dependabot #869: pyinstaller-hooks-contrib 2026.9 to 2026.10 in printbridge build pins.
 - **v2.66.12 · 18.11.2026:** Ledger #764, deep review of #754: a database outage does not hold the outage sentence for a second read
 - **v2.66.11 · 18.11.2026:** Ledger #764, deep review of #744: a bitte or gern that closes an order is no wish of the complaint
 - **v2.66.10 · 18.11.2026:** Ledger #764 deep review, hours and staff cards: a hand-written date answers its holiday card, and the board keeps the guests to call after a card is answered
