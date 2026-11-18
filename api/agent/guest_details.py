@@ -77,6 +77,7 @@ from api.domain.customers.phone import (
     FIXED_LENGTH,
     normalize_phone,
     read_bracketed_zero,
+    wrong_length,
 )
 from api.domain.menu.numberwords import (
     ARTICLES,
@@ -433,7 +434,11 @@ def _is_complete(group: str) -> bool:
     "0033 06 12 34 56 78" is the nine digits of the French guest (#804). Any other
     count is the German one, with the code and the zero in it: a number of a
     country not listed, said in pairs, is cut early and refused, and a short one
-    never takes the digits that follow it."""
+    never takes the digits that follow it. Of a listed country it does: five
+    pairs after "0033" are a French number, which is exactly how a full one is
+    said, so a number one pair short with a stray pair behind it reads the same
+    and is told apart by nothing (#849). One really short ends at its last group
+    and `e164` refuses it by its length (`wrong_length`)."""
     digits = "".join(char for char in group if char.isdigit())
     if digits.startswith("00"):
         said = digits[2:]
@@ -527,6 +532,7 @@ def e164(written: object) -> str:
     if not text.startswith(("0", "+")) or _DATE_LIKE.match(text) or _is_date(text):
         return ""
     try:
-        return normalize_phone(written)
+        number = normalize_phone(written)
     except InvalidInput:
         return ""
+    return "" if wrong_length(number) else number
