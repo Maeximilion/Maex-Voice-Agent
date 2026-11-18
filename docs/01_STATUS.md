@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.13
+> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.17
 
 ---
 
@@ -316,7 +316,11 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.66.13 · 18.11.2026:** #861 and #862: staff cards list only tables to come, a date's night is checked against the dates beside it, the holiday job takes the lock, TEAM_PHONE in E.164
+- **v2.66.17 · 18.11.2026:** #861 and #862: staff cards list only tables to come, a date's night is checked against the dates beside it, the holiday job takes the lock, TEAM_PHONE in E.164
+- **v2.66.16 · 18.11.2026:** Dependabot #872: types-pyyaml 6.0.12.20261113 in api.
+- **v2.66.15 · 18.11.2026:** Dependabot #871: webauthn 2.8.0 to 3.0.1 (cbor2 5.9.0 to 6.3.0 as its dependency) in api.
+- **v2.66.14 · 18.11.2026:** Dependabot #870: fastapi 0.163.1, psycopg 3.3.9, pydantic-settings 2.16.3, ruff 0.17.5 in api.
+- **v2.66.13 · 18.11.2026:** Dependabot #869: pyinstaller-hooks-contrib 2026.9 to 2026.10 in printbridge build pins.
 - **v2.66.12 · 18.11.2026:** Ledger #764, deep review of #754: a database outage does not hold the outage sentence for a second read
 - **v2.66.11 · 18.11.2026:** Ledger #764, deep review of #744: a bitte or gern that closes an order is no wish of the complaint
 - **v2.66.10 · 18.11.2026:** Ledger #764 deep review, hours and staff cards: a hand-written date answers its holiday card, and the board keeps the guests to call after a card is answered
