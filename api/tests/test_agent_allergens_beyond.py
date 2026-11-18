@@ -2638,3 +2638,44 @@ def test_an_option_of_one_dish_licenses_no_claim_about_another(session, known_te
     )
 
     assert said_nowhere(result, answer)
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "Die 13 hat keine Erdnüsse, ist notiert.",
+        "Gern, die 13. Da sind keine Erdnüsse drin.",
+    ],
+)
+def test_the_guests_allergy_note_licenses_no_claim_in_a_later_turn(
+    session, known_tenant, claim
+):
+    """Review of #798 (P1): the guest's own allergy, written on the line of
+    the dish ordered a turn later, is health data, not menu or order text.
+    It must not license a peanut claim the database does not hold."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie.",
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
+    )
+    pho = str(item(session, known_tenant, "13"))
+    line = {
+        "menu_item_id": pho,
+        "quantity": 1,
+        "note": "WICHTIG !!! Kunde ist allergisch auf Erdnüsse",
+    }
+    plain = "Gern, die 13 ist notiert."
+
+    result, _ = run(
+        session,
+        state,
+        "Dann nehme ich die 13.",
+        searches("13"),
+        LLMTurn(say=claim, cart=[line]),
+        LLMTurn(say=plain),
+    )
+
+    assert result.say == [plain]
+    assert state.cart == [line]

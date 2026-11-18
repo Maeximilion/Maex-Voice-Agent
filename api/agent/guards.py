@@ -690,8 +690,8 @@ class AllergenTurn:
     # The same letters by the dish that delivered them, by its id: a word in
     # a clause that names a dish is licensed by that dish's text only.
     dish_codes: dict[str, set[str]] = field(default_factory=dict)
-    # The allergen letters of the notes of the drafts made in this turn.
-    note_codes: set[str] = field(default_factory=set)
+    # The notes of the drafts made in this turn.
+    draft_notes: list[str] = field(default_factory=list)
     # The tools' sentences of this turn, core strings the model may repeat.
     tool_says: list[str] = field(default_factory=list)
     # Every dish a lookup that worked delivered in this turn, by its id.
@@ -764,7 +764,7 @@ def note_tool(
         turn.drafted = True
         note = args.get("note")
         if isinstance(note, str):
-            turn.note_codes |= _codes(note)
+            turn.draft_notes.append(note)
             turn.noted_in_draft = turn.noted_in_draft or bool(
                 HEALTH_NOTE_RE.search(note)
             )
@@ -782,6 +782,16 @@ def _option_names(dish: dict[str, Any]) -> list[Any]:
         for option in group.get("options") or []
         if isinstance(option, dict)
     ]
+
+
+def _wish_codes(*notes: Any) -> set[str]:
+    """The allergen letters of the notes that are wishes ("ohne Erdnüsse").
+    A note about the guest's health ("WICHTIG !!! Kunde ist allergisch auf
+    Erdnüsse") is no order text: it names what the guest reacts to, never
+    what a dish holds, and licenses nothing (review of #798, P1)."""
+    return _codes(
+        *(n for n in notes if isinstance(n, str) and not HEALTH_NOTE_RE.search(n))
+    )
 
 
 def _codes(*texts: Any) -> set[str]:
@@ -820,13 +830,18 @@ def _line_texts(state: ConversationState, line: dict[str, Any]) -> list[str]:
     return [name, *(option.get("name") for option in line.get("options", []))]
 
 
-def _order_codes(turn: AllergenTurn, state: ConversationState) -> set[str]:
+def _order_codes(
+    turn: AllergenTurn, state: ConversationState, *, health: bool = False
+) -> set[str]:
     """The allergen letters of the order text the core accepted in this turn:
-    the dish, options and note of each changed line, the notes of a draft."""
+    the dish, options and note of each changed line, the notes of a draft.
+    `health`: a note about the guest's health counts too. It takes up the
+    guest's own word (`_unexplained`), but never licenses a word of the
+    model (`_wish_codes`, review of #798, P1)."""
     changed = _changed_lines(turn, state)
-    return turn.note_codes | _codes(
-        *(text for line in changed for text in _line_texts(state, line)),
-        *(line.get("note") for line in changed),
+    notes = [*turn.draft_notes, *(line.get("note") for line in changed)]
+    return _codes(*(text for line in changed for text in _line_texts(state, line))) | (
+        _codes(*notes) if health else _wish_codes(*notes)
     )
 
 
@@ -841,7 +856,9 @@ def _noted(turn: AllergenTurn, state: ConversationState) -> bool:
 def _unexplained(turn: AllergenTurn, state: ConversationState) -> bool:
     """The guest named an allergen that neither the menu text of this turn
     nor a changed order line explains."""
-    return bool(turn.guest_codes - turn.menu_codes - _order_codes(turn, state))
+    return bool(
+        turn.guest_codes - turn.menu_codes - _order_codes(turn, state, health=True)
+    )
 
 
 def sticky(state: ConversationState) -> bool:
@@ -922,7 +939,7 @@ def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[st
             new = [line for line in changed if line["menu_item_id"] in named]
             allowed = set().union(*(turn.dish_codes.get(i, set()) for i in named))
             allowed |= _codes(*(t for line in lines for t in _line_texts(state, line)))
-            allowed |= _codes(*(line.get("note") for line in new))
+            allowed |= _wish_codes(*(line.get("note") for line in new))
         else:
             allowed = turn.menu_codes | _order_codes(turn, state)
             allowed |= _codes(
