@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.0
+> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.1
 
 ---
 
@@ -284,6 +284,7 @@ Settled assumptions: `docs/HISTORY.md` section "Made Assumptions (archive)".
 
 | Date | What |
 |---|---|
+| 18.11.2026 | **The bug command is now `/fix-bug`.** Claude Code 2.1.323 has a built-in `/bug` ("Report a bug or share your conversation") that wins over a project command of the same name, so typing `/bug` opened the app's feedback window instead of the red-test-first flow. `.claude/commands/bug.md` is renamed to `fix-bug.md`; `CLAUDE.md`, `README.md`, `docs/08`, `docs/12`, `docs/15`, `docs/16`, the board skill, `evals/report.py` and the command and route-hook tests name the new command. |
 | 18.11.2026 | **UI polish of the #571 pages, fix PR 8 of the #571 follow-ups (#829-1, 4, 8, 9, 10, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22; #829-2, 3, 5, 6, 7, 11 were #833, #829-17 was #830).** The front page and the operator login fit 375 px (`minmax(0,1fr)` columns); the tab row of the admin area stands beside its header and sticks to the top from 700 px; "Geschlossen" for a day asks first; the menu search runs while typing with a visible label and says a badge every dish carries once; the call details are focused and the row marked; "Persönlich"; titles and the way back named alike; an unknown cost shows a dash; table headers keep their words and wide operator tables scroll (cards below 1100 px); five dashboard forms ask before they act; PINs are password fields with a show toggle; "check" for "look"; a ticket field with a format hint; a tab icon. Claude's choices: see Made Assumptions. |
 | 17.11.2026 | **Operator write steps, fix PR 6 of the #571 follow-ups (#811 questions 1 and 2, the stale-page check).** The owner's card and the push name the operator: `team_phone.changed` carries `"by"`, and the card reads "Vom Betreiber geändert" when the operator made its last change (`staff_changes.changed_by`). The operator sets the standard team number on a route of its own, `POST /v1/ops/team-phone/standard` (`staff_changes.set_standard_team_phone`, checked as today's number, audit row `service_config.team_phone_standard`, push with `"standard": true`, no card), behind the dashboard's step-up and a reason. Every answer of the ops API carries a `version` of the state it shows, every step that changes something sends it back as `seen`, and the stack refuses a step from a page the restaurant changed since with 412 after locking the settings row and the login (`domain/operator.py` `_as_seen`); the dashboard then says nothing was done and reads the state again. docs/04, docs/23 §5 and §8, n8n README. |
 | 17.11.2026 | **Off-hours mark on a reservation, fix PR 7 of the #571 follow-ups (#819 item 1, Maxi's decision of 17.11.2026).** Migration 042 adds `reservations.off_hours` (false for every existing row, CHECK: only a `tablet` row). `confirm_tablet` sets it when no dine-in window of the opening hours holds the time at the confirming tap, after the sheet asked "Trotzdem eintragen" (also on free seats). The board's card in "Heute" says "Bewusst außerhalb der Öffnungszeiten eingetragen.", and `weekly.tables_outside_hours` (tab "Zeiten") leaves a marked table out. The agent's path is unchanged and still refuses a time outside the hours. Workbench: backup `before_migration_042`, `make migrate`, restart api and dispatcher |
@@ -316,6 +317,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.66.1 · 18.11.2026:** The project bug command is renamed to /fix-bug: Claude Code's built-in /bug opened the feedback window instead of .claude/commands/bug.md.
 - **v2.66.0 · 18.11.2026:** UI polish of the #571 pages (#829): sign-in fits 375 px, sticky tab row, confirms before far-reaching steps, live menu search, call details in view, table headers whole, PIN fields hidden, unknown cost as a dash, smaller wording fixes
 - **v2.65.1 · 18.11.2026:** Briefs name code locations found with Graphify
 - **v2.65.0 · 18.11.2026:** `/chain` (`.claude/commands/chain.md`): several tasks or issues worked off by one coordinator and one fresh session per pull request that builds and ships it, with usage pacing; the definition of a chain and what the GUI plan chain of #571 taught (Maxi, 2026-11-17)
