@@ -6,6 +6,7 @@ and `staff_changes.py`; this file formats them and reads the forms.
 """
 
 import re
+from collections.abc import Collection
 from datetime import date
 from datetime import time as dt_time
 from typing import Any
@@ -231,8 +232,11 @@ def day_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     ]
 
 
-def guest_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
-    """The confirmed tables no dine-in window holds, on the restaurant's clock."""
+def guest_rows(
+    session: Session, tenant: Tenant, leave_out: Collection[staff.BookingToCall] = ()
+) -> list[dict[str, Any]]:
+    """The confirmed tables no dine-in window holds, on the restaurant's clock,
+    less those a check card on the board lists already (`leave_out`)."""
     return [
         {
             "when": f"{SHORT[b.at.weekday()]}, {b.at:%d.%m.} {b.at:%H:%M} Uhr",
@@ -242,6 +246,7 @@ def guest_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
             "costly": b.costly,
         }
         for b in weekly.tables_outside_hours(session, tenant.id)
+        if b not in leave_out
     ]
 
 
