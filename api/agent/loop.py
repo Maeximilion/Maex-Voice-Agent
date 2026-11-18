@@ -1631,10 +1631,12 @@ def _names_health(state: ConversationState, text: str) -> bool:
     if any(a.startswith(b) or b.startswith(a) for a in said for b in _stems(text)):
         return True
     # What the guest reacts to, at any length: "Kiwi" there and "Kiwi" or
-    # "Kiwis" here, as the allergen names above (#764).
+    # "Kiwis" here, as the allergen names above (#764); and the other way,
+    # "Kiwis" or "Mohnbrötchen" there and "Kiwi" or "Mohn" here, which the
+    # five-letter cut of `_stems` dropped (#798).
     ingredients = {w for sentence in state.allergy_said for w in _ingredients(sentence)}
     return any(
-        word.startswith(ingredient)
+        word.startswith(ingredient) or (len(word) >= 4 and ingredient.startswith(word))
         for word in _WORD.findall(_plain(text))
         for ingredient in ingredients
     )
@@ -1666,7 +1668,7 @@ def _ingredients(sentence: str) -> set[str]:
     they react to (#764): the words after "gegen", "auf" or "kein" up to the
     clause's end ("allergisch gegen Kiwi und Mango"), and the part of a
     compound in front of the allergy word ("Kiwiallergie"). Of three letters
-    or more; a longer word is a stem of `_stems` already.
+    or more.
     shortcut: a short name after such a word ("auf den Namen Kim") counts
     too; the card then gets the sentence of its reason, the safe side."""
     found: set[str] = set()
@@ -1681,7 +1683,7 @@ def _ingredients(sentence: str) -> set[str]:
                     for w in words[n + 1 : n + 4]
                     if w not in _NO_INGREDIENT and w not in _PLAIN_WORDS
                 )
-    return {w for w in found if 3 <= len(w) < 5}
+    return {w for w in found if len(w) >= 3}
 
 
 def _stems(text: str) -> set[str]:

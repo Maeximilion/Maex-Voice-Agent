@@ -743,7 +743,7 @@ def note_tool(
             )
 
 
-def _option_names(dish: dict[str, Any]) -> list[str]:
+def _option_names(dish: dict[str, Any]) -> list[Any]:
     return [
         option.get("name")
         for group in dish.get("option_groups") or []

@@ -2766,6 +2766,10 @@ def test_a_short_allergen_name_on_a_model_card_is_rewritten(state, said, summary
         ("Meine Frau verträgt kein Lamm.", "Rückruf: Lamm im Curry"),
         ("Ich habe eine Kiwiallergie.", "Rückruf: Kiwis im Obstsalat"),
         ("Ich reagiere auf Reis.", "Rückruf: Reis zur 13"),
+        # The plural in the guest's sentence, the singular on the card (#798):
+        # "Kiwis" is five letters, "Kiwi" four, and neither reader matched.
+        ("Ich bin allergisch gegen Kiwis.", "Rückruf: Obstsalat ohne Kiwi"),
+        ("Ich vertrage keine Mohnbrötchen.", "Rückruf: Mohn im Dessert?"),
     ],
 )
 def test_a_short_ingredient_of_the_guest_on_a_model_card_is_rewritten(
