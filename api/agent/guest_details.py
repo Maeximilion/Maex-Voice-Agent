@@ -73,7 +73,11 @@ from collections import Counter
 from collections.abc import Mapping
 
 from api.core.errors import InvalidInput
-from api.domain.customers.phone import normalize_phone, read_bracketed_zero
+from api.domain.customers.phone import (
+    FIXED_LENGTH,
+    normalize_phone,
+    read_bracketed_zero,
+)
 from api.domain.menu.numberwords import (
     ARTICLES,
     CARD_SUFFIXES,
@@ -116,11 +120,6 @@ _SHORTEST_NUMBER = 8
 # With this many digits a number is complete for a pause: what follows the pause
 # is something else.
 _COMPLETE_NUMBER = 11
-# The same for a number with a said "00" and country code: the digits behind
-# both, without the trunk zero. A French number said in pairs ends at 9, a Danish
-# one at 8; the number of a country with fewer waits for one more pair and is
-# refused.
-_COMPLETE_INTERNATIONAL = 8
 # What may stand between two letters a guest spells.
 _BETWEEN_LETTERS = " \t,-."
 # Other digits of a turn with this many digits may be the head of the number.
@@ -428,17 +427,20 @@ def _goes_on(group: str) -> bool:
 
 
 def _is_complete(group: str) -> bool:
-    """Enough digits that what follows a pause is something else. A said "00" and
-    country code and the trunk zero are no part of the count: "0033 06 12 34 56
-    78" is nine digits, the number the French guest said (#804).
-    shortcut: the code counts as two digits. A one-digit code (+1, +7) ends the
-    number one digit early and leaves its last pair apart, a three-digit code
-    waits one digit too long; the number is refused in both cases, never
-    changed. Fix when such a guest is refused."""
+    """Enough digits that what follows a pause is something else. Of a country
+    whose numbers all have one length (`FIXED_LENGTH`) a number said with "00" and
+    its code is complete at that length, without the code and the trunk zero:
+    "0033 06 12 34 56 78" is the nine digits of the French guest (#804). Any other
+    count is the German one, with the code and the zero in it: a number of a
+    country not listed, said in pairs, is cut early and refused, and a short one
+    never takes the digits that follow it."""
     digits = "".join(char for char in group if char.isdigit())
-    if not digits.startswith("00"):
-        return len(digits) >= _COMPLETE_NUMBER
-    return len(digits[4:].removeprefix("0")) >= _COMPLETE_INTERNATIONAL
+    if digits.startswith("00"):
+        said = digits[2:]
+        for size in (1, 2, 3):
+            if length := FIXED_LENGTH.get(said[:size]):
+                return len(said[size:].removeprefix("0")) >= length
+    return len(digits) >= _COMPLETE_NUMBER
 
 
 def _digits(text: str) -> int:

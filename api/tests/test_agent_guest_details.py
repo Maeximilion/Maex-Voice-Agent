@@ -392,6 +392,19 @@ def test_a_foreign_number_that_is_really_short_is_still_refused():
     assert numbers("Meine Nummer ist null null drei drei, null sechs, zwölf") == set()
 
 
+def test_a_short_number_with_00_takes_no_pair_behind_it():
+    """Codex PR #848, P2: a digit count lower than the French one joined "neunzehn"
+    to a seven-digit number and stored +49721555119, a number nobody said."""
+    sentence = (
+        "Meine Nummer ist null null vier neun, sieben zwei eins, "
+        "fünf fünf fünf eins, neunzehn"
+    )
+    assert numbers(sentence) == set()
+    assert numbers(
+        "Meine Nummer ist null null vier neun, sieben zwei eins, fünf fünf fünf eins"
+    ) == {"+497215551"}
+
+
 def test_a_short_foreign_number_takes_no_pair_behind_it():
     """A Danish number has eight digits behind the code: "neunzehn" after it is
     something else, not two more digits of the number."""

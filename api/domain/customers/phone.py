@@ -63,6 +63,12 @@ OTHER_TRUNK = {"36": ("06",), "370": ("8",)}
 # Codes whose national numbers begin with 0 (Italy, San Marino, Vatican, Cote
 # d'Ivoire, Benin): a bracketed "(0)" behind one of them is part of the number.
 ZERO_LEADING = frozenset({"39", "378", "379", "225", "229"})
+# Codes whose national numbers all have this many digits, without the trunk zero.
+# A number said in pairs with pauses is complete at that length (`_is_complete` in
+# `agent/guest_details.py`); a code not listed keeps the count of a German number,
+# since no digit count fits every country (a short number must not take what
+# follows it). France: 9 digits, "+33 6 12 34 56 78". #804.
+FIXED_LENGTH = {"33": 9}
 SAY_INVALID_PHONE = (
     "Die Rufnummer habe ich nicht verstanden. Können Sie sie noch einmal sagen?"
 )
