@@ -149,6 +149,20 @@ Since 2026-11-07 Maxi's Ubuntu `~/.bashrc` ends with `export ENABLE_CLAUDEAI_MCP
 
 Restore on a new machine: add the export line to the end of `~/.bashrc` and open a new terminal.
 
+### Plugin sets in the desktop app (Windows)
+
+Maxi switches off the plugin sets `data`, `productivity`, `pdf-viewer` and `engineering` in the desktop app himself (decision 2026-11-18, #562: their skill and tool listings are context every session pays for on every call). Claude does not change them. A new machine or a reset app brings them back: switch the four off again in the app's plugin settings. The `enabledPlugins` block above holds only `ponytail`; the sets are app-level and are not in `settings.json`.
+
+### Auto compaction for an overnight chain (both systems)
+
+The handover thresholds of 300k and 450k stay for normal sessions (`CLAUDE.md` "Session End"). For a chain Maxi starts with the option "no handover limit" (`.claude/commands/chain.md` section 5a, Maxi 2026-11-18), auto compaction at about 550k tokens takes over. Checked against the Claude Code docs on 2026-11-18:
+
+- The user-level key is `"autoCompactWindow": 550000` (tokens, 100000 to 1000000, or `"auto"`) in the top level of `~/.claude/settings.json`; it can sit in any settings file. The environment variable `CLAUDE_CODE_AUTO_COMPACT_WINDOW=550000` does the same, as does `--settings '{"autoCompactWindow": 550000}'` for one session started from a terminal. `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (1 to 100, percent of the window) also lowers the point but cannot raise it; the token value is the clearer one for a 1M window.
+- Without it a session of the 1M window compacts at 97 percent (`get_usage` `autoCompactsAtPercent`, 2026-11-18).
+- It cannot be scoped to chain sessions: sessions the desktop app starts take their settings from the files, not from flags; the project local file of a worktree session is read at the main checkout's root, so it reaches every session of the repository. So it is switched on and off by hand: add the key before the chain starts, remove it when the chain ends.
+- Whether a running session picks up the key without a restart is not verified; a session started after the change does. The coordinator reads `get_usage` for itself and reports `autoCompactsAtPercent` (about 55 when it applies).
+- Claude cannot write `~/.claude/settings.json` (above). On Ubuntu Maxi runs, on: `jq '. + {autoCompactWindow: 550000}' ~/.claude/settings.json > /tmp/s.json && cp ~/.claude/settings.json ~/.claude/settings.json.bak && mv /tmp/s.json ~/.claude/settings.json`; off: `jq 'del(.autoCompactWindow)' ~/.claude/settings.json > /tmp/s.json && mv /tmp/s.json ~/.claude/settings.json`. On Windows he adds or removes the one line by hand.
+
 ## 4. The scripts
 
 All three need `bash`, `git` and `jq` on the path. Git for Windows does not ship `jq`; it is installed separately.
