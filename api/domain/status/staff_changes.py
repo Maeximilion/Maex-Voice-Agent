@@ -81,6 +81,8 @@ OPERATOR_ACTOR = "operator:"
 BY_OPERATOR, BY_TEAM = "operator", "team"
 ACTION_TEAM_PHONE = "staff_change.team_phone"
 ACTION_STANDARD = "service_config.team_phone_standard"
+# A new standard moved the "before" of today's open card: its last change.
+ACTION_BEFORE = "staff_change.team_phone_before"
 DAY_HOURS = "day_hours"
 OPEN, KEPT, UNDONE = "open", "kept", "undone"
 SET = "set"
@@ -260,10 +262,11 @@ def set_standard_team_phone(
     as the number for today. A number set for today still holds to the end of
     its day: the staff chose it for today. No card of its own: the owner gets
     the push. Today's open card now starts from the new standard, so undo
-    returns to it and a tablet showing the old card is refused (`decide`);
-    when today's number is the new standard, nothing is left to decide and
-    the card closes. False when it is the standard already. Raises
-    InvalidInput. Commits."""
+    returns to it, a tablet showing the old card is refused (`decide`), the
+    card names the operator, and the push asks the owner to look at it; when
+    today's number is the new standard, nothing is left to decide and the
+    card closes as kept, with its row as `decide` writes it. False when it is
+    the standard already. Raises InvalidInput. Commits."""
     number = _dialable(raw)
     config, zone = _locked(session, tenant_id)
     before = config.team_phone
@@ -273,11 +276,27 @@ def set_standard_team_phone(
     config.team_phone = number
     today = clock.business_day(now, zone)
     card = _open_card(session, tenant_id, TEAM_PHONE, today)
+    holding: dict[str, str] = {}
     if card is not None:
+        moved = card.before.get("number")
         card.before = {"number": number}
         if card.after == card.before:
             config.team_phone_today = config.team_phone_today_until = None
-            _close(card, UNDONE, now)
+            # The staff's number is the standard now: kept, not undone.
+            _close(card, KEPT, now)
+            _audit(
+                session,
+                tenant_id,
+                actor,
+                f"staff_change.{KEPT}",
+                card,
+                moved,
+                number,
+                kind=card.kind,
+            )
+        else:
+            _audit(session, tenant_id, actor, ACTION_BEFORE, card, moved, number)
+            holding = {"today": card.after["number"]}
     session.add(
         AuditLog(
             tenant_id=tenant_id,
@@ -297,6 +316,7 @@ def set_standard_team_phone(
             "from": before,
             "to": number,
             "standard": True,
+            **holding,
             **_who(actor),
         },
     )
@@ -321,7 +341,7 @@ def changed_by(
             # the card's own transaction may still write to it: a margin.
             AuditLog.tenant_id == tenant_id,
             AuditLog.at >= min(card.created_at for card in phones) - timedelta(hours=1),
-            AuditLog.action == ACTION_TEAM_PHONE,
+            AuditLog.action.in_((ACTION_TEAM_PHONE, ACTION_BEFORE)),
             AuditLog.entity_id.in_([card.id for card in phones]),
         )
         .order_by(AuditLog.id)

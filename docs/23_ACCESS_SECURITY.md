@@ -231,10 +231,10 @@ number.
   types travels in the request's body and is not repeated on the page. Looking again is a new
   step, recorded again.
 - **A step acts on the page it came from (#811).** Every form that changes something carries the
-  version of the state its page showed (`gesehen`, 16 hex digits from the stack), and the stack
+  version of the state its page showed (`seen`, 16 hex digits from the stack), and the stack
   refuses the step with 412 when the restaurant changed since: the owner on the tablet, the staff
   or a second operator. The page then says nothing was done and reads the state again by itself,
-  with the same reason (two more rows in each audit, `customer.access_*`), so the operator looks
+  with the same reason (two more rows `customer.access_*` in its own audit, one `ops.access_read` on the stack), so the operator looks
   at what holds before repeating it. The one-time form token stops a reload; this stops an old
   page, for example "switch the agent on again" from a page opened before the owner's newer
   emergency stop. A stack older than this sends no version: its page warns that nothing is

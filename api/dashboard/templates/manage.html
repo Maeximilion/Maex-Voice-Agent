@@ -6,7 +6,7 @@
    link is text of this one answer, never a field's value and never a link;
    the page is not stored. A form that changes something also carries the
    page's token (`once`) and is taken one time: a reload sends nothing again.
-   It carries the version of what the page shows (`gesehen`) too: the stack
+   It carries the version of what the page shows (`seen`) too: the stack
    refuses a step when the restaurant changed since (#811).
    The lists start at what holds now, so a tap on a button without a choice
    changes nothing. Everything a stack says is shown as text. #}
@@ -19,7 +19,7 @@
 <input type="hidden" name="reason" value="{{ category }}">
 <input type="hidden" name="reference" value="{{ reference }}">
 <input type="hidden" name="once" value="{{ once }}">
-<input type="hidden" name="gesehen" value="{{ access.version if access and access.version else '' }}">
+<input type="hidden" name="seen" value="{{ access.version if access and access.version else '' }}">
 {% endmacro %}
 
 {% block main %}

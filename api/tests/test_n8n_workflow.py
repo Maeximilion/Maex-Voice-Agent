@@ -344,6 +344,11 @@ def test_the_team_number_push_says_who_changed_it_and_which_number() -> None:
     assert f"{staff.BY_TEAM}: ' Geändert vom Team.'" in text
     assert "$json.payload.standard ?" in text
     assert "$json.payload.standard ?" in _assignment(node, "title")
+    # Review of #837: today's number still holding is said and asks for the
+    # tablet; a blank old standard prints no "vorher".
+    assert "' Heute gehen Anrufe noch an ' + $json.payload.today" in text
+    assert "$json.payload.standard && !$json.payload.today ? ''" in text
+    assert "($json.payload.from ? ', vorher ' + $json.payload.from : '')" in text
 
 
 def test_an_operator_step_names_the_operator_and_what_was_done() -> None:

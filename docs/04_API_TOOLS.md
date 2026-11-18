@@ -769,7 +769,8 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
   card, and the call mode and the team number push to `owner` and `ops` (docs/23 T12). The
   push `team_phone.changed` carries `"by": "operator" | "team"`, for the operator its account
   (`"actor"`, as the access pushes), and,
-  for the standard number, `"standard": true`; the card reads "Vom Betreiber geändert" when the
+  for the standard number, `"standard": true` and, while today's open card keeps another number,
+  `"today"` with it (the push then asks for the tablet); the card reads "Vom Betreiber geändert" when the
   operator made its last change (#811). What a rule
   refuses is `invalid_input` with status 422 (`core/ops_reason.py` `RULE_STATUS`, set by `_by_rule`
   in `domain/operator.py`); a request the route itself does not take is `invalid_input` with 200

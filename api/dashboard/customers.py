@@ -854,7 +854,7 @@ def step(action: str, form: dict[str, str]) -> Step | None:
     before. A stack that sends a version refuses a step without one."""
     read = STEPS.get(action)
     found = read(form) if read else None
-    seen = form.get("gesehen", "")
+    seen = form.get("seen", "")
     if found is None or not found.changes or not seen:
         return found
     if not VERSION.fullmatch(seen):

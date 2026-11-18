@@ -240,8 +240,10 @@ def test_every_step_is_in_the_audit_log_before_it_happens(
         seen.append([row.action for row in _audit(session, "ops.")])
         raise RuntimeError("after the audit row")
 
+    # `access` only for the read: a changing step calls it in `_as_seen`, and
+    # failing there would never reach the step function (review of #837).
     for name in (
-        "access",
+        *(["access"] if path == ACCESS else []),
         "shown_pin",
         "set_team_pin",
         "end_sessions",

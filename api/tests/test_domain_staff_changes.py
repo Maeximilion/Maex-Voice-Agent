@@ -1091,7 +1091,34 @@ def test_todays_number_made_the_standard_closes_its_card(session, tenant_id):
 
     config = _config(session, tenant_id)
     assert (config.team_phone, config.team_phone_today) == (NUMBER, None)
-    assert [card.status for card in _cards(session, tenant_id)] == ["undone"]
+    # Review of #837: the staff's number was kept, and the card says so.
+    (card,) = _cards(session, tenant_id)
+    assert card.status == "kept"
+    assert staff.open_cards(session, tenant_id, TUESDAY) == []
+    row = session.scalars(
+        select(AuditLog).where(
+            AuditLog.action == "staff_change.kept", AuditLog.entity_id == card.id
+        )
+    ).one()
+    assert (row.actor, row.payload["kind"]) == (OPERATOR, staff.TEAM_PHONE)
+
+
+def test_a_new_standard_under_todays_card_names_the_operator(session, tenant_id):
+    """Review of #837: the operator moved the card's "Vorher", so the card
+    names the operator, and the push says today's number still holds."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+
+    staff.set_standard_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+
+    (card,) = staff.open_cards(session, tenant_id, TUESDAY)
+    assert staff.changed_by(session, tenant_id, [card]) == {card.id: "operator"}
+    event, payload = _events(session, tenant_id)[-1]
+    assert (event, payload["standard"], payload["today"]) == (
+        TEAM_PHONE_CHANGED,
+        True,
+        NUMBER,
+    )
+    staff.change_team_phone(session, tenant_id, "+4972215550000", NOW)
     assert staff.open_cards(session, tenant_id, TUESDAY) == []
 
 
