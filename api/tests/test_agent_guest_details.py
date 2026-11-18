@@ -423,6 +423,14 @@ def test_a_french_number_takes_no_hour_behind_it():
     assert numbers(f"{short}, achtundsiebzig, neunzehn") == set()
 
 
+def test_an_hour_behind_a_short_french_number_does_not_complete_it():
+    """Codex PR #850, P2: refusing the short prefix by its length switched off
+    the check for a trailing hour, so "-19 Uhr" completed the number."""
+    for mark in ("-", "/"):
+        assert numbers(f"Meine Nummer ist +33 6 12 34 56{mark}19 Uhr") == set()
+    assert numbers("Meine Nummer ist +33 6 12 34 56 78-19 Uhr") == set()
+
+
 def test_a_short_number_with_00_takes_no_pair_behind_it():
     """Codex PR #848, P2: a digit count lower than the French one joined "neunzehn"
     to a seven-digit number and stored +49721555119, a number nobody said."""

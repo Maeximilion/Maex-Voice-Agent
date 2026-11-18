@@ -490,7 +490,11 @@ def _ends_with_other_digits(group: str) -> bool:
     if cut < 0:
         return False
     tail = group[cut + 1 :].strip()
-    return tail.isdigit() and len(tail) <= _SHORT_TAIL and bool(e164(group[:cut]))
+    return (
+        tail.isdigit()
+        and len(tail) <= _SHORT_TAIL
+        and bool(e164(group[:cut], exact_length=False))
+    )
 
 
 def _is_date(text: str, *, full_year: bool = False) -> bool:
@@ -515,7 +519,7 @@ def number_known(number: object, caller: str | None, numbers: set[str]) -> bool:
     return bool(written) and (written == caller or written in numbers)
 
 
-def e164(written: object) -> str:
+def e164(written: object, *, exact_length: bool = True) -> str:
     """The phone number in E.164, the one form the same number has. Empty for
     what is no phone number as it is said: only digits that begin with the
     zero of an area code or the plus of a country code are one. A date, a
@@ -524,7 +528,9 @@ def e164(written: object) -> str:
     without an area code is none either: it would be stored as an
     international one. Nor is one that is too short or too long: kept by its
     digits, "um 0 Uhr" would be a number a model could put in the place of
-    the caller ID."""
+    the caller ID. A number of a country with one length is refused at another
+    count of digits (`wrong_length`), except as the head of a number that an hour
+    follows (`_ends_with_other_digits`, `exact_length=False`)."""
     if not isinstance(written, str):
         return ""
     # "(0721) 5551234" begins with the area code as well.
@@ -535,4 +541,4 @@ def e164(written: object) -> str:
         number = normalize_phone(written)
     except InvalidInput:
         return ""
-    return "" if wrong_length(number) else number
+    return "" if exact_length and wrong_length(number) else number
