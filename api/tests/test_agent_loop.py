@@ -2645,19 +2645,39 @@ def test_a_table_the_domain_refused_this_turn_is_named_as_refused(
 
 
 @HANDED_OVER
-def test_a_question_for_another_time_keeps_the_table_open(session, state, now, stage):
-    """A `check_slot` takes the read-back out of the state, but the table can
-    still be booked: the card keeps it open."""
+@pytest.mark.parametrize(
+    "other_time",
+    [
+        ToolCall(
+            "check_slot",
+            {"party_size": 4, "reserved_for": "2026-09-16T20:00:00+02:00"},
+        ),
+        # A correction the domain refuses (closed at 23:30): a conflict, but
+        # about the new time, not the table read back.
+        ToolCall(
+            "create_reservation",
+            {
+                "guest_name": "Müller",
+                "phone": CALLER,
+                "party_size": 4,
+                "reserved_for": "2026-09-16T23:30:00+02:00",
+            },
+        ),
+    ],
+    ids=["check_slot", "refused_correction"],
+)
+def test_a_question_for_another_time_keeps_the_table_open(
+    session, state, now, stage, other_time
+):
+    """Asking for or drafting another time takes the read-back out of the
+    state, but the table can still be booked: the card keeps it open."""
     read_back_reservation(session, state)
     state.slots["phone"] = CALLER
-    other_time = ToolCall(
-        "check_slot", {"party_size": 4, "reserved_for": "2026-09-16T20:00:00+02:00"}
-    )
     loop = ConversationLoop(
         session, _then_to_the_team(other_time), "system", now=now, clock=clock_from([0])
     )
 
-    result = loop.run_turn(state, "Ginge auch acht?")
+    result = loop.run_turn(state, "Ginge auch später?")
 
     assert result.ended is True and result.say[0] == SAY_TABLE_NOT_BOOKED
     assert f"{SUMMARY_OPEN_TABLE} {TABLE_AT_SEVEN}" in _card(session, state)

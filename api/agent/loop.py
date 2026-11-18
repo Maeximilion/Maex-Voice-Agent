@@ -766,8 +766,13 @@ class ConversationLoop:
                 and not result.data.get("team_callback")
                 and (
                     # The yes to the table read back: its seats are gone,
-                    # reservations are off, the tablet cancelled it.
-                    (read_back is not None and state.reservation_id is None)
+                    # reservations are off, the tablet cancelled it. Not a
+                    # failed correction: the table read back still holds.
+                    (
+                        call.name == "confirm"
+                        and read_back is not None
+                        and state.reservation_id is None
+                    )
                     # The draft on the card after an allergy hint (above).
                     or (
                         call.name == "create_reservation"
