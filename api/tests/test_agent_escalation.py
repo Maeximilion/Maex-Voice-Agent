@@ -416,6 +416,32 @@ def test_a_bitte_or_gern_that_closes_an_order_is_no_wish_of_the_complaint(said):
     assert not only_a_complaint(said)
 
 
+@pytest.mark.parametrize("closing", ["bitte", "gern", "gerne"])
+@pytest.mark.parametrize("gap", [", ", " ", ". ", "; "])
+@pytest.mark.parametrize(
+    "complaint",
+    [
+        "beschweren muss ich mich auch",
+        "möchte ich mich auch beschweren",
+        "ich möchte mich beschweren",
+        "würde mich gerne beschweren",
+        "eine Beschwerde habe ich auch",
+        "die Pizza möchte ich reklamieren",
+    ],
+)
+def test_no_order_closing_word_is_ever_taken_into_the_complaint(
+    closing, gap, complaint
+):
+    """The #738, #744 and ledger #764 class, by construction: whatever the
+    speech engine sets between an order and its complaint, the word that closes
+    the order keeps the sentence for the team."""
+    from api.agent.escalation import only_a_complaint
+
+    said = f"Die 23 {closing}{gap}{complaint}, die Pizza war kalt."
+    assert not only_a_complaint(said), said
+    assert not only_a_complaint(said.lower().replace(",", "").replace(".", ""))
+
+
 @pytest.mark.parametrize(
     "said",
     [
