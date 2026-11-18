@@ -20,7 +20,7 @@ import threading
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.core.logging import error_text, get_logger, log
@@ -117,6 +117,23 @@ def deliver_once(db: Session, now: datetime) -> int:
         db.commit()
     db.commit()
     return sent
+
+
+def stuck(db: Session) -> int:
+    """Pushes that failed past the whole ladder of waits (about 13 minutes of
+    trying): a wrong token or a push server that is gone, which otherwise
+    shows only as warnings in the journal. The home page says so (#853)."""
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(OperatorPush)
+            .where(
+                OperatorPush.sent_at.is_(None),
+                OperatorPush.attempts > len(BACKOFF_SECONDS),
+            )
+        )
+        or 0
+    )
 
 
 def _run(stop: threading.Event) -> None:
