@@ -2173,6 +2173,36 @@ def test_an_outage_with_the_number_unreadable_rings_the_one_read_at_the_start(
     assert port.transfers("s-1") == [TEAM_PHONE]
 
 
+def test_a_database_failure_does_not_wait_on_a_second_read_of_the_number(
+    session, tenant, monkeypatch
+):
+    """Inside a turn the outage sentence is queued until the failure is
+    handled, so a read of the number after a database error held the sentence
+    for another connect timeout of silence (ledger #764). The database is the
+    failure: the call's own number, unread."""
+    reads = []
+
+    def counted(session, tenant_id, now=None):
+        reads.append(tenant_id)
+        return CHANGED_PHONE
+
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    monkeypatch.setattr(handler_module, "current_team_phone", counted)
+
+    def lost(live, text):
+        raise OperationalError("SELECT", {}, Exception("connection lost"))
+
+    monkeypatch.setattr(handler, "_turn", lost)
+    handler.on_user_turn("s-1", "Einen Tisch fuer vier bitte")
+
+    assert reads == []
+    assert port.says("s-1")[-1] == SAY_OUTAGE
+    assert port.transfers("s-1") == [TEAM_PHONE]
+
+
 def test_a_handover_without_a_named_target_dials_the_number_that_holds_now(
     session, tenant
 ):
