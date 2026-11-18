@@ -101,9 +101,9 @@ def test_every_amount_is_the_cents_of_the_database(client, db, tenant_id):
     dish(db, tenant_id, "2", "Teuer", 123456789, register=0)
     dish(db, tenant_id, "3", "Krumm", 1005)
     assert _rows(client.get(PAGE).text) == [
-        "1 Frei 0,00 € Allergene fehlen Kasse: 0,01 €",
-        "2 Teuer 1234567,89 € Allergene fehlen Kasse: 0,00 €",
-        "3 Krumm 10,05 € Allergene fehlen",
+        "1 Frei 0,00 € Kasse: 0,01 €",
+        "2 Teuer 1234567,89 € Kasse: 0,00 €",
+        "3 Krumm 10,05 €",
     ]
 
 
@@ -251,7 +251,7 @@ def test_a_large_menu_comes_in_pages_that_keep_the_search(
     assert 'href="/gui/menue?q=ente+%26&amp;seite=2"' in first
     assert "Vorherige Seite" not in first and "Nächste Seite</a>" in first
     last = client.get(f"{PAGE}?q=ente+%26&seite=3").text
-    assert _rows(last) == ["5 Ente & Reis 5 6,90 € Allergene fehlen"]
+    assert _rows(last) == ["5 Ente & Reis 5 6,90 €"]
     assert 'href="/gui/menue?q=ente+%26&amp;seite=2"' in last
     assert "Nächste Seite" not in last and "Vorherige Seite</a>" in last
     # Past the end is the last page, with the filter kept in its links.
@@ -283,3 +283,32 @@ def test_the_page_changes_nothing_and_takes_no_write(client, db, tenant_id):
     assert db.scalar(select(func.count()).select_from(AuditLog)) == 0
     # The price is answered on the board, as before; the page says where.
     assert "Übersicht" in client.get(PAGE).text
+
+
+def test_a_badge_every_dish_carries_is_said_once_not_per_row(client, db, tenant_id):
+    """#829-9: eight of eight "Allergene fehlen" hide the one that differs."""
+    dish(db, tenant_id, "1", "Suppe", 450)
+    dish(db, tenant_id, "2", "Pizza", 900)
+    page = client.get(PAGE).text
+
+    assert "Bei keinem Gericht ist ein Allergen hinterlegt" in page
+    assert _rows(page) == ["1 Suppe 4,50 €", "2 Pizza 9,00 €"]
+
+
+def test_a_badge_only_some_dishes_carry_stays_on_its_rows(client, db, tenant_id):
+    dish(db, tenant_id, "1", "Suppe", 450)
+    dish(db, tenant_id, "2", "Pizza", 900, allergens=["A"])
+    page = client.get(PAGE).text
+
+    assert "Bei keinem Gericht" not in page
+    assert _rows(page) == ["1 Suppe 4,50 € Allergene fehlen", "2 Pizza 9,00 €"]
+
+
+def test_the_search_runs_while_typing_and_has_a_visible_label(client, db, tenant_id):
+    """#829-8: the list is swapped from the full page; the field is labelled."""
+    dish(db, tenant_id, "1", "Suppe", 450)
+    page = client.get(PAGE).text
+
+    assert 'hx-trigger="input delay:300ms, submit"' in page
+    assert 'hx-select="#menue-liste"' in page and 'id="menue-liste"' in page
+    assert '<label for="menue-suche">Nummer oder Name</label>' in page

@@ -252,7 +252,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 
 ## Development
 
-The project is set up for Claude Code. `CLAUDE.md` contains the work instructions, `.claude/commands/` holds the commands `/start`, `/task`, `/done`, `/ship`, `/bug`, `/eval`, `/gate` and `/handover`. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+The project is set up for Claude Code. `CLAUDE.md` contains the work instructions, `.claude/commands/` holds the commands `/start`, `/task`, `/done`, `/ship`, `/fix-bug`, `/eval`, `/gate` and `/handover`. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
 <details>
 <summary>Make targets and the text phone</summary>

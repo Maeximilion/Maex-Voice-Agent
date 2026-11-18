@@ -95,7 +95,7 @@ An independent review of the exact head commit by the other model gates every me
 The rules live in `docs/21_REVIEW_AUTOMATION.md` "Working rules in force" (reviewer and bot identity, follow-up scope, manual review, "Repeated findings become rules", "Review comment format", "Evaluate feedback before changing code", "Review loop limits") and `docs/22_LANGUAGE_AND_PERFORMANCE.md` "Review signals for both reviewers". Read the applying sections by range before reviewing a PR as the independent reviewer or answering a review outside `/ship` (step 3 there reads them).
 
 ### Slash Commands (`.claude/commands/`)
-`/start` · `/task T-x.y` · `/done` close out · `/ship <PR>` CI and review to the merge · `/bug "…"` red test first · `/eval` · `/gate Gx` close gate, README, version · `/project` the only board writer · `/handover` to a new session · `/chain` several tasks, one session per PR. After `/done` opens or updates its PR, the session goes on with `/ship` itself (`done.md` "Automatic handoff").
+`/start` · `/task T-x.y` · `/done` close out · `/ship <PR>` CI and review to the merge · `/fix-bug "…"` red test first · `/eval` · `/gate Gx` close gate, README, version · `/project` the only board writer · `/handover` to a new session · `/chain` several tasks, one session per PR. After `/done` opens or updates its PR, the session goes on with `/ship` itself (`done.md` "Automatic handoff").
 
 ### Model Routing
 Start on the model you expect to need: `/start` recommends model and effort, `/task` checks both against the table before reading anything else and asks the user to switch on a mismatch (only the user can).
@@ -147,7 +147,7 @@ Large docs (`docs/01_STATUS.md`, `docs/07_WORKPACKAGES.md`, `docs/20_VOICE_LAYER
 
 Closing the loop is no follow-up step: an untested path, unverified claim or known gap in what was just built belongs to the task; test and fix it before reporting, unasked. "I can test X if you want" is only for work outside the scope or behind a wait point.
 
-Every session loads the personal skills `code-autopilot` and `caveman` (Skill tool, `caveman` with the argument `full`, Maxi, 2026-11-13) unasked (Maxi, 2026-10-19): `/start`, `/task` (after its model and environment checks) and `/bug` load both, any other session before its first reply; one not installed: say so in one line. `caveman` shapes chat replies to Maxi only: everything written to the repo, handover blocks too, stays in full English sentences, and questions stay closed popups. Where a skill differs, this file wins.
+Every session loads the personal skills `code-autopilot` and `caveman` (Skill tool, `caveman` with the argument `full`, Maxi, 2026-11-13) unasked (Maxi, 2026-10-19): `/start`, `/task` (after its model and environment checks) and `/fix-bug` load both, any other session before its first reply; one not installed: say so in one line. `caveman` shapes chat replies to Maxi only: everything written to the repo, handover blocks too, stays in full English sentences, and questions stay closed popups. Where a skill differs, this file wins.
 
 ### Questions
 Ask closed questions (yes/no or A/B/C with marked recommendation), **one per interruption**, only when the answer is needed, as clickable choices (`AskUserQuestion`). Research answerable questions yourself. Mark assumptions and write them to `docs/01_STATUS.md`.
@@ -160,7 +160,7 @@ Ask closed questions (yes/no or A/B/C with marked recommendation), **one per int
 
 - **Merging a PR into `main`** (Maxi, 2026-10-06): Claude merges once CI is green on the exact head commit, the evals are green where the diff touches the conversation path (rule 4), and that head has a completed independent review with all findings triaged. `/done` has run first on Claude's own work; `xhigh`, migration and README-routine cases: `ship.md` "Merging a PR into `main`".
 - The hook `merge_gate.sh` (Maxi, 2026-10-21) blocks until CI, the sync with `main`, the status bump and a clean review hold on the head, and takes only `gh pr merge <n> --merge --match-head-commit <full sha>` (`--delete-branch` after it allowed, a `cd` in front not), or for a native stack, which GitHub refuses the first form for, `gh stack merge <n> --merge --yes` on the bottom PR (Maxi, 2026-11-03), into `main`, checked in the folder it runs in. Any other command naming it, a commit message or search too, is blocked: such text goes into a file or reads `gh pr merg[e]`. Claude checks what it cannot see: `/ponytail-review`, the evals, the `xhigh` rule.
-- **Pulling is Claude's job, never Maxi's** (Maxi, 2026-10-12): the start hook updates `main` (and returns the main folder to `main` when its branch is finished), `/task` and `/bug` fetch before they branch, and before every merge Claude fetches and merges `origin/main` into a branch that is behind, then gets CI and review on the new head.
+- **Pulling is Claude's job, never Maxi's** (Maxi, 2026-10-12): the start hook updates `main` (and returns the main folder to `main` when its branch is finished), `/task` and `/fix-bug` fetch before they branch, and before every merge Claude fetches and merges `origin/main` into a branch that is behind, then gets CI and review on the new head.
 - **Stacked PRs** (Maxi, 2026-10-28): a waiting PR never blocks the next task: branch from it, `gh pr create --base <branch>`, `gh stack link`; detail: `done.md` step 7c.
 - A hook warning that `main` could not be synced comes first (Maxi, 2026-10-14): name the folder and blocking files at the top of the reply and fix it with Maxi before other work, never as a closing note.
 
@@ -236,7 +236,7 @@ A task is complete when **all** of these are true:
 - Write the entire menu into the system prompt
 - Put domain logic in `tools/` or `gui/` instead of `domain/`
 - Use a provider name outside `telephony/`
-- Touch the GitHub Project board during a task: no `gh project` call in `/task`, `/done`, or `/bug`, and never a second project (`docs/16_GITHUB_PROJECT.md`)
+- Touch the GitHub Project board during a task: no `gh project` call in `/task`, `/done`, or `/fix-bug`, and never a second project (`docs/16_GITHUB_PROJECT.md`)
 - Call n8n or external API directly from `domain/` (always via outbox)
 - Fix a bug without first having a red eval or unit test for it
 

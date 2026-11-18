@@ -1342,3 +1342,32 @@ def test_a_page_from_before_the_stacks_update_reads_it_again(
     assert "the stack was updated since this page was read" in answer.text
     assert f'name="seen" value="{SEEN}"' in answer.text
     assert [request.method for request in seen] == ["POST", "GET"]
+
+
+def test_a_far_reaching_step_asks_first_and_a_pin_is_typed_hidden(
+    client, factors, clock, sessions, monkeypatch
+):
+    """#829-19 and #829-20: the five forms that change how every call is answered,
+    who may sign in or where the team's calls go carry a question naming the
+    customer, and a PIN is a password field with a show toggle."""
+    _world(sessions, monkeypatch, alpha=_managed())
+    _signed_in(client, factors, clock)
+
+    text = _post(client).text
+
+    for action in (
+        "call-mode",
+        "team-phone",
+        "team-phone-standard",
+        "pin-set",
+        "setup-link",
+        "sign-out",
+    ):
+        forms = re.findall(rf'<form[^>]*manage/{action}"[^>]*>', text, re.S)
+        assert forms, action
+        assert all("data-frage=" in form for form in forms[-1:]), action
+    assert "Make a setup link for" in text and 'data-frage-ja="Yes"' in text
+    for which in ("team", "admin"):
+        assert re.search(rf'<input type="password" id="pin-{which}"', text)
+        assert f'data-zeigen="pin-{which}"' in text
+    assert 'type="text" id="pin-' not in text

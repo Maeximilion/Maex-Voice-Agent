@@ -1,7 +1,7 @@
 # 12 – Claude-Code-Playbooks
 
 > Nicht jede Session ist gleich. Zehn wiederkehrende Situationen, jede mit festem Ablauf.
-> Die Slash-Befehle in `.claude/commands/` automatisieren die Rituale: `/start`, `/task`, `/done`, `/ship`, `/bug`, `/eval`, `/gate`, `/handover`.
+> Die Slash-Befehle in `.claude/commands/` automatisieren die Rituale: `/start`, `/task`, `/done`, `/ship`, `/fix-bug`, `/eval`, `/gate`, `/handover`.
 
 ---
 
@@ -41,7 +41,7 @@
 ## S3 – Fehler aus dem Betrieb
 Der wichtigste Ablauf, weil er die Qualität langfristig trägt.
 ```text
-/bug "Kunde sagte 'zwei Ente' und bekam Nummer 2"
+/fix-bug "Kunde sagte 'zwei Ente' und bekam Nummer 2"
 1. Fall als Eval-Fall in evals/cases/ anlegen – zuerst, vor jeder Analyse
 2. make eval → der neue Fall muss ROT sein (sonst ist der Fall falsch beschrieben)
 3. Ursache finden: welches Modul? numberwords? search? ladder?

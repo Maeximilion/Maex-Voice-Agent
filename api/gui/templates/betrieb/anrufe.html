@@ -44,7 +44,7 @@
         <td data-label="Dauer">{{ row.duration }}</td>
         <td data-label="Kosten">{{ row.cost }}</td>
         <td data-label="Tools">{{ row.tools }}</td>
-        <td><button hx-post="/gui/anrufe/anruf" hx-vals='{"anruf": "{{ row.id }}"}' hx-target="#anruf-detail" hx-swap="innerHTML" aria-label="Anruf von {{ row.time }} Uhr im Einzelnen">Details</button></td>
+        <td><button hx-post="/gui/anrufe/anruf" hx-vals='{"anruf": "{{ row.id }}"}' hx-target="#anruf-detail" hx-swap="innerHTML" aria-expanded="false" aria-controls="anruf-detail" data-anruf aria-label="Anruf von {{ row.time }} Uhr im Einzelnen">Details</button></td>
       </tr>
       {% endfor %}
     </tbody>
