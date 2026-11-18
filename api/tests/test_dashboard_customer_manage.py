@@ -60,12 +60,12 @@ ACTIONS = sorted(customers.STEPS)
 GOOD: dict[str, dict[str, str]] = {
     "open": {},
     "pin-show": {"which": "team"},
-    "pin-set": {"which": "admin", "pin": NEW, "gesehen": SEEN},
-    "sign-out": {"device": TABLET, "gesehen": SEEN},
-    "setup-link": {"gesehen": SEEN},
-    "call-mode": {"mode": "primary", "gesehen": SEEN},
-    "team-phone": {"number": NUMBER, "gesehen": SEEN},
-    "team-phone-standard": {"number": NUMBER, "gesehen": SEEN},
+    "pin-set": {"which": "admin", "pin": NEW, "seen": SEEN},
+    "sign-out": {"device": TABLET, "seen": SEEN},
+    "setup-link": {"seen": SEEN},
+    "call-mode": {"mode": "primary", "seen": SEEN},
+    "team-phone": {"number": NUMBER, "seen": SEEN},
+    "team-phone-standard": {"number": NUMBER, "seen": SEEN},
 }
 # What reaches the stack for it: path and body.
 SENT: dict[str, tuple[str, dict[str, Any] | None]] = {
@@ -240,11 +240,11 @@ BAD_FORMS = [
     ("team-phone-standard", {"number": ""}),
     ("team-phone-standard", {"number": "0721 5551234"}),
     # A step that changes something without the version of its page (#811).
-    ("sign-out", {"gesehen": "0123456789ABCDEF"}),
-    ("setup-link", {"gesehen": SEEN + "0"}),
-    ("call-mode", {"gesehen": "<b>"}),
-    ("team-phone", {"gesehen": SEEN + "\n"}),
-    ("team-phone-standard", {"gesehen": "x" * 16}),
+    ("sign-out", {"seen": "0123456789ABCDEF"}),
+    ("setup-link", {"seen": SEEN + "0"}),
+    ("call-mode", {"seen": "<b>"}),
+    ("team-phone", {"seen": SEEN + "\n"}),
+    ("team-phone-standard", {"seen": "x" * 16}),
     ("delete-everything", {}),
     ("", {}),
 ]
@@ -635,7 +635,7 @@ def test_open_shows_the_state_and_every_form_carries_the_reason(
     assert text.count('name="reference" value="#812"') == forms - 1
     assert text.count('name="back" value="/customers/alpha"') == forms - 1
     # And the version of what it shows: a step from it acts on that (#811).
-    assert text.count(f'name="gesehen" value="{SEEN}"') == forms - 1
+    assert text.count(f'name="seen" value="{SEEN}"') == forms - 1
     assert PIN not in text and TOKEN_A not in text
     assert len(seen) == 1
     _took(sessions, "open")
@@ -862,7 +862,7 @@ def test_a_step_from_an_old_page_does_nothing_and_the_page_reads_the_state_again
         ("POST", "/v1/ops/call-mode"),
         ("GET", "/v1/ops/access"),
     ]
-    assert f'name="gesehen" value="{NEWER}"' in text
+    assert f'name="seen" value="{NEWER}"' in text
     assert '<option value="resume">' in text and '<option value="primary"' not in text
     actions = [r.action for r in _rows(sessions)][-4:]
     assert actions == [
@@ -1295,7 +1295,7 @@ def test_an_older_tabs_form_does_not_spend_the_newer_tabs_token(
 def test_a_step_without_a_version_is_sent_as_before():
     """A page of a stack older than #811 has no version: its steps go out
     without one, and a newer stack refuses such a step itself."""
-    step = _step("call-mode", gesehen="")
+    step = _step("call-mode", seen="")
     assert step is not None
     assert step.body == {"mode": "primary"}
 
@@ -1312,13 +1312,36 @@ def test_an_older_stack_is_managed_and_the_page_says_it_checks_nothing(
 
     page = _post(client).text
     assert "This stack is older" in page
-    assert 'name="gesehen" value=""' in page
+    assert 'name="seen" value=""' in page
 
-    answer = _post(client, "call-mode", mode="paused", gesehen="")
+    answer = _post(client, "call-mode", mode="paused", seen="")
 
     assert answer.status_code == 200
     assert json.loads(seen[-1].content) == {"mode": "paused"}
     _took(sessions, "call-mode")
+
+
+def test_a_page_from_before_the_stacks_update_reads_it_again(
+    client, factors, clock, sessions, monkeypatch
+):
+    """Review of #837: a page read before its stack was updated past #811
+    sends no version, the updated stack does not take the step, and the page
+    reads the state again by itself and says why."""
+    seen: list[httpx.Request] = []
+    refused, read = _error("invalid_input"), _says(_access())
+
+    def updated(request: httpx.Request) -> httpx.Response:
+        return read(request) if request.method == "GET" else refused(request)
+
+    _world(sessions, monkeypatch, alpha=_managed(seen, answer=updated))
+    _signed_in(client, factors, clock)
+
+    answer = _post(client, "call-mode", mode="paused", seen="")
+
+    assert answer.status_code == 200
+    assert "the stack was updated since this page was read" in answer.text
+    assert f'name="seen" value="{SEEN}"' in answer.text
+    assert [request.method for request in seen] == ["POST", "GET"]
 
 
 def test_a_far_reaching_step_asks_first_and_a_pin_is_typed_hidden(

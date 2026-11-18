@@ -734,9 +734,10 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
   today (`null`: the standard holds). `team_phones` are the numbers the tablet's sheet offers
   (`sheet_numbers`), 20 at most; an empty number is `null`. A restaurant without its settings row
   answers with no mode, no number and
-  two empty lists. `version` is 16 hex digits over what the state shows and the newest audit row
-  of a change to it (`domain/operator.py` `MARKS`, and the owner's answer on a team number
-  card); a device's last use is not in it. No field of
+  two empty lists. `version` is 16 hex digits over the stored settings behind the state (not what holds at
+  this minute, so a call-mode window or the end of today's number makes no page old) and the
+  count and newest id of the audit rows of a change to it (`domain/operator.py` `MARKS`; the
+  count moves too when a row with a lower id commits late); a device's last use is not in it. No field of
   the state is a secret; a shown PIN and a new link are the only
   secrets an answer carries, and nothing but a body ever carries one.
 - The link is `https://<AGENT_DOMAIN>/gui/einrichten#<token>`. `AGENT_DOMAIN` is a setting of
@@ -769,7 +770,8 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
   card, and the call mode and the team number push to `owner` and `ops` (docs/23 T12). The
   push `team_phone.changed` carries `"by": "operator" | "team"`, for the operator its account
   (`"actor"`, as the access pushes), and,
-  for the standard number, `"standard": true`; the card reads "Vom Betreiber geändert" when the
+  for the standard number, `"standard": true` and, while today's open card keeps another number,
+  `"today"` with it (the push then asks for the tablet); the card reads "Vom Betreiber geändert" when the
   operator made its last change (#811). What a rule
   refuses is `invalid_input` with status 422 (`core/ops_reason.py` `RULE_STATUS`, set by `_by_rule`
   in `domain/operator.py`); a request the route itself does not take is `invalid_input` with 200

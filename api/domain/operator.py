@@ -34,7 +34,7 @@ from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.core.errors import AppError, Conflict, InvalidInput
@@ -47,9 +47,6 @@ from api.domain.status.mode import CAUTION, PAUSED, mode_at
 from api.domain.status.staff_changes import (
     ACTION_STANDARD,
     ACTION_TEAM_PHONE,
-    KEPT,
-    TEAM_PHONE,
-    UNDONE,
     change_team_phone,
     sheet_numbers,
     team_phone_at,
@@ -72,8 +69,8 @@ MAX_NUMBERS = 20
 # The audit rows of a change to what the page shows. A state can come back to
 # what a page showed (the agent switched on and stopped again): the newest of
 # these rows tells the newer stop from the one on the page. The owner's answer
-# on a card counts only for a team number card (`DECIDED`): the page shows no
-# opening hours.
+# on a card needs no row here: an open team number card always differs from
+# the standard, so keeping or undoing it changes a stored number.
 MARKS = (
     ACTION_MODE,
     ACTION_TEAM_PHONE,
@@ -83,7 +80,6 @@ MARKS = (
     "gui.password_set",
     "gui.setup_link_issued",
 )
-DECIDED = (f"staff_change.{KEPT}", f"staff_change.{UNDONE}")
 
 
 @dataclass(frozen=True)
@@ -230,35 +226,37 @@ def access(session: Session, tenant: Tenant, now: datetime) -> Access:
         team_phones=sheet_numbers()[:MAX_NUMBERS] if config else [],
         version="",
     )
-    return replace(found, version=_version(session, tenant, found))
+    return replace(found, version=_version(session, tenant, found, config))
 
 
-def _version(session: Session, tenant: Tenant, found: Access) -> str:
-    """What the page shows and the newest change to it, as 16 hex digits. A
-    device's last use is left out: a tablet in use would make every page old."""
-    mark = session.scalar(
-        select(func.max(AuditLog.id)).where(
-            AuditLog.tenant_id == tenant.id,
-            or_(
-                AuditLog.action.in_(MARKS),
-                and_(
-                    AuditLog.action.in_(DECIDED),
-                    AuditLog.payload["kind"].astext == TEAM_PHONE,
-                ),
-            ),
+def _version(
+    session: Session, tenant: Tenant, found: Access, config: ServiceConfig | None
+) -> str:
+    """What the page's settings hold and the changes to them, as 16 hex
+    digits. The stored settings, not what holds at this minute: a call-mode
+    window that begins or today's number that ends would make the page old
+    with nobody's change (review of #837). A device's last use is left out: a
+    tablet in use would make every page old. The marks are counted as well as
+    the newest taken: a change whose row has a lower id commits after a page
+    read the newest, and the count still moves (`ix_audit_log_tenant_action`)."""
+    count, newest = session.execute(
+        select(func.count(), func.max(AuditLog.id)).where(
+            AuditLog.tenant_id == tenant.id, AuditLog.action.in_(MARKS)
         )
-    )
+    ).one()
+    until = config.team_phone_today_until if config else None
     shown = [
         found.login,
         found.team_pin_set,
         found.admin_pin_set,
         sorted(str(device.id) for device in found.devices),
-        found.call_mode,
-        found.team_phone,
-        found.team_phone_standard,
+        config.call_mode if config else None,
+        config.team_phone if config else None,
+        config.team_phone_today if config else None,
         # An instant, not its text: the offset read back follows the database.
-        found.team_phone_until.timestamp() if found.team_phone_until else None,
-        mark,
+        until.timestamp() if until else None,
+        count,
+        newest,
     ]
     text = json.dumps(shown, default=str)
     return hashlib.sha256(text.encode()).hexdigest()[:16]

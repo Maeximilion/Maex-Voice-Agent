@@ -546,7 +546,7 @@
             {
               "id": "3cecc03a-da5e-5841-a074-11e415f9f15c",
               "name": "text",
-              "value": "={{ $json.payload.standard ? 'Die Standardnummer des Teams ist jetzt ' + $json.payload.to + ', vorher ' + $json.payload.from + '.' : 'Anrufe an das Team gehen heute an ' + $json.payload.to + ', vorher an ' + $json.payload.from + '.' }}{{ ({ operator: ' Geändert vom Betreiber ' + String($json.payload.actor).replace(/^operator:/, '') + '.', team: ' Geändert vom Team.' })[$json.payload.by] ?? '' }}{{ $json.payload.standard ? '' : ' Bitte am Tablet prüfen.' }}",
+              "value": "={{ $json.payload.standard ? 'Die Standardnummer des Teams ist jetzt ' + $json.payload.to + ($json.payload.from ? ', vorher ' + $json.payload.from : '') + '.' + ($json.payload.today ? ' Heute gehen Anrufe noch an ' + $json.payload.today + '.' : '') : 'Anrufe an das Team gehen heute an ' + $json.payload.to + ', vorher an ' + $json.payload.from + '.' }}{{ ({ operator: ' Geändert vom Betreiber ' + String($json.payload.actor).replace(/^operator:/, '') + '.', team: ' Geändert vom Team.' })[$json.payload.by] ?? '' }}{{ $json.payload.standard && !$json.payload.today ? '' : ' Bitte am Tablet prüfen.' }}",
               "type": "string"
             },
             {

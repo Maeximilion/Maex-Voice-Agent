@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.1
+> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.2
 
 ---
 
@@ -317,6 +317,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.66.2 · 18.11.2026:** Review of #837 (post-merge `/code-review max`): a new standard equal to today's number closes today's card as kept with its `staff_change.kept` row, a card whose "Vorher" the operator moved names the operator, the standard push says today's number still holds and asks for the tablet (no "vorher ." for a blank old number), the dashboard field is `seen`, the audit-order test reaches every step again, docs/23 counts the re-read's rows right. Second round (migration 043): the page's version hashes the stored settings and counts its audit marks (no stale page from the clock or from a row that commits late), an index `ix_audit_log_tenant_action` answers it, a page from before its stack's update reads it again by itself, a tablet undoing a card the new standard kept is refused, cleanups (no `DECIDED`, shared audit helper, one number reader).
 - **v2.66.1 · 18.11.2026:** The project bug command is renamed to /fix-bug: Claude Code's built-in /bug opened the feedback window instead of .claude/commands/bug.md.
 - **v2.66.0 · 18.11.2026:** UI polish of the #571 pages (#829): sign-in fits 375 px, sticky tab row, confirms before far-reaching steps, live menu search, call details in view, table headers whole, PIN fields hidden, unknown cost as a dash, smaller wording fixes
 - **v2.65.1 · 18.11.2026:** Briefs name code locations found with Graphify

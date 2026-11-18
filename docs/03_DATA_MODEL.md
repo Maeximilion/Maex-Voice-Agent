@@ -301,6 +301,8 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | entity / entity_id | TEXT / UUID | |
 | payload | JSONB | vorher/nachher bei Änderungen |
 
+Indexes: `ix_audit_log_tenant_at` (tenant, time) and, since migration 043, `ix_audit_log_tenant_action` (tenant, action, id) for the version of the operator's page (review of #837).
+
 ### `staff_changes`
 A change the staff made without the owner's PIN, shown as a check card until the owner decides (#570 b, D34 point 4, migration 033).
 | Feld | Typ | Bemerkung |
