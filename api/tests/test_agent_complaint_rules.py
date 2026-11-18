@@ -744,6 +744,11 @@ def test_a_call_of_one_tenant_never_hears_the_rule_of_another(
         "Ich möchte die 23, beschweren muss ich mich aber auch, die Pizza war kalt.",
         "Ich nehme die 23, aber beschweren muss ich mich auch, die Pizza war kalt.",
         "ich möchte eine margherita beschweren muss ich mich auch die pizza war kalt",
+        # A bare "bitte" or "gern" closes the order in front of the complaint
+        # (ledger #764).
+        "Die 23 bitte, beschweren muss ich mich auch, die Pizza gestern war kalt.",
+        "Zwei Pizza gerne, dann noch eine Beschwerde: die Pizza war kalt.",
+        "die 23 gerne möchte ich mich auch beschweren die pizza war kalt",
     ],
 )
 def test_a_sentence_with_more_in_it_goes_to_the_team(session, tenant_id, state, said):
