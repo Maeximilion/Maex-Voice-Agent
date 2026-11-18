@@ -64,9 +64,11 @@ The brief is the session's only context. It has, in this order:
 
 ## 3. Parallel or in a row
 
-Items whose files do not overlap run at the same time; at most as many
-sessions as today's row of "Agents per weekday" allows, counting their review
-agents (tell each session its share). Items that touch the same files, or
+Items whose files do not overlap run at the same time: by default at most 3
+side sessions (Maxi, 2026-11-18). Up to 5, and never above today's row of
+"Agents per weekday", only while usage leaves room: the 5-hour window under 50
+percent and `ahead` (section 5) below 0 at the reading before a start. The
+limit counts their review agents too (tell each session its share). Items that touch the same files, or
 where one needs the other's result, run in a row. Whoever merges second
 merges `origin/main` in first; say so in both briefs. Check `gh pr view`
 before naming a base.
