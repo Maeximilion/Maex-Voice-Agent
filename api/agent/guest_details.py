@@ -73,7 +73,7 @@ from collections import Counter
 from collections.abc import Mapping
 
 from api.core.errors import InvalidInput
-from api.domain.customers.phone import TRUNK_IN_BRACKETS, normalize_phone
+from api.domain.customers.phone import normalize_phone, read_bracketed_zero
 from api.domain.menu.numberwords import (
     ARTICLES,
     CARD_SUFFIXES,
@@ -117,8 +117,10 @@ _SHORTEST_NUMBER = 8
 # is something else.
 _COMPLETE_NUMBER = 11
 # The same for a number with a said "00" and country code: the digits behind
-# both, without the trunk zero.
-_COMPLETE_INTERNATIONAL = 9
+# both, without the trunk zero. A French number said in pairs ends at 9, a Danish
+# one at 8; the number of a country with fewer waits for one more pair and is
+# refused.
+_COMPLETE_INTERNATIONAL = 8
 # What may stand between two letters a guest spells.
 _BETWEEN_LETTERS = " \t,-."
 # Other digits of a turn with this many digits may be the head of the number.
@@ -429,8 +431,10 @@ def _is_complete(group: str) -> bool:
     """Enough digits that what follows a pause is something else. A said "00" and
     country code and the trunk zero are no part of the count: "0033 06 12 34 56
     78" is nine digits, the number the French guest said (#804).
-    shortcut: the code counts as two digits, so a three-digit code counts one
-    too many and waits for one more pair; fix when such a guest is refused."""
+    shortcut: the code counts as two digits. A one-digit code (+1, +7) ends the
+    number one digit early and leaves its last pair apart, a three-digit code
+    waits one digit too long; the number is refused in both cases, never
+    changed. Fix when such a guest is refused."""
     digits = "".join(char for char in group if char.isdigit())
     if not digits.startswith("00"):
         return len(digits) >= _COMPLETE_NUMBER
@@ -444,7 +448,7 @@ def _digits(text: str) -> int:
 def _without_trunk_zero(run: str) -> str:
     """ "+43 (0)664 1234567" is one number. Read at the bracket as two, its
     tail became a German one. As `normalize_phone` reads the "(0)"."""
-    return TRUNK_IN_BRACKETS.sub("0", run)
+    return read_bracketed_zero(run)
 
 
 def _may_be_a_head(group: str) -> bool:

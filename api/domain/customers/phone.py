@@ -19,8 +19,8 @@ TRUNK_IN_BRACKETS = re.compile(r"\(\s*0\s*\)")
 # trunk prefix since its closed plan of 2009, but its 0 was one: the numbers kept
 # their digits without it, so a guest's old habit "+48 0 600 ..." means +48600...
 # Left out on purpose, so a 0 there stays as said: Italy, San Marino, Vatican,
-# Cote d'Ivoire, Benin (their numbers begin with 0; a bracketed "(0)" keeps its
-# zero there as well); Hungary (trunk prefix 06, `OTHER_TRUNK`);
+# Cote d'Ivoire, Benin (their numbers begin with 0, `ZERO_LEADING`); Hungary
+# (trunk prefix 06, `OTHER_TRUNK`);
 # Russia, Kazakhstan, Belarus (8); Norway (numbers with a 0); the countries
 # without a trunk prefix (Spain, Portugal, Greece, Czechia, Denmark, Luxembourg,
 # Latvia, Estonia, Malta, Cyprus, Iceland); every code not checked yet.
@@ -60,18 +60,34 @@ TRUNK_ZERO_AFTER = frozenset(
 # national number that begins with 8 continues with 0 (800, 809), which the guard
 # in `normalize_phone` leaves alone. Russia's 8 stays: 812 is St Petersburg.
 OTHER_TRUNK = {"36": ("06",), "370": ("8",)}
+# Codes whose national numbers begin with 0 (Italy, San Marino, Vatican, Cote
+# d'Ivoire, Benin): a bracketed "(0)" behind one of them is part of the number.
+ZERO_LEADING = frozenset({"39", "378", "379", "225", "229"})
 SAY_INVALID_PHONE = (
     "Die Rufnummer habe ich nicht verstanden. Können Sie sie noch einmal sagen?"
 )
 
 
+def read_bracketed_zero(text: str) -> str:
+    """The text with each "(0)" read as the number reads it. "(0)" is the national
+    trunk digit: behind a country code it falls away ("+49 (0)7221 ..." has one
+    digit too many with it), except behind a code in `ZERO_LEADING`, where it is
+    the number's own 0 ("+39 (0)2 ..." as "+39 02 ...", #804). Without a country
+    code it is the leading zero of the national form."""
+    plus = text.startswith("+")
+    if not plus and not text.startswith("00"):
+        return TRUNK_IN_BRACKETS.sub("0", text)
+
+    def read(found: re.Match[str]) -> str:
+        said = re.sub(r"[^0-9]", "", text[: found.start()])
+        return "0" if (said if plus else said[2:]) in ZERO_LEADING else ""
+
+    return TRUNK_IN_BRACKETS.sub(read, text)
+
+
 def normalize_phone(raw: str, country_code: str = DEFAULT_COUNTRY_CODE) -> str:
     """„0721 / 555-1234" → „+497215551234". Unbrauchbare Eingabe → InvalidInput."""
-    # "(0)" is the said trunk zero, read as a 0: the loop below drops it after the
-    # codes whose trunk it is ("+49 (0)7221 ..." has one digit too many with it)
-    # and keeps it where numbers begin with 0 ("+39 (0)2 ..." as "+39 02 ...", #804).
-    text = TRUNK_IN_BRACKETS.sub("0", raw.strip())
-    digits = re.sub(r"[\s\-/().]", "", text)
+    digits = re.sub(r"[\s\-/().]", "", read_bracketed_zero(raw.strip()))
     if digits.startswith("00"):
         digits = "+" + digits[2:]
     elif digits.startswith("0"):
@@ -84,15 +100,12 @@ def normalize_phone(raw: str, country_code: str = DEFAULT_COUNTRY_CODE) -> str:
     # free, so at most one length names a code.
     for size in (1, 2, 3):
         code, rest = digits[1 : 1 + size], digits[1 + size :]
-        trunks = (("0",) if code in TRUNK_ZERO_AFTER else ()) + OTHER_TRUNK.get(
-            code, ()
-        )
+        trunks = ("0",) if code in TRUNK_ZERO_AFTER else ()
+        trunks += OTHER_TRUNK.get(code, ())
         if trunks:
             for trunk in trunks:
-                if rest.startswith(trunk) and rest[len(trunk) : len(trunk) + 1] not in (
-                    "",
-                    "0",
-                ):
+                after = rest[len(trunk) : len(trunk) + 1]
+                if rest.startswith(trunk) and after not in ("", "0"):
                     digits = f"+{code}{rest[len(trunk) :]}"
                     break
             break

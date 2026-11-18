@@ -148,6 +148,25 @@ def test_a_bracketed_zero_is_kept_where_numbers_begin_with_zero(said: str, numbe
     assert normalize_phone(said) == number
 
 
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [
+        ("+61 (0)412 345 678", "+61412345678"),  # Australia, code not in any set
+        ("+34 (0)91 123 45 67", "+34911234567"),  # Spain, no trunk prefix at all
+        ("+81 (0)3 1234 5678", "+81312345678"),  # Japan
+        ("+1 (0)212 555 1234", "+12125551234"),
+        ("+36 (0)1 234 5678", "+3612345678"),  # Hungary: "(0)1" is no "06"
+        ("+49 (0)0171 2345678", "+491712345678"),  # the bracket, then a said zero
+        ("0061 (0)412 345 678", "+61412345678"),
+    ],
+)
+def test_a_bracketed_zero_behind_any_other_code_falls_away(said: str, number: str):
+    """The bracketed zero is the trunk digit: only the codes whose numbers begin
+    with 0 keep it. Origin/main dropped it behind every code; keeping it behind
+    the codes no set names dials a number that does not exist."""
+    assert normalize_phone(said) == number
+
+
 def test_german_team_and_staff_numbers_come_out_unchanged(monkeypatch):
     """Trigger path: the team number and the dialable staff numbers read the
     same code, so the German forms must come out as before."""
