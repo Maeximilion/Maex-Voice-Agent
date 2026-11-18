@@ -392,6 +392,45 @@ def test_a_foreign_number_that_is_really_short_is_still_refused():
     assert numbers("Meine Nummer ist null null drei drei, null sechs, zwölf") == set()
 
 
+def test_a_french_number_in_five_pairs_is_the_number_said():
+    """#849: "0033, 06 12 34 56 19" has the nine digits of a French number. A
+    number one pair short with a stray pair after it says the same digits, so
+    nothing tells them apart: it is read as said, the way the full number is."""
+    sentence = (
+        "Meine Nummer ist null null drei drei, null sechs, zwölf, vierunddreißig, "
+        "sechsundfünfzig, neunzehn"
+    )
+    assert numbers(sentence) == {"+33612345619"}
+
+
+def test_a_french_number_one_pair_short_is_refused_not_stored():
+    """#849: with its last pair missing the number has seven digits, none that
+    exists; it was stored as +336123456 and is asked for again now."""
+    sentence = (
+        "Meine Nummer ist null null drei drei, null sechs, zwölf, vierunddreißig, "
+        "sechsundfünfzig"
+    )
+    assert numbers(sentence) == set()
+    assert numbers("Erreichbar unter +33 6 12 34 56") == set()
+
+
+def test_a_french_number_takes_no_hour_behind_it():
+    """#849: a pair that is an hour ("neunzehn Uhr") is no digit of the number, with
+    its last pair there or missing."""
+    short = "Null null drei drei, null sechs, zwölf, vierunddreißig, sechsundfünfzig"
+    assert numbers(f"{short}, neunzehn Uhr") == set()
+    assert numbers(f"{short}, achtundsiebzig, neunzehn Uhr") == set()
+    assert numbers(f"{short}, achtundsiebzig, neunzehn") == set()
+
+
+def test_an_hour_behind_a_short_french_number_does_not_complete_it():
+    """Codex PR #850, P2: refusing the short prefix by its length switched off
+    the check for a trailing hour, so "-19 Uhr" completed the number."""
+    for mark in ("-", "/"):
+        assert numbers(f"Meine Nummer ist +33 6 12 34 56{mark}19 Uhr") == set()
+    assert numbers("Meine Nummer ist +33 6 12 34 56 78-19 Uhr") == set()
+
+
 def test_a_short_number_with_00_takes_no_pair_behind_it():
     """Codex PR #848, P2: a digit count lower than the French one joined "neunzehn"
     to a seven-digit number and stored +49721555119, a number nobody said."""
@@ -430,6 +469,7 @@ def test_a_complete_number_with_00_takes_no_pair_behind_it():
 
 def test_a_bracketed_zero_after_an_italian_code_stays_one_number():
     assert numbers("Erreichbar unter +39 (0)2 1234 5678") == {"+390212345678"}
+    assert numbers("Erreichbar unter +39 (0) 335 123 4567") == {"+393351234567"}
 
 
 def test_three_groups_that_are_no_date_stay_a_number():

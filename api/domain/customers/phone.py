@@ -63,12 +63,33 @@ OTHER_TRUNK = {"36": ("06",), "370": ("8",)}
 # Codes whose national numbers begin with 0 (Italy, San Marino, Vatican, Cote
 # d'Ivoire, Benin): a bracketed "(0)" behind one of them is part of the number.
 ZERO_LEADING = frozenset({"39", "378", "379", "225", "229"})
+# Italian mobiles: 3, then 9 digits (libphonenumber 9.0.43: 3[2-9] and 31, ten
+# digits; the nine-digit ones clash with area codes like Varese's 0332 and are not
+# read as mobiles). They have no leading 0, so a "(0)" before one is the trunk
+# digit and falls away. Brescia's 030 begins with 3 as well, and no mobile begins
+# with 30. Left as said: Varese-like area codes with a seven-digit number, ten
+# digits that are a landline, told by length only. San Marino (mobile 6x), Cote
+# d'Ivoire (landline 2x) and Benin (all 01) have the same shape, with no caller
+# for it yet: not built (#849).
+DIGITS_BEHIND = re.compile(r"[0-9\s\-/.]*")  # the number that goes on after a "(0)"
+ITALIAN_MOBILE = re.compile(r"3[2-9][0-9]{8}|31[0-9]{8}")
 # Codes whose national numbers all have this many digits, without the trunk zero.
 # A number said in pairs with pauses is complete at that length (`_is_complete` in
 # `agent/guest_details.py`); a code not listed keeps the count of a German number,
 # since no digit count fits every country (a short number must not take what
 # follows it). France: 9 digits, "+33 6 12 34 56 78". #804.
 FIXED_LENGTH = {"33": 9}
+
+
+def wrong_length(number: str) -> bool:
+    """Has the E.164 number of a `FIXED_LENGTH` country another count of digits
+    behind its code than all its numbers have? Then nobody said it."""
+    for size in (1, 2, 3):
+        if length := FIXED_LENGTH.get(number[1 : 1 + size]):
+            return len(number) - 1 - size != length
+    return False
+
+
 SAY_INVALID_PHONE = (
     "Die Rufnummer habe ich nicht verstanden. Können Sie sie noch einmal sagen?"
 )
@@ -86,7 +107,11 @@ def read_bracketed_zero(text: str) -> str:
 
     def read(found: re.Match[str]) -> str:
         said = re.sub(r"[^0-9]", "", text[: found.start()])
-        return "0" if (said if plus else said[2:]) in ZERO_LEADING else ""
+        code = said if plus else said[2:]
+        if code not in ZERO_LEADING:
+            return ""
+        behind = re.sub(r"[^0-9]", "", DIGITS_BEHIND.match(text, found.end())[0])  # type: ignore[index]
+        return "" if code == "39" and ITALIAN_MOBILE.fullmatch(behind) else "0"
 
     return TRUNK_IN_BRACKETS.sub(read, text)
 
