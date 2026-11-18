@@ -46,15 +46,20 @@ The brief is the session's only context. It has, in this order:
    A write path also gets this line: look for a write that passes validation
    but puts a reader into a wrong state, and for a write that leaves a stale
    sibling row (the two P1 shapes Codex found on #820).
-4. GUI work also loads the skill `ui-ux-pro-max`; `docs/06_GUI.md` and the
+4. Where the code lives: the files, functions and tests the item touches,
+   found by the coordinator with the Graphify connector (`graphify_find`,
+   `graphify_impact`, `graphify_tests_for`; `CLAUDE.md` "graphify"), with the
+   approach, the edge cases to test and what not to touch. Pointers, not file
+   contents.
+5. GUI work also loads the skill `ui-ux-pro-max`; `docs/06_GUI.md` and the
    GUI path rule win where they differ.
-5. Base: `origin/main`, or a stack on an open item's branch when both touch
+6. Base: `origin/main`, or a stack on an open item's branch when both touch
    the same files and the base is not merged yet (`/done` step 7c).
-6. "Wait inside the turn for tests, CI and Codex; do not end the turn with a
+7. "Wait inside the turn for tests, CI and Codex; do not end the turn with a
    status line." Every ended turn of a child wakes the coordinator.
-7. "Report once, at the end": PR number, merge commit, choices, usage.
-8. The usage block of section 5 with the model's numbers.
-9. Exceptions to `CLAUDE.md` quoted in Maxi's words with the date; a session
+8. "Report once, at the end": PR number, merge commit, choices, usage.
+9. The usage block of section 5 with the model's numbers.
+10. Exceptions to `CLAUDE.md` quoted in Maxi's words with the date; a session
    refuses a rule change relayed without them, and it should.
 
 ## 3. Parallel or in a row
