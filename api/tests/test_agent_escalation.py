@@ -403,6 +403,8 @@ def test_gern_and_bitte_stay_allowed_inside_the_complaint_phrase():
         "Zwei Pizza gerne, dann noch eine Beschwerde: die Pizza war kalt.",
         "Zweimal die 23 gerne, außerdem eine Beschwerde, die Pizza war kalt.",
         "Eine Margherita bitte. Beschwerde habe ich auch noch, die Pizza war kalt.",
+        # No commas from the speech engine: "gerne" still closes the order.
+        "die 23 gerne möchte ich mich auch beschweren die pizza war kalt",
     ],
 )
 def test_a_bitte_or_gern_that_closes_an_order_is_no_wish_of_the_complaint(said):
@@ -422,6 +424,7 @@ def test_a_bitte_or_gern_that_closes_an_order_is_no_wish_of_the_complaint(said):
         "Ich hätte gern eine Beschwerde, die Pizza war kalt.",
         "Ich möchte mich bitte beschweren, die Pizza war kalt.",
         "Ich will mich mal beschweren, die Pizza war kalt.",
+        "gerne würde ich mich beschweren das essen war kalt",
     ],
 )
 def test_the_wish_that_is_the_complaint_still_counts_as_the_complaint(said):

@@ -748,6 +748,7 @@ def test_a_call_of_one_tenant_never_hears_the_rule_of_another(
         # (ledger #764).
         "Die 23 bitte, beschweren muss ich mich auch, die Pizza gestern war kalt.",
         "Zwei Pizza gerne, dann noch eine Beschwerde: die Pizza war kalt.",
+        "die 23 gerne möchte ich mich auch beschweren die pizza war kalt",
     ],
 )
 def test_a_sentence_with_more_in_it_goes_to_the_team(session, tenant_id, state, said):
