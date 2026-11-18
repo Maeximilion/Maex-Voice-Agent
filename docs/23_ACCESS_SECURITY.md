@@ -381,7 +381,9 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   waits (more than four attempts: a wrong token, a push server that is gone) shows as a red banner on
   the dashboard's home page, counted by `push.stuck`; the row itself keeps waiting and goes out
   once the server works (Claude's choice, awaiting Maxi: a banner on the page the operator opens
-  anyway, no new endpoint or alert). A removal of TOTP
+  anyway, no new endpoint or alert). With no push server set (dev, test) no sender runs and
+  `stuck` stays 0, so the home page shows a second red banner while rows wait
+  (`push.unsent_without_server`, #858). A removal of TOTP
   that was off already (a double post, an older tab) is neither audited nor pushed (#816). The
   break glass removes every passkey too.
 - **Browser side.** `api/gui/ts/passkey.ts`, compiled, no inline script: it fetches the options,

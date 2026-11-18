@@ -820,6 +820,7 @@ def home(
         "recovery_left": access.recovery_left(db, operator.account_id),
         "no_passkey": passkeys.count(db, operator.account_id) == 0,
         "push_stuck": push.stuck(db),
+        "push_unsent": push.unsent_without_server(db),
         **_rows(db),
     }
     return _page(request, "home.html", context)
