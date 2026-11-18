@@ -329,6 +329,9 @@ class ConversationLoop:
     ) -> TurnResult:
         # The guest has stopped speaking: from here on they wait.
         turn_started = None if self._turn_deadline is None else self._clock()
+        # An allergen question left open lasts this one turn, also when the
+        # turn never reaches the model (#798).
+        pending, state.allergen_question_open = state.allergen_question_open, False
         # First of all: a name or number the model writes in this turn may
         # come from this very sentence (agent/guest_details.py, rule 2).
         if state.callback_waits is not None:
@@ -416,7 +419,7 @@ class ConversationLoop:
             guards.note_said(state, SAY_HUMAN_ANSWER)
             return TurnResult(state=state, say=[SAY_HUMAN_ANSWER])
         result = self._converse(
-            state, user_text, turn_started, open_table, wish, kept=kept
+            state, user_text, turn_started, open_table, wish, kept=kept, pending=pending
         )
         if not result.ended:
             unchanged = state.model_dump(include=_HEARD) == heard
@@ -448,17 +451,17 @@ class ConversationLoop:
         wish: str | None = None,
         *,
         kept: bool = False,
+        pending: bool = False,
     ) -> TurnResult:
         """The model's part of a guest turn: model calls and tools until a
         sentence for the guest, a handoff or a limit. `wish` is what the call
         was about before this sentence; `kept`: the sentence speaks of the
-        guest's health (`_note_allergy_said`)."""
+        guest's health (`_note_allergy_said`); `pending`: an allergen question
+        was left open by the turn before."""
         start = guards.begin_turn(state)
-        # Where an allergen word of this turn can come from (#798). A
-        # question left open lasts one turn: only an open turn that leaves it
-        # open again sets it once more (below).
-        aturn = guards.begin_allergen_turn(state, user_text, kept=kept)
-        state.allergen_question_open = False
+        # Where an allergen word of this turn can come from (#798). Only an
+        # open turn that leaves a question open sets it again (below).
+        aturn = guards.begin_allergen_turn(state, user_text, kept=kept, pending=pending)
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,
         # das denselben Fehlversuch über mehrere Tool-Hops hinweg noch einmal

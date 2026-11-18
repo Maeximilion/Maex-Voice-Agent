@@ -438,7 +438,7 @@ Outside → `ok: false`, `error.code: "out_of_zone"`, `say` offers pickup only w
     "reservation_id": "…", "status": "draft",
     "reserved_for": "2026-09-20T18:00:00Z", "party_size": 4,
     "guest_name": "Müller", "phone": "+4972215551234", "note": "Kinderstuhl",
-    "readback": "Ein Tisch für vier Personen am Sonntag, den 20. September um acht Uhr abends, auf den Namen Müller, mit dem Hinweis: Kinderstuhl. Passt das so?"
+    "readback": "Ein Tisch für vier Personen am Sonntag, den 20. September um acht Uhr abends, auf den Namen Müller, mit Ihrem Hinweis: Kinderstuhl. Passt das so?"
   },
   "say": null
 }
@@ -466,7 +466,7 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
   ],
   "note": null }
 ```
-`note` (optional, at most 200 characters) is the note of the whole order (T-11.1, D24): the guest's allergy said without a dish, or when it is unclear which dish it belongs to. It is stored in `orders.note`, read back after the dishes („Für die ganze Bestellung: …."), sent on the kitchen ticket and printed bold above the dishes. The model writes it, an allergy too („WICHTIG !!! …", Maxi 15.11.2026); the state keeps it for the next draft (`order_note`).
+`note` (optional, at most 200 characters) is the note of the whole order (T-11.1, D24): the guest's allergy said without a dish, or when it is unclear which dish it belongs to. It is stored in `orders.note`, read back after the dishes as the guest's („Ihr Hinweis für die ganze Bestellung: ….", #798"), sent on the kitchen ticket and printed bold above the dishes. The model writes it, an allergy too („WICHTIG !!! …", Maxi 15.11.2026); the state keeps it for the next draft (`order_note`).
 
 **Allergy notes (L13, Maxi 15.11.2026, #736, #763):** the model writes the guest's allergy as a plain note on the dish, the order or the table („WICHTIG !!! Kunde ist allergisch auf Nüsse"); no consent question. A guest who spoke of their health in the call gets no `draft_order` or `create_reservation` whose notes name none: the first goes back once per turn with the guest's words in the hint (`agent/guards.py` `unnoted_allergy`), the next gets „WICHTIG !!! Gast sagte: <Worte>" from the core on the note of the order or the table (docs/05 §Allergie). A `create_callback` whose `summary` names one is not refused: the core stores the card with the sentence of its reason instead, and a booking of this call behind it (`agent/loop.py` `_card_without_allergy`, repo audit 27.10.2026), as on its own cards, and the team asks when it calls back. A refused callback the model does not retry would lose the guest. A card is read by `wishes.speaks_of_health`: the allergy words, coeliac disease, „reagiert auf“, „darf kein“, „meiden“; the guest's own sentence on the core's cards and a line note of the open order on a card go through the same check (the note reads „Hinweis für die Küche mit dem Gast klären" there). Over HTTP (`/v1/tools/create_callback`) the summary is stored as it comes, and the tools store a note as it comes.
 **Response**

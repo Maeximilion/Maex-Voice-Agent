@@ -8,28 +8,30 @@ before the model or right after `get_item_details`, and the call ends without
 a `confirm`. Caller sentences in German: the detector reads German.
 """
 
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.agent import guards
 from api.agent.escalation import (
     asks_about_allergies,
-    asks_about_an_allergen,
     asks_beyond_the_allergens,
     names_an_additive,
 )
 from api.agent.guards import note_said
 from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.agent.loop import (
+    MAX_TOOL_HOPS,
     SAY_ALLERGENS_BEYOND,
     SAY_CALLBACK_NUMBER,
     SAY_NOBODY_REACHABLE,
     SAY_NOT_A_PERSON,
     SAY_ORDER_NOT_PLACED,
+    SAY_STUCK,
     SAY_TABLE_NOT_BOOKED,
     SUMMARY_ADDITIVES,
     SUMMARY_ALLERGENS,
@@ -39,10 +41,16 @@ from api.agent.loop import (
 from api.agent.state import ConversationState
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
-from api.domain.menu.importer import ALLERGENS_FILE, apply, parse
-from api.domain.menu.search import SAY_WHICH_NUMBER
+from api.domain.menu.importer import (
+    ALLERGENS_FILE,
+    MENU_FILE,
+    OPTIONS_FILE,
+    apply,
+    parse,
+)
+from api.domain.menu.search import search_menu
 from api.domain.menu.wishes import only_denies
-from api.models import Call, Callback, Order, OrderItem
+from api.models import Call, Callback, MenuItem, Order, OrderItem
 from api.tests.test_domain_draft_order import KARTE, NOW, _call, _tenant, item
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -281,7 +289,10 @@ def test_a_model_that_looks_up_after_that_answers_from_the_menu(session, known_t
     assert result.say[0] == SAY_ALLERGENS_UNKNOWN
 
 
-def test_a_model_that_talks_past_it_twice_hands_over(session, known_tenant):
+def test_a_model_that_talks_past_it_twice_gets_the_offer_said(session, known_tenant):
+    """#798 row 4: the guest's allergy opened the turn, so the model's own
+    sentence goes back once; the second time the guest hears the offer to look
+    a dish up, and the question stays pending for one turn."""
     state = state_for(session, known_tenant, phone=CALLER)
 
     result, llm = run(
@@ -293,13 +304,18 @@ def test_a_model_that_talks_past_it_twice_hands_over(session, known_tenant):
     )
 
     assert len(llm.calls) == 2
-    assert result.ended
-    assert result.say[0] == SAY_ALLERGENS_BEYOND
+    assert not result.ended
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+    assert state.allergen_question_open
 
 
-def test_a_model_may_talk_on_a_sentence_that_asks_no_allergy_question(
+def test_a_sentence_that_names_an_allergy_hears_only_core_sentences(
     session, known_tenant
 ):
+    """#798, question 1 (A): nothing tells "Ich habe eine Erdnussallergie"
+    next to a question from one about a dish without reading grammar, so the
+    model's own answer waits one exchange; the guest hears the noted sentence
+    and is not handed over."""
     state = state_for(session, known_tenant, phone=CALLER)
 
     result, llm = run(
@@ -307,10 +323,12 @@ def test_a_model_may_talk_on_a_sentence_that_asks_no_allergy_question(
         state,
         "Haben Sie heute noch auf? Ich habe eine Erdnussallergie.",
         LLMTurn(say="Ja, bis 22 Uhr."),
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
     )
 
-    assert len(llm.calls) == 1
-    assert result.say == ["Ja, bis 22 Uhr."]
+    assert len(llm.calls) == 2
+    assert not result.ended
+    assert result.say == [guards.SAY_ALLERGY_NOTED]
 
 
 def test_the_card_of_that_question_leaves_out_what_was_searched(session, known_tenant):
@@ -373,6 +391,8 @@ def test_a_question_on_several_dishes_none_found_goes_to_the_team(
     ],
 )
 def test_other_searches_stay_with_the_model(session, known_tenant, said, query):
+    """Each sentence speaks of an allergy, so the model's own question is not
+    heard (#798); its fixed question is, and nobody hands over."""
     state = state_for(session, known_tenant, phone=CALLER)
 
     result, llm = run(
@@ -380,7 +400,7 @@ def test_other_searches_stay_with_the_model(session, known_tenant, said, query):
         state,
         said,
         searches(query),
-        LLMTurn(say="Meinen Sie die 13 oder die 14?"),
+        LLMTurn(say=guards.SAY_ASK_ALLERGY),
     )
 
     assert len(llm.calls) == 2
@@ -579,24 +599,65 @@ def test_a_model_sentence_naming_allergens_after_any_lookup_is_the_core_s(
     session, known_tenant, number
 ):
     """A follow-up that names no allergen ("Und die 23?"): the lookup is a
-    plain one, but what the model says of allergens comes from the table, or
-    goes to the team where the table holds nothing (#764)."""
+    plain one, and the model's allergens are licensed by nothing of the turn.
+    #798 row 6: back once, the second time the table, or the team where the
+    table holds nothing."""
     state = state_for(session, known_tenant, phone=CALLER)
     state.allergy_talk = True
+    answer = f"Die {number} enthält Gluten und Soja."
 
-    result, _ = run(
+    result, llm = run(
         session,
         state,
         f"Und die {number}?",
         unflagged(session, known_tenant, number),
-        LLMTurn(say=f"Die {number} enthält Gluten und Soja."),
+        LLMTurn(say=answer),
+        LLMTurn(say=answer),
     )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_UNLICENSED_ALLERGEN
+    assert answer not in result.say
 
     if number == "23":
         assert result.say == [CORE_SAY]
     else:
         assert result.ended
         assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+
+
+@pytest.mark.parametrize("number", ["23", "13"])
+def test_after_a_table_sentence_a_lookup_is_answered_by_the_core_at_once(
+    session, known_tenant, number
+):
+    """Sticky (#798): the last sentence the guest heard was a table sentence,
+    so a lookup in the follow-up is an allergen lookup, whatever the model
+    says."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Welche Allergene hat die 23?",
+        details(session, known_tenant, "23"),
+        LLMTurn(say="ok"),
+    )
+    assert state.last_said == CORE_SAY
+
+    result, llm = run(
+        session,
+        state,
+        f"Und die {number}?",
+        unflagged(session, known_tenant, number),
+        LLMTurn(say="Ja, die geht auch."),
+    )
+
+    assert len(llm.calls) == 2
+    if number == "23":
+        assert result.say == [CORE_SAY]
+    else:
+        assert result.ended
+        assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+        assert state.handoff_summary is not None
+        assert "Gericht: 13 Pho Bo." in state.handoff_summary
 
 
 def test_an_answer_on_options_after_an_unflagged_lookup_reaches_the_guest(
@@ -644,42 +705,53 @@ def test_a_follow_up_without_a_lookup_is_not_answered_by_the_model(
 
 
 @pytest.mark.parametrize(
-    ("first", "asked", "answer"),
+    ("first", "asked", "answer", "pending"),
     [
-        # The skeptic's probe of #764: the allergy one turn before.
+        # The skeptic's probe of #764: the allergy one turn before, not taken
+        # up, so the question is pending (#798).
         (
             "Ich habe eine Erdnussallergie.",
             "Ist in der 13 Erdnuss?",
             "Nein, in der 13 ist keine Erdnuss.",
+            True,
         ),
         (
             "Ich habe eine Sojaallergie.",
             "Ist in der 23 Soja?",
             "Die 23 enthält nur Gluten.",
+            True,
         ),
         # No allergy at all.
-        ("Hallo.", "Ist in der Pho Bo Milch?", "Die Pho Bo enthält Soja."),
+        ("Hallo.", "Ist in der Pho Bo Milch?", "Die Pho Bo enthält Soja.", False),
         # The question names no allergen, the model's answer does.
-        ("Hallo.", "Und was ist mit der Pho Bo?", "Die Pho Bo enthält Milch."),
+        ("Hallo.", "Und was ist mit der Pho Bo?", "Die Pho Bo enthält Milch.", False),
         (
             "Hallo.",
             "Und sonst?",
             "Die Frühlingsrollen enthalten laut unseren Angaben Gluten.",
+            False,
         ),
     ],
 )
 def test_a_model_answer_on_allergens_without_a_lookup_never_reaches_the_guest(
-    session, known_tenant, first, asked, answer
+    session, known_tenant, first, asked, answer, pending
 ):
-    """#764: back to the model once, a second such answer goes to the team."""
+    """#764, #798 rows 4 and 6: back to the model once; the second such answer
+    is replaced by the offer to look a dish up, or goes to the team when the
+    turn before left a question open (rule 5)."""
     state = state_for(session, known_tenant, phone=CALLER)
-    run(session, state, first, LLMTurn(say="Gern."))
+    run(session, state, first, LLMTurn(say=guards.SAY_ALLERGY_NOTED))
+    assert state.allergen_question_open is pending
 
     result, _ = run(session, state, asked, LLMTurn(say=answer), LLMTurn(say=answer))
 
     assert answer not in result.say
-    assert result.ended
-    assert result.say[0] == SAY_ALLERGENS_BEYOND
+    if pending:
+        assert result.ended
+        assert result.say[0] == SAY_ALLERGENS_BEYOND
+    else:
+        assert not result.ended
+        assert result.say == [guards.SAY_ALLERGENS_OFFER]
 
 
 @pytest.mark.parametrize(
@@ -690,46 +762,32 @@ def test_a_model_answer_on_allergens_without_a_lookup_never_reaches_the_guest(
         "Gern, Nummer 13 Pho Bo. Noch etwas?",
     ],
 )
-def test_a_wish_or_the_guests_allergy_said_back_is_no_allergen_answer(
+def test_a_wish_with_the_guests_allergy_is_noted_and_never_handed_over(
     session, known_tenant, answer
 ):
+    """#798, question 1 (A): the model's own sentence goes back once with the
+    hint; the wish and the allergy in the note of the line, the guest hears
+    the noted sentence and nothing stays pending."""
     state = state_for(session, known_tenant, phone=CALLER)
+    pho = str(item(session, known_tenant, "13"))
+    note = "ohne Erdnüsse, WICHTIG !!! Kunde ist allergisch auf Erdnüsse"
 
-    result, _ = run(
+    result, llm = run(
         session,
         state,
         "Die 13 ohne Erdnüsse, ich habe eine Erdnussallergie.",
+        searches("13"),
         LLMTurn(say=answer),
+        LLMTurn(
+            say=guards.SAY_ALLERGY_NOTED,
+            cart=[{"menu_item_id": pho, "quantity": 1, "note": note}],
+        ),
     )
 
-    assert result.say == [answer]
-
-
-@pytest.mark.parametrize(
-    "said",
-    [
-        "Ist in den Frühlingsrollen Gluten?",
-        "Hat die 13 Nüsse?",
-        "Und ist da auch Soja drin?",
-        "Ist da Milch drin?",
-    ],
-)
-def test_these_ask_whether_an_allergen_is_in_a_dish(said):
-    assert asks_about_an_allergen(said)
-
-
-@pytest.mark.parametrize(
-    "said",
-    [
-        # A dish named like an allergen is a menu question.
-        "Haben Sie Erdnuss-Curry?",
-        "Die 13 ohne Erdnüsse bitte.",
-        "Was kostet die 23?",
-        "Ist in der 13 Koriander?",
-    ],
-)
-def test_these_do_not_ask_whether_an_allergen_is_in_a_dish(said):
-    assert not asks_about_an_allergen(said)
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_TURN
+    assert not result.ended
+    assert result.say == [guards.SAY_ALLERGY_NOTED]
+    assert not state.allergen_question_open
 
 
 @pytest.mark.parametrize(
@@ -738,7 +796,6 @@ def test_these_do_not_ask_whether_an_allergen_is_in_a_dish(said):
         "Ja, das ist sicher.",
         "Die Pho Bo ist glutenfrei.",
         "Da sind keine Spuren von Nüssen drin.",
-        "Die Pho Bo enthält keine Nüsse.",
         "Das kann ich Ihnen garantieren.",
         # The fixed sentence of the prompt for such a question.
         "Dazu kann ich Ihnen keine verlässliche Auskunft geben.",
@@ -852,7 +909,7 @@ def test_an_allergy_note_stays_whatever_the_dish_contains(session, known_tenant)
             )
         ),
         LLMTurn(tool_call=draft),
-        LLMTurn(say="Passt das so?"),
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
     )
 
     assert state.stage == "readback_pending"
@@ -916,7 +973,7 @@ def test_a_noted_allergy_never_reaches_the_card(session, known_tenant):
         "Einmal die Pho Bo auf Müller, ich habe eine Erdnussallergie.",
         LLMTurn(tool_call=ToolCall("search_menu", {"query": "Pho Bo"})),
         LLMTurn(tool_call=draft),
-        LLMTurn(say="Passt das so?"),
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
     )
     assert state.stage == "readback_pending"
 
@@ -940,7 +997,7 @@ def test_a_short_ingredient_of_the_guest_never_reaches_the_handover_card(
         session,
         state,
         "Ich bin allergisch gegen Kiwi.",
-        LLMTurn(say="Notiert."),
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
         now=CLOSED,
     )
 
@@ -1230,23 +1287,20 @@ def test_a_table_read_back_survives_a_new_allergy_in_the_same_turn(
     assert "Erdnuss" not in callback.summary
 
 
-@pytest.mark.parametrize(
-    "model",
-    [
-        # The claim goes to the team at once.
-        [LLMTurn(say="Ja, das ist sicher.")],
-        # A sentence without a lookup goes back once, the second to the team.
-        [LLMTurn(say="Gern."), LLMTurn(say="Gern.")],
-    ],
-    ids=["claim", "second unread sentence"],
-)
+@pytest.mark.parametrize("way", ["claim", "unflagged lookup"])
 def test_a_handover_on_the_models_answer_names_the_table_a_new_allergy_took_back(
-    session, known_tenant, model
+    session, known_tenant, way
 ):
     """Audit of 7768182, finding 8: the allergy takes the draft back before the
     model answers, so only the table read at the start of the turn is left for
-    the card."""
+    the card. The claim goes to the team at once; an unflagged lookup in the
+    open turn is answered by the table, here the team (#798 row 1)."""
     state = table_read_back(session, known_tenant)
+    model = (
+        [LLMTurn(say="Ja, das ist sicher.")]
+        if way == "claim"
+        else [unflagged(session, known_tenant, "13"), LLMTurn(say="Gern.")]
+    )
 
     result, _ = run(
         session,
@@ -1256,7 +1310,8 @@ def test_a_handover_on_the_models_answer_names_the_table_a_new_allergy_took_back
         now=CLOSED,
     )
 
-    assert result.say[:2] == [SAY_ALLERGENS_BEYOND, SAY_TABLE_NOT_BOOKED]
+    lead = SAY_ALLERGENS_BEYOND if way == "claim" else SAY_ALLERGENS_UNKNOWN
+    assert result.say[:2] == [lead, SAY_TABLE_NOT_BOOKED]
     callback = session.scalars(select(Callback)).one()
     assert "Offene Reservierung, nicht bestätigt: 4 Personen" in callback.summary
 
@@ -1280,18 +1335,24 @@ def test_the_fixed_sentence_hands_over_in_any_call(session, known_tenant):
     assert result.say.count(SAY_ALLERGENS_BEYOND) == 1
 
 
-def test_an_absence_of_an_allergen_is_a_claim_in_any_call(session, known_tenant):
+def test_an_absence_of_an_allergen_is_never_heard_in_any_call(session, known_tenant):
+    """Behaviour change of #798: no longer "the team at once" by a list of
+    German forms. Nothing of the turn licenses the nuts: back once, then the
+    offer to look the dish up."""
     state = state_for(session, known_tenant, phone=CALLER)
+    answer = "Die Pho Bo enthält keine Nüsse."
 
     result, _ = run(
         session,
         state,
         "Was ist in der Pho Bo?",
-        LLMTurn(say="Die Pho Bo enthält keine Nüsse."),
+        LLMTurn(say=answer),
+        LLMTurn(say=answer),
     )
 
-    assert result.ended
-    assert result.say[0] == SAY_ALLERGENS_BEYOND
+    assert answer not in result.say
+    assert not result.ended
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
 
 
 @pytest.mark.parametrize(
@@ -1299,7 +1360,8 @@ def test_an_absence_of_an_allergen_is_a_claim_in_any_call(session, known_tenant)
     [
         "Die 13, ich habe eine Erdnussallergie.",
         "Die 13, mein Sohn hat eine Erdnussallergie.",
-        "Die 13, ich habe keine Erdnussallergie.",
+        # The denial next to it: `test_agent_guards.py`,
+        # `test_a_denial_next_to_an_order_opens_nothing` (#798).
         "Die 13, ich habe eine Allergie.",
     ],
 )
@@ -1316,11 +1378,11 @@ def test_a_stated_allergy_is_no_allergen_question(session, known_tenant, said):
         state,
         said,
         details(session, known_tenant, "13"),
-        LLMTurn(say="Gern. Darf es noch etwas sein?"),
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
     )
 
     assert not result.ended
-    assert result.say == ["Gern. Darf es noch etwas sein?"]
+    assert result.say == [guards.SAY_ALLERGY_NOTED]
     assert session.scalars(select(Callback)).all() == []
     assert state.stage != "transferred"
 
@@ -1359,7 +1421,7 @@ def test_the_lookup_flag_is_read_as_the_tool_reads_it(session, known_tenant, fla
         state,
         "Die 13, ich habe eine Erdnussallergie.",
         LLMTurn(tool_call=lookup),
-        LLMTurn(say="Gern."),
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
     )
 
     assert not result.ended
@@ -1482,44 +1544,6 @@ def test_these_ask_about_the_allergy(said):
     assert asks_about_allergies(said)
 
 
-def test_a_lookup_that_worked_lets_any_answer_pass():
-    """Audit of 7768182, finding 8: the values are read, so the sentence may
-    name them, with or without a search before it."""
-    said = "Ja, in der Pho Bo ist Sellerie."
-
-    assert guards.unread_allergy_question({"get_item_details"}, said, ASKED) is None
-    read = {"search_menu", "get_item_details"}
-    assert guards.unread_allergy_question(read, said, ASKED) is None
-
-
-def test_after_a_search_a_question_with_a_claim_in_it_goes_back():
-    said = "Ja, die Pho Bo enthält Sellerie, soll ich sie notieren?"
-
-    assert guards.unread_allergy_question({"search_menu"}, said, ASKED) is not None
-
-
-@pytest.mark.parametrize(
-    "say",
-    [
-        "Meinen Sie die 13 oder die 14?",
-        # "Nr." ends no sentence.
-        "Meinen Sie die Nr. 13 oder die Nr. 14?",
-    ],
-)
-def test_after_a_search_the_question_which_dish_passes(say):
-    assert guards.unread_allergy_question({"search_menu"}, say, ASKED) is None
-
-
-def test_the_core_s_own_question_for_the_number_passes():
-    """An ambiguous number is no search that worked, and the sentence is the
-    core's. Nothing the model adds to it passes with it."""
-    said = "Ist in der Nummer 23 oder 24 Sellerie drin? Ich habe eine Allergie."
-
-    assert guards.unread_allergy_question(set(), SAY_WHICH_NUMBER, said) is None
-    claim = f"Die 23 enthält Sellerie. {SAY_WHICH_NUMBER}"
-    assert guards.unread_allergy_question(set(), claim, said) is not None
-
-
 @pytest.mark.parametrize(
     "said",
     [
@@ -1547,20 +1571,25 @@ def test_a_lookup_on_an_allergy_question_is_one_whatever_its_flag(
     session, known_tenant
 ):
     """Without the flag an unmaintained value would not go to the team, and
-    the model would answer from nothing."""
+    the model would answer from nothing. #798 row 1: the turn is open, so the
+    model's sentence after the lookup is not read; the team gets the dish on
+    the card."""
     state = state_for(session, known_tenant, phone=CALLER)
-    lookup = ToolCall(
-        "get_item_details",
-        {
-            "menu_item_id": str(item(session, known_tenant, "13")),
-            "allergen_question": False,
-        },
-    )
+    answer = "Nein, in der Pho Bo ist kein Sellerie."
 
-    result, _ = run(session, state, ASKED, LLMTurn(tool_call=lookup))
+    result, _ = run(
+        session,
+        state,
+        ASKED,
+        unflagged(session, known_tenant, "13"),
+        LLMTurn(say=answer),
+    )
 
     assert result.ended
     assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+    assert answer not in result.say
+    assert state.handoff_summary is not None
+    assert "Gericht: 13 Pho Bo." in state.handoff_summary
 
 
 def test_a_refused_lookup_is_no_read_of_the_menu(session, known_tenant):
@@ -1592,8 +1621,8 @@ def test_a_lookup_that_failed_is_no_read_of_the_menu(session, known_tenant):
     )
 
     assert len(llm.calls) == 3
-    assert result.ended
-    assert result.say[0] == SAY_ALLERGENS_BEYOND
+    assert CLAIM not in result.say
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
 
 
 @pytest.mark.parametrize(
@@ -1608,7 +1637,8 @@ def test_a_lookup_that_failed_is_no_read_of_the_menu(session, known_tenant):
     ],
 )
 def test_a_search_alone_answers_no_allergy_question(session, known_tenant, answer):
-    """A hit carries no allergens (`MenuHit`)."""
+    """A hit carries no allergens (`MenuHit`). #798 row 4: the second answer
+    is replaced by the offer to look the dish up."""
     state = state_for(session, known_tenant, phone=CALLER)
 
     result, llm = run(
@@ -1622,8 +1652,9 @@ def test_a_search_alone_answers_no_allergy_question(session, known_tenant, answe
 
     assert len(llm.calls) == 3
     assert answer not in result.say
-    assert result.ended
-    assert result.say[0] == SAY_ALLERGENS_BEYOND
+    assert not result.ended
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+    assert state.allergen_question_open
 
 
 def test_an_unmarked_question_is_not_answered_without_a_lookup(session, known_tenant):
@@ -1636,7 +1667,7 @@ def test_an_unmarked_question_is_not_answered_without_a_lookup(session, known_te
     result, llm = run(session, state, said, LLMTurn(say=answer), LLMTurn(say=answer))
 
     assert len(llm.calls) == 2
-    assert result.say[0] == SAY_ALLERGENS_BEYOND
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
 
     state = state_for(session, known_tenant, phone=CALLER)
     result, _ = run(session, state, said, details(session, known_tenant, "13"))
@@ -1644,7 +1675,9 @@ def test_an_unmarked_question_is_not_answered_without_a_lookup(session, known_te
     assert result.say[0] == SAY_ALLERGENS_UNKNOWN
 
 
-def test_after_a_search_the_model_may_ask_which_dish(session, known_tenant):
+def test_after_a_search_the_model_asks_with_the_fixed_question(session, known_tenant):
+    """#798 row 2: in an allergy turn the model's own question is not heard;
+    the fixed one is."""
     state = state_for(session, known_tenant, phone=CALLER)
 
     result, llm = run(
@@ -1653,10 +1686,12 @@ def test_after_a_search_the_model_may_ask_which_dish(session, known_tenant):
         ASKED,
         searches("Pho Bo"),
         LLMTurn(say="Meinen Sie die 13 oder die 14?"),
+        LLMTurn(say=guards.SAY_ASK_ALLERGY),
     )
 
-    assert len(llm.calls) == 2
-    assert result.say == ["Meinen Sie die 13 oder die 14?"]
+    assert len(llm.calls) == 3
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_TURN
+    assert result.say == [guards.SAY_ASK_ALLERGY]
 
 
 def test_the_card_names_the_table_the_guest_moved_to(session, known_tenant):
@@ -1712,7 +1747,7 @@ def test_a_mixed_negation_keeps_the_allergy(session, known_tenant, said):
     draft has to note it (`guards.unnoted_allergy`)."""
     state = state_for(session, known_tenant, phone=CALLER)
 
-    run(session, state, said, LLMTurn(say="Gern."))
+    run(session, state, said, LLMTurn(say=guards.SAY_ALLERGY_NOTED))
 
     assert not only_denies(said)
     assert state.allergy_said == [said]
@@ -2022,8 +2057,584 @@ def test_everyday_words_near_health_words_arm_no_claim_check(
     note reader refuses; "garantiert" is then no allergen claim."""
     state = state_for(session, known_tenant, phone=CALLER)
 
-    result, _ = run(
-        session, state, said, LLMTurn(say="Das bleibt garantiert unter uns.")
-    )
+    answer = "Das bleibt garantiert unter uns."
+
+    result, _ = run(session, state, said, LLMTurn(say=answer), LLMTurn(say=answer))
 
     assert not result.ended and not state.allergy_talk
+    assert result.say == [answer]
+
+
+# -- #798: the allergen guard decides by provenance -----------------------------
+#
+# Every sentence of the review of 16.11.2026 (spec section 4), end to end with
+# the guest sentence that produced it. Missed claims: the model's sentence is
+# in no `say`, the guest hears the table sentence, the offer to look a dish
+# up, or the team with the dish on the card. False handovers: the call goes
+# on and the model's sentence is spoken.
+
+
+@pytest.fixture
+def card_tenant(session):
+    """The test menu plus a dish and an option named like an allergen, a
+    description that names one, and a sold-out dish (#798)."""
+    tenant_id = _tenant(session, "Testbetrieb")
+    card = {
+        **KARTE,
+        MENU_FILE: KARTE[MENU_FILE]
+        + "24;Gebratene Garnelen;Hauptgerichte;14,90;;ja\n"
+        + "25;Tofu Spezial;Hauptgerichte;12,90;mit Sojasauce;ja\n",
+        OPTIONS_FILE: KARTE[OPTIONS_FILE] + "23;Extra;Garnelen;2,00;nein;nein\n",
+        ALLERGENS_FILE: "number;allergen_codes;confirmed_by\n23;A;Maxi\n",
+    }
+    plan = parse(card)
+    assert plan.ok, plan.errors
+    apply(session, tenant_id, plan, now=NOW)
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number == "24")
+        .values(sold_out_until=NOW + timedelta(hours=6))
+    )
+    session.flush()
+    return tenant_id
+
+
+def tools(session, tenant_id, *named: str) -> list[LLMTurn]:
+    """ "search 13" and "lookup 13" (unflagged) as the model's tool calls."""
+    turns = []
+    for name in named:
+        kind, query = name.split(" ", 1)
+        turns.append(
+            searches(query)
+            if kind == "search"
+            else unflagged(session, tenant_id, query)
+        )
+    return turns
+
+
+def said_nowhere(result, sentence: str) -> bool:
+    return all(sentence not in say for say in result.say)
+
+
+@pytest.mark.parametrize(
+    ("said", "named", "answer", "heard"),
+    [
+        # The guest names gluten; nothing of the 23 carries it.
+        ("Ist die 23 glutenfrei?", [], "Ja, ist sie.", "offer"),
+        ("Ist die 23 glutenfrei?", ["lookup 23"], "Ja, ist sie.", "table"),
+        ("Sind bei der 13 Erdnüsse dabei?", ["lookup 13"], "Nein, keine.", "team"),
+        # Questions without their mark.
+        ("Ist die 23 glutenfrei", [], "Ja, ist sie.", "offer"),
+        ("Sind bei der 13 Erdnüsse dabei", [], "Nein, keine.", "offer"),
+        # No tool call at all: the guest's own word opens the turn.
+        ("Und Sesam?", [], "Nein, kein Sesam.", "offer"),
+        ("Ich habe eine Nussallergie. Geht die 23?", ["lookup 23"], "Ja.", "table"),
+        ("Ich habe eine Nussallergie. Geht die 13?", ["lookup 13"], "Ja.", "team"),
+        (
+            "Ich habe eine Nussallergie. Geht die 23?",
+            [],
+            "Für Nussallergiker ist die 23 kein Problem.",
+            "offer",
+        ),
+        (
+            "Welche Allergene hat die 13?",
+            ["lookup 13"],
+            "Die Allergene der 13 sind Sesam und Soja.",
+            "team",
+        ),
+        # Without any signal: unlicensed, back once, then as row 1.
+        (
+            "Was ist die 13?",
+            ["lookup 13"],
+            "Die Allergene der 13 sind Sesam und Soja.",
+            "team",
+        ),
+        (
+            "Was ist in der 13?",
+            ["lookup 13"],
+            "Die 13 wird mit Sojasauce zubereitet.",
+            "team",
+        ),
+        ("Was ist in der 13?", [], "Bei der 13: Sesam und Soja.", "offer"),
+        ("Ist in der 23 Soja?", [], "Soja? Ja, das ist drin.", "offer"),
+        ("Hat die 13 Erdnüsse?", [], "Wegen der Erdnüsse: Die 13 hat keine.", "offer"),
+        (
+            "Ist da Sesam drin in der 13?",
+            [],
+            "Ohne Zwiebeln ist da Sesam drin.",
+            "offer",
+        ),
+        ("Ist Sesam in der 13?", [], "Nein, kein Sesam.", "offer"),
+        ("Ist in der 23 Gluten?", [], "Die 23 machen wir ohne Gluten.", "offer"),
+        (
+            "Was kostet die 23?",
+            [],
+            "Für Nussallergiker ist die 23 kein Problem.",
+            "offer",
+        ),
+        (
+            "Sind Nüsse in der 13?",
+            [],
+            "Nüsse, die sind bei der 13 kein Problem.",
+            "offer",
+        ),
+        (
+            "Was ist in den Frühlingsrollen?",
+            ["search Frühlingsrollen"],
+            "Die Frühlingsrollen? Ja, sie haben Gluten und Soja.",
+            "offer",
+        ),
+    ],
+)
+def test_a_claim_of_the_model_never_reaches_the_guest(
+    session, known_tenant, said, named, answer, heard
+):
+    """Spec #798 section 4, missed claims: the model insists, its sentence is
+    never heard."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, _ = run(
+        session,
+        state,
+        said,
+        *tools(session, known_tenant, *named),
+        LLMTurn(say=answer),
+        LLMTurn(say=answer),
+    )
+
+    assert said_nowhere(result, answer)
+    if heard == "offer":
+        assert not result.ended
+        assert result.say == [guards.SAY_ALLERGENS_OFFER]
+    elif heard == "table":
+        assert not result.ended
+        assert result.say == [CORE_SAY]
+    else:
+        assert result.ended
+        assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+        assert state.handoff_summary is not None
+        assert "Gericht: 13 Pho Bo." in state.handoff_summary
+
+
+def test_a_note_that_names_a_dish_goes_back(session, known_tenant):
+    """Spec #798 section 6: the read-back speaks a note word for word, so a
+    note that names a dish is the model's second way to the guest's ear."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    pho = str(item(session, known_tenant, "13"))
+
+    def draft(note):
+        return LLMTurn(
+            tool_call=ToolCall(
+                "draft_order",
+                {
+                    "type": "pickup",
+                    "customer": {"name": "Müller", "phone": CALLER},
+                    "items": [{"menu_item_id": pho, "quantity": 1, "note": note}],
+                },
+            )
+        )
+
+    result, llm = run(
+        session,
+        state,
+        "Die 13 auf Müller, ich habe eine Erdnussallergie.",
+        searches("13"),
+        draft("Erdnussallergie. Die 13 hat keine."),
+        draft("WICHTIG !!! Kunde ist allergisch auf Erdnüsse"),
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_NOTE_CLAIM
+    assert result.say == [guards.SAY_ALLERGY_NOTED]
+    assert session.scalars(select(OrderItem.note)).all() == [
+        "WICHTIG !!! Kunde ist allergisch auf Erdnüsse"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("said", "named", "answer", "cart", "spoken"),
+    [
+        # The search hit's name carries the code of "Garnelen".
+        (
+            "Haben Sie Garnelen?",
+            ["search Garnelen"],
+            "Garnelen haben wir heute leider nicht mehr.",
+            None,
+            None,
+        ),
+        # The option name of the 47 explains the guest's word.
+        (
+            "Kann ich die 47 mit Erdnuss im Restaurant essen?",
+            ["search 47"],
+            "Ja, die 47 mit Erdnuss können Sie gern bei uns essen.",
+            None,
+            None,
+        ),
+        (
+            "Ist die Erdnusssauce im Preis?",
+            ["search 47"],
+            "Die Erdnusssauce kostet bei der 47 fünfzig Cent extra.",
+            None,
+            "fünfzig Cent",
+        ),
+        # The option of the hit and of the changed line.
+        (
+            "Die 23 mit Garnelen bitte.",
+            ["search 23"],
+            "Die 23 mit Garnelen ist im Warenkorb.",
+            {"options": [{"group": "Extra", "name": "Garnelen"}]},
+            None,
+        ),
+        # An unflagged lookup in a turn without a signal keeps the sentence.
+        (
+            "Was kostet die 13?",
+            ["lookup 13"],
+            "Die 13 kostet 11,90 Euro.",
+            None,
+            "11,90 Euro",
+        ),
+        (
+            "Welche Saucen gibt es zur 47?",
+            ["lookup 47"],
+            "Die 47 hat Erdnuss als Sauce zur Wahl.",
+            None,
+            None,
+        ),
+        # The wish stands in the note of the line that changed in this turn.
+        (
+            "Die 13 ohne Erdnüsse bitte.",
+            ["search 13"],
+            "Die 13 ohne Erdnüsse ist kein Problem.",
+            {"note": "ohne Erdnüsse"},
+            None,
+        ),
+        # The database text of the dish itself names soy.
+        (
+            "Was ist in der 25?",
+            ["lookup 25"],
+            "Die 25 wird mit Sojasauce zubereitet.",
+            None,
+            None,
+        ),
+    ],
+)
+def test_an_order_sentence_named_like_an_allergen_reaches_the_guest(
+    session, card_tenant, said, named, answer, cart, spoken
+):
+    """Spec #798 section 4, false handovers: row 5."""
+    state = state_for(session, card_tenant, phone=CALLER)
+    number = named[0].split(" ", 1)[1]
+    lines = (
+        None
+        if cart is None
+        else [
+            {
+                "menu_item_id": str(item(session, card_tenant, number)),
+                "quantity": 1,
+                **cart,
+            }
+        ]
+    )
+
+    result, llm = run(
+        session,
+        state,
+        said,
+        *tools(session, card_tenant, *named),
+        LLMTurn(say=answer, cart=lines),
+    )
+
+    assert len(llm.calls) == len(named) + 1
+    assert not result.ended
+    assert result.say == [answer]
+    if spoken:
+        assert spoken in result.say[0]
+    if lines:
+        assert state.cart == lines
+
+
+def test_a_wish_the_model_did_not_write_into_the_cart_gets_one_hint(
+    session, card_tenant
+):
+    """Row 3: the guest's "Erdnüsse" is explained by nothing until the wish
+    stands in the `cart`."""
+    state = state_for(session, card_tenant, phone=CALLER)
+    pho = str(item(session, card_tenant, "13"))
+    answer = "Die 13 ohne Erdnüsse ist kein Problem."
+    line = {"menu_item_id": pho, "quantity": 1, "note": "ohne Erdnüsse"}
+
+    result, llm = run(
+        session,
+        state,
+        "Die 13 ohne Erdnüsse bitte.",
+        searches("13"),
+        LLMTurn(say=answer),
+        LLMTurn(say=answer, cart=[line]),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_TURN
+    assert result.say == [answer]
+    assert not state.allergen_question_open
+
+
+def test_the_sold_out_sentence_of_the_search_is_the_core_s(session, card_tenant):
+    """An allergy turn may pass on the tool's own sentence (row 2)."""
+    state = state_for(session, card_tenant, phone=CALLER)
+    sold_out = search_menu(session, card_tenant, "Garnelen", now=NOW).say
+    assert sold_out is not None
+    assert sold_out.startswith("Gebratene Garnelen ist heute leider aus.")
+
+    result, llm = run(
+        session,
+        state,
+        "Haben Sie Garnelen? Ich habe eine Nussallergie.",
+        searches("Garnelen"),
+        LLMTurn(say=sold_out),
+    )
+
+    assert len(llm.calls) == 2
+    assert result.say == [sold_out]
+
+
+def test_an_options_question_of_an_allergic_guest_is_the_table_s(session, card_tenant):
+    """Question 4 (A), R6: sticky, the careful side. The 47 has no maintained
+    value, so the team answers."""
+    state = state_for(session, card_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ich habe eine Nussallergie.",
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
+    )
+
+    result, _ = run(
+        session,
+        state,
+        "Welche Saucen gibt es zur 47?",
+        unflagged(session, card_tenant, "47"),
+        LLMTurn(say="Die 47 hat Erdnuss als Sauce zur Wahl."),
+    )
+
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_UNKNOWN
+    assert state.handoff_summary is not None
+    assert "Gericht: 47 Ente knusprig." in state.handoff_summary
+
+
+def test_a_pending_question_hands_over_on_the_second_unanswered_turn(
+    session, known_tenant
+):
+    """Rule 5: the guest asks again, and the model again offers only to look a
+    dish up."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    said = "Ist Sesam in der 13?"
+    run(session, state, said, LLMTurn(say="Nein."), LLMTurn(say="Nein."))
+    assert state.allergen_question_open
+
+    result, llm = run(session, state, said, LLMTurn(say=guards.SAY_ALLERGENS_OFFER))
+
+    assert len(llm.calls) == 1
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_a_pending_question_and_a_dish_named_then_is_the_core_s(session, known_tenant):
+    """The guest answers the offer with the dish; the model's own sentence
+    after a search alone goes back, the second goes to the team (row 4)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session, state, "Ist da Sesam drin?", LLMTurn(say="Nein."), LLMTurn(say="Nein.")
+    )
+    assert state.allergen_question_open
+
+    result, _ = run(
+        session,
+        state,
+        "Die 13.",
+        searches("13"),
+        LLMTurn(say="Nein, da ist kein Sesam drin."),
+        LLMTurn(say="Nein, da ist kein Sesam drin."),
+    )
+
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_a_pending_question_is_answered_by_the_table_after_a_lookup(
+    session, known_tenant
+):
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session, state, "Ist da Sesam drin?", LLMTurn(say="Nein."), LLMTurn(say="Nein.")
+    )
+
+    result, _ = run(
+        session,
+        state,
+        "Die 23.",
+        unflagged(session, known_tenant, "23"),
+        LLMTurn(say="Nein, kein Sesam."),
+    )
+
+    assert result.say == [CORE_SAY]
+    assert not state.allergen_question_open
+
+
+def test_a_pending_question_is_cleared_by_an_order_change(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ist Sesam in der 13?",
+        LLMTurn(say="Nein."),
+        LLMTurn(say="Nein."),
+    )
+    assert state.allergen_question_open
+    pho = str(item(session, known_tenant, "13"))
+    answer = "Gern, die 13 ohne Sesam."
+
+    result, _ = run(
+        session,
+        state,
+        "Dann die 13 ohne Sesam.",
+        searches("13"),
+        LLMTurn(
+            say=answer,
+            cart=[{"menu_item_id": pho, "quantity": 1, "note": "ohne Sesam"}],
+        ),
+    )
+
+    assert not result.ended
+    assert result.say == [answer]
+    assert not state.allergen_question_open
+
+
+def test_a_pending_question_lasts_one_turn(session, known_tenant):
+    """A turn that touches no dish clears it: the order after it is the
+    model's."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ist Sesam in der 13?",
+        LLMTurn(say="Nein."),
+        LLMTurn(say="Nein."),
+    )
+    run(session, state, "Was kostet die Lieferung?", LLMTurn(say="Drei Euro."))
+    assert not state.allergen_question_open
+    answer = "Gern, die 13. Noch etwas?"
+
+    result, _ = run(session, state, "Dann die 13.", searches("13"), LLMTurn(say=answer))
+
+    assert result.say == [answer]
+
+
+def test_a_pending_question_does_not_outlive_a_turn_without_the_model(
+    session, known_tenant
+):
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ist Sesam in der 13?",
+        LLMTurn(say="Nein."),
+        LLMTurn(say="Nein."),
+    )
+    run(session, state, "Sind Sie ein Mensch?")
+    answer = "Gern, die 13. Noch etwas?"
+
+    result, _ = run(
+        session,
+        state,
+        "Dann die 13.",
+        searches("13"),
+        LLMTurn(say=answer),
+        LLMTurn(say=answer),
+    )
+
+    assert not result.ended
+    assert result.say == [answer]
+
+
+def test_a_stated_allergy_with_an_options_lookup_and_a_new_line_stays(
+    session, known_tenant
+):
+    """The order changed in this turn, so the lookup is no allergen lookup;
+    the allergy is on the line's note and nothing is handed over."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    ente = str(item(session, known_tenant, "47"))
+    line = {
+        "menu_item_id": ente,
+        "quantity": 1,
+        "options": [{"group": "Fleisch", "name": "Huhn"}],
+        "note": "WICHTIG !!! Kunde ist allergisch auf Nüsse",
+    }
+
+    result, _ = run(
+        session,
+        state,
+        "Die 47 mit Huhn, ich habe eine Nussallergie.",
+        searches("47"),
+        unflagged(session, known_tenant, "47"),
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED, cart=[line]),
+    )
+
+    assert not result.ended
+    assert result.say == [guards.SAY_ALLERGY_NOTED]
+    assert state.cart == [line]
+    assert not state.allergen_question_open
+    assert session.scalars(select(Callback)).all() == []
+
+
+def test_the_tool_hop_limit_still_ends_in_the_outage_path(session, known_tenant):
+    """A refused sentence costs a hop like any refused call."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session,
+        state,
+        "Ist Sesam in der 13?",
+        LLMTurn(say="Nein."),
+        *[searches("13") for _ in range(MAX_TOOL_HOPS - 1)],
+    )
+
+    assert len(llm.calls) == MAX_TOOL_HOPS
+    assert result.ended
+    assert SAY_STUCK in result.say
+
+
+def test_a_lookup_result_reaches_the_model_without_its_allergens(session, known_tenant):
+    """Spec section 9: the model has nothing to relay; the core keeps the
+    values for the table sentence."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    result, llm = run(
+        session,
+        state,
+        "Ist die 23 glutenfrei?",
+        unflagged(session, known_tenant, "23"),
+        LLMTurn(say="Ja."),
+    )
+
+    sent = json.loads(llm.calls[1][2])
+    assert sent["tool"] == "get_item_details"
+    assert sent["data"]["number"] == "23"
+    assert "allergens" not in sent["data"]
+    assert "glutenhaltiges Getreide" not in llm.calls[1][2]
+    assert result.say == [CORE_SAY]
+
+
+def test_an_option_of_one_dish_licenses_no_claim_about_another(session, known_tenant):
+    state = state_for(session, known_tenant, phone=CALLER)
+    answer = "Die 47 kostet 15,50 Euro, und die 13 hat keine Erdnüsse."
+
+    result, _ = run(
+        session,
+        state,
+        "Was kosten die 47 und die 13?",
+        searches("die 47 und die 13"),
+        LLMTurn(say=answer),
+        LLMTurn(say=answer),
+    )
+
+    assert said_nowhere(result, answer)
