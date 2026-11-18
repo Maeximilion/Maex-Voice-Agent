@@ -48,6 +48,9 @@ class Figures:
     def cost_per_order_cents(self) -> int | None:
         if not self.orders:
             return None
+        if self.unknown_cost_calls and not self.cost_cents:
+            # Every cost is unknown: "0,00" would read as a real zero (#829-15).
+            return None
         return (2 * self.cost_cents + self.orders) // (2 * self.orders)
 
     @property

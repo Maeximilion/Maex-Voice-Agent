@@ -21,7 +21,7 @@
     {% if not s %}
     <p><span class="badge danger">down</span> {{ detail.row.problem }}</p>
     {% else %}
-    <p>{% if detail.row.notes %}<span class="badge warn">look</span> {{ detail.row.notes | join(", ") }}{% else %}<span class="badge ok">ok</span>{% endif %}</p>
+    <p>{% if detail.row.notes %}<span class="badge warn">check</span> {{ detail.row.notes | join(", ") }}{% else %}<span class="badge ok">ok</span>{% endif %}</p>
     <table class="tbl ops-liste">
       <thead>
         <tr><th scope="col">Call mode</th><th scope="col">Last call</th><th scope="col">Today</th><th scope="col">Print bridge</th><th scope="col">Backup</th></tr>
@@ -46,7 +46,7 @@
     {% else %}
     <div class="kz-bar">
       <div class="kz"><span class="muted">Accuracy</span><b>{{ f.week.accuracy_percent | percent }}</b></div>
-      <div class="kz"><span class="muted">Cost per order</span><b>{{ f.week.cost_per_order_cents | euro }}</b></div>
+      <div class="kz"><span class="muted">Cost per order</span><b>{{ (none if f.week.unknown_cost_calls and not f.week.cost_per_order_cents else f.week.cost_per_order_cents) | euro }}</b></div>
       <div class="kz"><span class="muted">Handed to the team</span><b>{{ f.week.handed_over_percent | percent }}</b></div>
       <div class="kz"><span class="muted">Missed calls</span><b>{{ f.week.missed }}</b></div>
     </div>
@@ -62,7 +62,7 @@
           <td data-label="Calls">{{ d.calls }}</td>
           <td data-label="Orders">{{ d.orders }}</td>
           <td data-label="Accuracy">{{ d.accuracy_percent | percent }}</td>
-          <td data-label="Cost per order">{{ d.cost_per_order_cents | euro }}{% if d.unknown_cost_calls %} *{% endif %}</td>
+          <td data-label="Cost per order">{{ (none if d.unknown_cost_calls and not d.cost_per_order_cents else d.cost_per_order_cents) | euro }}{% if d.unknown_cost_calls %} *{% endif %}</td>
           <td data-label="Handed to the team">{{ d.handed_over_percent | percent }}</td>
           <td data-label="Missed calls">{{ d.missed }}</td>
         </tr>
@@ -100,7 +100,7 @@
         {% for code, words in reasons.items() %}<option value="{{ code }}">{{ words }}</option>{% endfor %}
       </select>
       <label for="reference">Ticket or issue number</label>
-      <input id="reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
+      <input title="A ticket or issue number: digits, with or without a leading #, for example 829 or #829" id="reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
       <label for="day">Business day</label>
       <select id="day" name="day">
         {% for d in days %}<option value="{{ d.isoformat() }}">{{ d | weekday }}</option>{% endfor %}
@@ -125,7 +125,7 @@
         {% for code, words in reasons.items() %}<option value="{{ code }}">{{ words }}</option>{% endfor %}
       </select>
       <label for="manage-reference">Ticket or issue number</label>
-      <input id="manage-reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
+      <input title="A ticket or issue number: digits, with or without a leading #, for example 829 or #829" id="manage-reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
       <button type="submit" class="primary">Open access and call routing</button>
     </form>
     {% endif %}

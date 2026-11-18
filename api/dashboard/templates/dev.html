@@ -8,11 +8,12 @@
 
 {% macro results(table, empty) %}
     {% if table.problem %}
-    <p><span class="badge warn">look</span> <code>{{ table.name }}</code>: {{ table.problem }}.</p>
+    <p><span class="badge warn">check</span> <code>{{ table.name }}</code>: {{ table.problem }}.</p>
     {% elif not table.rows %}
     <p>{{ empty }}</p>
     {% else %}
-    <table class="tbl ops-liste">
+    <div class="ops-scroll">
+    <table class="tbl ops-liste ops-dicht">
       <thead>
         <tr>{% for column in table.columns %}<th scope="col">{{ column }}</th>{% endfor %}</tr>
       </thead>
@@ -22,6 +23,7 @@
         {% endfor %}
       </tbody>
     </table>
+    </div>
     <p class="muted">The newest {{ table.rows | length }} of {{ table.total }} rows of <code>{{ table.name }}</code>, the newest first.</p>
     {% endif %}
 {% endmacro %}
@@ -68,7 +70,7 @@
         {% for code, words in reasons.items() %}<option value="{{ code }}">{{ words }}</option>{% endfor %}
       </select>
       <label for="reference">Ticket or issue number</label>
-      <input id="reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
+      <input title="A ticket or issue number: digits, with or without a leading #, for example 829 or #829" id="reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
       <button type="submit" class="primary">Show the log</button>
     </form>
     {% endif %}

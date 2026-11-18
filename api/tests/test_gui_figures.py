@@ -252,3 +252,11 @@ def test_page_without_tenant_is_503(client):
 def test_operations_view_links_to_the_page(db, client, now):
     _tenant(db, "Eins")
     assert 'href="/gui/kennzahlen"' in client.get("/gui").text
+
+
+def test_a_cost_that_is_unknown_for_every_call_is_no_zero():
+    """#829-15: "0,00 EUR" reads as a real zero while no cost is known."""
+    unknown = Figures(3, 2, 0, 0, 0, 0, 3)
+    assert unknown.cost_per_order_cents is None
+    assert Figures(3, 2, 0, 0, 0, 30, 1).cost_per_order_cents == 15
+    assert Figures(2, 2, 0, 0, 0, 0, 0).cost_per_order_cents == 0
