@@ -40,7 +40,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Text, cast, func, literal, select
+from sqlalchemy import Text, cast, func, literal, select, update
 from sqlalchemy.dialects.postgresql import aggregate_order_by
 from sqlalchemy.orm import Session
 
@@ -88,6 +88,7 @@ DAY_HOURS = "day_hours"
 OPEN, KEPT, UNDONE = "open", "kept", "undone"
 SET = "set"
 DISMISSED = "dismissed"
+SUGGESTED = "suggested"
 NO_SPAN = "Bitte Beginn und Ende angeben, das Ende nicht gleich dem Beginn."
 OVERNIGHT = (
     "Das Ende liegt vor dem Beginn. Geht der Tag über Mitternacht, "
@@ -679,8 +680,9 @@ def bookings_outside_hours(
 
 
 def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> str:
-    """A fingerprint of the open cards for the event stream (gui/sse.py),
-    hashed in the database: no card rows with their JSONB per tablet tick."""
+    """A fingerprint of the open cards and the tables listed below them for
+    the event stream (gui/sse.py), hashed in the database: no card rows with
+    their JSONB per tablet tick."""
     each = func.concat(
         cast(StaffChange.id, Text), ":", cast(StaffChange.updated_at, Text)
     )
@@ -697,11 +699,10 @@ def cards_change_token(session: Session, tenant_id: uuid.UUID, today: date) -> s
             StaffChange.day >= today,
         )
     )
-    if digest == hashlib.md5(b"").hexdigest():  # no open card, nothing to list
-        return ""
-    # The guest lists on the cards hang on the confirmed tables (#710) and on
-    # the hours as they stand: the weekly ones and every date's (#819). The
-    # hours by their content: a save replaces its rows within one transaction.
+    # The guest lists on the cards and below them hang on the confirmed tables
+    # (#710), also with no card open (#764), and on the hours as they stand:
+    # the weekly ones and every date's (#819). The hours by their content: a
+    # save replaces its rows within one transaction.
     tables = session.execute(
         select(func.count(), func.max(Reservation.updated_at)).where(
             Reservation.tenant_id == tenant_id,
@@ -907,6 +908,17 @@ def _write(
             hours.closes,
         )
         row.like_weekday, row.note = hours.like_weekday, hours.note
+    # Hours set by hand answer the date's holiday card too (#764): left open,
+    # it says the weekly hours hold, and a tap on it is dropped beside this row.
+    session.execute(
+        update(SpecialDay)
+        .where(
+            SpecialDay.tenant_id == tenant_id,
+            SpecialDay.date == day,
+            SpecialDay.status == SUGGESTED,
+        )
+        .values(status=DISMISSED)
+    )
     session.flush()
 
 

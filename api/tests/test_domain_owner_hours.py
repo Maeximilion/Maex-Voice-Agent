@@ -719,11 +719,12 @@ def test_a_suggested_holiday_returned_to_the_weekly_hours_is_answered(
     _suggest(session, tenant_id)
     (card,) = _open_suggestion(session, tenant_id)
     staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(closed=True), NOW)
-    # Both rows: the owner's counts, the suggestion still waits.
+    # The owner's row counts and answers the suggestion (#764).
     assert sorted(_christmas(session, tenant_id)) == [
+        ("dismissed", False),
         ("set", True),
-        ("suggested", False),
     ]
+    assert _open_suggestion(session, tenant_id) == []
     assert staff.set_day_hours(session, tenant_id, CHRISTMAS, DayHours(), NOW) is True
     assert _christmas(session, tenant_id) == [("dismissed", False)]
     assert _open_suggestion(session, tenant_id) == []
