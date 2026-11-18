@@ -1,6 +1,7 @@
 """domain/status/holidays and jobs/holidays: the calendar, suggestions that change
 no hours until the team answers, the answers, the pass over tenants (T-9.5)."""
 
+import threading
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
@@ -168,6 +169,44 @@ def test_a_date_the_team_already_set_is_not_suggested(session, tenant_id):
     session.add(SpecialDay(tenant_id=tenant_id, date=ALL_SAINTS, closed=True))
     session.commit()
     assert days.suggest(session, tenant_id, "BW", date(2026, 10, 20)) == 0
+
+
+def test_suggest_waits_for_a_staff_change_of_the_restaurant(
+    migrated_db_url, session, tenant_id
+):
+    """#862: the job takes the lock every staff change takes first
+    (`staff_changes._locked`). Without it, a date the staff set between the
+    job's read and its insert got a suggestion beside the row, and "closed"
+    tapped on it would close the date again."""
+    engine = create_engine(migrated_db_url)
+    staff = Session(engine)
+    staff.scalars(
+        select(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant_id)
+        .with_for_update()
+    ).one()
+    result = {}
+
+    def job() -> None:
+        with Session(engine) as other:
+            result["written"] = days.suggest(other, tenant_id, "BW", date(2026, 10, 20))
+            other.commit()
+
+    runner = threading.Thread(target=job)
+    runner.start()
+    runner.join(timeout=1)
+    try:
+        assert runner.is_alive(), "the job did not wait for the staff change"
+    finally:
+        staff.add(
+            SpecialDay(tenant_id=tenant_id, date=ALL_SAINTS, closed=True, status="set")
+        )
+        staff.commit()
+        staff.close()
+        runner.join(timeout=10)
+        engine.dispose()
+    assert result["written"] == 0
+    assert [r.status for r in _rows(session, tenant_id)] == ["set"]
 
 
 def test_the_horizon_reaches_into_the_next_year(session, tenant_id):

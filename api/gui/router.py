@@ -1692,6 +1692,8 @@ def floor_plan_save(
 
 NO_CHANGE = "Keine Änderung."
 PHONE_HELD = "Gilt bis Betriebsschluss. Der Inhaber sieht es auf der Übersicht."
+# Back to the number that held before: the card closed as undone (#861).
+PHONE_BACK = "Zurückgenommen, es gilt wieder die Nummer von vorher."
 HOURS_HELD = "Gilt sofort. Der Inhaber sieht es auf der Übersicht."
 HOURS_WAIT = "Wartet auf den Inhaber: die Karte steht auf der Übersicht."
 NO_DATE = "Bitte einen Tag wählen."
@@ -1818,6 +1820,9 @@ def check_answer(
         except AppError as exc:
             session.rollback()
             logger.info("Check card not decided: %s", exc.message)
+            # Why, where the domain says it: hours that reach into a date
+            # beside (#862).
+            return _checks_fragment(request, session, exc.say)
     return _checks_fragment(request, session)
 
 
@@ -1883,7 +1888,10 @@ def team_phone_change(
         return _phone_sheet(
             request, session, tenant, exc.say or SWITCH_FAILED, status=409
         )
-    message = PHONE_HELD if card is not None else NO_CHANGE
+    if card is None:
+        message = NO_CHANGE
+    else:
+        message = PHONE_BACK if card.status == staff.UNDONE else PHONE_HELD
     return _phone_sheet(request, session, tenant, message, "ok")
 
 

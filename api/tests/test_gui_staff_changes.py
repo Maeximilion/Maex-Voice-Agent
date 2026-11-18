@@ -15,7 +15,7 @@ from api.config import settings
 from api.core.time import business_day
 from api.db import get_db
 from api.domain.status import holidays
-from api.domain.status.staff_changes import change_team_phone
+from api.domain.status.staff_changes import DayHours, change_team_phone, set_day_hours
 from api.main import app
 from api.models import Reservation, ServiceConfig, SpecialDay, StaffChange
 from scripts.seed import seed
@@ -81,6 +81,20 @@ def _config(engine) -> ServiceConfig:
         return session.scalars(select(ServiceConfig)).one()
 
 
+def test_back_to_the_standard_number_says_the_change_is_undone(client, engine):
+    """#861: the card closes as undone, so the sheet no longer says the number
+    holds to closing or that the owner sees it on the board."""
+    standard = _config(engine).team_phone
+    client.post("/gui/teamnummer", data={"nummer": NUMBER}, headers=HX)
+    back = client.post("/gui/teamnummer", data={"nummer": standard}, headers=HX)
+    assert back.status_code == 200
+    assert "Gilt bis Betriebsschluss" not in back.text
+    assert "Zurückgenommen, es gilt wieder die Nummer von vorher." in back.text
+    assert [c.status for c in _cards(engine)] == ["undone"]
+    cards = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert "Teamnummer heute" not in cards
+
+
 def test_the_team_number_for_today_and_its_card(client, engine):
     standard = _config(engine).team_phone
     sheet = client.get("/gui/teamnummer", headers=HX)
@@ -95,6 +109,7 @@ def test_the_team_number_for_today_and_its_card(client, engine):
 
     cards = client.get("/gui/fragments/pruefen", headers=HX).text
     assert "Teamnummer heute" in cards and "Als Standard übernehmen" in cards
+
     board = client.get("/gui/").text
     assert 'id="pruefen-liste"' in board and "Teamnummer heute" in board
     assert 'hx-get="/gui/einstellungen"' in board
@@ -351,6 +366,33 @@ def _answer(client, engine, choice):
         f"/gui/pruefen/{card.id}/{choice}", data=_seen(card), headers=HX
     ).text
     return answered, client.get("/gui/fragments/pruefen", headers=HX).text
+
+
+def test_a_keep_refused_for_the_date_beside_says_why(client, engine):
+    """#862: the staff's night waits; the owner opens the next date earlier
+    meanwhile. Keeping it is refused, and the board says why."""
+    later = _today() + timedelta(days=7)
+    client.post(
+        "/gui/tageszeiten",
+        data={
+            "datum": later.isoformat(),
+            "art": "zeiten",
+            "von": "18:00",
+            "bis": "11:00",
+            "nachts": "1",
+        },
+        headers=HX,
+    )
+    with Session(engine) as session:
+        set_day_hours(
+            session,
+            session.scalar(select(ServiceConfig.tenant_id)),
+            later + timedelta(days=1),
+            DayHours(opens=time(10), closes=time(14)),
+        )
+    answered, _board = _answer(client, engine, "uebernehmen")
+    assert "reicht in die Zeiten am" in answered
+    assert [c.status for c in _cards(engine)] == ["open"]
 
 
 def test_a_kept_closure_still_names_its_guests(client, engine):

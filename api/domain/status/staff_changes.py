@@ -5,7 +5,9 @@ hours of a given date. Both are temporary and reviewed:
 
 - A team number set by the staff holds to the end of the business day
   (`service_config.team_phone_today`), then the standard holds again, unless
-  the owner keeps it. Read only through `team_phone_at`.
+  the owner keeps it. Read only through `team_phone_at`. The business day
+  ends at 05:00 (`core/time.py`), not at closing: calls still reach the team
+  after closing, and a closed date has no closing (#861, docs/20 §5).
 - A date's hours hold at once for today, and for a later date when they close
   it or shorten it. Longer or extra hours for a later date wait for the owner.
   Asking for what held before the staff touched the date holds at once too: it
@@ -187,21 +189,17 @@ class DayHours:
         )
 
 
-def dialable_numbers() -> list[str]:
-    """The numbers the dialplan transfers to: TEAM_PHONE and TRANSFER_TARGETS,
-    compared exactly as written there (docs/20 §5, T-10.13). A team number
-    elsewhere would never ring, so the staff choose from these only."""
-    listed = [settings.team_phone, *settings.transfer_targets.split(",")]
-    return list(dict.fromkeys(n.strip() for n in listed if n.strip()))
-
-
 def sheet_numbers() -> list[str]:
-    """The dialable numbers the sheet offers: those written in E.164. The
-    dialplan compares exactly as written and a typed number is normalised, so
-    a listed national number (`0721...`) could be offered and never accepted
-    (#596). The dialplan itself still dials it, so `dialable_numbers` keeps it
-    for the tenant's own number (`provision`)."""
-    return [n for n in dialable_numbers() if E164.match(n)]
+    """The numbers a team number may be: TEAM_PHONE and TRANSFER_TARGETS,
+    those the dialplan transfers to, compared exactly as written there
+    (docs/20 §5, T-10.13); a team number elsewhere would never ring. Only
+    those written in E.164: a typed number is normalised, so a listed
+    national one (`0721...`) could be offered and never accepted (#596).
+    TEAM_PHONE is E.164 by the start check (`config.py`, #861), so the
+    standard number is always among them."""
+    listed = [settings.team_phone, *settings.transfer_targets.split(",")]
+    numbers = dict.fromkeys(n.strip() for n in listed if n.strip())
+    return [n for n in numbers if E164.match(n)]
 
 
 def team_phone_at(config: ServiceConfig, now: datetime) -> str:
@@ -234,6 +232,9 @@ def change_team_phone(
         config.team_phone_today = config.team_phone_today_until = None
     else:
         config.team_phone_today = number
+        # To the business day's end (05:00), not to closing (#861): transfers,
+        # outage legs and callbacks ring the team after closing too, a closed
+        # date has no closing, and the card is the business day's.
         config.team_phone_today_until = clock.business_day_bounds_utc(today, zone)[1]
     card = _open_card(session, tenant_id, TEAM_PHONE, today) or _new_card(
         session, tenant_id, TEAM_PHONE, today, {"number": holding}
@@ -387,7 +388,9 @@ def change_day_hours(
     of that date. Asking for what holds now withdraws a waiting request. None
     when nothing changes. An end before the start runs past midnight and is
     refused unless the staff say so (`overnight`): swapped times would open
-    the night. Raises InvalidInput. Commits."""
+    the night. New hours whose night reaches into the next date's, or that
+    start inside the night before, are refused too (`_night_checked`).
+    Raises InvalidInput. Commits."""
     hours = _checked(hours, overnight)
     now = now or clock.utcnow()
     _config, zone = _locked(session, tenant_id)
@@ -408,6 +411,8 @@ def change_day_hours(
     if hours == holding and (card is None or card.after == hours.as_dict()):
         session.commit()
         return None
+    if hours != holding:
+        _night_checked(session, tenant_id, day, hours, zone)
     if card is None:
         card = _new_card(session, tenant_id, DAY_HOURS, day, holding.as_dict())
     # What the card showed until now: what held, or the request that waited.
@@ -503,6 +508,7 @@ def set_day_hours(
     if hours == holding:
         session.commit()
         return False
+    _night_checked(session, tenant_id, day, hours, zone)
     _write(session, tenant_id, day, hours, row)
     session.add(
         AuditLog(
@@ -585,11 +591,15 @@ def decide(
         if keep:
             config.team_phone = card.after["number"]
         config.team_phone_today = config.team_phone_today_until = None
-    elif keep:
-        if not card.held:
-            _write(session, tenant_id, card.day, DayHours.of(card.after))
+    elif keep and card.held:
+        pass  # The hours hold already.
     else:
-        _write(session, tenant_id, card.day, DayHours.of(card.before))
+        hours = DayHours.of(card.after if keep else card.before)
+        if keep or card.held:
+            # The hours move, and a date beside may have changed since (#862);
+            # undoing a request that only waited moves nothing.
+            _night_checked(session, tenant_id, card.day, hours, zone)
+        _write(session, tenant_id, card.day, hours)
     _close(card, KEPT if keep else UNDONE, now)
     session.add(
         AuditLog(
@@ -628,6 +638,7 @@ def bookings_outside_hours(
     hours: DayHours,
     zone: str,
     before: DayHours | None = None,
+    now: datetime | None = None,
 ) -> list[BookingToCall]:
     """The confirmed tables of the business day that `hours` would leave
     without a dine-in window: all of them when closed, the ones outside the
@@ -635,7 +646,10 @@ def bookings_outside_hours(
     2026-11-13): nothing is cancelled and no guest is messaged. By time.
     A table the team booked outside the hours on purpose (`off_hours`, #819)
     is listed only when a window held it before the change: one the hours
-    never held is no news to its guest."""
+    never held is no news to its guest. Only tables from `now` on: a closure
+    held at 15:00 has no call to make to the lunch guests (#862), as the
+    board's own list (`weekly.tables_outside_hours`)."""
+    now = now or clock.utcnow()
     tz = ZoneInfo(zone)
     after = load_hours(session, tenant_id, day, days=1)
 
@@ -661,7 +675,7 @@ def bookings_outside_hours(
             Reservation.tenant_id == tenant_id,
             Reservation.status == "confirmed",
             Reservation.deleted_at.is_(None),
-            Reservation.reserved_for >= min(a for a, _ in span),
+            Reservation.reserved_for >= max(now, min(a for a, _ in span)),
             Reservation.reserved_for < max(b for _, b in span),
             # The team never calls a self-test's guest (#574).
             Reservation.is_test.is_(False),
@@ -762,6 +776,45 @@ def _checked(hours: DayHours, overnight: bool) -> DayHours:
             "hours past midnight not confirmed", say=past_midnight(hours.closes)
         )
     return hours
+
+
+def _night_checked(
+    session: Session, tenant_id: uuid.UUID, day: date, hours: DayHours, zone: str
+) -> None:
+    """A date's night ends before the next date's first span of a service
+    starts, and the night before the date ends before its spans start: every
+    reader takes the night first, so a night that reached into the next span
+    would be the window found there and its end the closing time (#862). The
+    weekly writer's rule (`weekly._night_faults`), with the dates around `day`
+    as they hold. The caller holds the restaurant's lock. Raises InvalidInput."""
+    # Imported here: weekly imports this module.
+    from api.domain.status.weekly import Span, _night_faults
+
+    tz = ZoneInfo(zone)
+    held = load_hours(session, tenant_id, day, days=1)
+    if hours.normal:
+        held.special.pop(day, None)
+    else:
+        held.special[day] = hours.row(tenant_id, day)
+
+    def spans(on: date) -> dict[str, list[Span]]:
+        return {
+            service: [
+                Span(opens.time(), closes.time())
+                for opens, closes in windows_for_day(held, on, service, tz)
+            ]
+            for service in SERVICES
+        }
+
+    around = {
+        (day - timedelta(days=1)).weekday(): spans(day - timedelta(days=1)),
+        (day + timedelta(days=1)).weekday(): spans(day + timedelta(days=1)),
+    }
+    own = spans(day)
+    for service in SERVICES:
+        for say in _night_faults(around, day.weekday(), service, own[service]).values():
+            session.rollback()
+            raise InvalidInput("a night reaches into the next span", say=say)
 
 
 def _dialable(raw: str) -> str:

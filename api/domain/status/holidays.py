@@ -116,7 +116,10 @@ def suggest(session: Session, tenant_id: uuid.UUID, region: str, today: date) ->
     """Suggest the holidays of the next `SUGGEST_DAYS` days that have no row in
     `special_days` yet, whatever its status: a day the team already set or
     dismissed is its answer. Flushes, does not commit; returns how many rows
-    it wrote."""
+    it wrote. Holds the restaurant's lock to the caller's commit: a date the
+    staff set between `taken` and the insert would get a suggestion beside
+    its row (#862)."""
+    _lock(session, tenant_id)
     horizon = today + timedelta(days=SUGGEST_DAYS)
     due = {
         day: name
@@ -157,6 +160,16 @@ def suggest(session: Session, tenant_id: uuid.UUID, region: str, today: date) ->
         .returning(SpecialDay.id)
     ).all()
     return len(written)
+
+
+def _lock(session: Session, tenant_id: uuid.UUID) -> None:
+    """The lock every staff change takes first (`staff_changes._locked`):
+    the restaurant's settings row."""
+    session.scalars(
+        select(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant_id)
+        .with_for_update()
+    ).first()
 
 
 def _like(row: SpecialDay) -> int:
@@ -210,13 +223,9 @@ def answer(
     the suggestion is dismissed (one counting row per date, #441). Commits."""
     if choice not in ANSWERS:
         raise InvalidInput(f"Unknown answer {choice!r} to a holiday suggestion")
-    # The lock every staff change takes first (staff_changes._locked): a staff
-    # row for the same date cannot appear between `already_set` and the flush.
-    session.scalars(
-        select(ServiceConfig)
-        .where(ServiceConfig.tenant_id == tenant_id)
-        .with_for_update()
-    ).first()
+    # A staff row for the same date cannot appear between `already_set` and
+    # the flush.
+    _lock(session, tenant_id)
     day = session.scalars(
         select(SpecialDay)
         .where(SpecialDay.id == special_day_id, SpecialDay.tenant_id == tenant_id)
