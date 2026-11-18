@@ -192,6 +192,13 @@ STALE_PAGE = (
     "owner, the staff or another operator). The page shows what holds now; "
     "look at it before you repeat the step."
 )
+# A page read from a stack before its update past #811 sent no version, and
+# the updated stack takes no step without one (review of #837).
+STACK_UPDATED = (
+    "Nothing was done: the stack was updated since this page was read and "
+    "now checks the page's version. The page shows what holds now; repeat "
+    "the step from it."
+)
 COPY = "a passkey answered with an old counter, a copy?"
 NO_STORE = {"Cache-Control": "no-store"}
 # Times are stored and sent in UTC and shown in the restaurants' time.
@@ -1210,12 +1217,17 @@ def customer_manage(
 
     found = ask(step)
     context["said"] = _said(step, found)
-    if found == customers.STALE:
+    unversioned = step.changes and "seen" not in (step.body or {})
+    if found == customers.STALE or (unversioned and found == customers.NOT_TAKEN):
         # Nothing was done; the page reads what holds now, as "Read the state
         # again" would, with the same reason (#811).
+        stale = found == customers.STALE
         found = ask(customers.Step("access", customers.ACCESS_PATH))
         if isinstance(found, str):
-            context["said"] = ("danger", f"{STALE_PAGE} Read again: {found}.", "")
+            if stale:
+                context["said"] = ("danger", f"{STALE_PAGE} Read again: {found}.", "")
+        elif not stale and found.version:
+            context["said"] = ("danger", STACK_UPDATED, "")
     if not isinstance(found, str):
         context["access"] = found
         context["once"] = passkeys.issue(

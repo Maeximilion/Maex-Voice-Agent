@@ -1319,3 +1319,26 @@ def test_an_older_stack_is_managed_and_the_page_says_it_checks_nothing(
     assert answer.status_code == 200
     assert json.loads(seen[-1].content) == {"mode": "paused"}
     _took(sessions, "call-mode")
+
+
+def test_a_page_from_before_the_stacks_update_reads_it_again(
+    client, factors, clock, sessions, monkeypatch
+):
+    """Review of #837: a page read before its stack was updated past #811
+    sends no version, the updated stack does not take the step, and the page
+    reads the state again by itself and says why."""
+    seen: list[httpx.Request] = []
+    refused, read = _error("invalid_input"), _says(_access())
+
+    def updated(request: httpx.Request) -> httpx.Response:
+        return read(request) if request.method == "GET" else refused(request)
+
+    _world(sessions, monkeypatch, alpha=_managed(seen, answer=updated))
+    _signed_in(client, factors, clock)
+
+    answer = _post(client, "call-mode", mode="paused", seen="")
+
+    assert answer.status_code == 200
+    assert "the stack was updated since this page was read" in answer.text
+    assert f'name="seen" value="{SEEN}"' in answer.text
+    assert [request.method for request in seen] == ["POST", "GET"]

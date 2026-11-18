@@ -734,9 +734,10 @@ wrong customer changes nobody's restaurant. A missing reason or account is 400 `
   today (`null`: the standard holds). `team_phones` are the numbers the tablet's sheet offers
   (`sheet_numbers`), 20 at most; an empty number is `null`. A restaurant without its settings row
   answers with no mode, no number and
-  two empty lists. `version` is 16 hex digits over what the state shows and the newest audit row
-  of a change to it (`domain/operator.py` `MARKS`, and the owner's answer on a team number
-  card); a device's last use is not in it. No field of
+  two empty lists. `version` is 16 hex digits over the stored settings behind the state (not what holds at
+  this minute, so a call-mode window or the end of today's number makes no page old) and the
+  count and newest id of the audit rows of a change to it (`domain/operator.py` `MARKS`; the
+  count moves too when a row with a lower id commits late); a device's last use is not in it. No field of
   the state is a secret; a shown PIN and a new link are the only
   secrets an answer carries, and nothing but a body ever carries one.
 - The link is `https://<AGENT_DOMAIN>/gui/einrichten#<token>`. `AGENT_DOMAIN` is a setting of

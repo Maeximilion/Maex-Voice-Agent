@@ -1157,3 +1157,19 @@ def test_the_check_token_follows_the_hours_behind_a_card(session, tenant_id):
     later = SATURDAY + timedelta(days=7)
     staff.set_day_hours(session, tenant_id, later, DayHours(closed=True), NOW)
     assert staff.cards_change_token(session, tenant_id, TUESDAY) != changed
+
+
+def test_a_tablet_undoing_the_card_a_new_standard_kept_is_refused(session, tenant_id):
+    """Review of #837: the operator's standard kept today's card while the
+    owner's tablet still showed it; an undo from that tablet does nothing, so
+    it is refused, not answered as done. A keep is what happened: no error."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    (shown,) = _cards(session, tenant_id)
+    seen = shown.updated_at
+    staff.set_standard_team_phone(session, tenant_id, NUMBER, NOW, OPERATOR)
+
+    with pytest.raises(Conflict):
+        staff.decide(session, tenant_id, shown.id, keep=False, now=NOW, seen=seen)
+    staff.decide(session, tenant_id, shown.id, keep=True, now=NOW, seen=seen)
+
+    assert _config(session, tenant_id).team_phone == NUMBER

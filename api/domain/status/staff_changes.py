@@ -48,6 +48,7 @@ from api.config import settings
 from api.core import time as clock
 from api.core.errors import Conflict, InvalidInput, NotFound
 from api.core.time import business_day_bounds_utc
+from api.domain.access.sessions import audit
 from api.domain.customers.phone import E164, costly, normalize_phone
 from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status.holidays import holidays as statutory_holidays
@@ -297,15 +298,14 @@ def set_standard_team_phone(
         else:
             _audit(session, tenant_id, actor, ACTION_BEFORE, card, moved, number)
             holding = {"today": card.after["number"]}
-    session.add(
-        AuditLog(
-            tenant_id=tenant_id,
-            actor=actor,
-            action=ACTION_STANDARD,
-            entity="service_config",
-            entity_id=tenant_id,
-            payload={"from": before, "to": number},
-        )
+    audit(
+        session,
+        tenant_id,
+        actor,
+        ACTION_STANDARD,
+        tenant_id,
+        {"from": before, "to": number},
+        entity="service_config",
     )
     enqueue(
         session,
@@ -544,6 +544,16 @@ def decide(
     if card is None:
         session.rollback()
         raise NotFound(f"Staff change {card_id} not found")
+    asked = KEPT if keep else UNDONE
+    if (
+        seen is not None
+        and card.status not in (OPEN, asked)
+        and seen != card.updated_at
+    ):
+        # Closed since the tablet showed it, the other way (a new standard
+        # kept it, review of #837): saying "done" would hide that nothing was.
+        session.rollback()
+        raise Conflict(f"Staff change {card_id} changed since it was shown")
     if card.status != OPEN or card.day < clock.business_day(now, zone):
         session.commit()
         return

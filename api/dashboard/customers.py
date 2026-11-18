@@ -818,18 +818,12 @@ def _call_mode(form: dict[str, str]) -> Step | None:
     return Step("call_mode", CALL_MODE_PATH, {"mode": mode}, {"mode": mode})
 
 
-def _team_phone(form: dict[str, str]) -> Step | None:
+def _number(name: str, path: str, form: dict[str, str]) -> Step | None:
+    """Today's team number or the standard one: the same form, two steps."""
     number = form.get("number", "")
     if not PHONE.fullmatch(number):
         return None
-    return Step("team_phone", TEAM_PHONE_PATH, {"number": number})
-
-
-def _team_phone_standard(form: dict[str, str]) -> Step | None:
-    number = form.get("number", "")
-    if not PHONE.fullmatch(number):
-        return None
-    return Step("team_phone_standard", TEAM_PHONE_STANDARD_PATH, {"number": number})
+    return Step(name, path, {"number": number})
 
 
 # The last part of the manage page's addresses, and how each reads its form.
@@ -840,8 +834,10 @@ STEPS: dict[str, Callable[[dict[str, str]], Step | None]] = {
     "sign-out": _sign_out,
     "setup-link": _setup_link,
     "call-mode": _call_mode,
-    "team-phone": _team_phone,
-    "team-phone-standard": _team_phone_standard,
+    "team-phone": partial(_number, "team_phone", TEAM_PHONE_PATH),
+    "team-phone-standard": partial(
+        _number, "team_phone_standard", TEAM_PHONE_STANDARD_PATH
+    ),
 }
 
 

@@ -1158,3 +1158,50 @@ def test_a_step_that_broke_pushes_nothing(http, session, login, stack, monkeypat
     with pytest.raises(RuntimeError, match="the step broke"):
         _ask(http, "POST", LINK)
     assert _pushed(session) == []
+
+
+def test_the_version_does_not_move_with_the_clock(session, login, stack):
+    """Review of #837: today's number ending at its day's end is nobody's
+    change, so a page read before it is not old after it."""
+    change_team_phone(session, stack.id, NUMBER, NOW)
+    page = operator.access(session, stack, NOW).version
+
+    later = operator.access(session, stack, NOW + timedelta(days=2))
+
+    assert later.team_phone != NUMBER
+    assert later.version == page
+
+
+def test_a_change_whose_row_commits_late_still_moves_the_version(session, login, stack):
+    """Review of #837: a mark with a lower id than the newest one a page read
+    (its transaction committed later) still makes that page old."""
+    page = operator.access(session, stack, NOW).version
+    newest = session.scalar(select(func.max(AuditLog.id))) or 0
+    session.add(
+        AuditLog(
+            id=newest + 1000,
+            tenant_id=stack.id,
+            actor="gui:owner",
+            action="gui.team_pin_set",
+            entity="gui_account",
+            entity_id=login.id,
+            payload={},
+        )
+    )
+    session.commit()
+    seen = operator.access(session, stack, NOW).version
+    session.add(
+        AuditLog(
+            id=newest + 500,
+            tenant_id=stack.id,
+            actor="gui:owner",
+            action="gui.team_pin_set",
+            entity="gui_account",
+            entity_id=login.id,
+            payload={},
+        )
+    )
+    session.commit()
+
+    assert seen != page
+    assert operator.access(session, stack, NOW).version != seen
