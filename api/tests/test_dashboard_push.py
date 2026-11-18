@@ -8,6 +8,7 @@ the process, and stop it to see a push wait and come through afterwards.
 
 import json
 import threading
+import time
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -215,3 +216,105 @@ def test_a_round_stops_at_the_first_failure(sessions, server):
         push.queue(db, "second", START)
         assert push.deliver_once(db, START) == 0
     assert [row.attempts for row in _queued(sessions)] == [1, 0]
+
+
+# --- the sender thread (#853) -------------------------------------------------------
+
+
+class _Db:
+    def __enter__(self) -> "_Db":
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+def _wait_for(condition, seconds: float = 5.0) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if condition():
+            return True
+        time.sleep(0.01)
+    return False
+
+
+def test_the_sender_runs_rounds_survives_a_raising_one_and_stops(monkeypatch, caplog):
+    rounds: list[int] = []
+
+    def deliver(db: Any, now: Any) -> int:
+        rounds.append(1)
+        if len(rounds) == 1:
+            raise RuntimeError("a bad round")
+        return 0
+
+    monkeypatch.setattr(push, "INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(push, "SessionLocal", lambda: _Db())
+    monkeypatch.setattr(push, "deliver_once", deliver)
+    monkeypatch.setattr(settings, "operator_push_url", "http://push.test/")
+    monkeypatch.setattr(settings, "operator_push_token", TOKEN)
+    with caplog.at_level("ERROR"):
+        stop = push.start()
+        assert stop is not None
+        # The raising round did not end the loop: a later round came.
+        assert _wait_for(lambda: len(rounds) >= 3)
+    assert "Operator push round failed" in caplog.text
+    stop.set()
+    (sender,) = [t for t in threading.enumerate() if t.name == "operator-push"]
+    sender.join(timeout=5)
+    assert not sender.is_alive()
+    seen = len(rounds)
+    time.sleep(0.05)
+    assert len(rounds) == seen
+
+
+def test_no_push_server_means_no_sender(monkeypatch):
+    monkeypatch.setattr(settings, "operator_push_url", "")
+    monkeypatch.setattr(settings, "operator_push_token", "")
+    assert push.start() is None
+    assert not [t for t in threading.enumerate() if t.name == "operator-push"]
+
+
+def test_the_dashboard_starts_the_sender_and_stops_it_with_the_app(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from api.dashboard import app as web
+
+    stop = threading.Event()
+    monkeypatch.setattr(push, "start", lambda: stop)
+    with TestClient(web.app):
+        assert not stop.is_set()
+    assert stop.is_set()
+
+
+# --- a push that cannot be sent shows on the home page (#853) -----------------------
+
+
+def test_pushes_stuck_past_the_ladder_are_counted_and_shown(
+    client, factors, clock, sessions, server
+):
+    server.stop()
+    _signed_in(client, factors, clock)
+    with sessions() as db:
+        push.queue(db, "never goes out", clock.at)
+        assert push.stuck(db) == 0
+    assert "could not be sent" not in client.get("/").text
+
+    # Four failed rounds walk the ladder; the fifth is past it.
+    at = clock.at
+    for _ in range(len(push.BACKOFF_SECONDS)):
+        with sessions() as db:
+            push.deliver_once(db, at)
+        at = _queued(sessions)[0].next_attempt_at
+        with sessions() as db:
+            assert push.stuck(db) == 0
+    with sessions() as db:
+        push.deliver_once(db, at)
+        assert push.stuck(db) == 1
+    assert "1 push to the ops topic could not be sent" in client.get("/").text
+
+
+def test_a_sent_push_is_not_stuck(sessions, server):
+    with sessions() as db:
+        push.queue(db, "goes out", START)
+        push.deliver_once(db, START)
+        assert push.stuck(db) == 0

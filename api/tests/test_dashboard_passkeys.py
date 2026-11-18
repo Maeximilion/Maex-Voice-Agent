@@ -4,6 +4,7 @@ against a scratch operator database, with a software authenticator
 
 import json
 import re
+import threading
 import uuid
 from datetime import timedelta
 from typing import Any
@@ -1114,6 +1115,40 @@ def test_the_cap_counts_one_address_and_sign_in_challenges_only(sessions):
     assert "attempt:more" not in {row.bound_to for row in rows}
 
 
+def test_parallel_asks_of_one_address_cannot_all_pass_the_cap(sessions):
+    """#853: the advisory lock per address is what keeps the count honest. Without
+    it every ask counts the rows before any other has committed and all pass."""
+    asks = passkeys.SIGN_IN_PER_ADDRESS * 3
+    barrier = threading.Barrier(asks)
+    results: list[bool] = []
+
+    def ask(number: int) -> None:
+        with sessions() as db:
+            barrier.wait()
+            try:
+                passkeys.issue(
+                    db, f"attempt:p{number}", passkeys.SIGN_IN, START, "1.2.3.4"
+                )
+                results.append(True)
+            except passkeys.TooMany:
+                results.append(False)
+
+    threads = [threading.Thread(target=ask, args=(n,)) for n in range(asks)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert len(results) == asks
+    assert sum(results) == passkeys.SIGN_IN_PER_ADDRESS
+    with sessions() as db:
+        rows = db.scalars(
+            select(OperatorChallenge).where(
+                OperatorChallenge.client_address == "1.2.3.4"
+            )
+        ).all()
+    assert len(rows) == passkeys.SIGN_IN_PER_ADDRESS
+
+
 def test_the_challenge_address_migration_goes_down_and_up(operator_url):
     cfg = _config(operator_url)
     command.upgrade(cfg, "head")
@@ -1356,6 +1391,24 @@ def test_the_break_glass_works_when_the_push_does_not(
     assert cli.main(["reset", "maxi"]) == 0
     printed = capsys.readouterr()
     assert "otpauth://" in printed.out and "push" in printed.err
+    # As the dashboard's `_alert`: a takeover push that was lost leaves a row.
+    (row,) = _audited(sessions, "operator.push_failed")
+    assert row.actor == "cli"
+    assert row.detail == {"what": "every factor reset", "account": "maxi"}
+
+
+def test_the_break_glass_still_shows_its_factors_when_the_alert_row_cannot_be_written(
+    sessions, monkeypatch, capsys, factors
+):
+    def gone(*args: Any, **kwargs: Any) -> None:
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr(push, "queue", gone)
+    monkeypatch.setattr(cli, "audit", gone)
+    monkeypatch.setattr(cli, "SessionLocal", sessions)
+    monkeypatch.setattr(cli, "getpass", lambda _prompt: PASSWORD)
+    assert cli.main(["reset", "maxi"]) == 0
+    assert "otpauth://" in capsys.readouterr().out
 
 
 def test_a_registration_overtaken_by_the_break_glass_adds_nothing(

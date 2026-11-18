@@ -845,6 +845,18 @@ def test_a_step_that_broke_raises_its_own_error_when_its_outcome_cannot_be_writt
         _ask(http, "POST", CALL_MODE, {"mode": "primary"})
 
 
+def test_a_refusal_reaches_the_caller_when_its_outcome_cannot_be_written(
+    http, session, login, stack, monkeypatch
+):
+    """The refusal is the answer; a lost outcome row must not turn it into a 500."""
+
+    def gone(*args: object, **kwargs: object) -> None:
+        raise ConnectionError("the database is gone")
+
+    monkeypatch.setattr(operator, "_outcome", gone)
+    _refused(_ask(http, "POST", CALL_MODE, {"mode": "nonsense"}))
+
+
 def test_the_access_read_has_no_outcome_row(http, session, stack):
     _data(_ask(http, "GET", ACCESS))
     assert _audit(session, "ops.access_read", outcomes=True)[-1].action == (
