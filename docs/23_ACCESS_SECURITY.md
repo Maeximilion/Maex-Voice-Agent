@@ -523,7 +523,10 @@ the second builds against.
   team number is today's (`service_config.team_phone_today`) until the end of the business day, and
   the staff choose it only among the numbers the dialplan dials (`TEAM_PHONE` and
   `TRANSFER_TARGETS`, T-10.13), so the tablet can never name a number that would not ring; the
-  transfer and the call routing read it. A date's hours: today's and shorter ones hold at once, and so
+  transfer and the call routing read it, and so do the dialplan's own outage legs, which ask
+  `voice` for it at the start of a call (#835). Only when `voice` cannot be asked then (down,
+  refusing the media token, the database down) do they ring `TEAM_PHONE` of `.env` first; a leg
+  nobody takes at today's number is followed by one at `TEAM_PHONE` (docs/20 §5). A date's hours: today's and shorter ones hold at once, and so
   does a return to what held before the staff came (the staff take their own change back); longer
   or extra hours for a later date wait on the card, and so do times on a date "like" another
   weekday, today's too and after a held closure of that date (#710). One open card per kind and date: a second

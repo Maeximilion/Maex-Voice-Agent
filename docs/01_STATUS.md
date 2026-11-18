@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.7
+> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.8
 
 ---
 
@@ -315,6 +315,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.66.8 · 18.11.2026:** Fix PR for #835: the dialplan's own outage legs ring the team number the restaurant set (`team_phone_at`, asked from `voice` at the call's start, `GET /team`, kept only when on the list), a leg nobody took is followed by the team number and then `TEAM_PHONE` once each; `TEAM_PHONE` of `.env` rings first only when `voice` cannot be asked (docs/20 §5, docs/23 §6), new drill "the team at today's number"
 - **v2.66.7 · 18.11.2026:** Fix PR for #802: a staff card's origin follows a holiday answer given while it waits, and a return to the origin's exact hours keeps its holiday name and holds at once
 - **v2.66.6 · 18.11.2026:** Fix PR for #853 (seven P3 findings of the blind reviews of #832 and #836), item 3 of the model trial #843, Claude's choices awaiting Maxi: (a) a refused operator step still returns its refusal when its outcome row cannot be written; (b) tests for the token check of a body FastAPI cannot parse (the route walk, kitchen and calls), the parallel sign-in challenges under the per-address lock, the push sender thread and its lifespan; (c) the break glass writes `operator.push_failed` when its push cannot be queued; (d) a push that failed past the whole ladder of waits shows as a banner on the dashboard's home page (`push.stuck`, no new endpoint); (e) a stack without a customer key: documented as one manual UPDATE in its own database (docs/23 §8), no code path added
 - **v2.66.5 · 18.11.2026:** Phone comment and docs paragraph fixed (#851)

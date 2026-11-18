@@ -49,7 +49,7 @@ caller → telephone network → access (test: the pilot's router as PBX · oper
 |---|---|---|
 | Registration, dialplan, media | Compose service `asterisk` (22.11.0, pinned by digest; not older, §11; the dialplan asks `voice` at `/media/ready` before it dials it, as a failed media connection can crash 22.11.0, #768, until #775), profile `voice`; built (T-1.11) | `deploy/asterisk/conf/`, rendered by `deploy/asterisk/render.sh` |
 | Voice process | Compose service `voice`, the API's image with the speech engines (target `voice` of `api/Dockerfile`), one worker, profile `voice`; built (T-1.11) | `api/telephony/app.py` |
-| WebSocket endpoint, dialplan callback | inside `voice`: `/media`, `/media/ready` (asked before `/media` is dialled, #768), `/calls/{id}/ending`, `/calls/{id}/missed` and `/calls/{id}/recording/stop`; built (T-1.11, T-10.8, T-11.3) | `api/telephony/router.py` |
+| WebSocket endpoint, dialplan callback | inside `voice`: `/media`, `/media/ready` (asked before `/media` is dialled, #768), `/team` (the team number for the dialplan's own legs, #835), `/calls/{id}/ending`, `/calls/{id}/missed` and `/calls/{id}/recording/stop`; built (T-1.11, T-10.8, T-11.3) | `api/telephony/router.py` |
 | Media protocol of Asterisk and the line on it | built (T-1.11) | `api/telephony/adapters/asterisk.py` |
 | Call session, provider neutral | built (T-10.4) | `api/telephony/session.py` |
 | Ports for ear, mouth and the line | built (T-10.4) | `api/telephony/speech.py` |
@@ -210,11 +210,11 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 
 | What fails | Who notices | What rings the team |
 |---|---|---|
-| `voice` is down or refuses the media connection | the dialplan, which asks `/media/ready` with the media token before it dials `voice` (#768) | the dialplan dials the team number |
+| `voice` is down or refuses the media connection | the dialplan, which asks `/media/ready` with the media token before it dials `voice` (#768) | the dialplan dials `TEAM_PHONE` of `.env`: it never asked `voice` for the restaurant's number (#835, below) |
 | A crash in the middle of a call, or a transfer asked for by the core | the dialplan asks `voice` after the leg ends; only an explicit "done" hangs up. A crash leaves the call log open: the dispatcher closes it as `error` once the call is `max_call_seconds` plus 10 minutes old (#545) | the dialplan dials the team number |
 | Model, database, a tool | the existing paths in `agent/loop.py` and `telephony/handler.py` | `TelephonyPort.transfer`, to the team number of the day once the routing was read (#674). The key terms for the ear are best effort: their failure changes nothing the caller hears. A caller id longer than 40 characters counts as withheld, not as a reason to refuse the call |
 | A Docker network between `voice` and Asterisk or the database is cut | the dialplan, Asterisk's pings, or the timeouts of the phone line's database sessions (§6) | the dialplan dials the team number |
-| The team does not pick up | the dial status | at another number of the list (`TRANSFER_TARGETS`): `TEAM_PHONE` once (T-10.13); at `TEAM_PHONE`: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8) |
+| The team does not pick up | the dial status | the team number next, then `TEAM_PHONE`, each number once (T-10.13, #835, below); at both: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8) |
 | The recording: the question, its log, the row or the file | `agent/recording.py`, the session | nothing has to: the call goes on without a recording, and in mode `shadow` the team rings as on a no (§4, T-11.3) |
 | The caller hangs up in mode `shadow` with the recording question, or on the sentence before a transfer of the AI, or on the outage sentence of a failed turn, before the line has the transfer | the session (`closed`), the handler | nothing can: a callback card under the caller id instead, with the card the core wrote for the handover, none for a withheld number; the call is logged `callback` or `abandoned`, never `transferred` (§4, #252 no. 9, #674); the outage sentence's call stays `error` and gets its card too (#741). Only on a call we answered: a leg closed before our first sentence is the row below or a caller who gave up while it rang (#652) |
 | `voice` takes the call and says nothing for 10 s (a slow start of the call, a mouth that hangs) | the dialplan: its `Dial` to `voice` gives up, our leg is closed | the dialplan dials the team number. The call log shows `abandoned`: `voice` cannot tell this from a caller who gave up while it rang (#652) |
@@ -226,6 +226,22 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 
 **A team number changed during a call** (#683). The agent's handover (`transfer_to_team`) reads the number from the database at that moment, so a change on the tablet reaches it. The legs `voice` dials on its own, an outage (`_fail`) and the shadow leg, read the number again when they dial (#710), once, in a savepoint bound by the line's 2 s statement limit and after the outage sentence has gone out; when that read fails (the database is the outage) they use the number read at the start of the call, so they work when the database does not. A change in the middle of a call whose database cannot be read rings the old number; if that does not answer, the fallback number and then the missed-call card follow, and no call is lost (rule 5).
 
+**Which number the dialplan's own legs ring** (#835). Where the table says "the dialplan dials
+the team number": after its probe (`/media/ready`) the dialplan asks `voice` once, `GET /team`
+with the media token, for the number the team is at now, `team_phone_at` (today's while it
+holds, else the standard), and keeps it as `TEAM` only when it is on its list (`TEAM_PHONE` and
+`TRANSFER_TARGETS`, exactly as written: the list the staff choose today's number from, #252
+finding 3). Every leg the dialplan dials on its own rings `TEAM`: `voice` crashed, frozen or
+silent in the call, an ending that is no transfer, or a transfer to a number off the list. A leg
+nobody took is followed by one at `TEAM`, then one at `TEAM_PHONE`, each number once, then the
+callback card. `TEAM_PHONE` of `.env` rings first only where `voice` could not name the number:
+`voice` down, refusing the media token or frozen when the call comes (it is never asked, a cut
+network included), the database down at that moment (`voice` answers nothing), or a team number
+that is not on the list. So `TEAM_PHONE` stays a number the team answers; when the standard
+number moves for good, the operator changes it in `.env` as well. These legs use the number of
+the call's start: a change during the call reaches them on the next call. Drilled in "the team
+at today's number" (§5 drills below).
+
 **Loop guard.** The team number must never be forwarded to us. `voice` refuses to start when the
 team number is one of its own inbound numbers, the dialplan rejects a call from its own number, and
 one line test proves it: software off, call the main number.
@@ -236,7 +252,7 @@ Everything in this table is the intended behaviour. T-10.2 turns each row into a
 `deploy/asterisk/conf/extensions.conf` dials `voice` with 10 s to answer and a backstop of 3600 s
 on the call; a `voice` it did not reach is not asked for an ending; the team is dialled at the
 number of the ending when that is `TEAM_PHONE` or on `TRANSFER_TARGETS` (T-10.13, below), else at
-`TEAM_PHONE` of `.env`. The loop guard is built in two of its three
+the team number `voice` named at the call's start, `TEAM_PHONE` of `.env` without one (#835, above). The loop guard is built in two of its three
 parts: `voice` refuses to start when the team number (in the database or in `.env`) is
 `VOICE_NUMBER`, `asterisk` refuses to start when `TEAM_PHONE` is that number (else every call
 the dialplan sends to the team would come back and be dropped), and the dialplan refuses a call
@@ -271,9 +287,10 @@ on the old configuration: `100 Trying`, `200 OK`). Now:
   `TRANSFER_TARGETS` (comma-separated, compared exactly as written, so `service_config.team_phone`
   has to appear there in the same form; the api reads the same list, and the staff choose today's
   team number only from it, #570 b). Any other number, from a database row somebody changed or
-  a `voice` that is no longer ours, is never dialled; the team rings at `TEAM_PHONE` instead, and
+  a `voice` that is no longer ours, is never dialled; the team rings at the team number instead (#835), and
   the log says "transfer to a number not on the list", without the number.
-- A leg at another number of the list that nobody takes is followed by one at `TEAM_PHONE`: busy,
+- A leg at another number of the list that nobody takes is followed by one at the team number, then
+  one at `TEAM_PHONE`, each number once (#835): busy,
   refused, not reachable as far as the network says so, or 30 s without an answer. The caller hears
   ringing meanwhile and never the network's early media (Dial option `r`), so an announcement that
   the number cannot be reached does not make the caller hang up before `TEAM_PHONE` is tried. **A mailbox that answers is an answer:** a listed mobile whose mailbox picks up within the

@@ -384,6 +384,75 @@ def test_a_busy_number_on_the_list_is_followed_by_the_team_phone(tmp_path):
     assert not after[1]
 
 
+TODAY_RINGS = rings_at(drill.TODAY_NUMBER)
+
+
+def today_stage(
+    tmp_path,
+    crash: list[str],
+    missed: list[str],
+    down: list[str],
+    named: str = "routed",
+) -> Stage:
+    """131 `voice` killed, 132 paused with every telephone busy, 133 `voice`
+    stopped; the router's lines as a test gives them."""
+    return Stage(
+        tmp_path,
+        {
+            131: {
+                "router": [*router(131, "dials", "answered"), *crash],
+                "asterisk": [f"call 1.1: team number {named}"],
+            },
+            132: {
+                "router": [
+                    *router(132, "dials"),
+                    *missed,
+                    "NoOp(DRILL 132 caller leg ended dialstatus=NOANSWER)",
+                ],
+                "asterisk": ["call 1.2: nobody at the team, card [noted]"],
+            },
+            133: {"router": [*router(133, "dials"), *down]},
+        },
+    )
+
+
+def test_the_team_today_drill_wants_todays_number_wherever_voice_could_say(tmp_path):
+    """#835: the dialplan's own legs ring the number the staff set for today,
+    TEAM_PHONE once after it; only a `voice` that is down leaves TEAM_PHONE."""
+    both = [TODAY_RINGS, TEAM_RINGS]
+    good = today_stage(tmp_path, [TODAY_RINGS], both, [TEAM_RINGS])
+    assert all(ok for _, ok, _ in drill.drill_team_today(good))
+
+    crash, _, _ = drill.drill_team_today(
+        today_stage(tmp_path, [TEAM_RINGS], both, [TEAM_RINGS])
+    )
+    assert not crash[1]
+    crash, _, _ = drill.drill_team_today(
+        today_stage(tmp_path, [TODAY_RINGS], both, [TEAM_RINGS], named="default")
+    )
+    assert not crash[1]
+    for missed in ([TODAY_RINGS], [TEAM_RINGS, TODAY_RINGS], [*both, TODAY_RINGS]):
+        _, chain, _ = drill.drill_team_today(
+            today_stage(tmp_path, [TODAY_RINGS], missed, [TEAM_RINGS])
+        )
+        assert not chain[1], missed
+
+
+def test_the_team_today_drill_sets_the_number_back(tmp_path, monkeypatch):
+    monkeypatch.setattr(drill, "TEAM_LIMIT_SECONDS", -9.9)
+    stage = today_stage(tmp_path, [], [], [])
+    statements: list[str] = []
+    monkeypatch.setattr(stage, "sql", statements.append)
+
+    with pytest.raises(drill.DrillError):
+        drill.drill_team_today(stage)
+    assert drill.TODAY_NUMBER in statements[0]
+    assert statements[-1] == (
+        "update service_config set team_phone_today = null, "
+        "team_phone_today_until = null"
+    )
+
+
 def test_the_transfer_drills_set_mode_and_team_number_back(tmp_path, monkeypatch):
     """Or every later drill would find the AI paused or the team elsewhere."""
     monkeypatch.setattr(drill, "TEAM_LIMIT_SECONDS", -9.9)
