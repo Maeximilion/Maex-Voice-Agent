@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.14
+> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.15
 
 ---
 
@@ -318,7 +318,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.66.14 · 18.11.2026:** #798: the allergen guard decides by provenance instead of German word lists: an allergy turn hears only core sentences (table sentence, read-back, a tool's sentence, three fixed sentences), every other allergen word of the model needs its code in the turn's menu text or the order; a read-back names a note as the guest's, a note that names a dish goes back; the #764 allergen branch (#747, #748) and Maxi's twelve decisions on the cloud session of 15.11.2026 come with it; Claude's choices awaiting Maxi on the PR
+- **v2.66.15 · 18.11.2026:** #798: the allergen guard decides by provenance instead of German word lists: an allergy turn hears only core sentences (table sentence, read-back, a tool's sentence, three fixed sentences), every other allergen word of the model needs its code in the turn's menu text or the order; a read-back names a note as the guest's, a note that names a dish goes back; the #764 allergen branch (#747, #748) and Maxi's twelve decisions on the cloud session of 15.11.2026 come with it; Claude's choices awaiting Maxi on the PR
+- **v2.66.14 · 18.11.2026:** Dependabot #870: fastapi 0.163.1, psycopg 3.3.9, pydantic-settings 2.16.3, ruff 0.17.5 in api.
 - **v2.66.13 · 18.11.2026:** Dependabot #869: pyinstaller-hooks-contrib 2026.9 to 2026.10 in printbridge build pins.
 - **v2.66.12 · 18.11.2026:** Ledger #764, deep review of #754: a database outage does not hold the outage sentence for a second read
 - **v2.66.11 · 18.11.2026:** Ledger #764, deep review of #744: a bitte or gern that closes an order is no wish of the complaint
