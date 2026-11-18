@@ -16,6 +16,7 @@ from api.config import settings
 from api.core.errors import Conflict, InvalidInput
 from api.domain.callbacks import transfer_to_team
 from api.domain.calls.routing import call_routing
+from api.domain.status import holidays, weekly
 from api.domain.status import staff_changes as staff
 from api.domain.status.hours import load_hours, windows_for_day
 from api.domain.status.staff_changes import DayHours
@@ -418,14 +419,20 @@ def test_each_team_number_change_pushes_once(session, tenant_id):
     staff.change_team_phone(session, tenant_id, "+4972215550000", NOW)
     staff.change_team_phone(session, tenant_id, standard, NOW)
     day = TUESDAY.isoformat()
-    # Nothing but the day and the numbers: no device, no name.
+    # The day, the numbers and the team as who changed it: no device, no name.
     assert _by_content(_events(session, tenant_id)) == _by_content(
         [
-            (TEAM_PHONE_CHANGED, {"day": day, "from": standard, "to": NUMBER}),
-            (TEAM_PHONE_CHANGED, {"day": day, "from": NUMBER, "to": "+4972215550000"}),
             (
                 TEAM_PHONE_CHANGED,
-                {"day": day, "from": "+4972215550000", "to": standard},
+                {"day": day, "from": standard, "to": NUMBER, "by": "team"},
+            ),
+            (
+                TEAM_PHONE_CHANGED,
+                {"day": day, "from": NUMBER, "to": "+4972215550000", "by": "team"},
+            ),
+            (
+                TEAM_PHONE_CHANGED,
+                {"day": day, "from": "+4972215550000", "to": standard, "by": "team"},
             ),
         ]
     )
@@ -612,6 +619,97 @@ def test_shorter_times_today_on_a_day_like_another_weekday_wait_too(session, ten
     assert closed is not None and closed.held
 
 
+@pytest.mark.parametrize(
+    "reopen",
+    [DayHours(opens=time(12), closes=time(13)), DayHours()],
+    ids=["own-times", "weekly-hours"],
+)
+def test_reopening_today_after_a_closure_on_a_day_like_another_weekday_waits(
+    session, tenant_id, reopen
+):
+    """Closing drops nothing and holds at once, but the row then reads closed:
+    times sent after it are still checked against "wie Sonntag" on the card,
+    or Sunday's seats, call mode and call limit go without the owner (#710,
+    review of #754)."""
+    session.add(
+        SpecialDay(tenant_id=tenant_id, date=TUESDAY, like_weekday=6, status="set")
+    )
+    session.commit()
+    closed = staff.change_day_hours(
+        session, tenant_id, TUESDAY, DayHours(closed=True), NOW
+    )
+    assert closed is not None and closed.held
+    card = staff.change_day_hours(session, tenant_id, TUESDAY, reopen, NOW)
+    assert card is not None and card.id == closed.id and not card.held
+    row = session.scalars(select(SpecialDay).where(SpecialDay.date == TUESDAY)).one()
+    session.refresh(row)
+    assert row.closed and row.like_weekday is None
+    staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
+    session.refresh(row)
+    assert row.like_weekday == 6 and not row.closed
+
+
+def test_reopening_today_after_a_closure_on_a_plain_day_holds_at_once(
+    session, tenant_id
+):
+    """No weekday to drop: today's times hold at once after a closure too."""
+    closed = staff.change_day_hours(
+        session, tenant_id, TUESDAY, DayHours(closed=True), NOW
+    )
+    assert closed is not None and closed.held
+    card = staff.change_day_hours(
+        session, tenant_id, TUESDAY, DayHours(opens=time(12), closes=time(13)), NOW
+    )
+    assert card is not None and card.held
+    row = session.scalars(select(SpecialDay).where(SpecialDay.date == TUESDAY)).one()
+    session.refresh(row)
+    assert not row.closed and row.opens_at == time(12)
+
+
+@pytest.mark.parametrize(
+    "now",
+    [NOW, datetime.combine(MONDAY, time(10, 0), tzinfo=BERLIN)],
+    ids=["later-date", "today"],
+)
+def test_reopening_a_rest_day_like_another_weekday_after_a_closure_waits(
+    session, tenant_id, now
+):
+    """Monday has no weekly windows, so the weekly hours after a closure fit
+    inside the closed row; the dropped "wie Sonntag" still waits for the
+    owner (review of the #764 fix)."""
+    session.add(
+        SpecialDay(tenant_id=tenant_id, date=MONDAY, like_weekday=6, status="set")
+    )
+    session.commit()
+    closed = staff.change_day_hours(
+        session, tenant_id, MONDAY, DayHours(closed=True), now
+    )
+    assert closed is not None and closed.held
+    card = staff.change_day_hours(session, tenant_id, MONDAY, DayHours(), now)
+    assert card is not None and not card.held
+    row = session.scalars(select(SpecialDay).where(SpecialDay.date == MONDAY)).one()
+    session.refresh(row)
+    assert row.closed and row.like_weekday is None
+
+
+def test_times_on_a_sunday_set_like_sunday_drop_nothing(session, tenant_id):
+    """A holiday on a Sunday keeps Sunday's seats with its own times, so
+    today's times after a closure hold at once (review of the #764 fix)."""
+    sunday = date(2026, 11, 15)
+    now = datetime.combine(sunday, time(10, 0), tzinfo=BERLIN)
+    session.add(
+        SpecialDay(tenant_id=tenant_id, date=sunday, like_weekday=6, status="set")
+    )
+    session.commit()
+    closed = staff.change_day_hours(
+        session, tenant_id, sunday, DayHours(closed=True), now
+    )
+    assert closed is not None and closed.held
+    times = DayHours(opens=time(12), closes=time(13))
+    card = staff.change_day_hours(session, tenant_id, sunday, times, now)
+    assert card is not None and card.held
+
+
 def test_a_listed_national_number_is_never_offered_on_the_sheet(
     session, tenant_id, monkeypatch
 ):
@@ -641,7 +739,9 @@ def test_a_span_over_midnight_needs_the_staff_to_say_so(session, tenant_id):
 # --- the guests a held closure or shortening leaves (#710) ---------------------
 
 
-def _table(session, tenant_id, day, at: time, name, status="confirmed"):
+def _table(
+    session, tenant_id, day, at: time, name, status="confirmed", off_hours=False
+):
     session.add(
         Reservation(
             tenant_id=tenant_id,
@@ -652,6 +752,7 @@ def _table(session, tenant_id, day, at: time, name, status="confirmed"):
             party_size=2,
             reserved_for=datetime.combine(day, at, tzinfo=BERLIN),
             idempotency_key=str(uuid.uuid4()),
+            off_hours=off_hours,
         )
     )
     session.commit()
@@ -662,6 +763,20 @@ def _guests(session, tenant_id, day, hours) -> list[str]:
         session, tenant_id, day, hours, "Europe/Berlin"
     )
     return [b.guest_name for b in found]
+
+
+def test_a_table_booked_outside_the_hours_is_listed_only_if_they_held_it(
+    session, tenant_id
+):
+    """#819: the hours never held the 15:00 table, so a closure is no news to
+    its guest; the 19:00 one was marked while the date had other hours, and
+    the weekly hours before the closure held it."""
+    _table(session, tenant_id, SATURDAY, time(15), "Nie geöffnet", off_hours=True)
+    _table(session, tenant_id, SATURDAY, time(19), "Damals markiert", off_hours=True)
+
+    assert _guests(session, tenant_id, SATURDAY, DayHours(closed=True)) == [
+        "Damals markiert"
+    ]
 
 
 def test_a_closure_lists_every_confirmed_table_of_the_date(session, tenant_id):
@@ -844,3 +959,339 @@ def test_the_window_table_lists_what_the_old_windows_held_and_the_new_ones_do_no
         session, tenant_id, SATURDAY, after, "Europe/Berlin", before
     )
     assert [b.guest_name for b in found] == listed
+
+
+# --- who changed the number, and the standard number (#811) ---------------------
+
+OPERATOR = "operator:maxi"
+
+
+def test_the_push_says_whether_the_team_or_the_operator_changed_the_number(
+    session, tenant_id
+):
+    """The team as a role (no device, no name); the operator with its
+    account, as the operator's access pushes."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    staff.change_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+    actors = [payload.get("actor") for _, payload in _events(session, tenant_id)]
+    assert sorted(actors, key=str) == [None, OPERATOR]
+
+    assert sorted(payload["by"] for _, payload in _events(session, tenant_id)) == [
+        "operator",
+        "team",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("actors", "by"),
+    [
+        (["gui:tablet"], "team"),
+        ([OPERATOR], "operator"),
+        (["gui:tablet", OPERATOR], "operator"),
+        ([OPERATOR, "gui:tablet"], "team"),
+    ],
+)
+def test_a_card_names_who_changed_it_last(session, tenant_id, actors, by):
+    numbers = [NUMBER, "+4972215550000"]
+    for actor, number in zip(actors, numbers, strict=False):
+        staff.change_team_phone(session, tenant_id, number, NOW, actor)
+
+    (card,) = staff.open_cards(session, tenant_id, TUESDAY)
+    assert staff.changed_by(session, tenant_id, [card]) == {card.id: by}
+
+
+def test_the_operator_sets_the_standard_number(session, tenant_id):
+    standard = _config(session, tenant_id).team_phone
+
+    assert staff.set_standard_team_phone(session, tenant_id, NUMBER, NOW, OPERATOR)
+
+    config = _config(session, tenant_id)
+    assert (config.team_phone, config.team_phone_today) == (NUMBER, None)
+    assert _cards(session, tenant_id) == []
+    assert _events(session, tenant_id) == [
+        (
+            TEAM_PHONE_CHANGED,
+            {
+                "day": TUESDAY.isoformat(),
+                "from": standard,
+                "to": NUMBER,
+                "standard": True,
+                "by": "operator",
+                "actor": OPERATOR,
+            },
+        )
+    ]
+    row = session.scalars(
+        select(AuditLog).where(AuditLog.action == "service_config.team_phone_standard")
+    ).one()
+    assert (row.actor, row.payload) == (OPERATOR, {"from": standard, "to": NUMBER})
+
+
+@pytest.mark.parametrize(
+    ("raw", "says"),
+    [("12", staff.NO_NUMBER), ("+4930123456", staff.NOT_LISTED), ("", staff.NO_NUMBER)],
+)
+def test_the_standard_number_is_checked_as_the_number_for_today(
+    session, tenant_id, raw, says
+):
+    standard = _config(session, tenant_id).team_phone
+
+    with pytest.raises(InvalidInput) as refused:
+        staff.set_standard_team_phone(session, tenant_id, raw, NOW, OPERATOR)
+
+    assert refused.value.say == says
+    assert _config(session, tenant_id).team_phone == standard
+    assert _events(session, tenant_id) == []
+
+
+def test_the_standard_that_holds_already_is_no_change(session, tenant_id, monkeypatch):
+    standard = _config(session, tenant_id).team_phone
+    monkeypatch.setattr(settings, "transfer_targets", f"{NUMBER}, {standard}")
+
+    assert not staff.set_standard_team_phone(
+        session, tenant_id, standard, NOW, OPERATOR
+    )
+    assert _events(session, tenant_id) == []
+
+
+def test_a_new_standard_holds_after_todays_number(session, tenant_id):
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    staff.set_standard_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+
+    config = _config(session, tenant_id)
+    assert staff.team_phone_at(config, NOW) == NUMBER
+    tomorrow = NOW + timedelta(days=1)
+    assert staff.team_phone_at(config, tomorrow) == "+4972215550000"
+
+
+def test_a_new_standard_moves_the_before_of_todays_card(session, tenant_id):
+    """Review of #811: the card said "Vorher" the old standard, undo went to
+    the new one, and a tablet that showed it could keep it unseen."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    (shown,) = _cards(session, tenant_id)
+    seen = shown.updated_at
+
+    staff.set_standard_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+
+    (card,) = _cards(session, tenant_id)
+    assert (card.before, card.after) == (
+        {"number": "+4972215550000"},
+        {"number": NUMBER},
+    )
+    with pytest.raises(Conflict):
+        staff.decide(session, tenant_id, card.id, keep=True, now=NOW, seen=seen)
+    staff.decide(session, tenant_id, card.id, keep=False, now=NOW, seen=card.updated_at)
+    assert staff.team_phone_at(_config(session, tenant_id), NOW) == "+4972215550000"
+
+
+def test_todays_number_made_the_standard_closes_its_card(session, tenant_id):
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+
+    staff.set_standard_team_phone(session, tenant_id, NUMBER, NOW, OPERATOR)
+
+    config = _config(session, tenant_id)
+    assert (config.team_phone, config.team_phone_today) == (NUMBER, None)
+    # Review of #837: the staff's number was kept, and the card says so.
+    (card,) = _cards(session, tenant_id)
+    assert card.status == "kept"
+    assert staff.open_cards(session, tenant_id, TUESDAY) == []
+    row = session.scalars(
+        select(AuditLog).where(
+            AuditLog.action == "staff_change.kept", AuditLog.entity_id == card.id
+        )
+    ).one()
+    assert (row.actor, row.payload["kind"]) == (OPERATOR, staff.TEAM_PHONE)
+
+
+def test_a_new_standard_under_todays_card_names_the_operator(session, tenant_id):
+    """Review of #837: the operator moved the card's "Vorher", so the card
+    names the operator, and the push says today's number still holds."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+
+    staff.set_standard_team_phone(session, tenant_id, "+4972215550000", NOW, OPERATOR)
+
+    (card,) = staff.open_cards(session, tenant_id, TUESDAY)
+    assert staff.changed_by(session, tenant_id, [card]) == {card.id: "operator"}
+    event, payload = _events(session, tenant_id)[-1]
+    assert (event, payload["standard"], payload["today"]) == (
+        TEAM_PHONE_CHANGED,
+        True,
+        NUMBER,
+    )
+    staff.change_team_phone(session, tenant_id, "+4972215550000", NOW)
+    assert staff.open_cards(session, tenant_id, TUESDAY) == []
+
+
+def test_a_change_begun_before_the_card_still_names_who_made_it(session, tenant_id):
+    """Review of #811: `at` is a transaction's start, so a tablet change that
+    began a moment before the card's transaction is stamped before it."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW, OPERATOR)
+    (card,) = staff.open_cards(session, tenant_id, TUESDAY)
+    session.add(
+        AuditLog(
+            tenant_id=tenant_id,
+            at=card.created_at - timedelta(seconds=2),
+            actor="gui:tablet",
+            action=staff.ACTION_TEAM_PHONE,
+            entity="staff_change",
+            entity_id=card.id,
+            payload={},
+        )
+    )
+    session.commit()
+
+    assert staff.changed_by(session, tenant_id, [card]) == {card.id: "team"}
+
+
+def test_the_check_token_follows_the_hours_behind_a_card(session, tenant_id):
+    """The guests to call on a card hang on the hours too (#819): a change of
+    the weekly hours or of another date's hours refreshes the card."""
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    token = staff.cards_change_token(session, tenant_id, TUESDAY)
+    sunday = SATURDAY.weekday() + 1
+    shown = weekly.token(weekly.week(session, tenant_id)[sunday])
+    lunch = weekly.Span(time(11, 30), time(14))
+    assert weekly.set_weekday(session, tenant_id, sunday, {"pickup": [lunch]}, shown)
+    changed = staff.cards_change_token(session, tenant_id, TUESDAY)
+    assert changed != token
+    later = SATURDAY + timedelta(days=7)
+    staff.set_day_hours(session, tenant_id, later, DayHours(closed=True), NOW)
+    assert staff.cards_change_token(session, tenant_id, TUESDAY) != changed
+
+
+def test_a_tablet_undoing_the_card_a_new_standard_kept_is_refused(session, tenant_id):
+    """Review of #837: the operator's standard kept today's card while the
+    owner's tablet still showed it; an undo from that tablet does nothing, so
+    it is refused, not answered as done. A keep is what happened: no error."""
+    staff.change_team_phone(session, tenant_id, NUMBER, NOW)
+    (shown,) = _cards(session, tenant_id)
+    seen = shown.updated_at
+    staff.set_standard_team_phone(session, tenant_id, NUMBER, NOW, OPERATOR)
+
+    with pytest.raises(Conflict):
+        staff.decide(session, tenant_id, shown.id, keep=False, now=NOW, seen=seen)
+    staff.decide(session, tenant_id, shown.id, keep=True, now=NOW, seen=seen)
+
+    assert _config(session, tenant_id).team_phone == NUMBER
+
+
+# --- the card's origin under a holiday answer, and its note (#802) ----------
+
+SATURDAY_MORNING = datetime.combine(SATURDAY, time(10, 0), tzinfo=BERLIN)
+
+
+def _holiday_answered(session, tenant_id, day, choice=holidays.LIKE) -> None:
+    """The team answers the date's holiday suggestion on the tablet."""
+    suggestion = SpecialDay(
+        tenant_id=tenant_id,
+        date=day,
+        note="Feiertag",
+        like_weekday=6,
+        status=holidays.SUGGESTED,
+    )
+    session.add(suggestion)
+    session.commit()
+    holidays.answer(session, tenant_id, suggestion.id, choice)
+
+
+def _set_row(session, day) -> SpecialDay:
+    return session.scalars(
+        select(SpecialDay)
+        .where(SpecialDay.date == day, SpecialDay.status == "set")
+        .execution_options(populate_existing=True)
+    ).one()
+
+
+def _waiting_card(session, tenant_id) -> StaffChange:
+    card = staff.change_day_hours(
+        session, tenant_id, SATURDAY, DayHours(opens=time(11), closes=time(23)), NOW
+    )
+    assert card is not None and not card.held
+    return card
+
+
+@pytest.mark.parametrize(
+    "reopen",
+    [DayHours(opens=time(12), closes=time(13)), DayHours()],
+    ids=["own-times", "weekly-hours"],
+)
+@pytest.mark.parametrize("now", [NOW, SATURDAY_MORNING], ids=["later-date", "today"])
+def test_a_holiday_answer_under_a_waiting_card_becomes_its_origin(
+    session, tenant_id, reopen, now
+):
+    """A holiday answered "wie Sonntag" while the date's card waits: the card
+    starts from that answer, so times after a held closure still drop Sunday's
+    seats, call mode and call limit and wait for the owner (#802)."""
+    waiting = _waiting_card(session, tenant_id)
+    _holiday_answered(session, tenant_id, SATURDAY)
+    session.refresh(waiting)
+    assert DayHours.of(waiting.before) == DayHours(like_weekday=6, note="Feiertag")
+    closed = staff.change_day_hours(
+        session, tenant_id, SATURDAY, DayHours(closed=True), now
+    )
+    assert closed is not None and closed.id == waiting.id and closed.held
+    card = staff.change_day_hours(session, tenant_id, SATURDAY, reopen, now)
+    assert card is not None and card.status == "open" and not card.held
+    row = _set_row(session, SATURDAY)
+    assert row.closed and row.note == "Feiertag"
+
+
+def test_the_owners_undo_returns_to_a_holiday_answer_given_under_the_card(
+    session, tenant_id
+):
+    """Undo writes the origin: the team's holiday answer, not the weekly hours
+    the card opened on, which would delete it (#802)."""
+    card = _waiting_card(session, tenant_id)
+    _holiday_answered(session, tenant_id, SATURDAY)
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
+    row = _set_row(session, SATURDAY)
+    assert (row.closed, row.like_weekday, row.note) == (False, 6, "Feiertag")
+
+
+def test_the_owners_keep_after_a_holiday_answer_keeps_the_holidays_name(
+    session, tenant_id
+):
+    """The waiting request takes the holiday's name, as one sent after the
+    answer would: kept, the date still says which holiday it is."""
+    card = _waiting_card(session, tenant_id)
+    _holiday_answered(session, tenant_id, SATURDAY, holidays.CLOSED)
+    staff.decide(session, tenant_id, card.id, keep=True, now=NOW)
+    row = _set_row(session, SATURDAY)
+    assert (row.opens_at, row.closes_at, row.note) == (time(11), time(23), "Feiertag")
+
+
+def test_a_holiday_answer_without_a_card_opens_none(session, tenant_id):
+    _holiday_answered(session, tenant_id, SATURDAY)
+    assert _cards(session, tenant_id) == []
+    assert _set_row(session, SATURDAY).like_weekday == 6
+
+
+@pytest.mark.parametrize(
+    ("origin", "now"),
+    [
+        (DayHours(opens=time(10), closes=time(23)), NOW),
+        (DayHours(opens=time(10), closes=time(23)), SATURDAY_MORNING),
+        (DayHours(closed=True), SATURDAY_MORNING),
+    ],
+    ids=["times-later-date", "times-today", "closed-today"],
+)
+def test_back_to_the_origin_after_the_weekly_hours_holds_and_keeps_its_name(
+    session, tenant_id, origin, now
+):
+    """The weekly hours held over a holiday row, then the staff ask for the
+    row's hours again: that is the origin, its name included, so it holds at
+    once and the card ends (#802)."""
+    row = origin.row(tenant_id, SATURDAY)
+    row.note = "Feiertag"
+    session.add(row)
+    session.commit()
+    weekly_hours = staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(), now)
+    assert weekly_hours is not None and weekly_hours.held
+    back = DayHours(origin.closed, origin.opens, origin.closes)
+    card = staff.change_day_hours(session, tenant_id, SATURDAY, back, now)
+    assert card is not None and card.held and card.status == "undone"
+    row = _set_row(session, SATURDAY)
+    assert DayHours.of_row(row) == DayHours(
+        origin.closed, origin.opens, origin.closes, note="Feiertag"
+    )

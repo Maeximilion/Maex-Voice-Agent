@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from api.config import settings
 from api.domain.access.hashing import token_hash
 from api.domain.access.sessions import resolve, sign_in
 from api.domain.access.setup import use_link
@@ -22,7 +23,7 @@ def engine(migrated_db_url, monkeypatch):
     engine = create_engine(migrated_db_url)
     monkeypatch.setattr(gui_access, "SessionLocal", sessionmaker(bind=engine))
     monkeypatch.setattr(gui_access, "utcnow", lambda: T0)
-    monkeypatch.delenv("AGENT_DOMAIN", raising=False)
+    monkeypatch.setattr(settings, "agent_domain", "")
     yield engine
     engine.dispose()
 
@@ -59,7 +60,7 @@ def test_link_takes_the_domain_of_the_stack_or_prints_the_path(
     engine, tenant_id, capsys, monkeypatch
 ):
     assert _link(capsys).startswith("/gui/einrichten#")
-    monkeypatch.setenv("AGENT_DOMAIN", "lokal.example.com")
+    monkeypatch.setattr(settings, "agent_domain", "lokal.example.com")
     assert _link(capsys).startswith("https://lokal.example.com/gui/einrichten#")
 
 

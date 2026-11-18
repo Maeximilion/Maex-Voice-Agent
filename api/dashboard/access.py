@@ -1,8 +1,14 @@
-"""Operator sign-in, sessions and the break-glass reset (#571, docs/23 §5).
+"""Operator sign-in, step-up, factors and the break-glass reset (#571,
+docs/23 §5).
 
-A sign-in needs the name, the password and one second factor: a TOTP code, or
-one of ten single-use recovery codes. Never the password alone. Passkeys come
-next (docs/23 §5, the following pull request).
+A sign-in needs the name, the password and one second factor: a passkey
+(`passkeys.py`), a TOTP code, or one of ten single-use recovery codes. Never
+the password alone.
+
+Dangerous actions need a second factor of the last five minutes on the
+session (`Operator.fresh`): the one of the sign-in, or a step-up with a passkey
+or a TOTP code. Changing the factors is such an action. An account always
+keeps TOTP or two passkeys, so one lost device never locks the operator out.
 
 Every answer to a wrong name, password or factor is the same. Failures count
 per account and per client address, or on the browser alone when it brings the
@@ -27,12 +33,13 @@ from sqlalchemy import CursorResult, delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from api.dashboard import totp
+from api.dashboard import passkeys, totp
 from api.dashboard.models import (
     OperatorAccount,
     OperatorAudit,
     OperatorDevice,
     OperatorLoginFailure,
+    OperatorPasskey,
     OperatorRecoveryCode,
     OperatorSession,
 )
@@ -48,6 +55,10 @@ from api.domain.access.sessions import FAILURES_FORGOTTEN, count_failure, minute
 
 SESSION_IDLE = timedelta(minutes=30)
 SESSION_MAX = timedelta(hours=12)
+# How long a second factor counts as fresh for a dangerous action.
+STEP_UP_FRESH = timedelta(minutes=5)
+# Without TOTP an account keeps at least this many passkeys.
+PASSKEYS_WITHOUT_TOTP = 2
 # last_seen_at moves at most once a minute, not on every request.
 TOUCH_EVERY = timedelta(minutes=1)
 # A sign-in this recent with the same code makes a refused second post a
@@ -62,18 +73,27 @@ NAME = re.compile(r"[a-z0-9._-]{2,40}")
 
 
 class SignInRefused(Exception):
-    """Any wrong input, or a wait that still runs (`wait_minutes`)."""
+    """Any wrong input, or a wait that still runs (`wait_minutes`). `copy`
+    says that a passkey of the account answered with a counter that did not
+    grow: the browser hears nothing of it, the operator must."""
 
-    def __init__(self, wait_minutes: int | None = None):
+    def __init__(self, wait_minutes: int | None = None, copy: bool = False):
         super().__init__("sign-in refused")
         self.wait_minutes = wait_minutes
+        self.copy = copy
+
+
+class FactorNeeded(Exception):
+    """The change would leave the account with neither TOTP nor two passkeys."""
 
 
 class Signed(NamedTuple):
-    """The session and the device cookie of a signed-in browser."""
+    """The session and the device cookie of a signed-in browser, and the
+    second factor that opened it."""
 
     token: str
     device_token: str
+    factor: str
 
 
 @dataclass(frozen=True)
@@ -81,6 +101,14 @@ class Operator:
     session_id: uuid.UUID
     account_id: uuid.UUID
     name: str
+    stepped_up_at: datetime | None = None
+
+    def fresh(self, now: datetime) -> bool:
+        """Did this session show a second factor in the last five minutes?"""
+        return (
+            self.stepped_up_at is not None
+            and timedelta(0) <= now - self.stepped_up_at < STEP_UP_FRESH
+        )
 
 
 @dataclass(frozen=True)
@@ -101,10 +129,31 @@ def sign_in(
     now: datetime,
     device_token: str = "",
     previous_token: str = "",
+    passkey: str = "",
+    attempt_token: str = "",
 ) -> Signed:
-    """Check name, password and second factor and open a session. Commits."""
+    """Check name, password and second factor and open a session. `passkey`
+    is the answer of a WebAuthn ceremony to the challenge this browser asked
+    for under `attempt_token`; with it, `code` is not looked at. Commits."""
     name = name.strip().lower()
+    # Enter after the password: no factor at all. Refused before the password is
+    # looked at, so it tells nothing, and neither counted nor audited (#816).
+    if not passkey and not code.strip():
+        raise SignInRefused()
     stored, account_id, trusted = _count_attempt(db, name, address, device_token, now)
+    # Taken before the password is looked at: a challenge is spent by the first
+    # post that brings it, whatever else that post got wrong.
+    challenge = (
+        passkeys.take(
+            db,
+            passkeys.for_attempt(attempt_token),
+            passkeys.SIGN_IN,
+            now,
+            passkeys.signed_challenge(passkey),
+        )
+        if passkey and attempt_token
+        else None
+    )
     if not verify_secret(password, stored):
         _note_failure(db, name if account_id else None, address, "password")
         raise SignInRefused()
@@ -115,17 +164,14 @@ def sign_in(
     if account is None or account.password_hash != stored:
         db.rollback()
         raise SignInRefused()
-    factor = _second_factor(db, account, code, now)
+    factor, why = _second_factor(db, account, code, now, passkey, challenge)
     if factor is None:
-        repeat = _just_signed_in(db, account, code, now)
+        repeat = not passkey and _just_signed_in(db, account, code, now)
         db.rollback()
-        _note_failure(db, name, address, "repeat" if repeat else "factor")
-        raise SignInRefused()
+        _note_failure(db, name, address, "repeat" if repeat else why)
+        raise SignInRefused(copy=why == "counter")
     if not trusted:
-        account.failures, account.blocked_until, account.last_failed_at = 0, None, None
-        db.execute(
-            delete(OperatorLoginFailure).where(OperatorLoginFailure.address == address)
-        )
+        _forgive(db, account, address)
     device_token = _trust_device(db, account, device_token, now)
     # The browser's own session, and every ended one of the account that no
     # browser came back for: otherwise their rows would stay for good.
@@ -148,6 +194,8 @@ def sign_in(
             token_hash=token_hash(token),
             created_at=now,
             last_seen_at=now,
+            # The sign-in is itself a fresh second factor.
+            stepped_up_at=now,
         )
     )
     if factor == "recovery":
@@ -157,12 +205,17 @@ def sign_in(
         db, account.name, "operator.signed_in", {"factor": factor, "address": address}
     )
     db.commit()
-    return Signed(token, device_token)
+    return Signed(token, device_token, factor)
 
 
-def resolve(db: Session, token: str, now: datetime) -> Operator | None:
+def resolve(
+    db: Session, token: str, now: datetime, touch: bool = True
+) -> Operator | None:
     """The operator behind a session cookie, or None once it ended. Commits
-    when it moves last_seen_at or drops an ended session."""
+    when it moves last_seen_at or drops an ended session. `touch=False` is for
+    a request the page sends by itself (the list's refresh): it must not count
+    as the operator being there, or an open tab would never reach the idle
+    limit."""
     if not token:
         return None
     found = db.execute(
@@ -177,16 +230,183 @@ def resolve(db: Session, token: str, now: datetime) -> Operator | None:
         db.delete(row)
         db.commit()
         return None
-    if now - row.last_seen_at >= TOUCH_EVERY:
+    if touch and now - row.last_seen_at >= TOUCH_EVERY:
         row.last_seen_at = now
         db.commit()
-    return Operator(row.id, row.account_id, name)
+    return Operator(row.id, row.account_id, name, row.stepped_up_at)
 
 
 def sign_out(db: Session, operator: Operator) -> None:
     db.execute(delete(OperatorSession).where(OperatorSession.id == operator.session_id))
     audit(db, operator.name, "operator.signed_out", {})
     db.commit()
+
+
+def step_up(
+    db: Session,
+    operator: Operator,
+    code: str,
+    address: str,
+    now: datetime,
+    device_token: str = "",
+    passkey: str = "",
+) -> None:
+    """A fresh second factor on a signed-in session (docs/23 §5): a passkey or
+    a TOTP code. A recovery code is a way in, not a step-up. Wrong answers
+    count and wait as at the sign-in, or a stolen session could guess codes.
+    Commits."""
+    # No factor at all says nothing: not counted, not audited (#816).
+    if not passkey and not code.strip():
+        raise SignInRefused()
+    _, _, trusted = _count_attempt(db, operator.name, address, device_token, now)
+    challenge = (
+        passkeys.take(
+            db,
+            passkeys.for_session(operator.session_id),
+            passkeys.STEP_UP,
+            now,
+            passkeys.signed_challenge(passkey),
+        )
+        if passkey
+        else None
+    )
+    account = _locked(db, operator)
+    session = db.get(
+        OperatorSession,
+        operator.session_id,
+        with_for_update=True,
+        populate_existing=True,
+    )
+    if session is None:
+        db.rollback()
+        raise SignInRefused()
+    factor, why = _second_factor(
+        db, account, code, now, passkey, challenge, recovery=False
+    )
+    if factor is None:
+        db.rollback()
+        audit(
+            db,
+            operator.name,
+            "operator.step_up_failed",
+            {"reason": why, "address": address},
+        )
+        db.commit()
+        raise SignInRefused(copy=why == "counter")
+    if trusted:
+        device = _device(db, account.id, device_token)
+        if device is not None:
+            device.failures, device.blocked_until, device.last_failed_at = 0, None, None
+    else:
+        _forgive(db, account, address)
+    session.stepped_up_at = now
+    audit(db, operator.name, "operator.stepped_up", {"factor": factor})
+    db.commit()
+
+
+def add_passkey(
+    db: Session, operator: Operator, answer: str, name: str, now: datetime
+) -> str:
+    """Register the passkey a ceremony on this session made. Returns its
+    name; raises `passkeys.Refused`. Commits."""
+    row = passkeys.register(
+        db, operator.account_id, operator.session_id, answer, name, now
+    )
+    audit(db, operator.name, "operator.passkey_added", {"passkey": row.name})
+    db.commit()
+    return row.name
+
+
+def remove_passkey(db: Session, operator: Operator, passkey_id: str) -> tuple[str, int]:
+    """Returns the removed passkey's name and how many other sessions ended
+    (`_end_other_sessions`). Raises `LookupError` for one that is not this
+    account's and `FactorNeeded` when it must stay. Commits."""
+    account = _locked(db, operator)
+    try:
+        wanted = uuid.UUID(passkey_id)
+    except ValueError:
+        wanted = None
+    row = db.get(OperatorPasskey, wanted) if wanted else None
+    if row is None or row.account_id != account.id:
+        db.rollback()
+        raise LookupError("no such passkey")
+    if (
+        account.totp_secret is None
+        and passkeys.count(db, account.id) <= PASSKEYS_WITHOUT_TOTP
+    ):
+        db.rollback()
+        raise FactorNeeded()
+    db.delete(row)
+    audit(db, operator.name, "operator.passkey_removed", {"passkey": row.name})
+    ended = _end_other_sessions(db, operator)
+    db.commit()
+    return row.name, ended
+
+
+def propose_totp(db: Session, operator: Operator) -> None:
+    """A new TOTP secret for the operator to scan, kept on the session and
+    not in force until `confirm_totp`. Commits."""
+    session = db.get(OperatorSession, operator.session_id, with_for_update=True)
+    if session is not None:
+        session.pending_totp = totp.new_secret()
+    db.commit()
+
+
+def pending_totp(db: Session, operator: Operator) -> str | None:
+    return db.scalar(
+        select(OperatorSession.pending_totp).where(
+            OperatorSession.id == operator.session_id
+        )
+    )
+
+
+def confirm_totp(
+    db: Session, operator: Operator, code: str, now: datetime
+) -> int | None:
+    """Put the proposed secret in force once a code of it came back, so a
+    secret that never reached the app replaces nothing. Returns how many other
+    sessions ended, None for a wrong code. Commits."""
+    account = _locked(db, operator)
+    session = db.get(OperatorSession, operator.session_id, with_for_update=True)
+    secret = session.pending_totp if session is not None else None
+    step = totp.matching_step(secret, code, now.timestamp(), None) if secret else None
+    if session is None or step is None:
+        db.rollback()
+        return None
+    account.totp_secret, account.totp_last_step = secret, step
+    session.pending_totp = None
+    audit(db, operator.name, "operator.totp_set", {})
+    ended = _end_other_sessions(db, operator)
+    db.commit()
+    return ended
+
+
+def remove_totp(db: Session, operator: Operator) -> int | None:
+    """Returns how many other sessions ended; None when TOTP was off already
+    (a double post, an older tab): nothing to audit or push. Raises
+    `FactorNeeded` without two passkeys. Commits."""
+    account = _locked(db, operator)
+    if passkeys.count(db, account.id) < PASSKEYS_WITHOUT_TOTP:
+        db.rollback()
+        raise FactorNeeded()
+    if account.totp_secret is None:
+        db.rollback()
+        return None
+    account.totp_secret, account.totp_last_step = None, None
+    audit(db, operator.name, "operator.totp_removed", {})
+    ended = _end_other_sessions(db, operator)
+    db.commit()
+    return ended
+
+
+def has_totp(db: Session, account_id: uuid.UUID) -> bool:
+    return bool(
+        db.scalar(
+            select(OperatorAccount.totp_secret.is_not(None)).where(
+                OperatorAccount.id == account_id
+            )
+        )
+    )
 
 
 def recovery_left(db: Session, account_id: uuid.UUID) -> int:
@@ -213,6 +433,7 @@ def create_account(db: Session, name: str, password: str) -> Factors:
     codes = _new_recovery_codes(db, account.id)
     audit(db, "cli", "operator.account_created", {"account": name})
     db.commit()
+    assert account.totp_secret is not None
     return Factors(account.totp_secret, codes)
 
 
@@ -229,7 +450,12 @@ def reset_account(db: Session, name: str, password: str) -> Factors:
     account.password_hash = hash_secret(password)
     account.totp_secret, account.totp_last_step = totp.new_secret(), None
     account.failures, account.blocked_until, account.last_failed_at = 0, None, None
-    for table in (OperatorRecoveryCode, OperatorSession, OperatorDevice):
+    for table in (
+        OperatorRecoveryCode,
+        OperatorSession,
+        OperatorDevice,
+        OperatorPasskey,
+    ):
         db.execute(delete(table).where(table.account_id == account.id))
     codes = _new_recovery_codes(db, account.id)
     audit(db, "cli", "operator.factors_reset", {"account": name})
@@ -248,8 +474,58 @@ def audit(
     db.add(OperatorAudit(actor=actor, action=action, target=target, detail=detail))
 
 
+def _locked(db: Session, operator: Operator) -> OperatorAccount:
+    """The operator's account, held until the commit: two changes of its
+    factors at once must not each see the other's factor as still there. A
+    change that waited here while another one ended its session (D39, the
+    break glass) is refused: it changes no factor and ends nobody's session."""
+    account = db.get(
+        OperatorAccount,
+        operator.account_id,
+        with_for_update=True,
+        populate_existing=True,
+    )
+    alive = db.scalar(
+        select(OperatorSession.id).where(OperatorSession.id == operator.session_id)
+    )
+    if account is None or alive is None:
+        db.rollback()
+        raise SignInRefused()
+    return account
+
+
+def _end_other_sessions(db: Session, operator: Operator) -> int:
+    """D39 (Maxi, 17.11.2026): a removed factor or a new TOTP secret is what
+    one does after a loss, so every other session of the account ends with it;
+    a thief's session must not outlive the change. The session making it stays.
+    Returns how many ended; the caller holds the account's row and commits."""
+    ended = cast(
+        CursorResult[*tuple[Any, ...]],
+        db.execute(
+            delete(OperatorSession).where(
+                OperatorSession.account_id == operator.account_id,
+                OperatorSession.id != operator.session_id,
+            )
+        ),
+    ).rowcount
+    if ended:
+        audit(db, operator.name, "operator.other_sessions_ended", {"ended": ended})
+    return ended
+
+
+def _forgive(db: Session, account: OperatorAccount, address: str) -> None:
+    account.failures, account.blocked_until, account.last_failed_at = 0, None, None
+    db.execute(
+        delete(OperatorLoginFailure).where(OperatorLoginFailure.address == address)
+    )
+
+
 def _checked(name: str, password: str) -> str:
     name = name.strip().lower()
+    # `operator:cli` is the command line's actor in a stack's audit log, and
+    # `cli` in this one: an account of that name would write as either.
+    if name == "cli":
+        raise ValueError("The name cli is the command line's. Choose another one.")
     if not NAME.fullmatch(name):
         raise ValueError(
             "The name has 2 to 40 characters: a to z, 0 to 9, dot, dash, underscore."
@@ -337,6 +613,8 @@ def _just_signed_in(
     """Is `code` the one this account signed in with a moment ago? Then a
     second post of the same form (a double tap) is no sign of a known
     password (#688)."""
+    if account.totp_secret is None:
+        return False
     step = totp.matching_step(account.totp_secret, code, now.timestamp(), None)
     if step is None or step != account.totp_last_step:
         return False
@@ -368,27 +646,41 @@ def _note_failure(db: Session, name: str | None, address: str, reason: str) -> N
 
 
 def _second_factor(
-    db: Session, account: OperatorAccount, code: str, now: datetime
-) -> str | None:
-    step = totp.matching_step(
-        account.totp_secret, code, now.timestamp(), account.totp_last_step
-    )
-    if step is not None:
-        account.totp_last_step = step
-        return "totp"
-    recovery = re.sub(r"[\s-]", "", code).lower()
-    if not RECOVERY.fullmatch(recovery):
-        return None
+    db: Session,
+    account: OperatorAccount,
+    code: str,
+    now: datetime,
+    passkey: str = "",
+    challenge: bytes | None = None,
+    recovery: bool = True,
+) -> tuple[str | None, str]:
+    """The factor that held, or None and the audit's word for why not."""
+    if passkey:
+        try:
+            passkeys.verify(db, account.id, challenge, passkey, now)
+        except passkeys.Refused as refused:
+            return None, refused.reason
+        return "passkey", ""
+    if account.totp_secret is not None:
+        step = totp.matching_step(
+            account.totp_secret, code, now.timestamp(), account.totp_last_step
+        )
+        if step is not None:
+            account.totp_last_step = step
+            return "totp", ""
+    typed = re.sub(r"[\s-]", "", code).lower()
+    if not recovery or not RECOVERY.fullmatch(typed):
+        return None, "factor"
     used = cast(
         CursorResult[*tuple[Any, ...]],
         db.execute(
             delete(OperatorRecoveryCode).where(
                 OperatorRecoveryCode.account_id == account.id,
-                OperatorRecoveryCode.code_hash == token_hash(recovery),
+                OperatorRecoveryCode.code_hash == token_hash(typed),
             )
         ),
     )
-    return "recovery" if used.rowcount else None
+    return ("recovery", "") if used.rowcount else (None, "factor")
 
 
 def _device(

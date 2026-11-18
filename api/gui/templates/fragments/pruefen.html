@@ -13,7 +13,7 @@
   <li class="card check" data-id="{{ c.id }}">
     <div class="res-head">
       <b>{{ c.title }}</b>
-      {% if c.waiting %}<span class="badge warn">Wartet auf den Inhaber</span>{% else %}<span class="badge">Vom Team geändert</span>{% endif %}
+      {% if c.waiting %}<span class="badge warn">Wartet auf den Inhaber</span>{% elif c.by_operator %}<span class="badge">Vom Betreiber geändert</span>{% else %}<span class="badge">Vom Team geändert</span>{% endif %}
     </div>
     <p>Vorher: {{ c.before }}</p>
     <p>{% if c.waiting %}Beantragt{% else %}Jetzt{% endif %}: <b>{{ c.after }}</b></p>

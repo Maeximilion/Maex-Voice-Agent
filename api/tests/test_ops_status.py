@@ -35,6 +35,7 @@ BERLIN = ZoneInfo("Europe/Berlin")
 # Thursday 29.10.2026, 14:00 in Berlin: the business day began at 05:00.
 NOW = datetime(2026, 10, 29, 14, 0, tzinfo=BERLIN)
 OPS = "f" * 64
+KEY = "testbetrieb"
 CALLER = "+4972215550199"
 
 
@@ -49,7 +50,12 @@ def session(migrated_db_url):
 @pytest.fixture
 def tenant(session) -> Tenant:
     result = seed(session, tenant_name="Testbetrieb", timezone="Europe/Berlin")
-    return session.get(Tenant, uuid.UUID(result.tenant_id))
+    tenant = session.get(Tenant, uuid.UUID(result.tenant_id))
+    assert tenant is not None
+    # As provisioning leaves it: every ops route checks the key (#811).
+    tenant.customer_key = KEY
+    session.commit()
+    return tenant
 
 
 @pytest.fixture(autouse=True)
@@ -233,7 +239,7 @@ def http(migrated_db_url, monkeypatch):
         engine.dispose()
 
 
-AUTH = {"Authorization": f"Bearer {OPS}"}
+AUTH = {"Authorization": f"Bearer {OPS}", "X-Ops-Customer": KEY}
 
 
 def test_http_status_carries_no_guest_data(http, session, tenant):
@@ -243,7 +249,7 @@ def test_http_status_carries_no_guest_data(http, session, tenant):
 
     assert response.status_code == 200
     data = response.json()["data"]
-    assert data["tenant"] == {"key": None, "name": "Testbetrieb"}
+    assert data["tenant"] == {"key": KEY, "name": "Testbetrieb"}
     assert data["today"]["calls"] == 2
     assert data["today"]["handed_over_percent"] == 50
     # In UTC, as stored; the dashboard shows Berlin time.

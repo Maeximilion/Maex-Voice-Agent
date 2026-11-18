@@ -1,0 +1,37 @@
+{# The form of one delivery zone (#571), or of a new one. Every field shows
+   what the database holds, so an untouched save changes nothing. `gesehen` is
+   the token of the zone shown: a zone another device changed since is not
+   written over. Amounts are typed in euros with a comma; what a field may
+   hold is checked in `domain/delivery/owner_zones.py`, not here. The amounts
+   open the decimal pad, whose separator is the device's (a comma in German,
+   #829-6); the postal codes keep the full keyboard, since a number pad has no
+   space to part them. A refused save marks every faulty field and lists them
+   above (#821, #829-3); each help text belongs to its field (#829-7). #}
+{% import "fragments/_fehler.html" as fehler %}
+<h2 id="lieferung-zone-titel" tabindex="-1"{% if not summary %} data-fokus{% endif %}>{{ title }}</h2>
+{{ fehler.summary(summary) }}
+<form class="week-form zone-form" novalidate hx-post="{{ action }}" hx-target="#lieferung-zonen" hx-swap="innerHTML" hx-disabled-elt="find button" aria-labelledby="lieferung-zone-titel">
+  <input type="hidden" name="gesehen" value="{{ seen }}">
+  <label>Name der Zone <input type="text" id="f-name" name="name" value="{{ name }}" autocomplete="off"{{ fehler.attrs(["name"], errors, "hilfe-name") }}></label>
+  {{ fehler.beside("name", errors) }}
+  <p class="muted" id="hilfe-name">Nur der Name, zum Beispiel „Innenstadt“. Preise und Bedingungen gehören in die Felder darunter, nicht in den Namen: die KI liest ihn mit.</p>
+  <label>Postleitzahlen <textarea id="f-plz" name="plz" rows="3" autocomplete="off"{{ fehler.attrs(["plz"], errors, "hilfe-plz") }}>{{ plz }}</textarea></label>
+  {{ fehler.beside("plz", errors) }}
+  <p class="muted" id="hilfe-plz">Mit Komma oder Leerzeichen trennen. Eine Postleitzahl kann nur in einer aktiven Zone stehen.</p>
+  <label>Lieferpauschale in Euro <input type="text" id="f-pauschale" name="pauschale" value="{{ pauschale }}" inputmode="decimal" autocomplete="off"{{ fehler.attrs(["pauschale"], errors, "hilfe-betrag") }}></label>
+  {{ fehler.beside("pauschale", errors) }}
+  <label>Mindestbestellwert in Euro <input type="text" id="f-mindestwert" name="mindestwert" value="{{ mindestwert }}" inputmode="decimal" autocomplete="off"{{ fehler.attrs(["mindestwert"], errors, "hilfe-betrag") }}></label>
+  {{ fehler.beside("mindestwert", errors) }}
+  <p class="muted" id="hilfe-betrag">Beträge mit Komma, zum Beispiel 2,50. Kostenlos oder kein Mindestbestellwert: 0. Für den Mindestbestellwert zählen die Gerichte ohne die Lieferpauschale.</p>
+  <label>Lieferzeit in Minuten <input type="text" id="f-lieferzeit" name="lieferzeit" value="{{ lieferzeit }}" inputmode="numeric" autocomplete="off"{{ fehler.attrs(["lieferzeit"], errors, "hilfe-lieferzeit") }}></label>
+  {{ fehler.beside("lieferzeit", errors) }}
+  <p class="muted" id="hilfe-lieferzeit">Höchstens {{ wait_max }} Minuten. Die KI nennt die längere Zeit: diese oder die Wartezeit Lieferung.</p>
+  <div class="span-row">
+    <label class="check"><input type="checkbox" name="aktiv" value="1"{% if aktiv %} checked{% endif %}> Zone aktiv: die KI nimmt Lieferungen dorthin an</label>
+  </div>
+  <p class="muted">Eine Zone wird nicht gelöscht, nur ausgeschaltet: frühere Adressen gehören zu ihr.</p>
+  <div class="cb-actions">
+    <button type="submit" class="primary">Speichern</button>
+    <button type="button" hx-get="/gui/lieferung/zonen" hx-target="#lieferung-zonen" hx-swap="innerHTML">Abbrechen</button>
+  </div>
+</form>

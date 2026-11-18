@@ -33,7 +33,7 @@ a{color:var(--accent)}
 ::placeholder{color:var(--muted);opacity:1}
 button{font:inherit;color:inherit;background:var(--surface);border:2px solid var(--line-strong);border-radius:var(--r);padding:7px 12px;cursor:pointer}
 button:hover{background:var(--surface-2)}
-button:focus-visible,a:focus-visible,[tabindex]:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+button:focus-visible,a:focus-visible,[tabindex]:focus-visible,input:focus-visible,summary:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--surface)}
 button.primary:hover{filter:brightness(1.08)}
 input[type=text],select{font:inherit;color:inherit;background:var(--surface);border:2px solid var(--line-strong);border-radius:var(--r-sm);padding:7px 10px;height:36px}
@@ -174,7 +174,87 @@ header.aus .seg.services .on{background:transparent;color:var(--muted)}
 .call-note{background:var(--warn-bg);color:var(--warn);font-weight:600}
 .betrieb .tbl{font-size:var(--fs-body)}
 .betrieb .tbl th{font-size:var(--fs-body)}
+/* The day ("Mo 16.11.") of the history and the time of a call stay on one line (#829-16). */
+.kz-history .tbl tr > :first-child{white-space:nowrap}
 @media (max-width:900px){ .kz-bar{grid-template-columns:1fr 1fr} }
+/* The frame of the admin area (#571): the four figures under the header row,
+   the areas as tabs. A tab is a link, 60 px high, marked by a line and by
+   aria-current, never by colour alone. */
+.admin-bar{padding:0 var(--s4) var(--s2)}
+.admin-bar p{margin:0 0 var(--s1)}
+/* The tab row stays at the top while a long page scrolls (#829-13): it stands beside the
+   header, not in it, because a sticky box cannot leave its parent. */
+.tabs{display:flex;flex-wrap:wrap;gap:var(--s1);padding:0 var(--s4);background:var(--surface);border-bottom:2px solid var(--line)}
+header.admin{border-bottom:0}
+/* From 700 px up: on a phone seven tabs wrap to three rows and would cover the page. */
+@media (min-width:700px){.tabs{position:sticky;top:0;z-index:5}}
+.tabs a{display:inline-flex;align-items:center;min-height:var(--tap);padding:0 var(--s4);color:var(--muted);font-weight:600;text-decoration:none;border-bottom:4px solid transparent}
+.tabs a[aria-current=page]{color:var(--text);border-bottom-color:var(--accent);font-weight:700}
+/* The tab "Zeiten" (#571): its parts one below the other, each form row wraps. */
+.zeiten{display:grid;gap:var(--s4)}
+.zeiten h2{margin:0 0 var(--s3);font-size:var(--fs-h2)}
+.zeiten h3{margin:var(--s4) 0 var(--s2);font-size:var(--fs-lg)}
+.zeiten .warn-card{border-color:var(--warn-line)}
+.week th[scope=row]{color:var(--text)}
+.week-form fieldset{border:2px solid var(--line);border-radius:var(--r);margin:0 0 var(--s3);padding:var(--s2) var(--s3);min-width:0}
+.week-form legend{font-weight:700;padding:0 var(--s2)}
+.span-row{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2) var(--s4);margin:var(--s2) 0}
+.span-row label{display:inline-flex;align-items:center;gap:var(--s2);font-weight:600}
+.span-row input[type=time],.span-row input[type=date]{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);min-height:var(--tap);padding:0 var(--s2);margin:0}
+.span-row input[type=checkbox]{width:28px;height:28px;margin:0;accent-color:var(--accent)}
+.span-row .check{min-height:var(--tap)}
+/* A refused form of the owner's tabs (#821, #829-3): the list above it, and each
+   faulty field with its sentence beside it; a mark and a word, never colour alone. */
+.fehler-liste{border:2px solid var(--danger);border-radius:var(--r);padding:var(--s2) var(--s3);margin:0 0 var(--s3)}
+.fehler-liste ul{margin:var(--s2) 0 0;padding-left:var(--s5)}
+.fehler-liste a{color:var(--text)}
+.feld-fehler{color:var(--danger);font-weight:600;margin:0;flex-basis:100%}
+.feld-fehler::before{content:"\2715\00a0"}
+/* The tab "Lieferung" (#571): a zone's fields one below the other. */
+.zone-form{display:grid;gap:var(--s2);max-width:560px}
+.zone-form > label{display:grid;gap:var(--s1);font-weight:600}
+.zone-form input[type=text],.zone-form textarea{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);min-height:var(--tap);padding:var(--s2);margin:0;width:100%;box-sizing:border-box}
+.zone-form .muted{margin:0 0 var(--s2)}
+.zone-form .check input{flex:none}
+/* The tab "Daten" (#571): the choices and the day of a request look like
+   the text fields beside them; a row of the call list names its time. */
+.zone-form select,.zone-form input[type=date]{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);min-height:var(--tap);padding:0 var(--s2);margin:0;width:100%;box-sizing:border-box}
+/* After the field rules above: a refused field wins over their border. */
+.betrieb input[aria-invalid=true],.betrieb textarea[aria-invalid=true]{border-color:var(--danger);border-width:3px}
+.calls .tbl th[scope=row]{color:var(--text);font-weight:600}
+/* The call whose details stand below (#829-10): the row is marked, and by aria-expanded too. */
+.calls .tbl tr:has(button[aria-expanded=true]){background:var(--accent-bg)}
+#anruf-detail:not(:empty){margin-top:var(--s4)}
+@media (max-width:900px){
+  /* Seven columns do not fit a tablet held upright (768 px): each zone is a
+     block there, as the tables of "Zeiten" are on a phone. */
+  .zonen .tbl thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .zonen .tbl tr{display:block;padding:var(--s2) 0;border-top:2px solid var(--line)}
+  .zonen .tbl th[scope=row],.zonen .tbl td{display:block;border:0;padding:2px 0}
+  .zonen .tbl td[data-label]::before{content:attr(data-label) ": ";color:var(--muted)}
+}
+.tbl .codes,.zonen .tbl th[scope=row]{overflow-wrap:anywhere}
+/* The tab "Menü" (#571): one dish per line, number, name, price, then its
+   notes; a narrow screen wraps the notes under the name. */
+.menue + .menue{margin-top:var(--s4)}
+.menue h2{margin:0 0 var(--s2);font-size:var(--fs-h2)}
+.menue .call-filter input[type=search]{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);min-height:var(--tap);padding:0 var(--s3);margin:0;flex:1 1 220px;min-width:0;box-sizing:border-box}
+.menu-list{list-style:none;margin:0;padding:0}
+.menu-list li{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s1) var(--s3);padding:var(--s2) 0;border-top:2px solid var(--line)}
+.menu-list .nr{flex:none;min-width:3.5ch}
+.menu-name{flex:1 1 12ch;min-width:0;overflow-wrap:anywhere;font-weight:600}
+.menu-price{flex:none;font-family:var(--font-mono);white-space:nowrap}
+.pager{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);margin-top:var(--s4)}
+@media (max-width:700px){
+  /* A phone: each row of the tab's tables is a block (a weekday with each
+     service on a line with its name, a special day with its button below),
+     so no table is wider than the page. */
+  .zeiten .tbl thead,.calls .tbl thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .zeiten .tbl tr,.calls .tbl tr{display:block;padding:var(--s2) 0;border-top:2px solid var(--line)}
+  .zeiten .tbl th[scope=row],.zeiten .tbl td,.calls .tbl th[scope=row],.calls .tbl td{display:block;border:0;padding:2px 0}
+  .zeiten .tbl td[data-label]::before,.calls .tbl td[data-label]::before{content:attr(data-label) ": ";color:var(--muted)}
+  .tabs a{padding:0 var(--s3)}
+}
 .board{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
 .col{background:transparent;padding:0}
 .col h2{margin:0;padding:0 0 10px;font-size:var(--fs-h2);font-weight:700;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:1;background:var(--bg)}
@@ -355,7 +435,7 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
 .ton-an[hidden]{display:none}
 /* Sign-in, setup link and PIN (#570): one card, every field and button 60 px, text 18 px or more. */
 .zugang main{display:grid;place-items:center;min-height:100vh;padding:var(--s4)}
-.zugang-form{width:min(32rem,100%);display:grid;gap:var(--s3);font-size:var(--fs-body)}
+.zugang-form{width:min(32rem,100%);display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s3);font-size:var(--fs-body)}
 .zugang-form h1{margin:0;font-size:var(--fs-h2)}
 .zugang-form p{margin:0}
 .zugang-form label{font-weight:600}
@@ -374,7 +454,9 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
    meaning here. */
 .start{background:radial-gradient(60rem 40rem at 10% 0%,var(--warn-bg),transparent 70%) no-repeat,var(--bg)}
 .start main{min-height:100dvh;padding:var(--s5) var(--s4)}
-.start-seite{width:min(68rem,100%);display:grid;gap:var(--s5);grid-template-areas:"kopf" "form" "punkte"}
+/* minmax(0,1fr): the implicit auto column took its width from the longest word and
+   pushed the page past a 375 px screen (#829-1). */
+.start-seite{width:min(68rem,100%);display:grid;grid-template-columns:minmax(0,1fr);gap:var(--s5);grid-template-areas:"kopf" "form" "punkte"}
 .start-kopf{grid-area:kopf}
 .start-seite .zugang-form{grid-area:form;width:100%;padding:var(--s5)}
 .start-punkte{grid-area:punkte}
@@ -389,6 +471,53 @@ details.dish-group:not([open]) > summary{border-bottom-color:var(--line)}
   .start-kopf{align-self:end}
   .start-punkte{align-self:start}
   .start-seite .zugang-form{align-self:center}
+}
+/* Operator dashboard (#571): the bar on top, the customer list as a table and,
+   below 900 px, one card per customer with each value named by its column. */
+.ops-kopf{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s4);padding:var(--s2) var(--s4)}
+.ops-marke{font-family:var(--font-mono);font-weight:700;color:var(--accent);text-decoration:none}
+.ops-kopf nav{display:flex;flex-wrap:wrap;gap:var(--s3);flex:1 1 auto}
+.ops-kopf nav a{display:inline-flex;align-items:center;min-height:var(--tap);padding:0 var(--s3);color:var(--text);text-decoration:none;border-bottom:3px solid transparent}
+.ops-kopf nav a[aria-current]{border-bottom-color:var(--accent);font-weight:700}
+.ops-kopf form{display:flex;align-items:center;gap:var(--s3)}
+.ops-seite{width:min(90rem,100%);margin:0 auto;display:grid;gap:var(--s4)}
+.ops-seite h1{margin:0;font-size:var(--fs-kpi)}
+.ops-seite p{margin:0}
+.ops-key{display:block;font-family:var(--font-mono);font-weight:400}
+.ops-liste th[scope=row]{color:var(--text);font-size:var(--fs-body)}
+/* What a stack says is shown as it came: one long word must not widen the table. Only what
+   must stay whole does: a column header, the name in a row's head and the cells of a dev table
+   (a date, a number) keep their words, so "Suite" no longer reads "Su ite" (#829-18); a table
+   wider than its box scrolls inside `.ops-scroll`. */
+.ops-liste td,.ops-liste th{overflow-wrap:anywhere}
+.ops-liste th{white-space:nowrap}
+.ops-liste th[scope=row]{white-space:normal;overflow-wrap:break-word}
+.ops-dicht td{white-space:nowrap;overflow-wrap:normal}
+.ops-scroll{overflow-x:auto}
+.ops-leer{display:grid;gap:var(--s2)}
+.ops code{font-family:var(--font-mono);overflow-wrap:anywhere}
+/* A customer's page (#571): the four figures two by two below 900 px. */
+@media (max-width:899px){.ops .kz-bar{grid-template-columns:repeat(2,1fr)}}
+/* Sign-in factors and step-up (#571): one card per factor, a form in a row.
+   A passkey button stays hidden until passkey.js finds WebAuthn. */
+.ops [hidden]{display:none}
+.ops-teil{display:grid;gap:var(--s3)}
+.ops-teil h2,.ops-teil h3{margin:0;font-size:var(--fs-h2)}
+/* A list is as wide as its longest entry: in a card (a grid) it would widen the
+   page on a phone, so the row may shrink and its fields end at the row. */
+.ops-zeile{display:flex;flex-wrap:wrap;gap:var(--s3);align-items:center;min-width:0}
+.ops-zeile select,.ops-zeile input{max-width:100%}
+.ops-zeile label{font-weight:600}
+.ops-zeile input{font:inherit;color:inherit;background:var(--surface-2);border:2px solid var(--line-strong);border-radius:var(--r-sm);padding:var(--s2) var(--s3);min-height:var(--tap)}
+.ops-zeile button,.ops-liste button{min-height:var(--tap)}
+.ops-geheim{user-select:all;font-size:var(--fs-body)}
+/* Cards from 1100 px down: the customer list and the eval table need that much width as rows. */
+@media (max-width:1099px){
+  .ops-liste thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .ops-liste,.ops-liste tbody,.ops-liste tr,.ops-liste th,.ops-liste td{display:block}
+  .ops-liste tr{background:var(--surface);border:2px solid var(--line);border-radius:var(--r-lg);padding:var(--s3) var(--s4);margin-bottom:var(--s3)}
+  .ops-liste td,.ops-liste th[scope=row]{border:0;padding:var(--s1) 0}
+  .ops-liste td::before{content:attr(data-label) ": ";color:var(--muted)}
 }
 /* T-3.16: an order that only waits for "In Kasse eingegeben" is one line; a red
    card also sticks to the top of the column as a ~50 px bar, below the sticky h2. */

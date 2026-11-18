@@ -100,9 +100,14 @@ class TabletDraft(BaseModel):
     note: str | None = None
     tables: list[str] = Field(default_factory=list)
     # The capacity window of the time and the guests it already holds; both
-    # None outside every window. A full window or none needs the team's word.
+    # None outside every window. A full window or none needs the team's word,
+    # and so do closed opening hours (`off_hours`).
     window_start: datetime | None = None
     window_end: datetime | None = None
     booked_guests: int = 0
     max_guests: int | None = None
+    window_full: bool = False
+    # No dine-in window of the opening hours holds the time (#819): the team
+    # is asked too, and the confirmed table carries the mark `off_hours`.
+    off_hours: bool = False
     needs_override: bool = False

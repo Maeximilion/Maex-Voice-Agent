@@ -254,6 +254,54 @@
               },
               "renameOutput": true,
               "outputKey": "call_mode.changed"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "d2f8f636-f524-4abc-823f-48ce25b30acd",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "admin_pin.wrong",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "admin_pin.wrong"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "51b43553-f3ff-58a0-a198-b5303c9741ba",
+                    "leftValue": "={{ $json.event_type }}",
+                    "rightValue": "operator_access.changed",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "operator_access.changed"
             }
           ]
         },
@@ -492,13 +540,13 @@
             {
               "id": "334810ec-ca0d-5b6c-b1ad-356aab15b916",
               "name": "title",
-              "value": "Teamnummer geändert",
+              "value": "={{ $json.payload.standard ? 'Standard-Teamnummer geändert' : 'Teamnummer geändert' }}",
               "type": "string"
             },
             {
               "id": "3cecc03a-da5e-5841-a074-11e415f9f15c",
               "name": "text",
-              "value": "=Anrufe an das Team gehen heute an {{ $json.payload.to }}, vorher an {{ $json.payload.from }}. Bitte am Tablet prüfen.",
+              "value": "={{ $json.payload.standard ? 'Die Standardnummer des Teams ist jetzt ' + $json.payload.to + ($json.payload.from ? ', vorher ' + $json.payload.from : '') + '.' + ($json.payload.today ? ' Heute gehen Anrufe noch an ' + $json.payload.today + '.' : '') : 'Anrufe an das Team gehen heute an ' + $json.payload.to + ', vorher an ' + $json.payload.from + '.' }}{{ ({ operator: ' Geändert vom Betreiber ' + String($json.payload.actor).replace(/^operator:/, '') + '.', team: ' Geändert vom Team.' })[$json.payload.by] ?? '' }}{{ $json.payload.standard && !$json.payload.today ? '' : ' Bitte am Tablet prüfen.' }}",
               "type": "string"
             },
             {
@@ -595,6 +643,78 @@
     },
     {
       "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "5a2a7927-b62d-48cb-9528-18a79d995279",
+              "name": "title",
+              "value": "Inhaber-PIN falsch",
+              "type": "string"
+            },
+            {
+              "id": "f3f0ef7b-9461-4f55-90e1-0448d1c80b22",
+              "name": "text",
+              "value": "={{ $json.payload.failures }} falsche Inhaber-PINs in Folge auf dem Gerät {{ $json.payload.device }}.{{ $json.payload.ended ? ' Das Gerät ist abgemeldet.' : '' }}",
+              "type": "string"
+            },
+            {
+              "id": "c97deb12-3bf7-4026-b56a-e804ebabf9fe",
+              "name": "priority",
+              "value": "={{ $json.payload.ended ? 'high' : 'normal' }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "59920b91-848c-44b8-8fbf-dae99922ee12",
+      "name": "Message: admin PIN wrong",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        1520
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "6f7d2f10-616e-5965-8e15-62f17e73d9a7",
+              "name": "title",
+              "value": "Zugang vom Betreiber geändert",
+              "type": "string"
+            },
+            {
+              "id": "84a06cbd-a09e-54e7-b832-8ed8e7da539a",
+              "name": "text",
+              "value": "=Betreiber {{ String($json.payload.actor).replace(/^operator:/, '') }} {{ ({ setup_link: 'hat einen Einrichtungslink erstellt', pin_set: 'hat die ' + ($json.payload.which === 'admin' ? 'Inhaber-PIN' : 'Team-PIN') + ' neu gesetzt', sign_out: 'hat ' + $json.payload.signed_out + ' Gerät(e) abgemeldet' })[$json.payload.step] ?? $json.payload.step }}.",
+              "type": "string"
+            },
+            {
+              "id": "9b0c03a0-af7a-54ce-a9b8-d89ed30fcc27",
+              "name": "priority",
+              "value": "high",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": false,
+        "options": {}
+      },
+      "id": "db6ac389-cdf7-5e64-81ba-3a27f99b9e39",
+      "name": "Message: operator access changed",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        1680
+      ]
+    },
+    {
+      "parameters": {
         "jsCode": "// One message, two readers: the owner of the restaurant and the\n// operator (docs/23_ACCESS_SECURITY.md, T12). The channel node sends\n// one push per item and fails the run if either fails.\nconst { title, text, priority } = $input.first().json;\nreturn ['owner', 'ops'].map((topic) => ({\n  json: { topic, title, text, priority },\n}));\n"
       },
       "id": "72680f16-d25c-5234-98c1-f9a20f589adc",
@@ -648,7 +768,7 @@
     },
     {
       "parameters": {
-        "content": "## Owner and ops channel\n\nA staff change and a change of the call mode go to the owner and to the operator (T12). **To owner and ops** turns the message into two items, and **Send push to owner and ops** publishes each to its topic, `owner` or `ops`, with the same credential as the team channel.\n\nNo \"Continue on Fail\": a failed push sends the event again, so the owner may get one twice.\n\nDetails: `n8n/README.md`\n",
+        "content": "## Owner and ops channel\n\nA staff change, a change of the call mode, wrong owner PINs and a step of the operator on the access go to the owner and to the operator (T12, #811). **To owner and ops** turns the message into two items, and **Send push to owner and ops** publishes each to its topic, `owner` or `ops`, with the same credential as the team channel.\n\nNo \"Continue on Fail\": a failed push sends the event again, so the owner may get one twice.\n\nDetails: `n8n/README.md`\n",
         "height": 280,
         "width": 380,
         "color": 3
@@ -751,6 +871,20 @@
         [
           {
             "node": "Message: call mode changed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message: admin PIN wrong",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Message: operator access changed",
             "type": "main",
             "index": 0
           }
@@ -879,6 +1013,28 @@
         [
           {
             "node": "Remember event id",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message: admin PIN wrong": {
+      "main": [
+        [
+          {
+            "node": "To owner and ops",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message: operator access changed": {
+      "main": [
+        [
+          {
+            "node": "To owner and ops",
             "type": "main",
             "index": 0
           }

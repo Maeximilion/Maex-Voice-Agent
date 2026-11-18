@@ -59,7 +59,7 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 | Reservations | built | Check a slot against hours and capacity, offer alternatives, book after the caller's yes; the team can enter one by hand on a table of the floor plan. |
 | Pickup and delivery orders | built | Search the menu, take the order, check zone, fee and minimum order for a delivery, read back, confirm. |
 | Conversation core | built | Understanding ladder, guards and escalation; a whole call runs in the text phone and in the evals without any telephony. |
-| Tablet view for the team | partly | Mode, wait times and switches in the header, today's reservations, orders and callbacks, live without reloading; pages for the owner behind an admin PIN. |
+| Tablet view for the team | built | Mode, wait times and switches in the header, today's reservations, orders and callbacks, live without reloading; pages for the owner behind an admin PIN. |
 | Kitchen slip | built | A print bridge in the restaurant fetches confirmed orders and prints them; a lost acknowledgement never prints a second slip. |
 | Team notifications | partly | Events leave through an outbox with retries, for push messages to the team's devices. |
 | Phone line and voice | partly | Our own voice layer: Asterisk, the service voice with its speech engines, and outage drills in which every failure ends at the team phone. |
@@ -90,13 +90,13 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 - `make test` and `make lint` run in container against real Postgres, ruff clean
 - CI additionally builds API image without local CA cert and checks startup, `/health`, and token auth (missing, wrong, valid) without bind mount
 - Specs for architecture, data model, tools, dialog, GUI, and evals are in `docs/`
+- The admin view (`docs/06_GUI.md` §4) runs in the browser: the four figures above every tab, the tabs Zeiten, Lieferung, Menü, Anrufe with the detail of one call, Kennzahlen, Daten and Geräte, the owner's parts behind the admin PIN. The menu tab reads; answering a price difference stays on the board's card, and eval results are shown in the operator dashboard only
 - Orders for pickup and delivery: the menu can be imported, searched, asked about and ordered from, and a delivery order checks its zone, fee and minimum order
 - A caller's allergy reaches the kitchen as a highlighted note the model writes, never without it once named, and a question about allergens beyond the maintained values goes to the team before `confirm` (legal check L13, L17)
 
 **Not yet working:**
 
 - No phone line yet. The own voice layer (`docs/20_VOICE_LAYER.md`) is built up to the speech engines: the call session (T-10.4), the AI telephone as Compose services `asterisk` and `voice` behind the profile `voice` (T-1.11), and outage drills on the workbench, `python3 -m scripts.voice_drill`, in which every way the AI telephone can fail ends at the team telephone. The speech engines run inside `voice` since T-1.11 part 2 (Whisper and Piper, the model files of the speech kit). Missing: the test at the pilot's router (T-10.1 step 2, T-10.2) and real voices (T-10.7)
-- The admin view (`docs/06_GUI.md` §4) is built in parts: the key figures, the device list and the owner's settings behind the admin PIN run in the browser; the tabs for menu, delivery and calls are still only a mockup
 - No real menu data yet: the CSVs come from the chat digitization (C1)
 - The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`) by default and in CI. A real model can be switched in for the text phone and the evals with `--model <name>` (T-2.4). No real model passes the suites on target yet; the latest run with its date is the eval image under Status
 - Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured and not planned: the team's devices are Android devices or the web page on the tablet (D14)
@@ -115,7 +115,7 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 | Version | 0.0.1 |
 | Stage | 0, Foundation |
 | Next Gate | G0: Budget · Rights · Telephony path · Vendor chosen · Stage order |
-| As of | 2026-11-11 |
+| As of | 2026-11-15 |
 <!-- /readme:status -->
 
 <p align="center">
@@ -252,7 +252,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 
 ## Development
 
-The project is set up for Claude Code. `CLAUDE.md` contains the work instructions, `.claude/commands/` holds the commands `/start`, `/task`, `/done`, `/ship`, `/bug`, `/eval`, `/gate` and `/handover`. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+The project is set up for Claude Code. `CLAUDE.md` contains the work instructions, `.claude/commands/` holds the commands `/start`, `/task`, `/done`, `/ship`, `/fix-bug`, `/eval`, `/gate` and `/handover`. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
 <details>
 <summary>Make targets and the text phone</summary>

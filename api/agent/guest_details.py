@@ -73,7 +73,12 @@ from collections import Counter
 from collections.abc import Mapping
 
 from api.core.errors import InvalidInput
-from api.domain.customers.phone import TRUNK_IN_BRACKETS, normalize_phone
+from api.domain.customers.phone import (
+    FIXED_LENGTH,
+    normalize_phone,
+    read_bracketed_zero,
+    wrong_length,
+)
 from api.domain.menu.numberwords import (
     ARTICLES,
     CARD_SUFFIXES,
@@ -416,9 +421,31 @@ def _goes_on(group: str) -> bool:
     is read without the marks of digits said in words (Codex PR #481, P1)."""
     return (
         group.startswith("0")
-        and _AREA_CODE_DIGITS <= _digits(group) < _COMPLETE_NUMBER
+        and _digits(group) >= _AREA_CODE_DIGITS
+        and not _is_complete(group)
         and not _is_date(group.replace(_SAID, ""))
     )
+
+
+def _is_complete(group: str) -> bool:
+    """Enough digits that what follows a pause is something else. Of a country
+    whose numbers all have one length (`FIXED_LENGTH`) a number said with "00" and
+    its code is complete at that length, without the code and the trunk zero:
+    "0033 06 12 34 56 78" is the nine digits of the French guest (#804). Any other
+    count is the German one, with the code and the zero in it: a number of a
+    country not listed, said in pairs, is cut early and refused, and a short one
+    never takes the digits that follow it. Of a listed country it does: five
+    pairs after "0033" are a French number, which is exactly how a full one is
+    said, so a number one pair short with a stray pair behind it reads the same
+    and is told apart by nothing (#849). One really short ends at its last group
+    and `e164` refuses it by its length (`wrong_length`)."""
+    digits = "".join(char for char in group if char.isdigit())
+    if digits.startswith("00"):
+        said = digits[2:]
+        for size in (1, 2, 3):
+            if length := FIXED_LENGTH.get(said[:size]):
+                return len(said[size:].removeprefix("0")) >= length
+    return len(digits) >= _COMPLETE_NUMBER
 
 
 def _digits(text: str) -> int:
@@ -428,8 +455,7 @@ def _digits(text: str) -> int:
 def _without_trunk_zero(run: str) -> str:
     """ "+43 (0)664 1234567" is one number. Read at the bracket as two, its
     tail became a German one. As `normalize_phone` reads the "(0)"."""
-    international = run.startswith(("+", "00"))
-    return TRUNK_IN_BRACKETS.sub("" if international else "0", run)
+    return read_bracketed_zero(run)
 
 
 def _may_be_a_head(group: str) -> bool:
@@ -464,7 +490,11 @@ def _ends_with_other_digits(group: str) -> bool:
     if cut < 0:
         return False
     tail = group[cut + 1 :].strip()
-    return tail.isdigit() and len(tail) <= _SHORT_TAIL and bool(e164(group[:cut]))
+    return (
+        tail.isdigit()
+        and len(tail) <= _SHORT_TAIL
+        and bool(e164(group[:cut], exact_length=False))
+    )
 
 
 def _is_date(text: str, *, full_year: bool = False) -> bool:
@@ -489,7 +519,7 @@ def number_known(number: object, caller: str | None, numbers: set[str]) -> bool:
     return bool(written) and (written == caller or written in numbers)
 
 
-def e164(written: object) -> str:
+def e164(written: object, *, exact_length: bool = True) -> str:
     """The phone number in E.164, the one form the same number has. Empty for
     what is no phone number as it is said: only digits that begin with the
     zero of an area code or the plus of a country code are one. A date, a
@@ -498,7 +528,9 @@ def e164(written: object) -> str:
     without an area code is none either: it would be stored as an
     international one. Nor is one that is too short or too long: kept by its
     digits, "um 0 Uhr" would be a number a model could put in the place of
-    the caller ID."""
+    the caller ID. A number of a country with one length is refused at another
+    count of digits (`wrong_length`), except as the head of a number that an hour
+    follows (`_ends_with_other_digits`, `exact_length=False`)."""
     if not isinstance(written, str):
         return ""
     # "(0721) 5551234" begins with the area code as well.
@@ -506,6 +538,7 @@ def e164(written: object) -> str:
     if not text.startswith(("0", "+")) or _DATE_LIKE.match(text) or _is_date(text):
         return ""
     try:
-        return normalize_phone(written)
+        number = normalize_phone(written)
     except InvalidInput:
         return ""
+    return "" if exact_length and wrong_length(number) else number

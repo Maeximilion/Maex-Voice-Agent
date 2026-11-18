@@ -16,7 +16,7 @@ mit demselben Satz wie die Suche.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
@@ -126,6 +126,7 @@ def _allergens(
         select(ItemAllergen).where(ItemAllergen.menu_item_id == menu_item_id)
     ).all()
     if not rows:
+        # The same rule over the whole menu: `without_allergens`, below.
         return Allergens(known=False)
     # Reihenfolge der LMIV-Liste, nicht die des Imports: vorgelesen wird immer gleich.
     codes = sorted(
@@ -141,4 +142,22 @@ def _allergens(
         codes=codes,
         names=[ALLERGEN_SPOKEN[code] for code in codes],
         confirmed_at=max(row.confirmed_at for row in rows).astimezone(zone).date(),
+    )
+
+
+def without_allergens(session: Session, tenant_id: uuid.UUID) -> set[uuid.UUID]:
+    """The active dishes for which `_allergens` has nothing to say: no
+    maintained row, so the agent answers `SAY_ALLERGENS_UNKNOWN`.
+
+    The rule of `_allergens` over the whole menu, for the tab "Menü"
+    (`listing.py`) and the operator's count (`domain/status/overview.py`).
+    Whoever changes what counts as allergen information changes both."""
+    return set(
+        session.scalars(
+            select(MenuItem.id).where(
+                MenuItem.tenant_id == tenant_id,
+                MenuItem.active.is_(True),
+                ~exists().where(ItemAllergen.menu_item_id == MenuItem.id),
+            )
+        )
     )

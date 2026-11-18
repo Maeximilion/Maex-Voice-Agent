@@ -1,0 +1,183 @@
+{# A customer's access and call routing (#571, docs/23 §5 and §8): both PINs,
+   devices, a setup link, the call mode and the team number. Reached by a post
+   only: every form carries the page's CSRF token, the way back for a stale
+   second factor, and the reason the operator gave when opening the page, so
+   each step is recorded with it on both sides. A shown PIN or a new setup
+   link is text of this one answer, never a field's value and never a link;
+   the page is not stored. A form that changes something also carries the
+   page's token (`once`) and is taken one time: a reload sends nothing again.
+   It carries the version of what the page shows (`seen`) too: the stack
+   refuses a step when the restaurant changed since (#811).
+   The lists start at what holds now, so a tap on a button without a choice
+   changes nothing. Everything a stack says is shown as text. #}
+{% extends "base.html" %}
+{% block title %}Access of {{ key }}{% endblock %}
+
+{% macro hidden() %}
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="back" value="/customers/{{ key }}">
+<input type="hidden" name="reason" value="{{ category }}">
+<input type="hidden" name="reference" value="{{ reference }}">
+<input type="hidden" name="once" value="{{ once }}">
+<input type="hidden" name="seen" value="{{ access.version if access and access.version else '' }}">
+{% endmacro %}
+
+{% block main %}
+{% set who = access.tenant.name if access and access.tenant else key %}
+<section class="ops-seite" aria-labelledby="manage-title">
+  <p><a href="/customers/{{ key }}">Back to {{ key }}</a></p>
+  <h1 id="manage-title">{% if access %}{{ access.tenant.name }}{% else %}{{ key }}{% endif %}<span class="muted ops-key">{{ key }}</span></h1>
+  <p>Access and call routing. Reason: {{ reason }}, {{ reference }}. Every step is recorded with your account {{ operator.name }}, here and in the customer's own audit log.</p>
+
+  {% if said %}
+  <div class="banner {{ said[0] }}" role="{% if said[0] == 'danger' %}alert{% else %}status{% endif %}">
+    <p>{{ said[1] }}</p>
+    {% if said[2] %}
+    <p><code class="ops-geheim">{{ said[2] }}</code></p>
+    <p>Shown once: this page is not stored. Copy it now; looking again is a new step and is recorded again.</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/open" autocomplete="off">
+    {{ hidden() }}
+    <button type="submit"{% if not access %} class="primary"{% endif %}>{% if access %}Read the state again{% else %}Open access and call routing again{% endif %}</button>
+  </form>
+  {% if access %}
+  {% if not access.version %}
+  <p class="banner warn" role="status">This stack is older: it does not check whether this page is still current, so a step from it can undo a change the restaurant made meanwhile. Read the state again right before a step, and update the stack.</p>
+  {% endif %}
+
+  <div class="card ops-teil">
+    <h2>Call mode</h2>
+    <p>Now: <b>{{ access.call_mode | mode }}</b></p>
+    <p class="muted">Holds from the next call on. The owner and the ops topic get a push, and the change stands in the customer's audit log with your account.</p>
+    {% if access.call_modes %}
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/call-mode" autocomplete="off"
+          data-frage="Change how every call of {{ who }} is answered? It holds from the next call on." data-frage-ja="Yes" data-frage-nein="No">
+      {{ hidden() }}
+      <label for="mode">Set to</label>
+      <select id="mode" name="mode" required>
+        {% if access.call_mode not in access.call_modes %}<option value="" selected>Leave it as it is</option>{% endif %}
+        {% for code in access.call_modes %}<option value="{{ code }}"{% if code == access.call_mode %} selected{% endif %}>{{ code | mode }}</option>{% endfor %}
+      </select>
+      <button type="submit">Set the call mode</button>
+    </form>
+    {% else %}
+    <p>The stack has no settings for this restaurant yet, so there is no mode to set.</p>
+    {% endif %}
+  </div>
+
+  <div class="card ops-teil">
+    <h2>Team number</h2>
+    <p>Calls for the team go to <b>{{ access.team_phone or "no number" }}</b> now.{% if access.team_phone_until %} That is today's number, until {{ access.team_phone_until | shown }}; then the standard number {{ access.team_phone_standard or "" }} holds again, unless the owner keeps today's.{% endif %}</p>
+    <p class="muted">A number set here holds until the end of the business day, as one the staff set on the tablet: the owner keeps or undoes it on the tablet's card, and the owner and the ops topic get a push. Only numbers the stack's telephone system dials can be chosen.</p>
+    {% if access.team_phones %}
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/team-phone" autocomplete="off"
+          data-frage="Send the team calls of {{ who }} to another number for today?" data-frage-ja="Yes" data-frage-nein="No">
+      {{ hidden() }}
+      <label for="number">Number for today</label>
+      <select id="number" name="number" required>
+        {% if access.team_phone not in access.team_phones %}<option value="" selected>Choose a number</option>{% endif %}
+        {% for number in access.team_phones %}<option value="{{ number }}"{% if number == access.team_phone %} selected{% endif %}>{{ number }}</option>{% endfor %}
+      </select>
+      <button type="submit">Use this number today</button>
+    </form>
+    <p class="muted">The standard number holds every day, from the next call on when no number is set for today. A new one is pushed to the owner and the ops topic; a number for today still holds until its end. Use it when the standard line no longer answers.</p>
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/team-phone-standard" autocomplete="off"
+          data-frage="Change the standard team number of {{ who }}? It holds every day from the next call on." data-frage-ja="Yes" data-frage-nein="No">
+      {{ hidden() }}
+      <label for="standard">Standard number</label>
+      <select id="standard" name="number" required>
+        {% if access.team_phone_standard not in access.team_phones %}<option value="" selected>Choose a number</option>{% endif %}
+        {% for number in access.team_phones %}<option value="{{ number }}"{% if number == access.team_phone_standard %} selected{% endif %}>{{ number }}</option>{% endfor %}
+      </select>
+      <button type="submit">Make this the standard number</button>
+    </form>
+    {% else %}
+    <p>The stack lists no number that could be chosen.</p>
+    {% endif %}
+  </div>
+
+  <div class="card ops-teil">
+    <h2>PINs</h2>
+    {% if not access.login %}
+    <p class="banner warn">The restaurant has not set a password yet. Make a setup link below: it sets the password and both PINs.</p>
+    {% endif %}
+    {% for which, is_set, words in (("team", access.team_pin_set, "Team PIN: unlocks a signed-in device for the staff."), ("admin", access.admin_pin_set, "Admin PIN: opens the owner's settings. Never the same as the team PIN.")) %}
+    <div class="ops-teil">
+      <h3>{{ words }}</h3>
+      <p>{% if is_set %}<span class="badge ok">set</span>{% else %}<span class="badge warn">not set</span>{% endif %}</p>
+      {% if is_set %}
+      <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/pin-show" autocomplete="off">
+        {{ hidden() }}
+        <input type="hidden" name="which" value="{{ which }}">
+        <button type="submit">Show the {{ which }} PIN once</button>
+      </form>
+      {% endif %}
+      <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/pin-set" autocomplete="off"
+            data-frage="Set a new {{ which }} PIN for {{ who }}? The old one stops working.{% if which == 'admin' %} Owner rights still open on a device end.{% endif %}" data-frage-ja="Yes" data-frage-nein="No">
+        {{ hidden() }}
+        <input type="hidden" name="which" value="{{ which }}">
+        <label for="pin-{{ which }}">New {{ which }} PIN, 4 to 6 digits</label>
+        {# A password field with a show toggle: the PIN is typed on a shared screen (#829-20). #}
+        <span class="zugang-feld">
+          <input type="password" id="pin-{{ which }}" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" size="6" autocomplete="off" required>
+          <button type="button" data-zeigen="pin-{{ which }}" data-zeigen-an="Hide" data-zeigen-aus="Show" aria-pressed="false">Show</button>
+        </span>
+        <button type="submit">Set the {{ which }} PIN</button>
+      </form>
+    </div>
+    {% endfor %}
+    <p class="muted">Signed-in devices stay signed in when a PIN changes. A new admin PIN ends owner rights still open on a device.</p>
+  </div>
+
+  <div class="card ops-teil">
+    <h2>Devices</h2>
+    {% if not access.devices %}
+    <p>No device is signed in.</p>
+    {% else %}
+    <table class="tbl ops-liste">
+      <thead>
+        <tr><th scope="col">Device, as its browser names itself</th><th scope="col">Signed in</th><th scope="col">Last used</th><th scope="col">Sign out</th></tr>
+      </thead>
+      <tbody>
+        {% for device in access.devices %}
+        <tr>
+          <th scope="row" data-label="Device">{{ device.device or "no name" }}</th>
+          <td data-label="Signed in">{{ device.created_at | shown }}</td>
+          <td data-label="Last used">{{ device.last_seen_at | shown }}</td>
+          <td data-label="Sign out">
+            <form method="post" action="/customers/{{ key }}/manage/sign-out" autocomplete="off">
+              {{ hidden() }}
+              <input type="hidden" name="device" value="{{ device.id }}">
+              <button type="submit">Sign out this device</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted">{{ access.devices | length }} devices, the last used first, in the restaurant's time.{% if access.devices | length >= max_devices %} More may be signed in: the stack lists its newest {{ max_devices }}.{% endif %}</p>
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/sign-out" autocomplete="off"
+          data-frage="Sign out every device of {{ who }}? Each one needs the password again." data-frage-ja="Yes" data-frage-nein="No">
+      {{ hidden() }}
+      <input type="hidden" name="device" value="all">
+      <button type="submit" class="danger">Sign out every device</button>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="card ops-teil">
+    <h2>Setup link</h2>
+    <p>A one-time link for the restaurant: it sets a new password, the team PIN and the admin PIN, and signs out every device. Valid 24 hours; a new link replaces an older one.</p>
+    <p class="muted">The link is shown once, here. Before you pass it on, check that it begins with the customer's own address.</p>
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/setup-link" autocomplete="off"
+          data-frage="Make a setup link for {{ who }}? Every signed-in device is signed out and an older link stops working." data-frage-ja="Yes" data-frage-nein="No">
+      {{ hidden() }}
+      <button type="submit">Make a setup link</button>
+    </form>
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

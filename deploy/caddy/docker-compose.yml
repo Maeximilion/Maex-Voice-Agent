@@ -29,6 +29,8 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ${MAEX_SITES:?set by scripts/new_stack.py}:/etc/caddy/sites:ro
+      # The operator dashboard's site, empty until `new_stack.py --ops-site`.
+      - ${MAEX_OPERATOR_SITE:?set by scripts/new_stack.py}:/etc/caddy/operator:ro
       - caddy_data:/data
       - caddy_config:/config
 

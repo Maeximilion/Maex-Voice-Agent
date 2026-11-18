@@ -1,0 +1,36 @@
+{# The delivery zones (#571): one row per postal code zone as `delivery_zones`
+   holds it, the active ones first. "Ändern" opens that zone's form in place
+   of the list, "Neue Zone" an empty one. Without an active zone the page says
+   what callers hear, because no switch shows it. #}
+<h2 tabindex="-1"{% if not message %} data-fokus{% endif %}>Lieferzonen</h2>
+{% if message %}<p class="badge ok" role="status" tabindex="-1" data-fokus>{{ message }}</p>{% endif %}
+{% if not delivers %}
+<p class="badge warn" role="status">Keine aktive Lieferzone.</p>
+<p>Ohne aktive Zone nimmt die KI keine Lieferung an.</p>
+{% endif %}
+{% if zones %}
+<table class="tbl week">
+  <thead>
+    <tr><th>Zone</th><th>Postleitzahlen</th><th>Lieferpauschale</th><th>Mindestbestellwert</th><th>Lieferzeit</th><th>Zustand</th><th>Ändern</th></tr>
+  </thead>
+  <tbody>
+    {% for zone in zones %}
+    <tr>
+      <th scope="row">{{ zone.name }}</th>
+      <td data-label="Postleitzahlen" class="codes">{{ zone.codes }}</td>
+      <td data-label="Lieferpauschale">{{ zone.fee }}</td>
+      <td data-label="Mindestbestellwert">{{ zone.min_order }}</td>
+      <td data-label="Lieferzeit">{{ zone.eta }}</td>
+      <td data-label="Zustand">{% if zone.active %}aktiv{% else %}<span class="badge warn">aus</span>{% endif %}</td>
+      <td><button hx-get="/gui/lieferung/zone/{{ zone.id }}" hx-target="#lieferung-zonen" hx-swap="innerHTML" aria-label="{{ zone.name }} ändern">Ändern</button></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">Noch keine Lieferzone angelegt.</p>
+{% endif %}
+<div class="cb-actions">
+  <button hx-get="/gui/lieferung/neu" hx-target="#lieferung-zonen" hx-swap="innerHTML">Neue Zone</button>
+</div>
+<p class="muted">Eine Änderung gilt sofort, auch in einem laufenden Anruf. Eine Bestellung, die schon vorgelesen oder angenommen ist, bleibt, wie sie ist. Wer sofort gar nicht mehr liefern will, schaltet in der Übersicht die Lieferung aus.</p>

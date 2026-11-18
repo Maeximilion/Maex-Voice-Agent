@@ -435,7 +435,73 @@ EUR; isolation and the unchanged code decide it.
   not answer stays (it may still print); one it never claimed is removed.
 - #570 logins are per stack; the GUI's tenant choice may stay as it is.
 - #571 operator dashboard reads several stacks over an ops API per stack on an internal `ops`
-  network (docs/23 §8).
+  network (docs/23 §8). Its own settings, in the operator stack's `.env`: `DATABASE_URL` (handed to the dashboard as `OPERATOR_DATABASE_URL`), `OPERATOR_PROXY_SECRET`, and
+  `OPERATOR_ORIGIN`, the address the operator's browser uses (`https://ops.<domain>`, no path).
+  Passkeys are bound to it: the dashboard refuses to start without it outside dev and test, and a
+  later change of the host name makes every registered passkey useless (TOTP and the recovery
+  codes still open, the passkeys are then registered again). `OPERATOR_PUSH_URL` (by
+  default the operator stack's own push server, `http://maex-ops-push-1/`) and
+  `OPERATOR_PUSH_TOKEN` (the token of its user `dashboard`) are where the push on a changed
+  sign-in factor goes, topic `ops`; the request queues it in the operator database and the
+  dashboard sends it, retried until the server takes it. Outside dev and test the dashboard
+  refuses to start without both (docs/23 §5, #827 F3).
+  `OPERATOR_METRICS_DIR` names the folder with the recorded eval and measurement results
+  (`docs/metrics/` of a checkout) that the dev tools show; the image holds none, so the
+  operator stack mounts it read-only, and without it the page says that the files are missing.
+  **The operator stack (#571, plan number 11, 17.11.2026):** `deploy/docker-compose.operator.yml`,
+  Compose project `maex-ops`, run from a checkout of its own in `<root>/ops`: the dashboard
+  (the API's image, `uvicorn api.dashboard.app:app` on port 8002, `ENV=prod`, not root, read-only,
+  no capability, `api/`, `db/` and `docs/metrics/` mounted read-only) and a `postgres:16-alpine`
+  of its own, and its own push server `push` (`binwiederhier/ntfy`, the image and closed start
+  of a customer's, #827 F3). Both networks are internal and nothing publishes a port: `backend`
+  holds the database and the dashboard, `edge` the dashboard, the push server and, once its site
+  is installed, the shared Caddy. Its `.env` (mode 600, `.env.example` names each line): `POSTGRES_USER`,
+  `POSTGRES_PASSWORD`, `POSTGRES_DB` (for example `maex_operator`), `DATABASE_URL` (the
+  dashboard's own role, for example `maex_ops`) and `OWNER_DATABASE_URL` (the owner, as in §3),
+  `BACKUP_DOCKER_NETWORK=maex-ops_backend` and `BACKUP_PASSPHRASE_FILE` (§4),
+  `OPERATOR_PROXY_SECRET` and `OPERATOR_ORIGIN`, the push server's `NTFY_BASE_URL` (a host of
+  its own, for example `https://push.ops.<domain>`), `NTFY_AUTH_USERS` (the users `dashboard`
+  and `ops`, each with a bcrypt hash from `ntfy user hash`), `NTFY_AUTH_TOKENS`
+  (`dashboard:<token>:dashboard`) and the same token as `OPERATOR_PUSH_TOKEN`, and
+  `COMPOSE_FILE=deploy/docker-compose.operator.yml:networks.json`. The dashboard connects as its
+  own role and, outside dev and test, refuses to start as a superuser; the owner migrates, dumps and
+  restores, and never reaches the dashboard's container (#827 F5). Setting it up, in `<root>/ops`:
+  `echo '{}' > networks.json` once, then `docker compose up -d --wait db`, `bash scripts/db_role.sh`,
+  `bash scripts/migrate.sh --operator`, `docker compose up -d --build` and the first account with
+  `docker compose exec dashboard python -m api.dashboard.cli add <name>`. From then on
+  `scripts/new_stack.py` rewrites `networks.json` from the site files (the dashboard on every
+  customer's `ops` network, on no other of theirs), recreates the dashboard and registers each
+  new customer with `customer-add`, the stack's `OPS_TOKEN` on standard input; without
+  `<root>/ops/.env` it prints that command instead. The operator's phone subscribes to the topic
+  `ops` at `NTFY_BASE_URL` with the user `ops`; `dashboard` may only publish there, `ops` only
+  read, and nobody else either (shown on a real ntfy 2.37.2, 17.11.2026).
+  The dashboard and its database may each take at most 512 MiB and one CPU, the push server
+  128 MiB and half a CPU, so the operator side never takes
+  memory from a stack's call path (#827 F7). Its database is dumped every night at 03:15 by the
+  second line of `deploy/backup.cron`, run in `<root>/ops`; a dump there writes no `backup.done`
+  (the operator database has no tenants and no backup alarm) and says so in the log (#827 F9).
+  **ops.<domain> stays closed until the security audit of docs/23 §11 found no open P1.** Without
+  a site file the shared Caddy has no site for that name, gets no certificate and answers
+  nothing. After the audit `python3 scripts/new_stack.py --ops-site [--root /srv/maex]` renders
+  `deploy/caddy/ops.caddy` with the hosts of `OPERATOR_ORIGIN` and `NTFY_BASE_URL` (the push
+  server's site, which gets no proxy secret) and `OPERATOR_PROXY_SECRET` into
+  `<root>/caddy/operator/ops.caddy` (mode 640; refused when the secret is short, odd or a
+  customer's, or when the push server has no https host of its own), joins the shared Caddy to `maex-ops_edge` and reloads it, and takes the file out
+  again when Caddy refuses it. From then on every customer's run and `--check-sites` also refuse a
+  customer site with the proxy secret or a host name of `ops.caddy`: that stack's `api` shares an
+  `ops` network with the dashboard and would pass its proxy check. The site sends HSTS, `nosniff`, `no-referrer`, the CSP without
+  inline code and `frame-ancestors 'none'`, limits a body to 256 kB, proxies to the dashboard
+  alone with the proxy secret and serves no file of its own. Caddy drops an `X-Forwarded-For`
+  a client sent (no `trusted_proxies`); the dashboard reads that header only next to the secret,
+  and Uvicorn reads none (`--no-proxy-headers`). The shared Caddy gives a client ten seconds for
+  its request headers and closes idle connections after two minutes; its admin endpoint stays on
+  the container's own loopback. Tested on 17.11.2026 with throwaway values and the host name
+  `ops.localhost` (Caddy's own local certificate, no request to a real certificate authority):
+  the sign-in page answers 200 with every header above, a page behind the session 303 to the
+  sign-in, `/docs` and `/openapi.json` 404, plain HTTP 308, a 300 kB post 413, another host name
+  and the admin port from another container nothing, the dashboard past Caddy 403 with or without
+  a guessed secret, and a forged `X-Forwarded-For: 6.6.6.6` left the client's real address in the
+  dashboard's counter. With the operator folder empty, `ops.localhost` answered nothing.
 - #576 offboarding is export, then removal of the stack and its volumes.
 
 ### Reassess

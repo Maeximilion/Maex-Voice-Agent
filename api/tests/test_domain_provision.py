@@ -395,6 +395,39 @@ def test_missing_names_what_the_new_tenant_lacks_until_it_is_there(engine):
         assert missing(session, tenant_id) == []
 
 
+def test_a_zone_on_a_map_is_no_delivery_zone_and_the_gap_names_the_tab(engine):
+    """Neither the tab "Lieferung" nor `check_delivery` uses a zone on a map
+    (#821): it does not close the gap, and the gap names the tab as well as
+    the import."""
+    spec = _spec(
+        hours=[
+            {
+                "days": WEEK,
+                "services": ["delivery"],
+                "opens": "17:00",
+                "closes": "22:00",
+            }
+        ]
+    )
+    with Session(engine) as session:
+        tenant_id = create_tenant(session, spec, "operator:test", T0).tenant_id
+        assert tenant_id is not None
+        session.add(
+            DeliveryZone(
+                tenant_id=tenant_id,
+                name="Karte",
+                match_type="polygon",
+                polygon={"type": "Polygon", "coordinates": []},
+                fee_cents=0,
+                min_order_cents=0,
+                eta_minutes=30,
+            )
+        )
+        session.commit()
+        (gap,) = [g for g in missing(session, tenant_id) if "delivery" in g]
+    assert gap == "delivery zones (tab Lieferung, or python -m scripts.seed_zones)"
+
+
 def test_missing_of_a_tenant_without_hours(engine):
     with Session(engine) as session:
         tenant = Tenant(name="Leer")
@@ -410,7 +443,7 @@ def test_missing_of_a_tenant_without_hours(engine):
 def cli(engine, monkeypatch, tmp_path):
     monkeypatch.setattr(job, "SessionLocal", sessionmaker(bind=engine))
     monkeypatch.setattr(job, "utcnow", lambda: T0)
-    monkeypatch.delenv("AGENT_DOMAIN", raising=False)
+    monkeypatch.setattr(settings, "agent_domain", "")
     path = tmp_path / "customer.json"
     path.write_text(_spec().model_dump_json(), encoding="utf-8")
     return path

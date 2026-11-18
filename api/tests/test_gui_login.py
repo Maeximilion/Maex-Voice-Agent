@@ -11,7 +11,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, select, update
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session
 
 from api.config import settings
@@ -20,11 +20,24 @@ from api.db import get_db
 from api.domain.access.admin import AdminRefused
 from api.domain.access.sessions import IDLE, stack_tenant_id
 from api.domain.access.setup import issue_link, use_link
+from api.domain.customers.requests import log_request
 from api.gui.router import router as gui_router
 from api.gui.session import csrf_matches
 from api.gui.sse import _signed_in
 from api.main import app
-from api.models import GuiAccount, GuiLoginFailure, GuiSession, StaffChange, Tenant
+from api.models import (
+    AuditLog,
+    Call,
+    DataSubjectRequest,
+    DeliveryZone,
+    GuiAccount,
+    GuiLoginFailure,
+    GuiSession,
+    OpeningHours,
+    SpecialDay,
+    StaffChange,
+    Tenant,
+)
 from scripts.seed import seed
 
 pytestmark = pytest.mark.gui_login
@@ -113,7 +126,14 @@ def test_every_route_of_the_view_refuses_without_a_session(client, method, path)
 
 
 def test_a_page_load_goes_to_the_sign_in(client):
-    for path in ("/gui", "/gui/", "/gui/kennzahlen", "/gui/anrufe", "/gui/raumplan"):
+    for path in (
+        "/gui",
+        "/gui/",
+        "/gui/kennzahlen",
+        "/gui/anrufe",
+        "/gui/menue",
+        "/gui/raumplan",
+    ):
         answer = client.get(path, headers=HTML)
         assert answer.status_code == 303, path
         assert answer.headers["location"] == "/gui/anmelden"
@@ -241,6 +261,37 @@ def test_a_wrong_password_says_so_and_sets_no_session(client, engine):
     assert "<h1>Testbetrieb</h1>" in answer.text
 
 
+def test_a_form_post_under_no_referrer_signs_in(client, engine):
+    """A browser sends `Origin: null` with a plain form post when the page's
+    referrer policy is `no-referrer` (Fetch, "append a request `Origin`
+    header"), and Caddy sets that policy on the whole site. The browser still
+    says `Sec-Fetch-Site: same-origin`, which no page can set or change. Found
+    16.11.2026: the operator's sign-in answered 403 in a real browser."""
+    _set_up_and_sign_in(client, engine)
+    client.cookies.clear()
+    client.cookies.set("csrf_token", "testtoken")
+    answer = client.post(
+        "/gui/anmelden",
+        data={"csrf_token": "testtoken", "passwort": PASSWORD},
+        headers={"Origin": "null", "Sec-Fetch-Site": "same-origin"},
+    )
+    assert answer.status_code == 303 and answer.headers["location"] == "/gui/"
+
+
+@pytest.mark.parametrize("site", ["cross-site", "same-site", "none", ""])
+def test_a_null_origin_that_is_not_this_site_stays_refused(client, engine, site):
+    """`null` is also what a sandboxed frame and a cross-site redirect send."""
+    _set_up_and_sign_in(client, engine)
+    client.cookies.clear()
+    client.cookies.set("csrf_token", "testtoken")
+    answer = client.post(
+        "/gui/anmelden",
+        data={"csrf_token": "testtoken", "passwort": PASSWORD},
+        headers={"Origin": "null", "Sec-Fetch-Site": site},
+    )
+    assert answer.status_code == 403
+
+
 @pytest.mark.parametrize(
     ("form", "headers"),
     [
@@ -341,6 +392,68 @@ def test_the_pin_form_needs_its_csrf_token(client, engine):
     _set_up_and_sign_in(client, engine)
     _lock(engine)
     assert client.post("/gui/entsperren", data={"pin": PIN}).status_code == 403
+
+
+FOREIGN = [{"Origin": "https://evil.example"}, {"Sec-Fetch-Site": "cross-site"}]
+
+
+@pytest.mark.parametrize("headers", FOREIGN)
+def test_the_pin_form_refuses_another_site(client, engine, headers):
+    """#827 F10: a foreign page cannot unlock the tablet with a PIN it holds."""
+    _set_up_and_sign_in(client, engine)
+    _lock(engine)
+    answer = client.post(
+        "/gui/entsperren", data={"csrf_token": "testtoken", "pin": PIN}, headers=headers
+    )
+    assert answer.status_code == 403
+    write = client.post("/gui/kopfzeile/ki-pausieren", headers=HX)
+    assert write.headers["HX-Redirect"] == "/gui/entsperren"
+
+
+@pytest.mark.parametrize(
+    ("token", "headers"),
+    [(None, {}), ("other", {}), *(("testtoken", h) for h in FOREIGN)],
+)
+def test_the_setup_form_needs_its_csrf_token_and_this_site(
+    client, engine, token, headers
+):
+    """#827 F10, proved live by the audit: a foreign page cannot use a setup
+    link it knows to give the tablet a password of its choosing. The link
+    stays unused."""
+    code = _setup(engine)
+    form = {
+        "code": code,
+        "passwort": PASSWORD,
+        "passwort2": PASSWORD,
+        "pin": PIN,
+        "pin2": PIN,
+        "admin_pin": ADMIN_PIN,
+        "admin_pin2": ADMIN_PIN,
+    }
+    if token is not None:
+        form["csrf_token"] = token
+    answer = client.post("/gui/einrichten", data=form, headers=headers)
+    assert answer.status_code == 403
+    with Session(engine) as session:
+        assert session.scalar(select(func.count()).select_from(GuiSession)) == 0
+    form["csrf_token"] = "testtoken"
+    assert client.post("/gui/einrichten", data=form).status_code == 303
+
+
+@pytest.mark.parametrize(
+    ("token", "headers"),
+    [(None, {}), ("other", {}), *(("testtoken", h) for h in FOREIGN)],
+)
+def test_closing_the_owner_part_needs_its_csrf_token_and_this_site(
+    client, engine, token, headers
+):
+    """#827 F10: a foreign page cannot end the owner's hour on the tablet."""
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client).status_code == 303
+    form = {} if token is None else {"csrf_token": token}
+    answer = client.post("/gui/inhaber/schliessen", data=form, headers=headers)
+    assert answer.status_code == 403
+    assert client.get(DEVICES, headers=HTML).status_code == 200
 
 
 # --- production: cookie flags, client address -----------------------------------
@@ -636,7 +749,422 @@ def test_the_admin_pin_unlocks_a_locked_device(client, engine):
 def test_the_settings_sheet_names_the_device_list(client, engine):
     _set_up_and_sign_in(client, engine)
     assert 'hx-get="/gui/einstellungen"' in client.get("/gui/", headers=HTML).text
-    assert 'href="/gui/geraete"' in client.get("/gui/einstellungen", headers=HX).text
+    sheet = client.get("/gui/einstellungen", headers=HX).text
+    for page in (
+        "/gui/zeiten",
+        "/gui/lieferung",
+        "/gui/menue",
+        "/gui/daten",
+        "/gui/geraete",
+    ):
+        assert f'href="{page}"' in sheet
+
+
+# --- the owner's tab "Zeiten" (#571, plan number 7) -----------------------------
+
+HOURS = "/gui/zeiten"
+HOURS_WRITES = [
+    (f"{HOURS}/woche/1", {"gesehen": "x", "pickup-von-0": "10:00"}),
+    (f"{HOURS}/tag", {"datum": "2099-01-01", "art": "geschlossen"}),
+]
+
+
+def _hours_untouched(engine) -> bool:
+    """The seed's 36 spans, no special day, no audit row of the tab."""
+    with Session(engine) as session:
+        spans = session.scalar(select(func.count()).select_from(OpeningHours))
+        days = session.scalar(select(func.count()).select_from(SpecialDay))
+        audits = session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.action.in_(("opening_hours.changed", "special_day.set")))
+        )
+    return (spans, days, audits) == (36, 0, 0)
+
+
+def test_the_weekly_hours_ask_the_admin_pin_first(client, engine):
+    _set_up_and_sign_in(client, engine)
+    page = client.get(HOURS, headers=HTML)
+    assert page.status_code == 303
+    assert page.headers["location"] == "/gui/inhaber?weiter=/gui/zeiten"
+    # The parts of the page ask it too, and show nothing before.
+    # After the PIN they lead back to the page they are a part of, never to
+    # themselves: alone a part is no page (no stylesheet, no script).
+    on_page = {**HX, "HX-Current-URL": "http://testserver/gui/zeiten"}
+    for path in (f"{HOURS}/woche", f"{HOURS}/woche/1"):
+        part = client.get(path, headers=on_page)
+        assert part.status_code == 401 and "11:30" not in part.text
+        assert part.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/zeiten"
+        # Without the page's address the PIN page leads to the board.
+        bare = client.get(path, headers=HX)
+        assert bare.headers["HX-Redirect"] == "/gui/inhaber?weiter="
+    # The team PIN opens nothing here.
+    assert _owner(client, pin=PIN, back=HOURS).status_code == 401
+    assert client.get(HOURS, headers=HTML).status_code == 303
+
+    assert _owner(client, back=HOURS).headers["location"] == HOURS
+    shown = client.get(HOURS, headers=HTML)
+    assert shown.status_code == 200 and "Öffnungszeiten der Woche" in shown.text
+    assert shown.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize(("path", "data"), HOURS_WRITES)
+def test_a_write_to_the_hours_without_the_admin_pin_writes_nothing(
+    client, engine, path, data
+):
+    _set_up_and_sign_in(client, engine)
+    answer = client.post(
+        path,
+        data=data,
+        headers={**HX, "HX-Current-URL": "http://testserver/gui/zeiten"},
+    )
+    assert answer.status_code == 401
+    assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/zeiten"
+    assert _hours_untouched(engine)
+
+
+@pytest.mark.parametrize(("path", "data"), HOURS_WRITES)
+def test_a_write_to_the_hours_from_another_site_is_refused(client, engine, path, data):
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=HOURS).status_code == 303
+    answer = client.post(
+        path, data=data, headers={**HX, "Origin": "https://evil.example"}
+    )
+    assert answer.status_code == 403
+    assert _hours_untouched(engine)
+
+
+def test_the_hours_close_again_when_the_owner_is_idle(client, engine):
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=HOURS).status_code == 303
+    assert client.get(HOURS, headers=HTML).status_code == 200
+    _age_owner_clock(engine, 16)
+    gone = client.post(HOURS_WRITES[1][0], data=HOURS_WRITES[1][1], headers=HX)
+    assert gone.status_code == 401 and _hours_untouched(engine)
+
+
+# --- the owner's tab "Lieferung" (#571, plan number 8) --------------------------
+
+DELIVERY = "/gui/lieferung"
+ZONE_FORM = {
+    "name": "Zone 1",
+    "plz": "76530",
+    "pauschale": "2,50",
+    "mindestwert": "15",
+    "lieferzeit": "40",
+    "aktiv": "1",
+}
+
+
+def _a_zone(engine) -> DeliveryZone:
+    with Session(engine) as session:
+        zone = DeliveryZone(
+            tenant_id=session.scalars(select(Tenant.id)).one(),
+            name="Zone 9",
+            match_type="postal_code",
+            postal_codes=["76599"],
+            fee_cents=190,
+            min_order_cents=1200,
+            eta_minutes=35,
+        )
+        session.add(zone)
+        session.commit()
+        session.refresh(zone)
+        session.expunge(zone)
+        return zone
+
+
+def _zones_untouched(engine) -> bool:
+    """The one zone as `_a_zone` wrote it, no audit row of the tab."""
+    with Session(engine) as session:
+        zones = [
+            (zone.name, zone.fee_cents, zone.active)
+            for zone in session.scalars(select(DeliveryZone))
+        ]
+        audits = session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.entity == "delivery_zones")
+        )
+    return zones == [("Zone 9", 190, True)] and audits == 0
+
+
+def test_the_delivery_zones_ask_the_admin_pin_first(client, engine):
+    zone = _a_zone(engine)
+    _set_up_and_sign_in(client, engine)
+    page = client.get(DELIVERY, headers=HTML)
+    assert page.status_code == 303
+    assert page.headers["location"] == "/gui/inhaber?weiter=/gui/lieferung"
+    # The parts of the page ask it too, show nothing before and lead back to
+    # the page after the PIN, never to themselves.
+    on_page = {**HX, "HX-Current-URL": "http://testserver/gui/lieferung"}
+    for path in (
+        f"{DELIVERY}/zonen",
+        f"{DELIVERY}/neu",
+        f"{DELIVERY}/zone/{zone.id}",
+    ):
+        part = client.get(path, headers=on_page)
+        assert part.status_code == 401, path
+        assert "Zone 9" not in part.text and "76599" not in part.text
+        assert part.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/lieferung"
+    # The team PIN opens nothing here.
+    assert _owner(client, pin=PIN, back=DELIVERY).status_code == 401
+    assert client.get(DELIVERY, headers=HTML).status_code == 303
+
+    assert _owner(client, back=DELIVERY).headers["location"] == DELIVERY
+    shown = client.get(DELIVERY, headers=HTML)
+    assert shown.status_code == 200 and "Zone 9" in shown.text
+    assert shown.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize("target", ["neu", "zone"])
+def test_a_write_to_the_zones_without_the_admin_pin_writes_nothing(
+    client, engine, target
+):
+    zone = _a_zone(engine)
+    _set_up_and_sign_in(client, engine)
+    path = f"{DELIVERY}/neu" if target == "neu" else f"{DELIVERY}/zone/{zone.id}"
+    answer = client.post(
+        path,
+        data=ZONE_FORM,
+        headers={**HX, "HX-Current-URL": "http://testserver/gui/lieferung"},
+    )
+    assert answer.status_code == 401
+    assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/lieferung"
+    assert _zones_untouched(engine)
+
+
+@pytest.mark.parametrize("target", ["neu", "zone"])
+def test_a_write_to_the_zones_from_another_site_is_refused(client, engine, target):
+    zone = _a_zone(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DELIVERY).status_code == 303
+    path = f"{DELIVERY}/neu" if target == "neu" else f"{DELIVERY}/zone/{zone.id}"
+    answer = client.post(
+        path, data=ZONE_FORM, headers={**HX, "Origin": "https://evil.example"}
+    )
+    assert answer.status_code == 403
+    assert _zones_untouched(engine)
+
+
+def _nothing_of_the_zones_opens(client, engine, zone) -> None:
+    """The page, each of its parts and both writes lead to the admin PIN, show
+    nothing and write nothing."""
+    on_page = {**HX, "HX-Current-URL": "http://testserver/gui/lieferung"}
+    assert client.get(DELIVERY, headers=HTML).status_code == 303
+    for path in (
+        f"{DELIVERY}/zonen",
+        f"{DELIVERY}/neu",
+        f"{DELIVERY}/zone/{zone.id}",
+    ):
+        part = client.get(path, headers=on_page)
+        assert part.status_code == 401, path
+        assert "Zone 9" not in part.text and "76599" not in part.text
+        assert part.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/lieferung"
+    for path in (f"{DELIVERY}/neu", f"{DELIVERY}/zone/{zone.id}"):
+        write = client.post(path, data=ZONE_FORM, headers=on_page)
+        assert write.status_code == 401, path
+        assert write.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/lieferung"
+    assert _zones_untouched(engine)
+
+
+def test_the_zones_close_again_when_the_owner_is_idle(client, engine):
+    zone = _a_zone(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DELIVERY).status_code == 303
+    assert client.get(DELIVERY, headers=HTML).status_code == 200
+    _age_owner_clock(engine, 16)
+    _nothing_of_the_zones_opens(client, engine, zone)
+
+
+def test_a_locked_device_opens_nothing_of_the_zones(client, engine):
+    """The team's idle lock ends the owner's rights on the device too."""
+    zone = _a_zone(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DELIVERY).status_code == 303
+    assert client.get(DELIVERY, headers=HTML).status_code == 200
+    _lock(engine)
+    _nothing_of_the_zones_opens(client, engine, zone)
+
+
+# --- the owner's tab "Daten" (#571, plan number 10) ------------------------------
+
+DATA = "/gui/daten"
+DATA_PAGE = {**HX, "HX-Current-URL": "http://testserver/gui/daten"}
+DATA_NOTE = "Frau Beispiel, Bestellung vom 12.10."
+DATA_WRITES = [
+    ("anfrage", {"gesehen": "", "art": "access", "weg": "mail", "notiz": "neu"}),
+    ("anfrage/dsr_2026_001/frist", {}),
+    ("anfrage/dsr_2026_001/antwort", {"ergebnis": "refused"}),
+    ("anfrage/dsr_2026_001/pruefen", {"name": "Beispiel", "tag-1": "2026-10-12"}),
+]
+
+
+def _a_request(engine) -> DataSubjectRequest:
+    with Session(engine) as session:
+        tenant_id = session.scalars(select(Tenant.id)).one()
+        row = log_request(
+            session,
+            tenant_id,
+            kind="access",
+            channel="mail",
+            note=DATA_NOTE,
+            received_at=clock.utcnow().replace(year=2026, month=11, day=2),
+            zone="Europe/Berlin",
+        )
+        session.commit()
+        session.refresh(row)
+        session.expunge(row)
+        return row
+
+
+def _requests_untouched(engine, before: DataSubjectRequest) -> bool:
+    """The one request as `_a_request` wrote it, and its one audit row."""
+    with Session(engine) as session:
+        rows = [
+            (row.reference, row.deadline, row.answered_at)
+            for row in session.scalars(select(DataSubjectRequest))
+        ]
+        audits = session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.entity == "data_subject_request")
+        )
+    return rows == [("dsr_2026_001", before.deadline, None)] and audits == 1
+
+
+def _nothing_of_the_requests_opens(client, engine, before) -> None:
+    """The page, each of its parts and every write lead to the admin PIN, show
+    nothing and write nothing."""
+    assert client.get(DATA, headers=HTML).status_code == 303
+    for part in ("anfragen", "anfrage/dsr_2026_001"):
+        answer = client.get(f"{DATA}/{part}", headers=DATA_PAGE)
+        assert answer.status_code == 401, part
+        assert "Beispiel" not in answer.text and "dsr_2026_001" not in answer.text
+        assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/daten"
+    for path, data in DATA_WRITES:
+        write = client.post(f"{DATA}/{path}", data=data, headers=DATA_PAGE)
+        assert write.status_code == 401, path
+        assert write.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/daten"
+        assert "Beispiel" not in write.text
+    assert _requests_untouched(engine, before)
+
+
+def test_the_requests_of_guests_ask_the_admin_pin_first(client, engine):
+    before = _a_request(engine)
+    _set_up_and_sign_in(client, engine)
+    page = client.get(DATA, headers=HTML)
+    assert page.status_code == 303
+    assert page.headers["location"] == "/gui/inhaber?weiter=/gui/daten"
+    _nothing_of_the_requests_opens(client, engine, before)
+    # The team PIN opens nothing here.
+    assert _owner(client, pin=PIN, back=DATA).status_code == 401
+    assert client.get(DATA, headers=HTML).status_code == 303
+
+    assert _owner(client, back=DATA).headers["location"] == DATA
+    shown = client.get(DATA, headers=HTML)
+    assert shown.status_code == 200 and "dsr_2026_001" in shown.text
+    assert shown.headers["Cache-Control"] == "no-store"
+    opened = client.get(f"{DATA}/anfrage/dsr_2026_001", headers=HX)
+    assert opened.status_code == 200 and DATA_NOTE in opened.text
+    assert opened.headers["Cache-Control"] == "no-store"
+
+
+@pytest.mark.parametrize(("path", "data"), DATA_WRITES)
+def test_a_write_to_the_requests_from_another_site_is_refused(
+    client, engine, path, data
+):
+    before = _a_request(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DATA).status_code == 303
+    answer = client.post(
+        f"{DATA}/{path}", data=data, headers={**HX, "Origin": "https://evil.example"}
+    )
+    assert answer.status_code == 403
+    assert _requests_untouched(engine, before)
+
+
+def test_the_requests_close_again_when_the_owner_is_idle(client, engine):
+    before = _a_request(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DATA).status_code == 303
+    assert client.get(DATA, headers=HTML).status_code == 200
+    _age_owner_clock(engine, 16)
+    _nothing_of_the_requests_opens(client, engine, before)
+
+
+def test_a_locked_device_opens_nothing_of_the_requests(client, engine):
+    """The team's idle lock ends the owner's rights on the device too."""
+    before = _a_request(engine)
+    _set_up_and_sign_in(client, engine)
+    assert _owner(client, back=DATA).status_code == 303
+    assert client.get(DATA, headers=HTML).status_code == 200
+    _lock(engine)
+    _nothing_of_the_requests_opens(client, engine, before)
+
+
+# --- one row of the call list in detail (#571, plan number 10) -------------------
+
+CALL_DETAIL = "/gui/anrufe/anruf"
+
+
+def _a_call(engine) -> str:
+    with Session(engine) as session:
+        call = Call(
+            tenant_id=session.scalars(select(Tenant.id)).one(),
+            external_session_id="s-detail",
+            started_at=clock.utcnow() - timedelta(minutes=5),
+            delete_after=clock.utcnow().date(),
+            tool_calls=[{"name": "draft_order", "duration_ms": 80, "ok": True}],
+        )
+        session.add(call)
+        session.commit()
+        return str(call.id)
+
+
+def _call_looks(engine) -> int | None:
+    with Session(engine) as session:
+        return session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.action == "gui.call_read")
+        )
+
+
+def test_the_staff_open_a_calls_detail_with_the_restaurants_login(client, engine):
+    call_id = _a_call(engine)
+    _set_up_and_sign_in(client, engine)
+    answer = client.post(CALL_DETAIL, data={"anruf": call_id}, headers=HX)
+    assert answer.status_code == 200 and "1. draft_order" in answer.text
+    assert answer.headers["Cache-Control"] == "no-store"
+    assert _call_looks(engine) == 1
+
+
+def test_a_calls_detail_from_another_site_or_a_locked_device_shows_nothing(
+    client, engine
+):
+    call_id = _a_call(engine)
+    _set_up_and_sign_in(client, engine)
+    forged = client.post(
+        CALL_DETAIL,
+        data={"anruf": call_id},
+        headers={**HX, "Origin": "https://evil.example"},
+    )
+    assert forged.status_code == 403 and "draft_order" not in forged.text
+    _lock(engine)
+    locked = client.post(CALL_DETAIL, data={"anruf": call_id}, headers=HX)
+    assert locked.status_code == 401 and "draft_order" not in locked.text
+    assert locked.headers["HX-Redirect"] == "/gui/entsperren"
+    assert _call_looks(engine) == 0
+
+
+def test_the_staff_pages_of_the_frame_need_no_admin_pin(client, engine):
+    """The frame adds tabs, not a lock: "Anrufe", "Kennzahlen" and the
+    read-only "Menü" stay with the restaurant's login (docs/06 section 4)."""
+    _set_up_and_sign_in(client, engine)
+    for path in ("/gui/anrufe", "/gui/kennzahlen", "/gui/menue"):
+        page = client.get(path, headers=HTML)
+        assert page.status_code == 200 and 'href="/gui/zeiten"' in page.text
 
 
 def test_a_check_card_answer_without_the_admin_pin_goes_to_the_pin_page(
@@ -763,3 +1291,95 @@ def test_csrf_matches_needs_both_ascii_and_equal():
     assert not csrf_matches("", "")
     assert not csrf_matches(None, "abc") and not csrf_matches("abc", None)
     assert not csrf_matches("äbc", "äbc")  # compare_digest takes no non-ASCII str
+
+
+# --- customer view hardening (#827 F2, F4, F6) ---------------------------------
+
+
+def test_every_answer_of_the_view_but_its_files_says_no_store(client, engine):
+    """#827 F2: the board's parts hold guests' names, numbers and addresses,
+    and a refusal is no page to keep either (#821). One middleware sets it;
+    the view's own files keep their `no-cache`."""
+    refused = client.get("/gui/fragments/heute", headers=HX)
+    assert refused.status_code == 401
+    assert refused.headers["Cache-Control"] == "no-store"
+    _set_up_and_sign_in(client, engine)
+    for path in (
+        "/gui/fragments/heute",
+        "/gui/fragments/rueckrufe",
+        "/gui/rueckrufe/verlauf",
+        "/gui/fragments/bestellungen",
+        "/gui/fragments/pruefen",
+        "/gui/gibt-es-nicht",
+    ):
+        answer = client.get(path, headers=HX)
+        assert answer.headers.get("Cache-Control") == "no-store", path
+    foreign = client.post(
+        "/gui/kopfzeile/ki-pausieren",
+        headers={**HX, "Origin": "https://evil.example"},
+    )
+    assert foreign.status_code == 403
+    assert foreign.headers["Cache-Control"] == "no-store"
+    static = client.get("/gui/static/app.css")
+    assert static.status_code == 200 and static.headers["Cache-Control"] == "no-cache"
+
+
+def test_wrong_admin_pins_on_a_locked_device_count_on_its_five_tries(client, engine):
+    """#827 F4: the admin PIN page unlocks a locked device too, so it takes no
+    more tries than the lock page: three wrong team PINs and two wrong admin
+    PINs sign the device out."""
+    _set_up_and_sign_in(client, engine)
+    _lock(engine)
+    for _ in range(3):
+        wrong = client.post(
+            "/gui/entsperren", data={"csrf_token": "testtoken", "pin": "0000"}
+        )
+        assert wrong.status_code == 401
+    assert _owner(client, pin="1111").status_code == 401
+    ended = _owner(client, pin="2222")
+    assert ended.status_code == 303 and ended.headers["location"] == "/gui/anmelden"
+    assert _sessions(engine) == []
+
+
+def test_wrong_admin_pins_on_a_device_in_use_never_sign_it_out(client, engine):
+    """The decision of 09.11.2026 stays: on a device in use the admin PIN only
+    brings waits."""
+    _set_up_and_sign_in(client, engine)
+    for pin in ("0000", "0001"):
+        assert _owner(client, pin=pin).status_code == 401
+    assert "Zu viele Versuche" in _owner(client, pin="0002").text
+    assert len(_sessions(engine)) == 1
+
+
+FLOOR_PLAN_AND_NOTICE = [
+    ("GET", "/gui/raumplan"),
+    ("GET", "/gui/raumplan/plan"),
+    ("POST", "/gui/raumplan/bereiche"),
+    ("PUT", f"/gui/raumplan/bereiche/{ANY_ID}"),
+    ("GET", "/gui/vorlauf"),
+    ("POST", "/gui/vorlauf"),
+]
+
+
+@pytest.mark.parametrize(("method", "path"), FLOOR_PLAN_AND_NOTICE)
+def test_the_floor_plan_and_the_notice_ask_the_admin_pin(client, engine, method, path):
+    """#827 F6 (Maxi, 2026-11-17): tables, seats and the notice per weekday
+    turn callers away when wrong, so they are the owner's like the weekly
+    hours; the standard wait and the price answer stay with the staff."""
+    _set_up_and_sign_in(client, engine)
+    answer = client.request(
+        method, path, headers={**HX, "HX-Current-URL": "http://testserver/gui/"}
+    )
+    assert answer.status_code == 401
+    assert answer.headers["HX-Redirect"] == "/gui/inhaber?weiter=/gui/"
+
+
+def test_the_floor_plan_opens_after_the_admin_pin(client, engine):
+    _set_up_and_sign_in(client, engine)
+    page = client.get("/gui/raumplan", headers=HTML)
+    assert page.status_code == 303
+    assert page.headers["location"] == "/gui/inhaber?weiter=/gui/raumplan"
+    assert _owner(client, back="/gui/raumplan").headers["location"] == "/gui/raumplan"
+    assert client.get("/gui/raumplan", headers=HTML).status_code == 200
+    assert client.get("/gui/raumplan/plan").json()["ok"] is True
+    assert client.get("/gui/vorlauf", headers=HX).status_code == 200

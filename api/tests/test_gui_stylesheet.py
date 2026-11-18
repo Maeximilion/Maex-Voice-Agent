@@ -81,3 +81,34 @@ def test_tap_targets_do_not_wait_for_a_double_tap_zoom():
     assert "touch-action:manipulation" in rule
     floor_plan = (STATIC / "raumplan.css").read_text(encoding="utf-8")
     assert floor_plan.count("touch-action: none") == 3
+
+
+def test_every_form_control_shows_the_same_focus_ring():
+    """#829-17: a focused select or textarea kept the browser's thin ring."""
+    rule = re.search(
+        r"\n([^{}\n]*:focus-visible[^{}]*)\{([^}]*outline:3px[^}]*)\}", CSS
+    )
+    assert rule is not None
+    selectors, body = rule.groups()
+    listed = {s.strip().removesuffix(":focus-visible") for s in selectors.split(",")}
+    assert {"button", "a", "input", "select", "textarea", "summary"} <= listed
+    assert "var(--accent)" in body
+
+
+def test_the_front_page_and_the_sign_in_card_may_shrink_below_their_longest_word():
+    """#829-1: an implicit auto column made both pages wider than 375 px."""
+    for selector in (".start-seite", ".zugang-form"):
+        assert "grid-template-columns:minmax(0,1fr)" in _rule(selector)
+
+
+def test_the_tab_row_sticks_on_a_tablet_but_not_on_a_phone():
+    """#829-13: seven tabs wrap to three rows at 375 px and would cover the page."""
+    assert "position:sticky" not in _rule(".tabs")
+    assert "@media (min-width:700px){.tabs{position:sticky;top:0;z-index:5}}" in CSS
+
+
+def test_a_table_header_and_a_day_keep_their_words():
+    """#829-16, #829-18: no header reads "Su ite", no day wraps."""
+    assert ".ops-liste th{white-space:nowrap}" in CSS
+    assert "white-space:nowrap" in _rule(".kz-history .tbl tr > :first-child")
+    assert "overflow-x:auto" in _rule(".ops-scroll")

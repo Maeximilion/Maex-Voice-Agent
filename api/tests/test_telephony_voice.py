@@ -123,6 +123,7 @@ class Core:
         return self.card_written
 
     card_written = True
+    team_phone = TEAM
 
 
 @pytest.fixture
@@ -136,6 +137,7 @@ def phone():
         ear=FakeEar,
         mouth=FakeMouth,
         silence_seconds=60.0,
+        team_phone=lambda: core.team_phone,
     )
     with TestClient(create_app(voice)) as client:
         yield client, core
@@ -439,6 +441,7 @@ def test_without_a_token_nothing_is_let_in():
         ear=FakeEar,
         mouth=FakeMouth,
         silence_seconds=60.0,
+        team_phone=lambda: TEAM,
     )
     assert not voice.authorized(basic("")["authorization"])
 
@@ -455,6 +458,81 @@ def test_media_ready_wants_the_media_token(phone):
     assert client.get("/media/ready").status_code == 401
     assert client.get("/media/ready", headers=basic("wrong")).status_code == 401
     assert client.get("/media/ready", headers=basic(TOKEN)).text == "ok"
+
+
+def test_the_team_door_wants_the_token_and_answers_the_routed_number(phone):
+    """The dialplan asks it once a call has come, for the legs it dials on its
+    own (#835): `voice` crashed, ended without a transfer, or a listed number
+    nobody took."""
+    client, _ = phone
+    assert client.get("/team").status_code == 401
+    assert client.get("/team", headers=basic("wrong")).status_code == 401
+    response = client.get("/team", headers=basic(TOKEN))
+    assert (response.status_code, response.text) == (200, TEAM)
+
+
+def test_the_team_door_answers_nothing_when_the_number_is_unreadable(phone):
+    """The dialplan keeps TEAM_PHONE of its environment then."""
+    client, core = phone
+    core.team_phone = ""
+    response = client.get("/team", headers=basic(TOKEN))
+    assert (response.status_code, response.text) == (200, "")
+
+
+def test_the_dialplan_asks_for_the_team_number_after_the_probe():
+    """After `/media/ready`, so a `voice` that is down costs the caller no
+    second wait; before the Dial, so a `voice` that crashes in the call has
+    answered already."""
+    conf = DIALPLAN.read_text(encoding="utf-8")
+    probe = conf.index("CURL(http://voice:8001/media/ready)")
+    team = conf.index("CURL(http://voice:8001/team)")
+    assert probe < team < conf.index("Dial(WebSocket/voice")
+
+
+def test_the_routed_number_is_dialled_only_when_it_is_on_the_list():
+    """A number `voice` names is never dialled off the list (#252 finding 3):
+    TEAM is TEAM_PHONE of the environment unless the routed one is listed."""
+    steps = [s.strip() for s in _steps()]
+    default = steps.index("same => n,Set(TEAM=${ENV(TEAM_PHONE)})")
+    listed = steps.index(
+        'same => n,ExecIf($["${ROUTED}" != "" & '
+        "${FIELDNUM(LISTED,\\,,${ROUTED})} > 0]?Set(TEAM=${ROUTED}))"
+    )
+    assert default < listed
+    assert (
+        steps.index("same => n,Set(LISTED=${ENV(TEAM_PHONE)},${ENV(TRANSFER_TARGETS)})")
+        < listed
+    )
+
+
+def test_every_fallback_rings_the_routed_number_before_team_phone():
+    """#835: `voice` not reached, an ending that is no transfer to a listed
+    number, and a listed number nobody took all ring TEAM, the number the
+    restaurant set; TEAM_PHONE of the environment only after it, once."""
+    steps = [s.strip() for s in _steps()]
+    targets = [s for s in steps if "Set(TARGET=" in s]
+    assert targets == [
+        "same => n,Set(TARGET=${FILTER(+0123456789,${ENDING:9})})",
+        "same => n(toteam),Set(TARGET=${TEAM})",
+        "same => n,Set(TARGET=${ENV(TEAM_PHONE)})",
+        "same => n(routed),Set(TARGET=${TEAM})",
+        "same => n,Set(TARGET=${TEAM})",
+    ]
+    team = steps.index("exten => team,1,Log(NOTICE,call ${UNIQUEID}: to the team)")
+    chain = steps[team:]
+    assert chain[1] == "same => n,Set(TRIED=${TRIED}${TARGET},)"
+    routed = chain.index(
+        "same => n,GotoIf($[${FIELDNUM(TRIED,\\,,${TEAM})} = 0]?routed)"
+    )
+    tried = chain.index(
+        "same => n,GotoIf($[${FIELDNUM(TRIED,\\,,${ENV(TEAM_PHONE)})} > 0]?missed,1)"
+    )
+    assert (
+        chain.index("same => n,Log(NOTICE,call ${UNIQUEID}: team leg ${DIALSTATUS})")
+        < routed
+        < tried
+    )
+    assert not [s for s in steps if "${ENV(TEAM_PHONE)}" in s and "Dial(" in s]
 
 
 def test_the_dialplan_asks_voice_with_the_token_before_it_dials_it():
@@ -553,7 +631,8 @@ def _steps() -> list[str]:
 
 
 @pytest.mark.parametrize(
-    ("name", "alphabet"), [("ENDING", "a-z +0-9"), ("CARD", "a-z")]
+    ("name", "alphabet"),
+    [("ENDING", "a-z +0-9"), ("CARD", "a-z"), ("ROUTED", "+0123456789")],
 )
 def test_an_answer_of_voice_is_filtered_before_it_is_compared(name, alphabet):
     """22.11.0 counts a `$[...]` that a quote broke as true: a JSON error from
@@ -726,14 +805,22 @@ def test_the_dialplan_reports_every_missed_leg_and_waits_out_the_row():
 
 def voice_for(session, tenant) -> Voice:  # noqa: F811 - fixtures
     lines = Lines()
+    handler = handler_for(session, tenant, lines)
     return Voice(
-        events=handler_for(session, tenant, lines),
+        events=handler,
         lines=lines,
         token=TOKEN,
         ear=FakeEar,
         mouth=FakeMouth,
         silence_seconds=60.0,
+        team_phone=handler.team_phone,
     )
+
+
+def test_the_team_door_reads_the_restaurants_number(session, tenant):  # noqa: F811
+    """With the real handler: the number of `service_config`, not `.env`."""
+    with TestClient(create_app(voice_for(session, tenant))) as client:
+        assert client.get("/team", headers=basic(TOKEN)).text == TEAM_PHONE
 
 
 def test_a_paused_line_hands_the_call_to_the_team_unanswered(session, tenant):  # noqa: F811

@@ -36,8 +36,9 @@ from fastapi import FastAPI
 
 from api.agent.llm import ChatCompletionsLLM
 from api.config import LOCAL_ENVS, TOKEN_MIN_LENGTH, settings
+from api.core.database_role import refuse_a_superuser_role
 from api.core.logging import configure_logging, get_logger
-from api.db import SessionLocal, bounded_sessions, engine, refuse_a_superuser_role
+from api.db import SessionLocal, bounded_sessions, engine
 from api.domain.calls import call_routing, tenant_named
 from api.domain.customers.phone import E164
 from api.telephony.adapters.fake_speech import DrillEar, FakeEar, FakeMouth
@@ -278,8 +279,11 @@ class Voice:
         ear: Callable[[], Ear],
         mouth: Callable[[], Mouth],
         silence_seconds: float,
+        team_phone: Callable[[], str],
     ) -> None:
         self.lines = lines
+        # The number the team is at now, "" when it cannot be read (#835).
+        self.team_phone = team_phone
         self._events = events
         self._token = token
         self._ear = ear
@@ -443,6 +447,7 @@ def voice_from_settings() -> Voice:
         ear=make_ear,
         mouth=make_mouth,
         silence_seconds=settings.voice_silence_seconds,
+        team_phone=handler.team_phone,
     )
 
 
