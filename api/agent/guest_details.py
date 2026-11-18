@@ -73,7 +73,11 @@ from collections import Counter
 from collections.abc import Mapping
 
 from api.core.errors import InvalidInput
-from api.domain.customers.phone import TRUNK_IN_BRACKETS, normalize_phone
+from api.domain.customers.phone import (
+    FIXED_LENGTH,
+    normalize_phone,
+    read_bracketed_zero,
+)
 from api.domain.menu.numberwords import (
     ARTICLES,
     CARD_SUFFIXES,
@@ -416,9 +420,27 @@ def _goes_on(group: str) -> bool:
     is read without the marks of digits said in words (Codex PR #481, P1)."""
     return (
         group.startswith("0")
-        and _AREA_CODE_DIGITS <= _digits(group) < _COMPLETE_NUMBER
+        and _digits(group) >= _AREA_CODE_DIGITS
+        and not _is_complete(group)
         and not _is_date(group.replace(_SAID, ""))
     )
+
+
+def _is_complete(group: str) -> bool:
+    """Enough digits that what follows a pause is something else. Of a country
+    whose numbers all have one length (`FIXED_LENGTH`) a number said with "00" and
+    its code is complete at that length, without the code and the trunk zero:
+    "0033 06 12 34 56 78" is the nine digits of the French guest (#804). Any other
+    count is the German one, with the code and the zero in it: a number of a
+    country not listed, said in pairs, is cut early and refused, and a short one
+    never takes the digits that follow it."""
+    digits = "".join(char for char in group if char.isdigit())
+    if digits.startswith("00"):
+        said = digits[2:]
+        for size in (1, 2, 3):
+            if length := FIXED_LENGTH.get(said[:size]):
+                return len(said[size:].removeprefix("0")) >= length
+    return len(digits) >= _COMPLETE_NUMBER
 
 
 def _digits(text: str) -> int:
@@ -428,8 +450,7 @@ def _digits(text: str) -> int:
 def _without_trunk_zero(run: str) -> str:
     """ "+43 (0)664 1234567" is one number. Read at the bracket as two, its
     tail became a German one. As `normalize_phone` reads the "(0)"."""
-    international = run.startswith(("+", "00"))
-    return TRUNK_IN_BRACKETS.sub("" if international else "0", run)
+    return read_bracketed_zero(run)
 
 
 def _may_be_a_head(group: str) -> bool:
