@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.core.time import business_day
 from api.db import get_db
+from api.domain.status import holidays
 from api.domain.status.staff_changes import change_team_phone
 from api.main import app
 from api.models import Reservation, ServiceConfig, SpecialDay, StaffChange
@@ -342,3 +343,110 @@ def test_the_card_names_who_set_the_number(client, engine, actor, says, not_says
     cards = client.get("/gui/fragments/pruefen", headers=HX).text
 
     assert says in cards and not_says not in cards
+
+
+def _answer(client, engine, choice):
+    (card,) = [c for c in _cards(engine) if c.status == "open"]
+    answered = client.post(
+        f"/gui/pruefen/{card.id}/{choice}", data=_seen(card), headers=HX
+    ).text
+    return answered, client.get("/gui/fragments/pruefen", headers=HX).text
+
+
+def test_a_kept_closure_still_names_its_guests(client, engine):
+    """The card goes with the owner's answer; the tables its hours leave out
+    stay listed until they are cancelled or moved (#764)."""
+    later = _today() + timedelta(days=7)
+    _table(engine, later, "Familie Bauer")
+    client.post(
+        "/gui/tageszeiten",
+        data={"datum": later.isoformat(), "art": "geschlossen"},
+        headers=HX,
+    )
+    answered, board = _answer(client, engine, "uebernehmen")
+    for text in (answered, board):
+        assert "Familie Bauer" in text and "außerhalb der Öffnungszeiten" in text
+
+
+def test_an_undone_longer_day_names_the_late_table(client, engine):
+    """Today's longer hours hold at once and the agent books into them; the
+    owner's undo leaves that table outside the hours (#764). 22:30 is past
+    every weekday's closing time in the seed."""
+    today = _today()
+    client.post(
+        "/gui/tageszeiten",
+        data={
+            "datum": today.isoformat(),
+            "art": "zeiten",
+            "von": "10:00",
+            "bis": "23:59",
+        },
+        headers=HX,
+    )
+    _table(engine, today, "Spaet", at=time(22, 30))
+    answered, board = _answer(client, engine, "zuruecknehmen")
+    assert "Spaet" in answered and "Spaet" in board
+
+
+def test_a_guest_on_a_card_is_listed_once(client, engine):
+    later = _today() + timedelta(days=7)
+    _table(engine, later, "Familie Bauer")
+    client.post(
+        "/gui/tageszeiten",
+        data={"datum": later.isoformat(), "art": "geschlossen"},
+        headers=HX,
+    )
+    cards = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert cards.count("Familie Bauer") == 1
+
+
+def test_a_table_outside_the_hours_without_a_card_is_on_the_board(client, engine):
+    """A holiday answered "Geschlossen" or a date set behind the owner's PIN
+    opens no card: the board still names its guests (#764)."""
+    later = _today() + timedelta(days=7)
+    _table(engine, later, "Familie Bauer")
+    with Session(engine) as session:
+        session.add(
+            SpecialDay(
+                tenant_id=session.scalar(select(ServiceConfig.tenant_id)),
+                date=later,
+                closed=True,
+                status="set",
+            )
+        )
+        session.commit()
+    assert _cards(engine) == []
+    board = client.get("/gui").text
+    assert "Familie Bauer" in board and "außerhalb der Öffnungszeiten" in board
+
+
+def test_a_holiday_closed_under_a_waiting_card_names_its_guests(client, engine):
+    """The answer becomes the waiting card's origin (#802), so the card lists
+    nobody; the board still names the table the closed date leaves out (#764)."""
+    later = _today() + timedelta(days=7)
+    client.post(
+        "/gui/tageszeiten",
+        data={
+            "datum": later.isoformat(),
+            "art": "zeiten",
+            "von": "10:00",
+            "bis": "23:59",
+        },
+        headers=HX,
+    )
+    (card,) = _cards(engine)
+    assert card.held is False
+    _table(engine, later, "Familie Bauer")
+    with Session(engine) as session:
+        suggestion = SpecialDay(
+            tenant_id=session.scalar(select(ServiceConfig.tenant_id)),
+            date=later,
+            note="Feiertag",
+            like_weekday=6,
+            status="suggested",
+        )
+        session.add(suggestion)
+        session.commit()
+        holidays.answer(session, suggestion.tenant_id, suggestion.id, holidays.CLOSED)
+    board = client.get("/gui/fragments/pruefen", headers=HX).text
+    assert "Familie Bauer" in board and "außerhalb der Öffnungszeiten" in board
