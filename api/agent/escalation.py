@@ -201,8 +201,21 @@ _PERSON_COMPLAINED_TO = (
     + _NO_NEW_CLAUSE
     + r")"
 )
+# Where the wish that is the complaint begins: a modal verb, never a bare
+# "bitte" or "gern". Those close an order as often ("Die 23 bitte, beschweren
+# muss ich mich auch"), and the order went with the complaint (ledger #764);
+# inside the gap they may stand ("würde mich gerne beschweren"), and "gern"
+# right before the verb at the start of the sentence ("Gerne würde ich mich
+# beschweren"); further in, it closes an order the speech engine set no comma
+# after ("die 23 gerne möchte ich mich beschweren", Codex on PR #865).
+_COMPLAINT_WISH = (
+    r"(?:^\W*gerne?\s+|\b)(?:m(?:ö|oe)chten?|will|wollen?|wollten?|h(?:ä|ae)tten?"
+    r"|w(?:ü|ue)rden?"
+    r"|nehmen?|brauchen?|bestell(?:e|en)|abholen|abzuholen|mitnehmen|mitzunehmen"
+    r"|reservieren|tisch(?:e[ns]?)?)\b"
+)
 _WANTS_TO_COMPLAIN = re.compile(
-    _WANTS
+    _COMPLAINT_WISH
     # At most four words to the complaint, whatever they are.
     + r"(?=(?:"
     + _GAP_WORD
