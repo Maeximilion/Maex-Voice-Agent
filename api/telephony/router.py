@@ -21,6 +21,9 @@
 - `/media/ready`: asked by the dialplan before it dials `/media`, with the same
   credentials, so a `voice` that would refuse the media connection is never
   dialled (#768).
+- `/team`: asked by the dialplan once `/media/ready` said "ok": the number the
+  team is at now (`team_phone_at`), for the legs it dials on its own, or
+  nothing when the database cannot be read (#835).
 
 All but `/asterisk/seen` and `/health` want the media token as the password of Basic credentials. A call is named
 by the id of the caller's channel (`${UNIQUEID}`): the dialplan hands it to the
@@ -70,6 +73,15 @@ def media_ready(request: Request) -> str:
     if not _voice(request.app).authorized(request.headers.get("authorization")):
         raise HTTPException(status_code=401)
     return "ok"
+
+
+@router.get("/team", response_class=PlainTextResponse)
+def team(request: Request) -> str:
+    """The dialplan dials it only when it is on its list (#252 finding 3)."""
+    voice = _voice(request.app)
+    if not voice.authorized(request.headers.get("authorization")):
+        raise HTTPException(status_code=401)
+    return voice.team_phone()
 
 
 @router.post("/asterisk/alive", response_class=PlainTextResponse)

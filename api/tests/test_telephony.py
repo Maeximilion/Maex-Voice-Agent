@@ -14,7 +14,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from datetime import time as clock_time
 from pathlib import Path
 from types import SimpleNamespace
@@ -2191,6 +2191,47 @@ def test_a_handover_without_a_named_target_dials_the_number_that_holds_now(
 
     assert handler._team_phone(live) == CHANGED_PHONE
     assert live.team_phone == CHANGED_PHONE
+
+
+def _today(session, tenant, number: str | None, until: datetime | None) -> None:
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant.id)
+        .values(team_phone_today=number, team_phone_today_until=until)
+    )
+    session.commit()
+
+
+def test_the_dialplan_is_told_the_number_that_holds_now(session, tenant):
+    """The legs the dialplan dials on its own (#835): the standard number,
+    today's while it holds, the standard again after it."""
+    handler = handler_for(session, tenant, FakeTelephony())
+    assert handler.team_phone() == TEAM_PHONE
+
+    _today(session, tenant, CHANGED_PHONE, NOW + timedelta(hours=1))
+    assert handler.team_phone() == CHANGED_PHONE
+
+    _today(session, tenant, CHANGED_PHONE, NOW - timedelta(seconds=1))
+    assert handler.team_phone() == TEAM_PHONE
+
+
+def test_the_dialplan_is_told_no_number_without_a_database(session, tenant):
+    """Empty, never an exception: the dialplan dials TEAM_PHONE of its
+    environment then (rule 5)."""
+
+    def no_database():
+        raise OperationalError("SELECT 1", {}, Exception("connection refused"))
+
+    handler = handler_for(session, tenant, FakeTelephony(), session_factory=no_database)
+    assert handler.team_phone() == ""
+
+
+def test_the_dialplan_is_told_no_number_for_a_tenant_without_its_config(
+    session, tenant
+):
+    handler = handler_for(session, tenant, FakeTelephony())
+    handler._tenant_id = uuid.uuid4()
+    assert handler.team_phone() == ""
 
 
 @pytest.mark.parametrize(("length", "kept"), [(40, True), (41, False), (200, False)])

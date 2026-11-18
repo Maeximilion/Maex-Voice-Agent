@@ -404,6 +404,25 @@ class CallHandler:
             phone, summary, _ = self._named_phones.pop(session_id, (None, None, 0.0))
         return self._card(session_id, phone=phone, summary=summary)
 
+    def team_phone(self) -> str:
+        """The number the team is at now, for the legs the dialplan dials on
+        its own (#835): `voice` crashed in the call, ended it with no transfer
+        to a listed number, or a listed number nobody took. Empty when the
+        database cannot be read: the dialplan keeps TEAM_PHONE of its
+        environment then (rule 5). Never raises."""
+        session: Session | None = None
+        try:
+            session = self._session_factory()
+            return current_team_phone(session, self._tenant_id, self._now)
+        except Exception as exc:  # noqa: BLE001 - the dialplan has its own number
+            logger.error(
+                "the team number for the dialplan could not be read",
+                extra={"extra": {"error": type(exc).__name__}},
+            )
+            return ""
+        finally:
+            _close_quietly(session)
+
     def on_recording_stopped(self, session_id: str) -> bool:
         session: Session | None = None
         try:

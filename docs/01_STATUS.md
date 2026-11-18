@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.5
+> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.6
 
 ---
 
@@ -317,6 +317,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.66.6 · 18.11.2026:** Fix PR for #835: the dialplan's own outage legs ring the team number the restaurant set (`team_phone_at`, asked from `voice` at the call's start, `GET /team`, kept only when on the list), a leg nobody took is followed by the team number and then `TEAM_PHONE` once each; `TEAM_PHONE` of `.env` rings first only when `voice` cannot be asked (docs/20 §5, docs/23 §6), new drill "the team at today's number"
 - **v2.66.5 · 18.11.2026:** Phone comment and docs paragraph fixed (#851)
 - **v2.66.4 · 18.11.2026:** Fix PR for #849 (blind review of #848): an Italian mobile keeps no "(0)", a French number of another length than nine digits is refused, the false docstring of `_is_complete` is corrected, and the decisions row of the trunk zero says what is built
 - **v2.66.3 · 18.11.2026:** Fix PR for #804: a bracketed zero stays only behind codes whose numbers begin with 0, Hungary's 06 and Lithuania's 8 are dropped, a French number said in pairs is complete
