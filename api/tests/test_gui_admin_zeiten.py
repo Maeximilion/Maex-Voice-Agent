@@ -169,7 +169,7 @@ def test_every_admin_page_has_the_tabs_and_the_four_figures(client, path, tab):
     assert nav.count('aria-current="page"') == 1
     # In the frame, not somewhere on the page: Kennzahlen names them again
     # in its history table.
-    frame = page.text.split("<header>", 1)[1].split("</header>", 1)[0]
+    frame = page.text.split('<header class="admin">', 1)[1].split("</header>", 1)[0]
     bar = frame.split('class="kz-bar"', 1)[1]
     for label in FIGURES:
         assert label in bar
@@ -761,3 +761,33 @@ def test_a_refused_date_marks_its_field(client, data, fields):
         marked = 'aria-invalid="true"' in _tag(form, name)
         assert marked == (name in fields), name
     assert "data-fokus" in html
+
+
+def test_closing_a_day_asks_first_like_the_way_back(client):
+    """#829-4: "Geschlossen" stops every service for a day; it is its own request
+    because htmx reads hx-confirm from the element that sends."""
+    page = client.get(PAGE).text
+    button = re.search(r"<button[^>]*>Geschlossen</button>", page, re.S)
+
+    assert button
+    assert 'type="button"' in button.group(0) and "hx-confirm=" in button.group(0)
+    assert 'hx-vals=\'{"art": "geschlossen"}\'' in button.group(0)
+
+
+@pytest.mark.parametrize("path", ["/gui/zeiten", "/gui/geraete"])
+def test_the_frame_names_its_way_back_and_its_page_like_the_tab(client, path):
+    """#829-14, #829-22: "Zurück" led to the board, not back; Geräte had a title
+    of its own; the tab had no icon."""
+    page = client.get(path).text
+
+    assert 'href="/gui">Zur Betriebsansicht</a>' in page
+    assert ">Zurück</a>" not in page
+    assert "Angemeldete Geräte" not in page.split("<main>", 1)[0]
+    assert '<link rel="icon"' in page
+
+
+def test_the_tab_row_stands_beside_the_header_so_it_can_stick(client):
+    page = client.get(PAGE).text
+    after_header = page.split("</header>", 1)[1]
+
+    assert after_header.lstrip().startswith('<nav class="tabs"')

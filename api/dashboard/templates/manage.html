@@ -23,6 +23,7 @@
 {% endmacro %}
 
 {% block main %}
+{% set who = access.tenant.name if access and access.tenant else key %}
 <section class="ops-seite" aria-labelledby="manage-title">
   <p><a href="/customers/{{ key }}">Back to {{ key }}</a></p>
   <h1 id="manage-title">{% if access %}{{ access.tenant.name }}{% else %}{{ key }}{% endif %}<span class="muted ops-key">{{ key }}</span></h1>
@@ -52,7 +53,8 @@
     <p>Now: <b>{{ access.call_mode | mode }}</b></p>
     <p class="muted">Holds from the next call on. The owner and the ops topic get a push, and the change stands in the customer's audit log with your account.</p>
     {% if access.call_modes %}
-    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/call-mode" autocomplete="off">
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/call-mode" autocomplete="off"
+          data-frage="Change how every call of {{ who }} is answered? It holds from the next call on." data-frage-ja="Yes" data-frage-nein="No">
       {{ hidden() }}
       <label for="mode">Set to</label>
       <select id="mode" name="mode" required>
@@ -71,7 +73,8 @@
     <p>Calls for the team go to <b>{{ access.team_phone or "no number" }}</b> now.{% if access.team_phone_until %} That is today's number, until {{ access.team_phone_until | shown }}; then the standard number {{ access.team_phone_standard or "" }} holds again, unless the owner keeps today's.{% endif %}</p>
     <p class="muted">A number set here holds until the end of the business day, as one the staff set on the tablet: the owner keeps or undoes it on the tablet's card, and the owner and the ops topic get a push. Only numbers the stack's telephone system dials can be chosen.</p>
     {% if access.team_phones %}
-    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/team-phone" autocomplete="off">
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/team-phone" autocomplete="off"
+          data-frage="Send the team calls of {{ who }} to another number for today?" data-frage-ja="Yes" data-frage-nein="No">
       {{ hidden() }}
       <label for="number">Number for today</label>
       <select id="number" name="number" required>
@@ -81,7 +84,8 @@
       <button type="submit">Use this number today</button>
     </form>
     <p class="muted">The standard number holds every day, from the next call on when no number is set for today. A new one is pushed to the owner and the ops topic; a number for today still holds until its end. Use it when the standard line no longer answers.</p>
-    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/team-phone-standard" autocomplete="off">
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/team-phone-standard" autocomplete="off"
+          data-frage="Change the standard team number of {{ who }}? It holds every day from the next call on." data-frage-ja="Yes" data-frage-nein="No">
       {{ hidden() }}
       <label for="standard">Standard number</label>
       <select id="standard" name="number" required>
@@ -111,11 +115,16 @@
         <button type="submit">Show the {{ which }} PIN once</button>
       </form>
       {% endif %}
-      <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/pin-set" autocomplete="off">
+      <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/pin-set" autocomplete="off"
+            data-frage="Set a new {{ which }} PIN for {{ who }}? The old one stops working.{% if which == 'admin' %} Owner rights still open on a device end.{% endif %}" data-frage-ja="Yes" data-frage-nein="No">
         {{ hidden() }}
         <input type="hidden" name="which" value="{{ which }}">
         <label for="pin-{{ which }}">New {{ which }} PIN, 4 to 6 digits</label>
-        <input id="pin-{{ which }}" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" size="6" autocomplete="off" required>
+        {# A password field with a show toggle: the PIN is typed on a shared screen (#829-20). #}
+        <span class="zugang-feld">
+          <input type="password" id="pin-{{ which }}" name="pin" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" size="6" autocomplete="off" required>
+          <button type="button" data-zeigen="pin-{{ which }}" data-zeigen-an="Hide" data-zeigen-aus="Show" aria-pressed="false">Show</button>
+        </span>
         <button type="submit">Set the {{ which }} PIN</button>
       </form>
     </div>
@@ -150,7 +159,8 @@
       </tbody>
     </table>
     <p class="muted">{{ access.devices | length }} devices, the last used first, in the restaurant's time.{% if access.devices | length >= max_devices %} More may be signed in: the stack lists its newest {{ max_devices }}.{% endif %}</p>
-    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/sign-out" autocomplete="off">
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/sign-out" autocomplete="off"
+          data-frage="Sign out every device of {{ who }}? Each one needs the password again." data-frage-ja="Yes" data-frage-nein="No">
       {{ hidden() }}
       <input type="hidden" name="device" value="all">
       <button type="submit" class="danger">Sign out every device</button>
@@ -162,7 +172,8 @@
     <h2>Setup link</h2>
     <p>A one-time link for the restaurant: it sets a new password, the team PIN and the admin PIN, and signs out every device. Valid 24 hours; a new link replaces an older one.</p>
     <p class="muted">The link is shown once, here. Before you pass it on, check that it begins with the customer's own address.</p>
-    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/setup-link" autocomplete="off">
+    <form class="ops-zeile" method="post" action="/customers/{{ key }}/manage/setup-link" autocomplete="off"
+          data-frage="Make a setup link for {{ who }}? Every signed-in device is signed out and an older link stops working." data-frage-ja="Yes" data-frage-nein="No">
       {{ hidden() }}
       <button type="submit">Make a setup link</button>
     </form>

@@ -3,9 +3,9 @@
    how long each took. Never what was asked or answered, and no number: the row
    above shows what the list shows. No transcript is stored. #}
 {% if problem %}
-<p class="note" role="status">{{ problem }}</p>
+<p class="note" role="status" tabindex="-1" data-fokus>{{ problem }}</p>
 {% else %}
-<h2 id="anruf-detail-titel">Anruf im Einzelnen</h2>
+<h2 id="anruf-detail-titel" tabindex="-1" data-fokus>Anruf im Einzelnen</h2>
 <table class="tbl week">
   <tbody>
     {% for label, text in facts %}

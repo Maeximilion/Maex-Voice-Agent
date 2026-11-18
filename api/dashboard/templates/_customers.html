@@ -8,6 +8,7 @@
   <p><code>python -m api.dashboard.cli customer-add &lt;key&gt; http://&lt;api container&gt;:8000</code></p>
 </div>
 {% else %}
+<div class="ops-scroll">
 <table class="tbl ops-liste">
   <thead>
     <tr>
@@ -25,12 +26,12 @@
     {% for row in rows %}
     {% set s = row.status %}
     <tr>
-      <th scope="row" data-label="Customer"><a href="/customers/{{ row.key }}">{% if s %}{{ s.tenant.name }}{% else %}{{ row.key }}{% endif %}</a><span class="muted ops-key">{{ row.key }}</span></th>
+      <th scope="row" data-label="Customer"><a href="/customers/{{ row.key }}">{% if s %}{{ s.tenant.name }}{% else %}{{ row.key }}{% endif %}</a>{% if not s or s.tenant.name != row.key %}<span class="muted ops-key">{{ row.key }}</span>{% endif %}</th>
       {% if not s %}
       <td data-label="Stack" colspan="7"><span class="badge danger">down</span> {{ row.problem }}</td>
       {% else %}
       <td data-label="Stack">
-        {% if row.notes %}<span class="badge warn">look</span> {{ row.notes | join(", ") }}{% else %}<span class="badge ok">ok</span>{% endif %}
+        {% if row.notes %}<span class="badge warn">check</span> {{ row.notes | join(", ") }}{% else %}<span class="badge ok">ok</span>{% endif %}
       </td>
       <td data-label="Call mode">{{ s.call_mode or "not set" }}</td>
       <td data-label="Last call" title="{{ s.last_call_at | shown }}">{{ s.last_call_at | ago(now) }}</td>
@@ -47,5 +48,6 @@
     {% endfor %}
   </tbody>
 </table>
+</div>
 {% endif %}
 <p class="muted">As of {{ now | shown }}, refreshed every 30 seconds.</p>

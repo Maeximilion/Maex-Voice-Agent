@@ -21,7 +21,7 @@
     {% if not s %}
     <p><span class="badge danger">down</span> {{ detail.row.problem }}</p>
     {% else %}
-    <p>{% if detail.row.notes %}<span class="badge warn">look</span> {{ detail.row.notes | join(", ") }}{% else %}<span class="badge ok">ok</span>{% endif %}</p>
+    <p>{% if detail.row.notes %}<span class="badge warn">check</span> {{ detail.row.notes | join(", ") }}{% else %}<span class="badge ok">ok</span>{% endif %}</p>
     <table class="tbl ops-liste">
       <thead>
         <tr><th scope="col">Call mode</th><th scope="col">Last call</th><th scope="col">Today</th><th scope="col">Print bridge</th><th scope="col">Backup</th></tr>
@@ -100,7 +100,7 @@
         {% for code, words in reasons.items() %}<option value="{{ code }}">{{ words }}</option>{% endfor %}
       </select>
       <label for="reference">Ticket or issue number</label>
-      <input id="reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
+      <input title="A ticket or issue number: digits, with or without a leading #, for example 829 or #829" id="reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
       <label for="day">Business day</label>
       <select id="day" name="day">
         {% for d in days %}<option value="{{ d.isoformat() }}">{{ d | weekday }}</option>{% endfor %}
@@ -125,7 +125,7 @@
         {% for code, words in reasons.items() %}<option value="{{ code }}">{{ words }}</option>{% endfor %}
       </select>
       <label for="manage-reference">Ticket or issue number</label>
-      <input id="manage-reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
+      <input title="A ticket or issue number: digits, with or without a leading #, for example 829 or #829" id="manage-reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
       <button type="submit" class="primary">Open access and call routing</button>
     </form>
     {% endif %}

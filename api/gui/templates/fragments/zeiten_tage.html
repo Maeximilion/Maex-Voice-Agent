@@ -33,7 +33,10 @@
   </div>
   <div class="cb-actions">
     <button type="submit" name="art" value="zeiten" class="primary">Diese Zeiten</button>
-    <button type="submit" name="art" value="geschlossen">Geschlossen</button>
+    {# Its own request, not a submit of the form: htmx reads hx-confirm from the element that
+         sends, and the form sends for "Diese Zeiten". Closing a day stops every service (#829-4). #}
+    <button type="button" hx-post="/gui/zeiten/tag" hx-include="closest form" hx-vals='{"art": "geschlossen"}' hx-target="#zeiten-tage" hx-swap="innerHTML" hx-disabled-elt="this"
+            hx-confirm="Diesen Tag für alle Bereiche als geschlossen eintragen? Das gilt sofort.">Geschlossen</button>
   </div>
   <p class="muted">Gilt sofort und nur an diesem Tag, für alle Bereiche.</p>
 </form>
