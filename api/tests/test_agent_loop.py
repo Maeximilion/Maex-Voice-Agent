@@ -41,6 +41,7 @@ from api.agent.loop import (
     SUMMARY_OPEN_ORDER,
     SUMMARY_OPEN_TABLE,
     SUMMARY_OUTAGE,
+    SUMMARY_REFUSED_TABLE,
     ConversationLoop,
     TurnResult,
     _booked_say,
@@ -2613,46 +2614,92 @@ def _then_to_the_team(first: ToolCall) -> FakeLLM:
     )
 
 
+TABLE_AT_SEVEN = "4 Personen, 16.09.2026 19:00 Uhr, Name Müller."
+
+
 @HANDED_OVER
-@pytest.mark.parametrize(
-    ("said", "first", "switch_off"),
-    [
-        # The guest corrects the time: the table read back is no longer wanted.
-        (
-            "Lieber um acht",
-            ToolCall(
-                "check_slot",
-                {"party_size": 4, "reserved_for": "2026-09-16T20:00:00+02:00"},
-            ),
-            False,
-        ),
-        # The team switched reservations off: the yes can never book it.
-        ("Ja", None, True),
-    ],
-)
-def test_a_table_the_domain_took_back_this_turn_is_not_on_the_card(
-    session, state, now, stage, said, first, switch_off
+def test_a_table_the_domain_refused_this_turn_is_named_as_refused(
+    session, state, now, stage
 ):
-    """#862: the table read back at the turn's start went on the card after a
-    tool of the same turn took it back for good, and the team called a guest
-    back about a table that could never be booked."""
+    """#862: reservations were switched off before the yes. The card offered
+    the team "Offene Reservierung" for a table that could never be booked; it
+    names it as refused now, and the guest still hears it is not booked."""
     read_back_reservation(session, state)
     state.slots["phone"] = CALLER
-    if switch_off:
-        session.execute(update(ServiceConfig).values(reservations_enabled=False))
-        session.commit()
-        first = ToolCall(
-            "confirm", {"entity": "reservation", "entity_id": str(state.reservation_id)}
-        )
+    session.execute(update(ServiceConfig).values(reservations_enabled=False))
+    session.commit()
+    yes = ToolCall(
+        "confirm", {"entity": "reservation", "entity_id": str(state.reservation_id)}
+    )
     loop = ConversationLoop(
-        session, _then_to_the_team(first), "system", now=now, clock=clock_from([0])
+        session, _then_to_the_team(yes), "system", now=now, clock=clock_from([0])
     )
 
-    result = loop.run_turn(state, said)
+    result = loop.run_turn(state, "Ja")
 
     assert result.ended is True and state.stage == stage
-    assert SAY_TABLE_NOT_BOOKED not in result.say
-    assert SUMMARY_OPEN_TABLE not in _card(session, state)
+    assert result.say[0] == SAY_TABLE_NOT_BOOKED
+    card = _card(session, state)
+    assert f"{SUMMARY_REFUSED_TABLE} {TABLE_AT_SEVEN}" in card
+    assert SUMMARY_OPEN_TABLE not in card
+
+
+@HANDED_OVER
+def test_a_question_for_another_time_keeps_the_table_open(session, state, now, stage):
+    """A `check_slot` takes the read-back out of the state, but the table can
+    still be booked: the card keeps it open."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    other_time = ToolCall(
+        "check_slot", {"party_size": 4, "reserved_for": "2026-09-16T20:00:00+02:00"}
+    )
+    loop = ConversationLoop(
+        session, _then_to_the_team(other_time), "system", now=now, clock=clock_from([0])
+    )
+
+    result = loop.run_turn(state, "Ginge auch acht?")
+
+    assert result.ended is True and result.say[0] == SAY_TABLE_NOT_BOOKED
+    assert f"{SUMMARY_OPEN_TABLE} {TABLE_AT_SEVEN}" in _card(session, state)
+
+
+def test_a_draft_on_the_card_that_the_domain_refuses_is_named_as_refused(
+    session, state
+):
+    """#862, the allergy path: the draft sent without the guest's allergy is
+    put on the card (`_open_draft`); sent again, the domain refuses its time.
+    The card names that table as refused, not as open."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    late = ToolCall(
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": CALLER,
+            "party_size": 4,
+            "reserved_for": "2026-09-16T23:30:00+02:00",
+        },
+    )
+    llm = FakeLLM(
+        [
+            LLMTurn(tool_call=late),
+            LLMTurn(tool_call=late),
+            LLMTurn(
+                tool_call=ToolCall(
+                    name="transfer_to_team", args={"reason": "human_requested"}
+                )
+            ),
+            LLMTurn(say="Ich verbinde Sie mit dem Team."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ich habe eine Erdnussallergie, lieber um halb zwölf")
+
+    assert result.ended is True and result.say[0] == SAY_TABLE_NOT_BOOKED
+    card = _card(session, state)
+    assert f"{SUMMARY_REFUSED_TABLE} 4 Personen, 16.09.2026 23:30 Uhr" in card
+    assert SUMMARY_OPEN_TABLE not in card
 
 
 @pytest.mark.parametrize(

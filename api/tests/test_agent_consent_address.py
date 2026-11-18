@@ -104,10 +104,19 @@ def test_a_person_named_with_an_article_is_no_address(text):
     assert recording_answer(text) != "yes"
 
 
-@pytest.mark.parametrize("text", ["Ja, das passt, Fräulein", "Ja, das, junge Frau"])
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Ja, das passt, Fräulein",
+        "Ja, das, Fräulein",
+        "Ja das junge Frau",
+        "Ja genau das guter Mann",
+    ],
+)
 def test_an_address_after_a_filler_word_is_still_cut(text):
-    """Only an article right before the form keeps it: "das passt" or a
-    comma between still leave the form an address."""
+    """Only "das" right before "Fräulein" is its article: "das passt", a comma
+    between, or "das" before a form it cannot be the article of (speech
+    recognition drops the commas) still leave the form an address."""
     assert is_yes(text)
 
 

@@ -807,44 +807,53 @@ def test_going_back_to_an_earlier_draft_checks_the_slot_again(
         create_reservation(session, seven, now=berlin(DIENSTAG, 18, 30))
 
 
-def test_going_back_is_a_new_draft_and_its_retry_replays_it(
+def test_going_back_replays_the_same_draft_and_holds_no_second(
     session, tenant_id, call_id
 ):
+    """Checked again, the earlier draft is the one replayed: no second row
+    holds the same seats against other calls."""
     first, seven = _seven_then_eight(session, tenant_id, call_id)
 
     back = create_reservation(session, seven, now=NOW + timedelta(minutes=2))
     again = create_reservation(session, seven, now=NOW + timedelta(minutes=3))
 
-    assert back.reservation_id != first.reservation_id
-    assert back.reserved_for == first.reserved_for and back.status == "draft"
-    assert again == back
-    assert session.scalar(select(func.count()).select_from(Reservation)) == 3
+    assert back == first and again == first
+    assert session.scalar(select(func.count()).select_from(Reservation)) == 2
 
 
-def test_going_back_twice_drafts_each_time(session, tenant_id, call_id):
-    """Seven, eight, seven, eight, seven: every change of mind is checked."""
-    first, seven = _seven_then_eight(session, tenant_id, call_id)
-    eight = request(
-        tenant_id, call_id, idempotency_key="k-eight", reserved_for=berlin(DIENSTAG, 20)
-    )
-    ids = {first.reservation_id}
-    for minute, req in ((2, seven), (3, eight), (4, seven)):
-        draft = create_reservation(session, req, now=NOW + timedelta(minutes=minute))
-        ids.add(draft.reservation_id)
-
-    assert len(ids) == 4
-
-
-def test_a_retry_with_nothing_drafted_since_replays_unchecked(
-    session, tenant_id, call_id
-):
-    """The same request again, nothing between: the same draft, as ever."""
+def test_a_retry_is_checked_again_too(session, tenant_id, call_id):
+    """The same request after the notice was raised: the slot no longer
+    holds, and the draft is not read back again."""
     req = request(tenant_id, call_id, idempotency_key="k-same")
-    first = create_reservation(session, req, now=NOW)
+    create_reservation(session, req, now=NOW)
     session.execute(update(Capacity).values(notice_minutes=60 * 24))
     session.commit()
 
-    assert create_reservation(session, req, now=NOW + timedelta(minutes=5)) == first
+    with pytest.raises(Conflict):
+        create_reservation(session, req, now=NOW + timedelta(minutes=5))
+    assert session.scalar(select(func.count()).select_from(Reservation)) == 1
+
+
+def test_a_draft_cancelled_elsewhere_is_replayed_as_cancelled(
+    session, tenant_id, call_id
+):
+    """The call's session keeps its rows past a commit: read without a fresh
+    look, the tablet's cancel was not seen and the draft was checked and read
+    back as a draft again."""
+    req = request(tenant_id, call_id, idempotency_key="k-tablet")
+    first = create_reservation(session, req, now=NOW)
+    with Session(session.get_bind()) as tablet:
+        tablet.execute(
+            update(Reservation)
+            .where(Reservation.id == first.reservation_id)
+            .values(status="cancelled")
+        )
+        tablet.commit()
+
+    again = create_reservation(session, req, now=NOW + timedelta(minutes=1))
+
+    assert again.reservation_id == first.reservation_id
+    assert again.status == "cancelled"
 
 
 def test_a_confirmed_table_is_replayed_as_it_stands(session, tenant_id, call_id):
