@@ -530,7 +530,27 @@ def test_an_empty_answer_is_the_last_question_of_the_call():
     off = ask.index('same => n,ExecIf($["${ROUTED}" = ""]?Set(TEAMASK=off))')
     assert ask[off - 1] == "same => n,Set(ROUTED=${FILTER(+0123456789,${ROUTED})})"
     assert ask[-1] == "same => n(back),Return()"
-    assert sum("TEAMASK=" in s for s in _steps()) == 1
+
+
+def test_a_voice_that_is_not_answering_is_not_asked_for_the_team_number():
+    """An ending question that ran into its 2 s, or a `voice` the call never
+    reached, turns the question off (#861 review): it would only cost the
+    caller another wait before the team or the card."""
+    steps = [s.strip() for s in _steps()]
+    assert [s for s in steps if "TEAMASK=off" in s] == [
+        "same => n,ExecIf($[${EPOCH} - ${ASKED} >= 2]?Set(TEAMASK=off))",
+        'same => n,ExecIf($["${ROUTED}" = ""]?Set(TEAMASK=off))',
+        "same => n,Set(TEAMASK=off)",
+    ]
+    ending = steps.index(
+        "same => n,Set(ENDING=${CURL(http://voice:8001/calls/${UNIQUEID}/ending)})"
+    )
+    assert steps[ending - 1] == "same => n,Set(ASKED=${EPOCH})"
+    # Right behind the filter, which stays right behind the question (#776).
+    assert steps[ending + 2] == (
+        "same => n,ExecIf($[${EPOCH} - ${ASKED} >= 2]?Set(TEAMASK=off))"
+    )
+    assert _extension("unreached")[1] == "same => n,Set(TEAMASK=off)"
 
 
 def test_the_dialplan_asks_again_before_each_leg_it_dials_on_its_own():
