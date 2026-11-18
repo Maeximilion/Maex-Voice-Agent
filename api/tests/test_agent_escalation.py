@@ -397,6 +397,69 @@ def test_gern_and_bitte_stay_allowed_inside_the_complaint_phrase():
 
 
 @pytest.mark.parametrize(
+    "said",
+    [
+        "Die 23 bitte, beschweren muss ich mich auch, die Pizza gestern war kalt.",
+        "Zwei Pizza gerne, dann noch eine Beschwerde: die Pizza war kalt.",
+        "Zweimal die 23 gerne, außerdem eine Beschwerde, die Pizza war kalt.",
+        "Eine Margherita bitte. Beschwerde habe ich auch noch, die Pizza war kalt.",
+        # No commas from the speech engine: "gerne" still closes the order.
+        "die 23 gerne möchte ich mich auch beschweren die pizza war kalt",
+    ],
+)
+def test_a_bitte_or_gern_that_closes_an_order_is_no_wish_of_the_complaint(said):
+    """A bare "bitte" or "gern" in front of the complaint word ends the order
+    before it: taken as the complaint's wish, the order went with it and the
+    remedy ended the call (ledger #764)."""
+    from api.agent.escalation import only_a_complaint
+
+    assert not only_a_complaint(said)
+
+
+@pytest.mark.parametrize("closing", ["bitte", "gern", "gerne"])
+@pytest.mark.parametrize("gap", [", ", " ", ". ", "; "])
+@pytest.mark.parametrize(
+    "complaint",
+    [
+        "beschweren muss ich mich auch",
+        "möchte ich mich auch beschweren",
+        "ich möchte mich beschweren",
+        "würde mich gerne beschweren",
+        "eine Beschwerde habe ich auch",
+        "die Pizza möchte ich reklamieren",
+    ],
+)
+def test_no_order_closing_word_is_ever_taken_into_the_complaint(
+    closing, gap, complaint
+):
+    """The #738, #744 and ledger #764 class, by construction: whatever the
+    speech engine sets between an order and its complaint, the word that closes
+    the order keeps the sentence for the team."""
+    from api.agent.escalation import only_a_complaint
+
+    said = f"Die 23 {closing}{gap}{complaint}, die Pizza war kalt."
+    assert not only_a_complaint(said), said
+    assert not only_a_complaint(said.lower().replace(",", "").replace(".", ""))
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich würde mich gerne beschweren, die Pizza war kalt.",
+        "Ich wollte mich gerne beschweren, die Pizza war kalt.",
+        "Ich hätte gern eine Beschwerde, die Pizza war kalt.",
+        "Ich möchte mich bitte beschweren, die Pizza war kalt.",
+        "Ich will mich mal beschweren, die Pizza war kalt.",
+        "gerne würde ich mich beschweren das essen war kalt",
+    ],
+)
+def test_the_wish_that_is_the_complaint_still_counts_as_the_complaint(said):
+    from api.agent.escalation import only_a_complaint
+
+    assert only_a_complaint(said)
+
+
+@pytest.mark.parametrize(
     ("said", "incident"),
     [
         ("Hat der Schwarztee Koffein?", False),
