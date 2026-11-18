@@ -8,6 +8,9 @@
 {% if recovery_left <= 3 %}
 <p class="banner danger" role="alert">{{ recovery_left }} recovery codes left. New ones come with <code>python -m api.dashboard.cli reset {{ operator.name }}</code> on the operator host, which renews the password and the TOTP secret too.</p>
 {% endif %}
+{% if push_stuck %}
+<p class="banner danger" role="alert">{{ push_stuck }} push{{ "es" if push_stuck != 1 else "" }} to the ops topic could not be sent for over ten minutes: a changed sign-in factor did not reach your phone. Check the push server and <code>OPERATOR_PUSH_TOKEN</code>; the pushes go out by themselves once it works.</p>
+{% endif %}
 {% if no_passkey %}
 <p class="banner warn">No passkey yet. Add one under <a href="/factors">Sign-in factors</a>: unlike a code, it cannot be typed into a look-alike site.</p>
 {% endif %}

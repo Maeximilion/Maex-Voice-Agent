@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.5
+> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.6
 
 ---
 
@@ -318,6 +318,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.66.6 · 18.11.2026:** Fix PR for #853 (seven P3 findings of the blind reviews of #832 and #836), item 3 of the model trial #843, Claude's choices awaiting Maxi: (a) a refused operator step still returns its refusal when its outcome row cannot be written; (b) tests for the token check of a body FastAPI cannot parse (the route walk, kitchen and calls), the parallel sign-in challenges under the per-address lock, the push sender thread and its lifespan; (c) the break glass writes `operator.push_failed` when its push cannot be queued; (d) a push that failed past the whole ladder of waits shows as a banner on the dashboard's home page (`push.stuck`, no new endpoint); (e) a stack without a customer key: documented as one manual UPDATE in its own database (docs/23 §8), no code path added
 - **v2.66.5 · 18.11.2026:** Phone comment and docs paragraph fixed (#851)
 - **v2.66.4 · 18.11.2026:** Fix PR for #849 (blind review of #848): an Italian mobile keeps no "(0)", a French number of another length than nine digits is refused, the false docstring of `_is_complete` is corrected, and the decisions row of the trunk zero says what is built
 - **v2.66.3 · 18.11.2026:** Fix PR for #804: a bracketed zero stays only behind codes whose numbers begin with 0, Hungary's 06 and Lithuania's 8 are dropped, a French number said in pairs is complete
