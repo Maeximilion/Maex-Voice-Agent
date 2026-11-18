@@ -100,7 +100,7 @@ def normalize_phone(raw: str, country_code: str = DEFAULT_COUNTRY_CODE) -> str:
     # free, so at most one length names a code.
     for size in (1, 2, 3):
         code, rest = digits[1 : 1 + size], digits[1 + size :]
-        trunks = ("0",) if code in TRUNK_ZERO_AFTER else ()
+        trunks: tuple[str, ...] = ("0",) if code in TRUNK_ZERO_AFTER else ()
         trunks += OTHER_TRUNK.get(code, ())
         if trunks:
             for trunk in trunks:
