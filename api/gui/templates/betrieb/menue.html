@@ -16,20 +16,30 @@
 {% if tenant %}
 <section class="card menue">
   <h2>Speisekarte</h2>
-  <p class="muted">So kennt die KI die Karte. {{ items }} {{ "Gericht" if items == 1 else "Gerichte" }}, {{ allergens_missing }} ohne Allergen-Angabe, {{ price_differences }} mit offener Preisabweichung.</p>
-  <form class="call-filter" method="get" action="/gui/menue" role="search">
-    <input type="search" name="q" value="{{ query }}" maxlength="{{ query_max }}"
-           placeholder="Nummer oder Name" aria-label="Nummer oder Name" autocomplete="off">
-    <select name="hinweis" aria-label="Hinweis">
+  {# A badge every dish carries says nothing about one dish: it is said once, here, and the
+     rows keep only the badge that tells them apart (#829-9). #}
+  {% set all_missing = items > 1 and allergens_missing == items %}
+  {% set all_differ = items > 1 and price_differences == items %}
+  <p class="muted">So kennt die KI die Karte. {{ items }} {{ "Gericht" if items == 1 else "Gerichte" }}, {{ allergens_missing }} ohne Allergen-Angabe, {{ price_differences }} mit offener Preisabweichung.
+    {% if all_missing %}Bei keinem Gericht ist ein Allergen hinterlegt: die KI gibt dazu keine Auskunft.{% endif %}
+    {% if all_differ %}Bei jedem Gericht nennt die Kasse einen anderen Preis.{% endif %}</p>
+  {# The search runs while typing (#829-8): the list below is swapped from the full page the
+     server sends anyway, and the address follows, so the pager and a reload keep the filter. #}
+  <form class="call-filter" method="get" action="/gui/menue" role="search"
+        hx-get="/gui/menue" hx-trigger="input delay:300ms, submit" hx-target="#menue-liste" hx-select="#menue-liste" hx-swap="outerHTML" hx-push-url="true">
+    <label for="menue-suche">Nummer oder Name</label>
+    <input type="search" id="menue-suche" name="q" value="{{ query }}" maxlength="{{ query_max }}" autocomplete="off">
+    <label for="menue-hinweis">Hinweis</label>
+    <select id="menue-hinweis" name="hinweis">
       <option value="">Alle Gerichte</option>
       {% for value, label, chosen in filters %}<option value="{{ value }}"{% if chosen %} selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
     <button type="submit">Anzeigen</button>
-    {% if narrowed %}
-    <a class="button" href="/gui/menue">Alle zeigen</a>
-    <span class="muted" role="status">{{ found }}</span>
-    {% endif %}
   </form>
+  <div id="menue-liste">
+  {% if narrowed %}
+  <p><a class="button" href="/gui/menue">Alle zeigen</a> <span class="muted" role="status">{{ found }}</span></p>
+  {% endif %}
   {% if rows %}
   <ul class="menu-list">
     {% for row in rows %}
@@ -39,8 +49,8 @@
       <bdi class="nr">{{ row.number }}</bdi>
       <bdi class="menu-name">{{ row.name }}</bdi>
       <span class="menu-price">{{ row.price }}</span>
-      {% if row.allergens_missing %}<span class="badge warn">Allergene fehlen</span>{% endif %}
-      {% if row.register is not none %}<span class="badge danger">Kasse: {{ row.register }}</span>{% endif %}
+      {% if row.allergens_missing and not all_missing %}<span class="badge warn">Allergene fehlen</span>{% endif %}
+      {% if row.register is not none and not all_differ %}<span class="badge danger">Kasse: {{ row.register }}</span>{% endif %}
     </li>
     {% endfor %}
   </ul>
@@ -56,6 +66,7 @@
   {% else %}
   <p class="empty">Kein aktives Gericht in der Karte.</p>
   {% endif %}
+  </div>
 </section>
 <section class="card menue">
   <h2>Was die Hinweise bedeuten</h2>

@@ -30,7 +30,7 @@ KINDS = {"access": "Auskunft", "erasure": "Löschung", "objection": "Widerspruch
 CHANNELS = {
     "phone": "Telefon",
     "mail": "E-Mail oder Brief",
-    "in_person": "persönlich",
+    "in_person": "Persönlich",
 }
 OUTCOMES = {
     "done": "erledigt",

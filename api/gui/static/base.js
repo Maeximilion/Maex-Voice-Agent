@@ -67,6 +67,89 @@ document.addEventListener("htmx:afterSwap", (event) => {
     mark.focus({ preventScroll: true });
     mark.scrollIntoView({ block: "nearest" });
 });
+// The call whose details are open is marked (#829-10): the button of a row says
+// aria-expanded, the stylesheet colours the row, so the tap is seen to have landed.
+// Set from the answer that was swapped in, not from the tap: a request that failed
+// or came back late leaves the mark on the call whose details are on the page.
+document.addEventListener("htmx:afterSwap", (event) => {
+    if (!(event instanceof CustomEvent) || !(event.target instanceof Element))
+        return;
+    if (event.target.id !== "anruf-detail")
+        return;
+    const detail = event.detail;
+    const config = typeof detail === "object" && detail !== null
+        ? detail.requestConfig
+        : null;
+    const sender = typeof config === "object" && config !== null ? config.elt : null;
+    for (const other of document.querySelectorAll("[data-anruf]")) {
+        other.setAttribute("aria-expanded", String(other === sender));
+    }
+});
+// A form with `data-frage` asks before it is sent (#829-19): a plain POST form of
+// the operator dashboard, where htmx and its confirm hook are not used. The same
+// dialog as the board's question (`.frage`); "Nein" has the focus, Escape says no,
+// the page behind stands still. `data-frage-ja` and `data-frage-nein` carry the two
+// labels of an English page.
+document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement))
+        return;
+    const question = form.dataset["frage"];
+    if (!question || form.dataset["bestaetigt"] === "1")
+        return;
+    event.preventDefault();
+    // Before the listener that hides a shown password: nothing is sent yet.
+    event.stopPropagation();
+    const submitter = event instanceof SubmitEvent ? event.submitter : null;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const back = document.createElement("div");
+    back.className = "frage-grund";
+    const box = document.createElement("div");
+    box.className = "frage";
+    box.setAttribute("role", "alertdialog");
+    box.setAttribute("aria-modal", "true");
+    const text = document.createElement("p");
+    text.id = "frage-text";
+    text.textContent = question;
+    box.setAttribute("aria-labelledby", text.id);
+    const no = document.createElement("button");
+    no.type = "button";
+    no.textContent = form.dataset["frageNein"] ?? "Nein";
+    const yes = document.createElement("button");
+    yes.type = "button";
+    yes.className = "primary";
+    yes.textContent = form.dataset["frageJa"] ?? "Ja";
+    box.append(text, no, yes);
+    back.append(box);
+    const inert = [];
+    for (const el of Array.from(document.body.children)) {
+        if (el instanceof HTMLElement && el.tagName !== "SCRIPT" && !el.inert) {
+            el.inert = true;
+            inert.push(el);
+        }
+    }
+    document.body.append(back);
+    const close = () => {
+        back.remove();
+        for (const el of inert)
+            el.inert = false;
+        if (opener && document.contains(opener))
+            opener.focus();
+    };
+    no.addEventListener("click", close);
+    back.addEventListener("keydown", (key) => {
+        if (key.key === "Escape")
+            close();
+    });
+    yes.addEventListener("click", () => {
+        close();
+        form.dataset["bestaetigt"] = "1";
+        form.requestSubmit(submitter);
+        // The submit has run: a page restored from the cache asks again.
+        delete form.dataset["bestaetigt"];
+    });
+    no.focus();
+}, true);
 // "Nochmal versuchen" on the red bar reloads the page.
 document.addEventListener("click", (event) => {
     if (event.target instanceof Element && event.target.closest("[data-neu-laden]")) {
