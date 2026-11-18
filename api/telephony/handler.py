@@ -137,11 +137,13 @@ _DIGIT = re.compile(r"[0-9]")
 CLOSED_MEMORY = 10_000
 # Numbers guests named in calls handed to the team, for the card of a team leg
 # nobody answers; the call log keeps only the caller id. The report comes one
-# to two minutes after the handover (the last sentence, up to three legs of
-# 30 s: a listed number, the team's, TEAM_PHONE), and an answered leg sends
-# none: older entries are dropped at the next call's end, handover or report,
-# so a number neither outlives its call for long nor lands on another call
-# with the same id (Codex on PR #345, #861).
+# to two minutes after the handover (the last sentence, a leg of 30 s per
+# number tried: a listed one, the team's, TEAM_PHONE, one more after a change
+# during the call), and an answered leg sends none: older entries are dropped
+# at the next call's end, handover or report, so a number does not land on
+# another call with the same id (Codex on PR #345, #861).
+# shortcut: on a quiet line the last entry stays in memory until the next
+# call ends; drop it on a timer if that matters (#861 review).
 NAMED_PHONES_KEPT = 1000
 NAMED_PHONE_SECONDS = 300.0
 # How long the log of a call that ended as it should waits on a lock. Longer

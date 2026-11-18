@@ -2269,8 +2269,8 @@ def test_the_dialplan_is_told_the_number_that_holds_now(session, tenant):
 
 
 def test_the_dialplan_is_told_no_number_without_a_database(session, tenant):
-    """Empty, never an exception: the dialplan dials TEAM_PHONE of its
-    environment then (rule 5)."""
+    """Empty, never an exception: the dialplan keeps the number it had,
+    TEAM_PHONE of its environment at the call's start (rule 5)."""
 
     def no_database():
         raise OperationalError("SELECT 1", {}, Exception("connection refused"))

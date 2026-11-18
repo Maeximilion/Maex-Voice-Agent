@@ -245,12 +245,13 @@ ending that is no transfer to a listed number and after each leg nobody took (on
 or database that fails in the call leaves the number of the call's start, never none (rule 5).
 A number named after the change is one not tried yet, so it rings even after the old number was
 tried; each number still rings once. Not asked again on the way to `unreached`: the probe failed
-(nothing to ask) or the media connection failed a moment after `voice` named `TEAM`. A `voice`
-frozen in the call costs up to 2 s more per question; a killed one fails at once (the team rang
-0.4 s after the kill, below). Checked on the pinned Asterisk 22.11.0 with a stand-in `voice` and
-team legs that fail (18.11.2026): a number changed during the call rang next, an empty answer, a
-JSON error, a number off the list and a `voice` that is down kept the start number, every chain
-ended with the card. Drilled in "the team at today's number" (§5 drills below), without a change
+(nothing to ask) or the media connection failed a moment after `voice` named `TEAM`. An empty
+answer is the last question of the call: a `voice` frozen or down, or its database down (whose
+connect timeout is 2 s itself), costs the caller one wait of up to 2 s, not one before every leg;
+a killed `voice` fails at once (the team rang 0.4 s after the kill, below). Checked on the pinned
+Asterisk 22.11.0 with a stand-in `voice` and team legs that fail (18. and 19.11.2026): a number
+changed during the call rang next, an empty answer, a JSON error, a number off the list and a
+`voice` that is down kept the start number, every chain ended with the card. Drilled in "the team at today's number" (§5 drills below), without a change
 during the call.
 
 **Loop guard.** The team number must never be forwarded to us. `voice` refuses to start when the
