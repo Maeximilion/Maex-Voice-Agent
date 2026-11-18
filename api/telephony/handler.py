@@ -44,6 +44,7 @@ from fractions import Fraction
 from math import ceil
 
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from api.agent import recording
@@ -642,15 +643,24 @@ class CallHandler:
     def _guarded(self, live: _LiveCall, step: Callable[[], None]) -> None:
         try:
             step()
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "call failed, handing it to the team",
                 extra={"extra": {"session_id": live.session_id}},
             )
-            self._fail(live.session_id, live)
+            # The database is the failure: a second read would only add a
+            # connect timeout of silence before the outage sentence.
+            self._fail(
+                live.session_id, live, read_again=not isinstance(exc, DBAPIError)
+            )
 
     def _fail(
-        self, session_id: str, live: _LiveCall | None, team_phone: str | None = None
+        self,
+        session_id: str,
+        live: _LiveCall | None,
+        team_phone: str | None = None,
+        *,
+        read_again: bool = True,
     ) -> None:
         """Outage sentence, then the team: the call's number, else `team_phone`
         as routed, else the environment's. The sentence is best effort, the
@@ -687,9 +697,10 @@ class CallHandler:
                 self._port.say(session_id, SAY_OUTAGE if greeted else SAY_OUTAGE_FIRST)
             except Exception:
                 logger.exception("outage sentence could not be spoken")
-            if live is not None:
-                # After the sentence has gone out, so a read the line's bound
-                # cuts off (2 s) delays only the transfer, never the words.
+            if live is not None and read_again:
+                # Inside a turn the line carries out the sentence only once
+                # this returns (`CallSession._turn`), so the read delays the
+                # words as well: never after a database error (ledger #764).
                 target = self._team_phone(live)
             self._port.transfer(session_id, target)
         except Exception:
