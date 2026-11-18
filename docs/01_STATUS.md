@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.4
+> Status: 18.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.5
 
 ---
 
@@ -317,6 +317,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.66.5 · 18.11.2026:** Phone comment and docs paragraph fixed (#851)
 - **v2.66.4 · 18.11.2026:** Fix PR for #849 (blind review of #848): an Italian mobile keeps no "(0)", a French number of another length than nine digits is refused, the false docstring of `_is_complete` is corrected, and the decisions row of the trunk zero says what is built
 - **v2.66.3 · 18.11.2026:** Fix PR for #804: a bracketed zero stays only behind codes whose numbers begin with 0, Hungary's 06 and Lithuania's 8 are dropped, a French number said in pairs is complete
 - **v2.66.2 · 18.11.2026:** Review of #837 (post-merge `/code-review max`): a new standard equal to today's number closes today's card as kept with its `staff_change.kept` row, a card whose "Vorher" the operator moved names the operator, the standard push says today's number still holds and asks for the tablet (no "vorher ." for a blank old number), the dashboard field is `seen`, the audit-order test reaches every step again, docs/23 counts the re-read's rows right. Second round (migration 043): the page's version hashes the stored settings and counts its audit marks (no stale page from the clock or from a row that commits late), an index `ix_audit_log_tenant_action` answers it, a page from before its stack's update reads it again by itself, a tablet undoing a card the new standard kept is refused, cleanups (no `DECIDED`, shared audit helper, one number reader).

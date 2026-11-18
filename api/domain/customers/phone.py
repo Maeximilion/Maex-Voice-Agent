@@ -67,8 +67,10 @@ ZERO_LEADING = frozenset({"39", "378", "379", "225", "229"})
 # digits; the nine-digit ones clash with area codes like Varese's 0332 and are not
 # read as mobiles). They have no leading 0, so a "(0)" before one is the trunk
 # digit and falls away. Brescia's 030 begins with 3 as well, and no mobile begins
-# with 30. Left as said: Varese-like area codes with a seven-digit number, ten
-# digits that are a landline, told by length only. San Marino (mobile 6x), Cote
+# with 30. shortcut: a landline whose digits after the "(0)" have the shape of a
+# mobile (ten digits, 31 or 32 to 39: Varese's 0332 with a seven-digit number,
+# Como's 031 with eight) loses its 0 as well, since only the length separates
+# them; upgrade when such a caller appears. San Marino (mobile 6x), Cote
 # d'Ivoire (landline 2x) and Benin (all 01) have the same shape, with no caller
 # for it yet: not built (#849).
 DIGITS_BEHIND = re.compile(r"[0-9\s\-/.]*")  # the number that goes on after a "(0)"
