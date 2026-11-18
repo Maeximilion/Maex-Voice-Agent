@@ -158,8 +158,11 @@ def _step(
     try:
         yield
     except AppError:
-        session.rollback()
-        _outcome(session, tenant, by, step, ask, "refused")
+        # The refusal is the answer the caller needs; a lost outcome row
+        # leaves the ask unpaired, as for a crash, and must not replace it.
+        with suppress(Exception):
+            session.rollback()
+            _outcome(session, tenant, by, step, ask, "refused")
         raise
     except Exception:
         # The step's own error is the one to raise. Should the database be

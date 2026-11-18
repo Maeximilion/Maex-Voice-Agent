@@ -376,7 +376,12 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   `NTFY_BASE_URL`, a site of `ops.caddy` that gets no proxy secret; `dashboard` may only write
   there, `ops` only read, nobody else either. The push names the account and the change, never a
   secret. A push that cannot even be queued (the database refused) is audited as
-  `operator.push_failed` and never fails the request it reports. A removal of TOTP
+  `operator.push_failed` and never fails the request it reports; the break glass writes the same
+  row when its push cannot be queued (#853). A push that was tried past the whole ladder of
+  waits (more than four attempts: a wrong token, a push server that is gone) shows as a red banner on
+  the dashboard's home page, counted by `push.stuck`; the row itself keeps waiting and goes out
+  once the server works (Claude's choice, awaiting Maxi: a banner on the page the operator opens
+  anyway, no new endpoint or alert). A removal of TOTP
   that was off already (a double post, an older tab) is neither audited nor pushed (#816). The
   break glass removes every passkey too.
 - **Browser side.** `api/gui/ts/passkey.ts`, compiled, no inline script: it fetches the options,
@@ -716,6 +721,27 @@ change (`check_sites` in `scripts/new_stack.py`, tested in `api/tests/test_new_s
 `python3 scripts/new_stack.py --check-sites`). The shared Caddy also resolves the bare names `api`,
 `n8n` and `push` on every stack's `edge` network, so a site file must never use them; the check
 refuses one that does.
+
+**An existing stack without a customer key (#853).** A restaurant made before migration 035 has
+`tenants.customer_key` NULL. Its `/v1/ops/status` and `/figures` answer a conflict ("no customer key"
+in the dashboard's row), and `create_tenant` does not adopt it: it refuses to provision a database
+that already holds a tenant with another key (`domain/provision.py`, one customer per stack, D32).
+No code path gives such a stack its key, on purpose: the key is what ties a stack's answers to the
+customer the dashboard asked for, so a path that sets it over the API would be a new way to claim
+that tie. With what exists today the operator on the stack's host does it once, by hand, after a
+backup (`scripts/backup.sh`, docs/13 §4), in the stack's own database:
+
+```
+docker compose -p maex-<key> exec db psql -U <POSTGRES_USER> -d <POSTGRES_DB> \
+  -c "UPDATE tenants SET customer_key = '<key>' WHERE customer_key IS NULL"
+```
+
+(`POSTGRES_USER` and `POSTGRES_DB` are in the stack's `.env`.) It changes one row (a stack holds
+one tenant); the CHECK on the key's form and its unique index refuse a bad or a taken key. Then
+`python -m api.dashboard.cli customer-add <key> <api url>` on the operator host. The statement
+runs under the host's root and so under the host's own protection; it leaves no `audit_log` row,
+so the operator notes it in the runbook. Claude's choice, awaiting Maxi: whether to keep this
+manual step or to add a break-glass command with an audit row; none is built.
 
 ## 9. Uploads (#572)
 

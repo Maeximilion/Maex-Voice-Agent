@@ -23,6 +23,7 @@ never printed; `customers` lists keys and addresses only.
 
 import argparse
 import sys
+from contextlib import suppress
 from datetime import UTC, datetime
 from getpass import getpass
 
@@ -59,6 +60,12 @@ def _account(command: str, name: str) -> int:
             push.queue(db, f"{name}: {did} on the operator host", datetime.now(UTC))
     except Exception as problem:  # noqa: BLE001  the break glass works without the push
         print(f"The push to ops failed: {type(problem).__name__}", file=sys.stderr)
+        # As the dashboard's `_alert`: a takeover alert that was lost leaves a row.
+        # The factors below are shown once and must still be, so a failing
+        # audit write is not raised either.
+        with suppress(Exception), SessionLocal() as db:
+            audit(db, ACTOR, "operator.push_failed", {"what": did, "account": name})
+            db.commit()
     # The one place the secret is shown: inside the link (its `secret=` value is
     # what an app without link import takes typed in).
     print("Add this link to the authenticator app, or type in its secret= value:")
