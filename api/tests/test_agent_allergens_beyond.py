@@ -2624,9 +2624,19 @@ def test_a_lookup_result_reaches_the_model_without_its_allergens(session, known_
     assert result.say == [CORE_SAY]
 
 
-def test_an_option_of_one_dish_licenses_no_claim_about_another(session, known_tenant):
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Die 47 kostet 15,50 Euro, und die 13 hat keine Erdnüsse.",
+        # Both dishes in one clause (Codex review of #860, P1): the 47's option
+        # must not license the claim about the 13.
+        "Die 47 und die 13 enthalten keine Erdnüsse.",
+    ],
+)
+def test_an_option_of_one_dish_licenses_no_claim_about_another(
+    session, known_tenant, answer
+):
     state = state_for(session, known_tenant, phone=CALLER)
-    answer = "Die 47 kostet 15,50 Euro, und die 13 hat keine Erdnüsse."
 
     result, _ = run(
         session,

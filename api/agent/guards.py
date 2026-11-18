@@ -917,8 +917,11 @@ def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[st
     allergens no letter licenses. Licensed: a letter of the turn's menu text,
     of the dish and option names of the order, or of the order text accepted
     in this turn; in a clause that names a dish of the call (card number or
-    whole name), only that dish's own text and lines license, so the option
-    "Erdnuss" of the 47 licenses no "die 13 hat keine Erdnüsse". Whole dish
+    whole name), only that dish's own text and lines license, every named
+    dish for itself, so the option "Erdnuss" of the 47 licenses no "die 13
+    hat keine Erdnüsse" nor "die 47 und die 13 enthalten keine Erdnüsse".
+    shortcut: a sentence about two dishes that is true of one ("Die 47 mit
+    Erdnusssauce und die 13 sind notiert") goes back once. Whole dish
     names the search delivered in this call are menu data and are left out
     ("Erdnuss-Curry").
     shortcut: a clause that refers to a dish without naming it ("Sie hat
@@ -935,11 +938,12 @@ def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[st
         }
         clause = _without_dish_names(state, clause)
         if named:
-            lines = [line for line in state.cart if line["menu_item_id"] in named]
-            new = [line for line in changed if line["menu_item_id"] in named]
-            allowed = set().union(*(turn.dish_codes.get(i, set()) for i in named))
-            allowed |= _codes(*(t for line in lines for t in _line_texts(state, line)))
-            allowed |= _wish_codes(*(line.get("note") for line in new))
+            # Each named dish licenses by its own text and lines, and a word
+            # needs all of them: the 47's option "Erdnuss" licenses no "Die 47
+            # und die 13 enthalten keine Erdnüsse" (Codex review of #860, P1).
+            allowed = set.intersection(
+                *(_dish_licence(turn, state, changed, i) for i in named)
+            )
         else:
             allowed = turn.menu_codes | _order_codes(turn, state)
             allowed |= _codes(
@@ -949,6 +953,24 @@ def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[st
         if _ALLERGEN_TALK.search(clause):
             words.add("allergen")
     return words
+
+
+def _dish_licence(
+    turn: AllergenTurn,
+    state: ConversationState,
+    changed: list[dict[str, Any]],
+    item_id: str,
+) -> set[str]:
+    """The letters one dish licenses: its menu text of this turn, the dish
+    and option names of its lines in the order, the wish notes of its lines
+    that changed in this turn."""
+    lines = [line for line in state.cart if line["menu_item_id"] == item_id]
+    new = [line for line in changed if line["menu_item_id"] == item_id]
+    return (
+        turn.dish_codes.get(item_id, set())
+        | _codes(*(t for line in lines for t in _line_texts(state, line)))
+        | _wish_codes(*(line.get("note") for line in new))
+    )
 
 
 def _names_it(clause: str, seen: dict[str, Any]) -> bool:
