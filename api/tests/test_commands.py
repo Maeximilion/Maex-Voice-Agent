@@ -14,7 +14,7 @@ COMMAND_DIR = REPO_ROOT / ".claude" / "commands"
 MAKEFILE = REPO_ROOT / "Makefile"
 
 # CLAUDE.md §6 nennt genau diese sieben Befehle.
-EXPECTED_COMMANDS = ("start", "task", "done", "bug", "eval", "gate", "handover")
+EXPECTED_COMMANDS = ("start", "task", "done", "fix-bug", "eval", "gate", "handover")
 
 # Dateiverweise: alles, was wie ein Repo-Pfad mit bekannter Endung aussieht.
 FILE_REF_RE = re.compile(r"[A-Za-z0-9_.\-/]+\.(?:md|py|sh|yml|yaml|json)")
