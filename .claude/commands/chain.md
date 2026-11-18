@@ -93,7 +93,7 @@ before naming a base.
 - Archives a session only on Maxi's word.
 - At 400k context of its own: write the state file (memory, `project` type:
   merged, open, next starts, waiting decisions), tell Maxi to go on in a fresh
-  coordinator that reads it.
+  coordinator that reads it. Not under the option of section 5a.
 
 ## 5. Usage pacing (in every brief)
 
@@ -114,6 +114,26 @@ would not finish. At 3 points left: commit, push, one background `sleep` to
 two minutes after the reset, then back to work. At 90 percent of the week:
 finish the step, commit, push, report. Cheap work first (read, test, build),
 agent waves and deep reviews when they fit into what is left of the window.
+
+## 5a. Option: no handover limit (overnight)
+
+Maxi names it when he starts a chain ("no handover limit", "overnight"); without
+it the normal limits hold (Maxi, 2026-11-18 on #562: 300k and 450k stay for
+normal sessions, a chain may run the whole night). Under it the coordinator and
+every child skip the handover at 300k and 450k (`CLAUDE.md` "Session End",
+`/handover` "When a block is due") and the coordinator skips its 400k state file
+(section 4). Auto compaction at about 550k tokens takes over, set by
+`autoCompactWindow` 550000 in the user settings (`docs/19` "Auto compaction for
+an overnight chain"). It cannot be scoped to chain sessions, so Maxi switches
+the key on before the chain and off after it; before the first start the
+coordinator reads `get_usage` for itself and checks `autoCompactsAtPercent` is
+about 55 (97 means it is not on: say so, and keep the normal limits). Pacing
+(section 5) and the weekly stop still hold.
+
+A child brief then says: "No handover limit this chain (Maxi, 2026-11-18): do
+not hand over at 300k or 450k and do not stop for context size. Auto compaction
+at about 550k tokens may happen: commit and push at every step and keep what you
+need in the PR and in files, so a compaction loses nothing."
 
 ## 6. The end of a chain
 
