@@ -196,13 +196,7 @@ answers ("sicher", "glutenfrei", "keine Spuren", "enthält keine",
 "garantiert", separate preparation) or is the fixed sentence
 (`guards.allergen_claim`). Inflected and turned forms count too ("eine
 glutenfreie Variante", "es sind keine Nüsse enthalten", "die 13 ist ohne
-Erdnüsse"), and since #764 "in der 13 ist keine Erdnuss", "Milch ist da keine
-drin", "enthält Sesam nicht", "Sesam hat die 13 nicht", "enthält weder Nüsse
-noch Sesam", "da kommen keine Nüsse rein", "da ist nix von Sesam drin" and an
-allergen asked back before the answer ("Nüsse? Nein, die sind nicht drin."),
-in a sentence and in a note alike; "Das ist kein Problem", a kitchen note
-"Gast ist allergisch, keine Nüsse" and "weder Nüsse noch Sesam" with no verb
-of content are none. A wish said back ("die 13 ohne Erdnüsse, notiert") and the
+Erdnüsse"); a wish said back ("die 13 ohne Erdnüsse, notiert") and the
 model asking "Sind Sie sicher, dass ...?" do not (#656). A card never
 carries a note with a health word (`wishes.speaks_of_health`: an allergy
 word, "Zöliakie", "reagiert auf", "darf kein"): its line reads "Hinweis für

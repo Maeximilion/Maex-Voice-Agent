@@ -17,10 +17,8 @@ from api.agent.guards import (
     HINT_CONFIRM,
     HINT_GUEST_PHONE,
     HINT_NO_DRAFT,
-    NOTE_CLAIM,
     allergen_claim,
     begin_turn,
-    claims_in_a_note,
     false_booking,
     note_said,
     refusal,
@@ -1142,62 +1140,6 @@ def test_a_wish_echoed_or_a_question_of_certainty_is_no_claim(say):
 def test_a_promise_to_the_guest_that_they_are_safe_is_a_claim(say):
     """Only the question that opens with the verb is cut (Codex PR #714, P1)."""
     assert allergen_claim(new_state(allergy_talk=True), say) is ALLERGEN_CLAIM
-
-
-# --- #764: the absence forms #748 left open
-
-ABSENCE_764 = [
-    "In der 13 ist keine Erdnuss.",
-    "In der Pho Bo ist keine Milch.",
-    "Milch ist da keine drin.",
-    "Soja ist keins drin.",
-    "Die 13 enthält Sesam nicht.",
-    "Nein, Sesam hat die 13 nicht.",
-    "Die 13 enthält weder Nüsse noch Sesam.",
-    "Da kommen keine Nüsse rein.",
-    "Nüsse? Nein, die sind nicht drin.",
-    "Da ist nix von Sesam drin.",
-    "Nee, Sesam ist da keiner drin.",
-    "Da ist nichts mit Erdnüssen drin.",
-]
-
-
-@pytest.mark.parametrize("say", ABSENCE_764)
-def test_the_common_absence_forms_are_a_claim(say):
-    """#764 (L17): the most common ways to say an allergen is not in a dish."""
-    assert allergen_claim(new_state(), say) is ALLERGEN_CLAIM
-
-
-@pytest.mark.parametrize(
-    "say",
-    [
-        "Das ist kein Problem, die 13 ohne Erdnüsse.",
-        "Kein Problem, ich notiere keine Erdnüsse.",
-        "Gast ist allergisch, keine Nüsse.",
-        "WICHTIG !!! Allergie: weder Nüsse noch Sesam",
-        "Kunde verträgt Sesam nicht.",
-        "Möchten Sie noch etwas? Die 13 mit Sesam, gern.",
-        "Da ist kein Besteck dabei.",
-    ],
-)
-def test_a_wish_a_kitchen_note_or_a_plain_no_is_no_absence_claim(say):
-    """Words of the guest's wish and of a note for the kitchen (#764)."""
-    assert allergen_claim(new_state(allergy_talk=True), say) is None
-
-
-@pytest.mark.parametrize(
-    "note", ["In der 13 ist keine Erdnuss", "Sesam ist da keiner drin"]
-)
-def test_a_note_with_an_absence_form_goes_back(note):
-    """#764: a note is read back to the guest, so it holds no claim either."""
-    call = ToolCall(
-        "draft_order",
-        {
-            "type": "pickup",
-            "items": [{"menu_item_id": PHO, "quantity": 1, "note": note}],
-        },
-    )
-    assert claims_in_a_note(new_state(), call) is NOTE_CLAIM
 
 
 # --- #764: a model sentence that names a dish's allergens

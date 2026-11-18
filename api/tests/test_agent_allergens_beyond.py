@@ -683,30 +683,6 @@ def test_a_model_answer_on_allergens_without_a_lookup_never_reaches_the_guest(
 
 
 @pytest.mark.parametrize(
-    ("said", "answer"),
-    [
-        ("Ist in der Pho Bo Milch?", "Nein, in der Pho Bo ist keine Milch."),
-        ("Hat die 13 Nüsse?", "Nein, Nüsse hat die 13 nicht."),
-        ("Is da Sesam drin in der 13?", "Nee, Sesam ist da keiner drin."),
-        (ASKED, "Nein, da ist kein Sellerie."),
-    ],
-)
-def test_a_models_absence_claim_goes_to_the_team_at_once(
-    session, known_tenant, said, answer
-):
-    """#764 (L17): the absence forms #748 missed are a claim; the model is not
-    asked again."""
-    state = state_for(session, known_tenant, phone=CALLER)
-
-    result, llm = run(session, state, said, LLMTurn(say=answer))
-
-    assert len(llm.calls) == 1
-    assert answer not in result.say
-    assert result.ended
-    assert result.say[0] == SAY_ALLERGENS_BEYOND
-
-
-@pytest.mark.parametrize(
     "answer",
     [
         "Gern, die 13 ohne Erdnüsse. Noch etwas?",
@@ -1623,8 +1599,7 @@ def test_a_lookup_that_failed_is_no_read_of_the_menu(session, known_tenant):
 @pytest.mark.parametrize(
     "answer",
     [
-        # "Nein, da ist kein Sellerie." is a claim since #764 and goes to the
-        # team at once (`test_a_models_absence_claim_goes_to_the_team_at_once`).
+        "Nein, da ist kein Sellerie.",
         "Ja, die Pho Bo enthält Sellerie.",
         # Names nothing, says the same.
         "Da ist nichts davon drin.",
