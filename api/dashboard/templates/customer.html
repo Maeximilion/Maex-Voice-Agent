@@ -46,7 +46,7 @@
     {% else %}
     <div class="kz-bar">
       <div class="kz"><span class="muted">Accuracy</span><b>{{ f.week.accuracy_percent | percent }}</b></div>
-      <div class="kz"><span class="muted">Cost per order</span><b>{{ (none if f.week.unknown_cost_calls and not f.week.cost_per_order_cents else f.week.cost_per_order_cents) | euro }}</b></div>
+      <div class="kz"><span class="muted">Cost per order</span><b>{{ f.week.cost_per_order_cents | euro }}</b></div>
       <div class="kz"><span class="muted">Handed to the team</span><b>{{ f.week.handed_over_percent | percent }}</b></div>
       <div class="kz"><span class="muted">Missed calls</span><b>{{ f.week.missed }}</b></div>
     </div>
@@ -62,7 +62,7 @@
           <td data-label="Calls">{{ d.calls }}</td>
           <td data-label="Orders">{{ d.orders }}</td>
           <td data-label="Accuracy">{{ d.accuracy_percent | percent }}</td>
-          <td data-label="Cost per order">{{ (none if d.unknown_cost_calls and not d.cost_per_order_cents else d.cost_per_order_cents) | euro }}{% if d.unknown_cost_calls %} *{% endif %}</td>
+          <td data-label="Cost per order">{{ d.cost_per_order_cents | euro }}{% if d.unknown_cost_calls %} *{% endif %}</td>
           <td data-label="Handed to the team">{{ d.handed_over_percent | percent }}</td>
           <td data-label="Missed calls">{{ d.missed }}</td>
         </tr>

@@ -260,3 +260,5 @@ def test_a_cost_that_is_unknown_for_every_call_is_no_zero():
     assert unknown.cost_per_order_cents is None
     assert Figures(3, 2, 0, 0, 0, 30, 1).cost_per_order_cents == 15
     assert Figures(2, 2, 0, 0, 0, 0, 0).cost_per_order_cents == 0
+    # One cent of known cost over three orders rounds to a real zero, not to "unknown".
+    assert Figures(4, 3, 0, 0, 0, 1, 1).cost_per_order_cents == 0

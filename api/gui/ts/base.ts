@@ -64,12 +64,20 @@ document.addEventListener("htmx:afterSwap", (event) => {
 
 // The call whose details are open is marked (#829-10): the button of a row says
 // aria-expanded, the stylesheet colours the row, so the tap is seen to have landed.
-document.addEventListener("click", (event) => {
-  if (!(event.target instanceof Element)) return;
-  const button = event.target.closest("[data-anruf]");
-  if (!(button instanceof HTMLButtonElement)) return;
+// Set from the answer that was swapped in, not from the tap: a request that failed
+// or came back late leaves the mark on the call whose details are on the page.
+document.addEventListener("htmx:afterSwap", (event) => {
+  if (!(event instanceof CustomEvent) || !(event.target instanceof Element)) return;
+  if (event.target.id !== "anruf-detail") return;
+  const detail: unknown = event.detail;
+  const config: unknown =
+    typeof detail === "object" && detail !== null
+      ? (detail as { requestConfig?: unknown }).requestConfig
+      : null;
+  const sender: unknown =
+    typeof config === "object" && config !== null ? (config as { elt?: unknown }).elt : null;
   for (const other of document.querySelectorAll("[data-anruf]")) {
-    other.setAttribute("aria-expanded", String(other === button));
+    other.setAttribute("aria-expanded", String(other === sender));
   }
 });
 
