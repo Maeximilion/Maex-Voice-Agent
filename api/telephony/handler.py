@@ -136,11 +136,12 @@ _DIGIT = re.compile(r"[0-9]")
 # as a call this process lost. Bounded: a restaurant line has a few hundred a day.
 CLOSED_MEMORY = 10_000
 # Numbers guests named in calls handed to the team, for the card of a team leg
-# nobody answers; the call log keeps only the caller id. The report comes
-# about a minute after the handover (the last sentence, two legs of 30 s), and
-# an answered leg sends none: older entries are dropped, so a number neither
-# outlives its call for long nor lands on another call with the same id
-# (Codex on PR #345).
+# nobody answers; the call log keeps only the caller id. The report comes one
+# to two minutes after the handover (the last sentence, up to three legs of
+# 30 s: a listed number, the team's, TEAM_PHONE), and an answered leg sends
+# none: older entries are dropped at the next call's end, handover or report,
+# so a number neither outlives its call for long nor lands on another call
+# with the same id (Codex on PR #345, #861).
 NAMED_PHONES_KEPT = 1000
 NAMED_PHONE_SECONDS = 300.0
 # How long the log of a call that ended as it should waits on a lock. Longer
@@ -365,6 +366,9 @@ class CallHandler:
     ) -> None:
         with self._lock:
             self._ai_calls.discard(session_id)  # the leg is gone, its place is free
+            # A team that answered sends no report (#861): what older calls
+            # kept goes here; this call's own entry is fresh and stays.
+            self._forget_old_named_phones()
             if session_id in self._starting:
                 self._ended_while_starting.add(session_id)
                 return  # `on_call_started` closes it once the call is open
@@ -408,9 +412,10 @@ class CallHandler:
     def team_phone(self) -> str:
         """The number the team is at now, for the legs the dialplan dials on
         its own (#835): `voice` crashed in the call, ended it with no transfer
-        to a listed number, or a listed number nobody took. Empty when the
-        database cannot be read: the dialplan keeps TEAM_PHONE of its
-        environment then (rule 5). Never raises."""
+        to a listed number, or a listed number nobody took. Asked at the call's
+        start and before each such leg (#861). Empty when the database cannot
+        be read: the dialplan keeps the number it had, TEAM_PHONE of its
+        environment at the start (rule 5). Never raises."""
         session: Session | None = None
         try:
             session = self._session_factory()

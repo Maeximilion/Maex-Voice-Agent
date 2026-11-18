@@ -42,14 +42,17 @@ def _folded(text: str) -> str:
 # Reihenfolge ist die Prüfreihenfolge: "storniert die Reklamation" träfe sowohl
 # complaint- als auch cancellation-Wörter, complaint zuerst geprüft ist die
 # sicherere Lesart (docs/05 §4 nennt Beschwerde vor Storno).
+# Patterns (`re.search` on the lowered text); every one so far is plain text
+# but the two stems of a complaint below.
 _TRIGGERS: tuple[tuple[EscalationReason, tuple[str, ...]], ...] = (
     (
         "complaint",
         (
-            "beschwerde",
-            "beschweren",
-            "reklamation",
-            "reklamieren",
+            # The stems of `_COMPLAINT_WORD` with their endings, so "Ich
+            # beschwere mich", "beschwert" and "Ich reklamiere" count (#861),
+            # and "beschwerlich", "unbeschwert" and "Reklame" do not.
+            r"(?<!un)beschwer(?:de|e|t|st)",
+            r"reklam(?:ation|ier)",
             "ärger",
             "ärgerlich",
             "geärgert",
@@ -129,9 +132,11 @@ _ADDITIVE = re.compile(
 # Word starts where a stem hides in other words ("zerbrochen"), "übel" but
 # in "Kübel", "Dübel" and "grübeln" ("speiübel" counts), and
 # "arzt" anywhere but in "Schwarztee" and "Quarztorte": "Hausarzt" counts
-# (#657).
+# (#657). "beschwerden" only inside a word ("Magenbeschwerden", #861): alone
+# it is as often the plural of a complaint.
 _TEAM_ONLY = re.compile(
     r"krank|(?<![kdg])(?:übel|uebel)|\berbroch|durchfall|vergift|(?<!schw)(?<!qu)arzt"
+    r"|\Bbeschwerden"
     r"|ärztin|notaufnahme"
     r"|anwalt|anwältin|polizei|gesundheitsamt|verbraucherzentrale"
 )
@@ -336,7 +341,7 @@ def only_a_complaint(text: str) -> bool:
     lowered = text.lower()
     return not (
         any(
-            keyword in lowered
+            re.search(keyword, lowered)
             for reason, keywords in _TRIGGERS
             if reason != "complaint"
             for keyword in keywords
@@ -356,7 +361,7 @@ def check(text: str) -> EscalationReason | None:
     rohen Kundenzug geprüft, bevor `loop.py` das Modell überhaupt aufruft."""
     lowered = text.lower()
     for reason, keywords in _TRIGGERS:
-        if any(keyword in lowered for keyword in keywords):
+        if any(re.search(keyword, lowered) for keyword in keywords):
             return reason
     return None
 

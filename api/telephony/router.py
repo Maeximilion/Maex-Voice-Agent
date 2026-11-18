@@ -5,12 +5,13 @@
   from the line through one writer per connection.
 - `/calls/{call_id}/ending`: once `Dial` returns, the dialplan asks how our leg
   ended. "hangup" ends the call, "transfer <number>" is dialled if the number
-  is TEAM_PHONE or on TRANSFER_TARGETS of the dialplan, else TEAM_PHONE, and
-  anything else, an empty answer or none at all, rings the team (CLAUDE.md §2
-  rule 5, docs/20 §5).
-- `/calls/{call_id}/missed`: nobody answered the team leg at TEAM_PHONE. A
-  callback card is written; "noted" once it is, "none" otherwise, and the
-  dialplan tells the caller which (docs/20 §5, T-10.8).
+  is TEAM_PHONE or on TRANSFER_TARGETS of the dialplan, else the team at the
+  number `/team` names, and anything else, an empty answer or none at all,
+  rings the team there too (CLAUDE.md §2 rule 5, docs/20 §5).
+- `/calls/{call_id}/missed`: nobody answered the team legs, at the team's
+  number and at TEAM_PHONE. A callback card is written; "noted" once it is,
+  "none" otherwise, and the dialplan tells the caller which (docs/20 §5,
+  T-10.8).
 - `/calls/{call_id}/recording/stop`: the team pressed the stop key on a recorded
   team leg, and the dialplan stopped and deleted the file. "stopped" once the
   withdrawal is logged, "none" otherwise (docs/20 §5, T-11.3).
@@ -21,9 +22,10 @@
 - `/media/ready`: asked by the dialplan before it dials `/media`, with the same
   credentials, so a `voice` that would refuse the media connection is never
   dialled (#768).
-- `/team`: asked by the dialplan once `/media/ready` said "ok": the number the
-  team is at now (`team_phone_at`), for the legs it dials on its own, or
-  nothing when the database cannot be read (#835).
+- `/team`: asked by the dialplan once `/media/ready` said "ok", and again
+  before each leg it dials on its own (#861): the number the team is at now
+  (`team_phone_at`), or nothing when the database cannot be read, and the
+  dialplan keeps the number it had (#835).
 
 All but `/asterisk/seen` and `/health` want the media token as the password of Basic credentials. A call is named
 by the id of the caller's channel (`${UNIQUEID}`): the dialplan hands it to the
