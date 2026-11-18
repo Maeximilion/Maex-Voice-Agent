@@ -19,7 +19,8 @@ TRUNK_IN_BRACKETS = re.compile(r"\(\s*0\s*\)")
 # trunk prefix since its closed plan of 2009, but its 0 was one: the numbers kept
 # their digits without it, so a guest's old habit "+48 0 600 ..." means +48600...
 # Left out on purpose, so a 0 there stays as said: Italy, San Marino, Vatican,
-# Cote d'Ivoire, Benin (their numbers begin with 0); Hungary (trunk prefix 06);
+# Cote d'Ivoire, Benin (their numbers begin with 0; a bracketed "(0)" keeps its
+# zero there as well); Hungary (trunk prefix 06, `OTHER_TRUNK`);
 # Russia, Kazakhstan, Belarus (8); Norway (numbers with a 0); the countries
 # without a trunk prefix (Spain, Portugal, Greece, Czechia, Denmark, Luxembourg,
 # Latvia, Estonia, Malta, Cyprus, Iceland); every code not checked yet.
@@ -54,6 +55,11 @@ TRUNK_ZERO_AFTER = frozenset(
         "423",  # Liechtenstein
     }
 )
+# A trunk prefix other than 0, dropped after its country code like the zero (#804).
+# Hungary: 06, and no national number begins with 0. Lithuania: 8 until 2024; a
+# national number that begins with 8 continues with 0 (800, 809), which the guard
+# in `normalize_phone` leaves alone. Russia's 8 stays: 812 is St Petersburg.
+OTHER_TRUNK = {"36": ("06",), "370": ("8",)}
 SAY_INVALID_PHONE = (
     "Die Rufnummer habe ich nicht verstanden. Können Sie sie noch einmal sagen?"
 )
@@ -61,13 +67,10 @@ SAY_INVALID_PHONE = (
 
 def normalize_phone(raw: str, country_code: str = DEFAULT_COUNTRY_CODE) -> str:
     """„0721 / 555-1234" → „+497215551234". Unbrauchbare Eingabe → InvalidInput."""
-    text = raw.strip()
-    # "(0)" ist die nationale Verkehrsausscheidungsziffer. Steht eine Landesvorwahl
-    # davor, entfaellt sie; sonst ist sie die fuehrende Null der nationalen Form.
-    # Ohne diese Unterscheidung wird aus "+49 (0)7221 5551234" eine Nummer mit einer
-    # Ziffer zu viel, und das Team ruft ins Leere.
-    international = text.startswith("+") or text.startswith("00")
-    text = TRUNK_IN_BRACKETS.sub("" if international else "0", text)
+    # "(0)" is the said trunk zero, read as a 0: the loop below drops it after the
+    # codes whose trunk it is ("+49 (0)7221 ..." has one digit too many with it)
+    # and keeps it where numbers begin with 0 ("+39 (0)2 ..." as "+39 02 ...", #804).
+    text = TRUNK_IN_BRACKETS.sub("0", raw.strip())
     digits = re.sub(r"[\s\-/().]", "", text)
     if digits.startswith("00"):
         digits = "+" + digits[2:]
@@ -81,9 +84,17 @@ def normalize_phone(raw: str, country_code: str = DEFAULT_COUNTRY_CODE) -> str:
     # free, so at most one length names a code.
     for size in (1, 2, 3):
         code, rest = digits[1 : 1 + size], digits[1 + size :]
-        if code in TRUNK_ZERO_AFTER:
-            if rest[:1] == "0" and rest[1:2] not in ("", "0"):
-                digits = f"+{code}{rest[1:]}"
+        trunks = (("0",) if code in TRUNK_ZERO_AFTER else ()) + OTHER_TRUNK.get(
+            code, ()
+        )
+        if trunks:
+            for trunk in trunks:
+                if rest.startswith(trunk) and rest[len(trunk) : len(trunk) + 1] not in (
+                    "",
+                    "0",
+                ):
+                    digits = f"+{code}{rest[len(trunk) :]}"
+                    break
             break
     if not E164.match(digits):
         raise InvalidInput(f"Rufnummer ungültig: {raw!r}", say=SAY_INVALID_PHONE)

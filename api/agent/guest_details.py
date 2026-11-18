@@ -116,6 +116,9 @@ _SHORTEST_NUMBER = 8
 # With this many digits a number is complete for a pause: what follows the pause
 # is something else.
 _COMPLETE_NUMBER = 11
+# The same for a number with a said "00" and country code: the digits behind
+# both, without the trunk zero.
+_COMPLETE_INTERNATIONAL = 9
 # What may stand between two letters a guest spells.
 _BETWEEN_LETTERS = " \t,-."
 # Other digits of a turn with this many digits may be the head of the number.
@@ -416,9 +419,22 @@ def _goes_on(group: str) -> bool:
     is read without the marks of digits said in words (Codex PR #481, P1)."""
     return (
         group.startswith("0")
-        and _AREA_CODE_DIGITS <= _digits(group) < _COMPLETE_NUMBER
+        and _digits(group) >= _AREA_CODE_DIGITS
+        and not _is_complete(group)
         and not _is_date(group.replace(_SAID, ""))
     )
+
+
+def _is_complete(group: str) -> bool:
+    """Enough digits that what follows a pause is something else. A said "00" and
+    country code and the trunk zero are no part of the count: "0033 06 12 34 56
+    78" is nine digits, the number the French guest said (#804).
+    shortcut: the code counts as two digits, so a three-digit code counts one
+    too many and waits for one more pair; fix when such a guest is refused."""
+    digits = "".join(char for char in group if char.isdigit())
+    if not digits.startswith("00"):
+        return len(digits) >= _COMPLETE_NUMBER
+    return len(digits[4:].removeprefix("0")) >= _COMPLETE_INTERNATIONAL
 
 
 def _digits(text: str) -> int:
@@ -428,8 +444,7 @@ def _digits(text: str) -> int:
 def _without_trunk_zero(run: str) -> str:
     """ "+43 (0)664 1234567" is one number. Read at the bracket as two, its
     tail became a German one. As `normalize_phone` reads the "(0)"."""
-    international = run.startswith(("+", "00"))
-    return TRUNK_IN_BRACKETS.sub("" if international else "0", run)
+    return TRUNK_IN_BRACKETS.sub("0", run)
 
 
 def _may_be_a_head(group: str) -> bool:
