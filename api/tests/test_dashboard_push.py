@@ -313,6 +313,34 @@ def test_pushes_stuck_past_the_ladder_are_counted_and_shown(
     assert "1 push to the ops topic could not be sent" in client.get("/").text
 
 
+def test_pushes_waiting_without_a_push_server_show_a_banner(
+    client, factors, clock, sessions, monkeypatch
+):
+    monkeypatch.setattr(settings, "operator_push_url", "")
+    monkeypatch.setattr(settings, "operator_push_token", "")
+    _signed_in(client, factors, clock)
+    with sessions() as db:
+        assert push.unsent_without_server(db) == 0
+    assert "No push server is set" not in client.get("/").text
+    with sessions() as db:
+        push.queue(db, "waits", clock.at)
+        assert push.unsent_without_server(db) == 1
+        assert push.stuck(db) == 0
+    assert (
+        "No push server is set, so 1 push to the ops topic is" in client.get("/").text
+    )
+
+
+def test_no_banner_for_unsent_rows_when_a_push_server_is_set(
+    client, factors, clock, sessions, server
+):
+    _signed_in(client, factors, clock)
+    with sessions() as db:
+        push.queue(db, "due soon", clock.at)
+        assert push.unsent_without_server(db) == 0
+    assert "No push server is set" not in client.get("/").text
+
+
 def test_a_sent_push_is_not_stuck(sessions, server):
     with sessions() as db:
         push.queue(db, "goes out", START)

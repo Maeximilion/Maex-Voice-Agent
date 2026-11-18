@@ -136,6 +136,22 @@ def stuck(db: Session) -> int:
     )
 
 
+def unsent_without_server(db: Session) -> int:
+    """Pushes waiting while no push server is set (dev, test or a stack
+    misconfigured past the start-up check): no sender runs, so `stuck` never
+    sees them, and the start-up warning is the only other sign (#858)."""
+    if configured():
+        return 0
+    return (
+        db.scalar(
+            select(func.count())
+            .select_from(OperatorPush)
+            .where(OperatorPush.sent_at.is_(None))
+        )
+        or 0
+    )
+
+
 def _run(stop: threading.Event) -> None:
     while not stop.wait(INTERVAL_SECONDS):
         try:

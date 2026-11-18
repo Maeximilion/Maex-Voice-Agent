@@ -7,6 +7,7 @@ instead of 401, or the wrong token to the right route.
 import pytest
 
 from api import main
+from api.core.auth import require_kitchen_token
 from api.tests import test_ops_status as base
 
 http = base.http
@@ -42,6 +43,48 @@ def test_every_route_of_a_prefix_carries_the_check_the_prefix_names(prefix, chec
     for route in routes:
         carried = {dep.call for dep in route.dependant.dependencies}
         assert check in carried, f"{route.path} does not carry {check.__name__}"
+
+
+def _prefixes_naming(check) -> tuple[str, ...]:
+    return tuple(prefix for prefix, named in main._TOKEN_CHECKS if named is check)
+
+
+def _guarded_outside_their_prefix(routes) -> list[str]:
+    """Routes that carry a token check but sit under no prefix naming it:
+    the body-parse fallback would skip that check for them."""
+    checks = {check for _, check in main._TOKEN_CHECKS}
+    found = []
+    for route in routes:
+        if not getattr(route, "dependant", None):
+            continue
+        for dep in route.dependant.dependencies:
+            if dep.call in checks and not route.path.startswith(
+                _prefixes_naming(dep.call)
+            ):
+                found.append(f"{route.path} carries {dep.call.__name__}")
+    return found
+
+
+def test_every_route_with_a_token_check_sits_under_a_prefix_that_names_it():
+    assert _guarded_outside_their_prefix(_flat(main.app.routes)) == []
+
+
+def test_a_guarded_route_outside_the_list_is_found():
+    """Mutant: a route with the kitchen check under `/v1/other/`."""
+    from fastapi import APIRouter, Depends
+
+    mutant = APIRouter()
+    mutant.add_api_route(
+        "/v1/other/x", lambda: None, dependencies=[Depends(require_kitchen_token)]
+    )
+    wrong_prefix = APIRouter()
+    wrong_prefix.add_api_route(
+        "/v1/ops/y", lambda: None, dependencies=[Depends(require_kitchen_token)]
+    )
+    assert _guarded_outside_their_prefix(mutant.routes + wrong_prefix.routes) == [
+        "/v1/other/x carries require_kitchen_token",
+        "/v1/ops/y carries require_kitchen_token",
+    ]
 
 
 @pytest.mark.parametrize(
