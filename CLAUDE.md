@@ -81,6 +81,7 @@ The layout is modular, organized by layers with fixed dependency direction. Full
 | `docs/21_REVIEW_AUTOMATION.md` **"Working rules in force" of reviews** | before reviewing or answering a review, every `/ship` fix round |
 | `docs/22_LANGUAGE_AND_PERFORMANCE.md` language, latency, typing, review signals | before performance or language changes, a PR review |
 | `docs/23_ACCESS_SECURITY.md` threat model, logins, tokens, uploads | before logins, dashboard, provisioning, uploads |
+| `docs/24_OPEN_REVIEW_POINTS.md` review findings left open, each with its trigger | task start: grep it for your task ID and files |
 | `.claude/commands/*.md` session flow per step: merge cases and hand-off (`ship.md`), ledger and stacks (`done.md`), parallel work and split routing (`task.md`), STATUS upkeep and alerts (`start.md`) | when the command runs |
 | `.claude/rules/*.md` path rules of section 8 (`gui.md`, `tests-language.md`, `scripts.md`, `migrations.md`) | load on a matching file |
 
