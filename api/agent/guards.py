@@ -423,7 +423,12 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             refused = _CART_OPTION
         elif (
             claimed := _claims_in(
-                state, [line["note"] for line in lines if "note" in line]
+                state,
+                [
+                    (line["note"], [line["menu_item_id"]])
+                    for line in lines
+                    if "note" in line
+                ],
             )
         ) is not None:
             # A changed note licenses words of the model (`AllergenTurn`), and
@@ -666,6 +671,8 @@ ALLERGY_CALL = ToolResult(ok=False, error_code="invalid_input", hint=HINT_ALLERG
 # Allergiker geeignet"). The guest's own allergy ("Ihre Allergie") is no such
 # word.
 _ALLERGEN_TALK = re.compile(r"allergen|allergiker", re.IGNORECASE)
+# The letter coeliac disease names in a note ("Zöliakie, ohne Gluten").
+_GLUTEN = allergens_named("Gluten")
 _WORDS = re.compile(r"\w")
 
 
@@ -750,6 +757,9 @@ def begin_allergen_turn(
     # allergen question: "Wie lange dauern die Nudeln mit Garnelen?" (deep
     # review of #860, P1). A name made of allergen words only stays.
     codes = allergens_named(_without_dish_names(state, said, plain_only=True))
+    # What the guest named stays licensed for the notes of the call: the
+    # draft turns later carries "ohne Erdnüsse" (`_note_licence`).
+    state.allergens_said = sorted(set(state.allergens_said) | codes)
     return AllergenTurn(
         guest_codes=frozenset(codes),
         speaks=speaks,
@@ -1225,20 +1235,64 @@ def _said(state: ConversationState) -> str:
 
 def claims_in_a_note(state: ConversationState, call: ToolCall) -> ToolResult | None:
     """A note of a draft that promises a dish free of an allergen ("nussfrei",
-    "keine Spuren") or names a dish ("Erdnussallergie. Die 13 hat keine."):
-    read back word for word, it is the model's second way to the guest's ear
-    (#798), so it goes back. The same lists as the model's sentence
-    (`allergen_claim`); an additive has its own way (`notes_an_additive`)."""
-    return _claims_in(state, _notes(call))
+    "keine Spuren"), names a dish ("Erdnussallergie. Die 13 hat keine.") or
+    names an allergen nobody licensed: read back word for word, it is the
+    model's second way to the guest's ear (#798), so it goes back. The same
+    lists as the model's sentence (`allergen_claim`); an additive has its
+    own way (`notes_an_additive`)."""
+    if call.name not in NOTED:
+        return None
+    items = call.args.get("items")
+    lines = [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
+    note = call.args.get("note")
+    notes = (
+        [(note, [str(i.get("menu_item_id")) for i in lines])]
+        if isinstance(note, str)
+        else []
+    )
+    notes += [
+        (i["note"], [str(i.get("menu_item_id"))])
+        for i in lines
+        if isinstance(i.get("note"), str)
+    ]
+    return _claims_in(state, notes)
 
 
-def _claims_in(state: ConversationState, notes: list[str]) -> ToolResult | None:
-    if any(
-        allergen_claim(state, note) is ALLERGEN_CLAIM or _names_a_dish(state, note)
-        for note in notes
-    ):
-        return NOTE_CLAIM
+def _claims_in(
+    state: ConversationState, notes: list[tuple[str, list[str]]]
+) -> ToolResult | None:
+    """`notes`: each note with the dishes it stands on (all lines for the
+    note of the whole order)."""
+    # A note the order already carries was checked when it came: the draft
+    # carries the line's "ohne Erdnüsse" on although this turn names none.
+    old = {line.get("note") for line in state.cart}
+    old |= {state.order_note, state.table_note}
+    for note, ids in notes:
+        if allergen_claim(state, note) is ALLERGEN_CLAIM or _names_a_dish(state, note):
+            return NOTE_CLAIM
+        if note not in old and allergens_named(note) - _note_licence(state, ids):
+            # Codex review of #860 (P1): "Enthält keine Erdnüsse" on a line
+            # the guest only ordered would be read back as their note.
+            return NOTE_CLAIM
     return None
+
+
+def _note_licence(state: ConversationState, ids: list[str]) -> set[str]:
+    """The allergen letters a new note may name: those the guest named in
+    this call (`allergens_said`, so a wish said turns before the draft still
+    counts), the guest's health sentences (coeliac disease names gluten), and
+    the dish and option names of the note's dishes."""
+    said = " ".join(state.allergy_said)
+    codes = set(state.allergens_said) | allergens_named(said)
+    if names_coeliac(said):
+        codes |= _GLUTEN
+    for item_id in ids:
+        seen = state.seen_items.get(item_id, {})
+        groups = [*seen.get("required", []), *seen.get("optional", [])]
+        codes |= _codes(
+            seen.get("name"), *(o for g in groups for o in g.get("options", []))
+        )
+    return codes
 
 
 def _names_a_dish(state: ConversationState, note: str) -> bool:

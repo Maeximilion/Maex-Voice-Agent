@@ -249,8 +249,14 @@ up (`guards.is_open`)
    (`loop._tool_result_as_input`). A read-back names a note as the guest's
    ("Ihr Hinweis: ...", "Ihr Hinweis für die ganze Bestellung: ...", "mit
    Ihrem Hinweis: ..."), and a note that names a dish of the search (card
-   number or whole name, the guest's quoted allergy sentence aside) goes
-   back (`guards.claims_in_a_note`), in a `cart` too. Residual risks, all
+   number after "Nummer" or an article, or whole name; the guest's quoted
+   allergy sentence aside) goes back (`guards.claims_in_a_note`), in a
+   `cart` too. So does a new note that names an allergen neither the guest
+   (their words anywhere in the call, `allergens_said`, their health
+   sentences, coeliac disease for gluten) nor its own dish's name and
+   options named: "Enthält keine Erdnüsse" on a line the guest only ordered
+   would be read back as their note (Codex review of #860). A note the order
+   already carries is not checked again. Residual risks, all
    bounded to allergens the dish's own database text names: a claim built
    only from licensed nouns ("Ist in der 47 Erdnuss?" with an option
    "Erdnuss"), a follow-up without an allergen word answered without a

@@ -2816,3 +2816,28 @@ def test_the_offer_again_after_the_guest_named_the_dish_goes_to_the_team(
 
     assert result.ended
     assert result.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_a_cart_note_with_an_absence_nobody_said_is_never_read_back(
+    session, known_tenant
+):
+    """Codex review of #860 (P1): "Enthält keine Erdnüsse" as the model's
+    line note would be read back word for word; it goes back with the hint
+    and the line is taken without it."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    pho = str(item(session, known_tenant, "13"))
+    claimed = {"menu_item_id": pho, "quantity": 1, "note": "Enthält keine Erdnüsse"}
+    plain = {"menu_item_id": pho, "quantity": 1}
+
+    result, llm = run(
+        session,
+        state,
+        "Die 13 bitte.",
+        searches("13"),
+        LLMTurn(say="Die 13 ist notiert.", cart=[claimed]),
+        LLMTurn(say="Die 13 ist notiert.", cart=[plain]),
+    )
+
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_NOTE_CLAIM
+    assert result.say == ["Die 13 ist notiert."]
+    assert state.cart == [plain]

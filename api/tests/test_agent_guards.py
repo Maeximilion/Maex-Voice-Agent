@@ -1639,17 +1639,56 @@ def test_a_note_that_names_a_dish_goes_back(note):
 
 
 @pytest.mark.parametrize(
-    "note",
+    ("said", "note"),
     [
-        "ohne Erdnüsse",
-        "WICHTIG !!! Kunde ist allergisch auf Nüsse",
-        "Zöliakie, ohne Gluten",
+        ("Die 13 ohne Erdnüsse bitte.", "ohne Erdnüsse"),
+        (
+            "Die 13 bitte, ich habe eine Nussallergie.",
+            "WICHTIG !!! Kunde ist allergisch auf Nüsse",
+        ),
+        ("Die 13 bitte, ich habe Zöliakie.", "Zöliakie, ohne Gluten"),
     ],
 )
-def test_a_wish_or_an_allergy_note_passes(note):
-    _, state = allergen_turn("Die 13 bitte.", search(PHO))
+def test_a_wish_or_an_allergy_note_passes(said, note):
+    """The guest named the allergen: the note may carry it."""
+    _, state = allergen_turn(said, search(PHO))
 
     assert claims_in_a_note(state, _drafted_with(note)) is None
+
+
+def test_a_note_may_name_an_option_of_its_dish():
+    _, state = allergen_turn("Die 47 bitte, ohne das Extra.", search(ENTE))
+    cart = [{"menu_item_id": ENTE, "quantity": 1, "note": "ohne Erdnuss"}]
+
+    assert take_cart(state, cart) is None
+
+
+@pytest.mark.parametrize(
+    "note", ["Enthält keine Erdnüsse", "Kunde verträgt Sesam gut", "mit Milch"]
+)
+def test_a_note_naming_an_allergen_nobody_said_goes_back(note):
+    """Codex review of #860 (P1): the read-back speaks a note word for word,
+    so its allergen words need the guest's word or the dish's own text, like
+    the model's sentence."""
+    _, state = allergen_turn("Die 13 bitte.", search(PHO))
+    cart = [{"menu_item_id": PHO, "quantity": 1, "note": note}]
+
+    assert claims_in_a_note(state, _drafted_with(note)) is NOTE_CLAIM
+    assert take_cart(state, cart) is NOTE_CLAIM
+    assert state.cart == []
+
+
+def test_a_note_already_on_the_order_is_not_checked_again():
+    """The guest said "ohne Erdnüsse" a turn before; the draft carries the
+    line's note on."""
+    _, state = allergen_turn(
+        "Die 13 ohne Erdnüsse bitte.",
+        search(PHO),
+        cart=[{"menu_item_id": PHO, "quantity": 1, "note": "ohne Erdnüsse"}],
+    )
+    _, state = allergen_turn("Auf Müller zum Abholen.", state=state)
+
+    assert claims_in_a_note(state, _drafted_with("ohne Erdnüsse")) is None
 
 
 def test_a_note_quoting_the_guests_own_sentence_passes():

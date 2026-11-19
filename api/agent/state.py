@@ -187,6 +187,11 @@ class ConversationState(BaseModel):
     # again goes to the team (`guards.left_twice`, deep review of #860).
     # Never sent.
     allergen_question_codes: list[str] = Field(default_factory=list)
+    # The allergen letters the guest named in this call, outside a denial
+    # and without the names of dishes found (`guards.begin_allergen_turn`):
+    # a new note may name only these, its dish's own text, or the guest's
+    # health (`guards._note_licence`, Codex review of #860). Never sent.
+    allergens_said: list[str] = Field(default_factory=list)
     # The note of the whole order and of the table as the last draft carried
     # it: a draft made again from `cart` or `slots` keeps it. Sent.
     order_note: str | None = None
