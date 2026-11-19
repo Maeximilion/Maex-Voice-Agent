@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 19.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.25
+> Status: 19.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.67.0
 
 ---
 
@@ -96,8 +96,8 @@ Decided D1 to D30: same archive section.
 | D31 | Which further mechanics of MaexSocial's labels and gates are taken over (Maxi asked 05.11.2026 to look; names stay this repo's)? Already the same here: assignee, type label and milestone per PR and issue, project status sync, daily maintenance. (full text: docs/HISTORY.md) | Maxi | open |
 | D39 | ~~Should a change of a sign-in factor end the account's other sessions (deep review of #807, issue #816 finding 6)?~~ **decided 17.11.2026 (Maxi): (A)** removing a passkey or TOTP, or setting a new TOTP secret, ends every other session of the account, and the operator is pushed that the other sessions ended; built in `access._end_other_sessions` (docs/23 §5) | Maxi | decided |
 | D38 | ~~Three choices about the operator's write steps (deep review of #571 pull request 5, 16.11.2026, issue #811): (1) the operator's team number is today's only, by the staff's rule, and the owner's card reads "Vom Team geändert": show it as the operator's (carry the actor onto the card and into the push)? Recommendation: yes; (2) may the operator set the standard team number in the dashboard (the case: the standard line is dead and the owner does not answer the card, so the dead number holds again next morning)? Recommendation: yes, as a route of its own with step-up, reason and a push to the owner; (3) a push to the owner when the operator makes a setup link, sets a PIN or signs devices out, so a taken-over dashboard shows sooner? Recommendation: yes for the setup link, no for the rest. Maxi's, because each changes what an owner sees or what the operator may do to a restaurant's calls. |~~ **decided 17.11.2026 (record on #571): (1) yes, Claude under the chain's word, and (2) yes, Maxi, both built in fix pull request 6 with the stale-page check; (3) yes for all three pushes, Claude, fix pull request 5.**
-| D37 | Should a change of a sign-in factor need a passkey step-up once the account has a passkey (security review of #571 part 4, 16.11.2026)? Today the sign-in is the fresh second factor for five minutes whatever it was (docs/23 §5 as written: "a fresh passkey or TOTP"). A live phishing proxy that relays the password and one TOTP code could in that time register a passkey of its own and remove the operator's; the push to `ops` fires, but the operator is out until the break glass. Tightening it means: an operator who lost the only passkey registers a new one through the break glass, not with TOTP. Recommendation: yes, tighten, before `ops.<domain>` is reachable from outside; Maxi's, because it changes his own way back in |
-| D36 | An external penetration test before the first paying customer (found while planning #571, 16.11.2026)? It costs money, so it is Maxi's; the security audit of docs/23 §11 comes before anything is reachable from outside either way | Maxi | before the first paying customer |
+| D37 | ~~Should a change of a sign-in factor need a passkey step-up once the account has a passkey (security review of #571 part 4, 16.11.2026)?~~ **decided 19.11.2026 (Maxi): yes, tighten.** Once the account has a passkey, registering or removing a passkey and setting or removing a TOTP secret need a passkey step-up; the sign-in no longer counts as the fresh factor for them. An operator who lost the only passkey registers a new one through the break glass, not with TOTP. Build: #884, before `ops.<domain>` is reachable from outside (docs/23 §5 changes with it) | Maxi | decided |
+| D36 | ~~An external penetration test before the first paying customer (found while planning #571, 16.11.2026)?~~ **decided 19.11.2026 (Maxi): yes, before the first paying customer.** Budget, the tester and the date are Maxi's chat tasks (C-list); the security audit of docs/23 §11 still comes first | Maxi | decided |
 | D35 | ~~Where does a restaurant's front page with the sign-in live (#571)?~~ **decided 16.11.2026 (Maxi):** on each customer's own host name, not on one central site: a central login would hold every customer's credentials or hand a session across stacks (against D32), and a passkey, bound to its host name, would force that central login. The operator's dev login stays on `ops.<domain>` (D33). Later, each an issue of its own: an owner passkey on the customer's own host (scope the full host name, never a shared parent domain) and a central product page without any login. The plan of the eleven pull requests is the comment of 16.11.2026 on #571 | Maxi | decided |
 
 ---
@@ -168,6 +168,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.67.0 · 19.11.2026:** D36 and D37 decided by Maxi: external pen test before the first paying customer, passkey step-up for factor changes (#884)
 - **v2.66.25 · 19.11.2026:** STATUS holds status only: review findings to docs/24, Changelog, Done and process rows trimmed to HISTORY (#562)
 - **v2.66.24 · 19.11.2026:** Maxi accepted 44 assumption rows on 19.11.2026, moved to HISTORY (#562)
 - **v2.66.23 · 19.11.2026:** STATUS upkeep 19.11.2026: nothing to archive, no row older than one month (#562)
