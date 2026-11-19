@@ -594,7 +594,11 @@ the second builds against.
   its attempts count on that device alone and skip the account's and the address's waits, so the
   restaurant's own tablets still get in. The cookie opens nothing by itself: it still needs the
   password, and a stolen one gets the device's own wait, as a single address does (OWASP "Slow
-  Down Online Guessing Attacks with Device Cookies"). A new browser during such an attack waits. The client address is the last entry of Caddy's
+  Down Online Guessing Attacks with Device Cookies"). A new browser during such an attack waits.
+  Signing out every device (a new password by setup link, the operator's or the command line's
+  "all devices") also forgets every device cookie of the restaurant, so one kept by someone who
+  knew the old password guesses on the account's count again (#888 B1); signing out one device
+  keeps them. The client address is the last entry of Caddy's
   `X-Forwarded-For`, trusted only outside dev and test, where only Caddy reaches the view.
 - **CSRF** as today (docs/06 §9) plus a check on every write that `Origin` (or, without it,
   `Sec-Fetch-Site`) names this site; a browser sends one of them on every cross-site write. `Origin: null` passes
