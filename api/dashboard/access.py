@@ -101,6 +101,8 @@ class Signed(NamedTuple):
     token: str
     device_token: str
     factor: str
+    # A browser without this account's device cookie (#888 A1).
+    new_browser: bool
 
 
 @dataclass(frozen=True)
@@ -223,7 +225,7 @@ def sign_in(
         db, account.name, "operator.signed_in", {"factor": factor, "address": address}
     )
     db.commit()
-    return Signed(token, device_token, factor)
+    return Signed(token, device_token, factor, not trusted)
 
 
 def resolve(

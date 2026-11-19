@@ -690,7 +690,7 @@
             {
               "id": "84a06cbd-a09e-54e7-b832-8ed8e7da539a",
               "name": "text",
-              "value": "=Betreiber {{ String($json.payload.actor).replace(/^operator:/, '') }} {{ ({ setup_link: 'hat einen Einrichtungslink erstellt', pin_set: 'hat die ' + ($json.payload.which === 'admin' ? 'Inhaber-PIN' : 'Team-PIN') + ' neu gesetzt', sign_out: 'hat ' + $json.payload.signed_out + ' Gerät(e) abgemeldet' })[$json.payload.step] ?? $json.payload.step }}.",
+              "value": "=Betreiber {{ String($json.payload.actor).replace(/^operator:/, '') }} {{ ({ setup_link: 'hat einen Einrichtungslink erstellt', pin_set: 'hat die ' + ($json.payload.which === 'admin' ? 'Inhaber-PIN' : 'Team-PIN') + ' neu gesetzt', pin_show: 'hat die ' + ($json.payload.which === 'admin' ? 'Inhaber-PIN' : 'Team-PIN') + ' angesehen', sign_out: 'hat ' + $json.payload.signed_out + ' Gerät(e) abgemeldet' })[$json.payload.step] ?? $json.payload.step }}.",
               "type": "string"
             },
             {

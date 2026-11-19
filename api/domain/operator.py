@@ -294,6 +294,8 @@ def show_pin(
     """The team or admin PIN, or None when none is set. Two rows: the reason
     here, the look itself from the function the command line uses."""
     with _step(session, tenant, by, "pin_show", which=which):
+        # Before the call: it commits the look, and the push with it (#888 A1).
+        _tell_owner(session, tenant, by, "pin_show", which=which)
         pin = shown_pin(session, tenant.id, by.actor, which)
     return pin
 
