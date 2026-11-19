@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from api.config import TOKEN_PLACEHOLDER, Settings
+from api.domain.customers.phone import E164
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -192,3 +193,33 @@ def test_production_refuses_the_proxy_secret_as_the_media_token():
 
 def test_dev_may_share_tokens():
     assert _settings(env="dev", gui_proxy_secret="x" * 40, voice_media_token="x" * 40)
+
+
+@pytest.mark.parametrize(
+    "number",
+    [
+        "07215551234",
+        "0049 721 5551234",
+        "+49 721 5551234",
+        "+4907215551234x",
+        "+497215551234\n",
+        "",
+    ],
+)
+@pytest.mark.parametrize("env", ["dev", "prod"])
+def test_no_process_starts_on_a_team_phone_outside_e164(number, env):
+    """#861: the staff sheet offers and stores E.164 numbers only and the
+    dialplan compares as written, so a national TEAM_PHONE was a standard the
+    staff could never go back to. Refused in every environment; the message
+    leaves the number out, which may be somebody's own mobile."""
+    with pytest.raises(ValidationError, match="TEAM_PHONE") as refused:
+        _settings(env=env, agent_api_token=LONG_ENOUGH, team_phone=number)
+    assert "5551234" not in str(refused.value)
+
+
+def test_the_team_phone_check_reads_the_number_rule_of_the_domain():
+    """Config sits below the domain and keeps its own copy of the rule."""
+    from api.config import TEAM_PHONE_FORM
+
+    assert TEAM_PHONE_FORM.pattern == E164.pattern
+    assert _settings(team_phone="+497215551234").team_phone == "+497215551234"

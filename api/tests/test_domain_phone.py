@@ -197,7 +197,7 @@ def test_german_team_and_staff_numbers_come_out_unchanged(monkeypatch):
     from api.domain.status import staff_changes
 
     team = "+4972215551234"
-    monkeypatch.setattr(provision, "dialable_numbers", lambda: [team])
+    monkeypatch.setattr(provision, "sheet_numbers", lambda: [team])
     monkeypatch.setattr(staff_changes, "sheet_numbers", lambda: [team])
     for said in (team, "07221 5551234", "+49 (0)7221 5551234", "0049 7221 5551234"):
         assert normalize_phone(said) == team
