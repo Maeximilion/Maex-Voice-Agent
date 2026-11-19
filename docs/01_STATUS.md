@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 19.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.67.3
+> Status: 19.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.67.4
 
 ---
 
@@ -172,6 +172,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.67.4 · 19.11.2026:** Security audit of docs/23 §5 to §8 (component, `c6e5437a`): no P0, no P1, three P2 and ten P3 in #888; the operator site and the restaurant login may open, the P2s are fixed before the first paying customer (D36).
 - **v2.67.3 · 19.11.2026:** Windows switch scripts/stack.cmd starts, pauses, resumes and stops the workbench stack in Ubuntu WSL (#887).
 - **v2.67.2 · 18.11.2026:** #798: the allergen guard decides by provenance instead of German word lists: an allergy turn hears only core sentences (table sentence, read-back, a tool's sentence, three fixed sentences), every other allergen word of the model needs its code in the turn's menu text or the order; a read-back names a note as the guest's, a note that names a dish goes back; the #764 allergen branch (#747, #748) and Maxi's twelve decisions on the cloud session of 15.11.2026 come with it; Claude's choices awaiting Maxi on the PR
 - **v2.67.1 · 19.11.2026:** #884 done: a factor change needs a passkey step-up once the account has a passkey (D37)
