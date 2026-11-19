@@ -24,6 +24,7 @@ from zoneinfo import ZoneInfo
 
 from api.agent.escalation import speaks_of_allergies
 from api.agent.guards import (
+    HINT_ALLERGY_CALL,
     HINT_ALLERGY_TURN,
     HINT_GUEST_NAME,
     HINT_GUEST_PHONE,
@@ -453,6 +454,7 @@ class ScriptedLLM:
                 )
             )
         if not result.get("ok") and result.get("hint") in (
+            HINT_ALLERGY_CALL,
             HINT_ALLERGY_TURN,
             HINT_UNLICENSED_ALLERGEN,
         ):

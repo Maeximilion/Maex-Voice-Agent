@@ -178,10 +178,6 @@ def searches(query: str = NOT_ON_THE_CARD) -> LLMTurn:
         "Ich habe eine Erdnussallergie, ist da Erdnuss drin?",
         # The speech engine dropped the mark: the word order still asks.
         "Ist in der Pho Bo Sellerie ich habe eine Allergie",
-        # On the cost list of docs/05 §4: a surname reads like an allergen
-        # (audit of 7768182, finding 9).
-        "Kann ich einen Tisch auf den Namen Fischer bekommen? "
-        "Ich habe eine Nussallergie.",
     ],
 )
 def test_a_question_about_an_allergy_is_read_as_one(said):
@@ -203,6 +199,10 @@ def test_a_question_about_an_allergy_is_read_as_one(said):
         "Sind Sie ein Roboter? Die 99 bitte, ich habe eine Erdnussallergie.",
         "Haben Sie heute noch auf? Die 99 bitte, ich habe eine Nussallergie.",
         "Hallo? Ich möchte die 99, ich habe eine Nussallergie.",
+        # A surname that reads like an allergen names none (audit of 7768182,
+        # finding 9; deep review of #860).
+        "Kann ich einen Tisch auf den Namen Fischer bekommen? "
+        "Ich habe eine Nussallergie.",
     ],
 )
 def test_other_sentences_are_no_allergy_question(said):
@@ -707,19 +707,27 @@ def test_a_follow_up_without_a_lookup_is_not_answered_by_the_model(
 @pytest.mark.parametrize(
     ("first", "asked", "answer", "pending"),
     [
-        # The skeptic's probe of #764: the allergy one turn before, not taken
-        # up, so the question is pending (#798).
+        # The skeptic's probe of #764: a question one turn before, not taken
+        # up, so it is pending (#798).
         (
-            "Ich habe eine Erdnussallergie.",
+            "Ich habe eine Erdnussallergie. Was ist in der 13?",
             "Ist in der 13 Erdnuss?",
             "Nein, in der 13 ist keine Erdnuss.",
             True,
         ),
         (
-            "Ich habe eine Sojaallergie.",
+            "Ich habe eine Sojaallergie, geht die 23?",
             "Ist in der 23 Soja?",
             "Die 23 enthält nur Gluten.",
             True,
+        ),
+        # A stated allergy asks nothing and leaves nothing pending (deep
+        # review of #860, P2); the model's answer is still never heard.
+        (
+            "Ich habe eine Erdnussallergie.",
+            "Ist in der 13 Erdnuss?",
+            "Nein, in der 13 ist keine Erdnuss.",
+            False,
         ),
         # No allergy at all.
         ("Hallo.", "Ist in der Pho Bo Milch?", "Die Pho Bo enthält Soja.", False),
@@ -2662,7 +2670,8 @@ def test_the_guests_allergy_note_licenses_no_claim_in_a_later_turn(
 ):
     """Review of #798 (P1): the guest's own allergy, written on the line of
     the dish ordered a turn later, is health data, not menu or order text.
-    It must not license a peanut claim the database does not hold."""
+    It must not license a peanut claim the database does not hold. In a call
+    about an allergy the retry is a core sentence (deep review of #860)."""
     state = state_for(session, known_tenant, phone=CALLER)
     run(
         session,
@@ -2676,9 +2685,9 @@ def test_the_guests_allergy_note_licenses_no_claim_in_a_later_turn(
         "quantity": 1,
         "note": "WICHTIG !!! Kunde ist allergisch auf Erdnüsse",
     }
-    plain = "Gern, die 13 ist notiert."
+    plain = guards.SAY_ALLERGY_NOTED
 
-    result, _ = run(
+    result, llm = run(
         session,
         state,
         "Dann nehme ich die 13.",
@@ -2687,5 +2696,82 @@ def test_the_guests_allergy_note_licenses_no_claim_in_a_later_turn(
         LLMTurn(say=plain),
     )
 
+    assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_ALLERGY_CALL
     assert result.say == [plain]
     assert state.cart == [line]
+
+
+def test_a_refused_claim_comes_back_without_its_noun_and_is_not_heard(
+    session, known_tenant
+):
+    """Deep review of PR #860 (P1): after a refused allergen word in a call
+    about an allergy, "für Sie kein Problem" is the same claim without its
+    noun. The retry is held to core sentences."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie.",
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
+    )
+    retry = "Ja, die 13 ist für Sie kein Problem."
+
+    result, _ = run(
+        session,
+        state,
+        "Passt die 13 für mich?",
+        LLMTurn(say="Die 13 enthält keine Erdnüsse."),
+        LLMTurn(say=retry),
+    )
+
+    assert said_nowhere(result, retry)
+    assert result.say == [guards.SAY_ALLERGENS_OFFER]
+
+
+def test_a_question_answered_twice_with_the_noted_sentence_goes_to_the_team(
+    session, known_tenant
+):
+    """Deep review of PR #860 (P1): the second turn in a row that leaves the
+    guest's allergen question open goes to the team, whatever core sentence
+    it ends in."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    asked = "Ich habe eine Erdnussallergie. Ist in der 13 Erdnuss?"
+
+    first, _ = run(session, state, asked, LLMTurn(say=guards.SAY_ALLERGY_NOTED))
+    assert first.say == [guards.SAY_ALLERGY_NOTED]
+    assert state.allergen_question_open
+
+    second, _ = run(session, state, asked, LLMTurn(say=guards.SAY_ALLERGY_NOTED))
+
+    assert second.ended
+    assert second.say[0] == SAY_ALLERGENS_BEYOND
+    assert state.handoff_summary is not None
+
+
+def test_a_stated_allergy_leaves_the_next_price_question_to_the_model(
+    session, known_tenant
+):
+    """Deep review of PR #860 (P2): nothing was asked, so nothing is pending,
+    and the price of a dish a turn later is no allergen question."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie.",
+        LLMTurn(say=guards.SAY_ALLERGY_NOTED),
+    )
+    assert not state.allergen_question_open
+    price = "Die 13 kostet 11,90 Euro."
+
+    result, _ = run(
+        session,
+        state,
+        "Was kostet die 13 eigentlich?",
+        searches("13"),
+        LLMTurn(say=price),
+        LLMTurn(say=price),
+    )
+
+    assert not result.ended
+    assert result.say == [price]
+    assert session.scalars(select(Callback)).all() == []

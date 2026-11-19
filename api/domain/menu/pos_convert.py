@@ -100,6 +100,12 @@ _WHOLE_WORD_ONLY = frozenset(("ei", "egg", "eggs", "nut", "nuts"))
 _PREFIX_ONLY = frozenset(("eier",))
 # Look like an allergen and are none.
 _LOOKALIKES = ("kokos", "muskat", "buchweizen", "buckwheat")
+# A guest's name or street holds an allergen's name and names none: "Auf den
+# Namen Fischer", "Nussbaumweg 3" would open an allergen turn of the agent
+# (deep review of #860, P1). Whole words, so "Fischerplatte" stays fish.
+# ponytail: closed list of the common names; add one when the call log shows it.
+_NAMES_OF_PEOPLE = frozenset(("fischer", "fischers", "nussbaum", "senft"))
+_STREETS = ("strasse", "str", "weg", "gasse", "platz", "allee", "damm", "ufer")
 _NAMES = tuple(
     (name, code, kind)
     for kind, table in ((False, ALLERGEN_NAMES), (True, ALLERGEN_KINDS))
@@ -595,7 +601,11 @@ def _allergens_named(word: str) -> tuple[set[str], set[str]]:
     Only a word that starts with a name of `ALLERGEN_NAMES` stands for the
     whole letter; "Haselnuss" or "Laktose" is one kind of it.
     """
-    if any(x in word for x in _LOOKALIKES):
+    if (
+        word in _NAMES_OF_PEOPLE
+        or word.endswith(_STREETS)
+        or any(x in word for x in _LOOKALIKES)
+    ):
         return set(), set()
     hits = [
         (name, code, kind)

@@ -631,17 +631,27 @@ class ConversationLoop:
                 # Row 1: the table sentence of every dish looked up, in an
                 # open turn that changed no order.
                 table = open_turn and bool(aturn.looked_up) and not changed
+                # After a refused allergen word in a call about an allergy,
+                # the retry may say only core sentences: "Ja, die 13 ist für
+                # Sie kein Problem" is the same claim without its noun (deep
+                # review of #860, P1).
+                in_allergy_call = guards.sticky(state)
+                strict = open_turn or (allergen_back and in_allergy_call)
                 if (
                     not table
                     and not allergen_says
                     and (
                         not guards.core_only(aturn, state, say)
-                        if open_turn
+                        if strict
                         else bool(guards.unlicensed(aturn, state, say))
                     )
                 ):
                     refused = (
-                        guards.ALLERGY_TURN if open_turn else guards.UNLICENSED_ALLERGEN
+                        guards.ALLERGY_TURN
+                        if open_turn
+                        else guards.ALLERGY_CALL
+                        if in_allergy_call
+                        else guards.UNLICENSED_ALLERGEN
                     )
                     log_refused(
                         self._session, state.call_id, state.tenant_id, SAY, refused
@@ -682,9 +692,12 @@ class ConversationLoop:
                 elif open_turn:
                     # Rows 2 and 4: what the guest said may stay untaken.
                     left = guards.leaves_a_question(aturn, state)
-                    if left and aturn.pending and guards.SAY_ALLERGENS_OFFER in say:
-                        # The second turn in a row that only offers to look a
-                        # dish up: the question goes to the team (rule 5).
+                    if left and aturn.pending:
+                        # The second turn in a row that leaves the question
+                        # open goes to the team (rule 5), whatever core
+                        # sentence it ends in: a model that answers every
+                        # question with the noted sentence never hands over
+                        # otherwise (deep review of #860, P1).
                         return self._allergens_to_team(
                             state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                         )
@@ -1636,13 +1649,19 @@ def _asked_about_an_allergy(state: ConversationState) -> bool:
     allergisch?", "Haben Sie eine Allergie?")? Never a read-back: its note
     names the allergy, and the "Ja" to it answers the order."""
     say = state.last_say or ""
-    lowered = say.lower()
     if guards.SAY_ASK_ALLERGY in say:
         # The fixed question of an allergy turn (#798).
         return True
-    if "?" not in say or not ("allerg" in lowered or "wogegen" in lowered):
+    if state.readback and say.lstrip("…") in state.readback:
         return False
-    return not (state.readback and say.lstrip("…") in state.readback)
+    # Read without the read-back and the noted sentence beside it: "Ihren
+    # Hinweis gebe ich an die Küche weiter. <read-back> Passt das so?" asks
+    # about the order (deep review of #860, P1).
+    for core in (state.readback, guards.SAY_ALLERGY_NOTED):
+        if core:
+            say = say.replace(core, " ")
+    lowered = say.lower()
+    return "?" in say and ("allerg" in lowered or "wogegen" in lowered)
 
 
 # Words a card may share with the guest's sentences about their health

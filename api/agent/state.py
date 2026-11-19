@@ -507,18 +507,21 @@ def same_order(lines: list[dict[str, Any]], other: list[dict[str, Any]]) -> bool
 
 def _as_set(lines: list[dict[str, Any]]) -> list[str]:
     """Lines for comparison. Sorted, not a set: two equal lines are two."""
-    return sorted(
-        json.dumps(
-            {
-                **line,
-                "options": sorted(
-                    (option_key(option["group"]), option_key(option["name"]))
-                    for option in line.get("options", [])
-                ),
-            },
-            sort_keys=True,
-        )
-        for line in lines
+    return sorted(line_key(line) for line in lines)
+
+
+def line_key(line: dict[str, Any]) -> str:
+    """One line for comparison, whatever the sequence and spelling of its
+    options."""
+    return json.dumps(
+        {
+            **line,
+            "options": sorted(
+                (option_key(option["group"]), option_key(option["name"]))
+                for option in line.get("options", [])
+            ),
+        },
+        sort_keys=True,
     )
 
 
