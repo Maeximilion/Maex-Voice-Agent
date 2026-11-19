@@ -707,27 +707,19 @@ def test_a_follow_up_without_a_lookup_is_not_answered_by_the_model(
 @pytest.mark.parametrize(
     ("first", "asked", "answer", "pending"),
     [
-        # The skeptic's probe of #764: a question one turn before, not taken
-        # up, so it is pending (#798).
-        (
-            "Ich habe eine Erdnussallergie. Was ist in der 13?",
-            "Ist in der 13 Erdnuss?",
-            "Nein, in der 13 ist keine Erdnuss.",
-            True,
-        ),
-        (
-            "Ich habe eine Sojaallergie, geht die 23?",
-            "Ist in der 23 Soja?",
-            "Die 23 enthält nur Gluten.",
-            True,
-        ),
-        # A stated allergy asks nothing and leaves nothing pending (deep
-        # review of #860, P2); the model's answer is still never heard.
+        # The skeptic's probe of #764: the allergy one turn before, not taken
+        # up, and the same allergen left open again (#798).
         (
             "Ich habe eine Erdnussallergie.",
             "Ist in der 13 Erdnuss?",
             "Nein, in der 13 ist keine Erdnuss.",
-            False,
+            True,
+        ),
+        (
+            "Ich habe eine Sojaallergie.",
+            "Ist in der 23 Soja?",
+            "Die 23 enthält nur Gluten.",
+            True,
         ),
         # No allergy at all.
         ("Hallo.", "Ist in der Pho Bo Milch?", "Die Pho Bo enthält Soja.", False),
@@ -749,7 +741,9 @@ def test_a_model_answer_on_allergens_without_a_lookup_never_reaches_the_guest(
     turn before left a question open (rule 5)."""
     state = state_for(session, known_tenant, phone=CALLER)
     run(session, state, first, LLMTurn(say=guards.SAY_ALLERGY_NOTED))
-    assert state.allergen_question_open is pending
+    assert bool(state.allergen_question_codes) is pending
+    # The noted sentence makes no next dish the answer (deep review of #860).
+    assert not state.allergen_question_open
 
     result, _ = run(session, state, asked, LLMTurn(say=answer), LLMTurn(say=answer))
 
@@ -2739,7 +2733,7 @@ def test_a_question_answered_twice_with_the_noted_sentence_goes_to_the_team(
 
     first, _ = run(session, state, asked, LLMTurn(say=guards.SAY_ALLERGY_NOTED))
     assert first.say == [guards.SAY_ALLERGY_NOTED]
-    assert state.allergen_question_open
+    assert state.allergen_question_codes
 
     second, _ = run(session, state, asked, LLMTurn(say=guards.SAY_ALLERGY_NOTED))
 
@@ -2751,8 +2745,8 @@ def test_a_question_answered_twice_with_the_noted_sentence_goes_to_the_team(
 def test_a_stated_allergy_leaves_the_next_price_question_to_the_model(
     session, known_tenant
 ):
-    """Deep review of PR #860 (P2): nothing was asked, so nothing is pending,
-    and the price of a dish a turn later is no allergen question."""
+    """Deep review of PR #860 (P2): the noted sentence ended the turn, so the
+    next dish named is no answer to it, and its price is the model's."""
     state = state_for(session, known_tenant, phone=CALLER)
     run(
         session,
@@ -2761,6 +2755,7 @@ def test_a_stated_allergy_leaves_the_next_price_question_to_the_model(
         LLMTurn(say=guards.SAY_ALLERGY_NOTED),
     )
     assert not state.allergen_question_open
+    assert state.allergen_question_codes
     price = "Die 13 kostet 11,90 Euro."
 
     result, _ = run(
@@ -2775,3 +2770,22 @@ def test_a_stated_allergy_leaves_the_next_price_question_to_the_model(
     assert not result.ended
     assert result.say == [price]
     assert session.scalars(select(Callback)).all() == []
+
+
+def test_an_allergen_asked_twice_without_its_mark_goes_to_the_team(
+    session, known_tenant
+):
+    """Codex review of #860 (P1): the speech engine drops the question mark;
+    the same allergen left open by the offer twice in a row still hands over."""
+    state = state_for(session, known_tenant, phone=CALLER)
+
+    first, _ = run(session, state, "Und Sesam", LLMTurn(say=guards.SAY_ALLERGENS_OFFER))
+    assert first.say == [guards.SAY_ALLERGENS_OFFER]
+    assert state.allergen_question_open
+
+    second, _ = run(
+        session, state, "Und Sesam", LLMTurn(say=guards.SAY_ALLERGENS_OFFER)
+    )
+
+    assert second.ended
+    assert second.say[0] == SAY_ALLERGENS_BEYOND

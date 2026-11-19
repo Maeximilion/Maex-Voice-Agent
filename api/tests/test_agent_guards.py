@@ -29,6 +29,7 @@ from api.agent.guards import (
     false_booking,
     is_open,
     leaves_a_question,
+    left_twice,
     note_said,
     note_tool,
     order_changed,
@@ -36,6 +37,7 @@ from api.agent.guards import (
     sticky,
     table_says,
     take_cart,
+    unexplained_codes,
     unlicensed,
 )
 from api.agent.llm import ToolCall
@@ -46,6 +48,7 @@ from api.agent.state import (
     apply_tool_result,
 )
 from api.domain.menu.details import say_allergens
+from api.domain.menu.pos_convert import allergens_named
 
 ENTE = str(uuid.uuid4())
 PHO = str(uuid.uuid4())
@@ -1576,8 +1579,8 @@ def test_an_allergy_noted_on_a_changed_line_leaves_no_question():
     assert core_only(turn, state, SAY_ALLERGY_NOTED)
 
 
-def test_an_allergy_question_not_taken_up_leaves_a_question():
-    turn, state = allergen_turn("Ich habe eine Nussallergie. Geht die 13?")
+def test_an_allergy_not_noted_leaves_a_question():
+    turn, state = allergen_turn("Ich habe eine Nussallergie.")
 
     assert leaves_a_question(turn, state)
 
@@ -1922,13 +1925,41 @@ def test_an_ordered_dish_named_by_the_guest_explains_its_own_name():
     assert not is_open(turn, state)
 
 
-def test_a_stated_allergy_leaves_no_question():
-    """Nothing was asked: the allergy waits for the order's note
-    (`unnoted_allergy`), and the next dish step stays the model's."""
-    turn, state = allergen_turn("Ich habe eine Nussallergie.")
+def _letters(word):
+    return sorted(allergens_named(word))
 
-    assert is_open(turn, state)
-    assert not leaves_a_question(turn, state)
+
+def test_the_same_allergen_left_open_again_is_left_twice():
+    """Whatever core sentence ends the turn: a model that answers every
+    question with the noted sentence hands over too. Decided by the letters
+    left unexplained, not by question or statement."""
+    state = new_state(allergen_question_codes=_letters("Erdnuss"))
+    turn, state = allergen_turn(
+        "Ich habe eine Erdnussallergie. Ist in der 13 Erdnuss?", state=state
+    )
+
+    assert left_twice(turn, state, SAY_ALLERGY_NOTED)
+
+
+def test_an_allergen_without_a_mark_offered_twice_is_left_twice():
+    """Codex review of #860 (P1): "Und Sesam" without its question mark."""
+    turn, state = allergen_turn("Und Sesam")
+    assert leaves_a_question(turn, state)
+    state = new_state(
+        allergen_question_open=True,
+        allergen_question_codes=sorted(unexplained_codes(turn, state)),
+    )
+    turn, state = allergen_turn("Und Sesam", state=state)
+
+    assert left_twice(turn, state, SAY_ALLERGENS_OFFER)
+
+
+def test_another_allergy_named_next_is_not_left_twice():
+    state = new_state(allergen_question_codes=_letters("Nuss"))
+    turn, state = allergen_turn("Ich habe auch eine Sesamallergie.", state=state)
+
+    assert leaves_a_question(turn, state)
+    assert not left_twice(turn, state, SAY_ALLERGY_NOTED)
 
 
 def test_the_noted_sentence_before_a_read_back_asks_nothing():

@@ -343,6 +343,8 @@ class ConversationLoop:
         # An allergen question left open lasts this one turn, also when the
         # turn never reaches the model (#798).
         pending, state.allergen_question_open = state.allergen_question_open, False
+        asked_before = frozenset(state.allergen_question_codes)
+        state.allergen_question_codes = []
         # First of all: a name or number the model writes in this turn may
         # come from this very sentence (agent/guest_details.py, rule 2).
         if state.callback_waits is not None:
@@ -430,7 +432,14 @@ class ConversationLoop:
             guards.note_said(state, SAY_HUMAN_ANSWER)
             return TurnResult(state=state, say=[SAY_HUMAN_ANSWER])
         result = self._converse(
-            state, user_text, turn_started, open_table, wish, kept=kept, pending=pending
+            state,
+            user_text,
+            turn_started,
+            open_table,
+            wish,
+            kept=kept,
+            pending=pending,
+            asked_before=asked_before,
         )
         if not result.ended:
             unchanged = state.model_dump(include=_HEARD) == heard
@@ -463,16 +472,19 @@ class ConversationLoop:
         *,
         kept: bool = False,
         pending: bool = False,
+        asked_before: frozenset[str] = frozenset(),
     ) -> TurnResult:
         """The model's part of a guest turn: model calls and tools until a
         sentence for the guest, a handoff or a limit. `wish` is what the call
         was about before this sentence; `kept`: the sentence speaks of the
-        guest's health (`_note_allergy_said`); `pending`: an allergen question
-        was left open by the turn before."""
+        guest's health (`_note_allergy_said`); `pending` and `asked_before`:
+        what the turn before left open."""
         start = guards.begin_turn(state)
         # Where an allergen word of this turn can come from (#798). Only an
         # open turn that leaves a question open sets it again (below).
-        aturn = guards.begin_allergen_turn(state, user_text, kept=kept, pending=pending)
+        aturn = guards.begin_allergen_turn(
+            state, user_text, kept=kept, pending=pending, asked_before=asked_before
+        )
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,
         # das denselben Fehlversuch über mehrere Tool-Hops hinweg noch einmal
@@ -691,17 +703,20 @@ class ConversationLoop:
                     say = " ".join(allergen_says)
                 elif open_turn:
                     # Rows 2 and 4: what the guest said may stay untaken.
-                    left = guards.leaves_a_question(aturn, state)
-                    if left and aturn.pending:
+                    if guards.left_twice(aturn, state, say):
                         # The second turn in a row that leaves the question
-                        # open goes to the team (rule 5), whatever core
-                        # sentence it ends in: a model that answers every
-                        # question with the noted sentence never hands over
-                        # otherwise (deep review of #860, P1).
+                        # open goes to the team (rule 5).
                         return self._allergens_to_team(
                             state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                         )
-                    state.allergen_question_open = left
+                    left = guards.leaves_a_question(aturn, state)
+                    # Only the offer makes the next named dish its answer: a
+                    # turn that ended in the noted sentence leaves the next
+                    # dish step to the model (deep review of #860, P2).
+                    state.allergen_question_open = (
+                        left and guards.SAY_ALLERGENS_OFFER in say
+                    )
+                    state.allergen_question_codes = guards.codes_left(aturn, state, say)
                 refused = guards.false_booking(state, say)
                 if refused is not None:
                     # Rule 3 for what the guest hears: "Ihre Abholung ist

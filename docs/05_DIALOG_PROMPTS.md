@@ -236,11 +236,16 @@ up (`guards.is_open`)
        in the model's own words, goes back once, then as above; in a call
        where the guest named an allergy the retry may say only core
        sentences (`HINT_ALLERGY_CALL`)
-   An open turn that asks something and ends in a core sentence with the
-   guest's allergy not noted, or an allergen nothing explained, leaves the
-   question open for one turn (`allergen_question_open`); a stated allergy
-   asks nothing and waits for the order's note. A second such turn in a row
-   goes to the team, whatever core sentence it ends in. The model never reads a lookup's `allergens`
+   An open turn that ends in a core sentence with the guest's allergy not
+   noted, or an allergen nothing explained, leaves the question open for
+   one turn: after the offer sentence a dish the guest names next is its
+   answer (`allergen_question_open`); the letters nothing explained are
+   kept (`allergen_question_codes`), except after "Worauf genau soll die
+   Küche achten?", whose answer comes next. A second turn in a row goes to
+   the team when it ends in the offer again or leaves one of those letters
+   unexplained again, whatever core sentence it ends in (`guards.left_twice`);
+   decided by where the words come from, never by telling a question from a
+   statement. A second, other allergy named in a row hands nothing over. The model never reads a lookup's `allergens`
    (`loop._tool_result_as_input`). A read-back names a note as the guest's
    ("Ihr Hinweis: ...", "Ihr Hinweis für die ganze Bestellung: ...", "mit
    Ihrem Hinweis: ..."), and a note that names a dish of the search (card

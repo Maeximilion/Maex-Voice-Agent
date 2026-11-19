@@ -693,9 +693,9 @@ class AllergenTurn:
     # An allergen question was left open by the turn before
     # (`ConversationState.allergen_question_open`).
     pending: bool
-    # The guest's sentence asks something (`escalation.is_question`): only a
-    # question can be left open (`leaves_a_question`).
-    asks: bool
+    # The allergen letters the turn before left unexplained
+    # (`ConversationState.allergen_question_codes`).
+    asked_before: frozenset[str]
     # The order as it stood when the guest began to speak.
     cart_at_start: list[dict[str, Any]]
     # The allergen letters of the dish, option and description names the
@@ -726,9 +726,12 @@ def begin_allergen_turn(
     *,
     kept: bool,
     pending: bool | None = None,
+    asked_before: frozenset[str] | None = None,
 ) -> AllergenTurn:
     """Call once per guest turn, before the model. `kept`: the guest's
-    sentence speaks of their health (`loop._note_allergy_said`)."""
+    sentence speaks of their health (`loop._note_allergy_said`); `pending`
+    and `asked_before`: what the turn before left open, read from the state
+    when not given."""
     said = _guest_words(user_text)
     # A kept sentence speaks of an allergy by an allergy word or coeliac
     # disease outside a denial, or it is the answer to the model's question
@@ -751,20 +754,27 @@ def begin_allergen_turn(
         guest_codes=frozenset(codes),
         speaks=speaks,
         pending=state.allergen_question_open if pending is None else pending,
-        asks=is_question(user_text),
+        asked_before=frozenset(state.allergen_question_codes)
+        if asked_before is None
+        else asked_before,
         cart_at_start=[dict(line) for line in state.cart],
     )
 
 
 def _guest_words(text: str) -> str:
-    """The guest's sentence without what only denies an allergy. A question
-    keeps its asking clause next to a denial: "Ich habe keine Nussallergie,
-    ist in der 13 Sesam?" asks about sesame (deep review of #860, P1)."""
-    kept: list[str] = []
-    for sentence in SENTENCE.split(text):
-        clauses = sentence.split(",") if is_question(sentence) else [sentence]
-        kept += (said for clause in clauses for said in _not_denied(clause))
-    return " ".join(kept)
+    """The guest's sentence without what only denies an allergy, read clause
+    by clause: "Ich habe keine Nussallergie, ist in der 13 Sesam?" keeps the
+    sesame (deep review of #860, P1). By punctuation, not by telling a
+    question from a statement (AGENTS.md, Codex review of #860).
+    shortcut: a denial with its list after a comma ("keine Allergie gegen
+    Erdnüsse, Sesam und Milch") keeps the list; the turn opens and the
+    model's sentence goes back, nothing false is said."""
+    return " ".join(
+        said
+        for sentence in SENTENCE.split(text)
+        for clause in sentence.split(",")
+        for said in _not_denied(clause)
+    )
 
 
 def note_tool(
@@ -903,9 +913,7 @@ def _noted(turn: AllergenTurn, state: ConversationState) -> bool:
 def _unexplained(turn: AllergenTurn, state: ConversationState) -> bool:
     """The guest named an allergen that neither the menu text of this turn
     nor a changed order line explains."""
-    return bool(
-        turn.guest_codes - turn.menu_codes - _order_codes(turn, state, health=True)
-    )
+    return bool(unexplained_codes(turn, state))
 
 
 def sticky(state: ConversationState) -> bool:
@@ -1106,14 +1114,43 @@ def unknown_dish(turn: AllergenTurn) -> dict[str, Any] | None:
 
 def leaves_a_question(turn: AllergenTurn, state: ConversationState) -> bool:
     """An open turn that ends in a core string or the offer sentence leaves
-    the guest's question untaken: an allergy not noted, or an allergen
-    nothing explains, in a turn that asks something. It stays pending for
-    one turn (`ConversationState.allergen_question_open`). A stated allergy
-    asks nothing: it waits for the order's note (`unnoted_allergy`), and the
-    next dish step stays the model's (deep review of #860, P2)."""
-    return turn.asks and (
-        (turn.speaks and not _noted(turn, state)) or _unexplained(turn, state)
+    the guest's signal untaken: an allergy not noted, or an allergen nothing
+    explains (`ConversationState.allergen_question_open` and
+    `allergen_question_codes`)."""
+    return (turn.speaks and not _noted(turn, state)) or _unexplained(turn, state)
+
+
+def unexplained_codes(turn: AllergenTurn, state: ConversationState) -> set[str]:
+    """The allergen letters the guest named that neither the menu text of
+    this turn nor a changed order line explains."""
+    return (
+        set(turn.guest_codes) - turn.menu_codes - _order_codes(turn, state, health=True)
     )
+
+
+def codes_left(turn: AllergenTurn, state: ConversationState, say: str) -> list[str]:
+    """The letters this open turn leaves unexplained, kept for the next turn
+    (`ConversationState.allergen_question_codes`). None when the turn ends
+    by asking the guest about the allergy: their next words answer it
+    ("Worauf genau soll die Küche achten?" - "Sesam.")."""
+    if SAY_ASK_ALLERGY in say or not leaves_a_question(turn, state):
+        return []
+    return sorted(unexplained_codes(turn, state))
+
+
+def left_twice(turn: AllergenTurn, state: ConversationState, say: str) -> bool:
+    """Does this open turn leave the guest's question open a second time in a
+    row (rule 5)? The turn before ended in the offer and this one does again,
+    or an allergen the turn before left unexplained is unexplained again,
+    whatever core sentence ends the turn: a model that answers every
+    question with "Ihren Hinweis gebe ich an die Küche weiter." hands over
+    too (deep review of #860, P1). Decided by where the words come from, not
+    by question or statement: a second, other allergy named in a row hands
+    nothing over."""
+    if not leaves_a_question(turn, state):
+        return False
+    offered = turn.pending and SAY_ALLERGENS_OFFER in say
+    return offered or bool(turn.asked_before & unexplained_codes(turn, state))
 
 
 HINT_STATED_ALLERGY = (
