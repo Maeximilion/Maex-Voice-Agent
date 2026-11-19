@@ -173,6 +173,15 @@ class Person:
     open_rows: list[OpenRow]
 
 
+def _note_fault(note: str | None) -> str | None:
+    """What is wrong with a stripped note, or None."""
+    if note is not None and len(note) > NOTE_MAX:
+        return SAY_NOTE_LONG
+    if note is not None and NUL in note:
+        return SAY_NOTE_SIGN
+    return None
+
+
 def log_request(
     session: Session,
     tenant_id: uuid.UUID,
@@ -187,10 +196,8 @@ def log_request(
 ) -> DataSubjectRequest:
     """`reference` keeps the number a line of the interim file already has."""
     note = (note or "").strip() or None
-    if note is not None and len(note) > NOTE_MAX:
-        raise FieldErrors("the note is too long", {"note": SAY_NOTE_LONG})
-    if note is not None and NUL in note:
-        raise FieldErrors("the note holds a NUL", {"note": SAY_NOTE_SIGN})
+    if fault := _note_fault(note):
+        raise FieldErrors("the note is refused", {"note": fault})
     day = to_local(received_at, zone).date()
     if reference is None:
         reference = _next_reference(session, tenant_id, day.year)
@@ -243,21 +250,27 @@ def log_request_once(
     received_on: date | None,
     now: datetime,
     actor: str,
+    other_faults: dict[str, str] | None = None,
 ) -> DataSubjectRequest:
     """A request typed into the tab "Daten". `seen` is `log_token` as the
     form showed it: a second tap on "Eintragen", or a request another device
     logged in between, writes no second line. One request after the other, under
     the lock of the settings row. A day of receipt that has not come is refused:
-    its deadline would be later than the law's."""
+    its deadline would be later than the law's. Every fault comes in one answer
+    (#862); `other_faults` are those the caller found in the form itself, such as
+    a day that could not be read."""
     _, zone = _locked(session, tenant_id)
     if seen != log_token(session, tenant_id):
         raise Conflict("the request log changed", say=SAY_LOG_CHANGED)
     if kind not in REQUEST_KINDS or channel not in REQUEST_CHANNELS:
         raise InvalidInput("no such kind or channel")
     today = to_local(now, zone).date()
-    faults = {}
-    if not (note or "").strip():
+    faults = dict(other_faults or {})
+    stripped = (note or "").strip()
+    if not stripped:
         faults["note"] = SAY_NO_DETAILS
+    elif fault := _note_fault(stripped):
+        faults["note"] = fault
     if received_on is not None and received_on > today:
         faults["received"] = SAY_FUTURE
     if faults:

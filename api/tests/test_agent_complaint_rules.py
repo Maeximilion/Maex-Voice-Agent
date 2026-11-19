@@ -805,9 +805,12 @@ def test_a_complaint_that_only_tells_what_happened_gets_the_offer(
 def test_an_order_in_front_of_the_models_complaint_handover_goes_to_the_team(
     session, tenant_id, state, said
 ):
-    """The model hands the sentence over as a complaint: the order's verb in
-    front of it must not be read as the complaint's wish, or the remedy ends
-    the call and the 23 is never ordered (#744 follow-up, P1)."""
+    """The order's verb in front of the complaint must not be read as the
+    complaint's wish, or the remedy ends the call and the 23 is never ordered
+    (#744 follow-up, P1). Since #861 the core reads "beschwere" and
+    "reklamiere" itself and hands these over before the model; the same guard
+    (`_offer_remedy`) on the model's handover is covered by
+    `test_a_wish_only_the_model_saw_keeps_its_handover`."""
     rule(session, tenant_id)
     call = ToolCall(name="transfer_to_team", args={"reason": "complaint"})
 

@@ -44,6 +44,59 @@ def test_leerer_text_loest_nichts_aus():
     assert check("") is None
 
 
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich beschwere mich über die Lieferung.",
+        "Ich habe mich gestern schon beschwert.",
+        "Warum beschwerst du dich?",
+        "Ich reklamiere die Pizza.",
+        "Die Pizza war kalt, das habe ich reklamiert.",
+        "Meine Beschwerden von gestern sind noch offen.",
+        # Spoken without the ending (review of #861).
+        "Ich beschwer mich, die Pizza war kalt.",
+        "Da beschwer' ich mich.",
+    ],
+)
+def test_every_form_of_a_complaint_word_is_read_by_the_core(said):
+    """The stems of `_COMPLAINT_WORD`, not only the infinitive and the noun
+    (#861): "Ich beschwere mich" and "Ich reklamiere" reached the model."""
+    assert check(said) == "complaint"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Der Weg zu Ihnen ist beschwerlich.",
+        "Wir wollen einen unbeschwerten Abend bei Ihnen.",
+        "Ich habe Ihre Reklame in der Zeitung gesehen.",
+    ],
+)
+def test_words_that_only_share_the_stem_are_no_complaint(said):
+    """The stems alone would read these as complaints (#861)."""
+    assert check(said) is None
+
+
+@pytest.mark.parametrize(
+    "illness",
+    [
+        "Magenbeschwerden",
+        "Magen-Darm-Beschwerden",
+        chr(0x2011).join(["Herz", "Kreislauf", "Beschwerden"]),
+    ],
+)
+def test_a_health_complaint_goes_to_the_team_and_gets_no_remedy(illness):
+    """ "Magenbeschwerden" holds "beschwerde" and stays a complaint, but a
+    guest who fell ill is the team's (D19), never a rule of the catalogue.
+    Written with hyphens too, as a speech engine does (review of #861)."""
+    from api.agent.escalation import names_an_incident, only_a_complaint
+
+    said = f"Ich habe {illness} nach Ihrem Essen, das Essen war kalt."
+    assert check(said) == "complaint"
+    assert names_an_incident(said)
+    assert not only_a_complaint(said)
+
+
 # -- without_human_question: whether a person is on the line (docs/09 L1) ------
 
 
@@ -473,6 +526,9 @@ def test_the_wish_that_is_the_complaint_still_counts_as_the_complaint(said):
         # Compounds count (Codex PR #715).
         ("Das Essen war kalt, mir wurde danach speiübel.", True),
         ("Mir war kotzübel.", True),
+        # Symptoms or several complaints, the doubt goes to the team (#861).
+        ("Ich habe seit dem Essen Beschwerden.", True),
+        ("Ich habe eine Beschwerde, die Pizza war kalt.", False),
     ],
 )
 def test_an_incident_word_is_read_as_a_word_not_inside_another(said, incident):

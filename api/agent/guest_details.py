@@ -77,7 +77,6 @@ from api.domain.customers.phone import (
     FIXED_LENGTH,
     normalize_phone,
     read_bracketed_zero,
-    wrong_length,
 )
 from api.domain.menu.numberwords import (
     ARTICLES,
@@ -538,7 +537,6 @@ def e164(written: object, *, exact_length: bool = True) -> str:
     if not text.startswith(("0", "+")) or _DATE_LIKE.match(text) or _is_date(text):
         return ""
     try:
-        number = normalize_phone(written)
+        return normalize_phone(written, exact_length=exact_length)
     except InvalidInput:
         return ""
-    return "" if exact_length and wrong_length(number) else number

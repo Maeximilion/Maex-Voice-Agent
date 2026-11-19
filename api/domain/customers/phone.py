@@ -73,7 +73,7 @@ ZERO_LEADING = frozenset({"39", "378", "379", "225", "229"})
 # them; upgrade when such a caller appears. San Marino (mobile 6x), Cote
 # d'Ivoire (landline 2x) and Benin (all 01) have the same shape, with no caller
 # for it yet: not built (#849).
-DIGITS_BEHIND = re.compile(r"[0-9\s\-/.]*")  # the number that goes on after a "(0)"
+DIGITS_BEHIND = re.compile(r"[0-9\s\-/.()]*")  # the number that goes on after a "(0)"
 ITALIAN_MOBILE = re.compile(r"3[2-9][0-9]{8}|31[0-9]{8}")
 # Codes whose national numbers all have this many digits, without the trunk zero.
 # A number said in pairs with pauses is complete at that length (`_is_complete` in
@@ -118,8 +118,14 @@ def read_bracketed_zero(text: str) -> str:
     return TRUNK_IN_BRACKETS.sub(read, text)
 
 
-def normalize_phone(raw: str, country_code: str = DEFAULT_COUNTRY_CODE) -> str:
-    """„0721 / 555-1234" → „+497215551234". Unbrauchbare Eingabe → InvalidInput."""
+def normalize_phone(
+    raw: str, country_code: str = DEFAULT_COUNTRY_CODE, *, exact_length: bool = True
+) -> str:
+    """„0721 / 555-1234" → „+497215551234". Unbrauchbare Eingabe → InvalidInput.
+    A number of a `FIXED_LENGTH` country with another count of digits is none
+    (`wrong_length`) at every entry point (#862), not only in the agent's
+    `e164`; `exact_length=False` skips that check for the head of a number that
+    an hour follows (`agent.guest_details._ends_with_other_digits`)."""
     digits = re.sub(r"[\s\-/().]", "", read_bracketed_zero(raw.strip()))
     if digits.startswith("00"):
         digits = "+" + digits[2:]
@@ -127,6 +133,8 @@ def normalize_phone(raw: str, country_code: str = DEFAULT_COUNTRY_CODE) -> str:
         digits = f"+{country_code}{digits[1:]}"
     elif digits and not digits.startswith("+"):
         digits = f"+{digits}"
+    # shortcut: "+39 0347 1234567" (no bracket) keeps its zero, since an Italian
+    # landline of 11 digits has the same shape; upgrade when such a caller needs it (#862).
     # "+49 0171 ...": the trunk zero said after the country code. Where it is
     # one, it is dropped (#683); Italy keeps its 0. Two zeros stay: the
     # placeholder +49000000000 and Bulgaria's 00800. Country codes are prefix
@@ -142,7 +150,7 @@ def normalize_phone(raw: str, country_code: str = DEFAULT_COUNTRY_CODE) -> str:
                     digits = f"+{code}{rest[len(trunk) :]}"
                     break
             break
-    if not E164.match(digits):
+    if not E164.match(digits) or (exact_length and wrong_length(digits)):
         raise InvalidInput(f"Rufnummer ungültig: {raw!r}", say=SAY_INVALID_PHONE)
     return digits
 

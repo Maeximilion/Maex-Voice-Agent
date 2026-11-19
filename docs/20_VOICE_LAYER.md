@@ -226,8 +226,8 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 
 **A team number changed during a call** (#683). The agent's handover (`transfer_to_team`) reads the number from the database at that moment, so a change on the tablet reaches it. The legs `voice` dials on its own, an outage (`_fail`) and the shadow leg, read the number again when they dial (#710), once, in a savepoint bound by the line's 2 s statement limit; inside a turn the line plays the outage sentence only after that read, so an outage that is a database error skips it (#764). When the read fails or is skipped (the database is the outage) they use the number read at the start of the call, so they work when the database does not. A change in the middle of a call whose database cannot be read rings the old number; if that does not answer, the fallback number and then the missed-call card follow, and no call is lost (rule 5).
 
-**Which number the dialplan's own legs ring** (#835). Where the table says "the dialplan dials
-the team number": after its probe (`/media/ready`) the dialplan asks `voice` once, `GET /team`
+**Which number the dialplan's own legs ring** (#835, #861). Where the table says "the dialplan
+dials the team number": after its probe (`/media/ready`) the dialplan asks `voice`, `GET /team`
 with the media token, for the number the team is at now, `team_phone_at` (today's while it
 holds, else the standard), and keeps it as `TEAM` only when it is on its list (`TEAM_PHONE` and
 `TRANSFER_TARGETS`, exactly as written: the list the staff choose today's number from, #252
@@ -238,9 +238,24 @@ callback card. `TEAM_PHONE` of `.env` rings first only where `voice` could not n
 `voice` down, refusing the media token or frozen when the call comes (it is never asked, a cut
 network included), the database down at that moment (`voice` answers nothing), or a team number
 that is not on the list. So `TEAM_PHONE` stays a number the team answers; when the standard
-number moves for good, the operator changes it in `.env` as well. These legs use the number of
-the call's start: a change during the call reaches them on the next call. Drilled in "the team
-at today's number" (§5 drills below).
+number moves for good, the operator changes it in `.env` as well. A change during the call is
+followed (#861): the dialplan asks `/team` again before each leg it dials on its own, after an
+ending that is no transfer to a listed number and after each leg nobody took (one subroutine,
+`teamnow`). An answer that is empty or not on the list keeps the number `TEAM` had, so a `voice`
+or database that fails in the call leaves the number of the call's start, never none (rule 5).
+A number named after the change is one not tried yet, so it rings even after the old number was
+tried; each number still rings once. Never asked on the way to `unreached` or after it: the
+probe failed (nothing to ask) or the media connection failed a moment after `voice` named
+`TEAM`. Not asked either when the question for the ending ran into its 2 s (`voice` frozen or
+the network to it cut), so the rows above keep their times. An empty answer is the last
+question of the call: a `voice` down or its database down (whose connect timeout is 2 s itself)
+costs the caller one wait of up to 2 s, not one before every leg; a killed `voice` fails at once
+(the team rang 0.4 s after the kill, below). Checked on the pinned Asterisk 22.11.0 with a
+stand-in `voice` and team legs that fail (18. and 19.11.2026): a number changed during the call
+rang next, also after the real steps behind the Dial; an empty answer, a JSON error, a number
+off the list and a `voice` that is down kept the start number; an ending question that ran into
+its 2 s and a failed probe asked nothing more; every chain ended with the card. Drilled in "the team at today's number" (§5 drills below), without a change
+during the call.
 
 **`TEAM_PHONE` in E.164, today's number to the end of the business day** (#861). The list compares
 as written, and the staff choose and store numbers in E.164 only, so a `TEAM_PHONE` written
@@ -265,7 +280,7 @@ Everything in this table is the intended behaviour. T-10.2 turns each row into a
 `deploy/asterisk/conf/extensions.conf` dials `voice` with 10 s to answer and a backstop of 3600 s
 on the call; a `voice` it did not reach is not asked for an ending; the team is dialled at the
 number of the ending when that is `TEAM_PHONE` or on `TRANSFER_TARGETS` (T-10.13, below), else at
-the team number `voice` named at the call's start, `TEAM_PHONE` of `.env` without one (#835, above). The loop guard is built in two of its three
+the team number `voice` named last, `TEAM_PHONE` of `.env` without one (#835, #861, above). The loop guard is built in two of its three
 parts: `voice` refuses to start when the team number (in the database or in `.env`) is
 `VOICE_NUMBER`, `asterisk` refuses to start when `TEAM_PHONE` is that number (else every call
 the dialplan sends to the team would come back and be dropped), and the dialplan refuses a call
