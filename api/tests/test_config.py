@@ -197,7 +197,14 @@ def test_dev_may_share_tokens():
 
 @pytest.mark.parametrize(
     "number",
-    ["07215551234", "0049 721 5551234", "+49 721 5551234", "+4907215551234x", ""],
+    [
+        "07215551234",
+        "0049 721 5551234",
+        "+49 721 5551234",
+        "+4907215551234x",
+        "+497215551234\n",
+        "",
+    ],
 )
 @pytest.mark.parametrize("env", ["dev", "prod"])
 def test_no_process_starts_on_a_team_phone_outside_e164(number, env):

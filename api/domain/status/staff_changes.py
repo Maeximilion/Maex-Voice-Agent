@@ -411,8 +411,6 @@ def change_day_hours(
     if hours == holding and (card is None or card.after == hours.as_dict()):
         session.commit()
         return None
-    if hours != holding:
-        _night_checked(session, tenant_id, day, hours, zone)
     if card is None:
         card = _new_card(session, tenant_id, DAY_HOURS, day, holding.as_dict())
     # What the card showed until now: what held, or the request that waited.
@@ -429,6 +427,8 @@ def change_day_hours(
         # The request that waits already, sent again: nothing changes.
         session.commit()
         return None
+    if hours != holding:
+        _night_checked(session, tenant_id, day, hours, zone)
     if held and hours != holding:
         _write(session, tenant_id, day, hours, row)
     _audit(
@@ -591,15 +591,15 @@ def decide(
         if keep:
             config.team_phone = card.after["number"]
         config.team_phone_today = config.team_phone_today_until = None
-    elif keep and card.held:
-        pass  # The hours hold already.
-    else:
+    elif not keep or not card.held:
+        row = _set_row(session, tenant_id, card.day, lock=True)
         hours = DayHours.of(card.after if keep else card.before)
-        if keep or card.held:
-            # The hours move, and a date beside may have changed since (#862);
-            # undoing a request that only waited moves nothing.
+        if hours != DayHours.of_row(row):
+            # The hours move, and a date beside may have changed since (#862).
+            # Read from the row: a card whose last request waits can sit over
+            # an earlier change that held.
             _night_checked(session, tenant_id, card.day, hours, zone)
-        _write(session, tenant_id, card.day, hours)
+        _write(session, tenant_id, card.day, hours, row)
     _close(card, KEPT if keep else UNDONE, now)
     session.add(
         AuditLog(
@@ -651,7 +651,10 @@ def bookings_outside_hours(
     board's own list (`weekly.tables_outside_hours`)."""
     now = now or clock.utcnow()
     tz = ZoneInfo(zone)
-    after = load_hours(session, tenant_id, day, days=1)
+    # After the change: the date with its new hours, its neighbours as set. A
+    # table counts as kept when any window still holds it, also one of the day
+    # before or after (open_window_at checks the previous day too).
+    after = _hours_with(session, tenant_id, day, hours)
 
     def dinein(held: DayHours) -> list[tuple[datetime, datetime]]:
         special = {} if held.normal else {day: held.row(tenant_id, day)}
@@ -662,13 +665,6 @@ def bookings_outside_hours(
     # 22:00 to 10:00). The query bounds come from this span, never a constant.
     held_before = dinein(before or DayHours())
     span = [business_day_bounds_utc(day, zone), *held_before]
-    # After the change: the date with its new hours, its neighbours as set. A
-    # table counts as kept when any window still holds it, also one of the day
-    # before or after (open_window_at checks the previous day too).
-    if hours.normal:
-        after.special.pop(day, None)
-    else:
-        after.special[day] = hours.row(tenant_id, day)
     rows = session.scalars(
         select(Reservation)
         .where(
@@ -778,6 +774,18 @@ def _checked(hours: DayHours, overnight: bool) -> DayHours:
     return hours
 
 
+def _hours_with(
+    session: Session, tenant_id: uuid.UUID, day: date, hours: DayHours
+) -> HoursData:
+    """The hours of `day` and the dates beside it, with `day` holding `hours`."""
+    held = load_hours(session, tenant_id, day, days=1)
+    if hours.normal:
+        held.special.pop(day, None)
+    else:
+        held.special[day] = hours.row(tenant_id, day)
+    return held
+
+
 def _night_checked(
     session: Session, tenant_id: uuid.UUID, day: date, hours: DayHours, zone: str
 ) -> None:
@@ -791,11 +799,7 @@ def _night_checked(
     from api.domain.status.weekly import Span, _night_faults
 
     tz = ZoneInfo(zone)
-    held = load_hours(session, tenant_id, day, days=1)
-    if hours.normal:
-        held.special.pop(day, None)
-    else:
-        held.special[day] = hours.row(tenant_id, day)
+    held = _hours_with(session, tenant_id, day, hours)
 
     def spans(on: date) -> dict[str, list[Span]]:
         return {

@@ -18,7 +18,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from api.core.errors import InvalidInput, NotFound
-from api.models import AuditLog, ServiceConfig, SpecialDay
+from api.models import AuditLog, ServiceConfig, SpecialDay, Tenant
 from api.models.tenants import HOLIDAY_REGIONS
 
 ACTOR_TABLET = "gui:tablet"
@@ -244,15 +244,25 @@ def answer(
         if choice == OPEN or already_set is not None:
             day.status = DISMISSED
         else:
+            # Imported here: staff_changes reads this module's calendar.
+            from api.domain.status.staff_changes import (
+                DayHours,
+                _night_checked,
+                holiday_answered,
+            )
+
+            if choice != CLOSED:
+                # The weekday's hours may reach into a date beside, or start
+                # inside its night (#862): refused like a staff change.
+                zone = session.get_one(Tenant, tenant_id).timezone
+                like = DayHours(like_weekday=_like(day), note=day.note)
+                _night_checked(session, tenant_id, day.date, like, zone)
             day.status = SET
             if choice == CLOSED:
                 day.closed, day.like_weekday = True, None
             else:
                 # What the card offered, also for a row written without one.
                 day.like_weekday = _like(day)
-            # Imported here: staff_changes reads this module's calendar.
-            from api.domain.status.staff_changes import holiday_answered
-
             holiday_answered(session, tenant_id, day)
         session.add(
             AuditLog(

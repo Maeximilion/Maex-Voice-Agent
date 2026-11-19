@@ -714,15 +714,18 @@ def feiertag(
         return templates.TemplateResponse(
             request, "fragments/feiertage.html", {"holiday_problem": NO_TENANT}, 503
         )
+    problem = None
     try:
         holiday_days.answer(session, tenant.id, special_day_id, HOLIDAY_ANSWERS[choice])
     except AppError as exc:
         session.rollback()
         logger.info("Holiday suggestion not answered: %s", exc.message)
+        # Why, where the domain says it: hours that reach into a date beside.
+        problem = exc.say
     return templates.TemplateResponse(
         request,
         "fragments/feiertage.html",
-        {"holidays": _holiday_rows(session, tenant)},
+        {"holidays": _holiday_rows(session, tenant), "holiday_problem": problem},
     )
 
 
@@ -1696,6 +1699,8 @@ PHONE_HELD = "Gilt bis Betriebsschluss. Der Inhaber sieht es auf der Übersicht.
 PHONE_BACK = "Zurückgenommen, es gilt wieder die Nummer von vorher."
 HOURS_HELD = "Gilt sofort. Der Inhaber sieht es auf der Übersicht."
 HOURS_WAIT = "Wartet auf den Inhaber: die Karte steht auf der Übersicht."
+# Back to the hours that held before: the card closed as undone (#861 review).
+HOURS_BACK = "Zurückgenommen, es gelten wieder die Zeiten von vorher."
 NO_DATE = "Bitte einen Tag wählen."
 NO_TIME = "Bitte Beginn und Ende als Uhrzeit angeben."
 CARD_CHANGED = "Die Karte hat sich gerade geändert. Bitte noch einmal prüfen."
@@ -1984,7 +1989,10 @@ def day_hours_change(
         )
     if card is None:
         return _hours_sheet(request, session, tenant, day, NO_CHANGE, "ok")
-    message = HOURS_HELD if card.held else HOURS_WAIT
+    if card.status == staff.UNDONE:
+        message = HOURS_BACK
+    else:
+        message = HOURS_HELD if card.held else HOURS_WAIT
     return _hours_sheet(request, session, tenant, day, message, "ok")
 
 

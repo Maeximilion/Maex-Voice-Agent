@@ -95,6 +95,19 @@ def test_back_to_the_standard_number_says_the_change_is_undone(client, engine):
     assert "Teamnummer heute" not in cards
 
 
+def test_back_to_the_hours_before_says_the_change_is_undone(client, engine):
+    """Review of #861: the hours route has the same shape; asking for what
+    held before closes the card as undone."""
+    later = _today() + timedelta(days=7)
+    form = {"datum": later.isoformat()}
+    client.post("/gui/tageszeiten", data=form | {"art": "geschlossen"}, headers=HX)
+    back = client.post("/gui/tageszeiten", data=form | {"art": "normal"}, headers=HX)
+    assert back.status_code == 200
+    assert "Gilt sofort" not in back.text
+    assert "Zurückgenommen, es gelten wieder die Zeiten von vorher." in back.text
+    assert [c.status for c in _cards(engine)] == ["undone"]
+
+
 def test_the_team_number_for_today_and_its_card(client, engine):
     standard = _config(engine).team_phone
     sheet = client.get("/gui/teamnummer", headers=HX)

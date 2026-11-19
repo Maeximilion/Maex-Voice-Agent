@@ -874,7 +874,8 @@ def test_a_closure_held_in_the_afternoon_lists_only_the_tables_to_come(
     session, tenant_id, monkeypatch
 ):
     """#862: closed at 15:00, the lunch guests have eaten already; only the
-    evening table is a guest to call. A table due this minute still is."""
+    evening table is a guest to call. A table due at that moment still is,
+    as on the board's own list (`weekly.tables_outside_hours`)."""
     _table(session, tenant_id, SATURDAY, time(12), "Lunch")
     _table(session, tenant_id, SATURDAY, time(15), "Arriving")
     _table(session, tenant_id, SATURDAY, time(19), "Evening")
@@ -984,6 +985,73 @@ def test_undoing_a_closure_whose_night_a_date_beside_took_is_refused(
         staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
     assert refused.value.say == _night_overlap(SATURDAY)
     assert staff.day_hours(session, tenant_id, SATURDAY).closed
+
+
+def test_undoing_a_card_whose_last_request_waits_still_checks_the_night(
+    session, tenant_id
+):
+    """Review of #862: the card's closure held, a later request on it waits.
+    Undone, the hours still move from closed back to the night to 03:00, so
+    the check reads the date's row, not the card's last request."""
+    staff.set_day_hours(
+        session, tenant_id, SATURDAY, _hours(time(18), time(3)), NOW, overnight=True
+    )
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    card = staff.change_day_hours(
+        session, tenant_id, SATURDAY, _hours(time(17), time(23)), NOW
+    )
+    assert card is not None and not card.held
+    sunday = SATURDAY + timedelta(days=1)
+    assert staff.set_day_hours(
+        session, tenant_id, sunday, _hours(time(2), time(10)), NOW
+    )
+    with pytest.raises(InvalidInput) as refused:
+        staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
+    assert refused.value.say == _night_overlap(SATURDAY)
+    assert staff.day_hours(session, tenant_id, SATURDAY).closed
+
+
+def test_a_waiting_night_sent_again_changes_nothing(session, tenant_id):
+    """The date beside changed since the request: sent again (a second tap,
+    a second tablet), the request that waits is no new change and is not
+    refused; the owner's keep checks it."""
+    night = DayHours(opens=time(18), closes=time(11))
+    card = staff.change_day_hours(
+        session, tenant_id, SATURDAY, night, NOW, overnight=True
+    )
+    assert card is not None and not card.held
+    sunday = SATURDAY + timedelta(days=1)
+    staff.set_day_hours(session, tenant_id, sunday, _hours(time(10), time(14)), NOW)
+    again = staff.change_day_hours(
+        session, tenant_id, SATURDAY, night, NOW, overnight=True
+    )
+    assert again is None
+
+
+def test_a_holiday_like_sunday_inside_the_night_before_is_refused(session, tenant_id):
+    """Sunday's own night runs to 12:00 (Monday is a rest day, so it passed);
+    Monday answered "wie Sonntag" would open at 11:30 inside it. Refused with
+    the reason, the suggestion stays open; "closed" is still taken."""
+    sunday = MONDAY - timedelta(days=1)
+    assert staff.set_day_hours(
+        session, tenant_id, sunday, _hours(time(18), time(12)), NOW, overnight=True
+    )
+    suggestion = SpecialDay(
+        tenant_id=tenant_id,
+        date=MONDAY,
+        note="Feiertag",
+        like_weekday=6,
+        status=holidays.SUGGESTED,
+    )
+    session.add(suggestion)
+    session.commit()
+    with pytest.raises(InvalidInput) as refused:
+        holidays.answer(session, tenant_id, suggestion.id, holidays.LIKE)
+    assert refused.value.say == _night_overlap(sunday)
+    session.refresh(suggestion)
+    assert suggestion.status == holidays.SUGGESTED
+    holidays.answer(session, tenant_id, suggestion.id, holidays.CLOSED)
+    assert staff.day_hours(session, tenant_id, MONDAY).closed
 
 
 def _hours(opens: time, closes: time) -> DayHours:

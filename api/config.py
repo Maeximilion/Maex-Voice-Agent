@@ -232,7 +232,7 @@ class Settings(BaseSettings):
         compares a team number as written, and the staff choose and store
         E.164 numbers only, so a national standard could never be chosen
         again. The number stays out of the message: it can be a mobile."""
-        if not TEAM_PHONE_FORM.match(self.team_phone):
+        if not TEAM_PHONE_FORM.fullmatch(self.team_phone):
             raise ValueError("TEAM_PHONE must be written in E.164, as +49...")
         return self
 
