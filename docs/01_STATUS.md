@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 19.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.21
+> Status: 19.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.22
 
 ---
 
@@ -317,6 +317,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.66.22 · 19.11.2026:** Ledger #764 deep review, operator push and monitor (#861): the dispatcher does not start in production without MONITOR_PUSH_TOKEN, the push server takes the dashboard's token from OPERATOR_PUSH_TOKEN, sent operator pushes are pruned after 30 days, the twice-sent push is documented and pinned; model trial #843
 - **v2.66.21 · 19.11.2026:** #861 and #862: staff cards list only tables to come, a date's night is checked against the dates beside it, the holiday job takes the lock, TEAM_PHONE in E.164
 - **v2.66.20 · 19.11.2026:** Ledger #764 deep review, owner forms and phone numbers (#862): a bracket inside an Italian mobile no longer keeps the zero, the French length guard sits in normalize_phone for every entry point, a new data request names all its faults at once and a too-long note comes back whole; model trial #843
 - **v2.66.19 · 19.11.2026:** #861, outage and escalation P3s of ledger #764: the dialplan asks the team number again before its own legs (`teamnow`), complaint words in every form, a named number leaves memory at the next call's end, stale comments of #835 and #857
