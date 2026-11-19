@@ -1146,11 +1146,14 @@ def left_twice(turn: AllergenTurn, state: ConversationState, say: str) -> bool:
     question with "Ihren Hinweis gebe ich an die Küche weiter." hands over
     too (deep review of #860, P1). Decided by where the words come from, not
     by question or statement: a second, other allergy named in a row hands
-    nothing over."""
+    nothing over. The offer again needs no new allergen word: the guest's
+    answer to it is a dish ("Die 13."), and asking for the number twice
+    answers nothing (Codex review of #860, P1)."""
+    if turn.pending and SAY_ALLERGENS_OFFER in say:
+        return True
     if not leaves_a_question(turn, state):
         return False
-    offered = turn.pending and SAY_ALLERGENS_OFFER in say
-    return offered or bool(turn.asked_before & unexplained_codes(turn, state))
+    return bool(turn.asked_before & unexplained_codes(turn, state))
 
 
 HINT_STATED_ALLERGY = (

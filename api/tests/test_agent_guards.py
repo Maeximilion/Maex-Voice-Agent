@@ -1954,6 +1954,17 @@ def test_an_allergen_without_a_mark_offered_twice_is_left_twice():
     assert left_twice(turn, state, SAY_ALLERGENS_OFFER)
 
 
+def test_the_offer_again_after_the_dish_named_is_left_twice():
+    """Codex review of #860 (P1): the guest answered the offer with a dish,
+    which names no allergen; the offer said again hands over."""
+    state = new_state(allergen_question_open=True)
+    turn, state = allergen_turn("Die 13.", search(PHO), state=state)
+
+    assert is_open(turn, state)
+    assert not leaves_a_question(turn, state)
+    assert left_twice(turn, state, SAY_ALLERGENS_OFFER)
+
+
 def test_another_allergy_named_next_is_not_left_twice():
     state = new_state(allergen_question_codes=_letters("Nuss"))
     turn, state = allergen_turn("Ich habe auch eine Sesamallergie.", state=state)

@@ -2789,3 +2789,30 @@ def test_an_allergen_asked_twice_without_its_mark_goes_to_the_team(
 
     assert second.ended
     assert second.say[0] == SAY_ALLERGENS_BEYOND
+
+
+def test_the_offer_again_after_the_guest_named_the_dish_goes_to_the_team(
+    session, known_tenant
+):
+    """Codex review of #860 (P1): the guest answered the offer with the
+    number; a model that offers again instead of looking the dish up hands
+    over, the guest is not asked for the number twice."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(
+        session,
+        state,
+        "Ist da Sesam drin?",
+        LLMTurn(say=guards.SAY_ALLERGENS_OFFER),
+    )
+    assert state.allergen_question_open
+
+    result, _ = run(
+        session,
+        state,
+        "Die 13.",
+        searches("13"),
+        LLMTurn(say=guards.SAY_ALLERGENS_OFFER),
+    )
+
+    assert result.ended
+    assert result.say[0] == SAY_ALLERGENS_BEYOND
