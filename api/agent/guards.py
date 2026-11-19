@@ -425,10 +425,11 @@ def take_cart(state: ConversationState, cart: Any) -> ToolResult | None:
             claimed := _claims_in(
                 state,
                 [
-                    (line["note"], [line["menu_item_id"]])
+                    (line["note"], line["menu_item_id"])
                     for line in lines
                     if "note" in line
                 ],
+                [line["menu_item_id"] for line in lines],
             )
         ) is not None:
             # A changed note licenses words of the model (`AllergenTurn`), and
@@ -1245,32 +1246,36 @@ def claims_in_a_note(state: ConversationState, call: ToolCall) -> ToolResult | N
     items = call.args.get("items")
     lines = [i for i in items if isinstance(i, dict)] if isinstance(items, list) else []
     note = call.args.get("note")
-    notes = (
-        [(note, [str(i.get("menu_item_id")) for i in lines])]
-        if isinstance(note, str)
-        else []
+    notes: list[tuple[str, str | None]] = (
+        [(note, None)] if isinstance(note, str) else []
     )
     notes += [
-        (i["note"], [str(i.get("menu_item_id"))])
+        (i["note"], str(i.get("menu_item_id")))
         for i in lines
         if isinstance(i.get("note"), str)
     ]
-    return _claims_in(state, notes)
+    return _claims_in(state, notes, [str(i.get("menu_item_id")) for i in lines])
 
 
 def _claims_in(
-    state: ConversationState, notes: list[tuple[str, list[str]]]
+    state: ConversationState,
+    notes: list[tuple[str, str | None]],
+    ids: list[str],
 ) -> ToolResult | None:
-    """`notes`: each note with the dishes it stands on (all lines for the
-    note of the whole order)."""
-    # A note the order already carries was checked when it came: the draft
-    # carries the line's "ohne Erdnüsse" on although this turn names none.
-    old = {line.get("note") for line in state.cart}
-    old |= {state.order_note, state.table_note}
-    for note, ids in notes:
+    """`notes`: each note with the dish of its line, None for the note of the
+    whole order or table, which stands on all `ids`."""
+    # A note the order already carries on the same dish, or as the note of
+    # the whole order, was checked when it came: the draft carries the
+    # line's "ohne Erdnüsse" on although this turn names none. Moved to
+    # another dish it is new there (Codex review of #860, P1).
+    lines = {(str(line["menu_item_id"]), line.get("note")) for line in state.cart}
+    whole = {state.order_note, state.table_note}
+    for note, item_id in notes:
         if allergen_claim(state, note) is ALLERGEN_CLAIM or _names_a_dish(state, note):
             return NOTE_CLAIM
-        if note not in old and allergens_named(note) - _note_licence(state, ids):
+        old = (item_id, note) in lines if item_id else note in whole
+        on = [item_id] if item_id else ids
+        if not old and allergens_named(note) - _note_licence(state, on):
             # Codex review of #860 (P1): "Enthält keine Erdnüsse" on a line
             # the guest only ordered would be read back as their note.
             return NOTE_CLAIM

@@ -1678,6 +1678,20 @@ def test_a_note_naming_an_allergen_nobody_said_goes_back(note):
     assert state.cart == []
 
 
+def test_a_note_moved_to_another_dish_is_checked_again():
+    """Codex review of #860 (P1): the 47's option "Erdnuss" licenses the note
+    on the 47; copied onto the 13 it is a new note there."""
+    note = "Enthält keine Erdnüsse"
+    ente = {"menu_item_id": ENTE, "quantity": 1, "note": note}
+    _, state = allergen_turn("Die 47 bitte.", search(ENTE), cart=[ente])
+    _, state = allergen_turn("Und die 13.", search(PHO), state=state)
+    moved = [ente, {"menu_item_id": PHO, "quantity": 1, "note": note}]
+
+    assert claims_in_a_note(state, _drafted_with(note)) is NOTE_CLAIM
+    assert take_cart(state, moved) is NOTE_CLAIM
+    assert state.cart == [ente]
+
+
 def test_a_note_already_on_the_order_is_not_checked_again():
     """The guest said "ohne Erdnüsse" a turn before; the draft carries the
     line's note on."""
