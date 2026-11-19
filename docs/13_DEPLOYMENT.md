@@ -439,7 +439,9 @@ EUR; isolation and the unchanged code decide it.
   `OPERATOR_ORIGIN`, the address the operator's browser uses (`https://ops.<domain>`, no path).
   Passkeys are bound to it: the dashboard refuses to start without it outside dev and test, and a
   later change of the host name makes every registered passkey useless (TOTP and the recovery
-  codes still open, the passkeys are then registered again). `OPERATOR_PUSH_URL` (by
+  codes still open the sign-in, but a change of the factors then needs a passkey step-up, D37, so
+  every account needs `python -m api.dashboard.cli reset <name>` before its passkeys are
+  registered again). `OPERATOR_PUSH_URL` (by
   default the operator stack's own push server, `http://maex-ops-push-1/`) and
   `OPERATOR_PUSH_TOKEN` (the token of its user `dashboard`) are where the push on a changed
   sign-in factor goes, topic `ops`; the request queues it in the operator database and the

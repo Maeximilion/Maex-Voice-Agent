@@ -261,10 +261,14 @@ def register(
     answer: str,
     name: str,
     now: datetime,
+    *,
+    passkey_step_up: bool,
 ) -> OperatorPasskey:
     """Check the answer of a registration and add the passkey. Raises
     `Refused`. The challenge the answer names is gone either way; the new row
-    waits for the caller's commit, beside its audit."""
+    waits for the caller's commit, beside its audit. `passkey_step_up`: the
+    session showed a passkey on the step-up in the last five minutes, which
+    an account that has a passkey by the time its row is held needs (D37)."""
     challenge = take(
         db, for_session(session_id), REGISTER, now, signed_challenge(answer)
     )
@@ -275,6 +279,7 @@ def register(
     # The break glass holds it too: a registration that waited for it here
     # finds its session gone and must not put a passkey back.
     db.get(OperatorAccount, account_id, with_for_update=True)
+    existing = count(db, account_id)
     alive = db.scalar(
         select(OperatorSession.id).where(OperatorSession.id == session_id)
     )
@@ -282,7 +287,8 @@ def register(
         challenge is None
         or alive is None
         or len(answer) > ANSWER_MAX
-        or count(db, account_id) >= PASSKEYS_MAX
+        or existing >= PASSKEYS_MAX
+        or (existing > 0 and not passkey_step_up)
     ):
         db.rollback()
         raise Refused()

@@ -109,20 +109,33 @@ is the backup. Ten single-use recovery codes, stored hashed, are the last way in
   the operator out.
 - A new passkey, a new TOTP secret or a used recovery code needs a fresh second factor and sends a
   push to the `ops` topic ("new device"), so a silent takeover is visible.
+- **Once the account has a passkey, every change of a factor needs a passkey step-up** (D37, Maxi,
+  19.11.2026, built in #884): registering or removing a passkey, setting or removing a TOTP secret,
+  and the sight of a new TOTP secret take a passkey shown on `/step-up` in the last five minutes.
+  The sign-in does not count for them, whatever its factor (a passkey or a recovery code too), and
+  neither does a TOTP step-up: a stolen password with a phished TOTP code cannot swap the ways in.
+  An account without a passkey keeps the rule above (any fresh second factor, the sign-in's too),
+  so the first passkey can be registered. An operator who lost the only passkey, or every
+  passkey, registers a new one through the break glass below, never with TOTP.
 - A removed passkey, removed TOTP or a new TOTP secret ends every other session of the account;
   only the session making the change stays, and the push says how many ended (D39, Maxi,
   17.11.2026): a thief's session must not outlive the change made after a loss. A change of that
   ended session that was already waiting for the account's row is refused once it gets the row
   (`access._locked` looks for the session again): it changes no factor, ends no session and is
   answered 401.
-- Break glass when every factor is lost: SSH to the host and a CLI command in the operator stack
-  that resets the factors of one account. SSH is the real root anyway.
+- Break glass when every factor is lost, or every passkey (D37): SSH to the host and a CLI command
+  in the operator stack that resets the factors of one account
+  (`python -m api.dashboard.cli reset <name>`: a new password, a new TOTP secret and new recovery
+  codes, every passkey and every session removed). The operator then signs in with the new TOTP
+  code; the account has no passkey any more, so that sign-in may register a new one. SSH is the
+  real root anyway.
 
 **Sessions:** server-side rows, cookie `__Host-ops_session` (`Secure`, `HttpOnly`,
 `SameSite=Strict`, path `/`), random 32 bytes, only its hash stored. Idle limit 30 minutes, absolute
 limit 12 hours, rotated at login. Step-up (a fresh passkey or TOTP within the last 5 minutes) before:
 viewing personal data of a customer, rotating or showing a token, changing a call mode or team
-number, creating or deleting a customer, changing operator factors.
+number, creating or deleting a customer, changing operator factors (a passkey only, once the
+account has one, D37).
 
 **Brute force:** failed attempts counted per account and per client address in the operator
 database (survives a restart; production runs one uvicorn worker, but memory would reset). One or
@@ -350,13 +363,26 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   replaces nothing) and removes TOTP. The account always keeps TOTP or two passkeys; at most ten
   passkeys.
 - **Step-up is one dependency**, `require_step_up` in `dashboard/app.py`: the session showed a
-  second factor in the last five minutes, the sign-in's (a recovery code too, or an operator who
-  lost every device could register a new one only through the break glass) or one given on
+  second factor in the last five minutes, the sign-in's (a recovery code too) or one given on
   `/step-up`, which takes a passkey or a TOTP code and never a recovery code. Wrong answers there
   count and wait as at the sign-in. A stale request is sent to `/step-up` and back to a path of
-  this site; a stale write is dropped, never replayed. Today it stands before every change of a
-  factor, the sight of a new TOTP secret, a customer's call list, the log of one call and every
-  step of a customer's manage page; the later parts name it on their routes.
+  this site; a stale write is dropped, never replayed. Today it stands before a customer's call
+  list, the log of one call and every step of a customer's manage page; the later parts name it
+  on their routes. The changes of a factor have their own, next bullet.
+- **The factor changes have a dependency of their own**, `require_factor_step_up` (D37, #884):
+  `Operator.fresh_for_factors` reads `operator_sessions.passkey_stepped_up_at` (migration op006),
+  set only by a passkey on `/step-up`, never by the sign-in; without a passkey on the account it
+  falls back to `require_step_up`'s rule. A stale or TOTP-only request goes to
+  `/step-up?next=...&for_factors=1`, which offers the passkey alone, and the factors page links
+  there. The check runs once more under the account's row (`access._locked` with `now`, and
+  `passkeys.register` with `passkey_step_up`), so a first passkey that another session registered
+  after the route's check counts too (review of #884): the change is dropped and the browser goes
+  to the passkey step-up (`access.PasskeyNeeded`), a registration is refused. Two consequences, by D37's design: a
+  session that registered the account's first passkey with TOTP (the owner or a thief with the
+  password and a code) must step up with a passkey before any further change, so the owner who
+  finds a passkey that is not theirs removes it with the break glass, not with TOTP; and a browser
+  without the WebAuthn JSON helpers (`api/gui/ts/passkey.ts`) cannot change factors of an account
+  with a passkey, the step-up page says so.
 - **Audit and push.** A new or removed passkey, a new or removed TOTP secret, a used recovery
   code, and on the host a new account and the break glass are in the operator's audit and go as a
   push to the `ops` topic from one place, `dashboard/push.py` (#827 F3, 17.11.2026). It is the

@@ -1,6 +1,7 @@
 {# The operator's ways in (docs/23 §5): passkeys, TOTP, recovery codes. Looking
    needs the session; every change needs a second factor of the last five
-   minutes (`fresh`), and so does the sight of a new TOTP secret. Each form
+   minutes (`fresh`; a passkey step-up once the account has a passkey, D37), and so
+   does the sight of a new TOTP secret. Each form
    names this page in `back`, where a stale post returns after the step-up. #}
 {% extends "base.html" %}
 {% block title %}Sign-in factors{% endblock %}
@@ -17,7 +18,11 @@
   <h1 id="factors-title">Sign-in factors</h1>
   {% if note %}<p class="banner {{ note[0] }}" role="status">{{ note[1] }}</p>{% endif %}
   {% if not fresh %}
+  {% if passkeys %}
+  <p class="banner warn">A change here needs a passkey from the last five minutes. <a href="/step-up?next=/factors&amp;for_factors=1">Confirm it with a passkey</a></p>
+  {% else %}
   <p class="banner warn">A change here needs a fresh second factor. <a href="/step-up?next=/factors">Confirm it is you</a></p>
+  {% endif %}
   {% endif %}
 
   <div class="card ops-teil">

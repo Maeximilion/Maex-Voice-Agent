@@ -199,13 +199,24 @@ def _with_passkey(client, factors, clock, name="Laptop", device=None) -> Device:
     return device
 
 
+def _passkey_step_up(client, device: Device) -> None:
+    """A passkey step-up of this session: once the account has a passkey, a
+    change of its factors needs one (D37)."""
+    asked = _post(client, "/step-up/passkey/options")
+    answer = _post(client, "/step-up", passkey=device.get(asked.text, ORIGIN))
+    assert answer.status_code == 303, answer.text
+
+
 def _signed_in_with(client, factors, clock, count: int, totp: bool = True):
-    """Signed in with `count` passkeys, `Key 0` and so on, and TOTP on or off."""
+    """Signed in with `count` passkeys, `Key 0` and so on, and TOTP on or off;
+    stepped up with `Key 0` once it is there."""
     _signed_in(client, factors, clock)
     devices = [Device() for _ in range(count)]
     for number, device in enumerate(devices):
         answer = _register(client, device, f"Key {number}")
         assert answer.headers["location"] == "/factors?note=passkey-added"
+        if number == 0:
+            _passkey_step_up(client, device)
     if not totp:
         answer = _post(client, "/factors/totp/remove")
         assert answer.headers["location"] == "/factors?note=totp-removed"
@@ -380,6 +391,7 @@ def test_the_same_registration_posted_twice_adds_one_row(
     device = Device()
     answer = device.create(_post(client, "/factors/passkeys/options").text, ORIGIN)
     first = _post(client, "/factors/passkeys", name="Laptop", passkey=answer)
+    _passkey_step_up(client, device)
     second = _post(client, "/factors/passkeys", name="Laptop", passkey=answer)
     assert first.headers["location"] == "/factors?note=passkey-added"
     assert second.headers["location"] == "/factors?note=passkey-refused"
@@ -414,6 +426,7 @@ def test_a_device_registers_once_per_account(client, factors, clock, sessions):
     _signed_in(client, factors, clock)
     device = Device()
     assert "passkey-added" in _register(client, device).headers["location"]
+    _passkey_step_up(client, device)
     answer = _register(client, device, "Again")
     assert answer.headers["location"] == "/factors?note=passkey-refused"
     assert len(_rows(sessions)) == 1
@@ -443,21 +456,16 @@ def test_a_name_is_stored_trimmed_and_forty_characters_fit(
     client, factors, clock, sessions
 ):
     _signed_in(client, factors, clock)
-    assert (
-        "passkey-added" in _register(client, Device(), "  Phone  ").headers["location"]
-    )
+    phone = Device()
+    assert "passkey-added" in _register(client, phone, "  Phone  ").headers["location"]
+    _passkey_step_up(client, phone)
     assert "passkey-added" in _register(client, Device(), "x" * 40).headers["location"]
     assert [row.name for row in _rows(sessions)] == ["Phone", "x" * 40]
 
 
 def test_no_more_passkeys_than_the_limit(client, factors, clock, sessions, monkeypatch):
     monkeypatch.setattr(passkeys, "PASSKEYS_MAX", 2)
-    _signed_in(client, factors, clock)
-    for number in range(2):
-        assert (
-            "passkey-added"
-            in _register(client, Device(), f"K{number}").headers["location"]
-        )
+    _signed_in_with(client, factors, clock, 2)
     answer = _register(client, Device(), "Third")
     assert answer.headers["location"] == "/factors?note=passkey-refused"
     assert len(_rows(sessions)) == 2
@@ -479,8 +487,7 @@ def test_garbage_in_a_registration_never_fails_the_server(
 def test_an_answer_for_another_challenge_of_the_session_does_not_register(
     client, factors, clock, sessions
 ):
-    _signed_in(client, factors, clock)
-    assert "passkey-added" in _register(client, Device(), "First").headers["location"]
+    _signed_in_with(client, factors, clock, 1)
     registration = _post(client, "/factors/passkeys/options").text
     step_up = json.loads(_post(client, "/step-up/passkey/options").text)
     answer = Device().create(registration, ORIGIN, challenge=step_up["challenge"])
@@ -698,7 +705,9 @@ def test_outside_dev_and_test_the_attempt_cookie_is_host_bound_and_secure(
 
 
 @pytest.mark.parametrize("how", ["totp", "passkey", "recovery"])
-def test_any_sign_in_factor_is_fresh_for_five_minutes(client, factors, clock, how):
+def test_any_sign_in_factor_is_fresh_for_five_minutes(
+    client, factors, clock, guarded, how
+):
     if how == "passkey":
         device = _with_passkey(client, factors, clock)
         assert _passkey_sign_in(client, device).status_code == 303
@@ -706,11 +715,11 @@ def test_any_sign_in_factor_is_fresh_for_five_minutes(client, factors, clock, ho
         assert _sign_in(client, factors.recovery_codes[0]).status_code == 303
     else:
         _signed_in(client, factors, clock)
-    assert _post(client, "/factors/passkeys/options").status_code == 200
+    assert _call(client, "POST", "/guarded").text == "done"
     clock.at += timedelta(minutes=4, seconds=59)
-    assert _post(client, "/factors/passkeys/options").status_code == 200
+    assert _call(client, "POST", "/guarded").text == "done"
     clock.at += timedelta(seconds=1)
-    assert _post(client, "/factors/passkeys/options").status_code == 303
+    assert _call(client, "POST", "/guarded").status_code == 303
 
 
 @pytest.mark.parametrize("method", ["GET", "POST", "PUT", "PATCH", "DELETE"])
@@ -979,8 +988,9 @@ def test_every_factor_change_is_audited_and_pushed(
 ):
     _signed_in(client, factors, clock)
     keys = {name: Device() for name in "ABC"}
-    for name in "AB":
-        _register(client, keys[name], name)
+    _register(client, keys["A"], "A")
+    _passkey_step_up(client, keys["A"])
+    _register(client, keys["B"], "B")
     _post(client, "/factors/totp/new")
     _post(client, "/factors/totp", code=_code(_pending(sessions) or "", clock.at))
     second = next(row for row in _rows(sessions) if row.name == "B")
@@ -998,6 +1008,7 @@ def test_every_factor_change_is_audited_and_pushed(
     assert [a for a in _actions(sessions) if a != "operator.account_created"] == [
         "operator.signed_in",
         "operator.passkey_added",
+        "operator.stepped_up",
         "operator.passkey_added",
         "operator.totp_set",
         "operator.passkey_removed",
@@ -1266,7 +1277,7 @@ def test_the_factors_page_lists_passkeys_and_offers_changes_only_while_fresh(
     stale = client.get("/factors").text
     assert "Key 0" in stale and "Key 1" in stale
     assert "/factors/passkeys/remove" not in stale and "/factors/totp/new" not in stale
-    assert "Confirm it is you" in stale
+    assert "Confirm it with a passkey" in stale
 
 
 def test_the_factors_page_says_what_a_refusal_means_and_nothing_else(
@@ -1632,19 +1643,288 @@ def test_a_change_of_a_session_ended_while_it_waited_changes_nothing(
     waited for the account's row, while the owner's change ended that session,
     went on to change a factor and to end the owner's session."""
     thief = _other_browser(factors, clock)
-    _signed_in_with(client, factors, clock, 3)
+    devices = _signed_in_with(client, factors, clock, 3)
+    _passkey_step_up(thief, devices[1])  # a synced passkey, or the change waits
     locked = access._locked
     after: list[Any] = []
 
-    def the_owner_commits_first(db, operator):
+    def the_owner_commits_first(db, operator, now=None):
         if not after:
             after.append(None)  # the owner's own request passes straight through
             assert owners(client, sessions, clock).status_code == 303
             after[0] = (_factors_now(sessions), list(pushes))
-        return locked(db, operator)
+        return locked(db, operator, now)
 
     monkeypatch.setattr(access, "_locked", the_owner_commits_first)
     assert late(thief, sessions, clock).status_code == 401
     assert (_factors_now(sessions), pushes) == after[0]
     assert _still_signed_in(client) and not _still_signed_in(thief)
     assert len(_audited(sessions, "operator.other_sessions_ended")) == 1
+
+
+# --- D37: a factor change needs a passkey step-up once there is a passkey (#884) ---
+
+FACTOR_WRITES = [
+    "/factors/passkeys/options",
+    "/factors/passkeys",
+    "/factors/passkeys/remove",
+    "/factors/totp/new",
+    "/factors/totp",
+    "/factors/totp/remove",
+]
+TO_PASSKEY_STEP_UP = "/step-up?next=%2Ffactors&for_factors=1"
+
+
+@pytest.mark.parametrize("path", FACTOR_WRITES)
+def test_a_totp_session_is_refused_on_each_factor_change(
+    client, factors, clock, sessions, pushes, path
+):
+    _with_passkey(client, factors, clock)
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)
+    before = (_factors_now(sessions), _actions(sessions))
+    answer = _post(client, path, back="/factors", id=str(_rows(sessions)[0].id))
+    assert answer.headers["location"] == TO_PASSKEY_STEP_UP
+    # A TOTP step-up on top changes nothing.
+    clock.at += timedelta(seconds=30)
+    assert _step_up_with_code(client, factors, clock).status_code == 303
+    again = _post(client, path, back="/factors", id=str(_rows(sessions)[0].id))
+    assert again.headers["location"] == TO_PASSKEY_STEP_UP
+    assert _factors_now(sessions) == before[0] and _pending(sessions) is None
+    assert _actions(sessions) == [*before[1], "operator.stepped_up"]
+    assert pushes == ["maxi: new passkey 'Laptop'"]
+
+
+@pytest.mark.parametrize("how", ["passkey", "recovery"])
+def test_no_sign_in_counts_for_a_factor_change_once_there_is_a_passkey(
+    client, factors, clock, guarded, how
+):
+    device = _with_passkey(client, factors, clock)
+    if how == "passkey":
+        assert _passkey_sign_in(client, device).status_code == 303
+    else:
+        assert _sign_in(client, factors.recovery_codes[0]).status_code == 303
+    answer = _post(client, "/factors/totp/new", back="/factors")
+    assert answer.headers["location"] == TO_PASSKEY_STEP_UP
+    # Every other dangerous action still takes the sign-in's factor.
+    assert _call(client, "POST", "/guarded").text == "done"
+
+
+def test_a_passkey_step_up_opens_the_factor_changes_for_five_minutes(
+    client, factors, clock, sessions
+):
+    device = _with_passkey(client, factors, clock)
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)
+    _passkey_step_up(client, device)
+    assert _post(client, "/factors/totp/new").headers["location"] == "/factors?note="
+    assert _pending(sessions) in client.get("/factors").text
+    clock.at += timedelta(minutes=4, seconds=59)
+    assert _post(client, "/factors/passkeys/options").status_code == 200
+    clock.at += timedelta(seconds=1)
+    stale = _post(client, "/factors/passkeys/options", back="/factors")
+    assert stale.headers["location"] == TO_PASSKEY_STEP_UP
+    assert _pending(sessions) not in client.get("/factors").text
+
+
+@pytest.mark.parametrize("how", ["totp", "recovery"])
+def test_without_a_passkey_any_fresh_factor_changes_the_factors(
+    client, factors, clock, sessions, how
+):
+    if how == "recovery":
+        assert _sign_in(client, factors.recovery_codes[0]).status_code == 303
+    else:
+        _signed_in(client, factors, clock)
+    assert _post(client, "/factors/totp/new").headers["location"] == "/factors?note="
+    assert _pending(sessions) in client.get("/factors").text
+    clock.at += timedelta(minutes=5)
+    stale = _post(client, "/factors/totp/new", back="/factors")
+    assert stale.headers["location"] == "/step-up?next=%2Ffactors"
+    assert 'href="/step-up?next=/factors"' in client.get("/factors").text
+
+
+def test_removing_the_last_passkey_needs_that_passkey(client, factors, clock, sessions):
+    device = _with_passkey(client, factors, clock)
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)
+    row = str(_rows(sessions)[0].id)
+    refused = _post(client, "/factors/passkeys/remove", id=row, back="/factors")
+    assert refused.headers["location"] == TO_PASSKEY_STEP_UP
+    _passkey_step_up(client, device)
+    answer = _post(client, "/factors/passkeys/remove", id=row)
+    assert answer.headers["location"] == "/factors?note=passkey-removed"
+    # Without a passkey the TOTP code counts again.
+    assert _post(client, "/factors/totp/new").headers["location"] == "/factors?note="
+
+
+@pytest.mark.parametrize(
+    ("passkey_count", "for_factors", "code_field"),
+    [(1, True, False), (1, False, True), (0, True, True)],
+    ids=["factor change", "other action", "no passkey"],
+)
+def test_the_step_up_page_for_a_factor_change_offers_the_passkey_only(
+    client, factors, clock, passkey_count, for_factors, code_field
+):
+    _signed_in_with(client, factors, clock, passkey_count)
+    query = "next=/factors" + ("&for_factors=1" if for_factors else "")
+    page = client.get(f"/step-up?{query}").text
+    assert ('name="code"' in page) is code_field
+    assert ('data-passkey="get"' in page) is (passkey_count > 0)
+    assert ('name="for_factors" value="1"' in page) is not code_field
+    refused = _post(
+        client,
+        "/step-up",
+        next="/factors",
+        code=_wrong(factors.totp_secret, clock.at),
+        **({"for_factors": "1"} if for_factors else {}),
+    )
+    assert refused.status_code == 401
+    assert ('name="code"' in refused.text) is code_field
+
+
+def test_the_factors_page_sends_a_totp_session_to_the_passkey_step_up(
+    client, factors, clock
+):
+    _with_passkey(client, factors, clock)
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)
+    page = client.get("/factors").text
+    assert "/factors/totp/new" not in page
+    assert 'href="/step-up?next=/factors&amp;for_factors=1"' in page
+
+
+def test_the_passkey_step_up_migration_goes_down_and_up(operator_url):
+    cfg = _config(operator_url)
+    command.upgrade(cfg, "head")
+    engine = create_engine(operator_url)
+
+    def columns() -> set[str]:
+        found = inspect(engine).get_columns("operator_sessions")
+        return {col["name"] for col in found}
+
+    try:
+        assert "passkey_stepped_up_at" in columns()
+        command.downgrade(cfg, "op005")
+        assert "passkey_stepped_up_at" not in columns()
+        assert "stepped_up_at" in columns()
+        command.upgrade(cfg, "head")
+        assert "passkey_stepped_up_at" in columns()
+    finally:
+        engine.dispose()
+
+
+def test_a_passkey_step_up_freshens_only_its_own_session(
+    client, factors, clock, sessions
+):
+    other = _other_browser(factors, clock)
+    _signed_in_with(client, factors, clock, 1)
+    answer = _post(other, "/factors/totp/new", back="/factors")
+    assert answer.headers["location"] == TO_PASSKEY_STEP_UP
+    assert _pending(sessions) is None
+
+
+# --- Review of #884: the first passkey of another session, while a change waits ---
+
+
+def test_a_first_passkey_registered_while_a_totp_change_waited_stops_it(
+    client, factors, clock, sessions, pushes, monkeypatch
+):
+    """The TOTP session passed the route's check while the account had no
+    passkey; the owner's first passkey committed while its change waited for
+    the account's row. Under the row D37 holds again: nothing changes."""
+    owner = _other_browser(factors, clock)
+    _signed_in(client, factors, clock)
+    assert _post(client, "/factors/totp/new").headers["location"] == "/factors?note="
+    secret = _pending(sessions) or ""
+    locked = access._locked
+    fired: list[None] = []
+
+    def the_owner_registers_first(db, operator, now=None):
+        if not fired:
+            fired.append(None)
+            answer = _register(owner, Device(), "Owner key")
+            assert answer.headers["location"] == "/factors?note=passkey-added"
+        return locked(db, operator, now)
+
+    monkeypatch.setattr(access, "_locked", the_owner_registers_first)
+    answer = _post(client, "/factors/totp", code=_code(secret, clock.at))
+    assert answer.headers["location"] == TO_PASSKEY_STEP_UP
+    assert _factors_now(sessions) == (["Owner key"], factors.totp_secret)
+    assert _still_signed_in(owner)
+    assert pushes == ["maxi: new passkey 'Owner key'"]
+
+
+def test_a_first_passkey_registered_after_the_check_stops_a_second_registration(
+    client, factors, clock, sessions, pushes, monkeypatch
+):
+    owner = _other_browser(factors, clock)
+    _signed_in(client, factors, clock)
+    options = _post(client, "/factors/passkeys/options")
+    answer = Device().create(options.text, ORIGIN)
+    count = passkeys.count
+    fired: list[None] = []
+
+    def the_owner_registers_after_the_check(db, account_id):
+        seen = count(db, account_id)
+        if not fired:
+            fired.append(None)
+            done = _register(owner, Device(), "Owner key")
+            assert done.headers["location"] == "/factors?note=passkey-added"
+        return seen
+
+    monkeypatch.setattr(passkeys, "count", the_owner_registers_after_the_check)
+    refused = _post(client, "/factors/passkeys", name="Thief", passkey=answer)
+    assert refused.headers["location"] == "/factors?note=passkey-refused"
+    assert [row.name for row in _rows(sessions)] == ["Owner key"]
+    assert pushes == ["maxi: new passkey 'Owner key'"]
+
+
+@pytest.mark.parametrize("path", ["/factors/passkeys/remove", "/factors/totp/remove"])
+def test_a_first_passkey_registered_while_a_removal_waited_stops_it(
+    client, factors, clock, sessions, pushes, monkeypatch, path
+):
+    owner = _other_browser(factors, clock)
+    _signed_in(client, factors, clock)
+    locked = access._locked
+    fired: list[None] = []
+
+    def the_owner_registers_first(db, operator, now=None):
+        if not fired:
+            fired.append(None)
+            answer = _register(owner, Device(), "Owner key")
+            assert answer.headers["location"] == "/factors?note=passkey-added"
+        return locked(db, operator, now)
+
+    monkeypatch.setattr(access, "_locked", the_owner_registers_first)
+    answer = _post(client, path, id=str(uuid.uuid4()))
+    assert answer.headers["location"] == TO_PASSKEY_STEP_UP and fired
+    assert _factors_now(sessions) == (["Owner key"], factors.totp_secret)
+    assert _still_signed_in(owner)
+
+
+def test_a_pending_secret_is_hidden_once_only_a_totp_step_up_is_fresh(
+    client, factors, clock, sessions
+):
+    device = _with_passkey(client, factors, clock)
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)
+    _passkey_step_up(client, device)
+    assert _post(client, "/factors/totp/new").headers["location"] == "/factors?note="
+    pending = _pending(sessions)
+    assert pending and pending in client.get("/factors").text
+    clock.at += timedelta(minutes=4)
+    assert _step_up_with_code(client, factors, clock).status_code == 303
+    clock.at += timedelta(minutes=1)
+    # The passkey step-up is five minutes old, the TOTP one one minute.
+    assert pending not in client.get("/factors").text
+
+
+def test_a_passkey_step_up_opens_the_other_dangerous_actions_too(
+    client, factors, clock, guarded
+):
+    device = _with_passkey(client, factors, clock)
+    assert _passkey_sign_in(client, device).status_code == 303
+    clock.at += timedelta(minutes=5)
+    assert _call(client, "POST", "/guarded").status_code == 303
+    _passkey_step_up(client, device)
+    assert _call(client, "POST", "/guarded").text == "done"
