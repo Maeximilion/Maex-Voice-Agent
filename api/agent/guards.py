@@ -866,9 +866,13 @@ def sticky(state: ConversationState) -> bool:
     word, coeliac disease or an allergen in a kept sentence; not every
     sentence the safety net keeps, "die Stoßzeit meiden" is none, #798), or
     the last sentence the guest heard was the core's table sentence."""
+    # A denial the safety net keeps ("Haben Sie Pizza? Ich habe keine
+    # Allergie.") speaks of none, as in `begin_allergen_turn` (Codex review
+    # of #860, P1).
+    kept = (" ".join(_not_denied(said)) for said in state.allergy_said)
     return any(
         mentions_allergy(said) or names_coeliac(said) or allergens_named(said)
-        for said in state.allergy_said
+        for said in kept
     ) or (state.last_said or "").startswith(SAY_ALLERGENS_LEAD)
 
 
@@ -936,7 +940,12 @@ def unlicensed(turn: AllergenTurn, state: ConversationState, say: str) -> set[st
             for item_id, seen in state.seen_items.items()
             if _names_it(clause, seen)
         }
-        clause = _without_dish_names(state, clause)
+        if len(named) < 2:
+            # A whole dish name is menu data in a clause about that dish
+            # alone. Next to another dish it is checked like any word: a
+            # seen "Milch" or "Erdnusssauce" licenses no "die 13 enthält
+            # keine Milch" (Codex review of #860, P1).
+            clause = _without_dish_names(state, clause)
         if named:
             # Each named dish licenses by its own text and lines, and a word
             # needs all of them: the 47's option "Erdnuss" licenses no "Die 47

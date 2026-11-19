@@ -1679,7 +1679,58 @@ def test_a_cart_note_that_names_a_dish_is_not_taken():
         # Kept for the safety net, but no allergy: the call stays plain (#798).
         (["Wir wollen die Stoßzeit meiden, geht 17 Uhr?"], False),
         (["Keiner reagiert auf meine Mails, deshalb rufe ich an."], False),
+        # A denial the safety net keeps, next to another sentence or clause
+        # (Codex review of #860, P1).
+        (["Haben Sie Pizza? Ich habe keine Allergie."], False),
+        (["Ich habe keine Allergie, ich nehme die 47 zum Abholen."], False),
     ],
 )
 def test_only_a_sentence_about_an_allergy_makes_the_call_sticky(said, expected):
     assert sticky(new_state(allergy_said=said)) is expected
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        # Codex review of #860, P1: a drink "Milch" found in an earlier turn.
+        "Die 13 enthält keine Milch.",
+        # Own deep review: a seen dish named like an allergen in a claim
+        # about another dish.
+        "Nein, in der 13 ist keine Erdnusssauce drin.",
+    ],
+)
+def test_a_seen_dish_named_like_an_allergen_licenses_no_claim_about_another(say):
+    """A whole dish name is menu data only in a clause about that dish; in a
+    clause that also names another dish its allergen word is checked
+    against that dish's own text."""
+    state = new_state()
+    for item_id, number, name in (
+        ("milch", "80", "Milch"),
+        ("sauce", "90", "Erdnusssauce"),
+        (PHO, "13", "Pho Bo"),
+    ):
+        state.seen_items[item_id] = {
+            "number": number,
+            "name": name,
+            "sold_out": False,
+            "required": [],
+            "optional": [],
+        }
+    turn = begin_allergen_turn(state, "Was kostet die 13?", kept=False)
+
+    assert unlicensed(turn, state, say)
+
+
+def test_a_sentence_about_a_dish_named_like_an_allergen_stays_licensed():
+    """The dish alone in its clause: its name is menu data, as before."""
+    state = new_state()
+    state.seen_items["milch"] = {
+        "number": "80",
+        "name": "Milch",
+        "sold_out": False,
+        "required": [],
+        "optional": [],
+    }
+    turn = begin_allergen_turn(state, "Was kostet die Milch?", kept=False)
+
+    assert not unlicensed(turn, state, "Die Milch kostet 2 Euro.")
