@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 19.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.20
+> Status: 19.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.21
 > Status: 19.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.66.18
 
 ---
@@ -320,7 +320,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.66.20 · 18.11.2026:** #798: the allergen guard decides by provenance instead of German word lists: an allergy turn hears only core sentences (table sentence, read-back, a tool's sentence, three fixed sentences), every other allergen word of the model needs its code in the turn's menu text or the order; a read-back names a note as the guest's, a note that names a dish goes back; the #764 allergen branch (#747, #748) and Maxi's twelve decisions on the cloud session of 15.11.2026 come with it; Claude's choices awaiting Maxi on the PR
+- **v2.66.21 · 18.11.2026:** #798: the allergen guard decides by provenance instead of German word lists: an allergy turn hears only core sentences (table sentence, read-back, a tool's sentence, three fixed sentences), every other allergen word of the model needs its code in the turn's menu text or the order; a read-back names a note as the guest's, a note that names a dish goes back; the #764 allergen branch (#747, #748) and Maxi's twelve decisions on the cloud session of 15.11.2026 come with it; Claude's choices awaiting Maxi on the PR
+- **v2.66.20 · 19.11.2026:** Ledger #764 deep review, owner forms and phone numbers (#862): a bracket inside an Italian mobile no longer keeps the zero, the French length guard sits in normalize_phone for every entry point, a new data request names all its faults at once and a too-long note comes back whole; model trial #843
 - **v2.66.19 · 19.11.2026:** #861, outage and escalation P3s of ledger #764: the dialplan asks the team number again before its own legs (`teamnow`), complaint words in every form, a named number leaves memory at the next call's end, stale comments of #835 and #857
 - **v2.66.18 · 19.11.2026:** Ledger #764 deep review, confirm and read-back (#862): a yes stays a yes behind "das Fräulein", a table the domain refused is named as refused on the card, a replayed reservation draft is checked again and an order draft gone back to is drafted anew
 - **v2.66.17 · 19.11.2026:** Settle #562: no-handover-limit chain option with auto compaction at 550k, plugin sets note, Maxi's decisions on #845, #850, #855 recorded

@@ -247,3 +247,45 @@ def test_costly_numbers_are_the_premium_service_and_satellite_ranges(number, exp
     from api.domain.customers.phone import costly
 
     assert costly(number) is expected
+
+
+@pytest.mark.parametrize(
+    ("said", "number"),
+    [
+        ("+39 (0)347 (123) 4567", "+393471234567"),  # a bracket inside the digits
+        ("+39 (0) 347 (12) 34567", "+393471234567"),
+        ("0039 (0)347 (123) 4567", "+393471234567"),
+    ],
+)
+def test_a_bracketed_zero_before_an_italian_mobile_with_more_brackets_falls_away(
+    said: str, number: str
+):
+    """#862: the digits behind "(0)" were read up to the first bracket, so
+    "+39 (0)347 (123) 4567" kept the zero (+3903471234567)."""
+    assert normalize_phone(said) == number
+
+
+def test_an_italian_mobile_with_a_said_zero_keeps_it_today():
+    """#862, pinned limit: "+39 0347 1234567" has no bracket to tell the trunk
+    zero from the number's own 0, and an 11-digit landline looks the same, so
+    the zero stays (shortcut in `normalize_phone`)."""
+    assert normalize_phone("+39 0347 1234567") == "+3903471234567"
+    assert normalize_phone("+39 0347 1234567") != "+393471234567"
+
+
+@pytest.mark.parametrize(
+    "said", ["+3361234567", "0033 6 12 34 56 7", "+33 6 12 34 56 789"]
+)
+def test_a_french_number_of_the_wrong_length_is_no_number_anywhere(said: str):
+    """#862: the length guard sat in the agent's `e164` only, so every other
+    entry point (callback, caller ID lookup, the "Daten" form) took
+    +3361234567."""
+    with pytest.raises(InvalidInput):
+        normalize_phone(said)
+
+
+def test_a_french_number_of_the_wrong_length_passes_where_the_caller_asks_for_it():
+    """The head of a number that an hour follows is cut by `e164`, which asks
+    for no length check."""
+    assert normalize_phone("+3361234567", exact_length=False) == "+3361234567"
+    assert normalize_phone("+33 6 12 34 56 78") == "+33612345678"
