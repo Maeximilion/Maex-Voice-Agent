@@ -24,7 +24,9 @@ the answer travels in the hidden field `passkey` of an ordinary form post.
 
 `require_step_up` is the one dependency in front of every dangerous action
 (docs/23 §5): a route that needs a second factor of the last five minutes
-names it and nothing else.
+names it and nothing else. A change of the operator's own factors names
+`require_factor_step_up` instead, which wants a passkey step-up once the
+account has a passkey (D37).
 """
 
 import hmac
@@ -76,6 +78,9 @@ GUI_STATIC = HERE.parent / "gui" / "static"
 LOGIN = "/login"
 HOME = "/"
 STEP_UP = "/step-up"
+# On the step-up page: the action waiting is a factor change, so only a
+# passkey is offered once the account has one (D37).
+FOR_FACTORS = "for_factors"
 FACTORS = "/factors"
 WRITES = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 FAILED = "Sign-in failed."
@@ -413,6 +418,15 @@ def require_operator(
     return operator
 
 
+@app.exception_handler(access.PasskeyNeeded)
+def _passkey_needed(request: Request, needed: Exception) -> Response:
+    """A factor change that passed the route's check while the account had no
+    passkey, and found one under the account's row (D37): to the passkey
+    step-up, as `require_factor_step_up` sends it; the change is dropped."""
+    query = urlencode({"next": FACTORS, FOR_FACTORS: "1"})
+    return RedirectResponse(f"{STEP_UP}?{query}", status_code=303)
+
+
 @app.exception_handler(access.SignInRefused)
 def _session_ended(request: Request, refused: Exception) -> Response:
     """A factor change whose session ended while it waited for the account's
@@ -450,15 +464,37 @@ def require_step_up(
     the page its form names in `back` (the write is dropped, never replayed)."""
     if operator.fresh(now()):
         return operator
+    raise _to_step_up(request, form)
+
+
+def require_factor_step_up(
+    request: Request,
+    form: dict[str, str] = Depends(_form),
+    operator: access.Operator = Depends(require_operator),
+    db: Session = Depends(get_db),
+) -> access.Operator:
+    """In front of every change of a factor and the sight of a new TOTP
+    secret (D37, docs/23 §5): once the account has a passkey, only a passkey
+    step-up of the last five minutes counts, so a stolen password with a TOTP
+    code cannot swap the ways in. Without one, as `require_step_up`."""
+    has_passkey = passkeys.count(db, operator.account_id) > 0
+    if operator.fresh_for_factors(now(), has_passkey):
+        return operator
+    raise _to_step_up(request, form, passkey_only=has_passkey)
+
+
+def _to_step_up(
+    request: Request, form: dict[str, str], passkey_only: bool = False
+) -> HTTPException:
     if request.method == "GET":
         back = request.url.path
         if request.url.query:
             back += f"?{request.url.query}"
     else:
         back = form.get("back", "")
-    raise HTTPException(
-        status_code=303,
-        headers={"Location": f"{STEP_UP}?{urlencode({'next': _local(back)})}"},
+    query = {"next": _local(back), **({FOR_FACTORS: "1"} if passkey_only else {})}
+    return HTTPException(
+        status_code=303, headers={"Location": f"{STEP_UP}?{urlencode(query)}"}
     )
 
 
@@ -603,11 +639,16 @@ def login_passkey_options(
     return response
 
 
-def _ways(db: Session, operator: access.Operator) -> dict[str, Any]:
+def _ways(
+    db: Session, operator: access.Operator, for_factors: bool = False
+) -> dict[str, Any]:
+    has_passkey = passkeys.count(db, operator.account_id) > 0
     return {
         "operator": operator,
-        "has_passkey": passkeys.count(db, operator.account_id) > 0,
+        "has_passkey": has_passkey,
         "has_totp": access.has_totp(db, operator.account_id),
+        # A factor change waits: a TOTP code would not open it (D37).
+        "passkey_only": for_factors and has_passkey,
     }
 
 
@@ -615,10 +656,12 @@ def _ways(db: Session, operator: access.Operator) -> dict[str, Any]:
 def step_up_page(
     request: Request,
     next: str = HOME,
+    for_factors: str = "",
     operator: access.Operator = Depends(require_operator),
     db: Session = Depends(get_db),
 ) -> Response:
-    return _page(request, "step_up.html", {"next": _local(next), **_ways(db, operator)})
+    ways = _ways(db, operator, for_factors == "1")
+    return _page(request, "step_up.html", {"next": _local(next), **ways})
 
 
 @app.post(STEP_UP, response_class=HTMLResponse)
@@ -643,7 +686,8 @@ def step_up_post(
     except access.SignInRefused as refused:
         if refused.copy:
             _alert(db, operator.name, COPY)
-        context = {"next": back, "message": _refusal(refused), **_ways(db, operator)}
+        ways = _ways(db, operator, form.get(FOR_FACTORS) == "1")
+        context = {"next": back, "message": _refusal(refused), **ways}
         return _page(request, "step_up.html", context, 401)
     return RedirectResponse(back, status_code=303)
 
@@ -675,10 +719,11 @@ def factors_page(
     db: Session = Depends(get_db),
 ) -> Response:
     """The operator's ways in. Everyone signed in may look; every change, and
-    the sight of a new TOTP secret, needs a fresh second factor."""
-    fresh = operator.fresh(now())
-    pending = access.pending_totp(db, operator) if fresh else None
+    the sight of a new TOTP secret, needs a fresh second factor: a passkey
+    step-up once the account has a passkey (D37)."""
     rows = passkeys.of_account(db, operator.account_id)
+    fresh = operator.fresh_for_factors(now(), bool(rows))
+    pending = access.pending_totp(db, operator) if fresh else None
     has_totp = access.has_totp(db, operator.account_id)
     context = {
         "operator": operator,
@@ -703,7 +748,7 @@ def _factors(note: str) -> Response:
 def passkey_options(
     request: Request,
     form: dict[str, str] = Depends(_form),
-    operator: access.Operator = Depends(require_step_up),
+    operator: access.Operator = Depends(require_factor_step_up),
     db: Session = Depends(get_db),
 ) -> Response:
     _checked(request, form)
@@ -718,7 +763,7 @@ def passkey_options(
 def passkey_add(
     request: Request,
     form: dict[str, str] = Depends(_form),
-    operator: access.Operator = Depends(require_step_up),
+    operator: access.Operator = Depends(require_factor_step_up),
     db: Session = Depends(get_db),
 ) -> Response:
     _checked(request, form)
@@ -736,12 +781,12 @@ def passkey_add(
 def passkey_remove(
     request: Request,
     form: dict[str, str] = Depends(_form),
-    operator: access.Operator = Depends(require_step_up),
+    operator: access.Operator = Depends(require_factor_step_up),
     db: Session = Depends(get_db),
 ) -> Response:
     _checked(request, form)
     try:
-        name, ended = access.remove_passkey(db, operator, form.get("id", ""))
+        name, ended = access.remove_passkey(db, operator, form.get("id", ""), now())
     except access.FactorNeeded:
         return _factors("factor-needed")
     except LookupError:
@@ -754,7 +799,7 @@ def passkey_remove(
 def totp_new(
     request: Request,
     form: dict[str, str] = Depends(_form),
-    operator: access.Operator = Depends(require_step_up),
+    operator: access.Operator = Depends(require_factor_step_up),
     db: Session = Depends(get_db),
 ) -> Response:
     _checked(request, form)
@@ -766,7 +811,7 @@ def totp_new(
 def totp_confirm(
     request: Request,
     form: dict[str, str] = Depends(_form),
-    operator: access.Operator = Depends(require_step_up),
+    operator: access.Operator = Depends(require_factor_step_up),
     db: Session = Depends(get_db),
 ) -> Response:
     _checked(request, form)
@@ -781,12 +826,12 @@ def totp_confirm(
 def totp_remove(
     request: Request,
     form: dict[str, str] = Depends(_form),
-    operator: access.Operator = Depends(require_step_up),
+    operator: access.Operator = Depends(require_factor_step_up),
     db: Session = Depends(get_db),
 ) -> Response:
     _checked(request, form)
     try:
-        ended = access.remove_totp(db, operator)
+        ended = access.remove_totp(db, operator, now())
     except access.FactorNeeded:
         return _factors("factor-needed")
     if ended is None:

@@ -98,6 +98,10 @@ class OperatorSession(Base):
     # The last second factor this session showed: the sign-in's, then each
     # step-up. Dangerous actions need one of the last five minutes.
     stepped_up_at: Mapped[datetime | None] = _at(nullable=True)
+    # The last passkey on the step-up, never the sign-in's: once the account
+    # has a passkey, a change of its factors needs one of the last five
+    # minutes (D37).
+    passkey_stepped_up_at: Mapped[datetime | None] = _at(nullable=True)
     # A new TOTP secret, shown to the operator and not in force until a code
     # of it came back.
     pending_totp: Mapped[str | None] = mapped_column(Text)

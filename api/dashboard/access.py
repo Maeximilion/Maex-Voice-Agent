@@ -7,7 +7,9 @@ the password alone.
 
 Dangerous actions need a second factor of the last five minutes on the
 session (`Operator.fresh`): the one of the sign-in, or a step-up with a passkey
-or a TOTP code. Changing the factors is such an action. An account always
+or a TOTP code. Changing the factors is such an action, and once the account
+has a passkey it needs a passkey step-up of the last five minutes
+(`Operator.fresh_for_factors`, D37). An account always
 keeps TOTP or two passkeys, so one lost device never locks the operator out.
 
 Every answer to a wrong name, password or factor is the same. Failures count
@@ -83,6 +85,11 @@ class SignInRefused(Exception):
         self.copy = copy
 
 
+class PasskeyNeeded(Exception):
+    """D37 under the account's row: the account has a passkey by now, and this
+    session showed none on the step-up in the last five minutes."""
+
+
 class FactorNeeded(Exception):
     """The change would leave the account with neither TOTP nor two passkeys."""
 
@@ -102,13 +109,24 @@ class Operator:
     account_id: uuid.UUID
     name: str
     stepped_up_at: datetime | None = None
+    passkey_stepped_up_at: datetime | None = None
 
     def fresh(self, now: datetime) -> bool:
         """Did this session show a second factor in the last five minutes?"""
-        return (
-            self.stepped_up_at is not None
-            and timedelta(0) <= now - self.stepped_up_at < STEP_UP_FRESH
-        )
+        return _within(self.stepped_up_at, now)
+
+    def fresh_for_factors(self, now: datetime, has_passkey: bool) -> bool:
+        """May this session change the account's factors (D37)? Once the
+        account has a passkey, only a passkey step-up of the last five minutes
+        counts: not the sign-in, not a TOTP code. Without one, any fresh
+        second factor does, as for every other dangerous action."""
+        if has_passkey:
+            return _within(self.passkey_stepped_up_at, now)
+        return self.fresh(now)
+
+
+def _within(at: datetime | None, now: datetime) -> bool:
+    return at is not None and timedelta(0) <= now - at < STEP_UP_FRESH
 
 
 @dataclass(frozen=True)
@@ -233,7 +251,9 @@ def resolve(
     if touch and now - row.last_seen_at >= TOUCH_EVERY:
         row.last_seen_at = now
         db.commit()
-    return Operator(row.id, row.account_id, name, row.stepped_up_at)
+    return Operator(
+        row.id, row.account_id, name, row.stepped_up_at, row.passkey_stepped_up_at
+    )
 
 
 def sign_out(db: Session, operator: Operator) -> None:
@@ -300,6 +320,8 @@ def step_up(
     else:
         _forgive(db, account, address)
     session.stepped_up_at = now
+    if factor == "passkey":
+        session.passkey_stepped_up_at = now
     audit(db, operator.name, "operator.stepped_up", {"factor": factor})
     db.commit()
 
@@ -310,18 +332,26 @@ def add_passkey(
     """Register the passkey a ceremony on this session made. Returns its
     name; raises `passkeys.Refused`. Commits."""
     row = passkeys.register(
-        db, operator.account_id, operator.session_id, answer, name, now
+        db,
+        operator.account_id,
+        operator.session_id,
+        answer,
+        name,
+        now,
+        passkey_step_up=operator.fresh_for_factors(now, has_passkey=True),
     )
     audit(db, operator.name, "operator.passkey_added", {"passkey": row.name})
     db.commit()
     return row.name
 
 
-def remove_passkey(db: Session, operator: Operator, passkey_id: str) -> tuple[str, int]:
+def remove_passkey(
+    db: Session, operator: Operator, passkey_id: str, now: datetime
+) -> tuple[str, int]:
     """Returns the removed passkey's name and how many other sessions ended
     (`_end_other_sessions`). Raises `LookupError` for one that is not this
     account's and `FactorNeeded` when it must stay. Commits."""
-    account = _locked(db, operator)
+    account = _locked(db, operator, now)
     try:
         wanted = uuid.UUID(passkey_id)
     except ValueError:
@@ -366,7 +396,7 @@ def confirm_totp(
     """Put the proposed secret in force once a code of it came back, so a
     secret that never reached the app replaces nothing. Returns how many other
     sessions ended, None for a wrong code. Commits."""
-    account = _locked(db, operator)
+    account = _locked(db, operator, now)
     session = db.get(OperatorSession, operator.session_id, with_for_update=True)
     secret = session.pending_totp if session is not None else None
     step = totp.matching_step(secret, code, now.timestamp(), None) if secret else None
@@ -381,11 +411,11 @@ def confirm_totp(
     return ended
 
 
-def remove_totp(db: Session, operator: Operator) -> int | None:
+def remove_totp(db: Session, operator: Operator, now: datetime) -> int | None:
     """Returns how many other sessions ended; None when TOTP was off already
     (a double post, an older tab): nothing to audit or push. Raises
     `FactorNeeded` without two passkeys. Commits."""
-    account = _locked(db, operator)
+    account = _locked(db, operator, now)
     if passkeys.count(db, account.id) < PASSKEYS_WITHOUT_TOTP:
         db.rollback()
         raise FactorNeeded()
@@ -474,11 +504,16 @@ def audit(
     db.add(OperatorAudit(actor=actor, action=action, target=target, detail=detail))
 
 
-def _locked(db: Session, operator: Operator) -> OperatorAccount:
+def _locked(
+    db: Session, operator: Operator, now: datetime | None = None
+) -> OperatorAccount:
     """The operator's account, held until the commit: two changes of its
     factors at once must not each see the other's factor as still there. A
     change that waited here while another one ended its session (D39, the
-    break glass) is refused: it changes no factor and ends nobody's session."""
+    break glass) is refused: it changes no factor and ends nobody's session.
+    With `now`, a factor change: D37 is checked again under the row, so a
+    first passkey another session registered after the route's check counts
+    (`PasskeyNeeded`)."""
     account = db.get(
         OperatorAccount,
         operator.account_id,
@@ -491,6 +526,11 @@ def _locked(db: Session, operator: Operator) -> OperatorAccount:
     if account is None or alive is None:
         db.rollback()
         raise SignInRefused()
+    if now is not None and not operator.fresh_for_factors(
+        now, passkeys.count(db, account.id) > 0
+    ):
+        db.rollback()
+        raise PasskeyNeeded()
     return account
 
 
