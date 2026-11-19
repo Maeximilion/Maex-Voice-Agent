@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -192,11 +192,28 @@ def test_suggest_waits_for_a_staff_change_of_the_restaurant(
             result["written"] = days.suggest(other, tenant_id, "BW", date(2026, 10, 20))
             other.commit()
 
+    def waiting_on_a_lock() -> bool:
+        # The job's connection waits on a row lock, not merely slow to start.
+        with engine.connect() as probe:
+            return bool(
+                probe.scalar(
+                    text(
+                        "SELECT count(*) FROM pg_stat_activity WHERE "
+                        "datname = current_database() AND wait_event_type = 'Lock'"
+                    )
+                )
+            )
+
     runner = threading.Thread(target=job)
     runner.start()
-    runner.join(timeout=1)
     try:
-        assert runner.is_alive(), "the job did not wait for the staff change"
+        for _ in range(50):
+            if waiting_on_a_lock() or not runner.is_alive():
+                break
+            runner.join(timeout=0.1)
+        assert runner.is_alive() and waiting_on_a_lock(), (
+            "the job did not wait for the staff change"
+        )
     finally:
         staff.add(
             SpecialDay(tenant_id=tenant_id, date=ALL_SAINTS, closed=True, status="set")
