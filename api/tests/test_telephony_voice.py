@@ -461,9 +461,9 @@ def test_media_ready_wants_the_media_token(phone):
 
 
 def test_the_team_door_wants_the_token_and_answers_the_routed_number(phone):
-    """The dialplan asks it once a call has come, for the legs it dials on its
-    own (#835): `voice` crashed, ended without a transfer, or a listed number
-    nobody took."""
+    """The dialplan asks it when a call has come and before each leg it dials
+    on its own (#835, #861): `voice` crashed, ended without a transfer, or a
+    listed number nobody took."""
     client, _ = phone
     assert client.get("/team").status_code == 401
     assert client.get("/team", headers=basic("wrong")).status_code == 401
@@ -472,7 +472,8 @@ def test_the_team_door_wants_the_token_and_answers_the_routed_number(phone):
 
 
 def test_the_team_door_answers_nothing_when_the_number_is_unreadable(phone):
-    """The dialplan keeps TEAM_PHONE of its environment then."""
+    """The dialplan keeps the number it had then, TEAM_PHONE of its
+    environment at the call's start."""
     client, core = phone
     core.team_phone = ""
     response = client.get("/team", headers=basic(TOKEN))
@@ -485,8 +486,96 @@ def test_the_dialplan_asks_for_the_team_number_after_the_probe():
     answered already."""
     conf = DIALPLAN.read_text(encoding="utf-8")
     probe = conf.index("CURL(http://voice:8001/media/ready)")
-    team = conf.index("CURL(http://voice:8001/team)")
+    team = conf.index("Gosub(teamnow,1)")
     assert probe < team < conf.index("Dial(WebSocket/voice")
+
+
+def _extension(name: str) -> list[str]:
+    """The steps of one extension of [ai], from its first to the next one."""
+    steps = [s.strip() for s in _steps()]
+    start = next(i for i, s in enumerate(steps) if s.startswith(f"exten => {name},1,"))
+    end = next(
+        (i for i, s in enumerate(steps[start + 1 :], start + 1) if "exten =>" in s),
+        len(steps),
+    )
+    return steps[start:end]
+
+
+def test_the_team_number_is_asked_in_one_place_that_keeps_it_on_failure():
+    """One subroutine asks `/team` (#861). Only a listed answer replaces
+    TEAM; an empty one, a refused or frozen `voice` or a database that is
+    down keep the number TEAM held, never nothing (rule 5)."""
+    conf = DIALPLAN.read_text(encoding="utf-8")
+    assert conf.count("CURL(http://voice:8001/team)") == 1
+    ask = _extension("teamnow")
+    assert [s for s in ask if "Set(TEAM=" in s] == [
+        'same => n,ExecIf($["${ROUTED}" != "" & '
+        "${FIELDNUM(LISTED,\\,,${ROUTED})} > 0]?Set(TEAM=${ROUTED}))"
+    ]
+    assert [s.strip() for s in _steps() if "Set(TEAM=" in s and "ExecIf" not in s] == [
+        "same => n,Set(TEAM=${ENV(TEAM_PHONE)})"
+    ]
+    token = "same => n,Set(CURLOPT(userpwd)=asterisk:${ENV(VOICE_MEDIA_TOKEN)})"
+    assert ask.index(token) < ask.index(
+        "same => n,Set(ROUTED=${CURL(http://voice:8001/team)})"
+    )
+
+
+def test_an_empty_answer_is_the_last_question_of_the_call():
+    """`voice` frozen or down, or its database down (2 s of connect timeout),
+    would cost the caller that wait before every leg (#861 review): after an
+    empty answer the call asks no more and keeps TEAM."""
+    ask = _extension("teamnow")
+    assert ask[0] == 'exten => teamnow,1,GotoIf($["${TEAMASK}" = "off"]?back)'
+    off = ask.index('same => n,ExecIf($["${ROUTED}" = ""]?Set(TEAMASK=off))')
+    assert ask[off - 1] == "same => n,Set(ROUTED=${FILTER(+0123456789,${ROUTED})})"
+    assert ask[-1] == "same => n(back),Return()"
+
+
+def test_a_voice_that_is_not_answering_is_not_asked_for_the_team_number():
+    """An ending question that ran into its 2 s, or a `voice` the call never
+    reached, turns the question off (#861 review): it would only cost the
+    caller another wait before the team or the card."""
+    steps = [s.strip() for s in _steps()]
+    assert [s for s in steps if "TEAMASK=off" in s] == [
+        "same => n,ExecIf($[${EPOCH} - ${ASKED} >= 2]?Set(TEAMASK=off))",
+        'same => n,ExecIf($["${ROUTED}" = ""]?Set(TEAMASK=off))',
+        "same => n,Set(TEAMASK=off)",
+    ]
+    ending = steps.index(
+        "same => n,Set(ENDING=${CURL(http://voice:8001/calls/${UNIQUEID}/ending)})"
+    )
+    assert steps[ending - 1] == "same => n,Set(ASKED=${EPOCH})"
+    # Right behind the filter, which stays right behind the question (#776).
+    assert steps[ending + 2] == (
+        "same => n,ExecIf($[${EPOCH} - ${ASKED} >= 2]?Set(TEAMASK=off))"
+    )
+    assert _extension("unreached")[1] == "same => n,Set(TEAMASK=off)"
+
+
+def test_the_dialplan_asks_again_before_each_leg_it_dials_on_its_own():
+    """A number changed on the tablet during the call reaches the legs the
+    dialplan dials on its own (#861): the ending that is no transfer to a
+    listed number, and every leg after one nobody took."""
+    toteam = [s.strip() for s in _steps()]
+    at = toteam.index("same => n(toteam),Gosub(teamnow,1)")
+    assert toteam[at + 1 : at + 3] == [
+        "same => n,Set(TARGET=${TEAM})",
+        "same => n,Goto(team,1)",
+    ]
+    team = _extension("team")
+    leg = team.index("same => n,Log(NOTICE,call ${UNIQUEID}: team leg ${DIALSTATUS})")
+    assert team[leg + 1] == "same => n,Gosub(teamnow,1)"
+    assert team[leg + 2].startswith("same => n,GotoIf($[${FIELDNUM(TRIED,\\,,${TEAM})}")
+
+
+def test_every_subroutine_the_dialplan_calls_exists_and_returns():
+    """A Gosub to an extension that is not there hangs the call up, the team
+    never rings (rule 5)."""
+    calls = re.findall(r"Gosub\((\w+),1\)", DIALPLAN.read_text(encoding="utf-8"))
+    assert calls
+    for name in set(calls):
+        assert _extension(name)[-1].endswith(",Return()")
 
 
 def test_the_routed_number_is_dialled_only_when_it_is_on_the_list():
@@ -513,7 +602,7 @@ def test_every_fallback_rings_the_routed_number_before_team_phone():
     targets = [s for s in steps if "Set(TARGET=" in s]
     assert targets == [
         "same => n,Set(TARGET=${FILTER(+0123456789,${ENDING:9})})",
-        "same => n(toteam),Set(TARGET=${TEAM})",
+        "same => n,Set(TARGET=${TEAM})",
         "same => n,Set(TARGET=${ENV(TEAM_PHONE)})",
         "same => n(routed),Set(TARGET=${TEAM})",
         "same => n,Set(TARGET=${TEAM})",

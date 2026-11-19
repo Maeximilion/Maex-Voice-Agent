@@ -428,7 +428,7 @@ def test_the_team_today_drill_wants_todays_number_wherever_voice_could_say(tmp_p
     )
     assert not crash[1]
     crash, _, _ = drill.drill_team_today(
-        today_stage(tmp_path, [TODAY_RINGS], both, [TEAM_RINGS], named="default")
+        today_stage(tmp_path, [TODAY_RINGS], both, [TEAM_RINGS], named="kept")
     )
     assert not crash[1]
     for missed in ([TODAY_RINGS], [TEAM_RINGS, TODAY_RINGS], [*both, TODAY_RINGS]):

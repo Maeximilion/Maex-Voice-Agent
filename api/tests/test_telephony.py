@@ -2047,6 +2047,29 @@ def test_a_named_number_is_forgotten_after_the_handover_window(session, tenant):
     assert session.scalars(select(Callback)).all() == []
 
 
+def test_a_named_number_is_dropped_when_a_later_call_ends(session, tenant):
+    """A team that answered sends no report: the number and the card stayed
+    in memory until the next handover or report, overnight on a quiet line
+    (#861). The end of any later call drops them; the call's own end keeps
+    them for the report of its team leg."""
+    clock = Clock()
+    case = {
+        "transcript": [
+            {"role": "customer", "text": "Meine Nummer ist 0721 5551234."},
+            {"role": "customer", "text": "Ich will mich beschweren."},
+        ]
+    }
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, clock=clock)
+    sid = port.play(case, handler)
+    assert sid in handler._named_phones  # its own end keeps it
+
+    clock.now += handler_module.NAMED_PHONE_SECONDS + 1
+    port.play({"transcript": []}, handler)  # a caller who hangs up at once
+
+    assert sid not in handler._named_phones
+
+
 def test_without_any_number_the_report_has_no_card(session, tenant):
     case = {"transcript": COMPLAINT["transcript"]}
     port = FakeTelephony()
@@ -2246,8 +2269,8 @@ def test_the_dialplan_is_told_the_number_that_holds_now(session, tenant):
 
 
 def test_the_dialplan_is_told_no_number_without_a_database(session, tenant):
-    """Empty, never an exception: the dialplan dials TEAM_PHONE of its
-    environment then (rule 5)."""
+    """Empty, never an exception: the dialplan keeps the number it had,
+    TEAM_PHONE of its environment at the call's start (rule 5)."""
 
     def no_database():
         raise OperationalError("SELECT 1", {}, Exception("connection refused"))
