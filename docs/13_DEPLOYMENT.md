@@ -55,6 +55,8 @@ Tablet, print bridge and, in operation, the telephone access need a fixed **publ
 ```text
 Maxis PC (nur Werkbank)
   docker compose up      → Postgres, API, n8n lokal zum Entwickeln
+  scripts\stack.cmd      → Windows switch for the stack in Ubuntu WSL (~/Maex-Voice-Agent):
+                           double-click for a menu, or start|pause|resume|stop|status
   sim/cli.py             → Gespräche ohne Telefon
   local model (optional) → for sim and evals only, never for a real call (§0);
                            setup: bash scripts/setup_local_llm.sh (docs/18 §5)
