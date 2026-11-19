@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} | Maex Voice Agent{% endblock %}
+{% block robots %}<meta name="robots" content="noindex">{% endblock %}
+
+{% block content %}
+<div class="wrap legal">
+  <p class="eyebrow">{{ title }}</p>
+  <h1 class="h-page">{{ title }}</h1>
+  <p class="formnote" role="note">Platzhalter, nicht veröffentlichungsfähig. Die Angaben liefert Maxi vor der Veröffentlichung; bis dahin steht hier nichts, was eine Firma, eine Anschrift oder eine Datenverarbeitung beschreibt.</p>
+  {% if kind == "impressum" %}
+  <p>Hier stehen die Angaben nach § 5 DDG: Name und Anschrift des Anbieters, Kontakt und, wo es zutrifft, Registereintrag und Umsatzsteuer-Identifikationsnummer.</p>
+  {% else %}
+  <p>Hier steht der Datenschutzhinweis: wer verantwortlich ist, welche Daten die Seite und die Anfrage verarbeiten, wie lange sie gespeichert werden und welche Rechte Besucher haben.</p>
+  {% endif %}
+  <p><a href="/">Zurück zur Startseite</a></p>
+</div>
+{% endblock %}

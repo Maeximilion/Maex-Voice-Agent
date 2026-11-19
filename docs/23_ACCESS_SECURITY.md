@@ -60,6 +60,8 @@ shared Caddy (host) ──── one site per customer: <customer>.<domain>  →
          └── one internal network per customer stack, "ops", holding only the dashboard and that stack's api
 ```
 
+The public site (`api/site/`, #892, docs/13 §9) is a fourth thing behind the same Caddy, on the apex and `www`: no session, no database, no secret, nothing of the applications imported; it can only be read. The inquiry form built on it is not live (no route, no mail service, no privacy text yet): when it is, the route, its spam protection, what it stores and for how long come into this document and `docs/09` §5 first.
+
 Boundaries, outermost first: internet to Caddy; Caddy to one stack; dashboard to one stack's API;
 inside a stack the networks of docs/13 §3 (unchanged); host to everything.
 
