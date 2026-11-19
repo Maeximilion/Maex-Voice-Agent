@@ -274,7 +274,7 @@ def test_readback_morgen_eine_person_mit_hinweis(session, tenant_id, call_id):
     assert draft.note == "Kinderstuhl"
     assert draft.readback == (
         "Ein Tisch für eine Person morgen um zwölf Uhr mittags, auf den Namen Müller"
-        ", mit dem Hinweis: Kinderstuhl. Passt das so?"
+        ", mit Ihrem Hinweis: Kinderstuhl. Passt das so?"
     )
 
 

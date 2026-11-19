@@ -104,14 +104,19 @@ def _say(
         return SAY_ALLERGENS_UNKNOWN
     said = []
     if allergen_question:
-        *rest, last = allergens.names
-        names = f"{', '.join(rest)} und {last}" if rest else last
-        said.append(
-            SAY_ALLERGENS_KNOWN.format(number=item.number, name=item.name, names=names)
-        )
+        said.append(say_allergens(item.number, item.name, allergens.names))
     if sold_out:
         said.append(SAY_SOLD_OUT.format(name=item.name))
     return " ".join(said) or None
+
+
+def say_allergens(number: str, name: str, names: list[str]) -> str:
+    """The sentence of a dish's maintained allergens, from the table of the
+    14 names (`ALLERGEN_SPOKEN`). Also what the own core says after a lookup
+    the model sent without the flag, when its answer names allergens (#764)."""
+    *rest, last = names
+    spoken = f"{', '.join(rest)} und {last}" if rest else last
+    return SAY_ALLERGENS_KNOWN.format(number=number, name=name, names=spoken)
 
 
 def _allergens(

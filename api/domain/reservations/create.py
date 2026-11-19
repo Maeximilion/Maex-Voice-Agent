@@ -206,5 +206,6 @@ def readback(r: Reservation, zone: ZoneInfo) -> str:
         f", auf den Namen {r.guest_name}"
     )
     if r.note:
-        satz += f", mit dem Hinweis: {r.note}"
+        # Named as the guest's, as on an order (#798).
+        satz += f", mit Ihrem Hinweis: {r.note}"
     return satz + ". Passt das so?"

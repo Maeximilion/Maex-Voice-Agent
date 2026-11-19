@@ -48,6 +48,9 @@ How to review:
   same root cause into one finding. Do not restart a search for cosmetic changes
   in unchanged, unaffected files after a fix; the existing severity rules remain.
 - Report a finding only when you can name a concrete failing input or sequence. No scenario, no finding.
+- A guard that tells a question from a wish, or a statement from a denial, by a pattern over German
+  words is a finding. Decide by where the words come from: tool results, the accepted order, core
+  strings. A new pattern needs Maxi's word (#798).
 - Back every claim about behaviour with the file and line that shows it; never infer behaviour from
   a name alone. Open the review summary with the number of findings, and say plainly when there is
   nothing to fix.

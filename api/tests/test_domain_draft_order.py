@@ -156,7 +156,7 @@ def test_entwurf_mit_summe_readback_und_audit(session, tenant_id, call_id):
     assert draft.warnings == []
     assert draft.ready_at == NOW + timedelta(minutes=30)
     assert draft.readback == (
-        "Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln. "
+        "Zweimal Nummer 23 Frühlingsrollen, Ihr Hinweis: ohne Zwiebeln. "
         "Einmal Nummer 47 Ente knusprig mit Huhn und Erdnuss. "
         "Macht 28 Euro 80, abholbereit in etwa 30 Minuten, auf den Namen Müller. "
         "Passt das so?"
@@ -191,7 +191,7 @@ def test_note_of_the_whole_order_is_stored_and_read_back(session, tenant_id, cal
 
     assert session.get(Order, draft.order_id).note == note
     assert draft.readback.startswith(
-        f"Zweimal Nummer 23 Frühlingsrollen. Für die ganze Bestellung: {note}. Macht "
+        f"Zweimal Nummer 23 Frühlingsrollen. Ihr Hinweis für die ganze Bestellung: {note}. Macht "
     )
     # The replay says the same.
     assert draft_order(session, req, now=NOW) == draft
