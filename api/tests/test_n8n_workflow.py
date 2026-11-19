@@ -357,7 +357,7 @@ def test_an_operator_step_names_the_operator_and_what_was_done() -> None:
     node = _nodes()[_branches()[types.OPERATOR_ACCESS_CHANGED]]
     text = _assignment(node, "text")
     assert "$json.payload.actor" in text
-    for step in ("setup_link", "pin_set", "sign_out"):
+    for step in ("setup_link", "pin_set", "pin_show", "sign_out"):
         assert f"{step}:" in text, step
     assert "$json.payload.signed_out" in text and "$json.payload.which" in text
     # A way into the restaurant's view changed: the phone makes itself heard.

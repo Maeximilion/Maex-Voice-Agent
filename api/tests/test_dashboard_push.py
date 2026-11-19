@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from api.dashboard import push
 from api.dashboard.config import settings
@@ -22,7 +22,7 @@ from api.dashboard.models import OperatorPush
 from api.tests import test_dashboard_passkeys as base
 from api.tests.passkey_device import Device
 from api.tests.test_dashboard_login import START
-from api.tests.test_dashboard_passkeys import _register, _signed_in
+from api.tests.test_dashboard_passkeys import _register
 
 # Fixtures of the passkey tests, taken by assignment (see test_ops_write.py).
 operator_url = base.operator_url
@@ -71,6 +71,15 @@ def server(monkeypatch):
     running.stop()
 
 
+def _signed_in(client, factors, clock, sessions) -> None:
+    """Signed in, with the push of the new browser (#888 A1) taken out of the
+    outbox again, so each test sees only the pushes it makes itself."""
+    base._signed_in(client, factors, clock)
+    with sessions() as db:
+        db.execute(delete(OperatorPush))
+        db.commit()
+
+
 def _queued(sessions) -> list[OperatorPush]:
     with sessions() as db:
         return list(db.scalars(select(OperatorPush).order_by(OperatorPush.id)))
@@ -79,7 +88,7 @@ def _queued(sessions) -> list[OperatorPush]:
 def test_a_new_passkey_is_queued_in_the_request_and_sent_by_the_sender(
     client, factors, clock, sessions, server
 ):
-    _signed_in(client, factors, clock)
+    _signed_in(client, factors, clock, sessions)
     answer = _register(client, Device())
     assert answer.headers["location"] == "/factors?note=passkey-added"
     # The request sent nothing itself: the push waits in the outbox.
@@ -110,7 +119,7 @@ def test_a_push_server_that_is_down_never_blocks_the_request_or_loses_the_push(
     client, factors, clock, sessions, server
 ):
     server.stop()
-    _signed_in(client, factors, clock)
+    _signed_in(client, factors, clock, sessions)
     assert _register(client, Device()).status_code == 303
 
     with sessions() as db:
@@ -293,7 +302,7 @@ def test_pushes_stuck_past_the_ladder_are_counted_and_shown(
     client, factors, clock, sessions, server
 ):
     server.stop()
-    _signed_in(client, factors, clock)
+    _signed_in(client, factors, clock, sessions)
     with sessions() as db:
         push.queue(db, "never goes out", clock.at)
         assert push.stuck(db) == 0
@@ -318,7 +327,7 @@ def test_pushes_waiting_without_a_push_server_show_a_banner(
 ):
     monkeypatch.setattr(settings, "operator_push_url", "")
     monkeypatch.setattr(settings, "operator_push_token", "")
-    _signed_in(client, factors, clock)
+    _signed_in(client, factors, clock, sessions)
     with sessions() as db:
         assert push.unsent_without_server(db) == 0
     assert "No push server is set" not in client.get("/").text
@@ -334,7 +343,7 @@ def test_pushes_waiting_without_a_push_server_show_a_banner(
 def test_no_banner_for_unsent_rows_when_a_push_server_is_set(
     client, factors, clock, sessions, server
 ):
-    _signed_in(client, factors, clock)
+    _signed_in(client, factors, clock, sessions)
     with sessions() as db:
         push.queue(db, "due soon", clock.at)
         assert push.unsent_without_server(db) == 0

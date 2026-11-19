@@ -205,6 +205,7 @@ STACK_UPDATED = (
     "the step from it."
 )
 COPY = "a passkey answered with an old counter, a copy?"
+NEW_BROWSER = "signed in from a new browser"
 NO_STORE = {"Cache-Control": "no-store"}
 # Times are stored and sent in UTC and shown in the restaurants' time.
 SHOWN_IN = ZoneInfo("Europe/Berlin")
@@ -576,8 +577,12 @@ def login_post(
         if refused.copy:
             _alert(db, form.get("name", "").strip().lower(), COPY)
         return _page(request, "login.html", {"message": _refusal(refused)}, 401)
+    operator = form.get("name", "").strip().lower()
     if signed.factor == "recovery":
-        _alert(db, form.get("name", "").strip().lower(), "a recovery code was used")
+        _alert(db, operator, "a recovery code was used")
+    if signed.new_browser:
+        # A phished password and code would otherwise sign in unseen (#888 A1).
+        _alert(db, operator, f"{NEW_BROWSER} ({signed.factor})")
     response = RedirectResponse(HOME, status_code=303)
     response.delete_cookie(cookie("attempt"), path="/", secure=secure(), httponly=True)
     # No max-age: the server ends the session (30 minutes idle, 12 hours).
