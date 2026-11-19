@@ -379,7 +379,7 @@ EUR; isolation and the unchanged code decide it.
   `deploy/customer.example.json` (kept with the stack on the server, never in the repository). The
   same file again changes nothing; a database that holds another tenant refuses, so a command run
   in the wrong stack writes nothing. The team number must be `TEAM_PHONE` or on
-  `TRANSFER_TARGETS`. Menu and delivery zones keep their importers (docs/14,
+  `TRANSFER_TARGETS`, written in E.164 (#861). Menu and delivery zones keep their importers (docs/14,
   `scripts/seed_zones.py`); `python -m api.jobs.provision check` lists what is still missing.
   **The stack around it is built too (#573, second part):** on the host, as the deploy user,
   `python3 scripts/new_stack.py <customer.json> --domain <domain> [--root /srv/maex] [--dry-run]`

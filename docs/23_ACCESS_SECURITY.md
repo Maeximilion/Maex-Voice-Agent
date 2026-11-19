@@ -537,7 +537,9 @@ the second builds against.
   what held before the staff came. The holiday answers of T-9.5 stay as they are (Maxi 09.11.2026);
   one given while the date's card waits becomes that card's "before" (#802), so undo returns to it
   and later times are checked against its weekday. A request for the exact hours of the "before"
-  is the "before", its holiday name included, and holds at once.
+  is the "before", its holiday name included, and holds at once. Hours whose night reaches into the next date's first
+  span, or that start inside the night before, are refused for the staff, the owner and the holiday answer, as the weekly
+  writer refuses them (#862).
   The call mode gets the push but no card (Maxi 09.11.2026). The push (#588): an outbox event in
   the same transaction as the change (`team_phone.changed`, `day_hours.changed`,
   `call_mode.changed`, migration 034; `admin_pin.wrong` of the admin PIN above, migration 040), which n8n publishes to the topics `owner` and `ops`

@@ -257,6 +257,19 @@ off the list and a `voice` that is down kept the start number; an ending questio
 its 2 s and a failed probe asked nothing more; every chain ended with the card. Drilled in "the team at today's number" (§5 drills below), without a change
 during the call.
 
+**`TEAM_PHONE` in E.164, today's number to the end of the business day** (#861). The list compares
+as written, and the staff choose and store numbers in E.164 only, so a `TEAM_PHONE` written
+nationally (`0721...`) was a standard the staff could never go back to once a number of their own
+held; no process starts on another form now (`config.py`), and a new tenant takes no team number
+outside it (`provision`). A number the staff set for today holds to the end of the business day,
+05:00 (`core/time.py` `DAY_STARTS_AT`), not to closing, by choice (Claude's choice, awaiting Maxi):
+transfers, these legs and the callbacks ring the team after closing too, and the number the staff
+chose because the standard phone is away should ring there until the night is over; a closed date
+has no closing, and closing moves when the date's hours change; the check card and its push are the
+business day's. The limit: a service past 05:00 (a window 22:00 to 06:00) returns to the standard
+at 05:00 in the middle of it, and a number set in that tail belongs to the next business day and
+holds through it. No pilot case; the staff set it again in one tap.
+
 **Loop guard.** The team number must never be forwarded to us. `voice` refuses to start when the
 team number is one of its own inbound numbers, the dialplan rejects a call from its own number, and
 one line test proves it: software off, call the main number.
