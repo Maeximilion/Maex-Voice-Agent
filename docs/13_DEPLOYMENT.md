@@ -262,7 +262,7 @@ The passphrase file exists since 29.10.2026 (mode 600). Without `BACKUP_PASSPHRA
 - Day report on the previous business day from `MONITOR_REPORT_HOUR` (8): calls by outcome, cost, orders, reservations; also on a day without a call (built, T-8.3)
 - Log-Rotation, 14 Tage lokal
 
-The built alarms come from `api/jobs/monitor.py` in the dispatcher and go straight to the push server, topic `ops`, which only the operator reads; the user `monitor` writes it with `MONITOR_PUSH_TOKEN` (setup: `n8n/README.md`, "Setting up the push server"). They do not go through n8n, so n8n down is reported (Maxi, 29.10.2026). The dispatcher runs on the same machine, so the API or the server down still needs the check from outside (T-9.4).
+The built alarms come from `api/jobs/monitor.py` in the dispatcher and go straight to the push server, topic `ops`, which only the operator reads; the user `monitor` writes it with `MONITOR_PUSH_TOKEN` (setup: `n8n/README.md`, "Setting up the push server"); outside dev and test the dispatcher does not start without it (`monitor.require_push_token`, #861). They do not go through n8n, so n8n down is reported (Maxi, 29.10.2026). The dispatcher runs on the same machine, so the API or the server down still needs the check from outside (T-9.4).
 
 ---
 
@@ -461,8 +461,9 @@ EUR; isolation and the unchanged code decide it.
   `BACKUP_DOCKER_NETWORK=maex-ops_backend` and `BACKUP_PASSPHRASE_FILE` (§4),
   `OPERATOR_PROXY_SECRET` and `OPERATOR_ORIGIN`, the push server's `NTFY_BASE_URL` (a host of
   its own, for example `https://push.ops.<domain>`), `NTFY_AUTH_USERS` (the users `dashboard`
-  and `ops`, each with a bcrypt hash from `ntfy user hash`), `NTFY_AUTH_TOKENS`
-  (`dashboard:<token>:dashboard`) and the same token as `OPERATOR_PUSH_TOKEN`, and
+  and `ops`, each with a bcrypt hash from `ntfy user hash`) and `OPERATOR_PUSH_TOKEN`
+  (the push server takes the token of `dashboard` from it, `dashboard:<token>:dashboard`, so
+  the two cannot differ; an `NTFY_AUTH_TOKENS` line left from before is ignored, #861), and
   `COMPOSE_FILE=deploy/docker-compose.operator.yml:networks.json`. The dashboard connects as its
   own role and, outside dev and test, refuses to start as a superuser; the owner migrates, dumps and
   restores, and never reaches the dashboard's container (#827 F5). Setting it up, in `<root>/ops`:

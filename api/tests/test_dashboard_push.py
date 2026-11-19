@@ -346,3 +346,52 @@ def test_a_sent_push_is_not_stuck(sessions, server):
         push.queue(db, "goes out", START)
         push.deliver_once(db, START)
         assert push.stuck(db) == 0
+
+
+def test_a_push_whose_commit_fails_after_the_send_goes_out_twice(sessions, server):
+    """#861, pinned: at least once. The push is posted, then `sent_at` is
+    committed; when that commit fails the row is still unsent and the next
+    round posts it again."""
+    with sessions() as db:
+        push.queue(db, "once or twice", START)
+
+    def broken() -> None:
+        raise RuntimeError("the database went away")
+
+    with sessions() as db:
+        real = db.commit
+        db.commit = broken  # type: ignore[method-assign]
+        with pytest.raises(RuntimeError):
+            push.deliver_once(db, START)
+        db.commit = real  # type: ignore[method-assign]
+        db.rollback()
+    (row,) = _queued(sessions)
+    assert row.sent_at is None
+
+    with sessions() as db:
+        assert push.deliver_once(db, START) == 1
+    assert [body["message"] for body, _ in server.received] == ["once or twice"] * 2
+
+
+def test_sent_pushes_older_than_the_keep_period_are_pruned_by_the_next_one(
+    sessions, server
+):
+    """#861: `operator_pushes` was never pruned. A sent row goes with the next
+    push once `SENT_KEEP` has passed; an unsent one never does."""
+    with sessions() as db:
+        push.queue(db, "old and sent", START)
+        assert push.deliver_once(db, START) == 1
+        push.queue(db, "just inside", START + push.SENT_KEEP - timedelta(seconds=1))
+    assert [row.message for row in _queued(sessions)] == ["old and sent", "just inside"]
+
+    with sessions() as db:
+        push.queue(db, "new", START + push.SENT_KEEP)
+    assert [row.message for row in _queued(sessions)] == ["just inside", "new"]
+
+
+def test_an_unsent_push_is_never_pruned(sessions, monkeypatch):
+    monkeypatch.setattr(settings, "operator_push_url", "")
+    with sessions() as db:
+        push.queue(db, "waiting", START)
+        push.queue(db, "later", START + push.SENT_KEEP * 3)
+    assert [row.message for row in _queued(sessions)] == ["waiting", "later"]
