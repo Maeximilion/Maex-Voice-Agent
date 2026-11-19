@@ -123,6 +123,13 @@ services:
       - |
         if [ -n "$$NTFY_AUTH_USERS" ]; then
           export NTFY_AUTH_ACCESS="dashboard:ops:wo,ops:ops:ro"
+          # The token of `dashboard` is the dashboard's own OPERATOR_PUSH_TOKEN,
+          # one value, so the two cannot differ (#861).
+          if [ -n "$$OPERATOR_PUSH_TOKEN" ]; then
+            export NTFY_AUTH_TOKENS="dashboard:$$OPERATOR_PUSH_TOKEN:dashboard"
+          else
+            unset NTFY_AUTH_TOKENS
+          fi
         else
           unset NTFY_AUTH_USERS NTFY_AUTH_TOKENS
         fi
@@ -137,7 +144,7 @@ services:
       # From the operator stack's .env (docs/13 §8).
       - NTFY_BASE_URL
       - NTFY_AUTH_USERS
-      - NTFY_AUTH_TOKENS
+      - OPERATOR_PUSH_TOKEN
     volumes:
       - operator_pushdata:/var/lib/ntfy
     # Root in the image, but it only listens and writes into its volume.

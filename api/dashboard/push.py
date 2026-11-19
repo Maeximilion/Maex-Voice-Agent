@@ -20,7 +20,7 @@ import threading
 from datetime import UTC, datetime, timedelta
 
 import httpx
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from api.core.logging import error_text, get_logger, log
@@ -47,9 +47,21 @@ BACKOFF_SECONDS = (5, 30, 120, 600)
 LAST_ERROR_MAX = 500
 
 
+# A push the server took stays this long for the operator to look back at; an
+# unsent one is never pruned.
+SENT_KEEP = timedelta(days=30)
+
+
 def queue(db: Session, text: str, at: datetime) -> None:
     """Hold one push for the sender, due at once. Commits: the change it
-    reports is committed already, and its audit row with it."""
+    reports is committed already, and its audit row with it. The next push
+    prunes the sent ones older than `SENT_KEEP`, as the next challenge prunes
+    the expired ones (`passkeys.issue`); no job of its own (#861)."""
+    db.execute(
+        delete(OperatorPush).where(
+            OperatorPush.sent_at.is_not(None), OperatorPush.sent_at <= at - SENT_KEEP
+        )
+    )
     db.add(OperatorPush(message=text, next_attempt_at=at))
     db.commit()
 
@@ -83,7 +95,13 @@ def _claim_due(db: Session, now: datetime) -> OperatorPush | None:
 
 def deliver_once(db: Session, now: datetime) -> int:
     """Send what is due, oldest first, each row in its own transaction. How
-    many the push server took. Nothing is claimed without a push server."""
+    many the push server took. Nothing is claimed without a push server.
+
+    At least once, not exactly once: the push is posted first and `sent_at` is
+    committed after it. When that commit fails (the database went away between
+    the two) the row is still unsent and the next round posts the same push
+    again, so the operator may see one twice. The other order could lose a push
+    nobody ever sent, which a takeover warning must not (#861)."""
     if not configured():
         return 0
     sent = 0

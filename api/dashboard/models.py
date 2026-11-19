@@ -207,8 +207,9 @@ class OperatorPush(Base):
     """A push to the operator's `ops` topic, held until the push server took it
     (#827 F3, docs/23 §5): written in the request that changed a factor and
     sent by the dashboard's sender (`dashboard/push.py`), as a customer's
-    outbox is by its dispatcher. A row is never dropped: a push server that is
-    down only makes it wait."""
+    outbox is by its dispatcher. An unsent row is never dropped: a push server
+    that is down only makes it wait. A sent one goes with the next push after
+    `push.SENT_KEEP` (#861)."""
 
     __tablename__ = "operator_pushes"
 
