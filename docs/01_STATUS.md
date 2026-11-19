@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 19.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.67.5
+> Status: 20.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.67.6
 
 ---
 
@@ -45,6 +45,8 @@ Older summary paragraphs: `docs/HISTORY.md` section "Summary (archive)". Current
 ## What's Next
 
 Finished items: `docs/HISTORY.md` sections "What's Next and Open Decisions (archive, finished rows, 10.11.2026)" and "What's Next and Open Decisions (archive, process rows, 19.11.2026)".
+
+**#892, the public site (built 20.11.2026, PR open): the landing page and `/anfrage` exist as `api/site/`, nothing is deployed.** Open, each Maxi's: the final public copy, the legal notice and privacy text (placeholders marked not publishable), the mail service, target address and privacy text of the inquiry form (it stays disabled until `SITE_INQUIRY_ACTION` names a route), the sign-in target before the first stack is online (`SITE_LOGIN_URL`), hosting of the site (#840). The tablet demo `/tablet-demo` (B1 to B4) is its own task: until it exists the page shows no "Jetzt ausprobieren". Scrolling was measured in headless Chrome only, not on a phone.
 
 **Cloud session of 15.11.2026 taken over, Maxi's twelve decisions of 15.11.2026.** Twelve branches came over from the carrier branch `ccr-8ada70c0-3yo967` (never merged). Each one ships as its own PR. Decisions: (1) menu parser redesign: build the conservation gate in the consult's order (corpus PR, then the gate, then cleanup), with a Fable design session (use 2) running alongside; (2) #751, another person's allergy: keep #788 and measure first (#787), no coverage check yet; (3) #757, the stranded guest list: list it on the waiting cards and keep it until the date has passed; (4) #757 tables, which goes further than the question asked: a reserved table stays blocked for its whole service period (lunch or evening, split at the opening-hours break, since the guests' leaving time is unknown). The team frees it with one tap on the table or the reservation, and it frees itself when the period ends. This changes availability and gets its own issue; (5) the P2/P3 drafts of the #764 batch review are filed as issues as written, then the ledger is ticked; (6) "Ich möchte die Pizza reklamieren" gets the remedy offer of the complaint rules first and goes to the team only when the guest is still not satisfied (changes `fix/764-dialog-batch`); (7) phone normalisation keeps the sourced trunk-zero list, which already covers Germany and every neighbouring country, with no new dependency; (8) the self-test reservation shows as a marked test card on the real tablet (`is_test` flag, migration, never reaches outside; changes `feat/574-selftest`); (9) offboarding: off-site backups expire with their rolling 30 days, and a stack with a second tenant is removed by hand; (10) #637: AudioSeal and the real SIP leg are measured on the workbench before the first real call; (11) STATUS takes the firm row set of the cloud session's row proposals and archives the 24 old header lines; (12) #530: one eval "out of zone, pickup on but closed by its hours" is added, then #530 closes.
 
@@ -172,6 +174,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.67.6 · 20.11.2026:** #892: public landing page and inquiry page built as api/site (form and sign-in not offered as working until configured, demo place marked)
 - **v2.67.5 · 19.11.2026:** #888 B1: signing out every device of a restaurant (a new password by setup link, the operator's or the CLI's all devices) also forgets its device cookies
 - **v2.67.4 · 19.11.2026:** Security audit of docs/23 §5 to §8 (component, `c6e5437a`): no P0, no P1, three P2 and ten P3 in #888; the operator site and the restaurant login may open, the P2s are fixed before the first paying customer (D36).
 - **v2.67.3 · 19.11.2026:** Windows switch scripts/stack.cmd starts, pauses, resumes and stops the workbench stack in Ubuntu WSL (#887).

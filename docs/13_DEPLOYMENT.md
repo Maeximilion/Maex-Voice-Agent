@@ -514,3 +514,11 @@ EUR; isolation and the unchanged code decide it.
 With numbers again when the stacks no longer fit one server (memory above about 80 % of the VPS)
 or an upgrade across all stacks takes longer than one evening. Measure voice and Asterisk memory
 during the first real calls and correct the figure above.
+
+## 9. The public site (#892)
+
+The landing page and the inquiry page (`api/site/`, docs/06 §10) are a third small app beside the customer stacks and the operator stack: `uvicorn api.site.app:app --port 8003` from the API's image, no database, no session, nothing to back up. Nothing here is deployed yet; the server is #840 and the host names stay in private configuration.
+
+- **Hosts.** The apex `<domain>` and `www.<domain>` lead to this app, `ops.<domain>` to the dashboard and `<customer>.<domain>` to a customer's stack (docs/23 §3). Requirement for #840: the apex answers `/`, `/anfrage`, `/impressum`, `/datenschutz` and `/static/*` and nothing else of the application; `www` redirects to the apex with 301; HTTPS only, with the same `Strict-Transport-Security` as the other sites; a site block like `deploy/caddy/ops.caddy` with `request_body` limited to 256 KB and no proxy secret (the pages are public). The app sets its own CSP, `nosniff`, `no-referrer` and `no-cache` on every answer, so Caddy adds only HSTS. The app serves `/static` from `api/gui/static/`, which also holds files of the operations view; they are public files and none holds data.
+- **Environment** (all optional, `.env.example`): `SITE_LOGIN_URL` where "Kunden-Login" leads (`https://<customer>.<domain>/gui/anmelden`, or a path; `http://` only in dev and test), `SITE_CONTACT_EMAIL` for a mail link, `SITE_INQUIRY_ACTION` the path the form posts to, set only once that route exists. A value that is not what it says stops the start. Unset values switch their part of the page off.
+- **Before the site is public:** the legal notice and the privacy text replace the placeholders (Maxi supplies them, nothing is invented); `curl -I https://<domain>/` shows the CSP; the sign-in link reaches the customer's sign-in over HTTPS; `https://<domain>/gui/` and `/v1/` answer 404; the audit of `docs/09` §5 covers the form once it can send.

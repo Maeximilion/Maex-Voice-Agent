@@ -217,6 +217,15 @@ Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `doma
 ### `ops/` – Eingang des Operator-Dashboards (#571)
 - `router.py` — `GET /v1/ops/status` and `GET /v1/ops/figures` (the week's four figures and their course), own token `OPS_TOKEN`, reached only over the stack's internal `ops` network; thin shells around `domain/status/overview.py`. `GET /v1/ops/calls` (one business day's calls) is guest data: it also needs a reason and the operator's account (`core/auth.py` `require_ops_reason`) and goes through `domain/calls/log.py` `calls_for_support`. `GET /v1/ops/access` and the post routes `/access/pin/show`, `/access/pin`, `/access/sign-out`, `/access/setup-link`, `/call-mode` and `/team-phone` show a secret or change the restaurant: reason and account as above, and `_customer`, which refuses a stack whose restaurant is not the customer the dashboard names; shells around `domain/operator.py`, bodies in `schemas/ops.py`
 
+### `site/` – the public site, an app of its own (#892, docs/06 §10, docs/13 §9)
+Run from the API's image as `uvicorn api.site.app:app --port 8003`. No database, no session, no secret; it imports neither `api.config` nor `api.db` nor anything of the domain. Its stylesheet, scripts and fonts sit in `gui/static/` beside those of the operations view (`site.css`, compiled `site.js`, `anfrage.js`, `site-logic.js`, `fonts/`).
+- `config.py` — `SITE_LOGIN_URL`, `SITE_CONTACT_EMAIL`, `SITE_INQUIRY_ACTION`: each optional and checked at start; a part of the page that lacks its value is switched off, not shown dead
+- `app.py` — `create_app`: `/`, `/anfrage`, `/impressum`, `/datenschutz`, `/health`, `/static`; the CSP and the other headers on every answer
+- `content.py` — the three example calls, the kinds of business, `DEMO_PATH` (the tablet demo, `None` until it exists)
+- `waves.py` — path data of the three sound waves, drawn on the server
+- `templates/` — `base.html`, `landing.html`, `anfrage.html`, `legal.html`; no script or style of its own
+- Browser code: `gui/ts/site.ts` (call card, pause of what is off screen), `anfrage.ts` (form checks), `site-logic.ts` (the logic, run by node in `api/tests/site_logic.mjs`)
+
 ### `dashboard/` – the operator dashboard, an app of its own (#571, docs/23 §5)
 Run from the API's image as `uvicorn api.dashboard.app:app`, with its own database (`OPERATOR_DATABASE_URL`) and migrations (`db/dashboard/`). It never imports `api.config` or `api.db`, which build a customer stack's settings and connection (`api/tests/test_dashboard_login.py` checks it); from the customer side it uses only `core/` helpers that read no settings and `domain/access/hashing.py` and the wait rule of `domain/access/sessions.py`.
 - `config.py` — its settings: `ENV`, `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET` (refused at start outside dev and test when weak), `OPERATOR_ORIGIN` (the dashboard's own address, which passkeys are bound to; refused at start outside dev and test when missing), `OPERATOR_PUSH_URL` and `OPERATOR_PUSH_TOKEN`, `OPERATOR_METRICS_DIR` (the folder of the recorded eval and measurement results)

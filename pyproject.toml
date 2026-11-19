@@ -90,6 +90,7 @@ module = [
     "api.main",
     "api.ops.*",
     "api.services.*",
+    "api.site.*",
     "api.models.*",
     "api.schemas.*",
     "api.telephony.*",
