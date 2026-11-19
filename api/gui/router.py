@@ -2560,14 +2560,17 @@ def data_request_new(
         "art": form.get("art", ""),
         "weg": form.get("weg", ""),
         "eingang": form.get("eingang", "")[:10],
-        "notiz": form.get("notiz", "")[: guest_requests.NOTE_MAX],
+        # Whole, as typed (the form's size is bounded): a note refused as too
+        # long must not come back cut and be saved cut (#862).
+        "notiz": form.get("notiz", ""),
     }
+    other_faults: dict[str, str] = {}
     try:
         typed_day = form.get("eingang", "").strip()
         received = date.fromisoformat(typed_day) if typed_day else None
     except ValueError:
-        errors = {"eingang": data_view.BAD_DAY}
-        return _requests_part(request, session, tenant, sent=sent, errors=errors)
+        received = None
+        other_faults["received"] = data_view.BAD_DAY
     try:
         guest_requests.log_request_once(
             session,
@@ -2579,6 +2582,7 @@ def data_request_new(
             received_on=received,
             now=clock.utcnow(),
             actor=staff.ACTOR_OWNER,
+            other_faults=other_faults,
         )
         session.commit()
     except AppError as exc:

@@ -625,3 +625,26 @@ def test_the_details_field_is_marked_as_needed_and_tied_to_its_help(client):
         'hx-disabled-elt="find button"'
         in html.split('hx-post="/gui/daten/anfrage"', 1)[1]
     )
+
+
+def test_every_fault_of_a_new_request_comes_at_once(client, engine):
+    """#862: faults came in three rounds (unreadable date; then empty note or
+    future date; then a note too long). One answer names them all."""
+    answer = _log(client, eingang="12.10.2026", notiz="x" * 2001)
+    html = answer.text
+    assert "als Datum" in html and "zu lang" in html, html
+    answer = _log(client, eingang="12.10.2026", notiz="")
+    assert "als Datum" in answer.text and "Angaben des Gastes" in answer.text
+    answer = _log(client, eingang="2999-01-01", notiz="x" + chr(0))
+    assert "nicht in der Zukunft" in answer.text and "nicht speichern" in answer.text
+    assert _requests(engine) == [] and _audits(engine) == []
+
+
+def test_a_note_refused_as_too_long_is_shown_in_full(client, engine):
+    """#862: it came back cut to 2000 characters, and saving that stored the cut
+    note without a word."""
+    note = "Herr Schmidt " + "x" * 2100
+    answer = _log(client, notiz=note)
+    assert "zu lang" in answer.text
+    assert note in answer.text.replace("&#34;", '"')
+    assert _requests(engine) == []
