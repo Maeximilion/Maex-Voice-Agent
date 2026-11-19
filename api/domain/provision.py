@@ -23,7 +23,7 @@ from api.config import TEAM_PHONE_PLACEHOLDER, settings
 from api.core.errors import InvalidInput
 from api.domain.access.setup import issue_link
 from api.domain.customers.phone import normalize_phone
-from api.domain.status.staff_changes import dialable_numbers
+from api.domain.status.staff_changes import sheet_numbers
 from api.models import (
     AuditLog,
     BridgeHeartbeat,
@@ -141,12 +141,13 @@ def create_tenant(
 
 def _team_phone(given: str | None) -> str:
     """The team number of the new tenant: one the dialplan dials, since a
-    transfer elsewhere would never ring (`dialable_numbers`, T-10.13)."""
+    transfer elsewhere would never ring (T-10.13), and in E.164, so the staff
+    can choose it again after a number of their own (`sheet_numbers`, #861)."""
     number = normalize_phone(given) if given else settings.team_phone.strip()
-    if number not in dialable_numbers():
+    if number not in sheet_numbers():
         raise InvalidInput(
             f"team phone {number or '(empty)'} is not TEAM_PHONE or on "
-            "TRANSFER_TARGETS of this stack"
+            "TRANSFER_TARGETS of this stack, written in E.164"
         )
     return number
 

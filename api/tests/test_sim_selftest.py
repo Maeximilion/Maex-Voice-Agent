@@ -280,7 +280,12 @@ def test_a_table_today_shows_as_a_test_card_and_is_removed_after(stack):
             seen["log"] = list_calls(session, tenant, day)
             seen["report"] = _day_report(session, tenant, day)[3]
             seen["to_call"] = bookings_outside_hours(
-                session, tenant.id, day, DayHours(closed=True), tenant.timezone
+                session,
+                tenant.id,
+                day,
+                DayHours(closed=True),
+                tenant.timezone,
+                now=TUESDAY,
             )
             seen["customers"] = session.scalar(
                 select(func.count()).select_from(Customer)

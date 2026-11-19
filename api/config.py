@@ -1,5 +1,6 @@
 """Einstellungen aus der Umgebung. Keine Werte hier hartkodieren."""
 
+import re
 from typing import Literal, Self
 
 from pydantic import Field, model_validator
@@ -21,6 +22,8 @@ from api.core.tokens import (
 
 # The team number of .env.example: no telephone answers it (#687).
 TEAM_PHONE_PLACEHOLDER = "+49000000000"
+# E.164, the rule of `domain/customers/phone.py` (E164), which config sits below.
+TEAM_PHONE_FORM = re.compile(r"^\+[1-9][0-9]{6,14}$")
 
 # Upper limit of every deletion period in days (api/jobs/retention.py).
 MAX_RETENTION_DAYS = 3660
@@ -221,6 +224,16 @@ class Settings(BaseSettings):
                 "RETENTION_OUTBOX_ROW_DAYS must be at least "
                 "RETENTION_OUTBOX_SENT_DAYS and RETENTION_OUTBOX_UNSENT_DAYS"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _team_phone_in_e164(self) -> Self:
+        """TEAM_PHONE in E.164, in every environment (#861): the dialplan
+        compares a team number as written, and the staff choose and store
+        E.164 numbers only, so a national standard could never be chosen
+        again. The number stays out of the message: it can be a mobile."""
+        if not TEAM_PHONE_FORM.fullmatch(self.team_phone):
+            raise ValueError("TEAM_PHONE must be written in E.164, as +49...")
         return self
 
     @model_validator(mode="after")

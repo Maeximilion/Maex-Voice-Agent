@@ -187,6 +187,18 @@ def test_the_team_phone_must_be_one_the_dialplan_dials(engine, monkeypatch):
         assert config.team_phone == TEAM
 
 
+def test_a_national_team_phone_of_the_stack_refuses(engine, monkeypatch):
+    """#861: the staff sheet offers E.164 numbers only, so a standard written
+    nationally could never be chosen again once today's number held. The
+    start check refuses such a TEAM_PHONE first (`config.py`); this is the
+    tenant's own guard."""
+    national = "0" + TEAM.removeprefix("+49")
+    monkeypatch.setattr(settings, "team_phone", national)
+    with Session(engine) as session, pytest.raises(InvalidInput, match=r"E\.164"):
+        create_tenant(session, _spec(), "operator:test", T0)
+    assert _count(engine, Tenant) == 0
+
+
 def test_an_empty_team_phone_of_the_stack_refuses(engine, monkeypatch):
     monkeypatch.setattr(settings, "team_phone", "")
     with Session(engine) as session, pytest.raises(InvalidInput, match="empty"):

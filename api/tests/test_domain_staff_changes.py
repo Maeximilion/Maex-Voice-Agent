@@ -5,7 +5,7 @@ the team number."""
 
 import json
 import uuid
-from datetime import date, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -16,6 +16,7 @@ from api.config import settings
 from api.core.errors import Conflict, InvalidInput
 from api.domain.callbacks import transfer_to_team
 from api.domain.calls.routing import call_routing
+from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status import holidays, weekly
 from api.domain.status import staff_changes as staff
 from api.domain.status.hours import load_hours, windows_for_day
@@ -41,6 +42,7 @@ SATURDAY = date(2026, 11, 14)
 MONDAY = date(2026, 11, 16)
 NOW = datetime.combine(TUESDAY, time(10, 0), tzinfo=BERLIN)
 NUMBER = "+497215551234"
+PHONE = "+491701234567"
 
 
 @pytest.fixture(autouse=True)
@@ -132,7 +134,7 @@ def test_a_number_the_dialplan_does_not_dial_is_refused(session, tenant_id):
         staff.change_team_phone(session, tenant_id, "+4930123456", NOW)
     assert "Betreiber" in (refused.value.say or "")
     assert _cards(session, tenant_id) == []
-    assert staff.dialable_numbers() == [settings.team_phone, NUMBER, "+4972215550000"]
+    assert staff.sheet_numbers() == [settings.team_phone, NUMBER, "+4972215550000"]
 
 
 @pytest.mark.parametrize("raw", ["", "abc", "12"])
@@ -716,7 +718,6 @@ def test_a_listed_national_number_is_never_offered_on_the_sheet(
     """The dialplan dials it as written, but a typed number is normalised and
     would never match it (#596)."""
     monkeypatch.setattr(settings, "transfer_targets", f"07215559999,{NUMBER}")
-    assert staff.dialable_numbers() == [settings.team_phone, "07215559999", NUMBER]
     assert staff.sheet_numbers() == [settings.team_phone, NUMBER]
     with pytest.raises(InvalidInput):
         staff.change_team_phone(session, tenant_id, "07215559999", NOW)
@@ -760,7 +761,7 @@ def _table(
 
 def _guests(session, tenant_id, day, hours) -> list[str]:
     found = staff.bookings_outside_hours(
-        session, tenant_id, day, hours, "Europe/Berlin"
+        session, tenant_id, day, hours, "Europe/Berlin", now=NOW
     )
     return [b.guest_name for b in found]
 
@@ -783,7 +784,7 @@ def test_a_closure_lists_every_confirmed_table_of_the_date(session, tenant_id):
     _table(session, tenant_id, SATURDAY, time(19), "Bauer")
     _table(session, tenant_id, SATURDAY, time(12), "Aydin")
     found = staff.bookings_outside_hours(
-        session, tenant_id, SATURDAY, DayHours(closed=True), "Europe/Berlin"
+        session, tenant_id, SATURDAY, DayHours(closed=True), "Europe/Berlin", now=NOW
     )
     assert [(b.guest_name, b.at.strftime("%H:%M"), b.phone) for b in found] == [
         ("Aydin", "12:00", "+491701234567"),
@@ -845,7 +846,7 @@ def test_a_special_window_past_the_cutoff_keeps_its_late_table(session, tenant_i
     was = DayHours(opens=time(22), closes=time(10))
     _table(session, tenant_id, SATURDAY + timedelta(days=1), time(6), "Night")
     found = staff.bookings_outside_hours(
-        session, tenant_id, SATURDAY, DayHours(closed=True), "Europe/Berlin", was
+        session, tenant_id, SATURDAY, DayHours(closed=True), "Europe/Berlin", was, NOW
     )
     assert [b.guest_name for b in found] == ["Night"]
 
@@ -867,6 +868,190 @@ def test_a_table_the_next_day_still_holds_stays_off_the_list(session, tenant_id)
     _table(session, tenant_id, sunday, time(3), "Dawn")
     _table(session, tenant_id, SATURDAY, time(19), "Evening")
     assert _guests(session, tenant_id, SATURDAY, DayHours(closed=True)) == ["Evening"]
+
+
+def test_a_closure_held_in_the_afternoon_lists_only_the_tables_to_come(
+    session, tenant_id, monkeypatch
+):
+    """#862: closed at 15:00, the lunch guests have eaten already; only the
+    evening table is a guest to call. A table due at that moment still is,
+    as on the board's own list (`weekly.tables_outside_hours`)."""
+    _table(session, tenant_id, SATURDAY, time(12), "Lunch")
+    _table(session, tenant_id, SATURDAY, time(15), "Arriving")
+    _table(session, tenant_id, SATURDAY, time(19), "Evening")
+    afternoon = datetime.combine(SATURDAY, time(15), tzinfo=BERLIN).astimezone(UTC)
+    monkeypatch.setattr("api.core.time.utcnow", lambda: afternoon)
+    assert staff.bookings_outside_hours(
+        session, tenant_id, SATURDAY, DayHours(closed=True), "Europe/Berlin"
+    ) == [
+        staff.BookingToCall("Arriving", afternoon.astimezone(BERLIN), PHONE, 2),
+        staff.BookingToCall(
+            "Evening",
+            datetime.combine(SATURDAY, time(19), tzinfo=BERLIN),
+            PHONE,
+            2,
+        ),
+    ]
+
+
+# --- a date's night and the next date's hours (#862) -------------------------------
+
+NIGHT = DayHours(opens=time(18), closes=time(12))
+
+
+def _night_overlap(night: date) -> str:
+    return weekly.NIGHT_OVERLAP.format(
+        night=WEEKDAYS[night.weekday()], next=WEEKDAYS[(night.weekday() + 1) % 7]
+    )
+
+
+def test_a_night_into_the_next_dates_hours_is_refused(session, tenant_id):
+    """Saturday 18:00 to 12:00 reaches into Sunday's 11:30: every reader takes
+    the night first, so the agent would close Sunday at 12:00. The weekly
+    writer refuses the same (`weekly._night_faults`)."""
+    for write in (staff.change_day_hours, staff.set_day_hours):
+        with pytest.raises(InvalidInput) as refused:
+            write(session, tenant_id, SATURDAY, NIGHT, NOW, overnight=True)
+        assert refused.value.say == _night_overlap(SATURDAY)
+    assert _cards(session, tenant_id) == []
+    assert staff.day_hours(session, tenant_id, SATURDAY) == DayHours()
+
+
+def test_a_night_that_ends_before_the_next_dates_hours_is_taken(session, tenant_id):
+    """Ends at 11:00, before Sunday's 11:30: no overlap, the owner's hours hold."""
+    night = DayHours(opens=time(18), closes=time(11))
+    assert staff.set_day_hours(session, tenant_id, SATURDAY, night, NOW, overnight=True)
+    assert staff.day_hours(session, tenant_id, SATURDAY) == night
+
+
+def test_a_date_that_starts_inside_the_night_before_is_refused(session, tenant_id):
+    """Saturday's night runs to 03:00; Sunday's own hours from 02:00 would be
+    read as Saturday's window, closing at 03:00."""
+    staff.set_day_hours(
+        session, tenant_id, SATURDAY, _hours(time(18), time(3)), NOW, overnight=True
+    )
+    with pytest.raises(InvalidInput) as refused:
+        staff.change_day_hours(
+            session,
+            tenant_id,
+            SATURDAY + timedelta(days=1),
+            _hours(time(2), time(10)),
+            NOW,
+        )
+    assert refused.value.say == _night_overlap(SATURDAY)
+
+
+def test_keeping_a_night_a_date_beside_reaches_into_now_is_refused(session, tenant_id):
+    """Saturday to 11:00 waits for the owner; then the owner opens Sunday at
+    10:00. Kept, Saturday's night would be the window Sunday 10:00 is read in:
+    the owner hears why and the card waits. Undoing the request, which only
+    waited, moves nothing and is never refused."""
+    night = DayHours(opens=time(18), closes=time(11))
+    card = staff.change_day_hours(
+        session, tenant_id, SATURDAY, night, NOW, overnight=True
+    )
+    assert card is not None and not card.held
+    sunday = SATURDAY + timedelta(days=1)
+    assert staff.set_day_hours(
+        session, tenant_id, sunday, _hours(time(10), time(14)), NOW
+    )
+    with pytest.raises(InvalidInput) as refused:
+        staff.decide(session, tenant_id, card.id, keep=True, now=NOW)
+    assert refused.value.say == _night_overlap(SATURDAY)
+    assert [c.status for c in _cards(session, tenant_id)] == ["open"]
+    assert staff.day_hours(session, tenant_id, SATURDAY) == DayHours()
+    staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
+    assert [c.status for c in _cards(session, tenant_id)] == ["undone"]
+
+
+def test_undoing_a_closure_whose_night_a_date_beside_took_is_refused(
+    session, tenant_id
+):
+    """The owner's Saturday runs to 03:00; the staff close it (held at once),
+    and Sunday opens at 02:00 meanwhile. Undone, the night would come back
+    into Sunday's hours: refused with the reason, the closure holds."""
+    staff.set_day_hours(
+        session, tenant_id, SATURDAY, _hours(time(18), time(3)), NOW, overnight=True
+    )
+    card = staff.change_day_hours(
+        session, tenant_id, SATURDAY, DayHours(closed=True), NOW
+    )
+    assert card is not None and card.held
+    sunday = SATURDAY + timedelta(days=1)
+    assert staff.set_day_hours(
+        session, tenant_id, sunday, _hours(time(2), time(10)), NOW
+    )
+    with pytest.raises(InvalidInput) as refused:
+        staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
+    assert refused.value.say == _night_overlap(SATURDAY)
+    assert staff.day_hours(session, tenant_id, SATURDAY).closed
+
+
+def test_undoing_a_card_whose_last_request_waits_still_checks_the_night(
+    session, tenant_id
+):
+    """Review of #862: the card's closure held, a later request on it waits.
+    Undone, the hours still move from closed back to the night to 03:00, so
+    the check reads the date's row, not the card's last request."""
+    staff.set_day_hours(
+        session, tenant_id, SATURDAY, _hours(time(18), time(3)), NOW, overnight=True
+    )
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    card = staff.change_day_hours(
+        session, tenant_id, SATURDAY, _hours(time(17), time(23)), NOW
+    )
+    assert card is not None and not card.held
+    sunday = SATURDAY + timedelta(days=1)
+    assert staff.set_day_hours(
+        session, tenant_id, sunday, _hours(time(2), time(10)), NOW
+    )
+    with pytest.raises(InvalidInput) as refused:
+        staff.decide(session, tenant_id, card.id, keep=False, now=NOW)
+    assert refused.value.say == _night_overlap(SATURDAY)
+    assert staff.day_hours(session, tenant_id, SATURDAY).closed
+
+
+def test_a_waiting_night_sent_again_changes_nothing(session, tenant_id):
+    """The date beside changed since the request: sent again (a second tap,
+    a second tablet), the request that waits is no new change and is not
+    refused; the owner's keep checks it."""
+    night = DayHours(opens=time(18), closes=time(11))
+    card = staff.change_day_hours(
+        session, tenant_id, SATURDAY, night, NOW, overnight=True
+    )
+    assert card is not None and not card.held
+    sunday = SATURDAY + timedelta(days=1)
+    staff.set_day_hours(session, tenant_id, sunday, _hours(time(10), time(14)), NOW)
+    again = staff.change_day_hours(
+        session, tenant_id, SATURDAY, night, NOW, overnight=True
+    )
+    assert again is None
+
+
+def test_a_holiday_like_sunday_inside_the_night_before_is_refused(session, tenant_id):
+    """Sunday's own night runs to 12:00 (Monday is a rest day, so it passed);
+    Monday answered "wie Sonntag" would open at 11:30 inside it. Refused with
+    the reason, the suggestion stays open; "closed" is still taken."""
+    sunday = MONDAY - timedelta(days=1)
+    assert staff.set_day_hours(
+        session, tenant_id, sunday, _hours(time(18), time(12)), NOW, overnight=True
+    )
+    suggestion = SpecialDay(
+        tenant_id=tenant_id,
+        date=MONDAY,
+        note="Feiertag",
+        like_weekday=6,
+        status=holidays.SUGGESTED,
+    )
+    session.add(suggestion)
+    session.commit()
+    with pytest.raises(InvalidInput) as refused:
+        holidays.answer(session, tenant_id, suggestion.id, holidays.LIKE)
+    assert refused.value.say == _night_overlap(sunday)
+    session.refresh(suggestion)
+    assert suggestion.status == holidays.SUGGESTED
+    holidays.answer(session, tenant_id, suggestion.id, holidays.CLOSED)
+    assert staff.day_hours(session, tenant_id, MONDAY).closed
 
 
 def _hours(opens: time, closes: time) -> DayHours:
@@ -956,7 +1141,7 @@ def test_the_window_table_lists_what_the_old_windows_held_and_the_new_ones_do_no
     for offset, at, status, name in tables:
         _table(session, tenant_id, SATURDAY + timedelta(days=offset), at, name, status)
     found = staff.bookings_outside_hours(
-        session, tenant_id, SATURDAY, after, "Europe/Berlin", before
+        session, tenant_id, SATURDAY, after, "Europe/Berlin", before, NOW
     )
     assert [b.guest_name for b in found] == listed
 
