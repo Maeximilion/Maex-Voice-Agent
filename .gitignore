@@ -49,3 +49,6 @@ node_modules/
 
 # Graphify code graph: built per checkout with `graphify update .` (docs/19)
 graphify-out/
+
+# Tablet demo (#892): rendered by scripts/demo/tablet_demo_build.py, never committed
+api/site/tablet-demo/
