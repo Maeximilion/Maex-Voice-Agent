@@ -3,6 +3,10 @@ invented restaurant into plain files, nothing of this machine's settings or a
 real number reaches them, and the public site serves them."""
 
 import json
+import os
+import shutil
+import subprocess
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -17,6 +21,26 @@ from scripts.demo import tablet_demo_build as build
 from scripts.demo import tablet_demo_data as data
 from scripts.demo.tablet_demo_routes import manifest
 from scripts.seed import seed
+
+ROOT = Path(__file__).resolve().parents[2]
+STATIC = ROOT / "api" / "gui" / "static"
+
+
+def node_check(script: str, compiled: str, out: Path) -> None:
+    """Run one of the node checks of the fake backend against the built folder."""
+    node = shutil.which("node")
+    if not node:
+        # The api image carries no node; CI's runner does, and must run this.
+        if os.environ.get("CI"):
+            pytest.fail("the tablet demo checks need node")
+        pytest.skip("the tablet demo checks need node")
+    run = subprocess.run(
+        [node, str(Path(__file__).with_name(script)), str(STATIC / compiled), str(out)],
+        capture_output=True,
+        text=True,
+    )
+    assert run.returncode == 0, run.stderr or run.stdout
+    assert run.stdout.strip() == "ok"
 
 
 @pytest.fixture
@@ -133,3 +157,62 @@ def test_the_site_serves_the_built_demo_under_its_policy(tmp_path, monkeypatch):
     response = client.get("/tablet-demo/kennzahlen/")
     assert response.status_code == 200
     assert "frame-ancestors 'none'" in response.headers["content-security-policy"]
+
+
+def test_every_page_loads_the_fake_backend_before_the_board_script(built):
+    out, _ = built
+    board = (out / "index.html").read_text(encoding="utf-8")
+
+    backend = '<script type="module" src="/static/demo-backend.js"></script>'
+    assert board.count(backend) == 1
+    assert board.index(backend) < board.index('src="/static/app.js"')
+    assert "<script>" not in board  # no inline script (the site's CSP allows none)
+    for file in out.rglob("index.html"):
+        text = file.read_text(encoding="utf-8")
+        if text.lstrip().startswith("<!DOCTYPE"):
+            assert backend in text, file
+        else:
+            assert backend not in text, f"{file} is a fragment"
+    assert (STATIC / "demo-backend.js").is_file()
+    assert (STATIC / "demo-board.js").is_file()
+
+
+def test_the_state_of_the_board_is_recorded_without_tenant_or_request(built):
+    out, _ = built
+    state = json.loads((out / "state.json").read_text(encoding="utf-8"))
+
+    assert {"header", "orders", "callbacks", "today", "history", "menu"} <= set(state)
+    assert "tenant" not in state["header"]
+    assert all(
+        "request" not in part for part in state.values() if isinstance(part, dict)
+    )
+    assert len(state["menu"]) == 25
+    assert {d["category"] for d in state["menu"]} == set(data.DISHES)
+    assert all(p.startswith(data.EXAMPLE_PREFIX) for p in state["phones"])
+    assert state["header"]["config"] == {"call_mode": "primary"}
+    assert len(state["orders"]["orders"]) == 3
+    assert len(state["history"]["callbacks"]) == 1
+    assert state["table"] == build.EXAMPLE_TABLE
+
+
+def test_the_site_serves_the_fake_backend_as_a_script():
+    client = TestClient(site_app.create_app(SiteSettings(_env_file=None)))  # type: ignore[call-arg]
+    for name in ("demo-backend.js", "demo-board.js"):
+        response = client.get(f"/static/{name}")
+        assert response.status_code == 200
+        assert "javascript" in response.headers["content-type"]
+    # The page's own policy: scripts from this origin only, so no network target.
+    assert (
+        "script-src 'self'"
+        in client.get("/static/demo-backend.js").headers["content-security-policy"]
+    )
+
+
+def test_the_board_renders_the_real_fragments_and_follows_the_real_rules(built):
+    out, _ = built
+    node_check("demo_board.mjs", "demo-board.js", out)
+
+
+def test_the_fake_backend_answers_every_request_of_the_view_in_the_browser(built):
+    out, _ = built
+    node_check("demo_backend.mjs", "demo-backend.js", out)

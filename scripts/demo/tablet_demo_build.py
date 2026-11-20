@@ -18,10 +18,15 @@ requests of the pages from it. What changes in it:
 - a link to a rendered page leads to its file (`/gui/kennzahlen` to
   `/tablet-demo/kennzahlen/`); every `hx-*` target stays the real route, the
   fake backend answers it by the manifest;
-- every page gets `tablet-demo.css` and the notice for phone-sized screens.
+- every page gets `tablet-demo.css`, the notice for phone-sized screens and the
+  fake backend (`demo-backend.js`, compiled from `api/gui/ts/`).
 
 `captures.json` lists what was rendered: method, route, address, form body and
-file, so the fake backend finds the file for a request.
+file, so the fake backend finds the file for a request. `state.json` holds the
+data the four board fragments were rendered from (header, orders, callbacks,
+reservations of the day, the sheet of done callbacks), so the fake backend
+starts from the very state the real view showed and renders the same markup
+from it (B2, `api/gui/ts/demo-board.ts`).
 """
 
 import argparse
@@ -32,7 +37,7 @@ import sys
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from datetime import UTC, datetime, time
 from pathlib import Path
 from typing import Any
@@ -61,6 +66,9 @@ NOTICE = (
     "lässt sie sich so bedienen wie im Restaurant.</p>"
 )
 STYLESHEET = '<link rel="stylesheet" href="/static/tablet-demo.css">'
+# In the head, so it runs before the board's own module and replaces the
+# browser's request objects before the first request.
+BACKEND = '<script type="module" src="/static/demo-backend.js"></script>'
 BODY = re.compile(r"<body\b[^>]*>")
 HREF = re.compile(r'\bhref="(/gui(?:/[^"?#]*)?)"')
 CALL_ROW = re.compile(
@@ -76,6 +84,88 @@ SIZES = {
     ("rect", 6): (180, 80),
     ("round", 4): (100, 100),
 }
+
+
+# The fragments whose data the fake backend renders itself (B2): what the view
+# handed the template is written to `state.json`.
+RECORDED = {
+    "fragments/kopfzeile.html": "header",
+    "fragments/bestellungen.html": "orders",
+    "fragments/rueckrufe.html": "callbacks",
+    "fragments/heute.html": "today",
+    "fragments/rueckruf_verlauf.html": "history",
+}
+# The table the invented reservation of the example call sits at (a table of the
+# first room `drive` makes).
+EXAMPLE_TABLE = "T3"
+
+
+def _plain(value: Any) -> Any:
+    """What a template context holds, as JSON: the settings row as the one fact
+    the header reads from it, the tenant as nothing, a dataclass as its fields."""
+    if is_dataclass(value) and not isinstance(value, type):
+        return asdict(value)
+    if getattr(value, "call_mode", None) is not None:
+        return {"call_mode": value.call_mode}
+    if getattr(value, "timezone", None) is not None:
+        return None
+    return str(value)
+
+
+@contextmanager
+def recording() -> Iterator[dict[str, Any]]:
+    """The data of the fragments of `RECORDED`, as the view hands it to the
+    template, for the last answer of each (a failed answer is not kept)."""
+    from api.gui import router as view
+
+    seen: dict[str, Any] = {}
+    original = view.templates.TemplateResponse
+
+    def record(
+        request: Any, name: str, context: Any = None, *rest: Any, **more: Any
+    ) -> Any:
+        response = original(request, name, context, *rest, **more)
+        if name in RECORDED and response.status_code == 200 and context is not None:
+            plain = json.loads(json.dumps(context, default=_plain))
+            # Starlette adds the request; the header reads nothing of the tenant.
+            seen[RECORDED[name]] = {
+                k: v for k, v in plain.items() if k not in ("request", "tenant")
+            }
+        return response
+
+    with mock.patch.object(view.templates, "TemplateResponse", record):
+        yield seen
+
+
+def board_state(seen: dict[str, Any]) -> dict[str, Any]:
+    """`state.json`: the recorded data plus what the example call needs: the
+    menu (invented, from the seed), numbers of the example range for new callers,
+    the words of the modes and callback reasons, the demo clock's start."""
+    from api.gui.router import CALLBACK_LABELS, MODE_LABELS
+
+    missing = [name for name in RECORDED.values() if name not in seen]
+    if missing:
+        raise SystemExit(f"the view did not render: {', '.join(missing)}")
+    menu = [
+        {
+            "category": category,
+            "number": number,
+            "name": name,
+            "cents": int(price.replace(",", "")),
+        }
+        for category, dishes in data.DISHES.items()
+        for number, name, price in dishes
+    ]
+    return {
+        **seen,
+        "menu": menu,
+        "sold_out": data.SOLD_OUT,
+        "phones": [data.example_number(n) for n in range(200, 210)],
+        "mode_labels": {k: list(v) for k, v in MODE_LABELS.items()},
+        "callback_labels": {k: list(v) for k, v in CALLBACK_LABELS.items()},
+        "clock": "12:00",
+        "table": EXAMPLE_TABLE,
+    }
 
 
 @dataclass(frozen=True)
@@ -123,7 +213,7 @@ def rewrite(html: str, whole_page: bool) -> str:
     html = html.replace('"/gui/static/', '"/static/')
     html = HREF.sub(link, html)
     if whole_page:
-        html = html.replace("</head>", f"{STYLESHEET}\n</head>", 1)
+        html = html.replace("</head>", f"{STYLESHEET}\n{BACKEND}\n</head>", 1)
         html = BODY.sub(lambda m: f"{m.group(0)}\n{NOTICE}", html, count=1)
     return html
 
@@ -376,13 +466,17 @@ def build(out: Path, now: datetime | None = None) -> list[Capture]:
     ):
         with db.SessionLocal() as session:
             seeded = data.fill(session, now)
-        with signed_in() as client:
+        with signed_in() as client, recording() as seen:
             drive(client, seeded)
             wanted = captures(client)
             if out.exists():
                 shutil.rmtree(out)
             out.mkdir(parents=True)
             done = render(client, wanted, out)
+    (out / "state.json").write_text(
+        json.dumps(board_state(seen), indent=1, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
     (out / "captures.json").write_text(
         json.dumps([asdict(c) for c in done], indent=1, ensure_ascii=False) + "\n",
         encoding="utf-8",
