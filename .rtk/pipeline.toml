@@ -1,0 +1,17 @@
+schema_version = 1
+
+[pipeline]
+name = "voice-development"
+extends = "rtk:default"
+
+# Reviews and patch application require the complete Git patch.
+[[hook.before_tool.shell]]
+name = "keep-git-patches"
+when = { command_matches = '(?:^|[;&|])\s*git(?:\s+[^;&|\n]*?)?\s+(?:diff|show)\b' }
+action = "passthrough"
+
+# The repository merge gate validates the unwrapped command.
+[[hook.before_tool.shell]]
+name = "keep-merge-command"
+when = { command_matches = '(?:^|[;&|])\s*gh\s+(?:pr|stack)\s+merge\b' }
+action = "passthrough"

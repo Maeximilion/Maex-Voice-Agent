@@ -952,6 +952,25 @@ The CLI also writes six companion skills (`banner-design`, `brand`, `design`, `d
 
 Update: run the CLI in an empty folder, copy only `.claude/skills/ui-ux-pro-max/` over the repository copy, run the check above, and bump the version here, all in one pull request. npm 2.15.0 (2026-08-13) is behind the upstream README, which already names flags such as `--dry-run` that this version refuses.
 
+### RTK (Windows and Ubuntu)
+
+With RTK 1.2.1's standard distribution and its global Claude Code Bash hook installed,
+run these commands from the checkout or worktree where you will use RTK:
+
+```sh
+rtk init -g --show
+rtk trust
+rtk pipeline validate
+rtk pipeline explain --agent claude-code --tool Bash --command "git diff"
+```
+
+Review the local pipeline before accepting trust. The last command should select
+`keep-git-patches`. Without trust, or after the file changes, RTK falls back to
+its default. Use `rtk untrust` in the same directory to undo the selection.
+The project rules keep Git patches complete and leave merge commands in the form
+the project gate expects. Other Bash commands still use the default RTK filters.
+The rules operate in Claude Code and require no HTTP proxy.
+
 ### Ubuntu threads for projects and claude.ai
 
 A project in the desktop app (or claude.ai/code) can only start a session inside Ubuntu when a Remote Control server runs there. Console: Ubuntu terminal.
