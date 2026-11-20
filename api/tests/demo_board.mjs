@@ -17,7 +17,6 @@ const state = () => JSON.parse(read('state.json'))
 // loosened: a different class, text or attribute fails.
 const flat = (s) =>
   s
-    .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/\s+/g, ' ')
     .replace(/> </g, '><')
     .replace(/ >/g, '>')

@@ -94,6 +94,18 @@ function load() {
     return world;
 }
 const WAIT_LABEL = /^\/gui\/kopfzeile\/wartezeit\/([^/]+)$/;
+// The bridge reports a slip a moment after it was sent; the board follows on its own.
+function printSoon(r) {
+    if (r.pendingSlips().length === 0)
+        return;
+    setTimeout(() => {
+        let changed = false;
+        for (const id of r.pendingSlips())
+            changed = r.slipPrinted(id) || changed;
+        if (changed)
+            emit("orders");
+    }, SLIP_MS);
+}
 function handlers(r) {
     const header = (tap) => tap ? html(r.kopfzeile(), tap.status) : null;
     const column = (tap) => {
@@ -123,17 +135,14 @@ function handlers(r) {
         ["POST", /^\/gui\/kopfzeile\/([^/]+)\/([^/]+)$/, (m) => header(r.setService(m[1] ?? "", m[2] ?? "")) ?? missing()],
         ["POST", /^\/gui\/bestellungen\/([^/]+)\/passt$/, (m) => {
                 const reply = column(r.approve(m[1] ?? ""));
-                // The bridge reports the slip a moment later; the board follows on its own.
-                setTimeout(() => {
-                    let changed = false;
-                    for (const id of r.pendingSlips())
-                        changed = r.slipPrinted(id) || changed;
-                    if (changed)
-                        emit("orders");
-                }, SLIP_MS);
+                printSoon(r);
                 return reply;
             }],
-        ["POST", /^\/gui\/bestellungen\/([^/]+)\/nochmal-senden$/, (m) => column(r.resend(m[1] ?? ""))],
+        ["POST", /^\/gui\/bestellungen\/([^/]+)\/nochmal-senden$/, (m) => {
+                const reply = column(r.resend(m[1] ?? ""));
+                printSoon(r);
+                return reply;
+            }],
         ["POST", /^\/gui\/bestellungen\/([^/]+)\/in-kasse\/([^/]+)$/, (m) => column(r.markEntered(m[1] ?? "", m[2] ?? ""))],
         ["POST", /^\/gui\/bestellungen\/([^/]+)\/storniert\/([^/]+)$/, (m) => column(r.cancel(m[1] ?? "", m[2] ?? ""))],
         ["POST", /^\/gui\/rueckrufe\/([^/]+)\/erledigt$/, (m) => {
@@ -294,6 +303,35 @@ window.fetch = async (input, init) => {
     const reply = await answer(method, url.pathname + url.search, formOf(init?.body));
     return new Response(reply.body, { status: reply.status, headers: reply.headers });
 };
+// --- A line for the pages without the board's script -------------------------------
+// The board shows "order-notice" itself (app.ts); the sub pages (Lieferung, Zeiten,
+// Daten, Geräte, ...) load no board script, so a locked or not yet built control would
+// do nothing visible there. They get the same line, in the flow of the page.
+function notes() {
+    if (document.getElementById("ton-an"))
+        return;
+    let timer;
+    document.body.addEventListener("order-notice", (e) => {
+        const value = e instanceof CustomEvent ? e.detail?.value : null;
+        if (typeof value !== "string")
+            return;
+        let line = document.getElementById("demo-note");
+        if (!line) {
+            line = document.createElement("p");
+            line.id = "demo-note";
+            line.className = "demo-note";
+            line.setAttribute("role", "status");
+            const notice = document.querySelector(".demo-notice");
+            if (notice)
+                notice.after(line);
+            else
+                document.body.prepend(line);
+        }
+        line.textContent = value;
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => line?.remove(), 6000);
+    });
+}
 // --- The demo bar: what the real board does not have ------------------------------
 function bar() {
     const head = document.getElementById("kopfzeile");
@@ -336,7 +374,11 @@ function bar() {
     box.append(text, call, status);
     head.after(box);
 }
-if (document.readyState === "loading")
-    document.addEventListener("DOMContentLoaded", bar);
-else
+function ready() {
     bar();
+    notes();
+}
+if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", ready);
+else
+    ready();

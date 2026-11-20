@@ -14,7 +14,17 @@ const sent = []
 // What the browser has: the built folder behind /tablet-demo/, and nothing else.
 globalThis.window = globalThis
 globalThis.location = { href: 'http://demo.test/tablet-demo/', origin: 'http://demo.test' }
-globalThis.document = { readyState: 'complete', getElementById: () => null, addEventListener() {} }
+// A page without the board's script: no "#ton-an", a notice at the top, a body that
+// takes listeners. What the backend puts into the page is kept in `page`.
+const page = { listeners: {}, line: null }
+globalThis.document = {
+  readyState: 'complete',
+  getElementById: (id) => (id === 'demo-note' ? page.line : null),
+  querySelector: () => ({ after: (el) => (page.line = el) }),
+  createElement: () => ({ setAttribute() {}, remove() { page.line = null } }),
+  addEventListener() {},
+  body: { addEventListener: (type, fn) => (page.listeners[type] = fn), prepend() {} },
+}
 globalThis.fetch = async (input) => {
   const url = new URL(String(input), location.href)
   sent.push(url.pathname)
@@ -95,12 +105,25 @@ for (const [m, u] of [
   assert.equal(detail.responseText, fs.readFileSync(path.join(dir, call.file), 'utf8'), 'one detail per call')
 }
 
+// --- A red card resent: the slip is printed a moment later, with no further tap ---
+{
+  const col = await xhr('GET', '/gui/fragments/bestellungen')
+  const red = /\/gui\/bestellungen\/([^/]+)\/nochmal-senden/.exec(col.responseText)[1]
+  const again = await xhr('POST', `/gui/bestellungen/${red}/nochmal-senden`)
+  assert.match(text(again.responseText), /Zettel wird gedruckt/)
+  await new Promise((r) => setTimeout(r, 2200))
+  const later = await xhr('GET', '/gui/fragments/bestellungen')
+  assert.doesNotMatch(text(later.responseText), /Zettel wird gedruckt/)
+  assert.match(text(later.responseText), /Zettel liegt an der Kasse/)
+}
+
 // --- Orders and callbacks through the requests the buttons send ---
 {
   const col = await xhr('GET', '/gui/fragments/bestellungen')
   const id = /\/gui\/bestellungen\/([^/]+)\/passt/.exec(col.responseText)[1]
   const passt = await xhr('POST', `/gui/bestellungen/${id}/passt`)
-  assert.match(text(passt.responseText), /Zettel wird gedruckt/)
+  // The slip of this seed order may already be printed (the resend above printed every pending one).
+  assert.match(text(passt.responseText), /Zettel (wird gedruckt|liegt an der Kasse)/)
   const gone = await xhr('POST', '/gui/bestellungen/not-there/passt')
   assert.equal(gone.status, 200, 'an order that is gone: the fresh column')
   const cancelId = /\/gui\/bestellungen\/([^/]+)\/storniert\/([^"]+)"/.exec(col.responseText)
@@ -114,6 +137,14 @@ for (const [m, u] of [
   assert.ok(history.responseText.includes(cb))
   const reopened = await xhr('POST', `/gui/rueckrufe/${cb}/wieder-offen`)
   assert.match(reopened.responseText, /Erledigte R&uuml;ckrufe/)
+}
+
+// --- A page without the board's script shows the line of a locked control itself ---
+{
+  assert.ok(page.listeners['order-notice'], 'the backend listens for the board line')
+  const r = await xhr('POST', '/gui/lieferung/neu')
+  page.listeners['order-notice'](new CustomEvent('order-notice', { detail: { value: JSON.parse(r.getResponseHeader('HX-Trigger'))['order-notice'] } }))
+  assert.match(page.line.textContent, /Inhaber-PIN/)
 }
 
 // --- Owner's PIN parts: shown and locked, a line on the board, no swap ---
