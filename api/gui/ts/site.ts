@@ -1,16 +1,17 @@
 // The public site (#892): the example call of the hero card and the pause of the
-// animations that are off screen. A file, not inline code: the site's
+// animations that are off screen, the glow that follows the pointer and the
+// swing of the sound waves. A file, not inline code: the site's
 // Content-Security-Policy allows scripts from this origin only.
 //
 // Written for a smooth scroll: the card changes the text of its own text nodes
-// and a class on the waves when the speaker changes, nothing else, and it types
-// only while it is on screen. Nothing follows the pointer, and nothing redraws
-// the page on a timer.
+// and a class on the waves when the speaker changes, it types only while it is on
+// screen, and glow and waves move through transforms only (custom properties),
+// never layout, and stop off screen.
 //
 // Source: api/gui/ts/site.ts. The file of the same name in api/gui/static/ is its
 // compiled output (`npm run build`, docs/22); edit the source, never the output.
 
-import { callState, total, REST } from "./site-logic.js";
+import { callState, ease, voice, total, REST } from "./site-logic.js";
 import type { Status } from "./site-logic.js";
 
 const TICK_MS = 42;
@@ -116,10 +117,12 @@ function initCard(card: HTMLElement): void {
   function pick(id: string): void {
     const next = calls.get(id);
     if (!next) return;
-    // The call that was playing stands complete again.
+    // The call that was playing stands complete again, with no caret and no
+    // pending line left behind (a caret of a hidden call would still show).
     lines.forEach((line) => {
       line.said.data = line.full;
       line.rest.data = "";
+      line.item.classList.remove("is-active", "is-pending");
     });
     current.classList.remove("is-shown");
     next.classList.add("is-shown");
@@ -162,6 +165,109 @@ function pauseOffScreen(): void {
   document.querySelectorAll("[data-live]").forEach((element) => observer.observe(element));
 }
 
+// The three waves stand in place and swing up and down like a voice: one loop sets
+// the height of each layer (a transform, so the compositor does the drawing) while
+// someone speaks, and it stops while the waves are off screen or the tab is hidden.
+function initWaves(waves: HTMLElement): void {
+  const layers = Array.from(waves.querySelectorAll<HTMLElement>(".wave"));
+  const phases = [0, 0.23, 0.51];
+  let level = 0;
+  let frame = 0;
+  let onScreen = true;
+  let started = 0;
+  let drawn = 0;
+
+  function rest(): void {
+    window.cancelAnimationFrame(frame);
+    frame = 0;
+    layers.forEach((layer) => layer.style.removeProperty("transform"));
+  }
+
+  function draw(now: number): void {
+    frame = 0;
+    if (still.matches) return rest();
+    if (!onScreen || document.hidden) return;
+    frame = window.requestAnimationFrame(draw);
+    // Thirty pictures a second are plenty for a swing and halve the work.
+    if (now - drawn < 30) return;
+    drawn = now;
+    started ||= now;
+    level = ease(level, waves.classList.contains("is-loud") ? 1 : 0, 0.12);
+    layers.forEach((layer, i) => {
+      layer.style.transform = `scaleY(${(level * voice((now - started) / 1000, phases[i] ?? 0)).toFixed(3)})`;
+    });
+  }
+
+  function resume(): void {
+    if (!frame && onScreen && !document.hidden && !still.matches) frame = window.requestAnimationFrame(draw);
+  }
+
+  new IntersectionObserver((entries) => {
+    onScreen = entries.some((entry) => entry.isIntersecting);
+    resume();
+  }).observe(waves);
+  document.addEventListener("visibilitychange", resume);
+  // A reader who asks for no motion while the page is open gets the quiet curve of
+  // the stylesheet at once: the loop ends and the inline height goes.
+  still.addEventListener("change", () => {
+    if (still.matches) rest();
+    else resume();
+  });
+  resume();
+}
+
+// The purple glow of the hero follows a fine pointer, eased frame by frame (a
+// transform through two custom properties, no layout). Touch and a reader who
+// wants no motion keep the glow at its resting place in the top left corner.
+function initGlow(hero: HTMLElement): void {
+  if (!window.matchMedia("(hover:hover) and (pointer:fine)").matches) return;
+  let x = 0;
+  let y = 0;
+  let toX = 0;
+  let toY = 0;
+  let frame = 0;
+  let seen = false;
+
+  function move(): void {
+    frame = 0;
+    x = ease(x, toX, 0.12);
+    y = ease(y, toY, 0.12);
+    hero.style.setProperty("--gx", `${x.toFixed(1)}px`);
+    hero.style.setProperty("--gy", `${y.toFixed(1)}px`);
+    if (Math.abs(toX - x) + Math.abs(toY - y) > 0.5) frame = window.requestAnimationFrame(move);
+  }
+
+  function rest(): void {
+    window.cancelAnimationFrame(frame);
+    frame = 0;
+    seen = false;
+    hero.style.removeProperty("--gx");
+    hero.style.removeProperty("--gy");
+  }
+
+  still.addEventListener("change", () => {
+    if (still.matches) rest();
+  });
+
+  hero.addEventListener("pointermove", (event) => {
+    if (still.matches) return rest();
+    const box = hero.getBoundingClientRect();
+    toX = event.clientX - box.left;
+    toY = event.clientY - box.top;
+    // The first move starts where the glow already stands, never a jump from 0.
+    if (!seen) {
+      seen = true;
+      x = 6 * 16;
+      y = 6 * 16;
+    }
+    if (!frame) frame = window.requestAnimationFrame(move);
+  });
+}
+
 const card = document.querySelector<HTMLElement>("[data-callcard]");
+const waves = document.querySelector<HTMLElement>("[data-waves]");
+const hero = document.querySelector<HTMLElement>(".hero");
+if (waves) initWaves(waves);
+if (hero) initGlow(hero);
 if (card) initCard(card);
 pauseOffScreen();

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 20.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.67.11
+> Status: 21.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.67.12
 
 ---
 
@@ -174,6 +174,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.67.12 · 21.11.2026:** #892: landing hero fixes (glow follows the pointer, one caret after fast tab switches, sound waves swing in place)
 - **v2.67.11 · 20.11.2026:** Remove the optional RTK development pipeline and its setup instructions.
 - **v2.67.10 · 20.11.2026:** Keep Git patches and merge commands intact in the RTK development pipeline.
 - **v2.67.9 · 20.11.2026:** #892 B2: tablet demo fake backend in the browser (header, orders, callbacks, example call)
