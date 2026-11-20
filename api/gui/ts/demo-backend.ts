@@ -451,9 +451,39 @@ function bar(): void {
   head.after(box);
 }
 
+// --- The filter of the call list ----------------------------------------------------------
+
+// Its form is a plain GET, which the browser would send to the file server, and that
+// ignores the query. The demo asks its own backend and swaps the list in, as htmx would.
+function filters(): void {
+  const form = document.querySelector<HTMLFormElement>('form.call-filter[action="/gui/anrufe"]');
+  if (!form || form.dataset["demo"]) return;
+  form.dataset["demo"] = "1";
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const query = new URLSearchParams();
+    new FormData(form).forEach((value, key) => {
+      if (typeof value === "string") query.append(key, value);
+    });
+    window
+      .fetch(`/gui/anrufe?${query.toString()}`)
+      .then((res) => res.text())
+      .then((text) => {
+        const next = new DOMParser().parseFromString(text, "text/html").querySelector("section.calls");
+        const now = document.querySelector("section.calls");
+        if (!next || !now) return;
+        now.replaceWith(next);
+        (window as unknown as { htmx?: { process(el: Element): void } }).htmx?.process(next);
+        filters();
+      })
+      .catch(() => undefined);
+  });
+}
+
 function ready(): void {
   bar();
   notes();
+  filters();
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ready);
 else ready();

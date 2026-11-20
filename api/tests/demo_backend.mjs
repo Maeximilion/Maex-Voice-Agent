@@ -20,7 +20,7 @@ const page = { listeners: {}, line: null }
 globalThis.document = {
   readyState: 'complete',
   getElementById: (id) => (id === 'demo-note' ? page.line : null),
-  querySelector: () => ({ after: (el) => (page.line = el) }),
+  querySelector: (sel) => (sel.startsWith('form') ? null : { after: (el) => (page.line = el) }),
   createElement: () => ({ setAttribute() {}, remove() { page.line = null } }),
   addEventListener() {},
   body: { addEventListener: (type, fn) => (page.listeners[type] = fn), prepend() {} },
@@ -155,10 +155,61 @@ for (const [m, u] of [
   assert.match(JSON.parse(r.getResponseHeader('HX-Trigger'))['order-notice'], /Inhaber-PIN/)
   const g = await xhr('GET', '/gui/zeiten/woche')
   assert.equal(g.getResponseHeader('HX-Reswap'), 'none')
-  // Not built yet (B3): a line, never an error page.
-  const later = await xhr('POST', '/gui/teamnummer', form({ team_phone: '1' }))
+  // Not built yet (the holiday answers, the floor plan's saves): a line, never an error page.
+  const later = await xhr('POST', '/gui/feiertage/x/y')
   assert.equal(later.status, 200)
   assert.equal(later.getResponseHeader('HX-Reswap'), 'none')
+}
+
+// --- B3: the sheets answer from the visitor's restaurant, through the requests the buttons send ---
+{
+  const state = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8'))
+  const dish = state.menu.find((d) => d.number === '302')
+  const sheet = await xhr('GET', '/gui/gericht-aus')
+  assert.match(sheet.responseText, /Gericht aus/)
+  const off = await xhr('POST', `/gui/gericht-aus/${dish.id}/aus`)
+  assert.equal(off.status, 200)
+  assert.match(off.responseText, /class="dish aus"/)
+  assert.equal(JSON.parse(off.getResponseHeader('HX-Trigger'))['gerichte-geaendert'], '')
+  const head = await xhr('GET', '/gui/fragments/kopfzeile')
+  assert.match(text(head.responseText), /2 heute aus/, 'the tile of the header counts the dishes off')
+  const found = await xhr('GET', '/gui/fragments/gericht-aus?q=penne')
+  assert.match(found.responseText, /Penne Arrabbiata/)
+  assert.doesNotMatch(found.responseText, /Spaghetti/)
+  assert.equal((await xhr('POST', `/gui/gericht-aus/${dish.id}/vielleicht`)).status, 404)
+  const back = await xhr('POST', `/gui/gericht-aus/${dish.id}/wieder-da`)
+  assert.doesNotMatch(back.responseText, /class="dish aus"/)
+
+  const order = state.orders.orders[2].id
+  const open = await xhr('GET', `/gui/bestellungen/${order}/korrigieren`)
+  assert.match(open.responseText, /Bestellung korrigieren/)
+  const stand = /name="state" value="([^"]*)"/.exec(open.responseText)[1].replace(/&#34;/g, '"')
+  const tap = await xhr('POST', `/gui/bestellungen/${order}/korrigieren/vorschau`, form({ state: stand, op: 'plus:r:0' }))
+  assert.equal(tap.status, 200)
+  assert.match(text(tap.responseText), /Menge geändert/)
+  const garbled = await xhr('POST', `/gui/bestellungen/${order}/korrigieren/vorschau`, form({ state: 'x', op: 'plus:r:0' }))
+  assert.equal(garbled.status, 409)
+
+  const team = await xhr('POST', '/gui/teamnummer', form({ nummer: state.team.choices[0] }))
+  assert.match(text(team.responseText), /Gilt bis Betriebsschluss/)
+  const checks = await xhr('GET', '/gui/fragments/pruefen')
+  assert.match(text(checks.responseText), /Teamnummer heute/)
+  const hours = await xhr('GET', `/gui/tageszeiten?datum=${state.hours.today}`)
+  assert.match(hours.responseText, /Öffnungszeit für einen Tag/)
+
+  const res = await xhr('GET', '/gui/reservierung')
+  const key = /name="schluessel" value="([^"]+)"/.exec(res.responseText)[1]
+  const draft = await xhr('POST', '/gui/reservierung', form({ schluessel: key, datum: state.hours.today, uhrzeit: '19:00', personen: '2', name: 'Test', tisch: '' }))
+  const rid = /reservierung\/([^/]+)\/eintragen/.exec(draft.responseText)[1]
+  const entered = await xhr('POST', `/gui/reservierung/${rid}/eintragen`)
+  assert.match(JSON.parse(entered.getResponseHeader('HX-Trigger'))['reservierung-eingetragen'], /Test/)
+
+  const day = /<option value="([^"]+)" selected>/.exec(fs.readFileSync(path.join(dir, 'anrufe/index.html'), 'utf8'))[1]
+  const list = await xhr('GET', `/gui/anrufe?tag=${day}&ergebnis=completed&anliegen=`)
+  assert.match(list.responseText, /<option value="completed" selected>/)
+  const menu = await xhr('GET', '/gui/menue?q=pizza&hinweis=')
+  assert.equal(menu.getResponseHeader('HX-Push-Url'), 'false', 'htmx must not push an address that is no file of the demo')
+  assert.match(text(menu.responseText), /5 von 25 Gerichten/)
 }
 
 // --- fetch: "/gui/" is answered here, the rest is the browser's ---

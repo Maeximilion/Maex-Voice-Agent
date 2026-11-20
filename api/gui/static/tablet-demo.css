@@ -25,3 +25,14 @@
 
 /* The line a locked or not yet built control shows on a page without the board's script. */
 .demo-note{margin:0;padding:var(--s3) var(--s4);background:var(--accent-bg);color:var(--accent-text);border-bottom:2px solid var(--line);font-size:var(--fs-body);font-weight:600;line-height:1.4}
+
+/* B3: the owner's part is shown and locked. The note says why in words (colour is
+   never the only signal), the controls below it are disabled (app.css greys them and
+   shows the not-allowed cursor), so neither a click nor the keyboard opens them. */
+.demo-locked{margin:0;border-bottom:2px solid var(--warn-line)}
+.demo-locked~* select:disabled,.demo-locked~* input:disabled,.demo-locked~* textarea:disabled{opacity:.5;cursor:not-allowed}
+
+/* The label on example figures and the example menu: a badge that wraps with its text
+   instead of sitting on a fixed line, so it holds at every width. */
+.demo-example{display:inline-block;margin-inline-start:var(--s2);font-weight:600;white-space:normal}
+p.demo-example{margin:var(--s2) 0}

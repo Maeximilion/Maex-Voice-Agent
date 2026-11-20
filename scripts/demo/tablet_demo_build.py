@@ -102,6 +102,15 @@ RECORDED = {
     "fragments/tageszeiten.html": "hours",
     "fragments/reservierung.html": "entry",
 }
+# The pages behind the owner's PIN (`locked` routes hang off them): every control on
+# them is shown and disabled, with the note, so nothing opens by mouse or keyboard.
+LOCKED_PAGES = ("/gui/zeiten", "/gui/lieferung", "/gui/daten", "/gui/geraete")
+LOCKED_NOTE = (
+    '<p class="banner warn demo-locked" role="note">In der Demo gesperrt: Diese '
+    "Seite ist in der echten Version mit Inhaber-PIN verfügbar. Alles ist zu "
+    "sehen, nichts lässt sich ändern.</p>"
+)
+CONTROL = re.compile(r'<(button|select|textarea|input(?![^>]*type="hidden"))\b')
 # Said on the pages that show example figures or an example menu (B3).
 EXAMPLE_LABEL = "Beispielwerte, keine Messwerte"
 EXAMPLE_BADGE = f'<span class="badge warn demo-example">{EXAMPLE_LABEL}</span>'
@@ -249,6 +258,20 @@ def page_paths() -> set[str]:
     return {
         r["path"].rstrip("/") for r in manifest()["routes"] if r["answer"] == "page"
     }
+
+
+def lock(html: str) -> str:
+    """A page of the owner's part as the demo shows it: the note under the tabs and
+    every control below them disabled."""
+    head, tab, rest = html.partition("</nav>")
+    if not tab:
+        raise SystemExit(
+            "a page of the owner's part has no tab row to put the note under"
+        )
+    controls = CONTROL.sub(
+        lambda m: f'<{m.group(1)} disabled aria-disabled="true"', rest
+    )
+    return f"{head}{tab}\n{LOCKED_NOTE}{controls}"
 
 
 def rewrite(html: str, whole_page: bool) -> str:
@@ -455,7 +478,9 @@ def captures(client: TestClient) -> list[Capture]:
     calls = _ok(client.get("/gui/anrufe"), "calls").text
     # The list of every day the page offers, and one detail per call of each.
     days = DAY_OPTION.findall(calls)
-    found += [Capture("GET", "/gui/anrufe", f"/gui/anrufe?tag={d}", None, "") for d in days]
+    found += [
+        Capture("GET", "/gui/anrufe", f"/gui/anrufe?tag={d}", None, "") for d in days
+    ]
     rows = {
         call
         for day in days
@@ -486,6 +511,8 @@ def render(client: TestClient, wanted: list[Capture], out: Path) -> list[Capture
         text = response.text
         if not json_answer:
             text = rewrite(text, whole_page=text.lstrip().startswith("<!DOCTYPE"))
+            if capture.url in LOCKED_PAGES:
+                text = lock(text)
         target = out / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
