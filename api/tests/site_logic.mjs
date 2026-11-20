@@ -62,3 +62,21 @@ assert.deepEqual(L.check({ ...good, text: 'x'.repeat(L.LIMITS.text) }), {})
 assert.ok(L.check({ ...good, business: 'x'.repeat(L.LIMITS.business + 1) }).business)
 
 console.log('ok')
+
+// The glow eases toward the pointer without overshooting.
+assert.equal(L.ease(0, 100, 0.25), 25)
+assert.equal(L.ease(100, 100, 0.5), 100)
+
+// The voice swings 0..1 for any time and layer, has quiet moments between phrases
+// and loud ones inside them, and the three layers are out of step.
+let low = 0, high = 0
+for (let t = 0; t < 30; t += 0.02) {
+  for (const phase of [0, 0.23, 0.51]) {
+    const v = L.voice(t, phase)
+    assert.ok(v >= 0 && v <= 1, `voice ${v} at ${t}`)
+    if (v < 0.2) low++
+    if (v > 0.8) high++
+  }
+}
+assert.ok(low > 100 && high > 100, `speech-like rhythm: low ${low}, high ${high}`)
+assert.notEqual(L.voice(3.1, 0), L.voice(3.1, 0.23))

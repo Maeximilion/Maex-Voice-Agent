@@ -32,6 +32,20 @@ export function callState(lengths, n) {
     const status = said > YES ? "confirmed" : active >= 0 && active % 2 === 1 ? "speaking" : "listening";
     return { shown, active, status, loud: active >= 0 };
 }
+// One step of an exponential approach: `from` moves the share `k` (0..1) toward `to`.
+export function ease(from, to, k) {
+    return from + (to - from) * k;
+}
+// Swing of a sound wave at `seconds`, 0..1: syllable bursts of about 4 per second
+// inside phrases that breathe, with a short pause between them. `phase` (seconds)
+// offsets a layer so the layers do not move in step.
+export function voice(seconds, phase) {
+    const t = seconds + phase;
+    const syllable = Math.abs(Math.sin(Math.PI * 4.2 * t)) ** 0.8;
+    const phrase = Math.sin(Math.PI * 0.9 * t) * 0.5 + 0.5;
+    const gate = Math.min(1, Math.max(0, (phrase - 0.1) / 0.3));
+    return Math.min(1, 0.08 + 1.1 * syllable * gate * (0.7 + 0.3 * Math.sin(2.1 * t)));
+}
 export const KINDS = [
     "Restaurant",
     "Imbiss",
