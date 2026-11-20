@@ -88,13 +88,15 @@ def create_app(settings: SiteSettings | None = None) -> FastAPI:
 
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
     # The tablet demo, rendered by scripts/demo/tablet_demo_build.py into a
-    # folder that is not committed. Not built: the address answers 404, and the
-    # landing page does not link it while content.DEMO_PATH is None.
-    app.mount(
-        "/tablet-demo",
-        StaticFiles(directory=str(TABLET_DEMO), html=True, check_dir=False),
-        name="tablet-demo",
-    )
+    # folder that is not committed. Not built when the site starts: the address
+    # answers 404, and the landing page does not link it while
+    # content.DEMO_PATH is None.
+    if TABLET_DEMO.is_dir():
+        app.mount(
+            "/tablet-demo",
+            StaticFiles(directory=str(TABLET_DEMO), html=True),
+            name="tablet-demo",
+        )
 
     @app.middleware("http")
     async def headers(request: Request, call_next: Any) -> Response:

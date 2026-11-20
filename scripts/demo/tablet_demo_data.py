@@ -303,15 +303,15 @@ def _callback(
     return task.callback_id
 
 
-def _week_of_calls(
-    session: Session, seeded: Seeded, now: datetime, first: int
-) -> None:
+def _week_of_calls(session: Session, seeded: Seeded, now: datetime, first: int) -> None:
     """The six days before today, with orders behind the completed pickups, so
     the figures of the week count orders too."""
     n = first
     for days_back, day in enumerate(WEEK, start=1):
-        noon = (now - timedelta(days=days_back)).astimezone(ZONE).replace(
-            hour=12, minute=0, second=0, microsecond=0
+        noon = (
+            (now - timedelta(days=days_back))
+            .astimezone(ZONE)
+            .replace(hour=12, minute=0, second=0, microsecond=0)
         )
         index = 0
         for outcome, count in day.items():
@@ -332,14 +332,18 @@ def _week_of_calls(
                 n += 1
         session.commit()
         for dish in ("202", "304"):
-            order = _order(session, seeded.tenant_id, noon, n, "Gast", [{"number": dish}])
+            order = _order(
+                session, seeded.tenant_id, noon, n, "Gast", [{"number": dish}]
+            )
             # Done that day: otherwise it stands on today's board as an order
             # never typed into the register.
             session.execute(
                 update(Order)
                 .where(Order.id == order)
                 .values(
-                    status="handed_over", handover_state="sent", register_entered_at=noon
+                    status="handed_over",
+                    handover_state="sent",
+                    register_entered_at=noon,
                 )
             )
             session.commit()
@@ -351,7 +355,9 @@ def fill(session: Session, now: datetime) -> Seeded:
     the demo is seeded into a scratch database of its own, never next to data."""
     if session.scalar(select(Tenant.id).limit(1)) is not None:
         raise SystemExit("the database already holds a restaurant: use a scratch one")
-    tenant_id = uuid.UUID(seed(session, tenant_name=TENANT, timezone=TIMEZONE).tenant_id)
+    tenant_id = uuid.UUID(
+        seed(session, tenant_name=TENANT, timezone=TIMEZONE).tenant_id
+    )
     seeded = Seeded(tenant_id)
     _open_every_day(session, tenant_id)
     session.execute(
@@ -402,7 +408,7 @@ def fill(session: Session, now: datetime) -> Seeded:
         raise SystemExit(f"demo menu does not parse: {plan.errors}")
     apply(session, tenant_id, plan)
 
-    orders = (
+    orders: tuple[tuple[str, str, list[dict[str, Any]]], ...] = (
         (
             "neu",
             "Frau Berger",

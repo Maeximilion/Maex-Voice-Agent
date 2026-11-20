@@ -30,7 +30,7 @@ import re
 import shutil
 import sys
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import ExitStack, contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, time
@@ -63,7 +63,9 @@ NOTICE = (
 STYLESHEET = '<link rel="stylesheet" href="/static/tablet-demo.css">'
 BODY = re.compile(r"<body\b[^>]*>")
 HREF = re.compile(r'\bhref="(/gui(?:/[^"?#]*)?)"')
-CALL_ROW = re.compile(r"""hx-post="/gui/anrufe/anruf" hx-vals='\{"anruf": "([0-9a-f-]+)"\}'""")
+CALL_ROW = re.compile(
+    r"""hx-post="/gui/anrufe/anruf" hx-vals='\{"anruf": "([0-9a-f-]+)"\}'"""
+)
 ZONE = ZoneInfo(data.TIMEZONE)
 # A phone number in E.164 as the view prints it.
 PHONE = re.compile(r"\+[1-9][0-9]{7,14}")
@@ -103,7 +105,9 @@ def file_for(url: str, json_answer: bool = False) -> str:
 
 
 def page_paths() -> set[str]:
-    return {r["path"].rstrip("/") for r in manifest()["routes"] if r["answer"] == "page"}
+    return {
+        r["path"].rstrip("/") for r in manifest()["routes"] if r["answer"] == "page"
+    }
 
 
 def rewrite(html: str, whole_page: bool) -> str:
@@ -132,7 +136,9 @@ def frozen_clock(now: datetime) -> Iterator[None]:
     from api.core import time as clock
 
     original = clock.utcnow
-    holders = [m for m in list(sys.modules.values()) if getattr(m, "utcnow", None) is original]
+    holders = [
+        m for m in list(sys.modules.values()) if getattr(m, "utcnow", None) is original
+    ]
     with ExitStack() as stack:
         for module in holders:
             stack.enter_context(mock.patch.object(module, "utcnow", lambda: now))
@@ -149,7 +155,7 @@ def signed_in() -> Iterator[TestClient]:
     from api.main import app
 
     device = uuid.UUID(int=0)
-    overrides = {
+    overrides: dict[Callable[..., Any], Callable[..., Any]] = {
         require_gui_proxy: lambda: None,
         require_gui_session: lambda: Access(device, locked=False, admin=False),
         require_admin: lambda: Access(device, locked=False, admin=True),
@@ -171,8 +177,13 @@ def _ok(response: Any, what: str) -> Any:
     return response
 
 
-def _room(client: TestClient, name: str, kind: str, size: tuple[int, int],
-          tables: list[tuple[str, int, int, int, str]]) -> None:
+def _room(
+    client: TestClient,
+    name: str,
+    kind: str,
+    size: tuple[int, int],
+    tables: list[tuple[str, int, int, int, str]],
+) -> None:
     """A room of the floor plan, made through the editor's own two requests."""
     width, depth = size
     made = _ok(
@@ -308,14 +319,18 @@ def render(client: TestClient, wanted: list[Capture], out: Path) -> list[Capture
         json_answer = response.headers["content-type"].startswith("application/json")
         name = file_for(capture.url, json_answer)
         if capture.body:
-            name = f"{name.removesuffix('index.html')}{capture.body['anruf']}/index.html"
+            name = (
+                f"{name.removesuffix('index.html')}{capture.body['anruf']}/index.html"
+            )
         text = response.text
         if not json_answer:
             text = rewrite(text, whole_page=text.lstrip().startswith("<!DOCTYPE"))
         target = out / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8")
-        done.append(Capture(capture.method, capture.path, capture.url, capture.body, name))
+        done.append(
+            Capture(capture.method, capture.path, capture.url, capture.body, name)
+        )
     return done
 
 
