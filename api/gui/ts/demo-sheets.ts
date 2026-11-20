@@ -183,7 +183,7 @@ function lineView(order: string, l: View, swapping: number | null, message: stri
             ? '<span class="badge accent">Menge geändert</span>'
             : "";
   const idx = l.index;
-  let html = `<li class="edit-line ${l.kind}">
+  return `<li class="edit-line ${l.kind}">
   <div class="edit-head">
     <span>${l.quantity}&times; <span class="nr">${esc(l.number)}</span> ${esc(l.name)}</span>
     ${badge}
@@ -224,7 +224,6 @@ function lineView(order: string, l: View, swapping: number | null, message: stri
   </div>
   ${l.where === "r" && swapping === idx ? `<p class="hint">Menge und Hinweis bleiben.</p>\n  ${numberField("Tauschen gegen Nummer", message)}` : ""}
 </li>`;
-  return html;
 }
 
 export function renderCorrection(order: string, plan: Plan, edit: Edit, message: string | null): string {
@@ -424,6 +423,13 @@ function hoursText(h: DayHours): string {
   return "normale Zeiten der Woche";
 }
 
+// The visitor's own date, not the build's: the pages were rendered some day, the demo is
+// opened on another, and a reservation "for today" must not be in the past.
+export function localDay(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+}
+
 export class Sheets {
   private readonly menu: MenuDish[];
   private holding: string;
@@ -432,11 +438,11 @@ export class Sheets {
   private hours = new Map<string, DayHours>();
   private drafts = new Map<string, Draft>();
   private serial = 0;
-  private edits = new Map<string, number>();
 
   constructor(
     private readonly data: Recorded,
     private readonly r: Restaurant,
+    private readonly today: string = localDay(),
   ) {
     this.menu = data.menu.filter((d) => d.id !== undefined);
     this.holding = data.team.holding;
@@ -765,7 +771,7 @@ export class Sheets {
   }
 
   private hoursSheet(day: string | null, message: string | null, tone: string, typed?: { von: string; bis: string; nachts: boolean }): string {
-    const today = this.data.hours.today;
+    const today = this.today;
     const shown = day !== null && day >= today ? day : today;
     const holding = this.hours.get(shown) ?? { kind: "normal", text: "" };
     const opens = typed?.von ?? (holding.kind === "span" ? (holding.opens ?? "") : "");
@@ -811,7 +817,7 @@ export class Sheets {
     if (day === null || !["geschlossen", "zeiten", "normal"].includes(choice)) {
       return { status: 422, html: this.hoursSheet(day, NO_DATE, "danger") };
     }
-    if (day < this.data.hours.today) return { status: 409, html: this.hoursSheet(day, PAST_DAY, "danger", typed) };
+    if (day < this.today) return { status: 409, html: this.hoursSheet(day, PAST_DAY, "danger", typed) };
     let next: DayHours = { kind: "normal", text: "" };
     if (choice === "geschlossen") next = { kind: "closed", text: "" };
     if (choice === "zeiten") {
@@ -837,7 +843,7 @@ export class Sheets {
     if (next.kind === "span") {
       const from = minutesOf(next.opens ?? "") ?? 0;
       const to = (minutesOf(next.closes ?? "") ?? 0) + (typed.nachts ? 1440 : 0);
-      held = day === this.data.hours.today || (from >= WEEK_OPENS && to <= WEEK_CLOSES);
+      held = day === this.today || (from >= WEEK_OPENS && to <= WEEK_CLOSES);
     }
     if (held) this.hours.set(day, next);
     const [y, m, d] = day.split("-").map(Number);
@@ -880,7 +886,7 @@ export class Sheets {
 
   entryOpen(): Reply {
     this.serial += 1;
-    const values = { schluessel: `demo-key-${this.serial}`, datum: this.data.hours.today };
+    const values = { schluessel: `demo-key-${this.serial}`, datum: this.today };
     return { status: 200, html: entryForm(values, this.data.entry.choices, null) };
   }
 
@@ -895,11 +901,11 @@ export class Sheets {
     const name = (values["name"] ?? "").trim();
     if (!name) return refuse(SAY_NO_NAME);
     const clock = this.r.now();
-    if (day < this.data.hours.today || (day === this.data.hours.today && at < (minutesOf(clock) ?? 0))) return refuse(SAY_PAST);
+    if (day < this.today || (day === this.today && at < (minutesOf(clock) ?? 0))) return refuse(SAY_PAST);
     const picked = this.data.entry.choices.find((c) => c[0] === values["tisch"]);
     const table = picked ? (picked[1].split(" (")[0] ?? "") : null;
     const time = `${two(Math.floor(at / 60))}:${two(at % 60)}`;
-    const same = day === this.data.hours.today ? this.r.booked() : [];
+    const same = day === this.today ? this.r.booked() : [];
     if (table && same.some((x) => x.tables.includes(table) && Math.abs((minutesOf(x.time) ?? 0) - at) < 90)) {
       return refuse(`Tisch ${table} ist um ${time} Uhr schon vergeben.`);
     }
@@ -925,8 +931,9 @@ export class Sheets {
       entered: false,
     };
     // The same sheet key is the same draft: a second "Weiter" does not book twice.
-    this.drafts.set(draft.id, this.drafts.get(draft.id)?.entered ? (this.drafts.get(draft.id) as Draft) : draft);
-    return { status: 200, html: entrySummary(this.drafts.get(draft.id) as Draft, null, false) };
+    const known = this.drafts.get(draft.id);
+    if (!known?.entered) this.drafts.set(draft.id, draft);
+    return { status: 200, html: entrySummary(known?.entered ? known : draft, null, false) };
   }
 
   entryConfirm(id: string, form: URLSearchParams): Reply | null {
@@ -947,7 +954,7 @@ export class Sheets {
         is_test: false,
         off_hours: d.closed,
       };
-      if (d.day === this.data.hours.today) this.r.enter(entry);
+      if (d.day === this.today) this.r.enter(entry);
     }
     return { status: 200, html: "", trigger: { "reservierung-eingetragen": `Reservierung für ${d.name} eingetragen.` }, events: ["today"] };
   }
@@ -982,7 +989,8 @@ export function filterCalls(html: string, outcome: string, intent: string, dayLa
   const intentLabel = intent ? optionLabel(html, "anliegen", intent) : null;
   let shown = 0;
   let out = html.replace(/<tr>\s*<th scope="row">[\s\S]*?<\/tr>/g, (row) => {
-    const cell = (label: string): string => (new RegExp(`<td data-label="${label}"[^>]*>([\\s\\S]*?)</td>`).exec(row)?.[1] ?? "").replace(/<[^>]*>/g, "").trim();
+    const cell = (label: string): string => (new RegExp(`<td data-label="${label}"[^>]*>([\\s\\S]*?)</td>`).exec(row)?.[1] ?? "").trim();
+    // The result cell starts with its label and may add a badge after it; the reason cell is the label.
     const keep = (!outcomeLabel || cell("Ergebnis").startsWith(outcomeLabel)) && (!intentLabel || cell("Anliegen") === intentLabel);
     if (keep) shown += 1;
     return keep ? row : "";

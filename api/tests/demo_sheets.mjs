@@ -42,7 +42,7 @@ const form = (o) => new URLSearchParams(o)
 const fresh = () => {
   const data = state()
   const r = new B.Restaurant(data)
-  return { r, s: new S.Sheets(data, r), data }
+  return { r, s: new S.Sheets(data, r, data.hours.today), data }
 }
 const captures = JSON.parse(read('captures.json'))
 
