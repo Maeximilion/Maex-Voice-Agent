@@ -88,10 +88,9 @@ def prepare(out: Path) -> None:
 
 def target(out: Path, link: str) -> Path | None:
     """The file a root-absolute link reaches in the folder, None when none does."""
-    path = link.split("#", 1)[0].split("?", 1)[0]
-    if path.startswith("//"):
-        return None
-    rel = path.lstrip("/")
+    # A `//host/...` link keeps a host name as its first part, so no file
+    # matches it and it counts as broken: the site links nowhere outside.
+    rel = link.split("#", 1)[0].split("?", 1)[0].removeprefix("/")
     if not rel or rel.endswith("/"):
         candidates = [out / rel / "index.html"]
     else:
