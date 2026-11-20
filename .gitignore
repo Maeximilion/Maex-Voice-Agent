@@ -52,3 +52,7 @@ graphify-out/
 
 # Tablet demo (#892): rendered by scripts/demo/tablet_demo_build.py, never committed
 api/site/tablet-demo/
+
+# Public site export (#892): written by scripts/site_export.py, never committed
+site-export/
+site-export.zip

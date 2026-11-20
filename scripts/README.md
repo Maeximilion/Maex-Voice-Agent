@@ -3,6 +3,7 @@
 | Script | Purpose | Task |
 |---|---|---|
 | `seed.py` | Tenant, hours, capacity, test config | T-1.2 |
+| `site_export.py` | The public site as plain files for any static host: every page, a 404 page, `robots.txt`, an Apache `.htaccess` (headers, 404), the files of `/static/` the pages name and a built tablet demo into one folder (`site-export/`, not committed; `--zip` adds `site-export.zip`), legal texts from `SITE_LEGAL_DIR` outside the repo (placeholders and a loud warning without them), every link checked; deploys nothing (docs/13 §9) | #892 |
 | `new_stack.py` | A new customer's stack on the server: clone, `.env` with fresh secrets (mode 600), role, migrations, tenant through `api.jobs.provision`, site file in the shared Caddy with the cross-site check; `--dry-run`, `--check-sites`, `--selftest` (the stack's self-test at the end, #574) | #573 |
 | `import_menu.py` | Load CSV per `docs/14_MENU_IMPORT_FORMAT.md`, `--dry-run`, `--deactivate-missing` (refuses an empty file or more than half the active menu unless `--allow-large-deactivation`) | T-4.2, T-4.11 |
 | `seed_zones.py` | Delivery zones from CSV per `docs/14_MENU_IMPORT_FORMAT.md`, `--dry-run`; an overlap or any other error writes nothing | T-6.9 |

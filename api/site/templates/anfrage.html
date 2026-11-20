@@ -13,7 +13,7 @@
       <li>Kostet nichts und bindet Sie nicht.</li>
       <li>Wir beraten, ob die KI zu Ihrem Betrieb passt.</li>
     </ul>
-    {% if contact_email %}<p class="note">Lieber per E-Mail? <a href="mailto:{{ contact_email }}">{{ contact_email }}</a></p>{% endif %}
+    {% if contact_email and not preview %}<p class="note">Lieber per E-Mail? <a href="mailto:{{ contact_email }}">{{ contact_email }}</a></p>{% endif %}
   </div>
 
   {# The form is built and checked in the browser, but it is offered as working
@@ -21,7 +21,11 @@
      mail service, a target address and the privacy text first). #}
   <form class="formcard" data-inquiry novalidate
         {% if inquiry_action %}method="post" action="{{ inquiry_action }}"{% endif %}>
-    {% if not inquiry_action %}
+    {# The preview shows the form with every field and the button disabled, so a
+       visitor sees what it will ask and cannot mistake it for working. #}
+    {% if preview %}
+    <p class="formnote" role="status">Dies ist eine Vorschau eines persönlichen Projekts: Das Formular ist nur zum Ansehen da, senden lässt sich nichts.</p>
+    {% elif not inquiry_action %}
     <p class="formnote" role="status">Das Formular ist noch nicht freigeschaltet. Senden ist erst möglich, wenn Versand und Datenschutzhinweis stehen.</p>
     {% endif %}
     <fieldset{% if not inquiry_action %} disabled{% endif %}>

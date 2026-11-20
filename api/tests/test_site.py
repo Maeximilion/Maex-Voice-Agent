@@ -1,11 +1,13 @@
 """The public site (#892): serving, the unset-configuration cases, the files it
 loads and the tokens it shares with the operations view."""
 
+import html as html_text
 import os
 import re
 import shutil
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -23,18 +25,30 @@ PAGES = ("/", "/anfrage", "/impressum", "/datenschutz")
 @pytest.fixture(autouse=True)
 def _no_site_settings_from_outside(monkeypatch):
     """A developer's environment or .env must not change what the tests expect."""
-    for name in ("SITE_LOGIN_URL", "SITE_CONTACT_EMAIL", "SITE_INQUIRY_ACTION"):
+    for name in SITE_ENV:
         monkeypatch.delenv(name, raising=False)
     # Nor a tablet demo built in this checkout (scripts/demo/tablet_demo_build.py).
     monkeypatch.setattr(site_app, "TABLET_DEMO", Path("/nonexistent/tablet-demo"))
 
 
-def settings_of(**values: str) -> SiteSettings:
+SITE_ENV = (
+    "SITE_LOGIN_URL",
+    "SITE_CONTACT_EMAIL",
+    "SITE_INQUIRY_ACTION",
+    "SITE_PREVIEW",
+    "SITE_LEGAL_DIR",
+)
+
+
+def settings_of(**values: Any) -> SiteSettings:
     # `_env_file=None` is pydantic-settings' own argument; its signature is not typed.
     return SiteSettings(_env_file=None, **values)  # type: ignore[call-arg]
 
 
-def client(**values: str) -> TestClient:
+def client(**values: Any) -> TestClient:
+    """The site as it is once published: the private preview is off unless a
+    test switches it on (its own tests below)."""
+    values.setdefault("site_preview", False)
     return TestClient(site_app.create_app(settings_of(**values)))
 
 
@@ -335,3 +349,120 @@ def test_the_logic_of_the_call_card_and_the_form_holds_in_node():
 
     assert out.returncode == 0, out.stderr
     assert out.stdout.strip() == "ok"
+
+
+# The private preview (#892): on by default until Maxi turns it off.
+
+
+def preview(**values: Any) -> TestClient:
+    return TestClient(site_app.create_app(settings_of(**values)))
+
+
+def test_the_preview_is_on_by_default():
+    assert settings_of().site_preview is True
+
+
+@pytest.mark.parametrize("path", PAGES)
+def test_in_the_preview_the_sign_in_is_a_greyed_label_and_no_page_may_be_indexed(path):
+    # A sign-in target configured or not: the preview shows the entry greyed,
+    # with its reason in sight, and links nowhere (Maxi, 20.11.2026).
+    response = preview(site_login_url="https://login.example.com/gui/anmelden").get(
+        path
+    )
+
+    assert '<meta name="robots" content="noindex, nofollow">' in response.text
+    assert response.headers["x-robots-tag"] == "noindex, nofollow"
+    label = re.search(
+        r'<span class="btn btn-off" aria-disabled="true">(.*?)</span></span>',
+        response.text,
+    )
+    assert label
+    assert "Kunden-Login" in label.group(1)
+    assert '<span class="btn-off-why"> noch nicht freigeschaltet' in label.group(1)
+    assert "login.example.com" not in response.text
+    assert ">Kunden-Login</a>" not in response.text
+
+
+def test_in_the_preview_the_form_cannot_be_sent_whatever_is_configured():
+    c = preview(
+        site_inquiry_action="/anfrage/senden", site_contact_email="kontakt@example.com"
+    )
+    form = text_of(c, "/anfrage")
+    landing = text_of(c, "/")
+
+    assert "<fieldset disabled>" in form
+    tag = re.search(r"<form[^>]*>", form)
+    assert tag and "action=" not in tag.group(0) and "method=" not in tag.group(0)
+    assert "Vorschau eines persönlichen Projekts" in form
+    assert "Lieber per E-Mail?" not in form
+    # The landing page invites to look at the form, not to send an inquiry.
+    assert "Formular ansehen" in landing
+    assert "Zur Anfrage" not in landing
+    assert "Die Anfrage verpflichtet zu nichts" not in landing
+    assert "Sie sind schon Kunde?" not in landing
+
+
+def test_the_preview_badge_names_a_personal_project_and_off_the_test_phase():
+    assert "Persönliches Projekt in Entwicklung" in text_of(preview(), "/")
+    published = text_of(client(), "/")
+    assert "Aktuell in der Testphase" in published
+    assert "Persönliches Projekt" not in published
+
+
+def test_off_the_preview_pages_may_be_indexed_except_the_legal_ones():
+    c = client()
+
+    assert 'name="robots"' not in text_of(c, "/")
+    assert 'name="robots"' not in text_of(c, "/anfrage")
+    assert "x-robots-tag" not in c.get("/").headers
+    assert '<meta name="robots" content="noindex">' in text_of(c, "/impressum")
+
+
+@pytest.mark.parametrize("preview_on", [True, False])
+def test_robots_txt_allows_crawling_and_names_no_sitemap(preview_on):
+    # Blocking would hide the noindex of the pages from the crawler.
+    response = client(site_preview=preview_on).get("/robots.txt")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    lines = [line for line in response.text.splitlines() if not line.startswith("#")]
+    assert lines == ["User-agent: *", "Allow: /"]
+    assert "Sitemap" not in response.text
+
+
+@pytest.mark.parametrize("path", PAGES)
+def test_every_page_carries_the_policy_for_a_host_of_plain_files(path):
+    html = text_of(preview(), path)
+
+    meta = re.search(
+        r'<meta http-equiv="Content-Security-Policy" content="([^"]*)">', html
+    )
+    assert meta
+    # The template escapes the quotes; the browser reads them back.
+    assert html_text.unescape(meta.group(1)) == site_app.CSP_META
+    # A browser ignores frame-ancestors in a meta tag and says so in the console.
+    assert "frame-ancestors" not in meta.group(1)
+    assert "unsafe-inline" not in meta.group(1)
+    # The meta tag comes before anything it governs.
+    assert html.index("Content-Security-Policy") < html.index("<link")
+
+
+def test_the_legal_pages_take_their_text_from_the_folder_outside(tmp_path):
+    (tmp_path / "impressum.html").write_text("<p>Erika Beispiel</p>", encoding="utf-8")
+    c = preview(site_legal_dir=str(tmp_path))
+
+    notice = text_of(c, "/impressum")
+    privacy = text_of(c, "/datenschutz")
+
+    assert "<p>Erika Beispiel</p>" in notice
+    assert "nicht veröffentlichungsfähig" not in notice
+    # The missing file leaves its page the placeholder.
+    assert "nicht veröffentlichungsfähig" in privacy
+
+
+def test_an_unknown_address_gets_the_404_page_of_the_site():
+    response = preview().get("/gibt-es-nicht")
+
+    assert response.status_code == 404
+    assert "Diese Seite gibt es nicht." in response.text
+    assert response.headers["content-security-policy"] == site_app.CSP

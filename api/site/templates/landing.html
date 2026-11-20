@@ -12,7 +12,7 @@
 
   <div class="wrap hero-grid">
     <div class="hero-text">
-      <p class="badge-test"><span aria-hidden="true">▲</span> Aktuell in der Testphase</p>
+      <p class="badge-test"><span aria-hidden="true">▲</span> {% if preview %}Persönliches Projekt in Entwicklung{% else %}Aktuell in der Testphase{% endif %}</p>
       <h1 id="titel">
         <span class="w">Es</span> <span class="w">klingelt.</span><br>
         <span class="w">Die</span> <span class="w">KI</span> <span class="w">nimmt</span> <span class="w w-neon">ab.</span>
@@ -186,6 +186,15 @@
 <section class="band wrap closing" aria-labelledby="anfrage-titel">
   <div class="closing-text rv">
     <p class="eyebrow">Anfrage</p>
+    {% if preview %}
+    {# The preview takes no inquiry: the block says so, and the button only shows the form. #}
+    <h2 id="anfrage-titel" class="h-section">Die Anfrage</h2>
+    <p class="lead">So wird die Anfrage aussehen. In dieser Vorschau lässt sich noch nichts senden.</p>
+  </div>
+  <div class="closing-action rv">
+    <a class="btn btn-main btn-big" href="/anfrage">Formular ansehen</a>
+  </div>
+    {% else %}
     <h2 id="anfrage-titel" class="h-section">Unverbindlich anfragen</h2>
     <p class="lead">Sagen Sie uns kurz, um was für einen Betrieb es geht. Wir melden uns und beraten Sie. Die Anfrage verpflichtet zu nichts.</p>
     <p class="note">Sie sind schon Kunde? Oben rechts geht es zum Kunden-Login.</p>
@@ -193,5 +202,6 @@
   <div class="closing-action rv">
     <a class="btn btn-main btn-big" href="/anfrage">Zur Anfrage</a>
   </div>
+    {% endif %}
 </section>
 {% endblock %}
