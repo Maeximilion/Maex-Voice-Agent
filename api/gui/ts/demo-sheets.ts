@@ -989,7 +989,8 @@ export function filterCalls(html: string, outcome: string, intent: string, dayLa
   const intentLabel = intent ? optionLabel(html, "anliegen", intent) : null;
   let shown = 0;
   let out = html.replace(/<tr>\s*<th scope="row">[\s\S]*?<\/tr>/g, (row) => {
-    const cell = (label: string): string => (new RegExp(`<td data-label="${label}"[^>]*>([\\s\\S]*?)</td>`).exec(row)?.[1] ?? "").replace(/<[^>]*>/g, "").trim();
+    const cell = (label: string): string => (new RegExp(`<td data-label="${label}"[^>]*>([\\s\\S]*?)</td>`).exec(row)?.[1] ?? "").trim();
+    // The result cell starts with its label and may add a badge after it; the reason cell is the label.
     const keep = (!outcomeLabel || cell("Ergebnis").startsWith(outcomeLabel)) && (!intentLabel || cell("Anliegen") === intentLabel);
     if (keep) shown += 1;
     return keep ? row : "";
