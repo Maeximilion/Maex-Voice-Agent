@@ -289,6 +289,19 @@ function refusedCorrection(order: string, message: string): string {
 
 // --- Reservierung eintragen -------------------------------------------------------------
 
+// "0721 / 555-1234" is "+497215551234" (domain/customers/phone.py normalize_phone), as far as
+// the demo goes: German national spellings and numbers with a country code; null for what
+// is no number. Trunk zeros after another country code and per-country lengths are not rebuilt.
+export function normalizePhone(raw: string): string | null {
+  let digits = raw.trim().replace(/[\s\-/().]/g, "");
+  if (digits.startsWith("00")) digits = "+" + digits.slice(2);
+  else if (digits.startsWith("0")) digits = "+49" + digits.slice(1);
+  else if (digits && !digits.startsWith("+")) digits = "+" + digits;
+  // "+49 0171 ...": the trunk zero said after the country code is dropped.
+  if (/^\+490[1-9]/.test(digits)) digits = "+49" + digits.slice(4);
+  return /^\+[1-9][0-9]{6,14}$/.test(digits) ? digits : null;
+}
+
 type Draft = {
   id: string;
   at: string; // HH:MM
@@ -298,17 +311,16 @@ type Draft = {
   phone: string | null;
   note: string | null;
   tables: string[];
-  full: boolean;
-  closed: boolean;
-  load: string;
   entered: boolean;
 };
 
 const ENTRY_INVALID = "Bitte Datum, Uhrzeit, Personen und Namen prüfen.";
 const SAY_PAST = "Dieser Zeitpunkt ist schon vorbei.";
 const SAY_NO_NAME = "Bitte einen Namen eintragen.";
-const SAY_FULL = "Laut Reservierungen ist dafür kein Platz frei.";
-const SAY_CLOSED = "Zu dieser Zeit ist laut Öffnungszeiten geschlossen.";
+// The demo does not rebuild the real tablet's booking rules (window, tables, opening hours):
+// the summary says so (docs/06 §11).
+const ENTRY_EXAMPLE = "Beispiel: Auslastung, Tische und Öffnungszeiten prüft die echte Version.";
+const SAY_INVALID_PHONE = "Die Rufnummer habe ich nicht verstanden. Können Sie sie noch einmal sagen?";
 
 // Pass the typed form back as it was typed, with the refusal above the buttons.
 function entryForm(values: Record<string, string>, choices: [string, string][], message: string | null): string {
@@ -351,12 +363,6 @@ function entrySummary(d: Draft, message: string | null, blocked: boolean): strin
   const [y, m, dd] = d.day.split("-").map(Number);
   const date = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, dd ?? 1));
   const when = `${WEEKDAYS[(date.getUTCDay() + 6) % 7]}, ${two(dd ?? 1)}.${two(m ?? 1)}.${y}, ${d.at} Uhr`;
-  const needs = d.full || d.closed;
-  const confirm = d.closed
-    ? ' hx-confirm="Laut Öffnungszeiten ist zu dieser Zeit geschlossen. Trotzdem eintragen?"'
-    : d.full
-      ? ' hx-confirm="Laut Reservierungen ist dafür kein Platz frei. Trotzdem eintragen?"'
-      : "";
   return `<section class="sheet reservierung" role="dialog" aria-labelledby="reservierung-titel">
   <div class="sheet-head">
     <h2 id="reservierung-titel" tabindex="-1">Reservierung eintragen</h2>
@@ -371,17 +377,14 @@ function entrySummary(d: Draft, message: string | null, blocked: boolean): strin
       ${d.note ? `<dt>Hinweis</dt><dd>${esc(d.note)}</dd>` : ""}
       <dt>Tisch</dt><dd>${d.tables.length ? "Tisch " + esc(d.tables.join(" + ")) : "Ohne Tisch"}</dd>
     </dl>
-    <p class="badge ${d.full ? "warn" : "ok"}">${esc(d.load)}</p>
-    ${d.closed ? `<p class="badge warn">${esc(SAY_CLOSED)}</p>` : ""}
+    <p class="badge ok">${esc(ENTRY_EXAMPLE)}</p>
     <div class="sheet-foot">
       ${message ? `<p class="badge danger">${esc(message)}</p>` : ""}
       ${
         blocked
           ? ""
-          : `<form hx-post="/gui/reservierung/${esc(d.id)}/eintragen" hx-target="#reservierung" hx-swap="innerHTML"${confirm}>
-        ${d.full ? '<input type="hidden" name="trotzdem" value="1">' : ""}
-        ${d.closed ? '<input type="hidden" name="geschlossen" value="1">' : ""}
-        <button type="submit" class="primary">${needs ? "Trotzdem eintragen" : "Eintragen"}</button>
+          : `<form hx-post="/gui/reservierung/${esc(d.id)}/eintragen" hx-target="#reservierung" hx-swap="innerHTML">
+        <button type="submit" class="primary">Eintragen</button>
       </form>`
       }
     </div>
@@ -408,7 +411,7 @@ const PAST_DAY = "Ein vergangener Tag lässt sich nicht mehr ändern.";
 const WEEK_OPENS = 11 * 60;
 const WEEK_CLOSES = 23 * 60;
 
-type DayHours = { text: string; kind: "normal" | "closed" | "span"; opens?: string; closes?: string };
+type DayHours = { text: string; kind: "normal" | "closed" | "span"; opens?: string; closes?: string; nachts?: boolean };
 
 type Check = { id: string; title: string; before: string; after: string; now: string; waiting: boolean; keep: string; seen: string };
 
@@ -532,8 +535,15 @@ export class Sheets {
       };
       if (!e || e.q === 0) return { ...stored, kind: "removed", quantity: line.quantity };
       const dish = e.s ? this.menu.find((d) => d.id === e.s) : undefined;
-      if (!dish || dish.number === line.number) return stored;
-      return this.fromDish("r", i, "swapped", dish, e.q, e.o ?? [], line.note);
+      if (!dish) return stored;
+      const picks = e.o ?? [];
+      // Swapped to its own number: only the choices change (domain/ordering/correction.py);
+      // the same choices as before leave the stored line, with its choices offered.
+      const keys = (xs: string[]): string => [...xs].sort().join("|");
+      if (dish.number === line.number && keys(picks.map((p) => p[1])) === keys(line.options)) {
+        return { ...stored, groups: dish.groups ?? [], picked: picks };
+      }
+      return this.fromDish("r", i, "swapped", dish, e.q, picks, line.note);
     });
     const added = edit.a.map((a, j) => {
       const dish = this.menu.find((d) => d.id === a.m) as MenuDish;
@@ -826,12 +836,18 @@ export class Sheets {
       if (from === null || to === null) return { status: 422, html: this.hoursSheet(day, NO_TIME, "danger") };
       if (from === to) return { status: 409, html: this.hoursSheet(day, NO_SPAN, "danger", typed) };
       if (to < from && !typed.nachts) return { status: 409, html: this.hoursSheet(day, to === 0 ? AT_MIDNIGHT : OVERNIGHT, "danger", typed) };
-      next = { kind: "span", text: "", opens: typed.von, closes: typed.bis };
+      next = { kind: "span", text: "", opens: typed.von, closes: typed.bis, nachts: typed.nachts };
     }
     const before = this.hours.get(day) ?? { kind: "normal", text: "" };
-    if (hoursText(before as DayHours) === hoursText(next)) return { status: 200, html: this.hoursSheet(day, SAME, "ok") };
     const id = `hours-${day}`;
     const open = this.checks.find((c) => c.id === id);
+    if (hoursText(before as DayHours) === hoursText(next)) {
+      // The hours that hold now, asked while a request waits: the request is withdrawn. A change
+      // that is already in force, asked again, is no change and keeps its card (staff_changes.py).
+      if (!open?.waiting) return { status: 200, html: this.hoursSheet(day, SAME, "ok") };
+      this.checks = this.checks.filter((c) => c !== open);
+      return { status: 200, html: this.hoursSheet(day, HOURS_BACK, "ok"), events: ["checks"] };
+    }
     const first = open ? open.before : hoursText(before as DayHours);
     if (hoursText(next) === first) {
       this.hours.delete(day);
@@ -900,34 +916,21 @@ export class Sheets {
     if (day === null || at === null || party < 1) return refuse(ENTRY_INVALID);
     const name = (values["name"] ?? "").trim();
     if (!name) return refuse(SAY_NO_NAME);
-    const clock = this.r.now();
-    if (day < this.today || (day === this.today && at < (minutesOf(clock) ?? 0))) return refuse(SAY_PAST);
+    const raw = (values["telefon"] ?? "").trim();
+    const phone = raw ? normalizePhone(raw) : "";
+    if (phone === null) return refuse(SAY_INVALID_PHONE);
+    if (day < this.today || (day === this.today && at < (minutesOf(this.r.now()) ?? 0))) return refuse(SAY_PAST);
     const picked = this.data.entry.choices.find((c) => c[0] === values["tisch"]);
     const table = picked ? (picked[1].split(" (")[0] ?? "") : null;
-    const time = `${two(Math.floor(at / 60))}:${two(at % 60)}`;
-    const same = day === this.today ? this.r.booked() : [];
-    if (table && same.some((x) => x.tables.includes(table) && Math.abs((minutesOf(x.time) ?? 0) - at) < 90)) {
-      return refuse(`Tisch ${table} ist um ${time} Uhr schon vergeben.`);
-    }
-    const slot = this.data.slot_minutes;
-    const start = Math.floor(at / slot) * slot;
-    const guests = same.filter((x) => Math.floor((minutesOf(x.time) ?? 0) / slot) * slot === start).reduce((s, x) => s + x.party_size, 0) + party;
-    const clockOf = (m: number): string => `${two(Math.floor(m / 60) % 24)}:${two(m % 60)}`;
-    const closed = at < WEEK_OPENS || at >= WEEK_CLOSES;
     const draft: Draft = {
       id: `demo-draft-${values["schluessel"] || this.serial}`,
-      at: time,
+      at: `${two(Math.floor(at / 60))}:${two(at % 60)}`,
       day,
       party,
       name,
-      phone: (values["telefon"] ?? "").trim() || null,
+      phone: phone || null,
       note: (values["hinweis"] ?? "").trim() || null,
       tables: table ? [table] : [],
-      full: guests > this.data.max_guests,
-      closed,
-      load: closed
-        ? "Zu dieser Zeit gibt es kein Reservierungsfenster."
-        : `Fenster ${clockOf(start)} bis ${clockOf(start + slot)} Uhr: ${guests} von ${this.data.max_guests} Plätzen belegt.`,
       entered: false,
     };
     // The same sheet key is the same draft: a second "Weiter" does not book twice.
@@ -936,11 +939,13 @@ export class Sheets {
     return { status: 200, html: entrySummary(known?.entered ? known : draft, null, false) };
   }
 
-  entryConfirm(id: string, form: URLSearchParams): Reply | null {
+  entryConfirm(id: string): Reply | null {
     const d = this.drafts.get(id);
     if (!d) return null;
-    if (d.full && form.get("trotzdem") !== "1") return { status: 409, html: entrySummary(d, SAY_FULL, false) };
-    if (d.closed && form.get("geschlossen") !== "1") return { status: 409, html: entrySummary(d, SAY_CLOSED, true) };
+    // A draft that was not confirmed yet must still lie ahead when the team confirms it.
+    if (!d.entered && (d.day < this.today || (d.day === this.today && (minutesOf(d.at) ?? 0) < (minutesOf(this.r.now()) ?? 0)))) {
+      return { status: 409, html: entrySummary(d, SAY_PAST, true) };
+    }
     if (!d.entered) {
       d.entered = true;
       const entry: Reservation = {
@@ -952,8 +957,9 @@ export class Sheets {
         note: d.note,
         tables: d.tables,
         is_test: false,
-        off_hours: d.closed,
+        off_hours: false,
       };
+      // Another day's entry is not on today's board.
       if (d.day === this.today) this.r.enter(entry);
     }
     return { status: 200, html: "", trigger: { "reservierung-eingetragen": `Reservierung für ${d.name} eingetragen.` }, events: ["today"] };

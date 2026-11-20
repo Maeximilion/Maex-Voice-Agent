@@ -184,7 +184,7 @@ function handlers(w: World): [string, RegExp, Handler][] {
     }],
     ["GET", /^\/gui\/reservierung$/, () => g(s.entryOpen())],
     ["POST", /^\/gui\/reservierung$/, (_m, f) => g(s.entryCheck(f))],
-    ["POST", /^\/gui\/reservierung\/([^/]+)\/eintragen$/, (m, f) => g(s.entryConfirm(m[1] ?? "", f)) ?? missing()],
+    ["POST", /^\/gui\/reservierung\/([^/]+)\/eintragen$/, (m) => g(s.entryConfirm(m[1] ?? "")) ?? missing()],
     ["GET", /^\/gui\/teamnummer$/, () => g(s.teamOpen())],
     ["POST", /^\/gui\/teamnummer$/, (_m, f) => g(s.teamChange(f))],
     ["GET", /^\/gui\/tageszeiten$/, (_m, f) => g(s.hoursOpen(f.get("datum") ?? ""))],

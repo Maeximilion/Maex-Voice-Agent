@@ -132,8 +132,6 @@ export type Recorded = {
   team: TeamSheet;
   hours: HoursSheet;
   entry: EntrySheet;
-  slot_minutes: number;
-  max_guests: number;
 };
 
 // --- Escaping and small helpers ----------------------------------------------------
@@ -894,7 +892,7 @@ export class Restaurant {
     const mode = this.currentMode();
     const on = (key: string): boolean => this.header.services.find((s) => s[0] === key)?.[2] ?? false;
     const answers = mode !== "paused" && mode !== "shadow";
-    const order = answers && on("abholung");
+    const order = answers && on("abholung") && this.dishes().length > 0;
     const reservation = answers && on("reservierung");
     const callback = !order && !reservation;
     const n = this.serial++;

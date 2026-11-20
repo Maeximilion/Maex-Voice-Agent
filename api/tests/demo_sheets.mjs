@@ -168,7 +168,7 @@ const captures = JSON.parse(read('captures.json'))
   assert.match(broken.html, /durcheinander geraten/)
 }
 
-// --- Reservierung eintragen: form, summary, the window, the table ---
+// --- Reservierung eintragen: the form, the summary, the entry (the booking rules are the real tablet's) ---
 {
   const { r, s, data } = fresh()
   const open = s.entryOpen().html
@@ -188,37 +188,22 @@ const captures = JSON.parse(read('captures.json'))
   assert.equal(sum.status, 200)
   assert.match(text(sum.html), /Familie Beispiel/)
   assert.match(text(sum.html), /4 Personen/)
-  assert.match(text(sum.html), /Fenster 19:00 bis 19:30 Uhr: 4 von 60 Plätzen belegt\./)
-  assert.match(sum.html, /Eintragen<\/button>/)
+  assert.match(text(sum.html), /Beispiel: Auslastung, Tische und Öffnungszeiten prüft die echte Version/)
+  assert.doesNotMatch(sum.html, /Trotzdem/, 'the demo asks for no override')
   const id = /reservierung\/([^/]+)\/eintragen/.exec(sum.html)[1]
-  const done = s.entryConfirm(id, form({}))
+  const done = s.entryConfirm(id)
   assert.equal(done.trigger['reservierung-eingetragen'], 'Reservierung für Familie Beispiel eingetragen.')
   assert.match(text(r.heute()), /19:00/)
   assert.match(text(r.heute()), /Familie Beispiel/)
   // Edge: the same confirm twice books once.
-  s.entryConfirm(id, form({}))
+  s.entryConfirm(id)
   assert.equal((r.heute().match(/Familie Beispiel/g) ?? []).length, 1)
-  assert.equal(s.entryConfirm('nope', form({})), null)
-  // Edge: a table that is taken at that time, and the same one at another time.
+  assert.equal(s.entryConfirm('nope'), null)
+  // The table the visitor picked is named in the summary; which tables are free is the real tablet's.
   const table = data.entry.choices[2]
-  const taken = s.entryCheck(sent({ tisch: table[0], uhrzeit: '19:30', name: 'Zweite', schluessel: 'k2' }))
-  assert.equal(taken.status, 200)
-  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(taken.html)[1], form({}))
-  const clash = s.entryCheck(sent({ tisch: table[0], uhrzeit: '20:00', name: 'Dritte', schluessel: 'other' }))
-  assert.equal(clash.status, 409)
-  assert.match(text(clash.html), /Tisch T3 ist um 20:00 Uhr schon vergeben/)
-  assert.equal(s.entryCheck(sent({ tisch: table[0], uhrzeit: '22:00', name: 'Vierte', schluessel: 'third' })).status, 200)
-  // Edge: a full window needs the word "Trotzdem"; closed hours too.
-  const full = s.entryCheck(sent({ personen: '61', name: 'Gruppe', schluessel: 'big' }))
-  assert.match(text(full.html), /65 von 60 Plätzen belegt/)
-  assert.match(full.html, /Trotzdem eintragen<\/button>/)
-  assert.match(full.html, /name="trotzdem"/)
-  const fid = /reservierung\/([^/]+)\/eintragen/.exec(full.html)[1]
-  assert.equal(s.entryConfirm(fid, form({})).status, 409, 'without the word the full window refuses')
-  assert.equal(s.entryConfirm(fid, form({ trotzdem: '1' })).status, 200)
-  const closed = s.entryCheck(sent({ uhrzeit: '23:30', name: 'Spät', schluessel: 'late' }))
-  assert.match(text(closed.html), /laut Öffnungszeiten geschlossen/)
-  assert.match(closed.html, /name="geschlossen"/)
+  const named = s.entryCheck(sent({ tisch: table[0], uhrzeit: '19:30', name: 'Zweite', schluessel: 'k2' }))
+  assert.equal(named.status, 200)
+  assert.match(text(named.html), /Tisch T3/)
 }
 
 // --- Team number and a date's hours, with the owner's check cards ---
@@ -297,6 +282,107 @@ const captures = JSON.parse(read('captures.json'))
   assert.equal(items(S.filterMenu(menu, '', 'allergene')), 25)
   assert.match(S.filterMenu(menu, '', 'preis'), /Kein Gericht gefunden/)
   assert.match(S.filterMenu(menu, '', 'preis'), /<option value="preis" selected>/)
+}
+
+// --- Round 1 of the review of #899: the cases of the sheets ---
+{
+  const { data } = fresh()
+  const today = data.hours.today
+
+  // The time is checked again when the team confirms an unconfirmed draft; a confirmed one replays.
+  const c = fresh()
+  const soon = c.s.entryCheck(form({ datum: today, uhrzeit: '12:01', personen: '2', name: 'Knapp', telefon: '', hinweis: '', tisch: '', schluessel: 'late' }))
+  assert.equal(soon.status, 200, 'it lies ahead at the demo clock 12:00')
+  const sid = /reservierung\/([^/]+)\/eintragen/.exec(soon.html)[1]
+  c.r.tick(2)
+  const refused = c.s.entryConfirm(sid)
+  assert.equal(refused.status, 409)
+  assert.match(text(refused.html), /Dieser Zeitpunkt ist schon vorbei/)
+  assert.doesNotMatch(refused.html, /Eintragen<\/button>/, 'a draft in the past has no confirming button')
+  assert.doesNotMatch(text(c.r.heute()), /Knapp/)
+  const d = fresh()
+  const kept = d.s.entryCheck(form({ datum: today, uhrzeit: '12:01', personen: '2', name: 'Treu', telefon: '', hinweis: '', tisch: '', schluessel: 'ok' }))
+  const kid = /reservierung\/([^/]+)\/eintragen/.exec(kept.html)[1]
+  assert.equal(d.s.entryConfirm(kid).status, 200)
+  d.r.tick(5)
+  assert.equal(d.s.entryConfirm(kid).status, 200, 'a confirmed draft replays')
+  assert.equal((d.r.heute().match(/Treu/g) ?? []).length, 1)
+
+  // Every dish off: an example call takes no order and does not claim one.
+  const e = fresh()
+  for (const dish of e.data.menu) e.r.setOff(dish.number, true)
+  const before = (e.r.bestellungen().match(/class="card order/g) ?? []).length
+  const out = e.r.exampleCall()
+  assert.equal(out.order, false)
+  assert.equal((e.r.bestellungen().match(/class="card order/g) ?? []).length, before, 'no empty order card')
+  assert.equal(out.reservation, true, 'the table is still taken')
+
+  // Swapped to its own number: the choices stay editable and can be saved.
+  const g = fresh()
+  const margherita = state().orders.orders.find((o) => o.lines.some((l) => l.number === '201'))
+  const tapg = (html, op, extra = {}) => g.s.correctionTap(margherita.id, form({ state: /name="state" value="([^"]*)"/.exec(html)[1].replace(/&#34;/g, '"'), op, ...extra }))
+  let sheet = g.s.correctionOpen(margherita.id).html
+  const idx = margherita.lines.findIndex((l) => l.number === '201')
+  let step = tapg(sheet, `swap:${idx}`)
+  step = tapg(step.html, 'number', { number: '201' })
+  assert.match(text(step.html), /Bei 201 Pizza Margherita fehlt noch: Größe/, 'its own number opens the choices')
+  step = tapg(step.html, `opt:r:${idx}:0:1`)
+  assert.match(text(step.html), /Gewählt: Groß/)
+  assert.doesNotMatch(text(step.html), /fehlt noch/)
+  assert.match(text(step.html), /Noch nichts geändert/, 'the same choice as before is no change')
+  step = tapg(step.html, `opt:r:${idx}:0:0`)
+  assert.match(text(step.html), /Gewählt: Normal/)
+  assert.doesNotMatch(text(step.html), /Noch nichts geändert/)
+  const price = (html) => text(html).match(/Summe ([\d,]+) €/)[1]
+  assert.ok(Number(price(step.html).replace(',', '.')) < 28.7, 'Normal costs less than Groß')
+  const kept2 = g.s.correctionSave(margherita.id, form({ state: /name="state" value="([^"]*)"/.exec(step.html)[1].replace(/&#34;/g, '"'), reason: 'wrong_item' }))
+  assert.equal(kept2.status, 200)
+  assert.match(text(g.r.bestellungen()), /Korrigiert: falsches Gericht/)
+  // A dish without choices swapped to its own number is no change at all.
+  const plain = state().orders.orders.find((o) => o.lines.some((l) => l.number === '203'))
+  const pidx = plain.lines.findIndex((l) => l.number === '203')
+  const ps = g.s.correctionOpen(plain.id).html
+  const pa = g.s.correctionTap(plain.id, form({ state: /name="state" value="([^"]*)"/.exec(ps)[1].replace(/&#34;/g, '"'), op: `swap:${pidx}` }))
+  const pb = g.s.correctionTap(plain.id, form({ state: /name="state" value="([^"]*)"/.exec(pa.html)[1].replace(/&#34;/g, '"'), op: 'number', number: '203' }))
+  assert.match(text(pb.html), /Noch nichts geändert/)
+  assert.doesNotMatch(pb.html, /class="edit-line swapped"/)
+}
+
+// --- Round 3 of the review of #899 ---
+{
+  const { s, data } = fresh()
+  const today = data.hours.today
+  const other = new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10)
+  const put = (o) => form({ datum: other, uhrzeit: '19:00', personen: '2', name: 'Gast', telefon: '', hinweis: '', tisch: '', schluessel: 'r3' + Math.random(), ...o })
+
+  // The phone number: refused when it is none, kept as E.164 otherwise, optional.
+  assert.match(text(s.entryCheck(put({ telefon: 'abc' })).html), /Rufnummer habe ich nicht verstanden/)
+  assert.equal(s.entryCheck(put({ telefon: 'abc' })).status, 409)
+  const national = s.entryCheck(put({ telefon: '030 23125 000', name: 'National' }))
+  assert.match(text(national.html), /Telefon \+493023125000/)
+  assert.match(text(s.entryCheck(put({ telefon: '0049 30 / 23125-000', name: 'Alt' })).html), /Telefon \+493023125000/)
+  assert.match(text(s.entryCheck(put({ telefon: '+49 030 23125000', name: 'Trunk' })).html), /Telefon \+493023125000/)
+  assert.doesNotMatch(text(s.entryCheck(put({ telefon: '', name: 'Ohne' })).html), /Telefon/)
+  assert.equal(S.normalizePhone('12'), null)
+  assert.equal(S.normalizePhone('+0123456789'), null)
+
+  // A request that waits is withdrawn by asking for the hours that hold now.
+  const h = fresh()
+  const later = new Date(Date.parse(today) + 3 * 86400000).toISOString().slice(0, 10)
+  h.s.hoursChange(form({ datum: later, art: 'zeiten', von: '10:00', bis: '23:30' }))
+  assert.match(h.s.checkCards(), /Wartet auf den Inhaber/)
+  const back = h.s.hoursChange(form({ datum: later, art: 'normal' }))
+  assert.match(text(back.html), /Zurückgenommen/)
+  assert.doesNotMatch(h.s.checkCards(), /Wartet auf den Inhaber/)
+  assert.deepEqual(back.events, ['checks'])
+  assert.match(text(h.s.hoursChange(form({ datum: later, art: 'normal' })).html), /Keine Änderung/, 'nothing waits: no change')
+  // A change in force, asked again, keeps its card and its hours.
+  h.s.hoursChange(form({ datum: today, art: 'geschlossen' }))
+  assert.match(h.s.checkCards(), /Öffnungszeit/)
+  const again = h.s.hoursChange(form({ datum: today, art: 'geschlossen' }))
+  assert.match(text(again.html), /Keine Änderung/)
+  assert.match(text(again.html), /Gilt jetzt geschlossen/)
+  assert.match(h.s.checkCards(), /Öffnungszeit/, 'the card of the owner stays')
 }
 
 console.log('ok')

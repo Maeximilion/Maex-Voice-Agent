@@ -1,10 +1,10 @@
 """The sound waves of the hero as SVG path data.
 
-Each wave is two periods of 1440 units, so a shift by half its width loops
-without a seam. Drawn on the server, so the page needs no script for them.
+Each wave is one period of 1440 units; the waves stand in place and site.ts
+swings them up and down. Drawn on the server, so the page needs no script for the shape.
 """
 
-WIDTH = 2880
+WIDTH = 1440
 MID = 120
 
 SWINGS = {
