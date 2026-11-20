@@ -978,7 +978,7 @@ Claude hook returned no rewrite for `git status` there. The same hook returned
 model request, run this from the intended worktree in Bash:
 
 ```sh
-printf '%s\n' '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status"}}' | rtk hook claude
+jq -cn --arg cwd "$(git rev-parse --show-toplevel)" '{cwd:$cwd,hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:"git status"}}' | rtk hook claude
 ```
 
 ### Ubuntu threads for projects and claude.ai
