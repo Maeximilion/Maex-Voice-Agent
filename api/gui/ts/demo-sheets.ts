@@ -842,8 +842,9 @@ export class Sheets {
     const id = `hours-${day}`;
     const open = this.checks.find((c) => c.id === id);
     if (hoursText(before as DayHours) === hoursText(next)) {
-      // The hours that hold now, asked while a request waits: the request is withdrawn.
-      if (!open) return { status: 200, html: this.hoursSheet(day, SAME, "ok") };
+      // The hours that hold now, asked while a request waits: the request is withdrawn. A change
+      // that is already in force, asked again, is no change and keeps its card (staff_changes.py).
+      if (!open?.waiting) return { status: 200, html: this.hoursSheet(day, SAME, "ok") };
       this.checks = this.checks.filter((c) => c !== open);
       return { status: 200, html: this.hoursSheet(day, HOURS_BACK, "ok"), events: ["checks"] };
     }

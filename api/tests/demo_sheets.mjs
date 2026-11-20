@@ -376,6 +376,13 @@ const captures = JSON.parse(read('captures.json'))
   assert.doesNotMatch(h.s.checkCards(), /Wartet auf den Inhaber/)
   assert.deepEqual(back.events, ['checks'])
   assert.match(text(h.s.hoursChange(form({ datum: later, art: 'normal' })).html), /Keine Änderung/, 'nothing waits: no change')
+  // A change in force, asked again, keeps its card and its hours.
+  h.s.hoursChange(form({ datum: today, art: 'geschlossen' }))
+  assert.match(h.s.checkCards(), /Öffnungszeit/)
+  const again = h.s.hoursChange(form({ datum: today, art: 'geschlossen' }))
+  assert.match(text(again.html), /Keine Änderung/)
+  assert.match(text(again.html), /Gilt jetzt geschlossen/)
+  assert.match(h.s.checkCards(), /Öffnungszeit/, 'the card of the owner stays')
 }
 
 console.log('ok')
