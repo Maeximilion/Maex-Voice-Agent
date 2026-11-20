@@ -289,6 +289,19 @@ function refusedCorrection(order: string, message: string): string {
 
 // --- Reservierung eintragen -------------------------------------------------------------
 
+// "0721 / 555-1234" is "+497215551234" (domain/customers/phone.py normalize_phone), as far as
+// the demo goes: German national spellings and numbers with a country code; null for what
+// is no number. Trunk zeros after another country code and per-country lengths are not rebuilt.
+export function normalizePhone(raw: string): string | null {
+  let digits = raw.trim().replace(/[\s\-/().]/g, "");
+  if (digits.startsWith("00")) digits = "+" + digits.slice(2);
+  else if (digits.startsWith("0")) digits = "+49" + digits.slice(1);
+  else if (digits && !digits.startsWith("+")) digits = "+" + digits;
+  // "+49 0171 ...": the trunk zero said after the country code is dropped.
+  if (/^\+490[1-9]/.test(digits)) digits = "+49" + digits.slice(4);
+  return /^\+[1-9][0-9]{6,14}$/.test(digits) ? digits : null;
+}
+
 type Draft = {
   id: string;
   at: string; // HH:MM
@@ -309,6 +322,7 @@ const SAY_PAST = "Dieser Zeitpunkt ist schon vorbei.";
 const SAY_NO_NAME = "Bitte einen Namen eintragen.";
 const SAY_FULL = "Laut Reservierungen ist dafür kein Platz frei.";
 const SAY_CLOSED = "Zu dieser Zeit ist laut Öffnungszeiten geschlossen.";
+const SAY_INVALID_PHONE = "Die Rufnummer habe ich nicht verstanden. Können Sie sie noch einmal sagen?";
 
 // Pass the typed form back as it was typed, with the refusal above the buttons.
 function entryForm(values: Record<string, string>, choices: [string, string][], message: string | null): string {
@@ -851,9 +865,14 @@ export class Sheets {
       next = { kind: "span", text: "", opens: typed.von, closes: typed.bis, nachts: typed.nachts };
     }
     const before = this.hours.get(day) ?? { kind: "normal", text: "" };
-    if (hoursText(before as DayHours) === hoursText(next)) return { status: 200, html: this.hoursSheet(day, SAME, "ok") };
     const id = `hours-${day}`;
     const open = this.checks.find((c) => c.id === id);
+    if (hoursText(before as DayHours) === hoursText(next)) {
+      // The hours that hold now, asked while a request waits: the request is withdrawn.
+      if (!open) return { status: 200, html: this.hoursSheet(day, SAME, "ok") };
+      this.checks = this.checks.filter((c) => c !== open);
+      return { status: 200, html: this.hoursSheet(day, HOURS_BACK, "ok"), events: ["checks"] };
+    }
     const first = open ? open.before : hoursText(before as DayHours);
     if (hoursText(next) === first) {
       this.hours.delete(day);
@@ -922,6 +941,9 @@ export class Sheets {
     if (day === null || at === null || party < 1) return refuse(ENTRY_INVALID);
     const name = (values["name"] ?? "").trim();
     if (!name) return refuse(SAY_NO_NAME);
+    const raw = (values["telefon"] ?? "").trim();
+    const phone = raw ? normalizePhone(raw) : "";
+    if (phone === null) return refuse(SAY_INVALID_PHONE);
     const clock = this.r.now();
     if (day < this.today || (day === this.today && at < (minutesOf(clock) ?? 0))) return refuse(SAY_PAST);
     const picked = this.data.entry.choices.find((c) => c[0] === values["tisch"]);
@@ -933,13 +955,19 @@ export class Sheets {
     ];
     // A time inside the capacity window holds its table for the whole window; outside every
     // window only the same start time collides (domain/reservations/manual.py taken_tables).
-    const inWindow = at >= (minutesOf(this.data.window[0]) ?? 0) && at < (minutesOf(this.data.window[1]) ?? 0);
-    if (table && same.some((x) => x.tables.includes(table) && (inWindow || x.time === time))) {
+    const within = (hhmm: string): boolean => {
+      const m = minutesOf(hhmm) ?? 0;
+      return m >= (minutesOf(this.data.window[0]) ?? 0) && m < (minutesOf(this.data.window[1]) ?? 0);
+    };
+    const inWindow = within(time);
+    // A booking outside every window belongs to no window: it holds no table of this one and
+    // counts no guest (the window's own predicates in `taken_tables` and `booked_guests`).
+    if (table && same.some((x) => x.tables.includes(table) && (inWindow ? within(x.time) : x.time === time))) {
       return refuse(`Tisch ${table} ist um ${time} Uhr schon vergeben.`);
     }
     // The seeded capacity is one window for the whole opening time (slot_minutes is only
     // the grid of the times), so every booking of the day counts (api/domain/reservations/capacity.py).
-    const guests = same.reduce((s, x) => s + x.party, 0) + party;
+    const guests = same.filter((x) => within(x.time)).reduce((s, x) => s + x.party, 0) + party;
     const closed = !this.openAt(day, at);
     const draft: Draft = {
       id: `demo-draft-${values["schluessel"] || this.serial}`,
@@ -947,7 +975,7 @@ export class Sheets {
       day,
       party,
       name,
-      phone: (values["telefon"] ?? "").trim() || null,
+      phone: phone || null,
       note: (values["hinweis"] ?? "").trim() || null,
       tables: table ? [table] : [],
       // No window at that time is as full as a full one: only "Trotzdem" books it (manual.py `fits`).

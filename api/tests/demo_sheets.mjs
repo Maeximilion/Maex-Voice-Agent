@@ -401,4 +401,49 @@ const captures = JSON.parse(read('captures.json'))
   assert.doesNotMatch(pb.html, /class="edit-line swapped"/)
 }
 
+// --- Round 3 of the review of #899 ---
+{
+  const { r, s, data } = fresh()
+  const today = data.hours.today
+  const other = new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10)
+  const put = (o) => form({ datum: other, uhrzeit: '19:00', personen: '2', name: 'Gast', telefon: '', hinweis: '', tisch: '', schluessel: 'r3' + Math.random(), ...o })
+  const T3 = data.entry.choices[2][0]
+  // A booking outside every window (both overrides) holds no table and counts no guest of the window.
+  const late = s.entryCheck(put({ uhrzeit: '23:30', personen: '40', tisch: T3 }))
+  assert.match(late.html, /name="trotzdem"/)
+  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(late.html)[1], form({ trotzdem: '1', geschlossen: '1' }))
+  const evening = s.entryCheck(put({ uhrzeit: '19:00', personen: '30', tisch: T3 }))
+  assert.equal(evening.status, 200, 'the table of the late booking is free in the window')
+  assert.match(text(evening.html), /Fenster 11:00 bis 23:00 Uhr: 30 von 60 Plätzen belegt/)
+  // And the other way: a booking inside the window does not block a time outside every window.
+  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(evening.html)[1], form({}))
+  const edge = s.entryCheck(put({ uhrzeit: '23:45', tisch: T3 }))
+  assert.equal(edge.status, 200, 'the window booking at 19:00 does not hold a table at 23:45')
+  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(edge.html)[1], form({ trotzdem: '1', geschlossen: '1' }))
+  assert.equal(s.entryCheck(put({ uhrzeit: '23:45', tisch: T3 })).status, 409, 'the same start time collides outside the window')
+  assert.equal(s.entryCheck(put({ uhrzeit: '23:50', tisch: T3 })).status, 200)
+
+  // The phone number: refused when it is none, kept as E.164 otherwise, optional.
+  assert.match(text(s.entryCheck(put({ telefon: 'abc' })).html), /Rufnummer habe ich nicht verstanden/)
+  assert.equal(s.entryCheck(put({ telefon: 'abc' })).status, 409)
+  const national = s.entryCheck(put({ telefon: '030 23125 000', name: 'National' }))
+  assert.match(text(national.html), /Telefon \+493023125000/)
+  assert.match(text(s.entryCheck(put({ telefon: '0049 30 / 23125-000', name: 'Alt' })).html), /Telefon \+493023125000/)
+  assert.match(text(s.entryCheck(put({ telefon: '+49 030 23125000', name: 'Trunk' })).html), /Telefon \+493023125000/)
+  assert.doesNotMatch(text(s.entryCheck(put({ telefon: '', name: 'Ohne' })).html), /Telefon/)
+  assert.equal(S.normalizePhone('12'), null)
+  assert.equal(S.normalizePhone('+0123456789'), null)
+
+  // A request that waits is withdrawn by asking for the hours that hold now.
+  const h = fresh()
+  const later = new Date(Date.parse(today) + 3 * 86400000).toISOString().slice(0, 10)
+  h.s.hoursChange(form({ datum: later, art: 'zeiten', von: '10:00', bis: '23:30' }))
+  assert.match(h.s.checkCards(), /Wartet auf den Inhaber/)
+  const back = h.s.hoursChange(form({ datum: later, art: 'normal' }))
+  assert.match(text(back.html), /Zurückgenommen/)
+  assert.doesNotMatch(h.s.checkCards(), /Wartet auf den Inhaber/)
+  assert.deepEqual(back.events, ['checks'])
+  assert.match(text(h.s.hoursChange(form({ datum: later, art: 'normal' })).html), /Keine Änderung/, 'nothing waits: no change')
+}
+
 console.log('ok')
