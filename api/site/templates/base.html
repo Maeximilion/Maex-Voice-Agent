@@ -4,11 +4,16 @@
 <html lang="de">
 <head>
 <meta charset="utf-8">
+{# The policy travels with the page to a host that serves plain files; the app
+   also sends it as a header, with frame-ancestors, which a meta tag cannot carry. #}
+<meta http-equiv="Content-Security-Policy" content="{{ csp }}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Maex Voice Agent{% endblock %}</title>
 <meta name="description" content="{% block description %}Eine KI nimmt das Telefon Ihres Restaurants ab: Reservierungen, Abholung und Lieferung stehen sofort auf dem Tablet Ihres Teams.{% endblock %}">
 <meta name="theme-color" content="#0D0819">
-{% block robots %}{% endblock %}
+{# Private preview: no page may be indexed or its links followed. robots.txt
+   still allows crawling, or a crawler would never read this tag. #}
+{% if preview %}<meta name="robots" content="noindex, nofollow">{% else %}{% block robots %}{% endblock %}{% endif %}
 <link rel="preload" href="/static/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/fonts/ibm-plex-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="/static/site.css">
@@ -45,10 +50,11 @@
   <nav class="nav-links" aria-label="Hauptmenü">
     <a href="/#ablauf">So funktioniert's</a>
     <a href="/anfrage">Anfrage</a>
-    {% if login_url %}
+    {% if login_url and not preview %}
     <a class="btn btn-ghost" href="{{ login_url }}">Kunden-Login</a>
     {% else %}
-    {# No sign-in target is configured: the entry is shown as what it is. #}
+    {# No sign-in target, or the private preview (Maxi, 20.11.2026: the entry
+       stays visible, greyed): shown as what it is, no link, no control. #}
     <span class="btn btn-off" aria-disabled="true">Kunden-Login<span class="sr"> (noch nicht freigeschaltet)</span></span>
     {% endif %}
   </nav>

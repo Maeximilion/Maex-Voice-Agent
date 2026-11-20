@@ -7,6 +7,7 @@ form that cannot be sent.
 """
 
 import re
+from pathlib import Path
 from typing import Self
 from urllib.parse import urlsplit
 
@@ -35,6 +36,16 @@ class SiteSettings(BaseSettings):
     # address and the privacy text exist (#892). Empty: the form is shown, but
     # cannot be sent.
     site_inquiry_action: str = ""
+    # Private preview (#892), on until Maxi turns it off: no customer sign-in at
+    # all, a form that cannot be sent whatever SITE_INQUIRY_ACTION says,
+    # `noindex, nofollow` on every page, and the badge names a personal project
+    # in development.
+    site_preview: bool = True
+    # A folder outside the repository with `impressum.html` and
+    # `datenschutz.html`: the legal notice and the privacy text as HTML
+    # fragments, written by Maxi (they hold private details, so they never enter
+    # the repository). Empty or a file missing: that page is the placeholder.
+    site_legal_dir: str = ""
 
     @model_validator(mode="after")
     def _values_are_what_they_say(self) -> Self:
@@ -55,3 +66,14 @@ class SiteSettings(BaseSettings):
         if action and not (action.startswith("/") and not action.startswith("//")):
             raise ValueError("SITE_INQUIRY_ACTION must be a path of this site")
         return self
+
+    @property
+    def inquiry_open(self) -> bool:
+        return bool(self.site_inquiry_action) and not self.site_preview
+
+    def legal_text(self, kind: str) -> str | None:
+        """The fragment of `<kind>.html` in the legal folder, None without one."""
+        if not self.site_legal_dir:
+            return None
+        path = Path(self.site_legal_dir) / f"{kind}.html"
+        return path.read_text(encoding="utf-8") if path.is_file() else None
