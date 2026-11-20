@@ -62,6 +62,8 @@ shared Caddy (host) ──── one site per customer: <customer>.<domain>  →
 
 The public site (`api/site/`, #892, docs/13 §9) is a fourth thing behind the same Caddy, on the apex and `www`: no session, no database, no secret, nothing of the applications imported; it can only be read. The inquiry form built on it is not live (no route, no mail service, no privacy text yet): when it is, the route, its spam protection, what it stores and for how long come into this document and `docs/09` §5 first.
 
+The tablet demo of the public site (`/tablet-demo`, docs/06 §11) adds no trust boundary: it is static files of that site, rendered once from invented data in a scratch database, and its fake backend runs in the visitor's browser. It talks to no backend, no customer stack and no database, has no sign-in and no session, and nothing a visitor types leaves the browser. The build copies no real data: it seeds its own scratch database, replaces the environment's numbers with example numbers and refuses to publish a file that holds another phone number or a value of the settings. The site's CSP (`default-src 'self'`, no inline script or style) holds for it unchanged.
+
 Boundaries, outermost first: internet to Caddy; Caddy to one stack; dashboard to one stack's API;
 inside a stack the networks of docs/13 §3 (unchanged); host to everything.
 

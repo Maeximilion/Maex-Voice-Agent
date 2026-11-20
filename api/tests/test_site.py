@@ -25,6 +25,8 @@ def _no_site_settings_from_outside(monkeypatch):
     """A developer's environment or .env must not change what the tests expect."""
     for name in ("SITE_LOGIN_URL", "SITE_CONTACT_EMAIL", "SITE_INQUIRY_ACTION"):
         monkeypatch.delenv(name, raising=False)
+    # Nor a tablet demo built in this checkout (scripts/demo/tablet_demo_build.py).
+    monkeypatch.setattr(site_app, "TABLET_DEMO", Path("/nonexistent/tablet-demo"))
 
 
 def settings_of(**values: str) -> SiteSettings:

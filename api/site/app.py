@@ -25,6 +25,7 @@ HERE = Path(__file__).resolve().parent
 # The compiled scripts, the stylesheet and the fonts sit beside those of the
 # operations view, as the dashboard's stylesheet does.
 STATIC = HERE.parent / "gui" / "static"
+TABLET_DEMO = HERE / "tablet-demo"
 
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; "
@@ -86,6 +87,16 @@ def create_app(settings: SiteSettings | None = None) -> FastAPI:
         return {"status": "ok"}
 
     app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+    # The tablet demo, rendered by scripts/demo/tablet_demo_build.py into a
+    # folder that is not committed. Not built when the site starts: the address
+    # answers 404, and the landing page does not link it while
+    # content.DEMO_PATH is None.
+    if TABLET_DEMO.is_dir():
+        app.mount(
+            "/tablet-demo",
+            StaticFiles(directory=str(TABLET_DEMO), html=True),
+            name="tablet-demo",
+        )
 
     @app.middleware("http")
     async def headers(request: Request, call_next: Any) -> Response:

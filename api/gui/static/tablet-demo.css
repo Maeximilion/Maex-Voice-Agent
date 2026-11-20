@@ -1,0 +1,11 @@
+/* What the public tablet demo adds to the real pages (#892, docs/06 §11). The
+   pages themselves wear app.css unchanged; scripts/demo/tablet_demo_build.py
+   links this file into every page it renders.
+
+   The demo is built for tablets and computers. Below 768 px it says so at the
+   top of the page and stays usable (Maxi, 2026-11-20): a note in the flow of
+   the page, not fixed, so it never covers the header of the board. */
+.demo-notice{display:none}
+@media (max-width:767.98px){
+  .demo-notice{display:block;margin:0;padding:var(--s3) var(--s4);background:var(--warn-bg);color:var(--warn);border-bottom:2px solid var(--warn-line);font-size:var(--fs-body);font-weight:600;line-height:1.4}
+}
