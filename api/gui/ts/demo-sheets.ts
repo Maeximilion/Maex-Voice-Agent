@@ -408,7 +408,7 @@ const PAST_DAY = "Ein vergangener Tag lässt sich nicht mehr ändern.";
 const WEEK_OPENS = 11 * 60;
 const WEEK_CLOSES = 23 * 60;
 
-type DayHours = { text: string; kind: "normal" | "closed" | "span"; opens?: string; closes?: string };
+type DayHours = { text: string; kind: "normal" | "closed" | "span"; opens?: string; closes?: string; nachts?: boolean };
 
 type Check = { id: string; title: string; before: string; after: string; now: string; waiting: boolean; keep: string; seen: string };
 
@@ -438,6 +438,8 @@ export class Sheets {
   private hours = new Map<string, DayHours>();
   private drafts = new Map<string, Draft>();
   private serial = 0;
+  // What the visitor entered for a day other than today (today's go to the board).
+  private later: { day: string; time: string; party: number; tables: string[] }[] = [];
 
   constructor(
     private readonly data: Recorded,
@@ -532,8 +534,15 @@ export class Sheets {
       };
       if (!e || e.q === 0) return { ...stored, kind: "removed", quantity: line.quantity };
       const dish = e.s ? this.menu.find((d) => d.id === e.s) : undefined;
-      if (!dish || dish.number === line.number) return stored;
-      return this.fromDish("r", i, "swapped", dish, e.q, e.o ?? [], line.note);
+      if (!dish) return stored;
+      const picks = e.o ?? [];
+      // Swapped to its own number: only the choices change (domain/ordering/correction.py);
+      // the same choices as before leave the stored line, with its choices offered.
+      const keys = (xs: string[]): string => [...xs].sort().join("|");
+      if (dish.number === line.number && keys(picks.map((p) => p[1])) === keys(line.options)) {
+        return { ...stored, groups: dish.groups ?? [], picked: picks };
+      }
+      return this.fromDish("r", i, "swapped", dish, e.q, picks, line.note);
     });
     const added = edit.a.map((a, j) => {
       const dish = this.menu.find((d) => d.id === a.m) as MenuDish;
@@ -766,6 +775,19 @@ export class Sheets {
     return { status: 200, html: this.teamSheet(PHONE_HELD, "ok"), events: ["checks"] };
   }
 
+  // Whether the restaurant is open at a time of a day, by the hours the visitor set (a span
+  // "after midnight" runs into the next day) or else by the weekly hours.
+  private openAt(day: string, at: number): boolean {
+    const h = this.hours.get(day);
+    if (h?.kind === "closed") return false;
+    if (h?.kind === "span") {
+      const from = minutesOf(h.opens ?? "") ?? 0;
+      const to = (minutesOf(h.closes ?? "") ?? 0) + (h.nachts ? 1440 : 0);
+      return at >= from && at < to;
+    }
+    return at >= WEEK_OPENS && at < WEEK_CLOSES;
+  }
+
   private dayOf(text: string): string | null {
     return /^\d{4}-\d\d-\d\d$/.test(text) && !Number.isNaN(Date.parse(text)) ? text : null;
   }
@@ -826,7 +848,7 @@ export class Sheets {
       if (from === null || to === null) return { status: 422, html: this.hoursSheet(day, NO_TIME, "danger") };
       if (from === to) return { status: 409, html: this.hoursSheet(day, NO_SPAN, "danger", typed) };
       if (to < from && !typed.nachts) return { status: 409, html: this.hoursSheet(day, to === 0 ? AT_MIDNIGHT : OVERNIGHT, "danger", typed) };
-      next = { kind: "span", text: "", opens: typed.von, closes: typed.bis };
+      next = { kind: "span", text: "", opens: typed.von, closes: typed.bis, nachts: typed.nachts };
     }
     const before = this.hours.get(day) ?? { kind: "normal", text: "" };
     if (hoursText(before as DayHours) === hoursText(next)) return { status: 200, html: this.hoursSheet(day, SAME, "ok") };
@@ -905,15 +927,17 @@ export class Sheets {
     const picked = this.data.entry.choices.find((c) => c[0] === values["tisch"]);
     const table = picked ? (picked[1].split(" (")[0] ?? "") : null;
     const time = `${two(Math.floor(at / 60))}:${two(at % 60)}`;
-    const same = day === this.today ? this.r.booked() : [];
+    const same = [
+      ...(day === this.today ? this.r.booked().map((x) => ({ time: x.time, party: x.party_size, tables: x.tables })) : []),
+      ...this.later.filter((x) => x.day === day),
+    ];
     if (table && same.some((x) => x.tables.includes(table) && Math.abs((minutesOf(x.time) ?? 0) - at) < 90)) {
       return refuse(`Tisch ${table} ist um ${time} Uhr schon vergeben.`);
     }
-    const slot = this.data.slot_minutes;
-    const start = Math.floor(at / slot) * slot;
-    const guests = same.filter((x) => Math.floor((minutesOf(x.time) ?? 0) / slot) * slot === start).reduce((s, x) => s + x.party_size, 0) + party;
-    const clockOf = (m: number): string => `${two(Math.floor(m / 60) % 24)}:${two(m % 60)}`;
-    const closed = at < WEEK_OPENS || at >= WEEK_CLOSES;
+    // The seeded capacity is one window for the whole opening time (slot_minutes is only
+    // the grid of the times), so every booking of the day counts (api/domain/reservations/capacity.py).
+    const guests = same.reduce((s, x) => s + x.party, 0) + party;
+    const closed = !this.openAt(day, at);
     const draft: Draft = {
       id: `demo-draft-${values["schluessel"] || this.serial}`,
       at: time,
@@ -927,7 +951,7 @@ export class Sheets {
       closed,
       load: closed
         ? "Zu dieser Zeit gibt es kein Reservierungsfenster."
-        : `Fenster ${clockOf(start)} bis ${clockOf(start + slot)} Uhr: ${guests} von ${this.data.max_guests} Plätzen belegt.`,
+        : `Fenster ${this.data.window[0]} bis ${this.data.window[1]} Uhr: ${guests} von ${this.data.max_guests} Plätzen belegt.`,
       entered: false,
     };
     // The same sheet key is the same draft: a second "Weiter" does not book twice.
@@ -939,6 +963,10 @@ export class Sheets {
   entryConfirm(id: string, form: URLSearchParams): Reply | null {
     const d = this.drafts.get(id);
     if (!d) return null;
+    // A draft that was not confirmed yet must still lie ahead when the team confirms it.
+    if (!d.entered && (d.day < this.today || (d.day === this.today && (minutesOf(d.at) ?? 0) < (minutesOf(this.r.now()) ?? 0)))) {
+      return { status: 409, html: entrySummary(d, SAY_PAST, true) };
+    }
     if (d.full && form.get("trotzdem") !== "1") return { status: 409, html: entrySummary(d, SAY_FULL, false) };
     if (d.closed && form.get("geschlossen") !== "1") return { status: 409, html: entrySummary(d, SAY_CLOSED, true) };
     if (!d.entered) {
@@ -955,6 +983,7 @@ export class Sheets {
         off_hours: d.closed,
       };
       if (d.day === this.today) this.r.enter(entry);
+      else this.later.push({ day: d.day, time: d.at, party: d.party, tables: d.tables });
     }
     return { status: 200, html: "", trigger: { "reservierung-eingetragen": `Reservierung für ${d.name} eingetragen.` }, events: ["today"] };
   }

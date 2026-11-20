@@ -58,6 +58,8 @@ ZONE = ZoneInfo(TIMEZONE)
 EXAMPLE_PREFIX = "+493023125"
 SLOT_MINUTES = 30
 MAX_GUESTS = 60
+# The one capacity window, as `_open_every_day` seeds it, and the opening hours.
+WINDOW_FROM, WINDOW_TO = "11:00", "23:00"
 WAIT_PICKUP, WAIT_DELIVERY = 20, 45
 
 # Five categories, five dishes each (Maxi, 2026-11-19). Invented names and prices.

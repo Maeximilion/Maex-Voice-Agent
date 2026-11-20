@@ -188,7 +188,9 @@ const captures = JSON.parse(read('captures.json'))
   assert.equal(sum.status, 200)
   assert.match(text(sum.html), /Familie Beispiel/)
   assert.match(text(sum.html), /4 Personen/)
-  assert.match(text(sum.html), /Fenster 19:00 bis 19:30 Uhr: 4 von 60 Plätzen belegt\./)
+  // The capacity is one window for the whole opening time: the seeded bookings of the day count too.
+  const seeded = data.today.today.reduce((n, x) => n + x.party_size, 0)
+  assert.match(text(sum.html), new RegExp(`Fenster 11:00 bis 23:00 Uhr: ${seeded + 4} von 60 Plätzen belegt\\.`))
   assert.match(sum.html, /Eintragen<\/button>/)
   const id = /reservierung\/([^/]+)\/eintragen/.exec(sum.html)[1]
   const done = s.entryConfirm(id, form({}))
@@ -210,7 +212,7 @@ const captures = JSON.parse(read('captures.json'))
   assert.equal(s.entryCheck(sent({ tisch: table[0], uhrzeit: '22:00', name: 'Vierte', schluessel: 'third' })).status, 200)
   // Edge: a full window needs the word "Trotzdem"; closed hours too.
   const full = s.entryCheck(sent({ personen: '61', name: 'Gruppe', schluessel: 'big' }))
-  assert.match(text(full.html), /65 von 60 Plätzen belegt/)
+  assert.ok(Number(/(\d+) von 60 Plätzen belegt/.exec(text(full.html))[1]) > 60)
   assert.match(full.html, /Trotzdem eintragen<\/button>/)
   assert.match(full.html, /name="trotzdem"/)
   const fid = /reservierung\/([^/]+)\/eintragen/.exec(full.html)[1]
@@ -297,6 +299,99 @@ const captures = JSON.parse(read('captures.json'))
   assert.equal(items(S.filterMenu(menu, '', 'allergene')), 25)
   assert.match(S.filterMenu(menu, '', 'preis'), /Kein Gericht gefunden/)
   assert.match(S.filterMenu(menu, '', 'preis'), /<option value="preis" selected>/)
+}
+
+// --- Round 1 of the review of #899: five findings, each with its case ---
+{
+  // A window of the whole opening time: two groups of 40 at different hours still fill it.
+  const { r, s, data } = fresh()
+  const today = data.hours.today
+  const seeded = data.today.today.reduce((n, x) => n + x.party_size, 0)
+  const big = (o) => form({ datum: today, uhrzeit: '19:00', personen: '40', name: 'Gruppe', telefon: '', hinweis: '', tisch: '', ...o })
+  const first = s.entryCheck(big({ schluessel: 'a' }))
+  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(first.html)[1], form({}))
+  const second = s.entryCheck(big({ schluessel: 'b', uhrzeit: '20:00' }))
+  assert.match(text(second.html), new RegExp(`${seeded + 80} von 60 Plätzen belegt`))
+  assert.match(second.html, /Trotzdem eintragen<\/button>/, 'the second group needs the word')
+  // A day other than today is its own window.
+  const other = new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10)
+  const tomorrow = s.entryCheck(big({ schluessel: 'c', datum: other }))
+  assert.match(text(tomorrow.html), /40 von 60 Plätzen belegt/)
+  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(tomorrow.html)[1], form({}))
+  assert.match(text(s.entryCheck(big({ schluessel: 'd', datum: other, uhrzeit: '20:00' })).html), /80 von 60 Plätzen belegt/)
+
+  // The hours the visitor set today decide whether a booking is out of hours.
+  const t = fresh()
+  const at = (o) => t.s.entryCheck(form({ datum: today, uhrzeit: '19:00', personen: '2', name: 'Gast', telefon: '', hinweis: '', tisch: '', schluessel: 'h' + Math.random(), ...o }))
+  assert.doesNotMatch(at({}).html, /name="geschlossen"/)
+  t.s.hoursChange(form({ datum: today, art: 'geschlossen' }))
+  assert.match(at({}).html, /name="geschlossen"/, 'a closed day asks for the closed-hours word')
+  t.s.hoursChange(form({ datum: today, art: 'zeiten', von: '12:00', bis: '14:00' }))
+  assert.match(at({ uhrzeit: '19:00' }).html, /name="geschlossen"/)
+  assert.doesNotMatch(at({ uhrzeit: '13:00' }).html, /name="geschlossen"/)
+  t.s.hoursChange(form({ datum: today, art: 'zeiten', von: '18:00', bis: '02:00', nachts: '1' }))
+  assert.doesNotMatch(at({ uhrzeit: '23:30' }).html, /name="geschlossen"/, 'a span after midnight is open at 23:30')
+  assert.match(at({ uhrzeit: '17:00' }).html, /name="geschlossen"/)
+  t.s.hoursChange(form({ datum: today, art: 'normal' }))
+  assert.doesNotMatch(at({}).html, /name="geschlossen"/)
+
+  // The time is checked again when the team confirms an unconfirmed draft; a confirmed one replays.
+  const c = fresh()
+  const soon = c.s.entryCheck(form({ datum: today, uhrzeit: '12:01', personen: '2', name: 'Knapp', telefon: '', hinweis: '', tisch: '', schluessel: 'late' }))
+  assert.equal(soon.status, 200, 'it lies ahead at the demo clock 12:00')
+  const sid = /reservierung\/([^/]+)\/eintragen/.exec(soon.html)[1]
+  c.r.tick(2)
+  const refused = c.s.entryConfirm(sid, form({}))
+  assert.equal(refused.status, 409)
+  assert.match(text(refused.html), /Dieser Zeitpunkt ist schon vorbei/)
+  assert.doesNotMatch(refused.html, /Eintragen<\/button>/, 'a draft in the past has no confirming button')
+  assert.doesNotMatch(text(c.r.heute()), /Knapp/)
+  const d = fresh()
+  const kept = d.s.entryCheck(form({ datum: today, uhrzeit: '12:01', personen: '2', name: 'Treu', telefon: '', hinweis: '', tisch: '', schluessel: 'ok' }))
+  const kid = /reservierung\/([^/]+)\/eintragen/.exec(kept.html)[1]
+  assert.equal(d.s.entryConfirm(kid, form({})).status, 200)
+  d.r.tick(5)
+  assert.equal(d.s.entryConfirm(kid, form({})).status, 200, 'a confirmed draft replays')
+  assert.equal((d.r.heute().match(/Treu/g) ?? []).length, 1)
+
+  // Every dish off: an example call takes no order and does not claim one.
+  const e = fresh()
+  for (const dish of e.data.menu) e.r.setOff(dish.number, true)
+  const before = (e.r.bestellungen().match(/class="card order/g) ?? []).length
+  const out = e.r.exampleCall()
+  assert.equal(out.order, false)
+  assert.equal((e.r.bestellungen().match(/class="card order/g) ?? []).length, before, 'no empty order card')
+  assert.equal(out.reservation, true, 'the table is still taken')
+
+  // Swapped to its own number: the choices stay editable and can be saved.
+  const g = fresh()
+  const margherita = state().orders.orders.find((o) => o.lines.some((l) => l.number === '201'))
+  const tapg = (html, op, extra = {}) => g.s.correctionTap(margherita.id, form({ state: /name="state" value="([^"]*)"/.exec(html)[1].replace(/&#34;/g, '"'), op, ...extra }))
+  let sheet = g.s.correctionOpen(margherita.id).html
+  const idx = margherita.lines.findIndex((l) => l.number === '201')
+  let step = tapg(sheet, `swap:${idx}`)
+  step = tapg(step.html, 'number', { number: '201' })
+  assert.match(text(step.html), /Bei 201 Pizza Margherita fehlt noch: Größe/, 'its own number opens the choices')
+  step = tapg(step.html, `opt:r:${idx}:0:1`)
+  assert.match(text(step.html), /Gewählt: Groß/)
+  assert.doesNotMatch(text(step.html), /fehlt noch/)
+  assert.match(text(step.html), /Noch nichts geändert/, 'the same choice as before is no change')
+  step = tapg(step.html, `opt:r:${idx}:0:0`)
+  assert.match(text(step.html), /Gewählt: Normal/)
+  assert.doesNotMatch(text(step.html), /Noch nichts geändert/)
+  const price = (html) => text(html).match(/Summe ([\d,]+) €/)[1]
+  assert.ok(Number(price(step.html).replace(',', '.')) < 28.7, 'Normal costs less than Groß')
+  const kept2 = g.s.correctionSave(margherita.id, form({ state: /name="state" value="([^"]*)"/.exec(step.html)[1].replace(/&#34;/g, '"'), reason: 'wrong_item' }))
+  assert.equal(kept2.status, 200)
+  assert.match(text(g.r.bestellungen()), /Korrigiert: falsches Gericht/)
+  // A dish without choices swapped to its own number is no change at all.
+  const plain = state().orders.orders.find((o) => o.lines.some((l) => l.number === '203'))
+  const pidx = plain.lines.findIndex((l) => l.number === '203')
+  const ps = g.s.correctionOpen(plain.id).html
+  const pa = g.s.correctionTap(plain.id, form({ state: /name="state" value="([^"]*)"/.exec(ps)[1].replace(/&#34;/g, '"'), op: `swap:${pidx}` }))
+  const pb = g.s.correctionTap(plain.id, form({ state: /name="state" value="([^"]*)"/.exec(pa.html)[1].replace(/&#34;/g, '"'), op: 'number', number: '203' }))
+  assert.match(text(pb.html), /Noch nichts geändert/)
+  assert.doesNotMatch(pb.html, /class="edit-line swapped"/)
 }
 
 console.log('ok')
