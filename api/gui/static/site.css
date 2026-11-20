@@ -80,7 +80,7 @@ a:hover{color:var(--text)}
 
 /* Hero */
 .hero{position:relative;overflow-x:hidden;overflow-x:clip;min-block-size:clamp(34rem,calc(100dvh - 110px),60rem);display:flex;align-items:center;padding-block:clamp(24px,6vh,72px) clamp(150px,26vh,260px)}
-.hero::before{content:"";position:absolute;left:-18rem;top:-18rem;inline-size:48rem;block-size:48rem;border-radius:50%;background:radial-gradient(circle,rgba(123,47,255,.34),rgba(123,47,255,0) 65%);pointer-events:none}
+.hero::before{content:"";position:absolute;left:0;top:0;inline-size:48rem;block-size:48rem;border-radius:50%;background:radial-gradient(circle,rgba(123,47,255,.34),rgba(123,47,255,0) 65%);pointer-events:none;will-change:transform;transform:translate(calc(var(--gx,6rem) - 24rem),calc(var(--gy,6rem) - 24rem))}
 .hero-grid{position:relative;display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);gap:clamp(32px,5vw,72px);align-items:center}
 .badge-test{display:inline-flex;align-items:center;gap:10px;padding:8px 14px;border-radius:var(--r-sm);background:var(--warn-bg);color:var(--warn);font-family:var(--font-mono);font-size:.9rem;font-weight:700}
 h1{margin-top:28px;font-size:clamp(2.75rem,1.2rem + 5.2vw,6rem);font-weight:700;line-height:1;letter-spacing:-.03em}
@@ -96,16 +96,13 @@ h1{margin-top:28px;font-size:clamp(2.75rem,1.2rem + 5.2vw,6rem);font-weight:700;
 .actions{display:flex;flex-wrap:wrap;gap:14px;margin-top:36px}
 
 /* Sound waves: one flat line while it is quiet, a swing while someone speaks.
-   The line is a layer of its own; the waves scale and fade in on the compositor. */
+   The line is a layer of its own; site.ts sets the scaleY of each wave and the waves
+   scale up and down in place on the compositor, never sideways. */
 .waves{position:absolute;inset-inline:0;bottom:0;block-size:clamp(140px,26vh,260px);pointer-events:none}
 .waves::before{content:"";position:absolute;inset-inline:0;top:50%;block-size:2px;margin-top:-1px;background:var(--accent);opacity:.6}
-.wave{position:absolute;inset:0;opacity:0;transform:scaleY(0);transition:transform .9s cubic-bezier(.3,.9,.3,1),opacity .6s ease}
-.wave-2{transition-delay:.12s}
-.wave-3{transition-delay:.24s}
-.is-loud .wave{opacity:.85;transform:scaleY(1)}
-.run{position:absolute;left:0;top:0;inline-size:200%;block-size:100%;will-change:transform;animation:run 16s linear infinite}
-.wave-2 .run{animation-duration:26s;animation-direction:reverse}
-.wave-3 .run{animation-duration:38s}
+.wave{position:absolute;inset:0;opacity:0;transform:scaleY(0);will-change:transform;transition:opacity .6s ease}
+.is-loud .wave{opacity:.85}
+.run{position:absolute;inset:0}
 .wave svg{display:block;inline-size:100%;block-size:100%}
 .wave path{fill:none;stroke-width:3;vector-effect:non-scaling-stroke}
 .wave-1 path{stroke:var(--accent)}
@@ -139,6 +136,7 @@ h1{margin-top:28px;font-size:clamp(2.75rem,1.2rem + 5.2vw,6rem);font-weight:700;
 .rest{visibility:hidden}
 .caret{display:inline-block;visibility:hidden;inline-size:2px;block-size:1em;margin-left:3px;background:var(--accent);vertical-align:-2px;animation:blink 1s steps(1) infinite}
 .is-active .caret{visibility:visible}
+.call:not(.is-shown) .caret{visibility:hidden}
 .tags{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;padding-top:18px;border-top:2px solid var(--line);font-family:var(--font-mono);font-size:.9rem;color:var(--muted)}
 .tags span{background:var(--surface-2);border-radius:var(--r-sm);padding:6px 10px}
 
@@ -236,7 +234,6 @@ h1{margin-top:28px;font-size:clamp(2.75rem,1.2rem + 5.2vw,6rem);font-weight:700;
 .fineprint{margin-top:16px;font-size:.9375rem;line-height:1.5;color:var(--muted)}
 
 @keyframes rise{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:none}}
-@keyframes run{to{transform:translateX(-50%)}}
 @keyframes ring{0%{transform:scale(.7);opacity:.75}100%{transform:scale(2.6);opacity:0}}
 @keyframes blink{50%{opacity:0}}
 @keyframes flick{0%{opacity:.08}8%{opacity:1}12%{opacity:.25}20%{opacity:1}26%{opacity:.5}34%,100%{opacity:1}}
@@ -276,6 +273,6 @@ h1{margin-top:28px;font-size:clamp(2.75rem,1.2rem + 5.2vw,6rem);font-weight:700;
   .rv,.track-fill,.sign,.w,.late{opacity:1;transform:none}
   .ring{display:none}
   .wave{opacity:.55;transform:scaleY(.35)}
-  .run{will-change:auto}
+  .wave{will-change:auto}
   .caret{visibility:hidden!important}
 }

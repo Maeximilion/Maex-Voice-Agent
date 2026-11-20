@@ -269,7 +269,7 @@ def test_the_kinds_of_business_are_the_same_in_the_page_and_in_the_script():
     assert re.findall(r'"([^"]+)"', listed) == list(content.KINDS)
 
 
-def test_the_waves_are_two_seamless_periods_of_path_data():
+def test_the_waves_are_one_period_of_path_data():
     for path in waves.paths().values():
         assert path.startswith(f"M0 {waves.MID} Q")
         assert path.endswith(f"{waves.WIDTH} {waves.MID}")
@@ -316,10 +316,15 @@ def test_every_animation_has_a_still_state_for_reduced_motion():
     assert "@supports (animation-timeline:view())" in css
     for selector in (".rv{", ".track-fill{"):
         assert css.index(selector, css.index("@supports (animation-timeline")) > 0
-    # Nothing animates a filter, and nothing follows the pointer.
+    # Nothing animates a filter. Only the glow follows the pointer, and only a fine
+    # pointer of a reader who accepts motion.
     assert "filter:" not in css and "backdrop-filter" not in css
-    assert "pointermove" not in (STATIC / "site.js").read_text(encoding="utf-8")
-    assert "mousemove" not in (STATIC / "site.js").read_text(encoding="utf-8")
+    script = (STATIC / "site.js").read_text(encoding="utf-8")
+    assert "mousemove" not in script
+    assert script.count("pointermove") == 1
+    assert "(hover:hover) and (pointer:fine)" in script
+    assert "still.matches" in script[script.index("pointermove") :]
+    assert script.count("still.addEventListener") == 2
 
 
 def test_the_scripts_are_compiled_and_named_by_the_pages():
@@ -466,3 +471,18 @@ def test_an_unknown_address_gets_the_404_page_of_the_site():
     assert response.status_code == 404
     assert "Diese Seite gibt es nicht." in response.text
     assert response.headers["content-security-policy"] == site_app.CSP
+
+
+def test_a_hidden_call_shows_no_caret_and_a_switch_clears_the_old_one():
+    # A caret is visible by its own rule even inside a hidden call, so the switch
+    # clears the class of the call it leaves and the CSS hides the others (#892).
+    css = (STATIC / "site.css").read_text(encoding="utf-8")
+    assert ".call:not(.is-shown) .caret{visibility:hidden}" in css
+    source = (ROOT / "api" / "gui" / "ts" / "site.ts").read_text(encoding="utf-8")
+    assert 'classList.remove("is-active", "is-pending")' in source
+
+
+def test_the_waves_swing_in_place_and_never_run_sideways():
+    css = (STATIC / "site.css").read_text(encoding="utf-8")
+    assert "@keyframes run" not in css and ".run{position:absolute;inset:0}" in css
+    assert "scaleY" in (STATIC / "site.js").read_text(encoding="utf-8")
