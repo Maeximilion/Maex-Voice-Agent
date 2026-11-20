@@ -168,7 +168,7 @@ const captures = JSON.parse(read('captures.json'))
   assert.match(broken.html, /durcheinander geraten/)
 }
 
-// --- Reservierung eintragen: form, summary, the window, the table ---
+// --- Reservierung eintragen: the form, the summary, the entry (the booking rules are the real tablet's) ---
 {
   const { r, s, data } = fresh()
   const open = s.entryOpen().html
@@ -188,43 +188,22 @@ const captures = JSON.parse(read('captures.json'))
   assert.equal(sum.status, 200)
   assert.match(text(sum.html), /Familie Beispiel/)
   assert.match(text(sum.html), /4 Personen/)
-  // The capacity is one window for the whole opening time: the seeded bookings of the day count too.
-  const seeded = data.today.today.reduce((n, x) => n + x.party_size, 0)
-  assert.match(text(sum.html), new RegExp(`Fenster 11:00 bis 23:00 Uhr: ${seeded + 4} von 60 Plätzen belegt\\.`))
-  assert.match(sum.html, /Eintragen<\/button>/)
+  assert.match(text(sum.html), /Beispiel: Auslastung, Tische und Öffnungszeiten prüft die echte Version/)
+  assert.doesNotMatch(sum.html, /Trotzdem/, 'the demo asks for no override')
   const id = /reservierung\/([^/]+)\/eintragen/.exec(sum.html)[1]
-  const done = s.entryConfirm(id, form({}))
+  const done = s.entryConfirm(id)
   assert.equal(done.trigger['reservierung-eingetragen'], 'Reservierung für Familie Beispiel eingetragen.')
   assert.match(text(r.heute()), /19:00/)
   assert.match(text(r.heute()), /Familie Beispiel/)
   // Edge: the same confirm twice books once.
-  s.entryConfirm(id, form({}))
+  s.entryConfirm(id)
   assert.equal((r.heute().match(/Familie Beispiel/g) ?? []).length, 1)
-  assert.equal(s.entryConfirm('nope', form({})), null)
-  // Edge: a table that is taken at that time, and the same one at another time.
+  assert.equal(s.entryConfirm('nope'), null)
+  // The table the visitor picked is named in the summary; which tables are free is the real tablet's.
   const table = data.entry.choices[2]
-  const taken = s.entryCheck(sent({ tisch: table[0], uhrzeit: '19:30', name: 'Zweite', schluessel: 'k2' }))
-  assert.equal(taken.status, 200)
-  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(taken.html)[1], form({}))
-  const clash = s.entryCheck(sent({ tisch: table[0], uhrzeit: '20:00', name: 'Dritte', schluessel: 'other' }))
-  assert.equal(clash.status, 409)
-  assert.match(text(clash.html), /Tisch T3 ist um 20:00 Uhr schon vergeben/)
-  // A table is held for the whole capacity window, not for 90 minutes (the real `taken_tables`).
-  const late = s.entryCheck(sent({ tisch: table[0], uhrzeit: '22:00', name: 'Vierte', schluessel: 'third' }))
-  assert.equal(late.status, 409)
-  assert.match(text(late.html), /Tisch T3 ist um 22:00 Uhr schon vergeben/)
-  assert.equal(s.entryCheck(sent({ tisch: data.entry.choices[3][0], uhrzeit: '22:00', name: 'Fünfte', schluessel: 'fifth' })).status, 200, 'another table is free')
-  // Edge: a full window needs the word "Trotzdem"; closed hours too.
-  const full = s.entryCheck(sent({ personen: '61', name: 'Gruppe', schluessel: 'big' }))
-  assert.ok(Number(/(\d+) von 60 Plätzen belegt/.exec(text(full.html))[1]) > 60)
-  assert.match(full.html, /Trotzdem eintragen<\/button>/)
-  assert.match(full.html, /name="trotzdem"/)
-  const fid = /reservierung\/([^/]+)\/eintragen/.exec(full.html)[1]
-  assert.equal(s.entryConfirm(fid, form({})).status, 409, 'without the word the full window refuses')
-  assert.equal(s.entryConfirm(fid, form({ trotzdem: '1' })).status, 200)
-  const closed = s.entryCheck(sent({ uhrzeit: '23:30', name: 'Spät', schluessel: 'late' }))
-  assert.match(text(closed.html), /laut Öffnungszeiten geschlossen/)
-  assert.match(closed.html, /name="geschlossen"/)
+  const named = s.entryCheck(sent({ tisch: table[0], uhrzeit: '19:30', name: 'Zweite', schluessel: 'k2' }))
+  assert.equal(named.status, 200)
+  assert.match(text(named.html), /Tisch T3/)
 }
 
 // --- Team number and a date's hours, with the owner's check cards ---
@@ -305,42 +284,10 @@ const captures = JSON.parse(read('captures.json'))
   assert.match(S.filterMenu(menu, '', 'preis'), /<option value="preis" selected>/)
 }
 
-// --- Round 1 of the review of #899: five findings, each with its case ---
+// --- Round 1 of the review of #899: the cases of the sheets ---
 {
-  // A window of the whole opening time: two groups of 40 at different hours still fill it.
-  const { r, s, data } = fresh()
+  const { data } = fresh()
   const today = data.hours.today
-  const seeded = data.today.today.reduce((n, x) => n + x.party_size, 0)
-  const big = (o) => form({ datum: today, uhrzeit: '19:00', personen: '40', name: 'Gruppe', telefon: '', hinweis: '', tisch: '', ...o })
-  const first = s.entryCheck(big({ schluessel: 'a' }))
-  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(first.html)[1], form({}))
-  const second = s.entryCheck(big({ schluessel: 'b', uhrzeit: '20:00' }))
-  assert.match(text(second.html), new RegExp(`${seeded + 80} von 60 Plätzen belegt`))
-  assert.match(second.html, /Trotzdem eintragen<\/button>/, 'the second group needs the word')
-  // A day other than today is its own window.
-  const other = new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10)
-  const tomorrow = s.entryCheck(big({ schluessel: 'c', datum: other }))
-  assert.match(text(tomorrow.html), /40 von 60 Plätzen belegt/)
-  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(tomorrow.html)[1], form({}))
-  assert.match(text(s.entryCheck(big({ schluessel: 'd', datum: other, uhrzeit: '20:00' })).html), /80 von 60 Plätzen belegt/)
-
-  // The hours the visitor set today decide whether a booking is out of hours.
-  const t = fresh()
-  const at = (o) => t.s.entryCheck(form({ datum: today, uhrzeit: '19:00', personen: '2', name: 'Gast', telefon: '', hinweis: '', tisch: '', schluessel: 'h' + Math.random(), ...o }))
-  assert.doesNotMatch(at({}).html, /name="geschlossen"/)
-  t.s.hoursChange(form({ datum: today, art: 'geschlossen' }))
-  assert.match(at({}).html, /name="geschlossen"/, 'a closed day asks for the closed-hours word')
-  t.s.hoursChange(form({ datum: today, art: 'zeiten', von: '12:00', bis: '14:00' }))
-  assert.match(at({ uhrzeit: '19:00' }).html, /name="geschlossen"/)
-  assert.doesNotMatch(at({ uhrzeit: '13:00' }).html, /name="geschlossen"/)
-  t.s.hoursChange(form({ datum: today, art: 'zeiten', von: '18:00', bis: '02:00', nachts: '1' }))
-  assert.doesNotMatch(at({ uhrzeit: '23:30' }).html, /name="geschlossen"/, 'a span after midnight is open at 23:30')
-  // Open is not the same as inside a capacity window: 23:30 has none and needs the word "Trotzdem".
-  assert.match(at({ uhrzeit: '23:30' }).html, /Trotzdem eintragen<\/button>/)
-  assert.match(text(at({ uhrzeit: '23:30' }).html), /Zu dieser Zeit gibt es kein Reservierungsfenster/)
-  assert.match(at({ uhrzeit: '17:00' }).html, /name="geschlossen"/)
-  t.s.hoursChange(form({ datum: today, art: 'normal' }))
-  assert.doesNotMatch(at({}).html, /name="geschlossen"/)
 
   // The time is checked again when the team confirms an unconfirmed draft; a confirmed one replays.
   const c = fresh()
@@ -348,7 +295,7 @@ const captures = JSON.parse(read('captures.json'))
   assert.equal(soon.status, 200, 'it lies ahead at the demo clock 12:00')
   const sid = /reservierung\/([^/]+)\/eintragen/.exec(soon.html)[1]
   c.r.tick(2)
-  const refused = c.s.entryConfirm(sid, form({}))
+  const refused = c.s.entryConfirm(sid)
   assert.equal(refused.status, 409)
   assert.match(text(refused.html), /Dieser Zeitpunkt ist schon vorbei/)
   assert.doesNotMatch(refused.html, /Eintragen<\/button>/, 'a draft in the past has no confirming button')
@@ -356,9 +303,9 @@ const captures = JSON.parse(read('captures.json'))
   const d = fresh()
   const kept = d.s.entryCheck(form({ datum: today, uhrzeit: '12:01', personen: '2', name: 'Treu', telefon: '', hinweis: '', tisch: '', schluessel: 'ok' }))
   const kid = /reservierung\/([^/]+)\/eintragen/.exec(kept.html)[1]
-  assert.equal(d.s.entryConfirm(kid, form({})).status, 200)
+  assert.equal(d.s.entryConfirm(kid).status, 200)
   d.r.tick(5)
-  assert.equal(d.s.entryConfirm(kid, form({})).status, 200, 'a confirmed draft replays')
+  assert.equal(d.s.entryConfirm(kid).status, 200, 'a confirmed draft replays')
   assert.equal((d.r.heute().match(/Treu/g) ?? []).length, 1)
 
   // Every dish off: an example call takes no order and does not claim one.
@@ -403,25 +350,10 @@ const captures = JSON.parse(read('captures.json'))
 
 // --- Round 3 of the review of #899 ---
 {
-  const { r, s, data } = fresh()
+  const { s, data } = fresh()
   const today = data.hours.today
   const other = new Date(Date.parse(today) + 86400000).toISOString().slice(0, 10)
   const put = (o) => form({ datum: other, uhrzeit: '19:00', personen: '2', name: 'Gast', telefon: '', hinweis: '', tisch: '', schluessel: 'r3' + Math.random(), ...o })
-  const T3 = data.entry.choices[2][0]
-  // A booking outside every window (both overrides) holds no table and counts no guest of the window.
-  const late = s.entryCheck(put({ uhrzeit: '23:30', personen: '40', tisch: T3 }))
-  assert.match(late.html, /name="trotzdem"/)
-  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(late.html)[1], form({ trotzdem: '1', geschlossen: '1' }))
-  const evening = s.entryCheck(put({ uhrzeit: '19:00', personen: '30', tisch: T3 }))
-  assert.equal(evening.status, 200, 'the table of the late booking is free in the window')
-  assert.match(text(evening.html), /Fenster 11:00 bis 23:00 Uhr: 30 von 60 Plätzen belegt/)
-  // And the other way: a booking inside the window does not block a time outside every window.
-  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(evening.html)[1], form({}))
-  const edge = s.entryCheck(put({ uhrzeit: '23:45', tisch: T3 }))
-  assert.equal(edge.status, 200, 'the window booking at 19:00 does not hold a table at 23:45')
-  s.entryConfirm(/reservierung\/([^/]+)\/eintragen/.exec(edge.html)[1], form({ trotzdem: '1', geschlossen: '1' }))
-  assert.equal(s.entryCheck(put({ uhrzeit: '23:45', tisch: T3 })).status, 409, 'the same start time collides outside the window')
-  assert.equal(s.entryCheck(put({ uhrzeit: '23:50', tisch: T3 })).status, 200)
 
   // The phone number: refused when it is none, kept as E.164 otherwise, optional.
   assert.match(text(s.entryCheck(put({ telefon: 'abc' })).html), /Rufnummer habe ich nicht verstanden/)

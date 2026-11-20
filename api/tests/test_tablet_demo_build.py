@@ -283,7 +283,6 @@ def test_the_state_carries_what_the_sheets_need(built):
     assert [o["name"] for o in pizza["groups"][0]["options"]] == ["Normal", "Groß"]
     assert pizza["groups"][0]["required"] is True
     assert [d["number"] for d in state["menu"] if d["sold_out"]] == [data.SOLD_OUT]
-    assert state["max_guests"] == data.MAX_GUESTS
     assert state["entry"]["choices"]
 
 

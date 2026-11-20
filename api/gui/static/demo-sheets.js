@@ -262,8 +262,9 @@ export function normalizePhone(raw) {
 const ENTRY_INVALID = "Bitte Datum, Uhrzeit, Personen und Namen prüfen.";
 const SAY_PAST = "Dieser Zeitpunkt ist schon vorbei.";
 const SAY_NO_NAME = "Bitte einen Namen eintragen.";
-const SAY_FULL = "Laut Reservierungen ist dafür kein Platz frei.";
-const SAY_CLOSED = "Zu dieser Zeit ist laut Öffnungszeiten geschlossen.";
+// The demo does not rebuild the real tablet's booking rules (window, tables, opening hours):
+// the summary says so (docs/06 §11).
+const ENTRY_EXAMPLE = "Beispiel: Auslastung, Tische und Öffnungszeiten prüft die echte Version.";
 const SAY_INVALID_PHONE = "Die Rufnummer habe ich nicht verstanden. Können Sie sie noch einmal sagen?";
 // Pass the typed form back as it was typed, with the refusal above the buttons.
 function entryForm(values, choices, message) {
@@ -305,12 +306,6 @@ function entrySummary(d, message, blocked) {
     const [y, m, dd] = d.day.split("-").map(Number);
     const date = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, dd ?? 1));
     const when = `${WEEKDAYS[(date.getUTCDay() + 6) % 7]}, ${two(dd ?? 1)}.${two(m ?? 1)}.${y}, ${d.at} Uhr`;
-    const needs = d.full || d.closed;
-    const confirm = d.closed
-        ? ' hx-confirm="Laut Öffnungszeiten ist zu dieser Zeit geschlossen. Trotzdem eintragen?"'
-        : d.full
-            ? ' hx-confirm="Laut Reservierungen ist dafür kein Platz frei. Trotzdem eintragen?"'
-            : "";
     return `<section class="sheet reservierung" role="dialog" aria-labelledby="reservierung-titel">
   <div class="sheet-head">
     <h2 id="reservierung-titel" tabindex="-1">Reservierung eintragen</h2>
@@ -325,16 +320,13 @@ function entrySummary(d, message, blocked) {
       ${d.note ? `<dt>Hinweis</dt><dd>${esc(d.note)}</dd>` : ""}
       <dt>Tisch</dt><dd>${d.tables.length ? "Tisch " + esc(d.tables.join(" + ")) : "Ohne Tisch"}</dd>
     </dl>
-    <p class="badge ${d.full ? "warn" : "ok"}">${esc(d.load)}</p>
-    ${d.closed ? `<p class="badge warn">${esc(SAY_CLOSED)}</p>` : ""}
+    <p class="badge ok">${esc(ENTRY_EXAMPLE)}</p>
     <div class="sheet-foot">
       ${message ? `<p class="badge danger">${esc(message)}</p>` : ""}
       ${blocked
         ? ""
-        : `<form hx-post="/gui/reservierung/${esc(d.id)}/eintragen" hx-target="#reservierung" hx-swap="innerHTML"${confirm}>
-        ${d.full ? '<input type="hidden" name="trotzdem" value="1">' : ""}
-        ${d.closed ? '<input type="hidden" name="geschlossen" value="1">' : ""}
-        <button type="submit" class="primary">${needs ? "Trotzdem eintragen" : "Eintragen"}</button>
+        : `<form hx-post="/gui/reservierung/${esc(d.id)}/eintragen" hx-target="#reservierung" hx-swap="innerHTML">
+        <button type="submit" class="primary">Eintragen</button>
       </form>`}
     </div>
   </div>
@@ -383,8 +375,6 @@ export class Sheets {
         this.hours = new Map();
         this.drafts = new Map();
         this.serial = 0;
-        // What the visitor entered for a day other than today (today's go to the board).
-        this.later = [];
         this.menu = data.menu.filter((d) => d.id !== undefined);
         this.holding = data.team.holding;
         this.numbers = [data.team.standard, ...data.team.choices];
@@ -720,19 +710,6 @@ export class Sheets {
             open.after = open.now = number;
         return { status: 200, html: this.teamSheet(PHONE_HELD, "ok"), events: ["checks"] };
     }
-    // Whether the restaurant is open at a time of a day, by the hours the visitor set (a span
-    // "after midnight" runs into the next day) or else by the weekly hours.
-    openAt(day, at) {
-        const h = this.hours.get(day);
-        if (h?.kind === "closed")
-            return false;
-        if (h?.kind === "span") {
-            const from = minutesOf(h.opens ?? "") ?? 0;
-            const to = (minutesOf(h.closes ?? "") ?? 0) + (h.nachts ? 1440 : 0);
-            return at >= from && at < to;
-        }
-        return at >= WEEK_OPENS && at < WEEK_CLOSES;
-    }
     dayOf(text) {
         return /^\d{4}-\d\d-\d\d$/.test(text) && !Number.isNaN(Date.parse(text)) ? text : null;
     }
@@ -879,47 +856,19 @@ export class Sheets {
         const phone = raw ? normalizePhone(raw) : "";
         if (phone === null)
             return refuse(SAY_INVALID_PHONE);
-        const clock = this.r.now();
-        if (day < this.today || (day === this.today && at < (minutesOf(clock) ?? 0)))
+        if (day < this.today || (day === this.today && at < (minutesOf(this.r.now()) ?? 0)))
             return refuse(SAY_PAST);
         const picked = this.data.entry.choices.find((c) => c[0] === values["tisch"]);
         const table = picked ? (picked[1].split(" (")[0] ?? "") : null;
-        const time = `${two(Math.floor(at / 60))}:${two(at % 60)}`;
-        const same = [
-            ...(day === this.today ? this.r.booked().map((x) => ({ time: x.time, party: x.party_size, tables: x.tables })) : []),
-            ...this.later.filter((x) => x.day === day),
-        ];
-        // A time inside the capacity window holds its table for the whole window; outside every
-        // window only the same start time collides (domain/reservations/manual.py taken_tables).
-        const within = (hhmm) => {
-            const m = minutesOf(hhmm) ?? 0;
-            return m >= (minutesOf(this.data.window[0]) ?? 0) && m < (minutesOf(this.data.window[1]) ?? 0);
-        };
-        const inWindow = within(time);
-        // A booking outside every window belongs to no window: it holds no table of this one and
-        // counts no guest (the window's own predicates in `taken_tables` and `booked_guests`).
-        if (table && same.some((x) => x.tables.includes(table) && (inWindow ? within(x.time) : x.time === time))) {
-            return refuse(`Tisch ${table} ist um ${time} Uhr schon vergeben.`);
-        }
-        // The seeded capacity is one window for the whole opening time (slot_minutes is only
-        // the grid of the times), so every booking of the day counts (api/domain/reservations/capacity.py).
-        const guests = same.filter((x) => within(x.time)).reduce((s, x) => s + x.party, 0) + party;
-        const closed = !this.openAt(day, at);
         const draft = {
             id: `demo-draft-${values["schluessel"] || this.serial}`,
-            at: time,
+            at: `${two(Math.floor(at / 60))}:${two(at % 60)}`,
             day,
             party,
             name,
             phone: phone || null,
             note: (values["hinweis"] ?? "").trim() || null,
             tables: table ? [table] : [],
-            // No window at that time is as full as a full one: only "Trotzdem" books it (manual.py `fits`).
-            full: !inWindow || guests > this.data.max_guests,
-            closed,
-            load: !inWindow
-                ? "Zu dieser Zeit gibt es kein Reservierungsfenster."
-                : `Fenster ${this.data.window[0]} bis ${this.data.window[1]} Uhr: ${guests} von ${this.data.max_guests} Plätzen belegt.`,
             entered: false,
         };
         // The same sheet key is the same draft: a second "Weiter" does not book twice.
@@ -928,7 +877,7 @@ export class Sheets {
             this.drafts.set(draft.id, draft);
         return { status: 200, html: entrySummary(known?.entered ? known : draft, null, false) };
     }
-    entryConfirm(id, form) {
+    entryConfirm(id) {
         const d = this.drafts.get(id);
         if (!d)
             return null;
@@ -936,10 +885,6 @@ export class Sheets {
         if (!d.entered && (d.day < this.today || (d.day === this.today && (minutesOf(d.at) ?? 0) < (minutesOf(this.r.now()) ?? 0)))) {
             return { status: 409, html: entrySummary(d, SAY_PAST, true) };
         }
-        if (d.full && form.get("trotzdem") !== "1")
-            return { status: 409, html: entrySummary(d, SAY_FULL, false) };
-        if (d.closed && form.get("geschlossen") !== "1")
-            return { status: 409, html: entrySummary(d, SAY_CLOSED, true) };
         if (!d.entered) {
             d.entered = true;
             const entry = {
@@ -951,12 +896,11 @@ export class Sheets {
                 note: d.note,
                 tables: d.tables,
                 is_test: false,
-                off_hours: d.closed,
+                off_hours: false,
             };
+            // Another day's entry is not on today's board.
             if (d.day === this.today)
                 this.r.enter(entry);
-            else
-                this.later.push({ day: d.day, time: d.at, party: d.party, tables: d.tables });
         }
         return { status: 200, html: "", trigger: { "reservierung-eingetragen": `Reservierung für ${d.name} eingetragen.` }, events: ["today"] };
     }

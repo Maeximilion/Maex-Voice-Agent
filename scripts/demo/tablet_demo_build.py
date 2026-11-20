@@ -219,8 +219,6 @@ def board_state(
         "callback_labels": {k: list(v) for k, v in CALLBACK_LABELS.items()},
         "clock": "12:00",
         "table": EXAMPLE_TABLE,
-        "window": [data.WINDOW_FROM, data.WINDOW_TO],
-        "max_guests": data.MAX_GUESTS,
     }
 
 

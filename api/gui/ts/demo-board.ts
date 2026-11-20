@@ -132,8 +132,6 @@ export type Recorded = {
   team: TeamSheet;
   hours: HoursSheet;
   entry: EntrySheet;
-  window: [string, string];
-  max_guests: number;
 };
 
 // --- Escaping and small helpers ----------------------------------------------------
