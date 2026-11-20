@@ -164,6 +164,8 @@ for (const [m, u] of [
 // --- B3: the sheets answer from the visitor's restaurant, through the requests the buttons send ---
 {
   const state = JSON.parse(fs.readFileSync(path.join(dir, 'state.json'), 'utf8'))
+  const now = new Date()
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}` // the visitor's day, not the build's
   const dish = state.menu.find((d) => d.number === '302')
   const sheet = await xhr('GET', '/gui/gericht-aus')
   assert.match(sheet.responseText, /Gericht aus/)
@@ -194,12 +196,12 @@ for (const [m, u] of [
   assert.match(text(team.responseText), /Gilt bis Betriebsschluss/)
   const checks = await xhr('GET', '/gui/fragments/pruefen')
   assert.match(text(checks.responseText), /Teamnummer heute/)
-  const hours = await xhr('GET', `/gui/tageszeiten?datum=${state.hours.today}`)
+  const hours = await xhr('GET', `/gui/tageszeiten?datum=${today}`)
   assert.match(hours.responseText, /Öffnungszeit für einen Tag/)
 
   const res = await xhr('GET', '/gui/reservierung')
   const key = /name="schluessel" value="([^"]+)"/.exec(res.responseText)[1]
-  const draft = await xhr('POST', '/gui/reservierung', form({ schluessel: key, datum: state.hours.today, uhrzeit: '19:00', personen: '2', name: 'Test', tisch: '' }))
+  const draft = await xhr('POST', '/gui/reservierung', form({ schluessel: key, datum: today, uhrzeit: '19:00', personen: '2', name: 'Test', tisch: '' }))
   const rid = /reservierung\/([^/]+)\/eintragen/.exec(draft.responseText)[1]
   const entered = await xhr('POST', `/gui/reservierung/${rid}/eintragen`)
   assert.match(JSON.parse(entered.getResponseHeader('HX-Trigger'))['reservierung-eingetragen'], /Test/)

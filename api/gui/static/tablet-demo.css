@@ -32,7 +32,7 @@
 .demo-locked{margin:0;border-bottom:2px solid var(--warn-line)}
 .demo-locked~* select:disabled,.demo-locked~* input:disabled,.demo-locked~* textarea:disabled{opacity:.5;cursor:not-allowed}
 
-/* The label on example figures and the example menu: a badge that wraps with its text
-   instead of sitting on a fixed line, so it holds at every width. */
-.demo-example{display:inline-block;margin-inline-start:var(--s2);font-weight:600;white-space:normal}
-p.demo-example{margin:var(--s2) 0}
+/* The label on example figures stays whole on one line (UI-UX Pro Max: a compact label
+   does not wrap to a second line); the longer note of the menu is a sentence and wraps. */
+.demo-example{display:inline-block;max-width:100%;margin-inline-start:var(--s2);font-weight:600;white-space:nowrap}
+p.demo-example{margin:var(--s2) 0;white-space:normal}

@@ -351,10 +351,17 @@ function hoursText(h) {
         return `${h.opens} bis ${h.closes} Uhr`;
     return "normale Zeiten der Woche";
 }
+// The visitor's own date, not the build's: the pages were rendered some day, the demo is
+// opened on another, and a reservation "for today" must not be in the past.
+export function localDay() {
+    const d = new Date();
+    return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())}`;
+}
 export class Sheets {
-    constructor(data, r) {
+    constructor(data, r, today = localDay()) {
         this.data = data;
         this.r = r;
+        this.today = today;
         this.checks = [];
         this.hours = new Map();
         this.drafts = new Map();
@@ -692,7 +699,7 @@ export class Sheets {
         return /^\d{4}-\d\d-\d\d$/.test(text) && !Number.isNaN(Date.parse(text)) ? text : null;
     }
     hoursSheet(day, message, tone, typed) {
-        const today = this.data.hours.today;
+        const today = this.today;
         const shown = day !== null && day >= today ? day : today;
         const holding = this.hours.get(shown) ?? { kind: "normal", text: "" };
         const opens = typed?.von ?? (holding.kind === "span" ? (holding.opens ?? "") : "");
@@ -736,7 +743,7 @@ export class Sheets {
         if (day === null || !["geschlossen", "zeiten", "normal"].includes(choice)) {
             return { status: 422, html: this.hoursSheet(day, NO_DATE, "danger") };
         }
-        if (day < this.data.hours.today)
+        if (day < this.today)
             return { status: 409, html: this.hoursSheet(day, PAST_DAY, "danger", typed) };
         let next = { kind: "normal", text: "" };
         if (choice === "geschlossen")
@@ -768,7 +775,7 @@ export class Sheets {
         if (next.kind === "span") {
             const from = minutesOf(next.opens ?? "") ?? 0;
             const to = (minutesOf(next.closes ?? "") ?? 0) + (typed.nachts ? 1440 : 0);
-            held = day === this.data.hours.today || (from >= WEEK_OPENS && to <= WEEK_CLOSES);
+            held = day === this.today || (from >= WEEK_OPENS && to <= WEEK_CLOSES);
         }
         if (held)
             this.hours.set(day, next);
@@ -809,7 +816,7 @@ export class Sheets {
     // --- Reservierung eintragen ---
     entryOpen() {
         this.serial += 1;
-        const values = { schluessel: `demo-key-${this.serial}`, datum: this.data.hours.today };
+        const values = { schluessel: `demo-key-${this.serial}`, datum: this.today };
         return { status: 200, html: entryForm(values, this.data.entry.choices, null) };
     }
     entryCheck(form) {
@@ -826,12 +833,12 @@ export class Sheets {
         if (!name)
             return refuse(SAY_NO_NAME);
         const clock = this.r.now();
-        if (day < this.data.hours.today || (day === this.data.hours.today && at < (minutesOf(clock) ?? 0)))
+        if (day < this.today || (day === this.today && at < (minutesOf(clock) ?? 0)))
             return refuse(SAY_PAST);
         const picked = this.data.entry.choices.find((c) => c[0] === values["tisch"]);
         const table = picked ? (picked[1].split(" (")[0] ?? "") : null;
         const time = `${two(Math.floor(at / 60))}:${two(at % 60)}`;
-        const same = day === this.data.hours.today ? this.r.booked() : [];
+        const same = day === this.today ? this.r.booked() : [];
         if (table && same.some((x) => x.tables.includes(table) && Math.abs((minutesOf(x.time) ?? 0) - at) < 90)) {
             return refuse(`Tisch ${table} ist um ${time} Uhr schon vergeben.`);
         }
@@ -881,7 +888,7 @@ export class Sheets {
                 is_test: false,
                 off_hours: d.closed,
             };
-            if (d.day === this.data.hours.today)
+            if (d.day === this.today)
                 this.r.enter(entry);
         }
         return { status: 200, html: "", trigger: { "reservierung-eingetragen": `Reservierung für ${d.name} eingetragen.` }, events: ["today"] };
