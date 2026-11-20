@@ -971,6 +971,16 @@ The project rules keep Git patches complete and leave merge commands in the form
 the project gate expects. Other Bash commands still use the default RTK filters.
 The rules operate in Claude Code and require no HTTP proxy.
 
+For RTK 1.2.1, keep the worktree outside `.claude/`. On Windows and Ubuntu,
+`pipeline explain` found the rules under `.claude/worktrees/`, but the actual
+Claude hook returned no rewrite for `git status` there. The same hook returned
+`rtk git status` in a sibling worktree. To check the real hook without running a
+model request, run this from the intended worktree in Bash:
+
+```sh
+printf '%s\n' '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git status"}}' | rtk hook claude
+```
+
 ### Ubuntu threads for projects and claude.ai
 
 A project in the desktop app (or claude.ai/code) can only start a session inside Ubuntu when a Remote Control server runs there. Console: Ubuntu terminal.
