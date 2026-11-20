@@ -14,6 +14,7 @@
 // Source: api/gui/ts/demo-backend.ts. The file of the same name in api/gui/static/ is
 // its compiled output (`npm run build`, docs/22); edit the source, never the output.
 import { demoLinks, Restaurant } from "./demo-board.js";
+import { dayLabelOf, filterCalls, filterMenu, Sheets } from "./demo-sheets.js";
 export {};
 // Where the build wrote the demo (api/site/tablet-demo/), as the site serves it.
 const BASE = "/tablet-demo/";
@@ -90,7 +91,10 @@ function load() {
         json("routes.json"),
         json("captures.json"),
         json("state.json"),
-    ]).then(([routes, captures, state]) => ({ routes: routes.routes, captures, restaurant: new Restaurant(state) })));
+    ]).then(([routes, captures, state]) => {
+        const restaurant = new Restaurant(state);
+        return { routes: routes.routes, captures, restaurant, sheets: new Sheets(state, restaurant) };
+    }));
     return world;
 }
 const WAIT_LABEL = /^\/gui\/kopfzeile\/wartezeit\/([^/]+)$/;
@@ -106,7 +110,28 @@ function printSoon(r) {
             emit("orders");
     }, SLIP_MS);
 }
-function handlers(r) {
+// What a sheet answers, as a reply of the backend: the trigger header the board listens
+// for, and the events the real server's stream would send afterwards.
+function sheet(reply) {
+    const headers = { "Content-Type": HTML };
+    if (reply.trigger)
+        headers["HX-Trigger"] = JSON.stringify(reply.trigger);
+    if (reply.events?.length)
+        setTimeout(() => emit(...(reply.events ?? [])), 0);
+    return { status: reply.status, headers, body: reply.html };
+}
+// A rendered page of the build, as it opens (the pages that take a filter start from it).
+async function captured(w, url) {
+    const c = w.captures.find((x) => x.method === "GET" && x.url === url);
+    if (!c)
+        return null;
+    const res = await realFetch(BASE + c.file);
+    return res.ok ? res.text() : null;
+}
+function handlers(w) {
+    const r = w.restaurant;
+    const s = w.sheets;
+    const g = (reply) => (reply ? sheet(reply) : null);
     const header = (tap) => tap ? html(r.kopfzeile(), tap.status) : null;
     const column = (tap) => {
         const reply = html(r.bestellungen(), tap.status);
@@ -115,6 +140,38 @@ function handlers(r) {
         return reply;
     };
     return [
+        // --- B3: the sheets and the filters of the pages ---
+        ["GET", /^\/gui\/gericht-aus$/, () => html(s.dishSheet())],
+        ["GET", /^\/gui\/fragments\/gericht-aus$/, (_m, f) => html(s.dishSearch(f.get("q") ?? ""))],
+        ["POST", /^\/gui\/gericht-aus\/([^/]+)\/([^/]+)$/, (m) => g(s.dishSwitch(m[1] ?? "", m[2] ?? "")) ?? missing()],
+        ["GET", /^\/gui\/bestellungen\/([^/]+)\/korrigieren$/, (m) => g(s.correctionOpen(m[1] ?? ""))],
+        ["POST", /^\/gui\/bestellungen\/([^/]+)\/korrigieren\/vorschau$/, (m, f) => g(s.correctionTap(m[1] ?? "", f))],
+        ["POST", /^\/gui\/bestellungen\/([^/]+)\/korrigieren$/, (m, f) => {
+                const reply = g(s.correctionSave(m[1] ?? "", f));
+                // A slip that was sent is printed again; the board follows on its own.
+                printSoon(r);
+                return reply;
+            }],
+        ["GET", /^\/gui\/reservierung$/, () => g(s.entryOpen())],
+        ["POST", /^\/gui\/reservierung$/, (_m, f) => g(s.entryCheck(f))],
+        ["POST", /^\/gui\/reservierung\/([^/]+)\/eintragen$/, (m, f) => g(s.entryConfirm(m[1] ?? "", f)) ?? missing()],
+        ["GET", /^\/gui\/teamnummer$/, () => g(s.teamOpen())],
+        ["POST", /^\/gui\/teamnummer$/, (_m, f) => g(s.teamChange(f))],
+        ["GET", /^\/gui\/tageszeiten$/, (_m, f) => g(s.hoursOpen(f.get("datum") ?? ""))],
+        ["POST", /^\/gui\/tageszeiten$/, (_m, f) => g(s.hoursChange(f))],
+        ["GET", /^\/gui\/fragments\/pruefen$/, () => html(s.checkCards())],
+        ["GET", /^\/gui\/anrufe$/, async (_m, f) => {
+                const day = f.get("tag") ?? "";
+                const page = (await captured(w, day ? `/gui/anrufe?tag=${day}` : "/gui/anrufe")) ?? (await captured(w, "/gui/anrufe"));
+                if (page === null)
+                    return null;
+                return html(filterCalls(page, f.get("ergebnis") ?? "", f.get("anliegen") ?? "", dayLabelOf(page, day || (/<option value="([^"]*)" selected>/.exec(page)?.[1] ?? ""))));
+            }],
+        ["GET", /^\/gui\/menue$/, async (_m, f) => {
+                const page = await captured(w, "/gui/menue");
+                // The page is the answer; htmx must not push this address (it is no file of the demo).
+                return page === null ? null : html(filterMenu(page, f.get("q") ?? "", f.get("hinweis") ?? ""), 200, { "HX-Push-Url": "false" });
+            }],
         ["GET", /^\/gui\/fragments\/kopfzeile$/, () => html(r.kopfzeile())],
         ["GET", /^\/gui\/fragments\/bestellungen$/, () => html(r.bestellungen())],
         ["GET", /^\/gui\/fragments\/rueckrufe$/, () => html(r.rueckrufe())],
@@ -165,13 +222,13 @@ async function answer(method, address, body) {
     w.restaurant.tick((Date.now() - started) / 60000);
     const url = new URL(address, location.href);
     const path = url.pathname;
-    for (const [verb, re, handler] of handlers(w.restaurant)) {
+    for (const [verb, re, handler] of handlers(w)) {
         if (verb !== method)
             continue;
         const m = re.exec(path);
         if (!m)
             continue;
-        const reply = handler(m, body);
+        const reply = await handler(m, method === "GET" ? url.searchParams : body);
         if (reply) {
             // Links to rendered pages lead to their files, as in the pages the build wrote.
             const pages = w.routes.filter((r) => r.answer === "page").map((r) => r.path);

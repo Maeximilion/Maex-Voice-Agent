@@ -1,0 +1,1028 @@
+// The sheets of the public tablet demo (#892, B3): "Gericht aus", the correction of an
+// order, "Reservierung eintragen", the staff settings (team number, a date's hours)
+// and the filters of the pages Anrufe and Menü. Like demo-board.ts it holds the
+// visitor's state and makes the markup without a browser; the fake backend
+// (demo-backend.ts) answers the requests of the real pages with these functions.
+//
+// The markup is the real templates' (api/gui/templates/fragments/gericht_aus*.html,
+// korrektur.html, reservierung.html, teamnummer.html, tageszeiten.html, pruefen.html);
+// the decisions are the real server's, rebuilt as far as the demo reaches (what is
+// left out is listed in docs/06 §11). api/tests/demo_sheets.mjs renders the start state
+// with this file and compares it, tag for tag, with the sheets the real view rendered.
+//
+// Source: api/gui/ts/demo-sheets.ts. The file of the same name in api/gui/static/ is
+// its compiled output (`npm run build`, docs/22); edit the source, never the output.
+
+import { esc, euro, type Card, type Choice, type Line, type MenuDish, type Recorded, type Reservation, type Restaurant } from "./demo-board.js";
+
+const ORDER_STALE = "Die Bestellung wurde inzwischen geändert. Bitte nochmal prüfen.";
+const BAD_STATE = "Die Korrektur ist durcheinander geraten. Bitte neu öffnen.";
+const NO_CHANGE = "Noch nichts geändert.";
+const NO_POSITION = "Mindestens ein Gericht muss bleiben. Eine leere Bestellung ist eine Stornierung.";
+const MAX_QUANTITY = 30;
+// Pickup orders only: "falsche Adresse" belongs to deliveries, which the demo has none of.
+const REASONS: Record<string, string> = { wrong_item: "falsches Gericht", wrong_quantity: "falsche Menge", other: "Sonstiges" };
+const WEEKDAYS = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag"];
+const SHORT = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+
+export type Reply = { status: number; html: string; trigger?: Record<string, string>; events?: string[] };
+
+// --- Text helpers --------------------------------------------------------------------
+
+function two(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+// A typed text as the domain compares it: without what nobody sees, at most 60 characters.
+export function searched(text: string): string {
+  let out = "";
+  for (const ch of text) {
+    if (/\s/u.test(ch)) out += " ";
+    else if (!/[\p{Cc}\p{Cf}]/u.test(ch)) out += ch;
+  }
+  return out.trim().slice(0, 60).trimEnd();
+}
+
+function fold(text: string): string {
+  return text
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/ß/g, "ss");
+}
+
+// "007" is 7, "s2" stays "s2": the number as the card spells it, without leading zeros.
+function canonical(number: string): string {
+  return number.toLowerCase().replace(/\s+/g, "").replace(/^([a-z]*)0+(?=\d)/, "$1");
+}
+
+// The search field of "Gericht aus" and "Menü" (domain/menu/sold_out.py `matches`): a
+// number ("7" finds 07) or a part of the name; a number alone never matches every name.
+export function matches(number: string, name: string, query: string): boolean {
+  const said = searched(query);
+  if (!said) return true;
+  if (/^[a-z]{0,2}\d/i.test(said) && canonical(number).startsWith(canonical(said))) return true;
+  const part = fold(said).replace(/\b\d+[a-z]*\b/g, " ").replace(/\s+/g, " ").trim();
+  return part !== "" && fold(name).replace(/\s+/g, " ").includes(part);
+}
+
+// Card order: 2 before 12, 23 before 23a, plain numbers before S2 (domain/menu/sold_out.py).
+function numberKey(number: string): [string, number, string] {
+  const m = /^([a-z]*)(\d+)([a-z]*)$/.exec(number.toLowerCase());
+  return m ? [m[1] ?? "", Number(m[2]), m[3] ?? ""] : ["￿", 1e9, number];
+}
+
+function byCard(a: MenuDish, b: MenuDish): number {
+  const [pa, na, sa] = numberKey(a.number);
+  const [pb, nb, sb] = numberKey(b.number);
+  return pa.localeCompare(pb) || na - nb || sa.localeCompare(sb);
+}
+
+// --- "Gericht aus" ---------------------------------------------------------------------
+
+function dishRow(d: MenuDish, off: boolean): string {
+  const state = off ? "wieder-da" : "aus";
+  return `<li class="dish${off ? " aus" : ""}" id="dish-${esc(d.id ?? d.number)}">
+  <span class="dish-name"><span class="nr">${esc(d.number)}</span> ${esc(d.name)}${off ? ' <span class="badge warn">heute aus</span>' : ""}</span>
+  <button type="button" class="${off ? "primary" : ""}"
+          hx-post="/gui/gericht-aus/${esc(d.id ?? d.number)}/${state}"
+          hx-target="closest li" hx-swap="outerHTML">${off ? "Wieder da" : "Heute aus"}</button>
+
+</li>`;
+}
+
+function dishList(menu: MenuDish[], isOff: (n: string) => boolean, query: string): string {
+  const shown = [...menu].sort(byCard).filter((d) => matches(d.number, d.name, query));
+  const searching = searched(query) !== "";
+  const groups: { category: string; dishes: MenuDish[]; off: boolean }[] = [];
+  const out = searching ? [] : shown.filter((d) => isOff(d.number));
+  if (out.length) groups.push({ category: "", dishes: out, off: true });
+  for (const d of shown) {
+    if (!searching && isOff(d.number)) continue;
+    let g = groups.find((x) => !x.off && x.category === d.category);
+    if (!g) groups.push((g = { category: d.category, dishes: [], off: false }));
+    g.dishes.push(d);
+  }
+  let html = `<div hx-sync="this:drop">`;
+  for (const g of groups) {
+    const rows = g.dishes.map((d) => dishRow(d, isOff(d.number))).join("");
+    if (g.off) {
+      html += `<section class="dish-group"><h3 class="dish-cat">Heute aus</h3><ul class="dishes">${rows}</ul></section>`;
+      continue;
+    }
+    const count = g.dishes.filter((d) => isOff(d.number)).length;
+    html += `<details class="dish-group" data-cat="${esc(g.category)}"${searching ? " open" : ""}>
+    <summary class="dish-cat">
+      <span class="cat-name">${esc(g.category)}</span>
+      <span class="count">${g.dishes.length}</span>
+      ${count ? `<span class="badge warn">${count} heute aus</span>` : ""}
+    </summary><ul class="dishes">${rows}</ul></details>`;
+  }
+  if (!groups.length) html += `<p class="empty">Kein Gericht gefunden.</p>`;
+  return html + "</div>";
+}
+
+// --- The correction of an order ---------------------------------------------------------
+
+type Pick = [string, string];
+type RowEdit = { id: string; q: number; s?: string | null; o?: Pick[]; d?: boolean };
+type AddEdit = { m: string; q: number; o: Pick[] };
+type Edit = { v: string; e: string; r: RowEdit[]; a: AddEdit[]; t: number | null; ad: null };
+
+type View = {
+  where: "r" | "a";
+  index: number;
+  kind: "kept" | "changed" | "removed" | "swapped" | "added";
+  number: string;
+  name: string;
+  quantity: number;
+  options: string[];
+  note: string | null;
+  cents: number;
+  missing: string[];
+  soldOut: boolean;
+  groups: Choice[];
+  picked: Pick[];
+};
+
+type Plan = { rows: View[]; added: View[]; total: number; before: number; blockers: string[] };
+
+function delta(dish: MenuDish | undefined, names: string[]): number {
+  let sum = 0;
+  for (const g of dish?.groups ?? []) for (const o of g.options) if (names.includes(o.name)) sum += o.delta;
+  return sum;
+}
+
+function tap(order: string, op: string, label: string, cls = "", confirm: string | null = null): string {
+  return `<button type="button" class="${cls}"
+        hx-post="/gui/bestellungen/${esc(order)}/korrigieren/vorschau"
+        hx-vals='{"op": ${JSON.stringify(op)}}'
+        hx-sync="closest form:drop" hx-disabled-elt="closest fieldset"
+        ${confirm ? `hx-confirm="${esc(confirm)}"` : ""}
+        >${esc(label)}</button>`;
+}
+
+function numberField(label: string, message: string | null): string {
+  return `<div class="nummer">
+  <label for="number">${esc(label)}</label>
+  <input type="text" id="number" name="number" inputmode="text" autocomplete="off">
+  <button type="submit">Übernehmen</button>
+</div>
+${message ? `<p class="blocker" id="number-error" role="alert">${esc(message)}</p>` : ""}`;
+}
+
+function lineView(order: string, l: View, swapping: number | null, message: string | null): string {
+  const badge =
+    l.kind === "removed"
+      ? '<span class="badge danger">wird entfernt</span>'
+      : l.kind === "swapped"
+        ? '<span class="badge accent">getauscht</span>'
+        : l.kind === "added"
+          ? '<span class="badge accent">neu</span>'
+          : l.kind === "changed"
+            ? '<span class="badge accent">Menge geändert</span>'
+            : "";
+  const idx = l.index;
+  let html = `<li class="edit-line ${l.kind}">
+  <div class="edit-head">
+    <span>${l.quantity}&times; <span class="nr">${esc(l.number)}</span> ${esc(l.name)}</span>
+    ${badge}
+    ${l.soldOut ? '<span class="badge warn">heute aus</span>' : ""}
+    ${l.kind !== "removed" ? `<b class="price">${euro(l.cents)}</b>` : ""}
+  </div>
+  ${l.options.map((o) => `<div class="opt">&boxur; ${esc(o)}</div>`).join("")}
+  ${l.note ? `<div class="note">Hinweis: ${esc(l.note)}</div>` : ""}
+  ${l.groups
+    .map(
+      (g, gi) => `<div class="choice">
+    <span class="choice-name">${esc(g.group)}${g.required ? ' <span class="muted">(Pflicht)</span>' : ""}</span>
+    ${g.options
+      .map((o, oi) => {
+        const picked = l.picked.some((p) => p[0] === g.group && p[1] === o.name);
+        const text = (picked ? "Gewählt: " : "") + o.name + (o.delta ? " " + euro(o.delta) : "");
+        return tap(order, `opt:${l.where}:${idx}:${gi}:${oi}`, text, picked ? "picked" : "");
+      })
+      .join("\n    ")}
+  </div>`,
+    )
+    .join("")}
+  ${l.missing.length ? `<p class="blocker">Fehlt noch: ${esc(l.missing.join(", "))}</p>` : ""}
+  <div class="edit-actions">
+    ${
+      l.kind === "removed"
+        ? tap(order, `restore:${idx}`, "Zurück")
+        : `${tap(order, `minus:${l.where}:${idx}`, "−", "qty")}
+    ${tap(order, `plus:${l.where}:${idx}`, "+", "qty")}
+    ${
+      l.where === "r"
+        ? `${l.note ? tap(order, `remove:${idx}`, "Entfernen", "", `Der Hinweis fällt mit weg: ${l.note} - Wirklich entfernen?`) : ""}
+    ${swapping === idx ? tap(order, "unswap", "Nicht tauschen") : tap(order, `swap:${idx}`, "Tauschen")}
+    ${l.kind === "swapped" ? tap(order, `restore:${idx}`, "Zurück") : ""}`
+        : ""
+    }`
+    }
+  </div>
+  ${l.where === "r" && swapping === idx ? `<p class="hint">Menge und Hinweis bleiben.</p>\n  ${numberField("Tauschen gegen Nummer", message)}` : ""}
+</li>`;
+  return html;
+}
+
+export function renderCorrection(order: string, plan: Plan, edit: Edit, message: string | null): string {
+  const foot = plan.blockers.find((b) => b !== NO_CHANGE) ?? plan.blockers[0] ?? null;
+  const error = plan.blockers.some((b) => b !== NO_CHANGE);
+  const swapField = edit.t === null || !plan.rows.some((r) => r.index === edit.t);
+  const state = esc(JSON.stringify(edit));
+  return `<section class="sheet korrektur" data-order="${esc(order)}" role="dialog" aria-labelledby="korrektur-titel">
+  <div class="sheet-head">
+    <h2 id="korrektur-titel" tabindex="-1">Bestellung korrigieren</h2>
+    <button type="button" class="schliessen" data-schliessen>Abbrechen</button>
+  </div>
+  <div class="sheet-body">
+  <form id="korrektur-form"
+        hx-post="/gui/bestellungen/${esc(order)}/korrigieren/vorschau"
+        hx-target="#korrektur" hx-swap="innerHTML"
+        hx-vals='{"op": "number"}'
+        hx-include="#korrektur-adresse"
+        hx-sync="this:drop" hx-disabled-elt="find fieldset">
+    <fieldset>
+      <input type="hidden" id="korrektur-stand" name="state" value="${state}">
+      <ul class="cards">
+        ${plan.rows.map((l) => lineView(order, l, edit.t, message)).join("")}
+        ${plan.added.map((l) => lineView(order, l, edit.t, message)).join("")}
+      </ul>
+      ${swapField ? numberField(edit.t !== null ? "Tauschen gegen Nummer" : "Gericht dazu, Nummer", message) : ""}
+      <div class="sheet-foot">
+      <div class="order-foot">
+        <b>Summe ${euro(plan.total)}</b>
+        <span class="muted">vorher ${euro(plan.before)}</span>
+      </div>
+      ${foot ? `<p class="${error ? "blocker" : "state-note"}">${esc(foot)}</p>` : ""}
+      <p class="muted">Grund antippen, dann ist gespeichert:</p>
+      <div class="reasons">
+        ${Object.entries(REASONS)
+          .map(
+            ([key, label]) => `<button type="button" class="primary"
+                hx-post="/gui/bestellungen/${esc(order)}/korrigieren"
+                hx-vals='{"reason": ${JSON.stringify(key)}}'
+                hx-sync="closest form:drop" hx-disabled-elt="closest fieldset"
+                ${plan.blockers.length ? "disabled" : ""}>${esc(label)}</button>`,
+          )
+          .join("\n        ")}
+      </div>
+      </div>
+    </fieldset>
+  </form>
+  </div>
+</section>`;
+}
+
+function refusedCorrection(order: string, message: string): string {
+  return `<section class="sheet korrektur" data-order="${esc(order)}" role="dialog" aria-labelledby="korrektur-titel">
+  <div class="sheet-head">
+    <h2 id="korrektur-titel" tabindex="-1">Bestellung korrigieren</h2>
+    <button type="button" class="schliessen" data-schliessen>Abbrechen</button>
+  </div>
+  <div class="sheet-body">
+  <p class="banner danger">${esc(message)}</p>
+  </div>
+</section>`;
+}
+
+// --- Reservierung eintragen -------------------------------------------------------------
+
+type Draft = {
+  id: string;
+  at: string; // HH:MM
+  day: string; // YYYY-MM-DD
+  party: number;
+  name: string;
+  phone: string | null;
+  note: string | null;
+  tables: string[];
+  full: boolean;
+  closed: boolean;
+  load: string;
+  entered: boolean;
+};
+
+const ENTRY_INVALID = "Bitte Datum, Uhrzeit, Personen und Namen prüfen.";
+const SAY_PAST = "Dieser Zeitpunkt ist schon vorbei.";
+const SAY_NO_NAME = "Bitte einen Namen eintragen.";
+const SAY_FULL = "Laut Reservierungen ist dafür kein Platz frei.";
+const SAY_CLOSED = "Zu dieser Zeit ist laut Öffnungszeiten geschlossen.";
+
+// Pass the typed form back as it was typed, with the refusal above the buttons.
+function entryForm(values: Record<string, string>, choices: [string, string][], message: string | null): string {
+  const v = (k: string): string => esc(values[k] ?? "");
+  return `<section class="sheet reservierung" role="dialog" aria-labelledby="reservierung-titel">
+  <div class="sheet-head">
+    <h2 id="reservierung-titel" tabindex="-1">Reservierung eintragen</h2>
+    <button type="button" class="schliessen" data-schliessen>Schließen</button>
+  </div>
+  <form class="sheet-body" novalidate hx-post="/gui/reservierung" hx-target="#reservierung" hx-swap="innerHTML">
+    <input type="hidden" name="schluessel" value="${v("schluessel")}">
+    <div class="entry-fields">
+      <label for="res-datum">Datum</label>
+      <input type="date" id="res-datum" name="datum" value="${v("datum")}" required>
+      <label for="res-uhrzeit">Uhrzeit</label>
+      <input type="time" id="res-uhrzeit" name="uhrzeit" value="${v("uhrzeit")}" step="900" required>
+      <label for="res-personen">Personen</label>
+      <input type="number" id="res-personen" name="personen" inputmode="numeric" min="1" value="${v("personen")}" required>
+      <label for="res-name">Name</label>
+      <input type="text" id="res-name" name="name" maxlength="200" value="${v("name")}" required>
+      <label for="res-telefon">Telefon</label>
+      <input type="tel" id="res-telefon" name="telefon" maxlength="40" value="${v("telefon")}" placeholder="freiwillig">
+      <label for="res-hinweis">Hinweis</label>
+      <input type="text" id="res-hinweis" name="hinweis" maxlength="500" value="${v("hinweis")}">
+      <label for="res-tisch">Tisch</label>
+      <select id="res-tisch" name="tisch">
+        <option value="">Ohne Tisch</option>
+        ${choices.map(([value, label]) => `<option value="${esc(value)}"${values["tisch"] === value ? " selected" : ""}>${esc(label)}</option>`).join("\n        ")}
+      </select>
+    </div>
+    <div class="sheet-foot">
+      ${message ? `<p class="badge danger">${esc(message)}</p>` : ""}
+      <button type="submit" class="primary">Weiter</button>
+    </div>
+  </form>
+</section>`;
+}
+
+function entrySummary(d: Draft, message: string | null, blocked: boolean): string {
+  const [y, m, dd] = d.day.split("-").map(Number);
+  const date = new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, dd ?? 1));
+  const when = `${WEEKDAYS[(date.getUTCDay() + 6) % 7]}, ${two(dd ?? 1)}.${two(m ?? 1)}.${y}, ${d.at} Uhr`;
+  const needs = d.full || d.closed;
+  const confirm = d.closed
+    ? ' hx-confirm="Laut Öffnungszeiten ist zu dieser Zeit geschlossen. Trotzdem eintragen?"'
+    : d.full
+      ? ' hx-confirm="Laut Reservierungen ist dafür kein Platz frei. Trotzdem eintragen?"'
+      : "";
+  return `<section class="sheet reservierung" role="dialog" aria-labelledby="reservierung-titel">
+  <div class="sheet-head">
+    <h2 id="reservierung-titel" tabindex="-1">Reservierung eintragen</h2>
+    <button type="button" class="schliessen" data-schliessen>Schließen</button>
+  </div>
+  <div class="sheet-body">
+    <dl class="entry-summary">
+      <dt>Wann</dt><dd>${esc(when)}</dd>
+      <dt>Personen</dt><dd>${d.party} ${d.party === 1 ? "Person" : "Personen"}</dd>
+      <dt>Name</dt><dd>${esc(d.name)}</dd>
+      ${d.phone ? `<dt>Telefon</dt><dd>${esc(d.phone)}</dd>` : ""}
+      ${d.note ? `<dt>Hinweis</dt><dd>${esc(d.note)}</dd>` : ""}
+      <dt>Tisch</dt><dd>${d.tables.length ? "Tisch " + esc(d.tables.join(" + ")) : "Ohne Tisch"}</dd>
+    </dl>
+    <p class="badge ${d.full ? "warn" : "ok"}">${esc(d.load)}</p>
+    ${d.closed ? `<p class="badge warn">${esc(SAY_CLOSED)}</p>` : ""}
+    <div class="sheet-foot">
+      ${message ? `<p class="badge danger">${esc(message)}</p>` : ""}
+      ${
+        blocked
+          ? ""
+          : `<form hx-post="/gui/reservierung/${esc(d.id)}/eintragen" hx-target="#reservierung" hx-swap="innerHTML"${confirm}>
+        ${d.full ? '<input type="hidden" name="trotzdem" value="1">' : ""}
+        ${d.closed ? '<input type="hidden" name="geschlossen" value="1">' : ""}
+        <button type="submit" class="primary">${needs ? "Trotzdem eintragen" : "Eintragen"}</button>
+      </form>`
+      }
+    </div>
+  </div>
+</section>`;
+}
+
+// --- Staff settings: team number and a date's hours ---------------------------------------
+
+const PHONE_HELD = "Gilt bis Betriebsschluss. Der Inhaber sieht es auf der Übersicht.";
+const PHONE_BACK = "Zurückgenommen, es gilt wieder die Nummer von vorher.";
+const NO_NUMBER = "Das ist keine Telefonnummer.";
+const NOT_LISTED = "Diese Nummer kann die Telefonanlage nicht anrufen. Weitere Nummern gibt der Betreiber frei.";
+const HOURS_HELD = "Gilt sofort. Der Inhaber sieht es auf der Übersicht.";
+const HOURS_WAIT = "Wartet auf den Inhaber: die Karte steht auf der Übersicht.";
+const HOURS_BACK = "Zurückgenommen, es gelten wieder die Zeiten von vorher.";
+const SAME = "Keine Änderung.";
+const NO_DATE = "Bitte einen Tag wählen.";
+const NO_TIME = "Bitte Beginn und Ende als Uhrzeit angeben.";
+const NO_SPAN = "Bitte Beginn und Ende angeben, das Ende nicht gleich dem Beginn.";
+const OVERNIGHT = "Das Ende liegt vor dem Beginn. Geht der Tag über Mitternacht, bitte „Ende nach Mitternacht“ ankreuzen.";
+const AT_MIDNIGHT = "Ein Ende um 00:00 Uhr liegt schon am nächsten Tag. Bitte „Ende nach Mitternacht“ ankreuzen.";
+const PAST_DAY = "Ein vergangener Tag lässt sich nicht mehr ändern.";
+const WEEK_OPENS = 11 * 60;
+const WEEK_CLOSES = 23 * 60;
+
+type DayHours = { text: string; kind: "normal" | "closed" | "span"; opens?: string; closes?: string };
+
+type Check = { id: string; title: string; before: string; after: string; now: string; waiting: boolean; keep: string; seen: string };
+
+function minutesOf(text: string): number | null {
+  const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(text.trim());
+  return m ? Number(m[1]) * 60 + Number(m[2]) : null;
+}
+
+function hoursText(h: DayHours): string {
+  if (h.kind === "closed") return "geschlossen";
+  if (h.kind === "span") return `${h.opens} bis ${h.closes} Uhr`;
+  return "normale Zeiten der Woche";
+}
+
+export class Sheets {
+  private readonly menu: MenuDish[];
+  private holding: string;
+  private readonly numbers: string[];
+  private checks: Check[] = [];
+  private hours = new Map<string, DayHours>();
+  private drafts = new Map<string, Draft>();
+  private serial = 0;
+  private edits = new Map<string, number>();
+
+  constructor(
+    private readonly data: Recorded,
+    private readonly r: Restaurant,
+  ) {
+    this.menu = data.menu.filter((d) => d.id !== undefined);
+    this.holding = data.team.holding;
+    this.numbers = [data.team.standard, ...data.team.choices];
+  }
+
+  // --- Gericht aus ---
+
+  dishSheet(): string {
+    return this.dishSearch("", true);
+  }
+
+  dishSearch(query: string, whole = false): string {
+    const text = searched(query);
+    const list = dishList(this.menu, (n) => this.r.isOff(n), text);
+    if (!whole) return list;
+    return `<section class="sheet gericht-aus" role="dialog" aria-labelledby="gericht-titel">
+  <div class="sheet-head">
+    <h2 id="gericht-titel" tabindex="-1">Gericht aus</h2>
+    <button type="button" class="schliessen" data-schliessen>Fertig</button>
+  </div>
+  <div class="sheet-tools">
+    <p class="muted">Antippen: heute aus bis Betriebsschluss. Die KI bietet es nicht mehr an. Nochmal antippen: wieder da.</p>
+    <input type="search" id="gericht-suche" name="q" value="${esc(text)}"
+           placeholder="Nummer oder Name" autocomplete="off" inputmode="search"
+           aria-label="Nummer oder Name"
+           hx-get="/gui/fragments/gericht-aus" hx-target="#gericht-liste"
+           hx-trigger="input changed delay:250ms, search">
+  </div>
+  <div id="gericht-liste" class="sheet-body">${list}</div>
+</section>`;
+  }
+
+  // One tap. A dish that is gone is no error for the team: its row goes (an empty answer).
+  dishSwitch(id: string, state: string): Reply | null {
+    if (state !== "aus" && state !== "wieder-da") return null;
+    const dish = this.menu.find((d) => d.id === id);
+    if (!dish) return { status: 200, html: "", trigger: { "gerichte-geaendert": "" } };
+    this.r.setOff(dish.number, state === "aus");
+    return {
+      status: 200,
+      html: dishRow(dish, this.r.isOff(dish.number)),
+      trigger: { "gerichte-geaendert": "" },
+      events: ["header"],
+    };
+  }
+
+  // --- The correction of an order ---
+
+  private base(card: Card): { unit: number; dish: MenuDish | undefined }[] {
+    return card.lines.map((l) => {
+      const dish = this.menu.find((d) => d.number === l.number);
+      return { dish, unit: (dish?.cents ?? 0) + delta(dish, l.options) };
+    });
+  }
+
+  private fresh(card: Card): Edit {
+    this.serial += 1;
+    return {
+      v: card.version,
+      e: `demo-edit-${this.serial}`,
+      r: card.lines.map((_, i) => ({ id: `${card.id}:${i}`, q: card.lines[i]?.quantity ?? 1 })),
+      a: [],
+      t: null,
+      ad: null,
+    };
+  }
+
+  private plan(card: Card, edit: Edit): Plan {
+    const base = this.base(card);
+    const rows: View[] = card.lines.map((line, i) => {
+      const e = edit.r[i];
+      const stored: View = {
+        where: "r",
+        index: i,
+        kind: (e?.q ?? line.quantity) !== line.quantity ? "changed" : "kept",
+        number: line.number,
+        name: line.name,
+        quantity: e?.q ?? line.quantity,
+        options: line.options,
+        note: line.note,
+        cents: (base[i]?.unit ?? 0) * (e?.q ?? line.quantity),
+        missing: [],
+        soldOut: false,
+        groups: [],
+        picked: [],
+      };
+      if (!e || e.q === 0) return { ...stored, kind: "removed", quantity: line.quantity };
+      const dish = e.s ? this.menu.find((d) => d.id === e.s) : undefined;
+      if (!dish || dish.number === line.number) return stored;
+      return this.fromDish("r", i, "swapped", dish, e.q, e.o ?? [], line.note);
+    });
+    const added = edit.a.map((a, j) => {
+      const dish = this.menu.find((d) => d.id === a.m) as MenuDish;
+      return this.fromDish("a", j, "added", dish, a.q, a.o, null);
+    });
+    const remaining = [...rows.filter((l) => l.kind !== "removed"), ...added];
+    const total = remaining.reduce((sum, l) => sum + l.cents, 0);
+    const blockers: string[] = [];
+    if (!(added.length > 0 || rows.some((l) => l.kind !== "kept"))) blockers.push(NO_CHANGE);
+    if (!remaining.length) blockers.push(NO_POSITION);
+    for (const l of remaining) {
+      if (l.missing.length) blockers.push(`Bei ${l.number} ${l.name} fehlt noch: ${l.missing.join(", ")}.`);
+    }
+    return { rows, added, total, before: this.cents(card), blockers };
+  }
+
+  private cents(card: Card): number {
+    const base = this.base(card);
+    return card.lines.reduce((sum, l, i) => sum + (base[i]?.unit ?? 0) * l.quantity, 0);
+  }
+
+  private fromDish(where: "r" | "a", index: number, kind: "swapped" | "added", dish: MenuDish, q: number, picks: Pick[], note: string | null): View {
+    const groups = dish.groups ?? [];
+    const names = picks.map((p) => p[1]);
+    return {
+      where,
+      index,
+      kind,
+      number: dish.number,
+      name: dish.name,
+      quantity: q,
+      options: names,
+      note,
+      cents: (dish.cents + delta(dish, names)) * q,
+      missing: groups.filter((g) => g.required && !picks.some((p) => p[0] === g.group)).map((g) => g.group),
+      soldOut: this.r.isOff(dish.number),
+      groups,
+      picked: picks,
+    };
+  }
+
+  // The state the sheet sent back, in its shape; whether it fits the order comes after the
+  // version check, as on the server (an order that changed is stale before it is garbled).
+  private parse(text: string): Edit | null {
+    try {
+      const e = JSON.parse(text) as Edit;
+      const ok =
+        typeof e.v === "string" &&
+        Array.isArray(e.r) &&
+        e.r.every((r) => typeof r.id === "string" && Number.isInteger(r.q)) &&
+        Array.isArray(e.a) &&
+        (e.t === null || (Number.isInteger(e.t) && e.t >= 0 && e.t < e.r.length));
+      return ok ? e : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private fits(card: Card, e: Edit): boolean {
+    return e.r.length === card.lines.length && e.r.every((r, i) => r.id === `${card.id}:${i}`) && e.a.every((a) => this.menu.some((d) => d.id === a.m));
+  }
+
+  // The edit of a request, or the sheet's refusal (stale order, garbled state).
+  private edited(id: string, text: string): { card: Card; edit: Edit } | Reply {
+    const card = this.r.card(id);
+    if (!card || !card.can_change) return { status: 409, html: refusedCorrection(id, ORDER_STALE) };
+    const edit = this.parse(text);
+    if (!edit) return { status: 409, html: refusedCorrection(id, BAD_STATE) };
+    if (edit.v !== card.version) return { status: 409, html: refusedCorrection(id, ORDER_STALE) };
+    if (!this.fits(card, edit)) return { status: 409, html: refusedCorrection(id, BAD_STATE) };
+    return { card, edit };
+  }
+
+  correctionOpen(id: string): Reply {
+    const card = this.r.card(id);
+    if (!card || !card.can_change) return { status: 409, html: refusedCorrection(id, ORDER_STALE) };
+    const edit = this.fresh(card);
+    return { status: 200, html: renderCorrection(id, this.plan(card, edit), edit, null) };
+  }
+
+  correctionTap(id: string, form: URLSearchParams): Reply {
+    const got = this.edited(id, form.get("state") ?? "");
+    if ("status" in got) return got;
+    const { card, edit } = got;
+    const before = JSON.stringify(edit);
+    const message = this.apply(edit, form.get("op") ?? "", form.get("number") ?? "", card);
+    if (message === BAD_STATE) {
+      const kept = JSON.parse(before) as Edit;
+      return { status: 422, html: renderCorrection(id, this.plan(card, kept), kept, message) };
+    }
+    return { status: 200, html: renderCorrection(id, this.plan(card, edit), edit, message) };
+  }
+
+  // One tap on the sheet (gui/orders_view.py apply_op); a message for the team or null.
+  private apply(edit: Edit, op: string, number: string, card: Card): string | null {
+    const parts = op.split(":");
+    const kind = parts[0];
+    const target = (where: string | undefined, index: number): RowEdit | AddEdit | undefined =>
+      where === "r" ? edit.r[index] : edit.a[index];
+    const i = Number(parts[1]);
+    if (kind === "number") {
+      const wanted = canonical(number);
+      const dish = wanted ? this.menu.find((d) => canonical(d.number) === wanted) : undefined;
+      if (!dish?.id) return `Nummer ${number.trim() || "?"} gibt es nicht auf der Karte.`;
+      if (edit.t !== null) {
+        const row = edit.r[edit.t];
+        if (row) {
+          row.s = dish.id;
+          row.o = [];
+        }
+        edit.t = null;
+      } else {
+        edit.a.push({ m: dish.id, q: 1, o: [] });
+      }
+      return null;
+    }
+    if (kind === "plus" || kind === "minus") {
+      const t = target(parts[1], Number(parts[2]));
+      if (!t) return BAD_STATE;
+      t.q = Math.max(0, Math.min(MAX_QUANTITY, t.q + (kind === "plus" ? 1 : -1)));
+      const index = Number(parts[2]);
+      if (parts[1] === "a" && t.q === 0) edit.a.splice(index, 1);
+      // A line with a note goes only through "Entfernen", which asks first.
+      else if (parts[1] === "r" && t.q === 0 && card.lines[index]?.note) t.q = 1;
+      return null;
+    }
+    if (kind === "remove" || kind === "restore" || kind === "swap") {
+      const row = edit.r[i];
+      if (!row) return BAD_STATE;
+      if (kind === "remove") {
+        row.q = 0;
+        row.d = true;
+      } else if (kind === "restore") {
+        Object.assign(row, { q: card.lines[i]?.quantity ?? 1, d: false, s: null, o: [] });
+      } else edit.t = i;
+      return null;
+    }
+    if (kind === "unswap") {
+      edit.t = null;
+      return null;
+    }
+    if (kind === "opt") {
+      const t = target(parts[1], Number(parts[2]));
+      const where = parts[1];
+      const dishId = where === "r" ? (t as RowEdit | undefined)?.s : (t as AddEdit | undefined)?.m;
+      const dish = this.menu.find((d) => d.id === dishId);
+      const group = dish?.groups?.[Number(parts[3])];
+      const option = group?.options[Number(parts[4])];
+      if (!t || !group || !option) return BAD_STATE;
+      const picked: Pick = [group.group, option.name];
+      const current = t.o ?? [];
+      if (group.required) t.o = [...current.filter((c) => c[0] !== group.group), picked];
+      else if (current.some((c) => c[0] === picked[0] && c[1] === picked[1])) t.o = current.filter((c) => !(c[0] === picked[0] && c[1] === picked[1]));
+      else t.o = [...current, picked];
+      return null;
+    }
+    return BAD_STATE;
+  }
+
+  correctionSave(id: string, form: URLSearchParams): Reply {
+    const got = this.edited(id, form.get("state") ?? "");
+    if ("status" in got) return got;
+    const { card, edit } = got;
+    const plan = this.plan(card, edit);
+    const reason = REASONS[form.get("reason") ?? ""];
+    if (plan.blockers.length || reason === undefined) {
+      return { status: 422, html: renderCorrection(id, plan, edit, plan.blockers[0] ?? "Das hat nicht geklappt. Bitte nochmal tippen.") };
+    }
+    const lines: Line[] = [...plan.rows.filter((l) => l.kind !== "removed"), ...plan.added].map((l) => ({
+      quantity: l.quantity,
+      number: l.number,
+      name: l.name,
+      options: l.options,
+      note: l.note,
+    }));
+    this.r.correct(id, lines, plan.total, reason);
+    return { status: 200, html: "", trigger: { "bestellungen-geaendert": "" }, events: ["orders"] };
+  }
+
+  // --- Team number and hours ---
+
+  private teamSheet(message: string | null, tone: string): string {
+    const choices = this.numbers.filter((n) => n !== this.holding);
+    return `<section class="sheet teamnummer" role="dialog" aria-labelledby="teamnummer-titel">
+  <div class="sheet-head">
+    <h2 id="teamnummer-titel" tabindex="-1">Teamnummer</h2>
+    <button type="button" class="schliessen" data-schliessen>Schließen</button>
+  </div>
+  <div class="sheet-tools">
+    <p>Hierhin gibt die KI Anrufe weiter. Gilt jetzt: <b>${esc(this.holding)}</b></p>
+    <p class="muted">Standard: ${esc(this.data.team.standard)}. Eine Änderung gilt bis Betriebsschluss, dann wieder der Standard, außer der Inhaber übernimmt sie.</p>
+  </div>
+  <div class="sheet-body">
+    ${
+      choices.length
+        ? choices
+            .map(
+              (n) => `<button class="primary" hx-post="/gui/teamnummer" hx-vals='{"nummer": "${esc(n)}"}'
+            hx-target="#einstellungen" hx-swap="innerHTML">Heute: ${esc(n)}</button>`,
+            )
+            .join("\n    ")
+        : "<p>Keine andere Nummer möglich. Weitere Nummern gibt der Betreiber frei.</p>"
+    }
+    <div class="sheet-foot">
+      ${message ? `<span class="badge ${tone}" role="status">${esc(message)}</span>` : ""}
+    </div>
+  </div>
+</section>`;
+  }
+
+  teamOpen(): Reply {
+    return { status: 200, html: this.teamSheet(null, "danger") };
+  }
+
+  teamChange(form: URLSearchParams): Reply {
+    const number = (form.get("nummer") ?? "").trim();
+    if (!/^\+?[0-9 ]{5,20}$/.test(number)) return { status: 409, html: this.teamSheet(NO_NUMBER, "danger") };
+    if (!this.numbers.includes(number)) return { status: 409, html: this.teamSheet(NOT_LISTED, "danger") };
+    if (number === this.holding) return { status: 200, html: this.teamSheet(SAME, "ok") };
+    const before = this.holding;
+    this.holding = number;
+    // Back to the number that held first: the card closes as undone (#861).
+    const open = this.checks.find((c) => c.id === "team");
+    if (open && open.before === number) {
+      this.checks = this.checks.filter((c) => c !== open);
+      return { status: 200, html: this.teamSheet(PHONE_BACK, "ok"), events: ["checks"] };
+    }
+    if (!open) this.checks.push({ id: "team", title: "Teamnummer heute", before, after: number, now: number, waiting: false, keep: "Als Standard übernehmen", seen: "demo" });
+    else open.after = open.now = number;
+    return { status: 200, html: this.teamSheet(PHONE_HELD, "ok"), events: ["checks"] };
+  }
+
+  private dayOf(text: string): string | null {
+    return /^\d{4}-\d\d-\d\d$/.test(text) && !Number.isNaN(Date.parse(text)) ? text : null;
+  }
+
+  private hoursSheet(day: string | null, message: string | null, tone: string, typed?: { von: string; bis: string; nachts: boolean }): string {
+    const today = this.data.hours.today;
+    const shown = day !== null && day >= today ? day : today;
+    const holding = this.hours.get(shown) ?? { kind: "normal", text: "" };
+    const opens = typed?.von ?? (holding.kind === "span" ? (holding.opens ?? "") : "");
+    const closes = typed?.bis ?? (holding.kind === "span" ? (holding.closes ?? "") : "");
+    return `<section class="sheet tageszeiten" role="dialog" aria-labelledby="tageszeiten-titel">
+  <div class="sheet-head">
+    <h2 id="tageszeiten-titel" tabindex="-1">Öffnungszeit für einen Tag</h2>
+    <button type="button" class="schliessen" data-schliessen>Schließen</button>
+  </div>
+  <form class="sheet-body" novalidate hx-post="/gui/tageszeiten" hx-target="#einstellungen" hx-swap="innerHTML">
+    <div class="entry-fields">
+      <label for="datum">Tag</label>
+      <input type="date" id="datum" name="datum" value="${esc(shown)}" min="${esc(today)}" required
+             hx-get="/gui/tageszeiten" hx-trigger="change" hx-include="this" hx-target="#einstellungen" hx-swap="innerHTML">
+      <span>Gilt jetzt</span>
+      <b>${esc(hoursText(holding as DayHours))}</b>
+      <label for="von">Von</label>
+      <input type="time" id="von" name="von" value="${esc(opens)}" step="900">
+      <label for="bis">Bis</label>
+      <input type="time" id="bis" name="bis" value="${esc(closes)}" step="900">
+      <span></span>
+      <label><input type="checkbox" name="nachts" value="1"${typed?.nachts ? " checked" : ""}> Ende nach Mitternacht</label>
+    </div>
+    <p class="muted">Heute und kürzere Zeiten gelten sofort. Längere oder zusätzliche Zeiten an einem späteren Tag und eigene Zeiten an einem Tag „wie Sonntag“ (oder einem anderen Wochentag) gelten erst, wenn der Inhaber sie übernimmt.</p>
+    <div class="sheet-foot">
+      <button type="submit" name="art" value="zeiten" class="primary">Diese Zeiten</button>
+      <button type="submit" name="art" value="geschlossen">Geschlossen</button>
+      <button type="submit" name="art" value="normal">Normale Zeiten</button>
+      ${message ? `<span class="badge ${tone}" role="status">${esc(message)}</span>` : ""}
+    </div>
+  </form>
+</section>`;
+  }
+
+  hoursOpen(day: string): Reply {
+    return { status: 200, html: this.hoursSheet(this.dayOf(day), null, "danger") };
+  }
+
+  hoursChange(form: URLSearchParams): Reply {
+    const day = this.dayOf(form.get("datum") ?? "");
+    const choice = form.get("art") ?? "";
+    const typed = { von: form.get("von") ?? "", bis: form.get("bis") ?? "", nachts: Boolean(form.get("nachts")) };
+    if (day === null || !["geschlossen", "zeiten", "normal"].includes(choice)) {
+      return { status: 422, html: this.hoursSheet(day, NO_DATE, "danger") };
+    }
+    if (day < this.data.hours.today) return { status: 409, html: this.hoursSheet(day, PAST_DAY, "danger", typed) };
+    let next: DayHours = { kind: "normal", text: "" };
+    if (choice === "geschlossen") next = { kind: "closed", text: "" };
+    if (choice === "zeiten") {
+      const from = minutesOf(typed.von);
+      const to = minutesOf(typed.bis);
+      if (from === null || to === null) return { status: 422, html: this.hoursSheet(day, NO_TIME, "danger") };
+      if (from === to) return { status: 409, html: this.hoursSheet(day, NO_SPAN, "danger", typed) };
+      if (to < from && !typed.nachts) return { status: 409, html: this.hoursSheet(day, to === 0 ? AT_MIDNIGHT : OVERNIGHT, "danger", typed) };
+      next = { kind: "span", text: "", opens: typed.von, closes: typed.bis };
+    }
+    const before = this.hours.get(day) ?? { kind: "normal", text: "" };
+    if (hoursText(before as DayHours) === hoursText(next)) return { status: 200, html: this.hoursSheet(day, SAME, "ok") };
+    const id = `hours-${day}`;
+    const open = this.checks.find((c) => c.id === id);
+    const first = open ? open.before : hoursText(before as DayHours);
+    if (hoursText(next) === first) {
+      this.hours.delete(day);
+      this.checks = this.checks.filter((c) => c !== open);
+      return { status: 200, html: this.hoursSheet(day, HOURS_BACK, "ok"), events: ["checks"] };
+    }
+    // Held at once: today, or hours that stay inside the weekly ones; later or longer waits for the owner.
+    let held = true;
+    if (next.kind === "span") {
+      const from = minutesOf(next.opens ?? "") ?? 0;
+      const to = (minutesOf(next.closes ?? "") ?? 0) + (typed.nachts ? 1440 : 0);
+      held = day === this.data.hours.today || (from >= WEEK_OPENS && to <= WEEK_CLOSES);
+    }
+    if (held) this.hours.set(day, next);
+    const [y, m, d] = day.split("-").map(Number);
+    const weekday = SHORT[(new Date(Date.UTC(y ?? 1970, (m ?? 1) - 1, d ?? 1)).getUTCDay() + 6) % 7];
+    const title = `Öffnungszeit ${weekday}, ${two(d ?? 1)}.${two(m ?? 1)}.`;
+    const card: Check = { id, title, before: first, after: hoursText(next), now: hoursText(held ? next : (before as DayHours)), waiting: !held, keep: "Übernehmen", seen: "demo" };
+    if (open) Object.assign(open, card);
+    else this.checks.push(card);
+    return { status: 200, html: this.hoursSheet(day, held ? HOURS_HELD : HOURS_WAIT, "ok"), events: ["checks"] };
+  }
+
+  // The check cards for the owner (fragments/pruefen.html); both buttons ask the PIN.
+  checkCards(): string {
+    const cards = this.checks
+      .map(
+        (c) => `<li class="card check" data-id="${esc(c.id)}">
+    <div class="res-head">
+      <b>${esc(c.title)}</b>
+      ${c.waiting ? '<span class="badge warn">Wartet auf den Inhaber</span>' : '<span class="badge">Vom Team geändert</span>'}
+    </div>
+    <p>Vorher: ${esc(c.before)}</p>
+    <p>${c.waiting ? "Beantragt" : "Jetzt"}: <b>${esc(c.after)}</b></p>
+    ${c.waiting && c.now !== c.before ? `<p class="muted">Gilt bis dahin: ${esc(c.now)}</p>` : ""}
+    <div class="cb-actions">
+      <button class="primary" hx-post="/gui/pruefen/${esc(c.id)}/uebernehmen" hx-vals='{"gesehen": "${c.seen}"}'
+              hx-target="#pruefen-liste" hx-swap="innerHTML">${esc(c.keep)}</button>
+      <button hx-post="/gui/pruefen/${esc(c.id)}/zuruecknehmen" hx-vals='{"gesehen": "${c.seen}"}'
+              hx-target="#pruefen-liste" hx-swap="innerHTML">Zurücknehmen</button>
+    </div>
+  </li>`,
+      )
+      .join("");
+    return `${cards ? `<ul class="cards">${cards}</ul>` : ""}
+<section id="zeiten-gaeste">
+
+</section>`;
+  }
+
+  // --- Reservierung eintragen ---
+
+  entryOpen(): Reply {
+    this.serial += 1;
+    const values = { schluessel: `demo-key-${this.serial}`, datum: this.data.hours.today };
+    return { status: 200, html: entryForm(values, this.data.entry.choices, null) };
+  }
+
+  entryCheck(form: URLSearchParams): Reply {
+    const values: Record<string, string> = {};
+    for (const k of ["schluessel", "datum", "uhrzeit", "personen", "name", "telefon", "hinweis", "tisch"]) values[k] = form.get(k) ?? "";
+    const refuse = (say: string): Reply => ({ status: 409, html: entryForm(values, this.data.entry.choices, say) });
+    const day = this.dayOf(values["datum"] ?? "");
+    const at = minutesOf(values["uhrzeit"] ?? "");
+    const party = /^[0-9]{1,3}$/.test((values["personen"] ?? "").trim()) ? Number(values["personen"]) : 0;
+    if (day === null || at === null || party < 1) return refuse(ENTRY_INVALID);
+    const name = (values["name"] ?? "").trim();
+    if (!name) return refuse(SAY_NO_NAME);
+    const clock = this.r.now();
+    if (day < this.data.hours.today || (day === this.data.hours.today && at < (minutesOf(clock) ?? 0))) return refuse(SAY_PAST);
+    const picked = this.data.entry.choices.find((c) => c[0] === values["tisch"]);
+    const table = picked ? (picked[1].split(" (")[0] ?? "") : null;
+    const time = `${two(Math.floor(at / 60))}:${two(at % 60)}`;
+    const same = day === this.data.hours.today ? this.r.booked() : [];
+    if (table && same.some((x) => x.tables.includes(table) && Math.abs((minutesOf(x.time) ?? 0) - at) < 90)) {
+      return refuse(`Tisch ${table} ist um ${time} Uhr schon vergeben.`);
+    }
+    const slot = this.data.slot_minutes;
+    const start = Math.floor(at / slot) * slot;
+    const guests = same.filter((x) => Math.floor((minutesOf(x.time) ?? 0) / slot) * slot === start).reduce((s, x) => s + x.party_size, 0) + party;
+    const clockOf = (m: number): string => `${two(Math.floor(m / 60) % 24)}:${two(m % 60)}`;
+    const closed = at < WEEK_OPENS || at >= WEEK_CLOSES;
+    const draft: Draft = {
+      id: `demo-draft-${values["schluessel"] || this.serial}`,
+      at: time,
+      day,
+      party,
+      name,
+      phone: (values["telefon"] ?? "").trim() || null,
+      note: (values["hinweis"] ?? "").trim() || null,
+      tables: table ? [table] : [],
+      full: guests > this.data.max_guests,
+      closed,
+      load: closed
+        ? "Zu dieser Zeit gibt es kein Reservierungsfenster."
+        : `Fenster ${clockOf(start)} bis ${clockOf(start + slot)} Uhr: ${guests} von ${this.data.max_guests} Plätzen belegt.`,
+      entered: false,
+    };
+    // The same sheet key is the same draft: a second "Weiter" does not book twice.
+    this.drafts.set(draft.id, this.drafts.get(draft.id)?.entered ? (this.drafts.get(draft.id) as Draft) : draft);
+    return { status: 200, html: entrySummary(this.drafts.get(draft.id) as Draft, null, false) };
+  }
+
+  entryConfirm(id: string, form: URLSearchParams): Reply | null {
+    const d = this.drafts.get(id);
+    if (!d) return null;
+    if (d.full && form.get("trotzdem") !== "1") return { status: 409, html: entrySummary(d, SAY_FULL, false) };
+    if (d.closed && form.get("geschlossen") !== "1") return { status: 409, html: entrySummary(d, SAY_CLOSED, true) };
+    if (!d.entered) {
+      d.entered = true;
+      const entry: Reservation = {
+        id: d.id,
+        time: d.at,
+        party_size: d.party,
+        guest_name: d.name,
+        phone: d.phone,
+        note: d.note,
+        tables: d.tables,
+        is_test: false,
+        off_hours: d.closed,
+      };
+      if (d.day === this.data.hours.today) this.r.enter(entry);
+    }
+    return { status: 200, html: "", trigger: { "reservierung-eingetragen": `Reservierung für ${d.name} eingetragen.` }, events: ["today"] };
+  }
+}
+
+// --- The pages Anrufe and Menü: the filters of their forms --------------------------------
+
+function selectBlock(select: string): RegExp {
+  return new RegExp(`(<select[^>]*name="${select}"[^>]*>)([\\s\\S]*?)(</select>)`);
+}
+
+function optionLabel(html: string, select: string, value: string): string | null {
+  const block = selectBlock(select).exec(html)?.[2] ?? "";
+  for (const m of block.matchAll(/<option value="([^"]*)"[^>]*>([^<]*)<\/option>/g)) {
+    if (m[1] === value) return m[2] ?? null;
+  }
+  return null;
+}
+
+// Marks the chosen option of a select, as the real page does after a filter.
+function choose(html: string, select: string, value: string): string {
+  return html.replace(selectBlock(select), (_all, a: string, body: string, c: string) => {
+    const options = body.replace(/ selected/g, "").replace(/<option value="([^"]*)"/g, (whole, v: string) => (v === value ? `${whole} selected` : whole));
+    return a + options + c;
+  });
+}
+
+// The call list of one day (the day picks the captured page); the two other filters cut
+// its rows. The count line says how many remain.
+export function filterCalls(html: string, outcome: string, intent: string, dayLabel: string): string {
+  const outcomeLabel = outcome ? optionLabel(html, "ergebnis", outcome) : null;
+  const intentLabel = intent ? optionLabel(html, "anliegen", intent) : null;
+  let shown = 0;
+  let out = html.replace(/<tr>\s*<th scope="row">[\s\S]*?<\/tr>/g, (row) => {
+    const cell = (label: string): string => (new RegExp(`<td data-label="${label}"[^>]*>([\\s\\S]*?)</td>`).exec(row)?.[1] ?? "").replace(/<[^>]*>/g, "").trim();
+    const keep = (!outcomeLabel || cell("Ergebnis").startsWith(outcomeLabel)) && (!intentLabel || cell("Anliegen") === intentLabel);
+    if (keep) shown += 1;
+    return keep ? row : "";
+  });
+  out = out.replace(/<span class="muted">\d+ Anrufe? [^<]*<\/span>/, `<span class="muted">${shown} ${shown === 1 ? "Anruf" : "Anrufe"} ${esc(dayLabel)}</span>`);
+  out = choose(choose(out, "ergebnis", outcome), "anliegen", intent);
+  if (shown === 0) out = out.replace(/<table class="tbl">[\s\S]*?<\/table>/, '<p class="note">Keine Anrufe für diese Auswahl.</p>');
+  return out;
+}
+
+export function dayLabelOf(html: string, day: string): string {
+  const label = optionLabel(html, "tag", day) ?? "";
+  return label === "Heute" ? "heute" : label;
+}
+
+// The menu page for a search and a filter: the whole page, as the real route answers it.
+// A note every dish carries is said once above the list and no badge sits on the rows
+// (the page's all_missing, all_differ), so the filter then keeps every dish.
+export function filterMenu(html: string, query: string, hint: string): string {
+  const said = searched(query);
+  const rows = [...html.matchAll(/<li>\s*<bdi class="nr">([^<]*)<\/bdi>[\s\S]*?<\/li>/g)];
+  const all: Record<string, boolean> = {
+    allergene: /Bei keinem Gericht ist ein Allergen/.test(html),
+    preis: /Bei jedem Gericht nennt die Kasse einen anderen Preis/.test(html),
+  };
+  const badge: Record<string, string> = { allergene: "Allergene fehlen", preis: "Kasse:" };
+  const kept = rows.filter((m) => {
+    const name = (/<bdi class="menu-name">([^<]*)<\/bdi>/.exec(m[0])?.[1] ?? "").replace(/&#39;/g, "'").replace(/&amp;/g, "&");
+    const flagged = !hint || (all[hint] ?? false) || m[0].includes(badge[hint] ?? "");
+    return flagged && matches(m[1] ?? "", name, said);
+  });
+  const narrowed = said !== "" || hint !== "";
+  const list = /<div id="menue-liste">[\s\S]*?<\/ul>/.exec(html)?.[0] ?? '<div id="menue-liste">';
+  const body = kept.length
+    ? `<ul class="menu-list">\n${kept.map((m) => m[0]).join("\n")}\n  </ul>`
+    : `<p class="empty">Kein Gericht gefunden.</p>`;
+  const total = rows.length;
+  const head = narrowed
+    ? `<p><a class="button" href="/gui/menue">Alle zeigen</a> <span class="muted" role="status">${kept.length} von ${total} ${total === 1 ? "Gericht" : "Gerichten"}</span></p>\n  `
+    : "";
+  const out = html.replace(list, () => `<div id="menue-liste">\n  ${head}${body}`);
+  return choose(out.replace(/(<input type="search" id="menue-suche" name="q" value=")[^"]*(")/, `$1${esc(said)}$2`), "hinweis", hint);
+}

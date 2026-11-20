@@ -99,7 +99,22 @@ export type HeaderData = {
   header_problem?: string | null;
 };
 
-export type MenuDish = { category: string; number: string; name: string; cents: number };
+export type Choice = { group: string; required: boolean; options: { name: string; delta: number; default: boolean }[] };
+// A dish of the invented card; the id, "off today" and choices come from the build (B3).
+export type MenuDish = {
+  category: string;
+  number: string;
+  name: string;
+  cents: number;
+  id?: string;
+  sold_out?: boolean;
+  groups?: Choice[];
+};
+
+// What the real view showed on opening the sheets of B3.
+export type TeamSheet = { holding: string; standard: string; choices: string[] };
+export type HoursSheet = { day: string; today: string; holding: string; opens: string; closes: string };
+export type EntrySheet = { values: { schluessel: string; datum: string }; choices: [string, string][] };
 
 export type Recorded = {
   header: HeaderData;
@@ -114,6 +129,11 @@ export type Recorded = {
   callback_labels: Record<string, [string, string]>;
   clock: string;
   table: string;
+  team: TeamSheet;
+  hours: HoursSheet;
+  entry: EntrySheet;
+  slot_minutes: number;
+  max_guests: number;
 };
 
 // --- Escaping and small helpers ----------------------------------------------------
@@ -561,9 +581,13 @@ export class Restaurant {
   // Today's waits differ from the standard until the business day ends; the
   // standard is the third field of a wait.
   private orderProblem: string | null = null;
+  // The dishes off today, by number ("Gericht aus"); the tile of the header counts them.
+  private off: Set<string>;
 
   constructor(data: Recorded) {
     this.data = data;
+    const marked = data.menu.filter((d) => d.sold_out).map((d) => d.number);
+    this.off = new Set(marked.length ? marked : [data.sold_out]);
     this.header = structuredClone(data.header);
     this.orders = data.orders.orders.map((c) => fromCard(structuredClone(c)));
     this.callbacks = structuredClone(data.callbacks.callbacks);
@@ -729,9 +753,50 @@ export class Restaurant {
     return this.mark(null);
   }
 
-  // The count on the tile "Gericht aus"; the sheet itself follows in B3.
-  setSoldOut(count: number): void {
-    this.header.sold_out_count = count;
+  isOff(number: string): boolean {
+    return this.off.has(number);
+  }
+
+  // One tap on "Gericht aus" or "Wieder da": the tile follows with the count.
+  setOff(number: string, off: boolean): void {
+    if (off) this.off.add(number);
+    else this.off.delete(number);
+    this.header.sold_out_count = this.off.size;
+  }
+
+  // --- The sheets of B3 reach into the board through these ---
+
+  // The card as the board shows it, for the correction sheet.
+  card(id: string): Card | null {
+    const o = this.find(id);
+    return o ? deriveCard(o) : null;
+  }
+
+  // A saved correction (api/domain/ordering/correction.py apply_correction): the
+  // lines and the sum change, the order is no longer marked as in the register, and
+  // a slip already sent is printed again.
+  correct(id: string, lines: Line[], cents: number, reason: string): boolean {
+    const o = this.find(id);
+    if (!o) return false;
+    o.card.lines = lines;
+    o.card.total = euro(cents);
+    o.card.corrected = reason;
+    o.card.version = `${o.card.version}c`;
+    o.registered = false;
+    o.registerLate = false;
+    o.lateText = null;
+    if (o.handover !== null) o.handover = "pending";
+    return true;
+  }
+
+  // A table the team entered by hand is on the board's "Heute".
+  enter(reservation: Reservation): void {
+    if (!this.today.some((r) => r.id === reservation.id)) this.today.push(reservation);
+  }
+
+  // What is booked on the day, for the window's load of the reservation sheet.
+  booked(): Reservation[] {
+    return this.today;
   }
 
   // --- Orders (api/domain/ordering/board.py) ---
@@ -843,7 +908,7 @@ export class Restaurant {
 
   private dishes(): MenuDish[] {
     // Two dishes of different categories, never the one marked off.
-    const open = this.data.menu.filter((d) => d.number !== this.data.sold_out);
+    const open = this.data.menu.filter((d) => !this.off.has(d.number));
     const first = open[(this.serial * 7) % open.length];
     const second = open.find((d) => d.category !== first?.category && d.number !== first?.number);
     return [first, second].filter((d): d is MenuDish => d !== undefined);

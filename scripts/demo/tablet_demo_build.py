@@ -49,8 +49,10 @@ from sqlalchemy import create_engine, select, update
 
 from api import db
 from api.config import settings
+from api.core import time as clock
 from api.core.time import business_day
-from api.models import MenuItem, Order
+from api.domain.menu.items import is_sold_out
+from api.models import ItemOption, MenuItem, Order
 from scripts.demo import tablet_demo_data as data
 from scripts.demo.tablet_demo_routes import MANIFEST, manifest, pattern
 
@@ -74,6 +76,7 @@ HREF = re.compile(r'\bhref="(/gui(?:/[^"?#]*)?)"')
 CALL_ROW = re.compile(
     r"""hx-post="/gui/anrufe/anruf" hx-vals='\{"anruf": "([0-9a-f-]+)"\}'"""
 )
+DAY_OPTION = re.compile(r'<option value="(\d{4}-\d\d-\d\d)"')
 ZONE = ZoneInfo(data.TIMEZONE)
 # A phone number in E.164 as the view prints it.
 PHONE = re.compile(r"\+[1-9][0-9]{7,14}")
@@ -94,7 +97,18 @@ RECORDED = {
     "fragments/rueckrufe.html": "callbacks",
     "fragments/heute.html": "today",
     "fragments/rueckruf_verlauf.html": "history",
+    # The sheets of B3: what the real view showed on opening them.
+    "fragments/teamnummer.html": "team",
+    "fragments/tageszeiten.html": "hours",
+    "fragments/reservierung.html": "entry",
 }
+# Said on the pages that show example figures or an example menu (B3).
+EXAMPLE_LABEL = "Beispielwerte, keine Messwerte"
+EXAMPLE_BADGE = f'<span class="badge warn demo-example">{EXAMPLE_LABEL}</span>'
+MENU_LABEL = (
+    '<p class="badge warn demo-example">Beispielkarte: erfundene Gerichte und '
+    "Preise, kein Angebot.</p>"
+)
 # The table the invented reservation of the example call sits at (a table of the
 # first room `drive` makes).
 EXAMPLE_TABLE = "T3"
@@ -137,10 +151,40 @@ def recording() -> Iterator[dict[str, Any]]:
         yield seen
 
 
-def board_state(seen: dict[str, Any]) -> dict[str, Any]:
+def catalog(session: Any) -> dict[str, dict[str, Any]]:
+    """The seeded menu by dish number: id, whether it is off today and its
+    choices (group, required, options with the surcharge in cents), for "Gericht
+    aus" and the correction sheet (B3)."""
+    options: dict[Any, dict[str, dict[str, Any]]] = {}
+    for option in session.scalars(select(ItemOption)):
+        group = options.setdefault(option.menu_item_id, {}).setdefault(
+            option.group_name,
+            {"group": option.group_name, "required": option.required, "options": []},
+        )
+        group["options"].append(
+            {
+                "name": option.option_name,
+                "delta": option.price_delta_cents,
+                "default": option.is_default,
+            }
+        )
+    return {
+        item.number: {
+            "id": str(item.id),
+            "sold_out": is_sold_out(item, clock.utcnow()),
+            "groups": list(options.get(item.id, {}).values()),
+        }
+        for item in session.scalars(select(MenuItem).where(MenuItem.active.is_(True)))
+    }
+
+
+def board_state(
+    seen: dict[str, Any], known: dict[str, dict[str, Any]] | None = None
+) -> dict[str, Any]:
     """`state.json`: the recorded data plus what the example call needs: the
-    menu (invented, from the seed), numbers of the example range for new callers,
-    the words of the modes and callback reasons, the demo clock's start."""
+    menu (invented, from the seed, with the ids, choices and "off today" of
+    `catalog`), numbers of the example range for new callers, the words of the
+    modes and callback reasons, the demo clock's start."""
     from api.gui.router import CALLBACK_LABELS, MODE_LABELS
 
     missing = [name for name in RECORDED.values() if name not in seen]
@@ -152,6 +196,7 @@ def board_state(seen: dict[str, Any]) -> dict[str, Any]:
             "number": number,
             "name": name,
             "cents": int(price.replace(",", "")),
+            **(known or {}).get(number, {}),
         }
         for category, dishes in data.DISHES.items()
         for number, name, price in dishes
@@ -165,6 +210,8 @@ def board_state(seen: dict[str, Any]) -> dict[str, Any]:
         "callback_labels": {k: list(v) for k, v in CALLBACK_LABELS.items()},
         "clock": "12:00",
         "table": EXAMPLE_TABLE,
+        "slot_minutes": data.SLOT_MINUTES,
+        "max_guests": data.MAX_GUESTS,
     }
 
 
@@ -188,7 +235,11 @@ def demo_now() -> datetime:
 def file_for(url: str, json_answer: bool = False) -> str:
     """Where the answer to `url` is written: a folder with `index.html`, so a
     page is reached by its plain address, or a `.json` file."""
-    rest = url.split("?", 1)[0].removeprefix("/gui").strip("/")
+    path, _, query = url.partition("?")
+    rest = path.removeprefix("/gui").strip("/")
+    if query:
+        # One file per asked variant (the call list of a day).
+        rest = f"{rest}/{re.sub(r'[^0-9A-Za-z-]+', '-', query).strip('-')}"
     if json_answer:
         return f"{rest}.json"
     return f"{rest}/index.html" if rest else "index.html"
@@ -213,6 +264,16 @@ def rewrite(html: str, whole_page: bool) -> str:
     html = html.replace('"/gui/static/', '"/static/')
     html = HREF.sub(link, html)
     if whole_page:
+        # The figures are an invented week and the menu an invented card: said
+        # where a visitor reads them (B3).
+        html = html.replace(
+            '<p class="muted">Letzte 7 Tage</p>',
+            f'<p class="muted">Letzte 7 Tage {EXAMPLE_BADGE}</p>',
+        )
+        html = html.replace("<h2>Verlauf</h2>", f"<h2>Verlauf {EXAMPLE_BADGE}</h2>")
+        html = html.replace(
+            "<h2>Speisekarte</h2>", f"<h2>Speisekarte</h2>\n  {MENU_LABEL}"
+        )
         html = html.replace("</head>", f"{STYLESHEET}\n{BACKEND}\n</head>", 1)
         html = BODY.sub(lambda m: f"{m.group(0)}\n{NOTICE}", html, count=1)
     return html
@@ -392,9 +453,19 @@ def captures(client: TestClient) -> list[Capture]:
         )
         found += [Capture("GET", route["path"], url, None, "") for url in urls]
     calls = _ok(client.get("/gui/anrufe"), "calls").text
+    # The list of every day the page offers, and one detail per call of each.
+    days = DAY_OPTION.findall(calls)
+    found += [Capture("GET", "/gui/anrufe", f"/gui/anrufe?tag={d}", None, "") for d in days]
+    rows = {
+        call
+        for day in days
+        for call in CALL_ROW.findall(
+            _ok(client.get(f"/gui/anrufe?tag={day}"), "calls of a day").text
+        )
+    }
     found += [
         Capture("POST", "/gui/anrufe/anruf", "/gui/anrufe/anruf", {"anruf": call}, "")
-        for call in sorted(set(CALL_ROW.findall(calls)))
+        for call in sorted(rows | set(CALL_ROW.findall(calls)))
     ]
     return found
 
@@ -469,12 +540,14 @@ def build(out: Path, now: datetime | None = None) -> list[Capture]:
         with signed_in() as client, recording() as seen:
             drive(client, seeded)
             wanted = captures(client)
+            with db.SessionLocal() as session:
+                dishes = catalog(session)
             if out.exists():
                 shutil.rmtree(out)
             out.mkdir(parents=True)
             done = render(client, wanted, out)
     (out / "state.json").write_text(
-        json.dumps(board_state(seen), indent=1, ensure_ascii=False) + "\n",
+        json.dumps(board_state(seen, dishes), indent=1, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     (out / "captures.json").write_text(
