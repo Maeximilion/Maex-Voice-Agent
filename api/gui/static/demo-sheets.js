@@ -149,7 +149,7 @@ function lineView(order, l, swapping, message) {
                     ? '<span class="badge accent">Menge geändert</span>'
                     : "";
     const idx = l.index;
-    let html = `<li class="edit-line ${l.kind}">
+    return `<li class="edit-line ${l.kind}">
   <div class="edit-head">
     <span>${l.quantity}&times; <span class="nr">${esc(l.number)}</span> ${esc(l.name)}</span>
     ${badge}
@@ -184,7 +184,6 @@ function lineView(order, l, swapping, message) {
   </div>
   ${l.where === "r" && swapping === idx ? `<p class="hint">Menge und Hinweis bleiben.</p>\n  ${numberField("Tauschen gegen Nummer", message)}` : ""}
 </li>`;
-    return html;
 }
 export function renderCorrection(order, plan, edit, message) {
     const foot = plan.blockers.find((b) => b !== NO_CHANGE) ?? plan.blockers[0] ?? null;
@@ -366,7 +365,6 @@ export class Sheets {
         this.hours = new Map();
         this.drafts = new Map();
         this.serial = 0;
-        this.edits = new Map();
         this.menu = data.menu.filter((d) => d.id !== undefined);
         this.holding = data.team.holding;
         this.numbers = [data.team.standard, ...data.team.choices];
@@ -864,8 +862,10 @@ export class Sheets {
             entered: false,
         };
         // The same sheet key is the same draft: a second "Weiter" does not book twice.
-        this.drafts.set(draft.id, this.drafts.get(draft.id)?.entered ? this.drafts.get(draft.id) : draft);
-        return { status: 200, html: entrySummary(this.drafts.get(draft.id), null, false) };
+        const known = this.drafts.get(draft.id);
+        if (!known?.entered)
+            this.drafts.set(draft.id, draft);
+        return { status: 200, html: entrySummary(known?.entered ? known : draft, null, false) };
     }
     entryConfirm(id, form) {
         const d = this.drafts.get(id);
