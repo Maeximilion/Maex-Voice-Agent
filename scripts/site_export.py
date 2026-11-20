@@ -1,12 +1,14 @@
 """Write the public site as plain files for any static host (#892, docs/13 §9).
 
-    python -m scripts.site_export [--out site-export]
+    python -m scripts.site_export [--out site-export] [--zip]
 
 Asks the site app (`api/site/app.py`) for every page with the configuration of
 this environment (`SITE_*`, `.env`) and writes the answers into one folder:
 `index.html`, `anfrage/index.html`, `impressum/index.html`,
-`datenschutz/index.html`, `robots.txt`, the files of `/static/`, and the tablet
-demo under `tablet-demo/` when `scripts/demo/tablet_demo_build.py` has built it.
+`datenschutz/index.html`, `404.html`, `robots.txt`, an Apache `.htaccess` with
+the headers the app sends, the files of `/static/` the pages need, and the
+tablet demo under `tablet-demo/` when `scripts/demo/tablet_demo_build.py` has
+built it. `--zip` also writes `<folder>.zip` for the upload.
 Links stay root-absolute (`/static/site.css`, `/anfrage/`), so the folder is
 served from the root of a host name. Every link of the written pages is checked
 against the folder; a broken one stops the export.
@@ -47,6 +49,13 @@ LEGAL = ("impressum", "datenschutz")
 PAGE_LINK = re.compile(r'((?:href|action)=")/(anfrage|impressum|datenschutz)(?=[?#"])')
 LINK = re.compile(r'(?:href|src|action)="(/[^"]*)"')
 CSS_URL = re.compile(r"url\(\s*['\"]?(/[^)'\"]+)")
+# A file of /static/ named by a page, a stylesheet, a script or a manifest, and
+# the relative imports of a compiled script (`from "./site-logic.js"`).
+STATIC_REF = re.compile(r"/static/([\w.-]+(?:/[\w.-]+)*)")
+JS_IMPORT = re.compile(r"""(?:\bfrom|\bimport)\s*\(?\s*["'](\.{1,2}/[^"']+)["']""")
+SCANNED = (".html", ".css", ".js", ".json")
+# The fonts are under the SIL OFL, which travels with every copy of them.
+FONT_LICENCE = "fonts/IBM-Plex-Sans-OFL.txt"
 ROBOTS_META = re.compile(r'<meta\s+name="robots"', re.I)
 NOINDEX = '<meta name="robots" content="noindex, nofollow">'
 
@@ -107,6 +116,34 @@ def broken_links(out: Path) -> list[str]:
     return broken
 
 
+def copy_static(out: Path) -> None:
+    """Copies the files of /static/ the written pages need, and what those files
+    need in turn, nothing else: `api/gui/static/` also holds the tablet
+    application's files, which only the tablet demo loads."""
+    todo = [f for f in out.rglob("*") if f.suffix in (".html", ".json")]
+    copied: set[str] = set()
+    while todo:
+        file = todo.pop()
+        text = file.read_text(encoding="utf-8")
+        names = STATIC_REF.findall(text)
+        if file.suffix == ".js":
+            here = file.parent.relative_to(out / "static")
+            names += [(here / ref).as_posix() for ref in JS_IMPORT.findall(text)]
+        if any(name.startswith("fonts/") for name in names):
+            names.append(FONT_LICENCE)
+        for name in names:
+            name = Path(name).as_posix().removeprefix("./")
+            source = site_app.STATIC / name
+            if name in copied or ".." in name or not source.is_file():
+                continue
+            copied.add(name)
+            target_file = out / "static" / name
+            target_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target_file)
+            if target_file.suffix in SCANNED:
+                todo.append(target_file)
+
+
 def mark_noindex(folder: Path) -> None:
     """Gives every page of a copied folder the preview's robots tag where it has
     none, so no page of the export can be indexed."""
@@ -163,11 +200,11 @@ def export(out: Path, settings: SiteSettings) -> list[str]:
         PAGE_LINK.sub(r"\1/\2/", missing_page.text), encoding="utf-8"
     )
     (out / ".htaccess").write_text(htaccess(settings), encoding="utf-8")
-    shutil.copytree(site_app.STATIC, out / "static")
     if site_app.TABLET_DEMO.is_dir():
         shutil.copytree(site_app.TABLET_DEMO, out / "tablet-demo")
         if settings.site_preview:
             mark_noindex(out / "tablet-demo")
+    copy_static(out)
     (out / MARK).write_text("written by scripts/site_export.py\n", encoding="utf-8")
     broken = broken_links(out)
     if broken:

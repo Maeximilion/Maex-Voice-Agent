@@ -69,7 +69,9 @@ a:hover{color:var(--text)}
 .btn-ghost{background:var(--surface);border-color:var(--line-strong);color:var(--text)}
 .btn-ghost:hover{background:var(--surface-2)}
 .btn-try{background:var(--warn-bg);border-color:var(--warn-line);color:var(--text)}
-.btn-off{background:transparent;border:2px dashed var(--line);color:var(--muted);cursor:default}
+/* A disabled entry says why, in sight and not only to a screen reader. */
+.btn-off{flex-direction:column;line-height:1.2;background:transparent;border:2px dashed var(--line);color:var(--muted);cursor:not-allowed}
+.btn-off-why{font-family:var(--font-mono);font-size:.75rem;font-weight:400}
 .btn-off:hover{transform:none;color:var(--muted)}
 .btn-big{min-block-size:64px;padding-inline:36px;font-size:1.25rem}
 .btn-wide{inline-size:100%;margin-top:28px}

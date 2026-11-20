@@ -363,17 +363,24 @@ def test_the_preview_is_on_by_default():
 
 
 @pytest.mark.parametrize("path", PAGES)
-def test_in_the_preview_no_page_offers_a_sign_in_and_none_may_be_indexed(path):
-    # A sign-in target configured or not: the preview shows none, not even a label.
+def test_in_the_preview_the_sign_in_is_a_greyed_label_and_no_page_may_be_indexed(path):
+    # A sign-in target configured or not: the preview shows the entry greyed,
+    # with its reason in sight, and links nowhere (Maxi, 20.11.2026).
     response = preview(site_login_url="https://login.example.com/gui/anmelden").get(
         path
     )
 
     assert '<meta name="robots" content="noindex, nofollow">' in response.text
     assert response.headers["x-robots-tag"] == "noindex, nofollow"
-    assert "Kunden-Login" not in response.text
+    label = re.search(
+        r'<span class="btn btn-off" aria-disabled="true">(.*?)</span></span>',
+        response.text,
+    )
+    assert label
+    assert "Kunden-Login" in label.group(1)
+    assert '<span class="btn-off-why"> noch nicht freigeschaltet' in label.group(1)
     assert "login.example.com" not in response.text
-    assert "btn-off" not in response.text
+    assert ">Kunden-Login</a>" not in response.text
 
 
 def test_in_the_preview_the_form_cannot_be_sent_whatever_is_configured():
@@ -392,7 +399,7 @@ def test_in_the_preview_the_form_cannot_be_sent_whatever_is_configured():
     assert "Formular ansehen" in landing
     assert "Zur Anfrage" not in landing
     assert "Die Anfrage verpflichtet zu nichts" not in landing
-    assert "Kunden-Login" not in landing
+    assert "Sie sind schon Kunde?" not in landing
 
 
 def test_the_preview_badge_names_a_personal_project_and_off_the_test_phase():
@@ -451,3 +458,11 @@ def test_the_legal_pages_take_their_text_from_the_folder_outside(tmp_path):
     assert "nicht veröffentlichungsfähig" not in notice
     # The missing file leaves its page the placeholder.
     assert "nicht veröffentlichungsfähig" in privacy
+
+
+def test_an_unknown_address_gets_the_404_page_of_the_site():
+    response = preview().get("/gibt-es-nicht")
+
+    assert response.status_code == 404
+    assert "Diese Seite gibt es nicht." in response.text
+    assert response.headers["content-security-policy"] == site_app.CSP

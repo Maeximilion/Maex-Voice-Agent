@@ -36,10 +36,10 @@ class SiteSettings(BaseSettings):
     # address and the privacy text exist (#892). Empty: the form is shown, but
     # cannot be sent.
     site_inquiry_action: str = ""
-    # Private preview (#892), on until Maxi turns it off: no customer sign-in at
-    # all, a form that cannot be sent whatever SITE_INQUIRY_ACTION says,
-    # `noindex, nofollow` on every page, and the badge names a personal project
-    # in development.
+    # Private preview (#892), on until Maxi turns it off: the customer sign-in
+    # greyed whatever SITE_LOGIN_URL says, a form that cannot be sent whatever
+    # SITE_INQUIRY_ACTION says, `noindex, nofollow` on every page, and the badge
+    # names a personal project in development.
     site_preview: bool = True
     # A folder outside the repository with `impressum.html` and
     # `datenschutz.html`: the legal notice and the privacy text as HTML

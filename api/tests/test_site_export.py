@@ -21,6 +21,8 @@ FILES = (
     "anfrage/index.html",
     "impressum/index.html",
     "datenschutz/index.html",
+    "404.html",
+    ".htaccess",
     "robots.txt",
     "static/site.css",
     "static/site.js",
@@ -79,12 +81,13 @@ def test_every_exported_page_of_the_preview_says_noindex_nofollow(tmp_path):
     out = tmp_path / "site"
     site_export.export(out, settings_of())
 
-    assert len(pages(out)) == 4
+    assert len(pages(out)) == 5  # four pages and the 404 page
     for page in pages(out):
         html = page.read_text(encoding="utf-8")
         assert html.count('name="robots"') == 1, page
         assert '<meta name="robots" content="noindex, nofollow">' in html, page
-        assert "Kunden-Login" not in html, page
+        assert 'class="btn btn-off" aria-disabled="true"' in html, page
+        assert ">Kunden-Login</a>" not in html, page
         assert "Content-Security-Policy" in html, page
 
 
@@ -201,7 +204,8 @@ def test_a_built_tablet_demo_joins_the_export_with_noindex(tmp_path, monkeypatch
     (demo / "index.html").write_text(
         '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
         '<body><a href="/tablet-demo/kennzahlen/">K</a>'
-        '<link rel="stylesheet" href="/static/tablet-demo.css"></body></html>',
+        '<link rel="stylesheet" href="/static/tablet-demo.css">'
+        '<script src="/static/app.js"></script></body></html>',
         encoding="utf-8",
     )
     (demo / "kennzahlen" / "index.html").write_text(
@@ -220,3 +224,88 @@ def test_a_built_tablet_demo_joins_the_export_with_noindex(tmp_path, monkeypatch
     assert site_export.broken_links(out) == []
     # The source folder of the demo is left as it was.
     assert "robots" not in (demo / "index.html").read_text(encoding="utf-8")
+    # The demo's own files of /static/ come along, the board's script too.
+    assert (out / "static" / "tablet-demo.css").is_file()
+    assert (out / "static" / "app.js").is_file()
+
+
+def test_the_export_carries_only_the_static_files_its_pages_need(tmp_path):
+    out = tmp_path / "site"
+    site_export.export(out, settings_of())
+
+    shipped = {
+        p.relative_to(out / "static").as_posix()
+        for p in (out / "static").rglob("*")
+        if p.is_file()
+    }
+    fonts = {
+        f"fonts/ibm-plex-sans-latin-{w}-normal.woff2" for w in (400, 500, 600, 700)
+    }
+    assert shipped == {
+        "site.css",
+        "site.js",
+        "site-logic.js",
+        "anfrage.js",
+        "icon-192.png",
+        "fonts/IBM-Plex-Sans-OFL.txt",
+        *fonts,
+    }
+    # The tablet application's files stay out while no demo is built.
+    for name in (
+        "app.js",
+        "app.css",
+        "htmx.min.js",
+        "passkey.js",
+        "dev-console.js",
+        "manifest.json",
+    ):
+        assert name not in shipped
+
+
+def test_the_404_page_is_a_page_of_the_site(tmp_path):
+    out = tmp_path / "site"
+    site_export.export(out, settings_of())
+
+    html = (out / "404.html").read_text(encoding="utf-8")
+    assert "Diese Seite gibt es nicht." in html
+    assert '<meta name="robots" content="noindex, nofollow">' in html
+    assert 'href="/"' in html
+
+
+@pytest.mark.parametrize("preview_on", [True, False])
+def test_the_htaccess_sends_the_headers_and_names_the_404_page(tmp_path, preview_on):
+    out = tmp_path / "site"
+    site_export.export(out, settings_of(site_preview=preview_on))
+
+    text = (out / ".htaccess").read_text(encoding="utf-8")
+    assert "ErrorDocument 404 /404.html" in text
+    assert f'Header always set Content-Security-Policy "{site_app.CSP}"' in text
+    assert "frame-ancestors 'none'" in text and "unsafe-inline" not in text
+    assert 'Header always set X-Content-Type-Options "nosniff"' in text
+    assert 'Header always set Referrer-Policy "no-referrer"' in text
+    assert ('X-Robots-Tag "noindex, nofollow"' in text) is preview_on
+    # Directives a shared host may forbid in .htaccess (a 500 for every page).
+    directives = [line.split()[0] for line in text.splitlines() if line.strip()]
+    assert "Options" not in directives and "DirectoryIndex" not in directives
+    assert "<IfModule mod_headers.c>" in text
+
+
+def test_the_zip_holds_the_folder_without_the_marker(tmp_path, monkeypatch):
+    import zipfile
+
+    out = tmp_path / "site"
+    monkeypatch.setattr(site_export, "SiteSettings", lambda: settings_of())
+
+    assert site_export.main(["--out", str(out), "--zip"]) == 0
+
+    with zipfile.ZipFile(tmp_path / "site.zip") as packed:
+        names = set(packed.namelist())
+    assert {
+        "index.html",
+        "anfrage/index.html",
+        ".htaccess",
+        "404.html",
+        "robots.txt",
+    } <= names
+    assert site_export.MARK not in names
+    assert "static/site.css" in names
