@@ -862,7 +862,10 @@ export class Sheets {
             ...(day === this.today ? this.r.booked().map((x) => ({ time: x.time, party: x.party_size, tables: x.tables })) : []),
             ...this.later.filter((x) => x.day === day),
         ];
-        if (table && same.some((x) => x.tables.includes(table) && Math.abs((minutesOf(x.time) ?? 0) - at) < 90)) {
+        // A time inside the capacity window holds its table for the whole window; outside every
+        // window only the same start time collides (domain/reservations/manual.py taken_tables).
+        const inWindow = at >= (minutesOf(this.data.window[0]) ?? 0) && at < (minutesOf(this.data.window[1]) ?? 0);
+        if (table && same.some((x) => x.tables.includes(table) && (inWindow || x.time === time))) {
             return refuse(`Tisch ${table} ist um ${time} Uhr schon vergeben.`);
         }
         // The seeded capacity is one window for the whole opening time (slot_minutes is only
@@ -878,9 +881,10 @@ export class Sheets {
             phone: (values["telefon"] ?? "").trim() || null,
             note: (values["hinweis"] ?? "").trim() || null,
             tables: table ? [table] : [],
-            full: guests > this.data.max_guests,
+            // No window at that time is as full as a full one: only "Trotzdem" books it (manual.py `fits`).
+            full: !inWindow || guests > this.data.max_guests,
             closed,
-            load: closed
+            load: !inWindow
                 ? "Zu dieser Zeit gibt es kein Reservierungsfenster."
                 : `Fenster ${this.data.window[0]} bis ${this.data.window[1]} Uhr: ${guests} von ${this.data.max_guests} Plätzen belegt.`,
             entered: false,
