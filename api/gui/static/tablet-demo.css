@@ -9,3 +9,16 @@
 @media (max-width:767.98px){
   .demo-notice{display:block;margin:0;padding:var(--s3) var(--s4);background:var(--warn-bg);color:var(--warn);border-bottom:2px solid var(--warn-line);font-size:var(--fs-body);font-weight:600;line-height:1.4}
 }
+
+/* The demo bar under the header of the board (B2, api/gui/ts/demo-backend.ts): what
+   the real board does not have, the "Beispielanruf" that lets an invented call
+   arrive. From the UI-UX Pro Max skill: a 44 px target, the result in one atomic
+   status line (role="status") instead of a moving toast, wrapping instead of
+   scrolling at every width. Colours and spacing are the board's own tokens. */
+.demo-bar{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3) var(--s4);padding:var(--s3) var(--s4);background:var(--accent-bg);color:var(--accent-text);border-bottom:2px solid var(--line)}
+.demo-bar p{margin:0}
+.demo-bar-text{flex:1 1 18rem;font-size:var(--fs-body);line-height:1.4}
+.demo-bar button{min-height:44px;padding-inline:var(--s4)}
+.demo-bar button:disabled{opacity:.6;cursor:progress}
+.demo-bar-status{flex:1 1 100%;min-height:1.4em;font-weight:600;line-height:1.4}
+.demo-bar-status:empty{display:none}

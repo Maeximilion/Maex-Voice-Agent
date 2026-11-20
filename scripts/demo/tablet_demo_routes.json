@@ -96,6 +96,7 @@
   },
   "not_in_demo": {
     "templates": ["dev/", "fragments/dev_anruf.html", "zugang/"],
-    "scripts": ["anfrage.ts", "dev-console.ts", "passkey.ts", "site-logic.ts", "site.ts"]
+    "scripts": ["anfrage.ts", "dev-console.ts", "passkey.ts", "site-logic.ts", "site.ts", "demo-backend.ts", "demo-board.ts"],
+    "scripts_note": "demo-backend.ts and demo-board.ts are the fake backend itself: they name the routes it answers, and api/tests/demo_board.mjs compares the markup they make with the real fragments instead"
   }
 }
