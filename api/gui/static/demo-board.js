@@ -428,6 +428,8 @@ export class Restaurant {
         // standard is the third field of a wait.
         this.orderProblem = null;
         this.data = data;
+        const marked = data.menu.filter((d) => d.sold_out).map((d) => d.number);
+        this.off = new Set(marked.length ? marked : [data.sold_out]);
         this.header = structuredClone(data.header);
         this.orders = data.orders.orders.map((c) => fromCard(structuredClone(c)));
         this.callbacks = structuredClone(data.callbacks.callbacks);
@@ -581,9 +583,49 @@ export class Restaurant {
         wait[2] = wait[3];
         return this.mark(null);
     }
-    // The count on the tile "Gericht aus"; the sheet itself follows in B3.
-    setSoldOut(count) {
-        this.header.sold_out_count = count;
+    isOff(number) {
+        return this.off.has(number);
+    }
+    // One tap on "Gericht aus" or "Wieder da": the tile follows with the count.
+    setOff(number, off) {
+        if (off)
+            this.off.add(number);
+        else
+            this.off.delete(number);
+        this.header.sold_out_count = this.off.size;
+    }
+    // --- The sheets of B3 reach into the board through these ---
+    // The card as the board shows it, for the correction sheet.
+    card(id) {
+        const o = this.find(id);
+        return o ? deriveCard(o) : null;
+    }
+    // A saved correction (api/domain/ordering/correction.py apply_correction): the
+    // lines and the sum change, the order is no longer marked as in the register, and
+    // a slip already sent is printed again.
+    correct(id, lines, cents, reason) {
+        const o = this.find(id);
+        if (!o)
+            return false;
+        o.card.lines = lines;
+        o.card.total = euro(cents);
+        o.card.corrected = reason;
+        o.card.version = `${o.card.version}c`;
+        o.registered = false;
+        o.registerLate = false;
+        o.lateText = null;
+        if (o.handover !== null)
+            o.handover = "pending";
+        return true;
+    }
+    // A table the team entered by hand is on the board's "Heute".
+    enter(reservation) {
+        if (!this.today.some((r) => r.id === reservation.id))
+            this.today.push(reservation);
+    }
+    // What is booked on the day, for the window's load of the reservation sheet.
+    booked() {
+        return this.today;
     }
     // --- Orders (api/domain/ordering/board.py) ---
     find(id) {
@@ -681,7 +723,7 @@ export class Restaurant {
         const mode = this.currentMode();
         const on = (key) => this.header.services.find((s) => s[0] === key)?.[2] ?? false;
         const answers = mode !== "paused" && mode !== "shadow";
-        const order = answers && on("abholung");
+        const order = answers && on("abholung") && this.dishes().length > 0;
         const reservation = answers && on("reservierung");
         const callback = !order && !reservation;
         const n = this.serial++;
@@ -697,7 +739,7 @@ export class Restaurant {
     }
     dishes() {
         // Two dishes of different categories, never the one marked off.
-        const open = this.data.menu.filter((d) => d.number !== this.data.sold_out);
+        const open = this.data.menu.filter((d) => !this.off.has(d.number));
         const first = open[(this.serial * 7) % open.length];
         const second = open.find((d) => d.category !== first?.category && d.number !== first?.number);
         return [first, second].filter((d) => d !== undefined);

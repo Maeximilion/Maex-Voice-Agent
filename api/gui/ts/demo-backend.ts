@@ -15,6 +15,7 @@
 // its compiled output (`npm run build`, docs/22); edit the source, never the output.
 
 import { demoLinks, Restaurant, type Recorded } from "./demo-board.js";
+import { dayLabelOf, filterCalls, filterMenu, Sheets, type Reply as SheetReply } from "./demo-sheets.js";
 
 export {};
 
@@ -30,7 +31,7 @@ const LATER = "Dieser Teil der Demo folgt in einer späteren Version.";
 type Reply = { status: number; headers: Record<string, string>; body: string };
 type Route = { method: string; path: string; answer: string };
 type Capture = { method: string; path: string; url: string; body: Record<string, string> | null; file: string };
-type Handler = (m: string[], form: URLSearchParams) => Reply | null;
+type Handler = (m: string[], form: URLSearchParams) => Reply | null | Promise<Reply | null>;
 
 const realFetch = window.fetch.bind(window);
 const started = Date.now();
@@ -93,7 +94,7 @@ function emit(...names: string[]): void {
 
 // --- The visitor's restaurant and the answers --------------------------------------
 
-type World = { routes: Route[]; captures: Capture[]; restaurant: Restaurant };
+type World = { routes: Route[]; captures: Capture[]; restaurant: Restaurant; sheets: Sheets };
 
 async function json<T>(file: string): Promise<T> {
   const res = await realFetch(BASE + file);
@@ -108,7 +109,10 @@ function load(): Promise<World> {
     json<{ routes: Route[] }>("routes.json"),
     json<Capture[]>("captures.json"),
     json<Recorded>("state.json"),
-  ]).then(([routes, captures, state]) => ({ routes: routes.routes, captures, restaurant: new Restaurant(state) }));
+  ]).then(([routes, captures, state]) => {
+    const restaurant = new Restaurant(state);
+    return { routes: routes.routes, captures, restaurant, sheets: new Sheets(state, restaurant) };
+  });
   return world;
 }
 
@@ -124,7 +128,27 @@ function printSoon(r: Restaurant): void {
   }, SLIP_MS);
 }
 
-function handlers(r: Restaurant): [string, RegExp, Handler][] {
+// What a sheet answers, as a reply of the backend: the trigger header the board listens
+// for, and the events the real server's stream would send afterwards.
+function sheet(reply: SheetReply): Reply {
+  const headers: Record<string, string> = { "Content-Type": HTML };
+  if (reply.trigger) headers["HX-Trigger"] = JSON.stringify(reply.trigger);
+  if (reply.events?.length) setTimeout(() => emit(...(reply.events ?? [])), 0);
+  return { status: reply.status, headers, body: reply.html };
+}
+
+// A rendered page of the build, as it opens (the pages that take a filter start from it).
+async function captured(w: World, url: string): Promise<string | null> {
+  const c = w.captures.find((x) => x.method === "GET" && x.url === url);
+  if (!c) return null;
+  const res = await realFetch(BASE + c.file);
+  return res.ok ? res.text() : null;
+}
+
+function handlers(w: World): [string, RegExp, Handler][] {
+  const r = w.restaurant;
+  const s = w.sheets;
+  const g = (reply: SheetReply | null): Reply | null => (reply ? sheet(reply) : null);
   const header = (tap: { status: number } | null): Reply | null =>
     tap ? html(r.kopfzeile(), tap.status) : null;
   const column = (tap: { status: number; notice?: string }): Reply => {
@@ -133,6 +157,37 @@ function handlers(r: Restaurant): [string, RegExp, Handler][] {
     return reply;
   };
   return [
+    // --- B3: the sheets and the filters of the pages ---
+    ["GET", /^\/gui\/gericht-aus$/, () => html(s.dishSheet())],
+    ["GET", /^\/gui\/fragments\/gericht-aus$/, (_m, f) => html(s.dishSearch(f.get("q") ?? ""))],
+    ["POST", /^\/gui\/gericht-aus\/([^/]+)\/([^/]+)$/, (m) => g(s.dishSwitch(m[1] ?? "", m[2] ?? "")) ?? missing()],
+    ["GET", /^\/gui\/bestellungen\/([^/]+)\/korrigieren$/, (m) => g(s.correctionOpen(m[1] ?? ""))],
+    ["POST", /^\/gui\/bestellungen\/([^/]+)\/korrigieren\/vorschau$/, (m, f) => g(s.correctionTap(m[1] ?? "", f))],
+    ["POST", /^\/gui\/bestellungen\/([^/]+)\/korrigieren$/, (m, f) => {
+      const reply = g(s.correctionSave(m[1] ?? "", f));
+      // A slip that was sent is printed again; the board follows on its own.
+      printSoon(r);
+      return reply;
+    }],
+    ["GET", /^\/gui\/reservierung$/, () => g(s.entryOpen())],
+    ["POST", /^\/gui\/reservierung$/, (_m, f) => g(s.entryCheck(f))],
+    ["POST", /^\/gui\/reservierung\/([^/]+)\/eintragen$/, (m) => g(s.entryConfirm(m[1] ?? "")) ?? missing()],
+    ["GET", /^\/gui\/teamnummer$/, () => g(s.teamOpen())],
+    ["POST", /^\/gui\/teamnummer$/, (_m, f) => g(s.teamChange(f))],
+    ["GET", /^\/gui\/tageszeiten$/, (_m, f) => g(s.hoursOpen(f.get("datum") ?? ""))],
+    ["POST", /^\/gui\/tageszeiten$/, (_m, f) => g(s.hoursChange(f))],
+    ["GET", /^\/gui\/fragments\/pruefen$/, () => html(s.checkCards())],
+    ["GET", /^\/gui\/anrufe$/, async (_m, f) => {
+      const day = f.get("tag") ?? "";
+      const page = (await captured(w, day ? `/gui/anrufe?tag=${day}` : "/gui/anrufe")) ?? (await captured(w, "/gui/anrufe"));
+      if (page === null) return null;
+      return html(filterCalls(page, f.get("ergebnis") ?? "", f.get("anliegen") ?? "", dayLabelOf(page, day || (/<option value="([^"]*)" selected>/.exec(page)?.[1] ?? ""))));
+    }],
+    ["GET", /^\/gui\/menue$/, async (_m, f) => {
+      const page = await captured(w, "/gui/menue");
+      // The page is the answer; htmx must not push this address (it is no file of the demo).
+      return page === null ? null : html(filterMenu(page, f.get("q") ?? "", f.get("hinweis") ?? ""), 200, { "HX-Push-Url": "false" });
+    }],
     ["GET", /^\/gui\/fragments\/kopfzeile$/, () => html(r.kopfzeile())],
     ["GET", /^\/gui\/fragments\/bestellungen$/, () => html(r.bestellungen())],
     ["GET", /^\/gui\/fragments\/rueckrufe$/, () => html(r.rueckrufe())],
@@ -188,11 +243,11 @@ async function answer(method: string, address: string, body: URLSearchParams): P
   w.restaurant.tick((Date.now() - started) / 60000);
   const url = new URL(address, location.href);
   const path = url.pathname;
-  for (const [verb, re, handler] of handlers(w.restaurant)) {
+  for (const [verb, re, handler] of handlers(w)) {
     if (verb !== method) continue;
     const m = re.exec(path);
     if (!m) continue;
-    const reply = handler(m, body);
+    const reply = await handler(m, method === "GET" ? url.searchParams : body);
     if (reply) {
       // Links to rendered pages lead to their files, as in the pages the build wrote.
       const pages = w.routes.filter((r) => r.answer === "page").map((r) => r.path);
@@ -396,9 +451,39 @@ function bar(): void {
   head.after(box);
 }
 
+// --- The filter of the call list ----------------------------------------------------------
+
+// Its form is a plain GET, which the browser would send to the file server, and that
+// ignores the query. The demo asks its own backend and swaps the list in, as htmx would.
+function filters(): void {
+  const form = document.querySelector<HTMLFormElement>('form.call-filter[action="/gui/anrufe"]');
+  if (!form || form.dataset["demo"]) return;
+  form.dataset["demo"] = "1";
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const query = new URLSearchParams();
+    new FormData(form).forEach((value, key) => {
+      if (typeof value === "string") query.append(key, value);
+    });
+    window
+      .fetch(`/gui/anrufe?${query.toString()}`)
+      .then((res) => res.text())
+      .then((text) => {
+        const next = new DOMParser().parseFromString(text, "text/html").querySelector("section.calls");
+        const now = document.querySelector("section.calls");
+        if (!next || !now) return;
+        now.replaceWith(next);
+        (window as unknown as { htmx?: { process(el: Element): void } }).htmx?.process(next);
+        filters();
+      })
+      .catch(() => undefined);
+  });
+}
+
 function ready(): void {
   bar();
   notes();
+  filters();
 }
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", ready);
 else ready();

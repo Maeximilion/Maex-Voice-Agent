@@ -4,6 +4,7 @@ real number reaches them, and the public site serves them."""
 
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -216,3 +217,93 @@ def test_the_board_renders_the_real_fragments_and_follows_the_real_rules(built):
 def test_the_fake_backend_answers_every_request_of_the_view_in_the_browser(built):
     out, _ = built
     node_check("demo_backend.mjs", "demo-backend.js", out)
+
+
+# --- B3: the sheets and the owner's part ---
+
+PIN_PAGES = ("zeiten", "lieferung", "daten", "geraete")
+CONTROL = re.compile(r"<(?:button|select|textarea|input)\b[^>]*>")
+
+
+def test_the_sheets_render_the_real_templates_and_follow_the_real_rules(built):
+    out, _ = built
+    node_check("demo_sheets.mjs", "demo-board.js", out)
+
+
+def test_the_owners_pages_are_locked_and_say_so(built):
+    out, _ = built
+    for page in PIN_PAGES:
+        text = (out / page / "index.html").read_text(encoding="utf-8")
+        assert 'class="banner warn demo-locked"' in text, page
+        assert "Inhaber-PIN verfügbar" in text, page
+        # Nothing below the tabs can be pressed or typed into, by mouse or keyboard.
+        body = text.split("</nav>", 1)[1]
+        for control in CONTROL.findall(body):
+            assert "disabled" in control or 'type="hidden"' in control, (page, control)
+    # The pages a visitor may use are not locked.
+    for page in ("kennzahlen", "anrufe", "menue", "raumplan"):
+        text = (out / page / "index.html").read_text(encoding="utf-8")
+        assert "demo-locked" not in text, page
+
+
+def test_example_figures_and_the_example_menu_carry_their_label(built):
+    out, _ = built
+    for page in ("kennzahlen", "anrufe", "menue", "zeiten", "lieferung"):
+        text = (out / page / "index.html").read_text(encoding="utf-8")
+        assert build.EXAMPLE_LABEL in text, page
+    kennzahlen = (out / "kennzahlen" / "index.html").read_text(encoding="utf-8")
+    assert f"Letzte 7 Tage {build.EXAMPLE_BADGE}" in kennzahlen
+    assert f"<h2>Verlauf {build.EXAMPLE_BADGE}</h2>" in kennzahlen
+    assert "kein Angebot" in (out / "menue" / "index.html").read_text(encoding="utf-8")
+
+
+def test_every_day_of_the_call_list_and_each_call_is_captured(built):
+    out, done = built
+    page = (out / "anrufe" / "index.html").read_text(encoding="utf-8")
+    days = {c.url for c in done if c.url.startswith("/gui/anrufe?tag=")}
+    assert days == {f"/gui/anrufe?tag={d}" for d in build.DAY_OPTION.findall(page)}
+    assert len(days) == 14
+    # A detail for every row of every day, so no "Details" button is dead.
+    shown = set()
+    for c in done:
+        if c.url.startswith("/gui/anrufe?tag="):
+            text = (out / c.file).read_text(encoding="utf-8")
+            shown |= set(build.CALL_ROW.findall(text))
+    assert shown
+    assert shown <= {c.body["anruf"] for c in done if c.body}
+
+
+def test_the_state_carries_what_the_sheets_need(built):
+    out, _ = built
+    state = json.loads((out / "state.json").read_text(encoding="utf-8"))
+
+    assert {"team", "hours", "entry"} <= set(state)
+    assert all(d["id"] and "groups" in d for d in state["menu"])
+    pizza = next(d for d in state["menu"] if d["number"] == "201")
+    assert [o["name"] for o in pizza["groups"][0]["options"]] == ["Normal", "Groß"]
+    assert pizza["groups"][0]["required"] is True
+    assert [d["number"] for d in state["menu"] if d["sold_out"]] == [data.SOLD_OUT]
+    assert state["entry"]["choices"]
+
+
+def test_the_lock_refuses_a_page_without_a_tab_row_and_leaves_hidden_fields():
+    with pytest.raises(SystemExit, match="no tab row"):
+        build.lock("<main><button>x</button></main>")
+    locked = build.lock(
+        '<nav class="tabs"></nav><button>a</button><input type="hidden" name="c">'
+        '<input name="d"><select name="e"></select>'
+    )
+    assert (
+        locked.count(" disabled aria-disabled") == 3
+    )  # the hidden field stays as it is
+    assert "demo-locked" in locked
+
+
+def test_a_variant_of_a_page_gets_a_file_of_its_own():
+    assert build.file_for("/gui/anrufe") == "anrufe/index.html"
+    assert build.file_for("/gui/anrufe?tag=2026-11-19") == (
+        "anrufe/tag-2026-11-19/index.html"
+    )
+    assert (
+        build.file_for("/gui/raumplan/plan", json_answer=True) == "raumplan/plan.json"
+    )

@@ -57,6 +57,7 @@ ZONE = ZoneInfo(TIMEZONE)
 # Bundesnetzagentur, "Rufnummern für Medienproduktionen": +49 30 23125 000-999.
 EXAMPLE_PREFIX = "+493023125"
 SLOT_MINUTES = 30
+MAX_GUESTS = 60
 WAIT_PICKUP, WAIT_DELIVERY = 20, 45
 
 # Five categories, five dishes each (Maxi, 2026-11-19). Invented names and prices.
@@ -181,7 +182,7 @@ def _open_every_day(session: Session, tenant_id: uuid.UUID) -> None:
                 weekday=d,
                 slot_start=time(11, 0),
                 slot_end=time(23, 0),
-                max_guests=60,
+                max_guests=MAX_GUESTS,
                 slot_minutes=SLOT_MINUTES,
             )
             for d in range(7)
