@@ -323,7 +323,8 @@ def test_every_animation_has_a_still_state_for_reduced_motion():
     assert "mousemove" not in script
     assert script.count("pointermove") == 1
     assert "(hover:hover) and (pointer:fine)" in script
-    assert "still.matches" in script[: script.index("pointermove")]
+    assert "still.matches" in script[script.index("pointermove") :]
+    assert script.count("still.addEventListener") == 2
 
 
 def test_the_scripts_are_compiled_and_named_by_the_pages():

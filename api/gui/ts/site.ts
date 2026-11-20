@@ -177,8 +177,15 @@ function initWaves(waves: HTMLElement): void {
   let started = 0;
   let drawn = 0;
 
+  function rest(): void {
+    window.cancelAnimationFrame(frame);
+    frame = 0;
+    layers.forEach((layer) => layer.style.removeProperty("transform"));
+  }
+
   function draw(now: number): void {
     frame = 0;
+    if (still.matches) return rest();
     if (!onScreen || document.hidden) return;
     frame = window.requestAnimationFrame(draw);
     // Thirty pictures a second are plenty for a swing and halve the work.
@@ -200,6 +207,12 @@ function initWaves(waves: HTMLElement): void {
     resume();
   }).observe(waves);
   document.addEventListener("visibilitychange", resume);
+  // A reader who asks for no motion while the page is open gets the quiet curve of
+  // the stylesheet at once: the loop ends and the inline height goes.
+  still.addEventListener("change", () => {
+    if (still.matches) rest();
+    else resume();
+  });
   resume();
 }
 
@@ -207,7 +220,7 @@ function initWaves(waves: HTMLElement): void {
 // transform through two custom properties, no layout). Touch and a reader who
 // wants no motion keep the glow at its resting place in the top left corner.
 function initGlow(hero: HTMLElement): void {
-  if (still.matches || !window.matchMedia("(hover:hover) and (pointer:fine)").matches) return;
+  if (!window.matchMedia("(hover:hover) and (pointer:fine)").matches) return;
   let x = 0;
   let y = 0;
   let toX = 0;
@@ -224,7 +237,20 @@ function initGlow(hero: HTMLElement): void {
     if (Math.abs(toX - x) + Math.abs(toY - y) > 0.5) frame = window.requestAnimationFrame(move);
   }
 
+  function rest(): void {
+    window.cancelAnimationFrame(frame);
+    frame = 0;
+    seen = false;
+    hero.style.removeProperty("--gx");
+    hero.style.removeProperty("--gy");
+  }
+
+  still.addEventListener("change", () => {
+    if (still.matches) rest();
+  });
+
   hero.addEventListener("pointermove", (event) => {
+    if (still.matches) return rest();
     const box = hero.getBoundingClientRect();
     toX = event.clientX - box.left;
     toY = event.clientY - box.top;
