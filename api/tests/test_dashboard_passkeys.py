@@ -125,11 +125,14 @@ def factors(sessions):
 
 @pytest.fixture
 def pushes(monkeypatch):
-    """What would have gone to the `ops` topic."""
+    """What would have gone to the `ops` topic, but for the push of a sign-in
+    from a new browser: every test client is one, and that push has tests of
+    its own (#888 A1)."""
     sent: list[str] = []
 
     def queue(db: Any, text: str, at: Any) -> None:
-        sent.append(text)
+        if web.NEW_BROWSER not in text:
+            sent.append(text)
 
     monkeypatch.setattr(push, "queue", queue)
     return sent
@@ -1027,6 +1030,25 @@ def test_a_recovery_code_at_sign_in_is_audited_and_pushed(
     assert _audited(sessions, "operator.signed_in")[-1].detail["factor"] == "recovery"
 
 
+def test_a_sign_in_from_a_new_browser_is_pushed_and_a_known_one_is_not(
+    client, factors, clock, monkeypatch
+):
+    """#888 A1: a phished password and TOTP code signed in unseen."""
+    sent: list[str] = []
+    monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
+    _signed_in(client, factors, clock)
+    assert sent == [f"maxi: {web.NEW_BROWSER} (totp)"]
+
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)  # the same browser, its device cookie kept
+    assert len(sent) == 1
+
+    client.cookies.clear()
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)
+    assert sent[1:] == [f"maxi: {web.NEW_BROWSER} (totp)"]
+
+
 def test_a_failed_push_leaves_the_change_in_place_and_is_audited(
     client, factors, clock, sessions, monkeypatch
 ):
@@ -1039,7 +1061,10 @@ def test_a_failed_push_leaves_the_change_in_place_and_is_audited(
     assert answer.headers["location"] == "/factors?note=passkey-added"
     assert len(_rows(sessions)) == 1
     failed = _audited(sessions, "operator.push_failed")
-    assert [row.detail["what"] for row in failed] == ["new passkey 'Laptop'"]
+    assert [row.detail["what"] for row in failed] == [
+        f"{web.NEW_BROWSER} (totp)",
+        "new passkey 'Laptop'",
+    ]
 
 
 def test_a_failed_push_does_not_stop_a_recovery_sign_in(
@@ -1051,7 +1076,10 @@ def test_a_failed_push_does_not_stop_a_recovery_sign_in(
     monkeypatch.setattr(push, "queue", queue)
     assert _sign_in(client, factors.recovery_codes[0]).status_code == 303
     failed = _audited(sessions, "operator.push_failed")
-    assert [row.detail["what"] for row in failed] == ["a recovery code was used"]
+    assert [row.detail["what"] for row in failed] == [
+        "a recovery code was used",
+        f"{web.NEW_BROWSER} (recovery)",
+    ]
 
 
 # --- the challenges table ---------------------------------------------------------
@@ -1353,7 +1381,8 @@ def test_a_push_that_breaks_in_any_way_does_not_cost_the_recovery_code_its_sessi
     monkeypatch.setattr(push, "queue", queue)
     answer = _sign_in(client, factors.recovery_codes[0])
     assert answer.status_code == 303 and client.cookies.get("ops_session")
-    assert len(_audited(sessions, "operator.push_failed")) == 1
+    # The recovery code's push and the new browser's.
+    assert len(_audited(sessions, "operator.push_failed")) == 2
 
 
 def test_a_copy_of_a_passkey_is_pushed(client, factors, clock, pushes):

@@ -346,6 +346,8 @@ def test_a_pin_that_is_not_set_is_shown_as_none(http, session, stack):
     data = _data(_ask(http, "POST", PIN_SHOW, {"which": "team"}))
 
     assert data["pin"] is None and data["team_pin_set"] is False
+    # Nothing was shown, so the owner hears of nothing (#888 A1).
+    assert _pushed(session) == []
 
 
 @pytest.mark.parametrize(
@@ -1129,6 +1131,17 @@ def _pushed(session) -> list[dict[str, Any]]:
             {"all": True},
             {"step": "sign_out", "actor": ACTOR, "signed_out": 2},
         ),
+        # #888 A1: a look at a PIN opens the restaurant's view as much as a new one.
+        (
+            PIN_SHOW,
+            {"which": "team"},
+            {"step": "pin_show", "actor": ACTOR, "which": "team"},
+        ),
+        (
+            PIN_SHOW,
+            {"which": "admin"},
+            {"step": "pin_show", "actor": ACTOR, "which": "admin"},
+        ),
     ],
 )
 def test_a_step_on_the_restaurants_access_pushes_to_the_owner_naming_the_operator(
@@ -1152,12 +1165,11 @@ def test_one_device_signed_out_is_pushed_as_one(http, session, login, stack):
 
 
 def test_a_step_that_changed_nothing_pushes_nothing(http, session, login, stack):
-    """A refused PIN, a device that is gone already, a look and a read change
+    """A refused PIN, a device that is gone already and a read change
     nothing the owner must hear of."""
     _refused(_ask(http, "POST", PIN_SET, {"which": "team", "pin": ADMIN}))
     gone = {"device": str(uuid.uuid4())}
     assert _data(_ask(http, "POST", SIGN_OUT, gone))["signed_out"] == 0
-    _data(_ask(http, "POST", PIN_SHOW, {"which": "team"}))
     _data(_ask(http, "GET", ACCESS))
     assert _pushed(session) == []
 

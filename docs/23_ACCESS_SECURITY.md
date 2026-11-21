@@ -112,7 +112,10 @@ is the backup. Ten single-use recovery codes, stored hashed, are the last way in
 - At least two passkeys are registered before TOTP may be removed, so one lost device never locks
   the operator out.
 - A new passkey, a new TOTP secret or a used recovery code needs a fresh second factor and sends a
-  push to the `ops` topic ("new device"), so a silent takeover is visible.
+  push to the `ops` topic ("new device"), so a silent takeover is visible. A sign-in from a
+  browser without the account's device cookie pushes too, naming its factor (#888 A1): a
+  password and a TOTP code phished in real time would otherwise open every customer's PINs and
+  call lists unseen for up to twelve hours.
 - **Once the account has a passkey, every change of a factor needs a passkey step-up** (D37, Maxi,
   19.11.2026, built in #884): registering or removing a passkey, setting or removing a TOTP secret,
   and the sight of a new TOTP secret take a passkey shown on `/step-up` in the last five minutes.
@@ -711,7 +714,8 @@ guest's data.
   (`seen`) and is refused with 412 when the restaurant changed since; the check runs after the
   reason's row, with the settings row and the login locked, so a change by the owner waits for
   the step or the step sees it. A sign-out says its device or `all` in words.
-  A setup link, a PIN set and a sign-out that ended a session also push to the owner and to `ops`
+  A setup link, a PIN set, a PIN shown (#888 A1: a look opens the view as much as a new PIN) and
+  a sign-out that ended a session also push to the owner and to `ops`
   (`operator_access.changed`, migration 041; #811 question 3, decided 17.11.2026), naming the
   operator's account and the step (which PIN, how many devices), never the PIN, the link or a
   device's name: the owner sees at once what the operator did, and a taken-over dashboard is
