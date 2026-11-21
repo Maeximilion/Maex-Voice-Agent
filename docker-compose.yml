@@ -91,7 +91,10 @@ x-settings: &settings
 
 services:
   db:
-    image: postgres:16-alpine
+    # An exact minor, so a new one arrives as a Dependabot pull request and not
+    # unseen with a pull (#888 D3); the same pin in every file that names it
+    # (api/tests/test_image_pins.py).
+    image: postgres:16.16-alpine
     restart: unless-stopped
     networks: [backend]
     <<: *hardened
@@ -136,6 +139,9 @@ services:
       KITCHEN_BRIDGE_TOKEN:
       # Read by the operator dashboard over the `ops` network (docs/23 §8).
       OPS_TOKEN:
+      # Empty here; the customer layout names the api's alias on `ops`, the
+      # only network the ops API answers on (#888 C4).
+      OPS_NETWORK_HOST:
       # For the eval runner and the text phone in this container (`make
       # eval`); the production file blanks it, the server's API calls no model.
       LLM_API_KEY:

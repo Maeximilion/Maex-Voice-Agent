@@ -35,7 +35,11 @@ services:
       - caddy_config:/config
 
 networks:
+  # IPv6 of its own: otherwise Docker's proxy takes every IPv6 client's
+  # connection and Caddy sees them all from one address, so the per-address
+  # limits of both logins become one bucket (#888 D1, docs/13 §8).
   public:
+    enable_ipv6: true
 
 volumes:
   caddy_data:

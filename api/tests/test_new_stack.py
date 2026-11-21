@@ -133,6 +133,9 @@ def test_the_customer_layout_has_no_caddy_and_an_ops_network_for_the_api():
     on_ops = {name for name, s in services.items() if "ops" in s.get("networks", [])}
     assert on_ops == {"api"}
     assert layout["networks"]["ops"] == {"internal": True}
+    # The ops API answers over `ops` only, at the alias the api has there (#888 C4).
+    alias = services["api"]["environment"]["OPS_NETWORK_HOST"]
+    assert services["api"]["networks"]["ops"]["aliases"] == [alias]
     assert new_stack.COMPOSE_FILES.endswith("deploy/docker-compose.customer.yml")
 
 
@@ -296,10 +299,12 @@ class FakeDocker:
     """`new_stack.run` without Docker: records each command, answers the hash,
     the provisioning and, when asked to, refuses the Caddy check."""
 
-    def __init__(self, refuse: str | None = None):
+    def __init__(self, refuse: str | None = None, ipv6: str = "true"):
         self.commands: list[list[str]] = []
         self.inputs: list[str | None] = []
         self.refuse = refuse
+        # What `docker network inspect` says of the shared Caddy's network.
+        self.ipv6 = ipv6
 
     def __call__(self, command, cwd, **options):
         import subprocess
@@ -314,6 +319,8 @@ class FakeDocker:
             out = "\n".join(_fake_hashes(options["input"].split()))
         elif "api.jobs.provision" in text:
             out = json.dumps({"tenant_id": "t-1", "missing": []})
+        elif command[:3] == ["docker", "network", "inspect"]:
+            out = self.ipv6 + "\n"
         return subprocess.CompletedProcess(command, 0, stdout=out)
 
 
@@ -358,6 +365,46 @@ def test_a_site_is_checked_before_it_is_loaded(tmp_path, monkeypatch):
     caddy = [" ".join(c[-4:-2]) for c in docker.commands if "caddy" in c[-4:-2]]
     assert caddy == ["caddy validate", "caddy reload"]
     assert (root / "caddy" / "sites" / "pilot.caddy").exists()
+
+
+def test_the_shared_caddy_publishes_on_a_network_with_ipv6():
+    """#888 D1: without IPv6 on `public`, Docker's proxy hands Caddy every IPv6
+    client from one address, and the per-address limits become one bucket."""
+    compose = _load(REPO_ROOT / "deploy" / "caddy" / "docker-compose.yml")
+    assert compose["networks"]["public"]["enable_ipv6"] is True
+
+
+@pytest.mark.parametrize("shown", ["false", ""])
+def test_no_site_goes_live_behind_a_caddy_network_without_ipv6(
+    tmp_path, monkeypatch, shown
+):
+    """A `public` network made before enable_ipv6 keeps its old setting."""
+    root = tmp_path / "srv"
+    _stack(root)
+    docker = FakeDocker(ipv6=shown)
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    with pytest.raises(new_stack.Refused, match="maex-caddy_public has no IPv6"):
+        new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    assert not (root / "caddy" / "sites" / "pilot.caddy").exists()
+    assert not any("reload" in command for command in docker.commands)
+
+
+def test_the_ipv6_check_runs_after_the_shared_caddy_is_up(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _operator(root)
+    docker = FakeDocker()
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 0
+
+    steps = [" ".join(c) for c in docker.commands]
+    up = next(i for i, s in enumerate(steps) if s.endswith(" up -d"))
+    inspect = next(i for i, s in enumerate(steps) if "network inspect" in s)
+    reload = next(i for i, s in enumerate(steps) if "caddy reload" in s)
+    assert up < inspect < reload
+    assert steps[inspect].endswith("maex-caddy_public")
 
 
 def test_half_an_editor_account_is_refused_before_anything_starts(

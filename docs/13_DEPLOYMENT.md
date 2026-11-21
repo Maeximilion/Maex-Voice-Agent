@@ -221,7 +221,7 @@ Both scripts act on the database of `DATABASE_URL`, the same variable the applic
 | `BACKUP_DIR` | where dumps go, default `backups/` (ignored by git) |
 | `BACKUP_KEEP_DAYS` | dumps of this database older than this are removed after a good run, labelled ones included (repo audit of 27.10.2026, finding 7: they hold the same customer data, and docs/03 allows backups 30 days), default 14, `0` keeps everything. It is also the deadline for the copy a restore leaves behind (Restore below) |
 | `BACKUP_DOCKER_NETWORK` | The stack's Compose network that holds `db`, for example `maex-voice-agent_backend`. Needed on the server: Postgres has no published port there and the host `db` only resolves inside that network |
-| `BACKUP_PG_CLIENT` | `auto` (default), `local` or `docker`. `auto` takes the client from the `postgres:16-alpine` image (`BACKUP_PG_IMAGE`) when no `pg_dump` is on PATH, when `BACKUP_DOCKER_NETWORK` is set, or when the local client has another major version than the server |
+| `BACKUP_PG_CLIENT` | `auto` (default), `local` or `docker`. `auto` takes the client from the `postgres:16.16-alpine` image (`BACKUP_PG_IMAGE`) when no `pg_dump` is on PATH, when `BACKUP_DOCKER_NETWORK` is set, or when the local client has another major version than the server |
 
 ```bash
 bash scripts/backup.sh                              # scheduled dump, also `make backup`
@@ -308,6 +308,11 @@ their `CodeQL` result is neutral with "configurations not found". Decided 19.10.
   analyze a changed workflow. What covers the rest: the human review of every Dependabot
   pull request, and CodeQL on `main` after the merge, which flags the changed workflow
   there.
+- **Postgres is one exact minor (#888 D3, 22.11.2026):** `postgres:16.16-alpine`, never the
+  moving `16-alpine`, so a new minor arrives as a Dependabot pull request instead of with any
+  `docker compose pull`. Dependabot bumps the compose files only (majors stay ignored); the CI
+  services, the backup client's default in `scripts/lib_pg.sh` and this file follow by hand, and
+  `api/tests/test_image_pins.py` fails on that pull request until they do.
 - **Forks:** the repository is public; every outside pull request is treated as untrusted and
   read by a person before a merge; CodeQL on `main` scans it after the merge.
 
@@ -455,7 +460,7 @@ EUR; isolation and the unchanged code decide it.
   **The operator stack (#571, plan number 11, 17.11.2026):** `deploy/docker-compose.operator.yml`,
   Compose project `maex-ops`, run from a checkout of its own in `<root>/ops`: the dashboard
   (the API's image, `uvicorn api.dashboard.app:app` on port 8002, `ENV=prod`, not root, read-only,
-  no capability, `api/`, `db/` and `docs/metrics/` mounted read-only) and a `postgres:16-alpine`
+  no capability, `api/`, `db/` and `docs/metrics/` mounted read-only) and a `postgres:16.16-alpine`
   of its own, and its own push server `push` (`binwiederhier/ntfy`, the image and closed start
   of a customer's, #827 F3). Both networks are internal and nothing publishes a port: `backend`
   holds the database and the dashboard, `edge` the dashboard, the push server and, once its site
@@ -507,6 +512,30 @@ EUR; isolation and the unchanged code decide it.
   and the admin port from another container nothing, the dashboard past Caddy 403 with or without
   a guessed secret, and a forged `X-Forwarded-For: 6.6.6.6` left the client's real address in the
   dashboard's counter. With the operator folder empty, `ops.localhost` answered nothing.
+- **IPv6 in front of the shared Caddy (#888 D1, 22.11.2026).** A netcup VPS has IPv6, and once the
+  host names get AAAA records, Docker's proxy would take every IPv6 client's connection to a
+  network without IPv6 and hand it to Caddy from the network's gateway: every IPv6 client then
+  counts as one address, an attacker on IPv6 uses up the passkey challenge cap of the operator
+  login (429) and raises the waits of every IPv6 tablet (docs/23 §5 and §6). So the shared Caddy's
+  network `public` has IPv6 of its own (`enable_ipv6` in `deploy/caddy/docker-compose.yml`; Docker
+  Engine 27 or later gives it a ULA prefix without a subnet set, checked on the workbench's Docker
+  29.9), and the host's ip6tables rules map a client to Caddy with its own address. Needed on the
+  server: Docker Engine 27 or later, and no `"ip6tables": false` in `/etc/docker/daemon.json`.
+  Every run of `scripts/new_stack.py` (a customer's and `--ops-site`) asks the running network
+  after the shared Caddy is up (`docker network inspect -f '{{.EnableIPv6}}' maex-caddy_public`)
+  and refuses to load the site when it has no IPv6, as a network made before this setting keeps
+  the old one: stop the shared Caddy (`docker compose -p maex-caddy ... down`, every site is offline until
+  the next step), which removes the network, and run the script again. **AAAA records only after that**, and then once checked on
+  the real host: sign in to `ops.<domain>` from an IPv6 client, and the audit row
+  `operator.signed_in` names the client's own IPv6 address, not an address of the `public`
+  network. Until that check passed, the host names get A records only.
+- **The ops API answers over `ops` only (#888 C4, 22.11.2026).** The customer layout gives the
+  stack's `api` the alias `ops-api` on its `ops` network and sets `OPS_NETWORK_HOST=ops-api`; a
+  request to `/v1/ops` whose connection did not arrive at that address (so over `backend` or
+  `edge`, from the dispatcher, `voice`, n8n, the push server or Caddy) gets the 404 of a path that
+  does not exist, before the token is looked at (`api/ops/network.py`). Docker resolves the alias
+  on `ops` alone; tried on the workbench with two internal networks: over `edge` the connection
+  arrived at another address than the alias, and a container on `edge` could not resolve it.
 - #576 offboarding is export, then removal of the stack and its volumes.
 
 ### Reassess

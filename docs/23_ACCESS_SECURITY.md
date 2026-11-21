@@ -664,6 +664,11 @@ guest's data.
 - Routes under `/v1/ops/*`, behind `OPS_TOKEN` (constant-time compare, refused at start when weak,
   distinct from every other token). Caddy answers 404 for `/v1/ops/*` on the customer's site, as it
   does for every path not on the public list today (`api/tests/test_deploy_exposure.py` keeps it so).
+  The api answers `/v1/ops/*` over `ops` only (#888 C4, 22.11.2026): a request whose connection
+  arrived at another of its addresses, so over `backend` or `edge` from the dispatcher, `voice`,
+  n8n or the push server, gets the 404 of an unknown path before the token is read. The network
+  is told by the connection's local address against the api's alias on `ops` (`OPS_NETWORK_HOST`,
+  `api/ops/network.py`, docs/13 §8), so `OPS_TOKEN` is no longer the only barrier there.
 - **Default answers carry no personal data:** health, call mode, last call, counts of calls and
   orders today, print bridge heartbeat, backup age, open alerts, the four figures of docs/06 §4,
   menu status (items, price differences, missing allergens).

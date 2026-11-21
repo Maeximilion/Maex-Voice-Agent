@@ -26,6 +26,7 @@ from api.domain.calls import end_call, start_call
 from api.gui import mount_gui
 from api.gui.session import no_store, slide_cookies
 from api.kitchen.router import router as kitchen_router
+from api.ops.network import ops_network_only
 from api.ops.router import router as ops_router
 from api.schemas.calls import EndCallRequest, StartCallRequest
 from api.tools.router import router as tools_router
@@ -53,6 +54,8 @@ app = FastAPI(
     redoc_url="/redoc" if _DESCRIBED else None,
     openapi_url="/openapi.json" if _DESCRIBED else None,
 )
+# Innermost: before routing and body parsing, and still logged (#888 C4).
+app.middleware("http")(ops_network_only)
 app.middleware("http")(tool_call_log_middleware)
 app.middleware("http")(request_context_middleware)
 app.middleware("http")(slide_cookies)
