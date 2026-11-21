@@ -442,7 +442,10 @@ def test_a_known_device_signs_in_while_a_guesser_keeps_the_account_waiting(
     at = last + timedelta(minutes=1)
     assert _refused(session, tenant_id, PASSWORD, ADDRESS, at=at).wait_minutes
     # ... but the tablet, whose session ended (five wrong PINs, say), gets in.
-    end_sessions(session, tenant_id, "operator:test", "test")
+    # Only that session ends: signing out all devices forgets the cookies (#888).
+    ended = resolve(session, tablet.token, tenant_id, T0)
+    assert ended is not None
+    end_sessions(session, tenant_id, "operator:test", "test", ended.session_id)
     session.commit()
     again = sign_in(
         session,
@@ -488,6 +491,53 @@ def test_an_unknown_device_cookie_counts_like_any_stranger(
         == 1
     )
     assert session.get(GuiLoginFailure, ADDRESS).failures == 1
+
+
+def _device_count(session, tenant_id) -> int:
+    return session.execute(
+        select(func.count())
+        .select_from(GuiDevice)
+        .join(GuiAccount, GuiAccount.id == GuiDevice.account_id)
+        .where(GuiAccount.tenant_id == tenant_id)
+    ).scalar_one()
+
+
+def test_a_device_cookie_from_before_a_new_password_counts_like_a_stranger(
+    session, tenant_id, ready
+):
+    """#888 B1: a cookie kept by someone who knew the old password no longer
+    guesses on a count of its own once the owner sets a new one."""
+    kept = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Handy", T0).device_token
+    code, _ = issue_link(session, tenant_id, "operator:test", T0)
+    use_link(session, tenant_id, code, "Neues-Passwort-99", "9876", "PC", T0)
+    assert _device_count(session, tenant_id) == 1  # the browser that set it
+
+    _refused_with(session, tenant_id, kept)
+    assert session.scalars(select(GuiAccount.failures)).one() == 1
+    assert session.get(GuiLoginFailure, ADDRESS).failures == 1
+
+
+def test_signing_out_all_devices_forgets_their_cookies_one_keeps_them(
+    session, tenant_id, ready
+):
+    other = Tenant(name="Anderer Betrieb")
+    session.add(other)
+    session.commit()
+    code, _ = issue_link(session, other.id, "operator:test", T0)
+    use_link(session, other.id, code, PASSWORD, PIN, "x", T0)
+    second = sign_in(session, tenant_id, PASSWORD, ADDRESS, "Handy", T0)
+    second_access = resolve(session, second.token, tenant_id, T0)
+    assert second_access is not None
+    assert _device_count(session, tenant_id) == 2
+
+    end_sessions(session, tenant_id, "operator:test", "lost", second_access.session_id)
+    session.commit()
+    assert _device_count(session, tenant_id) == 2
+
+    end_sessions(session, tenant_id, "operator:test", "lost")
+    session.commit()
+    assert _device_count(session, tenant_id) == 0
+    assert _device_count(session, other.id) == 1
 
 
 def test_the_device_cookie_is_kept_across_sign_ins(session, tenant_id, ready):
