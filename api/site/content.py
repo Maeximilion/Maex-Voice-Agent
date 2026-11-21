@@ -6,10 +6,11 @@ date. The example calls are invented and marked as examples on the page.
 
 from dataclasses import dataclass
 
-# The path of the playable tablet demo once it exists (#892, its own task).
-# None: the page shows no "Jetzt ausprobieren" and no demo section, so no dead
-# button stands in for it. The place for the demo is marked in landing.html.
-DEMO_PATH: str | None = None
+# The path of the playable tablet demo (#892). The landing page offers it in the hero
+# and in its demo section; None switches both off, so no dead button stands in for
+# a demo that is not built. The static export refuses a site whose demo link
+# reaches no file, so an export needs `scripts/demo/tablet_demo_build.py` first.
+DEMO_PATH: str | None = "/tablet-demo"
 
 
 @dataclass(frozen=True)

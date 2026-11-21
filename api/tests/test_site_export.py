@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from api.site import app as site_app
+from api.site import content
 from api.site.config import SiteSettings
 from scripts import site_export
 
@@ -42,6 +43,9 @@ def _no_outside_settings_and_no_demo(monkeypatch):
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(site_app, "TABLET_DEMO", Path("/nonexistent/tablet-demo"))
+    # The landing page links the demo (content.DEMO_PATH); most tests export
+    # without one. The tests of the demo switch it back on.
+    monkeypatch.setattr(content, "DEMO_PATH", None)
 
 
 def settings_of(**values: Any) -> SiteSettings:
@@ -213,6 +217,7 @@ def test_a_built_tablet_demo_joins_the_export_with_noindex(tmp_path, monkeypatch
     )
     (demo / "captures.json").write_text("[]", encoding="utf-8")
     monkeypatch.setattr(site_app, "TABLET_DEMO", demo)
+    monkeypatch.setattr(content, "DEMO_PATH", "/tablet-demo")
     out = tmp_path / "site"
 
     site_export.export(out, settings_of())
@@ -222,11 +227,82 @@ def test_a_built_tablet_demo_joins_the_export_with_noindex(tmp_path, monkeypatch
         html = (out / page).read_text(encoding="utf-8")
         assert html.count('<meta name="robots" content="noindex, nofollow">') == 1, page
     assert site_export.broken_links(out) == []
+    # The landing page offers the demo, and the link reaches the demo's page.
+    landing = (out / "index.html").read_text(encoding="utf-8")
+    assert 'href="/tablet-demo"' in landing and 'id="demo"' in landing
     # The source folder of the demo is left as it was.
     assert "robots" not in (demo / "index.html").read_text(encoding="utf-8")
     # The demo's own files of /static/ come along, the board's script too.
     assert (out / "static" / "tablet-demo.css").is_file()
     assert (out / "static" / "app.js").is_file()
+
+
+def test_a_landing_page_that_offers_the_demo_needs_it_built(tmp_path, monkeypatch):
+    monkeypatch.setattr(content, "DEMO_PATH", "/tablet-demo")
+
+    with pytest.raises(site_export.ExportError, match=r"index\.html: /tablet-demo"):
+        site_export.export(tmp_path / "site", settings_of())
+
+
+def demo_page(tmp_path, monkeypatch, body: str) -> Path:
+    demo = tmp_path / "tablet-demo"
+    demo.mkdir()
+    (demo / "index.html").write_text(
+        f"<html><head></head><body>{body}</body></html>", encoding="utf-8"
+    )
+    monkeypatch.setattr(site_app, "TABLET_DEMO", demo)
+    return tmp_path / "site"
+
+
+@pytest.mark.parametrize(
+    "form",
+    [
+        '<form class="call-filter" method="get" action="/gui/anrufe"></form>',
+        '<form method="get" action="/gui/menue" hx-get="/gui/menue"></form>',
+        '<form method="post" action="/gui/inhaber/schliessen"></form>',
+        '<form method="post" action="/gui/bestellungen/7/passt"></form>',
+    ],
+)
+def test_a_form_the_demo_answers_is_no_broken_link(tmp_path, monkeypatch, form):
+    out = demo_page(tmp_path, monkeypatch, form)
+
+    site_export.export(out, settings_of())
+
+    assert site_export.broken_links(out) == []
+
+
+@pytest.mark.parametrize(
+    ("body", "link"),
+    [
+        # A route the demo marks absent, or none at all, is a broken form.
+        ('<form action="/gui/anmelden"></form>', "/gui/anmelden"),
+        ('<form action="/gui/nirgends"></form>', "/gui/nirgends"),
+        # Only a form action may name a route; a link or a source stays a file.
+        ('<a href="/gui/anrufe">x</a>', "/gui/anrufe"),
+        ('<img src="/gui/menue">', "/gui/menue"),
+    ],
+)
+def test_the_demo_exception_is_only_for_form_actions_it_answers(
+    tmp_path, monkeypatch, body, link
+):
+    out = demo_page(tmp_path, monkeypatch, body)
+
+    with pytest.raises(site_export.ExportError, match="broken links"):
+        site_export.export(out, settings_of())
+    assert site_export.broken_links(out) == [f"tablet-demo/index.html: {link}"]
+
+
+def test_a_form_action_outside_the_demo_is_still_checked(tmp_path):
+    out = tmp_path / "site"
+    site_export.export(out, settings_of())
+    landing = out / "index.html"
+    landing.write_text(
+        landing.read_text(encoding="utf-8")
+        + '<form action="/gui/inhaber/schliessen"></form>',
+        encoding="utf-8",
+    )
+
+    assert site_export.broken_links(out) == ["index.html: /gui/inhaber/schliessen"]
 
 
 def test_the_export_carries_only_the_static_files_its_pages_need(tmp_path):

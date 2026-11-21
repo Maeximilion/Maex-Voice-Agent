@@ -149,7 +149,8 @@ def test_the_copy_names_no_price_and_no_figure_of_performance():
     assert "Beispielgespräch" in copy
 
 
-def test_with_nothing_configured_nothing_is_offered_as_working():
+def test_with_nothing_configured_nothing_is_offered_as_working(monkeypatch):
+    monkeypatch.setattr(content, "DEMO_PATH", None)
     c = client()
     landing = text_of(c, "/")
     form = text_of(c, "/anfrage")
@@ -165,7 +166,7 @@ def test_with_nothing_configured_nothing_is_offered_as_working():
     assert "Das Formular ist noch nicht freigeschaltet" in form
     tag = re.search(r"<form[^>]*>", form)
     assert tag and "action=" not in tag.group(0)
-    # No demo yet: no hero action, no section, no link to the demo.
+    # No demo path: no hero action, no section, no link to the demo.
     assert "Jetzt ausprobieren" not in landing
     assert "tablet-demo" not in landing
     assert 'id="demo"' not in landing

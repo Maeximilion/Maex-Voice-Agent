@@ -32,6 +32,7 @@ from fastapi.testclient import TestClient
 
 from api.site import app as site_app
 from api.site.config import SiteSettings
+from scripts.demo.tablet_demo_routes import manifest, pattern
 
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "site-export"
@@ -47,7 +48,7 @@ LEGAL = ("impressum", "datenschutz")
 # A link to a page of the site gets its trailing slash, the clean path a static
 # host serves `<page>/index.html` at without a redirect.
 PAGE_LINK = re.compile(r'((?:href|action)=")/(anfrage|impressum|datenschutz)(?=[?#"])')
-LINK = re.compile(r'(?:href|src|action)="(/[^"]*)"')
+LINK = re.compile(r'(?P<attr>href|src|action)="(?P<link>/[^"]*)"')
 CSS_URL = re.compile(r"url\(\s*['\"]?(/[^)'\"]+)")
 # A file of /static/ named by a page, a stylesheet, a script or a manifest, and
 # the relative imports of a compiled script (`from "./site-logic.js"`).
@@ -98,20 +99,47 @@ def target(out: Path, link: str) -> Path | None:
     return next((c for c in candidates if c.is_file()), None)
 
 
+def answered_by_the_demo(link: str) -> bool:
+    """Whether a form `action` inside the tablet demo is one no click can send to
+    the host: a route of `tablet_demo_routes.json` that the demo does not mark
+    absent. The page's own submit is answered in the browser (the call filter by
+    `filters()` and the menu search by htmx, both in api/gui/ts/demo-backend.ts),
+    or cannot happen: the forms of the PIN-locked pages have every control
+    disabled (`lock()` in scripts/demo/tablet_demo_build.py, tested by
+    `test_the_owners_pages_are_locked_and_say_so`)."""
+    path = link.split("#", 1)[0].split("?", 1)[0]
+    return any(
+        route["answer"] != "absent" and pattern(route["path"]).fullmatch(path)
+        for route in manifest()["routes"]
+    )
+
+
 def broken_links(out: Path) -> list[str]:
     """Every root-absolute link of a written page or stylesheet that reaches no
-    file of the folder, as `<file>: <link>`."""
+    file of the folder, as `<file>: <link>`. Only a form `action` inside
+    `tablet-demo/` may name a route the demo answers instead of a file."""
     broken = []
     for file in sorted(out.rglob("*")):
+        rel = file.relative_to(out)
+        in_demo = rel.parts[0] == "tablet-demo"
         if file.suffix == ".html":
-            links = LINK.findall(file.read_text(encoding="utf-8"))
+            text = file.read_text(encoding="utf-8")
+            links = [
+                m["link"]
+                for m in LINK.finditer(text)
+                if not (
+                    in_demo
+                    and m["attr"] == "action"
+                    and answered_by_the_demo(m["link"])
+                )
+            ]
         elif file.suffix == ".css":
             links = CSS_URL.findall(file.read_text(encoding="utf-8"))
         else:
             continue
         for link in links:
             if target(out, link) is None:
-                broken.append(f"{file.relative_to(out).as_posix()}: {link}")
+                broken.append(f"{rel.as_posix()}: {link}")
     return broken
 
 

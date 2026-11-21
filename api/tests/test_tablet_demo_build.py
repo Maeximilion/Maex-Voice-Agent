@@ -246,6 +246,27 @@ def test_the_owners_pages_are_locked_and_say_so(built):
         assert "demo-locked" not in text, page
 
 
+FORM_TAG = re.compile(r"<form\b[^>]*>.*?</form>", re.S)
+
+
+def test_no_click_can_post_a_form_natively_on_a_static_host(built):
+    # A plain POST would leave the demo for a file that is not there (#892): the
+    # export lets a form `action` name a /gui route only because of this. A form
+    # that htmx or a script drives is answered by the fake backend.
+    out, _ = built
+    seen = 0
+    for page in out.rglob("index.html"):
+        for form in FORM_TAG.findall(page.read_text(encoding="utf-8")):
+            opening = form.split(">", 1)[0]
+            if 'method="post"' not in opening or "hx-post" in opening:
+                continue
+            seen += 1
+            for control in CONTROL.findall(form):
+                if 'type="submit"' in control or control.startswith("<button"):
+                    assert "disabled" in control, (page, control)
+    assert seen, "no native POST form left to check: drop this test"
+
+
 def test_example_figures_and_the_example_menu_carry_their_label(built):
     out, _ = built
     for page in ("kennzahlen", "anrufe", "menue", "zeiten", "lieferung"):
