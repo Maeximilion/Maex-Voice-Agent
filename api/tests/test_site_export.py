@@ -364,6 +364,15 @@ def test_the_htaccess_sends_the_headers_and_names_the_404_page(tmp_path, preview
     directives = [line.split()[0] for line in text.splitlines() if line.strip()]
     assert "Options" not in directives and "DirectoryIndex" not in directives
     assert "<IfModule mod_headers.c>" in text
+    # www to the apex, 301, before every other rule, with no host name in it; the
+    # host sets HSTS itself, so the file sends none.
+    lines = text.splitlines()
+    assert lines.index("  RewriteEngine On") < lines.index(
+        "ErrorDocument 404 /404.html"
+    )
+    assert r"  RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]" in lines
+    assert "  RewriteRule ^ https://%1%{REQUEST_URI} [R=301,L]" in lines
+    assert "Strict-Transport-Security" not in text
 
 
 def test_the_zip_holds_the_folder_without_the_marker(tmp_path, monkeypatch):

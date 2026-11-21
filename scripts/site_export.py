@@ -185,7 +185,8 @@ def mark_noindex(folder: Path) -> None:
 
 def htaccess(settings: SiteSettings) -> str:
     """What an Apache host (netcup webhosting, Plesk) needs beside the files:
-    the headers the app would send and the 404 page. Only directives of the
+    the headers the app would send, the `www` redirect and the 404 page. Only
+    directives of the
     FileInfo class, which a shared host allows in .htaccess; `Options` and
     `DirectoryIndex` are left out because a host that forbids them answers 500.
     Apache's DirectorySlash already sends `/anfrage` to `/anfrage/`."""
@@ -199,6 +200,14 @@ def htaccess(settings: SiteSettings) -> str:
         headers.append(("X-Robots-Tag", "noindex, nofollow"))
     lines = [
         "# Written by scripts/site_export.py (#892, docs/13 §9); do not edit here.",
+        # www leads to the apex with 301: the panel's "preferred domain" is locked
+        # on this host. No host name here, so any domain works; the query string
+        # is kept by default. HSTS is the host's own setting, not sent here.
+        "<IfModule mod_rewrite.c>",
+        "  RewriteEngine On",
+        r"  RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]",
+        "  RewriteRule ^ https://%1%{REQUEST_URI} [R=301,L]",
+        "</IfModule>",
         "ErrorDocument 404 /404.html",
         "<IfModule mod_headers.c>",
         *(f'  Header always set {name} "{value}"' for name, value in headers),
