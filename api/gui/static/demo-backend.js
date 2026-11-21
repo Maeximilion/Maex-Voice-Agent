@@ -14,6 +14,7 @@
 // Source: api/gui/ts/demo-backend.ts. The file of the same name in api/gui/static/ is
 // its compiled output (`npm run build`, docs/22); edit the source, never the output.
 import { demoLinks, Restaurant } from "./demo-board.js";
+import { FloorPlan } from "./demo-floorplan.js";
 import { dayLabelOf, filterCalls, filterMenu, Sheets } from "./demo-sheets.js";
 export {};
 // Where the build wrote the demo (api/site/tablet-demo/), as the site serves it.
@@ -91,9 +92,12 @@ function load() {
         json("routes.json"),
         json("captures.json"),
         json("state.json"),
-    ]).then(([routes, captures, state]) => {
+    ]).then(async ([routes, captures, state]) => {
         const restaurant = new Restaurant(state);
-        return { routes: routes.routes, captures, restaurant, sheets: new Sheets(state, restaurant) };
+        // The rooms the build made through the real editor are the visitor's start.
+        const plan = captures.find((c) => c.method === "GET" && c.url === "/gui/raumplan/plan");
+        const rooms = plan ? await json(plan.file) : { areas: [] };
+        return { routes: routes.routes, captures, restaurant, sheets: new Sheets(state, restaurant), plan: new FloorPlan(rooms) };
     }));
     return world;
 }
@@ -139,7 +143,16 @@ function handlers(w) {
             reply.headers["HX-Trigger"] = JSON.stringify({ "order-notice": tap.notice });
         return reply;
     };
+    const json_ = (reply) => ({
+        status: reply.status,
+        headers: { "Content-Type": JSON_TYPE },
+        body: reply.body,
+    });
     return [
+        // --- B4: the floor plan, with the server's checks ---
+        ["GET", /^\/gui\/raumplan\/plan$/, () => json_(w.plan.plan())],
+        ["POST", /^\/gui\/raumplan\/bereiche$/, (_m, _f, raw) => json_(w.plan.create(raw))],
+        ["PUT", /^\/gui\/raumplan\/bereiche\/([^/]+)$/, (m, _f, raw) => json_(w.plan.save(m[1] ?? "", raw))],
         // --- B3: the sheets and the filters of the pages ---
         ["GET", /^\/gui\/gericht-aus$/, () => html(s.dishSheet())],
         ["GET", /^\/gui\/fragments\/gericht-aus$/, (_m, f) => html(s.dishSearch(f.get("q") ?? ""))],
@@ -217,7 +230,7 @@ function handlers(w) {
 function pattern(path) {
     return new RegExp("^" + path.replace(/\{[^}]+\}/g, "[^/]+").replace(/\/$/, "/?") + "$");
 }
-async function answer(method, address, body) {
+async function answer(method, address, body, raw = "") {
     const w = await load();
     w.restaurant.tick((Date.now() - started) / 60000);
     const url = new URL(address, location.href);
@@ -228,7 +241,7 @@ async function answer(method, address, body) {
         const m = re.exec(path);
         if (!m)
             continue;
-        const reply = await handler(m, method === "GET" ? url.searchParams : body);
+        const reply = await handler(m, method === "GET" ? url.searchParams : body, raw);
         if (reply) {
             // Links to rendered pages lead to their files, as in the pages the build wrote.
             const pages = w.routes.filter((r) => r.answer === "page").map((r) => r.path);
@@ -299,7 +312,7 @@ class FakeXhr extends EventTarget {
     setRequestHeader() { }
     overrideMimeType() { }
     send(body) {
-        answer(this.method, this.address, formOf(body)).then((reply) => {
+        answer(this.method, this.address, formOf(body), typeof body === "string" ? body : "").then((reply) => {
             if (this.aborted)
                 return;
             this.reply = reply;
@@ -357,7 +370,7 @@ window.fetch = async (input, init) => {
     if (url.origin !== location.origin || !url.pathname.startsWith("/gui/"))
         return realFetch(input, init);
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-    const reply = await answer(method, url.pathname + url.search, formOf(init?.body));
+    const reply = await answer(method, url.pathname + url.search, formOf(init?.body), typeof init?.body === "string" ? init.body : "");
     return new Response(reply.body, { status: reply.status, headers: reply.headers });
 };
 // --- A line for the pages without the board's script -------------------------------

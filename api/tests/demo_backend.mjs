@@ -228,6 +228,87 @@ for (const [m, u] of [
   assert.ok(!sent.slice(before).some((p) => p.startsWith('/gui/')), 'nothing of the view leaves the browser')
 }
 
+// --- The floor plan: the server's checks, rebuilt (B4) ---
+{
+  const call = async (method, url, body) => {
+    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json', 'HX-Request': 'true' }, body: body === undefined ? undefined : JSON.stringify(body) })
+    return { status: res.status, data: await res.json() }
+  }
+  const rooms = (await call('GET', '/gui/raumplan/plan')).data.areas
+  const [first, second] = rooms
+  const save = (room, change) => {
+    const { id, revision, ...area } = structuredClone(room)
+    return call('PUT', `/gui/raumplan/bereiche/${id}`, { revision, area: change(area) })
+  }
+  const say = (r) => r.data.say
+
+  // Normal case: a moved table is stored, the revision counts up, the plan keeps it.
+  const moved = await save(first, (a) => (a.tables[0].x_cm = a.tables[0].x_cm + 1, a))
+  assert.equal(moved.status, 200)
+  assert.equal(moved.data.area.revision, first.revision + 1)
+  assert.equal((await call('GET', '/gui/raumplan/plan')).data.areas[0].tables[0].x_cm, first.tables[0].x_cm + 1)
+  // The same room again (a retry of the same save) is no conflict, and nothing changes.
+  const again = await save(first, (a) => (a.tables[0].x_cm = a.tables[0].x_cm + 1, a))
+  assert.equal(again.status, 200)
+  assert.equal(again.data.area.revision, first.revision + 1)
+  // Another change from the old revision: refused with the room as it stands.
+  const stale = await save(first, (a) => (a.name = 'Anderer Name', a))
+  assert.equal(stale.status, 409)
+  assert.equal(stale.data.area.revision, first.revision + 1)
+  assert.match(say(stale), /^Ein anderes Gerät hat diesen Raum inzwischen geändert/)
+  const live = moved.data.area
+
+  // A table name that lives in another room (also in another case).
+  const taken = await save(live, (a) => (a.tables[0].name = second.tables[0].name.toUpperCase(), a))
+  assert.equal(taken.status, 422)
+  assert.equal(say(taken), `Den Tischnamen ${second.tables[0].name.toUpperCase()} gibt es schon. Bitte einen anderen wählen.`)
+  // The same name twice in one room.
+  const twice = await save(live, (a) => (a.tables[1].name = a.tables[0].name, a))
+  assert.match(say(twice), /^Den Tischnamen .* gibt es schon/)
+  // A table outside its room, and one that sticks out by its turned size.
+  const outside = await save(live, (a) => (a.tables[0].x_cm = a.width_cm, a))
+  assert.equal(say(outside), `${live.tables[0].name} liegt außerhalb des Raums.`)
+  const turned = await save(live, (a) => (Object.assign(a.tables[0], { shape: 'rect', width_cm: 400, depth_cm: 60, rotation: 90, x_cm: 30, y_cm: 30 }), a))
+  assert.match(say(turned), /liegt außerhalb des Raums\.$/)
+  // A value out of bounds: the request's own limits, one text for all of them.
+  for (const change of [
+    (a) => (a.tables[0].seats = 41, a),
+    (a) => (a.tables[0].width_cm = 29, a),
+    (a) => (a.tables[0].x_cm = 5001, a),
+    (a) => (a.tables[0].name = '', a),
+    (a) => (a.tables[0].name = 'x'.repeat(26), a),
+    (a) => (a.wall_cm = 61, a),
+    (a) => (a.tables[0].extra = 1, a),
+  ]) {
+    const r = await save(live, change)
+    assert.equal(r.status, 422)
+    assert.equal(say(r), 'Der Plan enthält einen ungültigen Wert und ist nicht gespeichert.')
+  }
+  // Round table with two sizes, a square with two sides, a combination with a stranger.
+  assert.match(say(await save(live, (a) => (Object.assign(a.tables[0], { shape: 'round', width_cm: 80, depth_cm: 90 }), a))), /ist rund: ein Maß\.$/)
+  assert.equal(say(await save(live, (a) => (Object.assign(a, { shape: 'square', width_cm: 900, depth_cm: 800 }), a))), 'Ein Quadrat hat zwei gleich lange Seiten.')
+  assert.equal(say(await save(live, (a) => (a.combinations = [[a.tables[0].id, second.tables[0].id]], a))), 'Kombinieren geht nur mit Tischen dieses Raums.')
+  // A table of another room travels in this one.
+  assert.match(say(await save(live, (a) => (a.tables.push(structuredClone(second.tables[0])), a))), /^Ein Tisch gehört zu einem anderen Raum/)
+  // Nothing refused was stored.
+  assert.equal((await call('GET', '/gui/raumplan/plan')).data.areas[0].revision, live.revision)
+
+  // A new room: made empty, a name that exists is refused (any case), the sides decide square.
+  const made = await call('POST', '/gui/raumplan/bereiche', { name: ' Gartensaal ', kind: 'terrace', width_cm: 500, depth_cm: 500 })
+  assert.equal(made.status, 200)
+  assert.deepEqual([made.data.area.name, made.data.area.shape, made.data.area.revision, made.data.area.tables.length], ['Gartensaal', 'square', 0, 0])
+  const dup = await call('POST', '/gui/raumplan/bereiche', { name: 'gartensaal', kind: 'inside', width_cm: 500, depth_cm: 400 })
+  assert.equal(say(dup), 'Den Raumnamen gartensaal gibt es schon. Bitte einen anderen wählen.')
+  assert.equal((await call('POST', '/gui/raumplan/bereiche', { name: 'Klein', kind: 'inside', width_cm: 199, depth_cm: 400 })).status, 422)
+  assert.equal(say(await save(made.data.area, (a) => (a.name = live.name, a))), `Den Raumnamen ${live.name} gibt es schon. Bitte einen anderen wählen.`)
+  // A table goes into the new room, and its name is taken there afterwards.
+  const t = { id: '11111111-1111-4111-8111-111111111111', name: 'G1', shape: 'rect', seats: 4, width_cm: 80, depth_cm: 80, x_cm: 100, y_cm: 100 }
+  const filled = await save(made.data.area, (a) => (a.tables = [t], a))
+  assert.equal(filled.data.area.tables[0].rotation, 0, 'defaults are filled in as the server does')
+  assert.match(say(await save(live, (a) => (a.tables[1].name = 'g1', a))), /^Den Tischnamen g1 gibt es schon/)
+  assert.equal((await call('PUT', '/gui/raumplan/bereiche/22222222-2222-4222-8222-222222222222', { revision: 0, area: {} })).status, 422)
+}
+
 // --- The event stream opens and can be closed ---
 {
   const es = new EventSource('/gui/events')

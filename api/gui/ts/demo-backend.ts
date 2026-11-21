@@ -15,6 +15,7 @@
 // its compiled output (`npm run build`, docs/22); edit the source, never the output.
 
 import { demoLinks, Restaurant, type Recorded } from "./demo-board.js";
+import { FloorPlan, type Doc as PlanDoc } from "./demo-floorplan.js";
 import { dayLabelOf, filterCalls, filterMenu, Sheets, type Reply as SheetReply } from "./demo-sheets.js";
 
 export {};
@@ -31,7 +32,7 @@ const LATER = "Dieser Teil der Demo folgt in einer späteren Version.";
 type Reply = { status: number; headers: Record<string, string>; body: string };
 type Route = { method: string; path: string; answer: string };
 type Capture = { method: string; path: string; url: string; body: Record<string, string> | null; file: string };
-type Handler = (m: string[], form: URLSearchParams) => Reply | null | Promise<Reply | null>;
+type Handler = (m: string[], form: URLSearchParams, raw: string) => Reply | null | Promise<Reply | null>;
 
 const realFetch = window.fetch.bind(window);
 const started = Date.now();
@@ -94,7 +95,7 @@ function emit(...names: string[]): void {
 
 // --- The visitor's restaurant and the answers --------------------------------------
 
-type World = { routes: Route[]; captures: Capture[]; restaurant: Restaurant; sheets: Sheets };
+type World = { routes: Route[]; captures: Capture[]; restaurant: Restaurant; sheets: Sheets; plan: FloorPlan };
 
 async function json<T>(file: string): Promise<T> {
   const res = await realFetch(BASE + file);
@@ -109,9 +110,12 @@ function load(): Promise<World> {
     json<{ routes: Route[] }>("routes.json"),
     json<Capture[]>("captures.json"),
     json<Recorded>("state.json"),
-  ]).then(([routes, captures, state]) => {
+  ]).then(async ([routes, captures, state]) => {
     const restaurant = new Restaurant(state);
-    return { routes: routes.routes, captures, restaurant, sheets: new Sheets(state, restaurant) };
+    // The rooms the build made through the real editor are the visitor's start.
+    const plan = captures.find((c) => c.method === "GET" && c.url === "/gui/raumplan/plan");
+    const rooms = plan ? await json<{ areas: PlanDoc[] }>(plan.file) : { areas: [] };
+    return { routes: routes.routes, captures, restaurant, sheets: new Sheets(state, restaurant), plan: new FloorPlan(rooms) };
   });
   return world;
 }
@@ -156,7 +160,16 @@ function handlers(w: World): [string, RegExp, Handler][] {
     if (tap.notice) reply.headers["HX-Trigger"] = JSON.stringify({ "order-notice": tap.notice });
     return reply;
   };
+  const json_ = (reply: { status: number; body: string }): Reply => ({
+    status: reply.status,
+    headers: { "Content-Type": JSON_TYPE },
+    body: reply.body,
+  });
   return [
+    // --- B4: the floor plan, with the server's checks ---
+    ["GET", /^\/gui\/raumplan\/plan$/, () => json_(w.plan.plan())],
+    ["POST", /^\/gui\/raumplan\/bereiche$/, (_m, _f, raw) => json_(w.plan.create(raw))],
+    ["PUT", /^\/gui\/raumplan\/bereiche\/([^/]+)$/, (m, _f, raw) => json_(w.plan.save(m[1] ?? "", raw))],
     // --- B3: the sheets and the filters of the pages ---
     ["GET", /^\/gui\/gericht-aus$/, () => html(s.dishSheet())],
     ["GET", /^\/gui\/fragments\/gericht-aus$/, (_m, f) => html(s.dishSearch(f.get("q") ?? ""))],
@@ -238,7 +251,7 @@ function pattern(path: string): RegExp {
   return new RegExp("^" + path.replace(/\{[^}]+\}/g, "[^/]+").replace(/\/$/, "/?") + "$");
 }
 
-async function answer(method: string, address: string, body: URLSearchParams): Promise<Reply> {
+async function answer(method: string, address: string, body: URLSearchParams, raw = ""): Promise<Reply> {
   const w = await load();
   w.restaurant.tick((Date.now() - started) / 60000);
   const url = new URL(address, location.href);
@@ -247,7 +260,7 @@ async function answer(method: string, address: string, body: URLSearchParams): P
     if (verb !== method) continue;
     const m = re.exec(path);
     if (!m) continue;
-    const reply = await handler(m, method === "GET" ? url.searchParams : body);
+    const reply = await handler(m, method === "GET" ? url.searchParams : body, raw);
     if (reply) {
       // Links to rendered pages lead to their files, as in the pages the build wrote.
       const pages = w.routes.filter((r) => r.answer === "page").map((r) => r.path);
@@ -324,7 +337,7 @@ class FakeXhr extends EventTarget {
   overrideMimeType(): void {}
 
   send(body?: unknown): void {
-    answer(this.method, this.address, formOf(body)).then(
+    answer(this.method, this.address, formOf(body), typeof body === "string" ? body : "").then(
       (reply) => {
         if (this.aborted) return;
         this.reply = reply;
@@ -377,7 +390,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
   const url = new URL(raw, location.href);
   if (url.origin !== location.origin || !url.pathname.startsWith("/gui/")) return realFetch(input, init);
   const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-  const reply = await answer(method, url.pathname + url.search, formOf(init?.body));
+  const reply = await answer(method, url.pathname + url.search, formOf(init?.body), typeof init?.body === "string" ? init.body : "");
   return new Response(reply.body, { status: reply.status, headers: reply.headers });
 };
 
