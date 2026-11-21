@@ -14,7 +14,7 @@ name: maex-ops
 
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16.16-alpine
     restart: always
     logging:
       driver: journald

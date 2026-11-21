@@ -172,7 +172,7 @@ pg_resolve_client() {
     env_default BACKUP_PG_IMAGE
     env_default BACKUP_DOCKER_NETWORK
     PG_CLIENT="${BACKUP_PG_CLIENT:-auto}"
-    PG_IMAGE="${BACKUP_PG_IMAGE:-postgres:16-alpine}"
+    PG_IMAGE="${BACKUP_PG_IMAGE:-postgres:16.16-alpine}"
     if [ "$PG_CLIENT" = auto ]; then
         PG_CLIENT=docker
         # A client on the host cannot resolve names of the Compose network.

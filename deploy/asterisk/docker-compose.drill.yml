@@ -11,7 +11,7 @@
 # does not exist, so a turn of the core fails the way a model outage does.
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16.16-alpine
     networks: [backend]
     environment:
       POSTGRES_USER: maex

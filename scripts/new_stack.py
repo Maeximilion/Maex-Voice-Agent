@@ -68,6 +68,8 @@ E164 = re.compile(r"^\+[1-9][0-9]{6,14}$")
 DOMAIN = re.compile(r"^(?=.{1,200}$)([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
 COMPOSE_FILES = "docker-compose.yml:deploy/docker-compose.prod.yml:deploy/docker-compose.customer.yml"
 CADDY_PROJECT = "maex-caddy"
+# The network the shared Caddy publishes 80 and 443 on (deploy/caddy).
+CADDY_PUBLIC = f"{CADDY_PROJECT}_public"
 # Keys that would take the shared Caddy's or the operator stack's folder or
 # Compose project (#687, #571).
 RESERVED_KEYS = frozenset({"caddy", "ops"})
@@ -427,10 +429,11 @@ def load_site(root: Path, path: Path, site: str) -> None:
     try:
         command, caddy_env = caddy(root, "up", "-d")
         run(command, root, env=caddy_env)
+        check_ipv6(root)
         command, caddy_env = caddy(root, "exec", "-T", "caddy")
         run([*command, "caddy", "validate", *config], root, env=caddy_env)
         run([*command, "caddy", "reload", *config], root, env=caddy_env)
-    except Refused:
+    except Refused as problem:
         if before is None:
             path.unlink(missing_ok=True)
         else:
@@ -438,9 +441,26 @@ def load_site(root: Path, path: Path, site: str) -> None:
         _write_networks(root)
         undone = "removed again" if before is None else "put back as it was"
         raise Refused(
-            f"the shared Caddy refused {path.name}; it is {undone}, the other "
-            "sites are as they were. Fix the stack's .env and run again."
+            f"the shared Caddy refused {path.name} ({problem}); it is {undone}, "
+            "the other sites are as they were. Fix what it names and run again."
         ) from None
+
+
+def check_ipv6(root: Path) -> None:
+    """Without IPv6 on the shared Caddy's network, Docker's proxy hands it every
+    IPv6 client from one address, and the per-address limits of both logins
+    become one bucket (#888 D1, docs/13 §8). A network made before enable_ipv6
+    keeps its old setting, so the running one is asked."""
+    shown = run(
+        ["docker", "network", "inspect", "-f", "{{.EnableIPv6}}", CADDY_PUBLIC],
+        root,
+        stdout=subprocess.PIPE,
+    ).stdout.strip()
+    if shown != "true":
+        raise Refused(
+            f"{CADDY_PUBLIC} has no IPv6: stop the shared Caddy, remove the "
+            "network and start it again (docs/13 §8)"
+        )
 
 
 def join_operator(root: Path, key: str, token: str) -> None:

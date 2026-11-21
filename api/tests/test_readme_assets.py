@@ -1647,7 +1647,8 @@ def test_the_badges_carry_the_versions_the_stack_really_uses() -> None:
     dockerfile = (ra.ROOT / "api" / "Dockerfile").read_text(encoding="utf-8")
     compose = (ra.ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     assert f"FROM python:{ra.PYTHON_VERSION}-" in dockerfile
-    assert f"image: postgres:{ra.POSTGRES_VERSION}-" in compose
+    # The badge names the major; the file pins an exact minor of it (#888 D3).
+    assert f"image: postgres:{ra.POSTGRES_VERSION}." in compose
 
 
 def test_the_eval_badge_names_the_date_of_its_run() -> None:

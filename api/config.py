@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     kitchen_bridge_token: str = ""
     # The operator dashboard reads /v1/ops/* with it (#571, docs/23 §8). Empty: closed.
     ops_token: str = ""
+    # The api's alias on its `ops` network: /v1/ops/* answers there only
+    # (#888 C4, api/ops/network.py). Empty: no `ops` network, not checked.
+    ops_network_host: str = ""
     # Betrieb, fuer den das Token gilt; ohne ihn ist /v1/kitchen/* zu. Jeder
     # andere tenant_id wird abgelehnt: ein Token oeffnet nie die Bons aller.
     kitchen_bridge_tenant_id: str = ""
