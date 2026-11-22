@@ -110,11 +110,11 @@ def booked_guests(
     one, and the old one must not make the evening full for the same guest.
     Its confirmed tables still count: a second table is not a correction.
 
-    Of every other call only the draft its newest row is counts (#908): each
-    correction writes a new draft and leaves the old one a draft, and only the
-    newest waits for the yes. Counted against all, ten corrections held the
-    evening for one caller. Newest of any status, so that the older drafts do
-    not count again once the newest is confirmed.
+    A draft of another call counts only while it is that call's newest row
+    (#908): each correction writes a new draft and leaves the old one a draft,
+    and only the newest waits for the yes. Counted against all, ten
+    corrections held the evening for one caller. Newest of any status, so
+    that the older drafts do not count again once the newest is confirmed.
     shortcut: a guest who goes back to an earlier draft replays that row, and
     the newest row holds the seats instead; the yes checks again with
     `has_room`, so nothing is overbooked. Upgrade when such a yes is refused.

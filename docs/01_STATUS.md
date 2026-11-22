@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 22.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.1
+> Status: 22.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.2
 
 ---
 
@@ -155,6 +155,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 | 18.11.2026 | **#861 and #862, staff cards and the team number (P3s of the ledger #764 deep review).** A closure or shortening lists only the tables still to come (`bookings_outside_hours` takes `now`): a closure held at 15:00 no longer names the lunch guests. A date's hours are checked against the dates beside them with the weekly writer's rule (`weekly._night_faults` through `staff_changes._night_checked`): a night into the next date's first span, or a date that starts inside the night before, is refused for the staff, the owner's date form and the owner's keep or undo on a card and the holiday answer "wie Sonntag"; the board and the holiday list name the reason. Back to the hours that held before says so on the sheet. The holiday job takes the restaurant's lock before it reads the dates. `TEAM_PHONE` must be written in E.164 (start check in `config.py`, provision takes only `sheet_numbers`), so the staff can always go back to the standard number; going back says "Zurückgenommen, es gilt wieder die Nummer von vorher." Today's number keeps ending at 05:00 (docs/20 section 5). |
 | 22.11.2026 | **T-10.2 (#397), Maxi's reading of the wire run of 14.11.2026: G0 takes it with conditions.** The six go rows stand; the no-go rows Asterisk down and second caller are limits of the router access. The second caller counts as the failed router test that starts T-10.12, and the rows Asterisk down, second and third caller run again on the trunk. #769 keeps the router findings. G0 still waits for two calls at once in T-10.1 |
 | 22.11.2026 | **Scoped security audit (docs/09 §5) at `3fb8cbc1`: 1 P1, 5 P2, 7 P3; the baseline moves from `141d412` once this row is on `main`.** The 400 exposed files changed since 12.10.2026, read by six area reviewers on Opus 5.5 at `xhigh`, a skeptic over every P2, each finding checked in the code; findings in the comment of 22.11.2026 on #888. The P1 is #908: one call holds many tables' worth of seats with drafts, so every other caller hears "full" while it talks; it holds back T-10.1 step 2 until fixed (the audit records T-10.1, its files are a subset). The P2s: a cookie a sibling host sets stops every tablet tap (`__Host-` prefix, with #888 B2); data subject requests match calls by substring and verify by a caller id a spoofer can present; `project-sync` runs a stacked pull request's base branch with `PROJECT_TOKEN`; a second `--inside` load test deletes the operator database and every customer folder. T-9.2 stays due for the real server (#840). |
+| 22.11.2026 | **#908 fixed: a call's replaced drafts hold no seats; only its newest row can, so T-10.1 step 2 is no longer held back by the audit's P1.** `capacity.booked_guests` counts a draft of another live call only while no newer row of that call exists (one turn's drafts of the same instant: the higher id; a confirmed row there never hides a draft), so ten corrections hold one party, and none once the newest is confirmed or cancelled; the agent, `confirm` and the tablet's count all go through it. Migration 044 adds `ix_reservations_call_created_at`: without it the check walked the tenant's history once per live draft (701 ms for 80 drafts of one call at 144,000 rows, inside the day's lock); with it 3.1 to 3.6 ms, against 2.0 to 2.6 ms on `main` that counted 400 seats for one caller. Shortcut kept: a guest who goes back to an earlier draft replays that row while the newest still holds the seats; the yes checks `has_room` again under the lock, so nothing is overbooked. Workbench database: migration 044 is due after the merge. |
 
 Older rows: `docs/HISTORY.md` section "Done (archive)".
 
@@ -176,6 +177,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.68.2 · 22.11.2026:** #908: only a call's newest row holds seats as a draft, migration 044 indexes reservations by call and creation time
 - **v2.68.1 · 22.11.2026:** Scoped security audit at 3fb8cbc1: 1 P1 (#908, holds back T-10.1 step 2), 5 P2, 7 P3 on #888; the baseline moves from 141d412
 - **v2.68.0 · 22.11.2026:** T-10.2 taken for G0 with conditions (Maxi's reading)
 - **v2.67.18 · 22.11.2026:** #841: load test of one VPS of D3 built and run (scripts/voice_load.py): 4 stacks with 3 calls each inside every check, at 5 one lost 20 ms frame; memory is the limit (about 1.05 GB per stack, n8n the largest share), not the processor

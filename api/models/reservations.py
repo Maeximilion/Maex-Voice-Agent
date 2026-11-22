@@ -39,6 +39,8 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
             name="ck_reservations_off_hours_tablet",
         ),
         Index("ix_reservations_tenant_reserved_for", "tenant_id", "reserved_for"),
+        # The seat count asks per draft for a newer row of its call (#908).
+        Index("ix_reservations_call_created_at", "call_id", "created_at"),
     )
 
     call_id: Mapped[uuid.UUID | None] = mapped_column(

@@ -738,6 +738,9 @@ def test_a_confirmed_table_of_the_same_call_still_counts(session, tenant_id, cal
         )
 
 
+# --- Of another call only its newest row's draft counts (#908) ---
+
+
 def _three_corrections(session, tenant_id, call_id):
     """Six at seven, a quarter past and half past: three drafts of one call,
     the last one written last."""
@@ -837,6 +840,48 @@ def test_a_confirmed_table_of_the_same_instant_never_hides_a_draft(
     # 30 + 6 + 6 > 40.
     with pytest.raises(Conflict):
         create_reservation(session, _six(tenant_id, call_id), now=NOW)
+
+
+def test_a_draft_is_replaced_only_by_a_newer_row_of_its_own_call(
+    session, tenant_id, call_id
+):
+    """Another call's newer draft hides nothing: 30 of 40 booked, call P holds
+    six, call Q four a minute later, so two more do not fit."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    create_reservation(
+        session, _six(tenant_id, _other_call(session, tenant_id)), now=NOW
+    )
+    create_reservation(
+        session,
+        _six(tenant_id, _other_call(session, tenant_id), party_size=4),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    with pytest.raises(Conflict):
+        create_reservation(
+            session,
+            _six(tenant_id, call_id, party_size=2),
+            now=NOW + timedelta(minutes=2),
+        )
+
+
+def test_a_draft_moved_to_another_day_frees_the_first_one(session, tenant_id, call_id):
+    """The correction leaves Wednesday for Thursday: the Wednesday draft of
+    six holds nothing any more, and six more fit next to the thirty."""
+    other = _other_call(session, tenant_id)
+    _seat(session, tenant_id, other, 30)
+    create_reservation(session, _six(tenant_id, other), now=NOW)
+    create_reservation(
+        session,
+        _six(tenant_id, other, reserved_for=WEDNESDAY_EVENING + timedelta(days=1)),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    mine = create_reservation(
+        session, _six(tenant_id, call_id), now=NOW + timedelta(minutes=2)
+    )
+
+    assert mine.status == "draft"
 
 
 def test_two_drafts_of_one_call_never_book_past_the_window(session, tenant_id, call_id):
