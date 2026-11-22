@@ -153,10 +153,8 @@ tasks = ["T-1.11", "T-10.1", "T-10.2", "T-10.7"]
 
 [[capability]]
 area = "Tablet view for the team"
-works = '''The admin view (`docs/06_GUI.md` §4) runs in the browser'''
-missing = '''The admin view (`docs/06_GUI.md` §4) is built in parts: the key figures, the device list and the owner's settings behind the admin PIN run in the browser; the tabs for menu, delivery and calls are still only a mockup'''
+works = '''The admin view (`docs/06_GUI.md` §4) runs in the browser: the four figures above every tab, the tabs Zeiten, Lieferung, Menü, Anrufe with the detail of one call, Kennzahlen, Daten and Geräte, the owner's parts behind the admin PIN. The menu tab reads; answering a price difference stays on the board's card, and eval results are shown in the operator dashboard only'''
 tasks = []
-waits_for = '''tasks for the remaining tabs of the admin view'''
 
 [[capability]]
 area = "Pickup and delivery orders"

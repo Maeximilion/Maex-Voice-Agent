@@ -3,6 +3,7 @@ same answer to every wrong input, waits after failures, sessions, CSRF, the
 proxy check and the break-glass command, against a scratch operator database."""
 
 import os
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -11,6 +12,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import sessionmaker
@@ -32,13 +34,18 @@ ROOT = Path(__file__).resolve().parents[2]
 INI = ROOT / "db" / "dashboard" / "alembic.ini"
 PASSWORD = "lange-geheime-phrase"
 START = datetime(2026, 11, 10, 9, 0, tzinfo=UTC)
+ORIGIN = "https://ops.example.com"
 TABLES = {
+    "operator_pushes",
     "operator_accounts",
     "operator_recovery_codes",
     "operator_sessions",
     "operator_devices",
     "operator_login_failures",
     "operator_audit",
+    "operator_customers",
+    "operator_passkeys",
+    "operator_challenges",
 }
 
 
@@ -138,8 +145,9 @@ def test_password_and_totp_open_the_dashboard(client, factors, clock, sessions):
     assert "HttpOnly" in answer.headers["set-cookie"]
     page = client.get("/")
     assert page.status_code == 200
-    assert "Signed in as <strong>maxi</strong>" in page.text
+    assert '<span class="muted">maxi</span>' in page.text
     assert "10 recovery codes left" in page.text
+    assert "No customer yet." in page.text
     assert _actions(sessions)[-1] == "operator.signed_in"
 
 
@@ -376,6 +384,44 @@ def test_a_post_without_the_page_token_or_from_another_site_is_refused(
     assert client.post("/logout", data={"csrf_token": token}).status_code == 401
 
 
+# What answers without a session: the sign-in and the health check, no more.
+PUBLIC = {
+    ("GET", "/health"),
+    ("GET", "/login"),
+    ("POST", "/login"),
+    ("POST", "/login/passkey/options"),
+}
+
+
+def _routes() -> list[tuple[str, str]]:
+    found = set()
+    for route in web.app.routes:
+        if isinstance(route, APIRoute):
+            path = re.sub(r"\{[^}]+\}", "x", route.path)
+            found |= {(method, path) for method in route.methods or ()}
+    return sorted(found)
+
+
+def test_every_route_of_the_dashboard_refuses_without_a_session(client, factors):
+    """#827 F10: the plan's gate asks for every route refused without a
+    session, also a route added later. The list of public routes is fixed
+    here: a new route is either behind the session or named above."""
+    routes = _routes()
+    assert set(routes) >= PUBLIC
+    for cookies in ({}, {"ops_session": "forged"}):
+        client.cookies.clear()
+        client.cookies.update(cookies)
+        for method, path in routes:
+            if (method, path) in PUBLIC:
+                continue
+            answer = client.request(method, path, follow_redirects=False)
+            if method == "GET" and answer.status_code == 303:
+                assert answer.headers["location"] == "/login", path
+            else:
+                assert answer.status_code == 401, (method, path)
+            assert "maxi" not in answer.text, path
+
+
 def test_outside_dev_and_test_only_the_proxy_gets_in(
     client, factors, clock, monkeypatch, sessions
 ):
@@ -415,12 +461,79 @@ def test_outside_dev_and_test_only_the_proxy_gets_in(
     assert row.detail["address"] == "5.6.7.8"
 
 
+# The push server of the operator stack and its user's token (#827 F3).
+PUSH = {
+    "operator_push_url": "http://maex-ops-push-1/",
+    "operator_push_token": "tk_" + "a" * 29,
+}
+
+
 def test_production_settings_need_a_strong_proxy_secret():
     for weak in ("", "short", "change_me_long_random", " " * 40):
         with pytest.raises(ValueError, match="OPERATOR_PROXY_SECRET"):
-            DashboardSettings(env="prod", operator_proxy_secret=weak)
-    DashboardSettings(env="prod", operator_proxy_secret="x" * 40)
+            DashboardSettings(
+                env="prod", operator_proxy_secret=weak, operator_origin=ORIGIN
+            )
+    DashboardSettings(
+        env="prod", operator_proxy_secret="x" * 40, operator_origin=ORIGIN, **PUSH
+    )
     DashboardSettings(env="dev", operator_proxy_secret="")
+
+
+def test_production_settings_need_the_origin_of_the_dashboard():
+    """A passkey is bound to it, so it is never a default and never read from a
+    request (docs/23 §5)."""
+    secret = {"env": "prod", "operator_proxy_secret": "x" * 40}
+    with pytest.raises(ValueError, match="OPERATOR_ORIGIN is missing"):
+        DashboardSettings(**secret)
+    for wrong in (
+        "",
+        "ops.example.com",
+        "http://ops.example.com",
+        "https://ops.example.com/",
+        "https://ops.example.com/login",
+        "https://OPS.example.com",
+        "https://user@ops.example.com",
+        "https://ops.example.com:port",
+        "https://",
+        # A browser writes the origin without the default port, and the passkey
+        # library compares it as it is (#816).
+        "https://ops.example.com:443",
+    ):
+        with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
+            DashboardSettings(**secret, operator_origin=wrong)
+    there = DashboardSettings(
+        **secret, operator_origin="https://ops.example.com:8443", **PUSH
+    )
+    assert there.relying_party_id == "ops.example.com"
+    # Dev and test run over plain HTTP on localhost.
+    assert DashboardSettings(env="dev").relying_party_id == "localhost"
+    with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
+        DashboardSettings(env="dev", operator_origin="ftp://localhost")
+    with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
+        DashboardSettings(env="dev", operator_origin="http://localhost:80")
+
+
+def test_production_settings_need_the_push_server_and_its_token():
+    """Without them the pushes would only wait in the database, and a takeover
+    that adds a passkey would reach no phone (#827 F3)."""
+    ready = {
+        "env": "prod",
+        "operator_proxy_secret": "x" * 40,
+        "operator_origin": ORIGIN,
+    }
+    for wrong in (
+        {},
+        {**PUSH, "operator_push_url": ""},
+        {**PUSH, "operator_push_token": ""},
+        {**PUSH, "operator_push_token": "tk_short"},
+        {**PUSH, "operator_push_token": "tk_" + "a" * 14 + " " + "a" * 14},
+    ):
+        with pytest.raises(ValueError, match="OPERATOR_PUSH"):
+            DashboardSettings(**ready, **wrong)
+    DashboardSettings(**ready, **PUSH)
+    # Dev and test start without one; the pushes then wait.
+    DashboardSettings(env="test")
 
 
 def test_the_dashboard_never_builds_the_customer_settings():
@@ -431,6 +544,9 @@ def test_the_dashboard_never_builds_the_customer_settings():
         "HOME": os.environ.get("HOME", "/tmp"),
         "ENV": "prod",
         "OPERATOR_PROXY_SECRET": "z" * 40,
+        "OPERATOR_ORIGIN": ORIGIN,
+        "OPERATOR_PUSH_URL": PUSH["operator_push_url"],
+        "OPERATOR_PUSH_TOKEN": PUSH["operator_push_token"],
     }
     probe = (
         "import sys, api.dashboard.app, api.dashboard.cli;"

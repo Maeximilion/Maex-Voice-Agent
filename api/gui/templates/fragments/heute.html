@@ -17,12 +17,17 @@
     <div class="res-head">
       <b class="time">{{ r.time }}</b>
       <span class="badge accent">{{ r.party_size }} {{ "Person" if r.party_size == 1 else "Personen" }}</span>
+      {% if r.is_test %}<span class="badge warn">TEST</span>{% endif %}
     </div>
+    {# The self-test's table (#574): nobody comes, the test removes it again. #}
+    {% if r.is_test %}<div class="note">Test der Einrichtung, kein Gast. Die Karte verschwindet von selbst.</div>{% endif %}
     <div class="name">{{ r.guest_name }}</div>
     {% if r.tables %}<div class="tables">Tisch {{ r.tables|join(" + ") }}</div>{% endif %}
     {# A table the team entered may have no number (T-3.12). #}
     {% if r.phone %}<div class="muted">{{ r.phone }}</div>{% endif %}
     {% if r.note %}<div class="note">{{ r.note }}</div>{% endif %}
+    {# Entered by the team after "Trotzdem eintragen" on closed hours (#819). #}
+    {% if r.off_hours %}<div class="note">Bewusst außerhalb der Öffnungszeiten eingetragen.</div>{% endif %}
   </li>
   {% endfor %}
 </ul>

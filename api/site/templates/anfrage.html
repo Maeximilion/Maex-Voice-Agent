@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Anfrage | Maex Voice Agent{% endblock %}
+{% block description %}Unverbindlich anfragen: kurz sagen, um was für einen Betrieb es geht. Wir melden uns und beraten Sie.{% endblock %}
+{% block scripts %}<script type="module" src="/static/anfrage.js"></script>{% endblock %}
+
+{% block content %}
+<div class="wrap inquiry">
+  <div class="inquiry-text">
+    <p class="eyebrow">Anfrage</p>
+    <h1 class="h-page">Unverbindlich anfragen</h1>
+    <p class="lead">Sagen Sie uns kurz, um was für einen Betrieb es geht. Wir melden uns und beraten Sie. Die Anfrage verpflichtet zu nichts.</p>
+    <ul class="checks checks-col">
+      <li>Kostet nichts und bindet Sie nicht.</li>
+      <li>Wir beraten, ob die KI zu Ihrem Betrieb passt.</li>
+    </ul>
+    {% if contact_email and not preview %}<p class="note">Lieber per E-Mail? <a href="mailto:{{ contact_email }}">{{ contact_email }}</a></p>{% endif %}
+  </div>
+
+  {# The form is built and checked in the browser, but it is offered as working
+     only when SITE_INQUIRY_ACTION names a route that takes it (#892: it needs a
+     mail service, a target address and the privacy text first). #}
+  <form class="formcard" data-inquiry novalidate
+        {% if inquiry_action %}method="post" action="{{ inquiry_action }}"{% endif %}>
+    {# The preview shows the form with every field and the button disabled, so a
+       visitor sees what it will ask and cannot mistake it for working. #}
+    {% if preview %}
+    <p class="formnote" role="status">Dies ist eine Vorschau eines persönlichen Projekts: Das Formular ist nur zum Ansehen da, senden lässt sich nichts.</p>
+    {% elif not inquiry_action %}
+    <p class="formnote" role="status">Das Formular ist noch nicht freigeschaltet. Senden ist erst möglich, wenn Versand und Datenschutzhinweis stehen.</p>
+    {% endif %}
+    <fieldset{% if not inquiry_action %} disabled{% endif %}>
+      <legend class="sr">Anfrage</legend>
+
+      <label for="f-kind">Art des Betriebs</label>
+      <select id="f-kind" name="kind" aria-describedby="e-kind" required>
+        {% for kind in kinds %}<option>{{ kind }}</option>{% endfor %}
+      </select>
+      <p class="error" id="e-kind" data-error="kind" role="alert" hidden></p>
+
+      <label for="f-business">Name des Betriebs</label>
+      <input id="f-business" name="business" type="text" autocomplete="organization" maxlength="120" aria-describedby="e-business" required>
+      <p class="error" id="e-business" data-error="business" role="alert" hidden></p>
+
+      <label for="f-name">Ihr Name</label>
+      <input id="f-name" name="name" type="text" autocomplete="name" maxlength="120" aria-describedby="e-name" required>
+      <p class="error" id="e-name" data-error="name" role="alert" hidden></p>
+
+      <label for="f-mail">E-Mail</label>
+      <input id="f-mail" name="mail" type="email" autocomplete="email" maxlength="254" aria-describedby="e-mail" required>
+      <p class="error" id="e-mail" data-error="mail" role="alert" hidden></p>
+
+      <label for="f-phone">Telefon (freiwillig)</label>
+      <input id="f-phone" name="phone" type="tel" autocomplete="tel" maxlength="25" aria-describedby="e-phone">
+      <p class="error" id="e-phone" data-error="phone" role="alert" hidden></p>
+
+      <label for="f-text">Worum geht es? (freiwillig)</label>
+      <textarea id="f-text" name="text" rows="4" maxlength="2000" aria-describedby="e-text"></textarea>
+      <p class="error" id="e-text" data-error="text" role="alert" hidden></p>
+
+      <button class="btn btn-main btn-wide" type="submit">Anfrage senden</button>
+    </fieldset>
+    <p class="fineprint">Unverbindlich und beratend. Der Hinweis zum Datenschutz steht hier, bevor die Seite online geht.</p>
+  </form>
+</div>
+{% endblock %}

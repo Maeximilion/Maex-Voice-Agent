@@ -1,6 +1,7 @@
 """Settings of the operator dashboard, from its own stack's environment."""
 
 from typing import Self
+from urllib.parse import urlsplit
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,6 +25,24 @@ class DashboardSettings(BaseSettings):
     # a customer's site): every customer's api shares a network with the
     # dashboard (docs/23 §8) and must not reach its sign-in past the proxy.
     operator_proxy_secret: str = ""
+    # Where the operator's browser reaches the dashboard, `https://ops.<domain>`.
+    # A passkey is bound to this origin and to its host name (the relying party
+    # id); both come from here, never from a request's Host header, which the
+    # sender chooses (docs/23 §5).
+    operator_origin: str = "http://localhost:8002"
+    # The push server and the token of its user `dashboard`, which may publish
+    # to `ops` (#827 F3). Outside dev and test both are required: without them
+    # the pushes would only wait in the database and a takeover stay silent.
+    operator_push_url: str = ""
+    operator_push_token: str = ""
+    # The folder with the eval and measurement records the dev tools show
+    # (`docs/metrics/` of a checkout, docs/08 §4); only read. The image holds
+    # none: the operator stack's Compose file mounts it (#571).
+    operator_metrics_dir: str = "docs/metrics"
+
+    @property
+    def relying_party_id(self) -> str:
+        return urlsplit(self.operator_origin).hostname or ""
 
     @model_validator(mode="after")
     def _production_needs_the_proxy_secret(self) -> Self:
@@ -33,6 +52,44 @@ class DashboardSettings(BaseSettings):
             raise ValueError(
                 "OPERATOR_PROXY_SECRET is missing, the placeholder, contains "
                 f"whitespace, or is shorter than {TOKEN_MIN_LENGTH} characters"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _the_origin_is_an_origin(self) -> Self:
+        local = self.env in LOCAL_ENVS
+        if not local and "operator_origin" not in self.model_fields_set:
+            raise ValueError("OPERATOR_ORIGIN is missing: https://ops.<domain>")
+        try:
+            parts = urlsplit(self.operator_origin)
+            port = f":{parts.port}" if parts.port else ""
+            # Scheme, host and port and nothing else, as a browser writes it:
+            # without the scheme's default port, which the passkey library
+            # would compare as it is and so refuse every passkey (#816).
+            fine = (
+                bool(parts.hostname)
+                and self.operator_origin == f"{parts.scheme}://{parts.hostname}{port}"
+                and parts.scheme in (("http", "https") if local else ("https",))
+                and parts.port != {"http": 80, "https": 443}.get(parts.scheme)
+            )
+        except ValueError:
+            fine = False
+        if not fine:
+            raise ValueError(
+                "OPERATOR_ORIGIN must be an origin like https://ops.example.com: "
+                "https outside dev and test, lower case, no path, no trailing slash"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _production_needs_the_push_server(self) -> Self:
+        if self.env not in LOCAL_ENVS and not (
+            self.operator_push_url and valid_production_token(self.operator_push_token)
+        ):
+            raise ValueError(
+                "OPERATOR_PUSH_URL or OPERATOR_PUSH_TOKEN is missing, or the token "
+                f"is shorter than {TOKEN_MIN_LENGTH} characters: the token of the "
+                "push server's user `dashboard` (docs/13 §8)"
             )
         return self
 

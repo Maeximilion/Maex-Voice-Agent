@@ -30,7 +30,7 @@ from api.config import settings
 from api.db import SessionLocal
 from api.domain.delivery.zones import POSTAL_CODE
 from api.domain.menu.importer import parse_eur
-from api.models import DeliveryZone, Tenant
+from api.models import DeliveryZone, ServiceConfig, Tenant
 
 COLUMNS = ("name", "postal_codes", "fee", "min_order", "eta_minutes")
 
@@ -96,6 +96,14 @@ def parse(text: str) -> tuple[list[Zone], list[str]]:
 
 
 def apply(session: Session, tenant_id: uuid.UUID, zones: list[Zone]) -> dict[str, int]:
+    # The lock of the owner's tab (`owner_zones.save_zone`), held until the
+    # caller commits: its check for a postal code in two zones reads these
+    # rows, so an import and a save on the tablet never interleave.
+    session.execute(
+        select(ServiceConfig.tenant_id)
+        .where(ServiceConfig.tenant_id == tenant_id)
+        .with_for_update()
+    )
     known = {
         row.name: row
         for row in session.scalars(

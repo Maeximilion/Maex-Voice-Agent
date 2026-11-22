@@ -31,7 +31,7 @@ Below `/gui/` the same envelope keeps an error status (repo audit, 27.10.2026): 
   - **Messverfahren:** bis zu 3 Messreihen. p95 gilt über alle bisher gemessenen Aufrufe (20, 40, dann 60), keine Reihe wird verworfen; liegt es unter dem Budget, endet die Messung. Die Grenze ist lokal und in CI dieselbe, 300 ms.
   - **Begründung:** Auf geteilten CI-Runnern laufen Push- und PR-Lauf plus `docker-smoke` gleichzeitig. Einzelne Ausreißer hoben p95 dort auf 560 ms (18.09.2026), lokal liegt es bei 10 bis 21 ms. Bei 20 Aufrufen reichen 2 Ausreißer für Rot, bei 60 sind bis zu 3 erlaubt; das ist weiter echtes p95. Ein Überschreiten in mehr als 5 Prozent der Aufrufe bleibt rot, auch wenn es nur zeitweise auftritt (Codex-Review PR #110).
   - Nicht erlaubt: Latenztests überspringen oder die Grenze anheben. 300 ms ist die Zusage an den Telefonpfad.
-- **Schreibende Tools** brauchen `idempotency_key`. Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang. Nur im selben Anruf: gehört der Schlüssel zu einem Vorgang eines anderen Anrufs, ist das `conflict`, nie dessen Antwort. Im eigenen Gesprächskern bildet der Code den Schlüssel immer selbst, einen Schlüssel vom Modell gibt es nicht - aus der **geprüften** Anfrage mit allen gespeicherten Feldern: eine geänderte Notiz ist ein neuer Entwurf, `options: []` und ein weggelassenes Feld sind derselbe (T-4.10).
+- **Schreibende Tools** brauchen `idempotency_key`. Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang. Nur im selben Anruf: gehört der Schlüssel zu einem Vorgang eines anderen Anrufs, ist das `conflict`, nie dessen Antwort. Im eigenen Gesprächskern bildet der Code den Schlüssel immer selbst, einen Schlüssel vom Modell gibt es nicht - aus der **geprüften** Anfrage mit allen gespeicherten Feldern: eine geänderte Notiz ist ein neuer Entwurf, `options: []` und ein weggelassenes Feld sind derselbe (T-4.10). Two refinements for drafts (#862): a replayed `create_reservation` draft of the same call is its slot checked again (section `create_reservation`); for `draft_order` the same key answers the same only while its draft is the call's latest, and once the call drafted a table or an order after it, the request goes back on a change of mind and is drafted anew under a successor key, checked like any correction. A decided draft (confirmed, cancelled) is replayed as it stands.
 - Jeder Aufruf landet mit Dauer und Ergebnis in `calls.tool_calls`.
 
 ---
@@ -336,7 +336,7 @@ Für Rückfragen zu Optionen, Extras und Allergenen.
 
 **Request** `{ "call_id": "…", "tenant_id": "…", "menu_item_id": "…", "allergen_question": false }`
 
-`allergen_question` ist **Pflicht** und hat keine Vorgabe: nur der Agent weiß, ob der Gast nach Allergenen gefragt hat oder nach der Sauce. Fehlt das Feld, antwortet das Tool `invalid_input` - das fällt auf, ein stiller Vorgabewert nicht.
+`allergen_question` ist **Pflicht** und hat keine Vorgabe: nur der Agent weiß, ob der Gast nach Allergenen gefragt hat oder nach der Sauce. Fehlt das Feld, antwortet das Tool `invalid_input` - das fällt auf, ein stiller Vorgabewert nicht. The model never reads the `allergens` field of the result (`loop._tool_result_as_input`, #798): only the core's table sentence speaks a dish's allergens. In a turn that speaks of an allergy or of allergens the guest hears that table sentence for every dish looked up, flagged or not, or the team takes the call where a dish has no maintained value (docs/05 §4).
 
 **Response**
 ```json
@@ -403,7 +403,7 @@ Outside → `ok: false`, `error.code: "out_of_zone"`, `say` offers pickup only w
 
 `alternatives`: höchstens zwei Termine im Raster, der nächstgelegene zuerst, **nur unter sechs Stunden Abstand zum Wunsch**. Der Satz nennt die Uhrzeit ohne Tag, und der Gast hört die Deutung, die dem Wunsch am nächsten liegt; unter sechs Stunden ist das die richtige (die andere Hälfte der Uhr liegt ±12 h weg, ein anderer Tag ±24 h). Am Ruhetag gibt es deshalb nichts vom Vortag (Befund T-5.2, `reservierung_0027`), nachts um halb eins keinen Mittag als „halb zwei" (Review PR #152). Ohne Alternative sagt der Satz „auch nicht kurz davor oder danach", nicht „an dem Tag": weiter weg kann noch etwas frei sein. Ist der Tag geschlossen (Ruhetag, geschlossener Sondertag) und liegt der Wunsch nicht im Fenster des Vorabends, heißt es „Am Montag haben wir leider geschlossen."
 
-**The asking call's own drafts do not count (#207, 14.10.2026):** the seats are counted without the drafts of the `call_id` in the request. A guest who corrects the time or the party size gets a new draft next to the old one; the old one must not make the evening full for the same guest (30 of 40 confirmed, a draft of six, the correction asks for six: free, not 36 + 6). Drafts of every other live call count, and so do the confirmed tables of the asking call: a second table in the same call is not a correction.
+**The asking call's own drafts do not count (#207, 14.10.2026):** the seats are counted without the drafts of the `call_id` in the request. A guest who corrects the time or the party size gets a new draft next to the old one; the old one must not make the evening full for the same guest (30 of 40 confirmed, a draft of six, the correction asks for six: free, not 36 + 6). Drafts of every other live call count, and so do the confirmed tables of the asking call: a second table in the same call is not a correction. **Only the newest row of a call can hold seats as a draft (#908, 22.11.2026):** a draft of another live call counts only while it is that call's newest reservation row, so one draft at most, and none once the newest row is confirmed or cancelled. Counted against all, ten corrections held the evening for one caller. Newest means the latest `replayed_at`, else `created_at`: a guest who goes back to an earlier draft replays its key, `create_reservation` stamps `replayed_at`, and that draft holds the seats again while the correction the guest left holds none. The older drafts stay drafts and stay confirmable by going back to them; the yes checks `has_room` again under the lock. Rows of the same instant (only on a pinned clock: the text phone with `--now`, evals, tests): of two drafts the higher id counts, and a confirmed row never hides a draft.
 
 **Service-Fenster (T-1.14, D12, Maxi 26./27.09.2026):** Ein Service ist ein Öffnungsfenster für `dinein` (Mittag, Abend, an Sondertagen die Sonderzeit). Gäste bleiben im selben Service:
 - Beginn frühestens `service_config.reservation_lead_minutes` nach Öffnung (15) und spätestens `reservation_last_start_minutes` vor Schluss (30), beide Grenzen buchbar, die Schlusszeit selbst nie (auch bei 0). Mittag 11–14 und Abend 17–22 ergeben 11:15–13:30 und 17:15–21:30, im 30-Minuten-Raster angeboten ab 11:30 und 17:30. Gilt nur für Reservierungen (Annahme D12).
@@ -438,14 +438,16 @@ Outside → `ok: false`, `error.code: "out_of_zone"`, `say` offers pickup only w
     "reservation_id": "…", "status": "draft",
     "reserved_for": "2026-09-20T18:00:00Z", "party_size": 4,
     "guest_name": "Müller", "phone": "+4972215551234", "note": "Kinderstuhl",
-    "readback": "Ein Tisch für vier Personen am Sonntag, den 20. September um acht Uhr abends, auf den Namen Müller, mit dem Hinweis: Kinderstuhl. Passt das so?"
+    "readback": "Ein Tisch für vier Personen am Sonntag, den 20. September um acht Uhr abends, auf den Namen Müller, mit Ihrem Hinweis: Kinderstuhl. Passt das so?"
   },
   "say": null
 }
 ```
 Legt die Reservierung als `draft` an und gibt `readback` zurück — den Satz, den der Agent vorliest. Erst `confirm` macht sie gültig.
 
-**Prüfungen im Code, nicht im Modell:** Anruf bekannt (`call_id` muss in `calls` stehen, sonst `not_found`) · Rufnummer nach E.164 normalisierbar (sonst `invalid_input` mit `say`) · Zeitpunkt in der Zukunft · Slot frei nach denselben Regeln wie `check_slot` (sonst `conflict`, `say` nennt die Alternativen). Der Entwurf zählt sofort gegen die Kapazität und landet im `audit_log`. It counts for every other call; against its own call it does not, as in `check_slot` (#207): a corrected draft is checked without the one it replaces. Gleicher `idempotency_key` → dieselbe Antwort ohne neue Prüfung; Schlüssel eines anderen Mandanten → `conflict`.
+The day in `readback` is named from the moment the draft was made (`created_at`, so a replay says the same): „heute", „morgen", else weekday and date. A table from 00:00 to 04:59 is named by its night („in der Nacht von Dienstag auf Mittwoch um halb eins", #742). A draft made from 00:00 to 04:59 never says „heute" or „morgen": to a guest still in the evening before they mean a day earlier than the calendar, so the day comes as weekday and date („am Mittwoch, den 16. September um sieben Uhr abends", #750 follow-up).
+
+**Prüfungen im Code, nicht im Modell:** Anruf bekannt (`call_id` muss in `calls` stehen, sonst `not_found`) · Rufnummer nach E.164 normalisierbar (sonst `invalid_input` mit `say`) · Zeitpunkt in der Zukunft · Slot frei nach denselben Regeln wie `check_slot` (sonst `conflict`, `say` nennt die Alternativen). Der Entwurf zählt sofort gegen die Kapazität und landet im `audit_log`. It counts for every other call while it is that call's newest row (#908, below); against its own call it does not, as in `check_slot` (#207): a corrected draft is checked without the one it replaces. Gleicher `idempotency_key` → derselbe Entwurf, kein zweiter; a draft of the same call is checked again by the rules of `check_slot` (sonst `conflict` as above), so a guest who goes back to an earlier table or asks again later is read back only a time the notice, the hours and the seats allow now (#862), and the replayed draft gets `replayed_at` and so becomes its call's newest row again (#908); a decided one comes back as it stands; Schlüssel eines anderen Mandanten → `conflict`.
 
 ---
 
@@ -464,7 +466,7 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
   ],
   "note": null }
 ```
-`note` (optional, at most 200 characters) is the note of the whole order (T-11.1, D24): the guest's allergy said without a dish, or when it is unclear which dish it belongs to. It is stored in `orders.note`, read back after the dishes („Für die ganze Bestellung: …."), sent on the kitchen ticket and printed bold above the dishes. The model writes it, an allergy too („WICHTIG !!! …", Maxi 15.11.2026); the state keeps it for the next draft (`order_note`).
+`note` (optional, at most 200 characters) is the note of the whole order (T-11.1, D24): the guest's allergy said without a dish, or when it is unclear which dish it belongs to. It is stored in `orders.note`, read back after the dishes as the guest's („Ihr Hinweis für die ganze Bestellung: ….", #798"), sent on the kitchen ticket and printed bold above the dishes. The model writes it, an allergy too („WICHTIG !!! …", Maxi 15.11.2026); the state keeps it for the next draft (`order_note`).
 
 **Allergy notes (L13, Maxi 15.11.2026, #736, #763):** the model writes the guest's allergy as a plain note on the dish, the order or the table („WICHTIG !!! Kunde ist allergisch auf Nüsse"); no consent question. A guest who spoke of their health in the call gets no `draft_order` or `create_reservation` whose notes name none: the first goes back once per turn with the guest's words in the hint (`agent/guards.py` `unnoted_allergy`), the next gets „WICHTIG !!! Gast sagte: <Worte>" from the core on the note of the order or the table (docs/05 §Allergie). A `create_callback` whose `summary` names one is not refused: the core stores the card with the sentence of its reason instead, and a booking of this call behind it (`agent/loop.py` `_card_without_allergy`, repo audit 27.10.2026), as on its own cards, and the team asks when it calls back. A refused callback the model does not retry would lose the guest. A card is read by `wishes.speaks_of_health`: the allergy words, coeliac disease, „reagiert auf“, „darf kein“, „meiden“; the guest's own sentence on the core's cards and a line note of the open order on a card go through the same check (the note reads „Hinweis für die Küche mit dem Gast klären" there). Over HTTP (`/v1/tools/create_callback`) the summary is stored as it comes, and the tools store a note as it comes.
 **Response**
@@ -520,7 +522,7 @@ Im Code (`domain/ordering/`):
 - Dieselbe Option zweimal ergibt `invalid_input` mit `say` („Erdnuss zu Ente knusprig habe ich schon. Einmal Erdnuss, richtig?"). Zwei Kartenzeilen oder Gruppen, die sich nur in der Schreibweise unterscheiden, ergeben `service_unavailable` mit Übergabe ans Team statt einer geratenen Zeile; der Import lehnt solche Zeilen ab. Ebenso eine Optionswahl, die den Preis unter null drückt: ein Kartenfehler, den der Gast nicht korrigieren kann.
 - Optionen kommen als `{group, name}`, verglichen ohne Groß-/Kleinschreibung; Preise kommen nur aus der Karte. `order_items.unit_price_cents` friert den Kartenpreis ein, die Optionen tragen ihre Differenz selbst.
 - `ready_at` = jetzt + the current pickup wait (`current_wait` in `domain/status/waits.py`: today's wait where it holds, otherwise the standard), auf die volle Minute **aufgerundet** (in UTC): angesagt wird nie weniger als die Wartezeit. Liegt es nach Schluss der Abholung, steht `ready_after_close` in `warnings`; der Entwurf entsteht trotzdem.
-- `readback` je Position ein Satz („Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln."), dann Summe, Abholzeit, Name. The total is spoken as two plain numbers, never with a decimal comma: „17 Euro 30", a round amount „7 Euro", below one euro „50 Cent", single cents with their unit („17 Euro 5 Cent"), a lone one as a word („ein Euro 50"; a voice reads „1 Euro" as „eins Euro"). A voice that does not know prices reads „17,30 Euro" as „siebzehn Komma drei null Euro" (Maxi, 12.10.2026); the surcharge in the `say` of `search_menu` uses the same form („50 Cent Aufpreis"). Ein Replay mit demselben `idempotency_key` liefert dieselbe Antwort: Nummer und Name je Position (Stand der Karte) und `warnings` stehen im `audit_log`-Eintrag `order.draft_created` und werden von dort gelesen, nicht aus Karte und Öffnungszeiten neu gerechnet, die sich seitdem geändert haben können. Menge, Optionen, Hinweise, Name und Telefon kommen aus `orders`/`order_items`: `audit_log` hält keine Personendaten, weil es länger bleibt als die Bestellung.
+- `readback` je Position ein Satz („Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln."), dann Summe, Abholzeit, Name. The total is spoken as two plain numbers, never with a decimal comma: „17 Euro 30", a round amount „7 Euro", below one euro „50 Cent", single cents with their unit („17 Euro 5 Cent"), a lone one as a word („ein Euro 50"; a voice reads „1 Euro" as „eins Euro"). A voice that does not know prices reads „17,30 Euro" as „siebzehn Komma drei null Euro" (Maxi, 12.10.2026); the surcharge in the `say` of `search_menu` uses the same form („50 Cent Aufpreis"). Ein Replay mit demselben `idempotency_key` (while the draft is the call's latest, §1, #862) liefert dieselbe Antwort: Nummer und Name je Position (Stand der Karte) und `warnings` stehen im `audit_log`-Eintrag `order.draft_created` und werden von dort gelesen, nicht aus Karte und Öffnungszeiten neu gerechnet, die sich seitdem geändert haben können. Menge, Optionen, Hinweise, Name und Telefon kommen aus `orders`/`order_items`: `audit_log` hält keine Personendaten, weil es länger bleibt als die Bestellung.
 
 ---
 
@@ -535,7 +537,9 @@ Der einzige Übergang von `draft` nach `confirmed`.
 
 **Idempotenz trägt der Zustand, nicht der Schlüssel:** ein zweiter Aufruf auf denselben Vorgang liest `confirmed` und antwortet gleich, ohne ein zweites Ereignis anzulegen — auch mit einem anderen `idempotency_key`. Der Schlüssel landet im `audit_log`. Ein stornierter Vorgang ergibt `conflict`, ein unbekannter oder fremder `not_found`. `pickup_code` bleibt bei Reservierungen `null`.
 
-**Reservations, seats checked again (#250):** a draft holds its seats only while its call can confirm it: the call has not ended and the draft is younger than `service_config.max_call_seconds`. An older draft no longer counts in `check_slot`, so its seats may be given to someone else. `confirm` therefore checks the window again, under the same day lock as `create_reservation` and without the drafts of its call (the draft itself and any a correction replaced, #207), and answers `conflict` with `say` "Dieser Tisch ist in der Zwischenzeit leider vergeben worden. Zu welcher anderen Uhrzeit passt es Ihnen?" when the party no longer fits. Seats only: opening hours and lead times were checked when the draft was made. Within a live call the check passes, because the draft still holds what it asks for; the one exception is a call that holds two drafts for the same window and confirms both, where every confirmed seat counts and the second may no longer fit. In the conversation core a draft that `confirm` refuses with `conflict` leaves the state (`agent/state.py`): it can never be confirmed as it is, and a "Ja" to the next question must not try again. The intent stays; `invalid_input` and `not_found` keep the draft, and so does the core's own refusal for a missing yes.
+**The self-test's table (#574, migration 039):** a reservation of a test call (`calls.is_test`, set only by `sim.selftest`, never by a request) carries `reservations.is_test`; its `confirm` is the same step with the same audit row, but writes no `reservation.confirmed` event and no customer contact: nothing of it reaches n8n, the guest or the team.
+
+**Reservations, seats checked again (#250):** a draft holds its seats only while its call can confirm it: the call has not ended and the draft is younger than `service_config.max_call_seconds`. An older draft no longer counts in `check_slot`, so its seats may be given to someone else. `confirm` therefore checks the window again, under the same day lock as `create_reservation` and without the drafts of its call (the draft itself and any a correction replaced, #207), and answers `conflict` with `say` "Dieser Tisch ist in der Zwischenzeit leider vergeben worden. Zu welcher anderen Uhrzeit passt es Ihnen?" when the party no longer fits. Seats only: opening hours and lead times were checked when the draft was made. Within a live call the check passes, because the draft read back last is its call's newest row and still holds what it asks for (#908); the one exception is a call that holds two drafts for the same window and confirms both, where every confirmed seat counts and the second may no longer fit. In the conversation core a draft that `confirm` refuses with `conflict` leaves the state (`agent/state.py`): it can never be confirmed as it is, and a "Ja" to the next question must not try again. The intent stays; `invalid_input` and `not_found` keep the draft, and so does the core's own refusal for a missing yes.
 
 **Reservations the team enters on the tablet (T-3.12, D30):** no tool and no call. `create_tablet_reservation` (`domain/reservations/manual.py`) writes the draft with `source = tablet` and no `call_id`; `confirm_tablet` (`domain/confirm.py`) is the team's confirming tap on the summary, the same step from `draft` to `confirmed` with the same audit row (actor `gui:tablet`, payload `source` and `override`) and the same `reservation.confirmed` event (`call_id` `null`, `source` `tablet`). The guest said yes to the employee; the tap stands for it (CLAUDE.md §2 rule 3, Maxi 05.11.2026). Neither path confirms the other's drafts: `confirm` needs the draft's call, `confirm_tablet` a tablet draft. A tablet draft holds no seats; the tap checks them under the day lock and answers a conflict (`WindowFull`) when the window has no room or the time lies outside every window, unless the team said "Trotzdem eintragen" (`override`). A table held by another confirmed reservation in the same window is a conflict either way; the tap also asks the plan again, under a share lock, so a table removed or a pair no longer combined since the draft is refused (`not_found`, `invalid_input`), and a draft left open past its time books nothing (`conflict`, "Dieser Zeitpunkt ist schon vorbei."; Codex #544). The agent's limits (party sizes, days ahead, notice, opening hours, `reservations_enabled`) do not apply: the team decides by hand.
 
@@ -579,7 +583,9 @@ Legt die Aufgabe an, GUI meldet sie mit Ton. `reason`: `complaint` · `not_under
 
 **Second writer, not a tool:** after a team leg nobody answered, the line's process writes the card through the same function, the same lock and the same rule of one open card per call (`callbacks.team_missed`, T-10.8). The number is the one the guest named in the call or the caller id; the reason is the transfer's (a cancellation becomes `human_requested`, the core's `outage` `not_understood`, a transfer without a reason, paused or the outage path, `out_of_scope`); the audit actor is `telephony`; the call's outcome becomes `callback` (an `error` stays). The text is "Ans Team weitergeleitet, dort hat niemand abgenommen." and the reason's sentence, or, where the core wrote a card of its own for the handover (an allergen question beyond the database, T-11.1, L17), that card, which the line's process keeps with the named number. Without the core's card (the outage path, paused, shadow) the bookings of the call that stand follow, read from the database by `call_id`: "Bereits gebucht:" and each confirmed reservation (party size, date and time in the restaurant's zone, name) and each confirmed, approved or handed-over order (pickup or delivery, name, code), never a note; such a booking takes the place of "Anliegen nicht bekannt.", so the team does not book it twice (#743 follow-up). Without a usable number no card is written.
 
-Die Rufnummer wird nach E.164 normalisiert. Eine geklammerte `(0)` hinter der Landesvorwahl entfällt dabei (`+49 (0)7221 5551234` → `+4972215551234`).
+The phone number is normalised to E.164. A bracketed `(0)` behind the country code is dropped (`+49 (0)7221 5551234` → `+4972215551234`); only behind the codes whose numbers begin with 0 (`ZERO_LEADING`: Italy, San Marino, Vatican, Cote d'Ivoire, Benin) does it stay as a 0 (`+39 (0)2 1234 5678` → `+390212345678`, #804). Before an Italian mobile number (3, ten digits, not 30) it is dropped after all (`+39 (0) 335 123 4567` → `+393351234567`, #849); a landline whose digits after the `(0)` have that same shape (`+39 (0)332 1234567`) loses its 0 too, since only the length separates them (known shortcut). A French number with a length other than nine digits behind `+33` is not taken from speech.
+
+An unbracketed 0 said right after the country code is dropped too, but only for the countries in `TRUNK_ZERO_AFTER` (`api/domain/customers/phone.py`, #683 and review #207): European countries whose trunk prefix is a single 0 that the international form omits (Poland: its former one) and none of whose numbers begins with a single 0. `+33 06 12 34 56 78` and `null null drei drei null sechs ...` become `+33612345678`. Two other trunk prefixes are dropped after their code (`OTHER_TRUNK`, #804): Hungary's 06 (`+36 06 30 123 4567` → `+36301234567`) and Lithuania's former 8 (`+370 8 612 34567` → `+37061234567`; an 8 followed by 0 stays, as does Russia's 8, since `+7 812` is St Petersburg). Every other country keeps the 0 as said: there it may belong to the number (Italy) or there is none (Spain). Two zeros always stay (the placeholder `+49000000000`). The list, its sources and the countries left out on purpose are kept at the code only. A number already in international form has no trunk digit to drop.
 
 ---
 
@@ -642,6 +648,14 @@ compare); empty closes the route, and outside dev and test the API refuses to st
 one equal to any other token of the stack. Caddy answers 404 for `/v1/ops/*`
 (`api/tests/test_deploy_exposure.py`).
 
+Every route also takes `X-Ops-Customer: <customer key>` (#811): a stack whose restaurant has
+another key, or none, answers 409 `conflict` before it reads or writes anything, a read of guest
+data and its audit row included. A body that cannot be parsed is answered 401 without the token,
+as every other request (the token is checked before the body's error is, also for `/v1/tools/*`).
+`not_found` with 200 and the message `this stack has no restaurant yet`
+(`api/core/ops_reason.py` `NO_RESTAURANT`) means the stack has no restaurant; any other
+`not_found` is a row the restaurant lacks, its settings.
+
 **`GET /v1/ops/status`** → `{"tenant": {"key", "name"}, "call_mode", "last_call_at", "business_day", "today": {...}, "print_bridge": {"configured", "last_poll_at", "silent"}, "backup_at", "alarms": [{"kind", "last_at", "count"}], "menu": {"items", "price_differences", "without_allergen_information"}}`
 
 - Counts, times (UTC) and codes only, no guest data: the route records no reason, so it has none to
@@ -653,5 +667,117 @@ one equal to any other token of the stack. Caddy answers 404 for `/v1/ops/*`
   time and count (`audit_log` `monitor.alarm`); it repeats one that still holds every hour or day.
 - `menu.without_allergen_information`: active dishes without one confirmed allergen value, for
   which the agent says "no information".
-- No restaurant in the stack yet: `not_found`.
+- No restaurant in the stack yet: `not_found` with the words of `NO_RESTAURANT`.
 - Measured: p95 13.4 ms with local DB (20 rounds, busy day of the test).
+
+**`GET /v1/ops/figures`** → `{"tenant": {"key", "name"}, "business_day", "week": {...}, "days": [{"day", ...}, ...]}`
+
+- The four figures of docs/06 §4 over the last seven business days, today included
+  (`domain/status/overview.py` `week`): `week` is the span in one, `days` each business day by
+  itself, the newest first. Each holds what `today` of the status holds: calls, orders, corrected,
+  handed over, missed, cost, calls of unknown cost, and the three derived values (`null`: nothing to
+  divide by).
+- Counts only, no guest data, so no reason is asked.
+
+**`GET /v1/ops/calls?day=YYYY-MM-DD`** → `{"tenant": {"key", "name"}, "business_day", "calls": [{"started_at", "caller", "intent", "outcome", "duration_seconds", "cost_cents", "tool_calls", "line_note"}]}`
+
+- Guest data, so two more headers are required (docs/23 §8, `core/ops_reason.py`):
+  `X-Ops-Reason: <category> #<number>`, the category one of `restaurant_report`, `guest_complaint`,
+  `alarm`, `data_request` and the number a ticket or issue number of one to nine digits, never free
+  text; and `X-Ops-Actor: <operator account>`. A missing or malformed header: 400 `invalid_input`,
+  nothing read, nothing written.
+- Before a row is read the stack writes and commits `audit_log`: actor `operator:<account>`, action
+  `ops.calls_read`, entity `call`, payload `{"reason", "reference", "day"}`. Nothing of a guest is
+  in it.
+- One business day per request, and only a day the team's own list reaches: today and the 13
+  business days before (`domain/calls/log.py` `DAYS_LISTED`). Another day: 400 `invalid_input`. No
+  span, no export.
+- **No phone number leaves the stack.** `caller` counts the day's callers in the order of their
+  first call (1, 2, 3, the same value for the same number), `null` for a withheld number: support
+  sees that one guest called three times, and not who. Test calls are left out, as on the tablet.
+- The calls of the day, newest first, times in UTC; `line_note` as on the tablet (#651).
+- Measured with local DB over HTTP (60 calls each, a stack with a few calls a day): `/figures` p95
+  22.9 ms, `/calls` p95 8.5 ms; the latency test of `api/tests/test_ops_detail.py` holds both under
+  300 ms on a busy week.
+
+**`GET /v1/ops/calls/<call_id>`** → `{"tenant": {"key", "name"}, "call_id", "call": {"started_at", "ended_at", "duration_seconds", "intent", "outcome", "transfer_reason", "line_note", "cost_cents", "model", "is_test", "tool_calls": [{"name", "duration_ms", "ok", "error_code"}], "tool_calls_total"} | null}`
+
+- One call for the dashboard's dev tools (docs/23 §5), by the id the logs write. Guest data: the headers `X-Ops-Reason` and `X-Ops-Actor` as for `/calls`, and the audit row `ops.call_read` (actor `operator:<account>`, payload reason, reference and the call's id) is committed before the row is read.
+- No caller number and no session id. `tool_calls` are the entries of `calls.tool_calls` in their order, the first 200, each as its four values (a name of at most 64 characters or `?`, a duration between 0 and an hour or null, `ok` true only when the entry says so, an error code or null); `tool_calls_total` counts all of them.
+- `"call": null` for an id this restaurant does not have and for a call older than the 14 business days of `/calls`; a self-test call is answered and marked `is_test`. What is no UUID is `invalid_input` without an audit row.
+- Read only: the route writes its audit row and nothing else. Measured under 300 ms (`api/tests/test_ops_call_log.py`).
+
+**The access read and the seven steps (#571, sixth part, 16.11.2026; the standard number and the page's version, #811).** They show a secret or change
+the restaurant, so each needs three headers besides the token: `X-Ops-Reason` and `X-Ops-Actor` as
+for `/calls`, and `X-Ops-Customer: <customer key>`. A stack whose restaurant has another key, or
+none, answers 409 `conflict` before it reads or writes anything: an address registered for the
+wrong customer changes nobody's restaurant. A missing reason or account is 400 `invalid_input`.
+
+| Route | Body | Does |
+|---|---|---|
+| `GET /v1/ops/access` | none | the state below, nothing else |
+| `POST /v1/ops/access/pin/show` | `{"which": "team" \| "admin"}` | answers with `"pin"`, `null` when none is set |
+| `POST /v1/ops/access/pin` | `{"which", "pin", "seen"}` | sets the PIN (`set_team_pin`, `set_admin_pin`) |
+| `POST /v1/ops/access/sign-out` | `{"device": "<id>", "seen"}` or `{"all": true, "seen"}` | ends one device or all; answers with `"signed_out"`, 0 for a device that is gone |
+| `POST /v1/ops/access/setup-link` | `{"seen"}` | a new one-time link (`issue_link`); answers with `"link"` and `"link_expires_at"` |
+| `POST /v1/ops/call-mode` | `{"mode", "seen"}` | `shadow`, `overflow` or `primary` (`set_mode`), `paused` (`pause_ai`), `resume` (`resume_ai`) |
+| `POST /v1/ops/team-phone` | `{"number", "seen"}` | today's team number by the staff's rule (`change_team_phone`); the owner's card and the push name the operator |
+| `POST /v1/ops/team-phone/standard` | `{"number", "seen"}` | the standard team number (`set_standard_team_phone`), checked as today's; no card, a push to `owner` and `ops`; a number set for today still holds to its end |
+
+- Every route answers with the state after it: `{"tenant": {"key", "name"}, "login",
+  "team_pin_set", "admin_pin_set", "devices": [{"id", "device", "created_at", "last_seen_at"}],
+  "call_mode", "call_modes", "team_phone", "team_phone_standard", "team_phone_until",
+  "team_phones", "version"}`. `login`: the restaurant has set its password. `devices`: the 200 last used.
+  `call_mode` is the mode that holds now and `call_modes` what can be sent from it (`["resume"]`
+  during the emergency stop). `team_phone` is where a call for the team goes now,
+  `team_phone_standard` the standard number and `team_phone_until` the end of a number set for
+  today (`null`: the standard holds). `team_phones` are the numbers the tablet's sheet offers
+  (`sheet_numbers`), 20 at most; an empty number is `null`. A restaurant without its settings row
+  answers with no mode, no number and
+  two empty lists. `version` is 16 hex digits over the stored settings behind the state (not what holds at
+  this minute, so a call-mode window or the end of today's number makes no page old) and the
+  count and newest id of the audit rows of a change to it (`domain/operator.py` `MARKS`; the
+  count moves too when a row with a lower id commits late); a device's last use is not in it. No field of
+  the state is a secret; a shown PIN and a new link are the only
+  secrets an answer carries, and nothing but a body ever carries one.
+- The link is `https://<AGENT_DOMAIN>/gui/einrichten#<token>`. `AGENT_DOMAIN` is a setting of
+  the api since this part (`agent_domain`; `docker-compose.yml` hands it over, the provisioning
+  script writes it into the stack's `.env`); without it the answer is the path alone, and the
+  dashboard tells the operator to put the customer's address in front.
+- **A step that changes something acts on the page it came from (#811).** It sends the `version`
+  of the state its page showed as `seen` (required by the stack, 1 to 64 characters; a look at
+  a PIN sends none; the dashboard sends none only to a stack older than this, whose answer has
+  no `version`). After the reason's row the stack locks the settings row and the login, reads the
+  version again and refuses with 412 `conflict` ("the restaurant changed since the page was
+  read", `core/ops_reason.py` `STALE_STATUS`) when it moved: the owner, the staff or a second
+  operator changed the restaurant since, and a step from an old page, such as switching the
+  agent on again, must not undo the owner's newer emergency stop. The outcome is `refused`;
+  nothing else is written. 409 stays the stack that is not the customer's.
+- **The reason is in `audit_log` before the step:** a row `ops.<step>` (`access_read`, `pin_show`,
+  `pin_set`, `sign_out`, `setup_link`, `call_mode`, `team_phone`, `team_phone_standard`), actor `operator:<account>`,
+  payload the reason's category and number and what is no secret (which PIN, which device, which
+  mode), committed first (`domain/operator.py`). The step's own row follows when it happened
+  (`gui.team_pin_shown`, `gui.admin_pin_set`, `gui.session_ended`, `gui.setup_link_issued`,
+  `service_config.mode_changed`, `staff_change.team_phone`,
+  `service_config.team_phone_standard`), with the operator as actor. Then
+  every step but the access read writes `ops.<step>.outcome` with payload `{"ask": <id of the
+  reason's row>, "outcome": "done" | "refused" | "failed"}` (#811): `refused` when a rule or the
+  stack said no, `failed` when the step broke; a reason's row without its outcome is a crash that
+  took the process down. No row holds a PIN, a link or, in the reason's row, a telephone number.
+- The steps are the functions the command line and the tablet use, so their rules hold: a PIN has
+  4 to 6 digits and the two differ, a mode is never chosen during the emergency stop, a team number
+  is one the dialplan dials, holds until the end of the business day and shows the owner's check
+  card, and the call mode and the team number push to `owner` and `ops` (docs/23 T12). The
+  push `team_phone.changed` carries `"by": "operator" | "team"`, for the operator its account
+  (`"actor"`, as the access pushes), and,
+  for the standard number, `"standard": true` and, while today's open card keeps another number,
+  `"today"` with it (the push then asks for the tablet); the card reads "Vom Betreiber geändert" when the
+  operator made its last change (#811). What a rule
+  refuses is `invalid_input` with status 422 (`core/ops_reason.py` `RULE_STATUS`, set by `_by_rule`
+  in `domain/operator.py`); a request the route itself does not take is `invalid_input` with 200
+  (the body's form, as everywhere in the API) or 400 (a header, a mode that does not exist). The
+  dashboard tells the two apart by the status and explains only the first as a rule.
+- A sign-out names its device or says `"all": true`; a body with neither or both is refused, so a
+  missing field never signs out every device. A PIN is taken as any short text and refused by the
+  domain, so no validation message is built around one.
+- Not measured: none of these is on a call's path.

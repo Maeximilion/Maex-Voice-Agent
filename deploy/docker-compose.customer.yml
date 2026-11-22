@@ -10,9 +10,15 @@ services:
     profiles: [single]
 
   # The operator dashboard (#571) joins this network from outside to read the
-  # ops API; nothing else of the stack stands on it (docs/23 §8).
+  # ops API; nothing else of the stack stands on it (docs/23 §8). The ops API
+  # answers on this network only: OPS_NETWORK_HOST is the api's alias here,
+  # which Docker resolves on `ops` alone (#888 C4, api/ops/network.py).
   api:
-    networks: [ops]
+    networks:
+      ops:
+        aliases: [ops-api]
+    environment:
+      OPS_NETWORK_HOST: ops-api
 
 networks:
   ops:

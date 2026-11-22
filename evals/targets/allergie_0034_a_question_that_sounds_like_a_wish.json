@@ -1,0 +1,25 @@
+{
+  "id": "allergie_0034",
+  "name": "R3: a question about an allergen that sounds like a wish",
+  "tags": [
+    "allergie",
+    "allergie_herkunft",
+    "level-3"
+  ],
+  "source": "handcrafted",
+  "pending": "T-2.4: the stand-in reads no allergens, a real model answers it (#798 section 7).",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ist die 13 ohne Erdnuesse?"
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

@@ -29,11 +29,17 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ${MAEX_SITES:?set by scripts/new_stack.py}:/etc/caddy/sites:ro
+      # The operator dashboard's site, empty until `new_stack.py --ops-site`.
+      - ${MAEX_OPERATOR_SITE:?set by scripts/new_stack.py}:/etc/caddy/operator:ro
       - caddy_data:/data
       - caddy_config:/config
 
 networks:
+  # IPv6 of its own: otherwise Docker's proxy takes every IPv6 client's
+  # connection and Caddy sees them all from one address, so the per-address
+  # limits of both logins become one bucket (#888 D1, docs/13 §8).
   public:
+    enable_ipv6: true
 
 volumes:
   caddy_data:

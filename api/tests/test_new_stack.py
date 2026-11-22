@@ -8,6 +8,7 @@ files rendered from the real deploy/Caddyfile for two customers.
 """
 
 import json
+import re
 import stat
 
 import pytest
@@ -79,7 +80,7 @@ def test_two_customers_get_sites_of_their_own():
     assert "(transport-alpha)" in alpha and "import transport-alpha" in alpha
     # The security headers and the public path list come along unchanged.
     assert "frame-ancestors 'none'" in alpha
-    assert "@public path /gui /gui/* /v1/kitchen/* /health" in alpha
+    assert "@public path / /gui /gui/* /v1/kitchen/* /health" in alpha
     assert "{$" not in alpha and "{env." not in alpha
 
 
@@ -132,6 +133,9 @@ def test_the_customer_layout_has_no_caddy_and_an_ops_network_for_the_api():
     on_ops = {name for name, s in services.items() if "ops" in s.get("networks", [])}
     assert on_ops == {"api"}
     assert layout["networks"]["ops"] == {"internal": True}
+    # The ops API answers over `ops` only, at the alias the api has there (#888 C4).
+    alias = services["api"]["environment"]["OPS_NETWORK_HOST"]
+    assert services["api"]["networks"]["ops"]["aliases"] == [alias]
     assert new_stack.COMPOSE_FILES.endswith("deploy/docker-compose.customer.yml")
 
 
@@ -157,6 +161,28 @@ def test_a_team_number_not_in_e164_is_refused_before_anything_starts(tmp_path, p
     argv = [str(path), "--domain", "a.example.org", "--root", str(tmp_path / "srv")]
     assert new_stack.main(argv) == 2
     assert not (tmp_path / "srv").exists()
+
+
+@pytest.mark.parametrize(
+    "timezone", ["Europe/Berlin\nAGENT_API_TOKEN=x", "Mars/Olympus", "../etc", ["x"]]
+)
+def test_a_timezone_that_is_no_zone_name_is_refused(tmp_path, timezone):
+    """#827 F8: it goes into .env as written."""
+    path = tmp_path / "customer.json"
+    path.write_text(json.dumps({"key": "pilot", "name": "x", "timezone": timezone}))
+    with pytest.raises(new_stack.BadInput, match="timezone"):
+        new_stack.read_customer(path)
+
+
+@pytest.mark.parametrize(
+    ("timezone", "expected"),
+    [("Europe/Vienna", "Europe/Vienna"), (None, "Europe/Berlin")],
+)
+def test_a_zone_name_or_none_is_taken(tmp_path, timezone, expected):
+    path = tmp_path / "customer.json"
+    path.write_text(json.dumps({"key": "pilot", "name": "x", "timezone": timezone}))
+    spec = new_stack.read_customer(path)
+    assert new_stack.fresh_env(spec, "a.example.org")["TENANT_TIMEZONE"] == expected
 
 
 def test_an_e164_team_number_becomes_team_phone():
@@ -273,14 +299,18 @@ class FakeDocker:
     """`new_stack.run` without Docker: records each command, answers the hash,
     the provisioning and, when asked to, refuses the Caddy check."""
 
-    def __init__(self, refuse: str | None = None):
+    def __init__(self, refuse: str | None = None, ipv6: str = "true"):
         self.commands: list[list[str]] = []
+        self.inputs: list[str | None] = []
         self.refuse = refuse
+        # What `docker network inspect` says of the shared Caddy's network.
+        self.ipv6 = ipv6
 
     def __call__(self, command, cwd, **options):
         import subprocess
 
         self.commands.append(command)
+        self.inputs.append(options.get("input"))
         text = " ".join(command)
         if self.refuse and self.refuse in text:
             raise new_stack.Refused(f"failed: {text}")
@@ -289,6 +319,8 @@ class FakeDocker:
             out = "\n".join(_fake_hashes(options["input"].split()))
         elif "api.jobs.provision" in text:
             out = json.dumps({"tenant_id": "t-1", "missing": []})
+        elif command[:3] == ["docker", "network", "inspect"]:
+            out = self.ipv6 + "\n"
         return subprocess.CompletedProcess(command, 0, stdout=out)
 
 
@@ -333,6 +365,46 @@ def test_a_site_is_checked_before_it_is_loaded(tmp_path, monkeypatch):
     caddy = [" ".join(c[-4:-2]) for c in docker.commands if "caddy" in c[-4:-2]]
     assert caddy == ["caddy validate", "caddy reload"]
     assert (root / "caddy" / "sites" / "pilot.caddy").exists()
+
+
+def test_the_shared_caddy_publishes_on_a_network_with_ipv6():
+    """#888 D1: without IPv6 on `public`, Docker's proxy hands Caddy every IPv6
+    client from one address, and the per-address limits become one bucket."""
+    compose = _load(REPO_ROOT / "deploy" / "caddy" / "docker-compose.yml")
+    assert compose["networks"]["public"]["enable_ipv6"] is True
+
+
+@pytest.mark.parametrize("shown", ["false", ""])
+def test_no_site_goes_live_behind_a_caddy_network_without_ipv6(
+    tmp_path, monkeypatch, shown
+):
+    """A `public` network made before enable_ipv6 keeps its old setting."""
+    root = tmp_path / "srv"
+    _stack(root)
+    docker = FakeDocker(ipv6=shown)
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    with pytest.raises(new_stack.Refused, match="maex-caddy_public has no IPv6"):
+        new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    assert not (root / "caddy" / "sites" / "pilot.caddy").exists()
+    assert not any("reload" in command for command in docker.commands)
+
+
+def test_the_ipv6_check_runs_after_the_shared_caddy_is_up(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _operator(root)
+    docker = FakeDocker()
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 0
+
+    steps = [" ".join(c) for c in docker.commands]
+    up = next(i for i, s in enumerate(steps) if s.endswith(" up -d"))
+    inspect = next(i for i, s in enumerate(steps) if "network inspect" in s)
+    reload = next(i for i, s in enumerate(steps) if "caddy reload" in s)
+    assert up < inspect < reload
+    assert steps[inspect].endswith("maex-caddy_public")
 
 
 def test_half_an_editor_account_is_refused_before_anything_starts(
@@ -410,3 +482,283 @@ def test_a_rerun_that_fails_puts_the_working_site_back(tmp_path, monkeypatch):
     assert site.read_text() == working
     networks = json.loads((root / "caddy" / "networks.json").read_text())
     assert set(networks["networks"]) == {"maex-pilot_edge"}
+
+
+def test_the_self_test_is_named_at_the_end_and_runs_only_when_asked(
+    tmp_path, monkeypatch, capsys
+):
+    """#574: right after the first run the menu is missing, so the self-test
+    is printed; `--selftest` runs it in the stack's api container."""
+    root = tmp_path / "srv"
+    _stack(root)
+    docker = FakeDocker()
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    selftest = list(new_stack.SELFTEST)
+    assert selftest not in docker.commands
+    assert f"cd {root / 'pilot'} && {' '.join(selftest)}" in capsys.readouterr().out
+
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False, True)
+
+    assert docker.commands[-2:] == [
+        ["docker", "compose", "up", "-d", "--wait", "api"],
+        selftest,
+    ]
+
+
+def test_a_failed_self_test_names_the_command_to_run_again(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _stack(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker(refuse="sim.selftest"))
+
+    with pytest.raises(new_stack.Refused, match="self-test failed") as refused:
+        new_stack.create(_customer(tmp_path), "a.example.org", root, False, True)
+
+    assert "python -m sim.selftest" in str(refused.value)
+    assert (root / "caddy" / "sites" / "pilot.caddy").exists()
+
+
+# --- #571: the operator stack and its site ops.<domain> ------------------------
+
+OPS_TEMPLATE = (REPO_ROOT / "deploy" / "caddy" / "ops.caddy").read_text()
+OPS_SECRET = "c" * 64
+OPS_PUSH = "https://push.ops.example.org"
+OPS_CSP = (
+    "default-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
+
+
+def _operator(root, origin="https://ops.example.org", secret=OPS_SECRET):
+    ops = root / "ops"
+    ops.mkdir(parents=True)
+    (ops / ".env").write_text(
+        f'OPERATOR_ORIGIN="{origin}"\nOPERATOR_PROXY_SECRET="{secret}"\n'
+        f'NTFY_BASE_URL="{OPS_PUSH}"\n'
+    )
+    return ops
+
+
+def test_the_operator_site_is_its_host_its_secret_and_the_dashboard_alone():
+    site = new_stack.ops_site_text(
+        OPS_TEMPLATE,
+        {
+            "OPERATOR_ORIGIN": "https://ops.example.org",
+            "OPERATOR_PROXY_SECRET": OPS_SECRET,
+            "NTFY_BASE_URL": OPS_PUSH,
+        },
+    )
+    code = "\n".join(line.split("#", 1)[0] for line in site.splitlines())
+    # The dashboard, and the operator's push server for the phone (#827 F3).
+    assert re.findall(r"^(\S+)\s*\{\s*$", code, re.MULTILINE) == [
+        "ops.example.org",
+        "push.ops.example.org",
+    ]
+    assert re.findall(r"reverse_proxy\s+(\S+)", code) == [
+        "maex-ops-dashboard-1:8002",
+        "maex-ops-push-1:80",
+    ]
+    # The secret goes to the dashboard only, never to the push server.
+    assert code.count("X-Maex-Proxy-Secret") == 1
+    assert f'header_up X-Maex-Proxy-Secret "{OPS_SECRET}"' in code
+    for header in (
+        'Strict-Transport-Security "max-age=31536000"',
+        'X-Content-Type-Options "nosniff"',
+        'Referrer-Policy "no-referrer"',
+        f'Content-Security-Policy "{OPS_CSP}"',
+    ):
+        assert header in code, header
+    assert "max_size 256KB" in code
+    # No admin, no file server, no listing, no trusted forwarders.
+    for absent in ("{$", "{env.", "file_server", "browse", "admin", "trusted_proxies"):
+        assert absent not in code, absent
+
+
+@pytest.mark.parametrize(
+    "env",
+    [
+        {"OPERATOR_ORIGIN": "http://ops.example.org"},
+        {"OPERATOR_ORIGIN": "https://ops.example.org/"},
+        {"OPERATOR_ORIGIN": "https://ops.example.org:8443"},
+        {"OPERATOR_ORIGIN": "https://ops.example.org\n}"},
+        {"OPERATOR_PROXY_SECRET": "short"},
+        {"OPERATOR_PROXY_SECRET": "c" * 40 + '" evil'},
+        {"OPERATOR_PROXY_SECRET": ""},
+        {"NTFY_BASE_URL": ""},
+        {"NTFY_BASE_URL": "http://push.ops.example.org"},
+        {"NTFY_BASE_URL": "https://push.ops.example.org/"},
+        {"NTFY_BASE_URL": "https://ops.example.org"},
+        {"NTFY_BASE_URL": "https://push.ops.example.org\n}"},
+    ],
+)
+def test_an_odd_origin_or_secret_writes_no_site(env):
+    values = {
+        "OPERATOR_ORIGIN": "https://ops.example.org",
+        "OPERATOR_PROXY_SECRET": OPS_SECRET,
+        "NTFY_BASE_URL": OPS_PUSH,
+        **env,
+    }
+    with pytest.raises(new_stack.BadInput):
+        new_stack.ops_site_text(OPS_TEMPLATE, values)
+
+
+def test_the_key_of_the_operator_stack_is_refused(tmp_path):
+    with pytest.raises(new_stack.BadInput, match="operator"):
+        new_stack.read_customer(_customer(tmp_path, key="ops"))
+
+
+def test_the_dashboard_joins_each_stacks_ops_network_and_no_other():
+    compose = json.loads(new_stack.operator_networks_file(["beta", "alpha"]))
+    assert compose["services"] == {
+        "dashboard": {"networks": ["maex-alpha_ops", "maex-beta_ops"]}
+    }
+    assert set(compose["networks"]) == {"maex-alpha_ops", "maex-beta_ops"}
+
+
+def test_the_operator_stack_publishes_nothing_and_has_no_way_out():
+    layout = _load(REPO_ROOT / "deploy" / "docker-compose.operator.yml")
+    services = _services(layout)
+    assert layout["name"] == new_stack.OPERATOR_PROJECT
+    assert set(services) == {"db", "dashboard", "push"}
+    assert all("ports" not in s and "expose" not in s for s in services.values())
+    assert layout["networks"] == {
+        "backend": {"internal": True},
+        "edge": {"internal": True},
+    }
+    assert services["db"]["networks"] == ["backend"]
+    dashboard = services["dashboard"]
+    assert dashboard["networks"] == ["backend", "edge"]
+    assert dashboard["environment"]["ENV"] == "prod"
+    assert dashboard["user"] != "root" and dashboard["read_only"] is True
+    assert dashboard["cap_drop"] == ["ALL"] and "cap_add" not in dashboard
+    assert all(str(v).endswith(":ro") for v in dashboard["volumes"])
+    # Uvicorn trusts no forwarded header; the dashboard reads it behind the secret.
+    assert "--no-proxy-headers" in dashboard["command"]
+    assert dashboard["command"][dashboard["command"].index("--port") + 1] == "8002"
+    # #827 F7: no service takes the host's memory or CPU from a stack.
+    for name in ("db", "dashboard"):
+        assert services[name]["mem_limit"] == "512m" and services[name]["cpus"] == 1.0
+    # #827 F3: the operator's own push server, on `edge` only, closed by
+    # default and pinned like each customer's; the dashboard publishes to it.
+    push = services["push"]
+    customers = _load(REPO_ROOT / "docker-compose.yml")["services"]["push"]
+    assert push["networks"] == ["edge"] and push["read_only"] is True
+    assert push["image"] == customers["image"] and "ports" not in push
+    assert "NTFY_AUTH_DEFAULT_ACCESS=deny-all" in push["environment"]
+    assert push["mem_limit"] == "128m" and push["cap_drop"] == ["ALL"]
+    assert dashboard["environment"]["OPERATOR_PUSH_URL"] == (
+        "${OPERATOR_PUSH_URL:-http://maex-ops-push-1/}"
+    )
+    # #827 F5: the dashboard's role from DATABASE_URL, never the owner's.
+    environment = dashboard["environment"]
+    assert environment["OPERATOR_DATABASE_URL"].startswith("${DATABASE_URL:?")
+    assert not {"OWNER_DATABASE_URL", "POSTGRES_PASSWORD"} & set(environment)
+    assert "env_file" not in dashboard
+
+
+def test_provisioning_registers_the_customer_with_the_operator(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _stack(root)
+    ops = _operator(root)
+    docker = FakeDocker()
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    register = [
+        *("docker", "compose", "exec", "-T", "dashboard", "python", "-m"),
+        *("api.dashboard.cli", "customer-add", "pilot", "http://maex-pilot-api-1:8000"),
+    ]
+    at = docker.commands.index(register)
+    assert docker.commands[at - 1] == [
+        *("docker", "compose", "up", "-d", "--wait", "dashboard")
+    ]
+    token = new_stack.read_env(root / "pilot" / ".env")["OPS_TOKEN"]
+    # On standard input, never on the command line.
+    assert docker.inputs[at] == token + "\n"
+    assert not any(token in " ".join(c) for c in docker.commands)
+    joined = json.loads((ops / "networks.json").read_text())
+    assert joined["services"]["dashboard"]["networks"] == ["maex-pilot_ops"]
+    # The site ops.<domain> is not installed by provisioning.
+    assert not (root / "caddy" / "operator" / "ops.caddy").exists()
+    shared = json.loads((root / "caddy" / "networks.json").read_text())
+    assert "maex-ops_edge" not in shared["networks"]
+
+
+def test_without_an_operator_stack_the_command_is_printed(
+    tmp_path, monkeypatch, capsys
+):
+    root = tmp_path / "srv"
+    _stack(root)
+    docker = FakeDocker()
+    monkeypatch.setattr(new_stack, "run", docker)
+
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    assert not any("customer-add" in " ".join(c) for c in docker.commands)
+    assert "customer-add pilot http://maex-pilot-api-1:8000" in capsys.readouterr().out
+
+
+def test_the_operator_site_goes_live_only_when_asked(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _operator(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker())
+
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 0
+
+    path = root / "caddy" / "operator" / "ops.caddy"
+    assert stat.S_IMODE(path.stat().st_mode) == 0o640
+    assert "ops.example.org {" in path.read_text()
+    shared = json.loads((root / "caddy" / "networks.json").read_text())
+    assert shared["services"]["caddy"]["networks"] == ["maex-ops_edge"]
+
+
+def test_an_operator_site_the_shared_caddy_refuses_is_taken_out(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _operator(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker(refuse="caddy validate"))
+
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 1
+
+    assert not (root / "caddy" / "operator" / "ops.caddy").exists()
+    shared = json.loads((root / "caddy" / "networks.json").read_text())
+    assert shared["networks"] == {}
+
+
+def test_the_operator_secret_is_no_customers(tmp_path, monkeypatch):
+    root = tmp_path / "srv"
+    _stack(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker())
+    new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+    taken = new_stack.read_env(root / "pilot" / ".env")["GUI_PROXY_SECRET"]
+    _operator(root, secret=taken)
+
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 2
+    assert not (root / "caddy" / "operator" / "ops.caddy").exists()
+
+
+def test_without_an_operator_stack_no_site_is_written(tmp_path):
+    assert new_stack.main(["--ops-site", "--root", str(tmp_path)]) == 2
+    assert not (tmp_path / "caddy").exists()
+
+
+def test_a_customer_with_the_operator_secret_does_not_go_live(tmp_path, monkeypatch):
+    """The security review of plan number 11: the api of such a stack shares an
+    `ops` network with the dashboard and would pass its proxy check."""
+    root = tmp_path / "srv"
+    _operator(root)
+    monkeypatch.setattr(new_stack, "run", FakeDocker())
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 0
+    stack = _stack(root)
+    env = new_stack.fresh_env({"key": "pilot", "name": "Pizzeria"}, "a.example.org")
+    env["GUI_PROXY_SECRET"] = OPS_SECRET
+    (stack / ".env").write_text(new_stack.env_text(EXAMPLE, env))
+
+    with pytest.raises(new_stack.Refused, match=r"ops\.caddy"):
+        new_stack.create(_customer(tmp_path), "a.example.org", root, False)
+
+    assert not (root / "caddy" / "sites" / "pilot.caddy").exists()
+    site = new_stack.site_text(CADDYFILE, "pilot", env)
+    (root / "caddy" / "sites" / "pilot.caddy").write_text(site)
+    assert new_stack.main(["--check-sites", "--root", str(root)]) == 1

@@ -1,0 +1,21 @@
+{# The standard weekly hours (#571): one row per weekday, one column per
+   service, as `opening_hours` holds them. "Ändern" opens the form of that
+   weekday in place of the table. #}
+<h2 id="zeiten-woche-titel" tabindex="-1"{% if not message %} data-fokus{% endif %}>Öffnungszeiten der Woche</h2>
+{% if message %}<p class="badge {{ tone }}" role="status" tabindex="-1" data-fokus>{{ message }}</p>{% endif %}
+<table class="tbl week">
+  <thead>
+    <tr><th>Tag</th>{% for label, _text in hours[0].cells %}<th>{{ label }}</th>{% endfor %}<th>Ändern</th></tr>
+  </thead>
+  <tbody>
+    {% for row in hours %}
+    <tr>
+      <th scope="row">{{ row.name }}</th>
+      {% for label, text in row.cells %}<td data-label="{{ label }}">{{ text }}</td>{% endfor %}
+      <td><button hx-get="/gui/zeiten/woche/{{ row.weekday }}" hx-target="#zeiten-woche" hx-swap="innerHTML" aria-label="{{ row.name }} ändern">Ändern</button></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<p class="muted">Gilt für jede Woche. Ein einzelner Tag mit anderen Zeiten steht unter „Sondertage“.</p>
+{% if oob %}{% include "fragments/zeiten_gaeste.html" %}{% endif %}

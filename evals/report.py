@@ -8,7 +8,7 @@ Urteil nach docs/08:
   Lauf durchfallen - "kein 'ist nur ein Fall'" (docs/08 §4).
 
 Verglichen wird je Fall, nicht über die Genauigkeit: ein neuer roter Fall aus
-`/bug` senkt die Genauigkeit, ist aber keine Regression, und er soll rot in der
+`/fix-bug` senkt die Genauigkeit, ist aber keine Regression, und er soll rot in der
 Suite stehen dürfen, bis der Fix da ist (CLAUDE.md §9). Umgekehrt verdecken
 neue grüne Fälle keinen, der kaputtgegangen ist. Und nur ein bestandener Lauf
 ist Maßstab: sonst wäre eine Regression nach einem zweiten Aufruf von

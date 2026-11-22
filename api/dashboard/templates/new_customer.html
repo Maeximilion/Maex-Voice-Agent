@@ -1,0 +1,44 @@
+{# "New customer" (#571): the steps and their commands, as text. The browser
+   never runs provisioning: no form, no field, nothing to send. A stack is
+   made by scripts/new_stack.py on the host and enters the registry by the
+   command line, which hold the rules for a key, an address and a token. #}
+{% extends "base.html" %}
+{% block title %}New customer{% endblock %}
+
+{% block main %}
+<section class="ops-seite" aria-labelledby="new-title">
+  <h1 id="new-title">New customer</h1>
+  <p class="muted">This page runs nothing. Every step is a command on the host, run by you over SSH; the dashboard only shows the new stack once it is registered.</p>
+
+  <div class="card ops-teil">
+    <h2>1. The customer file</h2>
+    <p>Copy <code>deploy/customer.example.json</code> and fill it in. The key names the stack everywhere: lower-case letters, digits and single hyphens, a letter first, at most {{ key_length }} characters. Not taken as a key: {% for word in reserved %}<code>{{ word }}</code>, {% endfor %}<code>caddy</code>.</p>
+  </div>
+
+  <div class="card ops-teil">
+    <h2>2. The stack</h2>
+    <p>On the server as the deploy user, from a checkout of the repository. First the check that writes nothing, then the run:</p>
+    <p><code>python3 scripts/new_stack.py customer.json --domain &lt;domain&gt; --dry-run</code></p>
+    <p><code>python3 scripts/new_stack.py customer.json --domain &lt;domain&gt;</code></p>
+    <p>The run prints the setup link of the restaurant's first sign-in once and stores it nowhere. It prints no secret. A second run keeps every token.</p>
+  </div>
+
+  <div class="card ops-teil">
+    <h2>3. The menu and the self-test</h2>
+    <p>Import the menu (docs/14), then run the stack's self-test:</p>
+    <p><code>python3 scripts/new_stack.py customer.json --domain &lt;domain&gt; --selftest</code></p>
+  </div>
+
+  <div class="card ops-teil">
+    <h2>4. The registry of this dashboard</h2>
+    <p>On the operator host, with the dashboard on the stack's <code>ops</code> network:</p>
+    <p><code>python -m api.dashboard.cli customer-add &lt;key&gt; http://&lt;api container&gt;:8000</code></p>
+    <p>The command asks for the stack's <code>OPS_TOKEN</code> (in the stack's <code>.env</code>) or reads it from standard input. Never give it as an argument: a command line is kept in the shell's history. The address is <code>http://&lt;host&gt;:&lt;port&gt;</code> and nothing else. <code>customers</code> lists the registry, <code>customer-remove &lt;key&gt;</code> takes a customer out.</p>
+  </div>
+
+  <div class="card ops-teil">
+    <h2>5. The check</h2>
+    <p>The customer stands in the <a href="/">list</a> within 30 seconds. A row that says <q>another customer answers at this address</q> or <q>refuses the token</q> names what to correct with a second <code>customer-add</code>.</p>
+  </div>
+</section>
+{% endblock %}

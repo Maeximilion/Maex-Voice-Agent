@@ -293,7 +293,8 @@ def require_tools() -> tuple[str, str]:
 def free_port() -> int:
     with socket.socket() as sock:
         sock.bind((LOOPBACK, 0))
-        return sock.getsockname()[1]
+        port: int = sock.getsockname()[1]
+        return port
 
 
 def stack_environment() -> dict[str, str]:

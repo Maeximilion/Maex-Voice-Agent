@@ -177,6 +177,21 @@ class ConversationState(BaseModel):
     # between turns, and a note it writes later needs the words. A bare
     # denial clears it. At most `ALLERGY_SAID_MAX` sentences.
     allergy_said: list[str] = Field(default_factory=list)
+    # The guest's allergy or allergen of the last turn was not taken up and
+    # that turn ended in the offer to look a dish up (`guards.leaves_a_question`,
+    # #798): a dish the guest names next is the answer to it. Lasts one turn;
+    # a second such turn goes to the team. Never sent.
+    allergen_question_open: bool = False
+    # The allergen letters the guest named in the last turn that nothing
+    # explained, whatever core sentence ended it: the same letter left open
+    # again goes to the team (`guards.left_twice`, deep review of #860).
+    # Never sent.
+    allergen_question_codes: list[str] = Field(default_factory=list)
+    # The allergen letters the guest named in this call, outside a denial
+    # and without the names of dishes found (`guards.begin_allergen_turn`):
+    # a new note may name only these, its dish's own text, or the guest's
+    # health (`guards._note_licence`, Codex review of #860). Never sent.
+    allergens_said: list[str] = Field(default_factory=list)
     # The note of the whole order and of the table as the last draft carried
     # it: a draft made again from `cart` or `slots` keeps it. Sent.
     order_note: str | None = None
@@ -503,18 +518,21 @@ def same_order(lines: list[dict[str, Any]], other: list[dict[str, Any]]) -> bool
 
 def _as_set(lines: list[dict[str, Any]]) -> list[str]:
     """Lines for comparison. Sorted, not a set: two equal lines are two."""
-    return sorted(
-        json.dumps(
-            {
-                **line,
-                "options": sorted(
-                    (option_key(option["group"]), option_key(option["name"]))
-                    for option in line.get("options", [])
-                ),
-            },
-            sort_keys=True,
-        )
-        for line in lines
+    return sorted(line_key(line) for line in lines)
+
+
+def line_key(line: dict[str, Any]) -> str:
+    """One line for comparison, whatever the sequence and spelling of its
+    options."""
+    return json.dumps(
+        {
+            **line,
+            "options": sorted(
+                (option_key(option["group"]), option_key(option["name"]))
+                for option in line.get("options", [])
+            ),
+        },
+        sort_keys=True,
     )
 
 

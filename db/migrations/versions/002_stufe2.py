@@ -13,7 +13,9 @@ Vorgänger: 001
 Erstellt: 2026-09-18
 """
 
+import uuid
 from collections.abc import Sequence
+from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
@@ -25,7 +27,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def _timestamps() -> list[sa.Column]:
+def _timestamps() -> list[sa.Column[Any]]:
     return [
         sa.Column(
             "created_at",
@@ -42,7 +44,7 @@ def _timestamps() -> list[sa.Column]:
     ]
 
 
-def _id() -> sa.Column:
+def _id() -> sa.Column[uuid.UUID]:
     return sa.Column(
         "id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False
     )

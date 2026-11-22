@@ -16,7 +16,7 @@ mit demselben Satz wie die Suche.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from api.core.errors import NotFound
@@ -104,14 +104,19 @@ def _say(
         return SAY_ALLERGENS_UNKNOWN
     said = []
     if allergen_question:
-        *rest, last = allergens.names
-        names = f"{', '.join(rest)} und {last}" if rest else last
-        said.append(
-            SAY_ALLERGENS_KNOWN.format(number=item.number, name=item.name, names=names)
-        )
+        said.append(say_allergens(item.number, item.name, allergens.names))
     if sold_out:
         said.append(SAY_SOLD_OUT.format(name=item.name))
     return " ".join(said) or None
+
+
+def say_allergens(number: str, name: str, names: list[str]) -> str:
+    """The sentence of a dish's maintained allergens, from the table of the
+    14 names (`ALLERGEN_SPOKEN`). Also what the own core says after a lookup
+    the model sent without the flag, when its answer names allergens (#764)."""
+    *rest, last = names
+    spoken = f"{', '.join(rest)} und {last}" if rest else last
+    return SAY_ALLERGENS_KNOWN.format(number=number, name=name, names=spoken)
 
 
 def _allergens(
@@ -121,6 +126,7 @@ def _allergens(
         select(ItemAllergen).where(ItemAllergen.menu_item_id == menu_item_id)
     ).all()
     if not rows:
+        # The same rule over the whole menu: `without_allergens`, below.
         return Allergens(known=False)
     # Reihenfolge der LMIV-Liste, nicht die des Imports: vorgelesen wird immer gleich.
     codes = sorted(
@@ -136,4 +142,22 @@ def _allergens(
         codes=codes,
         names=[ALLERGEN_SPOKEN[code] for code in codes],
         confirmed_at=max(row.confirmed_at for row in rows).astimezone(zone).date(),
+    )
+
+
+def without_allergens(session: Session, tenant_id: uuid.UUID) -> set[uuid.UUID]:
+    """The active dishes for which `_allergens` has nothing to say: no
+    maintained row, so the agent answers `SAY_ALLERGENS_UNKNOWN`.
+
+    The rule of `_allergens` over the whole menu, for the tab "Menü"
+    (`listing.py`) and the operator's count (`domain/status/overview.py`).
+    Whoever changes what counts as allergen information changes both."""
+    return set(
+        session.scalars(
+            select(MenuItem.id).where(
+                MenuItem.tenant_id == tenant_id,
+                MenuItem.active.is_(True),
+                ~exists().where(ItemAllergen.menu_item_id == MenuItem.id),
+            )
+        )
     )
