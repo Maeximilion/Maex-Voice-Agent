@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 22.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.2
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.3
 
 ---
 
@@ -177,6 +177,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.68.3 · 23.11.2026:** Review #207: a refused sign-in code is a repeat only from the address of the TOTP sign-in that used it; a step-up code, another or no address stays a factor alarm
 - **v2.68.2 · 22.11.2026:** #908: only a call's newest row holds seats as a draft, migration 044 indexes reservations by call and creation time
 - **v2.68.1 · 22.11.2026:** Scoped security audit at 3fb8cbc1: 1 P1 (#908, holds back T-10.1 step 2), 5 P2, 7 P3 on #888; the baseline moves from 141d412
 - **v2.68.0 · 22.11.2026:** T-10.2 taken for G0 with conditions (Maxi's reading)
