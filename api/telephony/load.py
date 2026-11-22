@@ -737,11 +737,15 @@ def cut_seconds(
 ) -> float:
     """Audio missing at the end of answers: each answered turn should play the
     whole sentence of the stand-in model (`expected` seconds); what it falls
-    short by, beyond two windows of tolerance, is audio cut off or lost."""
+    short by, from its first sounding window to its last and beyond two
+    windows of tolerance, is audio cut off. Gaps inside are `lost_seconds`'."""
     cut = 0.0
     for lo, hi in turns:
-        played = sum(WINDOW for w in windows if lo <= w / rate < hi)
-        if played and played < expected - 2 * WINDOW:
+        inside = [w / rate for w in windows if lo <= w / rate < hi]
+        if not inside:
+            continue
+        played = inside[-1] - inside[0] + WINDOW
+        if played < expected - 2 * WINDOW:
             cut += expected - played
     return round(cut, 3)
 

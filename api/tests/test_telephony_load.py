@@ -383,6 +383,15 @@ def test_an_answer_cut_short_counts_as_lost() -> None:
         _sounding(cut, 1000, RATE), RATE, turn, load.ANSWER_SECONDS
     )
     assert short == pytest.approx(load.ANSWER_SECONDS - 0.8, abs=0.03)
+    # A gap inside a whole answer is lost audio, counted there and not here.
+    gap = _track([(0, 3.8), (1000, 0.8), (0, 0.4), (1000, load.ANSWER_SECONDS - 1.2)])
+    assert (
+        load.cut_seconds(_sounding(gap, 1000, RATE), RATE, turn, load.ANSWER_SECONDS)
+        == 0
+    )
+    assert load.lost_seconds(_sounding(gap, 1000, RATE), RATE, turn) == pytest.approx(
+        0.4, abs=0.03
+    )
     # A turn without an answer is a missing turn, not a cut one.
     assert load.cut_seconds([], RATE, turn, load.ANSWER_SECONDS) == 0
 
