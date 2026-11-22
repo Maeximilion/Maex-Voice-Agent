@@ -382,6 +382,8 @@ class Inside:
                     self.add_stack(n)
                 except LoadError as exc:
                     if not oom_kills():
+                        # The steps so far are kept, and the run still fails.
+                        self.finish(f"stack load{n} did not come up: {exc}")
                         raise
                     # Running out of memory while a stack starts is a result.
                     print(f"voice_load: stack load{n} ran out of memory: {exc}")

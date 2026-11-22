@@ -21,5 +21,8 @@ RUN (getent passwd "$DEPLOY_UID" | cut -d: -f1 | xargs -r userdel -r) \
     && mkdir -p /srv/maex /etc/systemd/journald.conf.d \
     && chown deploy /srv/maex
 COPY journald.conf /etc/systemd/journald.conf.d/maex.conf
+# The server's Docker settings (docs/13 §3): small networks, or the default
+# pools run out after about six customer stacks (#841).
+COPY docker-daemon.json /etc/docker/daemon.json
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]

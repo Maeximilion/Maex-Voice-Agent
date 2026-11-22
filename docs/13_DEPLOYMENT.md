@@ -521,6 +521,12 @@ EUR; isolation and the unchanged code decide it.
   Engine 27 or later gives it a ULA prefix without a subnet set, checked on the workbench's Docker
   29.9), and the host's ip6tables rules map a client to Caddy with its own address. Needed on the
   server: Docker Engine 27 or later, and no `"ip6tables": false` in `/etc/docker/daemon.json`.
+  That file is `deploy/docker-daemon.json` (`install -m 644 deploy/docker-daemon.json
+  /etc/docker/daemon.json`, then `systemctl restart docker`, before the first stack): every stack
+  makes about five networks, and Docker's default address pools are used up after about six
+  stacks ("all predefined address pools have been fully subnetted", found by the load test of
+  #841 at the seventh); the file gives /24 networks from 10.200.0.0/16 and /64 from a ULA prefix
+  of its own instead, room for about 50 stacks.
   Every run of `scripts/new_stack.py` (a customer's and `--ops-site`) asks the running network
   after the shared Caddy is up (`docker network inspect -f '{{.EnableIPv6}}' maex-caddy_public`)
   and refuses to load the site when it has no IPv6, as a network made before this setting keeps
