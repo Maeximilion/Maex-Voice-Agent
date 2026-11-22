@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 22.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.67.17
+> Status: 22.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.67.18
 
 ---
 
@@ -174,6 +174,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.67.18 · 22.11.2026:** #841: load test of one VPS of D3 built and run (scripts/voice_load.py): 4 stacks with 3 calls each inside every check, at 5 one lost 20 ms frame; memory is the limit (about 1.05 GB per stack, n8n the largest share), not the processor
 - **v2.67.17 · 22.11.2026:** #888 D1, C4, D3: IPv6 on the shared Caddy's network with a check before a site loads, the ops API answers over the ops network only, Postgres pinned to an exact minor
 - **v2.67.16 · 22.11.2026:** #888 A1: the operator's sign-in from a new browser pushes to ops, and a PIN shown by the operator pushes to the owner and ops
 - **v2.67.15 · 21.11.2026:** #892: tablet demo publishable through the static export (form actions the demo answers pass the link check), hero action and demo section switched on

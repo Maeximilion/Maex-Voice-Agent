@@ -365,8 +365,8 @@ over all tenants, and the agent tools take `tenant_id` from the call state, not 
 | | One stack per customer | All customers in one stack |
 |---|---|---|
 | App changes before customer 2 | none (deploy tooling only) | every row of the table above that picks one tenant |
-| Memory per customer | about 0.65 GB idle measured for api, dispatcher, n8n, push and db (09.11.2026, `docker stats`, workbench); voice and Asterisk not measured, so about 1 GB assumed | shared, a few hundred MB per customer |
-| Server cost per customer | about 3 EUR a month (VPS of D3: 8 GB, about 17 EUR, roughly 6 stacks) | below 1 EUR |
+| Memory per customer | about 0.9 GB with three calls running, measured by the load test of 22.11.2026 (#841, below): n8n 0.54, db 0.10, voice 0.08, api 0.08, dispatcher 0.08, push and Asterisk 0.02 each; the host adds about 1.4 GB for all of them (Docker, journald, page cache) | shared, a few hundred MB per customer |
+| Server cost per customer | about 4 EUR a month (VPS of D3: 8 GB, about 17 EUR, 4 stacks measured by #841, 6 assumed before) | below 1 EUR |
 | Speech, model and line | 45 to 85 EUR a month (docs/20 §9), the same either way | same |
 | Blast radius of a bug or a bad migration | one customer | every customer; a missing `tenant_id` filter shows one customer's data to another |
 | Backup, restore, offboarding (#576) | per stack: one dump, one volume to delete | one customer out of a shared dump, delete by `tenant_id` across all tables |
@@ -521,6 +521,12 @@ EUR; isolation and the unchanged code decide it.
   Engine 27 or later gives it a ULA prefix without a subnet set, checked on the workbench's Docker
   29.9), and the host's ip6tables rules map a client to Caddy with its own address. Needed on the
   server: Docker Engine 27 or later, and no `"ip6tables": false` in `/etc/docker/daemon.json`.
+  That file is `deploy/docker-daemon.json` (`install -m 644 deploy/docker-daemon.json
+  /etc/docker/daemon.json`, then `systemctl restart docker`, before the first stack): every stack
+  makes about five networks, and Docker's default address pools are used up after about six
+  stacks ("all predefined address pools have been fully subnetted", found by the load test of
+  #841 at the seventh); the file gives /24 networks from 10.200.0.0/16 and /64 from a ULA prefix
+  of its own instead, room for about 50 stacks.
   Every run of `scripts/new_stack.py` (a customer's and `--ops-site`) asks the running network
   after the shared Caddy is up (`docker network inspect -f '{{.EnableIPv6}}' maex-caddy_public`)
   and refuses to load the site when it has no IPv6, as a network made before this setting keeps
@@ -537,6 +543,66 @@ EUR; isolation and the unchanged code decide it.
   on `ops` alone; tried on the workbench with two internal networks: over `edge` the connection
   arrived at another address than the alias, and a container on `edge` could not resolve it.
 - #576 offboarding is export, then removal of the stack and its volumes.
+
+### Load test (#841)
+
+How many customer stacks with three calls at once one VPS of D3 (4 vCores, 8 GB) carries, before
+the server is bought and prices per concurrent call are set. On the workbench, in Ubuntu (WSL):
+
+    python3 -m scripts.voice_load [--max-stacks 6] [--calls 3] [--turns 4] [--keep]
+
+- **The test server** is one container of `deploy/loadtest/Dockerfile` (Ubuntu 24.04 with systemd,
+  journald and its own Docker Engine), limited to 4 processors and 8 GB without swap (`--cpus`,
+  `--memory`). The production Compose files run inside it unchanged, journald logging and
+  read-only roots included, and the host's own share (dockerd, containerd, journald) counts.
+  Docker Desktop itself refuses the journald log driver, and resizing WSL in `.wslconfig` would
+  need `wsl --shutdown`, end every session and share the 4 processors with them (Maxi chose the
+  container, 22.11.2026). It is privileged (a Docker Engine runs inside it), publishes no host
+  port, and its image cache lives in the volumes `maex-loadtest-docker` and
+  `maex-loadtest-containerd`; `--down` stops it, `--purge` deletes the cache too. The workbench
+  stack `maex-voice-agent` is not touched: everything runs under its own names inside the
+  test server.
+- **Inside**, as the deploy user: the operator stack in `/srv/maex/ops` as §8 sets it up (with
+  fresh secrets, no push users), then stacks `load1`, `load2`, ... each by
+  `scripts/new_stack.py` with the production names and networks (the shared Caddy and the
+  operator registration included), the eval menu, mode `primary`, and for the test only the
+  voice profile with the stand-in ear and mouth (`VOICE_EAR`/`VOICE_MOUTH` `load`;
+  `deploy/loadtest/docker-compose.load.yml` sets `ENV=test` for `voice` alone, which refuses
+  stand-ins under `prod`). The line (`deploy/loadtest/docker-compose.line.yml`): one router all
+  stacks' Asterisks register at, with the callers and the team telephones, and the stand-in for
+  the hosted model (`api/telephony/load_model.py`), both joined to each stack's `telephony`
+  network as `router` and `model`. The stacks run the last commit of the checkout (they are
+  clones).
+- **Stand-ins** with fixed delays, since speech and model run outside the server in operation:
+  the ear ends a turn after 0.5 s of silence and gives its final 0.1 s later, the model answers
+  each request after `--model-delay` (0.25 s; every turn makes two requests and one menu search
+  on the stack's real database), the mouth answers after 0.15 s. Together 1.25 s of the 1.5 s
+  budget (docs/20 §11); the rest is the server's.
+- **Steps**: 1 stack with 1 call, 1 with 3, then one stack more per step with 3 calls each,
+  until a check fails or memory runs out. Per step: the turn from the end of the caller's speech
+  to the first audio back (from the router's recordings of both directions), audio missing inside
+  answers, the tool calls of the call log (95th percentile, 300 ms), processor and memory of the
+  whole test server from its cgroup and per service, team rings, restarts and memory kills.
+  `deploy/loadtest/run/report.json` and `table.md` hold the result.
+- **Result of 22.11.2026** (branch of PR #905, the stand-ins above, 3 calls with 4 turns each per
+  stack, calls spread over one turn): 4 stacks with all 12 calls inside every check; at 5 stacks
+  (15 calls) one 20 ms frame of one greeting went missing, everything else held (turns 1.30 s
+  median and 1.32 s at the 95th percentile in every step, of which the stand-ins take 1.25 s;
+  tool calls 9 to 15 ms at the 95th percentile; no team ring, no restart). Memory is the limit,
+  not the processor: about 1.05 GB more of the server's memory per stack (6.3 of 8 GB at 5
+  stacks, page cache included), against 90 % of one core of 400 % on average at 5 stacks, of
+  which the router and the stand-in model, which do not run on the server in operation, take
+  about 28, and the kit's own polling of the router's log during that run a little more (read
+  once per call and second then, once per three seconds since): the processor figures are on
+  the high side. The largest share of a stack is n8n (0.54 GB). A second run with 0.1 s of lost audio
+  allowed per step held every check up to 6 stacks with 18 calls (turns 1.32 s, 7.4 of 8 GB), and
+  the seventh stack did not come up: Docker's default address pools were used up (§3,
+  `deploy/docker-daemon.json` since). The tables are in the comment on #841.
+- **The CPU caveat stands**: a workbench core (Ryzen 9 7950X3D) is faster than a VPS vCore, so the
+  number is an upper bound. Plan with a margin and run the same on the VPS in its first month:
+  there, as the deploy user in a checkout on an empty server,
+  `python3 -m scripts.voice_load --inside --run-dir <folder>`. It refuses a `/srv/maex` it did
+  not make, so it never clears a server with customers on it.
 
 ### Reassess
 

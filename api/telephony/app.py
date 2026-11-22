@@ -41,7 +41,13 @@ from api.core.logging import configure_logging, get_logger
 from api.db import SessionLocal, bounded_sessions, engine
 from api.domain.calls import call_routing, tenant_named
 from api.domain.customers.phone import E164
-from api.telephony.adapters.fake_speech import DrillEar, FakeEar, FakeMouth
+from api.telephony.adapters.fake_speech import (
+    DrillEar,
+    FakeEar,
+    FakeMouth,
+    LoadEar,
+    LoadMouth,
+)
 from api.telephony.handler import ANNOUNCEMENTS, CallHandler
 from api.telephony.port import CallEvents
 from api.telephony.router import router
@@ -53,9 +59,9 @@ from api.telephony.speech import Ear, Line, Mouth
 MODELS = Path("/models")
 # The ear for orders by the run of 13.10.2026 (docs/20 §11).
 EAR_MODEL = "large-v3-turbo"
-# They hear nothing, or "Ja" in a tone, and speak noise: for drills of the
-# workbench only.
-DRILL_ENGINES = frozenset({"fake", "drill"})
+# They hear nothing, "Ja" in a tone, or the load test's sentences, and speak
+# noise or a tone: for drills and the load test (#841) of the workbench only.
+DRILL_ENGINES = frozenset({"fake", "drill", "load"})
 # How many endings are kept for the dialplan. It asks within a second of the
 # end of our leg; an ending nobody asked for goes after this many newer ones.
 ENDINGS_KEPT = 1000
@@ -259,10 +265,12 @@ def _piper(watchdog: Watchdog) -> Callable[[], Mouth]:
 EARS: dict[str, Callable[[Watchdog], Callable[[], Ear]]] = {
     "fake": lambda _: FakeEar,
     "drill": lambda _: DrillEar,
+    "load": lambda _: LoadEar,
     "whisper": _whisper,
 }
 MOUTHS: dict[str, Callable[[Watchdog], Callable[[], Mouth]]] = {
     "fake": lambda _: FakeMouth,
+    "load": lambda _: LoadMouth,
     "piper": _piper,
 }
 
