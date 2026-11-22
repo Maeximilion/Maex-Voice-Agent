@@ -948,7 +948,7 @@ What the numbers are and are not:
 - **The text model is not in the measurement.** The kit reports what ear and mouth take of the
   1.5 s from voice to voice and what is left for the silence that ends a turn and for the model.
 
-### Handover: #637, a watermark on the real line (modelled line measured 15.11.2026, real leg not run)
+### Handover: #637, a watermark on the real line (modelled line measured 15.11.2026 and 23.11.2026, real leg not run)
 
 Art. 50(2) AI Act asks whether a machine-readable mark on the agent's voice is technically
 feasible on the phone path (docs/09 N1). This section records only the measurement, no legal
@@ -957,7 +957,18 @@ the line), sends marked and unmarked speech through the stages of `speech_bench`
 (band 300 to 3,400 Hz, 8 kHz, A-law, line noise at the seeds 0, 1 and 2 of `ear_floor.py`, 1 % and
 3 % lost 20 ms packets, 0.37 s offset, 20 and 100 ppm clock drift, GSM full rate 13 kbit/s and Opus
 12 kbit/s as stand-ins for the caller's mobile codec, since AMR and EVS are not in a stock ffmpeg)
-and detects at the far end. Results: §11, row of 15.11.2026.
+and detects at the far end. Results: §11, rows of 15.11.2026 and 23.11.2026.
+
+The script needs numpy, which the api image does not carry; the voice image has numpy and Piper but
+no ffmpeg, so its run leaves the codec stages out. Without numpy, without `piper-tts` for `--piper`
+or without a neural watermark's packages it says what to install instead of failing. A WAV file
+that is not mono 16-bit is refused with the ffmpeg line that converts it, other sample rates are
+resampled to 16 kHz, and a file shorter than one period of the spread mark (0.27 s) is left out of
+`--speech` and reported as too short by `--detect`. The spread mark needs more than that to be found
+reliably: on 23.11.2026 every miss was the shortest sentence, "Ja, gerne." (0.7 to 1.2 s), while
+every sentence of 3.2 s or more was found at every stage. A mark judged per short sentence is
+therefore weak; detecting over the agent's whole leg of a recording, several sentences long, is the
+case to measure on the real line.
 
 **Not measured yet: the real SIP leg** (Asterisk, the FRITZ!Box, the carrier, the caller's mobile
 network). How Maxi or a later session runs it on the workbench:
@@ -973,6 +984,11 @@ network). How Maxi or a later session runs it on the workbench:
    answering machine of another number, which keeps the call as a file). Playing a file instead of
    the probe's tone is not built.
 4. `python3 -m scripts.watermark_line --detect FAR_END.wav --methods spread,audioseal,perth`.
+
+Still open after 23.11.2026, for Maxi or a session he starts on the workbench: AudioSeal (and
+WavMark) on the modelled line, which needs torch and the Hugging Face weights in a throwaway
+environment (step 1), the codec stages with the Piper voices (ffmpeg with libgsm and libopus), and
+the real SIP leg (steps 3 and 4), which needs a test call and so a call Maxi places or allows.
 
 ---
 
@@ -1006,6 +1022,7 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 | 22.11.2026 | T-10.2, Maxi's reading | no new measurement: the run of 14.11.2026 read for G0 | **Go with conditions.** G0 takes the six go rows. The no-go rows Asterisk down and second caller are limits of the router access; the second caller counts as the failed router test that starts T-10.12, and both rows and the third caller are run again on the trunk |
 | 14.11.2026 | #768, Asterisk crash after a team leg | The crash of the wire run reproduced on the stand-in router: `voice` stopped, calls that the team takes, Asterisk 22.11.0 died with a segmentation fault after the 2nd, 4th or 5th such call in three runs; a core dump (started with `-g`, WSL's crash folder) shows it in musl's `pthread_exit`, walking the list of locks the call's thread still holds. Cause upstream: `ast_websocket_client_connect()` keeps the lock of the media channel when the connection fails (Asterisk issue #2121, fixed in 22.12.0, no image of it yet, #775). The dialplan now asks `voice` at `/media/ready`, with the media token, before it dials it; the deep review showed that the tokenless `/health` let a `voice` with another token through to the crashing path | **55 of 55 drill points** after the merge of #774 (its point "Asterisk lived through every drill" included), five new: no media connection tried with `voice` down, frozen or holding another token, the team rings for the last one, Asterisk up after five voice-down calls; the new points failed before the change (Asterisk gone after the 4th call; with `/health` as the question the refused connection was still tried). The team rings 2.4 s after the call with `voice` down or frozen, 4.1 s before, 0.2 s with another token. One run of the voice-down drill rang after 28.3 s while a review agent ran its own Asterisk containers on the same machine; three runs before and after, 2.4 s; the cause was not found |
 | 15.11.2026 | #637, a watermark on the modelled line | `python3 -m scripts.watermark_line --speech DIR` in a cloud session (4 CPU cores shared with other builds, load average 30 to 50; no Docker, no SIP, no Hugging Face). Speech: 18 English sentences (1.4 to 6 s, 83 s in all) of the free flite voices `slt`, `rms` and `awb` through ffmpeg 6.1.1, 16 kHz; Piper's voices could not be downloaded here. Three watermarks: a classic spread spectrum mark written for the script (zero-bit, keyed pattern in the band at -20 dB under the speech envelope, detected blind to delay by circular correlation with a drift search); Resemble AI PerTh 1.0.1 (`resemble-perth`, weights in the wheel; torch 2.15.0 CPU); Meta AudioSeal 0.2.1 and WavMark 0.0.3 installed but their weights live on Hugging Face, which this session cannot reach | **Spread spectrum survives every modelled stage:** found in 18 of 18 sentences at every stage, z score min 16.2 after A-law, 14.1 with line noise, 13.9 with 3 % lost packets, 12.6 with offset and 100 ppm drift, 7.6 after GSM-FR, 8.3 after Opus (threshold 6); false positives 0 of 18 per stage, and 0 of 900 tries with foreign keys on unmarked noisy speech (max 5.65). Marking costs 1.4 to 5.4 ms per second of audio, detection about 36 ms per sentence: inside the mouth's share of the 1.5 s voice to voice (§6). Its price is the strength: at -20 dB the mark is 26.6 dB under the speech (not judged by ear); at -25 dB only 61 % of the sentences are found after GSM, at -30 dB 6 %. **PerTh does not survive** (two sentences, the full run did not finish under the load): score 0.92 and 1.00 after the band, 0.60 and 0.87 after A-law, 0.41 and 0.62 with line noise, 0.10 and 0.47 after GSM, unmarked 0.06 and 0.00 (threshold 0.5); it marks below 2 kHz at 32 kHz and takes about 1 s to mark and 1.6 s to detect per second of audio on this loaded CPU, which alone would break the 1.5 s. **AudioSeal and WavMark not measured** (no weights here). Open: the real SIP leg (§10, "Handover: #637") and AudioSeal on the workbench |
+| 23.11.2026 | #637, the spread mark with the Piper voices | `python3 -m scripts.watermark_line --piper deploy/speech/run --methods spread --write DIR` on the workbench in the voice image (numpy, `piper-tts` 1.8.0, no ffmpeg, so no codec stages), `main` at `00881c4` merged into the branch. Speech: the script's five German sentences with the four Piper voices of the speech kit (`karlsson-low`, `kerstin-low`, `thorsten-high`, `thorsten-medium`), 20 sentences, 74 s | **Found in 16 to 20 of 20 per stage, never a false positive.** Clean, band, 8 kHz and A-law: 20 of 20 (z min 7.2 to 8.9, unmarked max 5.0); line noise seed 1, packet loss and offset: 19 of 20; offset plus 20 ppm drift: 16 of 20. Unmarked speech stayed at or under 5.12 at every stage (threshold 6). Every miss is the fifth sentence, "Ja, gerne." (0.72 to 1.16 s): with `karlsson-low` it is lost at seven noisy stages, with the other three voices at one or two; every sentence of 3.2 s or more is found at every stage. Marking costs 1.3 ms per second of audio. Not run: AudioSeal, WavMark, PerTh, the codec stages and the real SIP leg (§10, "Handover: #637") |
 
 ---
 

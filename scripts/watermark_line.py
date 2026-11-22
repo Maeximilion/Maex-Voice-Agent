@@ -53,6 +53,15 @@ PERIOD = 2048
 WSR_DB = -20.0  # mark to speech per 20 ms frame, in the band of the line
 DRIFTS_PPM = range(-150, 151, 10)  # two clocks on the path never agree
 SPREAD_THRESHOLD = 6.0  # z score; unmarked speech stayed under 5.7 (900 tries)
+# One period of the spread mark in whole 20 ms frames, plus the fastest drift:
+# a shorter file cannot carry the mark at all (#637).
+SHORTEST = 0.27
+# What each neural watermark needs, for the message when it does not load.
+PACKAGES = {
+    "audioseal": "torch audioseal",
+    "perth": 'torch resemble-perth "setuptools<81"',
+    "wavmark": "torch wavmark",
+}
 
 
 class Mark(Protocol):
@@ -312,16 +321,23 @@ METHODS: dict[str, Callable[[], Mark]] = {
 
 
 def read_wav(path: Path) -> Any:
-    """A mono 16-bit file as float samples at 16 kHz."""
+    """A mono 16-bit file as float samples at 16 kHz; any other rate is
+    resampled, any other format refused with what to do about it."""
     import numpy as np
 
     from api.telephony.speech_bench import _resample
 
-    with wave.open(str(path)) as w:
-        if w.getnchannels() != 1 or w.getsampwidth() != 2:
-            raise ValueError(f"{path.name}: mono 16-bit WAV expected")
-        rate = w.getframerate()
-        pcm = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
+    convert = f"convert it: ffmpeg -i {path.name} -ac 1 -c:a pcm_s16le out.wav"
+    try:
+        with wave.open(str(path)) as w:
+            if w.getnchannels() != 1 or w.getsampwidth() != 2:
+                raise ValueError(f"{path.name}: mono 16-bit WAV expected, {convert}")
+            rate = w.getframerate()
+            pcm = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16)
+    except (wave.Error, EOFError) as error:
+        raise ValueError(
+            f"{path.name}: not a PCM WAV file ({error}), {convert}"
+        ) from error
     x = pcm.astype(np.float32) / 32768
     return x if rate == RATE else _resample(x, rate, RATE)
 
@@ -400,7 +416,14 @@ def detect_files(mark: Mark, files: list[Path]) -> str:
     """Scores of recordings from the far end of a real call (`--detect`)."""
     lines = [f"**{mark.name}**, found where the score is above {mark.threshold}:", ""]
     for path in files:
-        score, bits = mark.detect(read_wav(path))
+        y = read_wav(path)
+        if len(y) < SHORTEST * RATE:
+            lines.append(
+                f"- {path.name}: too short to carry the mark "
+                f"({len(y) / RATE:.2f} s, at least {SHORTEST} s)"
+            )
+            continue
+        score, bits = mark.detect(y)
         found = "found" if score > mark.threshold else "not found"
         right = "" if bits is None else f", bits right {bits:.1%}"
         lines.append(f"- {path.name}: {found}, score {score:.2f}{right}")
@@ -420,11 +443,37 @@ def main(argv: list[str] | None = None) -> int:
         "--write", type=Path, help="also write each marked sentence here, to play"
     )
     args = parser.parse_args(argv)
+    unknown = set(args.methods.split(",")) - set(METHODS)
+    if unknown:
+        parser.error(f"unknown methods {sorted(unknown)}, known: {', '.join(METHODS)}")
+    try:
+        import numpy  # noqa: F401
+    except ModuleNotFoundError:
+        print("needs numpy, not in the api image: pip install numpy", file=sys.stderr)
+        return 2
     speech: dict[str, Any] = {}
-    if args.speech:
-        speech = {p.stem: read_wav(p) for p in sorted(args.speech.glob("*.wav"))}
-    elif args.piper:
-        speech = piper_speech(args.piper)
+    try:
+        if args.speech:
+            for p in sorted(args.speech.glob("*.wav")):
+                x = read_wav(p)
+                if len(x) < SHORTEST * RATE:
+                    print(
+                        f"{p.name}: too short to carry the mark, left out",
+                        file=sys.stderr,
+                    )
+                    continue
+                speech[p.stem] = x
+        elif args.piper:
+            speech = piper_speech(args.piper)
+        else:
+            for p in args.detect:
+                read_wav(p)  # refuses a wrong file before any model loads
+    except (ValueError, OSError) as error:  # a wrong or missing file
+        print(error, file=sys.stderr)
+        return 2
+    except ModuleNotFoundError as error:
+        print(f"--piper needs the package piper-tts ({error})", file=sys.stderr)
+        return 2
     if not speech and not args.detect:
         print("no speech found", file=sys.stderr)
         return 1
@@ -436,7 +485,10 @@ def main(argv: list[str] | None = None) -> int:
         try:
             mark = METHODS[name]()
         except Exception as error:  # noqa: BLE001 - a missing model is a result too
-            print(f"**{name}**: did not load ({type(error).__name__}: {error})\n")
+            print(f"**{name}**: did not load ({type(error).__name__}: {error})")
+            if isinstance(error, ModuleNotFoundError) and name in PACKAGES:
+                print(f"in a throwaway venv: pip install {PACKAGES[name]}")
+            print()
             continue
         if args.detect:
             print(detect_files(mark, args.detect), end="\n\n")
