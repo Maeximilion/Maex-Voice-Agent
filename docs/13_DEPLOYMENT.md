@@ -538,6 +538,52 @@ EUR; isolation and the unchanged code decide it.
   arrived at another address than the alias, and a container on `edge` could not resolve it.
 - #576 offboarding is export, then removal of the stack and its volumes.
 
+### Load test (#841)
+
+How many customer stacks with three calls at once one VPS of D3 (4 vCores, 8 GB) carries, before
+the server is bought and prices per concurrent call are set. On the workbench, in Ubuntu (WSL):
+
+    python3 -m scripts.voice_load [--max-stacks 6] [--calls 3] [--turns 4] [--keep]
+
+- **The test server** is one container of `deploy/loadtest/Dockerfile` (Ubuntu 24.04 with systemd,
+  journald and its own Docker Engine), limited to 4 processors and 8 GB without swap (`--cpus`,
+  `--memory`). The production Compose files run inside it unchanged, journald logging and
+  read-only roots included, and the host's own share (dockerd, containerd, journald) counts.
+  Docker Desktop itself refuses the journald log driver, and resizing WSL in `.wslconfig` would
+  need `wsl --shutdown`, end every session and share the 4 processors with them (Maxi chose the
+  container, 22.11.2026). It is privileged (a Docker Engine runs inside it), publishes no host
+  port, and its image cache lives in the volumes `maex-loadtest-docker` and
+  `maex-loadtest-containerd`; `--down` stops it, `--purge` deletes the cache too. The workbench
+  stack `maex-voice-agent` is not touched: everything runs under its own names inside the
+  test server.
+- **Inside**, as the deploy user: the operator stack in `/srv/maex/ops` as §8 sets it up (with
+  fresh secrets, no push users), then stacks `load1`, `load2`, ... each by
+  `scripts/new_stack.py` with the production names and networks (the shared Caddy and the
+  operator registration included), the eval menu, mode `primary`, and for the test only the
+  voice profile with the stand-in ear and mouth (`VOICE_EAR`/`VOICE_MOUTH` `load`;
+  `deploy/loadtest/docker-compose.load.yml` sets `ENV=test` for `voice` alone, which refuses
+  stand-ins under `prod`). The line (`deploy/loadtest/docker-compose.line.yml`): one router all
+  stacks' Asterisks register at, with the callers and the team telephones, and the stand-in for
+  the hosted model (`api/telephony/load_model.py`), both joined to each stack's `telephony`
+  network as `router` and `model`. The stacks run the last commit of the checkout (they are
+  clones).
+- **Stand-ins** with fixed delays, since speech and model run outside the server in operation:
+  the ear ends a turn after 0.5 s of silence and gives its final 0.1 s later, the model answers
+  each request after `--model-delay` (0.25 s; every turn makes two requests and one menu search
+  on the stack's real database), the mouth answers after 0.15 s. Together 1.25 s of the 1.5 s
+  budget (docs/20 §11); the rest is the server's.
+- **Steps**: 1 stack with 1 call, 1 with 3, then one stack more per step with 3 calls each,
+  until a check fails or memory runs out. Per step: the turn from the end of the caller's speech
+  to the first audio back (from the router's recordings of both directions), audio missing inside
+  answers, the tool calls of the call log (95th percentile, 300 ms), processor and memory of the
+  whole test server from its cgroup and per service, team rings, restarts and memory kills.
+  `deploy/loadtest/run/report.json` and `table.md` hold the result.
+- **The CPU caveat stands**: a workbench core (Ryzen 9 7950X3D) is faster than a VPS vCore, so the
+  number is an upper bound. Plan with a margin and run the same on the VPS in its first month:
+  there, as the deploy user in a checkout on an empty server,
+  `python3 -m scripts.voice_load --inside --run-dir <folder>`. It refuses a `/srv/maex` it did
+  not make, so it never clears a server with customers on it.
+
 ### Reassess
 
 With numbers again when the stacks no longer fit one server (memory above about 80 % of the VPS)

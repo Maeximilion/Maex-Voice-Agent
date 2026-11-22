@@ -148,7 +148,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--down", action="store_true")
     parser.add_argument("--purge", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--inside", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--inside",
+        action="store_true",
+        help="run on this host as the test server (the VPS itself, as the deploy user)",
+    )
     args = parser.parse_args(argv)
     if not 1 <= args.max_stacks <= MAX_STACKS:
         parser.error(f"--max-stacks: 1 to {MAX_STACKS}")
@@ -456,8 +460,9 @@ class Inside:
             sh(["docker", "network", "connect", "--alias", alias, network, container])
         self.stacks.append(stack)
         self.render_router()
-        sh(["docker", "exec", ROUTER, "asterisk", "-rx", "pjsip reload"])
-        sh(["docker", "exec", ROUTER, "asterisk", "-rx", "dialplan reload"])
+        # `pjsip reload` is no command in Asterisk 22 (and exits 0).
+        router_cli("module reload res_pjsip.so")
+        router_cli("dialplan reload")
         in_stack(
             stack, "compose", "up", "-d", "--wait", "voice", "asterisk",
             timeout=STACK_UP_SECONDS,
@@ -626,8 +631,9 @@ def turn_times(
     the first answer that starts after it and before the caller speaks again,
     None when none came."""
     out: list[float | None] = []
-    for i, (_, end) in enumerate(said[-turns:] if turns else []):
-        later = said[len(said) - turns + i + 1][0] if i + 1 < turns else float("inf")
+    last = said[-turns:] if turns else []
+    for i, (_, end) in enumerate(last):
+        later = last[i + 1][0] if i + 1 < len(last) else float("inf")
         answer = next((s for s, _ in heard if end <= s < later), None)
         out.append(None if answer is None else round(answer - end, 3))
     while len(out) < turns:
