@@ -706,7 +706,7 @@ def lost_seconds(
 def listening(said: list[tuple[float, float]]) -> list[tuple[float, float]]:
     """Where the caller listens: before it first speaks (the greeting) and
     from the end of each of its stretches to the start of the next."""
-    starts = [start for start, _ in said[1:]] + [float("inf")]
+    starts = [start for start, _ in said[1:]] + [float("inf")] * bool(said)
     return [(0.0, said[0][0] if said else float("inf"))] + [
         (end, nxt) for (_, end), nxt in zip(said, starts, strict=True)
     ]

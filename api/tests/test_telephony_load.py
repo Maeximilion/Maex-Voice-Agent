@@ -2,8 +2,11 @@
 back and judged (`telephony/load.py`). The run itself needs Docker and the test
 server; what it decides from its recordings and numbers is tested here."""
 
+import argparse
 import json
+import os
 import threading
+import wave
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 
@@ -266,7 +269,7 @@ def test_a_dry_run_on_the_server_runs_nothing(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     monkeypatch.setattr(load, "docker_problem", lambda: None)
-    monkeypatch.setattr(load.os, "getuid", lambda: 1000)
+    monkeypatch.setattr(os, "getuid", lambda: 1000)
 
     def refused(*_: object, **__: object) -> None:
         raise AssertionError("a dry run must not start anything")
@@ -398,7 +401,20 @@ def test_an_answer_cut_short_counts_as_lost() -> None:
 
 def test_the_server_side_refuses_a_folder_it_did_not_make(tmp_path: Path) -> None:
     (tmp_path / "notes.txt").write_text("mine")
-    args = load.argparse.Namespace(run_dir=tmp_path)
+    args = argparse.Namespace(run_dir=tmp_path)
     with pytest.raises(load.LoadError, match="not a run directory"):
         load.Inside(args).run()
     assert (tmp_path / "notes.txt").exists()
+
+
+def test_a_call_whose_caller_never_spoke(tmp_path: Path) -> None:
+    """Recordings without the caller's tone: every turn missing, no crash."""
+    assert load.listening([]) == [(0.0, float("inf"))]
+    for name, freq in (("101-said", 0), ("101-heard", 1000)):
+        with wave.open(str(tmp_path / f"{name}.wav"), "wb") as w:
+            w.setnchannels(1)
+            w.setsampwidth(2)
+            w.setframerate(RATE)
+            w.writeframes(_track([(freq, 2.0)]))
+    result = load.judge_call("101", tmp_path, 4)
+    assert result.turns == [None] * 4 and result.lost_audio == 0
