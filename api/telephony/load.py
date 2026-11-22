@@ -63,6 +63,7 @@ import re
 import secrets
 import shutil
 import statistics
+import string
 import subprocess
 import sys
 import threading
@@ -211,7 +212,8 @@ def on_workbench(args: argparse.Namespace) -> int:
         "the test server's Docker Engine did not start",
     )
     inner = [
-        *("docker", "exec", "-u", "deploy", "-w", str(REPO_ROOT), SERVER),
+        *("docker", "exec", "-u", "deploy", "-w", str(REPO_ROOT)),
+        *("-e", "PYTHONUNBUFFERED=1", SERVER),
         *("python3", "-m", "scripts.voice_load", "--inside"),
         *("--max-stacks", str(args.max_stacks), "--calls", str(args.calls)),
         *("--turns", str(args.turns), "--model-delay", str(args.model_delay)),
@@ -991,6 +993,8 @@ def operator_stack() -> None:
     ops = ROOT / "ops"
     sh(["git", "clone", "--quiet", str(REPO_ROOT), str(ops)])
     owner, app, proxy = (secrets.token_hex(32) for _ in range(3))
+    alphabet = string.ascii_lowercase + string.digits
+    push = "".join(secrets.choice(alphabet) for _ in range(29))
     env = ops / ".env"
     env.touch(mode=0o600)
     env.write_text(
@@ -1007,6 +1011,9 @@ def operator_stack() -> None:
                 f"OPERATOR_PROXY_SECRET={proxy}",
                 "OPERATOR_ORIGIN=https://ops.load.test",
                 "NTFY_BASE_URL=https://push.ops.load.test",
+                # ntfy's token form, tk_ and 29 characters. Without users the
+                # push server accepts nobody, which a load test does not need.
+                f"OPERATOR_PUSH_TOKEN=tk_{push}",
             ]
         )
         + "\n"
