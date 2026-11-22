@@ -134,9 +134,10 @@ core runs in a worker thread, and the port methods only enqueue.
 and what the line finished playing are queued with the time they happened and handled strictly one
 after another. The core runs in that worker. What it asks of the line (`Lines`, the
 `TelephonyPort` over all sessions) is kept while its turn runs and carried out the moment the turn
-returns, before anything that queued up behind it; timers fire on the time of the events, never
-ahead of an event that waited in the queue, and an event's time and its place in the queue are
-taken under one lock. Three ports: `Ear`, `Mouth` and
+returns, before anything that queued up behind it (one exception: the outage path has its
+sentence carried out at once with `speak_now`, still in order, §5); timers fire on the time of
+the events, never ahead of an event that waited in the queue, and an event's time and its place
+in the queue are taken under one lock. Three ports: `Ear`, `Mouth` and
 `Line`, the caller's leg (`answer`, `play` with a mark the line reports back when it was played,
 `flush`, `transfer`, `hangup`); the media adapter of T-1.11 implements `Line`. How a session ended
 is its `outcome`: only `hangup` lets the dialplan end the call, after `transfer`, `closed` or
@@ -216,7 +217,7 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 | A Docker network between `voice` and Asterisk or the database is cut | the dialplan, Asterisk's pings, or the timeouts of the phone line's database sessions (§6) | the dialplan dials the team number |
 | The team does not pick up | the dial status | the team number next, then `TEAM_PHONE`, each number once (T-10.13, #835, below); at both: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8) |
 | The recording: the question, its log, the row or the file | `agent/recording.py`, the session | nothing has to: the call goes on without a recording, and in mode `shadow` the team rings as on a no (§4, T-11.3) |
-| The caller hangs up in mode `shadow` with the recording question, or on the sentence before a transfer of the AI, or on the outage sentence of a failed turn, before the line has the transfer | the session (`closed`), the handler | nothing can: a callback card under the caller id instead, with the card the core wrote for the handover, none for a withheld number; the call is logged `callback` or `abandoned`, never `transferred` (§4, #252 no. 9, #674); the outage sentence's call stays `error` and gets its card too (#741). Only on a call we answered: a leg closed before our first sentence is the row below or a caller who gave up while it rang (#652) |
+| The caller hangs up in mode `shadow` with the recording question, or on the sentence before a transfer of the AI, or on the outage sentence of a failed turn, before the line has the transfer | the session (`closed`), the handler | nothing can: a callback card under the caller id instead, with the card the core wrote for the handover, none for a withheld number; the call is logged `callback` or `abandoned`, never `transferred` (§4, #252 no. 9, #674); the outage sentence's call stays `error` and gets its card too (#741), which names the bookings of the call that stand, from the database, where the core wrote no card (#743 follow-up). Only on a call we answered: a leg closed before our first sentence is the row below or a caller who gave up while it rang (#652) |
 | `voice` takes the call and says nothing for 10 s (a slow start of the call, a mouth that hangs) | the dialplan: its `Dial` to `voice` gives up, our leg is closed | the dialplan dials the team number. The call log shows `abandoned`: `voice` cannot tell this from a caller who gave up while it rang (#652) |
 | No audio of the caller reaches `voice` (one-way audio after a tunnel, NAT or firewall change; from here the same as a muted telephone) | the session, per call: the note `no_caller_audio` in the call log. The monitor: the last `ALARM_NO_AUDIO_CALLS` (3) calls all carry it, a push to the operator at most once a clock hour (#651) | nothing, by decision (Maxi, 11.11.2026): each call is asked twice and ended as a silent one. The operator's push is what ends the fault. Measured in the drill (13.11.2026, Asterisk 22): a caller leg that sends nothing (the router's `Wait`) leaves the note on the call, so the session sees no frame or zero frames, and the same on a line whose RTP is blocked in transit: the drill sets an iptables DROP rule on the AI telephone's media ports (10000 to 10039) while the caller plays a tone, 283 packets dropped, the call ends as a silent one with the note and the team does not ring (14.11.2026, #651) |
 | The media connection breaks while a transfer waits for its sentence | the session: the sentence is dropped, the core is told and logs the call as `error` | the session performs the transfer that waited at once (#652); if the line refuses it, the dialplan dials the team number |
@@ -224,7 +225,7 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 
 **Test number.** In the test phase every row of this table is tried on a number customers do not call, with a team telephone assigned to that number next to the AI telephone. The main number stays untouched until operation.
 
-**A team number changed during a call** (#683). The agent's handover (`transfer_to_team`) reads the number from the database at that moment, so a change on the tablet reaches it. The legs `voice` dials on its own, an outage (`_fail`) and the shadow leg, read the number again when they dial (#710), once, in a savepoint bound by the line's 2 s statement limit; inside a turn the line plays the outage sentence only after that read, so an outage that is a database error skips it (#764). When the read fails or is skipped (the database is the outage) they use the number read at the start of the call, so they work when the database does not. A change in the middle of a call whose database cannot be read rings the old number; if that does not answer, the fallback number and then the missed-call card follow, and no call is lost (rule 5).
+**A team number changed during a call** (#683). The agent's handover (`transfer_to_team`) reads the number from the database at that moment, so a change on the tablet reaches it. The legs `voice` dials on its own, an outage (`_fail`) and the shadow leg, read the number again when they dial (#710), once, in a savepoint bound by the line's 2 s statement limit; on the outage path the sentence goes out first: inside a turn the session would keep it until the turn returns, behind the read, so `_fail` asks the line to speak what was said so far at once (`TelephonyPort.speak_now`), and the read runs while the caller hears the sentence; the transfer waits for the end of the sentence anyway, so a slow read delays the transfer only by what it outlasts the sentence, never the words (#754 follow-up). An outage that is a database error skips the read (#764). When the read fails or is skipped (the database is the outage) they use the number read at the start of the call, so they work when the database does not. A change in the middle of a call whose database cannot be read rings the old number; if that does not answer, the fallback number and then the missed-call card follow, and no call is lost (rule 5).
 
 **Which number the dialplan's own legs ring** (#835, #861). Where the table says "the dialplan
 dials the team number": after its probe (`/media/ready`) the dialplan asks `voice`, `GET /team`
@@ -377,7 +378,9 @@ is rung (Maxi, 20.10.2026). The outage paths (paused, shadow, `voice` down, a fa
   and lost before a word ends the same way and its row is there. `voice` writes the card through `callbacks.team_missed`: the call row is
   found by its line id after its log is closed (the newest of the last two hours), the number is
   the one the guest named in the call, kept in the process's memory at the handover, else the
-  caller id, else that of an open card of the call; the reason is the transfer's, the outcome
+  caller id, else that of an open card of the call; the reason is the transfer's, the text the
+  core's card for the handover, else the reason's sentence with the call's standing bookings from
+  the database ("Bereits gebucht: ...", #743 follow-up); the outcome
   becomes `callback` whatever the log derived (an `error` stays). A busy team telephone answers
   within a fraction of a second, while our leg's log may still be written: both take the call's
   row, and `end_call` keeps an outcome set before it unless it logs an error. `voice` answers
@@ -413,7 +416,7 @@ network disconnect`, without touching either container:
 |---|---|
 | `voice` cut off from Asterisk before a call | "voice not reached", the team rang after 5.3 s |
 | `voice` cut off from Asterisk in the middle of a call | Asterisk's pings notice, as for a freeze; the team rang 8.4 s after the cut |
-| `voice` cut off from the database in the middle of a call, inside the opening hours | the caller's keys start a turn that finds a silent database, "call failed, handing it to the team", ending `transfer`; the team rang 12.4 s after the cut, within the limit of 30 s, though it is the slowest of these |
+| `voice` cut off from the database in the middle of a call, inside the opening hours | the caller's keys start a turn that finds a silent database, "call failed, handing it to the team", ending `transfer`; the team rang 12.4 s after the cut, within the limit of 30 s, though it is the slowest of these. Measured before the outage path read the team number again (#710); since the #754 follow-up that read runs while the outage sentence plays, so it may add to the time to the ring only what outlasts the sentence. Still to be measured again on the workbench |
 | `voice` cut off from the database before a call | "call could not be opened, handing it to the team"; the team rang after 8.3 s |
 | The networks are back | the next call is the AI's: answered, asked, goodbye, no team ring, no restart of `voice` |
 | Tried from inside Asterisk | `voice:8001` connects; `db:5432` does not, by name or by address |

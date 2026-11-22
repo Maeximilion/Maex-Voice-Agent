@@ -36,7 +36,11 @@ from api.agent.loop import (
 from api.agent.state import ConversationState
 from api.config import settings
 from api.domain.callbacks.create import SAY_NOTED
-from api.domain.callbacks.transfer import SUMMARY_HUNG_UP, SUMMARY_MISSED
+from api.domain.callbacks.transfer import (
+    SUMMARY_BOOKED,
+    SUMMARY_HUNG_UP,
+    SUMMARY_MISSED,
+)
 from api.domain.menu.importer import apply
 from api.domain.menu.items import active_count
 from api.models import (
@@ -1232,7 +1236,9 @@ class _Wire:
     """A call on the own voice layer with fakes for ear, mouth and line: the
     handler and the core are the real ones."""
 
-    def __init__(self, session, tenant, *, refuses_transfer: bool = False):
+    def __init__(
+        self, session, tenant, *, refuses_transfer: bool = False, llm_factory=None
+    ):
         from api.telephony.adapters.fake_speech import FakeEar, FakeLine, FakeMouth
         from api.telephony.session import CallSession, Lines
 
@@ -1244,7 +1250,7 @@ class _Wire:
             line=self.line,
             ear=self.ear,
             mouth=FakeMouth(),
-            events=handler_for(session, tenant, self.lines),
+            events=handler_for(session, tenant, self.lines, llm_factory=llm_factory),
             caller_id="0721 5551234",
             clock=lambda: self.now,
             silence_seconds=6.0,
@@ -2196,6 +2202,83 @@ def test_an_outage_with_the_number_unreadable_rings_the_one_read_at_the_start(
     assert port.transfers("s-1") == [TEAM_PHONE]
 
 
+def _outage_on_the_wire(session, tenant, monkeypatch, *, unreadable=False):
+    """A call on the own voice layer whose turn fails after the staff changed
+    the team number. Each read of the number is marked on the line, so the
+    test sees it between what the caller hears."""
+    wire = _Wire(session, tenant, llm_factory=lambda s: BrokenLLM())
+    wire.played()
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant.id)
+        .values(team_phone=CHANGED_PHONE)
+    )
+    session.commit()
+    from api.domain.calls import current_team_phone as real
+
+    def marked(*args, **kwargs):
+        wire.line.actions.append(("team_number_read",))
+        if unreadable:
+            raise OperationalError("SELECT", {}, Exception("connection refused"))
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(handler_module, "current_team_phone", marked)
+    return wire
+
+
+def test_on_the_wire_the_outage_sentence_plays_before_the_team_number_is_read(
+    session, tenant, monkeypatch
+):
+    """#754 follow-up: inside a turn the sentence would wait for the end of the
+    turn, behind the read. It goes out first, the read runs while it plays,
+    and the transfer still waits for its end and dials the number of now."""
+    wire = _outage_on_the_wire(session, tenant, monkeypatch)
+
+    wire.says("Einen Tisch fuer vier bitte")
+
+    actions = wire.line.actions
+    assert actions.index(("play", SAY_OUTAGE)) < actions.index(("team_number_read",))
+    assert "transfer" not in wire.line.kinds()
+    wire.played()
+    assert actions[-1] == ("transfer", CHANGED_PHONE)
+    assert actions.count(("team_number_read",)) == 1
+
+
+def test_on_the_wire_an_unreadable_team_number_comes_after_the_sentence_too(
+    session, tenant, monkeypatch
+):
+    """The database is the outage: the sentence is on the line before the read
+    that fails, and the call goes to the number it started with."""
+    wire = _outage_on_the_wire(session, tenant, monkeypatch, unreadable=True)
+
+    wire.says("Einen Tisch fuer vier bitte")
+    wire.played()
+
+    actions = wire.line.actions
+    assert actions.index(("play", SAY_OUTAGE)) < actions.index(("team_number_read",))
+    assert actions[-1] == ("transfer", TEAM_PHONE)
+    assert the_call(session, "voice-1").outcome == "error"
+
+
+def test_on_the_wire_a_mouth_that_fails_on_the_outage_sentence_rings_the_team_once(
+    session, tenant, monkeypatch
+):
+    """The sentence that now goes out first fails in the mouth: that failure
+    takes the call to the team, and the failed turn behind it neither reads
+    the number again nor asks for a second transfer."""
+    wire = _outage_on_the_wire(session, tenant, monkeypatch)
+    wire.call._mouth.broken = True
+
+    wire.says("Einen Tisch fuer vier bitte")
+
+    actions = wire.line.actions
+    assert ("play", SAY_OUTAGE) not in actions
+    assert [a for a in actions if a[0] == "transfer"] == [("transfer", CHANGED_PHONE)]
+    assert actions.count(("team_number_read",)) == 1
+    assert wire.call.outcome == "transfer"
+    assert the_call(session, "voice-1").outcome == "error"
+
+
 def test_a_database_failure_does_not_wait_on_a_second_read_of_the_number(
     session, tenant, monkeypatch
 ):
@@ -2395,6 +2478,58 @@ def test_a_guest_who_hangs_up_on_the_outage_sentence_gets_a_card(session, tenant
     [card] = session.scalars(select(Callback)).all()
     assert card.phone == "+497215551234"
     assert the_call(session, "s-1").outcome == "error"
+
+
+def _booked_then_broken(session, tenant) -> "_Wire":
+    """On the wire: a table is booked, and the line breaks while the guest
+    hears the confirmation, so the outage sentence follows it."""
+    wire = _Wire(session, tenant)
+    wire.until_the_read_back()
+    wire.played()
+    wire.says("Ja, passt so.")
+    assert _reservation_of(session, "voice-1").status == "confirmed"
+    wire.call.broken()
+    wire.call.drain()
+    assert wire.line.played()[-1] == SAY_OUTAGE
+    return wire
+
+
+def _table_on_the_card(session, tenant) -> str:
+    reservation = _reservation_of(session, "voice-1")
+    when = reservation.reserved_for.astimezone(ZoneInfo(tenant.timezone))
+    return (
+        f"{SUMMARY_BOOKED} Reservierung, {reservation.party_size} Personen, "
+        f"{when:%d.%m.%Y %H:%M} Uhr, Name {reservation.guest_name}."
+    )
+
+
+def test_a_guest_who_hangs_up_on_the_outage_sentence_after_a_booking_gets_it_named(
+    session, tenant
+):
+    """#743 follow-up: the outage path keeps no card of the core, so the card
+    named an unknown concern while the table stood; the team could book it a
+    second time. It names the booking of the call from the database."""
+    wire = _booked_then_broken(session, tenant)
+
+    wire.call.closed()
+    wire.call.drain()
+
+    [card] = session.scalars(select(Callback)).all()
+    assert card.summary == f"{SUMMARY_HUNG_UP} {_table_on_the_card(session, tenant)}"
+    assert _logged(session, "voice-1").outcome == "error"
+
+
+def test_a_missed_team_leg_of_an_outage_after_a_booking_names_it(session, tenant):
+    """The guest stays for the outage sentence, nobody takes the team leg: the
+    card the dialplan asks for names the booking too."""
+    wire = _booked_then_broken(session, tenant)
+    wire.played()
+    assert wire.line.kinds()[-1] == "transfer"
+
+    assert wire.call._events.on_team_missed("voice-1")
+
+    [card] = session.scalars(select(Callback)).all()
+    assert card.summary == f"{SUMMARY_MISSED} {_table_on_the_card(session, tenant)}"
 
 
 def test_a_withheld_guest_who_hangs_up_on_the_outage_sentence_gets_no_card(

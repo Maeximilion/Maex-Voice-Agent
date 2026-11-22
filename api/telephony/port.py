@@ -48,6 +48,14 @@ class TelephonyPort(Protocol):
         """End the call after everything said so far was spoken."""
         ...
 
+    def speak_now(self, session_id: str) -> None:
+        """What was said so far goes to the caller now, not when the event
+        that asked for it returns. For the outage path: its sentence is on the
+        line before the handler reads the team number behind it, so a slow
+        database delays at most the transfer, never the words (#754). Raises
+        when the line refuses what was asked, as the end of the event would."""
+        ...
+
     def start_recording(self, session_id: str, file_name: str) -> None:
         """Record the call from here on, into `file_name` of the recordings'
         folder, up to the handover or its end (`agent/recording.py`). Only after

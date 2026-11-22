@@ -25,7 +25,9 @@ events of the call wait in the queue.
 the order they were asked, before anything that queued up behind the turn. So a
 read-back protects itself before a "Ja" that was already waiting is looked at:
 the core has "said" the read-back by then, the guest has not heard a word of
-it.
+it. One exception: `speak_now` carries out what was asked so far at once, still
+in order, so the outage sentence is on the line while the handler reads the
+team number behind it (#754).
 
 **Timers run on the time of the events.** A timer fires only when nothing
 older is waiting in the queue: a key, an answer or a report from the line that
@@ -229,6 +231,19 @@ class CallSession:
 
     def hangup(self) -> None:
         self._ask("hangup")
+
+    def speak_now(self) -> None:
+        """Inside a turn: carry out what the core asked for so far now, in
+        order, instead of when the turn returns. The sentences start playing,
+        and what the core does next (a read of the database) runs while the
+        caller hears them. Outside a turn nothing waits, and nothing is done."""
+        if self._asked is None or threading.get_ident() != self._turn_thread:
+            return
+        # In place: the turn holds this list and goes on with what is asked
+        # after this call.
+        asked = list(self._asked)
+        self._asked.clear()
+        self._carry_out(asked)
 
     def start_recording(self, file_name: str) -> None:
         self._ask("start_recording", file_name)
@@ -673,10 +688,7 @@ class CallSession:
             deliver()
         finally:
             self._asked, self._turn_thread = before
-        for kind, payload in asked:
-            if self.over:
-                return
-            getattr(self, f"_on_{kind}")(self._clock(), payload)
+        self._carry_out(asked)
         if self.over:
             return
         if self._failed and self._ending is None:
@@ -687,6 +699,12 @@ class CallSession:
             self._end("failed")
         else:
             self._wait_for_the_caller(self._clock())
+
+    def _carry_out(self, asked: list[tuple[str, Any]]) -> None:
+        for kind, payload in asked:
+            if self.over:
+                return
+            getattr(self, f"_on_{kind}")(self._clock(), payload)
 
     def _hand_over_digits(self) -> None:
         digits, self._digits, self._digits_due = self._digits, "", None
@@ -874,6 +892,11 @@ class Lines:
         session = self._get(session_id)
         if session is not None:
             session.hangup()
+
+    def speak_now(self, session_id: str) -> None:
+        session = self._get(session_id)
+        if session is not None:
+            session.speak_now()
 
     def start_recording(self, session_id: str, file_name: str) -> None:
         """A last gate behind the core's: nothing is recorded while the setting
