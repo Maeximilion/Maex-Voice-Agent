@@ -116,6 +116,9 @@ MOUTH_SECONDS = 0.15
 # A gap inside an answer longer than this ends it; shorter ones are lost audio.
 ANSWER_GAP = 0.3
 TOOL_BUDGET_MS = 300.0
+# How long the caller speaks and listens in a turn (router/extensions.conf).
+SPEAK_SECONDS = 1.5
+LISTEN_SECONDS = 5.0
 SAMPLE_SECONDS = 1.0
 CALL_SLACK_SECONDS = 40.0
 REGISTER_SECONDS = 90.0
@@ -396,8 +399,8 @@ class Inside:
             router_dialplan(
                 (source / "extensions.conf").read_text(),
                 turns=a.turns,
-                speak=1.5,
-                listen=5.0,
+                speak=SPEAK_SECONDS,
+                listen=LISTEN_SECONDS,
                 greeting=a.greeting,
             )
         )
@@ -486,7 +489,7 @@ class Inside:
         sampler = Sampler()
         sampler.start()
         extens = [f"{s.n}{c:02d}" for s in stacks for c in range(1, calls + 1)]
-        period = 1.5 + 5.0
+        period = SPEAK_SECONDS + LISTEN_SECONDS
         for i, exten in enumerate(extens):
             # Spread over one turn, as calls of different callers are.
             time.sleep(period / len(extens) if i else 0)
@@ -625,15 +628,18 @@ def spans(windows: list[int], rate: int, gap: float) -> list[tuple[float, float]
 
 
 def turn_times(
-    said: list[tuple[float, float]], heard: list[tuple[float, float]], turns: int
+    said: list[tuple[float, float]],
+    heard: list[tuple[float, float]],
+    turns: int,
+    listen: float = LISTEN_SECONDS,
 ) -> list[float | None]:
     """For each of the caller's last `turns` stretches: seconds from its end to
-    the first answer that starts after it and before the caller speaks again,
-    None when none came."""
+    the first answer that starts after it, before the caller speaks again and
+    within `listen`; None when none came."""
     out: list[float | None] = []
     last = said[-turns:] if turns else []
     for i, (_, end) in enumerate(last):
-        later = last[i + 1][0] if i + 1 < len(last) else float("inf")
+        later = min(last[i + 1][0] if i + 1 < len(last) else float("inf"), end + listen)
         answer = next((s for s, _ in heard if end <= s < later), None)
         out.append(None if answer is None else round(answer - end, 3))
     while len(out) < turns:
