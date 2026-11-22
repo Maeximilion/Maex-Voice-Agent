@@ -300,6 +300,34 @@ def test_a_booking_that_does_not_stand_is_not_named(session, tenant_id, status):
     assert task.summary == f"{SUMMARY_MISSED} Anliegen nicht bekannt."
 
 
+def test_a_draft_next_to_a_standing_booking_is_left_out(session, tenant_id):
+    """A guest who booked a table and then began a second one (a draft read
+    back, no yes yet, #908): the card names what stands, not the draft."""
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    _reservation(session, call)
+    _reservation(session, call, status="draft")
+    _order(session, call, status="draft")
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+
+
+def test_a_card_with_more_bookings_than_it_holds_is_cut_not_refused(session, tenant_id):
+    """`CreateCallbackRequest.summary` takes 1000 characters: a call with many
+    tables still gets its card, cut at the limit (rule 5)."""
+    call = make_call(session, tenant_id, transfer_reason=None)
+    for _ in range(20):
+        _reservation(session, call)
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert len(task.summary) == 1000
+    assert task.summary.startswith(f"{SUMMARY_MISSED} {SUMMARY_BOOKED} {TABLE_BOOKED};")
+
+
 def test_a_deleted_booking_is_not_named(session, tenant_id):
     call = make_call(session, tenant_id, transfer_reason=None)
     reservation = _reservation(session, call)

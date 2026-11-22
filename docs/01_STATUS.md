@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 22.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.2
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.3
 
 ---
 
@@ -156,6 +156,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 | 22.11.2026 | **T-10.2 (#397), Maxi's reading of the wire run of 14.11.2026: G0 takes it with conditions.** The six go rows stand; the no-go rows Asterisk down and second caller are limits of the router access. The second caller counts as the failed router test that starts T-10.12, and the rows Asterisk down, second and third caller run again on the trunk. #769 keeps the router findings. G0 still waits for two calls at once in T-10.1 |
 | 22.11.2026 | **Scoped security audit (docs/09 §5) at `3fb8cbc1`: 1 P1, 5 P2, 7 P3; the baseline moves from `141d412` once this row is on `main`.** The 400 exposed files changed since 12.10.2026, read by six area reviewers on Opus 5.5 at `xhigh`, a skeptic over every P2, each finding checked in the code; findings in the comment of 22.11.2026 on #888. The P1 is #908: one call holds many tables' worth of seats with drafts, so every other caller hears "full" while it talks; it holds back T-10.1 step 2 until fixed (the audit records T-10.1, its files are a subset). The P2s: a cookie a sibling host sets stops every tablet tap (`__Host-` prefix, with #888 B2); data subject requests match calls by substring and verify by a caller id a spoofer can present; `project-sync` runs a stacked pull request's base branch with `PROJECT_TOKEN`; a second `--inside` load test deletes the operator database and every customer folder. T-9.2 stays due for the real server (#840). |
 | 22.11.2026 | **#908 fixed: a call's replaced drafts hold no seats; only its newest row can, so T-10.1 step 2 is no longer held back by the audit's P1.** `capacity.booked_guests` counts a draft of another live call only while no newer row of that call exists (one turn's drafts of the same instant: the higher id; a confirmed row there never hides a draft), so ten corrections hold one party, and none once the newest is confirmed or cancelled; the agent, `confirm` and the tablet's count all go through it. Migration 044 adds `ix_reservations_call_id` and `reservations.replayed_at`: without the index the check walked the tenant's history once per live draft (701 ms for 80 drafts of one call at 144,000 rows, inside the day's lock); with it 2.9 to 3.4 ms, against 2.0 to 2.6 ms on `main` that counted 400 seats for one caller. A guest who goes back to an earlier draft replays its key, which stamps `replayed_at`, so that draft holds the seats again and the correction left holds none (found by the deep review: without it another caller could take the seats and the guest's yes was refused). Workbench: migration 044 right after the pull, then restart `api`, `dispatcher` and `voice` (the voice service counts seats in its own process). |
+| 23.11.2026 | **#754 and #743 follow-ups (branch `cloud/fix/764-outage-path` of the cloud session of 15.11.2026, #911): the outage sentence is on the line before the team number is read again, and a missed-call card without the core's summary names the call's standing bookings.** `_fail` asks the line to speak what was said so far at once (`TelephonyPort.speak_now`, `CallSession.speak_now`), so the read of the number runs while the caller hears the sentence; after a database error there is no read at all (#764, on `main` since), and a mouth that fails on the sentence takes the call to the team once. `team_missed` reads the call's confirmed reservations and its confirmed, approved or handed-over orders by `call_id` ("Bereits gebucht: ...", without notes, L13) where the core wrote no card, instead of "Anliegen nicht bekannt"; drafts, cancelled and deleted rows are left out, and a card longer than 1000 characters is cut, not refused. 15 tests (13 of the branch, 2 added: a draft next to a standing booking, the cut). Evals on the head equal `main` case by case: cases 107/107, targets 1/27, numbers 249/249. |
 
 Older rows: `docs/HISTORY.md` section "Done (archive)".
 
@@ -177,6 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.68.3 · 23.11.2026:** #754 and #743 follow-ups: the outage sentence plays before the team number is read again, a missed-call card names the call's standing bookings
 - **v2.68.2 · 22.11.2026:** #908: only a call's newest row holds seats as a draft, migration 044 indexes reservations by call and creation time
 - **v2.68.1 · 22.11.2026:** Scoped security audit at 3fb8cbc1: 1 P1 (#908, holds back T-10.1 step 2), 5 P2, 7 P3 on #888; the baseline moves from 141d412
 - **v2.68.0 · 22.11.2026:** T-10.2 taken for G0 with conditions (Maxi's reading)
