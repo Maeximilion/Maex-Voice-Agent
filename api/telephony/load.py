@@ -69,6 +69,7 @@ import sys
 import threading
 import time
 import wave
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -120,6 +121,7 @@ TOOL_BUDGET_MS = 300.0
 SPEAK_SECONDS = 1.5
 LISTEN_SECONDS = 5.0
 SAMPLE_SECONDS = 1.0
+POLL_SECONDS = 3.0
 CALL_SLACK_SECONDS = 40.0
 REGISTER_SECONDS = 90.0
 STACK_UP_SECONDS = 900
@@ -511,13 +513,19 @@ class Inside:
                 f"channel originate Local/{exten}@dialout extension {exten}@caller"
             )
         limit = a.greeting + a.turns * period + CALL_SLACK_SECONDS
+
+        def all_ended() -> bool:
+            # One read of the log per poll: the kit's own work counts against
+            # the server it measures.
+            log = self.router_log(since)
+            return all(f"LOAD {e} caller hangs up" in log for e in extens)
+
         wait_for(
-            lambda: all(
-                f"LOAD {e} caller hangs up" in self.router_log(since) for e in extens
-            ),
+            all_ended,
             limit,
             "calls still running at the end of the step",
             fail=False,
+            poll=POLL_SECONDS,
         )
         router_cli("channel request hangup all")
         usage = sampler.stop()
@@ -1019,7 +1027,14 @@ def set_env(path: Path, values: dict[str, str]) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
-def wait_for(ready: Any, seconds: float, message: str, *, fail: bool = True) -> bool:
+def wait_for(
+    ready: Callable[[], bool],
+    seconds: float,
+    message: str,
+    *,
+    fail: bool = True,
+    poll: float = 1.0,
+) -> bool:
     end = time.monotonic() + seconds
     while True:
         try:
@@ -1032,7 +1047,7 @@ def wait_for(ready: Any, seconds: float, message: str, *, fail: bool = True) -> 
                 raise LoadError(message)
             print(f"voice_load: {message}")
             return False
-        time.sleep(1)
+        time.sleep(poll)
 
 
 def clean_slate(load_dir: Path) -> None:

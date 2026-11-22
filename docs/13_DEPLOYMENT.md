@@ -586,7 +586,9 @@ the server is bought and prices per concurrent call are set. On the workbench, i
   not the processor: about 1.05 GB more of the server's memory per stack (6.3 of 8 GB at 5
   stacks, page cache included), against 90 % of one core of 400 % on average at 5 stacks, of
   which the router and the stand-in model, which do not run on the server in operation, take
-  about 28. The largest share of a stack is n8n (0.54 GB). The table is in the comment on #841,
+  about 28, and the kit's own polling of the router's log during that run a little more (read
+  once per call and second then, once per three seconds since): the processor figures are on
+  the high side. The largest share of a stack is n8n (0.54 GB). The table is in the comment on #841,
   the run up to 9 stacks with 0.1 s of lost audio allowed there as well.
 - **The CPU caveat stands**: a workbench core (Ryzen 9 7950X3D) is faster than a VPS vCore, so the
   number is an upper bound. Plan with a margin and run the same on the VPS in its first month:
