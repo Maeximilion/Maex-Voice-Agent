@@ -132,9 +132,11 @@ def booked_guests(
             newer.call_id == Reservation.call_id,
             or_(
                 newer.created_at > Reservation.created_at,
-                # Same instant: the higher id stands for the newest, one counts.
+                # Same instant (one turn passes one `now`): of two drafts the
+                # higher id counts; a confirmed row there never hides a draft.
                 and_(
                     newer.created_at == Reservation.created_at,
+                    newer.status == "draft",
                     newer.id > Reservation.id,
                 ),
             ),

@@ -799,6 +799,46 @@ def test_the_newest_draft_of_another_call_still_counts(session, tenant_id, call_
         )
 
 
+def test_two_drafts_written_at_the_same_instant_hold_one_party(
+    session, tenant_id, call_id
+):
+    """A turn passes one `now` to every tool it calls: two drafts of one call
+    can share their `created_at`, and still only one of them counts."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    other = _other_call(session, tenant_id)
+    for mm in (0, 30):
+        create_reservation(
+            session,
+            _six(tenant_id, other, reserved_for=berlin(MITTWOCH, 19, mm)),
+            now=NOW,
+        )
+
+    mine = create_reservation(session, _six(tenant_id, call_id, party_size=4), now=NOW)
+
+    assert mine.status == "draft"
+
+
+def test_a_confirmed_table_of_the_same_instant_never_hides_a_draft(
+    session, tenant_id, call_id
+):
+    """Which of two rows of one instant is newer cannot be told: a confirmed
+    table next to a draft leaves the draft counting, whatever their ids."""
+    other = _other_call(session, tenant_id)
+    _seat(session, tenant_id, other, 30)
+    _seat(session, tenant_id, other, 6, status="draft")
+    # The confirmed table gets the higher id, the one a tie-break on ids picks.
+    session.execute(
+        update(Reservation)
+        .where(Reservation.status == "draft")
+        .values(id=uuid.UUID(int=1))
+    )
+    session.commit()
+
+    # 30 + 6 + 6 > 40.
+    with pytest.raises(Conflict):
+        create_reservation(session, _six(tenant_id, call_id), now=NOW)
+
+
 def test_two_drafts_of_one_call_never_book_past_the_window(session, tenant_id, call_id):
     """A call may hold two drafts now, but `confirm` counts every confirmed
     seat: only one of them can be booked."""
