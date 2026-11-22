@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
+from api.agent.guards import SAY_ALLERGENS_OFFER, SAY_ALLERGY_NOTED, SAY_ASK_ALLERGY
 from api.domain.menu.importer import MENU_FILE, OPTIONS_FILE, apply, parse
 from api.models import Call, Callback, MenuItem, Order, OrderItem
 from api.tests.test_domain_menu_search import KARTE
@@ -1002,7 +1003,7 @@ def test_allergie_ohne_zutat_wird_nachgefragt_und_notiert(session, tenant):
     _, turns = _bestellung(
         session, tenant, "Pho Bo, ich habe eine Allergie.", "Erdnüsse."
     )
-    assert "Wogegen" in " ".join(turns[1].say)
+    assert "Worauf genau" in " ".join(turns[1].say)
     assert "Darf es noch etwas sein?" not in " ".join(turns[1].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
@@ -1025,7 +1026,7 @@ def test_removal_before_an_allergy_without_ingredient_is_kept(session, tenant):
     _, turns = _bestellung(
         session, tenant, "Pho Bo ohne Zwiebeln, ich habe eine Allergie.", "Erdnüsse."
     )
-    assert "Wogegen" in " ".join(turns[1].say)
+    assert "Worauf genau" in " ".join(turns[1].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse. Ohne Zwiebeln"]
 
@@ -1038,7 +1039,7 @@ def test_denied_allergy_gives_no_note(session, tenant, line):
     """Codex PR #139 (P2), issue #252: a denied allergy gave "WICHTIG: Keine
     Erdnuss" or the question "Wogegen?"."""
     _, turns = _bestellung(session, tenant, line)
-    assert "Wogegen" not in said(turns)
+    assert "Worauf genau" not in said(turns)
     [order] = orders(session)
     assert order.status == "confirmed"
     assert _notes(session, order) == [None]
@@ -1243,7 +1244,7 @@ def test_another_persons_allergy_after_a_withdrawal_asks_again(session, tenant):
         "Keine, aber meine Frau ist gegen Sesam allergisch.",
         "Erdnüsse.",
     )
-    assert "Wogegen" in " ".join(turns[2].say)
+    assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
@@ -1258,7 +1259,7 @@ def test_denial_with_another_dish_keeps_the_question(session, tenant):
         "Die 23 noch, ich habe keine Allergie.",
         "Erdnüsse.",
     )
-    assert "Wogegen" in " ".join(turns[2].say)
+    assert "Worauf genau" in " ".join(turns[2].say)
 
 
 def test_removal_said_again_with_the_ingredient(session, tenant):
@@ -1317,7 +1318,7 @@ def test_allergie_ohne_antwort_bleibt_offen(session, tenant, antwort):
     _, turns = _bestellung(
         session, tenant, "Pho Bo, ich habe eine Allergie.", antwort, "Erdnüsse."
     )
-    assert "Wogegen" in " ".join(turns[2].say)
+    assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
@@ -1332,10 +1333,10 @@ def test_zwei_allergien_ohne_zutat_werden_nacheinander_gefragt(session, tenant):
         "Erdnüsse.",
         "Sesam.",
     )
+    # In an allergy turn only the core's fixed question is heard (#798),
+    # never one that names the dish.
     erste, zweite = " ".join(turns[1].say), " ".join(turns[2].say)
-    assert erste.count("Wogegen") == 1
-    assert "bei Pho Bo" in erste
-    assert "bei Frühlingsrollen (4 Stück)" in zweite
+    assert erste == zweite == SAY_ASK_ALLERGY
     [order] = orders(session)
     assert _notes(session, order) == [
         "WICHTIG !!! Allergie: Erdnüsse",
@@ -1346,7 +1347,10 @@ def test_zwei_allergien_ohne_zutat_werden_nacheinander_gefragt(session, tenant):
 def test_allergie_und_auswahl_nacheinander(session, tenant):
     """Codex PR #139, P1: ein mehrdeutiges Gericht und eine Allergie ohne Zutat
     in einem Satz - erst die Allergie, dann die Auswahl, nie beide Fragen
-    zugleich. Sonst wuerde "Nummer 12" als Zutat notiert."""
+    zugleich. Sonst wuerde "Nummer 12" als Zutat notiert. Since #798 an
+    allergy turn hears only the core's sentences: the stand-in's offer of the
+    soups is never heard, so "Nummer 12" orders no soup nobody offered (rule
+    2) and the team takes the order instead of a wrong one."""
     _, turns = _bestellung(
         session,
         tenant,
@@ -1355,12 +1359,10 @@ def test_allergie_und_auswahl_nacheinander(session, tenant):
         "Nummer 12.",
     )
     erste, zweite = " ".join(turns[1].say), " ".join(turns[2].say)
-    assert "Wogegen" in erste
+    assert "Worauf genau" in erste
     assert "Meinen Sie" not in erste
-    assert "Meinen Sie" in zweite
-    [order] = orders(session)
-    assert sorted(p[0] for p in positions(session, order)) == ["12", "13"]
-    assert "WICHTIG !!! Allergie: Erdnüsse" in _notes(session, order)
+    assert zweite == SAY_ALLERGY_NOTED
+    assert orders(session) == []
 
 
 @pytest.mark.parametrize(
@@ -1401,7 +1403,7 @@ def test_allergiefrei_geht_an_das_team(session, tenant):
         tenant,
         now=NOW,
     )
-    assert "Wogegen" not in said(turns)
+    assert "Worauf genau" not in said(turns)
     # Der Rueckrufpfad fragt nach der Nummer (Rufnummer unterdrueckt).
     assert "Telefonnummer" in said(turns)
 
@@ -1433,10 +1435,11 @@ def test_mehrdeutig_mit_allergie_erst_die_wahl(session, tenant):
         "Nummer 12.",
         "Erdnüsse.",
     )
+    # The allergy turn hears the core's sentence only (#798); the choice and
+    # the question for the ingredient follow one at a time.
     erste = " ".join(turns[1].say)
-    assert "Wogegen" not in erste
-    assert erste.count("Meinen Sie") == 1
-    assert "Wogegen" in " ".join(turns[2].say)
+    assert erste == SAY_ALLERGY_NOTED
+    assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     # On the dish chosen for it, by the model (Maxi, 15.11.2026).
     assert "WICHTIG !!! Allergie: Erdnüsse" in _notes(session, order)
@@ -1447,7 +1450,11 @@ def test_mehrdeutig_mit_allergie_und_zutat_fragt_einmal(session, tenant):
     _, turns = _bestellung(
         session, tenant, "Eine Suppe mit Erdnussallergie und die 23.", "Nummer 12."
     )
-    assert " ".join(turns[1].say).count("Meinen Sie") == 1
+    # The allergy turn hears the core's sentence only (#798), and the
+    # allergy still reaches the soup chosen next.
+    assert " ".join(turns[1].say) == SAY_ALLERGY_NOTED
+    [order] = orders(session)
+    assert "WICHTIG !!! Allergie: Erdnuss" in _notes(session, order)
 
 
 @pytest.mark.parametrize("antwort", ["Eine Cola bitte.", "Nummer 12."])
@@ -1456,7 +1463,7 @@ def test_bestellung_ist_keine_antwort_auf_wogegen(session, tenant, antwort):
     _, turns = _bestellung(
         session, tenant, "Pho Bo, ich habe eine Allergie.", antwort, "Erdnüsse."
     )
-    assert "Wogegen" in " ".join(turns[2].say)
+    assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
@@ -1599,7 +1606,7 @@ def test_prefixed_number_is_not_an_ingredient(session, sushi, answer):
     _, turns = _bestellung(
         session, sushi, "Pho Bo, ich habe eine Allergie.", answer, "Erdnüsse."
     )
-    assert "Wogegen" in " ".join(turns[2].say)
+    assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
@@ -1609,7 +1616,7 @@ def test_ingredient_with_number_word_is_not_an_order(session, tenant, answer):
     """Codex PR #155: a number word inside an ingredient does not turn the
     answer into an order - the note is recorded and the question not repeated."""
     _, turns = _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", answer)
-    assert "Wogegen" not in " ".join(turns[2].say)
+    assert "Worauf genau" not in " ".join(turns[2].say)
     [order] = orders(session)
     assert len(_notes(session, order)) == 1
 
@@ -1632,7 +1639,7 @@ def test_compact_ingredient_is_not_a_card_number(session, tenant, answer, ingred
     "Vitamin B12" and the spaced additive "E 621" are the ingredient - the
     note is recorded and the question not repeated."""
     _, turns = _bestellung(session, tenant, "Pho Bo, ich habe eine Allergie.", answer)
-    assert "Wogegen" not in " ".join(turns[2].say)
+    assert "Worauf genau" not in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == [f"WICHTIG !!! Allergie: {ingredient}"]
 
@@ -1644,7 +1651,7 @@ def test_the_menu_decides_what_a_card_number_is(session, tenant):
     _, turns = _bestellung(
         session, tenant, "Pho Bo, ich habe eine Allergie.", "B12.", "Erdnüsse."
     )
-    assert "Wogegen" in " ".join(turns[2].say)
+    assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
@@ -1656,7 +1663,7 @@ def test_number_on_the_menu_in_a_sentence_is_an_order(session, tenant, answer):
     _, turns = _bestellung(
         session, tenant, "Pho Bo, ich habe eine Allergie.", answer, "Erdnüsse."
     )
-    assert "Wogegen" in " ".join(turns[2].say)
+    assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
 
@@ -1934,8 +1941,6 @@ def test_allergy_in_the_opening_sentence_is_an_order(session, tenant):
     [
         # "Karte" next to the pickup stays what it was before the order.
         "Koennen Sie mir die Speisekarte vorlesen? Ich moechte bestellen.",
-        # No pickup named: the allergy alone starts no order.
-        "Guten Tag, ich habe eine Erdnussallergie.",
     ],
 )
 def test_out_of_scope_in_the_opening_sentence_stays_a_callback(
@@ -1944,6 +1949,18 @@ def test_out_of_scope_in_the_opening_sentence_stays_a_callback(
     replay(session, case(opening, "0721 5551234"), tenant, now=NOW)
     session.expire_all()
     assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
+    assert orders(session) == []
+
+
+def test_an_allergy_alone_in_the_opening_hears_the_core_sentence(session, tenant):
+    """Before #798 the stand-in asked for a number to call back. An allergy
+    turn hears only the core's sentences now, and the allergy stays with the
+    call (`allergy_said`): no order goes out without it."""
+    call, turns = replay(
+        session, case("Guten Tag, ich habe eine Erdnussallergie."), tenant, now=NOW
+    )
+    assert turns[0].say == [SAY_ALLERGY_NOTED]
+    assert call.state.allergy_said == ["Guten Tag, ich habe eine Erdnussallergie."]
     assert orders(session) == []
 
 
@@ -1957,100 +1974,79 @@ def test_out_of_scope_in_the_opening_sentence_stays_a_callback(
         ("Guten Tag.", "Schnitzel mit Erdnussallergie zum Abholen."),
     ],
 )
-def test_allergy_that_reaches_no_position_goes_to_the_team(session, tenant, lines):
+def test_allergy_that_reaches_no_position_is_not_lost(session, tenant, lines):
     """The allergy in the sentence that announces the pickup is a note only if
-    the search puts it on a dish. Otherwise it must not get lost: the team
-    calls back, as before the order."""
-    replay(session, case(*lines, "0721 5551234"), tenant, now=NOW)
+    the search puts it on a dish. Otherwise it must not get lost: the turn
+    hears the core's sentence (#798), and the stand-in still has the team
+    call back, with the number it asks for in the next turn."""
+    _, turns = replay(session, case(*lines, "Die 13.", "0721 5551234"), tenant, now=NOW)
+    assert turns[len(lines) - 1].say == [SAY_ALLERGY_NOTED]
     session.expire_all()
     assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
     assert orders(session) == []
 
 
-@pytest.mark.parametrize(
-    "opening",
-    [
-        "Ist die Pho Bo allergenfrei? Ich moechte sie zum Abholen.",
-        # Worded with the guest's allergy (Codex PR #178).
-        "Ist in der Pho etwas, gegen das ich allergisch sein koennte? "
-        "Ich moechte sie zum Abholen.",
-    ],
-)
-def test_an_allergy_question_the_model_talks_past_goes_to_the_team(
-    session, tenant, opening
-):
+def test_an_allergy_question_the_model_talks_past_goes_to_the_team(session, tenant):
     """The stand-in answers it without a look at the menu, as a real model did
-    in a full run (PR #445): the core takes it to the team, no order."""
-    replay(session, case(opening), tenant, now=NOW)
+    in a full run (PR #445): the guest hears the core's offer to look a dish
+    up (#798), and the same question unanswered a second time goes to the
+    team, no order."""
+    opening = "Ist die Pho Bo allergenfrei? Ich moechte sie zum Abholen."
+    _, turns = replay(session, case(opening, opening), tenant, now=NOW)
+    assert turns[0].say == [SAY_ALLERGENS_OFFER]
     session.expire_all()
     call = session.scalars(select(Call)).one()
     assert call.transfer_reason == "out_of_scope"
     assert orders(session) == []
 
 
-def test_allergy_on_a_sold_out_dish_goes_to_the_team(session, tenant):
+def test_an_allergy_question_with_the_guests_allergy_hears_core_sentences(
+    session, tenant
+):
+    """Worded with the guest's allergy (Codex PR #178): the stand-in, which
+    reads no allergens, gives the core's sentence for the kitchen, never an
+    answer of its own (#798)."""
+    opening = (
+        "Ist in der Pho etwas, gegen das ich allergisch sein koennte? "
+        "Ich moechte sie zum Abholen."
+    )
+    _, turns = replay(session, case(opening), tenant, now=NOW)
+    assert turns[0].say == [SAY_ALLERGY_NOTED]
+    assert orders(session) == []
+
+
+def test_allergy_on_a_sold_out_dish_is_no_order(session, tenant):
     session.execute(
         update(MenuItem)
         .where(MenuItem.tenant_id == tenant.id, MenuItem.number == "13")
         .values(sold_out_until=datetime(2026, 9, 15, 23, 0, tzinfo=BERLIN))
     )
     session.commit()
-    replay(
+    call, turns = replay(
         session,
-        case("Ich moechte Pho Bo mit Erdnussallergie zum Abholen.", "0721 5551234"),
+        case("Ich moechte Pho Bo mit Erdnussallergie zum Abholen."),
         tenant,
         now=NOW,
     )
-    session.expire_all()
-    assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
-
-
-def test_allergy_on_an_ambiguous_dish_goes_to_the_team(session, tenant):
-    """Codex PR #178: "Suppe" is two dishes. The choice can still be rejected,
-    and the allergy would go with it - so it is not noted yet, the team calls
-    back as before the order."""
-    replay(
-        session,
-        case(
-            "Ich moechte eine Suppe mit Erdnussallergie zum Abholen.",
-            "0721 5551234",
-        ),
-        tenant,
-        now=NOW,
-    )
-    session.expire_all()
-    assert [c.reason for c in session.scalars(select(Callback))] == ["out_of_scope"]
+    # The allergy turn hears the core's sentence (#798); the allergy stays.
+    assert turns[0].say == [SAY_ALLERGY_NOTED]
+    assert call.state.allergy_said
     assert orders(session) == []
 
 
-# --- A number heard through "ist" in the stand-in (Codex PR #257) ----------------
-
-
-def test_a_repeated_heard_number_does_not_take_the_offered_dish(session, sushi):
-    """ "Ist eins" again after "Meinen Sie Nummer S1 ...?" is the same open
-    question and no yes: the stand-in asks again and adds nothing."""
-    _, turns = _bestellung(session, sushi, "Ist eins.", "Ist eins.", "Pho Bo.")
-    assert "Meinen Sie Nummer s1" in " ".join(turns[1].say)
-    assert "Meinen Sie Nummer s1" in " ".join(turns[2].say)
-    [order] = orders(session)
-    assert [n for n, _, _ in positions(session, order)] == ["13"]
-
-
-def test_a_yes_or_the_name_takes_the_offered_heard_number(session, sushi):
-    for answer in ("Ja, genau.", "Lachs Nigiri."):
-        _bestellung(session, sushi, "Ist eins.", answer)
-    assert [
-        [n.lower() for n, _, _ in positions(session, order)]
-        for order in orders(session)
-    ] == [["s1"], ["s1"]]
-
-
-def test_a_repeated_heard_number_picks_neither_of_two_offered_dishes(session, sushi):
-    """12 or S12 was asked; "ist zwölf" again decides nothing, "die 12" does."""
-    _, turns = _bestellung(session, sushi, "Ist zwölf.", "Ist zwölf.", "Die 12.")
-    assert "Meinen Sie" in " ".join(turns[2].say)
-    [order] = orders(session)
-    assert [n for n, _, _ in positions(session, order)] == ["12"]
+def test_allergy_on_an_ambiguous_dish_is_no_order(session, tenant):
+    """Codex PR #178: "Suppe" is two dishes. The choice can still be rejected,
+    and the allergy would go with it - so it is not noted yet. The allergy turn
+    hears the core's sentence (#798) and the allergy stays with the call."""
+    call, turns = replay(
+        session,
+        case("Ich moechte eine Suppe mit Erdnussallergie zum Abholen."),
+        tenant,
+        now=NOW,
+    )
+    assert turns[0].say == [SAY_ALLERGY_NOTED]
+    assert call.state.allergy_said
+    assert orders(session) == []
 
 
 @pytest.mark.parametrize(

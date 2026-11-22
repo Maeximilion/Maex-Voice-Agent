@@ -1,0 +1,41 @@
+# The line of the load test (#841, api/telephony/load.py), on the test server
+# beside the customer stacks: the router every stack's Asterisk registers at
+# (the callers and the team telephones), and the stand-in for the hosted
+# language model (api/telephony/load_model.py). The kit connects both to each
+# stack's `telephony` network as `router` and `model`, the way a stack reaches
+# its line and its model provider in production. Started by the kit with the
+# project name load-line; no host port.
+services:
+  router:
+    image: andrius/asterisk:22.11.0_alpine-3.24-537e52c@sha256:98c0e598fb16492215ddc7cc52c3200646b44584ffa9267bebecff531fd3530b
+    networks: [line]
+    environment:
+      PUID: ${LOAD_UID}
+      PGID: ${LOAD_GID}
+      ASTERISK_TERMINAL_OPTS: "-n"
+    volumes:
+      - ${LOAD_RUN}/router:/etc/asterisk
+      - ${LOAD_RUN}/recordings:/recordings
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core waitfullybooted"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  model:
+    image: python:3.12-slim@sha256:dddfd7e07f9d15aeeca61529320492139d21cac7f0070c00609243e51e4e0016
+    networks: [line]
+    user: "${LOAD_UID}:${LOAD_GID}"
+    read_only: true
+    working_dir: /src
+    command: ["python", "-m", "api.telephony.load_model", "--delay", "${LOAD_MODEL_DELAY}"]
+    volumes:
+      - ${LOAD_SRC}/api:/src/api:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+networks:
+  line:

@@ -11,6 +11,7 @@
 | Entry | Who uses it | Check today | Where |
 |---|---|---|---|
 | `agent.<domain>/gui/*` | the restaurant's tablet | the restaurant's device login (#570, §6; Caddy Basic-Auth until then), then `X-Maex-Proxy-Secret` set by Caddy and checked in constant time (`require_gui_proxy`), CSRF double submit plus `HX-Request` and a same-origin check on every write (docs/06 §9) | `deploy/Caddyfile`, `api/core/auth.py`, `api/gui/session.py` |
+| `agent.<domain>/` | anyone who types the host name | none, no data: a redirect to `/gui/` with a fixed target, behind `X-Maex-Proxy-Secret` like the view; the sign-in page it ends on is the front page and shows the restaurant's name only (#571, D35) | `api/gui/access.py` |
 | `agent.<domain>/v1/kitchen/*` | the print bridge | `KITCHEN_BRIDGE_TOKEN`, bound to `KITCHEN_BRIDGE_TENANT_ID` | `require_kitchen_token` |
 | `agent.<domain>/health` | uptime check | none, no data | |
 | every other path on that name | nobody | 404 from Caddy | `api/tests/test_deploy_exposure.py` |
@@ -59,6 +60,10 @@ shared Caddy (host) ──── one site per customer: <customer>.<domain>  →
          └── one internal network per customer stack, "ops", holding only the dashboard and that stack's api
 ```
 
+The public site (`api/site/`, #892, docs/13 §9) is a fourth thing behind the same Caddy, on the apex and `www`: no session, no database, no secret, nothing of the applications imported; it can only be read. The inquiry form built on it is not live (no route, no mail service, no privacy text yet): when it is, the route, its spam protection, what it stores and for how long come into this document and `docs/09` §5 first.
+
+The tablet demo of the public site (`/tablet-demo`, docs/06 §11) adds no trust boundary: it is static files of that site, rendered once from invented data in a scratch database, and its fake backend runs in the visitor's browser. It talks to no backend, no customer stack and no database, has no sign-in and no session, and nothing a visitor types leaves the browser. The build copies no real data: it seeds its own scratch database, replaces the environment's numbers with example numbers and refuses to publish a file that holds another phone number or a value of the settings. The site's CSP (`default-src 'self'`, no inline script or style) holds for it unchanged. The fake backend (B2) is a script of the site's own origin that answers the pages' requests in the browser: it sends none to a server, and nothing behind the owner's PIN works in it, the parts that need it answer with the note "In der echten Version mit Inhaber-PIN." and change nothing.
+
 Boundaries, outermost first: internet to Caddy; Caddy to one stack; dashboard to one stack's API;
 inside a stack the networks of docs/13 §3 (unchanged); host to everything.
 
@@ -87,7 +92,12 @@ medium is accepted with the named limit, low is noise.
 **Where (D33, Maxi 09.11.2026): public, behind a strong login.** Its own host name `ops.<domain>`,
 never a path on a customer's host. Caddy adds the security headers of the operations view (CSP
 without inline script, `frame-ancestors 'none'`, HSTS, `nosniff`, `no-referrer`) and the 256 kB
-body limit; uploads (§9) get their own, larger limit on their one route.
+body limit; uploads (§9) get their own, larger limit on their one route. **Built (#571, plan
+number 11, 17.11.2026), closed until the audit of §11:** the site template `deploy/caddy/ops.caddy`
+and the operator stack `deploy/docker-compose.operator.yml` (docs/13 §8). Nothing installs the
+site but `scripts/new_stack.py --ops-site`, run after the audit; until then the name has no site
+and the operator stack publishes no port. The referrer policy stays `no-referrer` with the
+`Origin: null` rule of `core/origin.py` (#809: `same-origin` instead is Maxi's to decide).
 
 **Accounts:** one named account per person (today only Maxi), never a shared one. Stored in the
 operator stack's own database, not in a customer's. Password hashed with `hashlib.scrypt`
@@ -102,15 +112,37 @@ is the backup. Ten single-use recovery codes, stored hashed, are the last way in
 - At least two passkeys are registered before TOTP may be removed, so one lost device never locks
   the operator out.
 - A new passkey, a new TOTP secret or a used recovery code needs a fresh second factor and sends a
-  push to the `ops` topic ("new device"), so a silent takeover is visible.
-- Break glass when every factor is lost: SSH to the host and a CLI command in the operator stack
-  that resets the factors of one account. SSH is the real root anyway.
+  push to the `ops` topic ("new device"), so a silent takeover is visible. A sign-in from a
+  browser without the account's device cookie pushes too, naming its factor (#888 A1): a
+  password and a TOTP code phished in real time would otherwise open every customer's PINs and
+  call lists unseen for up to twelve hours.
+- **Once the account has a passkey, every change of a factor needs a passkey step-up** (D37, Maxi,
+  19.11.2026, built in #884): registering or removing a passkey, setting or removing a TOTP secret,
+  and the sight of a new TOTP secret take a passkey shown on `/step-up` in the last five minutes.
+  The sign-in does not count for them, whatever its factor (a passkey or a recovery code too), and
+  neither does a TOTP step-up: a stolen password with a phished TOTP code cannot swap the ways in.
+  An account without a passkey keeps the rule above (any fresh second factor, the sign-in's too),
+  so the first passkey can be registered. An operator who lost the only passkey, or every
+  passkey, registers a new one through the break glass below, never with TOTP.
+- A removed passkey, removed TOTP or a new TOTP secret ends every other session of the account;
+  only the session making the change stays, and the push says how many ended (D39, Maxi,
+  17.11.2026): a thief's session must not outlive the change made after a loss. A change of that
+  ended session that was already waiting for the account's row is refused once it gets the row
+  (`access._locked` looks for the session again): it changes no factor, ends no session and is
+  answered 401.
+- Break glass when every factor is lost, or every passkey (D37): SSH to the host and a CLI command
+  in the operator stack that resets the factors of one account
+  (`python -m api.dashboard.cli reset <name>`: a new password, a new TOTP secret and new recovery
+  codes, every passkey and every session removed). The operator then signs in with the new TOTP
+  code; the account has no passkey any more, so that sign-in may register a new one. SSH is the
+  real root anyway.
 
 **Sessions:** server-side rows, cookie `__Host-ops_session` (`Secure`, `HttpOnly`,
 `SameSite=Strict`, path `/`), random 32 bytes, only its hash stored. Idle limit 30 minutes, absolute
 limit 12 hours, rotated at login. Step-up (a fresh passkey or TOTP within the last 5 minutes) before:
 viewing personal data of a customer, rotating or showing a token, changing a call mode or team
-number, creating or deleting a customer, changing operator factors.
+number, creating or deleting a customer, changing operator factors (a passkey only, once the
+account has one, D37).
 
 **Brute force:** failed attempts counted per account and per client address in the operator
 database (survives a restart; production runs one uvicorn worker, but memory would reset). One or
@@ -140,10 +172,263 @@ names cannot fill the table, and an address is forgotten a day after its last fa
 request but `/health` needs `OPERATOR_PROXY_SECRET` from Caddy outside dev and test (as
 `GUI_PROXY_SECRET`, T10): every customer's `api` shares an `ops` network with the dashboard. The
 TOTP secret is stored readable, because the code is an HMAC of it; the operator database and its
-encrypted backups stay on the operator host (T7). Still to come: passkeys (`py_webauthn`, the
-dashboard's own image target), the push to `ops` on a new factor or a used recovery code, step-up
-before dangerous actions, the operator stack's Compose file and the Caddy site `ops.<domain>`
-with its headers, then the customer list over the ops API (§8).
+encrypted backups stay on the operator host (T7).
+
+**The customer list (#571, third part, 16.11.2026):** the start page shows every customer's stack
+in one row: the stack's state as a glyph and a word (ok, look, down) with what to look at, call
+mode, last call, calls and orders today, print bridge, backup age, menu status. The customers come
+from a registry in the operator database (`operator_customers`, migration op002): key, the address
+of the stack's ops API on its `ops` network and its `OPS_TOKEN`, added on the operator host with
+`python -m api.dashboard.cli customer-add <key> http://<api container>:8000`, which asks for the
+token or reads it from standard input, never from an argument, and never prints it;
+`customer-remove` and `customers` beside it, each change in the operator's audit (`customer.added`,
+`customer.changed` for a second run that moves the address or rotates the token,
+`customer.removed`). The key follows the rule of a stack's `tenants.customer_key`, at most 32
+characters, and the address is stored as `http://<host>:<port>` rebuilt from its parts; `https` is
+not taken, the `ops` network is internal and a handshake is one more wait the list's deadline
+cannot end. The token is
+stored readable, because the dashboard sends it (as the TOTP secret, T7); no two customers share an
+address or a token. Each stack is asked at once with three seconds to answer (§8). The rows come
+again every 30 seconds; that request checks the session but does not keep it alive, so an open tab
+still ends at the idle limit. Since plan number 11 provisioning adds the registry row itself
+(`scripts/new_stack.py`, the token on standard input) and the operator stack has its Compose
+file, and since #827 F3 (17.11.2026) its own push server (below, "Audit and push").
+
+**A customer's page, read (#571, fifth part, 16.11.2026):** a row of the list leads to
+`/customers/<key>`; a key the registry does not hold is 404 before any stack is asked, and the key
+`rows` cannot be registered (the list's refresh lives there).
+
+- **Without a reason:** the stack's state, the four figures of docs/06 §4 over the last seven
+  business days with the course per day, and the menu status. Counts and states only (§8), behind
+  the session like the list.
+- **The calls of one business day are guest data.** The route is a post behind `require_step_up`
+  with the page's CSRF token and the same-site check. A post, not a link: the session cookie is
+  `SameSite=Strict`, but a customer's host under the same domain is the same site, so a page there
+  could make the operator's browser follow a link, and a read in the operator's name with a reason
+  someone else chose would stand in both audits. The form is only shown to a session whose second
+  factor is fresh; a stale post goes to the step-up and back to the customer's page, and is dropped.
+- **The reason** is one of four categories and a ticket or issue number (§8). The actor the stack
+  is told is the session's account, never a field or a header of the request.
+- **Two audits:** the operator's own (`customer.calls_asked`, target the customer, detail reason,
+  reference and day) is committed before the stack is asked; the stack writes its own before it
+  answers (§8). A second row of the operator's says what came of it: `customer.calls_shown` with
+  the number of calls, or `customer.calls_not_shown` with the dashboard's own sentence why (the
+  stack was too slow, refused the day, answered as another customer), so the audit tells a read
+  that was tried from one the operator saw. None of them holds guest data.
+- **What is shown:** time, a count per caller of the day, intent, outcome, duration, cost, tool
+  calls, the note about the line. No phone number (Claude's choice, docs/01 "Made Assumptions"). The
+  page is sent with `Cache-Control: no-store`, and nothing of it is kept on the operator host.
+- A sign-out or the break glass ends the session, and so does a removed factor or a new TOTP secret
+  on another session of the account (D39), and with it the step-up: a fresh second factor of a
+  session that no longer exists opens nothing.
+
+**A customer's page, write (#571, sixth part, 16.11.2026):** the last card of a customer's page
+opens "Access and call routing" (`/customers/<key>/manage/<step>`), where the operator shows and
+sets the team PIN and the admin PIN, signs out one device or all, makes a setup link, sets the
+call mode, sets today's team number and (Maxi 17.11.2026, #811 question 2) the standard team
+number.
+
+- **Every step is a post behind `require_step_up`**, the page's CSRF token and the same-site
+  check, the read that opens the page too: a PIN and a setup link are ways into a restaurant, and
+  the call mode and the team number decide where a call goes (T12). There is no GET, so nothing of
+  it can be linked to, kept in a history or prefetched. A stale post goes to the step-up and back
+  to the customer's page, and is dropped.
+- **Every step carries a reason** (Claude's choice, docs/01 "Made Assumptions": §8 asks one only
+  for guest data): the category and ticket number the operator gave when opening the page travel
+  as hidden fields of each form and are checked again on each post. The actor is the session's
+  account, never a field or a header.
+- **Two audits per step:** the operator's own `customer.<step>_asked` (target the customer; detail
+  the reason, the reference and what is no secret: which PIN, which device, which mode) is
+  committed before the stack is asked, and a second row says what came of it: `customer.<step>_done`,
+  `customer.<step>_not_done` with the dashboard's own sentence when the stack refused before doing
+  anything, or `customer.<step>_unclear` when a step that changes something got no clear answer and
+  the stack may have done it all the same. The stack writes its own rows (§8): the reason's first,
+  the step's own when something happened.
+- **A secret is shown once and exists nowhere else on the operator's side.** A PIN and a setup
+  link are text of the one answer page (`Cache-Control: no-store`), never a field's value (a
+  browser keeps those in its form history), never part of an address, an audit row or a log line;
+  the link is text to copy, not a link the operator's browser could follow. A new PIN the operator
+  types travels in the request's body and is not repeated on the page. Looking again is a new
+  step, recorded again.
+- **A step acts on the page it came from (#811).** Every form that changes something carries the
+  version of the state its page showed (`seen`, 16 hex digits from the stack), and the stack
+  refuses the step with 412 when the restaurant changed since: the owner on the tablet, the staff
+  or a second operator. The page then says nothing was done and reads the state again by itself,
+  with the same reason (two more rows `customer.access_*` in its own audit, one `ops.access_read` on the stack), so the operator looks
+  at what holds before repeating it. The one-time form token stops a reload; this stops an old
+  page, for example "switch the agent on again" from a page opened before the owner's newer
+  emergency stop. A stack older than this sends no version: its page warns that nothing is
+  checked and its steps go out as before, so its agent can still be stopped from here.
+- **Nothing odd is sent.** A form is read into one request (`customers.step`): a PIN of 4 to 6
+  ASCII digits, a device's id as the stack wrote it or the word `all`, a mode's code, a number in
+  E.164, and for a step that changes something a version of 16 hex digits. Anything else is "nothing was sent" without a row in either audit. Whether a PIN, a mode
+  or a number is taken is the stack's decision; its refusal is said in the dashboard's own words.
+- **The stack's answer is input from outside, the state after the step as well** (§8): a PIN that
+  is not 4 to 6 digits, a link that is not `https://<host>/gui/einrichten#<token>` or the path
+  alone, more than 200 devices, a mode or a number of another form (the shown team number too:
+  digits and what stands between them) are "answer cannot be read", and everything is shown as
+  text. A taken-over stack can still answer with a link to a host of its own under that path, so
+  the page tells the operator to compare the link's start with the customer's address before
+  passing it on; it gains nothing by that, the restaurant's own sign-in page is the stack's
+  already. A stack that does not know its host (`AGENT_DOMAIN` not set) answers the path alone,
+  and the page says to put the customer's address in front.
+- **A step is sent once, and a form is taken once.** The dashboard never repeats a request to a
+  stack by itself. A form that changes something carries a token of the page it stands on, kept
+  as a passkey challenge is (one per session and customer, single use, five minutes;
+  `passkeys.issue` and `take`): the post takes it out, so a reload of the answer page, the Back
+  button or an older tab sends nothing a second time and writes no audit row (409, "this form was
+  sent before"); only the very token is taken out, so an older tab's form does not spend the
+  newer page's. Without it a reload within the five minutes of the step-up would make a second
+  setup link and void the one just passed on, or end an emergency stop the owner set in between.
+  The two reads (opening the page, showing a PIN) need no token: repeating them changes nothing
+  and is recorded each time.
+- **No clear answer is said as such.** When the stack answers too slowly, is not reachable or
+  answers what cannot be read, the page says that the change may have been made all the same and
+  to look before repeating it, and the audit row is `_unclear`; after a refusal (the token, an
+  older version, the wrong stack, a rule) it says nothing of the kind, because nothing was done.
+  Only what one of the stack's rules refused (status 422, docs/04) is explained with that rule's
+  sentence; a refusal of the request itself is "does not take this request".
+- **A list starts at what holds.** The lists of modes and numbers preselect the mode and the
+  number that hold now, so a button pressed without a choice changes nothing; where what holds is
+  not in the list (the emergency stop, whose one entry is "switch the agent on again") the list
+  starts at an empty entry that the browser refuses and the dashboard does not send.
+- No script: plain forms. The lists of modes and numbers are the ones the stack answered with.
+
+**The dev tools and "New customer" (#571, seventh part, 16.11.2026):** two entries of the
+navigation, `/dev` and `/new-customer`.
+
+- **Eval runs and measurements** are the records the repository keeps (`docs/metrics/`, docs/08
+  §4): `eval_history.csv` and `voice_history.csv`, read from the folder `OPERATOR_METRICS_DIR`
+  (`dashboard/results.py`). No stack is asked: an eval belongs to a version of the code, not to a
+  customer, and the files hold nothing of a guest, so the session is enough. The files are the
+  operator's own and still read as input: at most 512 kB, the newest 50 rows, the named columns,
+  each cell cut to 200 characters and shown as text; a file that is missing or cannot be read is
+  one sentence in its place. The dashboard never writes there.
+- **The log of one call is guest data** and stands where the call list stands: a post
+  (`/dev/call`) behind `require_step_up` with the page's CSRF token and the same-site check, a
+  reason of the four categories with a ticket number, the session's account as the actor, and
+  two rows in the operator's audit (`customer.call_log_asked` before the stack is asked, then
+  `customer.call_log_shown` with the number of tool calls or `customer.call_log_not_shown` with
+  the dashboard's own sentence). The customer is one of the registry, chosen from a list that
+  starts empty; the call's id is typed as a log line writes it and is sent only when it is a
+  UUID. The stack answers with the call's row without its number and its session id and with
+  the tool calls (which tool, how long, whether it answered, an error code), never with what
+  was asked or said (§8). The page is sent with `Cache-Control: no-store`.
+- **Read-only in production is a rule in the code** (`_dev_tools_only_read` in
+  `dashboard/app.py`): outside dev and test every request under `/dev` that is not a GET is
+  refused with 405 before any route, except the posts named in `DEV_READS`, today the call log
+  alone, whose post exists for the CSRF token and whose question to the stack is a GET. A tool
+  added under `/dev` later cannot write in production by being forgotten: a test compares the
+  route table with that list. The simulator console is not part of the dashboard.
+- **"New customer" runs nothing.** The page names the steps and their commands as text: the
+  customer file, `scripts/new_stack.py` (first with `--dry-run`), the menu and the self-test,
+  `python -m api.dashboard.cli customer-add`, the check in the list. It has no form and no field
+  and takes no write, so the rules for a key, an address (`http://<host>:<port>`) and a token
+  (asked for or read from standard input, never an argument, never shown) stay where they are
+  enforced: in the script and the command line.
+
+**Passkeys, step-up and the push (#571, fourth part, 16.11.2026):** a passkey is the normal second
+factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webauthn`).
+
+- **Bound to the site by the settings.** The relying party id and the origin come from
+  `OPERATOR_ORIGIN` (`https://ops.<domain>`; outside dev and test the dashboard refuses to start
+  when it is missing or not a bare https origin), never from a request's Host header. The
+  origin is written as a browser writes it, without the scheme's default port: `webauthn`
+  compares it as it is, and `:443` would turn every passkey away (#816).
+- **Challenges.** Every ceremony signs 32 random bytes that the server keeps for one holder and one
+  purpose: the session for a registration or a step-up, a cookie of the sign-in attempt
+  (`__Host-ops_attempt`) for a sign-in. The challenge is taken out by the first post that brings
+  it, whatever else that post got wrong, and is worthless after five minutes. Only the challenge
+  an answer names is taken (`passkeys.signed_challenge`): when a second tab asked for options,
+  the first tab's answer is refused and leaves the second tab's challenge in place (#816). A
+  challenge of one purpose answers no other. Nobody's challenge is removed to make room for another's: anyone may
+  ask for a sign-in challenge, and a flood of them must not take the operator's away. Unanswered
+  ones are swept out after their five minutes. One client address holds at most ten live sign-in
+  challenges of other attempts (`passkeys.SIGN_IN_PER_ADDRESS`, the column `client_address`,
+  migration op004); above that it gets 429 and no row, while an attempt asking again replaces its
+  own (#827 F1: the audit of §11 filled the table with 3,000 rows from one client). The cap is per
+  address, not global: a global one would let a flood shut out the operator's passkey. An IPv6
+  client owns many addresses; the per-account waits still hold.
+- **An answer is input from outside.** At most 32,768 characters are parsed, and whatever the
+  parsing or the check raises is a refusal, never a server error: at the sign-in that runs after
+  the password check, and an error there would tell that the password was right.
+- **Sign-in.** Name and password travel with the passkey's answer in one post, checked in the old
+  order: count the attempt, the password, then the factor. The operator is verified on the device
+  (PIN, finger, face) at every use and the passkey is stored on it (discoverable), so the challenge
+  names no credential and the sign-in page tells nothing about any account. A wrong password, a
+  wrong or foreign passkey, a spent or expired challenge and another site's origin get the one
+  sentence of every refusal and count toward the same waits. A post with no factor at all (Enter
+  after the password) gets the same sentence before anything is counted or looked at: the
+  password is not checked, so it tells nothing, and it is no "password known" in the audit
+  (#816; the step-up does the same).
+- **A copy shows.** A signature counter that does not grow is refused, audited as
+  `operator.sign_in_failed` (at the step-up `operator.step_up_failed`) with `reason` `counter`
+  and pushed to `ops`; passkeys a platform syncs send 0 every time and are exempt. A device that holds a passkey of the account is left out of the next
+  registration, so two passkeys are two devices.
+- **The page `/factors`** lists the passkeys and registers, names and removes them, proposes a new
+  TOTP secret (in force only after a code of it came back, so a secret that never reached the app
+  replaces nothing) and removes TOTP. The account always keeps TOTP or two passkeys; at most ten
+  passkeys.
+- **Step-up is one dependency**, `require_step_up` in `dashboard/app.py`: the session showed a
+  second factor in the last five minutes, the sign-in's (a recovery code too) or one given on
+  `/step-up`, which takes a passkey or a TOTP code and never a recovery code. Wrong answers there
+  count and wait as at the sign-in. A stale request is sent to `/step-up` and back to a path of
+  this site; a stale write is dropped, never replayed. Today it stands before a customer's call
+  list, the log of one call and every step of a customer's manage page; the later parts name it
+  on their routes. The changes of a factor have their own, next bullet.
+- **The factor changes have a dependency of their own**, `require_factor_step_up` (D37, #884):
+  `Operator.fresh_for_factors` reads `operator_sessions.passkey_stepped_up_at` (migration op006),
+  set only by a passkey on `/step-up`, never by the sign-in; without a passkey on the account it
+  falls back to `require_step_up`'s rule. A stale or TOTP-only request goes to
+  `/step-up?next=...&for_factors=1`, which offers the passkey alone, and the factors page links
+  there. The check runs once more under the account's row (`access._locked` with `now`, and
+  `passkeys.register` with `passkey_step_up`), so a first passkey that another session registered
+  after the route's check counts too (review of #884): the change is dropped and the browser goes
+  to the passkey step-up (`access.PasskeyNeeded`), a registration is refused. Two consequences, by D37's design: a
+  session that registered the account's first passkey with TOTP (the owner or a thief with the
+  password and a code) must step up with a passkey before any further change, so the owner who
+  finds a passkey that is not theirs removes it with the break glass, not with TOTP; and a browser
+  without the WebAuthn JSON helpers (`api/gui/ts/passkey.ts`) cannot change factors of an account
+  with a passkey, the step-up page says so.
+- **Audit and push.** A new or removed passkey, a new or removed TOTP secret, a used recovery
+  code, and on the host a new account and the break glass are in the operator's audit and go as a
+  push to the `ops` topic from one place, `dashboard/push.py` (#827 F3, 17.11.2026). It is the
+  outbox pattern of a customer's stack in the operator database: the request writes a row of
+  `operator_pushes` (migration op005) right after the change and its audit row, and a sender
+  thread of the dashboard's process posts it every five seconds to the operator stack's own push
+  server (`push`, ntfy, the image and closed start of a customer's; `OPERATOR_PUSH_URL`, by
+  default `http://maex-ops-push-1/` over the internal `edge`) with the token of its user
+  `dashboard`, as a stack's monitor publishes (`api/jobs/monitor.py`). A push server that is
+  down or refuses never holds the request up and never loses the push: the row is retried with
+  the outbox's waits (5 s, 30 s, 2 min, then every 10 min) for as long as it takes, oldest first,
+  and each failure is a warning in the log. Outside dev and test the dashboard refuses to start
+  without `OPERATOR_PUSH_URL` and a token of at least 32 characters (the review of this pull
+  request: a stack started without them would only queue, and a takeover stay silent); in dev
+  and test the rows wait and no sender runs.
+  The operator's phone reads `ops` with the user `ops` through the shared Caddy at the host of
+  `NTFY_BASE_URL`, a site of `ops.caddy` that gets no proxy secret; `dashboard` may only write
+  there, `ops` only read, nobody else either. The push names the account and the change, never a
+  secret. A push that cannot even be queued (the database refused) is audited as
+  `operator.push_failed` and never fails the request it reports; the break glass writes the same
+  row when its push cannot be queued (#853). A push that was tried past the whole ladder of
+  waits (more than four attempts: a wrong token, a push server that is gone) shows as a red banner on
+  the dashboard's home page, counted by `push.stuck`; the row itself keeps waiting and goes out
+  once the server works (Claude's choice, awaiting Maxi: a banner on the page the operator opens
+  anyway, no new endpoint or alert). With no push server set (dev, test) no sender runs and
+  `stuck` stays 0, so the home page shows a second red banner while rows wait
+  (`push.unsent_without_server`, #858). A removal of TOTP
+  that was off already (a double post, an older tab) is neither audited nor pushed (#816). The
+  break glass removes every passkey too.
+- **Browser side.** `api/gui/ts/passkey.ts`, compiled, no inline script: it fetches the options,
+  runs the ceremony and puts the answer into a hidden field of an ordinary form. A browser without
+  the WebAuthn JSON helpers (before Chrome 129, Firefox 119, Safari 18.4) shows no passkey button;
+  the code still signs in. A session that ended while the page was open (the options answer 401)
+  sends the browser to the sign-in.
+- **Deep review (#816, 17.11.2026).** The catch-up review of #807 found no security hole; five
+  robustness findings are fixed above, and Maxi's answer to its question is built: a removed
+  factor or a new TOTP secret ends the account's other sessions (`access._end_other_sessions`,
+  audited as `operator.other_sessions_ended`, named in the push; D39). Three plausible P3 are
+  kept as they are (docs/01 "Made Assumptions").
 
 ## 6. Customer login (#570)
 
@@ -157,6 +442,12 @@ the second builds against.
   `/gui`). `GUI_PROXY_SECRET` stays: it keeps requests from inside the Docker networks out of the
   view, independent of the login. The login holds in every environment, dev and test included, so a
   stack started with the wrong `ENV` is not open.
+- **The front page is the sign-in page (#571, D35, Maxi 16.11.2026):** it lives on the customer's
+  own host name, never on a site shared by several customers. `/` answers with a redirect to the
+  view and carries nothing; `/gui/anmelden` shows the restaurant's name, three sentences about the
+  product and the password field, and sets no cookie but the CSRF token. No second sign-in code
+  exists: the form posts to the route above, with its waits, device cookie, CSRF token and
+  same-site check. The redirect's target is fixed, so no link can send a browser elsewhere.
 - **The account lives in the customer's own database** (`gui_accounts`, one row per tenant, unique),
   bound to the stack's `tenant_id`. Every GUI route (`gui/session.py`, a dependency of the whole
   router) resolves the session and checks that its tenant is the stack's tenant; the session of one
@@ -169,7 +460,7 @@ the second builds against.
   through a setup link. The PIN has 4 to 6 digits and is **one team PIN per restaurant**, set with
   the password (assumption, `docs/01_STATUS.md`): staff share the tablet, so a PIN chosen per device
   would be known only to whoever signed it in. **The operator sees and changes the team PIN, and the
-  admin PIN** (Maxi 09.11.2026): until the dashboard has it (#571) with
+  admin PIN** (Maxi 09.11.2026): in the dashboard (#571, §5 "A customer's page, write") or on the stack with
   `python -m api.jobs.gui_access pin` and `pin --set <digits>`, `--admin` for the admin PIN, each
   look and change in `audit_log` without the value. So the PINs are stored readable (migration 031): a hash of 4 to 6 digits held
   nobody with the database back anyway, since a million guesses take an afternoon offline, and
@@ -189,9 +480,15 @@ the second builds against.
   the staff could sign in again at will, so ending the session would cost a guesser nothing. Nor
   do they end it on a lost tablet (Maxi 09.11.2026, review of #587): the board stays usable for the
   team, the admin PIN guards the owner's settings only, and a lost tablet is signed out by the
-  operator (T8). A new admin PIN from the operator starts without a wait and ends owner rights still
-  open on any device. Each right and wrong admin PIN stands in `audit_log` (`gui.admin_unlocked`,
-  `gui.admin_pin_wrong`).
+  operator (T8). On a locked device it is different (#827 F4, 17.11.2026): the admin PIN page
+  unlocks it too, so a wrong admin PIN there also counts on the lock page's five tries
+  (`gui_sessions.pin_failures`), together with wrong team PINs, and the fifth ends the session; a
+  guesser on a lost tablet gets five tries, not about 860 a day. Every third wrong admin PIN in a row,
+  and a session they ended, push to the owner and to `ops` (`admin_pin.wrong`, migration 040, with
+  the count, the device's name and whether it was signed out; never the PIN typed). A new admin PIN
+  from the operator starts without a wait and ends owner rights still open on any device. Each right
+  and wrong admin PIN stands in `audit_log` (`gui.admin_unlocked`, `gui.admin_pin_wrong`, and
+  `gui.session_ended` with the reason `admin_pin_failures`).
 - **Sessions per device:** cookie `__Host-session` (`Secure`, `HttpOnly`, `SameSite=Lax`, path `/`;
   `maex_session` without `Secure` in dev and test, which run over plain HTTP), a random 32-byte
   token whose SHA-256 is the server-side row (`gui_sessions`). The session slides for 30 days on use
@@ -204,20 +501,53 @@ the second builds against.
   always visible; new orders with their sound), and the next change goes to the PIN page
   (`/gui/entsperren`, `HX-Redirect` on a 401); a change behind the admin PIN goes to the admin PIN
   page instead, which unlocks too, so the owner's click is not lost to the team PIN (#597). Only a change moves the 15 minutes; reading and the
-  event stream do not. Five wrong PINs in a row end the session; the device then needs the password.
+  event stream do not. Five wrong PINs in a row end the session, wrong admin PINs typed on the
+  locked device counted with them; the device then needs the password.
   The PIN is never a login: it only unlocks a session that already exists.
 - **Devices:** each session is a device with its first and last use and the browser's name. In (a)
   the operator lists and signs them out on the stack (`python -m api.jobs.gui_access devices`,
-  `sign-out <id>` or `--all`), until the dashboard has it (#571). The owner's device list
+  `sign-out <id>` or `--all`); since 16.11.2026 the dashboard does both too (#571, §5). The owner's device list
   (`/gui/geraete`, under "Einstellungen" in the header) has "Gerät abmelden" behind the admin PIN (#570 b).
   A device signed out there loses its open event stream on the next tick (#597), and its admin PIN
   form answers with the sign-in, not with a wrong PIN.
 - **Two levels in the admin area (D34 point 3, the admin PIN built in (b)):** staff with the shared login, no PIN: call
-  mode, team number and the hours of a given date (a special day). The owner, with an admin PIN
+  mode, team number and the hours of a given date (a special day), and (Maxi 17.11.2026, #827 F6)
+  the standard wait per service in the header and the answer to the register's open price on the
+  board, which takes only the price the register stored. The owner, with an admin PIN
   asked when a protected part is first opened and then unlocked on that device for 60 minutes:
-  delivery zones, fees and minimum order, the standard weekly hours, the device list. Built: the
-  device list; the other pages do not exist yet and take `require_admin` (`gui/session.py`) when
-  they come.
+  delivery zones, fees and minimum order, the standard weekly hours, the device list, and since
+  17.11.2026 (#827 F6) the floor plan (`/gui/raumplan`: the page, its data and both writes) and the
+  reservation notice per weekday (`/gui/vorlauf`: the sheet and its write), since tables, seats and
+  a notice too long turn callers away. Built: the
+  device list, and since 17.11.2026 the standard weekly hours (the tab "Zeiten", `/gui/zeiten`, #571):
+  the page, each of its parts and both writes take `require_admin` (`gui/session.py`), so nothing
+  of it is read or written without the admin PIN, and each write carries the CSRF token and
+  `HX-Request` and leaves an audit row with the actor `gui:owner` and the hours before and after.
+  A weekday's form sends a token of the hours it showed; a save against hours changed since is
+  refused, and a form refused for a typing error keeps the token it was typed against, so its
+  corrected save cannot write over another device's change. Every answer under `/gui/` says
+  `Cache-Control: no-store`, the parts htmx fetches and the refusals too, set in one place (the
+  middleware `no_store` in `gui/session.py`, #827 F2); only the view's own files under `/gui/static/`
+  keep `no-cache`. A part fetched by
+  htmx without the PIN leads back to its page after the PIN, never to itself. On that tab the owner also sets a date's hours directly: they hold at once without a
+  check card or a push, which exist to tell the owner what the staff did, and a date whose staff
+  change is still open is decided on its card first. The staff's own way to a date's hours (the
+  sheet, next point) is unchanged, and so is what waits for the owner. Since 17.11.2026 the
+  delivery zones with fee and minimum order are built too (the tab "Lieferung", `/gui/lieferung`, #571
+  plan number 8): the page, the list, both forms and both writes take `require_admin`, each write
+  carries the CSRF token and `HX-Request`, answers `no-store` and leaves an audit row with the actor
+  `gui:owner` and the zone before and after. Every value is checked in `domain/delivery/owner_zones.py`
+  (money decides there, never in the form), a zone is found by its id and this restaurant's tenant
+  only, and a save runs under the lock of the settings row, so two devices cannot each add one postal
+  code to a different zone; the import (`scripts/seed_zones.py`) takes the same lock. Typed text comes back escaped, and a field the owner changed is cut to a bound (a field sent back as it was shown comes back whole). Since 17.11.2026 the requests of data subjects are behind the admin PIN too (the tab "Daten", `/gui/daten`, #571 plan number 10): the page, both parts and all four writes take `require_admin`, each write carries the CSRF token and `HX-Request` and answers `no-store`. The check of a person is a POST whose body holds the name, days, address and numbers; nothing of them is in an address, a log line or an error text, the refusal the owner reads is a fixed sentence per case, and the rows come back only in the answer to that check. A look is in the audit log, committed, before a row is read (`data_subject.rows_read`, actor `gui:owner`), and only for a request still open, found by its reference and this restaurant's tenant. The page cannot erase: `erase` and `record_objection` have no route. The detail of one call (`POST /gui/anrufe/anruf`, the restaurant's login) follows the same rule: the id in the body, the audit row `gui.call_read` before the read, no number and nothing said in the answer, one answer for every id that is no call of the list.
+  The tab "Menü" (`/gui/menue`, #571 plan number 9, 17.11.2026) is one GET route that only reads and
+  takes the restaurant's login without the admin PIN, like the call list: it shows the active dishes
+  with their prices, which the restaurant publishes, whether an allergen row is kept (never which),
+  and the register's open price, which the board shows the same staff already. Its three address
+  fields are read leniently and bounded (60 characters of search text, six digits of a page number),
+  the search runs in the process over this restaurant's rows and never reaches SQL as text, every
+  value is escaped, and the page writes nothing, so it needs no CSRF token. A later write on it
+  (an alias, a price answered from the row) is decided then, with its own lock.
 - **Staff changes are temporary and reviewed (D34 point 4, built in (b), the push in #588):** a staff change to a date's hours
   expires with that date. Today's changes hold at once; for a later date the restrictive direction
   (closed, shorter hours) holds at once, while longer or extra hours beyond today wait for the
@@ -228,25 +558,35 @@ the second builds against.
   team number is today's (`service_config.team_phone_today`) until the end of the business day, and
   the staff choose it only among the numbers the dialplan dials (`TEAM_PHONE` and
   `TRANSFER_TARGETS`, T-10.13), so the tablet can never name a number that would not ring; the
-  transfer and the call routing read it. A date's hours: today's and shorter ones hold at once, and so
+  transfer and the call routing read it, and so do the dialplan's own outage legs, which ask
+  `voice` for it at the start of a call and again before each such leg (#835, #861). Only when
+  `voice` cannot be asked at the start (down, refusing the media token, the database down) do
+  they ring `TEAM_PHONE` of `.env` first; a leg nobody takes at today's number is followed by one
+  at `TEAM_PHONE` (docs/20 §5). A date's hours: today's and shorter ones hold at once, and so
   does a return to what held before the staff came (the staff take their own change back); longer
-  or extra hours for a later date wait on the card. One open card per kind and date: a second
+  or extra hours for a later date wait on the card, and so do times on a date "like" another
+  weekday, today's too and after a held closure of that date (#710). One open card per kind and date: a second
   change moves its "after" and keeps the "before" of the first, so "Zurücknehmen" always returns to
-  what held before the staff came. The holiday answers of T-9.5 stay as they are (Maxi 09.11.2026).
+  what held before the staff came. The holiday answers of T-9.5 stay as they are (Maxi 09.11.2026);
+  one given while the date's card waits becomes that card's "before" (#802), so undo returns to it
+  and later times are checked against its weekday. A request for the exact hours of the "before"
+  is the "before", its holiday name included, and holds at once. Hours whose night reaches into the next date's first
+  span, or that start inside the night before, are refused for the staff, the owner and the holiday answer, as the weekly
+  writer refuses them (#862).
   The call mode gets the push but no card (Maxi 09.11.2026). The push (#588): an outbox event in
   the same transaction as the change (`team_phone.changed`, `day_hours.changed`,
-  `call_mode.changed`, migration 034), which n8n publishes to the topics `owner` and `ops`
+  `call_mode.changed`, migration 034; `admin_pin.wrong` of the admin PIN above, migration 040), which n8n publishes to the topics `owner` and `ops`
   (`n8n/team_events.json`). It carries the day and the change only, the team number the one number;
   a tap that changes nothing and the owner's own answer on a card push nothing.
 - **Password reset (D34 point 5):** a one-time setup link made by the operator, valid 24 hours,
   shown once, stored hashed; a newer link replaces an older one, and setting the password signs out
-  every other device. Until the dashboard exists (#571) the operator makes it on the stack:
+  every other device. The operator makes it in the dashboard (#571, §5) or on the stack:
   `python -m api.jobs.gui_access link`. The code travels in the link's fragment (`#...`), which no
   browser sends, so no access log or proxy sees it; the page's script puts it into the form. An
   e-mail reset link is decided too but waits for Maxi's choice of the mail service (provider, cost,
   data processing agreement): issue #584. No security questions.
 - **Lost tablet (D34 point 6, T8):** the owner signs out one device in the admin area; the
-  operator removes a device (today with `gui_access sign-out`) and makes a new setup link, which
+  operator removes a device (in the dashboard, or with `gui_access sign-out`) and makes a new setup link, which
   changes the password and signs out every device.
 - **Brute force** (Maxi 09.11.2026): counters per account (on its row) and per client address
   (`gui_login_failures`) in the customer's database. One or two wrong passwords cost nothing; every
@@ -261,11 +601,19 @@ the second builds against.
   its attempts count on that device alone and skip the account's and the address's waits, so the
   restaurant's own tablets still get in. The cookie opens nothing by itself: it still needs the
   password, and a stolen one gets the device's own wait, as a single address does (OWASP "Slow
-  Down Online Guessing Attacks with Device Cookies"). A new browser during such an attack waits. The client address is the last entry of Caddy's
+  Down Online Guessing Attacks with Device Cookies"). A new browser during such an attack waits.
+  Signing out every device (a new password by setup link, the operator's or the command line's
+  "all devices") also forgets every device cookie of the restaurant, so one kept by someone who
+  knew the old password guesses on the account's count again (#888 B1); signing out one device
+  keeps them. The client address is the last entry of Caddy's
   `X-Forwarded-For`, trusted only outside dev and test, where only Caddy reaches the view.
 - **CSRF** as today (docs/06 §9) plus a check on every write that `Origin` (or, without it,
-  `Sec-Fetch-Site`) names this site; a browser sends one of them on every cross-site write, and
-  `Origin: null` is refused. The sign-in, setup and PIN forms carry the page's CSRF token as a field
+  `Sec-Fetch-Site`) names this site; a browser sends one of them on every cross-site write. `Origin: null` passes
+  only with `Sec-Fetch-Site: same-origin` (16.11.2026, `api/core/origin.py`): under the proxy's
+  `no-referrer` policy a browser sends `null` with a plain form post of the site itself, so every
+  plain form (sign-in, setup, PINs, and the operator's sign-in) was refused in a real browser;
+  `null` from a sandboxed frame or a cross-site redirect comes without `same-origin`, which no
+  page can set, and stays refused, as does a browser too old to send the header. The sign-in, setup and PIN forms carry the page's CSRF token as a field
   (login CSRF).
 - **Second factor for customers:** not required at start; the tablet session is long and the admin
   area has the admin PIN. Offered later as an option if a customer asks.
@@ -316,6 +664,11 @@ guest's data.
 - Routes under `/v1/ops/*`, behind `OPS_TOKEN` (constant-time compare, refused at start when weak,
   distinct from every other token). Caddy answers 404 for `/v1/ops/*` on the customer's site, as it
   does for every path not on the public list today (`api/tests/test_deploy_exposure.py` keeps it so).
+  The api answers `/v1/ops/*` over `ops` only (#888 C4, 22.11.2026): a request whose connection
+  arrived at another of its addresses, so over `backend` or `edge` from the dispatcher, `voice`,
+  n8n or the push server, gets the 404 of an unknown path before the token is read. The network
+  is told by the connection's local address against the api's alias on `ops` (`OPS_NETWORK_HOST`,
+  `api/ops/network.py`, docs/13 §8), so `OPS_TOKEN` is no longer the only barrier there.
 - **Default answers carry no personal data:** health, call mode, last call, counts of calls and
   orders today, print bridge heartbeat, backup age, open alerts, the four figures of docs/06 §4,
   menu status (items, price differences, missing allergens).
@@ -327,11 +680,81 @@ guest's data.
   guest names) and `X-Ops-Actor`, and writes the customer's `audit_log` with actor
   `operator:<account>` and the reason before it answers. No bulk export over this API; an export is
   a data subject request (docs/09 §2) or offboarding (#576).
+  Built (#571, fifth part, 16.11.2026): `GET /v1/ops/calls` (docs/04 §Ops API), the calls of one
+  business day. The reason is a category of a fixed list and a ticket or issue number
+  (`api/core/ops_reason.py`, shared by both sides), never a sentence: a sentence would sooner or
+  later hold a guest's name, and the reason is copied into two audit logs. The audit row is
+  committed before a row is read. The stack sends no phone number at all, only a count per caller
+  of the day; the day must be one the team's own list reaches (14 business days).
+  Built (#571, seventh part, 16.11.2026): `GET /v1/ops/calls/<call_id>` (docs/04 §Ops API), one
+  call for the dev tools (§5): its row without the number and the session id, and its tool calls
+  as name, duration, ok and error code, at most 200 of them, each value cut to what it should be
+  (the column is JSON). Same headers, and the audit row `ops.call_read` with the reason and the
+  call's id is committed before the row is read. A call the restaurant does not have, another
+  restaurant's, or one older than the call list reaches is `"call": null` under the restaurant's
+  name: the code `not_found` already says "no restaurant in the stack", and the dashboard must
+  not read one as the other. The route writes nothing but its audit row.
 - **Writes** (settings, call mode, tokens) are separate routes, each writing `audit_log` with the
   operator as actor; changing the call mode or team number also pushes to `owner` and `ops` (T12),
   through the domain functions the tablet uses (`domain/status/config.py`, `staff_changes.py`).
+  Built (#571, sixth part, 16.11.2026; docs/04 §Ops API): `GET /v1/ops/access` and seven post
+  routes for both PINs (show, set), the devices (sign out one or all), a setup link, the call mode,
+  today's team number and (#811) the standard team number. No tokens yet ("Token erneuern", §7). Each needs the reason and the account, as
+  guest data does, and the customer's key (`X-Ops-Customer`): a write to a stack registered under
+  the wrong customer would have happened before the dashboard read the answer's name, so the stack
+  compares the key with its own before anything, and a restaurant without a key takes no step at
+  all. Since #811 the reads (`/status`, `/figures`, `/calls`, `/calls/<id>`) check it the same
+  way, so a read of guest data from the wrong stack writes no audit row and sends no call.
+  `domain/operator.py` commits a row `ops.<step>` with the reason first and then calls the
+  function the command line or the tablet uses with the operator as actor: one set of rules, and
+  the step's own audit row and push are the ones that existed. A row `ops.<step>.outcome` with
+  the ask's id and `done`, `refused` or `failed` follows (#811), so an ask is never left to be
+  read as a refusal, a crash or a no-op by guessing. Today's team number follows the staff's rule (the standard stays,
+  the owner keeps or undoes it on the check card, which reads "Vom Betreiber geändert", #811
+  question 1). The standard number (#811 question 2, Maxi 17.11.2026) has a route of its own,
+  checked as today's and pushed to `owner` and `ops` with `"standard": true`, without a card: a
+  dead standard line no longer holds again every morning because the owner did not answer the
+  card (hard rule 5). Both pushes say the operator changed it (`"by": "operator"`) and name the
+  operator's account (`"actor"`), as the access pushes do. Every step that changes something sends the version of its page
+  (`seen`) and is refused with 412 when the restaurant changed since; the check runs after the
+  reason's row, with the settings row and the login locked, so a change by the owner waits for
+  the step or the step sees it. A sign-out says its device or `all` in words.
+  A setup link, a PIN set, a PIN shown (#888 A1: a look opens the view as much as a new PIN) and
+  a sign-out that ended a session also push to the owner and to `ops`
+  (`operator_access.changed`, migration 041; #811 question 3, decided 17.11.2026), naming the
+  operator's account and the step (which PIN, how many devices), never the PIN, the link or a
+  device's name: the owner sees at once what the operator did, and a taken-over dashboard is
+  seen sooner (T11). The push goes with the step's outcome row, so a step that was refused or
+  broke pushes nothing; a sign-out of a device that was gone already pushes nothing either. No PIN and
+  no link is in an audit row, a log line or an address; the request log holds the path only.
+  An operator account cannot be named `cli`: `operator:cli` is the command line's actor in a
+  stack's audit log.
 - The actor header is trusted only because only the dashboard holds `OPS_TOKEN`; the dashboard sets
   it from the session, never from user input.
+- **A stack's answer is input from outside** (built with the customer list, 16.11.2026,
+  `api/dashboard/customers.py`): a stack that was taken over may answer anything. The dashboard
+  reads at most 64 kB as they arrive (it asks for no packed answer and takes none, so nothing
+  is unpacked before the limit), gives the whole list five seconds (a stack that trickles its answer
+  is a row "answers too slowly" and delays nobody: every stack has a worker of its own, so none
+  waits unasked behind slow ones), checks every field (types, lengths, at most 50
+  alarms, times with an offset and between 2000 and 2100, so none overflows when it is shown), requires the answer to name the customer the row was asked for ("another customer
+  answers at this address" otherwise; a stack whose restaurant has no `customer_key` is a red row
+  "its restaurant has no customer key yet", because nothing ties its answer to the customer), and
+  shows everything as text. Counts are at most 10^9 and the list's cells break a long word, so one
+  stack cannot widen the table for all. Every page and the list's refresh are sent with
+  `Cache-Control: no-store`: after a sign-out the Back button shows nothing from the cache. The token goes to the
+  registered address only: no redirect is followed and no proxy variable of the host is read. Whatever
+  one customer's row trips over, the others are still shown: that row reads "could not be asked"
+  and the kind of failure with its place in the code goes to the log, never its message (that can
+  quote a header with the token). The customer's page asks through the same two functions (`_fetch`,
+  `_at_once`), so the rules hold for every question: the figures have the same 64 kB, the calls of a
+  day 512 kB and at most 2000 rows, every count is at most 10^9 and every percentage at most 100 (a
+  number of a thousand digits is valid JSON too), every day lies between 2000 and 2100 (the page
+  counts days back from the stack's business day), and an answer for another day than the one asked
+  is no answer. The log of one call has the 64 kB, at most 200 tool calls, a duration that is a
+  number between 0 and an hour (no NaN), and an answer about another call than the one asked is no
+  answer. A caller's header can never replace the token's. A 404 is "does not know this
+  question (an older version?)", not a missing restaurant: the two sides deploy apart.
 
 Rejected:
 
@@ -349,6 +772,27 @@ change (`check_sites` in `scripts/new_stack.py`, tested in `api/tests/test_new_s
 `python3 scripts/new_stack.py --check-sites`). The shared Caddy also resolves the bare names `api`,
 `n8n` and `push` on every stack's `edge` network, so a site file must never use them; the check
 refuses one that does.
+
+**An existing stack without a customer key (#853).** A restaurant made before migration 035 has
+`tenants.customer_key` NULL. Its `/v1/ops/status` and `/figures` answer a conflict ("no customer key"
+in the dashboard's row), and `create_tenant` does not adopt it: it refuses to provision a database
+that already holds a tenant with another key (`domain/provision.py`, one customer per stack, D32).
+No code path gives such a stack its key, on purpose: the key is what ties a stack's answers to the
+customer the dashboard asked for, so a path that sets it over the API would be a new way to claim
+that tie. With what exists today the operator on the stack's host does it once, by hand, after a
+backup (`scripts/backup.sh`, docs/13 §4), in the stack's own database:
+
+```
+docker compose -p maex-<key> exec db psql -U <POSTGRES_USER> -d <POSTGRES_DB> \
+  -c "UPDATE tenants SET customer_key = '<key>' WHERE customer_key IS NULL"
+```
+
+(`POSTGRES_USER` and `POSTGRES_DB` are in the stack's `.env`.) It changes one row (a stack holds
+one tenant); the CHECK on the key's form and its unique index refuse a bad or a taken key. Then
+`python -m api.dashboard.cli customer-add <key> <api url>` on the operator host. The statement
+runs under the host's root and so under the host's own protection; it leaves no `audit_log` row,
+so the operator notes it in the runbook. Claude's choice, awaiting Maxi: whether to keep this
+manual step or to add a break-glass command with an audit row; none is built.
 
 ## 9. Uploads (#572)
 
@@ -379,7 +823,7 @@ exploit, which sanitising in a sealed container addresses.
 
 | Library | For | Where |
 |---|---|---|
-| `webauthn` (py_webauthn) and what it pulls in | passkeys, operator dashboard | operator stack only |
+| `webauthn` (py_webauthn) and what it pulls in (`cbor2`, `cryptography`, `pyOpenSSL`, `pyasn1`) | passkeys, operator dashboard | in the shared lock file since 16.11.2026, because the dashboard runs from the API's image; imported by `api/dashboard/` only |
 | Pillow, a PDF rasteriser | sanitising uploads | the sanitiser image only |
 
 Each goes into `requirements.in` with hashes (`make lock`) in the PR that first uses it. TOTP, scrypt
@@ -394,7 +838,8 @@ and tokens use the standard library.
    the cross-site test of §8.
 3. #571 dashboard with the operator login of §5 and the ops API of §8.
 4. #572 menu intake with the upload rules of §9.
-5. **Security audit, kind component (docs/09 §5), on Opus 5.5 at `xhigh`**, before `ops.<domain>`
+5. **Security audit, kind component (docs/09 §5), on Opus 5.5 at `high`** (`xhigh` only after a
+   stall, CLAUDE.md "Model Routing"), before `ops.<domain>`
    or a customer login is reachable from outside; covers §5 to §9 against this threat table. A P1
    blocks the go-live of that part.
 

@@ -14,7 +14,7 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from datetime import time as clock_time
 from pathlib import Path
 from types import SimpleNamespace
@@ -2047,6 +2047,29 @@ def test_a_named_number_is_forgotten_after_the_handover_window(session, tenant):
     assert session.scalars(select(Callback)).all() == []
 
 
+def test_a_named_number_is_dropped_when_a_later_call_ends(session, tenant):
+    """A team that answered sends no report: the number and the card stayed
+    in memory until the next handover or report, overnight on a quiet line
+    (#861). The end of any later call drops them; the call's own end keeps
+    them for the report of its team leg."""
+    clock = Clock()
+    case = {
+        "transcript": [
+            {"role": "customer", "text": "Meine Nummer ist 0721 5551234."},
+            {"role": "customer", "text": "Ich will mich beschweren."},
+        ]
+    }
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port, clock=clock)
+    sid = port.play(case, handler)
+    assert sid in handler._named_phones  # its own end keeps it
+
+    clock.now += handler_module.NAMED_PHONE_SECONDS + 1
+    port.play({"transcript": []}, handler)  # a caller who hangs up at once
+
+    assert sid not in handler._named_phones
+
+
 def test_without_any_number_the_report_has_no_card(session, tenant):
     case = {"transcript": COMPLAINT["transcript"]}
     port = FakeTelephony()
@@ -2173,6 +2196,36 @@ def test_an_outage_with_the_number_unreadable_rings_the_one_read_at_the_start(
     assert port.transfers("s-1") == [TEAM_PHONE]
 
 
+def test_a_database_failure_does_not_wait_on_a_second_read_of_the_number(
+    session, tenant, monkeypatch
+):
+    """Inside a turn the outage sentence is queued until the failure is
+    handled, so a read of the number after a database error held the sentence
+    for another connect timeout of silence (ledger #764). The database is the
+    failure: the call's own number, unread."""
+    reads = []
+
+    def counted(session, tenant_id, now=None):
+        reads.append(tenant_id)
+        return CHANGED_PHONE
+
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    monkeypatch.setattr(handler_module, "current_team_phone", counted)
+
+    def lost(live, text):
+        raise OperationalError("SELECT", {}, Exception("connection lost"))
+
+    monkeypatch.setattr(handler, "_turn", lost)
+    handler.on_user_turn("s-1", "Einen Tisch fuer vier bitte")
+
+    assert reads == []
+    assert port.says("s-1")[-1] == SAY_OUTAGE
+    assert port.transfers("s-1") == [TEAM_PHONE]
+
+
 def test_a_handover_without_a_named_target_dials_the_number_that_holds_now(
     session, tenant
 ):
@@ -2191,6 +2244,47 @@ def test_a_handover_without_a_named_target_dials_the_number_that_holds_now(
 
     assert handler._team_phone(live) == CHANGED_PHONE
     assert live.team_phone == CHANGED_PHONE
+
+
+def _today(session, tenant, number: str | None, until: datetime | None) -> None:
+    session.execute(
+        update(ServiceConfig)
+        .where(ServiceConfig.tenant_id == tenant.id)
+        .values(team_phone_today=number, team_phone_today_until=until)
+    )
+    session.commit()
+
+
+def test_the_dialplan_is_told_the_number_that_holds_now(session, tenant):
+    """The legs the dialplan dials on its own (#835): the standard number,
+    today's while it holds, the standard again after it."""
+    handler = handler_for(session, tenant, FakeTelephony())
+    assert handler.team_phone() == TEAM_PHONE
+
+    _today(session, tenant, CHANGED_PHONE, NOW + timedelta(hours=1))
+    assert handler.team_phone() == CHANGED_PHONE
+
+    _today(session, tenant, CHANGED_PHONE, NOW - timedelta(seconds=1))
+    assert handler.team_phone() == TEAM_PHONE
+
+
+def test_the_dialplan_is_told_no_number_without_a_database(session, tenant):
+    """Empty, never an exception: the dialplan keeps the number it had,
+    TEAM_PHONE of its environment at the call's start (rule 5)."""
+
+    def no_database():
+        raise OperationalError("SELECT 1", {}, Exception("connection refused"))
+
+    handler = handler_for(session, tenant, FakeTelephony(), session_factory=no_database)
+    assert handler.team_phone() == ""
+
+
+def test_the_dialplan_is_told_no_number_for_a_tenant_without_its_config(
+    session, tenant
+):
+    handler = handler_for(session, tenant, FakeTelephony())
+    handler._tenant_id = uuid.uuid4()
+    assert handler.team_phone() == ""
 
 
 @pytest.mark.parametrize(("length", "kept"), [(40, True), (41, False), (200, False)])

@@ -33,7 +33,14 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
             name="ck_reservations_call_source",
         ),
         CheckConstraint("party_size > 0", name="ck_reservations_party_size"),
+        # Only the team books outside the hours (#819): the agent never does.
+        CheckConstraint(
+            "NOT off_hours OR source = 'tablet'",
+            name="ck_reservations_off_hours_tablet",
+        ),
         Index("ix_reservations_tenant_reserved_for", "tenant_id", "reserved_for"),
+        # The seat count asks per draft for a newer row of its call (#908).
+        Index("ix_reservations_call_id", "call_id"),
     )
 
     call_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -54,6 +61,19 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     )
     note: Mapped[str | None] = mapped_column(Text)
     idempotency_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    # A self-test's card (#574): shown on the tablet as TEST, never sent out.
+    is_test: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    # The team booked it outside the opening hours on purpose (#819, migration
+    # 042): set by `confirm_tablet` from the hours at the tap, never afterwards.
+    off_hours: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    # When the guest went back to this draft and its key replayed it (#908,
+    # migration 044): the seat count orders a call's rows by this, else by
+    # `created_at`, which stays the read-back's anchor.
+    replayed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ReservationTable(TenantScoped, Base):

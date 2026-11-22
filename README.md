@@ -59,7 +59,7 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 | Reservations | built | Check a slot against hours and capacity, offer alternatives, book after the caller's yes; the team can enter one by hand on a table of the floor plan. |
 | Pickup and delivery orders | built | Search the menu, take the order, check zone, fee and minimum order for a delivery, read back, confirm. |
 | Conversation core | built | Understanding ladder, guards and escalation; a whole call runs in the text phone and in the evals without any telephony. |
-| Tablet view for the team | partly | Mode, wait times and switches in the header, today's reservations, orders and callbacks, live without reloading; pages for the owner behind an admin PIN. |
+| Tablet view for the team | built | Mode, wait times and switches in the header, today's reservations, orders and callbacks, live without reloading; pages for the owner behind an admin PIN. |
 | Kitchen slip | built | A print bridge in the restaurant fetches confirmed orders and prints them; a lost acknowledgement never prints a second slip. |
 | Team notifications | partly | Events leave through an outbox with retries, for push messages to the team's devices. |
 | Phone line and voice | partly | Our own voice layer: Asterisk, the service voice with its speech engines, and outage drills in which every failure ends at the team phone. |
@@ -90,13 +90,13 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 - `make test` and `make lint` run in container against real Postgres, ruff clean
 - CI additionally builds API image without local CA cert and checks startup, `/health`, and token auth (missing, wrong, valid) without bind mount
 - Specs for architecture, data model, tools, dialog, GUI, and evals are in `docs/`
+- The admin view (`docs/06_GUI.md` §4) runs in the browser: the four figures above every tab, the tabs Zeiten, Lieferung, Menü, Anrufe with the detail of one call, Kennzahlen, Daten and Geräte, the owner's parts behind the admin PIN. The menu tab reads; answering a price difference stays on the board's card, and eval results are shown in the operator dashboard only
 - Orders for pickup and delivery: the menu can be imported, searched, asked about and ordered from, and a delivery order checks its zone, fee and minimum order
 - A caller's allergy reaches the kitchen as a highlighted note the model writes, never without it once named, and a question about allergens beyond the maintained values goes to the team before `confirm` (legal check L13, L17)
 
 **Not yet working:**
 
 - No phone line yet. The own voice layer (`docs/20_VOICE_LAYER.md`) is built up to the speech engines: the call session (T-10.4), the AI telephone as Compose services `asterisk` and `voice` behind the profile `voice` (T-1.11), and outage drills on the workbench, `python3 -m scripts.voice_drill`, in which every way the AI telephone can fail ends at the team telephone. The speech engines run inside `voice` since T-1.11 part 2 (Whisper and Piper, the model files of the speech kit). Missing: the test at the pilot's router (T-10.1 step 2, T-10.2) and real voices (T-10.7)
-- The admin view (`docs/06_GUI.md` §4) is built in parts: the key figures, the device list and the owner's settings behind the admin PIN run in the browser; the tabs for menu, delivery and calls are still only a mockup
 - No real menu data yet: the CSVs come from the chat digitization (C1)
 - The conversation core runs against a rule-based stand-in for the model (`sim/scripted_llm.py`) by default and in CI. A real model can be switched in for the text phone and the evals with `--model <name>` (T-2.4). No real model passes the suites on target yet; the latest run with its date is the eval image under Status
 - Team notifications (`n8n/team_events.json` to the push server in the stack, D13) are built but reach nobody until the workflow is imported, the push users and token are set in `.env` and the team's devices subscribe (`n8n/README.md`); iPhones and iPads get a message at once only through an outside relay, which is not configured and not planned: the team's devices are Android devices or the web page on the tablet (D14)
@@ -115,7 +115,7 @@ Built means: it runs on the workbench and in CI with invented test data. Nothing
 | Version | 0.0.1 |
 | Stage | 0, Foundation |
 | Next Gate | G0: Budget · Rights · Telephony path · Vendor chosen · Stage order |
-| As of | 2026-11-11 |
+| As of | 2026-11-15 |
 <!-- /readme:status -->
 
 <p align="center">
@@ -237,7 +237,7 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | `DATABASE_URL` | Postgres database connection of the application |
 | `OWNER_DATABASE_URL` | Only on the server: the owner of the schema, for migrations, backup and restore. `DATABASE_URL` then names a role without superuser that `bash scripts/db_role.sh` sets up; in `ENV=prod` the API does not start as a superuser (`docs/13_DEPLOYMENT.md` §3). Empty on the workbench |
 | `AGENT_API_TOKEN` | Bearer token for the tool endpoints (`/v1/tools`). Outside `ENV=dev` and `ENV=test`, the API does not start on the placeholder, fewer than 32 characters, or any whitespace (`openssl rand -hex 32`) |
-| `TEAM_PHONE` | Extension for forwarding to team; the AI telephone's dialplan rings it whenever the service `voice` cannot say where a call goes |
+| `TEAM_PHONE` | Extension for forwarding to team; the AI telephone's dialplan rings it whenever the service `voice` cannot say where a call goes. Written in E.164 (`+49...`): no process starts on another form, since the staff choose and store E.164 numbers and the dialplan compares as written (#861) |
 | `VOICE_MEDIA_TOKEN`, `VOICE_NUMBER`, `VOICE_EAR`, `VOICE_MOUTH` | The service `voice` of the own voice layer (Compose profile `voice`): the token Asterisk presents, the number the AI telephone answers, and the speech engines (`whisper`, `piper`; `VOICE_EAR_DEVICE`, `VOICE_MOUTH_VOICE`, `VOICE_EAR_MEASURE` for test calls only, model files in `deploy/speech/run/models`). It does not start with one missing, with an engine it cannot load, or with the team on its own number (`docs/20_VOICE_LAYER.md` §7) |
 | `ACCESS_HOST`, `ACCESS_USER`, `ACCESS_PASSWORD` | Where the AI telephone registers: the pilot's router in the test phase, a SIP trunk in operation. Asterisk takes SIP only from the IPv4 addresses of the servers its `_sip._udp` SRV records name, or of `ACCESS_HOST` itself without such records, looked up when it starts; a lookup that fails stops the start until DNS answers. Read by Asterisk only |
 | `ACCESS_ALSO` | More names or IPv4 addresses Asterisk takes SIP from, comma-separated, looked up once at the start: the pilot's router calls from its public address, also through its VPN. Read by Asterisk only |
@@ -246,13 +246,14 @@ All settings come from `.env`. Template and description of all variables: `.env.
 | `MAX_CALL_SECONDS` | Maximum call duration a new tenant is seeded with. A call is ended by the tenant's own value (`service_config.max_call_seconds`) |
 | `PRIVACY_NOTICE_ADDRESS` | Where the privacy notice is, as a caller should hear it; a new tenant is seeded with it, and the phone greeting names the tenant's own value (`service_config.privacy_notice_address`). Empty: the greeting leaves the sentence out. Set before the first real call |
 | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | Language model of the conversation core, any server with the chat completions API. Empty by default: the text phone and the evals then run on the scripted stand-in. A local model is for the workbench with invented test data only (`docs/13_DEPLOYMENT.md` §0) |
+| `SITE_PREVIEW`, `SITE_LEGAL_DIR` | The public site (`api/site/`, `docs/13_DEPLOYMENT.md` §9): the private preview is on until `SITE_PREVIEW=false` (the customer sign-in greyed with its reason in sight, a form that cannot be sent, `noindex, nofollow` on every page); `SITE_LEGAL_DIR` names a folder outside the repo with the legal notice and the privacy text. `python -m scripts.site_export --zip` writes the site as plain files with an Apache `.htaccess` into `site-export/` and `site-export.zip` |
 | `BACKUP_PASSPHRASE_FILE` | File with the passphrase for database dumps, outside the repo. Without it `make backup` writes nothing (`docs/13_DEPLOYMENT.md` §4) |
 
 </details>
 
 ## Development
 
-The project is set up for Claude Code. `CLAUDE.md` contains the work instructions, `.claude/commands/` holds the commands `/start`, `/task`, `/done`, `/ship`, `/bug`, `/eval`, `/gate` and `/handover`. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
+The project is set up for Claude Code. `CLAUDE.md` contains the work instructions, `.claude/commands/` holds the commands `/start`, `/task`, `/done`, `/ship`, `/fix-bug`, `/eval`, `/gate` and `/handover`. Workflows: `docs/12_CLAUDE_CODE_PLAYBOOKS.md`.
 
 <details>
 <summary>Make targets and the text phone</summary>

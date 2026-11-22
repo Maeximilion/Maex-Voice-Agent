@@ -10,6 +10,7 @@ from pathlib import Path
 
 GUI = Path(__file__).resolve().parents[1] / "gui"
 DASHBOARD = GUI.parent / "dashboard"
+SITE = GUI.parent / "site"
 
 # Written by hand before the rule. Empty since #626: every script is compiled.
 NOT_YET_MIGRATED: set[str] = set()
@@ -42,7 +43,7 @@ def test_every_typescript_source_has_its_compiled_file():
 
 def test_no_template_carries_a_script_of_its_own():
     inline = set()
-    for root in (GUI / "templates", DASHBOARD / "templates"):
+    for root in (GUI / "templates", DASHBOARD / "templates", SITE / "templates"):
         for template in root.rglob("*.html"):
             text = template.read_text(encoding="utf-8")
             tags = text.split("<script")[1:]

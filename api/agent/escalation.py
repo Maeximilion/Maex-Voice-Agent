@@ -42,14 +42,18 @@ def _folded(text: str) -> str:
 # Reihenfolge ist die Prüfreihenfolge: "storniert die Reklamation" träfe sowohl
 # complaint- als auch cancellation-Wörter, complaint zuerst geprüft ist die
 # sicherere Lesart (docs/05 §4 nennt Beschwerde vor Storno).
+# Patterns (`re.search` on the lowered text); every one so far is plain text
+# but the two stems of a complaint below.
 _TRIGGERS: tuple[tuple[EscalationReason, tuple[str, ...]], ...] = (
     (
         "complaint",
         (
-            "beschwerde",
-            "beschweren",
-            "reklamation",
-            "reklamieren",
+            # The stems of `_COMPLAINT_WORD` with their endings, so "Ich
+            # beschwere mich", "Ich beschwer mich", "beschwert" and "Ich
+            # reklamiere" count (#861), and "beschwerlich", "unbeschwert"
+            # and "Reklame" do not.
+            r"(?<!un)beschwer(?:de|e|t|st|\b)",
+            r"reklam(?:ation|ier)",
             "ärger",
             "ärgerlich",
             "geärgert",
@@ -129,9 +133,12 @@ _ADDITIVE = re.compile(
 # Word starts where a stem hides in other words ("zerbrochen"), "übel" but
 # in "Kübel", "Dübel" and "grübeln" ("speiübel" counts), and
 # "arzt" anywhere but in "Schwarztee" and "Quarztorte": "Hausarzt" counts
-# (#657).
+# (#657). "beschwerden" in any form (#861): symptoms ("Magenbeschwerden",
+# "Magen-Darm-Beschwerden", "seit dem Essen Beschwerden") or several
+# complaints, and on that doubt the team.
 _TEAM_ONLY = re.compile(
     r"krank|(?<![kdg])(?:übel|uebel)|\berbroch|durchfall|vergift|(?<!schw)(?<!qu)arzt"
+    r"|beschwerden"
     r"|ärztin|notaufnahme"
     r"|anwalt|anwältin|polizei|gesundheitsamt|verbraucherzentrale"
 )
@@ -161,11 +168,80 @@ _OTHER_WISH = (
     r"|m(?:ö|oe)chten?|will|wollen|h(?:ä|ae)tten?"
     r"|abzuholen|mitzunehmen|tisch(?:e[ns]?)?)\b"
 )
-_WANTS_TO_COMPLAIN = re.compile(
-    _WANTS
-    + r"(?:\W+(?!und\b)(?!"
+# What else may stand in the gap: the guest, filler, the person complained to
+# and a pronoun object ("das reklamieren"). "Ich möchte die 23, beschweren muss
+# ich mich aber auch" has the order's own verb in front of its dish, and cut as
+# the complaint's wish it took the order with it (#744 follow-up). After
+# "über" or "wegen" the words name what is complained about ("über die
+# Lieferung"), and so does a dish right before "reklamieren" ("die Pizza
+# reklamieren", Maxi, 15.11.2026): no comma between, and no new clause after
+# it ("reklamieren muss ich auch").
+_COMPLAINT_GAP = (
+    r"(?:mich|uns|sich|dich|ich|wir|gerne?|bitte|mal|auch|jetzt|nun|gleich"
+    r"|hier|hiermit|heute|einmal|nochmal|noch|nur|kurz|eben|doch|ja|leider|erst"
+    r"|zuerst|aber|au(?:ß|ss)erdem|zudem|dann|w(?:ü|ue)rden?|bei|ihnen|euch"
+    r"|dar(?:ü|ue)ber|deswegen|deshalb|eine[nm]?|das|dies(?:es)?|es|etwas)\b"
+)
+_COMPLAINT_WORD = r"(?:beschwer|reklam)"
+_GAP_WORD = r"\W+(?!und\b)(?!" + _OTHER_WISH + r")(?!" + _COMPLAINT_WORD + r")"
+_DISH_RECLAIMED = (
+    r"\s+(?:d(?:er|ie|as|en|em)|eine?[nm]?|meine?[nm]?|unsere?[nm]?)\b(?:\s+"
+    + r"(?!und\b)(?!"
     + _OTHER_WISH
-    + r")\w+){0,4}?\W+(?:beschwer|reklam)\w*"
+    + r")(?!"
+    + _COMPLAINT_WORD
+    + r")\w+){1,2}"
+    + r"(?=\s+reklam\w*\b(?!\W+(?:muss|m(?:ü|ue)ss(?:en|te)|will|werde|sollte?)\b))"
+)
+# No comma in the phrase and no new clause after the complaint word, as for
+# the dish reclaimed: "bei Ihnen Pizza, beschweren muss ich auch" orders.
+_NO_NEW_CLAUSE = r"(?!\W+(?:muss|m(?:ü|ue)ss(?:en|te)|will|werde|sollte?)\b)"
+# The person complained to: "beim Chef", "bei Ihrem Chef" (Graphify, PR #793).
+_PERSON_COMPLAINED_TO = (
+    r"\s+beim?\b(?:\s+(?!und\b)(?!"
+    + _OTHER_WISH
+    + r")(?!"
+    + _COMPLAINT_WORD
+    + r")\w+){1,2}(?=\s+"
+    + _COMPLAINT_WORD
+    + r"\w*\b"
+    + _NO_NEW_CLAUSE
+    + r")"
+)
+# Where the wish that is the complaint begins: a modal verb, never a bare
+# "bitte" or "gern". Those close an order as often ("Die 23 bitte, beschweren
+# muss ich mich auch"), and the order went with the complaint (ledger #764);
+# inside the gap they may stand ("würde mich gerne beschweren"), and "gern"
+# right before the verb at the start of the sentence ("Gerne würde ich mich
+# beschweren"); further in, it closes an order the speech engine set no comma
+# after ("die 23 gerne möchte ich mich beschweren", Codex on PR #865).
+_COMPLAINT_WISH = (
+    r"(?:^\W*gerne?\s+|\b)(?:m(?:ö|oe)chten?|will|wollen?|wollten?|h(?:ä|ae)tten?"
+    r"|w(?:ü|ue)rden?"
+    r"|nehmen?|brauchen?|bestell(?:e|en)|abholen|abzuholen|mitnehmen|mitzunehmen"
+    r"|reservieren|tisch(?:e[ns]?)?)\b"
+)
+_WANTS_TO_COMPLAIN = re.compile(
+    _COMPLAINT_WISH
+    # At most four words to the complaint, whatever they are.
+    + r"(?=(?:"
+    + _GAP_WORD
+    + r"\w+){0,4}\W+"
+    + _COMPLAINT_WORD
+    + r")(?:"
+    + _GAP_WORD
+    + _COMPLAINT_GAP
+    + r")*(?:"
+    + _GAP_WORD
+    + r"(?:(?:ü|ue)ber|wegen)\b(?:"
+    + _GAP_WORD
+    + r"\w+)*|"
+    + _PERSON_COMPLAINED_TO
+    + r"|"
+    + _DISH_RECLAIMED
+    + r")?\W+"
+    + _COMPLAINT_WORD
+    + r"\w*"
 )
 
 
@@ -267,7 +343,7 @@ def only_a_complaint(text: str) -> bool:
     lowered = text.lower()
     return not (
         any(
-            keyword in lowered
+            re.search(keyword, lowered)
             for reason, keywords in _TRIGGERS
             if reason != "complaint"
             for keyword in keywords
@@ -287,7 +363,7 @@ def check(text: str) -> EscalationReason | None:
     rohen Kundenzug geprüft, bevor `loop.py` das Modell überhaupt aufruft."""
     lowered = text.lower()
     for reason, keywords in _TRIGGERS:
-        if any(keyword in lowered for keyword in keywords):
+        if any(re.search(keyword, lowered) for keyword in keywords):
             return reason
     return None
 

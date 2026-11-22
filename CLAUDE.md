@@ -81,6 +81,7 @@ The layout is modular, organized by layers with fixed dependency direction. Full
 | `docs/21_REVIEW_AUTOMATION.md` **"Working rules in force" of reviews** | before reviewing or answering a review, every `/ship` fix round |
 | `docs/22_LANGUAGE_AND_PERFORMANCE.md` language, latency, typing, review signals | before performance or language changes, a PR review |
 | `docs/23_ACCESS_SECURITY.md` threat model, logins, tokens, uploads | before logins, dashboard, provisioning, uploads |
+| `docs/24_OPEN_REVIEW_POINTS.md` review findings left open, each with its trigger | task start: grep it for your task ID and files |
 | `.claude/commands/*.md` session flow per step: merge cases and hand-off (`ship.md`), ledger and stacks (`done.md`), parallel work and split routing (`task.md`), STATUS upkeep and alerts (`start.md`) | when the command runs |
 | `.claude/rules/*.md` path rules of section 8 (`gui.md`, `tests-language.md`, `scripts.md`, `migrations.md`) | load on a matching file |
 
@@ -95,7 +96,7 @@ An independent review of the exact head commit by the other model gates every me
 The rules live in `docs/21_REVIEW_AUTOMATION.md` "Working rules in force" (reviewer and bot identity, follow-up scope, manual review, "Repeated findings become rules", "Review comment format", "Evaluate feedback before changing code", "Review loop limits") and `docs/22_LANGUAGE_AND_PERFORMANCE.md` "Review signals for both reviewers". Read the applying sections by range before reviewing a PR as the independent reviewer or answering a review outside `/ship` (step 3 there reads them).
 
 ### Slash Commands (`.claude/commands/`)
-`/start` · `/task T-x.y` · `/done` close out · `/ship <PR>` CI and review to the merge · `/bug "…"` red test first · `/eval` · `/gate Gx` close gate, README, version · `/project` the only board writer · `/handover` to a new session. After `/done` opens or updates its PR, the session goes on with `/ship` itself (`done.md` "Automatic handoff").
+`/start` · `/task T-x.y` · `/done` close out · `/ship <PR>` CI and review to the merge · `/fix-bug "…"` red test first · `/eval` · `/gate Gx` close gate, README, version · `/project` the only board writer · `/handover` to a new session · `/chain` several tasks, one session per PR. After `/done` opens or updates its PR, the session goes on with `/ship` itself (`done.md` "Automatic handoff").
 
 ### Model Routing
 Start on the model you expect to need: `/start` recommends model and effort, `/task` checks both against the table before reading anything else and asks the user to switch on a mismatch (only the user can).
@@ -121,7 +122,7 @@ Workflows: scanning stages on Haiku 5.5, judging on Sonnet or Opus. Mixed task: 
 
 Maxi starts uses 2 to 4; `/start` names at most one candidate in one line. Never on Fable: `/ship`, waiting for CI or a review, P2 fix rounds, `gui/`, docs, status, seeds and imports, tests for existing code, search and reading, the board, a security audit or review. In a Fable session: no optional follow-up steps (Definition of Done items stay); it ends with a handover when its PR opens, `/ship` runs in a fresh Sonnet session, a P1 fix on Opus; every subagent gets an explicit cheaper `model`, else it can inherit Fable. `/advisor` stays off.
 
-**Usage check** (Maxi, 2026-11-11): before a task, fix round, Fable use or agent, after every agent and during long runs, read the limits: `get_usage` in the desktop app (5-hour window, week, Fable week), `~/.claude/usage_gate/state.json` in a terminal (week only); where neither reads, say so in one line. No task starts at or above 70 percent of the 5-hour window (Sonnet row: 85) or 90 of the week, no Fable use at or above 80 of the Fable week (consult: 95); name the reset time and what still fits. At 90 of the 5-hour window: finish the step, commit, push, write the handover with the reset time; agents write findings to files as they go. The user-level usage gate blocks at its weekly cap (`docs/19`).
+**Usage check** (Maxi, 2026-11-11): before a task, fix round, Fable use or agent, after every agent and during long runs, read the limits: `get_usage` in the desktop app (5-hour window, week, Fable week), `~/.claude/usage_gate/state.json` in a terminal (week only); where neither reads, say so in one line. No task starts at or above 70 percent of the 5-hour window (Sonnet row: 85) or 90 of the week; the Fable week is used up to 100, then the work goes on with the other models (Maxi, 2026-11-17); name the reset time and what still fits. At 90 of the 5-hour window: finish the step, commit, push, write the handover with the reset time; agents write findings to files as they go. The user-level usage gate blocks at its weekly cap (`docs/19`).
 
 **Agents per weekday** (Maxi, 2026-11-02): agents at once count every subagent and thread, a workflow's included; day in `Europe/Berlin`. The hook `agent_limit.sh` names today's row at session start. A rule, not a cap: nothing counts them.
 
@@ -147,7 +148,9 @@ Large docs (`docs/01_STATUS.md`, `docs/07_WORKPACKAGES.md`, `docs/20_VOICE_LAYER
 
 Closing the loop is no follow-up step: an untested path, unverified claim or known gap in what was just built belongs to the task; test and fix it before reporting, unasked. "I can test X if you want" is only for work outside the scope or behind a wait point.
 
-Every session loads the personal skills `code-autopilot` and `caveman` (Skill tool, `caveman` with the argument `full`, Maxi, 2026-11-13) unasked (Maxi, 2026-10-19): `/start`, `/task` (after its model and environment checks) and `/bug` load both, any other session before its first reply; one not installed: say so in one line. `caveman` shapes chat replies to Maxi only: everything written to the repo, handover blocks too, stays in full English sentences, and questions stay closed popups. Where a skill differs, this file wins.
+Every session loads the personal skills `code-autopilot` and `caveman` (Skill tool, `caveman` with the argument `full`, Maxi, 2026-11-13) unasked (Maxi, 2026-10-19): `/start`, `/task` (after its model and environment checks) and `/fix-bug` load both, any other session before its first reply; one not installed: say so in one line. `caveman` shapes chat replies to Maxi only: everything written to the repo, handover blocks too, stays in full English sentences, and questions stay closed popups. Where a skill differs, this file wins.
+
+**UI-UX Pro Max for every UI task** (Maxi, 2026-11-20): every UI, UX or design element is worked with the plugin `ui-ux-pro-max` and the sub-skill that fits (`ui-ux-pro-max` for structure and UX rules, `design` or `design-system`, `ui-styling`), loaded before the first sketch; the PR says what was taken from it. Palette, fonts and effects stay the repository brand.
 
 ### Questions
 Ask closed questions (yes/no or A/B/C with marked recommendation), **one per interruption**, only when the answer is needed, as clickable choices (`AskUserQuestion`). Research answerable questions yourself. Mark assumptions and write them to `docs/01_STATUS.md`.
@@ -160,7 +163,7 @@ Ask closed questions (yes/no or A/B/C with marked recommendation), **one per int
 
 - **Merging a PR into `main`** (Maxi, 2026-10-06): Claude merges once CI is green on the exact head commit, the evals are green where the diff touches the conversation path (rule 4), and that head has a completed independent review with all findings triaged. `/done` has run first on Claude's own work; `xhigh`, migration and README-routine cases: `ship.md` "Merging a PR into `main`".
 - The hook `merge_gate.sh` (Maxi, 2026-10-21) blocks until CI, the sync with `main`, the status bump and a clean review hold on the head, and takes only `gh pr merge <n> --merge --match-head-commit <full sha>` (`--delete-branch` after it allowed, a `cd` in front not), or for a native stack, which GitHub refuses the first form for, `gh stack merge <n> --merge --yes` on the bottom PR (Maxi, 2026-11-03), into `main`, checked in the folder it runs in. Any other command naming it, a commit message or search too, is blocked: such text goes into a file or reads `gh pr merg[e]`. Claude checks what it cannot see: `/ponytail-review`, the evals, the `xhigh` rule.
-- **Pulling is Claude's job, never Maxi's** (Maxi, 2026-10-12): the start hook updates `main` (and returns the main folder to `main` when its branch is finished), `/task` and `/bug` fetch before they branch, and before every merge Claude fetches and merges `origin/main` into a branch that is behind, then gets CI and review on the new head.
+- **Pulling is Claude's job, never Maxi's** (Maxi, 2026-10-12): the start hook updates `main` (and returns the main folder to `main` when its branch is finished), `/task` and `/fix-bug` fetch before they branch, and before every merge Claude fetches and merges `origin/main` into a branch that is behind, then gets CI and review on the new head.
 - **Stacked PRs** (Maxi, 2026-10-28): a waiting PR never blocks the next task: branch from it, `gh pr create --base <branch>`, `gh stack link`; detail: `done.md` step 7c.
 - A hook warning that `main` could not be synced comes first (Maxi, 2026-10-14): name the folder and blocking files at the top of the reply and fix it with Maxi before other work, never as a closing note.
 
@@ -168,7 +171,7 @@ Ask closed questions (yes/no or A/B/C with marked recommendation), **one per int
 A finding is a claim to check against the code before any change; a severity label is no proof. Confirmed: fix with a test; wrong or outdated: answer in its thread with evidence. Every commit that moves the head, a merge from `main` too, needs a new review. `/ponytail-review` and `/security-review` run in `/done` step 1; the security audit only at the triggers of `docs/09_OPERATIONS_LEGAL.md` section 5.
 
 ### Session End
-**Hand over before compression** (Maxi, 2026-10-21): a session never runs into context compression. Measure with `python3 scripts/session_usage.py context` before each large step, at `/done` and after a merge; at 300k tokens before a large step, or 450k at any clean point (`/handover` "When a block is due"): finish the step, push, hand over, tell Maxi to go on in a new session.
+**Hand over before compression** (Maxi, 2026-10-21): a session never runs into context compression. Measure with `python3 scripts/session_usage.py context` before each large step, at `/done` and after a merge; at 300k tokens before a large step, or 450k at any clean point (`/handover` "When a block is due"): finish the step, push, hand over, tell Maxi to go on in a new session. A chain Maxi starts with "no handover limit" skips both (`chain.md` section 5a).
 
 ### Cache-friendly sessions
 
@@ -236,7 +239,7 @@ A task is complete when **all** of these are true:
 - Write the entire menu into the system prompt
 - Put domain logic in `tools/` or `gui/` instead of `domain/`
 - Use a provider name outside `telephony/`
-- Touch the GitHub Project board during a task: no `gh project` call in `/task`, `/done`, or `/bug`, and never a second project (`docs/16_GITHUB_PROJECT.md`)
+- Touch the GitHub Project board during a task: no `gh project` call in `/task`, `/done`, or `/fix-bug`, and never a second project (`docs/16_GITHUB_PROJECT.md`)
 - Call n8n or external API directly from `domain/` (always via outbox)
 - Fix a bug without first having a red eval or unit test for it
 
@@ -248,11 +251,12 @@ Claude Code builds: API, tools, data model, migrations, GUI, the voice layer, ev
 
 ## graphify
 
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
+This project has a code graph in two places: the Graphify MCP connector (an index of `main` on Graphify's servers) and a local one in graphify-out/. Ask the graph before your first grep, search or source-file read for a codebase question, and put this rule in every subagent prompt that explores code. Read raw files only for lines the graph or an earlier read already located.
 
 Rules:
-- When graphify-out/graph.json exists, run `graphify query "<question>"` before your first grep, search or source-file read for a codebase question, and put this rule in every subagent prompt that explores code. Read raw files only for lines the graph or an earlier read already located. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- **The MCP connector first** (Maxi, 2026-11-15): it needs no local build, works in every checkout and worktree, and is what the Graphify dashboard counts. Its tools are deferred: load them once per session with `ToolSearch` query `graphify code graph find callers impact query` (max_results 10) and pass `repository_id` `Maeximilion/Maex-Voice-Agent`. Where a symbol is defined: `graphify_find`; how something works: `query_graph`; who calls it: `graphify_callers`; a symbol with its neighbours: `graphify_node`; what a change touches: `graphify_impact`; linked tests: `graphify_tests_for`; a file's imports and dependents: `graphify_file_neighbors`. A result whose `commitSha` equals `git rev-parse HEAD` needs no grep re-check; files changed on the branch since that commit are read directly.
+- **The local CLI as fallback**, where the connector is missing (a terminal session without claude.ai connectors) or for the branch's own changes, once graphify-out/graph.json exists: `graphify query "<question>"`, `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
-- graphify-out/ is local and gitignored: each checkout and worktree builds its own. A session start builds a missing one in the background (`.claude/hooks/graphify_ready.sh`, about 30 seconds, code only, no tokens, nothing leaves the machine); until it exists, search and read directly. Install and git hooks per machine: `docs/19_CLAUDE_CODE_SETUP.md` section 5 "Graphify".
+- graphify-out/ is local and gitignored: each checkout and worktree builds its own. A session start builds a missing one in the background (`.claude/hooks/graphify_ready.sh`, about 30 seconds, code only, no tokens, nothing leaves the machine); until it exists, use the connector. That build can die unseen in a desktop app session (seen once, 2026-11-15: `build.log` stops after the extraction, no `graph.json`), so when the CLI finds no graph, run `graphify update .` as a background command yourself. Install and git hooks per machine: `docs/19_CLAUDE_CODE_SETUP.md` section 5 "Graphify".

@@ -14,6 +14,7 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from scripts.pr_metadata import WORKPACKAGES
 from scripts.project_report import ProjectError, graphql
@@ -87,7 +88,7 @@ def parse_tasks(text: str) -> dict[str, Task]:
         if issue is not None:
             seen_issues.add(issue)
 
-        def expand(match: re.Match, task_name: str = task) -> str:
+        def expand(match: re.Match[str], task_name: str = task) -> str:
             block, start, end_block, end = map(int, match.groups())
             if block != end_block or end < start or end - start > 100:
                 raise ProjectError(f"Ambiguous dependency range in {task_name}")
@@ -108,7 +109,7 @@ def parse_tasks(text: str) -> dict[str, Task]:
     return tasks
 
 
-def fetch_issues(repo: str, token: str) -> dict[int, dict]:
+def fetch_issues(repo: str, token: str) -> dict[int, dict[str, Any]]:
     owner, _, name = repo.partition("/")
     if not owner or not name:
         raise ProjectError("GITHUB_REPOSITORY must be owner/name")
@@ -152,11 +153,11 @@ def reaches(graph: dict[str, set[str]], source: str, target: str) -> bool:
 
 
 def plan(
-    tasks: dict[str, Task], issues: dict[int, dict]
-) -> tuple[list[tuple[str, int, int]], dict]:
+    tasks: dict[str, Task], issues: dict[int, dict[str, Any]]
+) -> tuple[list[tuple[str, int, int]], dict[str, Any]]:
     """Plan additive changes against existing and already-planned edges."""
     changes: list[tuple[str, int, int]] = []
-    findings: dict[str, list[dict]] = {}
+    findings: dict[str, list[dict[str, Any]]] = {}
     graphs = {
         "parent": {
             i["id"]: {i["parent"]["id"]} if i["parent"] else set()

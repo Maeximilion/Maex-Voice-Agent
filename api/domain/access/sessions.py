@@ -336,10 +336,21 @@ def end_sessions(
     reason: str,
     session_id: uuid.UUID | None = None,
 ) -> int:
-    """Sign out one device, or every device of the restaurant. The caller commits."""
+    """Sign out one device, or every device of the restaurant. Signing out
+    every device also forgets their device cookies, so a cookie kept from
+    before a password reset no longer counts its guesses apart from the
+    account's (#888 B1). The caller commits."""
     query = select(GuiSession).where(GuiSession.tenant_id == tenant_id)
     if session_id is not None:
         query = query.where(GuiSession.id == session_id)
+    else:
+        session.execute(
+            delete(GuiDevice).where(
+                GuiDevice.account_id.in_(
+                    select(GuiAccount.id).where(GuiAccount.tenant_id == tenant_id)
+                )
+            )
+        )
     rows = session.scalars(query.with_for_update()).all()
     for row in rows:
         _end(session, row, actor, reason)
@@ -395,14 +406,14 @@ def audit(
     entity_id: uuid.UUID,
     payload: dict[str, Any],
     entity: str = "gui_account",
-) -> None:
-    session.add(
-        AuditLog(
-            tenant_id=tenant_id,
-            actor=actor,
-            action=action,
-            entity=entity,
-            entity_id=entity_id,
-            payload=payload,
-        )
+) -> AuditLog:
+    row = AuditLog(
+        tenant_id=tenant_id,
+        actor=actor,
+        action=action,
+        entity=entity,
+        entity_id=entity_id,
+        payload=payload,
     )
+    session.add(row)
+    return row

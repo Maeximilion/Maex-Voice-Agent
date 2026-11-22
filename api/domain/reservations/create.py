@@ -44,9 +44,30 @@ def create_reservation(
         raise NotFound("Mandant unbekannt")
     zone = ZoneInfo(tenant.timezone)
 
-    # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1).
+    # Same key, same draft, no second one (docs/04 §1).
     existing = _by_key(session, req.idempotency_key)
     if existing is not None:
+        if (
+            existing.status == "draft"
+            and existing.tenant_id == req.tenant_id
+            and existing.call_id == req.call_id
+        ):
+            # Its slot is checked again, as for a new draft: the guest who
+            # goes back to an earlier table, or asks again after a while, is
+            # read back a time the notice, the hours and the seats allow now
+            # (#862). The same row, so no second draft holds the seats, and
+            # from now on the one that holds them (#908).
+            _check(
+                session,
+                req.tenant_id,
+                req.call_id,
+                existing.reserved_for,
+                existing.party_size,
+                zone,
+                now,
+            )
+            existing.replayed_at = now
+            session.commit()
         return _replay(existing, req.tenant_id, req.call_id, zone)
 
     call = session.get(Call, req.call_id)
@@ -59,19 +80,15 @@ def create_reservation(
     phone = normalize_phone(req.phone)
     note = (req.note or "").strip() or None
 
-    lock_capacity_days(session, req.tenant_id, req.reserved_for.astimezone(zone).date())
-    slot = check_slot(
+    _check(
         session,
         req.tenant_id,
+        req.call_id,
         req.reserved_for,
         req.party_size,
-        now=now,
-        call_id=req.call_id,
+        zone,
+        now,
     )
-    if slot.team_callback:
-        raise TeamDecides("party above what the agent books itself", say=slot.say)
-    if not slot.available:
-        raise Conflict("Zeitpunkt nicht mehr verfügbar", say=slot.say)
 
     reservation = Reservation(
         tenant_id=req.tenant_id,
@@ -85,6 +102,8 @@ def create_reservation(
         reserved_for=req.reserved_for,
         note=note,
         idempotency_key=req.idempotency_key,
+        # The self-test's table is a test card like its call (#574).
+        is_test=call.is_test,
         # Fester Bezugspunkt für den readback, damit ein Replay über Mitternacht
         # nicht plötzlich "heute" statt "morgen" sagt.
         created_at=now,
@@ -118,8 +137,34 @@ def create_reservation(
     return _draft(reservation, zone)
 
 
+def _check(
+    session: Session,
+    tenant_id: uuid.UUID,
+    call_id: uuid.UUID,
+    reserved_for: datetime,
+    party_size: int,
+    zone: ZoneInfo,
+    now: datetime,
+) -> None:
+    """The slot by the rules of `check_slot`, under the capacity lock that is
+    held to the commit."""
+    lock_capacity_days(session, tenant_id, reserved_for.astimezone(zone).date())
+    slot = check_slot(
+        session, tenant_id, reserved_for, party_size, now=now, call_id=call_id
+    )
+    if slot.team_callback:
+        raise TeamDecides("party above what the agent books itself", say=slot.say)
+    if not slot.available:
+        raise Conflict("Zeitpunkt nicht mehr verfügbar", say=slot.say)
+
+
 def _by_key(session: Session, key: str) -> Reservation | None:
-    return session.scalar(select(Reservation).where(Reservation.idempotency_key == key))
+    # Read fresh: the call's session keeps its rows past a commit, and a draft
+    # the tablet cancelled meanwhile must not be replayed as a draft (#862).
+    return session.scalar(
+        select(Reservation).where(Reservation.idempotency_key == key),
+        execution_options={"populate_existing": True},
+    )
 
 
 def _replay(
@@ -155,12 +200,14 @@ def readback(r: Reservation, zone: ZoneInfo) -> str:
     """
     local = r.reserved_for.astimezone(zone)
     # Day and daytime word: "halb eins" is 00:30 and 12:30 alike (#681), and 00:30
-    # of "morgen" is still tonight (#742); the guest's yes confirms what is read back.
-    when = spoken_when(local, today=r.created_at.astimezone(zone).date())
+    # of "morgen" is still tonight (#742), and a draft made after midnight names the
+    # day by weekday and date (#750 follow-up); the guest's yes confirms what is read back.
+    when = spoken_when(local, now=r.created_at.astimezone(zone))
     satz = (
         f"Ein Tisch für {spoken_party_size(r.party_size)} {when}"
         f", auf den Namen {r.guest_name}"
     )
     if r.note:
-        satz += f", mit dem Hinweis: {r.note}"
+        # Named as the guest's, as on an order (#798).
+        satz += f", mit Ihrem Hinweis: {r.note}"
     return satz + ". Passt das so?"

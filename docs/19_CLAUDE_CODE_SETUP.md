@@ -149,6 +149,20 @@ Since 2026-11-07 Maxi's Ubuntu `~/.bashrc` ends with `export ENABLE_CLAUDEAI_MCP
 
 Restore on a new machine: add the export line to the end of `~/.bashrc` and open a new terminal.
 
+### Plugin sets in the desktop app (Windows)
+
+Maxi switches off the plugin sets `data`, `productivity`, `pdf-viewer` and `engineering` in the desktop app himself (decision 2026-11-18, #562: their skill and tool listings are context every session pays for on every call). Claude does not change them. A new machine or a reset app brings them back: switch the four off again in the app's plugin settings. The `enabledPlugins` block above holds only `ponytail`; the sets are app-level and are not in `settings.json`.
+
+### Auto compaction for an overnight chain (both systems)
+
+The handover thresholds of 300k and 450k stay for normal sessions (`CLAUDE.md` "Session End"). For a chain Maxi starts with the option "no handover limit" (`.claude/commands/chain.md` section 5a, Maxi 2026-11-18), auto compaction at about 550k tokens takes over. Checked against the Claude Code docs on 2026-11-18:
+
+- The user-level key is `"autoCompactWindow": 550000` (tokens, 100000 to 1000000, or `"auto"`) in the top level of `~/.claude/settings.json`; it can sit in any settings file. The environment variable `CLAUDE_CODE_AUTO_COMPACT_WINDOW=550000` does the same, as does `--settings '{"autoCompactWindow": 550000}'` for one session started from a terminal. `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` (1 to 100, percent of the window) also lowers the point but cannot raise it; the token value is the clearer one for a 1M window.
+- Without it a session of the 1M window compacts at 97 percent (`get_usage` `autoCompactsAtPercent`, 2026-11-18).
+- It cannot be scoped to chain sessions: sessions the desktop app starts take their settings from the files, not from flags; the project local file of a worktree session is read at the main checkout's root, so it reaches every session of the repository. So it is switched on and off by hand: add the key before the chain starts, remove it when the chain ends.
+- Whether a running session picks up the key without a restart is not verified; a session started after the change does. The coordinator reads `get_usage` for itself and reports `autoCompactsAtPercent` (about 55 when it applies).
+- Claude cannot write `~/.claude/settings.json` (above). On Ubuntu Maxi runs, on: `jq '. + {autoCompactWindow: 550000}' ~/.claude/settings.json > /tmp/s.json && cp ~/.claude/settings.json ~/.claude/settings.json.bak && mv /tmp/s.json ~/.claude/settings.json`; off: `jq 'del(.autoCompactWindow)' ~/.claude/settings.json > /tmp/s.json && mv /tmp/s.json ~/.claude/settings.json`. On Windows he adds or removes the one line by hand.
+
 ## 4. The scripts
 
 All three need `bash`, `git` and `jq` on the path. Git for Windows does not ship `jq`; it is installed separately.
@@ -886,7 +900,7 @@ gh extension install github/gh-stack
 
 ### Graphify (both systems)
 
-Graphify maps the code into a graph that Claude queries (`graphify query`, `path`, `explain`) before it greps or reads files (Maxi, 2026-11-14). The repository carries what `graphify install --project` wrote (version 0.9.109): the skill in `.claude/skills/graphify/`, `.claude/CLAUDE.md`, the `## graphify` section of `CLAUDE.md` and three hooks in `.claude/settings.json` (`graphify hook-guard search`, `read`, `compact`). The CLI itself is installed once per machine. The PyPI package is `graphifyy` with two y; other `graphify*` packages are not the official one.
+Graphify maps the code into a graph that Claude queries (the MCP connector below first, the local `graphify query`, `path`, `explain` as fallback) before it greps or reads files (Maxi, 2026-11-14). The repository carries what `graphify install --project` wrote (version 0.9.109): the skill in `.claude/skills/graphify/`, `.claude/CLAUDE.md`, the `## graphify` section of `CLAUDE.md` and three hooks in `.claude/settings.json` (`graphify hook-guard search`, `read`, `compact`). The CLI itself is installed once per machine. The PyPI package is `graphifyy` with two y; other `graphify*` packages are not the official one.
 
 Windows, PowerShell; restart the desktop app afterwards so it sees the new `PATH`:
 
@@ -906,6 +920,10 @@ pipx install graphifyy
 
 The graph is built without anyone asking (Maxi, 2026-11-15): the SessionStart hook `.claude/hooks/graphify_ready.sh` starts `graphify update .` in the background wherever `graphify-out/graph.json` is missing, in the session's working folder and in the project folder, and says so in one line; a second session starting meanwhile leaves the build to the first (lock `graphify-out/.building`, taken over after ten minutes). Building costs no tokens: tree-sitter reads the code on the machine, about 30 seconds for 17,700 nodes. Tokens are spent only on what `graphify query` prints (2,000 by default, `--budget N`) and on the hook notes (at most five per session).
 
+The background build can die unseen in a desktop app session (seen once on 2026-11-15 in a fresh worktree: `build.log` stopped after "AST extraction: 825/825", `.building` was gone and no `graph.json` was written). It could not be reproduced: run by hand, from the Bash tool and from a console window that closes at once, the same hook finished every time in about 30 seconds. So the hook note and `CLAUDE.md` tell the session to run `graphify update .` as a background command itself when the CLI finds no graph; a build started from the Bash tool finished in every test.
+
+**Graphify MCP connector, the first choice** (Maxi, 2026-11-15). The claude.ai account has the Graphify connector, which indexes `Maeximilion/Maex-Voice-Agent` on `main` on Graphify's servers (free plan: 3 repositories, 25,000 nodes per graph; this repository had 16,000 on 2026-11-15, no query limit). It needs no local build, answers in every checkout and worktree, and is the only use the Graphify dashboard counts: its "Context tokens saved" tile measures connector queries, never a local `graphify query`. Its tools are deferred in a session; `CLAUDE.md` section "graphify" names the `ToolSearch` query that loads them and which tool answers which question. Each answer carries the `commitSha` of its index; files changed on a branch since that commit are read directly or asked through the local CLI. Terminal sessions see the connector only where claude.ai connectors are switched on for them; elsewhere the local graph is the only one.
+
 Once per clone, in its folder: build the graph by hand if no session has done it yet (code only through tree-sitter, no model call, nothing leaves the machine, about 30 seconds), then install the git hooks that rebuild it in the background after a commit, checkout, merge or rebase. The hooks live in the clone's `.git/hooks`, so all worktrees of a clone share them, but they only rebuild where `graphify-out/` exists. `hook install` also adds a merge driver line to `.gitattributes`; the graph is not committed (`graphify-out/` is in `.gitignore`), so that line is undone at once.
 
 ```bash
@@ -919,6 +937,20 @@ graphify hook install && git checkout .gitattributes
 The three Claude hooks fire in a terminal `claude` session (checked 2026-11-15 on Windows with `claude -p`: a marker file `graphify-out/cache/hook_sessions/<session_id>.nudges` appears and the model sees the "graphify: this project has a knowledge graph" note). In a desktop app session that works in a worktree they fire too, but from the main checkout: the app loads `.claude/settings.json` and runs its hooks in the project folder, not in the session's worktree (checked 2026-11-15: an edit to the worktree's settings file changed nothing, and the marker file appeared under the main checkout's `graphify-out/`). The guard looks for `graphify-out/graph.json` relative to the folder it runs in, so without a graph in the main checkout it stays silent, with no error. Two things follow: the main checkout needs a graph of its own, which `graphify_ready.sh` builds, and a hook or settings change is live in app sessions only after it is merged and the main checkout is pulled. To check a guard by hand, send it a payload with a `session_id`; without one it prints nothing once a `graphify query` ran in the last 30 minutes.
 
 Without `graphify` on `PATH` the three Claude hooks fail with "command not found", which Claude Code treats as a non-blocking error: the tool call goes through. Remove: `graphify hook uninstall` per clone, `uv tool uninstall graphifyy` or `pipx uninstall graphifyy` per machine; `graphify uninstall` removes the repository files and belongs in a pull request.
+
+### UI UX Pro Max (both systems)
+
+UI UX Pro Max is a design skill (styles, colors, fonts, UX and accessibility rules, chart advice) that Claude loads on its own for interface work (Maxi, 2026-11-15). Source: `github.com/nextlevelbuilder/ui-ux-pro-max-skill`, MIT. The repository carries the skill in `.claude/skills/ui-ux-pro-max/` as `npx -y ui-ux-pro-max-cli@2.15.0 init --ai claude` wrote it, so every checkout has it: the Windows app sessions, the Ubuntu app sessions and a terminal `claude` in `~/Maex-Voice-Agent`. Nothing is installed per machine and there is no user-level copy; a session sees the skill once its checkout has it, an app session from the main checkout after the merge and the pull.
+
+The skill's search script needs only a Python 3 standard library, makes no network calls and writes nothing unless `--persist` is passed (then `design-system/<project>/` under `--output-dir`, by default the current folder). Checked 2026-11-15 with Python 3.10 on Windows and 3.12 in Ubuntu:
+
+```bash
+python3 .claude/skills/ui-ux-pro-max/scripts/search.py "touch target" --domain ux -n 2
+```
+
+The CLI also writes six companion skills (`banner-design`, `brand`, `design`, `design-system`, `slides`, `ui-styling`). They are left out: logos, banners, slides and brand kits are not work this project does, `design` calls the Gemini API with a key of its own, and each extra skill puts its description into every session. Its advice is general web design: the tablet GUI keeps its own rules (`docs/06_GUI.md`, `.claude/rules/gui.md`), and those win where they differ, for example Tailwind or React suggestions against Jinja2, HTMX and TypeScript in `api/gui/ts/`.
+
+Update: run the CLI in an empty folder, copy only `.claude/skills/ui-ux-pro-max/` over the repository copy, run the check above, and bump the version here, all in one pull request. npm 2.15.0 (2026-08-13) is behind the upstream README, which already names flags such as `--dry-run` that this version refuses.
 
 ### Ubuntu threads for projects and claude.ai
 

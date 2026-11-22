@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from api.agent.guards import SAY_ASK_ALLERGY
 from api.agent.llm import LLMError, LLMTurn, ToolCall
 from api.domain.menu.normalize import normalize_query
 from api.domain.menu.numberwords import (
@@ -49,8 +50,10 @@ SAY_NAME = "Auf welchen Namen darf ich die Bestellung notieren?"
 SAY_PHONE = "Unter welcher Telefonnummer sind Sie erreichbar?"
 SAY_RESTART = "Dann noch einmal von vorn: was möchten Sie bestellen?"
 # An allergy without its ingredient: the model asks (Maxi, 15.11.2026), with
-# the dish while another one is open too (Codex PR #139, P1).
-SAY_ALLERGY_WHICH = "Wogegen sind Sie allergisch?"
+# the fixed question of an allergy turn (#798); the variant with the dish
+# while another one is open too (Codex PR #139, P1) is refused in such a turn
+# and said as the fixed one (`scripted_llm`).
+SAY_ALLERGY_WHICH = SAY_ASK_ALLERGY
 SAY_ALLERGY_WHICH_FOR = "Wogegen sind Sie bei {name} allergisch?"
 SAY_ADDRESS = (
     "An welche Adresse dürfen wir liefern? Bitte nennen Sie Postleitzahl, Ort, "
@@ -672,6 +675,11 @@ class PickupScript:
         if not self._allergy_for:
             self._allergy_named = False
         return self._next(slots, patch, lead=_join(lead, self._take_deferred()))
+
+    def asks_allergy(self) -> bool:
+        """An allergy waits for its ingredient: the open question of the
+        script is the one about it."""
+        return bool(self._allergy_for)
 
     def _allergy_question(self) -> str:
         """The question for the first open allergy. With several, it names

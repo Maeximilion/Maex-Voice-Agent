@@ -19,6 +19,8 @@ EVENT_TYPES = (
     "team_phone.changed",
     "day_hours.changed",
     "call_mode.changed",
+    "admin_pin.wrong",
+    "operator_access.changed",
 )
 OUTBOX_STATUSES = ("pending", "sent", "failed")
 

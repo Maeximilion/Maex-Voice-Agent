@@ -1,17 +1,35 @@
-{# Sign-in of a device with the restaurant's password (#570, D34). One field,
-   a plain form: the answer is the board or this page with one sentence. #}
+{# Front page and sign-in of a device with the restaurant's password (#570, D34;
+   the front page #571). The bare host name leads here. One field, a plain form:
+   the answer is the board or this page with one sentence. The order in the
+   source is headline, form, points, so a phone reaches the form first; from
+   900 px the form stands beside the text. #}
 {% extends "base.html" %}
-{% block title %}Anmelden{% endblock %}
-{% block body_class %}betrieb zugang{% endblock %}
+{% block title %}Anmelden{% if tenant %} &ndash; {{ tenant.name }}{% endif %}{% endblock %}
+{% block body_class %}betrieb zugang start{% endblock %}
 
 {% block main %}
-<form class="card zugang-form" method="post" action="/gui/anmelden">
-  <h1>Anmelden</h1>
-  <p>Das Passwort des Betriebs, einmal je Gerät.</p>
-  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-  <label for="passwort">Passwort</label>
-  <input type="password" id="passwort" name="passwort" autocomplete="current-password" required autofocus>
-  {% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
-  <button type="submit" class="primary">Anmelden</button>
-</form>
+<div class="start-seite">
+  <div class="start-kopf">
+    <p class="start-marke">Maex Voice Agent</p>
+    <h1>{{ tenant.name if tenant else "Betriebsansicht" }}</h1>
+    <p class="start-satz">Die KI nimmt das Telefon ab. Reservierungen, Abholung und Lieferung stehen sofort auf dem Tablet.</p>
+  </div>
+  <form class="card zugang-form" method="post" action="/gui/anmelden">
+    <h2>Anmelden</h2>
+    <p>Das Passwort des Betriebs, einmal je Gerät.</p>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="passwort">Passwort</label>
+    <div class="zugang-feld">
+      <input type="password" id="passwort" name="passwort" autocomplete="current-password" required autofocus>
+      <button type="button" data-zeigen="passwort" aria-pressed="false">Anzeigen</button>
+    </div>
+    {% if message %}<p class="badge danger" role="alert">{{ message }}</p>{% endif %}
+    <button type="submit" class="primary">Anmelden</button>
+  </form>
+  <ul class="start-punkte">
+    <li>Nichts wird gebucht, bevor der Gast Ja sagt.</li>
+    <li>Fällt etwas aus, klingelt Ihr Telefon.</li>
+    <li>Ein Tipp schaltet die KI aus.</li>
+  </ul>
+</div>
 {% endblock %}

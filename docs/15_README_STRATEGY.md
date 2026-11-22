@@ -10,7 +10,7 @@ The README is the shop window of the repo. It describes the current state for so
 | Gate passed (G0 to G5) | Status, version, "What works", next steps | Claude Code via `/gate` |
 | New dependency or new service (Docker image, vendor, library) | Requirements, Quick Start | Claude Code in the same task |
 | Change to the Quick Start (new command, new environment variable) | Quick Start, Configuration | Claude Code in the same task |
-| Known issue that users will run into | Known Issues | Claude Code via `/bug` or `/done` |
+| Known issue that users will run into | Known Issues | Claude Code via `/fix-bug` or `/done` |
 | New doc file under `docs/` | Documentation | Claude Code in the same task |
 | Visible change to the text phone's output or to the operations view | The demo recording | Claude Code in the same task: `/done` proposes it, `python -m scripts.readme_demo` records it (see "The demo recording") |
 | A new image or a redesign of one | Four variants, Maxi picks one | Claude Code, before anything is committed (see "New and redesigned images") |

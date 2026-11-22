@@ -24,4 +24,4 @@ Maintain the GitHub Project board. This is the only command allowed to write to 
 4. Propose, do not apply: assigning iterations, archiving anything other than a confirmed duplicate, new views or fields, anything touching docs/07 priorities.
 5. Report in at most five lines: what was fixed, what waits for a decision. Then leave the board alone until the next `/project`.
 
-Never create a second project. Never add an item twice. Never delete a project, an item or a field - a duplicate is archived, not deleted. Never touch the board from inside `/task`, `/done` or `/bug`.
+Never create a second project. Never add an item twice. Never delete a project, an item or a field - a duplicate is archived, not deleted. Never touch the board from inside `/task`, `/done` or `/fix-bug`.
