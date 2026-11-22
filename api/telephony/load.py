@@ -451,7 +451,14 @@ class Inside:
             *("compose", "run", "--rm", "-T", "-v", f"{REPO_ROOT}/evals/menu:/menu:ro"),
             *("api", "python", "-m", "scripts.import_menu", "/menu"),
         )
-        sql(stack, "update service_config set call_mode = 'primary'")
+        # The AI answers first, and takes as many calls at once as the test
+        # places: the product's default is one (D16, T-10.9), and a call above
+        # the limit rings the team.
+        sql(
+            stack,
+            "update service_config set call_mode = 'primary', "
+            f"max_concurrent_calls = {int(self.args.calls)}",
+        )
         # The telephone's containers and their network, not started: Asterisk
         # looks the router up once, when it starts (deploy/asterisk/render.sh).
         in_stack(
@@ -499,7 +506,7 @@ class Inside:
         limit = a.greeting + a.turns * period + CALL_SLACK_SECONDS
         wait_for(
             lambda: all(
-                f"LOAD {e} caller leg ended" in self.router_log(since) for e in extens
+                f"LOAD {e} caller hangs up" in self.router_log(since) for e in extens
             ),
             limit,
             "calls still running at the end of the step",
