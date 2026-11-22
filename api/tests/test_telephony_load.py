@@ -306,3 +306,9 @@ def test_percentile_and_stand_ins() -> None:
     assert load.percentile([], 0.95) is None
     assert load.percentile([1.0, 2.0, 3.0], 0.5) == 2.0
     assert load.stand_in_seconds(0.25) == 1.25
+
+
+def test_memory_kills_of_the_server(tmp_path: Path) -> None:
+    assert load.oom_kills(tmp_path) == 0
+    (tmp_path / "memory.events").write_text("low 0\nhigh 0\nmax 4\noom 2\noom_kill 1\n")
+    assert load.oom_kills(tmp_path) == 1

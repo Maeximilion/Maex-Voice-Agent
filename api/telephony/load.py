@@ -338,9 +338,11 @@ class Inside:
                 try:
                     self.add_stack(n)
                 except LoadError as exc:
+                    if not oom_kills():
+                        raise
                     # Running out of memory while a stack starts is a result.
-                    print(f"voice_load: stack load{n} did not come up: {exc}")
-                    self.finish(f"stack load{n} did not come up: {exc}")
+                    print(f"voice_load: stack load{n} ran out of memory: {exc}")
+                    self.finish(f"stack load{n} ran out of memory while it started")
                     return 0
             step(f"Step {name}: {stacks} stack(s), {calls} call(s) each")
             result = self.step(name, self.stacks[:stacks], calls)
@@ -431,6 +433,12 @@ class Inside:
             *("api", "python", "-m", "scripts.import_menu", "/menu"),
         )
         sql(stack, "update service_config set call_mode = 'primary'")
+        # The telephone's containers and their network, not started: Asterisk
+        # looks the router up once, when it starts (deploy/asterisk/render.sh).
+        in_stack(
+            stack, "compose", "up", "--no-start", "--build", "voice", "asterisk",
+            timeout=STACK_UP_SECONDS,
+        )  # fmt: skip
         network = f"maex-{key}_telephony"
         for container, alias in ((ROUTER, "router"), (MODEL, "model")):
             sh(["docker", "network", "connect", "--alias", alias, network, container])
@@ -439,7 +447,7 @@ class Inside:
         sh(["docker", "exec", ROUTER, "asterisk", "-rx", "pjsip reload"])
         sh(["docker", "exec", ROUTER, "asterisk", "-rx", "dialplan reload"])
         in_stack(
-            stack, "compose", "up", "-d", "--build", "--wait", "voice", "asterisk",
+            stack, "compose", "up", "-d", "--wait", "voice", "asterisk",
             timeout=STACK_UP_SECONDS,
         )  # fmt: skip
         wait_for(
@@ -728,6 +736,16 @@ def read_int(path: Path) -> int:
     except OSError:
         return 0
     return int(text) if text.isdigit() else 0
+
+
+def oom_kills(root: Path = Path("/sys/fs/cgroup")) -> int:
+    """Processes the kernel killed for memory inside the test server."""
+    try:
+        events = (root / "memory.events").read_text().split()
+    except OSError:
+        return 0
+    pairs = dict(zip(events[::2], events[1::2], strict=False))
+    return int(pairs.get("oom_kill", "0"))
 
 
 def containers() -> dict[str, str]:
