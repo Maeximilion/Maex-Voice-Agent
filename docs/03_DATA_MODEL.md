@@ -190,8 +190,9 @@ Two tables of one room the team may push together. One row per pair, the smaller
 | idempotency_key | TEXT UNIQUE | |
 | is_test | BOOL, default false | the table of a self-test call (#574, migration 039), copied from `calls.is_test` by `create_reservation`: the tablet shows it as a card marked TEST, its `confirm` writes no outbox event and no customer contact, the hours change cards never list it; `sim.selftest` deletes it again |
 | off_hours | BOOL, default false | the team booked the table outside the opening hours on purpose (#819, migration 042): `confirm_tablet` sets it when no dine-in window of the hours, as they stand at the confirming tap, holds `reserved_for`, after the sheet asked „Trotzdem eintragen“; never set afterwards and never by the agent, which books inside the hours only (CHECK `ck_reservations_off_hours_tablet`: only a `tablet` row carries it). The board's card says „Bewusst außerhalb der Öffnungszeiten eingetragen.“, and the tab „Zeiten“ leaves the table off its list of guests to call; rows from before 042 stay false |
+| replayed_at | TIMESTAMPTZ, null | when the guest went back to this draft and its key replayed it (#908, migration 044): the seat count takes a call's newest row by this, else by `created_at`, and only that row's draft holds seats against other calls; `created_at` stays the read-back's anchor |
 
-Indexes: `ix_reservations_tenant_reserved_for` (tenant, time of the table) and, since migration 044, `ix_reservations_call_created_at` (call, creation time) for the seat count's check that a draft is its call's newest row (#908).
+Indexes: `ix_reservations_tenant_reserved_for` (tenant, time of the table) and, since migration 044, `ix_reservations_call_id` (call) for the seat count's check that a draft is its call's newest row (#908).
 
 ### `reservation_tables`
 The table, or the two tables of a combination, a reservation the team entered sits on (T-3.12, migration 029). An agent's reservation has none: it books seats of a window, not a table (D28). A table is taken for the capacity window of its reservation, the turn; outside every window only the same start time collides (assumption, docs/01).
@@ -643,7 +644,7 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 041 | The outbox type `operator_access.changed`: a setup link, a PIN set or devices signed out by the operator, pushed to the owner and to `ops` (#811); the downgrade deletes the rows of that type |
 | 042 | `reservations.off_hours` (BOOL NOT NULL, default false) with CHECK `ck_reservations_off_hours_tablet` (only a `tablet` row is marked): a table the team booked outside the opening hours on purpose (#819); a new column only, false for every existing row, since whether an older table was meant cannot be read back; down drops it, and the marked tables come back on the list of guests to call (backup label `before_migration_042`) |
 | 043 | Index `ix_audit_log_tenant_action` (tenant, action, id) for the version of the operator's page (review of #837); up and down change no row |
-| 044 | Index `ix_reservations_call_created_at` (call, creation time) for the seat count's newest-row check (#908): 701 ms for 80 drafts of one call at 144,000 rows before, 3.6 ms after; up and down change no row |
+| 044 | `reservations.replayed_at` (TIMESTAMPTZ, empty for every existing row) and index `ix_reservations_call_id` for the seat count's newest-row check (#908): the index took 80 drafts of one call at 144,000 rows from 701 ms to about 3.5 ms; up and down change no row, down drops the column with what it holds |
 | planned, next free number | `eval_cases`, `eval_runs` |
 
 ### Operator database (#571, docs/23 §5)

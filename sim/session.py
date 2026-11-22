@@ -131,7 +131,9 @@ class SimCall:
             self._llm,
             build_system_prompt(tools=True),
             max_call_seconds=call_routing(session, tenant.id).max_call_seconds,
-            now=self._now,
+            # Pinned only with `--now`: on the real clock each tool call gets
+            # its own time, as on the phone line (#908 orders drafts by it).
+            now=self._fixed_now,
         )
         started = start_call(
             session,

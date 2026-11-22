@@ -55,7 +55,8 @@ def create_reservation(
             # Its slot is checked again, as for a new draft: the guest who
             # goes back to an earlier table, or asks again after a while, is
             # read back a time the notice, the hours and the seats allow now
-            # (#862). The same row, so no second draft holds the seats.
+            # (#862). The same row, so no second draft holds the seats, and
+            # from now on the one that holds them (#908).
             _check(
                 session,
                 req.tenant_id,
@@ -65,6 +66,7 @@ def create_reservation(
                 zone,
                 now,
             )
+            existing.replayed_at = now
             session.commit()
         return _replay(existing, req.tenant_id, req.call_id, zone)
 

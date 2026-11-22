@@ -10,7 +10,8 @@ and the draft is younger than the longest a call may last
 seats and hangs up at the read-back keeps them for good, and the tablet, which
 lists confirmed tables only, shows nothing (#250). Because a draft can lose its
 seats before the yes, `confirm` asks `has_room` again under the day lock.
-A call's own drafts never count against that call (#207, `booked_guests`).
+A call's own drafts never count against that call (#207, `booked_guests`), and
+of another call only its newest row's draft counts (#908).
 
 A reservation the team enters on the tablet has no call (T-3.12, D30). Once
 confirmed it counts like the agent's; as a draft it holds nothing, because no
@@ -23,7 +24,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, exists, or_, select, text
+from sqlalchemy import and_, exists, func, or_, select, text
 from sqlalchemy.orm import Session, aliased
 
 from api.domain.status.hours import weekday_of
@@ -112,16 +113,19 @@ def booked_guests(
 
     A draft of another call counts only while it is that call's newest row
     (#908): each correction writes a new draft and leaves the old one a draft,
-    and only the newest waits for the yes. Counted against all, ten
-    corrections held the evening for one caller. Newest of any status, so
-    that the older drafts do not count again once the newest is confirmed.
-    shortcut: a guest who goes back to an earlier draft replays that row, and
-    the newest row holds the seats instead; the yes checks again with
-    `has_room`, so nothing is overbooked. Upgrade when such a yes is refused.
+    and the guest's yes goes to the one read back last. Counted against all,
+    ten corrections held the evening for one caller. Newest of any status, so
+    that the older drafts do not count again once the newest is confirmed;
+    newest by `replayed_at` where the guest went back to an earlier draft,
+    else by `created_at`.
+    shortcut: wall-clock order; a clock step back wider than the gap between
+    two corrections makes the left one newest. Upgrade to a sequence if seen.
     """
     if not windows:
         return {}
     newer = aliased(Reservation)
+    held_since = func.coalesce(Reservation.replayed_at, Reservation.created_at)
+    newer_since = func.coalesce(newer.replayed_at, newer.created_at)
     live_draft = and_(
         Reservation.status == "draft",
         Reservation.call_id.is_not(None),
@@ -131,11 +135,12 @@ def booked_guests(
             newer.tenant_id == Reservation.tenant_id,
             newer.call_id == Reservation.call_id,
             or_(
-                newer.created_at > Reservation.created_at,
-                # Same instant (one turn passes one `now`): of two drafts the
-                # higher id counts; a confirmed row there never hides a draft.
+                newer_since > held_since,
+                # Same instant (a call on a pinned clock: the text phone with
+                # `--now`, evals, tests): of two drafts the higher id counts;
+                # a confirmed row there never hides a draft.
                 and_(
-                    newer.created_at == Reservation.created_at,
+                    newer_since == held_since,
                     newer.status == "draft",
                     newer.id > Reservation.id,
                 ),

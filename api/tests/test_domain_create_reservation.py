@@ -819,6 +819,9 @@ def test_two_drafts_written_at_the_same_instant_hold_one_party(
     mine = create_reservation(session, _six(tenant_id, call_id, party_size=4), now=NOW)
 
     assert mine.status == "draft"
+    # And one of them does count: 30 + 6 + 5 > 40.
+    with pytest.raises(Conflict):
+        create_reservation(session, _six(tenant_id, call_id, party_size=5), now=NOW)
 
 
 def test_a_confirmed_table_of_the_same_instant_never_hides_a_draft(
@@ -840,6 +843,44 @@ def test_a_confirmed_table_of_the_same_instant_never_hides_a_draft(
     # 30 + 6 + 6 > 40.
     with pytest.raises(Conflict):
         create_reservation(session, _six(tenant_id, call_id), now=NOW)
+
+
+def test_going_back_to_an_earlier_draft_makes_it_hold_the_seats_again(
+    session, tenant_id, call_id
+):
+    """Wednesday, then Thursday, then "doch Mittwoch": the replayed Wednesday
+    draft is the call's newest again, so another caller cannot take its
+    seats, the guest's yes books it, and Thursday holds nothing after it."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    wednesday = _six(tenant_id, call_id, idempotency_key="k-wednesday")
+    first = create_reservation(session, wednesday, now=NOW)
+    thursday = WEDNESDAY_EVENING + timedelta(days=1)
+    create_reservation(
+        session,
+        _six(tenant_id, call_id, reserved_for=thursday),
+        now=NOW + timedelta(minutes=1),
+    )
+    back = create_reservation(session, wednesday, now=NOW + timedelta(minutes=2))
+    assert back == first
+
+    with pytest.raises(Conflict):
+        create_reservation(
+            session,
+            _six(tenant_id, _other_call(session, tenant_id)),
+            now=NOW + timedelta(minutes=3),
+        )
+    assert _confirm(session, tenant_id, call_id, first.reservation_id).status == (
+        "confirmed"
+    )
+    _, held = reservations_capacity.window_load(
+        session,
+        tenant_id,
+        thursday,
+        BERLIN,
+        now=NOW + timedelta(minutes=4),
+        draft_lifetime=_call_limit(session, tenant_id),
+    )
+    assert held == 0
 
 
 def test_a_draft_is_replaced_only_by_a_newer_row_of_its_own_call(

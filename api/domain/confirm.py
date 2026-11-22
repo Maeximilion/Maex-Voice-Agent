@@ -101,7 +101,8 @@ def _confirm_reservation(
         session.commit()
         return CONFIRMED
 
-    # A draft holds its seats only while its call can confirm it (capacity.py).
+    # A draft holds its seats only while its call can confirm it and it is
+    # that call's newest row (capacity.py, #908).
     # One that is confirmed after that, or after the capacity was lowered, may
     # find them given away: check again, under the same lock as the making of
     # a draft, so that two late confirmations cannot both see the window empty.

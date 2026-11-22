@@ -40,7 +40,7 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
         ),
         Index("ix_reservations_tenant_reserved_for", "tenant_id", "reserved_for"),
         # The seat count asks per draft for a newer row of its call (#908).
-        Index("ix_reservations_call_created_at", "call_id", "created_at"),
+        Index("ix_reservations_call_id", "call_id"),
     )
 
     call_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -70,6 +70,10 @@ class Reservation(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):
     off_hours: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    # When the guest went back to this draft and its key replayed it (#908,
+    # migration 044): the seat count orders a call's rows by this, else by
+    # `created_at`, which stays the read-back's anchor.
+    replayed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ReservationTable(TenantScoped, Base):
