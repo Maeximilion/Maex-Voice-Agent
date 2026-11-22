@@ -1015,6 +1015,11 @@ def test_outside_dev_and_test_the_drill_engines_and_a_short_token_are_refused(
     startable.setattr(settings, "voice_media_token", "x" * 32)
     with pytest.raises(RuntimeError, match="drill engines"):
         voice_from_settings()
+    # The load test's stand-ins (#841) hear sentences nobody said.
+    startable.setattr(settings, "voice_ear", "load")
+    startable.setattr(settings, "voice_mouth", "load")
+    with pytest.raises(RuntimeError, match="drill engines"):
+        voice_from_settings()
 
 
 def test_the_service_does_not_start_without_a_model(startable):
