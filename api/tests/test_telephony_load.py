@@ -369,3 +369,27 @@ def test_lost_audio_may_be_allowed() -> None:
     assert not result.inside
     result.checks = load.judge_step(result, 1.5, lost_audio=0.1)
     assert result.inside
+
+
+def test_an_answer_cut_short_counts_as_lost() -> None:
+    turn = [(2.5, 7.5)]
+    whole = _track([(0, 3.8), (1000, load.ANSWER_SECONDS)])
+    cut = _track([(0, 3.8), (1000, 0.8)])
+    assert (
+        load.cut_seconds(_sounding(whole, 1000, RATE), RATE, turn, load.ANSWER_SECONDS)
+        == 0
+    )
+    short = load.cut_seconds(
+        _sounding(cut, 1000, RATE), RATE, turn, load.ANSWER_SECONDS
+    )
+    assert short == pytest.approx(load.ANSWER_SECONDS - 0.8, abs=0.03)
+    # A turn without an answer is a missing turn, not a cut one.
+    assert load.cut_seconds([], RATE, turn, load.ANSWER_SECONDS) == 0
+
+
+def test_the_server_side_refuses_a_folder_it_did_not_make(tmp_path: Path) -> None:
+    (tmp_path / "notes.txt").write_text("mine")
+    args = load.argparse.Namespace(run_dir=tmp_path)
+    with pytest.raises(load.LoadError, match="not a run directory"):
+        load.Inside(args).run()
+    assert (tmp_path / "notes.txt").exists()

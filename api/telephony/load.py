@@ -75,7 +75,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from api.telephony.adapters.fake_speech import LoadMouth
 from api.telephony.audio import _sounding
+from api.telephony.load_model import SAY
 from api.telephony.spike import docker_problem, step, usable_run_dir
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -117,6 +119,8 @@ MOUTH_SECONDS = 0.15
 # A gap inside an answer longer than this ends it; shorter ones are lost audio.
 ANSWER_GAP = 0.3
 TOOL_BUDGET_MS = 300.0
+# How long the mouth plays the stand-in model's answer of every turn.
+ANSWER_SECONDS = min(len(SAY) * LoadMouth.SECONDS_PER_CHAR, LoadMouth.MAX_SECONDS)
 # How long the caller speaks and listens in a turn (router/extensions.conf).
 SPEAK_SECONDS = 1.5
 LISTEN_SECONDS = 5.0
@@ -356,7 +360,14 @@ class Inside:
         self.results: list[StepResult] = []
 
     def run(self) -> int:
+        # The kit clears folders in it: only its own or an empty one.
+        if not usable_run_dir(self.load, RUN_MARKER):
+            raise LoadError(
+                f"{self.load} is not a run directory of this kit: name an empty or "
+                "a new one"
+            )
         self.load.mkdir(parents=True, exist_ok=True)
+        (self.load / RUN_MARKER).touch()
         step("Clear what an earlier run left on the test server")
         clean_slate(self.load)
         step("Start the operator stack and the line")
@@ -713,11 +724,24 @@ def judge_call(exten: str, folder: Path, turns: int) -> CallResult:
     said = spans(_sounding(said_pcm, SAID_HZ, said_rate), said_rate, ANSWER_GAP)
     heard_windows = _sounding(heard_pcm, HEARD_HZ, heard_rate)
     heard = spans(heard_windows, heard_rate, ANSWER_GAP)
-    return CallResult(
-        exten,
-        turn_times(said, heard, turns),
-        lost_seconds(heard_windows, heard_rate, listening(said)),
-    )
+    ears = listening(said)
+    lost = lost_seconds(heard_windows, heard_rate, ears)
+    lost += cut_seconds(heard_windows, heard_rate, ears[1:], ANSWER_SECONDS)
+    return CallResult(exten, turn_times(said, heard, turns), round(lost, 3))
+
+
+def cut_seconds(
+    windows: list[int], rate: int, turns: list[tuple[float, float]], expected: float
+) -> float:
+    """Audio missing at the end of answers: each answered turn should play the
+    whole sentence of the stand-in model (`expected` seconds); what it falls
+    short by, beyond two windows of tolerance, is audio cut off or lost."""
+    cut = 0.0
+    for lo, hi in turns:
+        played = sum(WINDOW for w in windows if lo <= w / rate < hi)
+        if played and played < expected - 2 * WINDOW:
+            cut += expected - played
+    return round(cut, 3)
 
 
 # -- what the server and the stacks report ----------------------------------------
