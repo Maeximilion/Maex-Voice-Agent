@@ -377,10 +377,10 @@ class Inside:
         }
 
     def render_router(self) -> None:
+        # Written over in place: the running router has the folder mounted, and
+        # a new folder would stay unseen behind the deleted one.
         target = self.load / "router"
-        if target.exists():
-            shutil.rmtree(target)
-        target.mkdir(parents=True)
+        target.mkdir(parents=True, exist_ok=True)
         for name in ("asterisk.conf", "logger.conf", "modules.conf"):
             shutil.copy(REPO_ROOT / "deploy" / "asterisk" / "conf" / name, target)
         source = KIT_DIR / "router"
