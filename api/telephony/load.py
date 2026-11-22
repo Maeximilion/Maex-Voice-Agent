@@ -91,6 +91,12 @@ ROOT = Path("/srv/maex")
 # Inside the test server the run directory is here.
 LOAD_DIR = Path("/load")
 LINE_PROJECT = "load-line"
+# Run as root in the test server before each run: it is the kit's own.
+WIPE = (
+    "docker ps -aq | xargs -r docker rm -f >/dev/null; "
+    "docker volume prune -af >/dev/null; docker network prune -f >/dev/null; "
+    "rm -rf /srv/maex/* /srv/maex/.[!.]*"
+)
 ROUTER = f"{LINE_PROJECT}-router-1"
 MODEL = f"{LINE_PROJECT}-model-1"
 DOMAIN = "load{n}.test"
@@ -211,6 +217,9 @@ def on_workbench(args: argparse.Namespace) -> int:
         60,
         "the test server's Docker Engine did not start",
     )
+    # The server's Docker data is kept between runs, and the containers of the
+    # last one start again with it (restart: always), with their folders gone.
+    inside_server(["sh", "-c", WIPE])
     inner = [
         *("docker", "exec", "-u", "deploy", "-w", str(REPO_ROOT)),
         *("-e", "PYTHONUNBUFFERED=1", SERVER),
@@ -219,6 +228,7 @@ def on_workbench(args: argparse.Namespace) -> int:
         *("--turns", str(args.turns), "--model-delay", str(args.model_delay)),
         *("--turn-budget", str(args.turn_budget), "--greeting", str(args.greeting)),
         *("--cpus", args.cpus, "--memory", args.memory),
+        *("--run-dir", str(LOAD_DIR)),
     ]
     try:
         code = subprocess.run(inner, check=False).returncode
@@ -321,12 +331,14 @@ class Inside:
 
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
+        self.load: Path = args.run_dir
         self.stacks: list[Stack] = []
         self.results: list[StepResult] = []
 
     def run(self) -> int:
+        self.load.mkdir(parents=True, exist_ok=True)
         step("Clear what an earlier run left on the test server")
-        clean_slate()
+        clean_slate(self.load)
         step("Start the operator stack and the line")
         operator_stack()
         self.render_router()
@@ -357,7 +369,7 @@ class Inside:
     def line_env(self) -> dict[str, str]:
         return {
             **os.environ,
-            "LOAD_RUN": str(LOAD_DIR),
+            "LOAD_RUN": str(self.load),
             "LOAD_SRC": str(REPO_ROOT),
             "LOAD_UID": str(os.getuid()),
             "LOAD_GID": str(os.getgid()),
@@ -365,7 +377,7 @@ class Inside:
         }
 
     def render_router(self) -> None:
-        target = LOAD_DIR / "router"
+        target = self.load / "router"
         if target.exists():
             shutil.rmtree(target)
         target.mkdir(parents=True)
@@ -385,15 +397,15 @@ class Inside:
                 greeting=a.greeting,
             )
         )
-        (LOAD_DIR / "recordings").mkdir(exist_ok=True)
+        (self.load / "recordings").mkdir(exist_ok=True)
 
     def add_stack(self, n: int) -> None:
         key = f"load{n}"
-        customers = LOAD_DIR / "customers"
+        customers = self.load / "customers"
         customers.mkdir(exist_ok=True)
         spec = customers / f"{key}.json"
         spec.write_text(json.dumps(customer(n), indent=2))
-        log = LOAD_DIR / f"new_stack-{key}.log"
+        log = self.load / f"new_stack-{key}.log"
         with log.open("w") as out:
             # stdout carries the setup link and the push passwords: not kept.
             done = subprocess.run(
@@ -461,7 +473,7 @@ class Inside:
 
     def step(self, name: str, stacks: list[Stack], calls: int) -> StepResult:
         a = self.args
-        folder = LOAD_DIR / "recordings" / name
+        folder = self.load / "recordings" / name
         folder.mkdir(parents=True, exist_ok=True)
         router_cli(f"dialplan set global STEP {name}")
         started = datetime.now(UTC)
@@ -520,9 +532,9 @@ class Inside:
             "steps": [summary(r) for r in self.results],
             "limit": limit,
         }
-        (LOAD_DIR / "report.json").write_text(json.dumps(report, indent=2) + "\n")
+        (self.load / "report.json").write_text(json.dumps(report, indent=2) + "\n")
         text = table(self.results) + "\n\n" + limit + "\n"
-        (LOAD_DIR / "table.md").write_text(text)
+        (self.load / "table.md").write_text(text)
         step("Result")
         print(text)
 
@@ -991,19 +1003,48 @@ def wait_for(ready: Any, seconds: float, message: str, *, fail: bool = True) -> 
         time.sleep(1)
 
 
-def clean_slate() -> None:
-    ids = sh(["docker", "ps", "-aq"]).split()
-    if ids:
-        sh(["docker", "rm", "-f", *ids])
-    sh(["docker", "volume", "prune", "-af"])
-    sh(["docker", "network", "prune", "-f"])
+def clean_slate(load_dir: Path) -> None:
+    """What an earlier run of this kit left: its stacks, the operator stack,
+    the shared Caddy and the line, with their volumes and folders. A host whose
+    /srv/maex this kit did not make is refused: a server with customers on it
+    is no place for a load test."""
+    marker = ROOT / RUN_MARKER
+    if any(ROOT.iterdir()) and not marker.exists():
+        raise LoadError(
+            f"{ROOT} holds stacks this kit did not make: run the load test on an "
+            "empty server only"
+        )
+    listed = sh(
+        [
+            "docker",
+            "ps",
+            "-a",
+            "--format",
+            '{{.ID}} {{.Label "com.docker.compose.project"}}',
+        ]
+    )
+    ours = [
+        cid
+        for cid, _, project in (line.partition(" ") for line in listed.splitlines())
+        if re.fullmatch(r"maex-load\d+|maex-ops|maex-caddy|" + LINE_PROJECT, project)
+    ]
+    if ours:
+        sh(["docker", "rm", "-f", *ours])
+    stacks = [f"maex-load{n}" for n in range(1, MAX_STACKS + 1)]
+    for project in ("maex-ops", "maex-caddy", LINE_PROJECT, *stacks):
+        label = f"label=com.docker.compose.project={project}"
+        for kind in ("volume", "network"):
+            sh(["docker", kind, "prune", "-f", *(["-a"] if kind == "volume" else []),
+                "--filter", label])  # fmt: skip
     for path in ROOT.iterdir():
-        sh(["rm", "-rf", str(path)])
+        if path != marker:
+            sh(["rm", "-rf", str(path)])
+    marker.touch()
     for name in ("recordings", "customers", "router"):
-        if (LOAD_DIR / name).exists():
-            shutil.rmtree(LOAD_DIR / name)
+        if (load_dir / name).exists():
+            shutil.rmtree(load_dir / name)
     for name in ("report.json", "table.md"):
-        (LOAD_DIR / name).unlink(missing_ok=True)
+        (load_dir / name).unlink(missing_ok=True)
 
 
 def operator_stack() -> None:
