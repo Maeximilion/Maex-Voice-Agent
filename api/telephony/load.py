@@ -188,9 +188,15 @@ def on_workbench(args: argparse.Namespace) -> int:
     (run_dir / RUN_MARKER).touch()
     step("Build and start the test server", f"({args.cpus} processors, {args.memory})")
     stop_server(purge=False)
+    # A client configuration of its own: the base image is public, and the
+    # workbench's credential helper is a Windows program that fails whenever
+    # WSL cannot start Windows programs (seen 22.11.2026).
+    config = run_dir / "docker-config"
+    config.mkdir(exist_ok=True)
+    (config / "config.json").write_text("{}\n")
     sh(
         [
-            *("docker", "build", "-q", "-t", SERVER_IMAGE),
+            *("docker", "--config", str(config), "build", "-q", "-t", SERVER_IMAGE),
             *("--build-arg", f"DEPLOY_UID={os.getuid()}"),
             *("--build-arg", f"DEPLOY_GID={os.getgid()}"),
             *("-f", str(KIT_DIR / "Dockerfile"), str(REPO_ROOT / "deploy")),
