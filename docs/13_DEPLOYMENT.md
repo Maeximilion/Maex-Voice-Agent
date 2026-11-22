@@ -594,8 +594,10 @@ the server is bought and prices per concurrent call are set. On the workbench, i
   which the router and the stand-in model, which do not run on the server in operation, take
   about 28, and the kit's own polling of the router's log during that run a little more (read
   once per call and second then, once per three seconds since): the processor figures are on
-  the high side. The largest share of a stack is n8n (0.54 GB). The table is in the comment on #841,
-  the run up to 9 stacks with 0.1 s of lost audio allowed there as well.
+  the high side. The largest share of a stack is n8n (0.54 GB). A second run with 0.1 s of lost audio
+  allowed per step held every check up to 6 stacks with 18 calls (turns 1.32 s, 7.4 of 8 GB), and
+  the seventh stack did not come up: Docker's default address pools were used up (§3,
+  `deploy/docker-daemon.json` since). The tables are in the comment on #841.
 - **The CPU caveat stands**: a workbench core (Ryzen 9 7950X3D) is faster than a VPS vCore, so the
   number is an upper bound. Plan with a margin and run the same on the VPS in its first month:
   there, as the deploy user in a checkout on an empty server,
