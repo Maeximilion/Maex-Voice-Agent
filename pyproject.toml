@@ -68,6 +68,15 @@ module = [
     "piper.*",
     "huggingface_hub",
     "huggingface_hub.*",
+    # The watermarks of scripts/watermark_line.py (#637), measured, not shipped.
+    "torch",
+    "torch.*",
+    "audioseal",
+    "audioseal.*",
+    "perth",
+    "perth.*",
+    "wavmark",
+    "wavmark.*",
 ]
 ignore_missing_imports = true
 
