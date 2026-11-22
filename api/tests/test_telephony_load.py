@@ -312,3 +312,10 @@ def test_memory_kills_of_the_server(tmp_path: Path) -> None:
     assert load.oom_kills(tmp_path) == 0
     (tmp_path / "memory.events").write_text("low 0\nhigh 0\nmax 4\noom 2\noom_kill 1\n")
     assert load.oom_kills(tmp_path) == 1
+
+
+def test_lost_audio_may_be_allowed() -> None:
+    result = _step(lost_audio=0.02)
+    assert not result.inside
+    result.checks = load.judge_step(result, 1.5, lost_audio=0.1)
+    assert result.inside

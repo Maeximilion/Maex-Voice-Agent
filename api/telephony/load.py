@@ -143,6 +143,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--turns", type=int, default=4)
     parser.add_argument("--model-delay", type=float, default=0.25)
     parser.add_argument("--turn-budget", type=float, default=1.5)
+    parser.add_argument(
+        "--lost-audio",
+        type=float,
+        default=0.0,
+        help="seconds of audio a step may lose inside its answers (default none)",
+    )
     parser.add_argument("--greeting", type=float, default=10.0)
     parser.add_argument("--cpus", default="4")
     parser.add_argument("--memory", default="8g")
@@ -234,6 +240,7 @@ def on_workbench(args: argparse.Namespace) -> int:
         *("--max-stacks", str(args.max_stacks), "--calls", str(args.calls)),
         *("--turns", str(args.turns), "--model-delay", str(args.model_delay)),
         *("--turn-budget", str(args.turn_budget), "--greeting", str(args.greeting)),
+        *("--lost-audio", str(args.lost_audio)),
         *("--cpus", args.cpus, "--memory", args.memory),
         *("--run-dir", str(LOAD_DIR)),
     ]
@@ -531,7 +538,7 @@ class Inside:
             restarts=restarts(),
             **usage,
         )
-        result.checks = judge_step(result, a.turn_budget)
+        result.checks = judge_step(result, a.turn_budget, a.lost_audio)
         return result
 
     def router_log(self, since: float) -> str:
@@ -834,7 +841,9 @@ def percentile(values: list[float], share: float) -> float | None:
     return ordered[min(len(ordered) - 1, round(share * (len(ordered) - 1)))]
 
 
-def judge_step(r: StepResult, turn_budget: float) -> list[Check]:
+def judge_step(
+    r: StepResult, turn_budget: float, lost_audio: float = 0.0
+) -> list[Check]:
     median = statistics.median(r.turns) if r.turns else None
     tool_p95 = percentile(r.tool_ms, 0.95)
     memory_left = r.memory_limit_mb - r.memory_peak_mb
@@ -854,7 +863,11 @@ def judge_step(r: StepResult, turn_budget: float) -> list[Check]:
             tool_p95 is None or tool_p95 <= TOOL_BUDGET_MS,
             f"95th percentile {fmt(tool_p95)} ms of {len(r.tool_ms)}",
         ),
-        ("audio steady", r.lost_audio == 0, f"{r.lost_audio} s missing in answers"),
+        (
+            "audio steady",
+            r.lost_audio <= lost_audio,
+            f"{r.lost_audio} s missing in answers, {lost_audio} s allowed",
+        ),
         ("no team ring", r.team_rings == 0, f"{r.team_rings} rings"),
         ("nothing restarted", not r.restarts, "; ".join(r.restarts) or "none"),
         (
