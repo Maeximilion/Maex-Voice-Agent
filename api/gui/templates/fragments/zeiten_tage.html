@@ -1,0 +1,43 @@
+{# Dates with hours of their own (#571): the coming ones from `special_days`
+   and the owner's form. Set here they hold at once, without a check card
+   (the staff's way is the sheet "Öffnungszeit für einen Tag"). The form
+   preselects nothing: no date, no times, and the choice is the button; only a
+   refused form shows again what was typed (`typed`), its faulty inputs
+   marked and tied to the message (`errors`, #821). #}
+<h2 tabindex="-1"{% if not message %} data-fokus{% endif %}>Sondertage</h2>
+{% if message %}<p class="badge {{ tone }}" id="tage-meldung" role="{{ 'alert' if tone == 'danger' else 'status' }}" tabindex="-1" data-fokus>{{ message }}</p>{% endif %}
+{% if days %}
+<table class="tbl">
+  <thead><tr><th>Datum</th><th>Was gilt</th><th>Normale Zeiten</th></tr></thead>
+  <tbody>
+    {% for d in days %}
+    <tr>
+      <td>{{ d.when }}</td>
+      <td>{{ d.text }}{% if d.note %} <span class="muted">({{ d.note }})</span>{% endif %}</td>
+      <td><button hx-post="/gui/zeiten/tag" hx-vals='{"datum": "{{ d.day }}", "art": "normal"}' hx-target="#zeiten-tage" hx-swap="innerHTML"
+                  hx-confirm="{{ d.when }}: wieder die normalen Zeiten der Woche?">Normale Zeiten</button></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="empty">Kein Sondertag eingetragen.</p>
+{% endif %}
+<form class="day-form" novalidate hx-post="/gui/zeiten/tag" hx-target="#zeiten-tage" hx-swap="innerHTML" hx-disabled-elt="find button">
+  <h3>Einen Tag ändern</h3>
+  <div class="span-row">
+    <label>Tag <input type="date" name="datum" value="{{ typed.datum if typed else '' }}"{% if errors and errors.get("datum") %} aria-invalid="true" aria-describedby="tage-meldung"{% endif %} min="{{ today }}"></label>
+    <label>Von <input type="time" name="von" value="{{ typed.von if typed else '' }}"{% if errors and errors.get("von") %} aria-invalid="true" aria-describedby="tage-meldung"{% endif %} step="900"></label>
+    <label>Bis <input type="time" name="bis" value="{{ typed.bis if typed else '' }}"{% if errors and errors.get("bis") %} aria-invalid="true" aria-describedby="tage-meldung"{% endif %} step="900"></label>
+    <label class="check"><input type="checkbox" name="nachts" value="1"{% if typed and typed.nachts %} checked{% endif %}> Ende nach Mitternacht</label>
+  </div>
+  <div class="cb-actions">
+    <button type="submit" name="art" value="zeiten" class="primary">Diese Zeiten</button>
+    {# Its own request, not a submit of the form: htmx reads hx-confirm from the element that
+         sends, and the form sends for "Diese Zeiten". Closing a day stops every service (#829-4). #}
+    <button type="button" hx-post="/gui/zeiten/tag" hx-include="closest form" hx-vals='{"art": "geschlossen"}' hx-target="#zeiten-tage" hx-swap="innerHTML" hx-disabled-elt="this"
+            hx-confirm="Diesen Tag für alle Bereiche als geschlossen eintragen? Das gilt sofort.">Geschlossen</button>
+  </div>
+  <p class="muted">Gilt sofort und nur an diesem Tag, für alle Bereiche.</p>
+</form>
+{% if oob %}{% include "fragments/zeiten_gaeste.html" %}{% endif %}

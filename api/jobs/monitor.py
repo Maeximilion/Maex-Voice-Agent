@@ -33,7 +33,8 @@ The push goes straight to the push server of the stack, topic `ops`, which only
 the operator reads (Maxi, 29.10.2026). The audit log remembers each push sent
 (`monitor.alarm`), so a restart does not send it again; a push that fails is
 not recorded and goes out on the next pass. Without MONITOR_PUSH_TOKEN the
-push is only logged (development, tests). Counts and amounts only, no guest
+push is only logged (development, tests); outside them the dispatcher does not
+start (`require_push_token`). Counts and amounts only, no guest
 details.
 """
 
@@ -45,7 +46,7 @@ import httpx
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from api.config import settings
+from api.config import LOCAL_ENVS, TOKEN_MIN_LENGTH, settings, valid_production_token
 from api.core.logging import error_text, get_logger, log
 from api.core.time import business_day, business_day_bounds_utc, to_local
 from api.domain.calls.figures import ORDERS_TAKEN
@@ -84,6 +85,27 @@ OUTCOME_WORDS = {
 Send = Callable[[str, str, str], None]
 # (kind, key, title, text, priority): the key makes a push once per day or hour.
 Alarm = tuple[str, str, str, str, str]
+
+
+def require_push_token() -> None:
+    """Outside dev and test, refuse to start without the push token (#861).
+
+    `push` only logs without a token, and `check` then books the alarm as sent,
+    so a production stack with the token left out would never tell the operator
+    anything. `push` itself must not raise instead: that would hide the alarm
+    on the dashboard too. Only the dispatcher has the token (docker-compose.yml),
+    so the check runs in its start (`api/jobs/cold_path.py`), as the dashboard's
+    own push check does (`dashboard/config.py`, #836). The value stays out of
+    the message: it ends up in a log."""
+    if settings.env in LOCAL_ENVS or valid_production_token(
+        settings.monitor_push_token
+    ):
+        return
+    raise RuntimeError(
+        "MONITOR_PUSH_TOKEN is empty, the placeholder, contains whitespace or is "
+        f"shorter than {TOKEN_MIN_LENGTH} characters: the token of the push "
+        "server's user `monitor` (docs/13 §8)"
+    )
 
 
 def push(title: str, text: str, priority: str) -> None:
@@ -393,6 +415,7 @@ def _day_report(session: Session, tenant: Tenant, day: date) -> Alarm:
                 Call.tenant_id == tenant.id,
                 Call.started_at >= start,
                 Call.started_at < end,
+                Call.is_test.is_(False),
             )
             .group_by(Call.outcome)
         ).all()
@@ -416,6 +439,7 @@ def _day_report(session: Session, tenant: Tenant, day: date) -> Alarm:
             Reservation.status == "confirmed",
             # The agent's day: a table the team entered by hand took no call (T-3.12).
             Reservation.source == "agent",
+            Reservation.is_test.is_(False),
             Reservation.created_at >= start,
             Reservation.created_at < end,
         )
@@ -451,6 +475,7 @@ def _cost(
             Call.tenant_id == tenant.id,
             Call.started_at >= start,
             Call.started_at < end,
+            Call.is_test.is_(False),
         )
     ).one()
     return known or 0, unknown

@@ -19,6 +19,7 @@ from api.models import (
     FloorArea,
     Reservation,
     ReservationTable,
+    SpecialDay,
     TableCombination,
 )
 from api.tests import test_gui_router as gui
@@ -195,7 +196,7 @@ def test_a_full_window_is_entered_only_after_trotzdem(client, engine, tenant_id)
     with Session(engine) as s:
         last = s.scalars(select(AuditLog).order_by(AuditLog.id.desc())).first()
     assert last is not None
-    assert last.payload == {"source": "tablet", "override": True}
+    assert last.payload == {"source": "tablet", "override": True, "off_hours": False}
 
 
 @pytest.mark.parametrize(
@@ -339,3 +340,83 @@ def test_the_card_names_its_tables_and_hides_a_missing_number(
 
     assert "Tisch T1 + T2" in text
     assert '<div class="muted"></div>' not in text
+
+
+# --- a table outside the opening hours on purpose (#819) ---------------------------
+
+
+def test_a_closed_day_is_entered_only_after_trotzdem_and_marked(
+    client, engine, tenant_id
+):
+    with Session(engine) as s:
+        s.add(SpecialDay(tenant_id=tenant_id, date=ahead(), closed=True, status="set"))
+        s.commit()
+
+    summary = client.post("/gui/reservierung", content=entry(), headers=TYPED)
+
+    # The seats are free; the hours are what the team is asked about.
+    assert "0 von 40 Plätzen belegt" in summary.text
+    assert "Zu dieser Zeit ist laut Öffnungszeiten geschlossen." in summary.text
+    assert "Trotzdem eintragen" in summary.text
+    assert (
+        'hx-confirm="Laut Öffnungszeiten ist zu dieser Zeit geschlossen. '
+        'Trotzdem eintragen?"' in summary.text
+    )
+    draft = drafts(engine)[-1]
+    path = f"/gui/reservierung/{draft.id}/eintragen"
+
+    refused = client.post(path, content="", headers=TYPED)
+    assert refused.status_code == 409
+    assert drafts(engine)[-1].status == "draft"
+
+    assert '<input type="hidden" name="geschlossen" value="1">' in summary.text
+    assert 'name="trotzdem"' not in summary.text
+    seats_only = client.post(path, content="trotzdem=1", headers=TYPED)
+    assert seats_only.status_code == 409
+    assert drafts(engine)[-1].status == "draft"
+
+    taken = client.post(path, content="geschlossen=1", headers=TYPED)
+    assert taken.status_code == 200
+    booked = drafts(engine)[-1]
+    assert (booked.status, booked.off_hours) == ("confirmed", True)
+
+
+def test_the_board_card_names_a_table_booked_outside_the_hours(
+    client, engine, tenant_id
+):
+    with Session(engine) as s:
+        for name, off_hours in (("Absichtlich", True), ("Normal", False)):
+            s.add(
+                Reservation(
+                    tenant_id=tenant_id,
+                    source="tablet",
+                    status="confirmed",
+                    guest_name=name,
+                    phone="",
+                    party_size=2,
+                    reserved_for=heute(20 if off_hours else 21),
+                    idempotency_key=uuid.uuid4().hex,
+                    off_hours=off_hours,
+                )
+            )
+        s.commit()
+
+    body = client.get("/gui/fragments/heute").text
+
+    marked, plain = body.split('<li class="card res"')[1:]
+    note = '<div class="note">Bewusst außerhalb der Öffnungszeiten eingetragen.</div>'
+    assert "Absichtlich" in marked and note in marked
+    assert "Normal" in plain and "Öffnungszeiten" not in plain
+
+
+def test_a_full_window_on_a_closed_day_warns_of_both(client, engine, tenant_id):
+    full_evening(engine, tenant_id)
+    with Session(engine) as s:
+        s.add(SpecialDay(tenant_id=tenant_id, date=ahead(), closed=True, status="set"))
+        s.commit()
+
+    summary = client.post("/gui/reservierung", content=entry(), headers=TYPED).text
+
+    assert '<p class="badge warn">Fenster 17:00 bis 22:00 Uhr: 40 von 40' in summary
+    assert "Zu dieser Zeit ist laut Öffnungszeiten geschlossen." in summary
+    assert "Trotzdem eintragen" in summary

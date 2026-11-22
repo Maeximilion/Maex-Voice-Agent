@@ -797,11 +797,42 @@ def test_cron_file_runs_the_backup_daily_at_three():
         if line.strip() and not line.startswith("#")
     ]
 
-    (job,) = lines
+    # A customer stack's database and the operator stack's own (#827 F9).
+    job, operator = lines
     assert job.startswith("0 3 * * * ")
-    assert "scripts/backup.sh" in job
-    # The shell opens the log before the script runs; without the folder no backup.
-    assert job.index("mkdir -p backups") < job.index(">> backups/")
+    assert operator.startswith("15 3 * * * cd /srv/maex/ops && ")
+    for line in lines:
+        assert "scripts/backup.sh" in line
+        # The shell opens the log before the script runs; without the folder no backup.
+        assert line.index("mkdir -p backups") < line.index(">> backups/")
+
+
+def test_the_operator_database_is_dumped_without_a_mark_for_the_alarm(
+    backup_dir, passphrase_file
+):
+    """#827 F9: the operator stack's database has no tenants and no backup
+    alarm, so a good dump must not end in the warning that the alarm fires."""
+    name = f"maex_operator_{os.getpid()}_{int(time.time())}"
+    _sql(_admin_url("postgres"), f'create database "{name}"')
+    try:
+        url = _admin_url(name)
+        _sql(url, "create table operator_audit (id int primary key)")
+        _sql(url, "insert into operator_audit values (1)")
+
+        done = _run(
+            "backup.sh",
+            db_url=url,
+            backup_dir=backup_dir,
+            passphrase_file=passphrase_file,
+        )
+
+        assert done.returncode == 0, done.stderr
+        assert "warning" not in done.stderr
+        assert "operator database" in done.stdout
+        (dump,) = backup_dir.iterdir()
+        assert dump.name.startswith(f"maex_{name}_")
+    finally:
+        _sql(_admin_url("postgres"), f'drop database "{name}" with (force)')
 
 
 def test_passphrase_file_with_windows_line_ending_gives_the_same_key(

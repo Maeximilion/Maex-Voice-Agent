@@ -99,6 +99,8 @@ When the print bridge last polled, one row per tenant (T-8.3, migration 016, `do
 
 Mehrere Zeilen je Wochentag erlaubt (Mittag und Abend getrennt).
 
+The times are the restaurant's clock (`tenants.timezone`), not UTC: a span is turned into instants per date (`domain/status/hours.py`), so it keeps its clock times over a change of the clock. A row whose `closes_at` is not after its `opens_at` runs past midnight into the next date. The owner edits the rows on the tab "Zeiten" (#571, docs/06 §4, `domain/status/weekly.py`): the spans of one weekday and service are replaced as a whole, with an audit row `opening_hours.changed`; no migration came with it.
+
 ### `special_days`
 Feiertage, Urlaub, Sonderzeiten. Schlägt `opening_hours` für dieses Datum.
 
@@ -186,6 +188,11 @@ Two tables of one room the team may push together. One row per pair, the smaller
 | reserved_for | TIMESTAMPTZ | |
 | note | TEXT | Kinderstuhl, Allergie, Anlass |
 | idempotency_key | TEXT UNIQUE | |
+| is_test | BOOL, default false | the table of a self-test call (#574, migration 039), copied from `calls.is_test` by `create_reservation`: the tablet shows it as a card marked TEST, its `confirm` writes no outbox event and no customer contact, the hours change cards never list it; `sim.selftest` deletes it again |
+| off_hours | BOOL, default false | the team booked the table outside the opening hours on purpose (#819, migration 042): `confirm_tablet` sets it when no dine-in window of the hours, as they stand at the confirming tap, holds `reserved_for`, after the sheet asked „Trotzdem eintragen“; never set afterwards and never by the agent, which books inside the hours only (CHECK `ck_reservations_off_hours_tablet`: only a `tablet` row carries it). The board's card says „Bewusst außerhalb der Öffnungszeiten eingetragen.“, and the tab „Zeiten“ leaves the table off its list of guests to call; rows from before 042 stay false |
+| replayed_at | TIMESTAMPTZ, null | when the guest went back to this draft and its key replayed it (#908, migration 044): the seat count takes a call's newest row by this, else by `created_at`, and only that row's draft holds seats against other calls; `created_at` stays the read-back's anchor |
+
+Indexes: `ix_reservations_tenant_reserved_for` (tenant, time of the table) and, since migration 044, `ix_reservations_call_id` (call) for the seat count's check that a draft is its call's newest row (#908).
 
 ### `reservation_tables`
 The table, or the two tables of a combination, a reservation the team entered sits on (T-3.12, migration 029). An agent's reservation has none: it books seats of a window, not a table (D28). A table is taken for the capacity window of its reservation, the turn; outside every window only the same start time collides (assumption, docs/01).
@@ -213,6 +220,7 @@ Ein Eintrag je Anruf. Grundlage für KPIs und Kostenkontrolle.
 | line_note | TEXT NULL | what was wrong with the line of the call, a closed list (CHECK, migration 036). `no_caller_audio`: the AI answered at least a silence's length (VOICE_SILENCE_SECONDS) before the end of the call, and nothing of the caller had arrived by then, no frame or only digital zero (#651, Maxi 11.11.2026). The call ends as a silent one, without the team; the note marks it in the call list and feeds the monitor's alarm for calls in a row without audio (docs/20 §5). NULL on every other call |
 | cost_cents | INT NULL | von der Plattform, sobald verfügbar. From the own core (text phone, T-2.4): the model cost of the call in whole cents, rounded up, from the counted tokens and the prices in `.env`; empty when no real model ran, a price is missing or the tokens of one request are unknown, never 0 for unknown. The exact tokens are in the log line "model usage", not in this table |
 | model | TEXT NULL | welches Modell lief |
+| is_test | BOOL, default false | a self-test call (`python -m sim.selftest`, #574, migration 039): outside the figures, the call log and the monitor's day report; the self-test deletes it again |
 | tool_calls | JSONB | Liste mit Name, Dauer, Ergebnis |
 | delete_after | DATE | the day the caller number goes, `RETENTION_CALLER_ID_DAYS` (90) after `started_at` (T-11.2; 24 months before). Informational: the deletion job goes by `started_at`, so a shortened period also reaches older rows |
 
@@ -277,7 +285,7 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 |---|---|---|
 | id | UUID PK | dient n8n als Idempotenz-Schlüssel; `order.confirmed` holt die Druckbrücke ab, nicht der Dispatcher (T-4.6) |
 | tenant_id | UUID FK | |
-| event_type | TEXT | `order.confirmed` / `reservation.confirmed` / `callback.created` / `order.handover_failed` / `daily.report` / `team_phone.changed` / `day_hours.changed` / `call_mode.changed` (the last three since migration 034, #588) |
+| event_type | TEXT | `order.confirmed` / `reservation.confirmed` / `callback.created` / `order.handover_failed` / `daily.report` / `team_phone.changed` / `day_hours.changed` / `call_mode.changed` (the last three since migration 034, #588) / `admin_pin.wrong` (since migration 040, #827 F4) / `operator_access.changed` (since migration 041, #811) |
 | payload | JSONB | vollständiger Vorgang, damit n8n nicht zurückfragen muss |
 | status | TEXT | `pending` / `sent` / `failed` |
 | attempts | INT | |
@@ -296,6 +304,8 @@ Der kalte Pfad beginnt hier. Wird in **derselben Transaktion** wie der Fachvorga
 | entity / entity_id | TEXT / UUID | |
 | payload | JSONB | vorher/nachher bei Änderungen |
 
+Indexes: `ix_audit_log_tenant_at` (tenant, time) and, since migration 043, `ix_audit_log_tenant_action` (tenant, action, id) for the version of the operator's page (review of #837).
+
 ### `staff_changes`
 A change the staff made without the owner's PIN, shown as a check card until the owner decides (#570 b, D34 point 4, migration 033).
 | Feld | Typ | Bemerkung |
@@ -304,7 +314,7 @@ A change the staff made without the owner's PIN, shown as a check card until the
 | tenant_id | UUID FK | |
 | kind | TEXT CHECK | `team_phone` / `day_hours` |
 | day | DATE | the date whose hours changed, or the business day a team number holds for; a card of a past day is not shown |
-| before / after | JSONB | what held before the staff came, and what they asked for last |
+| before / after | JSONB | what held before the staff came (for `day_hours`: or the team's holiday answer given while the card waits, #802), and what they asked for last |
 | held | BOOL | whether `after` holds; longer or extra hours for a later date wait for the owner |
 | status | TEXT CHECK, default `open` | `open` / `kept` / `undone`; one open card per tenant, kind and day (partial unique index) |
 | decided_at | TIMESTAMPTZ NULL | |
@@ -407,7 +417,7 @@ Varianten und Extras mit Preisdifferenz.
 | confirmed_by | TEXT | wer den Wert gepflegt hat |
 | confirmed_at | TIMESTAMPTZ | |
 
-**Regel:** Kein Eintrag bedeutet *keine Auskunft*, nicht *kein Allergen*. Der Agent sagt dann: Rückruf durch das Team.
+**Regel:** Kein Eintrag bedeutet *keine Auskunft*, nicht *kein Allergen*. Der Agent sagt dann: Rückruf durch das Team. The owner's tab "Menü" marks such a dish "Allergene fehlen" and the operator's customer list counts it, both by `domain/menu/details.without_allergens` (#571, 17.11.2026).
 
 ### `item_aliases`
 Der Übersetzer zwischen Kundensprache und Karte. Wächst aus echten Anrufen.
@@ -529,6 +539,8 @@ The request log (legal check U2, T-11.8, migration 019): the proof of the one-mo
 | eta_minutes | INT | |
 | active | BOOL | |
 
+Written by the import `scripts/seed_zones.py` (T-6.9) and, since 17.11.2026, by the owner's tab "Lieferung" (`domain/delivery/owner_zones.py`, #571), which keeps what the table itself does not: a postal code in one active zone only, and a name once per restaurant. Each save of the tab writes `delivery_zone.created` or `delivery_zone.changed` to `audit_log` with the zone before and after (no personal data). No row is deleted: `addresses.zone_id` points here.
+
 **Start:** `postal_code` genügt und ist ohne Geo-Erweiterung testbar. Polygone erst, wenn die Liefergebiets-Kalkulation sie liefert. Dann ist PostGIS eine Option, `shapely` im Python-Code reicht aber für diese Datenmenge.
 
 ---
@@ -627,12 +639,23 @@ Decided by Maxi on 20.10.2026 with the legal check (`docs/09_OPERATIONS_LEGAL.md
 | 036 | `calls.line_note` (CHECK on the closed list, today `no_caller_audio`): the note on a call nothing of the caller reached (#651). Down drops the column and the notes; no call is lost |
 | 037 | `complaint_rules.phrases` holds no NULL element (CHECK with `array_position(phrases, NULL) IS NULL`, #692). Up drops the NULLs of an existing row and fails on a row of NULLs only, which is fixed by hand; down restores the old check and changes no row |
 | 038 | `gui_sessions.admin_active_at`: the owner's idle clock, 15 minutes without an owner page or write ends owner rights (#600); new column only, rights open at the upgrade end at once; down drops it |
+| 039 | `calls.is_test` and `reservations.is_test` (BOOL NOT NULL, default false): the rows of a self-test call (#574); new columns only, false for every row; down drops them and refuses while a test call is left |
+| 040 | The outbox type `admin_pin.wrong` (CHECK `ck_outbox_event_type` extended, #827 F4); the downgrade deletes the rows of that type |
+| 041 | The outbox type `operator_access.changed`: a setup link, a PIN set or devices signed out by the operator, pushed to the owner and to `ops` (#811); the downgrade deletes the rows of that type |
+| 042 | `reservations.off_hours` (BOOL NOT NULL, default false) with CHECK `ck_reservations_off_hours_tablet` (only a `tablet` row is marked): a table the team booked outside the opening hours on purpose (#819); a new column only, false for every existing row, since whether an older table was meant cannot be read back; down drops it, and the marked tables come back on the list of guests to call (backup label `before_migration_042`) |
+| 043 | Index `ix_audit_log_tenant_action` (tenant, action, id) for the version of the operator's page (review of #837); up and down change no row |
+| 044 | `reservations.replayed_at` (TIMESTAMPTZ, empty for every existing row) and index `ix_reservations_call_id` for the seat count's newest-row check (#908): the index took 80 drafts of one call at 144,000 rows from 701 ms to about 3.5 ms; up and down change no row, down drops the column with what it holds |
 | planned, next free number | `eval_cases`, `eval_runs` |
 
 ### Operator database (#571, docs/23 §5)
 
-Not a customer's database: the operator stack's own, migrated with `alembic -c db/dashboard/alembic.ini` from `OPERATOR_DATABASE_URL`, revisions `op001` on (`db/dashboard/migrations/`). It holds no guest data.
+Not a customer's database: the operator stack's own, migrated as its owner with `bash scripts/migrate.sh --operator` (`alembic -c db/dashboard/alembic.ini`, the dashboard itself connects as a role of its own, #827 F5), revisions `op001` on (`db/dashboard/migrations/`). It holds no guest data.
 
 | Migration | Content |
 |---|---|
 | op001 | `operator_accounts` (name unique, CHECK `^[a-z0-9._-]{2,40}$`; scrypt `password_hash`; `totp_secret` readable, `totp_last_step`; `failures`, `last_failed_at`, `blocked_until`), `operator_recovery_codes` (SHA-256 of a single-use code), `operator_sessions` (SHA-256 of the cookie token, `created_at`, `last_seen_at`), `operator_devices` (SHA-256 of the device cookie with its own failure count), `operator_login_failures` (per client address), `operator_audit` (`at`, `actor`, `action`, `target`, `detail`); the downgrade drops every table and with them every operator account |
+| op002 | `operator_customers` (`key` with the CHECK of a customer key, `api_url` and `ops_token` each unique, `added_at`): the stacks the dashboard reads (docs/23 §8); the downgrade drops the table |
+| op003 | `operator_passkeys` (`credential_id` unique, `public_key`, `sign_count`, `name`, `created_at`, `last_used_at`), `operator_challenges` (`bound_to`, `purpose`, unique together; `challenge`, `expires_at`), `operator_sessions.stepped_up_at` and `.pending_totp`, `operator_accounts.totp_secret` nullable (an operator with two passkeys may remove TOTP). The downgrade drops every passkey and gives an account without TOTP a random secret nobody has seen: its recovery codes still open it, `python -m api.dashboard.cli reset` gives it new factors |
+| op004 | `operator_challenges.client_address` (text, indexed): the client address of a sign-in challenge, so one address holds at most ten live ones (#827 F1, docs/23 §5); empty for a session's challenge. The downgrade drops the column |
+| op005 | `operator_pushes` (`message`, `created_at`, `next_attempt_at` indexed, `attempts`, `sent_at`, `last_error`): the operator's pushes to `ops`, written by the request and sent by the dashboard's sender, never dropped (#827 F3, docs/23 §5). The downgrade drops the table with what still waits |
+| op006 | `operator_sessions.passkey_stepped_up_at` (nullable timestamp): when the session last showed a passkey on the step-up, never set by the sign-in; once the account has a passkey a change of its factors needs one of the last five minutes (D37, #884, docs/23 §5). The downgrade drops the column |

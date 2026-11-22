@@ -60,13 +60,22 @@ class DishGroup:
 _NUMBER_START = re.compile(r"[a-z]{0,2}\d")
 
 
+# The digits of a card number that still sort as a number: far more than a
+# card has.
+_SORTED_DIGITS = 18
+
+
 def number_key(number: str) -> tuple[str, int, str]:
     """Menu order: 2 before 12, 23 before 23a, numbers without a prefix before
     S2 before S12 before SM1. Numbers are text (docs/14)."""
     match = CARD_PARTS.fullmatch(number.lower())
-    if match is None:
+    # Leading zeros are no place of their own ("007" sorts as 7). A run of
+    # digits no card has sorts last and is never converted: Python refuses a
+    # number of thousands of digits, and one such row took every list down.
+    digits = match.group(2).lstrip("0") if match else ""
+    if match is None or len(digits) > _SORTED_DIGITS:
         return ("\uffff", 10**9, number)
-    return (match.group(1), int(match.group(2)), match.group(3))
+    return (match.group(1), int(digits or "0"), match.group(3))
 
 
 def _active(session: Session, tenant_id: uuid.UUID) -> list[MenuItem]:
@@ -78,21 +87,43 @@ def _active(session: Session, tenant_id: uuid.UUID) -> list[MenuItem]:
     return sorted(items, key=lambda i: number_key(i.number))
 
 
-def _matches(item: MenuItem, query: str) -> bool:
-    """Suchfeld am Tablet: Nummer ("7" findet 07) oder ein Teil des Namens."""
-    said = query.strip()
+# What is compared of a typed search text: no dish number or name needs more,
+# and every dish of the list is compared with it.
+QUERY_MAX = 60
+
+
+def _seen(text: str) -> str:
+    """A text without what nobody sees: control and format characters (a
+    zero-width space, a soft hyphen, a direction override) are dropped, a
+    space of any kind (a tab, a no-break space) is a plain space."""
+    return "".join(
+        " " if ch.isspace() else ch for ch in text if ch.isspace() or ch.isprintable()
+    )
+
+
+def searched(query: str) -> str:
+    """A typed search text as it is compared, and as a page shows it again:
+    without what nobody sees, at most `QUERY_MAX` characters."""
+    return _seen(query).strip()[:QUERY_MAX].rstrip()
+
+
+def matches(number: str, name: str, query: str) -> bool:
+    """Search field on the tablet ("Gericht aus", the tab "Menü"): a number
+    ("7" finds 07) or a part of the name."""
+    said = searched(query)
     if not said:
         return True
     # A leading digit can also be a name ("8 Kostbarkeiten", Codex PR #146).
     by_number = bool(_NUMBER_START.match(said.lower())) and canonical_card(
-        item.number
+        number
     ).startswith(canonical_card(said))
     if by_number:
         return True
     # normalize_query drops numbers: "8 Kostbar" becomes "kostbar", "2" becomes
     # empty - and an empty text must not match every name.
     name_part = normalize_query(said)
-    return bool(name_part) and name_part in normalize_query(item.name)
+    # A name can carry what nobody sees too (a soft hyphen from an export).
+    return bool(name_part) and name_part in normalize_query(_seen(name))
 
 
 def list_switches(
@@ -103,6 +134,8 @@ def list_switches(
 ) -> list[DishSwitch]:
     """Aktive Gerichte fuer die Liste am Tablet, in Kartenreihenfolge."""
     now = now or clock.utcnow()
+    # Cleaned and cut once, not once per dish: the typed text can be long.
+    query = searched(query)
     return [
         DishSwitch(
             menu_item_id=item.id,
@@ -112,7 +145,7 @@ def list_switches(
             sold_out=is_sold_out(item, now),
         )
         for item in _active(session, tenant_id)
-        if _matches(item, query)
+        if matches(item.number, item.name, query)
     ]
 
 

@@ -48,6 +48,11 @@ one call per drill:
                   TEAM_PHONE, the number is never dialled
   listed, busy    `voice` hands the call to another number of the list, which
                   is busy: the team rings at TEAM_PHONE after it
+  team today      the staff moved the team to another number of the list for
+                  today (#835): `voice` killed in the call, the team rings
+                  there; nobody takes it, TEAM_PHONE follows once, then a
+                  card; `voice` stopped, the dialplan never learns the number
+                  and rings TEAM_PHONE
   stranger        an INVITE from an address that is not the router, From user
                   `access` (the endpoint's name), is refused by the ACL (403);
                   so is a second one from a caller's number, which no
@@ -123,6 +128,8 @@ TEAM_PHONE = NUMBER_PREFIX + "900"
 # On the AI telephone's list of transfer targets (TRANSFER_TARGETS); the
 # router's telephone there is busy. And a number on no list.
 LISTED_BUSY_NUMBER = NUMBER_PREFIX + "901"
+# On the list too, and answered: where the drill moves the team for today (#835).
+TODAY_NUMBER = NUMBER_PREFIX + "902"
 UNLISTED_NUMBER = NUMBER_PREFIX + "999"
 # The stranger's second INVITE comes from this number: a refused call must not
 # leave it in Asterisk's output (#252 finding 12).
@@ -237,7 +244,9 @@ class Drill:
             # Written loosely, with TEAM_PHONE in its national form: render.sh
             # cleans it, and the busy drill fails if the clean list does not
             # reach the dialplan.
-            "TRANSFER_TARGETS": f" {LISTED_BUSY_NUMBER}, ,0{TEAM_PHONE[3:]},",
+            "TRANSFER_TARGETS": (
+                f" {LISTED_BUSY_NUMBER}, ,0{TEAM_PHONE[3:]},{TODAY_NUMBER}"
+            ),
             "ACCESS_HOST": "router",
             "ACCESS_USER": "ai",
         }
@@ -378,9 +387,10 @@ class Drill:
         numbers = [
             form
             for number in [
-                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 131)),
+                *(f"{NUMBER_PREFIX}{n}" for n in range(101, 134)),
                 TEAM_PHONE,
                 LISTED_BUSY_NUMBER,
+                TODAY_NUMBER,
                 UNLISTED_NUMBER,
                 STRANGER_NUMBER,
             ]
@@ -1291,6 +1301,96 @@ def drill_voice_down_calls(drill: Drill) -> list[Check]:
     ]
 
 
+@contextmanager
+def team_today(drill: Drill) -> Iterator[None]:
+    """For one drill the staff moved the team to TODAY_NUMBER for an hour,
+    as `change_team_phone` writes it. Set back whatever fails."""
+    drill.sql(
+        f"update service_config set team_phone_today = '{TODAY_NUMBER}', "
+        "team_phone_today_until = now() + interval '1 hour'"
+    )
+    try:
+        yield
+    finally:
+        drill.sql(
+            "update service_config set team_phone_today = null, "
+            "team_phone_today_until = null"
+        )
+
+
+def first_ring(call: Call, since: float) -> tuple[str, float]:
+    """Where the team rang first for `call`, today's number or TEAM_PHONE,
+    and how long after `since`."""
+    pattern, seen = call.wait(
+        call.rings_at(TODAY_NUMBER), call.team_rings, timeout=TEAM_LIMIT_SECONDS + 10
+    )
+    return ("today's" if TODAY_NUMBER in pattern else "TEAM_PHONE"), seen - since
+
+
+def drill_team_today(drill: Drill) -> list[Check]:
+    """#835: the legs the dialplan dials on its own ring the number the
+    restaurant set, not TEAM_PHONE of `.env`. 131: `voice` killed in the
+    call, so no ending. 132: mode paused and every telephone busy, today's
+    number first, TEAM_PHONE once after it, then a card. 133: `voice`
+    stopped, so the dialplan never learns today's number: TEAM_PHONE, the
+    documented fallback (docs/20 §5)."""
+    with team_today(drill):
+        call = drill.place(131)
+        call.wait(call.answered, timeout=15)
+        killed = time.monotonic()
+        drill.compose("kill", "voice")
+        try:
+            where, seconds = first_ring(call, killed)
+        finally:
+            drill.restart("voice")
+        drill.quiet()
+        routed = any("team number routed" in line for line in call.lines("asterisk"))
+
+        try:
+            drill.mode("paused")
+            with team_away(drill, "busy"):
+                missed = drill.place(132)
+                missed.wait(missed.ended, timeout=CALL_TIMEOUT_SECONDS)
+        finally:
+            drill.mode("primary")
+        drill.quiet()
+        lines = missed.lines("router")
+        today, team = (
+            [i for i, line in enumerate(lines) if re.search(p, line)]
+            for p in (missed.rings_at(TODAY_NUMBER), missed.team_rings)
+        )
+        card, _, _ = missed_of(missed)
+
+        drill.compose("stop", "voice")
+        try:
+            down = drill.place(133)
+            down_where, down_seconds = first_ring(down, down.placed)
+        finally:
+            drill.restart("voice")
+        drill.quiet()
+    return [
+        (
+            "team today, voice crashes: the team rings at today's number",
+            where == "today's" and seconds <= TEAM_LIMIT_SECONDS and routed,
+            f"first at {where} after {seconds:.1f} s from the kill, "
+            f"voice named it: {routed}",
+        ),
+        (
+            "team today, nobody answers: today's number, TEAM_PHONE once, a card",
+            len(today) == 1
+            and len(team) == 1
+            and today[0] < team[0]
+            and card == "noted",
+            f"router log lines: today's {today}, TEAM_PHONE {team}, card [{card}]",
+        ),
+        (
+            "team today, voice down: TEAM_PHONE of the environment",
+            down_where == "TEAM_PHONE" and down_seconds <= TEAM_LIMIT_SECONDS,
+            f"first at {down_where} after {down_seconds:.1f} s",
+        ),
+    ]
+
+
 def drill_voice_refuses(drill: Drill) -> list[Check]:
     """130 calls while `voice` holds another media token than Asterisk, as
     after a token changed in `.env` and only `voice` recreated: it answers,
@@ -1489,6 +1589,7 @@ SCENARIOS: list[tuple[str, Callable[[Drill], list[Check]]]] = [
     ("the recording of a call (122 to 126)", drill_recording),
     ("a transfer to a number off the list (109)", drill_unlisted),
     ("a transfer to a busy number on the list (110)", drill_listed_busy),
+    ("the team at today's number (131 to 133)", drill_team_today),
     ("voice crashes in the middle of a call (105)", drill_crash),
     ("voice is down (104)", drill_voice_down),
     ("voice is down for several calls (129)", drill_voice_down_calls),

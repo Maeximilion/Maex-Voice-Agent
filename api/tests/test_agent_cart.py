@@ -980,7 +980,11 @@ def test_yes_after_a_changed_cart_does_not_confirm_the_old_draft(
     ],
 )
 def test_a_cart_note_is_taken_as_the_model_wrote_it(note):
-    state = new_state()
+    # The guest named both allergies (a note names no allergen the guest
+    # did not, #798).
+    state = new_state(
+        allergy_said=["Ich habe eine Nussallergie, meine Frau eine Sesamallergie."]
+    )
     searched(state, ENTE)
 
     assert take_cart(state, [line(ENTE, note=note)]) is None

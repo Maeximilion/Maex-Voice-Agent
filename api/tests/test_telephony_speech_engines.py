@@ -228,6 +228,7 @@ def test_a_call_on_the_engines_of_the_service(mouth, monkeypatch):
         ear=voice_app._whisper(watchdog),
         mouth=voice_app._piper(watchdog),
         silence_seconds=60.0,
+        team_phone=lambda: "",
     )
 
     def played_sentence(ws) -> int:

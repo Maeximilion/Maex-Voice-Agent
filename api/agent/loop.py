@@ -56,7 +56,7 @@ from api.agent.state import (
 )
 from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
-from api.core.errors import SAY_TO_THE_TEAM
+from api.core.errors import SAY_TO_THE_TEAM, Conflict
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
@@ -196,6 +196,17 @@ SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
 # The same for a table read back and not yet confirmed (own review of PR #369).
 SAY_TABLE_NOT_BOOKED = "Ihre Reservierung ist damit noch nicht bestätigt."
 SUMMARY_OPEN_TABLE = "Offene Reservierung, nicht bestätigt:"
+# A table the domain refused in the same turn: no team can book it as it
+# stands, the card names it as what the guest asked for (#862).
+SUMMARY_REFUSED_TABLE = "Reservierung nicht möglich, nicht gebucht:"
+
+
+class RefusedTable(str):
+    """The text of a table on the card that the domain refused for good."""
+
+    __slots__ = ()
+
+
 # The lead of the handover for a question beyond the database (traces,
 # contact, a promise of safety, L17): nothing about what is stored, which may
 # be maintained for that dish (own review of PR #369). Draft wording, checked
@@ -329,6 +340,11 @@ class ConversationLoop:
     ) -> TurnResult:
         # The guest has stopped speaking: from here on they wait.
         turn_started = None if self._turn_deadline is None else self._clock()
+        # An allergen question left open lasts this one turn, also when the
+        # turn never reaches the model (#798).
+        pending, state.allergen_question_open = state.allergen_question_open, False
+        asked_before = frozenset(state.allergen_question_codes)
+        state.allergen_question_codes = []
         # First of all: a name or number the model writes in this turn may
         # come from this very sentence (agent/guest_details.py, rule 2).
         if state.callback_waits is not None:
@@ -348,7 +364,8 @@ class ConversationLoop:
         # The table read back, before a new allergy takes its draft back: a
         # handover in this very turn still names it (Codex PR #369).
         open_table = self._open_table(state)
-        if _note_allergy_said(state, user_text):
+        kept = _note_allergy_said(state, user_text)
+        if kept:
             # The draft read out before may not carry what the guest just
             # said: a yes must not confirm it (Codex PR #368, P1). The model
             # drafts again, with the note (`guards.unnoted_allergy`).
@@ -414,7 +431,16 @@ class ConversationLoop:
                 return self._outage(state, SAY_TIMEOUT, user_text, open_table)
             guards.note_said(state, SAY_HUMAN_ANSWER)
             return TurnResult(state=state, say=[SAY_HUMAN_ANSWER])
-        result = self._converse(state, user_text, turn_started, open_table, wish)
+        result = self._converse(
+            state,
+            user_text,
+            turn_started,
+            open_table,
+            wish,
+            kept=kept,
+            pending=pending,
+            asked_before=asked_before,
+        )
         if not result.ended:
             unchanged = state.model_dump(include=_HEARD) == heard
             self._unheard = self._unheard + 1 if unchanged else 0
@@ -443,11 +469,22 @@ class ConversationLoop:
         turn_started: float | None,
         open_table: str | None = None,
         wish: str | None = None,
+        *,
+        kept: bool = False,
+        pending: bool = False,
+        asked_before: frozenset[str] = frozenset(),
     ) -> TurnResult:
         """The model's part of a guest turn: model calls and tools until a
         sentence for the guest, a handoff or a limit. `wish` is what the call
-        was about before this sentence."""
+        was about before this sentence; `kept`: the sentence speaks of the
+        guest's health (`_note_allergy_said`); `pending` and `asked_before`:
+        what the turn before left open."""
         start = guards.begin_turn(state)
+        # Where an allergen word of this turn can come from (#798). Only an
+        # open turn that leaves a question open sets it again (below).
+        aturn = guards.begin_allergen_turn(
+            state, user_text, kept=kept, pending=pending, asked_before=asked_before
+        )
         pending_input = user_text
         # Ein Feld zählt höchstens einmal je Kundenzug: ohne das könnte ein Modell,
         # das denselben Fehlversuch über mehrere Tool-Hops hinweg noch einmal
@@ -458,14 +495,14 @@ class ConversationLoop:
         # The tools the model called in this guest turn, refused ones and a
         # refused `cart` included.
         called: list[str] = []
-        # Of those, the ones that worked: what the model can have read.
-        read: set[str] = set()
         # The draft without the guest's allergy went back once in this turn
         # (`guards.unnoted_allergy`): the next one goes through.
         allergy_hint_given = False
         # The core's allergen sentences of this turn, one per dish looked up:
         # the only allergen words the guest hears (#669, #717, rule 1).
         allergen_says: list[str] = []
+        # The model's sentence went back once for its allergen words.
+        allergen_back = False
         zone = self._local_now(state).tzinfo
         assert zone is not None  # `to_local` gives an aware time
         for _ in range(MAX_TOOL_HOPS):
@@ -599,21 +636,87 @@ class ConversationLoop:
                         if claim is guards.ADDITIVE_CLAIM
                         else SUMMARY_ALLERGENS,
                     )
-                refused = guards.unread_allergy_question(read, say, user_text)
-                if refused is not None:
-                    # Back to the model once, it may well find the dish. A
-                    # second sentence without a look at the menu goes to the
-                    # team: the guest's question must not stay unanswered.
+                # Where its allergen words come from decides what the guest
+                # hears (#798, rule 1); the lists above went first.
+                open_turn = guards.is_open(aturn, state)
+                changed = guards.order_changed(aturn, state)
+                # Row 1: the table sentence of every dish looked up, in an
+                # open turn that changed no order.
+                table = open_turn and bool(aturn.looked_up) and not changed
+                # After a refused allergen word in a call about an allergy,
+                # the retry may say only core sentences: "Ja, die 13 ist für
+                # Sie kein Problem" is the same claim without its noun (deep
+                # review of #860, P1).
+                in_allergy_call = guards.sticky(state)
+                strict = open_turn or (allergen_back and in_allergy_call)
+                if (
+                    not table
+                    and not allergen_says
+                    and (
+                        not guards.core_only(aturn, state, say)
+                        if strict
+                        else bool(guards.unlicensed(aturn, state, say))
+                    )
+                ):
+                    refused = (
+                        guards.ALLERGY_TURN
+                        if open_turn
+                        else guards.ALLERGY_CALL
+                        if in_allergy_call
+                        else guards.UNLICENSED_ALLERGEN
+                    )
                     log_refused(
                         self._session, state.call_id, state.tenant_id, SAY, refused
                     )
-                    if SAY in called:
+                    if not allergen_back:
+                        # Rows 3 and 6: back to the model once.
+                        allergen_back = True
+                        called.append(SAY)
+                        pending_input = _tool_result_as_input(SAY, refused, zone)
+                        continue
+                    # Rows 4 and 6, a second time: the table where a dish was
+                    # looked up, the team for a question left open before
+                    # (rule 5), else the offer.
+                    if aturn.looked_up and not changed:
+                        table = True
+                    elif aturn.pending:
                         return self._allergens_to_team(
                             state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                         )
-                    called.append(SAY)
-                    pending_input = _tool_result_as_input(SAY, refused, zone)
-                    continue
+                    else:
+                        say = guards.SAY_ALLERGENS_OFFER
+                if table:
+                    sentences = guards.table_says(aturn)
+                    if sentences is None:
+                        unknown = guards.unknown_dish(aturn)
+                        assert unknown is not None  # `table_says`: one has no value
+                        return self._allergens_to_team(
+                            state, _dish(unknown), table=open_table
+                        )
+                    say = " ".join(sentences)
+                elif allergen_says:
+                    # A flagged lookup (R8): the model relays nothing. A
+                    # dropped allergen ("Die 23 enthält Gluten", soy missing)
+                    # or an added one passed every guard. shortcut: its other
+                    # words are dropped too; the guest asks on, the next turn
+                    # answers.
+                    say = " ".join(allergen_says)
+                elif open_turn:
+                    # Rows 2 and 4: what the guest said may stay untaken.
+                    if guards.left_twice(aturn, state, say):
+                        # The second turn in a row that leaves the question
+                        # open goes to the team (rule 5).
+                        return self._allergens_to_team(
+                            state, lead=SAY_ALLERGENS_BEYOND, table=open_table
+                        )
+                    left = guards.leaves_a_question(aturn, state)
+                    # Only the offer makes the next named dish its answer: a
+                    # turn that ended in the noted sentence leaves the next
+                    # dish step to the model (deep review of #860, P2).
+                    state.allergen_question_open = (
+                        left and guards.SAY_ALLERGENS_OFFER in say
+                    )
+                    state.allergen_question_codes = guards.codes_left(aturn, state, say)
                 refused = guards.false_booking(state, say)
                 if refused is not None:
                     # Rule 3 for what the guest hears: "Ihre Abholung ist
@@ -625,12 +728,6 @@ class ConversationLoop:
                     called.append(SAY)
                     pending_input = _tool_result_as_input(SAY, refused, zone)
                     continue
-                if allergen_says:
-                    # The model relays nothing: a dropped allergen ("Die 23
-                    # enthält Gluten", soy missing) or an added one passed
-                    # every guard. shortcut: its other words are dropped
-                    # too; the guest asks on, the next turn answers.
-                    say = " ".join(allergen_says)
                 # What the guest hears decides which offered dishes count as
                 # put to them (guards.py, rule 2).
                 guards.note_said(state, say)
@@ -730,7 +827,6 @@ class ConversationLoop:
                 result = refused
             else:
                 call = _card_without_allergy(state, call)
-                call = guards.flag_the_allergy_question(call, user_text)
                 result = self._dispatch(state, call.name, call.args)
             if (
                 turn.tool_call.name == "search_menu"
@@ -746,7 +842,34 @@ class ConversationLoop:
                 return self._allergens_to_team(
                     state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                 )
+            read_back = state.reservation_id
             apply_tool_result(state, call.name, result, call.args)
+            guards.note_tool(aturn, call.name, result, call.args)
+            if (
+                refused is None
+                and open_table is not None
+                and result.error_code == Conflict.code
+                and not result.data.get("team_callback")
+                and (
+                    # The yes to the table read back: its seats are gone,
+                    # reservations are off, the tablet cancelled it. Not a
+                    # failed correction: the table read back still holds.
+                    (
+                        call.name == "confirm"
+                        and read_back is not None
+                        and state.reservation_id is None
+                    )
+                    # The draft on the card after an allergy hint (above).
+                    or (
+                        call.name == "create_reservation"
+                        and open_table == self._open_draft(state, call)
+                    )
+                )
+            ):
+                # The domain refused the very table on the card: it is named
+                # as refused, never as open, and the guest still hears that it
+                # is not booked (#862).
+                open_table = RefusedTable(open_table)
             told = result.say or ""
             if not result.ok and told.endswith(SAY_TO_THE_TEAM):
                 # The tool's sentence promises the team: a draft cancelled on
@@ -776,9 +899,9 @@ class ConversationLoop:
                 # Asked for allergens the database does not hold (L17): the
                 # team answers before any `confirm`, and the model is not
                 # asked again, as for a table the team decides on.
-                data = result.data
-                dish = f"{data.get('number') or ''} {data.get('name') or ''}".strip()
-                return self._allergens_to_team(state, dish or None, table=open_table)
+                return self._allergens_to_team(
+                    state, _dish(result.data), table=open_table
+                )
             if turn.tool_call.name == "confirm" and result.ok:
                 # Booked: the core says so itself and ends the turn. A model
                 # that phrased it said what the database did not hold (a code
@@ -837,14 +960,13 @@ class ConversationLoop:
                 # who hangs up then would be lost (Codex PR #280).
                 return self._table_to_team(state, turn.tool_call.args, result.say)
             called.append(turn.tool_call.name)
-            if result.ok:
-                read.add(turn.tool_call.name)
-                if (
-                    turn.tool_call.name == "get_item_details"
-                    and told.startswith(SAY_ALLERGENS_LEAD)
-                    and told not in allergen_says
-                ):
-                    allergen_says.append(told)
+            if (
+                result.ok
+                and turn.tool_call.name == "get_item_details"
+                and told.startswith(SAY_ALLERGENS_LEAD)
+                and told not in allergen_says
+            ):
+                allergen_says.append(told)
             pending_input = _tool_result_as_input(turn.tool_call.name, result, zone)
 
         return self._outage(state, SAY_STUCK, user_text, open_table)
@@ -1422,7 +1544,12 @@ class ConversationLoop:
             return head + said, booked, []
         table = self._open_table(state) or table
         if table:
-            head += f" {SUMMARY_OPEN_TABLE} {table}."
+            label = (
+                SUMMARY_REFUSED_TABLE
+                if isinstance(table, RefusedTable)
+                else SUMMARY_OPEN_TABLE
+            )
+            head += f" {label} {table}."
         # Room for what follows the order, and for the line's first sentence
         # on a team leg nobody answered: all of it stands on that card (#207).
         reserve = len(said + booked + SUMMARY_MISSED) + 1
@@ -1537,10 +1664,19 @@ def _asked_about_an_allergy(state: ConversationState) -> bool:
     allergisch?", "Haben Sie eine Allergie?")? Never a read-back: its note
     names the allergy, and the "Ja" to it answers the order."""
     say = state.last_say or ""
-    lowered = say.lower()
-    if "?" not in say or not ("allerg" in lowered or "wogegen" in lowered):
+    if guards.SAY_ASK_ALLERGY in say:
+        # The fixed question of an allergy turn (#798).
+        return True
+    if state.readback and say.lstrip("…") in state.readback:
         return False
-    return not (state.readback and say.lstrip("…") in state.readback)
+    # Read without the read-back and the noted sentence beside it: "Ihren
+    # Hinweis gebe ich an die Küche weiter. <read-back> Passt das so?" asks
+    # about the order (deep review of #860, P1).
+    for core in (state.readback, guards.SAY_ALLERGY_NOTED):
+        if core:
+            say = say.replace(core, " ")
+    lowered = say.lower()
+    return "?" in say and ("allerg" in lowered or "wogegen" in lowered)
 
 
 # Words a card may share with the guest's sentences about their health
@@ -1571,7 +1707,62 @@ def _names_health(state: ConversationState, text: str) -> bool:
     said = {word for sentence in state.allergy_said for word in _stems(sentence)}
     # By prefix: "Erdnussallergie" there names "Erdnüssen" here (Codex PR
     # #788, P1).
-    return any(a.startswith(b) or b.startswith(a) for a in said for b in _stems(text))
+    if any(a.startswith(b) or b.startswith(a) for a in said for b in _stems(text)):
+        return True
+    # What the guest reacts to, at any length: "Kiwi" there and "Kiwi" or
+    # "Kiwis" here, as the allergen names above (#764); and the other way,
+    # "Kiwis" or "Mohnbrötchen" there and "Kiwi" or "Mohn" here, which the
+    # five-letter cut of `_stems` dropped (#798).
+    ingredients = {w for sentence in state.allergy_said for w in _ingredients(sentence)}
+    return any(
+        word.startswith(ingredient) or (len(word) >= 4 and ingredient.startswith(word))
+        for word in _WORD.findall(_plain(text))
+        for ingredient in ingredients
+    )
+
+
+# The word in front of what a guest reacts to: "gegen Kiwi", "auf Reis",
+# "kein Lamm", "keinen Mais".
+_BEFORE_INGREDIENT = frozenset({"gegen", "auf", "kein", "keine", "keinen", "keiner"})
+# Words between that word and the ingredient ("gegen die Kiwi").
+_NO_INGREDIENT = frozenset(
+    {"der", "die", "das", "den", "dem", "des", "ein", "eine", "einen", "alle"}
+    | {"und", "oder", "auch", "so", "etwas", "was", "mit", "von", "zu"}
+)
+_WORD = re.compile(r"\w+")
+# An allergy word behind its ingredient: "Kiwiallergie".
+_ALLERGY_SUFFIX = re.compile(r"^(\w{3,}?)(?:allergi|unvertraglich|intoleran)")
+
+
+def _plain(text: str) -> str:
+    """`text` folded as `_stems` folds it, without dropping a word."""
+    folded = text.casefold().replace("ß", "ss")
+    for umlaut, plain in (("ä", "a"), ("ö", "o"), ("ü", "u")):
+        folded = folded.replace(umlaut, plain)
+    return folded
+
+
+def _ingredients(sentence: str) -> set[str]:
+    """The short words a guest's sentence about their health names as what
+    they react to (#764): the words after "gegen", "auf" or "kein" up to the
+    clause's end ("allergisch gegen Kiwi und Mango"), and the part of a
+    compound in front of the allergy word ("Kiwiallergie"). Of three letters
+    or more.
+    shortcut: a short name after such a word ("auf den Namen Kim") counts
+    too; the card then gets the sentence of its reason, the safe side."""
+    found: set[str] = set()
+    for clause in re.split(r"[.,;:!?]", _plain(sentence)):
+        words = _WORD.findall(clause)
+        for n, word in enumerate(words):
+            if (match := _ALLERGY_SUFFIX.match(word)) is not None:
+                found.add(match.group(1))
+            if word in _BEFORE_INGREDIENT:
+                found.update(
+                    w
+                    for w in words[n + 1 : n + 4]
+                    if w not in _NO_INGREDIENT and w not in _PLAIN_WORDS
+                )
+    return {w for w in found if len(w) >= 3}
 
 
 def _stems(text: str) -> set[str]:
@@ -1604,6 +1795,11 @@ def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
     reason = str(call.args.get("reason"))
     card = _handoff_summary(reason, None, state.booking_say)
     return ToolCall(call.name, {**call.args, "summary": card})
+
+
+def _dish(data: dict[str, Any]) -> str | None:
+    """A looked-up dish as a card names it: "13 Pho Bo"."""
+    return f"{data.get('number') or ''} {data.get('name') or ''}".strip() or None
 
 
 def _found_nothing(result: ToolResult) -> bool:
@@ -1652,7 +1848,12 @@ def _tool_result_as_input(name: str, result: ToolResult, zone: tzinfo) -> str:
     """Ergebnis dem Modell als nächster Zug zurückgeben, ohne echten Kundeninput.
     Times in the restaurant's local time (`zone`), like `now` in the state."""
     if result.ok:
-        payload = {"tool": name, "ok": True, "data": _local_times(result.data, zone)}
+        data = result.data
+        if name == "get_item_details":
+            # The model has nothing to relay: only the core's table sentence
+            # speaks a dish's allergens (#798, rule 1).
+            data = {key: value for key, value in data.items() if key != "allergens"}
+        payload = {"tool": name, "ok": True, "data": _local_times(data, zone)}
     else:
         payload = {"tool": name, "ok": False, "error_code": result.error_code}
     if result.hint:

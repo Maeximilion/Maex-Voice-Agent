@@ -12,6 +12,7 @@ Created: 2026-11-03
 """
 
 from collections.abc import Sequence
+from typing import Any
 
 import sqlalchemy as sa
 from alembic import op
@@ -23,7 +24,7 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-def _base() -> list[sa.Column]:
+def _base() -> list[sa.Column[Any]]:
     return [
         sa.Column(
             "id", sa.UUID(), server_default=sa.text("gen_random_uuid()"), nullable=False

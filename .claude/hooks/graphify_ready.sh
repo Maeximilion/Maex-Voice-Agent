@@ -48,4 +48,4 @@ for dir in "$cwd" "${CLAUDE_PROJECT_DIR:-}" "$PWD"; do
   started+=("$dir")
 done
 [ ${#started[@]} -gt 0 ] || exit 0
-say "graphify: no code graph yet in ${started[*]}; building it in the background (about 30 seconds). Until graphify-out/graph.json exists there, search and read files directly."
+say "graphify: no code graph yet in ${started[*]}; building it in the background (about 30 seconds). Until then use the Graphify MCP connector; if graphify-out/graph.json is still missing when you need the CLI, run \`graphify update .\` there as a background command yourself."

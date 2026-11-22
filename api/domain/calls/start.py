@@ -21,8 +21,14 @@ from api.schemas.calls import CallStarted, StartCallRequest
 
 
 def start_call(
-    session: Session, req: StartCallRequest, now: datetime | None = None
+    session: Session,
+    req: StartCallRequest,
+    now: datetime | None = None,
+    *,
+    is_test: bool = False,
 ) -> CallStarted:
+    """`is_test` only from the self-test (`sim/selftest_call.py`, #574), never
+    from the request: a line cannot mark its own call as one nobody hears of."""
     now = now or utcnow()
     if session.get(Tenant, req.tenant_id) is None:
         raise NotFound("Mandant unbekannt")
@@ -53,6 +59,7 @@ def start_call(
         caller_id=_caller_id(req.caller_id),
         started_at=now,
         delete_after=_delete_after(now),
+        is_test=is_test,
     )
     session.add(call)
     session.commit()

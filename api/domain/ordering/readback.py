@@ -41,8 +41,9 @@ def readback(
     satz = " ".join(_spoken_line(line) for line in lines)
     if order.note:
         # The note of the whole order after its dishes (D24), repeated like
-        # the note of a line.
-        satz += f" Für die ganze Bestellung: {order.note}."
+        # the note of a line, and named as the guest's: "keine Erdnüsse" is
+        # heard as the wish it is, never as a fact about a dish (#798).
+        satz += f" Ihr Hinweis für die ganze Bestellung: {order.note}."
     satz += f" Macht {spoken_euro(order.total_cents)}"
     if order.delivery_fee_cents:
         satz += f" inklusive {spoken_euro(order.delivery_fee_cents)} Liefergebühr"
@@ -77,7 +78,8 @@ def _spoken_line(line: SpokenLine) -> str:
     if line.options:
         text += " mit " + " und ".join(o["option"] for o in line.options)
     if line.note:
-        text += f", {line.note}"
+        # The guest's note, named as theirs (#798).
+        text += f", Ihr Hinweis: {line.note}"
     return text + "."
 
 

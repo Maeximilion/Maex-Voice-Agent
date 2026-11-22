@@ -1,0 +1,33 @@
+{# The faults of a refused form of the owner's tabs (#821, #829, `gui/form_view.py`).
+   `errors` maps a field's key to its sentence; an input names its keys and the
+   id of its help text. The list above the form takes the focus after the swap
+   (`data-fokus`, ts/base.ts) and links to each field. #}
+
+{# aria-invalid and aria-describedby of an input: its faults, then its help. #}
+{% macro attrs(keys, errors, help="") -%}
+{%- set errors = errors or {} -%}
+{%- set ids = [] -%}
+{%- for key in keys if errors.get(key) %}{% set _ = ids.append("fehler-" ~ key) %}{% endfor -%}
+{%- if help %}{% set _ = ids.append(help) %}{% endif -%}
+{%- if ids|length > (1 if help else 0) %} aria-invalid="true"{% endif -%}
+{%- if ids %} aria-describedby="{{ ids|join(' ') }}"{% endif -%}
+{%- endmacro %}
+
+{# The sentence beside a field, the target of its aria-describedby. #}
+{% macro beside(key, errors) -%}
+{%- set errors = errors or {} -%}
+{%- if errors.get(key) %}<p class="feld-fehler" id="fehler-{{ key }}">{{ errors[key] }}</p>{% endif -%}
+{%- endmacro %}
+
+{# The list above the form: `items` from `form_view.summary`. #}
+{% macro summary(items) -%}
+{%- if items %}
+<div class="fehler-liste" role="alert" tabindex="-1" data-fokus>
+  <p class="badge danger">Nicht gespeichert. Bitte prüfen:</p>
+  <ul>
+    {% for anchor, text in items %}<li>{% if anchor %}<a href="#{{ anchor }}">{{ text }}</a>{% else %}{{ text }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+</div>
+{%- endif %}
+{%- endmacro %}

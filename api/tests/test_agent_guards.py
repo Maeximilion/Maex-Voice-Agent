@@ -17,18 +17,38 @@ from api.agent.guards import (
     HINT_CONFIRM,
     HINT_GUEST_PHONE,
     HINT_NO_DRAFT,
+    NOTE_CLAIM,
+    SAY_ALLERGENS_OFFER,
+    SAY_ALLERGY_NOTED,
+    SAY_ASK_ALLERGY,
     allergen_claim,
+    begin_allergen_turn,
     begin_turn,
+    claims_in_a_note,
+    core_only,
     false_booking,
+    is_open,
+    leaves_a_question,
+    left_twice,
     note_said,
+    note_tool,
+    order_changed,
     refusal,
+    sticky,
+    table_says,
+    take_cart,
+    unexplained_codes,
+    unlicensed,
 )
 from api.agent.llm import ToolCall
+from api.agent.loop import _note_allergy_said
 from api.agent.state import (
     ConversationState,
     apply_state_patch,
     apply_tool_result,
 )
+from api.domain.menu.details import say_allergens
+from api.domain.menu.pos_convert import allergens_named
 
 ENTE = str(uuid.uuid4())
 PHO = str(uuid.uuid4())
@@ -1073,29 +1093,13 @@ def test_a_safety_promise_about_a_frei_dish_still_counts():
         "Die 23 ist eine glutenfreie Variante.",
         "Wir haben auch laktosefreies Eis.",
         "Das sind nussfreien Gerichte.",
-        "In der 13 sind keine Nüsse enthalten.",
-        "Die 13 ist ohne Erdnüsse.",
-        "Die Suppe kommt ganz ohne Sesam.",
-        # #739: the common forms of "no nuts in it" that `_ABSENT` missed.
-        "Die 13 hat keine Nüsse.",
-        "In der 13 gibt es keine Nüsse.",
-        "Es gibt kein Gluten in der 13.",
-        "Nüsse sind da nicht drin.",
-        "Nüsse sind nicht darin.",
-        "Die 13 hat kein Gluten.",
-        "Unsere Gerichte haben alle keine Erdnüsse.",
-        "Da sind keine Nüsse.",
-        # A denial acknowledged in front does not hide the claim behind it.
-        "Sie haben keine Allergie. Die 13 hat keine Nüsse.",
-        # The guest's allergy is no food (Codex PR #748, P1, round 4).
-        "Für Ihre Nussallergie passt die 13, die hat keine Nüsse.",
-        "Die 13 hat keine Allergene.",
-        "Die 13 hat keine Zutaten mit Gluten.",
     ],
 )
 def test_an_inflected_or_turned_absence_claim_is_refused(say):
     """No allergy word from the guest ("Haben Sie glutenfreie Gerichte?"): the
-    model's promise still has no database value behind it (#656, P1)."""
+    model's promise still has no database value behind it (#656, P1). The
+    absence forms that were here are decided by provenance since #798
+    (`test_an_absence_or_a_content_claim_without_a_source_is_unlicensed`)."""
     assert allergen_claim(new_state(), say) is ALLERGEN_CLAIM
 
 
@@ -1157,3 +1161,880 @@ def test_a_note_with_health_words_goes_through(note):
         },
     )
     assert refusal(state, begin_turn(state), "Die 13 bitte.", call) is None
+
+
+# --- #798: the allergen guard decides by provenance, not by German word lists
+#
+# `is_open`, `unlicensed` and `core_only` on a turn built as the loop builds
+# it: the guest's sentence read by `loop._note_allergy_said`, then each tool
+# result applied to the state and noted on the turn.
+
+GARNELEN = str(uuid.uuid4())
+TOFU = str(uuid.uuid4())
+DISHES = {
+    REIS: ("63", "Reis", None, ()),
+    ENTE: ("47", "Ente knusprig", None, ("Erdnuss",)),
+    PHO: ("13", "Pho Bo", None, ()),
+    SUPPE: ("23", "Frühlingsrollen", None, ("Garnelen",)),
+    GARNELEN: ("24", "Gebratene Garnelen", None, ()),
+    TOFU: ("25", "Tofu Spezial", "mit Sojasauce", ()),
+}
+
+
+def _groups(options):
+    if not options:
+        return []
+    return [
+        {
+            "group": "Extra",
+            "required": False,
+            "options": [{"name": o, "price_delta_cents": 50} for o in options],
+        }
+    ]
+
+
+def search(item_id, *, sold_out=False, wish=None):
+    number, name, _, options = DISHES[item_id]
+    data = {
+        "match_type": "exact_number",
+        "results": [
+            {
+                "menu_item_id": item_id,
+                "number": number,
+                "name": name,
+                "price_cents": 1190,
+                "sold_out": sold_out,
+                "option_groups": _groups(options),
+            }
+        ],
+    }
+    if wish is not None:
+        data["wish"] = wish
+    say = f"{name} ist heute leider aus." if sold_out else None
+    return "search_menu", ToolResult(ok=True, data=data, say=say), {"query": number}
+
+
+def lookup(item_id, *codes):
+    number, name, description, options = DISHES[item_id]
+    names = {"A": "glutenhaltiges Getreide", "F": "Soja", "N": "Sesam"}
+    data = {
+        "menu_item_id": item_id,
+        "number": number,
+        "name": name,
+        "price_cents": 1190,
+        "sold_out": False,
+        "description": description,
+        "option_groups": _groups(options),
+        "allergens": {
+            "known": bool(codes),
+            "codes": list(codes),
+            "names": [names[c] for c in codes],
+        },
+    }
+    args = {"menu_item_id": item_id, "allergen_question": False}
+    return "get_item_details", ToolResult(ok=True, data=data), args
+
+
+def allergen_turn(said, *tools, state=None, cart=None):
+    """The turn of `said`, as `ConversationLoop._converse` builds it."""
+    state = state or new_state()
+    turn = begin_allergen_turn(state, said, kept=_note_allergy_said(state, said))
+    for name, result, args in tools:
+        apply_tool_result(state, name, result, args)
+        note_tool(turn, name, result, args)
+    if cart is not None:
+        assert take_cart(state, cart) is None
+    return turn, state
+
+
+def decided(said, tools, say, state=None, cart=None):
+    """What the guard makes of the model's sentence: "open" (rows 1 to 4, the
+    sentence is never spoken), else the letters nothing licenses (rows 5
+    and 6; empty: spoken)."""
+    turn, state = allergen_turn(said, *tools, state=state, cart=cart)
+    if is_open(turn, state):
+        assert not core_only(turn, state, say)
+        return "open"
+    return unlicensed(turn, state, say)
+
+
+@pytest.mark.parametrize(
+    ("said", "tools", "say", "outcome"),
+    [
+        # The guest names gluten; nothing of the 23 carries it.
+        ("Ist die 23 glutenfrei?", [], "Ja, ist sie.", "open"),
+        ("Ist die 23 glutenfrei?", [lookup(SUPPE, "A")], "Ja, ist sie.", "open"),
+        # Questions without their mark.
+        ("Ist die 23 glutenfrei", [], "Ja, ist sie.", "open"),
+        ("Sind bei der 13 Erdnüsse dabei?", [lookup(PHO)], "Nein.", "open"),
+        ("Sind bei der 13 Erdnüsse dabei", [], "Nein, keine.", "open"),
+        # No tool call at all: the guest's own word opens the turn.
+        ("Und Sesam?", [], "Nein, kein Sesam.", "open"),
+        ("Ich habe eine Nussallergie. Geht die 23?", [], "Ja, die geht.", "open"),
+        (
+            "Ich habe eine Nussallergie. Geht die 23?",
+            [lookup(SUPPE, "A")],
+            "Für Nussallergiker ist die 23 kein Problem.",
+            "open",
+        ),
+        (
+            "Welche Allergene hat die 13?",
+            [lookup(PHO)],
+            "Die Allergene der 13 sind Sesam und Soja.",
+            "open",
+        ),
+        # The same sentence in a turn without any signal: unlicensed.
+        (
+            "Was ist die 13?",
+            [lookup(PHO)],
+            "Die Allergene der 13 sind Sesam und Soja.",
+            {"N", "F", "allergen"},
+        ),
+        (
+            "Was ist in der 13?",
+            [lookup(PHO)],
+            "Die 13 wird mit Sojasauce zubereitet.",
+            {"F"},
+        ),
+        (
+            "Was ist in der 13?",
+            [lookup(PHO)],
+            "Bei der 13: Sesam und Soja.",
+            {"N", "F"},
+        ),
+        ("Ist in der 13 Soja?", [], "Soja? Ja, das ist drin.", "open"),
+        ("Hat die 13 Erdnüsse?", [], "Wegen der Erdnüsse: Die 13 hat keine.", "open"),
+        (
+            "Ist da Sesam drin in der 13?",
+            [],
+            "Ohne Zwiebeln ist da Sesam drin.",
+            "open",
+        ),
+        (
+            "Die 13 ohne Zwiebeln bitte.",
+            [search(PHO)],
+            "Ohne Zwiebeln ist da Sesam drin.",
+            {"N"},
+        ),
+        ("Ist in der 23 Gluten?", [], "Die 23 machen wir ohne Gluten.", "open"),
+        # In a later turn the word has no code in menu or changed order text.
+        (
+            "Was kostet die 23?",
+            [],
+            "Für Nussallergiker ist die 23 kein Problem.",
+            {"H", "allergen"},
+        ),
+        (
+            "Sind Nüsse in der 13?",
+            [],
+            "Nüsse, die sind bei der 13 kein Problem.",
+            "open",
+        ),
+        (
+            "Was ist in den Frühlingsrollen?",
+            [search(SUPPE)],
+            "Die Frühlingsrollen? Ja, sie haben Gluten und Soja.",
+            {"A", "F"},
+        ),
+    ],
+)
+def test_a_claim_of_the_model_is_never_spoken_as_it_is(said, tools, say, outcome):
+    """Spec #798 section 4, missed claims: every sentence the review of
+    16.11.2026 reproduced reaches the guest neither as a claim nor through a
+    gap in a word list. The wording of the model's sentence decides nothing."""
+    assert decided(said, tools, say) == outcome
+
+
+@pytest.mark.parametrize(
+    ("say", "codes"),
+    [
+        # The absence forms the old lists pinned (#656, #739), without any
+        # tool of the turn and in a turn the guest did not open.
+        ("In der 13 sind keine Nüsse enthalten.", {"H"}),
+        ("Die 13 ist ohne Erdnüsse.", {"E"}),
+        ("Die Suppe kommt ganz ohne Sesam.", {"N"}),
+        ("Die 13 hat keine Nüsse.", {"H"}),
+        ("In der 13 gibt es keine Nüsse.", {"H"}),
+        ("Es gibt kein Gluten in der 13.", {"A"}),
+        ("Nüsse sind da nicht drin.", {"H"}),
+        ("Nüsse sind nicht darin.", {"H"}),
+        ("Die 13 hat kein Gluten.", {"A"}),
+        ("Unsere Gerichte haben alle keine Erdnüsse.", {"E"}),
+        ("Da sind keine Nüsse.", {"H"}),
+        ("Sie haben keine Allergie. Die 13 hat keine Nüsse.", {"H"}),
+        ("Die 13 hat keine Allergene.", {"allergen"}),
+        ("Die 13 hat keine Zutaten mit Gluten.", {"A"}),
+        ("Die 23 enthält Gluten und Soja.", {"A", "F"}),
+        ("Ja, in der 13 ist Erdnuss.", {"E"}),
+        ("Da ist Milch drin.", {"G"}),
+    ],
+)
+def test_an_absence_or_a_content_claim_without_a_source_is_unlicensed(say, codes):
+    """Behaviour change of #798: such a sentence is no longer "the team at
+    once" by a list of German forms; it goes back once and then ends as rows
+    1 to 6 decide (`test_agent_allergens_beyond.py`)."""
+    assert decided("Was ist in der 13?", [], say) == codes
+
+
+def test_the_old_absence_forms_are_no_list_claim_any_more():
+    """`allergen_claim` keeps `_ALWAYS` and `_SAFE`; "hat keine Nüsse" is
+    decided by provenance (above)."""
+    assert allergen_claim(new_state(), "Die 13 hat keine Nüsse.") is None
+
+
+@pytest.mark.parametrize(
+    ("said", "tools", "say", "cart"),
+    [
+        # The search hit's name carries the code of "Garnelen".
+        (
+            "Haben Sie Garnelen?",
+            [search(GARNELEN, sold_out=True)],
+            "Garnelen haben wir heute leider nicht mehr.",
+            None,
+        ),
+        # The option name of the 47 explains the guest's word.
+        (
+            "Kann ich die 47 mit Erdnuss im Restaurant essen?",
+            [search(ENTE)],
+            "Ja, die 47 mit Erdnuss können Sie gern bei uns essen.",
+            None,
+        ),
+        (
+            "Ist die Erdnusssauce im Preis?",
+            [search(ENTE)],
+            "Die Erdnusssauce kostet 50 Cent extra.",
+            None,
+        ),
+        # The option of the hit and of the changed line.
+        (
+            "Die 23 mit Garnelen bitte.",
+            [search(SUPPE)],
+            "Die 23 mit Garnelen ist im Warenkorb.",
+            [
+                {
+                    "menu_item_id": SUPPE,
+                    "options": [{"group": "Extra", "name": "Garnelen"}],
+                }
+            ],
+        ),
+        # An unflagged lookup in a turn without a signal is no allergen lookup.
+        ("Was kostet die 13?", [lookup(PHO)], "Die 13 kostet 11,90 Euro.", None),
+        (
+            "Welche Saucen gibt es zur 47?",
+            [lookup(ENTE)],
+            "Die 47 hat Erdnuss als Sauce zur Wahl.",
+            None,
+        ),
+        # The wish stands in the note of the line that changed in this turn.
+        (
+            "Die 13 ohne Erdnüsse bitte.",
+            [search(PHO)],
+            "Die 13 ohne Erdnüsse ist kein Problem.",
+            [{"menu_item_id": PHO, "note": "ohne Erdnüsse"}],
+        ),
+    ],
+)
+def test_an_order_sentence_named_like_an_allergen_is_spoken(said, tools, say, cart):
+    """Spec #798 section 4, false handovers: row 5."""
+    lines = None if cart is None else [{"quantity": 1, **line} for line in cart]
+    assert decided(said, tools, say, cart=lines) == set()
+
+
+def test_a_wish_the_model_did_not_write_into_the_cart_opens_the_turn():
+    """Row 3: the hint asks for the wish in the `cart`; without it the
+    guest's word is unexplained."""
+    assert decided("Die 13 ohne Erdnüsse bitte.", [search(PHO)], "Gern.") == "open"
+
+
+def test_an_options_lookup_in_a_sticky_call_is_the_core_s():
+    """Question 4 (A): an allergic guest's options question gets the table
+    or the team."""
+    state = new_state(allergy_said=["Ich habe eine Nussallergie."])
+    turn, state = allergen_turn(
+        "Welche Saucen gibt es zur 47?", lookup(ENTE), state=state
+    )
+
+    assert is_open(turn, state)
+
+
+def test_a_table_sentence_heard_last_makes_the_call_sticky():
+    state = new_state(last_said=say_allergens("23", "Frühlingsrollen", ["Soja"]))
+    turn, state = allergen_turn("Und die 13?", lookup(PHO), state=state)
+
+    assert is_open(turn, state)
+    # Without a lookup the follow-up is the model's (residual R2).
+    turn, state = allergen_turn("Und die 13?", state=state)
+    assert not is_open(turn, state)
+
+
+@pytest.mark.parametrize("said", ["Ich habe keine Nussallergie.", "Keine Allergien."])
+def test_a_denial_of_an_allergy_opens_nothing(said):
+    turn, state = allergen_turn(said)
+
+    assert not turn.speaks and not turn.guest_codes
+    assert not is_open(turn, state)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Die 13, ich habe keine Erdnussallergie.",
+        "Haben Sie Pizza? Ich habe keine Allergie.",
+    ],
+)
+def test_a_denial_next_to_an_order_opens_nothing(said):
+    turn, state = allergen_turn(said)
+
+    assert not is_open(turn, state)
+
+
+def test_a_line_that_did_not_change_explains_nothing():
+    """The guest asks about a wish an earlier turn put on a line: the line is
+    no source of this turn."""
+    state = new_state()
+    _, state = allergen_turn(
+        "Die 13 ohne Erdnüsse.",
+        search(PHO),
+        state=state,
+        cart=[{"menu_item_id": PHO, "quantity": 1, "note": "ohne Erdnüsse"}],
+    )
+    turn, state = allergen_turn(
+        "Und da sind wirklich keine Erdnüsse drin?", state=state
+    )
+
+    assert not order_changed(turn, state)
+    assert is_open(turn, state)
+
+
+def test_the_search_wish_licenses_nothing():
+    """The search's `wish` holds the model's query words."""
+    wish = {"text": "ohne Erdnüsse", "kind": "note", "note": "ohne Erdnüsse"}
+    turn, state = allergen_turn("Die 13 ohne Erdnüsse bitte.", search(PHO, wish=wish))
+
+    assert "E" not in turn.menu_codes
+    assert is_open(turn, state)
+
+
+def test_the_lookup_allergens_license_nothing():
+    """Only the core's table sentence may speak a lookup's `allergens`."""
+    turn, state = allergen_turn("Was ist die 13?", lookup(PHO, "A", "F"))
+
+    assert turn.menu_codes == set()
+    assert unlicensed(turn, state, "Die 13 enthält Gluten und Soja.") == {"A", "F"}
+
+
+def test_the_description_of_a_dish_licenses_its_words():
+    """Licensed when the database text of the dish itself names soy: then it
+    is the database's word."""
+    turn, state = allergen_turn("Was ist die 25?", lookup(TOFU))
+
+    assert unlicensed(turn, state, "Die 25 wird mit Sojasauce zubereitet.") == set()
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        SAY_ALLERGY_NOTED,
+        SAY_ASK_ALLERGY,
+        SAY_ALLERGENS_OFFER,
+        "Gebratene Garnelen ist heute leider aus.",
+        f"{SAY_ALLERGY_NOTED} {SAY_ASK_ALLERGY}",
+    ],
+)
+def test_core_strings_are_all_an_open_turn_may_say(say):
+    """Row 2: the fixed sentences and a tool `say` of this turn."""
+    turn, state = allergen_turn(
+        "Haben Sie Garnelen? Ich habe eine Nussallergie.",
+        search(GARNELEN, sold_out=True),
+    )
+
+    assert is_open(turn, state)
+    assert core_only(turn, state, say)
+    assert not core_only(turn, state, f"{say} Die 23 geht.")
+
+
+def test_the_read_back_is_a_core_string():
+    state = new_state(readback=READBACK)
+    turn, state = allergen_turn("Ich habe eine Sesamallergie.", state=state)
+
+    assert core_only(turn, state, READBACK)
+
+
+def test_an_allergy_noted_on_a_changed_line_leaves_no_question():
+    """The guest's allergy went onto the note of a line of this turn."""
+    turn, state = allergen_turn(
+        "Die 13 bitte, ich habe eine Nussallergie.",
+        search(PHO),
+        cart=[
+            {
+                "menu_item_id": PHO,
+                "quantity": 1,
+                "note": "WICHTIG !!! Kunde ist allergisch auf Nüsse",
+            }
+        ],
+    )
+
+    assert is_open(turn, state)
+    assert not leaves_a_question(turn, state)
+    assert core_only(turn, state, SAY_ALLERGY_NOTED)
+
+
+def test_an_allergy_not_noted_leaves_a_question():
+    turn, state = allergen_turn("Ich habe eine Nussallergie.")
+
+    assert leaves_a_question(turn, state)
+
+
+def test_a_pending_question_and_a_touched_dish_open_the_turn():
+    state = new_state(allergen_question_open=True)
+    turn, state = allergen_turn("Die 13.", search(PHO), state=state)
+
+    assert is_open(turn, state)
+
+
+def test_a_pending_question_closes_with_an_order_change():
+    state = new_state(allergen_question_open=True)
+    turn, state = allergen_turn(
+        "Die 13.", search(PHO), state=state, cart=[{"menu_item_id": PHO, "quantity": 1}]
+    )
+
+    assert not is_open(turn, state)
+
+
+def test_the_table_sentence_of_each_dish_or_none_for_an_unknown_value():
+    turn, _ = allergen_turn("Was ist die 23?", lookup(SUPPE, "A"))
+    assert table_says(turn) == [
+        say_allergens("23", "Frühlingsrollen", ["glutenhaltiges Getreide"])
+    ]
+
+    note_tool(turn, *lookup(PHO))
+    assert table_says(turn) is None
+
+
+# --- #798: a note is read back word for word, so it names no dish
+
+
+def _drafted_with(note):
+    return ToolCall(
+        "draft_order",
+        {
+            "type": "pickup",
+            "items": [{"menu_item_id": PHO, "quantity": 1, "note": note}],
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "note",
+    [
+        "Erdnussallergie. Die 13 hat keine.",
+        "Pho Bo ohne Erdnüsse geht",
+        "Nussallergie, die 13 ist ok",
+    ],
+)
+def test_a_note_that_names_a_dish_goes_back(note):
+    _, state = allergen_turn("Die 13 bitte.", search(PHO))
+
+    assert claims_in_a_note(state, _drafted_with(note)) is NOTE_CLAIM
+
+
+@pytest.mark.parametrize(
+    ("said", "note"),
+    [
+        ("Die 13 ohne Erdnüsse bitte.", "ohne Erdnüsse"),
+        (
+            "Die 13 bitte, ich habe eine Nussallergie.",
+            "WICHTIG !!! Kunde ist allergisch auf Nüsse",
+        ),
+        ("Die 13 bitte, ich habe Zöliakie.", "Zöliakie, ohne Gluten"),
+    ],
+)
+def test_a_wish_or_an_allergy_note_passes(said, note):
+    """The guest named the allergen: the note may carry it."""
+    _, state = allergen_turn(said, search(PHO))
+
+    assert claims_in_a_note(state, _drafted_with(note)) is None
+
+
+def test_a_note_may_name_an_option_of_its_dish():
+    _, state = allergen_turn("Die 47 bitte, ohne das Extra.", search(ENTE))
+    cart = [{"menu_item_id": ENTE, "quantity": 1, "note": "ohne Erdnuss"}]
+
+    assert take_cart(state, cart) is None
+
+
+@pytest.mark.parametrize(
+    "note", ["Enthält keine Erdnüsse", "Kunde verträgt Sesam gut", "mit Milch"]
+)
+def test_a_note_naming_an_allergen_nobody_said_goes_back(note):
+    """Codex review of #860 (P1): the read-back speaks a note word for word,
+    so its allergen words need the guest's word or the dish's own text, like
+    the model's sentence."""
+    _, state = allergen_turn("Die 13 bitte.", search(PHO))
+    cart = [{"menu_item_id": PHO, "quantity": 1, "note": note}]
+
+    assert claims_in_a_note(state, _drafted_with(note)) is NOTE_CLAIM
+    assert take_cart(state, cart) is NOTE_CLAIM
+    assert state.cart == []
+
+
+def test_a_note_moved_to_another_dish_is_checked_again():
+    """Codex review of #860 (P1): the 47's option "Erdnuss" licenses the note
+    on the 47; copied onto the 13 it is a new note there."""
+    note = "Enthält keine Erdnüsse"
+    ente = {"menu_item_id": ENTE, "quantity": 1, "note": note}
+    _, state = allergen_turn("Die 47 bitte.", search(ENTE), cart=[ente])
+    _, state = allergen_turn("Und die 13.", search(PHO), state=state)
+    moved = [ente, {"menu_item_id": PHO, "quantity": 1, "note": note}]
+
+    assert claims_in_a_note(state, _drafted_with(note)) is NOTE_CLAIM
+    assert take_cart(state, moved) is NOTE_CLAIM
+    assert state.cart == [ente]
+
+
+def test_a_note_already_on_the_order_is_not_checked_again():
+    """The guest said "ohne Erdnüsse" a turn before; the draft carries the
+    line's note on."""
+    _, state = allergen_turn(
+        "Die 13 ohne Erdnüsse bitte.",
+        search(PHO),
+        cart=[{"menu_item_id": PHO, "quantity": 1, "note": "ohne Erdnüsse"}],
+    )
+    _, state = allergen_turn("Auf Müller zum Abholen.", state=state)
+
+    assert claims_in_a_note(state, _drafted_with("ohne Erdnüsse")) is None
+
+
+def test_a_note_quoting_the_guests_own_sentence_passes():
+    """The prompt asks the model to quote the guest's health sentence; its
+    dish number is the guest's word, not the model's."""
+    said = "Die 13, ich habe eine Erdnussallergie."
+    _, state = allergen_turn(said, search(PHO))
+    assert state.allergy_said == [said]
+
+    note = "WICHTIG !!! Die 13, ich habe eine Erdnussallergie"
+    assert claims_in_a_note(state, _drafted_with(note)) is None
+
+
+def test_a_cart_note_that_names_a_dish_is_not_taken():
+    """A changed note licenses words of the model, so `take_cart` reads it
+    as `claims_in_a_note` does."""
+    _, state = allergen_turn("Die 13 bitte.", search(PHO))
+    cart = [{"menu_item_id": PHO, "quantity": 1, "note": "Die 13 hat keine Nüsse"}]
+
+    assert take_cart(state, cart) is NOTE_CLAIM
+    assert state.cart == []
+
+
+@pytest.mark.parametrize(
+    ("said", "expected"),
+    [
+        (["Ich habe eine Nussallergie."], True),
+        (["Gegen Erdnüsse."], True),
+        (["Ich habe Zöliakie."], True),
+        # Kept for the safety net, but no allergy: the call stays plain (#798).
+        (["Wir wollen die Stoßzeit meiden, geht 17 Uhr?"], False),
+        (["Keiner reagiert auf meine Mails, deshalb rufe ich an."], False),
+        # A denial the safety net keeps, next to another sentence or clause
+        # (Codex review of #860, P1).
+        (["Haben Sie Pizza? Ich habe keine Allergie."], False),
+        (["Ich habe keine Allergie, ich nehme die 47 zum Abholen."], False),
+    ],
+)
+def test_only_a_sentence_about_an_allergy_makes_the_call_sticky(said, expected):
+    assert sticky(new_state(allergy_said=said)) is expected
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        # Codex review of #860, P1: a drink "Milch" found in an earlier turn.
+        "Die 13 enthält keine Milch.",
+        # Own deep review: a seen dish named like an allergen in a claim
+        # about another dish.
+        "Nein, in der 13 ist keine Erdnusssauce drin.",
+    ],
+)
+def test_a_seen_dish_named_like_an_allergen_licenses_no_claim_about_another(say):
+    """A whole dish name is menu data only in a clause about that dish; in a
+    clause that also names another dish its allergen word is checked
+    against that dish's own text."""
+    state = new_state()
+    for item_id, number, name in (
+        ("milch", "80", "Milch"),
+        ("sauce", "90", "Erdnusssauce"),
+        (PHO, "13", "Pho Bo"),
+    ):
+        state.seen_items[item_id] = {
+            "number": number,
+            "name": name,
+            "sold_out": False,
+            "required": [],
+            "optional": [],
+        }
+    turn = begin_allergen_turn(state, "Was kostet die 13?", kept=False)
+
+    assert unlicensed(turn, state, say)
+
+
+def test_a_sentence_about_a_dish_named_like_an_allergen_stays_licensed():
+    """The dish alone in its clause: its name is menu data, as before."""
+    state = new_state()
+    state.seen_items["milch"] = {
+        "number": "80",
+        "name": "Milch",
+        "sold_out": False,
+        "required": [],
+        "optional": [],
+    }
+    turn = begin_allergen_turn(state, "Was kostet die Milch?", kept=False)
+
+    assert not unlicensed(turn, state, "Die Milch kostet 2 Euro.")
+
+
+# --- #798, deep review of PR #860: licence and open-turn holes
+
+
+def _search_saying(item_id, say, wish):
+    name, result, args = search(item_id, wish=wish)
+    return name, ToolResult(ok=True, data=result.data, say=say), args
+
+
+def test_a_search_say_that_repeats_an_allergen_wish_is_no_core_string():
+    """search_menu repeats the wish of the model's query in its `say`: in an
+    open turn those words are the model's, not the core's."""
+    wish = {"text": "ohne Erdnüsse", "kind": "note", "note": "ohne Erdnüsse"}
+    say = "Notiert: Nummer 13 Pho Bo, ohne Erdnüsse."
+    turn, state = allergen_turn(
+        "Ich habe eine Erdnussallergie. Ist die 13 ohne Erdnüsse?",
+        _search_saying(PHO, say, wish),
+    )
+
+    assert is_open(turn, state)
+    assert not core_only(turn, state, say)
+
+
+def test_a_search_say_with_a_plain_wish_stays_a_core_string():
+    wish = {"text": "ohne Zwiebeln", "kind": "note", "note": "ohne Zwiebeln"}
+    say = "Notiert: Nummer 13 Pho Bo, ohne Zwiebeln."
+    turn, state = allergen_turn(
+        "Ich habe eine Erdnussallergie. Die 13 ohne Zwiebeln.",
+        _search_saying(PHO, say, wish),
+    )
+
+    assert is_open(turn, state)
+    assert core_only(turn, state, say)
+
+
+def test_a_wish_note_the_guest_did_not_ask_for_licenses_nothing():
+    """The model writes "ohne Erdnüsse" on the line for a guest who named the
+    allergy a turn before: its own note licenses no claim about the dish."""
+    state = new_state(allergy_said=["Ich habe eine Erdnussallergie."])
+    turn, state = allergen_turn(
+        "Dann nehme ich die 13.",
+        search(PHO),
+        state=state,
+        cart=[{"menu_item_id": PHO, "quantity": 1, "note": "ohne Erdnüsse"}],
+    )
+
+    assert not is_open(turn, state)
+    assert unlicensed(turn, state, "Die 13 hat keine Erdnüsse, ist notiert.")
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Bei der 47 und der 13: keine Erdnüsse.",
+        "Die 13? Nein, keine Erdnüsse.",
+        "Die 13, die hat keine Erdnüsse.",
+        "Die 13 ist mild. Da sind keine Erdnüsse drin.",
+    ],
+)
+def test_a_clause_without_a_dish_speaks_of_the_dish_named_before_it(say):
+    """The 47's option "Erdnuss" licenses no peanut word in a clause or
+    sentence that only goes on about the 13."""
+    turn, state = allergen_turn(
+        "Was kosten die 47 und die 13?", search(ENTE), search(PHO)
+    )
+
+    assert not is_open(turn, state)
+    assert unlicensed(turn, state, say)
+
+
+@pytest.mark.parametrize(
+    "say",
+    [
+        "Die 47 mit Erdnuss, die 13 ohne Zwiebeln.",
+        "Gerne, die 47 mit Erdnuss kostet 12,40 Euro.",
+        "Die 13 kostet 11,90 Euro. Die 47 gibt es mit Erdnuss.",
+    ],
+)
+def test_each_clause_still_speaks_of_its_own_dish(say):
+    turn, state = allergen_turn(
+        "Was kosten die 47 und die 13?", search(ENTE), search(PHO)
+    )
+
+    assert unlicensed(turn, state, say) == set()
+
+
+def test_a_cart_line_of_another_dish_licenses_no_word_about_the_13():
+    line = {
+        "menu_item_id": ENTE,
+        "quantity": 1,
+        "options": [{"group": "Extra", "name": "Erdnuss"}],
+    }
+    _, state = allergen_turn("Die 47 mit Erdnuss.", search(ENTE), cart=[line])
+    turn, state = allergen_turn("Und was ist die 13?", search(PHO), state=state)
+
+    assert unlicensed(turn, state, "Die 13 ist mild, da sind keine Erdnüsse drin.")
+
+
+def test_a_line_sent_again_with_its_options_reordered_is_no_change():
+    """`same_order` sorts the options; the licence reads lines the same way,
+    so an old wish note stays an old note."""
+    _, state = allergen_turn("Die 47 bitte.", search(ENTE))
+    state.seen_items[ENTE]["optional"] = [
+        {"group": "Extra", "options": ["Erdnuss"]},
+        {"group": "Sauce", "options": ["Hoisin"]},
+    ]
+    options = [
+        {"group": "Extra", "name": "Erdnuss"},
+        {"group": "Sauce", "name": "Hoisin"},
+    ]
+    line = {"menu_item_id": ENTE, "quantity": 1, "options": options}
+    _, state = allergen_turn(
+        "Die 47 mit Erdnuss und Hoisin, ohne Sesam.",
+        state=state,
+        cart=[{**line, "note": "ohne Sesam"}],
+    )
+    again = {**line, "options": options[::-1], "note": "ohne Sesam"}
+    turn, state = allergen_turn(
+        "Und noch die 13. Ist in der 47 Sesam?",
+        search(PHO),
+        state=state,
+        cart=[again, {"menu_item_id": PHO, "quantity": 1}],
+    )
+
+    assert order_changed(turn, state)
+    assert is_open(turn, state)
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich habe keine Nussallergie, ist in der 13 Sesam?",
+        "Keine Allergie, aber ist in der 13 Sesam",
+    ],
+)
+def test_a_question_next_to_a_denial_still_opens_the_turn(said):
+    turn, state = allergen_turn(said)
+
+    assert turn.guest_codes
+    assert is_open(turn, state)
+
+
+def test_an_empty_answer_kept_for_the_net_leaves_the_dish_check_on():
+    """A kept sentence of only dots must not cut the empty string out of a
+    note: that would split every word and hide the dish number."""
+    state = new_state(allergy_said=["..."])
+    _, state = allergen_turn("Die 13 bitte.", search(PHO), state=state)
+    note = "WICHTIG !!! Allergie. Die 13 hat keine Erdnüsse."
+
+    assert claims_in_a_note(state, _drafted_with(note)) is NOTE_CLAIM
+
+
+@pytest.mark.parametrize(
+    "note",
+    ["bitte bis 13 Uhr fertig", "Klingel 13, zweiter Stock", "13,50 Euro passend"],
+)
+def test_a_note_with_a_number_that_names_no_dish_passes(note):
+    """A card number names a dish after "Nummer" or an article, as in
+    `names_dish`; a time or an amount names none."""
+    _, state = allergen_turn("Die 13 bitte.", search(PHO))
+
+    assert claims_in_a_note(state, _drafted_with(note)) is None
+
+
+@pytest.mark.parametrize(
+    "said",
+    ["Auf den Namen Fischer.", "Nussbaumweg 3, bitte.", "In die Fischerstraße 12."],
+)
+def test_a_name_or_a_street_named_like_an_allergen_opens_nothing(said):
+    turn, state = allergen_turn(said)
+
+    assert turn.guest_codes == frozenset()
+    assert not is_open(turn, state)
+    assert unlicensed(turn, state, "Danke, Herr Fischer.") == set()
+
+
+def test_an_ordered_dish_named_by_the_guest_explains_its_own_name():
+    """The guest names a dish of the order whose name holds an allergen:
+    that is the dish, not a question about the allergen."""
+    line = {"menu_item_id": GARNELEN, "quantity": 1}
+    _, state = allergen_turn("Die 24 bitte.", search(GARNELEN), cart=[line])
+    turn, state = allergen_turn("Wie lange dauern die Gebratene Garnelen?", state=state)
+
+    assert not turn.guest_codes
+    assert not is_open(turn, state)
+
+
+def _letters(word):
+    return sorted(allergens_named(word))
+
+
+def test_the_same_allergen_left_open_again_is_left_twice():
+    """Whatever core sentence ends the turn: a model that answers every
+    question with the noted sentence hands over too. Decided by the letters
+    left unexplained, not by question or statement."""
+    state = new_state(allergen_question_codes=_letters("Erdnuss"))
+    turn, state = allergen_turn(
+        "Ich habe eine Erdnussallergie. Ist in der 13 Erdnuss?", state=state
+    )
+
+    assert left_twice(turn, state, SAY_ALLERGY_NOTED)
+
+
+def test_an_allergen_without_a_mark_offered_twice_is_left_twice():
+    """Codex review of #860 (P1): "Und Sesam" without its question mark."""
+    turn, state = allergen_turn("Und Sesam")
+    assert leaves_a_question(turn, state)
+    state = new_state(
+        allergen_question_open=True,
+        allergen_question_codes=sorted(unexplained_codes(turn, state)),
+    )
+    turn, state = allergen_turn("Und Sesam", state=state)
+
+    assert left_twice(turn, state, SAY_ALLERGENS_OFFER)
+
+
+def test_the_offer_again_after_the_dish_named_is_left_twice():
+    """Codex review of #860 (P1): the guest answered the offer with a dish,
+    which names no allergen; the offer said again hands over."""
+    state = new_state(allergen_question_open=True)
+    turn, state = allergen_turn("Die 13.", search(PHO), state=state)
+
+    assert is_open(turn, state)
+    assert not leaves_a_question(turn, state)
+    assert left_twice(turn, state, SAY_ALLERGENS_OFFER)
+
+
+def test_another_allergy_named_next_is_not_left_twice():
+    state = new_state(allergen_question_codes=_letters("Nuss"))
+    turn, state = allergen_turn("Ich habe auch eine Sesamallergie.", state=state)
+
+    assert leaves_a_question(turn, state)
+    assert not left_twice(turn, state, SAY_ALLERGY_NOTED)
+
+
+def test_the_noted_sentence_before_a_read_back_asks_nothing():
+    """The model joins the fixed sentence to the read-back, whose note names
+    the allergy: the guest's "Ja." answers the order, not an allergy
+    question."""
+    readback = (
+        "Einmal die 13 Pho Bo, Ihr Hinweis: WICHTIG !!! Kunde ist allergisch "
+        "auf Erdnüsse. Passt das so?"
+    )
+    state = new_state(readback=readback, last_say=f"{SAY_ALLERGY_NOTED} {readback}")
+
+    assert not _note_allergy_said(state, "Ja.")
+    assert state.allergy_said == []

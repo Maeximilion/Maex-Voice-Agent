@@ -114,7 +114,7 @@ def test_short_task_is_routed_and_answers_are_not(run):
 
 
 def test_slash_commands_without_their_own_check_are_routed(run):
-    out = run('/bug "Migration fails while upgrading the schema"')
+    out = run('/fix-bug "Migration fails while upgrading the schema"')
     assert "effort high" in message(out)
 
 

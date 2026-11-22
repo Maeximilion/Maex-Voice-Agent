@@ -1,0 +1,76 @@
+{# Frame of the public pages (#892). Nothing from an outside host, no inline
+   script or style: the CSP of api/site/app.py allows this site's own files only. #}
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+{# The policy travels with the page to a host that serves plain files; the app
+   also sends it as a header, with frame-ancestors, which a meta tag cannot carry. #}
+<meta http-equiv="Content-Security-Policy" content="{{ csp }}">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Maex Voice Agent{% endblock %}</title>
+<meta name="description" content="{% block description %}Eine KI nimmt das Telefon Ihres Restaurants ab: Reservierungen, Abholung und Lieferung stehen sofort auf dem Tablet Ihres Teams.{% endblock %}">
+<meta name="theme-color" content="#0D0819">
+{# Private preview: no page may be indexed or its links followed. robots.txt
+   still allows crawling, or a crawler would never read this tag. #}
+{% if preview %}<meta name="robots" content="noindex, nofollow">{% else %}{% block robots %}{% endblock %}{% endif %}
+<link rel="preload" href="/static/fonts/ibm-plex-sans-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/fonts/ibm-plex-sans-latin-600-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/site.css">
+<link rel="icon" type="image/png" href="/static/icon-192.png">
+{% block scripts %}{% endblock %}
+</head>
+<body>
+<a class="skip" href="#inhalt">Zum Inhalt</a>
+
+{# The sign: layered strokes stand in for a blur, so the one flicker of the logo
+   animates the opacity of a flat layer and no filter. #}
+{% macro logo() %}
+<svg class="sign" role="img" aria-label="MÆX" viewBox="40 40 452 200" width="119" height="53">
+  <defs>
+    <path id="ly" d="M80 200 L80 80 L123.2 152 L166.4 80 L166.4 200 M207.2 200 L260 80 M365.6 80 L452 200 M452 80 L365.6 200"/>
+    <path id="lv" d="M260 80 L324.8 80 M260 80 L260 200 L324.8 200"/>
+    <path id="lw" d="M231 145 Q241 136 251 141 T271 153 T291 141 T310 145"/>
+  </defs>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <use href="#ly" stroke="#E8FF2E" stroke-width="38" opacity=".10"/><use href="#ly" stroke="#E8FF2E" stroke-width="26" opacity=".2"/>
+    <use href="#ly" stroke="#E8FF2E" stroke-width="13.2"/><use href="#ly" stroke="#FAFFD6" stroke-width="4.2" opacity=".9"/>
+    <use href="#lv" stroke="#9D7BFF" stroke-width="38" opacity=".10"/><use href="#lv" stroke="#9D7BFF" stroke-width="26" opacity=".2"/>
+    <use href="#lv" stroke="#9D7BFF" stroke-width="13.2"/><use href="#lv" stroke="#E9E1FF" stroke-width="4.2" opacity=".9"/>
+    <use href="#lw" stroke="#E8FF2E" stroke-width="13.2"/><use href="#lw" stroke="#FAFFD6" stroke-width="4.2" opacity=".9"/>
+  </g>
+</svg>
+{% endmacro %}
+
+<header class="nav wrap">
+  <a class="brand" href="/" aria-label="Maex Voice Agent, Startseite">
+    {{ logo() }}
+    <span class="brand-name">Maex Voice Agent</span>
+  </a>
+  <nav class="nav-links" aria-label="Hauptmenü">
+    <a href="/#ablauf">So funktioniert's</a>
+    <a href="/anfrage">Anfrage</a>
+    {% if login_url and not preview %}
+    <a class="btn btn-ghost" href="{{ login_url }}">Kunden-Login</a>
+    {% else %}
+    {# No sign-in target, or the private preview (Maxi, 20.11.2026: the entry
+       stays visible, greyed): shown as what it is, no link, no control. #}
+    <span class="btn btn-off" aria-disabled="true">Kunden-Login<span class="btn-off-why"> noch nicht freigeschaltet</span></span>
+    {% endif %}
+  </nav>
+</header>
+
+<main id="inhalt">
+{% block content %}{% endblock %}
+</main>
+
+<footer class="foot wrap">
+  <span class="foot-name">Maex Voice Agent</span>
+  <nav class="foot-links" aria-label="Rechtliches">
+    <a href="/impressum">Impressum</a>
+    <a href="/datenschutz">Datenschutz</a>
+    {% if contact_email %}<a href="mailto:{{ contact_email }}">{{ contact_email }}</a>{% endif %}
+  </nav>
+</footer>
+</body>
+</html>

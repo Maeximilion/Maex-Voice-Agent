@@ -746,3 +746,34 @@ def test_the_push_carries_the_token_and_priority(monkeypatch):
         "message": "Text",
         "priority": 4,
     }
+
+
+@pytest.mark.parametrize("token", ["", "change_me", "k" * 31, " " * 32])
+def test_the_dispatcher_does_not_start_without_a_real_monitor_token(monkeypatch, token):
+    """#861: without the token `push` only logs and `check` books the alarm as
+    sent, so a production stack would never alarm anyone."""
+    monkeypatch.setattr(settings, "env", "prod")
+    monkeypatch.setattr(settings, "monitor_push_token", token)
+
+    with pytest.raises(RuntimeError, match="MONITOR_PUSH_TOKEN") as refused:
+        monitor.require_push_token()
+    assert token.strip() == "" or token not in str(refused.value)
+
+
+@pytest.mark.parametrize(
+    ("env", "token"), [("prod", "m" * 32), ("dev", ""), ("test", "x")]
+)
+def test_the_monitor_token_check_lets_these_start(monkeypatch, env, token):
+    monkeypatch.setattr(settings, "env", env)
+    monkeypatch.setattr(settings, "monitor_push_token", token)
+    monitor.require_push_token()
+
+
+def test_the_cold_path_checks_the_monitor_token_before_its_threads_start():
+    from pathlib import Path
+
+    source = Path(monitor.__file__).with_name("cold_path.py").read_text("utf-8")
+    start = source.index('if __name__ == "__main__":')
+    assert source.index("monitor.require_push_token()", start) < source.index(
+        "threading.Thread(", start
+    )

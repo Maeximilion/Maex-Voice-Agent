@@ -1,5 +1,6 @@
 """scripts/bedientest_fixture: the start state of the operating test (T-3.5, protocol section 0)."""
 
+import subprocess
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -177,7 +178,7 @@ def test_default_port_is_not_the_working_stacks(tmp_path, monkeypatch):
 def test_the_stack_gets_its_settings_from_the_process_not_the_checkout(monkeypatch):
     seen: dict[str, Any] = {}
     monkeypatch.setattr(
-        fx.subprocess, "run", lambda cmd, **kw: seen.update(cmd=cmd, env=kw["env"])
+        subprocess, "run", lambda cmd, **kw: seen.update(cmd=cmd, env=kw["env"])
     )
     fx.run(fx.compose("ps"), dry_run=False)
     assert seen["cmd"][seen["cmd"].index("--env-file") + 1] == "/dev/null"
@@ -188,7 +189,7 @@ def test_the_stack_gets_its_settings_from_the_process_not_the_checkout(monkeypat
 
 def test_dry_run_runs_nothing(monkeypatch, capsys):
     called = []
-    monkeypatch.setattr(fx.subprocess, "run", lambda *a, **k: called.append(a))
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: called.append(a))
     assert fx.main(["up", "--dry-run"]) == 0
     assert fx.main(["arrive", "a", "--dry-run"]) == 0
     assert fx.main(["down", "--dry-run"]) == 0
@@ -200,7 +201,7 @@ def test_dry_run_runs_nothing(monkeypatch, capsys):
 
 
 def test_a_lan_bind_is_refused_unless_asked_for_twice(monkeypatch, capsys):
-    monkeypatch.setattr(fx.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: None)
     with pytest.raises(SystemExit) as refused:
         fx.main(["up", "--dry-run", "--bind", "0.0.0.0"])
     assert refused.value.code == 2 and "--allow-lan" in capsys.readouterr().err
@@ -216,7 +217,7 @@ def test_reset_keeps_the_lan_bind_of_the_last_up_only_when_allowed_again(
     """#689: a plain `reset` reopened the LAN bind without --allow-lan, and
     without the warning."""
     monkeypatch.setattr(fx, "WORK_DIR", tmp_path)
-    monkeypatch.setattr(fx.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: None)
     fx.main(["up", "--bind", "192.168.1.5", "--allow-lan"])
     capsys.readouterr()
     fx.main(["reset", "--allow-lan"])
@@ -230,7 +231,7 @@ def test_reset_keeps_the_lan_bind_of_the_last_up_only_when_allowed_again(
 
 def test_reset_keeps_a_loopback_port_of_the_last_up(tmp_path, monkeypatch):
     monkeypatch.setattr(fx, "WORK_DIR", tmp_path)
-    monkeypatch.setattr(fx.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: None)
     fx.main(["up", "--port", "18123"])
     fx.main(["reset"])
     assert "127.0.0.1:18123:8000" in (tmp_path / "override.yml").read_text()
@@ -239,7 +240,7 @@ def test_reset_keeps_a_loopback_port_of_the_last_up(tmp_path, monkeypatch):
 def test_down_forgets_the_bind(tmp_path, monkeypatch):
     """#689: `down` left the LAN bind for the next `reset`."""
     monkeypatch.setattr(fx, "WORK_DIR", tmp_path)
-    monkeypatch.setattr(fx.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: None)
     fx.main(["up", "--bind", "192.168.1.5", "--allow-lan"])
     fx.main(["down"])
     assert not (tmp_path / "override.yml").exists()
@@ -257,7 +258,7 @@ def test_the_shell_of_the_caller_cannot_redirect_the_stack(monkeypatch):
     }.items():
         monkeypatch.setenv(name, value)
     seen = {}
-    monkeypatch.setattr(fx.subprocess, "run", lambda cmd, **kw: seen.update(kw))
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: seen.update(kw))
     fx.run(fx.compose("ps"), dry_run=False)
     env = seen["env"]
     assert env["DATABASE_URL"] == fx.STACK_ENV["DATABASE_URL"]
