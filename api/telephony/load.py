@@ -178,6 +178,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         if args.inside:
+            if args.dry_run:
+                for name, stacks, calls in plan(args.max_stacks, args.calls):
+                    print(f"step {name}: {stacks} stack(s), {calls} call(s) each")
+                return 0
             return Inside(args).run()
         return on_workbench(args)
     except LoadError as exc:
@@ -669,15 +673,30 @@ def turn_times(
     return out
 
 
-def lost_seconds(windows: list[int], rate: int) -> float:
-    """Audio missing inside the answers: the gaps up to `ANSWER_GAP` between
-    sounding windows, which a voice played without a hitch does not have."""
+def lost_seconds(
+    windows: list[int], rate: int, listening: list[tuple[float, float]]
+) -> float:
+    """Audio missing inside the answers: the gaps between sounding windows
+    within one of the caller's `listening` stretches (from the end of its
+    speech to its next), where the one answer plays and a voice played
+    without a hitch has none, however long the gap."""
     lost = 0.0
     for before, after in itertools.pairwise(windows):
-        gap = (after - before) / rate - WINDOW
-        if WINDOW / 2 < gap <= ANSWER_GAP:
+        start, end = before / rate, after / rate
+        same = any(lo <= start and end < hi for lo, hi in listening)
+        gap = end - start - WINDOW
+        if same and gap > WINDOW / 2:
             lost += gap
     return round(lost, 3)
+
+
+def listening(said: list[tuple[float, float]]) -> list[tuple[float, float]]:
+    """Where the caller listens: before it first speaks (the greeting) and
+    from the end of each of its stretches to the start of the next."""
+    starts = [start for start, _ in said[1:]] + [float("inf")]
+    return [(0.0, said[0][0] if said else float("inf"))] + [
+        (end, nxt) for (_, end), nxt in zip(said, starts, strict=True)
+    ]
 
 
 def read_pcm(path: Path) -> tuple[bytes, int]:
@@ -695,7 +714,9 @@ def judge_call(exten: str, folder: Path, turns: int) -> CallResult:
     heard_windows = _sounding(heard_pcm, HEARD_HZ, heard_rate)
     heard = spans(heard_windows, heard_rate, ANSWER_GAP)
     return CallResult(
-        exten, turn_times(said, heard, turns), lost_seconds(heard_windows, heard_rate)
+        exten,
+        turn_times(said, heard, turns),
+        lost_seconds(heard_windows, heard_rate, listening(said)),
     )
 
 
@@ -729,7 +750,7 @@ class Sampler(threading.Thread):
             now, used = time.monotonic(), usec(self.root)
             self.cpu.append(100 * (used - last_usec) / 1e6 / (now - last_t))
             last_t, last_usec = now, used
-            self.memory.append(memory(self.root))
+            self.memory.append(server_memory(self.root)[0])
             for cid in self.containers:
                 self.service_memory[cid] = max(
                     self.service_memory.get(cid, 0), memory(self.scope(cid))
@@ -747,7 +768,7 @@ class Sampler(threading.Thread):
             entry["cpu_percent"] += 100 * used / 1e6 / seconds
             # Each container's peak in the step, summed per service.
             entry["memory_mb"] += self.service_memory.get(cid, 0) / 2**20
-        limit = read_int(self.root / "memory.max")
+        limit = server_memory(self.root)[1]
         return {
             "cpu_percent_mean": round(statistics.fmean(self.cpu), 1)
             if self.cpu
@@ -770,6 +791,27 @@ def usec(cgroup: Path) -> int:
     except OSError:
         pass
     return 0
+
+
+def server_memory(root: Path, meminfo: Path = Path("/proc/meminfo")) -> tuple[int, int]:
+    """Bytes in use and the limit of the whole server. In the test server its
+    cgroup counts (page cache included, as the limit does); on a VPS itself,
+    whose root cgroup has no such files, the kernel's own count without cache."""
+    current, limit = memory(root), read_int(root / "memory.max")
+    if current and limit:
+        return current, limit
+    try:
+        fields = {
+            line.split(":")[0]: int(line.split()[1]) * 1024
+            for line in meminfo.read_text().splitlines()
+            if len(line.split()) >= 2 and line.split()[1].isdigit()
+        }
+    except OSError:
+        return current, limit
+    total = fields.get("MemTotal", 0)
+    if current:
+        return current, total
+    return total - fields.get("MemAvailable", total), total
 
 
 def memory(cgroup: Path) -> int:
@@ -921,7 +963,9 @@ def table(results: list[StepResult]) -> str:
 
 
 def limit_line(results: list[StepResult], stopped: str | None) -> str:
-    good = [r for r in results if r.inside]
+    # The warm-up with one call per stack says nothing about three per stack.
+    per_stack = max((r.calls // max(r.stacks, 1) for r in results), default=0)
+    good = [r for r in results if r.inside and r.calls // max(r.stacks, 1) == per_stack]
     best = max((r.stacks for r in good), default=0)
     failed = next((r for r in results if not r.inside), None)
     if failed:

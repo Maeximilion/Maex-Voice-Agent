@@ -159,14 +159,26 @@ def test_turn_without_an_answer_before_the_caller_speaks_again() -> None:
 
 
 def test_lost_audio_inside_an_answer_is_counted() -> None:
+    anywhere = [(0.0, float("inf"))]
     whole = _track([(1000, 2.0)])
     broken = _track([(1000, 0.8), (0, 0.1), (1000, 1.1)])
-    assert load.lost_seconds(_sounding(whole, 1000, RATE), RATE) == 0
-    lost = load.lost_seconds(_sounding(broken, 1000, RATE), RATE)
+    assert load.lost_seconds(_sounding(whole, 1000, RATE), RATE, anywhere) == 0
+    lost = load.lost_seconds(_sounding(broken, 1000, RATE), RATE, anywhere)
     assert lost == pytest.approx(0.1, abs=0.03)
-    # Between two answers is no loss.
-    two = _track([(1000, 1.0), (0, 3.0), (1000, 1.0)])
-    assert load.lost_seconds(_sounding(two, 1000, RATE), RATE) == 0
+
+
+def test_a_long_dropout_inside_an_answer_counts_and_between_answers_not() -> None:
+    # The caller speaks 1.0 to 2.5 and 7.5 to 9.0: it listens before 1.0,
+    # from 2.5 to 7.5 and after 9.0.
+    said = [(1.0, 2.5), (7.5, 9.0)]
+    ears = load.listening(said)
+    assert ears == [(0.0, 1.0), (2.5, 7.5), (9.0, float("inf"))]
+    # One answer from 3.8, a second of it missing; then the next turn's answer.
+    heard = _track(
+        [(0, 3.8), (1000, 0.5), (0, 1.0), (1000, 0.5), (0, 3.4), (1000, 1.0)]
+    )
+    lost = load.lost_seconds(_sounding(heard, 1000, RATE), RATE, ears)
+    assert lost == pytest.approx(1.0, abs=0.03)
 
 
 def test_a_call_without_recordings_misses_every_turn(tmp_path: Path) -> None:
@@ -224,6 +236,44 @@ def test_each_limit_fails_the_step(changes: dict[str, object], failed: str) -> N
     result = _step(**changes)
     assert not result.inside
     assert [name for name, ok, _ in result.checks if not ok] == [failed]
+
+
+def test_the_warm_up_alone_is_no_capacity() -> None:
+    steps = [
+        _step(name="s1-c1", calls=1),
+        _step(name="s1-c3", turns=[2.0]),
+    ]
+    assert "inside the budget: 0" in load.limit_line(steps, None)
+
+
+def test_server_memory_in_the_test_server_and_on_a_vps(tmp_path: Path) -> None:
+    cgroup = tmp_path / "cg"
+    cgroup.mkdir()
+    (cgroup / "memory.current").write_text(str(3 * 2**30))
+    (cgroup / "memory.max").write_text(str(8 * 2**30))
+    meminfo = tmp_path / "meminfo"
+    meminfo.write_text(
+        "MemTotal: 8000000 kB\nMemFree: 1 kB\nMemAvailable: 6000000 kB\n"
+    )
+    assert load.server_memory(cgroup, meminfo) == (3 * 2**30, 8 * 2**30)
+    # A VPS's root cgroup has neither file: the kernel's count, without cache.
+    bare = tmp_path / "root"
+    bare.mkdir()
+    assert load.server_memory(bare, meminfo) == (2000000 * 1024, 8000000 * 1024)
+
+
+def test_a_dry_run_on_the_server_runs_nothing(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(load, "docker_problem", lambda: None)
+    monkeypatch.setattr(load.os, "getuid", lambda: 1000)
+
+    def refused(*_: object, **__: object) -> None:
+        raise AssertionError("a dry run must not start anything")
+
+    monkeypatch.setattr(load, "Inside", refused)
+    assert load.main(["--inside", "--dry-run", "--max-stacks", "2"]) == 0
+    assert "step s2-c3" in capsys.readouterr().out
 
 
 def test_the_limit_names_the_first_failed_step() -> None:
