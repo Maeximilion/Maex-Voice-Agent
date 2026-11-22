@@ -186,7 +186,7 @@ def sign_in(
         raise SignInRefused()
     factor, why = _second_factor(db, account, code, now, passkey, challenge)
     if factor is None:
-        repeat = not passkey and _just_signed_in(db, account, code, now)
+        repeat = not passkey and _just_signed_in(db, account, code, address, now)
         db.rollback()
         _note_failure(db, name, address, "repeat" if repeat else why)
         raise SignInRefused(copy=why == "counter")
@@ -650,25 +650,48 @@ def _name_counter(db: Session, name: str, now: datetime) -> OperatorLoginFailure
 
 
 def _just_signed_in(
-    db: Session, account: OperatorAccount, code: str, now: datetime
+    db: Session, account: OperatorAccount, code: str, address: str, now: datetime
 ) -> bool:
-    """Is `code` the one this account signed in with a moment ago? Then a
-    second post of the same form (a double tap) is no sign of a known
-    password (#688)."""
+    """Is `code` the one this account signed in with a moment ago, from this
+    address? Then a second post of the same form (a double tap) is no sign of
+    a known password (#688). The same code from another address is the race a
+    password thief runs against the operator, so it stays a `factor` failure
+    (review #207). Not the device cookie: a double tap from a new browser
+    sends both posts before the first answer sets it."""
     if account.totp_secret is None:
         return False
     step = totp.matching_step(account.totp_secret, code, now.timestamp(), None)
     if step is None or step != account.totp_last_step:
         return False
-    return bool(
-        db.scalar(
-            select(func.count())
-            .select_from(OperatorSession)
-            .where(
-                OperatorSession.account_id == account.id,
-                OperatorSession.created_at >= now - REPEAT_WINDOW,
-            )
+    if not db.scalar(
+        select(func.count())
+        .select_from(OperatorSession)
+        .where(
+            OperatorSession.account_id == account.id,
+            OperatorSession.created_at >= now - REPEAT_WINDOW,
         )
+    ):
+        return False
+    # The last row that moved totp_last_step names who used this code: a TOTP
+    # sign-in, a TOTP step-up or a new secret (a recovery code leaves the step
+    # as it was). Only a sign-in from this very address is a double tap.
+    last = db.execute(
+        select(OperatorAudit.action, OperatorAudit.detail["address"].astext)
+        .where(
+            OperatorAudit.actor == account.name,
+            (
+                OperatorAudit.action.in_(("operator.signed_in", "operator.stepped_up"))
+                & (OperatorAudit.detail["factor"].astext == "totp")
+            )
+            | (OperatorAudit.action == "operator.totp_set"),
+        )
+        .order_by(OperatorAudit.id.desc())
+        .limit(1)
+    ).first()
+    return (
+        bool(address)
+        and last is not None
+        and tuple(last) == ("operator.signed_in", address)
     )
 
 
