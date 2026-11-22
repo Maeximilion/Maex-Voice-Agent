@@ -738,6 +738,193 @@ def test_a_confirmed_table_of_the_same_call_still_counts(session, tenant_id, cal
         )
 
 
+# --- Of another call only its newest row's draft counts (#908) ---
+
+
+def _three_corrections(session, tenant_id, call_id):
+    """Six at seven, a quarter past and half past: three drafts of one call,
+    the last one written last."""
+    drafts = [
+        create_reservation(
+            session,
+            _six(tenant_id, call_id, reserved_for=berlin(MITTWOCH, 19, mm)),
+            now=NOW + timedelta(minutes=step),
+        )
+        for step, mm in enumerate((0, 15, 30))
+    ]
+    return drafts[-1]
+
+
+def test_only_the_newest_draft_of_a_call_holds_seats(session, tenant_id, call_id):
+    """#908: every correction wrote a draft and every draft held its seats, so
+    one call could fill the evening for everybody else. 30 of 40 seats booked,
+    call A corrects twice: only its newest six count, and call B still drafts
+    four. A's yes to its newest draft books it."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    newest = _three_corrections(session, tenant_id, call_id)
+
+    other = create_reservation(
+        session,
+        _six(tenant_id, _other_call(session, tenant_id), party_size=4),
+        now=NOW + timedelta(minutes=5),
+    )
+
+    assert other.status == "draft"
+    assert _confirm(session, tenant_id, call_id, newest.reservation_id).status == (
+        "confirmed"
+    )
+
+
+def test_a_replaced_draft_holds_nothing_after_the_yes(session, tenant_id, call_id):
+    """The newest draft confirmed, the older ones of its call stay drafts: they
+    must not count again now that a confirmed row is the newest."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    newest = _three_corrections(session, tenant_id, call_id)
+    _confirm(session, tenant_id, call_id, newest.reservation_id)
+
+    other = create_reservation(
+        session,
+        _six(tenant_id, _other_call(session, tenant_id), party_size=4),
+        now=NOW + timedelta(minutes=5),
+    )
+
+    assert other.status == "draft"
+
+
+def test_the_newest_draft_of_another_call_still_counts(session, tenant_id, call_id):
+    """One draft per call still holds its seats: 30 + 6 + 6 > 40."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    _three_corrections(session, tenant_id, _other_call(session, tenant_id))
+
+    with pytest.raises(Conflict):
+        create_reservation(
+            session, _six(tenant_id, call_id), now=NOW + timedelta(minutes=5)
+        )
+
+
+def test_two_drafts_written_at_the_same_instant_hold_one_party(
+    session, tenant_id, call_id
+):
+    """A turn passes one `now` to every tool it calls: two drafts of one call
+    can share their `created_at`, and still only one of them counts."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    other = _other_call(session, tenant_id)
+    for mm in (0, 30):
+        create_reservation(
+            session,
+            _six(tenant_id, other, reserved_for=berlin(MITTWOCH, 19, mm)),
+            now=NOW,
+        )
+
+    mine = create_reservation(session, _six(tenant_id, call_id, party_size=4), now=NOW)
+
+    assert mine.status == "draft"
+    # And one of them does count: 30 + 6 + 5 > 40.
+    with pytest.raises(Conflict):
+        create_reservation(session, _six(tenant_id, call_id, party_size=5), now=NOW)
+
+
+def test_a_confirmed_table_of_the_same_instant_never_hides_a_draft(
+    session, tenant_id, call_id
+):
+    """Which of two rows of one instant is newer cannot be told: a confirmed
+    table next to a draft leaves the draft counting, whatever their ids."""
+    other = _other_call(session, tenant_id)
+    _seat(session, tenant_id, other, 30)
+    _seat(session, tenant_id, other, 6, status="draft")
+    # The confirmed table gets the higher id, the one a tie-break on ids picks.
+    session.execute(
+        update(Reservation)
+        .where(Reservation.status == "draft")
+        .values(id=uuid.UUID(int=1))
+    )
+    session.commit()
+
+    # 30 + 6 + 6 > 40.
+    with pytest.raises(Conflict):
+        create_reservation(session, _six(tenant_id, call_id), now=NOW)
+
+
+def test_going_back_to_an_earlier_draft_makes_it_hold_the_seats_again(
+    session, tenant_id, call_id
+):
+    """Wednesday, then Thursday, then "doch Mittwoch": the replayed Wednesday
+    draft is the call's newest again, so another caller cannot take its
+    seats, the guest's yes books it, and Thursday holds nothing after it."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    wednesday = _six(tenant_id, call_id, idempotency_key="k-wednesday")
+    first = create_reservation(session, wednesday, now=NOW)
+    thursday = WEDNESDAY_EVENING + timedelta(days=1)
+    create_reservation(
+        session,
+        _six(tenant_id, call_id, reserved_for=thursday),
+        now=NOW + timedelta(minutes=1),
+    )
+    back = create_reservation(session, wednesday, now=NOW + timedelta(minutes=2))
+    assert back == first
+
+    with pytest.raises(Conflict):
+        create_reservation(
+            session,
+            _six(tenant_id, _other_call(session, tenant_id)),
+            now=NOW + timedelta(minutes=3),
+        )
+    assert _confirm(session, tenant_id, call_id, first.reservation_id).status == (
+        "confirmed"
+    )
+    _, held = reservations_capacity.window_load(
+        session,
+        tenant_id,
+        thursday,
+        BERLIN,
+        now=NOW + timedelta(minutes=4),
+        draft_lifetime=_call_limit(session, tenant_id),
+    )
+    assert held == 0
+
+
+def test_a_draft_is_replaced_only_by_a_newer_row_of_its_own_call(
+    session, tenant_id, call_id
+):
+    """Another call's newer draft hides nothing: 30 of 40 booked, call P holds
+    six, call Q four a minute later, so two more do not fit."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    create_reservation(
+        session, _six(tenant_id, _other_call(session, tenant_id)), now=NOW
+    )
+    create_reservation(
+        session,
+        _six(tenant_id, _other_call(session, tenant_id), party_size=4),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    with pytest.raises(Conflict):
+        create_reservation(
+            session,
+            _six(tenant_id, call_id, party_size=2),
+            now=NOW + timedelta(minutes=2),
+        )
+
+
+def test_a_draft_moved_to_another_day_frees_the_first_one(session, tenant_id, call_id):
+    """The correction leaves Wednesday for Thursday: the Wednesday draft of
+    six holds nothing any more, and six more fit next to the thirty."""
+    other = _other_call(session, tenant_id)
+    _seat(session, tenant_id, other, 30)
+    create_reservation(session, _six(tenant_id, other), now=NOW)
+    create_reservation(
+        session,
+        _six(tenant_id, other, reserved_for=WEDNESDAY_EVENING + timedelta(days=1)),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    mine = create_reservation(
+        session, _six(tenant_id, call_id), now=NOW + timedelta(minutes=2)
+    )
+
+    assert mine.status == "draft"
+
+
 def test_two_drafts_of_one_call_never_book_past_the_window(session, tenant_id, call_id):
     """A call may hold two drafts now, but `confirm` counts every confirmed
     seat: only one of them can be booked."""

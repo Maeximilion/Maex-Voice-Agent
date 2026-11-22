@@ -4,7 +4,7 @@ seated on a table or a combination of the floor plan."""
 
 import threading
 import uuid
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -250,6 +250,30 @@ def test_a_live_agent_draft_fills_the_window_for_the_tablet_too(session, tenant_
     draft = enter(session, tenant_id)
 
     assert draft.needs_override
+
+
+def test_a_replaced_agent_draft_holds_nothing_for_the_tablet(session, tenant_id):
+    """#908 on the tablet: a caller corrected 18:00 to 19:00, both drafts of
+    twenty are live, and the team sees only the newest one's seats."""
+    call, _ = agent_table(session, tenant_id, 20, berlin(18))
+    create_reservation(
+        session,
+        CreateReservationRequest(
+            call_id=call,
+            tenant_id=tenant_id,
+            idempotency_key=uuid.uuid4().hex,
+            guest_name="Müller",
+            phone="+4972215551234",
+            party_size=20,
+            reserved_for=berlin(19),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    draft = enter(session, tenant_id, at=NOW + timedelta(minutes=2))
+
+    assert draft.booked_guests == 20
+    assert not draft.needs_override
 
 
 def test_a_time_outside_every_window_needs_the_teams_word(session, tenant_id):
