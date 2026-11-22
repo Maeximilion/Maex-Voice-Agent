@@ -365,8 +365,8 @@ over all tenants, and the agent tools take `tenant_id` from the call state, not 
 | | One stack per customer | All customers in one stack |
 |---|---|---|
 | App changes before customer 2 | none (deploy tooling only) | every row of the table above that picks one tenant |
-| Memory per customer | about 0.65 GB idle measured for api, dispatcher, n8n, push and db (09.11.2026, `docker stats`, workbench); voice and Asterisk not measured, so about 1 GB assumed | shared, a few hundred MB per customer |
-| Server cost per customer | about 3 EUR a month (VPS of D3: 8 GB, about 17 EUR, roughly 6 stacks) | below 1 EUR |
+| Memory per customer | about 0.9 GB with three calls running, measured by the load test of 22.11.2026 (#841, below): n8n 0.54, db 0.10, voice 0.08, api 0.08, dispatcher 0.08, push and Asterisk 0.02 each; the host adds about 1.4 GB for all of them (Docker, journald, page cache) | shared, a few hundred MB per customer |
+| Server cost per customer | about 4 EUR a month (VPS of D3: 8 GB, about 17 EUR, 4 stacks measured by #841, 6 assumed before) | below 1 EUR |
 | Speech, model and line | 45 to 85 EUR a month (docs/20 §9), the same either way | same |
 | Blast radius of a bug or a bad migration | one customer | every customer; a missing `tenant_id` filter shows one customer's data to another |
 | Backup, restore, offboarding (#576) | per stack: one dump, one volume to delete | one customer out of a shared dump, delete by `tenant_id` across all tables |
@@ -578,6 +578,16 @@ the server is bought and prices per concurrent call are set. On the workbench, i
   answers, the tool calls of the call log (95th percentile, 300 ms), processor and memory of the
   whole test server from its cgroup and per service, team rings, restarts and memory kills.
   `deploy/loadtest/run/report.json` and `table.md` hold the result.
+- **Result of 22.11.2026** (branch of PR #905, the stand-ins above, 3 calls with 4 turns each per
+  stack, calls spread over one turn): 4 stacks with all 12 calls inside every check; at 5 stacks
+  (15 calls) one 20 ms frame of one greeting went missing, everything else held (turns 1.30 s
+  median and 1.32 s at the 95th percentile in every step, of which the stand-ins take 1.25 s;
+  tool calls 9 to 15 ms at the 95th percentile; no team ring, no restart). Memory is the limit,
+  not the processor: about 1.05 GB more of the server's memory per stack (6.3 of 8 GB at 5
+  stacks, page cache included), against 90 % of one core of 400 % on average at 5 stacks, of
+  which the router and the stand-in model, which do not run on the server in operation, take
+  about 28. The largest share of a stack is n8n (0.54 GB). The table is in the comment on #841,
+  the run up to 9 stacks with 0.1 s of lost audio allowed there as well.
 - **The CPU caveat stands**: a workbench core (Ryzen 9 7950X3D) is faster than a VPS vCore, so the
   number is an upper bound. Plan with a margin and run the same on the VPS in its first month:
   there, as the deploy user in a checkout on an empty server,

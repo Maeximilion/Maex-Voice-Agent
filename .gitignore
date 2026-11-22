@@ -56,4 +56,4 @@ api/site/tablet-demo/
 # Public site export (#892): written by scripts/site_export.py, never committed
 site-export/
 site-export.zip
-deploy/loadtest/run/
+deploy/loadtest/run*/
