@@ -672,19 +672,27 @@ def _just_signed_in(
         )
     ):
         return False
-    # The last TOTP sign-in set totp_last_step, so it used this code; a
-    # recovery code leaves the step as it was.
-    used_from = db.scalar(
-        select(OperatorAudit.detail["address"].astext)
+    # The last row that moved totp_last_step names who used this code: a TOTP
+    # sign-in, a TOTP step-up or a new secret (a recovery code leaves the step
+    # as it was). Only a sign-in from this very address is a double tap.
+    last = db.execute(
+        select(OperatorAudit.action, OperatorAudit.detail["address"].astext)
         .where(
             OperatorAudit.actor == account.name,
-            OperatorAudit.action == "operator.signed_in",
-            OperatorAudit.detail["factor"].astext == "totp",
+            (
+                OperatorAudit.action.in_(("operator.signed_in", "operator.stepped_up"))
+                & (OperatorAudit.detail["factor"].astext == "totp")
+            )
+            | (OperatorAudit.action == "operator.totp_set"),
         )
         .order_by(OperatorAudit.id.desc())
         .limit(1)
+    ).first()
+    return (
+        bool(address)
+        and last is not None
+        and tuple(last) == ("operator.signed_in", address)
     )
-    return used_from == address
 
 
 def _note_failure(db: Session, name: str | None, address: str, reason: str) -> None:

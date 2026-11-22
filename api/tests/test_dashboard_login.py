@@ -795,6 +795,61 @@ def test_a_code_used_from_another_address_is_no_repeat_of_an_earlier_sign_in(
     assert _failures(sessions) == [("factor", "198.51.100.7")]
 
 
+def test_a_step_up_code_replayed_at_the_sign_in_is_no_repeat(sessions, factors, clock):
+    """A TOTP step-up also moves the account's step, so the code of the last
+    TOTP sign-in is not always the one just used: a step-up code seen and
+    sent to the sign-in, even from the sign-in's address, is no double tap."""
+    address = "198.51.100.7"
+    with sessions() as db:
+        signed = access.sign_in(
+            db,
+            "maxi",
+            PASSWORD,
+            _code(factors.totp_secret, clock.at),
+            address,
+            clock.at,
+        )
+    later = clock.at + timedelta(seconds=totp.STEP_SECONDS)
+    code = _code(factors.totp_secret, later)
+    with sessions() as db:
+        operator = access.resolve(db, signed.token, later)
+        assert operator is not None
+        access.step_up(db, operator, code, address, later)
+    _replay(sessions, code, address, later)
+    assert _failures(sessions) == [("factor", address)]
+
+
+@pytest.mark.parametrize(
+    ("signed_from", "replayed_from", "reason"),
+    [
+        ("2001:db8::7", "2001:db8::7", "repeat"),
+        # Compared as sent, never widened: the safe side is the alarm.
+        ("198.51.100.7", "::ffff:198.51.100.7", "factor"),
+        # No address known on either post says nothing about the device.
+        ("", "", "factor"),
+    ],
+)
+def test_the_repeat_address_is_compared_exactly_and_never_empty(
+    sessions, factors, clock, signed_from, replayed_from, reason
+):
+    code = _code(factors.totp_secret, clock.at)
+    with sessions() as db:
+        assert access.sign_in(db, "maxi", PASSWORD, code, signed_from, clock.at)
+    _replay(sessions, code, replayed_from, clock.at)
+    assert _failures(sessions) == [(reason, replayed_from)]
+
+
+def test_the_code_sent_again_after_the_window_is_a_factor_failure(
+    sessions, factors, clock
+):
+    code = _code(factors.totp_secret, clock.at)
+    with sessions() as db:
+        assert access.sign_in(db, "maxi", PASSWORD, code, "198.51.100.7", clock.at)
+    late = clock.at + access.REPEAT_WINDOW + timedelta(seconds=1)
+    _replay(sessions, code, "198.51.100.7", late)
+    assert _failures(sessions) == [("factor", "198.51.100.7")]
+
+
 def test_an_oversized_unknown_name_is_refused_like_any_other(client, clock):
     """Codex PR #731: a name of kilobytes broke the index of its counter."""
     import secrets
