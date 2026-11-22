@@ -6,9 +6,11 @@ fake line records what it was asked to do, so a test reads the call back as a
 list of actions.
 """
 
+import time
 from array import array
 from collections.abc import Callable, Iterable
 
+from api.telephony.audio import tone
 from api.telephony.speech import Heard
 
 
@@ -62,6 +64,75 @@ class DrillEar(FakeEar):
         ) >= self.LOUD:
             self._said_at = at
             self.hear(Heard("Ja", ended_at=at))
+
+
+class LoadEar(FakeEar):
+    """The ear of the load test (#841, `telephony/load.py`): a stand-in for a
+    speech-to-text service. In operation that service runs outside the server
+    and costs it network, not processor, so this one does no work: a loud
+    frame is the caller speaking, and `END_SILENCE` of quiet after it ends the
+    utterance, which is heard `DELAY` later as the next of `SENTENCES`. Partials
+    while the caller speaks, as an adapter without partial transcripts sends
+    them (`speech.Heard`)."""
+
+    # The silence that ends a turn (docs/20 §6, T-10.3) and what a streaming
+    # service takes after it for the final transcript.
+    END_SILENCE = 0.5
+    DELAY = 0.1
+    PARTIAL_EVERY = 0.5
+    LOUD = 1000
+    # What the caller says, turn by turn: a pickup order, so that every turn
+    # searches the menu.
+    SENTENCES = (
+        "Ich möchte etwas zum Abholen bestellen",
+        "Die Nummer 23 bitte",
+        "Und zweimal die 12",
+        "Noch eine große Cola",
+        "Das wäre alles",
+    )
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._last_loud: float | None = None
+        self._partial_at = 0.0
+        self._turn = 0
+
+    def feed(self, frame: bytes, at: float) -> None:
+        samples = array("h", frame[: len(frame) - len(frame) % 2])
+        if max(map(abs, samples), default=0) >= self.LOUD:
+            if self._last_loud is None or at - self._partial_at >= self.PARTIAL_EVERY:
+                self._partial_at = at
+                self.hear(Heard("", final=False, ended_at=at))
+            self._last_loud = at
+        elif (
+            self._last_loud is not None
+            and at - self._last_loud >= self.END_SILENCE + self.DELAY
+        ):
+            ended_at, self._last_loud = self._last_loud, None
+            text = self.SENTENCES[self._turn % len(self.SENTENCES)]
+            self._turn += 1
+            self.hear(Heard(text, ended_at=ended_at))
+
+
+class LoadMouth:
+    """The mouth of the load test (#841): a stand-in for a text-to-speech
+    service. It answers after `DELAY` with a tone the caller's side can find in
+    its recording, as long as the sentence would take to say (`SECONDS_PER_CHAR`,
+    at most `MAX_SECONDS`), so the media channel carries what a voice would."""
+
+    RATE = 16000
+    DELAY = 0.15
+    SECONDS_PER_CHAR = 0.06
+    MAX_SECONDS = 4.0
+    FREQ_HZ = 1000
+
+    def __init__(self, sleep: Callable[[float], None] = time.sleep) -> None:
+        self._sleep = sleep
+
+    def speak(self, text: str) -> Iterable[bytes]:
+        self._sleep(self.DELAY)
+        seconds = min(len(text) * self.SECONDS_PER_CHAR, self.MAX_SECONDS)
+        yield tone(self.FREQ_HZ, seconds, self.RATE)
 
 
 class FakeMouth:

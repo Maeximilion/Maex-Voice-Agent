@@ -1,0 +1,9 @@
+# Appended to a customer stack's COMPOSE_FILE by the load test (#841,
+# api/telephony/load.py), after the production files. One change only: `voice`
+# refuses the stand-in engines (VOICE_EAR and VOICE_MOUTH `load`) under
+# ENV=prod, so it runs as `test` here; every other service stays as production
+# runs it. Never part of a real stack.
+services:
+  voice:
+    environment:
+      ENV: test
