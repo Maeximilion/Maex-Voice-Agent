@@ -14,8 +14,9 @@ before the next weekday's first span of the service starts, Sunday's before
 Monday's: every reader looks at the day before first, so a night that reached
 into the next day's span would close it at the night's end. The same holds
 between the weekday and the dates with hours of their own beside it, or "like"
-it, from today on. A save never brings such an overlap nor deepens one it
-finds; an old one it leaves as it was blocks nothing (#877).
+it, while that night can still be read. A save never brings such an overlap,
+and never lets a night cut further into a next day's span that runs on past it;
+an old overlap it leaves as it was, or eases, blocks nothing (#877).
 
 Hours are compared as the form shows them, to the minute, and service by
 service: a service the owner did not change is neither checked nor written, so
@@ -138,7 +139,7 @@ def set_weekday(
     second device) raise Conflict, so a save never writes over hours the owner
     did not see. False when nothing changes, whatever the token: then no row
     is written, and a save tapped twice is no conflict. The night rule reads
-    the dates with hours of their own from `now`'s business day on. Raises
+    the dates with hours of their own whose nights end after `now`. Raises
     InvalidInput. Commits."""
     if weekday not in range(7) or not set(spans) <= set(SERVICES):
         raise InvalidInput(f"no such weekday or service: {weekday}, {sorted(spans)}")
@@ -165,9 +166,9 @@ def set_weekday(
         faults.update(found)
     clean = [service for service in changed if service not in faults]
     if clean:
-        today = clock.business_day(now or clock.utcnow(), zone)
+        moment = now or clock.utcnow()
         faults.update(
-            _dated_night_faults(session, tenant_id, zone, today, weekday, clean, after)
+            _dated_night_faults(session, tenant_id, zone, moment, weekday, clean, after)
         )
     if faults:
         session.rollback()
@@ -318,16 +319,32 @@ def _overlap(late: list[Span], early: list[Span]) -> int:
     return reach - first
 
 
+def _cut(late: list[Span], early: list[Span]) -> int:
+    """How far, in minutes, the night of `late` reaches into the one span of
+    `early` that starts inside it, or as it ends, and runs on past it: the
+    stretch a reader takes for the night's window and closes at the night's
+    end, though that span holds longer. Below zero when no span is cut; a span
+    wholly inside the night is read inside it and closes no earlier than it."""
+    reach = max((_minutes(span)[1] for span in late), default=0) - DAY_MINUTES
+    cuts = (
+        reach - start for start, end in map(_minutes, early) if start <= reach < end
+    )
+    return max(cuts, default=-1)
+
+
 def _deepens(
     late: list[Span], early: list[Span], late_was: list[Span], early_was: list[Span]
 ) -> bool:
-    """A night that reaches the next day's spans after a save, and further
-    than before it (#877). An overlap from before the rule, or from a writer
-    that did not check it, may stay or shrink, so the hours beside it can
-    still be shortened or moved out of it; a save never brings one or makes
-    one worse."""
-    overlap = _overlap(late, early)
-    return overlap >= 0 and overlap > _overlap(late_was, early_was)
+    """A save that brings a night overlap where there was none, or lets a
+    night cut further into a next day's span than before it (#877), also a
+    span it held wholly before. An overlap from before the rule, or from a
+    writer that did not check it, may stay or ease, so the hours beside it
+    can still be shortened or moved out of it."""
+    if _overlap(late, early) < 0:
+        return False
+    if _overlap(late_was, early_was) < 0:
+        return True
+    return _cut(late, early) > _cut(late_was, early_was)
 
 
 def night_deepened(
@@ -353,7 +370,7 @@ def _dated_night_faults(
     session: Session,
     tenant_id: uuid.UUID,
     zone: str,
-    today: date,
+    now: datetime,
     weekday: int,
     services: list[str],
     after: Day,
@@ -361,8 +378,10 @@ def _dated_night_faults(
     """The night rule between the dates with hours of their own and the dates
     beside them, with the weekday's new spans (#877): a date beside the
     weekday, or one "like" it, would otherwise be read inside a night the
-    weekly check never saw. Only nights that reach today or later; the pairs
-    of two weekly days are `_night_faults`'. A fault names both dates."""
+    weekly check never saw. Only nights that end after `now`: a night over
+    is read by nobody, and its date is no longer the owner's to change. The
+    pairs of two weekly days are `_night_faults`'. A fault names both dates."""
+    today = clock.business_day(now, zone)
     rows = session.scalars(
         select(SpecialDay).where(
             SpecialDay.tenant_id == tenant_id,
@@ -396,9 +415,19 @@ def _dated_night_faults(
     was, will = HoursData(regular, special), HoursData(kept + new, special)
     tz = ZoneInfo(zone)
     faults: dict[str, str] = {}
+
+    def running(night: date, service: str) -> bool:
+        return any(
+            end > now
+            for data in (was, will)
+            for _start, end in windows_for_day(data, night, service, tz)
+        )
+
     for service in services:
         for night in nights:
-            if night_deepened(was, will, night, service, tz):
+            if running(night, service) and night_deepened(
+                was, will, night, service, tz
+            ):
                 faults[service] = NIGHT_OVERLAP.format(
                     night=_dated(night), next=_dated(night + one)
                 )

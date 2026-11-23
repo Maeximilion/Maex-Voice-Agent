@@ -58,7 +58,8 @@ def _seen(session, tenant_id, weekday) -> str:
 
 def _set(session, tenant_id, weekday, spans, seen=None) -> bool:
     seen = _seen(session, tenant_id, weekday) if seen is None else seen
-    return weekly.set_weekday(session, tenant_id, weekday, spans, seen)
+    # A fixed clock: which dates the night rule reads depends on it (#877).
+    return weekly.set_weekday(session, tenant_id, weekday, spans, seen, now=NOW)
 
 
 def _windows(session, tenant_id, day, service="pickup") -> list[tuple[str, str]]:
@@ -949,3 +950,47 @@ def test_a_date_change_may_ease_an_old_overlap_but_never_deepen_it(session, tena
         night="Samstag", next="Sonntag"
     )
     assert staff.day_hours(session, tenant_id, SATURDAY_14) == shorter
+
+
+def test_a_change_may_not_let_a_night_cut_a_span_it_held(session, tenant_id):
+    """Deep review of #877: the depth of an overlap alone is no measure. A span
+    wholly inside the night is read inside it and closes no earlier; shortening
+    the night so that it ends inside that span, or stretching the span past the
+    night's end, would close it at the night's end for the agent."""
+    sunday = SATURDAY_14 + timedelta(days=1)
+    _date_rows(
+        session,
+        tenant_id,
+        [(SATURDAY_14, time(18), time(3)), (sunday, time(1), time(2, 30))],
+    )
+    shorter = DayHours(opens=time(18), closes=time(2))
+    with pytest.raises(InvalidInput):
+        staff.set_day_hours(
+            session, tenant_id, SATURDAY_14, shorter, NOW, overnight=True
+        )
+    longer = DayHours(opens=time(1), closes=time(10))
+    with pytest.raises(InvalidInput):
+        staff.set_day_hours(session, tenant_id, sunday, longer, NOW)
+    # Still wholly inside the night: nothing is read wrong, the change holds.
+    inside = DayHours(opens=time(0, 30), closes=time(2, 45))
+    assert staff.set_day_hours(session, tenant_id, sunday, inside, NOW)
+
+
+def test_a_night_that_is_over_blocks_no_weekly_save(session, tenant_id):
+    """Review of #877: Saturday 14.11 runs to 03:00. At Sunday 02:30 a weekly
+    Sunday from 02:00 is refused, the night still runs; at 15:00 that night is
+    over, nobody reads it, and the date is past changing: the save holds."""
+    night = DayHours(opens=time(18), closes=time(3))
+    assert staff.set_day_hours(
+        session, tenant_id, SATURDAY_14, night, NOW, overnight=True
+    )
+    sunday = SATURDAY_14 + timedelta(days=1)
+    early = {"pickup": [Span(time(2), time(10))]}
+    for hour, refused in ((time(2, 30), True), (time(15), False)):
+        at = datetime.combine(sunday, hour, tzinfo=BERLIN)
+        seen = _seen(session, tenant_id, SUNDAY)
+        if refused:
+            with pytest.raises(FieldErrors):
+                weekly.set_weekday(session, tenant_id, SUNDAY, early, seen, now=at)
+        else:
+            assert weekly.set_weekday(session, tenant_id, SUNDAY, early, seen, now=at)

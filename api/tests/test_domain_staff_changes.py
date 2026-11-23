@@ -1360,7 +1360,9 @@ def test_the_check_token_follows_the_hours_behind_a_card(session, tenant_id):
     sunday = SATURDAY.weekday() + 1
     shown = weekly.token(weekly.week(session, tenant_id)[sunday])
     lunch = weekly.Span(time(11, 30), time(14))
-    assert weekly.set_weekday(session, tenant_id, sunday, {"pickup": [lunch]}, shown)
+    assert weekly.set_weekday(
+        session, tenant_id, sunday, {"pickup": [lunch]}, shown, now=NOW
+    )
     changed = staff.cards_change_token(session, tenant_id, TUESDAY)
     assert changed != token
     later = SATURDAY + timedelta(days=7)

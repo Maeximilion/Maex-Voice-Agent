@@ -803,6 +803,31 @@ def test_a_refused_night_marks_the_time_it_is_about(client):
     assert _marked(inside.text) == {"von"}
 
 
+def test_a_night_refusal_of_a_button_without_times_marks_no_time(client):
+    """Review of #877: "Normale Zeiten" sends no times, so a night refusal of
+    the weekly hours it brings back marks neither time field."""
+    day = _today() + timedelta(days=9)
+    while (day + timedelta(days=1)).weekday() == 0:
+        day += timedelta(days=1)
+    following = (day + timedelta(days=1)).isoformat()
+    # The next date opens late, so a night to 12:00 fits; back to the weekly
+    # 11:30 would start inside that night.
+    late = _day(client, datum=following, art="zeiten", von="14:00", bis="20:00")
+    assert "Gespeichert" in late.text
+    night = _day(
+        client,
+        datum=day.isoformat(),
+        art="zeiten",
+        von="18:00",
+        bis="12:00",
+        nachts="1",
+    )
+    assert "Gespeichert" in night.text
+    normal = _day(client, datum=following, art="normal")
+    assert "Mitternacht" in normal.text
+    assert _marked(normal.text) == set()
+
+
 def test_closing_a_day_asks_first_like_the_way_back(client):
     """#829-4: "Geschlossen" stops every service for a day; it is its own request
     because htmx reads hx-confirm from the element that sends."""

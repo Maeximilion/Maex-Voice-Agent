@@ -356,9 +356,10 @@ def test_a_change_back_to_what_held_asks_for_no_check() -> None:
     card to point to and must not ask for the tablet."""
     for event in (types.TEAM_PHONE_CHANGED, types.DAY_HOURS_CHANGED):
         text = _assignment(_nodes()[_branches()[event]], "text")
-        assert "$json.payload.undone" in text, event
-        check = text.index("Bitte am Tablet prüfen.")
-        assert text.rindex("$json.payload.undone", 0, check) >= 0, event
+        # The mark guards the request: it empties the whole tail of the text.
+        assert "{{ $json.payload.undone ? '' : " in text, event
+        guarded = text.split("{{ $json.payload.undone ? '' : ", 1)[1].split("}}", 1)[0]
+        assert "Bitte am Tablet prüfen." in guarded, event
 
 
 def test_an_operator_step_names_the_operator_and_what_was_done() -> None:
