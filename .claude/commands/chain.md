@@ -50,7 +50,21 @@ The brief is the session's only context. It has, in this order:
    found by the coordinator with the Graphify connector (`graphify_find`,
    `graphify_impact`, `graphify_tests_for`; `CLAUDE.md` "graphify"), with the
    approach, the edge cases to test and what not to touch. Pointers, not file
-   contents.
+   contents. The coordinator does not search for all of it itself: in Maxi's
+   turn, before it starts the sessions, it runs one scout agent per item in the
+   foreground, all in parallel (Explore type, `model` haiku; Maxi's idea,
+   2026-11-23, so the sessions start faster; about 30 to 40 seconds each). Each
+   scout is told to use the Graphify connector first and to return a map of at
+   most 300 words: the file and line of each function the item names, its direct
+   callers, the linked tests with their names, and the `commitSha` of the graph
+   with whether it equals `HEAD`, plus its caveats (a name not in the graph, a
+   file that does not exist, a setting not found). The coordinator puts each
+   map, caveats kept, straight into that item's brief under "Where the code
+   lives". Only a map that was not ready in time follows by `SendMessage`, and
+   the brief then says so and what to read meanwhile; a message to a session
+   that is mid-turn is queued until its turn ends, so it may come too late to
+   help. The session uses the map instead of searching again and re-reads only
+   the files changed since that commit.
 5. GUI work also loads the skill `ui-ux-pro-max`; `docs/06_GUI.md` and the
    GUI path rule win where they differ.
 6. Base: `origin/main`, or a stack on an open item's branch when both touch
@@ -61,6 +75,10 @@ The brief is the session's only context. It has, in this order:
 9. The usage block of section 5 with the model's numbers.
 10. Exceptions to `CLAUDE.md` quoted in Maxi's words with the date; a session
    refuses a rule change relayed without them, and it should.
+11. The next reserve item (section 4) and this line: "If your item stops
+   without a PR (blocked by a Maxi decision, nothing to do), post why on its
+   issue and take the reserve item yourself in this same session; if its route
+   differs from yours, ask the coordinator to switch model and effort."
 
 ## 3. Parallel or in a row
 
@@ -80,9 +98,18 @@ before naming a base.
   start one, and an `AskUserQuestion` answer inside such a turn does not
   change that; over Remote Control not even a proposal card shows. So: start
   every item that is ready in the turn of his message, and when the next item
-  waits, say in one line that it starts with his next message.
+  waits, say in one line that it starts with his next message. A scout
+  agent's report turn is such a turn too, so sessions start in Maxi's turn,
+  after the foreground scouts returned; only a late map follows by message
+  (section 2, item 4).
 - Never routes a new task into an existing idle session to get around a
   refused start.
+- Reserve items (Maxi, 2026-11-23: "if something stops, work on the next one so
+  the chain doesn't break"): the plan lists one or two after the chain items,
+  each with route and a short brief, and every brief names the next one (item
+  11 of section 2). A note turn cannot start a session, so the stopped session
+  takes the reserve item itself. The coordinator crosses it off and, in Maxi's
+  next turn, names a new reserve.
 - Cache: a coordinator woken after more than an hour of silence rereads its
   whole context at the cache write price, about 40 times a warm read. While
   a child runs and no start waits for a note turn, keep it warm with one
