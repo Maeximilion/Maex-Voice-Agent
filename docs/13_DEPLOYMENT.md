@@ -680,11 +680,13 @@ the server is bought and prices per concurrent call are set. On the workbench, i
 - **What a run removes** (#888 S6): at its end, also when a step broke, a run removes its
   stacks, the operator stack, the shared Caddy and the line with their volumes and folders, and
   its marker `/srv/maex/.voice-load-run`; `--keep` leaves them running, and
-  `python3 -m scripts.voice_load --inside --down` removes them later. Before it starts, and again
+  `python3 -m scripts.voice_load --inside --down` removes them later (without the marker it
+  touches nothing). Before it starts, and again
   at its end, it removes only what it can tell is its own by what it wrote, never by the marker
   alone: a stack `load<n>` whose `.env` serves `agent.load<n>.test` (a reserved name no customer
   has) or that has no `.env` yet, `ops` whose `.env` names `https://ops.load.test`, and `caddy`
-  with no site but `load<n>` and no `operator/ops.caddy`. Anything else under `/srv/maex` (a
+  with no `operator/ops.caddy` and no site but those of such `load<n>` stacks, each serving its
+  `load<n>.test`. Anything else under `/srv/maex` (a
   customer's stack, the real operator stack with its `.env` and `ops/backups`, `offboarding`, a
   link) or any other Compose project `maex-*` refuses the run before anything is removed, and is
   left in place at its end. While the marker is there, `scripts/new_stack.py` sets up no

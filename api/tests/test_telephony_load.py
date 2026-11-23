@@ -643,6 +643,38 @@ def test_a_failed_removal_keeps_the_marker(
     assert "left in place" in out and "pizzeria" in out
 
 
+def test_down_without_a_marker_touches_nothing(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--inside --down` on a server no run is on: not even a Caddy without
+    sites (its volumes hold the certificates) goes."""
+    (root / "caddy" / "sites").mkdir(parents=True)
+    docker = _Docker(root, ["maex-caddy"])
+    monkeypatch.setattr(load, "sh", docker)
+    assert load.tear_down() is True
+    assert docker.calls == []
+    assert (root / "caddy").is_dir()
+
+
+def test_a_customer_named_load_keeps_the_caddy(
+    root: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real customer with the key load3 next to a run's leftovers: its
+    folder, its site and the shared Caddy stay, the run's own stack goes."""
+    _kit_root(root)
+    _load_stack(root, 3, domain="example.org")
+    (root / "caddy" / "sites" / "load3.caddy").write_text("agent.example.org {}\n")
+    docker = _Docker(root, ["maex-load1", "maex-load3", "maex-caddy"])
+    monkeypatch.setattr(load, "sh", docker)
+    assert load.tear_down() is True
+    assert sorted(p.name for p in root.iterdir()) == [
+        load.ROOT_LOCK,
+        "caddy",
+        "load3",
+    ]
+    assert docker.projects == ["maex-load3", "maex-caddy"]
+
+
 def test_down_on_the_server_removes_a_runs_leftovers(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

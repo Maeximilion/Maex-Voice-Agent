@@ -1186,9 +1186,14 @@ def made_by_kit(path: Path) -> bool:
             LOAD_ORIGIN
         )
     if path.name == "caddy":
+        # Each site a stack of the kit's, serving its load<n>.test: a customer
+        # whose key is load<n> keeps the Caddy and its certificates.
         sites = (path / "sites").glob("*.caddy")
         return not (path / "operator" / "ops.caddy").exists() and all(
-            re.fullmatch(r"load[1-9]", site.stem) for site in sites
+            re.fullmatch(r"load[1-9]", site.stem)
+            and made_by_kit(ROOT / site.stem)
+            and "agent." + DOMAIN.format(n=site.stem[4:]) in site.read_text()
+            for site in sites
         )
     return False
 
@@ -1259,7 +1264,13 @@ def clean_slate(load_dir: Path) -> None:
 def tear_down() -> bool:
     """Removes what the kit made, then its marker; anything it cannot tell is
     its own stays. The marker stays when a removal failed, so new_stack.py
-    keeps refusing customers next to the stacks left."""
+    keeps refusing customers next to the stacks left. Without the marker no
+    run is there to remove: nothing is touched."""
+    if not (ROOT / RUN_MARKER).exists():
+        print(
+            f"voice_load: no load test on this server ({ROOT / RUN_MARKER} is missing)"
+        )
+        return True
     try:
         with root_lock():
             projects, folders, strangers = leftovers()
