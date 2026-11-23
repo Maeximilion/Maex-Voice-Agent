@@ -119,6 +119,22 @@ def csrf_matches(cookie: str | None, sent: str | None) -> bool:
     )
 
 
+# The CSRF cookie before #888 S2: no `__Host-` prefix, so a sibling host could
+# shadow it with a `Domain` cookie of the same name.
+LEGACY_CSRF = "csrf_token"
+
+
+def csrf_ok(request: Request, sent: str | None) -> bool:
+    """The token sent matches the CSRF cookie (`cookie_name("csrf")`).
+
+    shortcut: a page opened before the rename still sends the old cookie's
+    value and is accepted against it, so no tap fails after the deploy; drop
+    the second check once every tablet has reloaded (#888 S2)."""
+    return csrf_matches(request.cookies.get(cookie_name("csrf")), sent) or (
+        csrf_matches(request.cookies.get(LEGACY_CSRF), sent)
+    )
+
+
 def client_address(request: Request) -> str:
     """The address the sign-in counts failures for. Outside dev and test only
     Caddy reaches the view (`require_gui_proxy`), and Caddy sets

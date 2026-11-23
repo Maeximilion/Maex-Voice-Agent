@@ -53,7 +53,7 @@ def client(engine, monkeypatch):
     app.dependency_overrides[require_gui_session] = lambda: None
     try:
         client = TestClient(app)
-        client.cookies.set("csrf_token", "testtoken")
+        client.cookies.set("maex_csrf", "testtoken")
         yield client
     finally:
         for entry in dev.OPEN_CALLS.values():
@@ -370,7 +370,7 @@ def test_console_is_absent_outside_dev(monkeypatch):
 def test_console_page_issues_csrf_token(client, tenant_id):
     client.cookies.clear()
     page = client.get(BASE)
-    token = client.cookies.get("csrf_token")
+    token = client.cookies.get("maex_csrf")
     assert token and len(token) >= 32
     # The console loads no app.js; base.html must send the header there too.
     # From a file: the proxy's CSP refuses inline scripts (#252 finding 11).

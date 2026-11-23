@@ -36,7 +36,7 @@ def client(engine):
     app.dependency_overrides[get_db] = override_get_db
     try:
         c = TestClient(app)
-        c.cookies.set("csrf_token", "testtoken")
+        c.cookies.set("maex_csrf", "testtoken")
         yield c
     finally:
         app.dependency_overrides.pop(get_db, None)
