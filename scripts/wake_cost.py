@@ -18,6 +18,7 @@ import sys
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 BUCKETS = (
     (0, 120, "< 2 min (working)"),
@@ -29,9 +30,9 @@ BUCKETS = (
 )
 
 
-def requests(path: Path) -> list[tuple[datetime, dict]]:
+def requests(path: Path) -> list[tuple[datetime, dict[str, Any]]]:
     """Requests of one transcript in time order, the last usage per message id."""
-    seen: dict[str, tuple[str, dict]] = {}
+    seen: dict[str, tuple[str, dict[str, Any]]] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         try:
             row = json.loads(line)
@@ -45,7 +46,7 @@ def requests(path: Path) -> list[tuple[datetime, dict]]:
     return [(datetime.fromisoformat(t.replace("Z", "+00:00")), u) for t, u in ordered]
 
 
-def cost(usage: dict) -> tuple[float, int, int]:
+def cost(usage: dict[str, Any]) -> tuple[float, int, int]:
     """Cost units of one request and its cache writes (5-minute, 1-hour)."""
     split = usage.get("cache_creation") or {}
     write_5m = split.get("ephemeral_5m_input_tokens", 0)
