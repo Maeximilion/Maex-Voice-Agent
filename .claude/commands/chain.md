@@ -173,11 +173,17 @@ Slow mode lets running sessions go on; only new starts and new agent waves
 wait. The pauses of the table above still hold in every mode.
 
 A mode Maxi pins on the chain dashboard stays until he sets it back to auto.
-When a mode is pinned and `ahead` reaches +50 or -50, the coordinator reminds
+When a mode is pinned and `ahead` reaches +30 or -30, the coordinator reminds
 him once, as a heading in large text at the top of its reply and as a push
 notification, to set the mode back to auto (Maxi, 2026-11-23: "give me once a
-reminder if we got to an extreme ahead value of 50"). It reminds him again only
-after `ahead` has been back inside -50 to +50.
+reminder if we got to an extreme ahead value of 50", lowered to 30 on his
+question for a better value). It reminds him again only after `ahead` has been
+back inside -30 to +30. Why 30: three Opus lanes used about 26 points an hour
+on 23.11, an even pace is 20; a forgotten turbo pin climbs about 20 points an
+hour, a forgotten slow pin falls about 10, and turbo closes about 20 an hour.
+At +30 more than an hour stays before the window runs out; at -30 about an
+hour and a half of turbo still catches up. At 50 neither is true late in the
+window.
 
 ## 5a. Option: no handover limit (overnight)
 
