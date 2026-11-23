@@ -444,10 +444,29 @@ services:
       - NTFY_AUTH_TOKENS
     volumes:
       - pushdata:/var/lib/ntfy
-    # Root in the image, but it only listens and writes into its volume.
+    # Root in the image; a user of its own here (#888 S10), which owns the
+    # volume through push-chown below.
+    user: "10003:10003"
+    depends_on:
+      push-chown:
+        condition: service_completed_successfully
     <<: *hardened
     read_only: true
     tmpfs: [/tmp]
+
+  # Gives the push server's volume to its user before it starts: Docker creates
+  # the volume owned by root, and a server that ran as root before #888 S10
+  # left its cache and user database owned by root. A no-op once that is right.
+  push-chown:
+    image: binwiederhier/ntfy:v2.37.2
+    entrypoint: ["chown", "-R", "10003:10003", "/var/lib/ntfy"]
+    volumes:
+      - pushdata:/var/lib/ntfy
+    restart: "no"
+    network_mode: none
+    <<: *hardened
+    cap_add: [CHOWN]
+    read_only: true
 
 # Who stands where (docs/13 §3, api/tests/test_compose_networks.py). All are
 # plain bridges here: Docker publishes no port of a container that is only on
