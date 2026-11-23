@@ -69,6 +69,7 @@ from api.domain.menu.items import option_key
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
 from api.domain.menu.wishes import (
     HEALTH_NOTE_RE,
+    _ingredient,
     mentions_allergy,
     names_coeliac,
     speaks_of_health,
@@ -927,6 +928,33 @@ def _unexplained(turn: AllergenTurn, state: ConversationState) -> bool:
     return bool(unexplained_codes(turn, state))
 
 
+def reacts_to(said: str, *, denied: bool = False) -> frozenset[str]:
+    """What a guest's sentence names as what someone reacts to: the allergen
+    letters, coeliac disease and the ingredient the wish parser reads
+    ("Tomatenallergie", "allergisch gegen Kiwi"), read in each sentence from
+    its first part that speaks of health on ("Ich habe eine Allergie, gegen
+    Erdnüsse."): "Die Pizza mit Käse, ich habe eine Allergie." and "Ist da
+    Erdnuss drin?" name nothing, nor does "Ich habe eine Allergie." (ledger
+    #764 review). `denied`: also the parts that only deny ("Nein, keine
+    Nussallergie."), left out otherwise.
+    shortcut: an allergen in a dish after the health part ("Ich habe eine
+    Allergie, die 13 mit Käse") counts too, the safe side."""
+    found: set[str] = set()
+    for sentence in SENTENCE.split(said):
+        health = False
+        for clause in sentence.split(","):
+            for part in [clause] if denied else _not_denied(clause):
+                health = health or speaks_of_health(part)
+                if not health:
+                    continue
+                found.update(allergens_named(part))
+                if names_coeliac(part):
+                    found.add("zöliakie")
+                if ingredient := _ingredient(part):
+                    found.add(ingredient.casefold())
+    return frozenset(found)
+
+
 def sticky(state: ConversationState) -> bool:
     """The call keeps speaking of allergies: the guest named one (an allergy
     word, coeliac disease or an allergen in a kept sentence; not every
@@ -1210,9 +1238,10 @@ def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall 
     to the field: the model sent it again without them. Words, never a
     reading of them (Maxi, 15.11.2026). One that would not fit next to the
     model's note takes the field alone: the health part is the one to keep.
-    None when the cut would drop the health words themselves ("..., ich habe
-    eine Erdnussallergie" at the end of a long sentence, Codex PR #788, P1):
-    the team takes the call instead (rule 5)."""
+    None when the cut would drop what a kept sentence says ("..., ich habe
+    eine Erdnussallergie" at the end of a long sentence, Codex PR #788, P1;
+    a later allergy behind a long first sentence, ledger #764 review,
+    `_each_survives`): the team takes the call instead (rule 5)."""
     added = NOTED_FOR_THE_GUEST.format(said=_said(state))
     limit = NOTE_MAX_FOR[call.name]
     before = call.args.get("note")
@@ -1224,9 +1253,37 @@ def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall 
     if len(note) > limit:
         note = added[:limit].rstrip()
         kept = note.removeprefix(NOTED_FOR_THE_GUEST.format(said=""))
-        if not speaks_of_health(kept):
+        if not _each_survives(state, len(kept)):
             return None
     return ToolCall(call.name, {**call.args, "note": note})
+
+
+# What a cut may take from the end of a sentence without taking anything said.
+_END_MARKS = " .!?…"
+
+
+def _each_survives(state: ConversationState, room: int) -> bool:
+    """Does every kept sentence keep what it says within the first `room`
+    characters of `_said`? One about health keeps its health words and all
+    it names (`reacts_to`); one that only says yes ("Ja, genau.") may go; any
+    other answer ("Gegen Erdnüsse.") stays whole but for its last mark. A
+    later allergy behind a long first sentence must not be cut off the note
+    (ledger #764 review).
+    shortcut: a health part the wish parser does not read ("Ich reagiere auf
+    Erdbeeren") only keeps its health words; the read-back voices the cut."""
+    start = 0
+    for sentence in (s.strip() for s in state.allergy_said):
+        left = sentence[: max(room - start, 0)]
+        start += len(sentence) + 1
+        if speaks_of_health(sentence):
+            kept = speaks_of_health(left) and reacts_to(sentence) <= reacts_to(left)
+        else:
+            kept = is_yes(sentence) or (
+                left.rstrip(_END_MARKS) == sentence.rstrip(_END_MARKS)
+            )
+        if not kept:
+            return False
+    return True
 
 
 def _said(state: ConversationState) -> str:
