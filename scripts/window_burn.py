@@ -20,6 +20,7 @@ from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 _SPEC = importlib.util.spec_from_file_location(
@@ -128,7 +129,7 @@ def solve(xs: list[list[float]], ys: list[float]) -> list[float]:
 
 def fit(
     points: list[tuple[datetime, int]], reqs: list[tuple[datetime, float, str, str]]
-):
+) -> tuple[dict[str, float], float, int]:
     """Points per million cost units per family, R squared, intervals used."""
     fams = [f for f in FAMILIES if any(r[2] == f for r in reqs)]
     xs, ys = [], []
@@ -153,9 +154,11 @@ def fit(
     )
 
 
-def buckets(start: datetime, end: datetime, reqs):
+def buckets(
+    start: datetime, end: datetime, reqs: list[tuple[datetime, float, str, str]]
+) -> dict[datetime, dict[str, Any]]:
     """Per 10-minute bucket: units per family, requests per session."""
-    table: dict[datetime, dict] = {}
+    table: dict[datetime, dict[str, Any]] = {}
     t = start
     while t < end:
         table[t] = {
@@ -173,7 +176,9 @@ def buckets(start: datetime, end: datetime, reqs):
     return table
 
 
-def lane_rates(table: dict, coef: dict[str, float]):
+def lane_rates(
+    table: dict[datetime, dict[str, Any]], coef: dict[str, float]
+) -> dict[tuple[str, str], float]:
     """Points per hour of one session-bucket, split building (many requests) and waiting."""
     acc: dict[tuple[str, str], list[float]] = defaultdict(list)
     for b in table.values():
