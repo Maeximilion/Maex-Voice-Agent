@@ -1883,7 +1883,18 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
     clauses = text.split(",")
     n = text[:comma].count(",") + 1
     before, behind = text[:comma], clauses[n]
-    if not _denial_phrase(_SENTENCE_END.split(before)[-1]):
+    sentence = _SENTENCE_END.split(before)[-1]
+    if not _denial_phrase(sentence):
+        return None
+    # An allergy or another health word in front of the denial's own clause
+    # ("Ich habe eine Nussallergie! Ich habe keine andere Allergie, nur meine
+    # Frau gegen Sesam", "Ich habe Zöliakie und ich habe keine Allergie, ...")
+    # is the caller's own and would be lost behind the other one's allergen:
+    # asked about, as before this reading (review #207, regression of #735).
+    start = _clause_start(words, named[0], nearest=True)
+    if speaks_of_health(before[: len(before) - len(sentence)]) or speaks_of_health(
+        text[: tokens[start].start()]
+    ):
         return None
     # A whitelist, not guards: the clause is one person and one single-word
     # allergen in one of the shapes below, nothing else. Every other form is
@@ -1909,7 +1920,6 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
         return None
     # What is said in front of the denial's own clause, commas and all
     # ("Ohne Zwiebeln und ich habe keine Allergie", Codex PR #735).
-    start = _clause_start(words, named[0], nearest=True)
     head = _clean(_drop_trailing_glue(text[: tokens[start].start()]))
     removals = [
         removal

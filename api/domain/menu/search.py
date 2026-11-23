@@ -378,17 +378,38 @@ def _position_parts(
     # Pommes" names the same dish with other words (Codex PR #127, P1).
     said: dict[uuid.UUID, set[str]] = {}
 
-    def whole(rest: list[str]) -> list[str]:
+    def hits_nothing(piece: str) -> bool:
+        try:
+            search(piece)
+        except NotFound:
+            return True
+        except Ambiguous:
+            return False
+        return False
+
+    def whole(rest: list[str], lost: bool = False) -> list[str]:
         """The sentence kept whole. The name search strips every number, so a
         piece with an unclear number further on ("einmal Suppe, und 30", where
         "Suppe" hits two dishes) makes the sentence ask for it instead (#328).
         For the same reason a piece that is one card number stays a position
         of its own, and only the pieces between them are kept together: "die
         23 und Ente" is the 23 and the Ente to ask about (#676), unless the
-        sentence carries a wish."""
+        sentence carries a wish. `lost`: the piece in front of `rest` hit no
+        dish at all."""
         if any(sole_item_number(piece, piece_card)[1] for piece in rest):
             raise Ambiguous("Nummer nicht eindeutig", say=SAY_WHICH_NUMBER)
         numbers = [sole_item_number(p, piece_card)[0] is not None for p in pieces]
+        # A piece that is no dish and no number may take a number back ("die
+        # 23, ne, die 24", "die 23, quatsch", "doch die 24"): no closed list
+        # holds every spoken correction, so such a sentence stays whole and
+        # asks, as before the cut; cut, the corrected number was booked beside
+        # the other one (review #207, regression of #721).
+        if lost or any(
+            hits_nothing(piece)
+            for piece, number in zip(rest, numbers[len(pieces) - len(rest) :])
+            if not number
+        ):
+            return [query]
         # A wish or an allergy behind the number belongs to its dish ("Die 13,
         # meine Frau hat eine Erdnussallergie"): kept whole, the search reads
         # it as dish and wish, and asks if a number is lost there.
@@ -443,7 +464,7 @@ def _position_parts(
                 # found Pho Bo alone and took it twice (eval abholung_0082).
                 # Any other piece that hits nothing is part of a name.
                 if sole_item_number(piece, piece_card)[0] is None:
-                    return whole(pieces[i + 1 :])
+                    return whole(pieces[i + 1 :], lost=True)
                 positions.append(piece)
                 i += 1
                 continue
