@@ -303,13 +303,16 @@ services:
 
   asterisk:
     profiles: ["voice"]
-    # Asterisk 22.11.0 with chan_websocket. Pinned by digest, a third-party
-    # build. Not older: before 22.11.0 a `voice` that takes the connection and
-    # answers nothing held the call for ever, and the team never rang (Asterisk
-    # issue #1979, shown by the drill "voice frozen" before #768). 22.11.0 can
-    # crash after a failed media connection (#768, Asterisk issue #2121): the
-    # dialplan asks `voice` first, until an image of 22.12.0 or later (#775).
-    image: andrius/asterisk:22.11.0_alpine-3.24-537e52c@sha256:98c0e598fb16492215ddc7cc52c3200646b44584ffa9267bebecff531fd3530b
+    # Asterisk 22.12.0 with chan_websocket, built here from the official source
+    # tarball (deploy/asterisk/image/, #775): base image pinned by digest, every
+    # source by checksum. Not older: 22.11.0 crashes after a failed media
+    # connection (Asterisk issue #2121, #768), and before 22.11.0 a `voice`
+    # that takes the connection and answers nothing held the call for ever
+    # (Asterisk issue #1979). `up` builds it, a few minutes the first time;
+    # never pulled: the name is ours alone, not a Docker Hub image.
+    image: maex-voice-agent/asterisk:22.12.0
+    build: ./deploy/asterisk/image
+    pull_policy: build
     restart: unless-stopped
     # It takes outside input: of the containers it reaches `voice` alone.
     networks: [telephony]
