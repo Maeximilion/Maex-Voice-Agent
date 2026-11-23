@@ -247,7 +247,9 @@ def test_the_removal_takes_the_stack_and_leaves_the_others(root, docker, capsys)
     assert entry["customer_key"] == "alpha" and entry["project"] == "maex-alpha"
     assert entry["export"]["rows"]["orders.csv"] == 1
     assert "volume maex-alpha_pgdata" in entry["removed"]
-    assert any("crontab" in line for line in entry["by_hand"])
+    # The backup cron loops over the stack folders, so it has no line to remove (#888 D2).
+    assert not any("crontab" in line for line in entry["by_hand"])
+    assert any("password manager" in line for line in entry["by_hand"])
     # No name, number or secret of the customer in the proof.
     assert NAME not in ledger and "Müller" not in ledger
     assert new_stack.read_env(root / "beta" / ".env")["AGENT_API_TOKEN"] not in ledger
