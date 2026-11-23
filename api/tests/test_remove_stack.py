@@ -36,7 +36,10 @@ class FakeDocker:
 
     def __init__(self) -> None:
         self.commands: list[list[str]] = []
+        self.envs: list[dict[str, str] | None] = []
         self.held: dict[str, dict[str, set[str]]] = {}
+        # The operator dashboard's registry (api.dashboard.cli customers).
+        self.registry: set[str] = set()
         self.fail: str | None = None
         self.keep_after_down: set[str] = set()
         self.on_export: Callable[[Path, str], None] = write_export
@@ -53,6 +56,7 @@ class FakeDocker:
     def __call__(self, command, cwd, **options):
         command = [str(part) for part in command]
         self.commands.append(command)
+        self.envs.append(options.get("env"))
         joined = " ".join(command)
         if self.fail and self.fail in joined:
             raise new_stack.Refused(f"failed with exit code 1: {joined}")
@@ -82,8 +86,18 @@ class FakeDocker:
         elif "api.jobs.offboarding" in command:
             mount = command[command.index("-v") + 1].split(":")[0]
             self.on_export(Path(mount), command[-1])
+        elif "api.dashboard.cli" in command:
+            if command[-1] == "customers":
+                out = "\n".join(
+                    f"{k}: http://maex-{k}-api-1:8000" for k in self.registry
+                )
+            else:
+                assert command[-2] == "customer-remove" and command[-1] in self.registry
+                self.registry.discard(command[-1])
         elif command[:2] == ["rm", "-rf"]:
-            shutil.rmtree(command[-1])
+            for part in command[command.index("--") + 1 :]:
+                path = Path(part)
+                shutil.rmtree(path) if path.is_dir() else path.unlink()
         return subprocess.CompletedProcess(command, 0, stdout=out)
 
     @staticmethod
@@ -101,16 +115,21 @@ class FakeDocker:
 
 
 def write_export(folder: Path, key: str, other_tenants: int = 0) -> None:
-    """What api.jobs.offboarding writes, in small."""
+    """What api.jobs.offboarding writes, in small: every file, one row each."""
     folder.mkdir(parents=True, exist_ok=True)
-    content = "order_id;total_cents\nx;1200\n"
-    (folder / "orders.csv").write_text(content)
-    digest = hashlib.sha256(content.encode()).hexdigest()
+    files = {}
+    for name in sorted(offboarding.FILES):
+        content = f"header\n{name}\n"
+        (folder / name).write_text(content)
+        files[name] = {
+            "rows": 1,
+            "sha256": hashlib.sha256(content.encode()).hexdigest(),
+        }
     manifest = {
         "customer_key": key,
         "exported_at": "2026-11-15T10:00:00+00:00",
         "other_tenants": other_tenants,
-        "files": {"orders.csv": {"rows": 1, "sha256": digest}},
+        "files": files,
     }
     (folder / "manifest.json").write_text(json.dumps(manifest))
 
@@ -225,7 +244,7 @@ def test_the_removal_takes_the_stack_and_leaves_the_others(root, docker, capsys)
     ledger = (root / "offboarding" / "removed.jsonl").read_text()
     (entry,) = [json.loads(line) for line in ledger.splitlines()]
     assert entry["customer_key"] == "alpha" and entry["project"] == "maex-alpha"
-    assert entry["export"]["rows"] == {"orders.csv": 1}
+    assert entry["export"]["rows"]["orders.csv"] == 1
     assert "volume maex-alpha_pgdata" in entry["removed"]
     assert any("crontab" in line for line in entry["by_hand"])
     # No name, number or secret of the customer in the proof.
@@ -268,6 +287,103 @@ def test_what_down_left_goes_by_the_projects_label(root, docker):
     assert not docker.held["maex-alpha"]["volume"]
 
 
+def _networks(path: Path, service: str) -> list[str]:
+    return json.loads(path.read_text())["services"][service]["networks"]
+
+
+def test_the_operator_stack_keeps_its_site_and_lets_the_customer_go(root, docker):
+    """new_stack.join_operator's counterpart: the dashboard leaves the stack's
+    `ops` network before `down` removes it and the registry forgets the key;
+    the shared Caddy keeps the operator stack's `edge` (ops.<domain>)."""
+    (root / "ops").mkdir()
+    (root / "ops" / ".env").write_text("COMPOSE_PROJECT_NAME=maex-ops\n")
+    (root / "caddy" / "operator").mkdir()
+    (root / "caddy" / "operator" / "ops.caddy").write_text("ops.example.org {}\n")
+    docker.registry = {"alpha", "beta"}
+    write_export(root / "offboarding" / "alpha", "alpha")
+
+    assert _main(root, "--confirm", "alpha") == 0
+
+    assert _networks(root / "caddy/networks.json", "caddy") == [
+        "maex-beta_edge",
+        "maex-ops_edge",
+    ]
+    assert _networks(root / "ops/networks.json", "dashboard") == ["maex-beta_ops"]
+    assert docker.registry == {"beta"}
+    steps = [" ".join(c) for c in docker.mutating()]
+    up = next(i for i, s in enumerate(steps) if "maex-ops up -d --wait dashboard" in s)
+    down = next(i for i, s in enumerate(steps) if " down --volumes" in s)
+    assert up < down, steps
+    (entry,) = [
+        json.loads(line)
+        for line in (root / "offboarding/removed.jsonl").read_text().splitlines()
+    ]
+    assert any(
+        "operator dashboard leaves maex-alpha_ops" in r for r in entry["removed"]
+    )
+
+
+def test_a_rerun_after_a_failed_folder_step_finishes_without_a_new_database(
+    root, docker, capsys
+):
+    """The folder goes after `down`: a rerun must not start the stack's
+    database again (empty, its volume is gone), and the `.env` that names the
+    project is the last file to go, so the rerun still knows the folder."""
+    write_export(root / "offboarding" / "alpha", "alpha")
+    export = (root / "offboarding/alpha/manifest.json").read_bytes()
+    docker.fail = f"{root}/alpha/backups"  # a file a container wrote as root
+    assert _main(root, "--confirm", "alpha") == 1
+    assert (root / "alpha" / ".env").is_file()
+    assert not docker.held["maex-alpha"]["volume"]
+    assert not (root / "offboarding/removed.jsonl").exists()
+
+    docker.fail = None
+    docker.commands.clear()
+    capsys.readouterr()
+    assert _main(root, "--dry-run") == 0
+    assert "write the export once more" not in capsys.readouterr().out
+    assert _main(root, "--confirm", "alpha") == 0
+    steps = [" ".join(c) for c in docker.mutating()]
+    assert not any(
+        " stop" in s or "api.jobs.offboarding" in s or " down " in s for s in steps
+    ), steps
+    assert not (root / "alpha").exists()
+    assert (root / "offboarding/alpha/manifest.json").read_bytes() == export
+    assert len((root / "offboarding/removed.jsonl").read_text().splitlines()) == 1
+
+
+def test_compose_names_the_project_whatever_the_shell_exported(
+    root, docker, monkeypatch
+):
+    """An exported COMPOSE_PROJECT_NAME beats the stack's .env in Compose: the
+    removal of alpha would take another project's volumes."""
+    monkeypatch.setenv("COMPOSE_PROJECT_NAME", "maex-beta")
+    monkeypatch.setenv("COMPOSE_FILE", "elsewhere.yml")
+    write_export(root / "offboarding" / "alpha", "alpha")
+    assert _main(root, "--confirm", "alpha") == 0
+    stack_calls = [
+        (c, env)
+        for c, env in zip(docker.commands, docker.envs, strict=True)
+        if c[:2] == ["docker", "compose"] and "maex-caddy" not in c
+    ]
+    assert stack_calls
+    for command, env in stack_calls:
+        assert command[2:4] == ["-p", "maex-alpha"], command
+        assert env is not None and not any(k.startswith("COMPOSE_") for k in env)
+    assert all(docker.held["maex-beta"].values())
+
+
+def _drop_one_file(folder: Path) -> None:
+    """A manifest whose checksums hold but which names one file fewer."""
+    manifest = json.loads((folder / "manifest.json").read_text())
+    del manifest["files"]["reservations.csv"]
+    (folder / "manifest.json").write_text(json.dumps(manifest))
+
+
+def test_the_script_knows_every_file_of_the_export_job():
+    assert set(offboarding.FILES) == remove_stack.EXPORT_FILES
+
+
 @pytest.mark.parametrize(
     "spoil, reason",
     [
@@ -278,6 +394,7 @@ def test_what_down_left_goes_by_the_projects_label(root, docker):
         (lambda f: write_export(f, "beta"), "not the export of 'alpha'"),
         (lambda f: write_export(f, "alpha", other_tenants=1), "other tenant"),
         (lambda f: (f / "manifest.json").write_text("{"), "not JSON"),
+        (_drop_one_file, "does not list the whole export"),
     ],
 )
 def test_an_export_that_is_not_whole_or_not_this_customers_is_refused(
@@ -335,7 +452,9 @@ def test_export_runs_the_job_in_the_stack_and_the_removal_accepts_its_manifest(
     docker.on_export = in_the_stack
     assert _main(root, "--export") == 0
     (command,) = [c for c in docker.commands if "api.jobs.offboarding" in c]
-    assert command[:5] == ["docker", "compose", "run", "--rm", "-T"]
+    assert command[:7] == [
+        *("docker", "compose", "-p", "maex-alpha", "run", "--rm", "-T")
+    ]
     assert f"{root.resolve()}/offboarding/alpha:/export" in command
     folder = root / "offboarding" / "alpha"
     assert folder.stat().st_mode & 0o777 == 0o700

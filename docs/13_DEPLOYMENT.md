@@ -571,17 +571,25 @@ its data goes with the stack; nothing is deleted row by row, and no other stack 
    file, the stack folder and the number of backups in it. Exit 1 when the removal would be
    refused.
 4. **Remove:** `python3 scripts/remove_stack.py <key> --confirm <key>`, the key typed twice. Refused,
-   with nothing changed, without a whole export (manifest of this key, every file with its
-   checksum), when the database held another tenant at the export, when the stack's `.env` names
-   another project, or when `BACKUP_DIR` lies outside the stack folder (dump names do not say which
-   stack they belong to). Then, under the lock of `new_stack.py`: `docker compose --profile '*'
-   stop`, the export once more, the site file out of `<root>/caddy/sites` and the shared Caddy
-   reloaded without the stack's `edge` network (it is recreated, so every site is away for a second
-   or two, as when a customer is added; a refusal puts the file back and removes nothing),
-   `docker compose --profile '*' down --volumes --remove-orphans --rmi local`, whatever the label
-   still shows, then `rm -rf --one-file-system` of the folder (code, `.env` with every token of the
-   stack, local backups). A file a container wrote as root makes the last step fail: delete it with
-   sudo and run again; a rerun takes up what is left.
+   with nothing changed, without a whole export (manifest of this key that lists all seven files,
+   each with its checksum), when the database held another tenant at the export, when the stack's
+   `.env` names another project, or when `BACKUP_DIR` lies outside the stack folder (dump names do
+   not say which stack they belong to). Then, under the lock of `new_stack.py`, every Compose call
+   with `-p maex-<key>` and without the caller's `COMPOSE_*` variables (an exported
+   `COMPOSE_PROJECT_NAME` would beat the stack's `.env`): `docker compose --profile '*' stop` and
+   the export once more, both only while the database volume `maex-<key>_pgdata` is there (a rerun
+   after `down` would start an empty database), the site file out of `<root>/caddy/sites` and both
+   networks files written from the site files as `new_stack.py` writes them (the shared Caddy keeps
+   the operator stack's `edge`), the shared Caddy reloaded without the stack's `edge` network (it is
+   recreated, so every site is away for a second or two, as when a customer is added; a refusal
+   puts the file back and removes nothing). With the operator stack in `<root>/ops`, its dashboard
+   is recreated without the stack's `ops` network (Docker removes no network a container still
+   stands on) and `customer-remove <key>` takes the customer out of its registry, when it is listed.
+   Then `docker compose --profile '*' down --volumes --remove-orphans --rmi local`, whatever the
+   label still shows, then `rm -rf --one-file-system` of the folder (code, local backups) with the
+   `.env` and every token of the stack last. A file a container wrote as root makes the last step
+   fail: delete it with sudo and run again; the `.env` is still there, so a rerun knows the folder
+   and takes up what is left.
 5. **Proof:** one JSON line appended to `<root>/offboarding/removed.jsonl` (mode 640), outside the
    removed stack: key, project, time, the export's time, its manifest checksum and row counts, the
    list of what was removed and what is left by hand. No name, number, address or token. A rerun
@@ -590,27 +598,26 @@ its data goes with the stack; nothing is deleted row by row, and no other stack 
 6. **By hand:** hand the export to the restaurant over a channel of its choice (it is the
    restaurant's own data, docs/09), then delete `<root>/offboarding/<key>`; remove the crontab line
    of the stack's backup; the stack's `.env` copy in the password manager; DNS names, phone number
-   and SIP trunk; off-site copies of its backups (open, below). The TLS certificates of the removed
-   host names stay in the shared Caddy's `caddy_data` until they expire; they hold no customer data.
+   and SIP trunk; tell the customer the date by which its last off-site copy is gone (below). The
+   TLS certificates of the removed host names stay in the shared Caddy's `caddy_data` until they
+   expire; they hold no customer data.
 
 Tested with a fake for every subprocess (`api/tests/test_remove_stack.py`) and the export against a
 real database (`api/tests/test_jobs_offboarding.py`); not yet run against Docker on a host.
 
-**Open, Maxi's (#576, #321): how long a removed customer stays in off-site backups.** The local dumps
-go with the stack folder; the off-site copies of the second storage (§4, Scaleway, not yet ordered)
-are outside the script's reach. (A, recommended) they run out with the rolling 30 days of
-docs/03 "Löschkonzept", and the confirmation to the customer names the date by which the last copy
-is gone; (B) the removal also deletes the stack's prefix in the off-site storage, which needs a
-delete credential on the host and has no way back; (C) a longer period for claims, which would need
-its own legal basis. Until decided, (A) is what happens by itself.
+**Decided, Maxi's decision 9 of 15.11.2026 (#576, #321): off-site backups expire with their
+rolling 30 days.** The local dumps go with the stack folder; the off-site copies of the second
+storage (§4, Scaleway, not yet ordered) are outside the script's reach and run out with the
+rolling 30 days of docs/03 "Löschkonzept". The confirmation to the customer names the date by
+which the last copy is gone. No delete credential for the off-site storage on the host.
 
-**Open, Maxi's: a database with a second tenant.** Provisioning refuses a second tenant
-(`domain/provision.py`), so a stack of `new_stack.py` holds one and the whole-stack removal is
-enough. A stack set up by hand can hold a test tenant beside the real one (§7 "Test-Mandant" in
-production); there the removal refuses, because it would take the other tenant too. (A,
-recommended) remove such a test tenant by hand before the offboarding, or remove the whole stack
-with it after checking the export; (B) build a deletion by `tenant_id` across every table, which
-only a later move to a shared stack would need.
+**Decided, the same decision: a stack with a second tenant is removed by hand.** Provisioning
+refuses a second tenant (`domain/provision.py`), so a stack of `new_stack.py` holds one and the
+whole-stack removal is enough. A stack set up by hand can hold a test tenant beside the real one
+(§7 "Test-Mandant" in production); there the script refuses, because it would take the other
+tenant too. Remove such a test tenant by hand before the offboarding, or remove the whole stack
+by hand after checking the export. No deletion by `tenant_id` across every table is built; only a
+later move to a shared stack would need one.
 
 ### Load test (#841)
 
