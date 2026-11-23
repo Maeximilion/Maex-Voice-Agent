@@ -160,7 +160,9 @@ services:
     network_mode: none
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
-    cap_add: [CHOWN]
+    # CHOWN for the owner, DAC_READ_SEARCH to pass through directories that
+    # are 0700 and already its user's on every later run.
+    cap_add: [CHOWN, DAC_READ_SEARCH]
     read_only: true
 
   push-chown:

@@ -465,7 +465,9 @@ services:
     restart: "no"
     network_mode: none
     <<: *hardened
-    cap_add: [CHOWN]
+    # CHOWN for the owner, DAC_READ_SEARCH to pass through directories that
+    # are 0700 and already its user's on every later run.
+    cap_add: [CHOWN, DAC_READ_SEARCH]
     read_only: true
 
 # Who stands where (docs/13 §3, api/tests/test_compose_networks.py). All are

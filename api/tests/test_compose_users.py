@@ -11,7 +11,10 @@ Measured with Docker 29.9.3 on 23.11.2026 (docs/13 §3): Caddy as uid 10002 with
 `no-new-privileges`, every capability dropped but `NET_BIND_SERVICE`, binds 443
 even with `net.ipv4.ip_unprivileged_port_start` raised to 1024; without the
 capability it fails there with "permission denied". `chown -R` with only
-`CHOWN` passes through a tree of 0700 directories and 0600 keys.
+`CHOWN` passes through a tree of 0700 directories and 0600 keys owned by root,
+but fails on the next `up`, when those directories are the user's already
+("Permission denied" on `/data/caddy/certificates`): `DAC_READ_SEARCH` lets
+it pass through them again.
 
 Nothing is started here; the files are read as test_compose_ports.py does.
 """
@@ -82,10 +85,10 @@ def test_its_volumes_go_to_that_user_before_it_starts(where, services, name, uid
 
 
 @pytest.mark.parametrize(("where", "services", "name", "uid"), PLACES, ids=IDS)
-def test_the_chown_runs_once_with_one_capability(where, services, name, uid):
+def test_the_chown_runs_once_with_two_capabilities(where, services, name, uid):
     chown = services(f"{name}-chown")
     assert chown["cap_drop"] == ["ALL"]
-    assert chown["cap_add"] == ["CHOWN"]
+    assert chown["cap_add"] == ["CHOWN", "DAC_READ_SEARCH"]
     assert chown["security_opt"] == ["no-new-privileges:true"]
     assert chown["read_only"] is True
     assert chown["network_mode"] == "none"

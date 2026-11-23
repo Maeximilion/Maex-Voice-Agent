@@ -348,8 +348,8 @@ KEPT_CAPABILITIES = {
     "db": HANDS_OVER,
     "asterisk": HANDS_OVER,
     "caddy": ["NET_BIND_SERVICE"],
-    "caddy-chown": ["CHOWN"],
-    "push-chown": ["CHOWN"],
+    "caddy-chown": ["CHOWN", "DAC_READ_SEARCH"],
+    "push-chown": ["CHOWN", "DAC_READ_SEARCH"],
 }
 # Writes into /var/lib, /var/spool and /var/log of its image.
 WRITABLE_ROOT = {"asterisk"}
