@@ -102,6 +102,11 @@ before naming a base.
   agent's report turn is such a turn too, so sessions start in Maxi's turn,
   after the foreground scouts returned; only a late map follows by message
   (section 2, item 4).
+- Never asks Maxi whether to start the next item (Maxi, 2026-11-23: "Don't ask
+  me ever again starting the Items / Side Sessions just do it because you are
+  using /chain"). When a lane frees, the coordinator starts the next item in
+  that same turn; only when the app refuses the start does it wait for his next
+  message, and it says so in one line, never as a question.
 - Never routes a new task into an existing idle session to get around a
   refused start.
 - Reserve items (Maxi, 2026-11-23: "if something stops, work on the next one so
