@@ -21,7 +21,7 @@ ARG PJPROJECT_VERSION=2.17
 ARG PJPROJECT_SHA256=04b2eb1f0f01aa0ad1945b167171843448a51aa6b7c3e806496d434f13a112b7
 RUN apk add --no-cache build-base linux-headers bash patch bzip2 curl perl \
         libedit-dev jansson-dev libxml2-dev sqlite-dev util-linux-dev \
-        openssl-dev curl-dev
+        openssl-dev curl-dev unbound-dev
 WORKDIR /src
 RUN curl -fsSL -o asterisk.tar.gz \
         "https://downloads.asterisk.org/pub/telephony/asterisk/releases/asterisk-${ASTERISK_VERSION}.tar.gz" \
@@ -34,25 +34,40 @@ RUN curl -fsSL -o asterisk.tar.gz \
     && rm asterisk.tar.gz
 # No sounds or music on hold: the dialplan plays only the announcements of
 # `voice` (/announcements) and tones. BUILD_NATIVE off: the image runs on
-# whatever CPU the server has, not only on the one that built it.
+# whatever CPU the server has, not only on the one that built it. No
+# astdb2bdb or astdb2sqlite3: they convert the Berkeley DB of old releases,
+# and its bundled code does not build on musl. musl-cdefs.h: the expression
+# parser of the core (main/ast_expr2.c) takes __P from glibc's sys/cdefs.h,
+# which musl does not have. /var/run is a link to /run in Alpine, so what
+# make installs there moves to /run.
 RUN ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var \
         --libdir=/usr/lib --with-pjproject-bundled --with-jansson \
         --with-externals-cache=/externals \
     && make menuselect.makeopts \
     && menuselect/menuselect \
         --disable BUILD_NATIVE \
+        --disable astdb2bdb \
+        --disable astdb2sqlite3 \
         --disable-category MENUSELECT_CORE_SOUNDS \
         --disable-category MENUSELECT_MOH \
         --disable-category MENUSELECT_EXTRA_SOUNDS \
         menuselect.makeopts \
-    && make -j"$(nproc)" \
+    && printf '#ifndef __P\n#define __P(p) p\n#endif\n' > /src/musl-cdefs.h \
+    && ASTCFLAGS="-include /src/musl-cdefs.h" make -j"$(nproc)" \
     && make install DESTDIR=/out \
-    && rm -rf /out/usr/include /out/var/lib/asterisk/documentation
+    && rm -rf /out/usr/include /out/var/lib/asterisk/documentation \
+    && mkdir -p /out/run && cp -a /out/var/run/. /out/run/ && rm -rf /out/var/run \
+    && find /out/usr/sbin /out/usr/lib -type f \( -name 'asterisk' -o -name '*.so*' \) \
+        -exec strip --strip-unneeded {} +
 
 FROM ${ALPINE}
 # Runtime libraries of the modules built above; curl for the healthcheck and
 # the dialplan's CURL(); busybox and musl-utils give render.sh its tools.
-RUN apk add --no-cache libedit jansson libxml2 sqlite-libs libuuid libcurl \
+# unbound-libs: res_resolver_unbound, without which PJSIP looks up no SRV
+# records and a trunk reached by them gets no team leg (render.sh, docs/20 §3).
+# Left out against the vendor image, as nothing here loads them: ODBC,
+# PostgreSQL, LDAP, Lua, Speex, Opus, fax, SRTP, Bluetooth and console channels.
+RUN apk add --no-cache libedit jansson libxml2 sqlite-libs libuuid libcurl unbound-libs \
         libssl3 libcrypto3 libstdc++ libgcc curl ca-certificates musl-utils \
     && addgroup -S -g 1000 asterisk \
     && adduser -S -D -H -u 1000 -G asterisk -h /var/lib/asterisk asterisk
