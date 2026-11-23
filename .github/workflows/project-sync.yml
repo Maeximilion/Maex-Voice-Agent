@@ -8,9 +8,12 @@ name: project-sync
 # docs/16_GITHUB_PROJECT.md). The daily project-maintenance run catches what an
 # event missed and keeps the decision issue.
 #
-# pull_request_target: the checkout is the default branch, nothing of the pull
-# request is run, and no text of it reaches the shell. It also hands Dependabot's
-# pull requests the PROJECT_TOKEN secret, which pull_request would withhold.
+# pull_request_target: the checkout is `main`, nothing of the pull request is run,
+# and no text of it reaches the shell. It also hands Dependabot's pull requests the
+# PROJECT_TOKEN secret, which pull_request would withhold. The checkout names `main`
+# itself (#888 S5): a stacked pull request's base is an unmerged task branch, and
+# only GitHub's current pull_request_target behaviour keeps that branch's code away
+# from the token; the explicit ref keeps it away under any event or platform change.
 on:
   pull_request_target:
     types: [opened, reopened, closed, edited, ready_for_review, labeled, unlabeled]
@@ -47,6 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: main
           persist-credentials: false
 
       - name: Sync status, dates and iterations
