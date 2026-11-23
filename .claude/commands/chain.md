@@ -172,6 +172,20 @@ by the coordinator at every reading of `ahead`:
 Slow mode lets running sessions go on; only new starts and new agent waves
 wait. The pauses of the table above still hold in every mode.
 
+In slow mode (Maxi, 2026-11-23: "in the Slow mode i would prefer to let Items
+work which needs smaller models or less effort or less thinking"):
+
+- The next start is the first open item routed to Sonnet or Haiku, or to a
+  lower effort; Opus items wait for normal mode unless none of the cheap kind
+  is left.
+- A session takes one background `sleep 900` (15 minutes) after each finished
+  part of its work, before it starts the next part. Measured on 23.11.2026
+  (6,000 requests of three days): a wake after any wait under 60 minutes costs
+  the same as one working request, because the cache is kept for an hour; the
+  wait itself costs nothing. So one long wait is cheap, many short polls are
+  not, and a wait of 60 minutes or more pays the cache write again (about
+  twenty times the read).
+
 A mode Maxi pins on the chain dashboard stays until he sets it back to auto.
 When a mode is pinned and `ahead` reaches +30 or -30, the coordinator reminds
 him once, as a heading in large text at the top of its reply and as a push
