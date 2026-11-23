@@ -10,6 +10,8 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit
 
+from printbridge.escpos import LAYOUTS
+
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
@@ -74,7 +76,7 @@ class Server:
 
     def claim(self, limit: int = 5) -> list[dict[str, Any]]:
         tickets: list[dict[str, Any]] = self._post(
-            "/v1/kitchen/claim", {"limit": limit}
+            "/v1/kitchen/claim", {"limit": limit, "layouts": list(LAYOUTS)}
         )["tickets"]
         return tickets
 

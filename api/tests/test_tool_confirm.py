@@ -5,13 +5,13 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
 from api.db import get_db
 from api.main import app
-from api.models import Call
+from api.models import Call, OutboxEvent
 from api.tests.conftest import LATENZ_RUNDEN, p95_ms
 from scripts.seed import seed
 
@@ -145,13 +145,19 @@ def test_ohne_token_401(client):
 
 
 @pytest.mark.latency
-def test_latenz_p95_unter_300_ms(client):
+@pytest.mark.parametrize("print_slip", [False, True])
+def test_latenz_p95_unter_300_ms(client, monkeypatch, migrated_db_url, print_slip):
     """Gemessen wird der Schreibpfad: je Aufruf ein frischer Entwurf, vorher angelegt.
 
     Genug Entwürfe für alle Messreihen, falls die erste über dem Budget liegt. Je
     Messreihe eine andere Woche, sonst reißt der Abend die Kapazität von 40 Gästen.
+
+    With `print_slip` the tenant has a print bridge, so every confirmed table
+    also queues its slip (#863).
     """
     http, tenant_id, call_id = client
+    if print_slip:
+        monkeypatch.setattr(settings, "kitchen_bridge_tenant_id", tenant_id)
     drafts = iter(
         [
             _draft(
@@ -168,5 +174,15 @@ def test_latenz_p95_unter_300_ms(client):
     )
 
     p95 = p95_ms(lambda: _confirm(http, tenant_id, call_id, next(drafts)), n=20)
-    print(f"\nconfirm p95 = {p95:.1f} ms")
+    print(f"\nconfirm p95 = {p95:.1f} ms (print slip: {print_slip})")
     assert p95 < 300, f"p95 {p95:.1f} ms über dem Budget aus docs/04 §1"
+    if print_slip:
+        engine = create_engine(migrated_db_url)
+        with Session(engine) as s:
+            slips = s.scalar(
+                select(func.count())
+                .select_from(OutboxEvent)
+                .where(OutboxEvent.payload["type"].astext == "reservation")
+            )
+        engine.dispose()
+        assert slips, "the measured path queued no print slip"

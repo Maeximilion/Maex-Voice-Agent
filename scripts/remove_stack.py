@@ -90,7 +90,6 @@ EXPORT_FILES = frozenset(
 DATABASE_VOLUME = "pgdata"
 BY_HAND = (
     "hand the export to the customer, then delete <root>/offboarding/<key>",
-    "remove the crontab line of the stack's backup (deploy/backup.cron)",
     "off-site backups of the stack expire with their rolling 30 days "
     "(decision 9 of 15.11.2026, docs/13 §8): tell the customer that date",
     "the stack's .env copy in the password manager",
