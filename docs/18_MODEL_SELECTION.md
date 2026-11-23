@@ -237,6 +237,7 @@ under "GPU numbers" and docs/01_STATUS.md, on a new branch, and open a PR.
 | Not shortlisted | GPT-5 mini (Azure EU), Claude Sonnet 5.5 (only if every small model fails a hard metric) |
 | 1 to 3 agents at the restaurant | schedule plus overflow, see §7 |
 | Claude race (Maxi, 23.11.2026) | Claude Haiku 4.5 against Claude Haiku 5.5 on the same eval suite: the better results win; with equal results the faster model turn (p50, then p95) wins. Built as `agent/messages_llm.py` behind `LLMClient`; run per §8 step 7 |
+| Workbench model and fallback (Maxi, 23.11.2026, after the race) | The workbench stays on the local `qwen3.6-35b-a3b`, which answers faster (turn p50 0.90 s against 2.14 s). Claude Haiku 5.5 with effort `low` is the fallback: it hands fewer solvable calls to the team (5.5 % against about 20 %), and the netcup VPS has no graphics card for a local model. A faster model with the same results, speed tricks for open-weight serving and a field test without Maxi's PC are #920, low priority |
 
 Open: the final operation model (T-5.3 measures it), the vendor contracts and DPAs (Maxi,
 in chat). D7 is decided (07.10.2026), see §1. T-10.10 (attached to T-5.3) compares the chain
