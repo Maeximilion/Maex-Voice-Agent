@@ -756,7 +756,8 @@ def test_a_write_without_a_local_back_goes_back_to_the_start_page(
 
 @pytest.mark.parametrize(
     ("passkey_count", "totp", "button", "field"),
-    [(0, True, False, True), (1, True, True, True), (2, False, True, False)],
+    # With a passkey the code is no step-up any more (Maxi, 23.11.2026).
+    [(0, True, False, True), (1, True, True, False), (2, False, True, False)],
     ids=["totp only", "both", "passkeys only"],
 )
 def test_the_step_up_page_offers_only_the_factors_the_account_has(
@@ -1732,13 +1733,13 @@ def test_a_totp_session_is_refused_on_each_factor_change(
     before = (_factors_now(sessions), _actions(sessions))
     answer = _post(client, path, back="/factors", id=str(_rows(sessions)[0].id))
     assert answer.headers["location"] == TO_PASSKEY_STEP_UP
-    # A TOTP step-up on top changes nothing.
+    # A TOTP step-up on top is refused and changes nothing.
     clock.at += timedelta(seconds=30)
-    assert _step_up_with_code(client, factors, clock).status_code == 303
+    assert _step_up_with_code(client, factors, clock).status_code == 401
     again = _post(client, path, back="/factors", id=str(_rows(sessions)[0].id))
     assert again.headers["location"] == TO_PASSKEY_STEP_UP
     assert _factors_now(sessions) == before[0] and _pending(sessions) is None
-    assert _actions(sessions) == [*before[1], "operator.stepped_up"]
+    assert _actions(sessions) == before[1]
     assert pushes == ["maxi: new passkey 'Laptop'"]
 
 
@@ -1753,8 +1754,9 @@ def test_no_sign_in_counts_for_a_factor_change_once_there_is_a_passkey(
         assert _sign_in(client, factors.recovery_codes[0]).status_code == 303
     answer = _post(client, "/factors/totp/new", back="/factors")
     assert answer.headers["location"] == TO_PASSKEY_STEP_UP
-    # Every other dangerous action still takes the sign-in's factor.
-    assert _call(client, "POST", "/guarded").text == "done"
+    # Every other dangerous action takes a passkey sign-in, not a recovery code
+    # (Maxi, 23.11.2026).
+    assert (_call(client, "POST", "/guarded").text == "done") is (how == "passkey")
 
 
 def test_a_passkey_step_up_opens_the_factor_changes_for_five_minutes(
@@ -1806,7 +1808,8 @@ def test_removing_the_last_passkey_needs_that_passkey(client, factors, clock, se
 
 @pytest.mark.parametrize(
     ("passkey_count", "for_factors", "code_field"),
-    [(1, True, False), (1, False, True), (0, True, True)],
+    # Any step-up of an account with a passkey takes it alone (Maxi, 23.11.2026).
+    [(1, True, False), (1, False, False), (0, True, True)],
     ids=["factor change", "other action", "no passkey"],
 )
 def test_the_step_up_page_for_a_factor_change_offers_the_passkey_only(
@@ -1960,9 +1963,10 @@ def test_a_pending_secret_is_hidden_once_only_a_totp_step_up_is_fresh(
     pending = _pending(sessions)
     assert pending and pending in client.get("/factors").text
     clock.at += timedelta(minutes=4)
-    assert _step_up_with_code(client, factors, clock).status_code == 303
+    # A TOTP step-up is refused on an account with a passkey (Maxi, 23.11.2026).
+    assert _step_up_with_code(client, factors, clock).status_code == 401
     clock.at += timedelta(minutes=1)
-    # The passkey step-up is five minutes old, the TOTP one one minute.
+    # The passkey step-up is five minutes old.
     assert pending not in client.get("/factors").text
 
 
@@ -2194,15 +2198,17 @@ def test_a_passkey_sign_in_from_a_known_browser_is_not_pushed(
 def test_a_step_up_with_a_code_is_pushed_and_one_with_a_passkey_is_not(
     client, factors, clock, monkeypatch
 ):
-    device = _with_passkey(client, factors, clock)
-    assert _passkey_sign_in(client, device).status_code == 303
+    _signed_in(client, factors, clock)  # no passkey yet: a code steps up
     sent: list[str] = []
     monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
     clock.at += timedelta(seconds=30)
     assert _step_up_with_code(client, factors, clock).status_code == 303
     assert sent == [f"maxi: stepped up {web.BY_CODE}"]
+    device = Device()
+    assert _register(client, device).status_code == 303
+    pushed = len(sent)
     _passkey_step_up(client, device)
-    assert len(sent) == 1
+    assert len(sent) == pushed
 
 
 def test_a_refused_step_up_with_a_code_is_not_pushed_as_one(
@@ -2214,3 +2220,66 @@ def test_a_refused_step_up_with_a_code_is_not_pushed_as_one(
     monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
     assert _post(client, "/step-up", code="000000").status_code == 401
     assert sent == []
+
+
+# --- a code is the way back in, not a fresh factor (Maxi, 23.11.2026) ---------
+
+
+def _operator(client, sessions, clock) -> access.Operator:
+    with sessions() as db:
+        operator = access.resolve(db, client.cookies.get("ops_session", ""), clock.at)
+    assert operator is not None
+    return operator
+
+
+def test_a_code_sign_in_of_an_account_with_a_passkey_opens_nothing_dangerous(
+    client, factors, clock, sessions, pushes
+):
+    """The stricter way of #946: a TOTP code still signs in, but no dangerous
+    action (a PIN, a call list, a factor change) opens before a passkey step-up."""
+    device = _with_passkey(client, factors, clock)
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)
+    assert not _operator(client, sessions, clock).fresh(clock.at)
+    _passkey_step_up(client, device)
+    assert _operator(client, sessions, clock).fresh(clock.at)
+
+
+def test_a_recovery_sign_in_of_an_account_with_a_passkey_opens_nothing_dangerous(
+    client, factors, clock, sessions, pushes
+):
+    _with_passkey(client, factors, clock)
+    clock.at += timedelta(seconds=30)
+    assert _sign_in(client, factors.recovery_codes[0]).status_code == 303
+    assert not _operator(client, sessions, clock).fresh(clock.at)
+
+
+def test_a_passkey_sign_in_and_a_code_without_a_passkey_stay_fresh(
+    client, factors, clock, sessions, pushes
+):
+    _signed_in(client, factors, clock)  # no passkey yet: the code is the way in
+    assert _operator(client, sessions, clock).fresh(clock.at)
+    device = Device()
+    assert _register(client, device).status_code == 303
+    client.cookies.clear()
+    clock.at += timedelta(seconds=30)
+    assert _passkey_sign_in(client, device).status_code == 303
+    assert _operator(client, sessions, clock).fresh(clock.at)
+
+
+def test_a_code_step_up_of_an_account_with_a_passkey_is_refused_uncounted(
+    client, factors, clock, sessions, pushes
+):
+    """Only the passkey makes such a session fresh; the code is neither taken
+    nor counted as a wrong one, and the page offers the passkey alone."""
+    _with_passkey(client, factors, clock)
+    clock.at += timedelta(seconds=30)
+    _signed_in(client, factors, clock)
+    assert 'name="code"' not in client.get("/step-up").text
+    clock.at += timedelta(seconds=30)
+    answer = _step_up_with_code(client, factors, clock)
+    assert answer.status_code == 401
+    assert 'name="code"' not in answer.text
+    assert not _operator(client, sessions, clock).fresh(clock.at)
+    assert _audited(sessions, "operator.step_up_failed") == []
+    assert _audited(sessions, "operator.stepped_up") == []
