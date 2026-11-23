@@ -129,7 +129,9 @@ is the backup. Ten single-use recovery codes, stored hashed, are the last way in
   17.11.2026): a thief's session must not outlive the change made after a loss. A change of that
   ended session that was already waiting for the account's row is refused once it gets the row
   (`access._locked` looks for the session again): it changes no factor, ends no session and is
-  answered 401.
+  answered 401. The same change forgets every other browser's device cookie, so a thief's
+  browser guesses codes for the new secret on the account's wait like any new browser, not on a
+  wait of its own; the browser making the change keeps its cookie (#888 B1, S12).
 - Break glass when every factor is lost, or every passkey (D37): SSH to the host and a CLI command
   in the operator stack that resets the factors of one account
   (`python -m api.dashboard.cli reset <name>`: a new password, a new TOTP secret and new recovery
@@ -163,14 +165,19 @@ writes real rows; a demo customer is a stack of its own with invented data.
 migrations `db/dashboard/`; docs/11). Sign-in with name, password and a TOTP code or a recovery
 code in one form, one answer for every refusal; the waits per account, per address and per known
 browser (a device cookie, as in §6, so a guesser cannot keep the operator out); sessions
-`__Host-ops_session` (`SameSite=Strict`) with the 30 minutes and 12 hours; the audit table; the
+`__Host-ops_session` (`SameSite=Strict`) with the 30 minutes and 12 hours, where only the
+operator's own requests (`Sec-Fetch-Site` absent, `none` or `same-origin`) move the idle clock, so
+a customer stack on the same site cannot keep a session alive with image loads (#888 A4); the
+audit table; the
 first account and the break glass with `python -m api.dashboard.cli add|reset <name>`, which
 asks the password twice and prints the TOTP link and ten recovery codes once. A failure on a
 known account is audited with whether the password or the factor was wrong (a right password
 with a wrong factor means the password is known; the code that had just signed in, sent again
 from the same address within two minutes, is a double tap, `repeat`; from any other address, with
 no address known, or a code last used by a step-up or a new secret, it stays `factor`, review
-#207); one on an unknown name is not, so a spray of
+#207). The first `factor` failure of an account in an hour is pushed to `ops` as well, so a
+known password does not stay in the audit unseen (#888 A2); one on an unknown name is not
+audited, so a spray of
 names cannot fill the table, and an address is forgotten a day after its last failure. Every
 request but `/health` needs `OPERATOR_PROXY_SECRET` from Caddy outside dev and test (as
 `GUI_PROXY_SECRET`, T10): every customer's `api` shares an `ops` network with the dashboard. The
@@ -375,7 +382,9 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
 - **Step-up is one dependency**, `require_step_up` in `dashboard/app.py`: the session showed a
   second factor in the last five minutes, the sign-in's (a recovery code too) or one given on
   `/step-up`, which takes a passkey or a TOTP code and never a recovery code. Wrong answers there
-  count and wait as at the sign-in. A stale request is sent to `/step-up` and back to a path of
+  count and wait as at the sign-in, except that the account counts even when the browser brings
+  its device cookie, so the cookie gives no second wait (#888 A3); every third wrong one in a row
+  is pushed to `ops` (#888 A2). A stale request is sent to `/step-up` and back to a path of
   this site; a stale write is dropped, never replayed. Today it stands before a customer's call
   list, the log of one call and every step of a customer's manage page; the later parts name it
   on their routes. The changes of a factor have their own, next bullet.

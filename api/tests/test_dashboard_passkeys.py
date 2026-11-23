@@ -26,9 +26,11 @@ from api.dashboard.models import (
     OperatorAccount,
     OperatorAudit,
     OperatorChallenge,
+    OperatorDevice,
     OperatorPasskey,
     OperatorSession,
 )
+from api.domain.access.hashing import token_hash
 from api.tests.passkey_device import Device
 from api.tests.test_dashboard_login import (
     PASSWORD,
@@ -1390,10 +1392,11 @@ def test_a_copy_of_a_passkey_is_pushed(client, factors, clock, pushes):
     pushes.clear()
     _refused(client, _passkey_sign_in(client, device, sign_count=1))
     assert pushes == ["maxi: a passkey answered with an old counter, a copy?"]
-    # A refusal for any other reason stays silent.
+    # A refusal for any other reason is no copy; with the right password it is
+    # the hourly alarm of a known password (#888 A2).
     clock.at += timedelta(seconds=1)
     _refused(client, _passkey_sign_in(client, device, verified=False))
-    assert len(pushes) == 1
+    assert pushes[1:] == [KNOWN_PASSWORD]
 
 
 def test_a_copy_of_a_passkey_at_the_step_up_is_pushed(client, factors, clock, pushes):
@@ -1957,3 +1960,115 @@ def test_a_passkey_step_up_opens_the_other_dangerous_actions_too(
     assert _call(client, "POST", "/guarded").status_code == 303
     _passkey_step_up(client, device)
     assert _call(client, "POST", "/guarded").text == "done"
+
+
+# --- #888 A2, A3, A4, B1 ---------------------------------------------------------
+
+KNOWN_PASSWORD = f"maxi: {web.KNOWN_PASSWORD}"
+STEP_UP_GUESSES = f"maxi: {web.STEP_UP_GUESSES}"
+
+
+def _wrong_step_up(client, factors, clock) -> None:
+    wrong = _wrong(factors.totp_secret, clock.at)
+    assert _post(client, "/step-up", code=wrong).status_code == 401
+
+
+def test_a_right_password_with_a_wrong_code_is_pushed_once_an_hour(
+    client, factors, clock, pushes
+):
+    """#888 A2: it was audited and never pushed, so a thief who had the
+    password guessed codes unseen."""
+    for _ in range(2):
+        _refused(client, _sign_in(client, _wrong(factors.totp_secret, clock.at)))
+    assert pushes == [KNOWN_PASSWORD]
+    clock.at += timedelta(hours=1, seconds=1)
+    _refused(client, _sign_in(client, _wrong(factors.totp_secret, clock.at)))
+    assert pushes == [KNOWN_PASSWORD, KNOWN_PASSWORD]
+
+
+def test_a_wrong_password_an_unknown_name_or_a_double_tap_is_not_pushed(
+    client, factors, clock, pushes
+):
+    _refused(client, _sign_in(client, "123456", password="falsch-falsch-falsch"))
+    _refused(client, _sign_in(client, "123456", name="nobody"))
+    code = _code(factors.totp_secret, clock.at)
+    assert _sign_in(client, code).status_code == 303
+    client.cookies.clear()
+    # The same form sent twice: a `repeat` (#688, #914), no known password.
+    _refused(client, _sign_in(client, code))
+    assert pushes == []
+
+
+def test_every_third_wrong_step_up_in_a_row_is_pushed(client, factors, clock, pushes):
+    """#888 A2: wrong step-up codes were audited only, so a stolen session
+    guessed them unseen. A step-up that holds starts the count again."""
+    _signed_in(client, factors, clock)
+    clock.at += timedelta(minutes=5)
+    for _ in range(2):
+        _wrong_step_up(client, factors, clock)
+    assert _step_up_with_code(client, factors, clock).status_code == 303
+    _wrong_step_up(client, factors, clock)
+    assert pushes == []
+    for _ in range(2):
+        _wrong_step_up(client, factors, clock)
+    assert pushes == [STEP_UP_GUESSES]
+
+
+def test_the_device_cookie_gives_the_step_up_no_second_wait(client, factors, clock):
+    """#888 A3: with the device cookie the step-up counted the device alone,
+    without it the account and the address, so whoever held the cookie had two
+    wait ladders. Now the account counts either way."""
+    _signed_in(client, factors, clock)
+    clock.at += timedelta(minutes=5)
+    for _ in range(3):
+        _wrong_step_up(client, factors, clock)
+    client.cookies.delete("ops_device")
+    answer = _step_up_with_code(client, factors, clock)
+    assert answer.status_code == 401 and web.WAIT.format(minutes=1) in answer.text
+    clock.at += timedelta(minutes=1, seconds=1)
+    assert _step_up_with_code(client, factors, clock).status_code == 303
+
+
+@pytest.mark.parametrize(
+    ("site", "alive"),
+    [
+        ("same-origin", True),
+        ("none", True),
+        ("same-site", False),
+        ("cross-site", False),
+    ],
+)
+def test_only_the_operators_own_requests_keep_the_session_alive(
+    client, factors, clock, site, alive
+):
+    """#888 A4: a taken-over customer stack on the same site could load
+    `ops.` pages as images every few minutes, and each GET moved the idle
+    clock."""
+    _signed_in(client, factors, clock)
+    for _ in range(2):
+        clock.at += timedelta(minutes=20)
+        client.get("/", headers={"Sec-Fetch-Site": site}, follow_redirects=False)
+    answer = client.get("/", follow_redirects=False)
+    assert (answer.status_code == 200) is alive
+    if not alive:
+        assert answer.headers["location"] == "/login"
+
+
+def test_a_factor_change_forgets_every_other_browsers_device_cookie(
+    client, factors, clock, sessions
+):
+    """#888 B1, S12: D39 ended the thief's session but kept the device row, so
+    the thief went on guessing codes for the new secret on a wait ladder of its
+    own. The browser making the change keeps its cookie."""
+    _signed_in(client, factors, clock)
+    clock.at += timedelta(seconds=30)
+    thief = TestClient(web.app)
+    assert _sign_in(thief, _code(factors.totp_secret, clock.at)).status_code == 303
+    _post(client, "/factors/totp/new")
+    pending = _pending(sessions)
+    assert pending
+    answer = _post(client, "/factors/totp", code=_code(pending, clock.at))
+    assert answer.headers["location"] == "/factors?note=totp-set"
+    with sessions() as db:
+        kept = list(db.scalars(select(OperatorDevice.token_hash)))
+    assert kept == [token_hash(client.cookies.get("ops_device", ""))]

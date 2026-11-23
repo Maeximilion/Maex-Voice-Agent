@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.9
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.10
 
 ---
 
@@ -177,6 +177,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.68.10 · 23.11.2026:** #888 A2, A3, A4, B1 (S12): operator sign-in alarms pushed, one wait ladder at the step-up, only own requests keep a session alive, a factor change forgets other browsers' device cookies
 - **v2.68.9 · 23.11.2026:** chain.md: the coordinator sends Haiku scout maps (Graphify) to the chain sessions
 - **v2.68.8 · 23.11.2026:** #576 built: export and removal of a leaving customer's stack (scripts/remove_stack.py), five faults of the cloud commit fixed
 - **v2.68.7 · 23.11.2026:** #892: neon wave swings inside the SVG (no dashes), example calls play once, demo screenshot under the neon button
