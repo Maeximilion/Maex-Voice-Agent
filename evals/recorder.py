@@ -23,6 +23,7 @@ von heute und das echte Modell aus T-2.4 mit derselben Regel.
 """
 
 import json
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -80,6 +81,9 @@ class Recording:
     # is no violation; the number shows how often a model tries (Maxi,
     # 07.10.2026).
     refused_attempts: list[tuple[str, str]] = field(default_factory=list)
+    # Seconds each answered model turn took, the wait the guest hears between
+    # two sentences (T-5.3 compares models on it, docs/18 §3).
+    turn_seconds: list[float] = field(default_factory=list)
 
 
 class RecordingLLM:
@@ -125,7 +129,9 @@ class RecordingLLM:
         timeout: float | None = None,
     ) -> LLMTurn:
         self._observe_input(user_input)
+        started = time.perf_counter()
         turn = self._inner.next_turn(system_prompt, state, user_input, timeout=timeout)
+        self.recording.turn_seconds.append(time.perf_counter() - started)
         self._before_cart = None
         if turn.cart is not None:
             if turn.tool_call is not None and turn.tool_call.name == "confirm":

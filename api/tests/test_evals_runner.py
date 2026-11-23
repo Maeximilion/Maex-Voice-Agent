@@ -2167,3 +2167,29 @@ def test_customers_are_seeded_per_case(migrated_db_url):
             )
     finally:
         engine.dispose()
+
+
+def test_report_shows_the_model_turn_times_of_a_real_model():
+    """p50 and p95 by nearest rank over every answered turn of the run (T-5.3)."""
+    times = [0.1 * n for n in range(1, 21)]  # 0.1 .. 2.0 s over two cases
+    report = _report(
+        [
+            _counted("a", requests=10, turn_seconds=times[:10]),
+            _counted("b", requests=10, turn_seconds=times[10:]),
+        ]
+    )
+
+    data = report.to_json()
+
+    assert data["turn_seconds_p50"] == pytest.approx(1.0)
+    assert data["turn_seconds_p95"] == pytest.approx(1.9)
+    assert "| Model turn p50 / p95 (s) | 1.00 / 1.90 |" in report.to_markdown()
+
+
+def test_report_without_a_model_or_without_turns_shows_no_times():
+    scripted = _report([_counted("a", turn_seconds=[0.001, 0.002])])
+    empty = _report([_counted("a", requests=1)])
+
+    assert scripted.to_json()["turn_seconds_p50"] is None
+    assert empty.to_json()["turn_seconds_p95"] is None
+    assert "| Model turn p50 / p95 (s) | - / - |" in scripted.to_markdown()
