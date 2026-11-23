@@ -523,6 +523,21 @@ def test_a_cut_that_drops_a_later_sentence_leaves_the_draft_to_the_team(later):
     assert guards.with_the_guests_words(state, ToolCall("draft_order", {})) is None
 
 
+def test_the_guests_whole_words_take_the_field_from_a_long_model_note():
+    """The guest's sentences fit alone, only not next to the model's note:
+    they take the field whole, the last one without its full stop."""
+    state = _named()
+    state.allergy_said = ["Ich habe eine Allergie.", "Gegen Erdnüsse."]
+    call = ToolCall("draft_order", {"items": [], "note": "bitte klingeln " * 13})
+
+    noted = guards.with_the_guests_words(state, call)
+
+    assert noted is not None
+    assert noted.args["note"] == (
+        "WICHTIG !!! Gast sagte: Ich habe eine Allergie. Gegen Erdnüsse"
+    )
+
+
 def test_the_guests_words_go_behind_the_models_order_note():
     state = _named()
     call = ToolCall("draft_order", {"items": [], "note": "bitte klingeln"})
