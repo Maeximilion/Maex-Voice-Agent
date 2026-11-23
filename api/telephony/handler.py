@@ -44,7 +44,8 @@ from fractions import Fraction
 from math import ceil
 
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from sqlalchemy.orm import Session
 
 from api.agent import recording
@@ -159,6 +160,14 @@ SessionFactory = Callable[[], Session]
 LLMFactory = Callable[[Session], LLMClient]
 
 
+# A database that does not answer: lost, refused, or too slow for the line's
+# bounds (statement and lock timeouts, a pool with no free connection). A
+# second read of the team number would only wait out another timeout before
+# the team rings (ledger #764, #926). A constraint or data error comes from a
+# database that answers, and the number of now is read again (#710).
+_DATABASE_DOWN = (OperationalError, InterfaceError, PoolTimeout)
+
+
 @dataclass
 class _LiveCall:
     session_id: str
@@ -172,7 +181,7 @@ class _LiveCall:
     llm: LLMClient | None = None
     # Silences in a row that the code has answered with a question.
     silences: int = 0
-    # The database, or a read of the team number, failed in this call: the
+    # The database stopped answering in this call (`_DATABASE_DOWN`): the
     # outage path dials `team_phone` unread, also when a failing voice takes
     # the call there a second time (#926).
     database_lost: bool = False
@@ -630,12 +639,13 @@ class CallHandler:
         try:
             with live.session.begin_nested():
                 number = current_team_phone(live.session, live.tenant_id, self._now)
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "the team number could not be read again, using the call's own",
                 extra={"extra": {"session_id": live.session_id}},
             )
-            live.database_lost = True
+            if isinstance(exc, _DATABASE_DOWN):
+                live.database_lost = True
             return live.team_phone
         live.team_phone = number
         return number
@@ -662,7 +672,7 @@ class CallHandler:
             )
             # The database is the failure: a second read would only add a
             # connect timeout of silence before the outage sentence.
-            if isinstance(exc, DBAPIError):
+            if isinstance(exc, _DATABASE_DOWN):
                 live.database_lost = True
             self._fail(live.session_id, live)
 

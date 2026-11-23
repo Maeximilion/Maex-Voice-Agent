@@ -320,9 +320,7 @@ def _bridge_problem(session: Session, tenant: Tenant) -> str | None:
         return None
     if quiet.since is None:
         return f"Druckbrücke hat sich noch nie gemeldet. {BRIDGE_CHECK}"
-    since = to_local(quiet.since, tenant.timezone)
-    today = to_local(clock.utcnow(), tenant.timezone).date()
-    shown = since.strftime("%H:%M" if since.date() == today else "%d.%m. %H:%M")
+    shown = _when(quiet.since, tenant.timezone)
     return f"Druckbrücke meldet sich nicht seit {shown}. {BRIDGE_CHECK}"
 
 

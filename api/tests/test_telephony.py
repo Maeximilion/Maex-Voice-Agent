@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, select, text, update
-from sqlalchemy.exc import DBAPIError, OperationalError
+from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, Usage
@@ -2368,6 +2368,30 @@ def test_a_database_failure_does_not_wait_on_a_second_read_of_the_number(
     assert reads == []
     assert port.says("s-1")[-1] == SAY_OUTAGE
     assert port.transfers("s-1") == [TEAM_PHONE]
+
+
+def test_a_constraint_error_reads_the_number_that_holds_now(
+    session, tenant, monkeypatch
+):
+    """#926: a constraint or data error comes from a database that answers, so
+    the outage path still reads the number of now (#710) instead of the one of
+    the call's start."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    monkeypatch.setattr(
+        handler_module, "current_team_phone", lambda *a, **k: CHANGED_PHONE
+    )
+
+    def refused(live, text):
+        raise IntegrityError("INSERT", {}, Exception("duplicate key"))
+
+    monkeypatch.setattr(handler, "_turn", refused)
+    handler.on_user_turn("s-1", "Einen Tisch fuer vier bitte")
+
+    assert port.says("s-1")[-1] == SAY_OUTAGE
+    assert port.transfers("s-1") == [CHANGED_PHONE]
 
 
 def test_a_handover_without_a_named_target_dials_the_number_that_holds_now(

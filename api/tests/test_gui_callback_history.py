@@ -133,7 +133,13 @@ def test_an_open_card_from_today_shows_the_clock_time_only(client, engine, tenan
 
 def test_a_history_card_names_the_date_its_call_came_in(client, engine, tenant_id):
     """The history shares the card: a call of two days ago, done today."""
-    done_callback(engine, tenant_id, created_at=utcnow() - timedelta(days=2))
+    # Done this instant: five minutes ago could be yesterday just after midnight.
+    done_callback(
+        engine,
+        tenant_id,
+        created_at=utcnow() - timedelta(days=2),
+        done_ago=timedelta(0),
+    )
     body = client.get("/gui/rueckrufe/verlauf").text
     assert DATED.search(body)
     assert re.search(r"Erledigt \d{2}:\d{2}", body)
