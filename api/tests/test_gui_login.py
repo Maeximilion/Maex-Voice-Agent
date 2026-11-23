@@ -1445,8 +1445,9 @@ def test_the_floor_plan_opens_after_the_admin_pin(client, engine):
     assert client.get("/gui/vorlauf", headers=HX).status_code == 200
 
 
-def test_the_tablet_sign_in_counts_an_ipv6_client_by_its_64(monkeypatch):
-    """#888 S11: the restaurant's sign-in counts a /64 as one address too."""
+def test_the_tablet_sign_in_keeps_the_client_address_as_caddy_sent_it(monkeypatch):
+    """The counters take an IPv6 client by its /64 themselves (#888 S11,
+    `test_domain_access.py`); the address stays as sent (review of #946)."""
     from starlette.requests import Request
 
     from api.gui.session import client_address
@@ -1454,4 +1455,4 @@ def test_the_tablet_sign_in_counts_an_ipv6_client_by_its_64(monkeypatch):
     monkeypatch.setattr(settings, "env", "prod")
     forwarded = [(b"x-forwarded-for", b"2001:db8:0:7:1::5")]
     request = Request({"type": "http", "headers": forwarded, "client": ("10.9.0.2", 1)})
-    assert client_address(request) == "2001:db8:0:7::/64"
+    assert client_address(request) == "2001:db8:0:7:1::5"

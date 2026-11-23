@@ -67,6 +67,7 @@ from api.dashboard.models import (
     OperatorSession,
 )
 from api.domain.access.hashing import token_hash
+from api.domain.access.sessions import counted_address
 
 CHALLENGE_LIFE = timedelta(minutes=5)
 CHALLENGE_BYTES = 32
@@ -118,6 +119,8 @@ def issue(
     flood is refused, nobody's challenge is taken away (#827 F1)."""
     db.execute(delete(OperatorChallenge).where(OperatorChallenge.expires_at <= now))
     if client_address is not None:
+        # An IPv6 client by its /64, as the sign-in counts it (#888 S11).
+        client_address = counted_address(client_address)
         # One address at a time, so parallel asks cannot all pass the count.
         db.execute(select(func.pg_advisory_xact_lock(func.hashtext(client_address))))
         live = db.scalar(

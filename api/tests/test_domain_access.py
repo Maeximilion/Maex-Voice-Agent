@@ -238,6 +238,17 @@ def test_an_address_keeps_its_count_when_the_restaurant_signs_in(
     assert sign_in(session, tenant_id, PASSWORD, ADDRESS, "x", T0)
 
 
+def test_an_ipv6_guesser_keeps_its_count_across_its_64(session, tenant_id, ready):
+    """#888 S11: per /128, every guess from a new address of the same /64
+    started a fresh count."""
+    for host in (1, 2):
+        _refused(session, tenant_id, address=f"2001:db8:0:7::{host}")
+    sign_in(session, tenant_id, PASSWORD, ADDRESS, "x", T0)
+    _refused(session, tenant_id, address="2001:db8:0:7::3")
+    assert _refused(session, tenant_id, PASSWORD, "2001:db8:0:7::4").wait_minutes == 1
+    assert sign_in(session, tenant_id, PASSWORD, ADDRESS, "x", T0)
+
+
 def test_a_day_without_a_failure_starts_the_count_again(session, tenant_id, ready):
     for _ in range(2):
         _refused(session, tenant_id)

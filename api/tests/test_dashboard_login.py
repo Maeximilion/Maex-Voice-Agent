@@ -825,6 +825,8 @@ def test_a_step_up_code_replayed_at_the_sign_in_is_no_repeat(sessions, factors, 
         ("2001:db8::7", "2001:db8::7", "repeat"),
         # Compared as sent, never widened: the safe side is the alarm.
         ("198.51.100.7", "::ffff:198.51.100.7", "factor"),
+        # Another host of the same /64, which the counters take as one (#888 S11).
+        ("2001:db8::7", "2001:db8::8", "factor"),
         # No address known on either post says nothing about the device.
         ("", "", "factor"),
     ],
@@ -858,14 +860,36 @@ def test_an_oversized_unknown_name_is_refused_like_any_other(client, clock):
     assert _sign_in(client, "000001", name=name).status_code == 401
 
 
-def test_the_dashboard_counts_an_ipv6_client_by_its_64(monkeypatch):
-    """#888 S11: each /128 of a /64 was an address of its own."""
+def test_the_dashboard_keeps_the_client_address_as_caddy_sent_it(monkeypatch):
+    """The audit names the client itself (the check of docs/13 §8 reads it) and a
+    double tap is compared as sent; only the counters take an IPv6 client by its
+    /64 (#888 S11, review of #946)."""
     from starlette.requests import Request
 
     monkeypatch.setattr(settings, "env", "prod")
     forwarded = [(b"x-forwarded-for", b"10.0.0.1, 2001:db8:0:7:1::5")]
     request = Request({"type": "http", "headers": forwarded, "client": ("10.9.0.2", 1)})
-    assert web.client_address(request) == "2001:db8:0:7::/64"
+    assert web.client_address(request) == "2001:db8:0:7:1::5"
+
+
+def test_made_up_names_from_one_64_meet_one_address_wait(sessions, clock):
+    """#888 S11: each /128 of a /64 was an address of its own, so a spray of
+    made-up names never met the per-address wait."""
+    with sessions() as db:
+        for host in (1, 2, 3):
+            with pytest.raises(access.SignInRefused) as refused:
+                access.sign_in(
+                    db,
+                    f"nobody{host}",
+                    PASSWORD,
+                    "000000",
+                    f"2001:db8::{host}",
+                    clock.at,
+                )
+            assert not refused.value.wait_minutes
+        with pytest.raises(access.SignInRefused) as refused:
+            access.sign_in(db, "nobody4", PASSWORD, "000000", "2001:db8::4", clock.at)
+    assert refused.value.wait_minutes == 1
 
 
 def test_the_failures_of_addresses_are_pruned_by_an_index(operator_url):
