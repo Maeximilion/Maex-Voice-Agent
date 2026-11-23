@@ -51,7 +51,8 @@ ends with "PR #N ready, first review clean". Then it is done and archived.
 sessions of the chain, ships the queue: it waits until the coordinator sends
 "ship #N", merges `origin/main` in, gets CI, Codex and the evals on the new
 head, fixes what that round finds, merges, messages the coordinator "merged
-#N", and waits for the next "ship #N". One pull request merges at a time
+#N" before anything else (no sleep or pause comes between the merge and that
+message; Maxi, 2026-11-24), and waits for the next "ship #N". One pull request merges at a time
 anyway, so one lane is enough. Why: a long build session ships in a big Opus
 context, and every CI or Codex wake rereads all of it; the ship lane rereads a
 small Sonnet context. A P1 in an `xhigh` path of the ship round is fixed on
@@ -186,7 +187,8 @@ before naming a base.
   anyway, so there the heartbeat costs nothing. No `CronCreate`.
 - On every child note or milestone message (section 2, item 12): read
   `get_usage`, check the merge with `gh pr view`, update the dashboard in that
-  same turn, answer in one or two lines. A note is the child's report, not
+  same turn, before anything else (a "merged #N" sets the item to done at once;
+  24.11.2026 #968 stayed active after its merge because this was skipped), answer in one or two lines. A note is the child's report, not
   proof. The dashboard stays the coordinator's: its state is per session and
   each update replaces the whole list, so children cannot write to it.
 - Its own cost counts (24.11.2026: at about 470k context each coordinator turn
