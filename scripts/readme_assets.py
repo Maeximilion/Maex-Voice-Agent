@@ -193,6 +193,7 @@ NOT_DRAWN: dict[str, str] = {
     "tool:get_item_details": "a question about a dish, the same hop and the same menu as search_menu",
     "adapter:fake": "plays calls from files for the tests and the text phone, never on a call",
     "adapter:fake_speech": "the ear and mouth of the drills and the tests, never on a real call",
+    "service:push-chown": "hands the push server's volume to its user before it starts, never on a call",
 }
 # The wires of the architecture, one per pair of nodes.
 FLOW_LINKS: list[tuple[str, str]] = [

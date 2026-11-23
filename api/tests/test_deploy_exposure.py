@@ -341,12 +341,15 @@ def test_no_service_gains_rights_after_its_start():
 
 # What a service may keep in production, and why, beside the comment in the
 # Compose file: root in the image's entrypoint that hands files over and drops
-# to its own user; Caddy binds 80 and 443.
+# to its own user; Caddy binds 80 and 443; the one-shot owners of a volume
+# hand it to the user of the service they start before (#888 S10).
 HANDS_OVER = ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETUID", "SETGID"]
 KEPT_CAPABILITIES = {
     "db": HANDS_OVER,
     "asterisk": HANDS_OVER,
     "caddy": ["NET_BIND_SERVICE"],
+    "caddy-chown": ["CHOWN", "DAC_READ_SEARCH"],
+    "push-chown": ["CHOWN", "DAC_READ_SEARCH"],
 }
 # Writes into /var/lib, /var/spool and /var/log of its image.
 WRITABLE_ROOT = {"asterisk"}
