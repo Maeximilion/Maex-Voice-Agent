@@ -3091,6 +3091,8 @@ UNNAMED = [
         "Und ich reagiere auf Erdbeeren.",
         "Ich darf keine Erdbeeren essen.",
         "Kein Koriander bitte, da bin ich allergisch.",
+        # An allergen by name in any phrasing (`allergens_named`).
+        "Bei Erdnüssen bekomme ich Atemnot, ich bin allergisch.",
     ],
 )
 def test_the_first_allergy_outlasts_later_sentences_about_health(state, first):
@@ -3122,14 +3124,28 @@ def test_sentences_that_name_an_allergen_all_stay(state):
     assert state.allergy_said == named
 
 
+def test_the_newest_sentence_stays_behind_five_that_name_an_allergen(state):
+    named = [
+        "Ich habe eine Erdnussallergie.",
+        "Ich bin allergisch gegen Sesam.",
+        "Ich vertrage kein Soja.",
+        "Ich habe eine Sellerieallergie.",
+        "Ich bin allergisch gegen Senf.",
+    ]
+    for said in [*named, "Ich bin Allergiker."]:
+        _note_allergy_said(state, said)
+
+    assert state.allergy_said == [*named, "Ich bin Allergiker."]
+
+
 def test_a_sentence_said_again_is_kept_once(state):
     _note_allergy_said(state, "Ich habe eine Erdnussallergie.")
     _note_allergy_said(state, "Ich bin Allergiker.")
-    _note_allergy_said(state, " Ich habe eine Erdnussallergie. ")
+    _note_allergy_said(state, " ich habe eine Erdnussallergie! ")
 
     assert state.allergy_said == [
         "Ich bin Allergiker.",
-        "Ich habe eine Erdnussallergie.",
+        "ich habe eine Erdnussallergie!",
     ]
 
 
@@ -3258,6 +3274,59 @@ def test_a_note_of_the_waiting_card_the_answer_made_health_is_cleared(state):
     assert _judged_again(state, card) == (
         f"{SUMMARY_OPEN_ORDER} 1x 13 Pho Bo ({SUMMARY_NOTE_TO_CLEAR})."
     )
+
+
+def test_the_words_inside_a_complaint_card_go_and_the_open_order_stays(state):
+    """A complaint's card has the table and the order behind the guest's
+    words (`_beyond_the_database`): only the words go (#940 review)."""
+    card = (
+        "Kunde hat sich beschwert. Kunde sagte: Ist in der 13 Glutamat? Davon "
+        f"wird mir übel. {SUMMARY_OPEN_TABLE} 4 Personen, 25.11.2026 19:00 Uhr. "
+        f"{SUMMARY_OPEN_ORDER} 2x 13 Pho Bo."
+    )
+    state.allergy_said = ["0721 5551234, ich habe eine Glutamatunverträglichkeit."]
+
+    assert _judged_again(state, card) == (
+        f"Kunde hat sich beschwert. {SUMMARY_OPEN_TABLE} 4 Personen, "
+        f"25.11.2026 19:00 Uhr. {SUMMARY_OPEN_ORDER} 2x 13 Pho Bo."
+    )
+
+
+def test_words_a_note_was_taken_from_go_with_it(state):
+    """The note came from the guest's words: replacing it first hid what the
+    words name, and the marker stood inside them (#940 review)."""
+    pho = str(uuid.uuid4())
+    state.cart = [{"menu_item_id": pho, "quantity": 1, "note": "ohne Erdnüsse"}]
+    card = (
+        f"Kunde wollte mit einem Menschen sprechen. {SUMMARY_OPEN_ORDER} 1x 13 Pho "
+        "Bo (ohne Erdnüsse). Kunde sagte: Ich möchte mit einem Menschen sprechen, "
+        "die 13 bitte ohne Erdnüsse."
+    )
+    state.allergy_said = ["0721 5551234, ich habe eine Erdnussallergie."]
+
+    assert _judged_again(state, card) == (
+        f"Kunde wollte mit einem Menschen sprechen. {SUMMARY_OPEN_ORDER} 1x 13 Pho "
+        f"Bo ({SUMMARY_NOTE_TO_CLEAR})."
+    )
+
+
+def test_notes_cleared_on_a_long_waiting_card_keep_it_inside_a_callback(state):
+    """Each short note becomes the longer marker: the card stays inside the
+    1000 characters a callback takes, or the guest's callback is refused
+    (rule 5, #940 review)."""
+    lines = []
+    for n in range(20):
+        pho = str(uuid.uuid4())
+        state.cart.append({"menu_item_id": pho, "quantity": 1, "note": "ohne Nüsse"})
+        lines.append(f"1x {n} Pho Bo Spezial mit Rind (ohne Nüsse)")
+    card = f"{SUMMARY_OPEN_ORDER} " + ", ".join(lines) + "."
+    assert 850 < len(card) <= 1000
+    state.allergy_said = ["0721 5551234, ich habe eine Nussallergie."]
+
+    judged = _judged_again(state, card)
+
+    assert len(judged) == 1000
+    assert "Nüsse" not in judged
 
 
 def test_a_note_the_answer_did_not_touch_stays_on_the_waiting_card(state):

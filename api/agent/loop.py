@@ -1740,16 +1740,18 @@ def _note_allergy_said(state: ConversationState, text: str) -> bool:
         return False
     armed = escalation.arms_the_net(text)
     if armed or asked:
-        # A sentence said again is kept once, as the newest.
+        # A sentence said again is kept once, as the newest, also in other
+        # case or punctuation ("ich habe eine Erdnussallergie!").
         said = text.strip()
-        kept = [*(old for old in state.allergy_said if old != said), said]
+        kept = [*(old for old in state.allergy_said if _differs(old, said)), said]
         # Over the bound, the oldest that names nothing goes: five later
         # sentences ("Ich bin Allergiker.") pushed the first out, and the net
         # no longer knew the peanut (#940). One that names what the guest
-        # reacts to ("reagiere auf Erdbeeren" too, as `_names_health` reads
-        # it) always stays; there are few in a call.
+        # reacts to (`_keeps_a_name`, "reagiere auf Erdbeeren" too) always
+        # stays, and so does the newest (it may answer the model's
+        # question); there are few in a call.
         while len(kept) > ALLERGY_SAID_MAX and (
-            plain := next((said for said in kept if not _names_any(said)), None)
+            plain := next((said for said in kept[:-1] if not _keeps_a_name(said)), None)
         ):
             kept.remove(plain)
         state.allergy_said = kept
@@ -1778,7 +1780,7 @@ def _taken_back(kept: list[str], denial: str) -> list[str]:
     if denied := guards.reacts_to(denial, denied=True):
         gone = [said for said in own if (named := _named(said)) and named <= denied]
     else:
-        gone = [] if any(map(_names_something, own)) else own
+        gone = [] if any(map(_names_any, own)) else own
     return [said for said in kept if said not in gone]
 
 
@@ -1797,9 +1799,21 @@ def _names_something(said: str) -> bool:
     return bool(_named(said)) or not (speaks_of_health(said) or is_yes(said))
 
 
+def _differs(old: str, said: str) -> bool:
+    """Do two kept sentences differ in more than case and punctuation?"""
+    return _WORD.findall(_plain(old)) != _WORD.findall(_plain(said))
+
+
+def _keeps_a_name(said: str) -> bool:
+    """A kept sentence that stays over the bound: one that names what someone
+    reacts to, or an allergen anywhere, as `_names_health` reads it for a
+    card ("Bei Erdnüssen bekomme ich Atemnot, ich bin allergisch.")."""
+    return _names_any(said) or bool(allergens_named(said))
+
+
 def _names_any(said: str) -> bool:
     """Does a kept sentence name what someone reacts to, as the net or a card
-    reads it (`_names_something`, `_ingredients`)?"""
+    reads it (`_names_something`, `_ingredients`: "reagiere auf Erdbeeren")?"""
     return _names_something(said) or bool(_ingredients(said))
 
 
@@ -1962,6 +1976,10 @@ def _marked(state: ConversationState, card: str) -> str:
     return f"{_MARKER} {card}".strip()[:_SUMMARY_MAX]
 
 
+# What `_card` puts behind the guest's words of a summary (`_judged_again`).
+_CARD_PARTS = (SUMMARY_OPEN_TABLE, SUMMARY_REFUSED_TABLE, SUMMARY_OPEN_ORDER)
+
+
 def _judged_again(state: ConversationState, card: str) -> str:
     """A card that waited for a callback number, judged again: it was judged
     against the sentences kept before the guest's answer, which may name the
@@ -1969,12 +1987,22 @@ def _judged_again(state: ConversationState, card: str) -> str:
     stay off, as `_card` and `_order_lines` leave them off (L13).
     shortcut: a note is found by its text; one the cut to the card's length
     split is missed, the team calls about the note anyway."""
+    # The guest's words first: a note taken from them would hide what they
+    # name once it is replaced (#940 review).
+    if (tail_at := card.find(_SAID_TAIL)) >= 0:
+        # They end where the card's next part begins: a complaint's card has
+        # the table and the order behind them (`_beyond_the_database`).
+        ends = (card.find(f" {label}", tail_at) for label in _CARD_PARTS)
+        end = min((at for at in ends if at >= 0), default=len(card))
+        if _names_health(state, card[tail_at + len(_SAID_TAIL) : end]):
+            card = card[:tail_at] + card[end:]
     for note in (state.order_note, *(line.get("note") for line in state.cart)):
         if note and _names_health(state, note):
             card = card.replace(note, SUMMARY_NOTE_TO_CLEAR)
-    tail_at = card.find(_SAID_TAIL)
-    if tail_at >= 0 and _names_health(state, card[tail_at + len(_SAID_TAIL) :]):
-        card = card[:tail_at]
+    # A note shorter than the marker makes the card longer: over what a
+    # callback takes it is refused and the guest lost (rule 5, #940 review).
+    # shortcut: the end goes, the order's last lines too; refit them when a
+    # waiting card near the limit with such notes is seen.
     return card[:_SUMMARY_MAX]
 
 
