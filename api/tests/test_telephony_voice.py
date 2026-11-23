@@ -1022,6 +1022,18 @@ def test_outside_dev_and_test_the_drill_engines_and_a_short_token_are_refused(
         voice_from_settings()
 
 
+def test_outside_dev_and_test_a_claude_model_is_refused(startable):
+    """No EU path and no DPA yet: a Claude model answers evals, never a real
+    caller (docs/18 §3, T-5.3)."""
+    startable.setattr(settings, "env", "prod")
+    startable.setattr(settings, "voice_media_token", "x" * 32)
+    startable.setattr(settings, "voice_ear", "whisper")
+    startable.setattr(settings, "voice_mouth", "piper")
+    startable.setattr(settings, "llm_model", "claude-haiku-4-5")
+    with pytest.raises(RuntimeError, match="Claude model is for evals"):
+        voice_from_settings()
+
+
 def test_the_service_does_not_start_without_a_model(startable):
     startable.setattr(settings, "llm_base_url", "")
     with pytest.raises(LLMError):

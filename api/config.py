@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     llm_model: str = ""
     llm_api_key: str = ""
+    # Key of the Messages API for a `claude-*` model (`agent/messages_llm.py`,
+    # T-5.3); such a model needs no `LLM_BASE_URL`.
+    anthropic_api_key: str = ""
     llm_timeout_seconds: float = 15.0
     # Upper limit for one answer. A turn is a sentence or a tool call; a model
     # that reasons before it answers needs more.
