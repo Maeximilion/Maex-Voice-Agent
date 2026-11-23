@@ -318,9 +318,9 @@ services:
     networks: [telephony]
     # Renders deploy/asterisk/conf/ into the tmpfs below, then starts as the
     # image does, without its -vvvddd: verbose output prints every dialplan
-    # step with its values, the media token included.
+    # step with its values, the media token included. -n: no colours in the log.
     entrypoint: ["/bin/sh", "/templates/render.sh"]
-    command: ["/usr/sbin/asterisk", "-f", "-T", "-W", "-U", "asterisk", "-p"]
+    command: ["/usr/sbin/asterisk", "-f", "-T", "-n", "-U", "asterisk", "-p"]
     # render.sh and the image's entrypoint run as root: they write the
     # configuration and make the runtime directories the asterisk user's,
     # then Asterisk drops to that user itself. Not read-only: it writes into
@@ -330,7 +330,6 @@ services:
     # Only what the AI telephone needs, not the whole .env: no database or
     # model credentials in this container.
     environment:
-      ASTERISK_TERMINAL_OPTS: "-n"
       VOICE_NUMBER: ${VOICE_NUMBER:-}
       VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
       TEAM_PHONE: ${TEAM_PHONE:-}

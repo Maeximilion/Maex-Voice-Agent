@@ -12,7 +12,8 @@
 # Update: set ASTERISK_VERSION and both checksums (downloads.asterisk.org
 # publishes asterisk-<version>.sha256; PJPROJECT_VERSION is in the tarball's
 # third-party/versions.mak), compare patches/ with Alpine's main/asterisk,
-# build, run the drills (docs/20 §10).
+# set the image tag in docker-compose.yml, build, run
+# scripts/asterisk_image_check.sh and the drills (docs/20 §10).
 # Both stages on the same base, written out for Dependabot.
 FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS build
 ARG ASTERISK_VERSION=22.12.0
@@ -85,4 +86,5 @@ RUN mkdir -p /etc/asterisk /var/run/asterisk \
     && chmod 0755 /usr/local/bin/entrypoint.sh \
     && asterisk -V
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["/usr/sbin/asterisk", "-f", "-T", "-W", "-U", "asterisk", "-p"]
+# -n: no colours, the output goes to the container log.
+CMD ["/usr/sbin/asterisk", "-f", "-T", "-n", "-U", "asterisk", "-p"]
