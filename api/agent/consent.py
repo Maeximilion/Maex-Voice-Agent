@@ -231,17 +231,23 @@ def _polite(words: list[str]) -> bool:
 def is_yes(text: str) -> bool:
     """An assent word, and nothing else but filler. A digit is never part of a
     yes: "Ja, 2" changes a quantity. A question is none: it asks."""
-    lowered = _lowered(text)
-    if any(char.isdigit() for char in lowered):
-        return False
-    if "?" in lowered or asks(lowered):
-        return False
-    for phrase in _HARMLESS:
-        lowered = lowered.replace(phrase, " ")
-    words = _WORD.findall(lowered)
+    words = _plain_words(text)
     return any(word in _YES for word in words) and all(
         word in _YES or word in _FILLER for word in words
     )
+
+
+def _plain_words(text: str) -> list[str]:
+    """The words of an answer that neither asks nor names a number, harmless
+    phrases cut; none for any other."""
+    lowered = _lowered(text)
+    if any(char.isdigit() for char in lowered):
+        return []
+    if "?" in lowered or asks(lowered):
+        return []
+    for phrase in _HARMLESS:
+        lowered = lowered.replace(phrase, " ")
+    return _WORD.findall(lowered)
 
 
 # What callers say to the time an order's read-back closes with (Maxi, #678,
@@ -262,12 +268,7 @@ def answers_the_read_back(text: str, readback: str | None) -> bool:
         return True
     if readback is None or readback.rstrip().endswith("?"):
         return False
-    lowered = _lowered(text)
-    if any(char.isdigit() for char in lowered) or "?" in lowered or asks(lowered):
-        return False
-    for phrase in _HARMLESS:
-        lowered = lowered.replace(phrase, " ")
-    words = _WORD.findall(lowered)
+    words = _plain_words(text)
     return any(word in _ACKNOWLEDGING for word in words) and all(
         word in _FILLER for word in words
     )
