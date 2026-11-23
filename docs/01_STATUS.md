@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.7
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.8
 
 ---
 
@@ -178,6 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.8 · 23.11.2026:** Callback cards name every booking of the call that stands, from the database in create_callback; the core writes none on its cards (#764 review, rule 5).
 - **v2.69.7 · 23.11.2026:** #888 C3 and D2: the superuser check runs once the database answers, the backup cron covers every customer stack
 - **v2.69.6 · 23.11.2026:** #888 S2 and B2: the tablet's CSRF cookie is __Host-csrf, read by its exact name, the old csrf_token accepted until every tablet reloaded
 - **v2.69.5 · 23.11.2026:** #888 S6: the load test removes what it made and its marker at the end, clears only what it can tell is its own, new_stack.py refuses customers while a marker is there
