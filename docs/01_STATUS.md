@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.23
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.24
 
 ---
 
@@ -179,6 +179,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.24 · 23.11.2026:** Chain briefs ask each side session to message the coordinator at milestones (PR ready, merged, stopped or blocked), because turn-end notes wait while another side session works.
 - **v2.69.23 · 23.11.2026:** #892: tests hold the site's text contrast (WCAG AA) and keyboard entry (skip link, one h1, focus ring)
 - **v2.69.22 · 23.11.2026:** #927 and #931: operator sign-in residuals in docs/23 and the runbook, the per-account known-password push tested
 - **v2.69.21 · 23.11.2026:** #926: no outage hand-over reads the team number again after a database failure, callback cards of an earlier day name their date
