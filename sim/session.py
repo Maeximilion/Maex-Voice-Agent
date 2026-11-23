@@ -15,8 +15,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from api.agent.llm import ChatCompletionsLLM, LLMClient, Usage, cost_cents
+from api.agent.llm import LLMClient, Usage, cost_cents
 from api.agent.loop import ConversationLoop
+from api.agent.messages_llm import client_from_settings
 from api.agent.outcome import CLOSING_STAGES, call_outcome, call_usage, log_usage
 from api.agent.prompt import build_system_prompt
 from api.agent.state import initial_state
@@ -86,11 +87,12 @@ def make_llm(
     model: str, *, now: datetime, timezone: str, menu: Callable[[], MenuNumbers]
 ) -> LLMClient:
     """`scripted` is the rule-based stand-in. Any other name is a model on the
-    server of `LLM_BASE_URL` (`--model qwen3:14b`); without a server that is an
+    server of `LLM_BASE_URL` (`--model qwen3:14b`), a `claude-*` name a Claude
+    model (`agent/messages_llm.py`); without a server or key that is an
     `LLMError`, never a silent fall back to the script."""
     if model == SCRIPTED:
         return ScriptedLLM(now=now, timezone=timezone, menu=menu)
-    return ChatCompletionsLLM.from_settings(model)
+    return client_from_settings(model)
 
 
 class SimCall:
