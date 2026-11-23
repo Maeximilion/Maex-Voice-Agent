@@ -32,10 +32,14 @@ if [ -z "$dial" ] || [ -z "$alpine" ]; then
 fi
 tag=aic$$
 work=$(mktemp -d)
+# The status is kept and given back: the dash of Ubuntu, the CI runner's sh,
+# ends with the trap's own status instead, and a failed check would pass.
 cleanup() {
+    status=$?
     docker rm -f "$tag-ast" "$tag-voice" >/dev/null 2>&1 || true
     docker network rm "$tag" >/dev/null 2>&1 || true
     rm -rf "$work"
+    exit "$status"
 }
 trap cleanup EXIT
 
