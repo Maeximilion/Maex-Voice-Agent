@@ -145,6 +145,8 @@ services:
       # For the eval runner and the text phone in this container (`make
       # eval`); the production file blanks it, the server's API calls no model.
       LLM_API_KEY:
+      # The same for a Claude model (`make eval MODEL=claude-haiku-4-5`, T-5.3).
+      ANTHROPIC_API_KEY:
     depends_on:
       db:
         condition: service_healthy
@@ -247,8 +249,9 @@ services:
     networks: [backend, telephony]
     environment:
       <<: *settings
-      # The core of a call asks the model.
+      # The core of a call asks the model, a Claude model with its own key.
       LLM_API_KEY:
+      ANTHROPIC_API_KEY:
       # Its own secret, shared with Asterisk only.
       VOICE_MEDIA_TOKEN: ${VOICE_MEDIA_TOKEN:-}
     # Not root, from the start (docs/01 open points): it reads its mounts and

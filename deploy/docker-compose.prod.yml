@@ -26,6 +26,7 @@ services:
       ENV: prod
       # The server's API calls no model; the key is for `voice` (base file).
       LLM_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
     # Not root, and the checkout read-only. The base file mounts the source
     # writable because development edits it and the tests write next to it. On
     # the server nothing in the container writes there, and the host runs
