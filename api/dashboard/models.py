@@ -19,6 +19,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Identity,
+    Index,
     Integer,
     LargeBinary,
     Text,
@@ -163,6 +164,10 @@ class OperatorDevice(Counted, Base):
 
 class OperatorLoginFailure(Counted, Base):
     __tablename__ = "operator_login_failures"
+    # Every attempt prunes by it (#888 S11, op007).
+    __table_args__ = (
+        Index("ix_operator_login_failures_last_failed_at", "last_failed_at"),
+    )
 
     address: Mapped[str] = mapped_column(Text, primary_key=True)
 
