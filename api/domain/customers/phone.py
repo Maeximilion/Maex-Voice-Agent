@@ -167,14 +167,17 @@ def number_or_none(raw: str | None) -> str | None:
 
 
 # Numbers that cost the caller more than a call: German premium and service
-# ranges, international shared-cost and satellite codes (#691). Allowed as a
-# callback number (Maxi decided B), but never dialled with one tap.
+# ranges, the ITU global premium-rate (+979) and shared-cost (+808) codes and
+# satellite codes (#691, #888 S9). Allowed as a callback number (Maxi decided
+# B), but never dialled with one tap.
 COSTLY_PREFIXES = (
     "+49900",
     "+49137",
     "+49180",
     "+49118",
     "+4912",
+    "+979",
+    "+808",
     "+870",
     "+881",
     "+882",
