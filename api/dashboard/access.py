@@ -56,7 +56,12 @@ from api.domain.access.hashing import (
     token_hash,
     verify_secret,
 )
-from api.domain.access.sessions import FAILURES_FORGOTTEN, count_failure, minutes_left
+from api.domain.access.sessions import (
+    FAILURES_FORGOTTEN,
+    count_failure,
+    counted_address,
+    minutes_left,
+)
 
 SESSION_IDLE = timedelta(minutes=30)
 SESSION_MAX = timedelta(hours=12)
@@ -174,7 +179,9 @@ def sign_in(
     # looked at, so it tells nothing, and neither counted nor audited (#816).
     if not passkey and not code.strip():
         raise SignInRefused()
-    stored, account_id, trusted = _count_attempt(db, name, address, device_token, now)
+    # The counters' key; the audit and the double tap keep the address as sent.
+    counted = counted_address(address)
+    stored, account_id, trusted = _count_attempt(db, name, counted, device_token, now)
     # Taken before the password is looked at: a challenge is spent by the first
     # post that brings it, whatever else that post got wrong.
     challenge = (
@@ -208,7 +215,7 @@ def sign_in(
         _note_failure(db, name, address, reason, now, alarm)
         raise SignInRefused(copy=why == "counter", alarm=alarm)
     if not trusted:
-        _forgive(db, account, address)
+        _forgive(db, account, counted)
     device_token = _trust_device(db, account, device_token, now)
     # The browser's own session, and every ended one of the account that no
     # browser came back for: otherwise their rows would stay for good.
@@ -299,8 +306,9 @@ def step_up(
         raise SignInRefused()
     # With the device cookie the account counts too, or a holder of both
     # would get two wait ladders, one with the cookie and one without (#888 A3).
+    counted = counted_address(address)
     _, _, trusted = _count_attempt(
-        db, operator.name, address, device_token, now, account_too=True
+        db, operator.name, counted, device_token, now, account_too=True
     )
     challenge = (
         passkeys.take(
@@ -344,7 +352,7 @@ def step_up(
             device.failures, device.blocked_until, device.last_failed_at = 0, None, None
         account.failures, account.blocked_until, account.last_failed_at = 0, None, None
     else:
-        _forgive(db, account, address)
+        _forgive(db, account, counted)
     session.stepped_up_at = now
     if factor == "passkey":
         session.passkey_stepped_up_at = now

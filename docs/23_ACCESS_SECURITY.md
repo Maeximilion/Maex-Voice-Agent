@@ -118,9 +118,12 @@ is the backup. Ten single-use recovery codes, stored hashed, are the last way in
   password and a TOTP code phished in real time would otherwise open every customer's PINs and
   call lists unseen for up to twelve hours.
 - **Passkey first** (Maxi, 23.11.2026, #888 A1): the passkey is the way in, a TOTP code or a
-  recovery code only the way back in when no passkey is at hand. Every sign-in with a TOTP code,
-  from a known browser too, and every step-up with one is pushed to `ops` ("with a TOTP code, not
-  a passkey"), as a used recovery code and a new browser are; a passkey sign-in from a known
+  recovery code only the way back in when no passkey is at hand. Every sign-in with a TOTP code
+  from a known browser and every step-up with one is pushed to `ops` ("with a TOTP code, not
+  a passkey"), as a used recovery code is; from a new browser the push of the new browser names
+  the code ("signed in from a new browser (totp)"). An account without a passkey pushes on each of
+  its sign-ins and step-ups so (Claude's choice of the review of #946, awaiting Maxi: seen rather
+  than quiet, at the cost of routine pushes until a passkey is registered). A passkey sign-in from a known
   browser and a passkey step-up stay quiet. A TOTP code still signs in alone, also on an account
   with a passkey, so a lost passkey never locks the operator out (Claude's choice of 23.11.2026,
   awaiting Maxi: the stricter way, a code sign-in that counts as no fresh factor until a passkey
@@ -159,11 +162,16 @@ account has one, D37).
 database (survives a restart; production runs one uvicorn worker, but memory would reset). One or
 two wrong attempts cost nothing; every third in a row brings a wait one minute longer than the last,
 1, 2, 3, 4, then 5 minutes at most (Maxi 09.11.2026, the same rule as §6), instead of a hard lock. Error text is the same for unknown user, wrong password and wrong
-factor. The client address comes from Caddy's `X-Forwarded-For`, trusted only from Caddy; an IPv6
-client counts by its /64 (`counted_address`, #888 S11), the block one line or host is given, or a
-spray of made-up names from one /64 would meet a fresh count, and a scrypt run, on every /128. An
-unknown name still costs the dummy hash, so the answer time tells no names. Every attempt forgets
-the counters a day after their last failure, by the index on `last_failed_at` (migration op007).
+factor. The client address comes from Caddy's `X-Forwarded-For`, trusted only from Caddy. The
+counters take an IPv6 client by its /64 (`counted_address`, #888 S11), the block of one network
+segment, or a spray of made-up names from one /64 would meet a fresh count, and a scrypt run, on
+every /128; the audit and the double tap keep the address as sent (review of #946). Two residuals:
+a neighbour on the same /64 (hotel or coworking Wi-Fi, a /64 shared by several servers) counts as
+the operator's own address, so its guesses make the operator's sign-in from a new browser wait, as
+behind an IPv4 NAT; and a line or server given a /56 or /48 still holds 256 to 65,536 fresh /64
+counters, so a spray from it is not bounded by them (#962). An unknown name still costs the dummy
+hash, so the answer time tells no names. Every attempt forgets the counters a day after their last
+failure, by the index on `last_failed_at` (migration op007).
 
 **Audit:** logins, failures, factor changes and every action in the dashboard go to the operator
 database's own audit table (actor, action, target customer, time; no guest data). An action on a
@@ -378,7 +386,9 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   migration op004); above that it gets 429 and no row, while an attempt asking again replaces its
   own (#827 F1: the audit of §11 filled the table with 3,000 rows from one client). The cap is per
   address, not global: a global one would let a flood shut out the operator's passkey. An IPv6
-  client counts by its /64 here too (#888 S11), so one host cannot hold ten per /128.
+  client counts by its /64 here too (#888 S11), so one host cannot hold ten per /128; the price is
+  that a neighbour on the same /64 can fill the cap for five minutes and leave the operator the
+  TOTP code, whose sign-in is pushed, as anyone behind the operator's IPv4 NAT could already.
 - **An answer is input from outside.** At most 32,768 characters are parsed, and whatever the
   parsing or the check raises is a refusal, never a server error: at the sign-in that runs after
   the password check, and an error there would tell that the password was right.
