@@ -180,6 +180,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 ## Changelog
 
 - **v2.69.0 · 23.11.2026:** T-5.3: Claude client behind LLMClient and model turn time in the eval report; Haiku 4.5 vs 5.5 race waits for an API key
+- **v2.68.7 · 23.11.2026:** #892: neon wave swings inside the SVG (no dashes), example calls play once, demo screenshot under the neon button
 - **v2.68.6 · 23.11.2026:** Review #207: a spoken correction between two numbers asks, the caller's own allergy in front of another person's is asked about (#911)
 - **v2.68.5 · 23.11.2026:** #754 and #743 follow-ups: the outage sentence plays before the team number is read again, a missed-call card names the call's standing bookings
 - **v2.68.4 · 23.11.2026:** Review #207: a refused sign-in code is a repeat only from the address of the TOTP sign-in that used it; a step-up code, another or no address stays a factor alarm

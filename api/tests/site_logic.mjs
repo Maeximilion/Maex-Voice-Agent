@@ -40,12 +40,24 @@ assert.equal(state(yesStart + 5).status, 'confirmed')
 assert.equal(state(L.total(lengths) + 5).status, 'confirmed')
 
 // Never more than a sentence has, never less than nothing.
-for (let n = -5; n < L.total(lengths) + L.REST; n++) {
+for (let n = -5; n < L.total(lengths) + 80; n++) {
   state(n).shown.forEach((count, i) => assert.ok(count >= 0 && count <= lengths[i], `n ${n}`))
 }
 // A finished call shows every sentence whole and nobody speaks.
 assert.deepEqual(state(L.total(lengths)).shown, lengths)
 assert.equal(state(L.total(lengths)).loud, false)
+
+// A call plays once: finished exactly when everything is typed, never before.
+assert.equal(L.finished(lengths, L.total(lengths) - 1), false)
+assert.equal(L.finished(lengths, L.total(lengths)), true)
+assert.equal(L.finished(lengths, 0), false)
+
+// The wave swing is a matrix in SVG units around the middle line (y 120): full
+// swing leaves it as it is, a flat swing never reaches 0 (no inverse, no stroke).
+assert.equal(L.swingMatrix(1), 'matrix(1,0,0,1.000,0,0.00)')
+assert.equal(L.swingMatrix(0.5), 'matrix(1,0,0,0.500,0,60.00)')
+assert.equal(L.swingMatrix(0), 'matrix(1,0,0,0.020,0,117.60)')
+assert.equal(L.swingMatrix(7), 'matrix(1,0,0,1.000,0,0.00)')
 
 // The inquiry checks.
 const good = { kind: 'Restaurant', business: 'Zum Test', name: 'Erika Muster', mail: 'erika@example.com', phone: '', text: '' }

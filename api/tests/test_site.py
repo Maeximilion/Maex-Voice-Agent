@@ -236,6 +236,25 @@ def test_once_the_demo_exists_the_hero_offers_it(monkeypatch):
     assert 'id="demo"' in html
 
 
+def test_the_demo_section_shows_a_screenshot_that_links_to_the_demo(monkeypatch):
+    monkeypatch.setattr(content, "DEMO_PATH", "/tablet-demo")
+    html = text_of(client(), "/")
+
+    shot = re.search(
+        r'<a class="demo-shot" href="/tablet-demo"[^>]*>\s*(<img[^>]*>)', html
+    )
+    assert shot, "the screenshot sits in a link to the demo"
+    img = shot.group(1)
+    assert 'src="/static/demo-tablet.webp"' in img
+    assert 'loading="lazy"' in img
+    assert re.search(r'width="\d+" height="\d+"', img)
+    assert re.search(r'alt="[^"]{20,}"', img)
+    assert (STATIC / "demo-tablet.webp").stat().st_size < 150_000
+    # No demo, no screenshot.
+    monkeypatch.setattr(content, "DEMO_PATH", None)
+    assert "demo-shot" not in text_of(client(), "/")
+
+
 @pytest.mark.parametrize("path", ["/impressum", "/datenschutz"])
 def test_the_legal_pages_are_placeholders_marked_as_not_publishable(path):
     html = text_of(client(), path)
@@ -334,6 +353,23 @@ def test_the_scripts_are_compiled_and_named_by_the_pages():
     for name in ("site.js", "site-logic.js", "anfrage.js"):
         assert (STATIC / name).is_file()
         assert (ROOT / "api" / "gui" / "ts" / name.replace(".js", ".ts")).is_file()
+
+
+def test_a_call_plays_once_and_a_choice_plays_it_again():
+    # Source check of the one place that decides it (site.ts tick/resume): the
+    # loop stops at the end of the call and never wraps to 0 on its own.
+    source = (ROOT / "api" / "gui" / "ts" / "site.ts").read_text(encoding="utf-8")
+    tick = source.split("function tick()", 1)[1].split("function resume()", 1)[0]
+
+    assert "finished(lengths, n)) return" in tick
+    assert "? 0 :" not in tick and "REST" not in source
+    # A pick starts over from 0; resume never restarts a finished call.
+    play = source.split("function play()", 1)[1].split("function pick(", 1)[0]
+    assert "still.matches ? total(lengths) : 0" in play
+    assert (
+        "!finished(lengths, n)"
+        in source.split("function resume()", 1)[1].split("}", 1)[0]
+    )
 
 
 def test_the_logic_of_the_call_card_and_the_form_holds_in_node():
@@ -486,4 +522,12 @@ def test_a_hidden_call_shows_no_caret_and_a_switch_clears_the_old_one():
 def test_the_waves_swing_in_place_and_never_run_sideways():
     css = (STATIC / "site.css").read_text(encoding="utf-8")
     assert "@keyframes run" not in css and ".run{position:absolute;inset:0}" in css
-    assert "scaleY" in (STATIC / "site.js").read_text(encoding="utf-8")
+    # The swing is a matrix on the path inside the SVG, where the stroke keeps its
+    # width (non-scaling-stroke). A scale on the wrapper outside the SVG squashed
+    # the drawn layer and broke the 3 px line into dashes (#892).
+    script = (STATIC / "site.js").read_text(encoding="utf-8")
+    assert "swingMatrix" in script and "scaleY" not in script
+    assert '".wave path"' in script
+    assert re.search(r"\.wave\{[^}]*transform", css) is None
+    assert re.search(r"\.wave\{[^}]*will-change", css) is None
+    assert "vector-effect:non-scaling-stroke" in css

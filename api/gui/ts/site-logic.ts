@@ -7,8 +7,10 @@
 
 // Characters of pause between two sentences of a call, counted like typed ones.
 export const PAUSE = 14;
-// The pause after the last sentence before the call plays again.
-export const REST = 80;
+// Middle line of the wave drawing (viewBox 0 0 1440 240, api/site/waves.py MID).
+const MID = 120;
+// A swing never reaches 0: a matrix without an inverse draws nothing.
+const MIN_SWING = 0.02;
 // A call is confirmed once the guest's yes (the third sentence) is complete.
 const YES = 2;
 
@@ -27,6 +29,18 @@ export interface CallState {
 // Total steps of a call: every sentence and its pause.
 export function total(lengths: number[]): number {
   return lengths.reduce((sum, length) => sum + length + PAUSE, 0);
+}
+
+// A call has played to its end once every sentence and pause is typed.
+export function finished(lengths: number[], n: number): boolean {
+  return n >= total(lengths);
+}
+
+// CSS matrix that squeezes a wave path to `swing` (0..1) of its height around the
+// middle line, in SVG units: the stroke (non-scaling) keeps its width on screen.
+export function swingMatrix(swing: number): string {
+  const s = Math.min(1, Math.max(MIN_SWING, swing));
+  return `matrix(1,0,0,${s.toFixed(3)},0,${(MID * (1 - s)).toFixed(2)})`;
 }
 
 // The state of a call of sentences with these lengths after `n` typed characters.

@@ -10,7 +10,7 @@
 //
 // Source: api/gui/ts/site.ts. The file of the same name in api/gui/static/ is its
 // compiled output (`npm run build`, docs/22); edit the source, never the output.
-import { callState, ease, voice, total, REST } from "./site-logic.js";
+import { callState, ease, voice, total, finished, swingMatrix } from "./site-logic.js";
 const TICK_MS = 42;
 const STATUS = {
     listening: "hört zu",
@@ -78,12 +78,15 @@ function initCard(card) {
         timer = 0;
         if (!onScreen || document.hidden)
             return;
-        n = n > total(lengths) + REST ? 0 : n + 1;
+        n += 1;
         paint();
+        // A call plays once and stands complete; a click on a choice plays it again.
+        if (finished(lengths, n))
+            return;
         timer = window.setTimeout(tick, TICK_MS);
     }
     function resume() {
-        if (!timer && onScreen && !document.hidden && !still.matches)
+        if (!timer && onScreen && !document.hidden && !still.matches && !finished(lengths, n))
             timer = window.setTimeout(tick, TICK_MS);
     }
     function play() {
@@ -146,10 +149,10 @@ function pauseOffScreen() {
     document.querySelectorAll("[data-live]").forEach((element) => observer.observe(element));
 }
 // The three waves stand in place and swing up and down like a voice: one loop sets
-// the height of each layer (a transform, so the compositor does the drawing) while
-// someone speaks, and it stops while the waves are off screen or the tab is hidden.
+// the height of each path inside its SVG (not a scale of the wrapper: that would
+// thin the stroke to dashes) while someone speaks, and it stops while the waves are off screen or the tab is hidden.
 function initWaves(waves) {
-    const layers = Array.from(waves.querySelectorAll(".wave"));
+    const layers = Array.from(waves.querySelectorAll(".wave path"));
     const phases = [0, 0.23, 0.51];
     let level = 0;
     let frame = 0;
@@ -175,7 +178,7 @@ function initWaves(waves) {
         started || (started = now);
         level = ease(level, waves.classList.contains("is-loud") ? 1 : 0, 0.12);
         layers.forEach((layer, i) => {
-            layer.style.transform = `scaleY(${(level * voice((now - started) / 1000, phases[i] ?? 0)).toFixed(3)})`;
+            layer.style.transform = swingMatrix(level * voice((now - started) / 1000, phases[i] ?? 0));
         });
     }
     function resume() {
