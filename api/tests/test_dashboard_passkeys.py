@@ -1158,6 +1158,19 @@ def test_the_cap_counts_one_address_and_sign_in_challenges_only(sessions):
     assert "attempt:more" not in {row.bound_to for row in rows}
 
 
+def test_the_cap_counts_an_ipv6_client_by_its_64(sessions):
+    """#888 S11: per /128, one IPv6 host could hold the cap ten times over for
+    every address of its block."""
+    with sessions() as db:
+        for number in range(passkeys.SIGN_IN_PER_ADDRESS):
+            passkeys.issue(
+                db, f"attempt:{number}", passkeys.SIGN_IN, START, f"2001:db8::{number}"
+            )
+        with pytest.raises(passkeys.TooMany):
+            passkeys.issue(db, "attempt:more", passkeys.SIGN_IN, START, "2001:db8::ff")
+        passkeys.issue(db, "attempt:other", passkeys.SIGN_IN, START, "2001:db8:0:1::1")
+
+
 def test_parallel_asks_of_one_address_cannot_all_pass_the_cap(sessions):
     """#853: the advisory lock per address is what keeps the count honest. Without
     it every ask counts the rows before any other has committed and all pass."""
@@ -2193,8 +2206,11 @@ def test_a_step_up_with_a_code_is_pushed_and_one_with_a_passkey_is_not(
 
 
 def test_a_refused_step_up_with_a_code_is_not_pushed_as_one(
-    client, factors, clock, pushes
+    client, factors, clock, monkeypatch
 ):
+    # Every push recorded: the `pushes` fixture drops the very text in question.
     _signed_in(client, factors, clock)
+    sent: list[str] = []
+    monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
     assert _post(client, "/step-up", code="000000").status_code == 401
-    assert pushes == []
+    assert sent == []

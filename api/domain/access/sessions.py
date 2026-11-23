@@ -105,6 +105,7 @@ def sign_in(
     checked, in a transaction of its own: a burst of parallel guesses meets the
     wait from its third on, and no row lock or pooled connection is held during
     the slow hash. A right password takes the count back. Commits."""
+    address = counted_address(address)
     stored, trusted = _count_attempt(session, tenant_id, address, device_token, now)
     if not verify_secret(password, stored):
         raise SignInRefused()
@@ -383,9 +384,11 @@ def _end(session: Session, row: GuiSession, actor: str, reason: str) -> None:
 
 def counted_address(host: str) -> str:
     """The client address failures count for: an IPv6 client by its /64, the
-    block one line or one host is given, or a spray from one /64 would meet a
-    fresh count on every address (#888 S11). An IPv4 address, also one mapped
-    into IPv6, stays as it is; anything that is no address is kept as sent."""
+    block of one network segment, or a spray from one /64 would meet a fresh
+    count on every address (#888 S11). A line or server given a /56 or /48
+    still holds many of them (docs/23 §5). An IPv4 address, also one mapped
+    into IPv6, stays as it is; anything that is no address is kept as sent.
+    Only for counting: the audit keeps the address as sent."""
     try:
         ip = ipaddress.ip_address(host)
     except ValueError:
