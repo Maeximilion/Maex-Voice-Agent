@@ -626,8 +626,11 @@ class CallHandler:
         try:
             with live.session.begin_nested():
                 return active_count(live.session, live.tenant_id)
-        except Exception:
+        except Exception as exc:
             logger.exception("the menu size for the key terms could not be read")
+            if isinstance(exc, _DATABASE_DOWN):
+                # The turn goes on without names; its outage path reads no number.
+                live.database_lost = True
             return 0
 
     def _team_phone(self, live: _LiveCall) -> str:

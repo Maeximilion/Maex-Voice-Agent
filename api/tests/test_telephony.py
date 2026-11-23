@@ -2370,6 +2370,35 @@ def test_a_database_failure_does_not_wait_on_a_second_read_of_the_number(
     assert port.transfers("s-1") == [TEAM_PHONE]
 
 
+def test_a_database_lost_behind_the_key_terms_is_not_read_again_for_the_team(
+    session, tenant, monkeypatch
+):
+    """#926 review: the read of the menu size for the ear's key terms meets a
+    database that does not answer and goes on without names; the outage that
+    follows dials the call's own number without waiting on the database again."""
+    reads = []
+
+    def counted(session, tenant_id, now=None):
+        reads.append(tenant_id)
+        return CHANGED_PHONE
+
+    def unreachable(session, tenant_id):
+        raise OperationalError("SELECT", {}, Exception("connection refused"))
+
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    monkeypatch.setattr(handler_module, "current_team_phone", counted)
+    monkeypatch.setattr(handler_module, "active_count", unreachable)
+
+    assert handler._menu_size(handler._live["s-1"]) == 0
+    handler.on_voice_failure("s-1")
+
+    assert reads == []
+    assert port.transfers("s-1") == [TEAM_PHONE]
+
+
 def test_a_constraint_error_reads_the_number_that_holds_now(
     session, tenant, monkeypatch
 ):
