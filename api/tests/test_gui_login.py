@@ -68,7 +68,7 @@ def _client(engine, base_url="http://testserver") -> TestClient:
 
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app, base_url=base_url, follow_redirects=False)
-    client.cookies.set("csrf_token", "testtoken")
+    client.cookies.set("maex_csrf", "testtoken")
     return client
 
 
@@ -174,7 +174,7 @@ def test_the_front_page_shows_the_name_and_sets_only_the_csrf_cookie(client):
     assert 'autocomplete="current-password"' in page.text
     assert 'data-zeigen="passwort"' in page.text
     cookies = page.headers.get_list("set-cookie")
-    assert [c.split("=")[0] for c in cookies] == ["csrf_token"]
+    assert [c.split("=")[0] for c in cookies] == ["maex_csrf"]
 
 
 def test_a_name_with_markup_is_shown_as_text(client, engine):
@@ -230,7 +230,7 @@ def test_setup_refuses_two_different_entries_and_a_spent_link(client, engine):
 def test_sign_in_with_the_password_sets_an_httponly_session_cookie(client, engine):
     _set_up_and_sign_in(client, engine)
     client.cookies.clear()
-    client.cookies.set("csrf_token", "testtoken")
+    client.cookies.set("maex_csrf", "testtoken")
     page = client.get("/gui/anmelden")
     assert page.status_code == 200 and 'type="password"' in page.text
 
@@ -251,7 +251,7 @@ def test_sign_in_with_the_password_sets_an_httponly_session_cookie(client, engin
 def test_a_wrong_password_says_so_and_sets_no_session(client, engine):
     _set_up_and_sign_in(client, engine)
     client.cookies.clear()
-    client.cookies.set("csrf_token", "testtoken")
+    client.cookies.set("maex_csrf", "testtoken")
     answer = client.post(
         "/gui/anmelden", data={"csrf_token": "testtoken", "passwort": "falsch-falsch"}
     )
@@ -269,7 +269,7 @@ def test_a_form_post_under_no_referrer_signs_in(client, engine):
     16.11.2026: the operator's sign-in answered 403 in a real browser."""
     _set_up_and_sign_in(client, engine)
     client.cookies.clear()
-    client.cookies.set("csrf_token", "testtoken")
+    client.cookies.set("maex_csrf", "testtoken")
     answer = client.post(
         "/gui/anmelden",
         data={"csrf_token": "testtoken", "passwort": PASSWORD},
@@ -283,7 +283,7 @@ def test_a_null_origin_that_is_not_this_site_stays_refused(client, engine, site)
     """`null` is also what a sandboxed frame and a cross-site redirect send."""
     _set_up_and_sign_in(client, engine)
     client.cookies.clear()
-    client.cookies.set("csrf_token", "testtoken")
+    client.cookies.set("maex_csrf", "testtoken")
     answer = client.post(
         "/gui/anmelden",
         data={"csrf_token": "testtoken", "passwort": PASSWORD},
@@ -313,7 +313,7 @@ def test_the_sign_in_needs_its_csrf_token_and_this_site(client, engine, form, he
     account of its choosing."""
     _set_up_and_sign_in(client, engine)
     client.cookies.clear()
-    client.cookies.set("csrf_token", "testtoken")
+    client.cookies.set("maex_csrf", "testtoken")
     answer = client.post("/gui/anmelden", data=form, headers=headers)
     assert answer.status_code == 403
 
@@ -465,6 +465,8 @@ def production(monkeypatch, engine):
     monkeypatch.setattr(settings, "agent_api_token", "a" * 32)
     monkeypatch.setattr(settings, "gui_proxy_secret", PROXY)
     client = _client(engine, base_url="https://testserver")
+    client.cookies.clear()
+    client.cookies.set("__Host-csrf", "testtoken")
     client.headers["X-Maex-Proxy-Secret"] = PROXY
     try:
         yield client
@@ -475,7 +477,7 @@ def production(monkeypatch, engine):
 def test_in_production_the_cookie_is_host_bound_and_secure(production, engine):
     _set_up_and_sign_in(production, engine)
     production.cookies.clear()
-    production.cookies.set("csrf_token", "testtoken")
+    production.cookies.set("__Host-csrf", "testtoken")
     answer = production.post(
         "/gui/anmelden", data={"csrf_token": "testtoken", "passwort": PASSWORD}
     )
@@ -487,11 +489,49 @@ def test_in_production_the_cookie_is_host_bound_and_secure(production, engine):
     assert production.get("/gui/", headers=HTML).status_code == 200
 
 
+def test_in_production_the_csrf_cookie_is_host_bound_and_a_planted_one_is_ignored(
+    production, engine
+):
+    """#888 S2/B2: the sign-in page issues `__Host-csrf`; a `csrf_token` cookie
+    a sibling host set for the whole domain changes nothing."""
+    _set_up_and_sign_in(production, engine)
+    production.cookies.clear()
+    page = production.get("/gui/anmelden", headers=HTML)
+    (cookie,) = page.headers.get_list("set-cookie")
+    assert cookie.split("=")[0] == "__Host-csrf"
+    assert "Secure" in cookie and "Path=/" in cookie and "Domain" not in cookie
+    token = production.cookies.get("__Host-csrf")
+    production.cookies.set("csrf_token", "planted-by-a-sibling-host")
+    production.cookies.set("maex_csrf", "planted-dev-name")
+
+    # The dev name is never read in production.
+    refused = production.post(
+        "/gui/anmelden", data={"csrf_token": "planted-dev-name", "passwort": PASSWORD}
+    )
+    assert refused.status_code == 403
+    answer = production.post(
+        "/gui/anmelden", data={"csrf_token": token, "passwort": PASSWORD}
+    )
+    assert answer.status_code == 303
+
+
+def test_a_sign_in_page_opened_before_the_rename_still_signs_in(client, engine):
+    """#888 S2 migration: the form carries the old cookie's value."""
+    _set_up_and_sign_in(client, engine)
+    client.cookies.clear()
+    client.cookies.set("csrf_token", "old-token-of-the-page")
+    answer = client.post(
+        "/gui/anmelden",
+        data={"csrf_token": "old-token-of-the-page", "passwort": PASSWORD},
+    )
+    assert answer.status_code == 303
+
+
 def test_in_production_failures_count_for_the_address_caddy_saw(production, engine):
     _set_up_and_sign_in(production, engine)
     # A stranger: no device cookie, so the failure counts per address.
     production.cookies.clear()
-    production.cookies.set("csrf_token", "testtoken")
+    production.cookies.set("__Host-csrf", "testtoken")
     production.post(
         "/gui/anmelden",
         data={"csrf_token": "testtoken", "passwort": "falsch-falsch"},
