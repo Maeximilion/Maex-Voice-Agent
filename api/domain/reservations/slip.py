@@ -38,9 +38,10 @@ from api.models import OutboxEvent, Reservation
 RESERVATION = "reservation"
 
 
-IS_RESERVATION_SLIP: ColumnElement[bool] = (
-    OutboxEvent.payload["type"].astext == RESERVATION
-)
+# Never NULL, so its negation is safe on a payload without a `type`.
+IS_RESERVATION_SLIP: ColumnElement[bool] = OutboxEvent.payload[
+    "type"
+].astext.is_not_distinct_from(RESERVATION)
 
 
 def still_booked(now: datetime) -> ColumnElement[bool]:

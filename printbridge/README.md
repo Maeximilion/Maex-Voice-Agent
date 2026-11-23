@@ -4,7 +4,7 @@ Fetches kitchen slips from the server and prints them on the receipt printer at 
 
 The server sits in the data center and cannot reach the printer at the restaurant. The bridge runs on a computer at the restaurant, asks for new slips every two seconds, prints them and reports back. It only calls outward: no port needs to be open in the router.
 
-Besides orders it prints a short slip for every table the agent books (#863): day, time, party size, name and note, marked "RESERVIERUNG" and "nicht in die Kasse". A bridge older than this layout prints such a slip as an order with a sum of 0,00 EUR: update the bridge with the server.
+Besides orders it prints a short slip for every table the agent books (#863): day, time, party size, name and note, marked "RESERVIERUNG" and "nicht in die Kasse". The bridge names this layout when it asks for slips; a bridge older than it gets none, and the server takes such a slip back once its table has passed. Update the bridge to get them.
 
 What happens when something fails:
 

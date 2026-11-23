@@ -101,7 +101,7 @@ ACTOR = "system"
 ACTION_HANDOVER_SENT = "order.handover_sent"
 ACTION_HANDOVER_FAILED = "order.handover_failed"
 WITHDRAWN = "not printed: order cancelled"
-NOT_BOOKED = "not printed: reservation cancelled, deleted or past"
+NOT_BOOKED = "reservation cancelled, deleted or past"
 # Starts the `last_error` of a superseded ticket that may have printed.
 UNANSWERED = "no answer: "
 
@@ -314,13 +314,16 @@ def _booked(session: Session, event: OutboxEvent, now: datetime) -> bool:
 
 
 def _take_back(event: OutboxEvent, now: datetime) -> None:
+    # Picked up and never answered: it may lie at the printer (as `_supersede`).
+    unanswered = event.attempts > 0 and event.last_error is None
     mark_sent(event, now, count_attempt=False)
-    event.last_error = NOT_BOOKED
+    head = UNANSWERED if unanswered else "not printed: "
+    event.last_error = f"{head}{NOT_BOOKED}"
 
 
 def _settle_reservation_slips(session: Session, now: datetime) -> None:
     """A reservation's slip is due only while its table stands, and it belongs
-    to no order, so the order watchdog below never ends it. Take back the one
+    to no order, so the order watchdog never ends it. Take back the one
     whose reservation is gone or past (a silent bridge would keep it queued
     with the guest's name), and fail the one whose last pickup got no answer.
     Neither touches a card or raises an alarm: the tablet shows the table."""
@@ -342,10 +345,7 @@ def _settle_reservation_slips(session: Session, now: datetime) -> None:
     for event in slips:
         if _booked(session, event, now):
             mark_attempt_failed(
-                event,
-                "Druckbruecke hat nicht zurueckgemeldet",
-                now,
-                count_attempt=False,
+                event, "no answer from the print bridge", now, count_attempt=False
             )
         else:
             _take_back(event, now)
@@ -353,7 +353,12 @@ def _settle_reservation_slips(session: Session, now: datetime) -> None:
 
 
 def claim_tickets(
-    session: Session, tenant_id: uuid.UUID, now: datetime, limit: int = 5
+    session: Session,
+    tenant_id: uuid.UUID,
+    now: datetime,
+    limit: int = 5,
+    *,
+    reservation_slips: bool = False,
 ) -> list[dict[str, Any]]:
     """Faellige Bons fuer die Druckbruecke, aelteste zuerst. Committet.
 
@@ -370,8 +375,13 @@ def claim_tickets(
             OutboxEvent.next_attempt_at <= now,
             # Ein Bon ohne Versuche mehr raeumt der Waechter ab.
             OutboxEvent.attempts < MAX_ATTEMPTS,
+            # A bridge that does not print the reservation layout would print
+            # the slip as an order (#863): it never gets one.
+            *(() if reservation_slips else (~IS_RESERVATION_SLIP,)),
         )
-        .order_by(OutboxEvent.created_at)
+        # Orders first: a backlog of reservation slips must not keep an order
+        # unclaimed until the watchdog turns its card red.
+        .order_by(IS_RESERVATION_SLIP, OutboxEvent.created_at)
         .limit(limit)
         .with_for_update(skip_locked=True)
     ).all()
@@ -444,7 +454,8 @@ def ack_ticket(
     else:
         reason = (error or "Druck fehlgeschlagen").strip() or "Druck fehlgeschlagen"
         final = mark_attempt_failed(event, reason, now, count_attempt=False)
-        if final:
+        # A reservation's slip is no kitchen ticket: the tablet shows the table.
+        if final and not is_slip_of_a_reservation(event):
             log(
                 logger,
                 logging.ERROR,
@@ -468,7 +479,6 @@ def sweep(session: Session, now: datetime) -> int:
     ueberspringt "Nochmal senden" den vom Waechter gesperrten Bon, legt einen
     zweiten an, und der Waechter faerbt die Karte gleich danach wieder rot.
     """
-    _settle_reservation_slips(session, now)
     cutoff = now - timedelta(seconds=PICKUP_TIMEOUT_SECONDS)
     stale = select(OutboxEvent.id).where(
         OutboxEvent.event_type.in_(KITCHEN),
@@ -529,4 +539,6 @@ def sweep(session: Session, now: datetime) -> int:
         if order is not None and before != order.handover_state:
             turned += 1
         session.commit()
+    # After the cards: nothing about a reservation's slip may hold them up.
+    _settle_reservation_slips(session, now)
     return turned

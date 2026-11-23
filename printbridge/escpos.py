@@ -162,6 +162,9 @@ def _address(ticket: dict[str, Any], width: int) -> list[bytes]:
 
 
 RESERVATION = "reservation"
+# The layouts beyond an order this bridge prints; it names them when it claims,
+# and the server sends nothing it cannot print (#863).
+LAYOUTS = (RESERVATION,)
 
 
 def _reservation(ticket: dict[str, Any], width: int, stamp: str) -> bytes:
