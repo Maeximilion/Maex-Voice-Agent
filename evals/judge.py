@@ -24,6 +24,7 @@ from api.agent.recording import RECORDING_WITHDRAWN
 from api.core.time import to_local
 from api.domain.menu.numberwords import fold
 from api.domain.ordering.confirm import ACTION_CONFIRMED as ORDER_CONFIRMED_ACTION
+from api.domain.reservations.slip import IS_RESERVATION_SLIP
 from api.domain.reservations.slots import MAX_ALTERNATIVES
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
@@ -579,6 +580,8 @@ def _duplicate_confirms(
         select(func.count(OutboxEvent.id))
         .where(
             OutboxEvent.event_type.in_((ORDER_CONFIRMED, RESERVATION_CONFIRMED)),
+            # A booked table's print slip shares its key (#863): no second yes.
+            ~IS_RESERVATION_SLIP,
             func.coalesce(
                 OutboxEvent.payload["order_id"].astext,
                 OutboxEvent.payload["reservation_id"].astext,

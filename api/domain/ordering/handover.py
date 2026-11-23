@@ -35,6 +35,11 @@ from sqlalchemy.orm import Session
 from api.core.errors import NotFound
 from api.core.logging import get_logger, log
 from api.domain.ordering.ticket import CANCELLED
+from api.domain.reservations.slip import (
+    IS_RESERVATION_SLIP,
+    is_slip_of_a_reservation,
+    still_booked,
+)
 from api.domain.status.bridge import note_poll
 from api.events import enqueue
 from api.events.outbox import MAX_ATTEMPTS, mark_attempt_failed, mark_sent
@@ -65,6 +70,10 @@ SLIP_FIELDS = (
     "delivery_fee_cents",
     "total_cents",
     "items",
+    # A reservation's slip (domain/reservations/slip.py).
+    "party_size",
+    "reserved_day",
+    "reserved_time",
 )
 ITEM_FIELDS = ("quantity", "number", "name", "options", "note")
 # A cancellation note only names the slip it voids: escpos prints no address and
@@ -92,6 +101,7 @@ ACTOR = "system"
 ACTION_HANDOVER_SENT = "order.handover_sent"
 ACTION_HANDOVER_FAILED = "order.handover_failed"
 WITHDRAWN = "not printed: order cancelled"
+NOT_BOOKED = "reservation cancelled, deleted or past"
 # Starts the `last_error` of a superseded ticket that may have printed.
 UNANSWERED = "no answer: "
 
@@ -295,8 +305,60 @@ def _local_times(
     return tz, now.astimezone(tz).strftime("%H:%M")
 
 
+def _booked(session: Session, event: OutboxEvent, now: datetime) -> bool:
+    return bool(
+        session.scalar(
+            select(OutboxEvent.id).where(OutboxEvent.id == event.id, still_booked(now))
+        )
+    )
+
+
+def _take_back(event: OutboxEvent, now: datetime) -> None:
+    # Picked up and never answered: it may lie at the printer (as `_supersede`).
+    unanswered = event.attempts > 0 and event.last_error is None
+    mark_sent(event, now, count_attempt=False)
+    head = UNANSWERED if unanswered else "not printed: "
+    event.last_error = f"{head}{NOT_BOOKED}"
+
+
+def _settle_reservation_slips(session: Session, now: datetime) -> None:
+    """A reservation's slip is due only while its table stands, and it belongs
+    to no order, so the order watchdog never ends it. Take back the one
+    whose reservation is gone or past (a silent bridge would keep it queued
+    with the guest's name), and fail the one whose last pickup got no answer.
+    Neither touches a card or raises an alarm: the tablet shows the table."""
+    cutoff = now - timedelta(seconds=PICKUP_TIMEOUT_SECONDS)
+    slips = session.scalars(
+        select(OutboxEvent)
+        .where(
+            OutboxEvent.event_type.in_(KITCHEN),
+            OutboxEvent.status == PENDING,
+            IS_RESERVATION_SLIP,
+            or_(
+                ~still_booked(now),
+                (OutboxEvent.attempts >= MAX_ATTEMPTS)
+                & (OutboxEvent.next_attempt_at <= cutoff),
+            ),
+        )
+        .with_for_update(skip_locked=True)
+    ).all()
+    for event in slips:
+        if _booked(session, event, now):
+            mark_attempt_failed(
+                event, "no answer from the print bridge", now, count_attempt=False
+            )
+        else:
+            _take_back(event, now)
+    session.commit()
+
+
 def claim_tickets(
-    session: Session, tenant_id: uuid.UUID, now: datetime, limit: int = 5
+    session: Session,
+    tenant_id: uuid.UUID,
+    now: datetime,
+    limit: int = 5,
+    *,
+    reservation_slips: bool = False,
 ) -> list[dict[str, Any]]:
     """Faellige Bons fuer die Druckbruecke, aelteste zuerst. Committet.
 
@@ -313,14 +375,22 @@ def claim_tickets(
             OutboxEvent.next_attempt_at <= now,
             # Ein Bon ohne Versuche mehr raeumt der Waechter ab.
             OutboxEvent.attempts < MAX_ATTEMPTS,
+            # A bridge that does not print the reservation layout would print
+            # the slip as an order (#863): it never gets one.
+            *(() if reservation_slips else (~IS_RESERVATION_SLIP,)),
         )
-        .order_by(OutboxEvent.created_at)
+        # Orders first: a backlog of reservation slips must not keep an order
+        # unclaimed until the watchdog turns its card red.
+        .order_by(IS_RESERVATION_SLIP, OutboxEvent.created_at)
         .limit(limit)
         .with_for_update(skip_locked=True)
     ).all()
     tickets = []
     tz, print_time = _local_times(session, tenant_id, now) if rows else (None, None)
     for event in rows:
+        if is_slip_of_a_reservation(event) and not _booked(session, event, now):
+            _take_back(event, now)
+            continue
         newest = _newest_revision(session, event) or 0
         if _revision(event) < newest:
             _supersede(event, newest, now)
@@ -384,7 +454,8 @@ def ack_ticket(
     else:
         reason = (error or "Druck fehlgeschlagen").strip() or "Druck fehlgeschlagen"
         final = mark_attempt_failed(event, reason, now, count_attempt=False)
-        if final:
+        # A reservation's slip is no kitchen ticket: the tablet shows the table.
+        if final and not is_slip_of_a_reservation(event):
             log(
                 logger,
                 logging.ERROR,
@@ -468,4 +539,6 @@ def sweep(session: Session, now: datetime) -> int:
         if order is not None and before != order.handover_state:
             turned += 1
         session.commit()
+    # After the cards: nothing about a reservation's slip may hold them up.
+    _settle_reservation_slips(session, now)
     return turned
