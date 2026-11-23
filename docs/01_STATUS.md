@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.19
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.20
 
 ---
 
@@ -179,7 +179,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.19 · 23.11.2026:** #940: the older gaps of the allergy safety net closed, the kitchen marker leads every card of an allergic guest
+- **v2.69.20 · 23.11.2026:** #940: the older gaps of the allergy safety net closed, the kitchen marker leads every card of an allergic guest
+- **v2.69.19 · 23.11.2026:** Chain rules: the window is used to 97 percent, starts without asking, slow/normal/turbo modes by ahead, slow mode waits 15 minutes between parts; scripts/wake_cost.py measures what a wake after a wait costs (#951).
 - **v2.69.17 · 23.11.2026:** #888 S10: Caddy and the push server run as their own user, volumes handed over by a one-shot chown
 - **v2.69.16 · 23.11.2026:** #888 S9: the global +979 premium-rate and +808 shared-cost codes count as costly, no one-tap call link
 - **v2.69.15 · 23.11.2026:** #888 S13: `VOICE_EAR_MEASURE` refused outside dev and test, no caller transcripts in the production journal
