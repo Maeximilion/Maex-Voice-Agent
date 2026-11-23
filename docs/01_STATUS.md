@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.21
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.22
 
 ---
 
@@ -179,6 +179,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.22 · 23.11.2026:** #892: tests hold the site's text contrast (WCAG AA) and keyboard entry (skip link, one h1, focus ring)
 - **v2.69.21 · 23.11.2026:** #926: no outage hand-over reads the team number again after a database failure, callback cards of an earlier day name their date
 - **v2.69.20 · 23.11.2026:** GUI: the Mehr row records its open state on a tap on the summary, not on toggle (#938)
 - **v2.69.19 · 23.11.2026:** Chain rules: the window is used to 97 percent, starts without asking, slow/normal/turbo modes by ahead, slow mode waits 15 minutes between parts; scripts/wake_cost.py measures what a wake after a wait costs (#951).
