@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.12
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.13
 
 ---
 
@@ -177,7 +177,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.68.12 · 23.11.2026:** #877: the weekly hours are checked against the dates beside them, no save deepens a night overlap, an undone staff change asks for no check, a night refusal marks its time field
+- **v2.68.13 · 23.11.2026:** #877: the weekly hours are checked against the dates beside them, no save deepens a night overlap, an undone staff change asks for no check, a night refusal marks its time field
+- **v2.68.12 · 23.11.2026:** #888 C1, S7, D3: ops token runbook reach, webhosting account in the threat table, D3 already pinned
 - **v2.68.11 · 23.11.2026:** #517: below 1180 px the wait steppers and Gericht aus fold into a Mehr row of the header
 - **v2.68.10 · 23.11.2026:** #880: an operator push is queued before old ones are pruned, the dispatcher needs MONITOR_PUSH_URL in production; three P3s stay by design
 - **v2.68.9 · 23.11.2026:** chain.md: the coordinator sends Haiku scout maps (Graphify) to the chain sessions
