@@ -46,6 +46,9 @@ PRODUCTION = {
     "voice": {"backend", "telephony"},
     "asterisk": {"telephony"},
     "caddy": {"edge", "public"},
+    # One-shot owners of a volume (#888 S10): on no network at all.
+    "push-chown": set(),
+    "caddy-chown": set(),
 }
 # What keeps a way out of the server: `public` for the certificates and the
 # published ports, `telephony` for SIP, the model and the speech services.
@@ -57,7 +60,9 @@ PRODUCTION_ONLY = {"public"}
 
 def _networks_of(service: dict) -> set[str]:
     """The networks a service stands on. No key at all is `default`, where a
-    forgotten service lands; `network_mode` is checked on its own."""
+    forgotten service lands; `network_mode` is checked on its own; `none` is no network at all."""
+    if service.get("network_mode") == "none":
+        return set()
     networks = service.get("networks", ["default"])
     return set(networks)
 
@@ -104,7 +109,7 @@ def test_the_workbench_has_the_same_services_on_the_same_networks():
     expected = {
         name: networks - PRODUCTION_ONLY
         for name, networks in PRODUCTION.items()
-        if name != "caddy"
+        if name not in {"caddy", "caddy-chown"}
     }
     wrong = _wrong(base, expected)
     assert not wrong, wrong
@@ -178,9 +183,10 @@ def test_the_workbench_keeps_its_ports_and_a_model_on_the_host():
 
 def test_no_production_service_shares_another_containers_network():
     """`network_mode` takes a service off the networks checked here. The tunnel
-    of the test phase does so on purpose, in its own file."""
+    of the test phase does so on purpose, in its own file. `none`, the one-shot
+    owners of a volume, shares nothing."""
     for name in _production_networks():
-        assert "network_mode" not in _merged(name), name
+        assert _merged(name).get("network_mode") in (None, "none"), name
 
 
 def test_the_drills_run_on_the_production_layout():
