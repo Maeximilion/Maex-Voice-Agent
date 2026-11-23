@@ -264,13 +264,23 @@ the team (rule 5, no call is lost). The limit and its weekly windows are a datab
 3. T-2.4 part 4: first eval run on `qwen3:14b` locally, then the same suite once on `mistral-small` (same family as the operation favourite); prompt work on what they show.
 4. T-5.3: hosted comparison of the shortlist with API test accounts and invented data only; report per §3; recommendation to Maxi.
 5. T-10.10: the chain against an audio-in model and a speech-to-speech model on the same cases, attached to T-5.3 (`docs/20_VOICE_LAYER.md` §6).
-7. **Claude race (T-5.3, Maxi 23.11.2026): built, not run.** It waits for an API key in `ANTHROPIC_API_KEY` (Maxi's account; invented data only). One run per setting, everything else the same, each with its own prices so the report shows the cost per case:
+7. **Claude race (T-5.3, Maxi 23.11.2026): run on 23.11.2026, Haiku 5.5 with effort `low` wins** (results below the run table). The workbench key in `ANTHROPIC_API_KEY` (Maxi's account; invented data only) runs until 01.03.2027; a new one is due before then. One run per setting, everything else the same, each with its own prices so the report shows the cost per case:
 
    | Run | `LLM_MODEL` | `LLM_REASONING_EFFORT` | `LLM_MAX_OUTPUT_TOKENS` | Prices in / out (cents per Mtok) |
    |---|---|---|---|---|
    | A | `claude-haiku-4-5` | empty (4.5 takes no effort level) | 600 | 100 / 500 |
    | B | `claude-haiku-5-5` | `none` (thinking off, the phone's latency) | 600 | 10 / 50 |
    | C | `claude-haiku-5-5` | `low` (adaptive thinking) | 4000 | 10 / 50 |
+
+   **Result (23.11.2026, PR #916 head `29367351`, cases 107 plus targets 27, all three runs in parallel from Docker on the workbench, no prompt caching; total cost 6.11 USD):**
+
+   | Run | Cases passed | Hard violations in cases | False escalation (cases) | Targets passed | Model turn p50 / p95 (s) | Cost of both suites |
+   |---|---|---|---|---|---|---|
+   | A Haiku 4.5 | 40/107 | 2 missed escalations (`allergie_0002`, `allergie_0030`) | 5.5 % | 3/27, 1 missed (`allergie_0033`, pending) | 1.32 / 2.12 | 4.83 USD |
+   | B Haiku 5.5, thinking off | 37/107 | 1 missed escalation (`allergie_0030`) | 53.8 % | 3/27 | 1.03 / 1.44 | 0.49 USD |
+   | C Haiku 5.5, effort `low` | **72/107** | **0** (verdict passed) | 5.5 % | 2/27, 2 missed (`allergie_0032`, `allergie_0033`, both pending known gaps) | 2.14 / 4.24 | 0.78 USD |
+
+   Reading by Maxi's rule (better results win, equal results the faster turn): the results are not equal, so **C wins**. It is the only run without a hard violation in the cases and passes almost twice as many as A, at a sixth of A's price. It is also the slowest, because it thinks before it answers. B is the fastest but not usable: without thinking, Haiku 5.5 often sends an empty envelope and writes its reasoning as plain text after it ("Hinweis: ... Die nächste Antwort müsste ..."). Every such turn is outside the contract and ends with the team, which is where its 53.8 % false escalations come from. Next: prompt work on C's 35 red cases, prompt caching (lower price and first-token time), and a check of C's p95 of 4.2 s against the turn deadline on the line. The decision for operation still needs the EU path and the DPA (§3).
 
    `make eval MODEL=<model>` and `make eval-targets MODEL=<model>` for each run, the settings in `.env`. Read: hard metrics first (all 0 or out), then accuracy and false escalations, then `Model turn p50 / p95`. Estimated cost without prompt caching, from the about 22,500 tokens per case measured on the local model (`docs/01_STATUS.md` assumptions): 135 cases (108 plus 27 targets) are about 3 million tokens a run, so about 4 USD for A and under 1 USD each for B and C.
 6. ~~T-10.9~~ **built 28.10.2026 (migration 011):** `max_concurrent_calls` with weekly windows as database values (§7); D16's three need the SIP trunk entry (T-10.12), the test phase runs with one AI call.
