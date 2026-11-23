@@ -1647,9 +1647,13 @@ def _note_allergy_said(state: ConversationState, text: str) -> bool:
         # own sentences (`allergie_0012`), never one that names someone else:
         # "Nein." to "Haben Sie selbst eine Allergie?" after "Meine Frau hat
         # eine Sesamallergie" is about the caller only (Codex PR #788, P1).
+        # Nor one that names its allergen: "Nein." to "Haben Sie sonst noch
+        # Allergien?" denies a further one (ledger #764 review, P1).
         if asked:
             state.allergy_said = [
-                s for s in state.allergy_said if names_someone_else(s)
+                s
+                for s in state.allergy_said
+                if names_someone_else(s) or guards.names_what(s)
             ]
         return False
     armed = escalation.arms_the_net(text)

@@ -393,6 +393,28 @@ def test_a_bare_denial_to_the_question_takes_the_own_back(
     assert state.allergy_said == []
 
 
+@pytest.mark.parametrize(
+    ("named", "asked", "answer"),
+    [
+        ("Ich habe eine Erdnussallergie.", "Haben Sie sonst noch Allergien?", "Nein."),
+        ("Ich habe Zöliakie.", SAY_ASK_ALLERGY, "Danke, nichts."),
+    ],
+)
+def test_a_bare_no_keeps_an_allergy_the_guest_named(
+    session, known_tenant, named, asked, answer
+):
+    """A "no" to a question about a further allergy takes back nothing the
+    guest named: only a sentence without its allergen ("Ich habe eine
+    Allergie.") is cleared (ledger #764 batch review, P1)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(session, state, named, LLMTurn(say=SAY_ALLERGY_NOTED))
+    run(session, state, "Ich möchte etwas abholen.", LLMTurn(say=asked))
+
+    run(session, state, answer, LLMTurn(say="Was darf ich Ihnen bringen?"))
+
+    assert state.allergy_said == [named]
+
+
 @pytest.mark.parametrize("asked", [None, SAY_ASK_ALLERGY])
 def test_a_denial_takes_no_one_elses_back(session, known_tenant, asked):
     """ "Nein." or "Ich habe keine Allergie" after another person's names only

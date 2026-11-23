@@ -319,7 +319,8 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      (`wishes.speaks_of_health`, "Zöliakie", "darf kein" included) arms it,
      generous on purpose, and so does the answer to the model's own question
      about an allergy ("Gegen Erdnüsse."); a bare denial in answer to such a
-     question ("Keine.", "Ich habe keine Allergie") clears it. A
+     question ("Keine.", "Ich habe keine Allergie") clears it, except a
+     sentence that names its allergen or coeliac disease. A
      draft_order or create_reservation whose notes name none
      (`wishes.HEALTH_NOTE`: "allergi", "unverträglich", "intoleran",
      "WICHTIG !!!", the pattern the retention job deletes by) goes back to

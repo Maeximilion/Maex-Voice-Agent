@@ -927,6 +927,14 @@ def _unexplained(turn: AllergenTurn, state: ConversationState) -> bool:
     return bool(unexplained_codes(turn, state))
 
 
+def names_what(said: str) -> bool:
+    """Does the guest's kept sentence name what they react to (an allergen or
+    coeliac disease), not only the word allergy? A bare "no" to the model's
+    question never takes such a sentence back (ledger #764 review, P1)."""
+    words = _guest_words(said)
+    return names_coeliac(words) or bool(allergens_named(words))
+
+
 def sticky(state: ConversationState) -> bool:
     """The call keeps speaking of allergies: the guest named one (an allergy
     word, coeliac disease or an allergen in a kept sentence; not every
