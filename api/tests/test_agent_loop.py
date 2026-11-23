@@ -3332,7 +3332,10 @@ def test_notes_cleared_on_a_long_waiting_card_keep_it_inside_a_callback(state):
 def test_a_note_the_answer_did_not_touch_stays_on_the_waiting_card(state):
     pho = str(uuid.uuid4())
     state.cart = [{"menu_item_id": pho, "quantity": 1, "note": "ohne Zwiebeln"}]
-    card = "Kunde wollte mit einem Menschen sprechen. Kunde sagte: Bitte schnell."
+    card = (
+        f"Kunde wollte mit einem Menschen sprechen. {SUMMARY_OPEN_ORDER} 1x 13 Pho "
+        "Bo (ohne Zwiebeln). Kunde sagte: Bitte schnell."
+    )
     state.allergy_said = ["Ich habe nämlich eine Erdnussallergie."]
 
     assert _judged_again(state, card) == card
@@ -3385,3 +3388,38 @@ def test_a_draft_held_back_unread_and_then_refused_is_named_refused(session, sta
     card = session.scalars(select(Callback)).one().summary
     assert SUMMARY_REFUSED_TABLE in card
     assert SUMMARY_TABLE_UNREAD not in card
+
+
+def test_a_long_open_order_leaves_room_for_booking_and_marker(session, state):
+    """The twin of the test above for an allergic guest: the marker leads the
+    card and the count of the lines that did not fit still stands before the
+    bookings (#764, #940)."""
+    state.slots["phone"] = CALLER
+    state.allergy_said = ["Ich habe eine Erdnussallergie."]
+    session.add(
+        Reservation(
+            tenant_id=state.tenant_id,
+            call_id=state.call_id,
+            status="confirmed",
+            guest_name="Müller",
+            phone=CALLER,
+            party_size=2,
+            reserved_for=datetime(2026, 9, 16, 19, 0, tzinfo=BERLIN),
+            idempotency_key=uuid.uuid4().hex,
+        )
+    )
+    session.commit()
+    for n in range(120):
+        dish = str(uuid.uuid4())
+        state.seen_items[dish] = {"number": f"{100 + n}", "name": "Pizza"}
+        state.cart.append({"menu_item_id": dish, "quantity": 2})
+
+    _ask_for_nine(session, state)
+
+    summary = session.scalars(select(Callback)).one().summary
+    assert len(summary) <= 1000
+    assert summary.startswith(f"{SUMMARY_NOTE_TO_CLEAR}.")
+    assert summary.endswith(
+        "weitere Positionen. Bereits gebucht: Reservierung, 2 Personen, "
+        "16.09.2026 19:00 Uhr, Name Müller."
+    )
