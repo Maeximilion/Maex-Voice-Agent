@@ -83,8 +83,8 @@ The brief is the session's only context. It has, in this order:
 12. The coordinator's session id and this line: "Send the coordinator
    (`SendMessage` to `<its local_ id>`) one short message at each milestone:
    PR ready, merged, stopped or blocked, reserve taken, a choice that needs
-   Maxi. Nothing in between." (Maxi, 2026-11-23: "Build the fix in chain.md
-   with the milestones".) Why: the app wakes the coordinator after a child's
+   Maxi. Nothing in between." (Maxi, 2026-11-23, asked for this fix "with
+   the milestones".) Why: the app wakes the coordinator after a child's
    ended turn only when no other side session it started still works, so with
    one long build running every other note waits for Maxi's next message (#955
    merged 21:37 UTC, its note arrived about 14 minutes later). A child's own
