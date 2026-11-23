@@ -2,7 +2,7 @@
 
 import json
 
-import httpx2
+import httpx
 import pytest
 
 from api.agent.llm import ORDER_FORMAT, OUTPUT_FORMAT, ChatCompletionsLLM, LLMError
@@ -24,16 +24,19 @@ def _message(text: str, *, stop: str = "end_turn", model: str = "claude-haiku-4-
 
 
 def _client(handler, *, effort: str = "", timeout: float = 15.0) -> MessagesLLM:
-    http = httpx2.Client(transport=httpx2.MockTransport(handler))
     return MessagesLLM(
-        "claude-haiku-4-5", "test-key", timeout=timeout, effort=effort, http_client=http
+        "claude-haiku-4-5",
+        "test-key",
+        timeout=timeout,
+        effort=effort,
+        transport=httpx.MockTransport(handler),
     )
 
 
 def _answering(text: str, seen: list, **message):
-    def handler(request: httpx2.Request) -> httpx2.Response:
+    def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
-        return httpx2.Response(200, json=_message(text, **message))
+        return httpx.Response(200, json=_message(text, **message))
 
     return handler
 
@@ -61,7 +64,9 @@ def test_a_sentence_comes_back_as_say_and_the_tokens_are_counted():
     # is sent without an effort setting.
     assert "temperature" not in body
     assert "thinking" not in body and "output_config" not in body
-    assert "test-key" in seen[0].headers["authorization"]
+    assert seen[0].headers["x-api-key"] == "test-key"
+    assert seen[0].headers["anthropic-version"] == "2026-10-21"
+    assert str(seen[0].url) == "https://api.anthropic.com/v1/messages"
     assert llm.usage.requests == 1
     assert llm.usage.prompt_tokens == 1200
     assert llm.usage.completion_tokens == 40
@@ -122,8 +127,8 @@ def test_an_answer_outside_the_contract_is_a_model_error():
 
 
 def test_a_server_error_is_a_model_error_without_the_guest_text():
-    def broken(request: httpx2.Request) -> httpx2.Response:
-        return httpx2.Response(
+    def broken(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
             529,
             json={
                 "type": "error",
@@ -142,10 +147,10 @@ def test_a_server_error_is_a_model_error_without_the_guest_text():
 
 
 def test_an_unreachable_server_is_a_model_error():
-    def down(request: httpx2.Request) -> httpx2.Response:
-        raise httpx2.ConnectError("refused", request=request)
+    def down(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("refused", request=request)
 
-    with pytest.raises(LLMError, match="APIConnectionError"):
+    with pytest.raises(LLMError, match="ConnectError"):
         _client(down).next_turn("S", {}, "x")
 
 

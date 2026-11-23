@@ -7,8 +7,6 @@ sqlalchemy==2.*
 alembic==1.*
 psycopg[binary]==3.*
 httpx==0.28.*
-# Messages API of the Claude models, imported by agent/messages_llm.py only (T-5.3)
-anthropic==2.*
 # passkeys of the operator dashboard, imported by api/dashboard only (docs/23 §10)
 webauthn==3.*
 pytest==9.*

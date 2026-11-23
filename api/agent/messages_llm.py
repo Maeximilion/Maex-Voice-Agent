@@ -6,6 +6,10 @@ one input, a JSON envelope back that `parse_turn` reads. Only the transport
 differs, so `agent/loop.py`, the guards and the evals do not see which of the
 two answered.
 
+Plain `httpx` like `ChatCompletionsLLM`, not the vendor SDK: the SDK brings
+`httpx2`, and once that is installed Starlette's test client switches to it and
+changes how every test client keeps cookies (two dashboard tests broke, PR #916).
+
 `client_from_settings` picks the client by the model's name: a `claude-*` model
 goes here, every other name to the chat completions server of `LLM_BASE_URL`.
 That is how `--model claude-haiku-4-5` works in the text phone and the eval
@@ -16,8 +20,7 @@ import json
 from dataclasses import replace
 from typing import Any
 
-import anthropic
-import httpx2
+import httpx
 
 from api.agent.llm import (
     ORDER_FORMAT,
@@ -30,10 +33,13 @@ from api.agent.llm import (
 )
 from api.config import settings
 
+API_URL = "https://api.anthropic.com/v1/"
+# The version without `temperature`, `top_p` and `top_k`; none is sent here.
+API_VERSION = "2026-10-21"
 CLAUDE_PREFIX = "claude-"
 # `LLM_REASONING_EFFORT` for a Claude model: "none" turns thinking off, a level
-# is sent as `output_config.effort`. Haiku 4.5 takes neither level (the API
-# answers 400), so its runs leave the setting empty or at "none".
+# is sent as `output_config.effort`. Haiku 4.5 takes no level (the API answers
+# 400), so its runs leave the setting empty or at "none".
 NO_THINKING = "none"
 
 
@@ -49,16 +55,17 @@ class MessagesLLM:
         *,
         timeout: float = 15.0,
         effort: str = "",
-        http_client: httpx2.Client | None = None,  # replaceable for tests
+        transport: httpx.BaseTransport | None = None,  # replaceable for tests
     ):
         self._model = model
         self._timeout = timeout
         self._effort = effort
         self.usage = Usage(model=model)
-        # No retries: the guest waits, and the turn deadline of `loop.py`
-        # (#252) decides what is left of that wait, not the SDK's backoff.
-        self._client = anthropic.Anthropic(
-            api_key=api_key, timeout=timeout, max_retries=0, http_client=http_client
+        self._http = httpx.Client(
+            base_url=API_URL,
+            headers={"x-api-key": api_key, "anthropic-version": API_VERSION},
+            timeout=timeout,
+            transport=transport,
         )
 
     @classmethod
@@ -77,7 +84,7 @@ class MessagesLLM:
         return llm
 
     def close(self) -> None:
-        self._client.close()
+        self._http.close()
 
     def next_turn(
         self,
@@ -87,10 +94,12 @@ class MessagesLLM:
         *,
         timeout: float | None = None,
     ) -> LLMTurn:
+        # What is left of the guest's wait cuts the request short, never
+        # stretches it (#252, as in `ChatCompletionsLLM`).
         within = self._timeout if timeout is None else min(timeout, self._timeout)
         state = json.dumps(state_json, ensure_ascii=False, default=str)
         output_format = ORDER_FORMAT if "cart" in state_json else OUTPUT_FORMAT
-        request: dict[str, Any] = {
+        body: dict[str, Any] = {
             "model": self._model,
             # A cut answer is no valid JSON and ends as `LLMError`. Thinking
             # counts against this limit: a run with an effort level needs a
@@ -100,45 +109,66 @@ class MessagesLLM:
             "messages": [
                 {"role": "user", "content": f"Zustand: {state}\nEingabe: {input_text}"}
             ],
-            "timeout": within,
         }
-        # No `temperature`: current Claude models refuse any value but the
-        # default. ponytail: no prompt caching yet, so the eval cost of a run
-        # is the plain token price; `cache_control` on the system block once
-        # operation needs the lower price and first-token time.
+        # ponytail: no prompt caching yet, so the eval cost of a run is the
+        # plain token price; `cache_control` on the system block once operation
+        # needs the lower price and first-token time.
         if self._effort == NO_THINKING:
-            request["thinking"] = {"type": "disabled"}
+            body["thinking"] = {"type": "disabled"}
         elif self._effort:
-            request["output_config"] = {"effort": self._effort}
+            body["output_config"] = {"effort": self._effort}
         self.usage = replace(
             self.usage,
             requests=self.usage.requests + 1,
             unmetered=self.usage.unmetered + 1,
         )
         try:
-            message = self._client.messages.create(**request)
-        except anthropic.APIError as exc:
+            response = self._http.post("messages", json=body, timeout=within)
+            response.raise_for_status()
+            payload = response.json()
+            self._count(payload)
+            stop = payload.get("stop_reason")
+            text = "".join(
+                block["text"]
+                for block in payload["content"]
+                if block.get("type") == "text"
+            )
+        except (
+            httpx.HTTPError,
+            ValueError,
+            LookupError,
+            TypeError,
+            AttributeError,
+        ) as exc:
             raise LLMError(f"model call failed: {type(exc).__name__}") from exc
-        self._count(message)
-        if message.stop_reason == "refusal":
+        if stop == "refusal":
             raise LLMError("model declined the turn")
-        text = "".join(
-            block.text
-            for block in message.content
-            if isinstance(block, anthropic.types.TextBlock)
-        )
         if not text.strip():
             raise LLMError("model answer without text")
         return parse_turn(_unfenced(text))
 
-    def _count(self, message: anthropic.types.Message) -> None:
-        """Tokens the API reports for this answer, and the model that ran."""
-        reported = message.usage
+    def _count(self, payload: object) -> None:
+        """Tokens the API reports and the model that ran. Both numbers or
+        nothing, as in `ChatCompletionsLLM._count`: the request stays
+        unmetered without them."""
+        if not isinstance(payload, dict):
+            return
+        answered = payload.get("model")
+        if isinstance(answered, str) and answered:
+            self.usage = replace(self.usage, model=answered)
+        reported = payload.get("usage")
+        if not isinstance(reported, dict):
+            return
+        tokens_in = reported.get("input_tokens")
+        tokens_out = reported.get("output_tokens")
+        if type(tokens_in) is not int or type(tokens_out) is not int:
+            return
+        if tokens_in < 0 or tokens_out < 0:
+            return
         self.usage = replace(
             self.usage,
-            model=message.model or self.usage.model,
-            prompt_tokens=self.usage.prompt_tokens + reported.input_tokens,
-            completion_tokens=self.usage.completion_tokens + reported.output_tokens,
+            prompt_tokens=self.usage.prompt_tokens + tokens_in,
+            completion_tokens=self.usage.completion_tokens + tokens_out,
             unmetered=self.usage.unmetered - 1,
         )
 
