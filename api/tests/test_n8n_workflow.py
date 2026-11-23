@@ -351,6 +351,17 @@ def test_the_team_number_push_says_who_changed_it_and_which_number() -> None:
     assert "($json.payload.from ? ', vorher ' + $json.payload.from : '')" in text
 
 
+def test_a_change_back_to_what_held_asks_for_no_check() -> None:
+    """#877: a change back closes its card as undone; the push then has no
+    card to point to and must not ask for the tablet."""
+    for event in (types.TEAM_PHONE_CHANGED, types.DAY_HOURS_CHANGED):
+        text = _assignment(_nodes()[_branches()[event]], "text")
+        # The mark guards the request: it empties the whole tail of the text.
+        assert "{{ $json.payload.undone ? '' : " in text, event
+        guarded = text.split("{{ $json.payload.undone ? '' : ", 1)[1].split("}}", 1)[0]
+        assert "Bitte am Tablet prüfen." in guarded, event
+
+
 def test_an_operator_step_names_the_operator_and_what_was_done() -> None:
     """#811 question 3: the owner hears of a setup link, a PIN set and devices
     signed out by the operator, with the operator's account named."""
