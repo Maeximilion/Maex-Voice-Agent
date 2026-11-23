@@ -3,7 +3,8 @@
    nothing is open, so the column shows only "Heute". #}
 {% if holiday_problem %}
 <p class="empty">{{ holiday_problem }}</p>
-{% elif holidays %}
+{% endif %}
+{% if holidays %}
 <details class="fold" id="feiertage-fold">
 <summary><span class="count">{{ holidays|length }}</span><span class="fold-text">Feiertage warten auf Antwort</span><span class="fold-toggle"><span class="fold-more">Öffnen</span><span class="fold-less">Schließen</span></span></summary>
 <ul class="cards">

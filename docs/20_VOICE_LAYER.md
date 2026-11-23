@@ -49,7 +49,7 @@ caller → telephone network → access (test: the pilot's router as PBX · oper
 |---|---|---|
 | Registration, dialplan, media | Compose service `asterisk` (22.11.0, pinned by digest; not older, §11; the dialplan asks `voice` at `/media/ready` before it dials it, as a failed media connection can crash 22.11.0, #768, until #775), profile `voice`; built (T-1.11) | `deploy/asterisk/conf/`, rendered by `deploy/asterisk/render.sh` |
 | Voice process | Compose service `voice`, the API's image with the speech engines (target `voice` of `api/Dockerfile`), one worker, profile `voice`; built (T-1.11) | `api/telephony/app.py` |
-| WebSocket endpoint, dialplan callback | inside `voice`: `/media`, `/media/ready` (asked before `/media` is dialled, #768), `/calls/{id}/ending`, `/calls/{id}/missed` and `/calls/{id}/recording/stop`; built (T-1.11, T-10.8, T-11.3) | `api/telephony/router.py` |
+| WebSocket endpoint, dialplan callback | inside `voice`: `/media`, `/media/ready` (asked before `/media` is dialled, #768), `/team` (the team number for the dialplan's own legs, #835), `/calls/{id}/ending`, `/calls/{id}/missed` and `/calls/{id}/recording/stop`; built (T-1.11, T-10.8, T-11.3) | `api/telephony/router.py` |
 | Media protocol of Asterisk and the line on it | built (T-1.11) | `api/telephony/adapters/asterisk.py` |
 | Call session, provider neutral | built (T-10.4) | `api/telephony/session.py` |
 | Ports for ear, mouth and the line | built (T-10.4) | `api/telephony/speech.py` |
@@ -134,9 +134,10 @@ core runs in a worker thread, and the port methods only enqueue.
 and what the line finished playing are queued with the time they happened and handled strictly one
 after another. The core runs in that worker. What it asks of the line (`Lines`, the
 `TelephonyPort` over all sessions) is kept while its turn runs and carried out the moment the turn
-returns, before anything that queued up behind it; timers fire on the time of the events, never
-ahead of an event that waited in the queue, and an event's time and its place in the queue are
-taken under one lock. Three ports: `Ear`, `Mouth` and
+returns, before anything that queued up behind it (one exception: the outage path has its
+sentence carried out at once with `speak_now`, still in order, §5); timers fire on the time of
+the events, never ahead of an event that waited in the queue, and an event's time and its place
+in the queue are taken under one lock. Three ports: `Ear`, `Mouth` and
 `Line`, the caller's leg (`answer`, `play` with a mark the line reports back when it was played,
 `flush`, `transfer`, `hangup`); the media adapter of T-1.11 implements `Line`. How a session ended
 is its `outcome`: only `hangup` lets the dialplan end the call, after `transfer`, `closed` or
@@ -210,21 +211,65 @@ capture endpoint against Asterisk 22.10.1 and again 22.11.0 (frames, recorded on
 
 | What fails | Who notices | What rings the team |
 |---|---|---|
-| `voice` is down or refuses the media connection | the dialplan, which asks `/media/ready` with the media token before it dials `voice` (#768) | the dialplan dials the team number |
+| `voice` is down or refuses the media connection | the dialplan, which asks `/media/ready` with the media token before it dials `voice` (#768) | the dialplan dials `TEAM_PHONE` of `.env`: it never asked `voice` for the restaurant's number (#835, below) |
 | A crash in the middle of a call, or a transfer asked for by the core | the dialplan asks `voice` after the leg ends; only an explicit "done" hangs up. A crash leaves the call log open: the dispatcher closes it as `error` once the call is `max_call_seconds` plus 10 minutes old (#545) | the dialplan dials the team number |
 | Model, database, a tool | the existing paths in `agent/loop.py` and `telephony/handler.py` | `TelephonyPort.transfer`, to the team number of the day once the routing was read (#674). The key terms for the ear are best effort: their failure changes nothing the caller hears. A caller id longer than 40 characters counts as withheld, not as a reason to refuse the call |
 | A Docker network between `voice` and Asterisk or the database is cut | the dialplan, Asterisk's pings, or the timeouts of the phone line's database sessions (§6) | the dialplan dials the team number |
-| The team does not pick up | the dial status | at another number of the list (`TRANSFER_TARGETS`): `TEAM_PHONE` once (T-10.13); at `TEAM_PHONE`: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8) |
+| The team does not pick up | the dial status | the team number next, then `TEAM_PHONE`, each number once (T-10.13, #835, below); at both: callback card for the team, and a caller the AI answered hears that the restaurant calls back, or to call again when no card could be written (T-10.8) |
 | The recording: the question, its log, the row or the file | `agent/recording.py`, the session | nothing has to: the call goes on without a recording, and in mode `shadow` the team rings as on a no (§4, T-11.3) |
-| The caller hangs up in mode `shadow` with the recording question, or on the sentence before a transfer of the AI, or on the outage sentence of a failed turn, before the line has the transfer | the session (`closed`), the handler | nothing can: a callback card under the caller id instead, with the card the core wrote for the handover, none for a withheld number; the call is logged `callback` or `abandoned`, never `transferred` (§4, #252 no. 9, #674); the outage sentence's call stays `error` and gets its card too (#741). Only on a call we answered: a leg closed before our first sentence is the row below or a caller who gave up while it rang (#652) |
+| The caller hangs up in mode `shadow` with the recording question, or on the sentence before a transfer of the AI, or on the outage sentence of a failed turn, before the line has the transfer | the session (`closed`), the handler | nothing can: a callback card under the caller id instead, with the card the core wrote for the handover, none for a withheld number; the call is logged `callback` or `abandoned`, never `transferred` (§4, #252 no. 9, #674); the outage sentence's call stays `error` and gets its card too (#741), which names the bookings of the call that stand, from the database, where the core wrote no card (#743 follow-up). Only on a call we answered: a leg closed before our first sentence is the row below or a caller who gave up while it rang (#652) |
 | `voice` takes the call and says nothing for 10 s (a slow start of the call, a mouth that hangs) | the dialplan: its `Dial` to `voice` gives up, our leg is closed | the dialplan dials the team number. The call log shows `abandoned`: `voice` cannot tell this from a caller who gave up while it rang (#652) |
 | No audio of the caller reaches `voice` (one-way audio after a tunnel, NAT or firewall change; from here the same as a muted telephone) | the session, per call: the note `no_caller_audio` in the call log. The monitor: the last `ALARM_NO_AUDIO_CALLS` (3) calls all carry it, a push to the operator at most once a clock hour (#651) | nothing, by decision (Maxi, 11.11.2026): each call is asked twice and ended as a silent one. The operator's push is what ends the fault. Measured in the drill (13.11.2026, Asterisk 22): a caller leg that sends nothing (the router's `Wait`) leaves the note on the call, so the session sees no frame or zero frames, and the same on a line whose RTP is blocked in transit: the drill sets an iptables DROP rule on the AI telephone's media ports (10000 to 10039) while the caller plays a tone, 283 packets dropped, the call ends as a silent one with the note and the team does not ring (14.11.2026, #651) |
 | The media connection breaks while a transfer waits for its sentence | the session: the sentence is dropped, the core is told and logs the call as `error` | the session performs the transfer that waited at once (#652); if the line refuses it, the dialplan dials the team number |
-| Asterisk or the whole machine is down | test phase: the router, the AI telephone is simply not registered. Operation: the trunk | test phase: the team telephones ring as before. Operation: the trunk's forwarding rules |
+| Asterisk or the whole machine is down | test phase: the router, the AI telephone is simply not registered. Operation: the trunk | test phase: the team telephones ring as before; on the pilot's router they do not, since only the AI telephone is assigned to the test number (wire run 14.11.2026). Operation: the trunk's forwarding rules, shown again on the trunk (T-10.12) |
 
 **Test number.** In the test phase every row of this table is tried on a number customers do not call, with a team telephone assigned to that number next to the AI telephone. The main number stays untouched until operation.
 
-**A team number changed during a call** (#683). The agent's handover (`transfer_to_team`) reads the number from the database at that moment, so a change on the tablet reaches it. The legs `voice` dials on its own, an outage (`_fail`) and the shadow leg, read the number again when they dial (#710), once, in a savepoint bound by the line's 2 s statement limit and after the outage sentence has gone out; when that read fails (the database is the outage) they use the number read at the start of the call, so they work when the database does not. A change in the middle of a call whose database cannot be read rings the old number; if that does not answer, the fallback number and then the missed-call card follow, and no call is lost (rule 5).
+**A team number changed during a call** (#683). The agent's handover (`transfer_to_team`) reads the number from the database at that moment, so a change on the tablet reaches it. The legs `voice` dials on its own, an outage (`_fail`) and the shadow leg, read the number again when they dial (#710), once, in a savepoint bound by the line's 2 s statement limit; on the outage path the sentence goes out first: inside a turn the session would keep it until the turn returns, behind the read, so `_fail` asks the line to speak what was said so far at once (`TelephonyPort.speak_now`), and the read runs while the caller hears the sentence; the transfer waits for the end of the sentence anyway, so a slow read delays the transfer only by what it outlasts the sentence, never the words (#754 follow-up). An outage that is a database error skips the read (#764). When the read fails or is skipped (the database is the outage) they use the number read at the start of the call, so they work when the database does not. A change in the middle of a call whose database cannot be read rings the old number; if that does not answer, the fallback number and then the missed-call card follow, and no call is lost (rule 5).
+
+**Which number the dialplan's own legs ring** (#835, #861). Where the table says "the dialplan
+dials the team number": after its probe (`/media/ready`) the dialplan asks `voice`, `GET /team`
+with the media token, for the number the team is at now, `team_phone_at` (today's while it
+holds, else the standard), and keeps it as `TEAM` only when it is on its list (`TEAM_PHONE` and
+`TRANSFER_TARGETS`, exactly as written: the list the staff choose today's number from, #252
+finding 3). Every leg the dialplan dials on its own rings `TEAM`: `voice` crashed, frozen or
+silent in the call, an ending that is no transfer, or a transfer to a number off the list. A leg
+nobody took is followed by one at `TEAM`, then one at `TEAM_PHONE`, each number once, then the
+callback card. `TEAM_PHONE` of `.env` rings first only where `voice` could not name the number:
+`voice` down, refusing the media token or frozen when the call comes (it is never asked, a cut
+network included), the database down at that moment (`voice` answers nothing), or a team number
+that is not on the list. So `TEAM_PHONE` stays a number the team answers; when the standard
+number moves for good, the operator changes it in `.env` as well. A change during the call is
+followed (#861): the dialplan asks `/team` again before each leg it dials on its own, after an
+ending that is no transfer to a listed number and after each leg nobody took (one subroutine,
+`teamnow`). An answer that is empty or not on the list keeps the number `TEAM` had, so a `voice`
+or database that fails in the call leaves the number of the call's start, never none (rule 5).
+A number named after the change is one not tried yet, so it rings even after the old number was
+tried; each number still rings once. Never asked on the way to `unreached` or after it: the
+probe failed (nothing to ask) or the media connection failed a moment after `voice` named
+`TEAM`. Not asked either when the question for the ending ran into its 2 s (`voice` frozen or
+the network to it cut), so the rows above keep their times. An empty answer is the last
+question of the call: a `voice` down or its database down (whose connect timeout is 2 s itself)
+costs the caller one wait of up to 2 s, not one before every leg; a killed `voice` fails at once
+(the team rang 0.4 s after the kill, below). Checked on the pinned Asterisk 22.11.0 with a
+stand-in `voice` and team legs that fail (18. and 19.11.2026): a number changed during the call
+rang next, also after the real steps behind the Dial; an empty answer, a JSON error, a number
+off the list and a `voice` that is down kept the start number; an ending question that ran into
+its 2 s and a failed probe asked nothing more; every chain ended with the card. Drilled in "the team at today's number" (§5 drills below), without a change
+during the call.
+
+**`TEAM_PHONE` in E.164, today's number to the end of the business day** (#861). The list compares
+as written, and the staff choose and store numbers in E.164 only, so a `TEAM_PHONE` written
+nationally (`0721...`) was a standard the staff could never go back to once a number of their own
+held; no process starts on another form now (`config.py`), and a new tenant takes no team number
+outside it (`provision`). A number the staff set for today holds to the end of the business day,
+05:00 (`core/time.py` `DAY_STARTS_AT`), not to closing, by choice (Claude's choice, awaiting Maxi):
+transfers, these legs and the callbacks ring the team after closing too, and the number the staff
+chose because the standard phone is away should ring there until the night is over; a closed date
+has no closing, and closing moves when the date's hours change; the check card and its push are the
+business day's. The limit: a service past 05:00 (a window 22:00 to 06:00) returns to the standard
+at 05:00 in the middle of it, and a number set in that tail belongs to the next business day and
+holds through it. No pilot case; the staff set it again in one tap.
 
 **Loop guard.** The team number must never be forwarded to us. `voice` refuses to start when the
 team number is one of its own inbound numbers, the dialplan rejects a call from its own number, and
@@ -236,7 +281,7 @@ Everything in this table is the intended behaviour. T-10.2 turns each row into a
 `deploy/asterisk/conf/extensions.conf` dials `voice` with 10 s to answer and a backstop of 3600 s
 on the call; a `voice` it did not reach is not asked for an ending; the team is dialled at the
 number of the ending when that is `TEAM_PHONE` or on `TRANSFER_TARGETS` (T-10.13, below), else at
-`TEAM_PHONE` of `.env`. The loop guard is built in two of its three
+the team number `voice` named last, `TEAM_PHONE` of `.env` without one (#835, #861, above). The loop guard is built in two of its three
 parts: `voice` refuses to start when the team number (in the database or in `.env`) is
 `VOICE_NUMBER`, `asterisk` refuses to start when `TEAM_PHONE` is that number (else every call
 the dialplan sends to the team would come back and be dropped), and the dialplan refuses a call
@@ -271,9 +316,10 @@ on the old configuration: `100 Trying`, `200 OK`). Now:
   `TRANSFER_TARGETS` (comma-separated, compared exactly as written, so `service_config.team_phone`
   has to appear there in the same form; the api reads the same list, and the staff choose today's
   team number only from it, #570 b). Any other number, from a database row somebody changed or
-  a `voice` that is no longer ours, is never dialled; the team rings at `TEAM_PHONE` instead, and
+  a `voice` that is no longer ours, is never dialled; the team rings at the team number instead (#835), and
   the log says "transfer to a number not on the list", without the number.
-- A leg at another number of the list that nobody takes is followed by one at `TEAM_PHONE`: busy,
+- A leg at another number of the list that nobody takes is followed by one at the team number, then
+  one at `TEAM_PHONE`, each number once (#835): busy,
   refused, not reachable as far as the network says so, or 30 s without an answer. The caller hears
   ringing meanwhile and never the network's early media (Dial option `r`), so an announcement that
   the number cannot be reached does not make the caller hang up before `TEAM_PHONE` is tried. **A mailbox that answers is an answer:** a listed mobile whose mailbox picks up within the
@@ -332,7 +378,9 @@ is rung (Maxi, 20.10.2026). The outage paths (paused, shadow, `voice` down, a fa
   and lost before a word ends the same way and its row is there. `voice` writes the card through `callbacks.team_missed`: the call row is
   found by its line id after its log is closed (the newest of the last two hours), the number is
   the one the guest named in the call, kept in the process's memory at the handover, else the
-  caller id, else that of an open card of the call; the reason is the transfer's, the outcome
+  caller id, else that of an open card of the call; the reason is the transfer's, the text the
+  core's card for the handover, else the reason's sentence with the call's standing bookings from
+  the database ("Bereits gebucht: ...", #743 follow-up); the outcome
   becomes `callback` whatever the log derived (an `error` stays). A busy team telephone answers
   within a fraction of a second, while our leg's log may still be written: both take the call's
   row, and `end_call` keeps an outcome set before it unless it logs an error. `voice` answers
@@ -368,7 +416,7 @@ network disconnect`, without touching either container:
 |---|---|
 | `voice` cut off from Asterisk before a call | "voice not reached", the team rang after 5.3 s |
 | `voice` cut off from Asterisk in the middle of a call | Asterisk's pings notice, as for a freeze; the team rang 8.4 s after the cut |
-| `voice` cut off from the database in the middle of a call, inside the opening hours | the caller's keys start a turn that finds a silent database, "call failed, handing it to the team", ending `transfer`; the team rang 12.4 s after the cut, within the limit of 30 s, though it is the slowest of these |
+| `voice` cut off from the database in the middle of a call, inside the opening hours | the caller's keys start a turn that finds a silent database, "call failed, handing it to the team", ending `transfer`; the team rang 12.4 s after the cut, within the limit of 30 s, though it is the slowest of these. Measured before the outage path read the team number again (#710); since the #754 follow-up that read runs while the outage sentence plays, so it may add to the time to the ring only what outlasts the sentence. Still to be measured again on the workbench |
 | `voice` cut off from the database before a call | "call could not be opened, handing it to the team"; the team rang after 8.3 s |
 | The networks are back | the next call is the AI's: answered, asked, goodbye, no team ring, no restart of `voice` |
 | Tried from inside Asterisk | `voice:8001` connects; `db:5432` does not, by name or by address |
@@ -903,6 +951,48 @@ What the numbers are and are not:
 - **The text model is not in the measurement.** The kit reports what ear and mouth take of the
   1.5 s from voice to voice and what is left for the silence that ends a turn and for the model.
 
+### Handover: #637, a watermark on the real line (modelled line measured 15.11.2026 and 23.11.2026, real leg not run)
+
+Art. 50(2) AI Act asks whether a machine-readable mark on the agent's voice is technically
+feasible on the phone path (docs/09 N1). This section records only the measurement, no legal
+reading. `scripts/watermark_line.py` marks synthetic speech at 16 kHz (the rate `PiperMouth` hands
+the line), sends marked and unmarked speech through the stages of `speech_bench`'s modelled line
+(band 300 to 3,400 Hz, 8 kHz, A-law, line noise at the seeds 0, 1 and 2 of `ear_floor.py`, 1 % and
+3 % lost 20 ms packets, 0.37 s offset, 20 and 100 ppm clock drift, GSM full rate 13 kbit/s and Opus
+12 kbit/s as stand-ins for the caller's mobile codec, since AMR and EVS are not in a stock ffmpeg)
+and detects at the far end. Results: §11, rows of 15.11.2026 and 23.11.2026.
+
+The script needs numpy, which the api image does not carry; the voice image has numpy and Piper but
+no ffmpeg, so its run leaves the codec stages out. Without numpy, without `piper-tts` for `--piper`
+or without a neural watermark's packages it says what to install instead of failing. A WAV file
+that is not mono 16-bit is refused with the ffmpeg line that converts it, other sample rates are
+resampled to 16 kHz, and a file shorter than one period of the spread mark (0.27 s) is left out of
+`--speech` and reported as too short by `--detect`. The spread mark needs more than that to be found
+reliably: on 23.11.2026 every miss was the shortest sentence, "Ja, gerne." (0.7 to 1.2 s), while
+every sentence of 3.2 s or more was found at every stage. A mark judged per short sentence is
+therefore weak; detecting over the agent's whole leg of a recording, several sentences long, is the
+case to measure on the real line.
+
+**Not measured yet: the real SIP leg** (Asterisk, the FRITZ!Box, the carrier, the caller's mobile
+network). How Maxi or a later session runs it on the workbench:
+
+1. `pip install audioseal resemble-perth "setuptools<81"` and torch for the CPU in a throwaway
+   virtual environment (nothing goes into a requirements file); the workbench reaches Hugging Face,
+   which AudioSeal and WavMark load their weights from.
+2. `python3 -m scripts.watermark_line --piper deploy/speech/run --write /tmp/marked`: the modelled
+   line again with the real Piper voices and AudioSeal, and the marked sentences as WAV files.
+3. Play a marked file on a test call and record the far end: the spike kit of T-10.1 step 1 records
+   what its softphone hears (`<exten>-heard.wav`, workbench SIP leg without the carrier); for the
+   carrier and the mobile network a recording at a second line is needed (for example the FRITZ!Box
+   answering machine of another number, which keeps the call as a file). Playing a file instead of
+   the probe's tone is not built.
+4. `python3 -m scripts.watermark_line --detect FAR_END.wav --methods spread,audioseal,perth`.
+
+Still open after 23.11.2026, for Maxi or a session he starts on the workbench: AudioSeal (and
+WavMark) on the modelled line, which needs torch and the Hugging Face weights in a throwaway
+environment (step 1), the codec stages with the Piper voices (ffmpeg with libgsm and libopus), and
+the real SIP leg (steps 3 and 4), which needs a test call and so a call Maxi places or allows.
+
 ---
 
 ## 11. Measurement log
@@ -932,7 +1022,10 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
 | 29.10.2026 | T-10.7, line with noise | the same run on a line that carries band-limited noise of about -55 dBFS around and under every sentence (`speech_bench.on_the_line`) instead of digital silence; scripted model; engine tests in the speech image | **Hard 0, every read-back checked (3/3).** Lines without speech 2 instead of 7 ("Keine.", "... hallo ..."); single-number lines 8 right, 3 silently wrong, 5 asked of 16, the wrong ones all numbers with a letter ("S 12", "Sushi zwölf", "45g" heard as "5 und 40 D", §12 "numbers with a letter"); cases as heard 9/56. Engine tests 9/9: the answer after 4 and 10 s heard in `thorsten-medium` and `thorsten-high`, the quiet line alone no speech. The detector unchanged |
 | 02.11.2026 | T-9.8 | `python3 -m scripts.voice_drill` on the workbench on the separate networks, `backend` internal as in production, with eight new points and `voice` cut off by `docker network disconnect` | **35 of 35 points.** The 27 points of before all passed. Cut from Asterisk: the team rang after 5.3 s, 8.4 s after a cut mid-call. Cut from the database: after 8.3 s, 12.4 s after a cut mid-call. The next call was the AI's. Asterisk reached `voice` and not the database, by name or by address; the database has no default route. The production files themselves: docs/13 §3 |
 | 14.11.2026 | T-10.2 | The outage map on the wire, row by row: the product's `asterisk` and `voice` (Whisper on the CPU, Piper, `qwen3.6-35b-a3b`) registered at the pilot's router through the tunnel, `main` at `10ec06a`, calls from Maxi's mobile to the test number, the restaurant's main number as the team telephone, opening hours open. Times are Asterisk's own log (arrival to "to the team"); the clock at the telephones was not written down per row: Maxi confirmed afterwards that every row that rang stayed clearly under 30 s from placing the call (14.11.2026), and the sheet was not scanned | **Six rows go, two no-go.** Trial call: answered and greeted, no team ring. `voice` down: to the team 4 s after arrival, answered, audio both ways; Asterisk died with a segmentation fault 44 s later and restarted (#768). `voice` killed 16 s into a call: to the team in the same second. Model unreachable: outage sentence, to the team 17 s after arrival, 4 s after the failure. Handover asked for: to the team after 15 s, audio both ways; the team telephone shows the test number, not the caller. Team does not pick up: 30 s of ringing, card `noted` in the same second, the sentence played. Loop test: software off, the main number rings as always, nothing reached us. **No-go:** Asterisk stopped or killed: the caller hears the network's "not reachable", no telephone rings, because only the AI telephone is assigned to the test number; the router dropped the killed registration within a minute. A second caller during an AI call: handed over in the same second, the router rang nothing for 30 s and refused nothing, a callback card. The router dials its own main number from the AI telephone without trouble. Before the run the router was unreachable from 11:23 to 11:35. Findings: #768, #769 |
+| 22.11.2026 | T-10.2, Maxi's reading | no new measurement: the run of 14.11.2026 read for G0 | **Go with conditions.** G0 takes the six go rows. The no-go rows Asterisk down and second caller are limits of the router access; the second caller counts as the failed router test that starts T-10.12, and both rows and the third caller are run again on the trunk |
 | 14.11.2026 | #768, Asterisk crash after a team leg | The crash of the wire run reproduced on the stand-in router: `voice` stopped, calls that the team takes, Asterisk 22.11.0 died with a segmentation fault after the 2nd, 4th or 5th such call in three runs; a core dump (started with `-g`, WSL's crash folder) shows it in musl's `pthread_exit`, walking the list of locks the call's thread still holds. Cause upstream: `ast_websocket_client_connect()` keeps the lock of the media channel when the connection fails (Asterisk issue #2121, fixed in 22.12.0, no image of it yet, #775). The dialplan now asks `voice` at `/media/ready`, with the media token, before it dials it; the deep review showed that the tokenless `/health` let a `voice` with another token through to the crashing path | **55 of 55 drill points** after the merge of #774 (its point "Asterisk lived through every drill" included), five new: no media connection tried with `voice` down, frozen or holding another token, the team rings for the last one, Asterisk up after five voice-down calls; the new points failed before the change (Asterisk gone after the 4th call; with `/health` as the question the refused connection was still tried). The team rings 2.4 s after the call with `voice` down or frozen, 4.1 s before, 0.2 s with another token. One run of the voice-down drill rang after 28.3 s while a review agent ran its own Asterisk containers on the same machine; three runs before and after, 2.4 s; the cause was not found |
+| 15.11.2026 | #637, a watermark on the modelled line | `python3 -m scripts.watermark_line --speech DIR` in a cloud session (4 CPU cores shared with other builds, load average 30 to 50; no Docker, no SIP, no Hugging Face). Speech: 18 English sentences (1.4 to 6 s, 83 s in all) of the free flite voices `slt`, `rms` and `awb` through ffmpeg 6.1.1, 16 kHz; Piper's voices could not be downloaded here. Three watermarks: a classic spread spectrum mark written for the script (zero-bit, keyed pattern in the band at -20 dB under the speech envelope, detected blind to delay by circular correlation with a drift search); Resemble AI PerTh 1.0.1 (`resemble-perth`, weights in the wheel; torch 2.15.0 CPU); Meta AudioSeal 0.2.1 and WavMark 0.0.3 installed but their weights live on Hugging Face, which this session cannot reach | **Spread spectrum survives every modelled stage:** found in 18 of 18 sentences at every stage, z score min 16.2 after A-law, 14.1 with line noise, 13.9 with 3 % lost packets, 12.6 with offset and 100 ppm drift, 7.6 after GSM-FR, 8.3 after Opus (threshold 6); false positives 0 of 18 per stage, and 0 of 900 tries with foreign keys on unmarked noisy speech (max 5.65). Marking costs 1.4 to 5.4 ms per second of audio, detection about 36 ms per sentence: inside the mouth's share of the 1.5 s voice to voice (§6). Its price is the strength: at -20 dB the mark is 26.6 dB under the speech (not judged by ear); at -25 dB only 61 % of the sentences are found after GSM, at -30 dB 6 %. **PerTh does not survive** (two sentences, the full run did not finish under the load): score 0.92 and 1.00 after the band, 0.60 and 0.87 after A-law, 0.41 and 0.62 with line noise, 0.10 and 0.47 after GSM, unmarked 0.06 and 0.00 (threshold 0.5); it marks below 2 kHz at 32 kHz and takes about 1 s to mark and 1.6 s to detect per second of audio on this loaded CPU, which alone would break the 1.5 s. **AudioSeal and WavMark not measured** (no weights here). Open: the real SIP leg (§10, "Handover: #637") and AudioSeal on the workbench |
+| 23.11.2026 | #637, the spread mark with the Piper voices | `python3 -m scripts.watermark_line --piper deploy/speech/run --methods spread --write DIR` on the workbench in the voice image (numpy, `piper-tts` 1.8.0, no ffmpeg, so no codec stages), `main` at `00881c4` merged into the branch. Speech: the script's five German sentences with the four Piper voices of the speech kit (`karlsson-low`, `kerstin-low`, `thorsten-high`, `thorsten-medium`), 20 sentences, 74 s | **Found in 16 to 20 of 20 per stage, never a false positive.** Clean, band, 8 kHz and A-law: 20 of 20 (z min 7.2 to 8.9, unmarked max 5.0); line noise seed 1, packet loss and offset: 19 of 20; offset plus 20 ppm drift: 16 of 20. Unmarked speech stayed at or under 5.12 at every stage (threshold 6). Every miss is the fifth sentence, "Ja, gerne." (0.72 to 1.16 s): with `karlsson-low` it is lost at seven noisy stages, with the other three voices at one or two; every sentence of 3.2 s or more is found at every stage. Marking costs 1.3 ms per second of audio. Not run: AudioSeal, WavMark, PerTh, the codec stages and the real SIP leg (§10, "Handover: #637") |
 
 ---
 

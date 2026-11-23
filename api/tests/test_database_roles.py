@@ -16,7 +16,9 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 
 from api.config import settings
-from api.db import refuse_a_superuser_role
+from api.core.database_role import refuse_a_superuser_role
+from api.dashboard import app as dashboard
+from api.dashboard.config import settings as dashboard_settings
 from api.main import app
 from api.tests.test_compose_ports import BASE, PROD, _load, _services
 from api.tests.test_deploy_exposure import OWN_CODE
@@ -96,7 +98,7 @@ def test_a_database_that_does_not_answer_does_not_stop_the_start(caplog):
         nowhere, poolclass=NullPool, connect_args={"connect_timeout": 2}
     )
 
-    with caplog.at_level(logging.WARNING, logger="api.db"):
+    with caplog.at_level(logging.WARNING, logger="api.core.database_role"):
         refuse_a_superuser_role("prod", engine)
 
     assert "could not be checked" in caplog.text
@@ -126,3 +128,23 @@ def test_the_owners_credentials_stay_out_of_the_applications_containers():
             assert "env_file" not in config, f"{service} gets all of .env"
             for name in OWNER_ONLY:
                 assert name not in (config.get("environment") or {}), service
+
+
+def test_the_dashboard_refuses_a_superuser_at_its_start(monkeypatch, superuser):
+    """#827 F5: the operator's tables hold every OPS_TOKEN and the TOTP secrets."""
+    monkeypatch.setattr(dashboard_settings, "env", "prod")
+    monkeypatch.setattr(dashboard, "engine", superuser)
+
+    with (
+        pytest.raises(RuntimeError, match=r"^OPERATOR_DATABASE_URL connects as"),
+        TestClient(dashboard.app),
+    ):
+        pass
+
+
+def test_the_dashboard_starts_with_a_role_of_its_own(monkeypatch, plain_role):
+    monkeypatch.setattr(dashboard_settings, "env", "prod")
+    monkeypatch.setattr(dashboard, "engine", plain_role)
+
+    with TestClient(dashboard.app) as client:
+        assert client.get("/health").status_code == 200

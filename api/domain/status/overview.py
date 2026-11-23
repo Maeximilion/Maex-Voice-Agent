@@ -8,12 +8,13 @@ order's content. Read by `GET /v1/ops/status` (api/ops/router.py).
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import exists, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from api.config import settings
 from api.core.time import business_day
 from api.domain.calls.figures import Figures, span_figures
+from api.domain.menu.details import without_allergens
 from api.domain.menu.price_check import open_differences
 from api.domain.status import bridge
 from api.domain.status.mode import mode_at
@@ -21,7 +22,6 @@ from api.models import (
     AuditLog,
     BridgeHeartbeat,
     Call,
-    ItemAllergen,
     MenuItem,
     ServiceConfig,
     Tenant,
@@ -36,6 +36,8 @@ BACKUP_DONE = "backup.done"
 # An alarm pushed within this span counts as open: the monitor repeats one that
 # still holds every clock hour or every day.
 ALARMS_OPEN_FOR = timedelta(hours=24)
+# The span of the four figures, as on the team's page (docs/06 §4).
+WEEK_DAYS = 7
 
 
 @dataclass(frozen=True)
@@ -100,6 +102,27 @@ def status(session: Session, tenant: Tenant, now: datetime) -> Status:
     )
 
 
+@dataclass(frozen=True)
+class Week:
+    business_day: date
+    # The whole span in one: a week's accuracy is not the mean of its days'.
+    week: Figures
+    # Each business day by itself, the newest first.
+    days: list[tuple[date, Figures]]
+
+
+def week(session: Session, tenant: Tenant, now: datetime) -> Week:
+    """The four figures of docs/06 §4 over the last `WEEK_DAYS` business days,
+    today included, and their course per day."""
+    today = business_day(now, tenant.timezone)
+    days = [today - timedelta(days=back) for back in range(WEEK_DAYS)]
+    return Week(
+        business_day=today,
+        week=span_figures(session, tenant, days[-1], today),
+        days=[(day, span_figures(session, tenant, day, day)) for day in days],
+    )
+
+
 def _bridge(session: Session, tenant: Tenant, now: datetime) -> BridgeStatus:
     return BridgeStatus(
         configured=str(tenant.id) == settings.kitchen_bridge_tenant_id,
@@ -131,16 +154,9 @@ def _alarms(session: Session, tenant: Tenant, now: datetime) -> list[Alarm]:
 def _menu(session: Session, tenant: Tenant) -> MenuStatus:
     active = (MenuItem.tenant_id == tenant.id, MenuItem.active.is_(True))
     items = session.scalar(select(func.count()).select_from(MenuItem).where(*active))
-    unknown = session.scalar(
-        select(func.count())
-        .select_from(MenuItem)
-        .where(
-            *active,
-            ~exists().where(ItemAllergen.menu_item_id == MenuItem.id),
-        )
-    )
     return MenuStatus(
         items=items or 0,
         price_differences=len(open_differences(session, tenant.id)),
-        without_allergen_information=unknown or 0,
+        # The rule of the owner's tab "Menü", so both show the same dishes.
+        without_allergen_information=len(without_allergens(session, tenant.id)),
     )

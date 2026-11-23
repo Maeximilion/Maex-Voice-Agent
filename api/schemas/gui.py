@@ -19,3 +19,7 @@ class TodayReservation(BaseModel):
     note: str | None = None
     # The tables of the floor plan the team seated it on, by name (T-3.12).
     tables: list[str] = Field(default_factory=list)
+    # The self-test's card (#574): marked TEST on the tablet.
+    is_test: bool = False
+    # Booked by the team outside the opening hours on purpose (#819).
+    off_hours: bool = False

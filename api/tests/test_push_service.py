@@ -212,3 +212,45 @@ def test_example_env_holds_no_credentials() -> None:
     for key in ("NTFY_AUTH_USERS", "NTFY_AUTH_TOKENS"):
         lines = [line for line in text.splitlines() if key in line]
         assert lines and all(line.startswith("#") for line in lines), key
+
+
+OPERATOR = REPO_ROOT / "deploy" / "docker-compose.operator.yml"
+
+
+def _operator_tokens(**env: str) -> str:
+    """The `NTFY_AUTH_TOKENS` the operator's push server starts with: the
+    start script up to `exec`, run with a stand-in `exec` that prints it."""
+    (script,) = _service(OPERATOR)["command"]
+    script = script.replace("$$", "$").replace(
+        "exec ntfy serve", 'echo "[$NTFY_AUTH_TOKENS]"'
+    )
+    return subprocess.run(
+        ["sh", "-c", script], env=env, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def test_the_operator_push_server_takes_its_token_from_the_dashboards() -> None:
+    """#861: `OPERATOR_PUSH_TOKEN` and `NTFY_AUTH_TOKENS` were two lines that had
+    to agree. Now the token of `dashboard` is derived from the first."""
+    users = "dashboard:<hash>:user,ops:<hash>:user"
+    token = "tk_" + "b" * 29
+    assert (
+        _operator_tokens(NTFY_AUTH_USERS=users, OPERATOR_PUSH_TOKEN=token)
+        == f"[dashboard:{token}:dashboard]"
+    )
+    # An old line of its own is not taken over the dashboard's token.
+    assert (
+        _operator_tokens(
+            NTFY_AUTH_USERS=users, OPERATOR_PUSH_TOKEN=token, NTFY_AUTH_TOKENS="x:y:z"
+        )
+        == f"[dashboard:{token}:dashboard]"
+    )
+
+
+def test_the_operator_push_server_starts_closed_without_a_token_or_users() -> None:
+    """No token: no token entry (a half one would stop the server). No users:
+    nothing at all, as before."""
+    assert _operator_tokens(NTFY_AUTH_USERS="dashboard:<h>:user,ops:<h>:user") == "[]"
+    assert _operator_tokens(OPERATOR_PUSH_TOKEN="tk_" + "b" * 29) == "[]"
+    env = _environment(OPERATOR)
+    assert "OPERATOR_PUSH_TOKEN" in env and "NTFY_AUTH_TOKENS" not in env

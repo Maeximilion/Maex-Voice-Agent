@@ -1,0 +1,168 @@
+# The operator stack (#571, docs/23 §3 and §5): the dashboard, its own small
+# database and its own push server (#827 F3), nothing else. Its own checkout <root>/ops with its own .env
+# (docs/13 §8), started from there:
+#   docker compose up -d --build
+# with COMPOSE_FILE=deploy/docker-compose.operator.yml:networks.json in that
+# .env. networks.json is written by scripts/new_stack.py: it puts the dashboard
+# on each customer stack's internal `ops` network.
+#
+# No service publishes a port. The shared Caddy (deploy/caddy) reaches the
+# dashboard over `edge`, and only once the site ops.<domain> is installed with
+# `scripts/new_stack.py --ops-site`, which waits for the security audit of
+# docs/23 §11. Until then nothing of this stack is reachable from outside.
+name: maex-ops
+
+services:
+  db:
+    image: postgres:16.16-alpine
+    restart: always
+    logging:
+      driver: journald
+    networks: [backend]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    # As the customer stacks' db (docker-compose.yml): the entrypoint makes the
+    # data directory the postgres user's and drops to it.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    read_only: true
+    tmpfs: [/var/run/postgresql, /tmp]
+    command: ["postgres", "-c", "log_error_verbosity=terse"]
+    # The stacks share one host (#827 F7): the operator side never takes
+    # memory or CPU from a stack's call path.
+    mem_limit: 512m
+    cpus: 1.0
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in the operator stack's .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in the operator stack's .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in the operator stack's .env}
+    volumes:
+      - operator_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  dashboard:
+    # The API's image (docs/23 §5), an app of its own.
+    build: ../api
+    restart: always
+    logging:
+      driver: journald
+    # `backend` to its database, `edge` for the shared Caddy; networks.json
+    # adds each customer's `ops`.
+    networks: [backend, edge]
+    # One worker, as docs/23 §5 assumes. Uvicorn takes no forwarded header on
+    # purpose: the dashboard reads X-Forwarded-For itself, and only from a
+    # request that carries the proxy secret (`client_address`).
+    command:
+      - uvicorn
+      - api.dashboard.app:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8002"
+      - --no-proxy-headers
+      - --no-server-header
+    environment:
+      ENV: prod
+      PYTHONPATH: /app
+      LOG_LEVEL:
+      # The dashboard's own role, no superuser (#827 F5): DATABASE_URL of this
+      # stack's .env, so scripts/db_role.sh, backup.sh and migrate.sh --operator
+      # work here as in a customer's checkout. The owner (OWNER_DATABASE_URL)
+      # never reaches this container.
+      OPERATOR_DATABASE_URL: ${DATABASE_URL:?set in the operator stack's .env}
+      # Checked on every request but /health; Caddy sends it (ops.caddy).
+      OPERATOR_PROXY_SECRET:
+      OPERATOR_ORIGIN:
+      # The stack's own push server below, over `edge` (#827 F3); the token of
+      # its user `dashboard`. With ENV=prod the dashboard does not start
+      # without both (dashboard/config.py).
+      OPERATOR_PUSH_URL: ${OPERATOR_PUSH_URL:-http://maex-ops-push-1/}
+      OPERATOR_PUSH_TOKEN:
+      OPERATOR_METRICS_DIR: /app/docs/metrics
+    # Not root, read-only, no capability, as the customer stacks' api
+    # (deploy/docker-compose.prod.yml).
+    user: "10001:10001"
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    # A sign-in flood runs one scrypt (32 MiB) per attempt; 200 at once peaked
+    # at about 176 MiB in the audit (#827 F7).
+    mem_limit: 512m
+    cpus: 1.0
+    volumes:
+      - ../api:/app/api:ro
+      # The dashboard's migrations (db/dashboard), run as the owner with
+      # `bash scripts/migrate.sh --operator`.
+      - ../db:/app/db:ro
+      # The eval and measurement records the dev tools show, only read.
+      - ../docs/metrics:/app/docs/metrics:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  push:
+    # The operator's push server (#827 F3, docs/23 §5): the dashboard publishes
+    # a changed sign-in factor to the topic `ops`, the operator's phone reads
+    # it through the shared Caddy at the host of NTFY_BASE_URL (ops.caddy).
+    # The same image and the same closed start as a customer's push server
+    # (docker-compose.yml); nothing is forwarded to an upstream relay.
+    image: binwiederhier/ntfy:v2.37.2
+    restart: always
+    logging:
+      driver: journald
+    networks: [edge]
+    # Rules only when users exist: the server refuses rules for users it does
+    # not know, and with no users it starts closed for everyone. `dashboard`
+    # may only write `ops`, `ops` only read it; both users come together.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -n "$$NTFY_AUTH_USERS" ]; then
+          export NTFY_AUTH_ACCESS="dashboard:ops:wo,ops:ops:ro"
+          # The token of `dashboard` is the dashboard's own OPERATOR_PUSH_TOKEN,
+          # one value, so the two cannot differ (#861).
+          if [ -n "$$OPERATOR_PUSH_TOKEN" ]; then
+            export NTFY_AUTH_TOKENS="dashboard:$$OPERATOR_PUSH_TOKEN:dashboard"
+          else
+            unset NTFY_AUTH_TOKENS
+          fi
+        else
+          unset NTFY_AUTH_USERS NTFY_AUTH_TOKENS
+        fi
+        exec ntfy serve
+    environment:
+      - NTFY_CACHE_FILE=/var/lib/ntfy/cache.db
+      - NTFY_AUTH_FILE=/var/lib/ntfy/auth.db
+      - NTFY_AUTH_DEFAULT_ACCESS=deny-all
+      - NTFY_ENABLE_LOGIN=true
+      # Caddy stands in front: take the visitor address from its header.
+      - NTFY_BEHIND_PROXY=true
+      # From the operator stack's .env (docs/13 §8).
+      - NTFY_BASE_URL
+      - NTFY_AUTH_USERS
+      - OPERATOR_PUSH_TOKEN
+    volumes:
+      - operator_pushdata:/var/lib/ntfy
+    # Root in the image, but it only listens and writes into its volume.
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    mem_limit: 128m
+    cpus: 0.5
+
+# Both internal: neither container has a way out of the server, and no port
+# is published. The shared Caddy joins `edge` from outside.
+networks:
+  backend:
+    internal: true
+  edge:
+    internal: true
+
+volumes:
+  operator_pgdata:
+  operator_pushdata:

@@ -32,7 +32,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 API_URL = "https://api.github.com"
 LABEL = "projektpflege"
@@ -79,7 +79,7 @@ class Plan:
     comment: str | None = None
 
 
-def finding_keys(findings: dict[str, list[dict]]) -> dict[str, str]:
+def finding_keys(findings: dict[str, list[dict[str, Any]]]) -> dict[str, str]:
     """Stabiler Schluessel je Befund und Eintrag, Wert ist die Anzeigezeile.
 
     Gehasht, weil Titel beliebigen Text enthalten und den HTML-Kommentar sprengen
@@ -110,7 +110,7 @@ def sections(body: str) -> list[tuple[str, str]]:
 
 
 def render_body(
-    findings: dict[str, list[dict]],
+    findings: dict[str, list[dict[str, Any]]],
     intro: str,
     kept: list[str] | None = None,
     kept_keys: set[str] | None = None,
@@ -137,7 +137,7 @@ def render_body(
 
 def plan(
     existing_body: str | None,
-    findings: dict[str, list[dict]],
+    findings: dict[str, list[dict[str, Any]]],
     mention: str,
     closed: bool = False,
 ) -> Plan:
@@ -185,7 +185,7 @@ def plan(
 
 def plan_partial(
     existing_body: str | None,
-    findings: dict[str, list[dict]],
+    findings: dict[str, list[dict[str, Any]]],
     mention: str,
     closed: bool = False,
     unknown: set[str] | None = None,
@@ -224,8 +224,9 @@ def plan_partial(
 
 
 def rest(
-    method: str, path: str, token: str, payload: dict | None = None
-) -> dict | list:
+    method: str, path: str, token: str, payload: dict[str, Any] | None = None
+) -> Any:
+    """The decoded JSON body: an object or a list, depending on the endpoint."""
     request = urllib.request.Request(
         f"{API_URL}{path}",
         data=json.dumps(payload).encode() if payload is not None else None,
@@ -247,7 +248,7 @@ def rest(
     return json.loads(raw) if raw else {}
 
 
-def apply(repo: str, token: str, issue: dict | None, todo: Plan) -> str:
+def apply(repo: str, token: str, issue: dict[str, Any] | None, todo: Plan) -> str:
     base = f"/repos/{repo}"
     if todo.action == "none":
         return "Issue unveraendert."
@@ -260,7 +261,7 @@ def apply(repo: str, token: str, issue: dict | None, todo: Plan) -> str:
                 raise
         # GitHub answers a created issue with the issue, a JSON object.
         created = cast(
-            dict,
+            dict[str, Any],
             rest(
                 "POST",
                 f"{base}/issues",
@@ -279,7 +280,7 @@ def apply(repo: str, token: str, issue: dict | None, todo: Plan) -> str:
     if todo.comment:
         rest("POST", f"{base}/issues/{number}/comments", token, {"body": todo.comment})
     if todo.body is not None:
-        update: dict = {"body": todo.body}
+        update: dict[str, Any] = {"body": todo.body}
         if todo.action == "reopen":
             update["state"] = "open"
         rest("PATCH", f"{base}/issues/{number}", token, update)
@@ -324,7 +325,7 @@ def main() -> int:
         return 2
     mention = os.environ.get("DECISION_MENTION") or f"@{repo.split('/')[0]}"
 
-    findings: dict[str, list[dict]] = {}
+    findings: dict[str, list[dict[str, Any]]] = {}
     partial = False
     # The headings of the --also sources that failed; None once the board failed.
     unknown: set[str] | None = set()

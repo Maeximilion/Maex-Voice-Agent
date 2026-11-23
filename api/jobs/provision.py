@@ -31,8 +31,8 @@ from api.core.errors import InvalidInput
 from api.core.time import to_local, utcnow
 from api.db import SessionLocal
 from api.domain.access.sessions import stack_tenant_id
+from api.domain.access.setup import setup_url
 from api.domain.provision import create_tenant, missing
-from api.jobs.gui_access import setup_url
 from api.schemas.provision import CustomerSpec
 
 ACTOR = "operator:cli"

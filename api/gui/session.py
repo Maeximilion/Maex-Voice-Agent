@@ -90,6 +90,23 @@ async def slide_cookies(
     return response
 
 
+async def no_store(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """No answer of the view is kept by the browser, its own files aside
+    (`no-cache` in `mount_gui`): pages and the parts htmx fetches hold guests'
+    names, numbers and addresses, which a device signed out or a shared
+    browser profile must not keep (#827 F2), and a refusal is no page to keep
+    either (#821). One place, so a new route cannot forget it."""
+    response = await call_next(request)
+    path = request.url.path
+    if (path == "/gui" or path.startswith("/gui/")) and not path.startswith(
+        "/gui/static/"
+    ):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 def csrf_matches(cookie: str | None, sent: str | None) -> bool:
     """The CSRF cookie and the token the request sent (form field or header):
     both there, ASCII (`compare_digest` takes no more) and equal."""
@@ -149,9 +166,9 @@ def require_admin(
     access: Access = Depends(require_gui_session),
     db: Session = Depends(get_db),
 ) -> Access:
-    """The owner's part of the admin area: the device list now, zones, fees and
-    weekly hours when their pages come (D34 point 3). Without the admin PIN on
-    this device it goes to the PIN page, which leads back here."""
+    """The owner's part of the admin area: the device list, the weekly hours and
+    the delivery zones with fee and minimum order (D34 point 3). Without the
+    admin PIN on this device it goes to the PIN page, which leads back here."""
     if not access.admin:
         raise _away(request, _owner_page(request))
     mark_admin_active(db, access.session_id, clock.utcnow())
@@ -160,8 +177,10 @@ def require_admin(
 
 def _owner_page(request: Request) -> str:
     back = request.url.path
-    if request.method != "GET":
-        # A write returns to the page it came from, not to its own path.
+    if request.method != "GET" or request.headers.get("hx-request") == "true":
+        # A write returns to the page it came from, not to its own path, and
+        # so does a part of a page htmx fetched: alone it is no page (no
+        # stylesheet, no script, a form that cannot save).
         try:
             back = urlsplit(request.headers.get("hx-current-url", "")).path
         except ValueError:  # "http://[" and the like: the owner page leads to the board

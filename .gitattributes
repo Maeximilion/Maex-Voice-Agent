@@ -17,3 +17,7 @@ api/gui/ts/*.ts text eol=lf
 docs/metrics/*.csv merge=union
 # Archive of docs/01_STATUS.md: entries are only added, so a merge keeps both sides.
 docs/HISTORY.md merge=union
+# Third-party skill copied from ui-ux-pro-max-cli (docs/19): collapsed in diffs, kept out of language stats.
+.claude/skills/ui-ux-pro-max/** linguist-vendored=true
+# Batch files run in cmd.exe, which misreads labels and goto in LF files.
+*.cmd text eol=crlf

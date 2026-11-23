@@ -56,6 +56,10 @@ class Call(UUIDPrimaryKey, TenantScoped, Timestamps, Base):
         JSONB, nullable=False, server_default=text("'[]'::jsonb")
     )
     delete_after: Mapped[date] = mapped_column(Date, nullable=False)
+    # A self-test call (#574, `sim/selftest_call.py`): in no figure, never sent out.
+    is_test: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
 
 
 class Callback(UUIDPrimaryKey, TenantScoped, Timestamps, SoftDelete, Base):

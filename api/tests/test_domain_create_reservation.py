@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from psycopg.errors import QueryCanceled
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import create_engine, func, select, text, update
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
@@ -274,7 +274,7 @@ def test_readback_morgen_eine_person_mit_hinweis(session, tenant_id, call_id):
     assert draft.note == "Kinderstuhl"
     assert draft.readback == (
         "Ein Tisch für eine Person morgen um zwölf Uhr mittags, auf den Namen Müller"
-        ", mit dem Hinweis: Kinderstuhl. Passt das so?"
+        ", mit Ihrem Hinweis: Kinderstuhl. Passt das so?"
     )
 
 
@@ -356,6 +356,183 @@ def test_after_midnight_table_is_named_by_its_night(created, day, hh, said):
         note=None,
     )
     assert said in readback(table, BERLIN)
+
+
+# Wednesday 00:15: the night of Tuesday to Wednesday, the evening may run on.
+AFTER_MIDNIGHT = berlin(MITTWOCH, 0, 15)
+
+
+@pytest.mark.parametrize(
+    ("created", "day", "hh", "said"),
+    [
+        # At 00:15 most callers still live in Tuesday: "heute" would be
+        # Tuesday's and "morgen" Wednesday to them. A guest who meant Wednesday
+        # by "morgen" heard "morgen" back for Thursday, and the yes booked the
+        # table 24 hours late (#750 follow-up).
+        (
+            AFTER_MIDNIGHT,
+            MITTWOCH,
+            19,
+            "Ein Tisch für zwei Personen am Mittwoch, den 16. September um sieben "
+            "Uhr abends",
+        ),
+        (
+            AFTER_MIDNIGHT,
+            MITTWOCH + timedelta(days=1),
+            19,
+            "Ein Tisch für zwei Personen am Donnerstag, den 17. September um "
+            "sieben Uhr abends",
+        ),
+        # 04:59 is still the night.
+        (
+            berlin(MITTWOCH, 4, 59),
+            MITTWOCH,
+            12,
+            "am Mittwoch, den 16. September um zwölf Uhr mittags",
+        ),
+        # The table's own night keeps its name by both days.
+        (
+            AFTER_MIDNIGHT,
+            MITTWOCH,
+            1,
+            "in der Nacht von Dienstag auf Mittwoch um ein Uhr",
+        ),
+        # From five the calendar day holds again, and the evening before too.
+        (berlin(MITTWOCH, 5, 0), MITTWOCH, 19, "heute um sieben Uhr abends"),
+        (
+            berlin(DIENSTAG, 20, 0),
+            MITTWOCH,
+            19,
+            "morgen um sieben Uhr abends",
+        ),
+        (
+            berlin(DIENSTAG, 23, 59),
+            MITTWOCH,
+            19,
+            "morgen um sieben Uhr abends",
+        ),
+    ],
+)
+def test_a_draft_made_after_midnight_names_the_day_by_weekday_and_date(
+    created, day, hh, said
+):
+    table = Reservation(
+        reserved_for=berlin(day, hh),
+        created_at=created,
+        party_size=2,
+        guest_name="Müller",
+        note=None,
+    )
+    assert said in readback(table, BERLIN)
+
+
+def test_a_call_after_midnight_reads_the_draft_back_by_weekday_and_date(
+    session, tenant_id, call_id
+):
+    draft = create_reservation(
+        session,
+        request(tenant_id, call_id, reserved_for=berlin(MITTWOCH + timedelta(1), 19)),
+        now=AFTER_MIDNIGHT,
+    )
+    assert draft.readback == (
+        "Ein Tisch für vier Personen am Donnerstag, den 17. September um sieben Uhr"
+        " abends, auf den Namen Müller. Passt das so?"
+    )
+
+
+def test_a_draft_made_after_midnight_never_says_heute_or_morgen():
+    for hh in (0, 1, 4):
+        for later in range(3):
+            table = Reservation(
+                reserved_for=berlin(MITTWOCH + timedelta(days=later), 19),
+                created_at=berlin(MITTWOCH, hh, 15).astimezone(ZoneInfo("UTC")),
+                party_size=2,
+                guest_name="Müller",
+                note=None,
+            )
+            said = readback(table, BERLIN)
+            assert " heute " not in said and " morgen " not in said, said
+
+
+def _at(y: int, m: int, d: int, hh: int, mm: int = 0, fold: int = 0) -> datetime:
+    return datetime(y, m, d, hh, mm, tzinfo=BERLIN, fold=fold)
+
+
+@pytest.mark.parametrize(
+    ("created", "table", "said"),
+    [
+        # Month end: Wednesday 30 September to Thursday 1 October.
+        (
+            _at(2026, 9, 30, 20),
+            _at(2026, 10, 1, 0, 30),
+            "in der Nacht von Mittwoch auf Donnerstag um halb eins",
+        ),
+        (_at(2026, 9, 30, 20), _at(2026, 10, 1, 19), "morgen um sieben Uhr abends"),
+        (
+            _at(2026, 10, 1, 0, 15),
+            _at(2026, 10, 1, 19),
+            "am Donnerstag, den 1. Oktober um sieben Uhr abends",
+        ),
+        # Year end: Thursday 31 December 2026 to Friday 1 January 2027.
+        (
+            _at(2026, 12, 31, 20),
+            _at(2027, 1, 1, 0, 30),
+            "in der Nacht von Donnerstag auf Freitag um halb eins",
+        ),
+        (_at(2026, 12, 31, 20), _at(2027, 1, 1, 19), "morgen um sieben Uhr abends"),
+        (
+            _at(2027, 1, 1, 0, 15),
+            _at(2027, 1, 1, 19),
+            "am Freitag, den 1. Januar um sieben Uhr abends",
+        ),
+        (
+            _at(2026, 12, 28, 20),
+            _at(2027, 1, 2, 0, 30),
+            "in der Nacht von Freitag auf Samstag",
+        ),
+        # Clocks go back in the night of Saturday 24 to Sunday 25 October 2026
+        # (03:00 summer time is 02:00 winter time): the night has 25 hours.
+        (
+            _at(2026, 10, 24, 20),
+            _at(2026, 10, 25, 1, 30),
+            "in der Nacht von Samstag auf Sonntag um halb zwei",
+        ),
+        (
+            _at(2026, 10, 24, 20),
+            _at(2026, 10, 25, 2, 30, fold=1),
+            "in der Nacht von Samstag auf Sonntag um halb drei",
+        ),
+        (_at(2026, 10, 24, 20), _at(2026, 10, 25, 19), "morgen um sieben Uhr abends"),
+        (
+            _at(2026, 10, 25, 2, 15, fold=1),
+            _at(2026, 10, 25, 19),
+            "am Sonntag, den 25. Oktober um sieben Uhr abends",
+        ),
+        # Clocks go forward in the night of Saturday 27 to Sunday 28 March 2027
+        # (02:00 winter time is 03:00 summer time): the night has 23 hours.
+        (
+            _at(2027, 3, 27, 20),
+            _at(2027, 3, 28, 3, 30),
+            "in der Nacht von Samstag auf Sonntag um halb vier",
+        ),
+        (_at(2027, 3, 27, 20), _at(2027, 3, 28, 19), "morgen um sieben Uhr abends"),
+        (_at(2027, 3, 28, 5), _at(2027, 3, 28, 19), "heute um sieben Uhr abends"),
+    ],
+)
+def test_the_night_read_back_holds_across_month_year_and_clock_change(
+    created, table, said
+):
+    """#862: the read-back counts local days with `ZoneInfo`, never hours from
+    UTC; stored in UTC, as the database returns them."""
+    utc = ZoneInfo("UTC")
+    row = Reservation(
+        reserved_for=table.astimezone(utc),
+        created_at=created.astimezone(utc),
+        party_size=2,
+        guest_name="Müller",
+        note=None,
+    )
+    assert f"Ein Tisch für zwei Personen {said}" in readback(row, BERLIN)
 
 
 def test_entwurf_zaehlt_sofort_gegen_die_kapazitaet(session, tenant_id, call_id):
@@ -561,6 +738,193 @@ def test_a_confirmed_table_of_the_same_call_still_counts(session, tenant_id, cal
         )
 
 
+# --- Of another call only its newest row's draft counts (#908) ---
+
+
+def _three_corrections(session, tenant_id, call_id):
+    """Six at seven, a quarter past and half past: three drafts of one call,
+    the last one written last."""
+    drafts = [
+        create_reservation(
+            session,
+            _six(tenant_id, call_id, reserved_for=berlin(MITTWOCH, 19, mm)),
+            now=NOW + timedelta(minutes=step),
+        )
+        for step, mm in enumerate((0, 15, 30))
+    ]
+    return drafts[-1]
+
+
+def test_only_the_newest_draft_of_a_call_holds_seats(session, tenant_id, call_id):
+    """#908: every correction wrote a draft and every draft held its seats, so
+    one call could fill the evening for everybody else. 30 of 40 seats booked,
+    call A corrects twice: only its newest six count, and call B still drafts
+    four. A's yes to its newest draft books it."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    newest = _three_corrections(session, tenant_id, call_id)
+
+    other = create_reservation(
+        session,
+        _six(tenant_id, _other_call(session, tenant_id), party_size=4),
+        now=NOW + timedelta(minutes=5),
+    )
+
+    assert other.status == "draft"
+    assert _confirm(session, tenant_id, call_id, newest.reservation_id).status == (
+        "confirmed"
+    )
+
+
+def test_a_replaced_draft_holds_nothing_after_the_yes(session, tenant_id, call_id):
+    """The newest draft confirmed, the older ones of its call stay drafts: they
+    must not count again now that a confirmed row is the newest."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    newest = _three_corrections(session, tenant_id, call_id)
+    _confirm(session, tenant_id, call_id, newest.reservation_id)
+
+    other = create_reservation(
+        session,
+        _six(tenant_id, _other_call(session, tenant_id), party_size=4),
+        now=NOW + timedelta(minutes=5),
+    )
+
+    assert other.status == "draft"
+
+
+def test_the_newest_draft_of_another_call_still_counts(session, tenant_id, call_id):
+    """One draft per call still holds its seats: 30 + 6 + 6 > 40."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    _three_corrections(session, tenant_id, _other_call(session, tenant_id))
+
+    with pytest.raises(Conflict):
+        create_reservation(
+            session, _six(tenant_id, call_id), now=NOW + timedelta(minutes=5)
+        )
+
+
+def test_two_drafts_written_at_the_same_instant_hold_one_party(
+    session, tenant_id, call_id
+):
+    """A turn passes one `now` to every tool it calls: two drafts of one call
+    can share their `created_at`, and still only one of them counts."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    other = _other_call(session, tenant_id)
+    for mm in (0, 30):
+        create_reservation(
+            session,
+            _six(tenant_id, other, reserved_for=berlin(MITTWOCH, 19, mm)),
+            now=NOW,
+        )
+
+    mine = create_reservation(session, _six(tenant_id, call_id, party_size=4), now=NOW)
+
+    assert mine.status == "draft"
+    # And one of them does count: 30 + 6 + 5 > 40.
+    with pytest.raises(Conflict):
+        create_reservation(session, _six(tenant_id, call_id, party_size=5), now=NOW)
+
+
+def test_a_confirmed_table_of_the_same_instant_never_hides_a_draft(
+    session, tenant_id, call_id
+):
+    """Which of two rows of one instant is newer cannot be told: a confirmed
+    table next to a draft leaves the draft counting, whatever their ids."""
+    other = _other_call(session, tenant_id)
+    _seat(session, tenant_id, other, 30)
+    _seat(session, tenant_id, other, 6, status="draft")
+    # The confirmed table gets the higher id, the one a tie-break on ids picks.
+    session.execute(
+        update(Reservation)
+        .where(Reservation.status == "draft")
+        .values(id=uuid.UUID(int=1))
+    )
+    session.commit()
+
+    # 30 + 6 + 6 > 40.
+    with pytest.raises(Conflict):
+        create_reservation(session, _six(tenant_id, call_id), now=NOW)
+
+
+def test_going_back_to_an_earlier_draft_makes_it_hold_the_seats_again(
+    session, tenant_id, call_id
+):
+    """Wednesday, then Thursday, then "doch Mittwoch": the replayed Wednesday
+    draft is the call's newest again, so another caller cannot take its
+    seats, the guest's yes books it, and Thursday holds nothing after it."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    wednesday = _six(tenant_id, call_id, idempotency_key="k-wednesday")
+    first = create_reservation(session, wednesday, now=NOW)
+    thursday = WEDNESDAY_EVENING + timedelta(days=1)
+    create_reservation(
+        session,
+        _six(tenant_id, call_id, reserved_for=thursday),
+        now=NOW + timedelta(minutes=1),
+    )
+    back = create_reservation(session, wednesday, now=NOW + timedelta(minutes=2))
+    assert back == first
+
+    with pytest.raises(Conflict):
+        create_reservation(
+            session,
+            _six(tenant_id, _other_call(session, tenant_id)),
+            now=NOW + timedelta(minutes=3),
+        )
+    assert _confirm(session, tenant_id, call_id, first.reservation_id).status == (
+        "confirmed"
+    )
+    _, held = reservations_capacity.window_load(
+        session,
+        tenant_id,
+        thursday,
+        BERLIN,
+        now=NOW + timedelta(minutes=4),
+        draft_lifetime=_call_limit(session, tenant_id),
+    )
+    assert held == 0
+
+
+def test_a_draft_is_replaced_only_by_a_newer_row_of_its_own_call(
+    session, tenant_id, call_id
+):
+    """Another call's newer draft hides nothing: 30 of 40 booked, call P holds
+    six, call Q four a minute later, so two more do not fit."""
+    _seat(session, tenant_id, _other_call(session, tenant_id), 30)
+    create_reservation(
+        session, _six(tenant_id, _other_call(session, tenant_id)), now=NOW
+    )
+    create_reservation(
+        session,
+        _six(tenant_id, _other_call(session, tenant_id), party_size=4),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    with pytest.raises(Conflict):
+        create_reservation(
+            session,
+            _six(tenant_id, call_id, party_size=2),
+            now=NOW + timedelta(minutes=2),
+        )
+
+
+def test_a_draft_moved_to_another_day_frees_the_first_one(session, tenant_id, call_id):
+    """The correction leaves Wednesday for Thursday: the Wednesday draft of
+    six holds nothing any more, and six more fit next to the thirty."""
+    other = _other_call(session, tenant_id)
+    _seat(session, tenant_id, other, 30)
+    create_reservation(session, _six(tenant_id, other), now=NOW)
+    create_reservation(
+        session,
+        _six(tenant_id, other, reserved_for=WEDNESDAY_EVENING + timedelta(days=1)),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    mine = create_reservation(
+        session, _six(tenant_id, call_id), now=NOW + timedelta(minutes=2)
+    )
+
+    assert mine.status == "draft"
+
+
 def test_two_drafts_of_one_call_never_book_past_the_window(session, tenant_id, call_id):
     """A call may hold two drafts now, but `confirm` counts every confirmed
     seat: only one of them can be booked."""
@@ -596,6 +960,103 @@ def test_replay_behaelt_readback_ueber_mitternacht(session, tenant_id, call_id):
     second = create_reservation(session, req, now=nach_mitternacht)
     assert second.readback == first.readback
     assert second == first
+
+
+def _seven_then_eight(session, tenant_id, call_id):
+    """A table at seven, corrected to eight: the request that goes back."""
+    seven = request(
+        tenant_id, call_id, idempotency_key="k-seven", reserved_for=berlin(DIENSTAG, 19)
+    )
+    first = create_reservation(session, seven, now=NOW)
+    create_reservation(
+        session,
+        request(
+            tenant_id,
+            call_id,
+            idempotency_key="k-eight",
+            reserved_for=berlin(DIENSTAG, 20),
+        ),
+        now=NOW + timedelta(minutes=1),
+    )
+    return first, seven
+
+
+def test_going_back_to_an_earlier_draft_checks_the_slot_again(
+    session, tenant_id, call_id
+):
+    """#862: the earlier draft's key replayed it without `check_slot`, so the
+    notice that has run out since (or hours closed since) was never read."""
+    _first, seven = _seven_then_eight(session, tenant_id, call_id)
+    session.execute(update(Capacity).values(notice_minutes=60))
+    session.commit()
+
+    with pytest.raises(Conflict):
+        create_reservation(session, seven, now=berlin(DIENSTAG, 18, 30))
+
+
+def test_going_back_replays_the_same_draft_and_holds_no_second(
+    session, tenant_id, call_id
+):
+    """Checked again, the earlier draft is the one replayed: no second row
+    holds the same seats against other calls."""
+    first, seven = _seven_then_eight(session, tenant_id, call_id)
+
+    back = create_reservation(session, seven, now=NOW + timedelta(minutes=2))
+    again = create_reservation(session, seven, now=NOW + timedelta(minutes=3))
+
+    assert back == first and again == first
+    assert session.scalar(select(func.count()).select_from(Reservation)) == 2
+
+
+def test_a_retry_is_checked_again_too(session, tenant_id, call_id):
+    """The same request after the notice was raised: the slot no longer
+    holds, and the draft is not read back again."""
+    req = request(tenant_id, call_id, idempotency_key="k-same")
+    create_reservation(session, req, now=NOW)
+    session.execute(update(Capacity).values(notice_minutes=60 * 24))
+    session.commit()
+
+    with pytest.raises(Conflict):
+        create_reservation(session, req, now=NOW + timedelta(minutes=5))
+    assert session.scalar(select(func.count()).select_from(Reservation)) == 1
+
+
+def test_a_draft_cancelled_elsewhere_is_replayed_as_cancelled(
+    session, tenant_id, call_id
+):
+    """The call's session keeps its rows past a commit: read without a fresh
+    look, the tablet's cancel was not seen and the draft was checked and read
+    back as a draft again."""
+    req = request(tenant_id, call_id, idempotency_key="k-tablet")
+    first = create_reservation(session, req, now=NOW)
+    with Session(session.get_bind()) as tablet:
+        tablet.execute(
+            update(Reservation)
+            .where(Reservation.id == first.reservation_id)
+            .values(status="cancelled")
+        )
+        tablet.commit()
+
+    again = create_reservation(session, req, now=NOW + timedelta(minutes=1))
+
+    assert again.reservation_id == first.reservation_id
+    assert again.status == "cancelled"
+
+
+def test_a_confirmed_table_is_replayed_as_it_stands(session, tenant_id, call_id):
+    """Its yes was given: the same request after it books nothing again."""
+    first, seven = _seven_then_eight(session, tenant_id, call_id)
+    session.execute(
+        update(Reservation)
+        .where(Reservation.id == first.reservation_id)
+        .values(status="confirmed")
+    )
+    session.commit()
+
+    again = create_reservation(session, seven, now=NOW + timedelta(minutes=2))
+
+    assert again.reservation_id == first.reservation_id
+    assert again.status == "confirmed"
 
 
 def test_parallele_anlagen_ueberbuchen_nicht(migrated_db_url):

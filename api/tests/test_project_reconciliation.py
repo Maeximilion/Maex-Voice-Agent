@@ -2,6 +2,7 @@
 
 import json
 import sys
+import time
 from datetime import UTC, datetime
 
 import pytest
@@ -34,7 +35,7 @@ def test_historical_intake_is_explicit_and_idempotent(monkeypatch, fix):
         }
 
     monkeypatch.setattr(project_report, "graphql", graphql)
-    monkeypatch.setattr(project_report.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     board: list[project_report.Item] = []
     added = project_report.reconcile_history("PROJECT", board, [item], "token", fix=fix)
     assert len(added) == int(fix)
@@ -156,7 +157,7 @@ def test_relationship_failure_does_not_publish_an_empty_success_report(
     monkeypatch.setattr(sys, "argv", ["relationships", "--findings-json", str(output)])
 
     def fail(*args):
-        raise project_relationships.ProjectError("API unavailable")
+        raise project_report.ProjectError("API unavailable")
 
     monkeypatch.setattr(project_relationships, "fetch_issues", fail)
     assert project_relationships.main() == 1

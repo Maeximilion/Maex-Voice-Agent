@@ -44,6 +44,7 @@ from fractions import Fraction
 from math import ceil
 
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
 from api.agent import recording
@@ -135,11 +136,14 @@ _DIGIT = re.compile(r"[0-9]")
 # as a call this process lost. Bounded: a restaurant line has a few hundred a day.
 CLOSED_MEMORY = 10_000
 # Numbers guests named in calls handed to the team, for the card of a team leg
-# nobody answers; the call log keeps only the caller id. The report comes
-# about a minute after the handover (the last sentence, two legs of 30 s), and
-# an answered leg sends none: older entries are dropped, so a number neither
-# outlives its call for long nor lands on another call with the same id
-# (Codex on PR #345).
+# nobody answers; the call log keeps only the caller id. The report comes one
+# to two minutes after the handover (the last sentence, a leg of 30 s per
+# number tried: a listed one, the team's, TEAM_PHONE, one more after a change
+# during the call), and an answered leg sends none: older entries are dropped
+# at the next call's end, handover or report, so a number does not land on
+# another call with the same id (Codex on PR #345, #861).
+# shortcut: on a quiet line the last entry stays in memory until the next
+# call ends; drop it on a timer if that matters (#861 review).
 NAMED_PHONES_KEPT = 1000
 NAMED_PHONE_SECONDS = 300.0
 # How long the log of a call that ended as it should waits on a lock. Longer
@@ -364,6 +368,9 @@ class CallHandler:
     ) -> None:
         with self._lock:
             self._ai_calls.discard(session_id)  # the leg is gone, its place is free
+            # A team that answered sends no report (#861): what older calls
+            # kept goes here; this call's own entry is fresh and stays.
+            self._forget_old_named_phones()
             if session_id in self._starting:
                 self._ended_while_starting.add(session_id)
                 return  # `on_call_started` closes it once the call is open
@@ -403,6 +410,26 @@ class CallHandler:
             self._forget_old_named_phones()
             phone, summary, _ = self._named_phones.pop(session_id, (None, None, 0.0))
         return self._card(session_id, phone=phone, summary=summary)
+
+    def team_phone(self) -> str:
+        """The number the team is at now, for the legs the dialplan dials on
+        its own (#835): `voice` crashed in the call, ended it with no transfer
+        to a listed number, or a listed number nobody took. Asked at the call's
+        start and before each such leg (#861). Empty when the database cannot
+        be read: the dialplan keeps the number it had, TEAM_PHONE of its
+        environment at the start (rule 5). Never raises."""
+        session: Session | None = None
+        try:
+            session = self._session_factory()
+            return current_team_phone(session, self._tenant_id, self._now)
+        except Exception as exc:  # noqa: BLE001 - the dialplan has its own number
+            logger.error(
+                "the team number for the dialplan could not be read",
+                extra={"extra": {"error": type(exc).__name__}},
+            )
+            return ""
+        finally:
+            _close_quietly(session)
 
     def on_recording_stopped(self, session_id: str) -> bool:
         session: Session | None = None
@@ -623,15 +650,24 @@ class CallHandler:
     def _guarded(self, live: _LiveCall, step: Callable[[], None]) -> None:
         try:
             step()
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "call failed, handing it to the team",
                 extra={"extra": {"session_id": live.session_id}},
             )
-            self._fail(live.session_id, live)
+            # The database is the failure: a second read would only add a
+            # connect timeout of silence before the outage sentence.
+            self._fail(
+                live.session_id, live, read_again=not isinstance(exc, DBAPIError)
+            )
 
     def _fail(
-        self, session_id: str, live: _LiveCall | None, team_phone: str | None = None
+        self,
+        session_id: str,
+        live: _LiveCall | None,
+        team_phone: str | None = None,
+        *,
+        read_again: bool = True,
     ) -> None:
         """Outage sentence, then the team: the call's number, else `team_phone`
         as routed, else the environment's. The sentence is best effort, the
@@ -668,9 +704,17 @@ class CallHandler:
                 self._port.say(session_id, SAY_OUTAGE if greeted else SAY_OUTAGE_FIRST)
             except Exception:
                 logger.exception("outage sentence could not be spoken")
-            if live is not None:
-                # After the sentence has gone out, so a read the line's bound
-                # cuts off (2 s) delays only the transfer, never the words.
+            if live is not None and read_again:
+                # The sentence goes out before the read: inside a turn of the
+                # own voice layer it would wait for the end of the turn, behind
+                # the read (#754). The read runs while the caller hears it, and
+                # the transfer waits for its end anyway. After a database error
+                # there is no read at all (ledger #764).
+                self._port.speak_now(session_id)
+                if still_open and live.finished:
+                    # The mouth failed on the sentence, and that failure took
+                    # the call to the team already (`on_voice_failure`).
+                    return
                 target = self._team_phone(live)
             self._port.transfer(session_id, target)
         except Exception:

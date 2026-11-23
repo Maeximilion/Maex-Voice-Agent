@@ -1,0 +1,111 @@
+{# The operator's ways in (docs/23 §5): passkeys, TOTP, recovery codes. Looking
+   needs the session; every change needs a second factor of the last five
+   minutes (`fresh`; a passkey step-up once the account has a passkey, D37), and so
+   does the sight of a new TOTP secret. Each form
+   names this page in `back`, where a stale post returns after the step-up. #}
+{% extends "base.html" %}
+{% block title %}Sign-in factors{% endblock %}
+{% set nav = "factors" %}
+{% block scripts %}<script type="module" src="/static/passkey.js"></script>{% endblock %}
+
+{% macro hidden() %}
+<input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+<input type="hidden" name="back" value="/factors">
+{% endmacro %}
+
+{% block main %}
+<section class="ops-seite" aria-labelledby="factors-title">
+  <h1 id="factors-title">Sign-in factors</h1>
+  {% if note %}<p class="banner {{ note[0] }}" role="status">{{ note[1] }}</p>{% endif %}
+  {% if not fresh %}
+  {% if passkeys %}
+  <p class="banner warn">A change here needs a passkey from the last five minutes. <a href="/step-up?next=/factors&amp;for_factors=1">Confirm it with a passkey</a></p>
+  {% else %}
+  <p class="banner warn">A change here needs a fresh second factor. <a href="/step-up?next=/factors">Confirm it is you</a></p>
+  {% endif %}
+  {% endif %}
+
+  <div class="card ops-teil">
+    <h2>Passkeys</h2>
+    <p class="muted">The normal second factor. A passkey answers only to this site, so a look-alike site gets nothing. Keep two, on two devices.</p>
+    {% if passkeys %}
+    <table class="tbl ops-liste">
+      <thead>
+        <tr><th scope="col">Name</th><th scope="col">Added</th><th scope="col">Last used</th><th scope="col">Remove</th></tr>
+      </thead>
+      <tbody>
+        {% for row in passkeys %}
+        <tr>
+          <th scope="row" data-label="Name">{{ row.name }}</th>
+          <td data-label="Added">{{ row.created_at | shown }}</td>
+          <td data-label="Last used">{{ (row.last_used_at | shown) or "never" }}</td>
+          <td data-label="Remove">
+            {% if fresh and passkeys_may_go %}
+            <form method="post" action="/factors/passkeys/remove">
+              {{ hidden() }}
+              <input type="hidden" name="id" value="{{ row.id }}">
+              <button type="submit" aria-label="Remove passkey {{ row.name }}">Remove</button>
+            </form>
+            {% elif not passkeys_may_go %}<span class="muted">stays: no TOTP</span>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p><strong>No passkey yet.</strong></p>
+    {% endif %}
+    {% if fresh %}
+    <form class="ops-zeile" method="post" action="/factors/passkeys">
+      {{ hidden() }}
+      <input type="hidden" name="passkey">
+      <label for="passkey-name">Name of the new passkey, for example the device</label>
+      <input id="passkey-name" name="name" maxlength="40" required autocomplete="off">
+      <button type="button" class="primary" hidden data-passkey="create" data-passkey-options="/factors/passkeys/options">Add a passkey</button>
+      <p class="badge danger" role="alert" hidden data-passkey-message>No passkey was made. Try again; a device that holds one already cannot hold a second.</p>
+    </form>
+    {% endif %}
+  </div>
+
+  <div class="card ops-teil">
+    <h2>Code from an authenticator app (TOTP)</h2>
+    <p>{% if has_totp %}<span class="badge ok">on</span> The backup when no passkey is at hand.{% else %}<span class="badge warn">off</span> Sign-in takes a passkey or a recovery code, step-up a passkey.{% endif %}</p>
+    {% if pending %}
+    <div class="ops-teil" role="group" aria-labelledby="totp-new-title">
+      <h3 id="totp-new-title">New secret, not in force yet</h3>
+      <p>Add this link to the authenticator app, or type in the secret. It replaces the old one once a code of it is entered here.</p>
+      <p><code class="ops-geheim">{{ pending_link }}</code></p>
+      <p>Secret: <code class="ops-geheim">{{ pending }}</code></p>
+      <form class="ops-zeile" method="post" action="/factors/totp">
+        {{ hidden() }}
+        <label for="totp-code">Code of the new secret</label>
+        <input id="totp-code" name="code" autocomplete="one-time-code" inputmode="numeric" required>
+        <button type="submit" class="primary">Put it in force</button>
+      </form>
+    </div>
+    {% endif %}
+    {% if fresh %}
+    <div class="ops-zeile">
+      <form method="post" action="/factors/totp/new">
+        {{ hidden() }}
+        <button type="submit">{% if has_totp %}New secret{% else %}Set up TOTP{% endif %}</button>
+      </form>
+      {% if totp_may_go %}
+      <form method="post" action="/factors/totp/remove">
+        {{ hidden() }}
+        <button type="submit">Remove TOTP</button>
+      </form>
+      {% elif has_totp %}
+      <p class="muted">TOTP can be removed once two passkeys are registered.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card ops-teil">
+    <h2>Recovery codes</h2>
+    <p>{{ recovery_left }} left, each works once. The last way in; a used one is reported to the <code>ops</code> topic.</p>
+    <p class="muted">New ones, with a new password and TOTP secret and without any passkey, come with <code>python -m api.dashboard.cli reset {{ operator.name }}</code> on the operator host.</p>
+  </div>
+</section>
+{% endblock %}

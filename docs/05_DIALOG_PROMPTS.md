@@ -151,7 +151,7 @@ The core decides, never the model: the model only says that a sentence is a comp
 
 The guest's yes is read as strictly as the yes to a read-back (`consent.is_yes`), and it counts only as the answer to the offer itself: after the phone line's "Sind Sie noch da?" a "Ja" answers that question, and the complaint goes to the team. The offer is played to the end like a read-back (`telephony/handler.py`). Only the yes writes anything, and it books what the guest heard, also if the row changed in the meantime. The booking is the card: reason `complaint`, the rule's name, the amount and the guest's sentence. The money moves when the team carries it out. A card that cannot be written books nothing, and the team takes the call.
 
-A rule matches only when all of this holds (`domain/callbacks/complaint_rules.py`, `escalation.only_a_complaint`): one of its phrases stands in the sentence as whole words, no second rule matches, and outside the phrase the sentence neither rules something out nor only supposes it ("nicht", "kein", "ohne", "wenn", "vielleicht", "weder ... noch", "kaum", "alles andere als" and the like, #657). A phrase with such a word in it is read as it stands ("nicht warm"). The sentence holds no other trigger of §4, no question, no allergy or allergen, nothing about health, no legal step, and no wish of its own: "ich möchte", "bitte", "bestellen", "Tisch" and the like, unless the wish is the complaint itself ("Ich möchte mich beschweren"); a wish of its own between the two stays one ("Ich möchte gern bestellen, aber zuerst beschweren", #657). Health words are read as words: "Hausarzt" counts, "Schwarztee" and "zerbrochen" do not. What already happened is no wish ("die Lieferung", "bestellt", "abgeholt"). The call has nothing else open, because it ends with the remedy: no draft, no booking, no dish searched, no slot besides the number, no allergy, no earlier wish. And a number is known, or nobody could carry the remedy out. The wish `note_intent` hears in the complaint sentence itself is no earlier wish: "Die Lieferung war kalt" names what the complaint is about.
+A rule matches only when all of this holds (`domain/callbacks/complaint_rules.py`, `escalation.only_a_complaint`): one of its phrases stands in the sentence as whole words, no second rule matches, and outside the phrase the sentence neither rules something out nor only supposes it ("nicht", "kein", "ohne", "wenn", "vielleicht", "weder ... noch", "kaum", "alles andere als" and the like, #657). A phrase with such a word in it is read as it stands ("nicht warm"). The sentence holds no other trigger of §4, no question, no allergy or allergen, nothing about health, no legal step, and no wish of its own: "ich möchte", "bitte", "bestellen", "Tisch" and the like, unless the wish is the complaint itself ("Ich möchte mich beschweren"); a wish of its own between the two stays one ("Ich möchte gern bestellen, aber zuerst beschweren", #657). Between the complaint's wish and "beschweren" or "reklamieren" only the guest, filler, the person complained to, a pronoun ("das reklamieren"), what follows "über" or "wegen", or the dish right before "reklamieren" may stand: "Ich möchte die Pizza reklamieren" gets the offer, and a guest it does not satisfy goes to the team the way of any declined offer (Maxi, 15.11.2026). A dish anywhere else there belongs to an order, behind a comma, an "und" or before a new clause ("Ich möchte die 23, beschweren muss ich mich aber auch", "eine Margherita reklamieren muss ich auch"), and the sentence goes to the team (#744 follow-up). Health words are read as words: "Hausarzt" counts, "Schwarztee" and "zerbrochen" do not. What already happened is no wish ("die Lieferung", "bestellt", "abgeholt"). The call has nothing else open, because it ends with the remedy: no draft, no booking, no dish searched, no slot besides the number, no allergy, no earlier wish. And a number is known, or nobody could carry the remedy out. The wish `note_intent` hears in the complaint sentence itself is no earlier wish: "Die Lieferung war kalt" names what the complaint is about.
 
 The cost is on the safe side: a guest who says only "Ich möchte mich beschweren" goes to the team, nobody asks what it was about. A phrase is matched as written, so "kalt" does not cover "kalte" or "eiskalt". A guest who demands something next to the complaint ("Ich will mein Geld zurück") goes to the team too. A dish named with no word of wishing ("und zweimal die 23") is missed: the guest can still decline, and the sentence stands on the card.
 
@@ -164,12 +164,14 @@ question with a request   → "Ich bin ein KI-Assistent, kein Mensch." and the m
 ```
 The AI Act asks for a truthful answer every time (docs/09 §1 L1), so the code gives it before the model, like the greeting (T-11.5, `agent/escalation.py` `without_human_question`, `agent/loop.py`). Only the question order counts, and a statement with "oder?" behind it ("Sind Sie ein Mensch?", "Spreche ich mit einer Maschine oder mit einem Menschen?", "Ist da ein Mensch?", "Sie sind ein Roboter, oder?"); a phrasing the list misses goes to the model, which says in its first sentence that it is an AI (the prompt has no room for more, `test_prompts_v3.py` budget). Greetings around the question ("Hallo, sagen Sie mal, ...") are no request; any other word or a digit is, and the model answers it after the truthful sentence. "Ich will mit einem Menschen sprechen" stays the wish of §4 and goes to the team at once. The triggers of §4 are read in the rest of the sentence, without the question's own words: a complaint, a cancellation or the wish for a human next to the question goes to the team as well, with the truthful sentence first. The offer stands while it is the last thing the guest heard: any sentence after it, the phone line's "Sind Sie noch da?" too, takes it back, and a "Ja" then answers that sentence. The question gets the answer only within the call limit; past `max_call_seconds` the truthful sentence comes before the handover of the timeout.
 
-**Taken for a person without asking (#638).** The Art. 50 guidelines (point 40) want the notice also where the exchange shows that the caller is misled about who speaks. A guest who asks for the agent's name ("Wie heißen Sie?", "Wie war Ihr Name?", "Mit wem spreche ich?") is read like the question above: the fixed sentence with the offer of the team when the sentence holds nothing else, the truthful sentence before the model's answer when it holds a request (`escalation._ASKS_ITS_NAME`, eval `eskalation_0019`). A guest who addresses it as a person ("junge Frau", "junger Mann", "Fräulein", "gute Frau", "guter Mann") asks nothing: the truthful sentence comes first and the model answers the sentence as it stands, with no offer, so a "Ja, junge Frau" still answers what the agent asked (`escalation.addresses_a_person`, eval `eskalation_0020`). The five forms are also cut out of the sentence before the yes and no readers of `consent.py` look at it (`is_yes`, `consent_answer`, `recording_answer`), as its harmless phrases are: "Ja, junge Frau" confirms a read-back, takes a remedy offer and logs consent as a yes, "Nein, junger Mann" is a no, and a form with nothing else is no answer (#648). The two lists are one set of five forms, kept equal by a test. Said every time such a cue comes, like the answer to the question, on every way out of the turn: also in the answer to the question for the callback number, to an offer of the complaint catalogue and past the call limit (`loop._guest_sentence`, one place since #649), and on the line in mode `shadow` (`escalation.takes_for_a_person`). A filler on either side of the name ("Wie ist Ihr Name, bitte?", "Wie war Ihr Name noch mal?") belongs to the question (#649). A closed list of clear cues: another one ("Kochen Sie das selbst?", which also asks about the kitchen) reaches the model. "Wie heißen sie denn?" said of dishes reads the same and gets the fixed answer with the offer instead of the model's answer; a "Ja" to it hands the call to the team (#649).
+**Taken for a person without asking (#638).** The Art. 50 guidelines (point 40) want the notice also where the exchange shows that the caller is misled about who speaks. A guest who asks for the agent's name ("Wie heißen Sie?", "Wie war Ihr Name?", "Mit wem spreche ich?") is read like the question above: the fixed sentence with the offer of the team when the sentence holds nothing else, the truthful sentence before the model's answer when it holds a request (`escalation._ASKS_ITS_NAME`, eval `eskalation_0019`). A guest who addresses it as a person ("junge Frau", "junger Mann", "Fräulein", "gute Frau", "guter Mann") asks nothing: the truthful sentence comes first and the model answers the sentence as it stands, with no offer, so a "Ja, junge Frau" still answers what the agent asked (`escalation.addresses_a_person`, eval `eskalation_0020`). The five forms are also cut out of the sentence before the yes and no readers of `consent.py` look at it (`is_yes`, `consent_answer`, `recording_answer`), as its harmless phrases are: "Ja, junge Frau" confirms a read-back, takes a remedy offer and logs consent as a yes, "Nein, junger Mann" is a no, and a form with nothing else is no answer (#648). "das" right before "Fräulein" is its article, the form names a third person and is not cut: "Ja, das Fräulein" is no yes (#862). The two lists are one set of five forms, kept equal by a test. Said every time such a cue comes, like the answer to the question, on every way out of the turn: also in the answer to the question for the callback number, to an offer of the complaint catalogue and past the call limit (`loop._guest_sentence`, one place since #649), and on the line in mode `shadow` (`escalation.takes_for_a_person`). A filler on either side of the name ("Wie ist Ihr Name, bitte?", "Wie war Ihr Name noch mal?") belongs to the question (#649). A closed list of clear cues: another one ("Kochen Sie das selbst?", which also asks about the kitchen) reaches the model. "Wie heißen sie denn?" said of dishes reads the same and gets the fixed answer with the offer instead of the model's answer; a "Ja" to it hands the call to the team (#649).
 
 ### Allergie
 ```text
 get_item_details mit allergen_question: true
-   known: true  → Codes nennen, aber keine medizinische Aussage
+   known: true  → the guest hears the core's sentence from the table
+                  ("Laut unseren Angaben enthält Nummer 23 ...: ..."), never
+                  the model's wording, and no medical statement
    known: false → the core says the say of the tool and hands the call to
                   the team, a callback when nobody answers; the call ends,
                   no confirm (T-11.1, L17); with no number known, the core
@@ -188,21 +190,77 @@ frying, in any call
 
 Contact, certainty and "frei von" (redesign of 27.10.2026, Maxi): the model
 reads the question and answers only with that fixed sentence; the core reads
-every model sentence in a call that speaks of allergies (or names an
-allergen) and hands over the same way when it claims what no database value
-answers ("sicher", "glutenfrei", "keine Spuren", "enthält keine",
-"garantiert", separate preparation) or is the fixed sentence
-(`guards.allergen_claim`). Inflected and turned forms count too ("eine
-glutenfreie Variante", "es sind keine Nüsse enthalten", "die 13 ist ohne
-Erdnüsse"); a wish said back ("die 13 ohne Erdnüsse, notiert") and the
-model asking "Sind Sie sicher, dass ...?" do not (#656). A card never
+every model sentence and hands over the same way when it holds a word that
+names an allergen's absence itself ("glutenfrei", "spurenfrei"), a safety
+word in a call that speaks of allergies or in a sentence that names an
+allergen ("sicher", "keine Spuren", "garantiert", separate preparation), or
+is the fixed sentence (`guards.allergen_claim`, `_ALWAYS` and `_SAFE`); the
+model asking "Sind Sie sicher, dass ...?" does not count (#656). A card never
 carries a note with a health word (`wishes.speaks_of_health`: an allergy
 word, "Zöliakie", "reagiert auf", "darf kein"): its line reads "Hinweis für
-die Küche mit dem Gast klären" instead. A health word without an allergy
-word ("Ich habe Zöliakie") the model asks about itself, what is meant and
-what must stay out of the food (prompt). "Zöliakie" (or "Cöliakie") also
+die Küche mit dem Gast klären" instead. "Zöliakie" (or "Cöliakie") also
 arms the claim check above, since it names no allergen (#763, Maxi
 14.11.2026)
+
+Every other allergen word decides by where it comes from, never by German
+grammar (#798, Maxi 18.11.2026). For each guest turn the core records the
+guest's sentence, the menu text the turn's tools delivered (dish, option and
+description names; never the search's `wish` nor a lookup's `allergens`)
+and the order text the core accepted in this turn (changed cart lines, the
+notes of a draft). A turn is open when the guest speaks of an allergy or of
+allergens, or names an allergen that neither that menu text nor a changed
+order line explains, or, with the order unchanged, a question was left open
+the turn before and a dish was touched, or the call is sticky (the guest
+named an allergy, or last heard the table sentence) and a dish was looked
+up (`guards.is_open`)
+   open, a lookup ran, the order unchanged
+     → the table sentence of every dish looked up; one without a value: the
+       team, with the dish on the card
+   open, otherwise
+     → only core sentences reach the guest: a read-back, the booking, a
+       tool's sentence of this turn, or one of three fixed sentences
+       ("Ihren Hinweis gebe ich an die Küche weiter.", "Worauf genau soll
+       die Küche achten?", "Wenn ich für ein Gericht die Allergene
+       nachsehen soll, nennen Sie mir bitte seine Nummer."). Any other
+       sentence of the model goes back once with a hint, a second one
+       becomes the offer sentence, or the team when a question was left
+       open the turn before (rule 5)
+   not open
+     → the model's sentence is spoken when each allergen word in it has its
+       code in the turn's menu text, the dish and option names of the
+       order, or the order text of this turn (a wish note only for what
+       the guest named in this turn); whole dish names of the search are
+       menu data. A clause that names a dish is licensed by that dish's own
+       text, one that names none by the dishes its sentence or the sentence
+       before it named. An unlicensed word, or "Allergene" or "Allergiker"
+       in the model's own words, goes back once, then as above; in a call
+       where the guest named an allergy the retry may say only core
+       sentences (`HINT_ALLERGY_CALL`)
+   An open turn that ends in a core sentence with the guest's allergy not
+   noted, or an allergen nothing explained, leaves the question open for
+   one turn: after the offer sentence a dish the guest names next is its
+   answer (`allergen_question_open`); the letters nothing explained are
+   kept (`allergen_question_codes`), except after "Worauf genau soll die
+   Küche achten?", whose answer comes next. A second turn in a row goes to
+   the team when it ends in the offer again or leaves one of those letters
+   unexplained again, whatever core sentence it ends in (`guards.left_twice`);
+   decided by where the words come from, never by telling a question from a
+   statement. A second, other allergy named in a row hands nothing over. The model never reads a lookup's `allergens`
+   (`loop._tool_result_as_input`). A read-back names a note as the guest's
+   ("Ihr Hinweis: ...", "Ihr Hinweis für die ganze Bestellung: ...", "mit
+   Ihrem Hinweis: ..."), and a note that names a dish of the search (card
+   number after "Nummer" or an article, or whole name; the guest's quoted
+   allergy sentence aside) goes back (`guards.claims_in_a_note`), in a
+   `cart` too. So does a new note that names an allergen neither the guest
+   (their words anywhere in the call, `allergens_said`, their health
+   sentences, coeliac disease for gluten) nor its own dish's name and
+   options named: "Enthält keine Erdnüsse" on a line the guest only ordered
+   would be read back as their note (Codex review of #860). A note the order
+   already carries is not checked again. Residual risks, all
+   bounded to allergens the dish's own database text names: a claim built
+   only from licensed nouns ("Ist in der 47 Erdnuss?" with an option
+   "Erdnuss"), a follow-up without an allergen word answered without a
+   lookup, a question booked as a wish (the design on #798, section 7)
 
 The guest names an additive (#638, § 5 LMZDV): "Ist da
 Geschmacksverstärker drin?", "Sind da Konservierungsstoffe drin", "die 13
@@ -279,7 +337,7 @@ Gast verneint eine Allergie ("ich habe keine Erdnussallergie")
    → no note (#252)
 ```
 
-From 26.10. to 15.11.2026 the core read the allergy itself (`agent/allergies.py`, after five review rounds on PR #368), asked "Wogegen sind Sie allergisch?" and "Darf ich die Allergie als Hinweis für die Küche notieren?", and wrote "WICHTIG: Keine <Zutat>. Grund: Allergie" onto the draft. Maxi's decision of 15.11.2026 (#736, #763) removed the reader, the question and the consent: the note is the model's, the core keeps the safety net above. A guest sentence that names an allergy named after a read-back drops that read-back, so a yes cannot confirm a draft without it. A handover card never quotes a guest sentence that names an allergy.
+From 26.10. to 15.11.2026 the core read the allergy itself (`agent/allergies.py`, after five review rounds on PR #368), asked "Wogegen sind Sie allergisch?" and "Darf ich die Allergie als Hinweis für die Küche notieren?", and wrote "WICHTIG: Keine <Zutat>. Grund: Allergie" onto the draft. Maxi's decision of 15.11.2026 (#736, #763) removed the reader, the question and the consent: the note is the model's, the core keeps the safety net above. A guest sentence that names an allergy named after a read-back drops that read-back, so a yes cannot confirm a draft without it. A handover card never quotes a guest sentence that names an allergy. Nor does a card the model writes name what the guest said they react to: a shared word of five letters or more, an allergen by its name ("Soja", Codex PR #788), and since #764 a shorter ingredient at any length, the word after "gegen", "auf" or "kein" and the part in front of "-allergie" ("Kiwi", "Mais", "Zimt", `loop._names_health`).
 
 ---
 
@@ -291,7 +349,7 @@ Sofort und ohne Diskussion:
 - Große oder ungewöhnliche Bestellung (Vorschlag: über 150 € oder über 20 Positionen)
 - Catering, Feier, Sonderwunsch außerhalb der Karte
 - Allergie ohne gepflegten DB-Wert, and any allergen question beyond the maintained values (traces, contact, a promise of safety): the core hands over before the model and before any `confirm` (T-11.1, L17)
-- An allergy question on a dish the search does not find (`allergie_0002`): no dish means no allergens to read, so the core hands over when `search_menu` finds nothing, also in every part of a sentence with several positions (`loop._found_nothing`), and the guest asks about an allergy. That is `escalation.asks_about_allergies`: a question, by its mark or by its word order (`escalation.is_question`), that speaks of allergies or names an allergen, next to an allergy that is not denied. It reads whole sentences on purpose: narrowing it to clauses lost real questions (audits of 30. and 31.10.2026, PR #447), and D24 says this parser is not to grow. The sentence says nothing about what is stored (`SAY_ALLERGENS_BEYOND`), the dish may well be maintained. A model that answers such a question without a `get_item_details` that worked gets its sentence back once with a hint, a second one goes to the team the same way (`guards.unread_allergy_question`): in a full run the model asked for the number without a search although the guest named the dish. A hit carries no allergens, so after a search alone only a question back that names no allergen passes ("Meinen Sie die 13 oder die 14?"). A lookup on such a question counts as one, whatever flag the model set (`guards.flag_the_allergy_question`). A read-back table stays on the card, and the search words stay off it, they can hold the guest's allergy (L13). The cost is on the safe side: a guest who asks for an allergen-named dish we do not have, or whose number was misheard, goes to the team, so does a model that searched with the allergen in the query although the dish exists, so does a guest who names no dish and whose question the model answers by asking which one, a statement next to the question after a search ("Gern. Welche Nummer?" goes back once), and a question back that names an allergen-bearing dish ("Meinen Sie die Erdnusssuppe?"). An allergy in passing next to a question on something else goes to the team too, and the table with it ("Ich habe eine Nussallergie, haben Sie Platz?"), as does an assent in front of an allergy ("Ist gut, ich habe eine Erdnussallergie", also the card number "ist zwölf"). So does a surname that reads like an allergen next to an allergy ("Kann ich einen Tisch auf den Namen Fischer bekommen? Ich habe eine Nussallergie."); no list of names stands against it. "Keine Allergie, aber gegen acht wäre gut" asks "Wogegen?" once too often. An answer to "Wogegen?" with `ist`, `stimmt` or `passt` in it is not read and costs an answer ("Erdnüsse, stimmt"); two of those go to the team.
+- An allergy question on a dish the search does not find (`allergie_0002`): no dish means no allergens to read, so the core hands over when `search_menu` finds nothing, also in every part of a sentence with several positions (`loop._found_nothing`), and the guest asks about an allergy. That is `escalation.asks_about_allergies`: a question, by its mark or by its word order (`escalation.is_question`), that speaks of allergies or names an allergen, next to an allergy that is not denied. It reads whole sentences on purpose: narrowing it to clauses lost real questions (audits of 30. and 31.10.2026, PR #447), and D24 says this parser is not to grow. The sentence says nothing about what is stored (`SAY_ALLERGENS_BEYOND`), the dish may well be maintained. What the model may say in such a turn is the rule of provenance above (#798). A read-back table stays on the card, and the search words stay off it, they can hold the guest's allergy (L13). The cost is on the safe side: a guest who asks for an allergen-named dish we do not have, or whose number was misheard, goes to the team, so does a model that searched with the allergen in the query although the dish exists, so does a guest who names no dish and whose question the model answers by asking which one, a statement next to the question after a search ("Gern. Welche Nummer?" goes back once), and a question back that names an allergen-bearing dish ("Meinen Sie die Erdnusssuppe?"). An allergy in passing next to a question on something else goes to the team too, and the table with it ("Ich habe eine Nussallergie, haben Sie Platz?"), as does an assent in front of an allergy ("Ist gut, ich habe eine Erdnussallergie", also the card number "ist zwölf"). A surname or a street that reads like an allergen no longer does: "Fischer", "Nussbaum", "Senft" and words ending in a street suffix ("Fischerstraße", "Nussbaumweg") name none (`pos_convert._NAMES_OF_PEOPLE`, `_STREETS`, deep review of #860); a name outside that short list still counts. "Keine Allergie, aber gegen acht wäre gut" asks "Wogegen?" once too often. An answer to "Wogegen?" with `ist`, `stimmt` or `passt` in it is not read and costs an answer ("Erdnüsse, stimmt"); two of those go to the team.
 - Dritter gescheiterter Versuch auf derselben Verständnis-Stufe
 - Anrufdauer über `max_call_seconds` (on the phone line the tenant's value from `service_config`, read at the start of the call)
 - The guest waits longer than `turn_deadline_seconds` for the answer to one sentence (#252; the tenant's value, read with the same routing; phone line only). The guest hears the outage sentence of §6, not a new one. Once the voice layer can say "Bitte warten Sie einen Moment" while a turn runs (T-1.11), the value goes from 10 to 15 in the database (Maxi, 12.10.2026); the code does not change for that

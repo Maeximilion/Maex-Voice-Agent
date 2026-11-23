@@ -55,6 +55,8 @@ Tablet, print bridge and, in operation, the telephone access need a fixed **publ
 ```text
 Maxis PC (nur Werkbank)
   docker compose up      → Postgres, API, n8n lokal zum Entwickeln
+  scripts\stack.cmd      → Windows switch for the stack in Ubuntu WSL (~/Maex-Voice-Agent):
+                           double-click for a menu, or start|pause|resume|stop|status
   sim/cli.py             → Gespräche ohne Telefon
   local model (optional) → for sim and evals only, never for a real call (§0);
                            setup: bash scripts/setup_local_llm.sh (docs/18 §5)
@@ -76,7 +78,8 @@ Internet
   │ 443 only (80 answers the certificate challenge and redirects to 443)
   ▼
 Caddy (TLS automatisch, Reverse Proxy)
-  ├── agent.example.com/gui/*        → api:8000  (device login of the view, #570)
+  ├── agent.example.com/             → api:8000  (exactly this path: a redirect to the view, #571)
+  ├── agent.example.com/gui/*        → api:8000  (device login of the view, #570; its sign-in is the front page)
   ├── agent.example.com/v1/kitchen/* → api:8000  (token of the print bridge)
   ├── agent.example.com/health       → api:8000
   │      every other path on that name: 404 from the proxy
@@ -218,7 +221,7 @@ Both scripts act on the database of `DATABASE_URL`, the same variable the applic
 | `BACKUP_DIR` | where dumps go, default `backups/` (ignored by git) |
 | `BACKUP_KEEP_DAYS` | dumps of this database older than this are removed after a good run, labelled ones included (repo audit of 27.10.2026, finding 7: they hold the same customer data, and docs/03 allows backups 30 days), default 14, `0` keeps everything. It is also the deadline for the copy a restore leaves behind (Restore below) |
 | `BACKUP_DOCKER_NETWORK` | The stack's Compose network that holds `db`, for example `maex-voice-agent_backend`. Needed on the server: Postgres has no published port there and the host `db` only resolves inside that network |
-| `BACKUP_PG_CLIENT` | `auto` (default), `local` or `docker`. `auto` takes the client from the `postgres:16-alpine` image (`BACKUP_PG_IMAGE`) when no `pg_dump` is on PATH, when `BACKUP_DOCKER_NETWORK` is set, or when the local client has another major version than the server |
+| `BACKUP_PG_CLIENT` | `auto` (default), `local` or `docker`. `auto` takes the client from the `postgres:16.16-alpine` image (`BACKUP_PG_IMAGE`) when no `pg_dump` is on PATH, when `BACKUP_DOCKER_NETWORK` is set, or when the local client has another major version than the server |
 
 ```bash
 bash scripts/backup.sh                              # scheduled dump, also `make backup`
@@ -261,7 +264,7 @@ The passphrase file exists since 29.10.2026 (mode 600). Without `BACKUP_PASSPHRA
 - Day report on the previous business day from `MONITOR_REPORT_HOUR` (8): calls by outcome, cost, orders, reservations; also on a day without a call (built, T-8.3)
 - Log-Rotation, 14 Tage lokal
 
-The built alarms come from `api/jobs/monitor.py` in the dispatcher and go straight to the push server, topic `ops`, which only the operator reads; the user `monitor` writes it with `MONITOR_PUSH_TOKEN` (setup: `n8n/README.md`, "Setting up the push server"). They do not go through n8n, so n8n down is reported (Maxi, 29.10.2026). The dispatcher runs on the same machine, so the API or the server down still needs the check from outside (T-9.4).
+The built alarms come from `api/jobs/monitor.py` in the dispatcher and go straight to the push server, topic `ops`, which only the operator reads; the user `monitor` writes it with `MONITOR_PUSH_TOKEN` (setup: `n8n/README.md`, "Setting up the push server"); outside dev and test the dispatcher does not start without it (`monitor.require_push_token`, #861). They do not go through n8n, so n8n down is reported (Maxi, 29.10.2026). The dispatcher runs on the same machine, so the API or the server down still needs the check from outside (T-9.4).
 
 ---
 
@@ -305,6 +308,11 @@ their `CodeQL` result is neutral with "configurations not found". Decided 19.10.
   analyze a changed workflow. What covers the rest: the human review of every Dependabot
   pull request, and CodeQL on `main` after the merge, which flags the changed workflow
   there.
+- **Postgres is one exact minor (#888 D3, 22.11.2026):** `postgres:16.16-alpine`, never the
+  moving `16-alpine`, so a new minor arrives as a Dependabot pull request instead of with any
+  `docker compose pull`. Dependabot bumps the compose files only (majors stay ignored); the CI
+  services, the backup client's default in `scripts/lib_pg.sh` and this file follow by hand, and
+  `api/tests/test_image_pins.py` fails on that pull request until they do.
 - **Forks:** the repository is public; every outside pull request is treated as untrusted and
   read by a person before a merge; CodeQL on `main` scans it after the merge.
 
@@ -357,8 +365,8 @@ over all tenants, and the agent tools take `tenant_id` from the call state, not 
 | | One stack per customer | All customers in one stack |
 |---|---|---|
 | App changes before customer 2 | none (deploy tooling only) | every row of the table above that picks one tenant |
-| Memory per customer | about 0.65 GB idle measured for api, dispatcher, n8n, push and db (09.11.2026, `docker stats`, workbench); voice and Asterisk not measured, so about 1 GB assumed | shared, a few hundred MB per customer |
-| Server cost per customer | about 3 EUR a month (VPS of D3: 8 GB, about 17 EUR, roughly 6 stacks) | below 1 EUR |
+| Memory per customer | about 0.9 GB with three calls running, measured by the load test of 22.11.2026 (#841, below): n8n 0.54, db 0.10, voice 0.08, api 0.08, dispatcher 0.08, push and Asterisk 0.02 each; the host adds about 1.4 GB for all of them (Docker, journald, page cache) | shared, a few hundred MB per customer |
+| Server cost per customer | about 4 EUR a month (VPS of D3: 8 GB, about 17 EUR, 4 stacks measured by #841, 6 assumed before) | below 1 EUR |
 | Speech, model and line | 45 to 85 EUR a month (docs/20 §9), the same either way | same |
 | Blast radius of a bug or a bad migration | one customer | every customer; a missing `tenant_id` filter shows one customer's data to another |
 | Backup, restore, offboarding (#576) | per stack: one dump, one volume to delete | one customer out of a shared dump, delete by `tenant_id` across all tables |
@@ -378,7 +386,7 @@ EUR; isolation and the unchanged code decide it.
   `deploy/customer.example.json` (kept with the stack on the server, never in the repository). The
   same file again changes nothing; a database that holds another tenant refuses, so a command run
   in the wrong stack writes nothing. The team number must be `TEAM_PHONE` or on
-  `TRANSFER_TARGETS`. Menu and delivery zones keep their importers (docs/14,
+  `TRANSFER_TARGETS`, written in E.164 (#861). Menu and delivery zones keep their importers (docs/14,
   `scripts/seed_zones.py`); `python -m api.jobs.provision check` lists what is still missing.
   **The stack around it is built too (#573, second part):** on the host, as the deploy user,
   `python3 scripts/new_stack.py <customer.json> --domain <domain> [--root /srv/maex] [--dry-run]`
@@ -398,13 +406,221 @@ EUR; isolation and the unchanged code decide it.
   away for a second or two: add a customer outside service hours. A `team_phone` in the customer file must be E.164 there, since it becomes `TEAM_PHONE` as written; anything else is refused before the first step. The setup link of the first login is printed once. An existing `.env` is never
   rewritten, so a rerun keeps every token and only renders the site file again, for example after
   `N8N_EDITOR_AUTH_USER` and `_HASH` were set (both empty: the editor answers 401). The push server gets its five users (#595): `team`, `owner` and `ops`, whose passwords are printed once and kept only as bcrypt hashes in `NTFY_AUTH_USERS` (hashed inside the stack's own pinned `push` image, the passwords over stdin), and `n8n` and `monitor` with fresh `tk_` tokens in `NTFY_AUTH_TOKENS`, the monitor's also as `MONITOR_PUSH_TOKEN`. The n8n token still goes into n8n's credential by hand (n8n/README.md). To issue new push passwords, empty `NTFY_AUTH_USERS` and run the script again. Still by hand: the voice profile and the trunk.
+  **Self-test (#574):** once the menu (and the zones, for delivery) are in, in the stack's folder
+  `docker compose exec api python -m sim.selftest`, or `new_stack.py ... --selftest` on a rerun,
+  which waits for the API's health first (without the flag the script prints the command). One
+  line per check, and the run stops at the first that fails: `health` (`/health` of the running
+  API, `--health-url` for another address), `database` (reachable and at the head migration of
+  the checkout), `configuration` (tenant, `service_config`, opening hours; what `provision check`
+  still lists follows as `note` lines), `menu` (active dishes and categories, and how many dishes
+  have no allergen information, which is allowed: the agent then says it has none),
+  `reservation` and, only with `--print-slip`, `print`. The last line is `connected` or
+  `not connected: <check>`; exit code 0, else 3 health, 4 database, 5 configuration, 6 menu,
+  7 reservation, 8 print (2 a wrong call).
+  The reservation is a simulated call through the agent with the scripted stand-in model
+  (`sim/`): a table for two at the first free time from today on, a draft before the yes,
+  `confirm` as the only step to a booking, and then the tablet's day list and the change token
+  its event stream polls must show it. It is a test call (`calls.is_test` and
+  `reservations.is_test`, migration 039, Maxi 15.11.2026): `confirm` writes no outbox event and
+  no customer contact for it, so n8n and the push server get nothing and nobody is called, and
+  the figures, the call log, the day report and the hours change cards leave it out. The call
+  carries its own `call_id` like any call and runs in one database transaction; a second
+  connection checks during the call that nothing is visible outside it. A call that fails a
+  check is rolled back and keeps no row. One that passes is committed: when its table is on
+  today's business day, the tablet shows it as a card marked TEST ("Test der Einrichtung, kein
+  Gast") for `--card-seconds` (60 by default, 0 for none), then the self-test deletes the call,
+  the table and their audit rows and checks that nothing is left. A run that was stopped with
+  Ctrl-C removes its card too; one that was killed leaves it until the next run, which deletes
+  it first. A table on a later day (no free table today) shows on no tablet now and is removed at
+  once. For about a second the test holds the day lock of the chosen day and a share lock on
+  `service_config`, and while the card shows its two seats count as booked, so run it outside
+  service hours where possible.
+  `--print-slip [--slip-wait 30]` sends one slip marked SELBSTTEST ("Testbon - nicht kochen")
+  through the print bridge, so it comes out of the kitchen printer: off by default, tell the
+  kitchen first. It is a kitchen event without an order or a call, which never goes to n8n; the
+  test waits for the bridge's answer and then removes its row. A slip the bridge claimed and did
+  not answer stays (it may still print); one it never claimed is removed.
 - #570 logins are per stack; the GUI's tenant choice may stay as it is.
 - #571 operator dashboard reads several stacks over an ops API per stack on an internal `ops`
-  network (docs/23 §8).
+  network (docs/23 §8). Its own settings, in the operator stack's `.env`: `DATABASE_URL` (handed to the dashboard as `OPERATOR_DATABASE_URL`), `OPERATOR_PROXY_SECRET`, and
+  `OPERATOR_ORIGIN`, the address the operator's browser uses (`https://ops.<domain>`, no path).
+  Passkeys are bound to it: the dashboard refuses to start without it outside dev and test, and a
+  later change of the host name makes every registered passkey useless (TOTP and the recovery
+  codes still open the sign-in, but a change of the factors then needs a passkey step-up, D37, so
+  every account needs `python -m api.dashboard.cli reset <name>` before its passkeys are
+  registered again). `OPERATOR_PUSH_URL` (by
+  default the operator stack's own push server, `http://maex-ops-push-1/`) and
+  `OPERATOR_PUSH_TOKEN` (the token of its user `dashboard`) are where the push on a changed
+  sign-in factor goes, topic `ops`; the request queues it in the operator database and the
+  dashboard sends it, retried until the server takes it. Outside dev and test the dashboard
+  refuses to start without both (docs/23 §5, #827 F3).
+  `OPERATOR_METRICS_DIR` names the folder with the recorded eval and measurement results
+  (`docs/metrics/` of a checkout) that the dev tools show; the image holds none, so the
+  operator stack mounts it read-only, and without it the page says that the files are missing.
+  **The operator stack (#571, plan number 11, 17.11.2026):** `deploy/docker-compose.operator.yml`,
+  Compose project `maex-ops`, run from a checkout of its own in `<root>/ops`: the dashboard
+  (the API's image, `uvicorn api.dashboard.app:app` on port 8002, `ENV=prod`, not root, read-only,
+  no capability, `api/`, `db/` and `docs/metrics/` mounted read-only) and a `postgres:16.16-alpine`
+  of its own, and its own push server `push` (`binwiederhier/ntfy`, the image and closed start
+  of a customer's, #827 F3). Both networks are internal and nothing publishes a port: `backend`
+  holds the database and the dashboard, `edge` the dashboard, the push server and, once its site
+  is installed, the shared Caddy. Its `.env` (mode 600, `.env.example` names each line): `POSTGRES_USER`,
+  `POSTGRES_PASSWORD`, `POSTGRES_DB` (for example `maex_operator`), `DATABASE_URL` (the
+  dashboard's own role, for example `maex_ops`) and `OWNER_DATABASE_URL` (the owner, as in §3),
+  `BACKUP_DOCKER_NETWORK=maex-ops_backend` and `BACKUP_PASSPHRASE_FILE` (§4),
+  `OPERATOR_PROXY_SECRET` and `OPERATOR_ORIGIN`, the push server's `NTFY_BASE_URL` (a host of
+  its own, for example `https://push.ops.<domain>`), `NTFY_AUTH_USERS` (the users `dashboard`
+  and `ops`, each with a bcrypt hash from `ntfy user hash`) and `OPERATOR_PUSH_TOKEN`
+  (the push server takes the token of `dashboard` from it, `dashboard:<token>:dashboard`, so
+  the two cannot differ; an `NTFY_AUTH_TOKENS` line left from before is ignored, #861), and
+  `COMPOSE_FILE=deploy/docker-compose.operator.yml:networks.json`. The dashboard connects as its
+  own role and, outside dev and test, refuses to start as a superuser; the owner migrates, dumps and
+  restores, and never reaches the dashboard's container (#827 F5). Setting it up, in `<root>/ops`:
+  `echo '{}' > networks.json` once, then `docker compose up -d --wait db`, `bash scripts/db_role.sh`,
+  `bash scripts/migrate.sh --operator`, `docker compose up -d --build` and the first account with
+  `docker compose exec dashboard python -m api.dashboard.cli add <name>`. From then on
+  `scripts/new_stack.py` rewrites `networks.json` from the site files (the dashboard on every
+  customer's `ops` network, on no other of theirs), recreates the dashboard and registers each
+  new customer with `customer-add`, the stack's `OPS_TOKEN` on standard input; without
+  `<root>/ops/.env` it prints that command instead. The operator's phone subscribes to the topic
+  `ops` at `NTFY_BASE_URL` with the user `ops`; `dashboard` may only publish there, `ops` only
+  read, and nobody else either (shown on a real ntfy 2.37.2, 17.11.2026).
+  The dashboard and its database may each take at most 512 MiB and one CPU, the push server
+  128 MiB and half a CPU, so the operator side never takes
+  memory from a stack's call path (#827 F7). Its database is dumped every night at 03:15 by the
+  second line of `deploy/backup.cron`, run in `<root>/ops`; a dump there writes no `backup.done`
+  (the operator database has no tenants and no backup alarm) and says so in the log (#827 F9).
+  **ops.<domain> stays closed until the security audit of docs/23 §11 found no open P1.** Without
+  a site file the shared Caddy has no site for that name, gets no certificate and answers
+  nothing. After the audit `python3 scripts/new_stack.py --ops-site [--root /srv/maex]` renders
+  `deploy/caddy/ops.caddy` with the hosts of `OPERATOR_ORIGIN` and `NTFY_BASE_URL` (the push
+  server's site, which gets no proxy secret) and `OPERATOR_PROXY_SECRET` into
+  `<root>/caddy/operator/ops.caddy` (mode 640; refused when the secret is short, odd or a
+  customer's, or when the push server has no https host of its own), joins the shared Caddy to `maex-ops_edge` and reloads it, and takes the file out
+  again when Caddy refuses it. From then on every customer's run and `--check-sites` also refuse a
+  customer site with the proxy secret or a host name of `ops.caddy`: that stack's `api` shares an
+  `ops` network with the dashboard and would pass its proxy check. The site sends HSTS, `nosniff`, `no-referrer`, the CSP without
+  inline code and `frame-ancestors 'none'`, limits a body to 256 kB, proxies to the dashboard
+  alone with the proxy secret and serves no file of its own. Caddy drops an `X-Forwarded-For`
+  a client sent (no `trusted_proxies`); the dashboard reads that header only next to the secret,
+  and Uvicorn reads none (`--no-proxy-headers`). The shared Caddy gives a client ten seconds for
+  its request headers and closes idle connections after two minutes; its admin endpoint stays on
+  the container's own loopback. Tested on 17.11.2026 with throwaway values and the host name
+  `ops.localhost` (Caddy's own local certificate, no request to a real certificate authority):
+  the sign-in page answers 200 with every header above, a page behind the session 303 to the
+  sign-in, `/docs` and `/openapi.json` 404, plain HTTP 308, a 300 kB post 413, another host name
+  and the admin port from another container nothing, the dashboard past Caddy 403 with or without
+  a guessed secret, and a forged `X-Forwarded-For: 6.6.6.6` left the client's real address in the
+  dashboard's counter. With the operator folder empty, `ops.localhost` answered nothing.
+- **IPv6 in front of the shared Caddy (#888 D1, 22.11.2026).** A netcup VPS has IPv6, and once the
+  host names get AAAA records, Docker's proxy would take every IPv6 client's connection to a
+  network without IPv6 and hand it to Caddy from the network's gateway: every IPv6 client then
+  counts as one address, an attacker on IPv6 uses up the passkey challenge cap of the operator
+  login (429) and raises the waits of every IPv6 tablet (docs/23 §5 and §6). So the shared Caddy's
+  network `public` has IPv6 of its own (`enable_ipv6` in `deploy/caddy/docker-compose.yml`; Docker
+  Engine 27 or later gives it a ULA prefix without a subnet set, checked on the workbench's Docker
+  29.9), and the host's ip6tables rules map a client to Caddy with its own address. Needed on the
+  server: Docker Engine 27 or later, and no `"ip6tables": false` in `/etc/docker/daemon.json`.
+  That file is `deploy/docker-daemon.json` (`install -m 644 deploy/docker-daemon.json
+  /etc/docker/daemon.json`, then `systemctl restart docker`, before the first stack): every stack
+  makes about five networks, and Docker's default address pools are used up after about six
+  stacks ("all predefined address pools have been fully subnetted", found by the load test of
+  #841 at the seventh); the file gives /24 networks from 10.200.0.0/16 and /64 from a ULA prefix
+  of its own instead, room for about 50 stacks.
+  Every run of `scripts/new_stack.py` (a customer's and `--ops-site`) asks the running network
+  after the shared Caddy is up (`docker network inspect -f '{{.EnableIPv6}}' maex-caddy_public`)
+  and refuses to load the site when it has no IPv6, as a network made before this setting keeps
+  the old one: stop the shared Caddy (`docker compose -p maex-caddy ... down`, every site is offline until
+  the next step), which removes the network, and run the script again. **AAAA records only after that**, and then once checked on
+  the real host: sign in to `ops.<domain>` from an IPv6 client, and the audit row
+  `operator.signed_in` names the client's own IPv6 address, not an address of the `public`
+  network. Until that check passed, the host names get A records only.
+- **The ops API answers over `ops` only (#888 C4, 22.11.2026).** The customer layout gives the
+  stack's `api` the alias `ops-api` on its `ops` network and sets `OPS_NETWORK_HOST=ops-api`; a
+  request to `/v1/ops` whose connection did not arrive at that address (so over `backend` or
+  `edge`, from the dispatcher, `voice`, n8n, the push server or Caddy) gets the 404 of a path that
+  does not exist, before the token is looked at (`api/ops/network.py`). Docker resolves the alias
+  on `ops` alone; tried on the workbench with two internal networks: over `edge` the connection
+  arrived at another address than the alias, and a container on `edge` could not resolve it.
 - #576 offboarding is export, then removal of the stack and its volumes.
+
+### Load test (#841)
+
+How many customer stacks with three calls at once one VPS of D3 (4 vCores, 8 GB) carries, before
+the server is bought and prices per concurrent call are set. On the workbench, in Ubuntu (WSL):
+
+    python3 -m scripts.voice_load [--max-stacks 6] [--calls 3] [--turns 4] [--keep]
+
+- **The test server** is one container of `deploy/loadtest/Dockerfile` (Ubuntu 24.04 with systemd,
+  journald and its own Docker Engine), limited to 4 processors and 8 GB without swap (`--cpus`,
+  `--memory`). The production Compose files run inside it unchanged, journald logging and
+  read-only roots included, and the host's own share (dockerd, containerd, journald) counts.
+  Docker Desktop itself refuses the journald log driver, and resizing WSL in `.wslconfig` would
+  need `wsl --shutdown`, end every session and share the 4 processors with them (Maxi chose the
+  container, 22.11.2026). It is privileged (a Docker Engine runs inside it), publishes no host
+  port, and its image cache lives in the volumes `maex-loadtest-docker` and
+  `maex-loadtest-containerd`; `--down` stops it, `--purge` deletes the cache too. The workbench
+  stack `maex-voice-agent` is not touched: everything runs under its own names inside the
+  test server.
+- **Inside**, as the deploy user: the operator stack in `/srv/maex/ops` as §8 sets it up (with
+  fresh secrets, no push users), then stacks `load1`, `load2`, ... each by
+  `scripts/new_stack.py` with the production names and networks (the shared Caddy and the
+  operator registration included), the eval menu, mode `primary`, and for the test only the
+  voice profile with the stand-in ear and mouth (`VOICE_EAR`/`VOICE_MOUTH` `load`;
+  `deploy/loadtest/docker-compose.load.yml` sets `ENV=test` for `voice` alone, which refuses
+  stand-ins under `prod`). The line (`deploy/loadtest/docker-compose.line.yml`): one router all
+  stacks' Asterisks register at, with the callers and the team telephones, and the stand-in for
+  the hosted model (`api/telephony/load_model.py`), both joined to each stack's `telephony`
+  network as `router` and `model`. The stacks run the last commit of the checkout (they are
+  clones).
+- **Stand-ins** with fixed delays, since speech and model run outside the server in operation:
+  the ear ends a turn after 0.5 s of silence and gives its final 0.1 s later, the model answers
+  each request after `--model-delay` (0.25 s; every turn makes two requests and one menu search
+  on the stack's real database), the mouth answers after 0.15 s. Together 1.25 s of the 1.5 s
+  budget (docs/20 §11); the rest is the server's.
+- **Steps**: 1 stack with 1 call, 1 with 3, then one stack more per step with 3 calls each,
+  until a check fails or memory runs out. Per step: the turn from the end of the caller's speech
+  to the first audio back (from the router's recordings of both directions), audio missing inside
+  answers, the tool calls of the call log (95th percentile, 300 ms), processor and memory of the
+  whole test server from its cgroup and per service, team rings, restarts and memory kills.
+  `deploy/loadtest/run/report.json` and `table.md` hold the result.
+- **Result of 22.11.2026** (branch of PR #905, the stand-ins above, 3 calls with 4 turns each per
+  stack, calls spread over one turn): 4 stacks with all 12 calls inside every check; at 5 stacks
+  (15 calls) one 20 ms frame of one greeting went missing, everything else held (turns 1.30 s
+  median and 1.32 s at the 95th percentile in every step, of which the stand-ins take 1.25 s;
+  tool calls 9 to 15 ms at the 95th percentile; no team ring, no restart). Memory is the limit,
+  not the processor: about 1.05 GB more of the server's memory per stack (6.3 of 8 GB at 5
+  stacks, page cache included), against 90 % of one core of 400 % on average at 5 stacks, of
+  which the router and the stand-in model, which do not run on the server in operation, take
+  about 28, and the kit's own polling of the router's log during that run a little more (read
+  once per call and second then, once per three seconds since): the processor figures are on
+  the high side. The largest share of a stack is n8n (0.54 GB). A second run with 0.1 s of lost audio
+  allowed per step held every check up to 6 stacks with 18 calls (turns 1.32 s, 7.4 of 8 GB), and
+  the seventh stack did not come up: Docker's default address pools were used up (§3,
+  `deploy/docker-daemon.json` since). The tables are in the comment on #841.
+- **The CPU caveat stands**: a workbench core (Ryzen 9 7950X3D) is faster than a VPS vCore, so the
+  number is an upper bound. Plan with a margin and run the same on the VPS in its first month:
+  there, as the deploy user in a checkout on an empty server,
+  `python3 -m scripts.voice_load --inside --run-dir <folder>`. It refuses a `/srv/maex` it did
+  not make, so it never clears a server with customers on it.
 
 ### Reassess
 
 With numbers again when the stacks no longer fit one server (memory above about 80 % of the VPS)
 or an upgrade across all stacks takes longer than one evening. Measure voice and Asterisk memory
 during the first real calls and correct the figure above.
+
+## 9. The public site (#892)
+
+The landing page and the inquiry page (`api/site/`, docs/06 §10) are a third small app beside the customer stacks and the operator stack: `uvicorn api.site.app:app --port 8003` from the API's image, no database, no session, nothing to back up. Nothing here is deployed yet; the server is #840 and the host names stay in private configuration.
+
+- **Hosts.** The apex `<domain>` and `www.<domain>` lead to this app, `ops.<domain>` to the dashboard and `<customer>.<domain>` to a customer's stack (docs/23 §3). Requirement for #840: the apex answers `/`, `/anfrage`, `/impressum`, `/datenschutz` and `/static/*` and nothing else of the application; `www` redirects to the apex with 301; HTTPS only, with the same `Strict-Transport-Security` as the other sites; a site block like `deploy/caddy/ops.caddy` with `request_body` limited to 256 KB and no proxy secret (the pages are public). The app sets its own CSP, `nosniff`, `no-referrer` and `no-cache` on every answer, so Caddy adds only HSTS. The app serves `/static` from `api/gui/static/`, which also holds files of the operations view; they are public files and none holds data.
+- **Environment** (all optional, `.env.example`): `SITE_LOGIN_URL` where "Kunden-Login" leads (`https://<customer>.<domain>/gui/anmelden`, or a path; `http://` only in dev and test), `SITE_CONTACT_EMAIL` for a mail link, `SITE_INQUIRY_ACTION` the path the form posts to, set only once that route exists. A value that is not what it says stops the start. Unset values switch their part of the page off.
+- **Tablet demo** (docs/06 §11): before publishing, `python -m scripts.demo.tablet_demo_build` renders `api/site/tablet-demo/` from invented data; it needs `DATABASE_URL` naming a PostgreSQL server where it may create and drop a scratch database (the local stack's is enough), and the site serves the folder at `/tablet-demo` when it exists at the site's start. The apex then also answers `/tablet-demo/*`. The output is not committed, so the image or the host gets it from that build. The landing page links the demo (`DEMO_PATH` in `api/site/content.py`), so an export without a built demo stops with `index.html: /tablet-demo`. In the export, a form `action` inside `tablet-demo/` may name a route of `scripts/demo/tablet_demo_routes.json` instead of a file (the call filter, the menu search and the owner's close button): the browser answers the first two, and the third sits on a locked page whose controls are all disabled. A link, a source or a form outside the demo still has to reach a file.
+- **Private preview** (`SITE_PREVIEW`, on until Maxi sets it to `false`): the customer sign-in greyed with its reason in sight (whatever `SITE_LOGIN_URL` says), the form shown with every field and the button disabled and one sentence that nothing can be sent (whatever `SITE_INQUIRY_ACTION` says), `<meta name="robots" content="noindex, nofollow">` on every page and `X-Robots-Tag` from the app, the badge "Persönliches Projekt in Entwicklung". `robots.txt` allows crawling on purpose: a crawler that robots.txt shuts out never reads a page, so it never sees the noindex and may still list the address from links elsewhere. No sitemap.
+- **Static export.** `python -m scripts.site_export [--out <folder>] [--zip]` (from the API's image, or any Python with the API's dependencies) asks the app for every page with this environment's `SITE_*` and writes `index.html`, `anfrage/index.html`, `impressum/index.html`, `datenschutz/index.html`, `404.html`, `robots.txt`, `.htaccess`, the files of `/static/` the pages name (and the files those name: fonts with their licence, compiled imports; the tablet application's own files only when the demo needs them) and, when built, `tablet-demo/` (copied as B1 wrote it, each page given the preview's robots tag) into one folder, `site-export/` by default (gitignored); `--zip` writes `site-export.zip` beside it, the folder's content without the export's marker file. Links are root-absolute with clean paths (`/anfrage/`), so the folder is served from the root of a host name; every link is checked against the folder and a broken one stops the export. It only empties a folder an earlier export wrote. Nothing is uploaded by the script.
+- **Host: netcup webhosting** (Maxi, 20.11.2026): Apache with Plesk, plain files only, upload by SSH or FTP, no CDN in front. The content of the zip goes into the domain's document root. The generated `.htaccess` holds only directives of the `FileInfo` class a shared host allows: `ErrorDocument 404 /404.html` and, inside `<IfModule mod_headers.c>`, the headers the app sends (`Content-Security-Policy` with `frame-ancestors 'none'`, `nosniff`, `no-referrer`, `no-cache`, and `X-Robots-Tag: noindex, nofollow` in the preview). The `www` to apex 301 redirect (Maxi, 21.11.2026) lives in the export too, as a generic `mod_rewrite` rule with no host name, because the panel's "preferred domain" setting is locked on this host; HSTS is the host's own setting (6 months, no subdomains), so the file sends no `Strict-Transport-Security`. `Options` and `DirectoryIndex` are left out, since a host that forbids them answers every page with 500; Apache's `DirectorySlash` already sends `/anfrage` to `/anfrage/`. Checked locally on `httpd:2.4` with `AllowOverride FileInfo` and on the package's test address.
+- **HTTPS on that host is a Plesk setting, not part of the export.** Per domain: SSL/TLS Certificates, a Let's Encrypt certificate for the domain and `www`; then Hosting Settings, "Permanent SEO-safe 301 redirect from HTTP to HTTPS"; HSTS in the certificate screen only once HTTPS answers for the domain and `www`. The redirect is not in `.htaccess`: Plesk has the setting per domain, and the same export is also served on the package's test address, which may have no certificate, where a forced redirect would lock the preview out.
+- **Legal texts.** `SITE_LEGAL_DIR` names a folder outside the repository with `impressum.html` and `datenschutz.html`, HTML fragments Maxi writes (form: `deploy/site/legal.example/`, invented details only). The real texts hold private details and never enter the repository, a PR or an issue; the export refuses a folder inside the repository. Without them it writes the placeholders and prints `WARNING ... NOT publishable` for each.
+- **Content-Security-Policy on a static host.** Every page carries the policy as `<meta http-equiv>` (without `frame-ancestors`, which a browser ignores in a meta tag), so it holds on a host that sets no header; the app and the `.htaccess` also send it as a header with `frame-ancestors 'none'`. Any other static host should send the same headers. A host or CDN that injects its own inline script (bot checks, analytics, e-mail obfuscation, script loaders; seen on the first hosted preview, gone with the move to netcup) is blocked by the policy and shows a console error: switch that feature off for this site. The policy never gets `'unsafe-inline'`; a fixed script of the host that must run can be allowed by its `sha256` hash (the console error names it) in `CSP_META` of `api/site/app.py`, by PR.
+- **Before the site is public:** the legal notice and the privacy text replace the placeholders (Maxi supplies them, nothing is invented); `curl -I https://<domain>/` shows the CSP; the sign-in link reaches the customer's sign-in over HTTPS; `https://<domain>/gui/` and `/v1/` answer 404; the audit of `docs/09` §5 covers the form once it can send.

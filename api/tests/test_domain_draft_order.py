@@ -156,7 +156,7 @@ def test_entwurf_mit_summe_readback_und_audit(session, tenant_id, call_id):
     assert draft.warnings == []
     assert draft.ready_at == NOW + timedelta(minutes=30)
     assert draft.readback == (
-        "Zweimal Nummer 23 Frühlingsrollen, ohne Zwiebeln. "
+        "Zweimal Nummer 23 Frühlingsrollen, Ihr Hinweis: ohne Zwiebeln. "
         "Einmal Nummer 47 Ente knusprig mit Huhn und Erdnuss. "
         "Macht 28 Euro 80, abholbereit in etwa 30 Minuten, auf den Namen Müller. "
         "Passt das so?"
@@ -191,7 +191,7 @@ def test_note_of_the_whole_order_is_stored_and_read_back(session, tenant_id, cal
 
     assert session.get(Order, draft.order_id).note == note
     assert draft.readback.startswith(
-        f"Zweimal Nummer 23 Frühlingsrollen. Für die ganze Bestellung: {note}. Macht "
+        f"Zweimal Nummer 23 Frühlingsrollen. Ihr Hinweis für die ganze Bestellung: {note}. Macht "
     )
     # The replay says the same.
     assert draft_order(session, req, now=NOW) == draft
@@ -231,6 +231,66 @@ def test_gleicher_schluessel_gleiche_antwort(session, tenant_id, call_id):
     assert again == first
     assert session.scalar(select(func.count()).select_from(Order)) == 1
     assert session.scalar(select(func.count()).select_from(OrderItem)) == 3
+
+
+def _back_to_the_first_draft(session, tenant_id, call_id):
+    """Draft two pieces, then three: the request that goes back to two."""
+    two = request(session, tenant_id, call_id, idempotency_key="k-two")
+    first = draft_order(session, two, now=NOW)
+    three = [{"menu_item_id": item(session, tenant_id, "23"), "quantity": 3}]
+    draft_order(
+        session,
+        request(session, tenant_id, call_id, three, idempotency_key="k-three"),
+        now=NOW + timedelta(minutes=1),
+    )
+    return first, two
+
+
+def test_going_back_to_an_earlier_draft_checks_it_again(session, tenant_id, call_id):
+    """#862: the earlier draft's key replayed it as it was, past a dish sold
+    out since (or hours closed since) and with its old pickup time."""
+    _first, two = _back_to_the_first_draft(session, tenant_id, call_id)
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number == "23")
+        .values(sold_out_until=NOW + timedelta(hours=3))
+    )
+    session.commit()
+
+    with pytest.raises(Conflict):
+        draft_order(session, two, now=NOW + timedelta(minutes=2))
+
+
+def test_going_back_is_a_new_draft_and_its_retry_replays_it(
+    session, tenant_id, call_id
+):
+    first, two = _back_to_the_first_draft(session, tenant_id, call_id)
+
+    back = draft_order(session, two, now=NOW + timedelta(minutes=30))
+    again = draft_order(session, two, now=NOW + timedelta(minutes=31))
+
+    assert back.order_id != first.order_id and back.ready_at > first.ready_at
+    assert again == back
+    assert session.scalar(select(func.count()).select_from(Order)) == 3
+
+
+def test_a_confirmed_draft_is_replayed_as_it_stands(session, tenant_id, call_id):
+    """Its yes was given: the same request after it books nothing again."""
+    req = request(session, tenant_id, call_id)
+    first = draft_order(session, req, now=NOW)
+    session.execute(
+        update(Order).where(Order.id == first.order_id).values(status="confirmed")
+    )
+    session.commit()
+    draft_order(
+        session,
+        request(session, tenant_id, call_id, idempotency_key="k-other"),
+        now=NOW + timedelta(minutes=1),
+    )
+
+    again = draft_order(session, req, now=NOW + timedelta(minutes=2))
+
+    assert again.order_id == first.order_id and again.status == "confirmed"
 
 
 def test_replay_nach_umbenennung_sagt_dasselbe(session, tenant_id, call_id):

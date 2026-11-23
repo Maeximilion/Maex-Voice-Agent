@@ -3,6 +3,7 @@ same answer to every wrong input, waits after failures, sessions, CSRF, the
 proxy check and the break-glass command, against a scratch operator database."""
 
 import os
+import re
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -11,6 +12,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, select
 from sqlalchemy.orm import sessionmaker
@@ -32,13 +34,18 @@ ROOT = Path(__file__).resolve().parents[2]
 INI = ROOT / "db" / "dashboard" / "alembic.ini"
 PASSWORD = "lange-geheime-phrase"
 START = datetime(2026, 11, 10, 9, 0, tzinfo=UTC)
+ORIGIN = "https://ops.example.com"
 TABLES = {
+    "operator_pushes",
     "operator_accounts",
     "operator_recovery_codes",
     "operator_sessions",
     "operator_devices",
     "operator_login_failures",
     "operator_audit",
+    "operator_customers",
+    "operator_passkeys",
+    "operator_challenges",
 }
 
 
@@ -138,8 +145,9 @@ def test_password_and_totp_open_the_dashboard(client, factors, clock, sessions):
     assert "HttpOnly" in answer.headers["set-cookie"]
     page = client.get("/")
     assert page.status_code == 200
-    assert "Signed in as <strong>maxi</strong>" in page.text
+    assert '<span class="muted">maxi</span>' in page.text
     assert "10 recovery codes left" in page.text
+    assert "No customer yet." in page.text
     assert _actions(sessions)[-1] == "operator.signed_in"
 
 
@@ -376,6 +384,44 @@ def test_a_post_without_the_page_token_or_from_another_site_is_refused(
     assert client.post("/logout", data={"csrf_token": token}).status_code == 401
 
 
+# What answers without a session: the sign-in and the health check, no more.
+PUBLIC = {
+    ("GET", "/health"),
+    ("GET", "/login"),
+    ("POST", "/login"),
+    ("POST", "/login/passkey/options"),
+}
+
+
+def _routes() -> list[tuple[str, str]]:
+    found = set()
+    for route in web.app.routes:
+        if isinstance(route, APIRoute):
+            path = re.sub(r"\{[^}]+\}", "x", route.path)
+            found |= {(method, path) for method in route.methods or ()}
+    return sorted(found)
+
+
+def test_every_route_of_the_dashboard_refuses_without_a_session(client, factors):
+    """#827 F10: the plan's gate asks for every route refused without a
+    session, also a route added later. The list of public routes is fixed
+    here: a new route is either behind the session or named above."""
+    routes = _routes()
+    assert set(routes) >= PUBLIC
+    for cookies in ({}, {"ops_session": "forged"}):
+        client.cookies.clear()
+        client.cookies.update(cookies)
+        for method, path in routes:
+            if (method, path) in PUBLIC:
+                continue
+            answer = client.request(method, path, follow_redirects=False)
+            if method == "GET" and answer.status_code == 303:
+                assert answer.headers["location"] == "/login", path
+            else:
+                assert answer.status_code == 401, (method, path)
+            assert "maxi" not in answer.text, path
+
+
 def test_outside_dev_and_test_only_the_proxy_gets_in(
     client, factors, clock, monkeypatch, sessions
 ):
@@ -415,12 +461,79 @@ def test_outside_dev_and_test_only_the_proxy_gets_in(
     assert row.detail["address"] == "5.6.7.8"
 
 
+# The push server of the operator stack and its user's token (#827 F3).
+PUSH = {
+    "operator_push_url": "http://maex-ops-push-1/",
+    "operator_push_token": "tk_" + "a" * 29,
+}
+
+
 def test_production_settings_need_a_strong_proxy_secret():
     for weak in ("", "short", "change_me_long_random", " " * 40):
         with pytest.raises(ValueError, match="OPERATOR_PROXY_SECRET"):
-            DashboardSettings(env="prod", operator_proxy_secret=weak)
-    DashboardSettings(env="prod", operator_proxy_secret="x" * 40)
+            DashboardSettings(
+                env="prod", operator_proxy_secret=weak, operator_origin=ORIGIN
+            )
+    DashboardSettings(
+        env="prod", operator_proxy_secret="x" * 40, operator_origin=ORIGIN, **PUSH
+    )
     DashboardSettings(env="dev", operator_proxy_secret="")
+
+
+def test_production_settings_need_the_origin_of_the_dashboard():
+    """A passkey is bound to it, so it is never a default and never read from a
+    request (docs/23 §5)."""
+    secret = {"env": "prod", "operator_proxy_secret": "x" * 40}
+    with pytest.raises(ValueError, match="OPERATOR_ORIGIN is missing"):
+        DashboardSettings(**secret)
+    for wrong in (
+        "",
+        "ops.example.com",
+        "http://ops.example.com",
+        "https://ops.example.com/",
+        "https://ops.example.com/login",
+        "https://OPS.example.com",
+        "https://user@ops.example.com",
+        "https://ops.example.com:port",
+        "https://",
+        # A browser writes the origin without the default port, and the passkey
+        # library compares it as it is (#816).
+        "https://ops.example.com:443",
+    ):
+        with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
+            DashboardSettings(**secret, operator_origin=wrong)
+    there = DashboardSettings(
+        **secret, operator_origin="https://ops.example.com:8443", **PUSH
+    )
+    assert there.relying_party_id == "ops.example.com"
+    # Dev and test run over plain HTTP on localhost.
+    assert DashboardSettings(env="dev").relying_party_id == "localhost"
+    with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
+        DashboardSettings(env="dev", operator_origin="ftp://localhost")
+    with pytest.raises(ValueError, match="OPERATOR_ORIGIN"):
+        DashboardSettings(env="dev", operator_origin="http://localhost:80")
+
+
+def test_production_settings_need_the_push_server_and_its_token():
+    """Without them the pushes would only wait in the database, and a takeover
+    that adds a passkey would reach no phone (#827 F3)."""
+    ready = {
+        "env": "prod",
+        "operator_proxy_secret": "x" * 40,
+        "operator_origin": ORIGIN,
+    }
+    for wrong in (
+        {},
+        {**PUSH, "operator_push_url": ""},
+        {**PUSH, "operator_push_token": ""},
+        {**PUSH, "operator_push_token": "tk_short"},
+        {**PUSH, "operator_push_token": "tk_" + "a" * 14 + " " + "a" * 14},
+    ):
+        with pytest.raises(ValueError, match="OPERATOR_PUSH"):
+            DashboardSettings(**ready, **wrong)
+    DashboardSettings(**ready, **PUSH)
+    # Dev and test start without one; the pushes then wait.
+    DashboardSettings(env="test")
 
 
 def test_the_dashboard_never_builds_the_customer_settings():
@@ -431,6 +544,9 @@ def test_the_dashboard_never_builds_the_customer_settings():
         "HOME": os.environ.get("HOME", "/tmp"),
         "ENV": "prod",
         "OPERATOR_PROXY_SECRET": "z" * 40,
+        "OPERATOR_ORIGIN": ORIGIN,
+        "OPERATOR_PUSH_URL": PUSH["operator_push_url"],
+        "OPERATOR_PUSH_TOKEN": PUSH["operator_push_token"],
     }
     probe = (
         "import sys, api.dashboard.app, api.dashboard.cli;"
@@ -607,6 +723,131 @@ def test_a_wrong_code_after_a_sign_in_is_still_a_factor_failure(
             )
         ]
     assert reasons == ["factor"]
+
+
+def _failures(sessions) -> list[tuple[str, str]]:
+    with sessions() as db:
+        return [
+            (row.detail["reason"], row.detail["address"])
+            for row in db.scalars(
+                select(OperatorAudit)
+                .where(OperatorAudit.action == "operator.sign_in_failed")
+                .order_by(OperatorAudit.id)
+            )
+        ]
+
+
+def _replay(sessions, code: str, address: str, at: datetime) -> None:
+    with sessions() as db, pytest.raises(access.SignInRefused):
+        access.sign_in(db, "maxi", PASSWORD, code, address, at)
+
+
+def test_the_code_just_used_sent_from_another_address_is_a_factor_alarm(
+    sessions, factors, clock
+):
+    """Review #207: someone who knows the password and saw the code, racing
+    the operator from elsewhere, was audited `repeat`, the label the runbook
+    reads as a double tap, no alarm."""
+    code = _code(factors.totp_secret, clock.at)
+    with sessions() as db:
+        assert access.sign_in(db, "maxi", PASSWORD, code, "198.51.100.7", clock.at)
+    _replay(sessions, code, "203.0.113.9", clock.at)
+    _replay(sessions, code, "198.51.100.7", clock.at)
+    assert _failures(sessions) == [
+        ("factor", "203.0.113.9"),
+        ("repeat", "198.51.100.7"),
+    ]
+
+
+def test_a_recovery_sign_in_elsewhere_leaves_the_double_tap_a_repeat(
+    sessions, factors, clock
+):
+    """Only the sign-in that used the code counts, not a later one with a
+    recovery code, which leaves the TOTP step as it was."""
+    code = _code(factors.totp_secret, clock.at)
+    with sessions() as db:
+        assert access.sign_in(db, "maxi", PASSWORD, code, "198.51.100.7", clock.at)
+    with sessions() as db:
+        assert access.sign_in(
+            db, "maxi", PASSWORD, factors.recovery_codes[0], "203.0.113.9", clock.at
+        )
+    _replay(sessions, code, "198.51.100.7", clock.at)
+    _replay(sessions, code, "203.0.113.9", clock.at)
+    assert _failures(sessions) == [
+        ("repeat", "198.51.100.7"),
+        ("factor", "203.0.113.9"),
+    ]
+
+
+def test_a_code_used_from_another_address_is_no_repeat_of_an_earlier_sign_in(
+    sessions, factors, clock
+):
+    """The address must be the one of the sign-in that used the code: an
+    earlier sign-in of this address with another code makes no repeat."""
+    with sessions() as db:
+        first = _code(factors.totp_secret, clock.at)
+        assert access.sign_in(db, "maxi", PASSWORD, first, "198.51.100.7", clock.at)
+    later = clock.at + timedelta(seconds=totp.STEP_SECONDS)
+    code = _code(factors.totp_secret, later)
+    with sessions() as db:
+        assert access.sign_in(db, "maxi", PASSWORD, code, "203.0.113.9", later)
+    _replay(sessions, code, "198.51.100.7", later)
+    assert _failures(sessions) == [("factor", "198.51.100.7")]
+
+
+def test_a_step_up_code_replayed_at_the_sign_in_is_no_repeat(sessions, factors, clock):
+    """A TOTP step-up also moves the account's step, so the code of the last
+    TOTP sign-in is not always the one just used: a step-up code seen and
+    sent to the sign-in, even from the sign-in's address, is no double tap."""
+    address = "198.51.100.7"
+    with sessions() as db:
+        signed = access.sign_in(
+            db,
+            "maxi",
+            PASSWORD,
+            _code(factors.totp_secret, clock.at),
+            address,
+            clock.at,
+        )
+    later = clock.at + timedelta(seconds=totp.STEP_SECONDS)
+    code = _code(factors.totp_secret, later)
+    with sessions() as db:
+        operator = access.resolve(db, signed.token, later)
+        assert operator is not None
+        access.step_up(db, operator, code, address, later)
+    _replay(sessions, code, address, later)
+    assert _failures(sessions) == [("factor", address)]
+
+
+@pytest.mark.parametrize(
+    ("signed_from", "replayed_from", "reason"),
+    [
+        ("2001:db8::7", "2001:db8::7", "repeat"),
+        # Compared as sent, never widened: the safe side is the alarm.
+        ("198.51.100.7", "::ffff:198.51.100.7", "factor"),
+        # No address known on either post says nothing about the device.
+        ("", "", "factor"),
+    ],
+)
+def test_the_repeat_address_is_compared_exactly_and_never_empty(
+    sessions, factors, clock, signed_from, replayed_from, reason
+):
+    code = _code(factors.totp_secret, clock.at)
+    with sessions() as db:
+        assert access.sign_in(db, "maxi", PASSWORD, code, signed_from, clock.at)
+    _replay(sessions, code, replayed_from, clock.at)
+    assert _failures(sessions) == [(reason, replayed_from)]
+
+
+def test_the_code_sent_again_after_the_window_is_a_factor_failure(
+    sessions, factors, clock
+):
+    code = _code(factors.totp_secret, clock.at)
+    with sessions() as db:
+        assert access.sign_in(db, "maxi", PASSWORD, code, "198.51.100.7", clock.at)
+    late = clock.at + access.REPEAT_WINDOW + timedelta(seconds=1)
+    _replay(sessions, code, "198.51.100.7", late)
+    assert _failures(sessions) == [("factor", "198.51.100.7")]
 
 
 def test_an_oversized_unknown_name_is_refused_like_any_other(client, clock):

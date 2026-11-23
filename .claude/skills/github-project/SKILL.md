@@ -9,7 +9,7 @@ The board is a derivation, not handiwork. Full convention: `docs/16_GITHUB_PROJE
 
 ## Hands-off during work
 
-**No `gh project` call inside the coding loop** - not reading, not writing. Not in `/task`, not in `/done`, not in `/bug`. Every such call pulls item lists and node IDs into context and moves no code forward.
+**No `gh project` call inside the coding loop** - not reading, not writing. Not in `/task`, not in `/done`, not in `/fix-bug`. Every such call pulls item lists and node IDs into context and moves no code forward.
 
 The board follows from events. Work links to it through three things only:
 
