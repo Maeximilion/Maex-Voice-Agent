@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.9
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.10
 
 ---
 
@@ -52,7 +52,7 @@ Finished items: `docs/HISTORY.md` sections "What's Next and Open Decisions (arch
 
 **#651, a caller we cannot hear (Maxi's decision of 11.11.2026): the mark, the alarm and the call list are built, two points are open (the tablet look is Maxi's, the third is a choice).** Built: `calls.line_note = no_caller_audio` and the monitor's alarm after `ALARM_NO_AUDIO_CALLS` such calls in a row; the call still ends as a silent one, without the team. The marked number with its note is in the call list `/gui/anrufe` (T-8.7, #661, first form). Open: (1) Maxi looks at the page on the tablet: the mark uses the view's warning colour, not yellow; (2) done 14.11.2026: a caller leg whose RTP is blocked in transit (iptables DROP on the media ports, 283 packets dropped) leaves the note and rings nobody, a drill point (128); (3) a caller who is hard to understand: the ladder already ends such a call with the team or a callback card (tested), the proposal to end it with a call-later sentence instead needs Maxi's choice and its own issue, Opus 5.5 `high`. The decision in full: the comment on #651. Maxi's own view across all restaurants is the operator dashboard #571, not the admin mockup, which is one restaurant's view.
 
-**T-3.16 partly done (09.11.2026):** three of the five parked findings (#517) are built, the other two stay open on the issue. Done: the number field of "Tauschen" stands under the line it swaps (`korrektur.html`, one field at any time) (full text: docs/HISTORY.md)
+**#517 last point built (23.11.2026):** the „Mehr“ row folds the waits and „Gericht aus“ below 1180 px (`docs/06_GUI.md`). **T-3.16 partly done (09.11.2026):** three of the five parked findings (#517) are built, the other two stay open on the issue. Done: the number field of "Tauschen" stands under the line it swaps (`korrektur.html`, one field at any time) (full text: docs/HISTORY.md)
 
 ### In Claude Code (can start immediately, without vendor)
 3. **T-10.2 ran on the wire on 14.11.2026: six rows go, two no-go; G0 takes it with conditions (Maxi's reading, 22.11.2026).** The two no-go rows are limits of the router access: the second caller is the failed router test that starts T-10.12, and the rows Asterisk down, second and third caller run again on the trunk. Go: `voice` down, a crash mid-call, the model down, a live handover, a team that does not pick up, the loop test (docs/20 §11). No-go: with Asterisk down the test number is "not reachable" because no team telephone is assigned to it at the router, and a second caller during an AI call is not put through. #768 (the Asterisk crash after a team leg) is found and fixed (Done, 14.11.2026). Open: #769 (router setting, second caller, the caller's number on the team telephone, the transfer reason of a model outage, conversation quality); the two rows run again on the trunk (T-10.12). The 30 s of the go rest on Asterisk's times and Maxi's word that every row that rang stayed clearly under 30 s by his clock; the sheet was not scanned

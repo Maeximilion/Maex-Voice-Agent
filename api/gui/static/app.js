@@ -54,6 +54,32 @@ function detail(event) {
     });
     // The holiday strip is replaced with its list after every answer; keep it open
     // while the team works through the suggestions, or each tap would fold it.
+    // "Mehr" of the command bar (#517): below 1180 px it folds the waits and "Gericht
+    // aus". The bar is replaced after every tap; keep the row open while the team
+    // works in it. From 1180 px on the controls stand in the row, so it is open then.
+    const breit = window.matchMedia("(min-width: 1180px)");
+    let mehrOffen = false;
+    const mehr = () => {
+        const d = document.getElementById("kopf-mehr");
+        return d instanceof HTMLDetailsElement ? d : null;
+    };
+    const mehrSetzen = () => {
+        const d = mehr();
+        if (d)
+            d.open = breit.matches || mehrOffen;
+    };
+    // A click on the summary is the team's choice; the toggle event also fires for
+    // the open state set here, so it cannot tell the two apart.
+    document.addEventListener("click", (e) => {
+        const t = e.target;
+        if (t instanceof Element && t.closest("#kopf-mehr > summary") && !breit.matches) {
+            mehrOffen = !mehr()?.open;
+        }
+    });
+    document.body.addEventListener("htmx:afterSwap", mehrSetzen);
+    breit.addEventListener("change", mehrSetzen);
+    window.addEventListener("resize", mehrSetzen); // older WebViews skip the media query event
+    mehrSetzen();
     let feiertageOffen = false;
     document.addEventListener("toggle", (e) => {
         const t = e.target;

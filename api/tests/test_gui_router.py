@@ -279,6 +279,24 @@ def wait_of(config: ServiceConfig, service: str) -> int:
     return current_wait(config, service, api_time.utcnow())
 
 
+def test_mehr_faltet_waits_und_gericht_aus_ein(client, tenant_id):
+    # #517: a plain details (works without script); the three controls sit inside
+    # it, the links the team needs at once stay outside.
+    body = client.get("/gui/").text
+
+    assert body.count('<details class="mehr" id="kopf-mehr">') == 1
+    mehr = body.split('<details class="mehr"')[1].split("</details>")[0]
+    assert "<summary>Mehr</summary>" in mehr
+    assert mehr.count('class="step"') == 2
+    assert 'hx-get="/gui/gericht-aus"' in mehr
+    for outside in (
+        'href="/gui/kennzahlen"',
+        'href="/gui/raumplan"',
+        'href="/gui/anrufe"',
+    ):
+        assert outside in body and outside not in mehr
+
+
 def test_kopfzeile_zeigt_die_knoepfe(client, tenant_id):
     body = client.get("/gui/").text
 
