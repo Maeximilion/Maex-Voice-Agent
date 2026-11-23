@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.28
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.29
 
 ---
 
@@ -179,6 +179,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.29 · 24.11.2026:** Chain: normal mode runs 2 build lanes plus the ship lane, slow mode comes on at +5 in the first hour and ends at -20.
 - **v2.69.28 · 24.11.2026:** Chain: four modes with hysteresis and ahead aimed at 97 percent, a Sonnet ship lane ships the queue, a side quest puts a lane to sleep, open decisions after an unattended chain go to an issue that /start and the next chain ask first.
 - **v2.69.27 · 23.11.2026:** Operator sign-in: once the account has a passkey, a TOTP or recovery code signs in but opens nothing dangerous before a passkey step-up
 - **v2.69.26 · 23.11.2026:** #940: the older gaps of the allergy safety net closed, the kitchen marker leads every card of an allergic guest

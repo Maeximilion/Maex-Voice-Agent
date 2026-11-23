@@ -126,10 +126,11 @@ The brief is the session's only context. It has, in this order:
 
 ## 3. Parallel or in a row
 
-Items whose files do not overlap run at the same time: by default at most 3
-side sessions (Maxi, 2026-11-18). Up to 5, and never above today's row of
-"Agents per weekday", only while usage leaves room: the 5-hour window under 50
-percent and `ahead` (section 5) below 0 at the reading before a start. The
+Items whose files do not overlap run at the same time: by default at most 2
+build side sessions plus the ship lane (Maxi, 2026-11-24: "change the normal
+mode to run just 2 lanes + 1 Ship lane", because 3 lanes ran +10 ahead and a
+pull request the coordinator opens on his idea is a lane of its own). More only
+in turbo (section 5), never above today's row of "Agents per weekday". The
 limit counts their review agents too (tell each session its share). Items that touch the same files, or
 where one needs the other's result, run in a row. Whoever merges second
 merges `origin/main` in first; say so in both briefs. Check `gh pr view`
@@ -212,18 +213,21 @@ Chain modes, read by the coordinator at every reading of `ahead`; Auto on the
 chain dashboard sets them by the same rules. Four modes with hysteresis (Maxi,
 2026-11-24, on the numbers of #965: three lanes burned 25 to 27 points an hour
 while they worked, slow mode at +10 never came on, three Opus lanes for five
-hours would reach about 125 percent). "Last 2 hours" is under 120 minutes to
-the reset.
+hours would reach about 125 percent). "First hour" is over 240 minutes to the
+reset, "last 2 hours" under 120 (Maxi, 2026-11-24: slow "at the beginning of
+the first hour ... at ahead +5 until it reaches -20"). Every mode keeps the
+ship lane on top of its build lanes, and a pull request the coordinator opens
+counts as a build lane.
 
-| Mode | On at | Back at | Lanes | Agent waves, deep reviews |
+| Mode | On at | Back at | Build lanes | Agent waves, deep reviews |
 |---|---|---|---|---|
-| Super slow | over +15 | +5 or below, to slow | one side session at a time, 15-minute sleep between parts | wait |
-| Slow | over +10 (last 2 hours: over +5) | -15 or below, to normal (last 2 hours: -5) | 3, 15-minute sleep between parts | wait |
-| Normal | | | 3 | as the brief says |
+| Super slow | over +15 | +5 or below, to slow | one at a time, 15-minute sleep between parts | wait |
+| Slow | over +5 in the first hour, +10 in the middle, +5 in the last 2 hours | to normal at -20 or below in the first hour, -15 in the middle, -5 in the last 2 hours | 2, 15-minute sleep between parts | wait |
+| Normal | | | 2 | as the brief says |
 | Turbo | under -25 | -10 or above, to normal | up to 5, never above today's row of "Agents per weekday" | welcome |
 
 From normal, over +15 goes straight to super slow. When turbo ends, running
-sessions finish their job; only no new start beyond 3 lanes (Maxi: "let the
+sessions finish their job; only no new start beyond 2 lanes (Maxi: "let the
 lanes get the Job done (no force break)"). Super slow lets running sessions go
 on too; only new starts and new agent waves wait. The pauses of the table
 above still hold in every mode.
