@@ -16,6 +16,8 @@ or every item is merged; the coordinator then reports and stops.
 
 ## 1. Fix the frame before the first start
 
+- **First:** the newest open "Decisions for Maxi after chain ..." issue
+  (section 6), asked as popups before anything else.
 - **Scope:** the list of items, each one pull request, in build order. A plan
   in an issue comment is the list; otherwise write it there first.
 - **Routing:** `CLAUDE.md` "Model Routing" per item. The coordinator itself
@@ -39,10 +41,30 @@ or every item is merged; the coordinator then reports and stops.
 ## 2. One session per pull request
 
 Each item gets a fresh session (`start_session`, `context` "fresh", own
-worktree, the item's `model` and `effort`). The session builds and ships its
-own pull request to the merge: `/done`, then `/ship` in the same session, no
-separate ship session (Maxi, 2026-11-17; it worked for every pull request of
-#571 from plan number 9 on). A P0 or P1 found on the way is fixed there too.
+worktree, the item's `model` and `effort`). The session builds its pull
+request through `/done` until CI is green and the first independent review is
+clean, fixes every finding of that first round itself (a P0 or P1 too), and
+ends with "PR #N ready, first review clean". Then it is done and archived.
+
+**The ship lane** (Maxi, 2026-11-24, "One Sonnet ship lane"): one fresh Sonnet
+`medium` session, started in Maxi's turn together with the first build
+sessions of the chain, ships the queue: it waits until the coordinator sends
+"ship #N", merges `origin/main` in, gets CI, Codex and the evals on the new
+head, fixes what that round finds, merges, messages the coordinator "merged
+#N", and waits for the next "ship #N". One pull request merges at a time
+anyway, so one lane is enough. Why: a long build session ships in a big Opus
+context, and every CI or Codex wake rereads all of it; the ship lane rereads a
+small Sonnet context. A P1 in an `xhigh` path of the ship round is fixed on
+Opus: the ship lane asks the coordinator, which switches its model and effort
+(`set_session_model`, `set_session_effort`) and back afterwards. When its
+context passes 300k, the coordinator starts a fresh ship lane in Maxi's next
+turn, and the old one finishes the pull request it holds. The ship lane does
+not count as a build lane (section 3): it mostly waits, about 1 point an hour
+(#965). Its brief: `Route: claude-sonnet-5-5 medium`, the chain and plan
+link, the order rule ("merge only on ship #N, one at a time"), the merge
+gate of `CLAUDE.md` ("Merging a PR into `main`"), the milestone line of item
+12, the usage block of section 5 (Sonnet row), and "Do not hand over at 300k
+or 450k".
 
 The brief is the session's only context. It has, in this order:
 
@@ -157,7 +179,9 @@ before naming a base.
 ## 5. Usage pacing (in every brief)
 
 From one `get_usage` reading: `ahead = percentUsed of the 5-hour window +
-minutes to reset / 3 - 100`. The session reads it at the start, before and
+minutes to reset / 3 - 97` (Maxi, 2026-11-24: "Keep / 3, aim at 97"; until
+then `- 100`). An even pace of 20 points an hour from the window's start lands
+at 97 percent at the reset, the 3-point buffer of the next paragraph. The session reads it at the start, before and
 after every agent, before every large step and at the end.
 
 | Model | Pause at a task boundary | Hard brake at any reading |
@@ -184,21 +208,35 @@ the pacing above decides, and the last 3 points are reached about 30 minutes
 before the reset, so the sleep to the reset stays short and the cache warm. A
 brief never sets a lower stop.
 
-Chain modes (Maxi, 2026-11-23: "change into slow mode when we reach +10 ahead
-so we can catch up and if we run into -20 we can run into Turbo Mode"), read
-by the coordinator at every reading of `ahead`:
+Chain modes, read by the coordinator at every reading of `ahead`; Auto on the
+chain dashboard sets them by the same rules. Four modes with hysteresis (Maxi,
+2026-11-24, on the numbers of #965: three lanes burned 25 to 27 points an hour
+while they worked, slow mode at +10 never came on, three Opus lanes for five
+hours would reach about 125 percent). "Last 2 hours" is under 120 minutes to
+the reset.
 
-| Mode | When | Lanes | Agent waves, deep reviews |
-|---|---|---|---|
-| Slow | `ahead` over +10 | no new start while two sessions work | wait until normal |
-| Normal | -20 to +10 | 3 | as the brief says |
-| Turbo | `ahead` under -20 | up to 5, never above today's row of "Agents per weekday" | welcome |
+| Mode | On at | Back at | Lanes | Agent waves, deep reviews |
+|---|---|---|---|---|
+| Super slow | over +15 | +5 or below, to slow | one side session at a time, 15-minute sleep between parts | wait |
+| Slow | over +10 (last 2 hours: over +5) | -15 or below, to normal (last 2 hours: -5) | 3, 15-minute sleep between parts | wait |
+| Normal | | | 3 | as the brief says |
+| Turbo | under -25 | -10 or above, to normal | up to 5, never above today's row of "Agents per weekday" | welcome |
 
-Slow mode lets running sessions go on; only new starts and new agent waves
-wait. The pauses of the table above still hold in every mode.
+From normal, over +15 goes straight to super slow. When turbo ends, running
+sessions finish their job; only no new start beyond 3 lanes (Maxi: "let the
+lanes get the Job done (no force break)"). Super slow lets running sessions go
+on too; only new starts and new agent waves wait. The pauses of the table
+above still hold in every mode.
 
-In slow mode (Maxi, 2026-11-23: "in the Slow mode i would prefer to let Items
-work which needs smaller models or less effort or less thinking"):
+A side quest Maxi starts during a chain (a measurement, a question for a
+session) counts as a lane. When it takes the chain above the lanes of its mode,
+the coordinator tells the lowest item in the order to sleep (one background
+sleep under 60 minutes, renewed) until a lane is free again (Maxi,
+2026-11-23).
+
+In slow and super slow mode (Maxi, 2026-11-23: "in the Slow mode i would
+prefer to let Items work which needs smaller models or less effort or less
+thinking"):
 
 - The next start is the first open item routed to Sonnet or Haiku, or to a
   lower effort; Opus items wait for normal mode unless none of the cheap kind
@@ -244,18 +282,18 @@ not hand over at 300k or 450k and do not stop for context size. Auto compaction
 at about 550k tokens may happen: commit and push at every step and keep what you
 need in the PR and in files, so a compaction loses nothing."
 
-A child's `/ship` never moves to a new session because of context size (Maxi,
+A child never hands its work to a new session because of context size (Maxi,
 2026-11-23: "start ship sessions in chain yourself in future when this happens
 so it doesn't break when i am not at the computer so in future it doesn't
 matter if i am here or not"). Only a turn Maxi's message began can start a
 session, so a hand-over at 450k stalls the chain until he is back. Every child
-brief therefore says, with that quote: "Do not hand over at 300k or 450k; build,
-`/done` and `/ship` in this session to the merge. Commit and push at every step
-and keep what you need in the PR and in files, so an auto compaction loses
-nothing." The 1M window compacts at about 97 percent, so a child reaches it
-rarely; a child whose turn fails on context anyway asks the coordinator by
-message, and the coordinator starts the `/ship` session in the next turn Maxi's
-message begins.
+brief therefore says, with that quote: "Do not hand over at 300k or 450k; build
+and `/done` in this session until the PR is ready with a clean first review.
+Commit and push at every step and keep what you need in the PR and in files,
+so an auto compaction loses nothing." Shipping goes to the ship lane (section
+2), which already runs. The 1M window compacts at about 97 percent, so a child
+reaches it rarely; a child whose turn fails on context anyway asks the
+coordinator by message.
 
 ## 6. The end of a chain
 
@@ -268,3 +306,14 @@ fix items that need no answer start without waiting for it. The last item
 of every chain that merged a migration: the workbench migration with a backup
 first (the migration path rule), run by Claude. Then close the issues the
 chain finished and report: merged pull requests, open decisions, usage.
+
+When the chain ends while Maxi is away (asleep, not at the computer), the
+coordinator files the open decisions as one issue ("Decisions for Maxi after
+chain ...": each choice with its PR, the option taken, the alternative, the
+recommendation) and links it on the plan issue (Maxi, 2026-11-24: "note it down
+in an Issue and the first thing to do when we start the chain or a new
+session, to decide what i have to like you just did with pop ups"). The first
+step of the next chain (section 1) and of `/start` is to read the newest open
+such issue and ask its decisions as closed popups (`AskUserQuestion`,
+recommendation first, at most four per popup); his answers go into the issue
+and to the items they change, then the issue is closed.
