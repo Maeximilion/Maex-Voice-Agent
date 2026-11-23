@@ -760,3 +760,19 @@ def test_guests_words_that_lose_the_allergy_in_the_cut_go_to_the_team(
     assert session.scalars(select(Reservation)).all() == []
     assert state.handoff_summary is not None
     assert "Erdnuss" not in state.handoff_summary
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "Ich reagiere auf Erdbeeren.",
+        "Ich darf keine Erdbeeren essen.",
+    ],
+)
+def test_a_bare_no_to_a_further_allergy_keeps_one_named_any_way(said):
+    """After a sentence that names what the guest reacts to, also in the
+    words only the cards read (`_ingredients`), a "Nein." to "Haben Sie sonst
+    noch Allergien?" denies a further one (#940 review; ledger #764 for the
+    wish parser's). An allergen in front of the health part stays no allergy
+    ("Die Pizza mit Käse, ich habe eine Allergie.", `guards.reacts_to`)."""
+    assert _taken_back([said], "Nein.") == [said]

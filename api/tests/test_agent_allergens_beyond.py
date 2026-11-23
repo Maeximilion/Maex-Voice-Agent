@@ -345,7 +345,10 @@ def test_the_card_of_that_question_leaves_out_what_was_searched(session, known_t
     )
 
     assert state.handoff_summary is not None
-    assert state.handoff_summary.startswith(SUMMARY_ALLERGENS)
+    # The kitchen marker leads every card of an allergic guest (#940).
+    assert state.handoff_summary.startswith(
+        f"{SUMMARY_NOTE_TO_CLEAR}. {SUMMARY_ALLERGENS}"
+    )
     assert "Erdnuss" not in state.handoff_summary
 
 
@@ -442,7 +445,7 @@ def test_without_a_team_the_card_names_the_question_and_the_dish(session, known_
     assert result.ended and state.stage == "callback"
     callback = session.scalars(select(Callback)).one()
     assert callback.reason == "out_of_scope"
-    assert callback.summary.startswith(SUMMARY_ALLERGENS)
+    assert callback.summary.startswith(f"{SUMMARY_NOTE_TO_CLEAR}. {SUMMARY_ALLERGENS}")
     assert "13 Pho Bo" in callback.summary
     # The question, never the guest's allergy (L13).
     assert "Sellerie" not in callback.summary
@@ -2879,3 +2882,64 @@ def test_a_cart_note_with_an_absence_nobody_said_is_never_read_back(
     assert json.loads(llm.calls[2][2])["hint"] == guards.HINT_NOTE_CLAIM
     assert result.say == ["Die 13 ist notiert."]
     assert state.cart == [plain]
+
+
+def test_a_table_read_back_stays_on_the_card_of_a_held_back_order(
+    session, known_tenant
+):
+    """An order draft held back for its note: the table read back before it
+    stays on the card, and the guest hears that neither is booked (#940)."""
+    state = table_read_back(session, known_tenant)
+    pho = str(item(session, known_tenant, "13"))
+    draft = ToolCall(
+        "draft_order",
+        {
+            "type": "pickup",
+            "customer": {"name": "Müller", "phone": CALLER},
+            "items": [{"menu_item_id": pho, "quantity": 1, "note": "ohne Farbstoff"}],
+        },
+    )
+    result, _ = run(
+        session,
+        state,
+        "Und einmal die Pho Bo zum Abholen, ich habe eine Erdnussallergie.",
+        LLMTurn(tool_call=ToolCall("search_menu", {"query": "Pho Bo"})),
+        LLMTurn(tool_call=draft),
+        LLMTurn(say="Passt das so?"),
+        now=CLOSED,
+    )
+
+    assert SAY_ORDER_NOT_PLACED in result.say
+    assert SAY_TABLE_NOT_BOOKED in result.say
+    card = session.scalars(select(Callback)).one().summary
+    assert "Offene Reservierung, nicht bestätigt: 4 Personen" in card
+
+
+def test_an_unreadable_correction_keeps_the_table_read_back_on_the_card(
+    session, known_tenant
+):
+    """The values the core read back stay on the card; the placeholder is only
+    for a table nobody could read (#940)."""
+    state = table_read_back(session, known_tenant)
+    unread = ToolCall(
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": CALLER,
+            "party_size": 4,
+            "reserved_for": "morgen um sieben",
+        },
+    )
+    run(
+        session,
+        state,
+        "Ich habe eine Erdnussallergie.",
+        LLMTurn(tool_call=unread),
+        LLMTurn(tool_call=ToolCall("transfer_to_team", {"reason": "out_of_scope"})),
+        now=CLOSED,
+    )
+
+    card = session.scalars(select(Callback)).one().summary
+    assert (
+        "Offene Reservierung, nicht bestätigt: 4 Personen, 16.09.2026 19:00 Uhr" in card
+    )
