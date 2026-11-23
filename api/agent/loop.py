@@ -194,6 +194,9 @@ _MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
 # guest's sentence behind them. Draft wording.
 SUMMARY_REMEDY_BOOKED = "Beschwerde, Gast hat zugestimmt, bitte ausführen: {remedy}."
 SUMMARY_REMEDY_OPEN = "Kunde hat sich beschwert, Angebot nicht angenommen: {remedy}."
+# The call ended after an order's read-back and before its yes (#953). Draft
+# wording.
+SUMMARY_READBACK_UNANSWERED = "Anruf endete vor dem Ja zur vorgelesenen Bestellung."
 SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
 # A cancel of the order read back, before its yes (#678): nothing to undo.
 SAY_ORDER_DROPPED = (
@@ -1076,14 +1079,39 @@ class ConversationLoop:
         )
         return result
 
-    def offer_unanswered(self, state: ConversationState) -> None:
+    def offer_unanswered(
+        self, state: ConversationState, *, with_the_team: bool = False
+    ) -> None:
         """The call ended while a rule waited for its answer: nothing is
         booked, and the complaint stays with the team on a card, or a guest
         who hangs up on the offer is lost (rule 5). Called by whoever closes
-        a call; a call without an open offer writes nothing."""
+        a call; a call without an open offer writes nothing.
+
+        The same for an order drafted and not answered with a yes (#953),
+        whatever the guest heard last: the time is a statement that invites a goodbye, a
+        "Danke" alone is no yes (Maxi, 23.11.2026), and the guest may expect
+        food nobody ordered. A table's read-back asks "Passt das so?", and a
+        guest who leaves it unanswered knows nothing is booked. Not when the
+        call goes `with_the_team` (an outage, a failed line): the team has it,
+        and its own card waits if nobody answers."""
         offer, state.remedy_offer = state.remedy_offer, None
         if offer is not None:
             self._complaint_card(state, offer, SUMMARY_REMEDY_OPEN)
+        elif (
+            not with_the_team
+            and state.stage == "readback_pending"
+            and state.order_id is not None
+            and (phone := state.slots.get("phone") or state.caller_phone)
+        ):
+            card, _ = self._card(
+                state, "not_understood", None, summary=SUMMARY_READBACK_UNANSWERED
+            )
+            result = self._dispatch(
+                state,
+                "create_callback",
+                {"phone": phone, "reason": "not_understood", "summary": card},
+            )
+            apply_tool_result(state, "create_callback", result)
 
     def _complaint_card(
         self, state: ConversationState, offer: RemedyOffer, sentence: str
@@ -1264,7 +1292,14 @@ class ConversationLoop:
         self, state: ConversationState, name: str, args: dict[str, Any]
     ) -> ToolResult:
         return dispatch(
-            self._session, state.call_id, state.tenant_id, name, args, now=self._now
+            self._session,
+            state.call_id,
+            state.tenant_id,
+            name,
+            args,
+            now=self._now,
+            # A draft the guest dropped is never replayed (#952).
+            pending_order=state.order_id,
         )
 
     def _table_to_team(
