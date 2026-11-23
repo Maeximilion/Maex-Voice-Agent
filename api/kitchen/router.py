@@ -18,6 +18,7 @@ from api.core.auth import require_kitchen_token
 from api.core.errors import Unauthorized
 from api.db import get_db
 from api.domain.ordering.handover import ack_ticket, claim_tickets
+from api.domain.reservations.slip import RESERVATION
 from api.schemas.kitchen import AckRequest, ClaimRequest
 
 router = APIRouter(prefix="/v1/kitchen", dependencies=[Depends(require_kitchen_token)])
@@ -32,7 +33,13 @@ def _own_tenant(tenant_id: uuid.UUID) -> None:
 @router.post("/claim")
 def claim(body: ClaimRequest, session: Session = Depends(get_db)) -> JSONResponse:
     _own_tenant(body.tenant_id)
-    tickets = claim_tickets(session, body.tenant_id, datetime.now(UTC), body.limit)
+    tickets = claim_tickets(
+        session,
+        body.tenant_id,
+        datetime.now(UTC),
+        body.limit,
+        reservation_slips=RESERVATION in body.layouts,
+    )
     return envelope.ok({"tickets": tickets})
 
 

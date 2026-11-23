@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.8
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.9
 
 ---
 
@@ -179,7 +179,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.8 · 23.11.2026:** T-5.3: prompt fix for Haiku 5.5 (read-back word for word, fixed allergy note), cases 72 -> 85/107
+- **v2.69.9 · 23.11.2026:** T-5.3: prompt fix for Haiku 5.5 (read-back word for word, fixed allergy note), cases 72 -> 85/107
+- **v2.69.8 · 23.11.2026:** #863 option C: every table the agent books prints a short slip on the print bridge (day, time, party, name, note); only a bridge that names the layout gets one, orders go first, no card, no alarm, taken back when the table is gone or past; tablet tables print nothing (Claude's choice, awaiting Maxi)
 - **v2.69.7 · 23.11.2026:** #888 C3 and D2: the superuser check runs once the database answers, the backup cron covers every customer stack
 - **v2.69.6 · 23.11.2026:** #888 S2 and B2: the tablet's CSRF cookie is __Host-csrf, read by its exact name, the old csrf_token accepted until every tablet reloaded
 - **v2.69.5 · 23.11.2026:** #888 S6: the load test removes what it made and its marker at the end, clears only what it can tell is its own, new_stack.py refuses customers while a marker is there
