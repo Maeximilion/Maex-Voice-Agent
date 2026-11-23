@@ -13,9 +13,8 @@
 # publishes asterisk-<version>.sha256; PJPROJECT_VERSION is in the tarball's
 # third-party/versions.mak), compare patches/ with Alpine's main/asterisk,
 # build, run the drills (docs/20 §10).
-ARG ALPINE=alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
-
-FROM ${ALPINE} AS build
+# Both stages on the same base, written out for Dependabot.
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS build
 ARG ASTERISK_VERSION=22.12.0
 ARG ASTERISK_SHA256=f8b2ba98aac6c4ff3376bc0a2868bea6ed577ca684efb7ec739ae6e8ce6e35e2
 ARG PJPROJECT_VERSION=2.17
@@ -65,7 +64,7 @@ RUN ./configure --prefix=/usr --sysconfdir=/etc --localstatedir=/var \
     && find /out/usr/sbin /out/usr/lib -type f \( -name 'asterisk' -o -name '*.so*' \) \
         -exec strip --strip-unneeded {} +
 
-FROM ${ALPINE}
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf
 # Runtime libraries of the modules built above; curl for the healthcheck and
 # the dialplan's CURL(); busybox, musl-utils (getent) and gettext-envsubst give
 # render.sh its tools. unbound-libs: res_resolver_unbound, without which PJSIP
