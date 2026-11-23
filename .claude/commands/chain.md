@@ -24,7 +24,16 @@ or every item is merged; the coordinator then reports and stops.
 - **Decisions:** plain questions the sessions answer themselves and list in
   the PR under "Claude's choice, awaiting Maxi". Only money, law, an open
   security design or production data go to Maxi, as closed questions
-  (`AskUserQuestion`), bundled, in a turn he began (see 4).
+  (`AskUserQuestion`), bundled, in a turn he began (see 4). Maxi, 2026-11-23:
+  "Give me the desicions when i am at the computer in future so i can decide
+  or if they are not so important just do it by yourself with the best options
+  when i am sleeping or not at the pc". So: while he is away, every choice is
+  made with the best option and listed in the PR; nothing waits for him except
+  the four kinds above. In the first turn his own message begins, the
+  coordinator gathers the listed choices of the merged and open PRs and asks
+  the ones worth his time as closed popups, recommendation first (at most four
+  per popup, the rest named in one line); his answer goes to the PR or a
+  follow-up item.
 - **Stop:** Maxi's word, the scope done, or 90 percent of the week.
 
 ## 2. One session per pull request
@@ -234,6 +243,19 @@ A child brief then says: "No handover limit this chain (Maxi, 2026-11-18): do
 not hand over at 300k or 450k and do not stop for context size. Auto compaction
 at about 550k tokens may happen: commit and push at every step and keep what you
 need in the PR and in files, so a compaction loses nothing."
+
+A child's `/ship` never moves to a new session because of context size (Maxi,
+2026-11-23: "start ship sessions in chain yourself in future when this happens
+so it doesn't break when i am not at the computer so in future it doesn't
+matter if i am here or not"). Only a turn Maxi's message began can start a
+session, so a hand-over at 450k stalls the chain until he is back. Every child
+brief therefore says, with that quote: "Do not hand over at 300k or 450k; build,
+`/done` and `/ship` in this session to the merge. Commit and push at every step
+and keep what you need in the PR and in files, so an auto compaction loses
+nothing." The 1M window compacts at about 97 percent, so a child reaches it
+rarely; a child whose turn fails on context anyway asks the coordinator by
+message, and the coordinator starts the `/ship` session in the next turn Maxi's
+message begins.
 
 ## 6. The end of a chain
 
