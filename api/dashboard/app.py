@@ -206,6 +206,13 @@ STACK_UPDATED = (
 )
 COPY = "a passkey answered with an old counter, a copy?"
 NEW_BROWSER = "signed in from a new browser"
+# #888 A2: the password is known, or a session guesses codes.
+KNOWN_PASSWORD = "right password with a wrong second factor"
+STEP_UP_GUESSES = "wrong step-up codes, three in a row"
+# A request the operator's own page sends, or one typed or bookmarked. A
+# same-site one may come from a customer stack and must not keep the session
+# alive (#888 A4).
+OWN_REQUEST = {"same-origin", "none"}
 NO_STORE = {"Cache-Control": "no-store"}
 # Times are stored and sent in UTC and shown in the restaurants' time.
 SHOWN_IN = ZoneInfo("Europe/Berlin")
@@ -406,10 +413,18 @@ def _checked(request: Request, form: dict[str, str]) -> None:
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
 
+def _own(request: Request) -> bool:
+    """Was this request sent by the operator, not by another site's page? A
+    browser without Fetch Metadata sends no header and counts as the operator."""
+    return request.headers.get("sec-fetch-site", "none") in OWN_REQUEST
+
+
 def require_operator(
     request: Request, db: Session = Depends(get_db)
 ) -> access.Operator:
-    operator = access.resolve(db, request.cookies.get(cookie("session"), ""), now())
+    operator = access.resolve(
+        db, request.cookies.get(cookie("session"), ""), now(), touch=_own(request)
+    )
     if operator is None:
         if request.method == "GET":
             raise HTTPException(status_code=303, headers={"Location": LOGIN})
@@ -515,6 +530,12 @@ def _alert(db: Session, operator: str, what: str) -> None:
         db.commit()
 
 
+def _device_cookie(request: Request) -> str:
+    """The browser's device cookie: a factor change keeps it and forgets the
+    others (#888 B1, S12)."""
+    return request.cookies.get(cookie("device"), "")
+
+
 def _with_ended(what: str, ended: int) -> str:
     """The push of a factor change names the sessions it ended (D39)."""
     return f"{what}, other sessions ended: {ended}" if ended else what
@@ -548,7 +569,8 @@ def health() -> dict[str, str]:
 
 @app.get(LOGIN, response_class=HTMLResponse)
 def login_page(request: Request, db: Session = Depends(get_db)) -> Response:
-    if access.resolve(db, request.cookies.get(cookie("session"), ""), now()):
+    token = request.cookies.get(cookie("session"), "")
+    if access.resolve(db, token, now(), touch=_own(request)):
         return RedirectResponse(HOME, status_code=303)
     return _page(request, "login.html", {})
 
@@ -576,6 +598,8 @@ def login_post(
     except access.SignInRefused as refused:
         if refused.copy:
             _alert(db, form.get("name", "").strip().lower(), COPY)
+        if refused.alarm:
+            _alert(db, form.get("name", "").strip().lower(), KNOWN_PASSWORD)
         return _page(request, "login.html", {"message": _refusal(refused)}, 401)
     operator = form.get("name", "").strip().lower()
     if signed.factor == "recovery":
@@ -691,6 +715,8 @@ def step_up_post(
     except access.SignInRefused as refused:
         if refused.copy:
             _alert(db, operator.name, COPY)
+        if refused.alarm:
+            _alert(db, operator.name, STEP_UP_GUESSES)
         ways = _ways(db, operator, form.get(FOR_FACTORS) == "1")
         context = {"next": back, "message": _refusal(refused), **ways}
         return _page(request, "step_up.html", context, 401)
@@ -791,7 +817,9 @@ def passkey_remove(
 ) -> Response:
     _checked(request, form)
     try:
-        name, ended = access.remove_passkey(db, operator, form.get("id", ""), now())
+        name, ended = access.remove_passkey(
+            db, operator, form.get("id", ""), now(), _device_cookie(request)
+        )
     except access.FactorNeeded:
         return _factors("factor-needed")
     except LookupError:
@@ -820,7 +848,9 @@ def totp_confirm(
     db: Session = Depends(get_db),
 ) -> Response:
     _checked(request, form)
-    ended = access.confirm_totp(db, operator, form.get("code", ""), now())
+    ended = access.confirm_totp(
+        db, operator, form.get("code", ""), now(), _device_cookie(request)
+    )
     if ended is None:
         return _factors("code-wrong")
     _alert(db, operator.name, _with_ended("new TOTP secret", ended))
@@ -836,7 +866,7 @@ def totp_remove(
 ) -> Response:
     _checked(request, form)
     try:
-        ended = access.remove_totp(db, operator, now())
+        ended = access.remove_totp(db, operator, now(), _device_cookie(request))
     except access.FactorNeeded:
         return _factors("factor-needed")
     if ended is None:
