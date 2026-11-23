@@ -218,6 +218,7 @@ export function renderHeader(h: HeaderData): string {
   out += `</div>`;
   if (cfg) {
     out += `<div class="top actions">`;
+    out += `<details class="mehr" id="kopf-mehr"><summary>Mehr</summary><div class="mehr-inhalt">`;
     for (const [key, label, minutes, standard] of h.waits) {
       out += `<div class="step"><button class="step-value" hx-get="/gui/wartezeit/${esc(key)}" hx-target="#wartezeit">`;
       out += `<b>Wartezeit ${esc(label)} ${minutes} Min</b>`;
@@ -233,6 +234,7 @@ export function renderHeader(h: HeaderData): string {
     out += `<button class="push" hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus`;
     if (h.sold_out_count) out += ` <span class="badge warn">${h.sold_out_count} heute aus</span>`;
     out += `</button>`;
+    out += `</div></details>`;
     out += `<a class="button" href="/gui/anrufe">Anrufe</a>`;
     out += `<a class="button" href="/gui/kennzahlen">Kennzahlen</a>`;
     out += `<a class="button" href="/gui/raumplan">Raumplan</a>`;
