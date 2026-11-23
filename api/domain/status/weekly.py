@@ -157,6 +157,7 @@ def set_weekday(
         session.rollback()
         raise Conflict(f"weekday {weekday} changed since shown", say=CHANGED_SINCE)
     faults: dict[str, str] = {}
+    clean: list[str] = []
     for service in changed:
         found = _faults(service, after[service])
         if not found:
@@ -164,7 +165,9 @@ def set_weekday(
                 stored, weekday, service, after[service], before[service]
             )
         faults.update(found)
-    clean = [service for service in changed if service not in faults]
+        if not found:
+            # A span fault is keyed by its span, not by the service.
+            clean.append(service)
     if clean:
         moment = now or clock.utcnow()
         faults.update(

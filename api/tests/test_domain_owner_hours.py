@@ -994,3 +994,16 @@ def test_a_night_that_is_over_blocks_no_weekly_save(session, tenant_id):
                 weekly.set_weekday(session, tenant_id, SUNDAY, early, seen, now=at)
         else:
             assert weekly.set_weekday(session, tenant_id, SUNDAY, early, seen, now=at)
+
+
+def test_a_span_fault_is_not_read_again_as_a_dates_night(session, tenant_id):
+    """Review of #877: a span that cannot hold (no length) is named alone; the
+    night rule against the dates beside it reads only spans that hold."""
+    night = DayHours(opens=time(18), closes=time(3))
+    assert staff.set_day_hours(
+        session, tenant_id, SATURDAY_14, night, NOW, overnight=True
+    )
+    empty = {"pickup": [Span(time(2), time(2))]}
+    with pytest.raises(FieldErrors) as refused:
+        _set_at_now(session, tenant_id, SUNDAY, empty)
+    assert refused.value.faults == {"pickup 02:00-02:00": staff.NO_SPAN}
