@@ -403,6 +403,8 @@ def test_a_name_with_the_day_shows_the_persons_rows_and_audits_the_look(client, 
         assert text in answer.text, text
     assert "12,00 €" in answer.text and "übergeben" in answer.text
     assert "Gerichte:</span> <bdi>1 x 23 " in answer.text
+    # The copy goes only where the rows prove it reaches the guest (#888 S4).
+    assert "nach einem Rückruf an die geprüfte Nummer" in answer.text
     # What was typed stays in the form for the next check.
     assert _fields(answer.text)["name"] == "Müller"
     (look,) = _audits(engine, "data_subject.rows_read")
