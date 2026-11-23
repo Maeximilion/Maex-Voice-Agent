@@ -405,8 +405,9 @@ class ConversationLoop:
             reason == "cancellation"
             and state.stage == "readback_pending"
             and state.order_id is not None
-            # "Meine Reservierung stornieren" is about something else.
-            and "reserv" not in user_text.lower()
+            # Only a plain cancel: anything more may be another booking, one
+            # line or a question, and goes to the team as before.
+            and escalation.only_cancels(user_text)
         ):
             # "So lange? Dann stornieren Sie das." Nothing is booked before
             # the yes, so the team has nothing to undo (Maxi, #678).

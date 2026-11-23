@@ -488,10 +488,36 @@ def test_a_cancel_after_the_stated_time_drops_the_draft_without_the_team(
 
     assert said == [SAY_ORDER_DROPPED]
     assert (state.order_id, state.readback, state.stage) == (None, None, "collecting")
-    assert state.cart == []
+    assert (state.cart, state.order_note) == ([], None)
     assert status(session, order, draft_id) == "draft"
     assert session.scalar(select(func.count()).select_from(Callback)) == 0
     turn(session, state, "Ja", Model(order.confirm(draft_id), say="Gerne."))
+    assert status(session, order, draft_id) == "draft"
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Bitte nicht stornieren, das passt so.",
+        "Kann ich das später noch stornieren?",
+        "Die Cola bitte abbestellen",
+        "Den Tisch für morgen bitte absagen",
+        "Die Bestellung von vorhin stornieren Sie bitte",
+    ],
+)
+def test_a_cancel_of_something_else_keeps_the_order_and_goes_to_the_team(
+    session, state, order, answer
+):
+    """Review of #678: only a plain cancel drops the order that waits. A
+    "nicht", a question, one line, a table or an earlier order is the team's,
+    with the sentence and the open order on its card, as before."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+
+    said = turn(session, state, answer, Model(say="x"))
+
+    assert said != [SAY_ORDER_DROPPED]
+    assert state.cart, "the open order stays for the team's card"
     assert status(session, order, draft_id) == "draft"
 
 

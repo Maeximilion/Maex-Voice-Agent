@@ -22,7 +22,6 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from api.agent.consent import answers_the_read_back
 from api.agent.escalation import speaks_of_allergies
 from api.agent.guards import (
     HINT_ALLERGY_CALL,
@@ -110,6 +109,7 @@ SUMMARY_OUT_OF_SCOPE = "Anliegen außerhalb dessen, was die KI selbst kann."
 
 YES = ("ja", "genau", "passt", "richtig", "stimmt", "gerne", "jawohl", "okay", "ok")
 NO = ("nein", "nicht", "falsch", "doch nicht", "anders")
+ACKNOWLEDGED = ("gut", "klar", "in ordnung")
 
 WEEKDAYS = {
     "montag": 0,
@@ -253,12 +253,27 @@ class ScriptedLLM:
         patch = self._extract(text, state.get("slots", {}))
         slots = {**state.get("slots", {}), **patch}
 
+        if (
+            self._pickup is not None
+            and self._pickup.readback_for
+            and state.get("stage") != "readback_pending"
+            and not state.get("cart")
+        ):
+            # The core dropped the draft and its lines ("stornieren", #678):
+            # nothing waits for a yes any more. An allergy takes back only the
+            # draft and keeps the lines (below).
+            self._pickup.readback_for = None
         if self._pickup is not None and self._pickup.readback_for:
-            yes = (
-                _mentions_word(text, YES) and not _mentions_word(text, NO)
-            ) or answers_the_read_back(text, self._pickup.readback)
-            if not yes and self._pickup.delivery and _mentions_stem(text, PICKUP):
+            # "So lange? Dann hole ich es doch ab": a new draft, before any yes.
+            if self._pickup.delivery and _mentions_stem(text, PICKUP):
                 return self._pickup.to_pickup(slots)
+            # Its own words, not the core's rule (consent.py): the time that
+            # closes an order's read-back is acknowledged too (#678).
+            timed = (self._pickup.readback or "").endswith(".")
+            yes = (
+                _mentions_word(text, YES)
+                or (timed and _mentions_word(text, ACKNOWLEDGED))
+            ) and not _mentions_word(text, NO)
             if (
                 not yes
                 and speaks_of_health(text)

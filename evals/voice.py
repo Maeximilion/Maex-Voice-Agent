@@ -47,7 +47,7 @@ from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
-from api.agent.consent import is_yes
+from api.agent.consent import acknowledges
 from api.telephony.session import CallSession, Lines
 from api.telephony.speech import Ear, Heard, Mouth, SpeechUsage
 from evals.heard import EVAL, dish_verdict, number_verdict
@@ -246,7 +246,9 @@ def noise_cases(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
         yeses = [
             turn
             for turn in variant["transcript"]
-            if turn.get("role") == "customer" and is_yes(turn.get("text", ""))
+            if turn.get("role") == "customer"
+            # A yes, or the acknowledgement of an order's stated time (#678).
+            and acknowledges(turn.get("text", ""))
         ]
         if not yeses:
             continue

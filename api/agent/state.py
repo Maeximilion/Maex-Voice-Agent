@@ -551,6 +551,7 @@ def order_dropped(state: ConversationState) -> None:
     from."""
     _drop_readback(state, "draft_order")
     state.cart = []
+    state.order_note = None
 
 
 def order_corrected(state: ConversationState) -> None:

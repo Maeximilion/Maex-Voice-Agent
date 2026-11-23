@@ -358,6 +358,31 @@ def only_a_complaint(text: str) -> bool:
     )
 
 
+# The words of a cancel that means the order read back and nothing else (#678
+# review): "Oh, so lange? Dann stornieren Sie das bitte." Any other word may
+# name another booking ("Tisch", "von vorhin"), one line ("die Cola"), ask
+# ("kann", "später") or turn it round ("nicht"): such a sentence goes to the
+# team as every cancel did. shortcut: a closed list, add a word when the call
+# log shows a plain cancel it misses.
+_PLAIN_CANCEL = frozenset(
+    {"absagen", "abbestellen", "rückgängig", "machen"}
+    | {"dann", "das", "es", "sie", "ich", "mir", "die", "meine", "ganze"}
+    | {"bestellung", "lieferung", "abholung", "bitte", "lieber", "doch", "also"}
+    | {"oh", "ach", "na", "so", "zu", "lang", "lange", "ist", "dauert", "mal"}
+    | {"nein", "nee", "ne", "okay", "ok", "gut", "alles", "klar", "ja", "danke"}
+    | {"leider", "schade", "aber", "einfach", "wieder", "gerne", "gern"}
+)
+
+
+def only_cancels(text: str) -> bool:
+    """Does the sentence cancel and say nothing else? A "storn" word and the
+    words of `_PLAIN_CANCEL`, nothing more."""
+    words = _WORDS.findall(_folded(text))
+    return any(word.startswith("storn") for word in words) and all(
+        word.startswith("storn") or word in _PLAIN_CANCEL for word in words
+    )
+
+
 def check(text: str) -> EscalationReason | None:
     """Erster treffende Auslöser aus docs/05 §4, oder `None`. Wird auf jedem
     rohen Kundenzug geprüft, bevor `loop.py` das Modell überhaupt aufruft."""

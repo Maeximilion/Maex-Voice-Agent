@@ -22,7 +22,10 @@ passt").
 
 Read out (`read_out`) means: the sentence that ended a turn held the words of
 the draft, then the question that asks for the yes ("Passt das so?", "Ist das
-so richtig?"), and nothing that could change either. Another question behind
+so richtig?"), and nothing that could change either. An order's read-back
+closes with its time instead ("Es dauert so ungefähr 30 Minuten.", #678) and
+needs no question: "Okay" or "Alles klar" to it is the yes
+(`answers_the_read_back`). Another question behind
 the read-back would be what the guest's yes answers.
 
 Strict on purpose: a yes that is missed costs the guest one more question, a
@@ -34,6 +37,7 @@ free text through.
 
 import re
 import unicodedata
+from collections.abc import Callable
 from itertools import pairwise
 
 from api.domain.calls.consent import Answer
@@ -237,13 +241,13 @@ def is_yes(text: str) -> bool:
     )
 
 
-def _plain_words(text: str) -> list[str]:
-    """The words of an answer that neither asks nor names a number, harmless
-    phrases cut; none for any other."""
+def _plain_words(text: str, asking: Callable[[str], bool] = asks) -> list[str]:
+    """The words of an answer that neither asks (`asking`) nor names a number,
+    harmless phrases cut; none for any other."""
     lowered = _lowered(text)
     if any(char.isdigit() for char in lowered):
         return []
-    if "?" in lowered or asks(lowered):
+    if "?" in lowered or asking(lowered):
         return []
     for phrase in _HARMLESS:
         lowered = lowered.replace(phrase, " ")
@@ -257,6 +261,16 @@ def _plain_words(text: str) -> list[str]:
 _ACKNOWLEDGING = frozenset(
     {"gut", "klar", "ordnung", "super", "prima", "perfekt", "wunderbar"}
 )
+# A statement invites a reply that ends the call or opens with a sound:
+# "Alles klar, tschüss", "Okay, bis gleich", "Oh, okay", "Na gut". Refused, the
+# guest hangs up on a draft nobody sees (review of #678). Never an answer
+# alone: "Tschüss" or "Bis gleich" acknowledges nothing.
+_CLOSING = frozenset(
+    {"tschüss", "tschüs", "tschuess", "tschues", "tschau", "ciao", "bye"}
+    | {"servus", "ade", "bis", "gleich", "später", "spaeter", "dann", "nachher"}
+    | {"auf", "wiederhören", "wiederhoeren", "wiedersehen"}
+    | {"oh", "ah", "aha", "ach", "na"}
+)
 
 
 def answers_the_read_back(text: str, readback: str | None) -> bool:
@@ -268,9 +282,23 @@ def answers_the_read_back(text: str, readback: str | None) -> bool:
         return True
     if readback is None or readback.rstrip().endswith("?"):
         return False
-    words = _plain_words(text)
-    return any(word in _ACKNOWLEDGING for word in words) and all(
-        word in _FILLER for word in words
+    return acknowledges(text)
+
+
+def acknowledges(text: str) -> bool:
+    """An acknowledgement of a statement: an assent or acknowledging word, the
+    rest filler and closing words. Nothing was asked, so "Ist gut" is an answer
+    here; a question mark or a verb before its subject ("Ist das gut") asks."""
+    words = _plain_words(text, asking=_verb_first_somewhere)
+    return any(word in _ACKNOWLEDGING or word in _YES for word in words) and all(
+        word in _YES or word in _FILLER or word in _CLOSING for word in words
+    )
+
+
+def _verb_first_somewhere(lowered: str) -> bool:
+    return any(
+        _verb_first(_WORD.findall(sentence))
+        for sentence in _SENTENCE_END.split(lowered)
     )
 
 
@@ -316,7 +344,9 @@ def read_out(say: str, readback: str) -> bool:
     - The words of the draft, in order and without a gap: a read-back that
       leaves the name out or says another number is not this draft.
     - Behind them the question that asks for the yes, the draft's own or one
-      of a few fixed forms (`_asks_to_confirm`), and nothing else. Without it the
+      of a few fixed forms (`_asks_to_confirm`), and nothing else. A
+      read-back that closes with a statement, an order's time (#678), may
+      also end the sentence. Without it the
       guest's "Ja" answers whatever was said last: "Das ist falsch: <draft>."
       asks nothing, and "<draft>. Möchten Sie noch einen Hochstuhl?" asks
       about the high chair. A read-back that is a question as a whole needs
