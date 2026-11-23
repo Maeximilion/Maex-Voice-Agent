@@ -764,3 +764,26 @@ def test_a_customer_with_the_operator_secret_does_not_go_live(tmp_path, monkeypa
     site = new_stack.site_text(CADDYFILE, "pilot", env)
     (root / "caddy" / "sites" / "pilot.caddy").write_text(site)
     assert new_stack.main(["--check-sites", "--root", str(root)]) == 1
+
+
+def test_no_customer_is_set_up_next_to_a_load_test(tmp_path, monkeypatch):
+    """#888 S6: the load test's marker means its stacks are here, and its next
+    run removes what it made: a customer would sit among them."""
+    root = tmp_path / "srv"
+    _operator(root)
+    (root / new_stack.LOAD_RUN).touch()
+    docker = FakeDocker()
+    monkeypatch.setattr(new_stack, "run", docker)
+    real = [str(CUSTOMER), "--domain", "a.example.org", "--root", str(root)]
+    assert new_stack.main(real) == 1
+    assert new_stack.main([*real, "--dry-run"]) == 1
+    assert new_stack.main(["--ops-site", "--root", str(root)]) == 1
+    assert docker.commands == []
+    assert not (root / "pilot").exists()
+    assert not (root / "caddy" / "operator" / "ops.caddy").exists()
+    # The load test's own stacks serve the reserved names *.test.
+    load = [str(CUSTOMER), "--domain", "load1.test", "--root", str(root), "--dry-run"]
+    assert new_stack.main(load) == 0
+    # Without the marker a customer is set up as always.
+    (root / new_stack.LOAD_RUN).unlink()
+    assert new_stack.main([*real, "--dry-run"]) == 0

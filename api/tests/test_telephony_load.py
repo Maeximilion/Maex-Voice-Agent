@@ -5,6 +5,7 @@ server; what it decides from its recordings and numbers is tested here."""
 import argparse
 import json
 import os
+import shutil
 import threading
 import wave
 from http.server import ThreadingHTTPServer
@@ -418,3 +419,241 @@ def test_a_call_whose_caller_never_spoke(tmp_path: Path) -> None:
             w.writeframes(_track([(freq, 2.0)]))
     result = load.judge_call("101", tmp_path, 4)
     assert result.turns == [None] * 4 and result.lost_audio == 0
+
+
+# -- what a run removes (#888 S6) -------------------------------------------------
+
+
+class _Docker:
+    """`load.sh` without Docker: the Compose projects it lists are `projects`
+    (container `c<i>` is project i), `rm -rf` removes in the fake root only,
+    every command is recorded."""
+
+    def __init__(self, root: Path, projects: list[str], fail: str = "") -> None:
+        self.root, self.projects, self.fail = root, projects, fail
+        self.calls: list[list[str]] = []
+
+    def __call__(self, command: list[str], **_: object) -> str:
+        self.calls.append(command)
+        if self.fail and self.fail in " ".join(command):
+            raise load.LoadError(f"{self.fail} failed")
+        if command[0] == "rm":
+            target = Path(command[-1])
+            assert target.parent == self.root, target
+            shutil.rmtree(target)
+            return ""
+        if command[:3] == ["docker", "rm", "-f"]:
+            gone = {int(cid[1:]) for cid in command[3:]}
+            self.projects = [p for i, p in enumerate(self.projects) if i not in gone]
+            return ""
+        if command[-1].startswith("{{.ID}}"):
+            return "".join(f"c{i} {p}\n" for i, p in enumerate(self.projects))
+        if "--format" in command:
+            return "".join(f"{p}\n" for p in self.projects)
+        return ""
+
+    def removals(self) -> list[list[str]]:
+        return [
+            c
+            for c in self.calls
+            if c[0] == "rm" or c[:3] == ["docker", "rm", "-f"] or "prune" in c
+        ]
+
+
+def _load_stack(root: Path, n: int, domain: str | None = None) -> Path:
+    folder = root / f"load{n}"
+    folder.mkdir(parents=True)
+    domain = domain or load.DOMAIN.format(n=n)
+    (folder / ".env").write_text(
+        f'COMPOSE_PROJECT_NAME="maex-load{n}"\nAGENT_DOMAIN="agent.{domain}"\n'
+    )
+    return folder
+
+
+def _kit_root(root: Path) -> None:
+    """What a run of the kit leaves: two stacks (one stopped before its .env),
+    the operator stack, the shared Caddy, the marker and new_stack's lock."""
+    _load_stack(root, 1)
+    (root / "load2").mkdir()
+    (root / "ops" / "backups").mkdir(parents=True)
+    (root / "ops" / ".env").write_text(f"OPERATOR_ORIGIN={load.LOAD_ORIGIN}\n")
+    (root / "caddy" / "sites").mkdir(parents=True)
+    (root / "caddy" / "sites" / "load1.caddy").write_text("agent.load1.test {}\n")
+    (root / load.RUN_MARKER).touch()
+    (root / load.ROOT_LOCK).touch()
+
+
+@pytest.fixture
+def root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    root = tmp_path / "srv"
+    root.mkdir()
+    monkeypatch.setattr(load, "ROOT", root)
+    return root
+
+
+def test_the_marker_is_the_one_new_stack_refuses_customers_by() -> None:
+    from scripts import new_stack
+
+    assert load.RUN_MARKER == new_stack.LOAD_RUN
+
+
+def test_a_server_with_customers_is_refused_though_a_marker_is_left(
+    root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The finding: a run left its marker, then a customer and the real
+    operator stack were set up. Nothing is removed, nothing is stopped."""
+    _kit_root(root)
+    (root / "ops" / ".env").write_text("OPERATOR_ORIGIN=https://ops.example.org\n")
+    (root / "pizzeria").mkdir()
+    (root / "pizzeria" / ".env").write_text('AGENT_DOMAIN="agent.example.org"\n')
+    docker = _Docker(root, ["maex-ops", "maex-caddy", "maex-pizzeria", "maex-load1"])
+    monkeypatch.setattr(load, "sh", docker)
+    with pytest.raises(load.LoadError) as refused:
+        load.clean_slate(tmp_path / "run")
+    assert str(root / "ops") in str(refused.value)
+    assert str(root / "pizzeria") in str(refused.value)
+    assert "Compose project maex-pizzeria" in str(refused.value)
+    assert docker.removals() == []
+    assert (root / "ops" / "backups").is_dir()
+    assert (root / "pizzeria" / ".env").exists()
+
+
+@pytest.mark.parametrize(
+    "stranger", ["project", "load-key", "operator-site", "offboarding", "symlink"]
+)
+def test_anything_the_kit_cannot_tell_is_its_own_refuses_the_run(
+    root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stranger: str
+) -> None:
+    _kit_root(root)
+    projects = ["maex-load1", "maex-ops", "maex-caddy", load.LINE_PROJECT]
+    if stranger == "project":  # a customer's volume whose folder is gone
+        projects.append("maex-pizzeria")
+    elif stranger == "load-key":  # a customer whose key happens to be load3
+        _load_stack(root, 3, domain="example.org")
+    elif stranger == "operator-site":  # the operator's own site in the Caddy
+        (root / "caddy" / "operator").mkdir()
+        (root / "caddy" / "operator" / "ops.caddy").write_text("ops.example.org {}\n")
+    elif stranger == "offboarding":  # remove_stack.py's exports and ledger
+        (root / "offboarding").mkdir()
+    else:
+        (root / "load4").symlink_to(tmp_path)
+    docker = _Docker(root, projects)
+    monkeypatch.setattr(load, "sh", docker)
+    with pytest.raises(load.LoadError, match="did not make"):
+        load.clean_slate(tmp_path / "run")
+    assert docker.removals() == []
+    assert (root / "load1" / ".env").exists()
+    assert (root / "ops" / "backups").is_dir()
+
+
+def test_a_clean_slate_removes_only_the_kits_own(
+    root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _kit_root(root)
+    projects = ["maex-load1", "maex-ops", "maex-caddy", load.LINE_PROJECT, "other"]
+    docker = _Docker(root, projects)
+    monkeypatch.setattr(load, "sh", docker)
+    run = tmp_path / "run"
+    (run / "recordings").mkdir(parents=True)
+    (run / "report.json").write_text("{}")
+
+    load.clean_slate(run)
+
+    assert sorted(p.name for p in root.iterdir()) == [load.ROOT_LOCK, load.RUN_MARKER]
+    assert docker.projects == ["other"]  # not one of the kit's names: untouched
+    pruned = {c[-1] for c in docker.calls if "prune" in c}
+    assert pruned == {
+        f"label=com.docker.compose.project={p}"
+        for p in ("maex-load1", "maex-load2", "maex-ops", "maex-caddy", "load-line")
+    }
+    assert not (run / "recordings").exists()
+    assert not (run / "report.json").exists()
+
+
+def test_an_empty_server_is_used_and_marked(
+    root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docker = _Docker(root, ["something-else"])
+    monkeypatch.setattr(load, "sh", docker)
+    load.clean_slate(tmp_path / "run")
+    assert (root / load.RUN_MARKER).exists()
+    assert [c for c in docker.calls if c[0] == "rm"] == []
+    assert docker.projects == ["something-else"]
+
+
+@pytest.mark.parametrize("keep", [False, True])
+def test_a_run_removes_what_it_made_also_when_a_step_broke(
+    root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, keep: bool
+) -> None:
+    docker = _Docker(root, [])
+    monkeypatch.setattr(load, "sh", docker)
+
+    def broke(self: load.Inside) -> int:
+        _kit_root(root)  # what the run set up before the step broke
+        docker.projects += ["maex-load1", "maex-ops", "maex-caddy", load.LINE_PROJECT]
+        raise load.LoadError("stack load2 did not come up")
+
+    monkeypatch.setattr(load.Inside, "measure", broke)
+    args = argparse.Namespace(run_dir=tmp_path / "run", keep=keep)
+    with pytest.raises(load.LoadError, match="load2"):
+        load.Inside(args).run()
+    if keep:
+        assert (root / load.RUN_MARKER).exists()
+        assert (root / "load1").is_dir()
+    else:
+        assert sorted(p.name for p in root.iterdir()) == [load.ROOT_LOCK]
+        assert docker.projects == []
+
+
+def test_a_finished_run_removes_what_it_made(
+    root: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    docker = _Docker(root, [])
+    monkeypatch.setattr(load, "sh", docker)
+
+    def measured(self: load.Inside) -> int:
+        _kit_root(root)
+        docker.projects += ["maex-load1", load.LINE_PROJECT]
+        return 0
+
+    monkeypatch.setattr(load.Inside, "measure", measured)
+    args = argparse.Namespace(run_dir=tmp_path / "run", keep=False)
+    assert load.Inside(args).run() == 0
+    assert sorted(p.name for p in root.iterdir()) == [load.ROOT_LOCK]
+    assert docker.projects == []
+
+
+def test_a_failed_removal_keeps_the_marker(
+    root: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _kit_root(root)
+    (root / "pizzeria").mkdir()
+    monkeypatch.setattr(load, "sh", _Docker(root, ["maex-load1"], fail="docker rm"))
+    assert load.tear_down() is False
+    assert (root / load.RUN_MARKER).exists()
+    assert (root / "load1").is_dir()
+    assert "not all removed" in capsys.readouterr().err
+    # Removed once Docker works; a customer's folder stays where it is.
+    docker = _Docker(root, ["maex-load1", "maex-pizzeria"])
+    monkeypatch.setattr(load, "sh", docker)
+    assert load.tear_down() is True
+    assert sorted(p.name for p in root.iterdir()) == [load.ROOT_LOCK, "pizzeria"]
+    assert docker.projects == ["maex-pizzeria"]
+    out = capsys.readouterr().out
+    assert "left in place" in out and "pizzeria" in out
+
+
+def test_down_on_the_server_removes_a_runs_leftovers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(load, "docker_problem", lambda: None)
+    monkeypatch.setattr(os, "getuid", lambda: 1000)
+    calls: list[str] = []
+
+    def tear_down() -> bool:
+        calls.append("down")
+        return True
+
+    monkeypatch.setattr(load, "tear_down", tear_down)
+    assert load.main(["--inside", "--down"]) == 0
+    assert calls == ["down"]

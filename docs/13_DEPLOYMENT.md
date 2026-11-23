@@ -676,8 +676,22 @@ the server is bought and prices per concurrent call are set. On the workbench, i
 - **The CPU caveat stands**: a workbench core (Ryzen 9 7950X3D) is faster than a VPS vCore, so the
   number is an upper bound. Plan with a margin and run the same on the VPS in its first month:
   there, as the deploy user in a checkout on an empty server,
-  `python3 -m scripts.voice_load --inside --run-dir <folder>`. It refuses a `/srv/maex` it did
-  not make, so it never clears a server with customers on it.
+  `python3 -m scripts.voice_load --inside --run-dir <folder>`.
+- **What a run removes** (#888 S6): at its end, also when a step broke, a run removes its
+  stacks, the operator stack, the shared Caddy and the line with their volumes and folders, and
+  its marker `/srv/maex/.voice-load-run`; `--keep` leaves them running, and
+  `python3 -m scripts.voice_load --inside --down` removes them later. Before it starts, and again
+  at its end, it removes only what it can tell is its own by what it wrote, never by the marker
+  alone: a stack `load<n>` whose `.env` serves `agent.load<n>.test` (a reserved name no customer
+  has) or that has no `.env` yet, `ops` whose `.env` names `https://ops.load.test`, and `caddy`
+  with no site but `load<n>` and no `operator/ops.caddy`. Anything else under `/srv/maex` (a
+  customer's stack, the real operator stack with its `.env` and `ops/backups`, `offboarding`, a
+  link) or any other Compose project `maex-*` refuses the run before anything is removed, and is
+  left in place at its end. While the marker is there, `scripts/new_stack.py` sets up no
+  customer and no `--ops-site` (only the run's own `*.test` stacks), and both take the same lock
+  of the root, so a customer's setup and a run never overlap. Removal and refusal are tested with
+  a fake file system and fake Docker calls (`api/tests/test_telephony_load.py`), not yet on a
+  server.
 
 ### Reassess
 

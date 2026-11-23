@@ -11,7 +11,9 @@ Engine of its own, limited to `--cpus` processors and `--memory` without swap,
 the size of the VPS of D3. Everything else runs inside it, as on the server:
 
 1. A clean slate: the containers, volumes and networks of an earlier run go,
-   the images and the build cache stay.
+   the images and the build cache stay. Only what the kit can tell is its own
+   goes (`leftovers`); anything else under /srv/maex or a Compose project
+   `maex-*` it did not make refuses the run before anything is removed.
 2. The operator stack in /srv/maex/ops (deploy/docker-compose.operator.yml) and
    the line (deploy/loadtest/docker-compose.line.yml): the router every stack's
    Asterisk registers at, with the callers and the team telephones, and the
@@ -44,8 +46,15 @@ faster per core than a VPS's vCore: the result is an upper bound until the
 same run on the server itself (`--inside` there, as the deploy user, from a
 checkout).
 
-`--keep` leaves the test server running, `--down` stops one left behind,
-`--purge` also deletes its image cache. Invented numbers and names only, no
+At the end, also when a step broke, the run removes its stacks, the operator
+stack, the shared Caddy and the line with their volumes and folders, and the
+marker `/srv/maex/.voice-load-run`; while the marker is there,
+scripts/new_stack.py sets up no customer.
+
+`--keep` leaves the test server running with the stacks in it, `--down` stops
+one left behind, `--purge` also deletes its image cache. On a server itself
+(`--inside`), `--keep` leaves the stacks running and `--down` removes what a
+run left. Invented numbers and names only, no
 host port is published, every secret is made by new_stack.py inside the test
 server and stays there; only the router's rendered configuration holds the
 stacks' line passwords, in the run directory.
@@ -56,6 +65,7 @@ Docker not usable.
 """
 
 import argparse
+import fcntl
 import itertools
 import json
 import os
@@ -69,7 +79,8 @@ import sys
 import threading
 import time
 import wave
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -91,6 +102,10 @@ SERVER_VOLUMES = {
     "maex-loadtest-containerd": "/var/lib/containerd",
 }
 ROOT = Path("/srv/maex")
+# scripts/new_stack.py's lock of the root: one writer of it at a time.
+ROOT_LOCK = ".new_stack.lock"
+# The operator stack's origin in operator_stack(): what tells its folder apart.
+LOAD_ORIGIN = "https://ops.load.test"
 # Inside the test server the run directory is here.
 LOAD_DIR = Path("/load")
 LINE_PROJECT = "load-line"
@@ -182,6 +197,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         if args.inside:
+            if args.down:
+                return 0 if tear_down() else 1
             if args.dry_run:
                 for name, stacks, calls in plan(args.max_stacks, args.calls):
                     print(f"step {name}: {stacks} stack(s), {calls} call(s) each")
@@ -253,6 +270,7 @@ def on_workbench(args: argparse.Namespace) -> int:
         *("--lost-audio", str(args.lost_audio)),
         *("--cpus", args.cpus, "--memory", args.memory),
         *("--run-dir", str(LOAD_DIR)),
+        *(["--keep"] if args.keep else []),
     ]
     try:
         code = subprocess.run(inner, check=False).returncode
@@ -370,6 +388,19 @@ class Inside:
         (self.load / RUN_MARKER).touch()
         step("Clear what an earlier run left on the test server")
         clean_slate(self.load)
+        code = 1
+        try:
+            code = self.measure()
+        finally:
+            if self.args.keep:
+                print("voice_load: the stacks stay; `--inside --down` removes them")
+            else:
+                step("Remove the stacks, the operator stack and the line")
+                if not tear_down():
+                    code = 1
+        return code
+
+    def measure(self) -> int:
         step("Start the operator stack and the line")
         operator_stack()
         self.render_router()
@@ -1124,48 +1155,126 @@ def wait_for(
         time.sleep(poll)
 
 
-def clean_slate(load_dir: Path) -> None:
-    """What an earlier run of this kit left: its stacks, the operator stack,
-    the shared Caddy and the line, with their volumes and folders. A host whose
-    /srv/maex this kit did not make is refused: a server with customers on it
-    is no place for a load test."""
-    marker = ROOT / RUN_MARKER
-    if any(ROOT.iterdir()) and not marker.exists():
-        raise LoadError(
-            f"{ROOT} holds stacks this kit did not make: run the load test on an "
-            "empty server only"
+@contextmanager
+def root_lock() -> Iterator[None]:
+    """new_stack.py's lock: no customer is set up while the kit looks at the
+    root, removes from it or sets its marker."""
+    with open(ROOT / ROOT_LOCK, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def made_by_kit(path: Path) -> bool:
+    """Whether a folder under ROOT is the kit's, by what the kit wrote into it,
+    never by the run marker: a stack `load<n>` serving load<n>.test (a reserved
+    name no customer has), the operator stack with LOAD_ORIGIN, the shared
+    Caddy with no site but the stacks'."""
+    if not path.is_dir() or path.is_symlink():
+        return False
+    env = path / ".env"
+    if re.fullmatch(r"load[1-9]", path.name):
+        if not env.exists():
+            # new_stack.py writes .env right after the clone: before it, the
+            # folder is a clone with no secret and no Compose project.
+            return True
+        values = read_env(env.read_text())
+        return values.get("COMPOSE_PROJECT_NAME") == f"maex-{path.name}" and values.get(
+            "AGENT_DOMAIN"
+        ) == "agent." + DOMAIN.format(n=path.name[4:])
+    if path.name == "ops":
+        return env.is_file() and read_env(env.read_text()).get("OPERATOR_ORIGIN") == (
+            LOAD_ORIGIN
         )
-    listed = sh(
-        [
-            "docker",
-            "ps",
-            "-a",
-            "--format",
-            '{{.ID}} {{.Label "com.docker.compose.project"}}',
-        ]
-    )
-    ours = [
+    if path.name == "caddy":
+        sites = (path / "sites").glob("*.caddy")
+        return not (path / "operator" / "ops.caddy").exists() and all(
+            re.fullmatch(r"load[1-9]", site.stem) for site in sites
+        )
+    return False
+
+
+def leftovers() -> tuple[list[str], list[Path], list[str]]:
+    """The Compose projects and folders the kit made, and everything else
+    under ROOT or in a Compose project `maex-*` (a customer's stack, the
+    operator's data, a backup)."""
+    projects, folders, strangers = [LINE_PROJECT], [], set()
+    for path in sorted(ROOT.iterdir()):
+        if path.name in (RUN_MARKER, ROOT_LOCK):
+            continue
+        if made_by_kit(path):
+            projects.append(f"maex-{path.name}")
+            folders.append(path)
+        else:
+            strangers.add(str(path))
+    label = '{{.Label "com.docker.compose.project"}}'
+    for kind in (["ps", "-a"], ["volume", "ls"], ["network", "ls"]):
+        for project in sh(["docker", *kind, "--format", label]).split():
+            if project.startswith("maex-") and project not in projects:
+                strangers.add(f"Compose project {project}")
+    return projects, folders, sorted(strangers)
+
+
+def remove(projects: list[str], folders: list[Path]) -> None:
+    """Containers, volumes and networks first, the folders last: a run stopped
+    halfway leaves folders the next run still knows as its own."""
+    listed = sh(["docker", "ps", "-a", "--format",
+                 '{{.ID}} {{.Label "com.docker.compose.project"}}'])  # fmt: skip
+    ids = [
         cid
         for cid, _, project in (line.partition(" ") for line in listed.splitlines())
-        if re.fullmatch(r"maex-load\d+|maex-ops|maex-caddy|" + LINE_PROJECT, project)
+        if project in projects
     ]
-    if ours:
-        sh(["docker", "rm", "-f", *ours])
-    stacks = [f"maex-load{n}" for n in range(1, MAX_STACKS + 1)]
-    for project in ("maex-ops", "maex-caddy", LINE_PROJECT, *stacks):
+    if ids:
+        sh(["docker", "rm", "-f", *ids])
+    for project in projects:
         label = f"label=com.docker.compose.project={project}"
         for kind in ("volume", "network"):
             sh(["docker", kind, "prune", "-f", *(["-a"] if kind == "volume" else []),
                 "--filter", label])  # fmt: skip
-    for path in ROOT.iterdir():
-        if path != marker:
-            sh(["rm", "-rf", str(path)])
-    marker.touch()
+    for path in folders:
+        sh(["rm", "-rf", "--", str(path)])
+
+
+def clean_slate(load_dir: Path) -> None:
+    """What an earlier run of this kit left: its stacks, the operator stack,
+    the shared Caddy and the line, with their volumes and folders. Anything
+    else refuses the run before anything is removed: a server with customers
+    on it is no place for a load test."""
+    with root_lock():
+        projects, folders, strangers = leftovers()
+        if strangers:
+            raise LoadError(
+                "this kit did not make " + ", ".join(strangers) + ": run the load "
+                "test on a server without customers only"
+            )
+        remove(projects, folders)
+        (ROOT / RUN_MARKER).touch()
     for name in ("recordings", "customers", "router"):
         if (load_dir / name).exists():
             shutil.rmtree(load_dir / name)
     for name in ("report.json", "table.md"):
         (load_dir / name).unlink(missing_ok=True)
+
+
+def tear_down() -> bool:
+    """Removes what the kit made, then its marker; anything it cannot tell is
+    its own stays. The marker stays when a removal failed, so new_stack.py
+    keeps refusing customers next to the stacks left."""
+    try:
+        with root_lock():
+            projects, folders, strangers = leftovers()
+            remove(projects, folders)
+            (ROOT / RUN_MARKER).unlink(missing_ok=True)
+    except (LoadError, OSError) as exc:
+        print(
+            f"voice_load: the run's stacks were not all removed: {exc}", file=sys.stderr
+        )
+        return False
+    if strangers:
+        print(
+            "voice_load: not made by this kit, left in place: " + ", ".join(strangers)
+        )
+    return True
 
 
 def operator_stack() -> None:
@@ -1189,7 +1298,7 @@ def operator_stack() -> None:
                 f"postgresql+psycopg://maex_owner:{owner}@db:5432/maex_operator",
                 "BACKUP_DOCKER_NETWORK=maex-ops_backend",
                 f"OPERATOR_PROXY_SECRET={proxy}",
-                "OPERATOR_ORIGIN=https://ops.load.test",
+                f"OPERATOR_ORIGIN={LOAD_ORIGIN}",
                 "NTFY_BASE_URL=https://push.ops.load.test",
                 # ntfy's token form, tk_ and 29 characters. Without users the
                 # push server accepts nobody, which a load test does not need.
