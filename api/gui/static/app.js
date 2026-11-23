@@ -65,6 +65,25 @@ function detail(event) {
         if (fold instanceof HTMLDetailsElement && feiertageOffen)
             fold.open = true;
     });
+    // The "Mehr" row of the header (#517) holds the wait steppers and "Gericht aus"
+    // below 1180 px. The header is replaced after every tap, so the team's choice
+    // is kept here; from 1180 px the row is always open (an older browser hides
+    // the content of a closed <details> whatever the stylesheet says).
+    let mehrOffen = false;
+    const breit = window.matchMedia("(min-width: 1180px)");
+    function mehrAbgleichen() {
+        const mehr = document.getElementById("mehr");
+        if (mehr instanceof HTMLDetailsElement)
+            mehr.open = breit.matches || mehrOffen;
+    }
+    document.addEventListener("toggle", (e) => {
+        const t = e.target;
+        if (t instanceof HTMLDetailsElement && t.id === "mehr" && !breit.matches)
+            mehrOffen = t.open;
+    }, true);
+    document.body.addEventListener("htmx:afterSwap", mehrAbgleichen);
+    breit.addEventListener("change", mehrAbgleichen);
+    mehrAbgleichen();
     if (!liste || !("EventSource" in window))
         return;
     function offline(yes) {
