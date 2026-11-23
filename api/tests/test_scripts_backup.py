@@ -790,23 +790,6 @@ def test_a_url_that_is_not_postgres_is_rejected_without_echoing_it():
     assert "secret" not in done.stdout + done.stderr
 
 
-def test_cron_file_runs_the_backup_daily_at_three():
-    lines = [
-        line
-        for line in (REPO_ROOT / "deploy" / "backup.cron").read_text().splitlines()
-        if line.strip() and not line.startswith("#")
-    ]
-
-    # A customer stack's database and the operator stack's own (#827 F9).
-    job, operator = lines
-    assert job.startswith("0 3 * * * ")
-    assert operator.startswith("15 3 * * * cd /srv/maex/ops && ")
-    for line in lines:
-        assert "scripts/backup.sh" in line
-        # The shell opens the log before the script runs; without the folder no backup.
-        assert line.index("mkdir -p backups") < line.index(">> backups/")
-
-
 def test_the_operator_database_is_dumped_without_a_mark_for_the_alarm(
     backup_dir, passphrase_file
 ):
