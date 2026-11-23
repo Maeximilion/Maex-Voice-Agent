@@ -45,7 +45,7 @@
 **Liefert:** `zone_name`, `fee_cents`, `min_order_cents`, `eta_minutes`. `out_of_zone`, `invalid_input`: `say` sprechen.
 
 ## draft_order
-**Wann:** sobald alle Gerichte gefunden, Pflichtoptionen gewählt und Name und Rufnummer bekannt sind, bei einer Lieferung auch die Adresse. Nach jeder Änderung erneut.
+**Wann:** sobald alle Gerichte gefunden, Pflichtoptionen gewählt und Name und Rufnummer bekannt sind, bei einer Lieferung auch die Adresse. Nach jeder Änderung erneut, „doch abholen“ mit `type: pickup`.
 **Eingabe:** `type` (`"pickup"` oder `"delivery"`), `customer` (`name`, `phone`; bei `delivery` dazu `address` mit `street`, `house_number`, `postal_code`, `city`, optional `floor_note`, oder `address_id` aus `customer` im Zustand, dann `name` nur, wenn der Gast ihn genannt hat), `items` (je `menu_item_id`, `quantity`, optional `options` als `{group, name}` und `note`), optional `note` für die ganze Bestellung.
 **Liefert:** `order_id`, Summe, Liefergebühr, `ready_at`, `readback` — der Satz, der vorgelesen wird. `below_minimum`: `say` nennt den Fehlbetrag. `closed`: `say` sprechen.
 

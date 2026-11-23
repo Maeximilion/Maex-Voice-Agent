@@ -411,7 +411,13 @@ class ConversationLoop:
         ):
             # "So lange? Dann stornieren Sie das." Nothing is booked before
             # the yes, so the team has nothing to undo (Maxi, #678).
+            if self._clock() - self._started > self._max_call_seconds:
+                # Its sentence asks for more: no call stays open past its
+                # limit on it, as on `only_asks`.
+                return self._outage(state, SAY_TIMEOUT, user_text, open_table)
             order_dropped(state)
+            # The guest was understood: the count of unheard turns starts anew.
+            self._unheard = 0
             guards.note_said(state, SAY_ORDER_DROPPED)
             return TurnResult(state=state, say=[SAY_ORDER_DROPPED])
         if reason is not None and escalated is None:

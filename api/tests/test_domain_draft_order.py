@@ -158,7 +158,7 @@ def test_entwurf_mit_summe_readback_und_audit(session, tenant_id, call_id):
     assert draft.readback == (
         "Zweimal Nummer 23 Frühlingsrollen, Ihr Hinweis: ohne Zwiebeln. "
         "Einmal Nummer 47 Ente knusprig mit Huhn und Erdnuss. "
-        "Macht 28 Euro 80, auf den Namen Müller. "
+        "Macht 28 Euro 80, zur Abholung, auf den Namen Müller. "
         "Es dauert so ungefähr 30 Minuten."
     )
 

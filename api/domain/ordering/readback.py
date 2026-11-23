@@ -50,6 +50,9 @@ def readback(
     if order.type == "delivery":
         where = _spoken_address(address) if address else SAME_ADDRESS
         satz += f", Lieferung {where}"
+    else:
+        # The time no longer says "abholbereit": the way is named (#678 review).
+        satz += ", zur Abholung"
     if name_heard:
         satz += f", auf den Namen {order.customer_name}"
     if order.ready_at is None:

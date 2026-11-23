@@ -35,6 +35,9 @@
     "intent": "pickup",
     "confirmed": false,
     "escalated": false,
-    "readback": "Es dauert so ungefähr"
+    "readback": "Es dauert so ungefähr",
+    "said": [
+      "die Bestellung storniert"
+    ]
   }
 }

@@ -1088,9 +1088,9 @@ EXAMPLE_CALL: dict[str, list[str]] = {
     "name": ["„Auf den Namen Mueller.“"],
     "readback": [
         "„Zweimal Nummer 25 Papaya-Salat.",
-        "Macht 15 Euro 80, auf den Namen",
-        "Mueller. Es dauert so ungefähr",
-        "30 Minuten.“",
+        "Macht 15 Euro 80, zur Abholung,",
+        "auf den Namen Mueller. Es dauert",
+        "so ungefähr 30 Minuten.“",
     ],
     "yes": ["„Ja, passt so.“"],
     "confirmed": ["„Ihre Bestellung auf den Namen", "Mueller ist aufgegeben. …“"],

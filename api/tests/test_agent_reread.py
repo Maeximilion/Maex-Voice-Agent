@@ -20,7 +20,7 @@ from api.agent.dispatch import ToolResult
 from api.agent.guards import HINT_CONFIRM, begin_turn, note_said, reread_on_yes
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMTurn, ToolCall
-from api.agent.loop import SAY_ORDER_DROPPED, ConversationLoop
+from api.agent.loop import SAY_ORDER_DROPPED, SAY_TIMEOUT, ConversationLoop
 from api.agent.state import ConversationState, apply_tool_result
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
@@ -519,6 +519,26 @@ def test_a_cancel_of_something_else_keeps_the_order_and_goes_to_the_team(
     assert said != [SAY_ORDER_DROPPED]
     assert state.cart, "the open order stays for the team's card"
     assert status(session, order, draft_id) == "draft"
+
+
+def test_a_cancel_past_the_call_limit_ends_with_the_team(session, state, order):
+    """The dropped order's sentence asks for more; past its limit the call
+    goes to the team instead, as on any other turn."""
+    read_to_the_guest(session, state, order)
+    times = iter([0.0, 10_000.0])
+    loop = ConversationLoop(
+        session,
+        Model(say="x"),
+        "system",
+        now=NOW,
+        clock=lambda: next(times, 10_000.0),
+        max_call_seconds=60,
+    )
+
+    said = loop.run_turn(state, "Dann stornieren Sie das bitte.").say
+
+    assert SAY_TIMEOUT in said and SAY_ORDER_DROPPED not in said
+    assert state.order_id is not None
 
 
 def test_a_cancel_without_a_draft_still_goes_to_the_team(session, state):
