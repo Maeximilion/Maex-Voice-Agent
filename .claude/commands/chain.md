@@ -254,9 +254,21 @@ From normal, over +15 goes straight to super slow. When turbo ends, running
 sessions finish their job; only no new start beyond the new count (Maxi: "let
 the lanes get the Job done (no force break)"). In super slow (Maxi,
 2026-11-24) all build sessions but one pause with 50-minute sleeps, renewed on
-each wake, so none falls into a cold cache; when the running one is done, a
-paused item takes its lane over ("go on #N"). The pauses of the first table
-still hold in every mode.
+each wake, so none falls into a cold cache. Each paused session renews its own
+sleep; the coordinator sends no heartbeat (a wake under 60 minutes keeps the
+cache warm and costs one request).
+
+When the running lane frees in super slow, it stays empty until the next
+paused session wakes on its own, at most 50 minutes later (Maxi, 2026-11-24:
+"no new Item get's in the free lane until the pause of 50 Minutes run out").
+The coordinator writes the next item in order, for example `#952`, into the
+baton file `~/.claude/chain/next-lane.txt` (otherwise it holds `none`) and
+sends no message. On every wake a paused session reads that file: when it
+names its own item, it takes the lane, sends the coordinator "lane taken #N"
+and goes on; otherwise it renews its 50-minute sleep. The coordinator writes
+`none` again on "lane taken". If the named session has not taken the lane 60
+minutes after the file was written, the coordinator sends it "go on #N".
+The pauses of the first table still hold in every mode.
 
 A side quest Maxi starts during a chain (a measurement, a question for a
 session) counts as a lane. When it takes the chain above the lanes of its mode,
