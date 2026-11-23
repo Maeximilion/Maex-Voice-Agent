@@ -760,12 +760,26 @@ def test_the_dispatcher_does_not_start_without_a_real_monitor_token(monkeypatch,
     assert token.strip() == "" or token not in str(refused.value)
 
 
+@pytest.mark.parametrize("url", ["", "   "])
+def test_the_dispatcher_does_not_start_without_a_monitor_push_url(monkeypatch, url):
+    """#880: a real token and an empty URL in `.env` would start a dispatcher
+    whose every alarm fails, as the dashboard's own check already refuses."""
+    monkeypatch.setattr(settings, "env", "prod")
+    monkeypatch.setattr(settings, "monitor_push_token", "m" * 32)
+    monkeypatch.setattr(settings, "monitor_push_url", url)
+
+    with pytest.raises(RuntimeError, match="MONITOR_PUSH_URL"):
+        monitor.require_push_token()
+
+
 @pytest.mark.parametrize(
-    ("env", "token"), [("prod", "m" * 32), ("dev", ""), ("test", "x")]
+    ("env", "token", "url"),
+    [("prod", "m" * 32, "http://push/"), ("dev", "", ""), ("test", "x", "")],
 )
-def test_the_monitor_token_check_lets_these_start(monkeypatch, env, token):
+def test_the_monitor_token_check_lets_these_start(monkeypatch, env, token, url):
     monkeypatch.setattr(settings, "env", env)
     monkeypatch.setattr(settings, "monitor_push_token", token)
+    monkeypatch.setattr(settings, "monitor_push_url", url)
     monitor.require_push_token()
 
 
