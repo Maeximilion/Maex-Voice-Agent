@@ -117,6 +117,14 @@ is the backup. Ten single-use recovery codes, stored hashed, are the last way in
   browser without the account's device cookie pushes too, naming its factor (#888 A1): a
   password and a TOTP code phished in real time would otherwise open every customer's PINs and
   call lists unseen for up to twelve hours.
+- **Passkey first** (Maxi, 23.11.2026, #888 A1): the passkey is the way in, a TOTP code or a
+  recovery code only the way back in when no passkey is at hand. Every sign-in with a TOTP code,
+  from a known browser too, and every step-up with one is pushed to `ops` ("with a TOTP code, not
+  a passkey"), as a used recovery code and a new browser are; a passkey sign-in from a known
+  browser and a passkey step-up stay quiet. A TOTP code still signs in alone, also on an account
+  with a passkey, so a lost passkey never locks the operator out (Claude's choice of 23.11.2026,
+  awaiting Maxi: the stricter way, a code sign-in that counts as no fresh factor until a passkey
+  step-up, would leave an operator without the passkey only the break glass).
 - **Once the account has a passkey, every change of a factor needs a passkey step-up** (D37, Maxi,
   19.11.2026, built in #884): registering or removing a passkey, setting or removing a TOTP secret,
   and the sight of a new TOTP secret take a passkey shown on `/step-up` in the last five minutes.
@@ -151,7 +159,11 @@ account has one, D37).
 database (survives a restart; production runs one uvicorn worker, but memory would reset). One or
 two wrong attempts cost nothing; every third in a row brings a wait one minute longer than the last,
 1, 2, 3, 4, then 5 minutes at most (Maxi 09.11.2026, the same rule as §6), instead of a hard lock. Error text is the same for unknown user, wrong password and wrong
-factor. The client address comes from Caddy's `X-Forwarded-For`, trusted only from Caddy.
+factor. The client address comes from Caddy's `X-Forwarded-For`, trusted only from Caddy; an IPv6
+client counts by its /64 (`counted_address`, #888 S11), the block one line or host is given, or a
+spray of made-up names from one /64 would meet a fresh count, and a scrypt run, on every /128. An
+unknown name still costs the dummy hash, so the answer time tells no names. Every attempt forgets
+the counters a day after their last failure, by the index on `last_failed_at` (migration op007).
 
 **Audit:** logins, failures, factor changes and every action in the dashboard go to the operator
 database's own audit table (actor, action, target customer, time; no guest data). An action on a
@@ -359,7 +371,7 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   migration op004); above that it gets 429 and no row, while an attempt asking again replaces its
   own (#827 F1: the audit of §11 filled the table with 3,000 rows from one client). The cap is per
   address, not global: a global one would let a flood shut out the operator's passkey. An IPv6
-  client owns many addresses; the per-account waits still hold.
+  client counts by its /64 here too (#888 S11), so one host cannot hold ten per /128.
 - **An answer is input from outside.** At most 32,768 characters are parsed, and whatever the
   parsing or the check raises is a refusal, never a server error: at the sign-in that runs after
   the password check, and an error there would tell that the password was right.
@@ -604,7 +616,7 @@ the second builds against.
   operator removes a device (in the dashboard, or with `gui_access sign-out`) and makes a new setup link, which
   changes the password and signs out every device.
 - **Brute force** (Maxi 09.11.2026): counters per account (on its row) and per client address
-  (`gui_login_failures`) in the customer's database. One or two wrong passwords cost nothing; every
+  (`gui_login_failures`, an IPv6 client by its /64, #888 S11) in the customer's database. One or two wrong passwords cost nothing; every
   third in a row brings a wait one minute longer than the last, 1, 2, 3, 4, then 5 minutes at most,
   during which no password is checked; a day without a failure
   starts the count again, and the deletion job drops an address a day after its last failure. Each

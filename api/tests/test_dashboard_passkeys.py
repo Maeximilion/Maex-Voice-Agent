@@ -127,13 +127,13 @@ def factors(sessions):
 
 @pytest.fixture
 def pushes(monkeypatch):
-    """What would have gone to the `ops` topic, but for the push of a sign-in
-    from a new browser: every test client is one, and that push has tests of
-    its own (#888 A1)."""
+    """What would have gone to the `ops` topic, but for the pushes of a sign-in
+    from a new browser and of a sign-in or step-up with a TOTP code: most
+    tests make them, and they have tests of their own (#888 A1)."""
     sent: list[str] = []
 
     def queue(db: Any, text: str, at: Any) -> None:
-        if web.NEW_BROWSER not in text:
+        if web.NEW_BROWSER not in text and web.BY_CODE not in text:
             sent.append(text)
 
     monkeypatch.setattr(push, "queue", queue)
@@ -1032,10 +1032,11 @@ def test_a_recovery_code_at_sign_in_is_audited_and_pushed(
     assert _audited(sessions, "operator.signed_in")[-1].detail["factor"] == "recovery"
 
 
-def test_a_sign_in_from_a_new_browser_is_pushed_and_a_known_one_is_not(
+def test_a_sign_in_from_a_new_browser_is_pushed_as_one(
     client, factors, clock, monkeypatch
 ):
-    """#888 A1: a phished password and TOTP code signed in unseen."""
+    """#888 A1: a phished password and TOTP code signed in unseen. A known
+    browser's sign-in with a code is pushed too, but not as a new browser."""
     sent: list[str] = []
     monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
     _signed_in(client, factors, clock)
@@ -1043,12 +1044,13 @@ def test_a_sign_in_from_a_new_browser_is_pushed_and_a_known_one_is_not(
 
     clock.at += timedelta(seconds=30)
     _signed_in(client, factors, clock)  # the same browser, its device cookie kept
-    assert len(sent) == 1
+    assert sent[1:] == [f"maxi: signed in {web.BY_CODE}"]
+    sent.clear()
 
     client.cookies.clear()
     clock.at += timedelta(seconds=30)
     _signed_in(client, factors, clock)
-    assert sent[1:] == [f"maxi: {web.NEW_BROWSER} (totp)"]
+    assert sent == [f"maxi: {web.NEW_BROWSER} (totp)"]
 
 
 def test_a_failed_push_leaves_the_change_in_place_and_is_audited(
@@ -2133,3 +2135,37 @@ def test_a_factor_change_forgets_every_other_browsers_device_cookie(
     with sessions() as db:
         kept = list(db.scalars(select(OperatorDevice.token_hash)))
     assert kept == [token_hash(client.cookies.get("ops_device", ""))]
+
+
+def test_a_passkey_sign_in_from_a_known_browser_is_not_pushed(
+    client, factors, clock, monkeypatch
+):
+    device = _with_passkey(client, factors, clock)
+    assert _passkey_sign_in(client, device).status_code == 303
+    sent: list[str] = []
+    monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
+    clock.at += timedelta(seconds=30)
+    assert _passkey_sign_in(client, device).status_code == 303
+    assert sent == []
+
+
+def test_a_step_up_with_a_code_is_pushed_and_one_with_a_passkey_is_not(
+    client, factors, clock, monkeypatch
+):
+    device = _with_passkey(client, factors, clock)
+    assert _passkey_sign_in(client, device).status_code == 303
+    sent: list[str] = []
+    monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
+    clock.at += timedelta(seconds=30)
+    assert _step_up_with_code(client, factors, clock).status_code == 303
+    assert sent == [f"maxi: stepped up {web.BY_CODE}"]
+    _passkey_step_up(client, device)
+    assert len(sent) == 1
+
+
+def test_a_refused_step_up_with_a_code_is_not_pushed_as_one(
+    client, factors, clock, pushes
+):
+    _signed_in(client, factors, clock)
+    assert _post(client, "/step-up", code="000000").status_code == 401
+    assert pushes == []
