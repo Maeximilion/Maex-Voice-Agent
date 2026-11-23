@@ -201,8 +201,9 @@ def sign_in(
         repeat = not passkey and _just_signed_in(db, account, code, address, now)
         db.rollback()
         reason = "repeat" if repeat else why
-        alarm = reason == "factor" and _first_known_password(db, name, now)
-        _note_failure(db, name, address, reason, now)
+        _hold(db, account.id)
+        alarm = reason == "factor" and _known_password_alarm_due(db, name, now)
+        _note_failure(db, name, address, reason, now, alarm)
         raise SignInRefused(copy=why == "counter", alarm=alarm)
     if not trusted:
         _forgive(db, account, address)
@@ -325,6 +326,7 @@ def step_up(
     )
     if factor is None:
         db.rollback()
+        _hold(db, account.id)
         alarm = (_failed_step_ups(db, operator.name) + 1) % STEP_UP_ALARM_EVERY == 0
         audit(
             db,
@@ -733,35 +735,48 @@ def _just_signed_in(
 
 
 def _note_failure(
-    db: Session, name: str | None, address: str, reason: str, now: datetime
+    db: Session,
+    name: str | None,
+    address: str,
+    reason: str,
+    now: datetime,
+    alarm: bool = False,
 ) -> None:
     """A failure on a real account goes into the audit; one on an unknown name
     does not, so a spray of names cannot fill it. A right password with a wrong
-    factor says the password is known. Stamped with the sign-in's clock, which
-    `_first_known_password` reads."""
+    factor says the password is known. Stamped with the sign-in's clock, and
+    marked when it was pushed, which `_known_password_alarm_due` reads."""
     if name is None:
         return
+    detail: dict[str, Any] = {"account": name, "reason": reason, "address": address}
+    if alarm:
+        detail["alarm"] = True
     db.add(
         OperatorAudit(
-            at=now,
-            actor="anonymous",
-            action="operator.sign_in_failed",
-            detail={"account": name, "reason": reason, "address": address},
+            at=now, actor="anonymous", action="operator.sign_in_failed", detail=detail
         )
     )
     db.commit()
 
 
-def _first_known_password(db: Session, name: str, now: datetime) -> bool:
-    """No right password with a wrong factor on this account in the last
-    hour yet: this one is pushed (#888 A2)."""
+def _hold(db: Session, account_id: uuid.UUID) -> None:
+    """The account's row, held until the caller's commit: a failure's alarm is
+    decided and its audit row written in one go, so failures at once cannot all
+    count the same rows and miss their alarm (Codex on #933)."""
+    db.get(OperatorAccount, account_id, with_for_update=True, populate_existing=True)
+
+
+def _known_password_alarm_due(db: Session, name: str, now: datetime) -> bool:
+    """No known-password alarm on this account in the last hour: this failure
+    is pushed (#888 A2). Measured from the last alarm, not the last failure, so
+    a guess every few minutes cannot keep the alarm quiet for good."""
     return not db.scalar(
         select(func.count())
         .select_from(OperatorAudit)
         .where(
             OperatorAudit.action == "operator.sign_in_failed",
             OperatorAudit.detail["account"].astext == name,
-            OperatorAudit.detail["reason"].astext == "factor",
+            OperatorAudit.detail["alarm"].astext == "true",
             OperatorAudit.at > now - KNOWN_PASSWORD_ALARM_EVERY,
         )
     )

@@ -1986,6 +1986,67 @@ def test_a_right_password_with_a_wrong_code_is_pushed_once_an_hour(
     assert pushes == [KNOWN_PASSWORD, KNOWN_PASSWORD]
 
 
+def test_a_guess_every_ten_minutes_is_pushed_again_every_hour(
+    client, factors, clock, pushes
+):
+    """Codex on #933: the hour was measured from the last failure, so a guess
+    every ten minutes kept every alarm after the first quiet."""
+    for _ in range(13):  # minute 0 to 120
+        _refused(client, _sign_in(client, _wrong(factors.totp_secret, clock.at)))
+        clock.at += timedelta(minutes=10)
+    assert pushes == [KNOWN_PASSWORD] * 3
+
+
+def test_three_wrong_step_ups_at_once_still_push_the_third(
+    sessions, factors, clock, monkeypatch
+):
+    """Codex on #933: the rollback of the factor check let go of the account
+    before the count, so three failures at once each counted none before them
+    and none pushed. They wait for each other on the account's row now."""
+    with sessions() as db:
+        signed = access.sign_in(
+            db,
+            "maxi",
+            PASSWORD,
+            _code(factors.totp_secret, clock.at),
+            "1.2.3.4",
+            clock.at,
+        )
+        operator = access.resolve(db, signed.token, clock.at)
+    assert operator is not None
+    barrier = threading.Barrier(3)
+    hold = access._hold
+
+    def met(db, account_id):
+        barrier.wait(timeout=30)
+        hold(db, account_id)
+
+    monkeypatch.setattr(access, "_hold", met)
+    later = clock.at + timedelta(minutes=5)
+    alarms: list[bool] = []
+
+    def guess() -> None:
+        with sessions() as db:
+            try:
+                access.step_up(
+                    db,
+                    operator,
+                    _wrong(factors.totp_secret, later),
+                    "1.2.3.4",
+                    later,
+                    device_token=signed.device_token,
+                )
+            except access.SignInRefused as refused:
+                alarms.append(refused.alarm)
+
+    threads = [threading.Thread(target=guess) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert sorted(alarms) == [False, False, True]
+
+
 def test_a_wrong_password_an_unknown_name_or_a_double_tap_is_not_pushed(
     client, factors, clock, pushes
 ):

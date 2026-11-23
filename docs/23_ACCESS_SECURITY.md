@@ -175,7 +175,7 @@ known account is audited with whether the password or the factor was wrong (a ri
 with a wrong factor means the password is known; the code that had just signed in, sent again
 from the same address within two minutes, is a double tap, `repeat`; from any other address, with
 no address known, or a code last used by a step-up or a new secret, it stays `factor`, review
-#207). The first `factor` failure of an account in an hour is pushed to `ops` as well, so a
+#207). A `factor` failure is pushed to `ops` as well, at most once an hour counted from the last such push, so a
 known password does not stay in the audit unseen (#888 A2); one on an unknown name is not
 audited, so a spray of
 names cannot fill the table, and an address is forgotten a day after its last failure. Every
