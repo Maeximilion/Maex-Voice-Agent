@@ -856,3 +856,34 @@ def test_an_oversized_unknown_name_is_refused_like_any_other(client, clock):
 
     name = secrets.token_hex(4000)
     assert _sign_in(client, "000001", name=name).status_code == 401
+
+
+def test_the_dashboard_counts_an_ipv6_client_by_its_64(monkeypatch):
+    """#888 S11: each /128 of a /64 was an address of its own."""
+    from starlette.requests import Request
+
+    monkeypatch.setattr(settings, "env", "prod")
+    forwarded = [(b"x-forwarded-for", b"10.0.0.1, 2001:db8:0:7:1::5")]
+    request = Request({"type": "http", "headers": forwarded, "client": ("10.9.0.2", 1)})
+    assert web.client_address(request) == "2001:db8:0:7::/64"
+
+
+def test_the_failures_of_addresses_are_pruned_by_an_index(operator_url):
+    """#888 S11: every attempt prunes the table by `last_failed_at`; without an
+    index that is a scan of every sprayed name and address."""
+    cfg = _config(operator_url)
+    command.upgrade(cfg, "head")
+    engine = create_engine(operator_url)
+
+    def indexed() -> bool:
+        found = inspect(engine).get_indexes("operator_login_failures")
+        return any(index["column_names"] == ["last_failed_at"] for index in found)
+
+    try:
+        assert indexed()
+        command.downgrade(cfg, "op006")
+        assert not indexed()
+        command.upgrade(cfg, "head")
+        assert indexed()
+    finally:
+        engine.dispose()

@@ -68,6 +68,7 @@ from api.core.tokens import LOCAL_ENVS
 from api.dashboard import access, customers, passkeys, push, results, totp
 from api.dashboard.config import settings
 from api.dashboard.db import engine, get_db
+from api.domain.access.sessions import counted_address
 
 configure_logging(settings.log_level)
 logger = get_logger("api.dashboard.app")
@@ -206,6 +207,10 @@ STACK_UPDATED = (
 )
 COPY = "a passkey answered with an old counter, a copy?"
 NEW_BROWSER = "signed in from a new browser"
+# #888 A1 (Maxi, 23.11.2026): the passkey is the way in; a TOTP code is the
+# way back in, so each sign-in and step-up with one is pushed, as a recovery
+# code is.
+BY_CODE = "with a TOTP code, not a passkey"
 # #888 A2: the password is known, or a session guesses codes.
 KNOWN_PASSWORD = "right password with a wrong second factor"
 STEP_UP_GUESSES = "wrong step-up codes, three in a row"
@@ -360,11 +365,12 @@ app.middleware("http")(request_context_middleware)
 
 def client_address(request: Request) -> str:
     """Caddy sets X-Forwarded-For itself; its last entry is the client it saw.
-    Trusted only outside dev and test, where only Caddy gets in."""
+    Trusted only outside dev and test, where only Caddy gets in. An IPv6
+    client counts by its /64, its passkey challenges too (#888 S11)."""
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded and secure():
-        return forwarded.rsplit(",", 1)[-1].strip()
-    return request.client.host if request.client else ""
+        return counted_address(forwarded.rsplit(",", 1)[-1].strip())
+    return counted_address(request.client.host if request.client else "")
 
 
 async def _form(request: Request) -> dict[str, str]:
@@ -607,6 +613,8 @@ def login_post(
     if signed.new_browser:
         # A phished password and code would otherwise sign in unseen (#888 A1).
         _alert(db, operator, f"{NEW_BROWSER} ({signed.factor})")
+    elif signed.factor == "totp":
+        _alert(db, operator, f"signed in {BY_CODE}")
     response = RedirectResponse(HOME, status_code=303)
     response.delete_cookie(cookie("attempt"), path="/", secure=secure(), httponly=True)
     # No max-age: the server ends the session (30 minutes idle, 12 hours).
@@ -703,7 +711,7 @@ def step_up_post(
     _checked(request, form)
     back = _local(form.get("next", ""))
     try:
-        access.step_up(
+        factor = access.step_up(
             db,
             operator,
             form.get("code", ""),
@@ -720,6 +728,8 @@ def step_up_post(
         ways = _ways(db, operator, form.get(FOR_FACTORS) == "1")
         context = {"next": back, "message": _refusal(refused), **ways}
         return _page(request, "step_up.html", context, 401)
+    if factor != "passkey":
+        _alert(db, operator.name, f"stepped up {BY_CODE}")
     return RedirectResponse(back, status_code=303)
 
 
