@@ -2062,6 +2062,35 @@ def test_a_wrong_password_an_unknown_name_or_a_double_tap_is_not_pushed(
     assert pushes == []
 
 
+def test_each_account_gets_its_own_known_password_push(
+    client, sessions, factors, clock, pushes
+):
+    """#931: the hour is counted per account, so a push for one account does
+    not hide a known password of another."""
+    with sessions() as db:
+        anna = access.create_account(db, "anna", PASSWORD)
+    _refused(client, _sign_in(client, _wrong(factors.totp_secret, clock.at)))
+    _refused(client, _sign_in(client, _wrong(anna.totp_secret, clock.at), name="anna"))
+    assert pushes == [KNOWN_PASSWORD, f"anna: {web.KNOWN_PASSWORD}"]
+
+
+def test_a_right_code_after_wrong_ones_adds_no_alarm_and_no_push_names_a_secret(
+    client, factors, clock, monkeypatch
+):
+    """#931: the right code after the guesses sends only the sign-in's own
+    push (#888 A1), and no push carries the password or a code."""
+    sent: list[str] = []
+    monkeypatch.setattr(push, "queue", lambda db, text, at: sent.append(text))
+    wrong = _wrong(factors.totp_secret, clock.at)
+    _refused(client, _sign_in(client, wrong))
+    clock.at += timedelta(seconds=1)
+    right = _code(factors.totp_secret, clock.at)
+    assert _sign_in(client, right).status_code == 303
+    assert sent == [KNOWN_PASSWORD, f"maxi: {web.NEW_BROWSER} (totp)"]
+    for secret in (PASSWORD, wrong, right, factors.totp_secret):
+        assert not any(secret in text for text in sent)
+
+
 def test_every_third_wrong_step_up_in_a_row_is_pushed(client, factors, clock, pushes):
     """#888 A2: wrong step-up codes were audited only, so a stolen session
     guessed them unseen. A step-up that holds starts the count again."""
