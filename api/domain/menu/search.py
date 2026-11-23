@@ -63,6 +63,7 @@ from api.domain.menu.wishes import (
     open_wish,
     opens_with_allergy,
     removal_with,
+    speaks_of_health,
     wish_candidates,
 )
 from api.models import ItemAlias, MenuItem
@@ -378,7 +379,12 @@ def _position_parts(
     # Pommes" names the same dish with other words (Codex PR #127, P1).
     said: dict[uuid.UUID, set[str]] = {}
 
-    def hits_nothing(piece: str) -> bool:
+    def takes_back(piece: str) -> bool:
+        """A piece that hits nothing and is no health mention: maybe a spoken
+        correction. "ich habe Zöliakie" hits no dish either, but it is the
+        caller's own health note for the dish in front (eval allergie_0026)."""
+        if speaks_of_health(piece):
+            return False
         try:
             search(piece)
         except NotFound:
@@ -387,15 +393,15 @@ def _position_parts(
             return False
         return False
 
-    def whole(rest: list[str], lost: bool = False) -> list[str]:
+    def whole(rest: list[str], lost: str | None = None) -> list[str]:
         """The sentence kept whole. The name search strips every number, so a
         piece with an unclear number further on ("einmal Suppe, und 30", where
         "Suppe" hits two dishes) makes the sentence ask for it instead (#328).
         For the same reason a piece that is one card number stays a position
         of its own, and only the pieces between them are kept together: "die
         23 und Ente" is the 23 and the Ente to ask about (#676), unless the
-        sentence carries a wish. `lost`: the piece in front of `rest` hit no
-        dish at all."""
+        sentence carries a wish. `lost`: the piece in front of `rest`, which
+        hit no dish at all."""
         if any(sole_item_number(piece, piece_card)[1] for piece in rest):
             raise Ambiguous("Nummer nicht eindeutig", say=SAY_WHICH_NUMBER)
         numbers = [sole_item_number(p, piece_card)[0] is not None for p in pieces]
@@ -404,9 +410,11 @@ def _position_parts(
         # holds every spoken correction, so such a sentence stays whole and
         # asks, as before the cut; cut, the corrected number was booked beside
         # the other one (review #207, regression of #721).
-        if lost or any(
-            hits_nothing(piece)
-            for piece, number in zip(rest, numbers[len(pieces) - len(rest) :])
+        if (lost is not None and not speaks_of_health(lost)) or any(
+            takes_back(piece)
+            for piece, number in zip(
+                rest, numbers[len(pieces) - len(rest) :], strict=True
+            )
             if not number
         ):
             return [query]
@@ -464,7 +472,7 @@ def _position_parts(
                 # found Pho Bo alone and took it twice (eval abholung_0082).
                 # Any other piece that hits nothing is part of a name.
                 if sole_item_number(piece, piece_card)[0] is None:
-                    return whole(pieces[i + 1 :], lost=True)
+                    return whole(pieces[i + 1 :], lost=piece)
                 positions.append(piece)
                 i += 1
                 continue

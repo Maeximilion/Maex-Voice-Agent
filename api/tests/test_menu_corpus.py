@@ -389,7 +389,6 @@ for _said in (
     "die 23, ne, die 24",
     "die 23, quatsch, die 24",
     "die 23, sorry, die 24",
-    "die 23, doch die 24",
     "die 23, Moment, die 24",
 ):
     RED.append(
@@ -441,47 +440,6 @@ for _said in (
     _nums: tuple[str, ...] = ("23", "24") if "23" in _said else ("13", "12")
     RED.append(
         row("N", "e722-article-number-times-article-number", _said, numbers=_nums)
-    )
-
-# PR #735: an allergy behind the caller's own denial.
-for _said, _lost in (
-    (
-        "Pho Bo, ich habe eine Nussallergie! Ich habe keine andere Allergie, nur meine Frau gegen Sesam",
-        "nuss",
-    ),
-    (
-        "die 13, meine Tochter hat eine Erdnussallergie. Ich habe keine Allergie, nur meine Frau gegen Sesam",
-        "erdnuss",
-    ),
-    (
-        "die 13, mein Sohn ist gegen Erdnuss allergisch. Ich habe keine Allergie, aber meine Frau gegen Sesam",
-        "erdnuss",
-    ),
-    (
-        "die 13, Erdnussallergie. Ich habe keine Allergie, nur meine Frau gegen Sesam",
-        "erdnuss",
-    ),
-    (
-        "die 13, ich habe Zöliakie. Ich habe keine Allergie, nur meine Frau gegen Sesam",
-        "zöliakie",
-    ),
-    (
-        "die 13, ich vertrage keine Nüsse. Ich habe keine Allergie, nur meine Frau gegen Sesam",
-        "nüsse",
-    ),
-    (
-        "die 13, ich bin laktoseintolerant. Ich habe keine Allergie, nur meine Frau gegen Sesam",
-        "laktose",
-    ),
-):
-    RED.append(
-        row(
-            "A",
-            "e735-allergy-before-denial",
-            _said,
-            numbers=("13",),
-            allergies=(_lost,),
-        )
     )
 
 # --- clean rows: what the review checked and found holding -----------------------
@@ -542,6 +500,7 @@ for _said, _nums in (
     ("Pho Bo,23", ("23",)),
     ("die 23, nee, die 24", ("23", "24")),
     ("die 23, nein, die 24", ("23", "24")),
+    ("die 23, doch die 24", ("23", "24")),
 ):
     CLEAN.append(
         row(
@@ -551,7 +510,8 @@ for _said, _nums in (
             numbers=_nums,
             either=_said.startswith(("die 23,24", "die 25,G"))
             or "nee, die" in _said
-            or "nein, die" in _said,
+            or "nein, die" in _said
+            or "doch die" in _said,
         )
     )
 # PR #722
@@ -615,6 +575,48 @@ for _said, _who in (
     ),
 ):
     CLEAN.append(row("A", "e735-clean", _said, numbers=("13",), allergies=_who))
+# PR #735: the caller's own allergy in front of the denial is kept, not lost
+# behind the other one's allergen (regression of #735, review #207, fixed #911).
+for _said, _lost in (
+    (
+        "Pho Bo, ich habe eine Nussallergie! Ich habe keine andere Allergie, nur meine Frau gegen Sesam",
+        "nuss",
+    ),
+    (
+        "die 13, meine Tochter hat eine Erdnussallergie. Ich habe keine Allergie, nur meine Frau gegen Sesam",
+        "erdnuss",
+    ),
+    (
+        "die 13, mein Sohn ist gegen Erdnuss allergisch. Ich habe keine Allergie, aber meine Frau gegen Sesam",
+        "erdnuss",
+    ),
+    (
+        "die 13, Erdnussallergie. Ich habe keine Allergie, nur meine Frau gegen Sesam",
+        "erdnuss",
+    ),
+    (
+        "die 13, ich habe Zöliakie. Ich habe keine Allergie, nur meine Frau gegen Sesam",
+        "zöliakie",
+    ),
+    (
+        "die 13, ich vertrage keine Nüsse. Ich habe keine Allergie, nur meine Frau gegen Sesam",
+        "nüsse",
+    ),
+    (
+        "die 13, ich bin laktoseintolerant. Ich habe keine Allergie, nur meine Frau gegen Sesam",
+        "laktose",
+    ),
+):
+    CLEAN.append(
+        row(
+            "A",
+            "e735-allergy-before-denial",
+            _said,
+            numbers=("13",),
+            allergies=(_lost,),
+        )
+    )
+
 
 # --- generated block: dish form x residue x second element ------------------------
 

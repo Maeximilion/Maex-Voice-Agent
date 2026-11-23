@@ -1520,6 +1520,59 @@ def test_nee_is_a_correction():
     assert split_positions("die 23, nee, die 24") == ["die 23, nee, die 24"]
 
 
+def _clear_parts(session, tid, said: str) -> list[str]:
+    clear = []
+    for part in position_parts(session, tid, said, now=NOW):
+        try:
+            found = suche(session, tid, part)
+        except (Ambiguous, NotFound):
+            continue
+        if found.match_type in CLEAR_MATCHES:
+            clear.append(part)
+    return clear
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "die 23, ne, die 24",
+        "die 23, quatsch, die 24",
+        "die 23, sorry, die 24",
+        "die 23, doch die 24",
+        "die 23, Moment, die 24",
+    ],
+)
+def test_a_spoken_correction_never_books_both_numbers(session, sushi, said):
+    """Review #207, regression of #721: the cut in whole() took the corrected
+    23 as a clear position beside the 24. A piece that is no dish, no number
+    and no health mention may take a number back, so the 23 is never clear."""
+    clear = _clear_parts(session, sushi, said)
+    assert len(clear) < 2, clear
+    assert not any("23" in part for part in clear), clear
+
+
+@pytest.mark.parametrize(
+    ("said", "first"),
+    [
+        ("Die 13 bitte, ich habe Zöliakie.", "Die 13 bitte"),
+        ("die 13, ich reagiere auf Nüsse", "die 13"),
+    ],
+)
+def test_a_health_mention_behind_a_card_number_is_no_correction(
+    session, sushi, said, first
+):
+    """Eval allergie_0026: "ich habe Zöliakie" hits no dish either, but it is
+    the caller's health note, not a correction; the 13 stays clear."""
+    parts = position_parts(session, sushi, said, now=NOW)
+    assert parts[0] == first
+    assert nummern(suche(session, sushi, first)) == ["13"]
+
+
+def test_a_correction_at_the_end_keeps_its_number_unclear(session, sushi):
+    """A lost piece behind the only number ("quatsch") keeps the part whole."""
+    assert _clear_parts(session, sushi, "die 23, quatsch") == []
+
+
 @pytest.mark.parametrize(
     "said", ["Eine Cola 0,5", "ein Wasser 0,75", "die 23 für 8,50"]
 )
