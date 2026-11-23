@@ -1,8 +1,8 @@
 {# Step-up (docs/23 §5): a dangerous action needs a second factor of the last
    five minutes. A passkey or a TOTP code, never a recovery code; the same
    sentence for every refusal. `next` is a path of this site, checked by the
-   route. A factor change of an account with a passkey takes the passkey only
-   (`passkey_only`, D37). #}
+   route. An account with a passkey confirms with the passkey only
+   (`passkey_only`, D37; Maxi, 23.11.2026). #}
 {% extends "base.html" %}
 {% block title %}Confirm it is you{% endblock %}
 {% set nav = "" %}

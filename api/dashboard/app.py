@@ -210,6 +210,7 @@ NEW_BROWSER = "signed in from a new browser"
 # way back in, so each sign-in and step-up with one is pushed, as a recovery
 # code is.
 BY_CODE = "with a TOTP code, not a passkey"
+PASSKEY_ONLY = "This account confirms with its passkey."
 # #888 A2: the password is known, or a session guesses codes.
 KNOWN_PASSWORD = "right password with a wrong second factor"
 STEP_UP_GUESSES = "wrong step-up codes, three in a row"
@@ -676,16 +677,15 @@ def login_passkey_options(
     return response
 
 
-def _ways(
-    db: Session, operator: access.Operator, for_factors: bool = False
-) -> dict[str, Any]:
+def _ways(db: Session, operator: access.Operator) -> dict[str, Any]:
     has_passkey = passkeys.count(db, operator.account_id) > 0
     return {
         "operator": operator,
         "has_passkey": has_passkey,
         "has_totp": access.has_totp(db, operator.account_id),
-        # A factor change waits: a TOTP code would not open it (D37).
-        "passkey_only": for_factors and has_passkey,
+        # Once there is a passkey, a code makes no session fresh (D37; Maxi,
+        # 23.11.2026, for every dangerous action).
+        "passkey_only": has_passkey,
     }
 
 
@@ -693,11 +693,10 @@ def _ways(
 def step_up_page(
     request: Request,
     next: str = HOME,
-    for_factors: str = "",
     operator: access.Operator = Depends(require_operator),
     db: Session = Depends(get_db),
 ) -> Response:
-    ways = _ways(db, operator, for_factors == "1")
+    ways = _ways(db, operator)
     return _page(request, "step_up.html", {"next": _local(next), **ways})
 
 
@@ -725,8 +724,10 @@ def step_up_post(
             _alert(db, operator.name, COPY)
         if refused.alarm:
             _alert(db, operator.name, STEP_UP_GUESSES)
-        ways = _ways(db, operator, form.get(FOR_FACTORS) == "1")
-        context = {"next": back, "message": _refusal(refused), **ways}
+        context = {"next": back, "message": _refusal(refused), **_ways(db, operator)}
+        return _page(request, "step_up.html", context, 401)
+    except access.PasskeyNeeded:
+        context = {"next": back, "message": PASSKEY_ONLY, **_ways(db, operator)}
         return _page(request, "step_up.html", context, 401)
     if factor != "passkey":
         _alert(db, operator.name, f"stepped up {BY_CODE}")
