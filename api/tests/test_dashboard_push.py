@@ -398,6 +398,27 @@ def test_sent_pushes_older_than_the_keep_period_are_pruned_by_the_next_one(
     assert [row.message for row in _queued(sessions)] == ["just inside", "new"]
 
 
+def test_a_prune_that_fails_still_queues_the_push(sessions, server, monkeypatch):
+    """#880: the prune ran first in the push's transaction, so a failing
+    `DELETE` lost the takeover push. Now the push is in before the prune."""
+    with sessions() as db:
+        push.queue(db, "old and sent", START)
+        assert push.deliver_once(db, START) == 1
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("lock wait timeout")
+
+    with sessions() as db:
+        monkeypatch.setattr(db, "execute", broken)
+        push.queue(db, "takeover", START + push.SENT_KEEP)
+    # The push is queued, and the old row waits for the next prune.
+    assert [row.message for row in _queued(sessions)] == ["old and sent", "takeover"]
+
+    with sessions() as db:
+        push.queue(db, "next", START + push.SENT_KEEP)
+    assert [row.message for row in _queued(sessions)] == ["takeover", "next"]
+
+
 def test_an_unsent_push_is_never_pruned(sessions, monkeypatch):
     monkeypatch.setattr(settings, "operator_push_url", "")
     with sessions() as db:
