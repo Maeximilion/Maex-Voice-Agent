@@ -187,10 +187,21 @@ jobs:
           python-version: "3.12"
       - name: README links, anchors and images
         # The pull request's own checker, without the secret: its scan says the list
-        # is missing and skips only the blocked terms.
+        # is missing and skips only the blocked terms, which `readme-terms` checks.
         run: python scripts/readme_check.py
-      # The secret reaches only main's checker (#888 S5): a pushed change to
-      # readme_check.py would otherwise run with the list and could print or send it.
+
+  # The blocked terms, in a job of their own (#888 S5): the secret reaches only main's
+  # checker, and no code of the pull request runs in this job. A step of the same job
+  # could hand later steps a poisoned environment ($GITHUB_ENV) or, with the runner's
+  # sudo, read every secret of its job from the runner's memory. The pull request's
+  # files are only read. Part of the required check `test`.
+  readme-terms:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
@@ -201,11 +212,11 @@ jobs:
       - name: README blocked terms, checked by main's code
         # The secret holds one term per line; without it (a fork, Dependabot) the scan
         # finds nothing to compare and passes. -I keeps the pull request's files off
-        # the import path; the checker only reads them.
+        # the import path; the runner's own Python, since nothing here needs another.
         env:
           README_BLOCKLIST: ${{ secrets.README_BLOCKLIST }}
         run: >-
-          python -I -c "import sys; sys.path.insert(0, '.trusted/scripts');
+          python3 -I -c "import sys; sys.path.insert(0, '.trusted/scripts');
           import readme_check as r; from pathlib import Path; root = Path.cwd();
           found = r.check_blocklist(root, r.blocked_terms(root)); print(*found, sep='\n');
           sys.exit(1 if found else 0)"
@@ -235,7 +246,7 @@ jobs:
   # `always()`: a job skipped after a failed or cancelled need would count as passed.
   test:
     if: ${{ always() }}
-    needs: [changes, checks, pytest, readme, browser]
+    needs: [changes, checks, pytest, readme, readme-terms, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

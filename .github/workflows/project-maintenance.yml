@@ -36,13 +36,12 @@ jobs:
   pflege:
     # Only main's code ever runs with PROJECT_TOKEN and the writing GITHUB_TOKEN
     # (#888 S5): a run started by hand on another branch would check out and run
-    # that branch's scripts. The checkout names main as well.
+    # that branch's scripts.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
           persist-credentials: false
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0

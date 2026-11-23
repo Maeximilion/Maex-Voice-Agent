@@ -145,7 +145,7 @@ The `GITHUB_TOKEN` of an action may not read account-owned projects. One-time se
 
 1. Create a fine-grained token: resource owner = own account, repository access = this repo, then under **Account permissions** **Projects: Read and write** and under **Repository permissions** **Issues** and **Pull requests**, each read-only
 
-   The repo permission is not an extra: without it GitHub returns every board entry of a private repo with empty content, so without number and state. The script then aborts instead of silently doing nothing (first run 24.09.2026). No classic token (#888 S5): its `repo` scope writes every repository of the account, so code that leaks the token would reach far beyond the board. Both workflows run only `main`'s code with it (`ref: main` on the checkout; project-maintenance runs only on `main`).
+   The repo permission is not an extra: without it GitHub returns every board entry of a private repo with empty content, so without number and state. The script then aborts instead of silently doing nothing (first run 24.09.2026). No classic token (#888 S5): its `repo` scope writes every repository of the account, so code that leaks the token would reach far beyond the board. Both workflows run only `main`'s code with it: project-sync checks out `main` by name, project-maintenance runs only on `main`.
 2. Store it in the repo as the secret `PROJECT_TOKEN`
 3. Store the number from the project URL in the repo as the variable `PROJECT_NUMBER`
 
