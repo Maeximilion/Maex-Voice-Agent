@@ -50,7 +50,21 @@ def tenant_id(engine) -> uuid.UUID:
         )
 
 
-def done_callback(engine, tenant_id, *, phone=PHONE, done_ago=timedelta(minutes=5)):
+def done_callback(
+    engine, tenant_id, *, phone=PHONE, done_ago=timedelta(minutes=5), **more
+):
+    return a_callback(
+        engine,
+        tenant_id,
+        phone=phone,
+        status="done",
+        done_by="gui:team",
+        done_at=utcnow() - done_ago,
+        **more,
+    )
+
+
+def a_callback(engine, tenant_id, *, phone=PHONE, **fields):
     with Session(engine) as s:
         call = Call(
             tenant_id=tenant_id,
@@ -66,9 +80,7 @@ def done_callback(engine, tenant_id, *, phone=PHONE, done_ago=timedelta(minutes=
             phone=phone,
             reason="not_understood",
             summary="Bitte zurueckrufen wegen Tisch.",
-            status="done",
-            done_by="gui:team",
-            done_at=utcnow() - done_ago,
+            **fields,
         )
         s.add(cb)
         s.commit()
@@ -97,6 +109,40 @@ def test_a_done_mark_of_an_earlier_day_names_the_date(client, engine, tenant_id)
     body = client.get("/gui/rueckrufe/verlauf").text
     # A date such as "04.11." precedes the clock time.
     assert re.search(r"Erledigt \d{2}\.\d{2}\. \d{2}:\d{2}", body)
+
+
+# The clock time of the call on a card, with the date in front when it was not
+# today: "Annahme 22:40" of last night must not read as this morning (#926).
+DATED = re.compile(r'class="time">\d{2}\.\d{2}\. \d{2}:\d{2}<')
+UNDATED = re.compile(r'class="time">\d{2}:\d{2}<')
+
+
+def test_an_open_card_from_the_day_before_names_its_date(client, engine, tenant_id):
+    a_callback(engine, tenant_id, created_at=utcnow() - timedelta(hours=25))
+    body = client.get("/gui/fragments/rueckrufe").text
+    assert DATED.search(body)
+    assert not UNDATED.search(body)
+
+
+def test_an_open_card_from_today_shows_the_clock_time_only(client, engine, tenant_id):
+    a_callback(engine, tenant_id)
+    body = client.get("/gui/fragments/rueckrufe").text
+    assert UNDATED.search(body)
+    assert not DATED.search(body)
+
+
+def test_a_history_card_names_the_date_its_call_came_in(client, engine, tenant_id):
+    """The history shares the card: a call of two days ago, done today."""
+    # Done this instant: five minutes ago could be yesterday just after midnight.
+    done_callback(
+        engine,
+        tenant_id,
+        created_at=utcnow() - timedelta(days=2),
+        done_ago=timedelta(0),
+    )
+    body = client.get("/gui/rueckrufe/verlauf").text
+    assert DATED.search(body)
+    assert re.search(r"Erledigt \d{2}:\d{2}", body)
 
 
 def test_a_removed_number_shows_the_note_and_no_call_button(client, engine, tenant_id):
