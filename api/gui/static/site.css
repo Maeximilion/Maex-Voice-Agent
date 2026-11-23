@@ -96,18 +96,20 @@ h1{margin-top:28px;font-size:clamp(2.75rem,1.2rem + 5.2vw,6rem);font-weight:700;
 .actions{display:flex;flex-wrap:wrap;gap:14px;margin-top:36px}
 
 /* Sound waves: one flat line while it is quiet, a swing while someone speaks.
-   The line is a layer of its own; site.ts sets the scaleY of each wave and the waves
-   scale up and down in place on the compositor, never sideways. */
+   The line is a layer of its own; site.ts swings each wave inside its SVG (a matrix on
+   the path, in SVG units around the middle line), because there the stroke keeps its
+   width on screen (non-scaling-stroke). A scaleY on a wrapper outside the SVG squashes
+   the drawn layer and thins the stroke below a pixel: the line broke into dashes. */
 .waves{position:absolute;inset-inline:0;bottom:0;block-size:clamp(140px,26vh,260px);pointer-events:none}
 .waves::before{content:"";position:absolute;inset-inline:0;top:50%;block-size:2px;margin-top:-1px;background:var(--accent);opacity:.6}
-.wave{position:absolute;inset:0;opacity:0;transform:scaleY(0);will-change:transform;transition:opacity .6s ease}
+.wave{position:absolute;inset:0;opacity:0;transition:opacity .6s ease}
 .is-loud .wave{opacity:.85}
 .run{position:absolute;inset:0}
 .wave svg{display:block;inline-size:100%;block-size:100%}
-.wave path{fill:none;stroke-width:3;vector-effect:non-scaling-stroke}
+.wave path{fill:none;stroke-width:4;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke;transform:matrix(1,0,0,.02,0,117.6)}
 .wave-1 path{stroke:var(--accent)}
 .wave-2 path{stroke:#7B2FFF}
-.wave-3 path{stroke:var(--warn);stroke-width:2;opacity:.6}
+.wave-3 path{stroke:var(--warn);stroke-width:3;opacity:.6}
 
 /* The call card */
 .callcard{justify-self:end;inline-size:100%;max-inline-size:34rem;background:var(--surface);border:2px solid var(--line);border-radius:var(--r-lg);padding:clamp(18px,3vw,26px);box-shadow:0 24px 60px rgba(0,0,0,.55)}
@@ -198,6 +200,9 @@ h1{margin-top:28px;font-size:clamp(2.75rem,1.2rem + 5.2vw,6rem);font-weight:700;
 .closing-action{display:flex;align-items:center}
 .note{margin-top:18px;max-inline-size:34rem;font-size:1.0625rem;color:var(--muted)}
 .neon-place{margin-top:24px}
+.demo-shot{display:block;max-inline-size:60rem;margin-top:28px;border:2px solid var(--line);border-radius:var(--r-lg);overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.55);transition:border-color .2s ease}
+.demo-shot:hover{border-color:var(--accent)}
+.demo-shot img{display:block;inline-size:100%;block-size:auto}
 
 /* The one neon call to action of a page, for the demo (#892); shown only once the demo exists. */
 .neon{position:relative;display:inline-block;padding:18px 34px;border:2px solid var(--accent);border-radius:var(--r);background:var(--surface);color:var(--accent);font-size:1.3125rem;font-weight:700;text-decoration:none;text-shadow:0 0 14px rgba(232,255,46,.85);animation:flick 1.1s linear backwards}
@@ -272,7 +277,7 @@ h1{margin-top:28px;font-size:clamp(2.75rem,1.2rem + 5.2vw,6rem);font-weight:700;
   *,*::before,*::after{animation:none!important;transition:none!important}
   .rv,.track-fill,.sign,.w,.late{opacity:1;transform:none}
   .ring{display:none}
-  .wave{opacity:.55;transform:scaleY(.35)}
-  .wave{will-change:auto}
+  .wave{opacity:.55}
+  .wave path{transform:matrix(1,0,0,.35,0,78)}
   .caret{visibility:hidden!important}
 }
