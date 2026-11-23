@@ -205,7 +205,7 @@ def _looks(db) -> list[AuditLog]:
 
 
 def _detail(client, call_id, headers=HX):
-    client.cookies.set("csrf_token", "testtoken")
+    client.cookies.set("maex_csrf", "testtoken")
     return client.post(DETAIL, data={"anruf": str(call_id)}, headers=headers)
 
 
