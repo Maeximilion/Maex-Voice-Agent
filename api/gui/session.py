@@ -4,7 +4,7 @@ Every route of the view depends on `require_gui_session`, in every environment:
 without a session a page goes to the sign-in, an HTMX or script request gets 401
 with `HX-Redirect`. A locked session (15 minutes without a change) still reads
 the board, which stays live (Maxi, 09.11.2026), and its next change goes to the
-PIN page. Every change must also come from the view's own origin. The owner's
+PIN page; so does a read beyond today's board (`require_unlocked`, T8). Every change must also come from the view's own origin. The owner's
 part of the admin area also needs the admin PIN on this device
 (`require_admin`, #570 part b).
 """
@@ -174,6 +174,17 @@ def _checked_access(request: Request, db: Session) -> Access:
                 request, _owner_page(request) if _needs_admin(request) else UNLOCK
             )
         mark_active(db, access.session_id, now)
+    return access
+
+
+def require_unlocked(
+    request: Request, access: Access = Depends(require_gui_session)
+) -> Access:
+    """A read beyond today's board, such as the callback history with its
+    numbers: a locked device first asks the PIN (T8, #888 B3). A read marks
+    nothing active, so it keeps no device unlocked."""
+    if access.locked:
+        raise _away(request, UNLOCK)
     return access
 
 
