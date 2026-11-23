@@ -1549,12 +1549,18 @@ class ConversationLoop:
                 else SUMMARY_OPEN_TABLE
             )
             head += f" {label} {table}."
+        # The guest spoke of an allergy in the call: the team asks about the
+        # kitchen note when it calls back, also where a note may carry it
+        # already (ledger #764 review), and the card never names it (L13).
+        marker = f" {SUMMARY_NOTE_TO_CLEAR}." if state.allergy_said else ""
         # Room for what follows the order, for the line's first sentence on a
         # team leg nobody answered and for the bookings `create_callback`
         # adds: all of it stands on that card (#207, #764).
         bookings = self._bookings_on_card(state)
-        reserve = len(said + SUMMARY_MISSED + bookings) + 2
+        reserve = len(said + marker + SUMMARY_MISSED + bookings) + 2
         head = _with_open_order(state, head, reserve=reserve)
+        if SUMMARY_NOTE_TO_CLEAR not in head:
+            head += marker
         not_booked = SAY_ORDER_NOT_PLACED if state.cart else None
         not_booked = SAY_TABLE_NOT_BOOKED if table else not_booked
         return head + said, [not_booked] if not_booked else []
@@ -1620,7 +1626,9 @@ def _order_lines(state: ConversationState, room: int) -> str:
         )
         if len(text := ", ".join(parts)) <= room:
             return text
-    return text[: max(room, 0)]
+    # The count stands even where nothing fits (bookings of the call take the
+    # room, #764): `create_callback` cuts the card's own text at its end.
+    return text
 
 
 def _booked_say(
@@ -1646,19 +1654,12 @@ def _note_allergy_said(state: ConversationState, text: str) -> bool:
     (`escalation.arms_the_net`) or answers the model's question about an
     allergy ("Gegen Erdnüsse."), for the safety net and the model, which
     keeps nothing between turns (Maxi, 15.11.2026). A bare denial in answer
-    to such a question ("Keine.") takes back the caller's own sentences, not
-    another person's. True for every sentence kept: a read-back waiting for
-    its yes may not carry it."""
+    to such a question takes back what `_taken_back` says. True for every
+    sentence kept: a read-back waiting for its yes may not carry it."""
     asked = _asked_about_an_allergy(state)
     if escalation.bare_denial(text, asked=asked):
-        # As the answer to the model's question it takes back the caller's
-        # own sentences (`allergie_0012`), never one that names someone else:
-        # "Nein." to "Haben Sie selbst eine Allergie?" after "Meine Frau hat
-        # eine Sesamallergie" is about the caller only (Codex PR #788, P1).
         if asked:
-            state.allergy_said = [
-                s for s in state.allergy_said if names_someone_else(s)
-            ]
+            state.allergy_said = _taken_back(state.allergy_said, text)
         return False
     armed = escalation.arms_the_net(text)
     if armed or asked:
@@ -1666,6 +1667,45 @@ def _note_allergy_said(state: ConversationState, text: str) -> bool:
     # An answer to the model's question ("Gegen Erdnüsse.") is new health
     # information too: a read-back before it lacks it (Codex PR #788, P1).
     return armed or asked
+
+
+def _taken_back(kept: list[str], denial: str) -> list[str]:
+    """What a bare denial that answers the model's question about an allergy
+    leaves of the kept sentences. Another person's always stays: "Nein." to
+    "Haben Sie selbst eine Allergie?" after "Meine Frau hat eine
+    Sesamallergie" is about the caller (Codex PR #788, P1). Of the caller's
+    own, a denial that names what it denies ("Nein, keine Nussallergie.")
+    takes back the sentences that name only that; a bare one ("Keine.",
+    "Nein.") takes all back when none names what the caller reacts to ("Ich
+    habe eine Allergie." - "Wogegen?" - "Keine.", `allergie_0012`), and none
+    when one does: after "Ich habe eine Erdnussallergie." a "Nein." to "Haben
+    Sie sonst noch Allergien?" denies a further one (ledger #764 review, P1).
+    shortcut: a "Nein." to a question that names the allergen ("Sie haben
+    also eine Sesamallergie?") keeps it, as the question may ask about a
+    further one, and a denial worded unlike the sentence ("keine Allergie
+    gegen Nüsse" after "Nussallergie") too; the model words the note, the
+    safe side."""
+    own = [said for said in kept if not names_someone_else(said)]
+    if denied := guards.reacts_to(denial, denied=True):
+        gone = [said for said in own if (named := _named(said)) and named <= denied]
+    else:
+        gone = [] if any(map(_names_something, own)) else own
+    return [said for said in kept if said not in gone]
+
+
+def _named(said: str) -> frozenset[str]:
+    """What a kept sentence names; one without a health word was kept as the
+    answer to the model's question and names its allergens ("Gegen
+    Erdnüsse.")."""
+    if speaks_of_health(said):
+        return guards.reacts_to(said)
+    return frozenset(allergens_named(said))
+
+
+def _names_something(said: str) -> bool:
+    """Does a kept sentence name what the caller reacts to? An answer to the
+    model's question does ("Kiwi."), unless it only says yes."""
+    return bool(_named(said)) or not (speaks_of_health(said) or is_yes(said))
 
 
 def _asked_about_an_allergy(state: ConversationState) -> bool:

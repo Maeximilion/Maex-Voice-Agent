@@ -1908,6 +1908,8 @@ def test_what_does_not_fit_on_the_card_is_counted(state):
     assert _order_lines(state, 200).startswith("1x 100 Salat, 1x 101 Salat")
     assert _order_lines(state, 80).startswith("1x 100, 1x 101, 1x 102")
     assert _order_lines(state, 40) == "1x 100, 1x 101, 8 weitere Positionen"
+    # The call's bookings can take all the room: the count still stands (#764).
+    assert _order_lines(state, -3) == "10 weitere Positionen"
 
 
 def test_options_and_the_note_of_a_line_reach_the_card(state):

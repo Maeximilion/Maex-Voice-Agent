@@ -7,7 +7,9 @@ first slip that waits 60 s.
 
 A bridge counts as silent after ALARM_BRIDGE_SILENT_MINUTES without a poll, and
 only while pickup or delivery has been open that long: the register PC is off
-at night, and only orders print. A tenant other than KITCHEN_BRIDGE_TENANT_ID has no bridge.
+at night. Orders print, and since #863 the agent's tables too, but only open
+pickup or delivery hours count: a table stays on the tablet whatever the paper
+does. A tenant other than KITCHEN_BRIDGE_TENANT_ID has no bridge.
 A bridge set up that never polled is silent too. Read by the operator's alarm
 (jobs/monitor.py) and the tablet's header.
 """
