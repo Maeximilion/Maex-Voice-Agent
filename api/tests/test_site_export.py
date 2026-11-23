@@ -237,6 +237,20 @@ def test_a_built_tablet_demo_joins_the_export_with_noindex(tmp_path, monkeypatch
     assert (out / "static" / "app.js").is_file()
 
 
+def test_the_demo_screenshot_of_the_landing_page_ships_with_the_export(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(content, "DEMO_PATH", "/tablet-demo")
+    out = demo_page(tmp_path, monkeypatch, "")
+
+    site_export.export(out, settings_of())
+
+    landing = (out / "index.html").read_text(encoding="utf-8")
+    assert 'src="/static/demo-tablet.webp"' in landing
+    assert (out / "static" / "demo-tablet.webp").is_file()
+    assert site_export.broken_links(out) == []
+
+
 def test_a_landing_page_that_offers_the_demo_needs_it_built(tmp_path, monkeypatch):
     monkeypatch.setattr(content, "DEMO_PATH", "/tablet-demo")
 

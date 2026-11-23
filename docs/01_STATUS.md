@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.7
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.68.8
 
 ---
 
@@ -177,7 +177,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.68.7 · 23.11.2026:** #576 built: export and removal of a leaving customer's stack (scripts/remove_stack.py), five faults of the cloud commit fixed
+- **v2.68.8 · 23.11.2026:** #576 built: export and removal of a leaving customer's stack (scripts/remove_stack.py), five faults of the cloud commit fixed
+- **v2.68.7 · 23.11.2026:** #892: neon wave swings inside the SVG (no dashes), example calls play once, demo screenshot under the neon button
 - **v2.68.6 · 23.11.2026:** Review #207: a spoken correction between two numbers asks, the caller's own allergy in front of another person's is asked about (#911)
 - **v2.68.5 · 23.11.2026:** #754 and #743 follow-ups: the outage sentence plays before the team number is read again, a missed-call card names the call's standing bookings
 - **v2.68.4 · 23.11.2026:** Review #207: a refused sign-in code is a repeat only from the address of the TOTP sign-in that used it; a step-up code, another or no address stays a factor alarm
