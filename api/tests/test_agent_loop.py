@@ -1866,6 +1866,39 @@ def test_a_long_open_order_keeps_every_line_on_the_card(session, state):
     assert all(f"2x {100 + n}" in summary for n in range(30))
 
 
+def test_a_long_open_order_leaves_room_for_a_booking_of_the_call(session, state):
+    """#764 review: `create_callback` adds the call's bookings to the card and
+    cuts its own text for them; the open order is fitted around them, so the
+    count of the lines that did not fit is not cut away."""
+    state.slots["phone"] = CALLER
+    session.add(
+        Reservation(
+            tenant_id=state.tenant_id,
+            call_id=state.call_id,
+            status="confirmed",
+            guest_name="Müller",
+            phone=CALLER,
+            party_size=2,
+            reserved_for=datetime(2026, 9, 16, 19, 0, tzinfo=BERLIN),
+            idempotency_key=uuid.uuid4().hex,
+        )
+    )
+    session.commit()
+    for n in range(120):
+        dish = str(uuid.uuid4())
+        state.seen_items[dish] = {"number": f"{100 + n}", "name": "Pizza"}
+        state.cart.append({"menu_item_id": dish, "quantity": 2})
+
+    _ask_for_nine(session, state)
+
+    summary = session.scalars(select(Callback)).one().summary
+    assert len(summary) <= 1000
+    assert summary.endswith(
+        "weitere Positionen. Bereits gebucht: Reservierung, 2 Personen, "
+        "16.09.2026 19:00 Uhr, Name Müller."
+    )
+
+
 def test_what_does_not_fit_on_the_card_is_counted(state):
     for n in range(10):
         dish = str(uuid.uuid4())
@@ -2065,7 +2098,29 @@ def test_a_late_confirm_tells_the_callback_card_what_is_booked(session, state):
     loop.run_turn(state, "Ja, passt")
 
     card = session.scalars(select(Callback)).one()
-    assert f"Bereits gebucht: {SAY_TABLE_BOOKED}" in card.summary
+    assert "Bereits gebucht: Reservierung, 4 Personen," in card.summary
+    assert card.summary.endswith("Name Müller.")
+
+
+def test_a_table_booked_before_an_order_began_stays_on_the_card(session, state):
+    """#764: a table confirmed, then an order drafted, which clears the
+    booking sentence of the conversation (`state.apply_tool_result`); the
+    guest then asks for a person and nobody is reachable. The card names the
+    table from the database, or the team books it a second time."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    ConversationLoop(
+        session, confirming(state, then_say="Noch etwas?"), "system", now=NOW
+    ).run_turn(state, "Ja, passt")
+    assert state.booking_say == SAY_TABLE_BOOKED
+    state.booking_say = None  # what `draft_order` does to it
+    loop = ConversationLoop(session, _model_asks_for_the_team(), "system", now=NOW)
+
+    result = loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+
+    assert result.ended is True
+    card = session.scalars(select(Callback)).one()
+    assert "Bereits gebucht: Reservierung, 4 Personen," in card.summary
 
 
 def test_a_late_confirm_without_team_or_number_asks_for_no_number(session, state):
@@ -2461,6 +2516,19 @@ def test_a_booking_stands_once_on_a_card_that_waited_for_the_number(
 ):
     state = numberless(tenant_id, call_id)
     state.booking_say = SAY_TABLE_BOOKED
+    session.add(
+        Reservation(
+            tenant_id=tenant_id,
+            call_id=call_id,
+            status="confirmed",
+            guest_name="Müller",
+            phone=CALLER,
+            party_size=2,
+            reserved_for=datetime(2026, 9, 16, 19, 0, tzinfo=BERLIN),
+            idempotency_key=uuid.uuid4().hex,
+        )
+    )
+    session.commit()
     llm = _model_asks_for_the_team()
     loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
 
@@ -2469,6 +2537,9 @@ def test_a_booking_stands_once_on_a_card_that_waited_for_the_number(
 
     card = session.scalars(select(Callback)).one().summary
     assert card.count("Bereits gebucht") == 1 and "Kunde sagte: Ich hätte" in card
+    assert card.endswith(
+        "Bereits gebucht: Reservierung, 2 Personen, 16.09.2026 19:00 Uhr, Name Müller."
+    )
 
 
 def test_a_failed_tool_with_another_sentence_goes_back_to_the_model(session, state):
@@ -2814,10 +2885,10 @@ def test_a_long_open_sentence_is_repeated_whole(state):
 @pytest.mark.parametrize("said", ["Gegen Erdnüsse.", "Ich habe eine Erdnussallergie."])
 def test_a_model_card_naming_the_guests_health_is_rewritten(state, summary, said):
     """L13: a card is kept for the period of a callback, the health note only
-    until the night after the order. Reason and booking stay. A compound
+    until the night after the order. The reason stays; the bookings of the
+    call follow from the database (`create_callback`, #764). A compound
     allergy word names its ingredient too (Codex PR #788)."""
     state.allergy_said = [said]
-    state.booking_say = "Ihr Tisch ist reserviert."
     call = ToolCall(
         "create_callback", {"reason": "human_requested", "summary": summary}
     )
@@ -2825,9 +2896,7 @@ def test_a_model_card_naming_the_guests_health_is_rewritten(state, summary, said
     card = _card_without_allergy(state, call).args
 
     assert card["reason"] == "human_requested"
-    assert card["summary"] == _handoff_summary(
-        "human_requested", None, "Ihr Tisch ist reserviert."
-    )
+    assert card["summary"] == _handoff_summary("human_requested", None)
     assert "Erdnüss" not in card["summary"] and "Zöliakie" not in card["summary"]
 
 

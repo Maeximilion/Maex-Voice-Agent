@@ -9,6 +9,7 @@ a `confirm`. Caller sentences in German: the detector reads German.
 """
 
 import json
+import uuid
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -39,7 +40,7 @@ from api.agent.loop import (
     ConversationLoop,
 )
 from api.agent.state import ConversationState
-from api.domain.callbacks.transfer import SUMMARY_MISSED
+from api.domain.callbacks.transfer import SUMMARY_MISSED, team_missed
 from api.domain.menu.details import SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.importer import (
     ALLERGENS_FILE,
@@ -1429,15 +1430,50 @@ def test_the_lookup_flag_is_read_as_the_tool_reads_it(session, known_tenant, fla
     assert not result.ended
 
 
-BOOKED = "Ihre Bestellung ist aufgegeben, Abholcode 42."
+BOOKED = "Bereits gebucht: Bestellung zur Abholung, Name Schmidt, Code 42."
+
+
+def _booked_order(session, state) -> None:
+    """An order of this call the guest's yes confirmed earlier."""
+    session.add(
+        Order(
+            tenant_id=state.tenant_id,
+            call_id=state.call_id,
+            type="pickup",
+            status="confirmed",
+            customer_name="Schmidt",
+            phone=CALLER,
+            items_total_cents=1380,
+            total_cents=1380,
+            pickup_code="42",
+            idempotency_key=uuid.uuid4().hex,
+        )
+    )
+    session.commit()
+
+
+def _missed_card(session, state) -> str:
+    """The card the line writes when nobody answers the team leg."""
+    call = session.get(Call, state.call_id)
+    task = team_missed(
+        session,
+        state.tenant_id,
+        call.external_session_id,
+        phone=CALLER,
+        summary=state.handoff_summary,
+        now=NOW + timedelta(minutes=1),
+    )
+    assert task is not None
+    return task.summary
 
 
 def test_a_live_handover_keeps_the_booking_for_the_line(session, known_tenant):
     """#207: on a live handover the core kept only the allergen card for the
     line; a team leg nobody answered became a card without "Bereits gebucht",
-    and the team might take the order again."""
+    and the team might take the order again. The booking comes from the
+    database when the card is written (#764)."""
     state = state_for(session, known_tenant, phone=CALLER)
-    state.booking_say = BOOKED
+    _booked_order(session, state)
 
     run(
         session,
@@ -1449,27 +1485,28 @@ def test_a_live_handover_keeps_the_booking_for_the_line(session, known_tenant):
     assert state.stage == "transferred"
     assert state.handoff_summary is not None
     assert state.handoff_summary.startswith(SUMMARY_ALLERGENS)
-    assert state.handoff_summary.endswith(f"Bereits gebucht: {BOOKED}")
+    assert _missed_card(session, state).endswith(f"{state.handoff_summary} {BOOKED}")
 
 
 def test_any_live_handover_keeps_the_booking_for_the_line(session, known_tenant):
     state = state_for(session, known_tenant, phone=CALLER)
-    state.booking_say = BOOKED
+    _booked_order(session, state)
 
     run(session, state, "Ich möchte bitte mit einem Menschen sprechen.")
 
     assert state.stage == "transferred"
     assert state.handoff_summary is not None
-    assert state.handoff_summary.endswith(f"Bereits gebucht: {BOOKED}")
+    assert _missed_card(session, state).endswith(BOOKED)
 
 
 def test_the_card_of_a_missed_team_leg_fits_with_a_large_open_order(
     session, known_tenant
 ):
     """The open order is cut so the line's first sentence and the booking
-    still fit a callback card (1000 characters, #207)."""
+    still fit a callback card (1000 characters, #207): nothing of the core's
+    card is cut away for the booking (#764)."""
     state = state_for(session, known_tenant, phone=CALLER)
-    state.booking_say = BOOKED
+    _booked_order(session, state)
     dish = str(item(session, known_tenant, "13"))
     state.seen_items[dish] = {"number": "13", "name": "Pho Bo"}
     state.cart = [
@@ -1485,8 +1522,9 @@ def test_the_card_of_a_missed_team_leg_fits_with_a_large_open_order(
     )
 
     assert state.handoff_summary is not None
-    assert len(f"{SUMMARY_MISSED} {state.handoff_summary}") <= 1000
-    assert state.handoff_summary.endswith(f"Bereits gebucht: {BOOKED}")
+    card = _missed_card(session, state)
+    assert card == f"{SUMMARY_MISSED} {state.handoff_summary} {BOOKED}"
+    assert len(card) <= 1000
 
 
 def test_a_wait_for_the_number_is_no_turn_without_understanding(session, known_tenant):

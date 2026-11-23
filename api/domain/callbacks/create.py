@@ -8,6 +8,7 @@ der Datenbank, das Team sieht sie in der Oberfläche, n8n bekommt das Ereignis.
 import uuid
 from datetime import datetime
 from typing import cast
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
@@ -18,7 +19,7 @@ from api.domain.customers.contact import note_contact
 from api.domain.customers.phone import normalize_phone
 from api.events import enqueue
 from api.events.types import CALLBACK_CREATED
-from api.models import AuditLog, Call, Callback, Tenant
+from api.models import AuditLog, Call, Callback, Order, Reservation, Tenant
 from api.schemas.callbacks import (
     CallbackReason,
     CallbackStatus,
@@ -31,6 +32,20 @@ ACTION_CREATED = "callback.created"
 SAY_NOTED = (
     "Ich habe Ihre Nummer notiert. Das Restaurant ruft Sie so bald wie möglich zurück."
 )
+# How a card names the bookings of its call that stand, so the team does not
+# book one a second time (Codex PR #347, #743, #764). Every card takes them
+# from the database here, whoever wrote its text. Drafts.
+SUMMARY_BOOKED = "Bereits gebucht:"
+_TABLE_BOOKED = "Reservierung, {party} Personen, {when:%d.%m.%Y %H:%M} Uhr, Name {name}"
+_ORDER_BOOKED = {
+    "pickup": "Bestellung zur Abholung, Name {name}",
+    "delivery": "Bestellung zur Lieferung, Name {name}",
+}
+# What the guest's yes made of an order (`confirm`) and nobody took back.
+_ORDER_STANDS = ("confirmed", "approved", "handed_over")
+# `CreateCallbackRequest.summary`: the card's own text gives way to the
+# bookings, which are never cut.
+SUMMARY_MAX = 1000
 
 
 def create_callback(
@@ -61,6 +76,7 @@ def create_callback(
     if open_task is not None:
         session.commit()
         return _task(open_task)
+    summary = _with_bookings(summary, booked(session, req.tenant_id, req.call_id))
 
     callback = Callback(
         tenant_id=req.tenant_id,
@@ -100,6 +116,68 @@ def create_callback(
     )
     session.commit()
     return _task(callback)
+
+
+def booked(session: Session, tenant_id: uuid.UUID, call_id: uuid.UUID) -> str | None:
+    """The reservations and orders of the call that stand, in the order they
+    were made, from the database (CLAUDE.md §2 rule 1). Without their notes:
+    one can name the guest's health, and a card is kept longer than that
+    (L13). Fresh rows: the call's session can hold one the team has moved
+    on the tablet since (`expire_on_commit=False`)."""
+    tenant = session.get(Tenant, tenant_id)
+    if tenant is None:
+        return None
+    zone = ZoneInfo(tenant.timezone)
+    fresh = {"populate_existing": True}
+    tables = session.scalars(
+        select(Reservation).where(
+            Reservation.tenant_id == tenant_id,
+            Reservation.call_id == call_id,
+            Reservation.status == "confirmed",
+            Reservation.deleted_at.is_(None),
+        ),
+        execution_options=fresh,
+    ).all()
+    orders = session.scalars(
+        select(Order).where(
+            Order.tenant_id == tenant_id,
+            Order.call_id == call_id,
+            Order.status.in_(_ORDER_STANDS),
+            Order.deleted_at.is_(None),
+        ),
+        execution_options=fresh,
+    ).all()
+    named = [
+        (
+            table.created_at,
+            _TABLE_BOOKED.format(
+                party=table.party_size,
+                when=table.reserved_for.astimezone(zone),
+                name=table.guest_name,
+            ),
+        )
+        for table in tables
+    ]
+    for order in orders:
+        line = _ORDER_BOOKED[order.type].format(name=order.customer_name)
+        if order.pickup_code:
+            line += f", Code {order.pickup_code}"
+        named.append((order.created_at, line))
+    if not named:
+        return None
+    named.sort(key=lambda entry: entry[0])
+    return f"{SUMMARY_BOOKED} {'; '.join(line for _, line in named)}."
+
+
+def _with_bookings(summary: str, bookings: str | None) -> str:
+    """The card's text with the bookings of its call at its end. The text is
+    cut to make room, the bookings never: a card without one lets the team
+    book it a second time. Bookings alone longer than a card leave no room
+    for its text; the reason still labels the card."""
+    if bookings is None:
+        return summary
+    room = max(SUMMARY_MAX - len(bookings) - 1, 0)
+    return f"{summary[:room].rstrip()} {bookings}".lstrip()
 
 
 def _lock_call(session: Session, tenant_id: uuid.UUID, call_id: uuid.UUID) -> None:

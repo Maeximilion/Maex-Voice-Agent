@@ -60,7 +60,8 @@ from api.core.errors import SAY_TO_THE_TEAM, Conflict
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
-from api.domain.callbacks.transfer import SUMMARY_BOOKED, SUMMARY_MISSED
+from api.domain.callbacks.create import booked
+from api.domain.callbacks.transfer import SUMMARY_MISSED
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
 from api.domain.menu.wishes import (
@@ -190,9 +191,6 @@ SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
 # guest's sentence behind them. Draft wording.
 SUMMARY_REMEDY_BOOKED = "Beschwerde, Gast hat zugestimmt, bitte ausführen: {remedy}."
 SUMMARY_REMEDY_OPEN = "Kunde hat sich beschwert, Angebot nicht angenommen: {remedy}."
-# How a card names a booking made earlier in the call (`_handoff_summary`):
-# the same words as a card the phone line writes without the core's.
-_BOOKED = f" {SUMMARY_BOOKED} "
 SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
 # The same for a table read back and not yet confirmed (own review of PR #369).
 SAY_TABLE_NOT_BOOKED = "Ihre Reservierung ist damit noch nicht bestätigt."
@@ -1082,12 +1080,12 @@ class ConversationLoop:
         reason = _transfer_reason(args)
         # The card before the transfer, as in `_handoff`: once transferred,
         # the state no longer shows a table read back (#690).
-        head, tail, lead = self._card(state, reason, user_text, table=open_table)
+        card, lead = self._card(state, reason, user_text, table=open_table)
         transfer = self._dispatch(state, "transfer_to_team", {"reason": reason})
         apply_tool_result(state, "transfer_to_team", transfer)
         if state.transferred:
             # With the card for a team leg nobody answers, as in `_handoff`.
-            state.handoff_summary = head + tail
+            state.handoff_summary = card
             return TurnResult(
                 state=state, say=[*lead, transfer.say or SAY_ESCALATION], ended=True
             )
@@ -1245,7 +1243,9 @@ class ConversationLoop:
                 {
                     "phone": phone,
                     "reason": "out_of_scope",
-                    "summary": _with_open_order(state, wish),
+                    "summary": _with_open_order(
+                        state, wish, reserve=len(self._bookings_on_card(state)) + 1
+                    ),
                 },
             )
             apply_tool_result(state, "create_callback", callback)
@@ -1468,15 +1468,14 @@ class ConversationLoop:
         Whatever ends the call, an order or a table that stands open goes
         onto the card, and the guest hears first that it is not booked
         (`_card`, #655); `table` and `open_named` as there."""
-        head, tail, lead = self._card(state, reason, detail, summary, table, open_named)
+        card, lead = self._card(state, reason, detail, summary, table, open_named)
         transfer = self._dispatch(state, "transfer_to_team", {"reason": reason})
         apply_tool_result(state, "transfer_to_team", transfer)
         if transfer.ok and transfer.data.get("available"):
             # The card goes with the call: the phone line writes it if nobody
-            # answers the team leg (Codex PR #369). The same card as for a
-            # callback, with a booking made earlier in the call, or the team
-            # books it again (#207).
-            state.handoff_summary = head + tail
+            # answers the team leg (Codex PR #369), the same card as for a
+            # callback; `create_callback` adds the bookings of the call (#764).
+            state.handoff_summary = card
             return TurnResult(
                 state=state, say=[*lead, transfer.say or fallback_say], ended=True
             )
@@ -1491,7 +1490,7 @@ class ConversationLoop:
             callback = self._dispatch(
                 state,
                 "create_callback",
-                {"phone": phone, "reason": callback_reason, "summary": head + tail},
+                {"phone": phone, "reason": callback_reason, "summary": card},
             )
             apply_tool_result(state, "create_callback", callback)
             if callback.ok:
@@ -1500,7 +1499,7 @@ class ConversationLoop:
                 )
 
         if ask_number and not phone:
-            state.callback_waits, state.callback_reason = head, reason
+            state.callback_waits, state.callback_reason = card, reason
             # The question ends the turn: the guest's digits are a number to
             # call (`state.note_guest_details`), and a "Ja" confirms nothing.
             asked = [*lead, SAY_CALLBACK_NUMBER]
@@ -1519,18 +1518,18 @@ class ConversationLoop:
         summary: str | None = None,
         table: str | None = None,
         open_named: bool = False,
-    ) -> tuple[str, str, list[str]]:
-        """The card of a handover in two parts, and what the guest hears
-        before the handover sentence. The first part is `summary`, or the
-        sentence of the reason, with the table read back and not confirmed
-        and the order that stands unplaced: time limit, outage, hop limit and
-        the wish for a person all end a call in the middle of one, and the
-        card read "Kunde sagte: Ja" (#655), and then the guest's sentence
-        `detail`. That part is what waits for a callback number
-        (`state.callback_waits`): the guest's words must not be lost while
-        the core asks for one (Codex PR #658). The second part is a booking
-        made earlier in the call, read when the card is written. `table` is
-        a table the state no longer shows (`_note_to_team`). `open_named`:
+    ) -> tuple[str, list[str]]:
+        """The card of a handover, and what the guest hears before the
+        handover sentence. The card is `summary`, or the sentence of the
+        reason, with the table read back and not confirmed and the order that
+        stands unplaced: time limit, outage, hop limit and the wish for a
+        person all end a call in the middle of one, and the card read "Kunde
+        sagte: Ja" (#655), and then the guest's sentence `detail`. The card
+        is what waits for a callback number (`state.callback_waits`): the
+        guest's words must not be lost while the core asks for one (Codex PR
+        #658). The bookings of the call are no part of it: `create_callback`
+        adds them from the database when the card is written (#764). `table`
+        is a table the state no longer shows (`_note_to_team`). `open_named`:
         `summary` is a card that waited for a number and names all of it
         already (`_callback_answered`)."""
         if detail and _names_health(state, detail):
@@ -1539,10 +1538,9 @@ class ConversationLoop:
             # (L13), and the team asks when it calls back.
             detail = None
         head = summary or _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY)
-        said = _card_tail(detail, None)
-        booked = _card_tail(None, state.booking_say)
+        said = _card_tail(detail)
         if open_named:
-            return head + said, booked, []
+            return head + said, []
         table = self._open_table(state) or table
         if table:
             label = (
@@ -1551,13 +1549,23 @@ class ConversationLoop:
                 else SUMMARY_OPEN_TABLE
             )
             head += f" {label} {table}."
-        # Room for what follows the order, and for the line's first sentence
-        # on a team leg nobody answered: all of it stands on that card (#207).
-        reserve = len(said + booked + SUMMARY_MISSED) + 1
+        # Room for what follows the order, for the line's first sentence on a
+        # team leg nobody answered and for the bookings `create_callback`
+        # adds: all of it stands on that card (#207, #764).
+        bookings = self._bookings_on_card(state)
+        reserve = len(said + SUMMARY_MISSED + bookings) + 2
         head = _with_open_order(state, head, reserve=reserve)
         not_booked = SAY_ORDER_NOT_PLACED if state.cart else None
         not_booked = SAY_TABLE_NOT_BOOKED if table else not_booked
-        return head + said, booked, [not_booked] if not_booked else []
+        return head + said, [not_booked] if not_booked else []
+
+    def _bookings_on_card(self, state: ConversationState) -> str:
+        """The bookings `create_callback` adds to a card, which an open order
+        on it leaves room for (#764). Without an open order nothing is
+        fitted, so nothing is read."""
+        if not state.cart:
+            return ""
+        return booked(self._session, state.tenant_id, state.call_id) or ""
 
 
 def _with_open_order(state: ConversationState, summary: str, reserve: int = 0) -> str:
@@ -1783,7 +1791,7 @@ def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
     """A callback whose `summary` the model wrote names the guest's allergy:
     health data on a card, kept longer than the kitchen note (L13). The card
     gets the sentence of its reason instead, as the core's own cards (`_handoff`),
-    with a booking of this call, and the team asks when it calls back.
+    and the team asks when it calls back.
     Rewritten, not refused: a refused callback the model does not retry
     loses the guest (rule 5)."""
     summary = call.args.get("summary")
@@ -1794,7 +1802,7 @@ def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
     ):
         return call
     reason = str(call.args.get("reason"))
-    card = _handoff_summary(reason, None, state.booking_say)
+    card = _handoff_summary(reason, None)
     return ToolCall(call.name, {**call.args, "summary": card})
 
 
@@ -1812,23 +1820,17 @@ def _found_nothing(result: ToolResult) -> bool:
 
 
 def _handoff_summary(
-    reason: str,
-    detail: str | None,
-    booked: str | None = None,
-    *,
-    base: str | None = None,
+    reason: str, detail: str | None, *, base: str | None = None
 ) -> str:
-    """The card of a handover. `base` replaces the sentence of the reason."""
+    """The card of a handover. `base` replaces the sentence of the reason.
+    The bookings of the call follow from the database (`create_callback`)."""
     base = base or _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY)
-    return base + _card_tail(detail, booked)
+    return base + _card_tail(detail)
 
 
-def _card_tail(detail: str | None, booked: str | None) -> str:
+def _card_tail(detail: str | None) -> str:
     """What follows the first sentence of a card: the guest's words, cut."""
-    tail = f" Kunde sagte: {detail[:_SUMMARY_DETAIL_MAX]}" if detail else ""
-    # A booking of this call stands whatever went wrong after it: the card says
-    # so, or the team books a second time (Codex PR #347).
-    return f"{tail}{_BOOKED}{booked}" if booked else tail
+    return f" Kunde sagte: {detail[:_SUMMARY_DETAIL_MAX]}" if detail else ""
 
 
 def _transfer_reason(args: dict[str, Any]) -> str:

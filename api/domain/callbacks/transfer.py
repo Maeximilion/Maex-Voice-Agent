@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 
 from api.core.errors import SAY_ON_FAILURE, NotFound
 from api.core.time import utcnow
-from api.domain.callbacks.create import create_callback
+from api.domain.callbacks.create import SUMMARY_MAX, booked, create_callback
 from api.domain.customers.contact import note_contact
 from api.domain.customers.phone import number_or_none
 from api.domain.status.hours import load_hours, open_window_at
@@ -30,8 +30,6 @@ from api.models import (
     AuditLog,
     Call,
     Callback,
-    Order,
-    Reservation,
     ServiceConfig,
     Tenant,
 )
@@ -54,24 +52,10 @@ SUMMARY_MISSED = "Ans Team weitergeleitet, dort hat niemand abgenommen."
 # Mode shadow with the recording question: the caller hung up before the line
 # handed the call on, and the team never rang (#252 no. 9).
 SUMMARY_HUNG_UP = "Aufgelegt, bevor das Team klingelte."
-# How a card names a booking of the call that stands, so the team does not book
-# it a second time (Codex PR #347). The core's own cards take it from the
-# conversation (`agent/loop.py`); a card without one takes it from here.
-SUMMARY_BOOKED = "Bereits gebucht:"
 SUMMARY_BY_REASON = {
     "cancellation": "Kunde wollte etwas stornieren.",
     None: "Anliegen nicht bekannt.",
 }
-# A booking on such a card, as the team finds it on the tablet. Drafts.
-_TABLE_BOOKED = "Reservierung, {party} Personen, {when:%d.%m.%Y %H:%M} Uhr, Name {name}"
-_ORDER_BOOKED = {
-    "pickup": "Bestellung zur Abholung, Name {name}",
-    "delivery": "Bestellung zur Lieferung, Name {name}",
-}
-# What the guest's yes made of an order (`confirm`) and nobody took back.
-_ORDER_STANDS = ("confirmed", "approved", "handed_over")
-# `CreateCallbackRequest.summary`: a card cut is better than one refused.
-_SUMMARY_MAX = 1000
 _CALLBACK_REASONS = frozenset(get_args(CallbackReason))
 
 
@@ -137,11 +121,11 @@ def team_missed(
     may be closed already. `phone` is a number the guest named in the call,
     which only the line's process still knows; else the caller id, else the
     number of an open card of the call. `summary` is the card the core wrote
-    for the handover, which only that process knows too (its reason, a
-    booking made earlier in the call, an allergen question beyond the
-    database, L17); else the card says the reason and the bookings of the
-    call that stand, from the database: the outage path writes no card of
-    its own, and the team must not book a table twice (#743). The call's
+    for the handover, which only that process knows too (its reason, an
+    allergen question beyond the database, L17); else the card says the
+    reason: the outage path writes no card of its own. Either way
+    `create_callback` adds the bookings of the call that stand, from the
+    database: the team must not book a table twice (#743, #764). The call's
     outcome becomes "callback",
     also when its log is still being written (`end_call` keeps it); an "error"
     stays, logged before or after. A team leg that rang with no number left
@@ -197,7 +181,7 @@ def team_missed(
                     summary or _without_the_cores_card(session, call),
                 )
                 if part
-            )[:_SUMMARY_MAX],
+            )[:SUMMARY_MAX],
         ),
         now=now,
         actor=ACTOR_TELEPHONY,
@@ -206,62 +190,12 @@ def team_missed(
 
 def _without_the_cores_card(session: Session, call: Call) -> str | None:
     """The card's text when the core wrote none: the sentence of the reason
-    where there is one, and what of the call stands booked. A booking says
-    more than "Anliegen nicht bekannt" and takes its place."""
-    said = SUMMARY_BY_REASON.get(call.transfer_reason)
-    booked = _booked(session, call)
-    if booked is None:
-        return said
-    if call.transfer_reason is None or not said:
-        return booked
-    return f"{said} {booked}"
-
-
-def _booked(session: Session, call: Call) -> str | None:
-    """The reservations and orders of the call that stand, in the order they
-    were made, from the database (CLAUDE.md §2 rule 1). Without their notes:
-    one can name the guest's health, and a card is kept longer than that
-    (L13)."""
-    tenant = session.get(Tenant, call.tenant_id)
-    if tenant is None:
+    where there is one. `create_callback` adds what of the call stands
+    booked; a booking says more than "Anliegen nicht bekannt" and takes its
+    place."""
+    if call.transfer_reason is None and booked(session, call.tenant_id, call.id):
         return None
-    zone = ZoneInfo(tenant.timezone)
-    tables = session.scalars(
-        select(Reservation).where(
-            Reservation.tenant_id == call.tenant_id,
-            Reservation.call_id == call.id,
-            Reservation.status == "confirmed",
-            Reservation.deleted_at.is_(None),
-        )
-    ).all()
-    orders = session.scalars(
-        select(Order).where(
-            Order.tenant_id == call.tenant_id,
-            Order.call_id == call.id,
-            Order.status.in_(_ORDER_STANDS),
-            Order.deleted_at.is_(None),
-        )
-    ).all()
-    named = [
-        (
-            table.created_at,
-            _TABLE_BOOKED.format(
-                party=table.party_size,
-                when=table.reserved_for.astimezone(zone),
-                name=table.guest_name,
-            ),
-        )
-        for table in tables
-    ]
-    for order in orders:
-        text = _ORDER_BOOKED[order.type].format(name=order.customer_name)
-        if order.pickup_code:
-            text += f", Code {order.pickup_code}"
-        named.append((order.created_at, text))
-    if not named:
-        return None
-    named.sort(key=lambda entry: entry[0])
-    return f"{SUMMARY_BOOKED} {'; '.join(text for _, text in named)}."
+    return SUMMARY_BY_REASON.get(call.transfer_reason)
 
 
 def _card_reason(reason: str | None) -> CallbackReason:
