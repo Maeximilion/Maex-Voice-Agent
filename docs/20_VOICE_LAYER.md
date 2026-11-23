@@ -47,7 +47,7 @@ caller → telephone network → access (test: the pilot's router as PBX · oper
 
 | Piece | Runs as | Place |
 |---|---|---|
-| Registration, dialplan, media | Compose service `asterisk` (22.11.0, pinned by digest; not older, §11; the dialplan asks `voice` at `/media/ready` before it dials it, as a failed media connection can crash 22.11.0, #768, until #775), profile `voice`; built (T-1.11) | `deploy/asterisk/conf/`, rendered by `deploy/asterisk/render.sh` |
+| Registration, dialplan, media | Compose service `asterisk` (22.12.0, built from the official source tarball in `deploy/asterisk/image/`, base image pinned by digest and every source by checksum, #775; not older, §11: 22.11.0 can crash after a failed media connection, #768; the dialplan still asks `voice` at `/media/ready` before it dials it, which rings the team sooner when `voice` is down), profile `voice`; built (T-1.11) | `deploy/asterisk/conf/`, rendered by `deploy/asterisk/render.sh` |
 | Voice process | Compose service `voice`, the API's image with the speech engines (target `voice` of `api/Dockerfile`), one worker, profile `voice`; built (T-1.11) | `api/telephony/app.py` |
 | WebSocket endpoint, dialplan callback | inside `voice`: `/media`, `/media/ready` (asked before `/media` is dialled, #768), `/team` (the team number for the dialplan's own legs, #835), `/calls/{id}/ending`, `/calls/{id}/missed` and `/calls/{id}/recording/stop`; built (T-1.11, T-10.8, T-11.3) | `api/telephony/router.py` |
 | Media protocol of Asterisk and the line on it | built (T-1.11) | `api/telephony/adapters/asterisk.py` |
@@ -1163,8 +1163,8 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   connection in `websocket_client.conf` can carry a user name and password, and TLS). **Built
   with T-1.11:** Basic credentials with the media token on both doors of `voice`; TLS between the
   two containers of one network is not. The Asterisk
-  image is a third-party build, pinned by digest; for operation decide between that and an image
-  built from the official source. The containers of the voice layer are to start as an unprivileged user from the beginning (the probe does,
+  image was a third-party build, pinned by digest; since #775 it is built from the official
+  source (Maxi, 23.11.2026), with Alpine's musl patches. The containers of the voice layer are to start as an unprivileged user from the beginning (the probe does,
   Asterisk drops root itself).
 - **From T-1.11, what the team sees on a handed-over call:** the team leg carries the user of our
   registration as its caller (`from_user`), not the guest's number; the router authenticates us by

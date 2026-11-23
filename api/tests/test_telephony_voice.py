@@ -625,9 +625,10 @@ def test_every_fallback_rings_the_routed_number_before_team_phone():
 
 
 def test_the_dialplan_asks_voice_with_the_token_before_it_dials_it():
-    """Asterisk 22.11.0 keeps a lock when a media connection fails, which can
-    crash it with every live call (#768): the dialplan asks `/media/ready` with
-    the media token first, and anything but "ok" rings the team."""
+    """A `voice` that is down, frozen or holds another token rings the team
+    without a media connection tried (#768, kept with 22.12.0 in #775): the
+    dialplan asks `/media/ready` with the media token first, and anything but
+    "ok" rings the team."""
     conf = DIALPLAN.read_text()
     dial = conf.index("Dial(WebSocket/voice")
     token = conf.index("CURLOPT(userpwd)=asterisk:${ENV(VOICE_MEDIA_TOKEN)}")
