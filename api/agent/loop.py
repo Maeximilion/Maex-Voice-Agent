@@ -62,7 +62,7 @@ from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
 from api.domain.callbacks.create import booked
-from api.domain.callbacks.transfer import SUMMARY_MISSED
+from api.domain.callbacks.transfer import SUMMARY_MISSED, SUMMARY_NOTE_TO_CLEAR
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
 from api.domain.menu.wishes import (
@@ -184,10 +184,9 @@ SUMMARY_ALLERGENS = (
 # The card when the guest asked about an additive, which no table holds
 # (#638). Draft wording.
 SUMMARY_ADDITIVES = "Frage zu Zusatzstoffen, vor einer Bestellung zu klären."
-# A line's note on a card when it names the guest's health: the card is kept
-# for the period of a callback, the allergy only until the night after its
-# order (L13). Draft wording.
-SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
+# A line's note on a card when it names the guest's health
+# (`SUMMARY_NOTE_TO_CLEAR`): the card is kept for the period of a callback, the
+# allergy only until the night after its order (L13).
 # The same as a card's first sentence (`_marked`).
 _MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
 # The cards of a rule of the catalogue (D19): name and amount from its row, the

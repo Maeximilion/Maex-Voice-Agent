@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.26
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.27
 
 ---
 
@@ -179,6 +179,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.27 · 24.11.2026:** #956: the card of a team leg nobody answered keeps the kitchen marker after a voice failure mid-call
 - **v2.69.26 · 23.11.2026:** #940: the older gaps of the allergy safety net closed, the kitchen marker leads every card of an allergic guest
 - **v2.69.25 · 23.11.2026:** Ledger #947, review of #946: the operator audit and double tap keep the client address as sent, only the counters group an IPv6 client by its /64
 - **v2.69.24 · 23.11.2026:** Chain briefs ask each side session to message the coordinator at milestones (PR ready, merged, stopped or blocked), because turn-end notes wait while another side session works.

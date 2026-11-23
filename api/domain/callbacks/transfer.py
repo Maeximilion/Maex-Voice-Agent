@@ -52,6 +52,10 @@ SUMMARY_MISSED = "Ans Team weitergeleitet, dort hat niemand abgenommen."
 # Mode shadow with the recording question: the caller hung up before the line
 # handed the call on, and the team never rang (#252 no. 9).
 SUMMARY_HUNG_UP = "Aufgelegt, bevor das Team klingelte."
+# A card's note when the guest spoke of an allergy in the call: the team asks
+# about the kitchen note when it calls back, the card never names the allergy
+# (L13). Draft wording; the core's cards lead with it too (`agent/loop.py`).
+SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
 SUMMARY_BY_REASON = {
     "cancellation": "Kunde wollte etwas stornieren.",
     None: "Anliegen nicht bekannt.",
@@ -110,12 +114,15 @@ def team_missed(
     summary: str | None = None,
     now: datetime | None = None,
     rang: bool = True,
+    kitchen_note: bool = False,
 ) -> CallbackTask | None:
     """Nobody answered the team leg of a call: a callback card, the team's only
     notice of the call then (docs/20 §5, T-10.8). None when there is none to
     write: the call is unknown, or there is no number to call back. `rang`
     False: there was no team leg, the caller hung up before the line handed
     the call on (mode `shadow` with the recording question, #252 no. 9).
+    `kitchen_note`: the guest spoke of an allergy in the call; the card leads
+    its text with the marker the core's cards carry, once (#956).
 
     `external_session_id` is the id the line gave the call; our leg and its log
     may be closed already. `phone` is a number the guest named in the call,
@@ -178,7 +185,10 @@ def team_missed(
                 part
                 for part in (
                     SUMMARY_MISSED if rang else SUMMARY_HUNG_UP,
-                    summary or _without_the_cores_card(session, call),
+                    _marked(
+                        summary or _without_the_cores_card(session, call),
+                        kitchen_note=kitchen_note,
+                    ),
                 )
                 if part
             )[:SUMMARY_MAX],
@@ -186,6 +196,14 @@ def team_missed(
         now=now,
         actor=ACTOR_TELEPHONY,
     )
+
+
+def _marked(card: str | None, *, kitchen_note: bool) -> str | None:
+    """`card` led by the kitchen marker, unless it carries it already: the
+    core's card does once the guest spoke of an allergy (#940)."""
+    if not kitchen_note or (card and SUMMARY_NOTE_TO_CLEAR in card):
+        return card
+    return f"{SUMMARY_NOTE_TO_CLEAR}. {card or ''}".strip()
 
 
 def _without_the_cores_card(session: Session, call: Call) -> str | None:

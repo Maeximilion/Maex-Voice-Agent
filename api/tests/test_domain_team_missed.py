@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 
 from api.domain.callbacks import create_callback, team_missed
 from api.domain.callbacks.create import SUMMARY_BOOKED
-from api.domain.callbacks.transfer import SUMMARY_HUNG_UP, SUMMARY_MISSED
+from api.domain.callbacks.transfer import (
+    SUMMARY_HUNG_UP,
+    SUMMARY_MISSED,
+    SUMMARY_NOTE_TO_CLEAR,
+)
 from api.domain.calls import end_call
 from api.models import AuditLog, Call, Callback, Order, OutboxEvent, Reservation
 from api.schemas.callbacks import CreateCallbackRequest
@@ -626,3 +630,101 @@ def test_a_report_waits_for_the_call_log_and_reads_what_it_wrote(
             assert call.outcome == after
     finally:
         engine.dispose()
+
+
+# -- the kitchen marker of a guest who spoke of an allergy (#956) ---------------
+
+MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
+
+
+def test_a_failed_call_with_an_allergy_said_leads_its_card_with_the_marker(
+    session, tenant_id
+):
+    """#956: the voice failed mid-call, so the core wrote no card; the line's
+    card still tells the team to ask about the kitchen note, in front of the
+    reason, and names no allergy (L13)."""
+    make_call(session, tenant_id, transfer_reason=None, outcome="error")
+
+    task = team_missed(
+        session, tenant_id, "1760000000.1", kitchen_note=True, now=REPORTED
+    )
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {MARKER} Anliegen nicht bekannt."
+
+
+def test_without_an_allergy_said_the_card_has_no_marker(session, tenant_id):
+    make_call(session, tenant_id, transfer_reason=None, outcome="error")
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert SUMMARY_NOTE_TO_CLEAR not in task.summary
+
+
+def test_the_marker_stands_before_the_bookings_of_a_failed_call(session, tenant_id):
+    """A booking takes the place of "Anliegen nicht bekannt"; the marker still
+    leads, and the bookings follow from the database."""
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    _reservation(session, call)
+
+    task = team_missed(
+        session, tenant_id, "1760000000.1", kitchen_note=True, now=REPORTED
+    )
+
+    assert task is not None
+    assert task.summary == (
+        f"{SUMMARY_MISSED} {MARKER} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+    )
+
+
+def test_a_core_card_with_the_marker_carries_it_once(session, tenant_id):
+    """The core's cards lead with the marker already (#940)."""
+    make_call(session, tenant_id, transfer_reason="human_requested")
+    summary = f"{MARKER} Kunde möchte mit einem Mitarbeiter sprechen."
+
+    task = team_missed(
+        session,
+        tenant_id,
+        "1760000000.1",
+        summary=summary,
+        kitchen_note=True,
+        now=REPORTED,
+    )
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {summary}"
+    assert task.summary.count(SUMMARY_NOTE_TO_CLEAR) == 1
+
+
+def test_a_core_card_without_the_marker_gets_it_in_front(session, tenant_id):
+    make_call(session, tenant_id, transfer_reason="human_requested")
+    summary = "Kunde möchte mit einem Mitarbeiter sprechen."
+
+    task = team_missed(
+        session,
+        tenant_id,
+        "1760000000.1",
+        summary=summary,
+        kitchen_note=True,
+        now=REPORTED,
+    )
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {MARKER} {summary}"
+
+
+def test_a_call_the_team_never_rang_carries_the_marker_too(session, tenant_id):
+    make_call(session, tenant_id, transfer_reason=None, outcome="abandoned")
+
+    task = team_missed(
+        session,
+        tenant_id,
+        "1760000000.1",
+        rang=False,
+        kitchen_note=True,
+        now=REPORTED,
+    )
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_HUNG_UP} {MARKER} Anliegen nicht bekannt."
