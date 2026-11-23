@@ -234,7 +234,7 @@ bash scripts/restore.sh <file> --replace <database> # the real restore
 
 **Restore:** the dump always goes into a new database first. `--check` reports table count and schema revision and drops that database again. `--replace` renames the current database to `<name>_before_restore_<time>` and the restored one into its place, both renames in one transaction. Nothing is dropped: the way back is a rename, and the old database is removed by hand once the restored state is checked. That copy holds customer data and nothing expires it, so every later run of `restore.sh` names the copies that still exist. **Deadline:** drop it once the restored state is checked, and at the latest `BACKUP_KEEP_DAYS` days (default 14) after the restore, the period of a dump made that day; never later than the 30 days docs/03 allows for backups. The time in its name is the UTC time of the restore. With `api` and `dispatcher` running it can be dropped, nothing connects to it; on the server, from the stack's folder: `docker compose exec db psql -U <POSTGRES_USER of .env> -d postgres -c 'drop database "<name>_before_restore_<time>"'`. The script does not drop it itself: a restore that turns out wrong a week later has no other way back than this copy. `--replace` wants the database name as a confirmation and refuses while sessions are connected, so stop `api` and `dispatcher` first (`docker compose stop api dispatcher`). If the database is gone entirely, `--replace` creates it from the dump. If the swap itself reports an error, the script asks the server which names exist before it says anything: "nothing changed" only when the swap did not happen, a warning and exit 0 when it did, and "outcome unknown" with what to look for when the server cannot be asked. The restored schema is at the revision of the dump; if the code is newer, `bash scripts/migrate.sh` follows. Call recordings made after the dump stay in the `recordings` volume without a row; the daily deletion job removes such a file once its own time is past `RETENTION_RECORDING_DAYS` (#693), so nothing is to be done by hand, but they are there until then. The dump is restored without owners and privileges (`--no-owner --no-privileges`), so everything belongs to the user who restores. Where the application has a role of its own (the user of `DATABASE_URL`, §3), the script gives that role its rights on the restored database before the swap, in `--check` as well; a role the server does not know stops the restore with nothing changed.
 
-**Cron:** `deploy/backup.cron` runs the backup daily at 03:00 and appends to `backups/backup.log`. A good run writes `backup.done` into `audit_log`; the monitor pushes "Backup overdue" when none is newer than `ALARM_BACKUP_HOURS` (26, 0 switches it off), so a failed night and a cron line that never ran both count (T-8.3). A monitor on a stack that takes no backups (the workbench) reports it once a day in its log.
+**Cron:** `deploy/backup.cron` runs the backup daily at 03:00 in every customer stack under `/srv/maex` (each folder with an `.env` and `scripts/backup.sh`, one after the other, so a stack made by `scripts/new_stack.py` needs no line of its own and a removed one leaves none, #888 D2) and appends to that stack's `backups/backup.log`. A good run writes `backup.done` into `audit_log`; the monitor pushes "Backup overdue" when none is newer than `ALARM_BACKUP_HOURS` (26, 0 switches it off), so a failed night and a cron line that never ran both count (T-8.3). A monitor on a stack that takes no backups (the workbench) reports it once a day in its log.
 
 **Migrating the workbench (Ubuntu, WSL), as done on 06.11.2026 from 026 to 029:** in the main folder, one command at a time, each only after the one before succeeded:
 
@@ -676,8 +676,24 @@ the server is bought and prices per concurrent call are set. On the workbench, i
 - **The CPU caveat stands**: a workbench core (Ryzen 9 7950X3D) is faster than a VPS vCore, so the
   number is an upper bound. Plan with a margin and run the same on the VPS in its first month:
   there, as the deploy user in a checkout on an empty server,
-  `python3 -m scripts.voice_load --inside --run-dir <folder>`. It refuses a `/srv/maex` it did
-  not make, so it never clears a server with customers on it.
+  `python3 -m scripts.voice_load --inside --run-dir <folder>`.
+- **What a run removes** (#888 S6): at its end, also when a step broke, a run removes its
+  stacks, the operator stack, the shared Caddy and the line with their volumes and folders, and
+  its marker `/srv/maex/.voice-load-run`; `--keep` leaves them running, and
+  `python3 -m scripts.voice_load --inside --down` removes them later (without the marker it
+  touches nothing). Before it starts, and again
+  at its end, it removes only what it can tell is its own by what it wrote, never by the marker
+  alone: a stack `load<n>` whose `.env` serves `agent.load<n>.test` (a reserved name no customer
+  has) or that has no `.env` yet, `ops` whose `.env` names `https://ops.load.test`, and `caddy`
+  with no `operator/ops.caddy` and no site but those of such `load<n>` stacks, each serving its
+  `load<n>.test`. Anything else under `/srv/maex` (a
+  customer's stack, the real operator stack with its `.env` and `ops/backups`, `offboarding`, a
+  link) or any other Compose project `maex-*` refuses the run before anything is removed, and is
+  left in place at its end. While the marker is there, `scripts/new_stack.py` sets up no
+  customer and no `--ops-site` (only the run's own `*.test` stacks), and both take the same lock
+  of the root, so a customer's setup and a run never overlap. Removal and refusal are tested with
+  a fake file system and fake Docker calls (`api/tests/test_telephony_load.py`), not yet on a
+  server.
 
 ### Reassess
 

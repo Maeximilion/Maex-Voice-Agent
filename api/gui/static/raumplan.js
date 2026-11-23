@@ -15,6 +15,7 @@
 // holding the old one would run it as a module and show an empty editor. Static
 // files are asked for again on every use since then (api/gui/__init__.py), so a
 // later change needs no new number.
+import { csrfToken } from "./csrf.js";
 import * as G from "./raumplan-geometry.js";
 const TITLES = { table: "Tisch", counter: "Theke", door: "Eingang", wall: "Wand", label: "Beschriftung" };
 const LABEL_TURN_TEXT = { "0": "Waagerecht", "-90": "Senkrecht, von unten zu lesen", "90": "Senkrecht, von oben zu lesen" };
@@ -66,11 +67,10 @@ function node(tag, cls, text) {
 }
 // ---- talking to the server -------------------------------------------------
 function send(method, url, body) {
-    const m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
     const init = {
         method,
         credentials: "same-origin",
-        headers: { "Content-Type": "application/json", "HX-Request": "true", "X-CSRF-Token": m?.[1] ?? "" }
+        headers: { "Content-Type": "application/json", "HX-Request": "true", "X-CSRF-Token": csrfToken(document.cookie) }
     };
     if (body !== undefined)
         init.body = JSON.stringify(body);

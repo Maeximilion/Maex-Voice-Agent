@@ -50,7 +50,7 @@ def client(engine):
 
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
-    client.cookies.set("csrf_token", "testtoken")
+    client.cookies.set("maex_csrf", "testtoken")
     try:
         yield client
     finally:
