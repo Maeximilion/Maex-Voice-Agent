@@ -88,6 +88,36 @@ def test_a_description_without_body_passes(branch):
     assert run.returncode == 0, run.stdout + run.stderr
 
 
+@pytest.mark.parametrize(
+    ("variable", "identity"),
+    [
+        ("AUTHOR", ("Claude", "noreply@anthropic.com")),
+        ("COMMITTER", ("Claude", "noreply@anthropic.com")),
+        ("AUTHOR", ("Codex", "codex@openai.com")),
+    ],
+)
+def test_an_ai_author_or_committer_fails(branch, monkeypatch, variable, identity):
+    # Maxi, 2026-11-23: Claude never stands as a participant in the repository
+    # unless he says so; a cloud session committed as Claude (#915).
+    commit(branch, "feat: one")
+    monkeypatch.setenv(f"GIT_{variable}_NAME", identity[0])
+    monkeypatch.setenv(f"GIT_{variable}_EMAIL", identity[1])
+    sha = commit(branch, "fix: two")
+    monkeypatch.undo()
+    run = check(branch)
+    assert run.returncode == 1
+    assert f"in {sha}:" in run.stdout and identity[1] in run.stdout
+
+
+def test_the_label_lets_an_ai_author_maxi_asked_for_through(branch, monkeypatch):
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "Claude")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "noreply@anthropic.com")
+    commit(branch, "feat: one")
+    monkeypatch.undo()
+    run = check(branch, labels=("attribution-approved",))
+    assert run.returncode == 0, run.stdout
+
+
 def test_a_range_git_cannot_read_fails_instead_of_passing(branch):
     run = check(branch, revision_range="nothere..HEAD")
     assert run.returncode != 0

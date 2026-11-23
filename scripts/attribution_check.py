@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Fail a pull request whose commits or description credit an AI author.
 
-Maxi wants no co-author trailer and no "Generated with" badge unless he asked
-for the credit in that work (CLAUDE.md section 6 "Independent review requests",
-section 8 Git); a harness reminder put one on PR #610. The check covers every
+Maxi wants no co-author trailer, no "Generated with" badge and no AI as a
+commit's author or committer unless he asked for the credit in that work
+(CLAUDE.md section 6 "Independent review requests", section 8 Git); a harness
+reminder put a trailer on PR #610, and a cloud session committed as Claude on
+PR #915, which makes GitHub list Claude among the contributors. The check covers every
 author, from any machine, in the required check `title` (pr-title.yml). The PR
 label `attribution-approved` is the escape for credit Maxi asked for.
 
@@ -28,19 +30,33 @@ CREDIT = re.compile(
 )
 
 
+# An AI vendor's address, or an AI's name as the whole name, in "name <email>".
+AI_IDENTITY = re.compile(
+    r"@(?:[\w.-]+\.)?(?:anthropic\.com|openai\.com)>"
+    r"|^(?:claude|codex|chatgpt)(?:\[bot\])? <",
+    re.IGNORECASE,
+)
+
+
 def credits(text: str) -> list[str]:
     return [match.group(0).strip() for match in CREDIT.finditer(text or "")]
 
 
-def commit_messages(revision_range: str) -> list[tuple[str, str]]:
+def commits(revision_range: str) -> list[list[str]]:
+    """Per commit: short sha, "author <email>", "committer <email>", message."""
     out = subprocess.run(
-        ["git", "log", "--format=%h%x1f%B%x1e", revision_range],
+        [
+            "git",
+            "log",
+            "--format=%h%x1f%an <%ae>%x1f%cn <%ce>%x1f%B%x1e",
+            revision_range,
+        ],
         capture_output=True,
         text=True,
         check=True,
     ).stdout
     records = [record.strip("\n") for record in out.split("\x1e")]
-    return [tuple(record.split("\x1f", 1)) for record in records if record]  # type: ignore[misc]
+    return [record.split("\x1f", 3) for record in records if record]
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -55,17 +71,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"label {APPROVED_LABEL}: credit allowed in this pull request")
         return 0
 
-    found = [
-        (sha, line)
-        for sha, message in commit_messages(args.range)
-        for line in credits(message)
-    ]
+    found = []
+    for sha, author, committer, message in commits(args.range):
+        found += [(sha, line) for line in credits(message)]
+        found += [
+            (sha, f"{role} {who}")
+            for role, who in (("author", author), ("committer", committer))
+            if AI_IDENTITY.search(who)
+        ]
     found += [("description", line) for line in credits(pull.get("body") or "")]
     for where, line in found:
         print(f"::error::AI attribution in {where}: {line}")
     if found:
         print(
-            "Remove the line (reword the commit, edit the description), or add the label "
+            "Remove the line (reword the commit, edit the description), make Maxi the "
+            "commit's author and committer (git commit --amend --reset-author), or add the label "
             f"{APPROVED_LABEL} when Maxi asked for the credit."
         )
         return 1
