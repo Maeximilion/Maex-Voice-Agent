@@ -158,8 +158,8 @@ def test_entwurf_mit_summe_readback_und_audit(session, tenant_id, call_id):
     assert draft.readback == (
         "Zweimal Nummer 23 Frühlingsrollen, Ihr Hinweis: ohne Zwiebeln. "
         "Einmal Nummer 47 Ente knusprig mit Huhn und Erdnuss. "
-        "Macht 28 Euro 80, abholbereit in etwa 30 Minuten, auf den Namen Müller. "
-        "Passt das so?"
+        "Macht 28 Euro 80, auf den Namen Müller. "
+        "Es dauert so ungefähr 30 Minuten."
     )
 
     order = session.get(Order, draft.order_id)
@@ -330,7 +330,7 @@ def test_wartezeit_wird_nie_kuerzer_angesagt(session, tenant_id, call_id, sekund
     assert draft.ready_at is not None
     assert draft.ready_at >= now + timedelta(minutes=30)
     assert draft.ready_at.second == 0 and draft.ready_at.microsecond == 0
-    assert "abholbereit in etwa 30 Minuten" in draft.readback
+    assert "Es dauert so ungefähr 30 Minuten." in draft.readback
 
 
 def test_the_read_back_names_todays_wait(session, tenant_id, call_id):
@@ -339,7 +339,7 @@ def test_the_read_back_names_todays_wait(session, tenant_id, call_id):
 
     draft = draft_order(session, request(session, tenant_id, call_id), now=NOW)
 
-    assert "abholbereit in etwa 75 Minuten" in draft.readback
+    assert "Es dauert so ungefähr 75 Minuten." in draft.readback
     assert draft.ready_at == NOW + timedelta(minutes=75)
 
 
@@ -350,7 +350,7 @@ def test_the_read_back_names_the_standard_the_next_morning(session, tenant_id, c
 
     draft = draft_order(session, request(session, tenant_id, call_id), now=next_noon)
 
-    assert "abholbereit in etwa 30 Minuten" in draft.readback
+    assert "Es dauert so ungefähr 30 Minuten." in draft.readback
 
 
 def test_audit_haelt_keine_personendaten(session, tenant_id):
