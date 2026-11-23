@@ -235,10 +235,10 @@ def report(start: datetime, end: datetime, root: Path) -> str:
         out.append(f"  {fam:7} {kind:9} {v:6.1f}")
     for fam in FAMILIES:
         if (fam, "building") in rates:
-            b = rates[(fam, "building")]
+            rate = rates[(fam, "building")]
             out.append(
                 f"  {fam} lanes building: "
-                + ", ".join(f"{k} = {k * b:.0f}/h" for k in (2, 3, 5))
+                + ", ".join(f"{k} = {k * rate:.0f}/h" for k in (2, 3, 5))
             )
     return "\n".join(out)
 
