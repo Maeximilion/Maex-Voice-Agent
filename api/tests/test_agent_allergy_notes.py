@@ -24,6 +24,7 @@ from api.agent.loop import (
     SAY_ALLERGENS_BEYOND,
     SUMMARY_NOTE_TO_CLEAR,
     ConversationLoop,
+    _taken_back,
 )
 from api.agent.state import ConversationState, note_guest_details
 from api.domain.menu import search_menu
@@ -401,6 +402,7 @@ def test_a_bare_denial_to_the_question_takes_the_own_back(
     ("named", "asked", "answer"),
     [
         ("Ich habe eine Erdnussallergie.", "Haben Sie sonst noch Allergien?", "Nein."),
+        ("Ich habe eine Kiwiallergie.", "Haben Sie sonst noch Allergien?", "Nein."),
         ("Ich habe Zöliakie.", SAY_ASK_ALLERGY, "Danke, nichts."),
     ],
 )
@@ -417,6 +419,38 @@ def test_a_bare_no_keeps_an_allergy_the_guest_named(
     run(session, state, answer, LLMTurn(say="Was darf ich Ihnen bringen?"))
 
     assert state.allergy_said == [named]
+
+
+NUTS = "Ich habe eine Nussallergie."
+SESAME = "Ich habe eine Sesamallergie."
+WIFE = "Meine Frau hat eine Sesamallergie."
+NO_NUTS = "Nein, keine Nussallergie."
+
+
+@pytest.mark.parametrize(
+    ("kept", "denial", "left"),
+    [
+        # A bare "no" after a named allergy denies a further one (#764).
+        (["Ich habe eine Allergie.", "Gegen Erdnüsse."], "Nein.", 2),
+        (["Ich habe eine Tomatenallergie."], "Nein.", 1),
+        (["Ich habe eine Allergie, gegen Erdnüsse."], "Nein.", 1),
+        # Nothing named: the "no" takes it back (`allergie_0012`), also next
+        # to a dish or a question that names an allergen.
+        (["Die Pizza mit Käse ohne Zwiebeln, ich habe eine Allergie."], "Keine.", 0),
+        (["Ich habe keine Allergie. Ist da Erdnuss drin?"], "Nein.", 0),
+        (["Ich habe eine Allergie.", "Ja."], "Keine.", 0),
+        # A denial that names the allergen takes back only what names that.
+        ([NUTS], NO_NUTS, 0),
+        ([SESAME, NUTS], NO_NUTS, 1),
+    ],
+)
+def test_what_a_bare_denial_takes_back(kept, denial, left):
+    """`left`: how many of the kept sentences, from the first, stay."""
+    assert _taken_back(kept, denial) == kept[:left]
+
+
+def test_a_denial_never_takes_back_another_persons_allergy():
+    assert _taken_back([NUTS, WIFE], NO_NUTS) == [WIFE]
 
 
 @pytest.mark.parametrize("asked", [None, SAY_ASK_ALLERGY])
@@ -523,6 +557,52 @@ def test_a_cut_that_drops_a_later_sentence_leaves_the_draft_to_the_team(later):
     assert guards.with_the_guests_words(state, ToolCall("draft_order", {})) is None
 
 
+LONG = (
+    "Ja hallo, ich möchte gern was zum Abholen bestellen, und ich muss vorher "
+    "sagen, ich habe eine ziemlich starke Laktoseintoleranz, das ist wirklich "
+    "wichtig für mich, also bitte wirklich gut aufpassen."
+)
+
+
+def _noted(*said: str) -> str | None:
+    state = _named()
+    state.allergy_said = list(said)
+    noted = guards.with_the_guests_words(state, ToolCall("draft_order", {}))
+    return None if noted is None else noted.args["note"]
+
+
+def test_a_cut_that_keeps_the_allergy_word_but_drops_the_allergen_goes_to_the_team():
+    """ "allergisch" alone tells the kitchen nothing: the allergens the
+    sentence names must survive the cut too (ledger #764 review)."""
+    said = "Ich bin allergisch, und zwar " + "wirklich " * 20 + "gegen Erdnüsse."
+
+    assert _noted(said) is None
+
+
+def test_a_cut_may_drop_a_kept_yes_but_not_the_answer_itself():
+    """ "Ja, genau." behind a long sentence carries nothing; an answer such as
+    "Gegen Erdnüsse!" keeps all but its last mark."""
+    noted = f"WICHTIG !!! Gast sagte: {LONG}"[:200].rstrip()
+    assert _noted(LONG, "Ja, genau.") == noted and "Laktose" in noted
+    answer = "Gegen " + "Erdnüsse und " * 10 + "Mandeln!"
+    room = 200 - len("WICHTIG !!! Gast sagte: Ich habe eine Allergie. ")
+
+    assert _noted("Ich habe eine Allergie.", answer[:room] + "!") is not None
+
+
+def test_an_answer_alone_takes_the_field_when_it_fits():
+    """Only "Gegen Erdnüsse." kept, the model's note too long: the answer
+    takes the field whole, though it has no health word (ledger #764)."""
+    state = _named()
+    state.allergy_said = ["Gegen Erdnüsse."]
+    call = ToolCall("draft_order", {"items": [], "note": "bitte klingeln " * 13})
+
+    noted = guards.with_the_guests_words(state, call)
+
+    assert noted is not None
+    assert noted.args["note"] == "WICHTIG !!! Gast sagte: Gegen Erdnüsse"
+
+
 def test_the_guests_whole_words_take_the_field_from_a_long_model_note():
     """The guest's sentences fit alone, only not next to the model's note:
     they take the field whole, the last one without its full stop."""
@@ -595,11 +675,16 @@ def test_a_refused_draft_stays_on_the_card_when_the_model_fails(session, known_t
     assert card.count(SUMMARY_NOTE_TO_CLEAR) == 1
 
 
-def test_an_allergy_on_no_note_marks_the_card_without_naming_it(session, known_tenant):
+@pytest.mark.parametrize(
+    "said", ["Ich habe eine Nussallergie.", "Ich reagiere auf Nüsse."]
+)
+def test_an_allergy_on_no_note_marks_the_card_without_naming_it(
+    session, known_tenant, said
+):
     """An allergy said before any dish, then the model fails: the card tells
     the team to ask about a kitchen note, never which allergy (L13)."""
     state = state_for(session, known_tenant, phone=CALLER)
-    run(session, state, "Ich habe eine Nussallergie.", LLMTurn(say=SAY_ALLERGY_NOTED))
+    run(session, state, said, LLMTurn(say=SAY_ALLERGY_NOTED))
 
     class Down(FakeLLM):
         def next_turn(self, *args, **kwargs):

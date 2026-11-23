@@ -198,7 +198,9 @@ is the fixed sentence (`guards.allergen_claim`, `_ALWAYS` and `_SAFE`); the
 model asking "Sind Sie sicher, dass ...?" does not count (#656). A card never
 carries a note with a health word (`wishes.speaks_of_health`: an allergy
 word, "Zöliakie", "reagiert auf", "darf kein"): its line reads "Hinweis für
-die Küche mit dem Gast klären" instead. "Zöliakie" (or "Cöliakie") also
+die Küche mit dem Gast klären" instead, and a card of a call whose guest
+spoke of their health carries that line too (`allergy_said`, ledger #764
+review). "Zöliakie" (or "Cöliakie") also
 arms the claim check above, since it names no allergen (#763, Maxi
 14.11.2026)
 
@@ -319,15 +321,21 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      (`wishes.speaks_of_health`, "Zöliakie", "darf kein" included) arms it,
      generous on purpose, and so does the answer to the model's own question
      about an allergy ("Gegen Erdnüsse."); a bare denial in answer to such a
-     question ("Keine.", "Ich habe keine Allergie") clears it, except a
-     sentence that names its allergen or coeliac disease. A
+     question ("Keine.", "Ich habe keine Allergie") clears the caller's own
+     sentences only when none names what the caller reacts to (an allergen,
+     coeliac disease, an ingredient the wish parser reads, an answer such
+     as "Gegen Erdnüsse."; `guards.reacts_to`): after "Ich habe eine
+     Erdnussallergie" a "Nein." to "Haben Sie sonst noch Allergien?" denies
+     a further one, and a denial that names it ("Nein, keine Nussallergie")
+     takes back what names only that (`loop._taken_back`, ledger #764). A
      draft_order or create_reservation whose notes name none
      (`wishes.HEALTH_NOTE`: "allergi", "unverträglich", "intoleran",
      "WICHTIG !!!", the pattern the retention job deletes by) goes back to
      the model once per turn with the guest's words in the hint; sent again
      without, the core writes "WICHTIG !!! Gast sagte: <Worte>" on the note
      of the order or the table and lets it go (`guards.unnoted_allergy`,
-     `guards.with_the_guests_words`). A note that promises a dish free of
+     `guards.with_the_guests_words`); when the cut to the field would drop
+     what a kept sentence names, the team takes the call instead. A note that promises a dish free of
      something ("nussfrei", "keine Spuren") goes back too
      (`guards.claims_in_a_note`)
    → the menu search still splits an allergy said behind a dish off as its
