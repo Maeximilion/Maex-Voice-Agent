@@ -240,8 +240,14 @@ The target in the header of this file is checked on the real tablet by two diffe
 
 ## 9. Request protection
 
-The operations page and the dev-only simulator console issue a random `csrf_token` cookie (SameSite=Lax,
-Secure outside dev/test or over HTTPS). A script in `base.html` reads the cookie when HTMX sends a request
+The operations page and the dev-only simulator console issue a random CSRF cookie (SameSite=Lax,
+Secure outside dev/test or over HTTPS). Outside dev and test it is `__Host-csrf` (Secure, path `/`, no
+`Domain`), so no other host of the domain can set one of that name; dev and test use `maex_csrf` over plain
+HTTP (`api/gui/session.py` `cookie_name`, #888 S2 and B2). The scripts read it by that exact name
+(`api/gui/ts/csrf.ts`), never by the first cookie whose name merely matches, so a `Domain` cookie of a sibling
+host cannot lock the taps out. Until every tablet has reloaded once, the server also accepts a token that
+matches the old `csrf_token` cookie, which pages opened before the rename still send (`csrf_ok`, docs/24).
+A script in `base.html` reads the cookie when HTMX sends a request
 and copies it into `X-CSRF-Token`, so every tab sends the cookie the browser holds at that moment
 (two tabs opened at once cannot end up with different tokens). The cookie is not HttpOnly on purpose:
 a script on the page could read a token in the page just the same. Every state-changing operations route requires both

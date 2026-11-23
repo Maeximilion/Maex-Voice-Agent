@@ -75,7 +75,7 @@ def client(engine):
     app.dependency_overrides[get_db] = override_get_db
     try:
         c = TestClient(app)
-        c.cookies.set("csrf_token", "testtoken")
+        c.cookies.set("maex_csrf", "testtoken")
         yield c
     finally:
         app.dependency_overrides.pop(get_db, None)
@@ -826,7 +826,7 @@ def test_unbehandelter_fehler_kommt_nicht_als_200(engine):
     app.dependency_overrides[get_db] = lambda: _BrokenSession()
     try:
         c = TestClient(app, raise_server_exceptions=False)
-        c.cookies.set("csrf_token", "testtoken")
+        c.cookies.set("maex_csrf", "testtoken")
         response = c.post("/gui/kopfzeile/ki-pausieren", headers=HX)
     finally:
         app.dependency_overrides.pop(get_db, None)
@@ -1022,7 +1022,7 @@ def test_switch_rejects_invalid_csrf(client, engine, tenant_id, cookie, header):
     client.cookies.clear()
     headers: dict[str | bytes, str | bytes] = {"HX-Request": "true"}
     if cookie is not None:
-        headers["Cookie"] = f'csrf_token="{cookie}"'.encode("latin-1")
+        headers["Cookie"] = f'maex_csrf="{cookie}"'.encode("latin-1")
     if header is not None:
         headers["X-CSRF-Token"] = header
     before = config_von(engine, tenant_id).call_mode
@@ -1034,7 +1034,7 @@ def test_switch_rejects_invalid_csrf(client, engine, tenant_id, cookie, header):
 def test_page_issues_csrf_token_and_accepts_it(client, tenant_id):
     client.cookies.clear()
     response = client.get("/gui/")
-    token = client.cookies.get("csrf_token")
+    token = client.cookies.get("maex_csrf")
     assert token and len(token) >= 32
     # From a file: the proxy's CSP refuses inline scripts (#252 finding 11).
     assert '<script type="module" src="/gui/static/base.js">' in response.text
@@ -1051,15 +1051,15 @@ def test_page_issues_csrf_token_and_accepts_it(client, tenant_id):
         ).status_code
         == 200
     )
-    assert client.get("/gui/").cookies.get("csrf_token") == token
+    assert client.get("/gui/").cookies.get("maex_csrf") == token
 
 
 def test_page_replaces_a_csrf_cookie_it_could_never_accept(client, tenant_id):
     client.cookies.clear()
     response = client.get(
-        "/gui/", headers={"Cookie": 'csrf_token="caf\u00e9"'.encode("latin-1")}
+        "/gui/", headers={"Cookie": 'maex_csrf="caf\u00e9"'.encode("latin-1")}
     )
-    token = response.cookies.get("csrf_token")
+    token = response.cookies.get("maex_csrf")
     assert token and token.isascii() and len(token) >= 32
 
 
@@ -1082,7 +1082,49 @@ def test_production_csrf_cookie_is_secure_behind_http_proxy(monkeypatch):
         }
     )
     response = _page_response(request, "dev/console.html", {})
-    assert "Secure" in response.headers["set-cookie"]
+    cookie = response.headers["set-cookie"]
+    # #888 S2/B2: `__Host-`, so no sibling host can set one of the same name.
+    assert cookie.startswith("__Host-csrf=")
+    assert "Secure" in cookie and "Path=/" in cookie and "Domain" not in cookie
+
+
+def _pause(client, token):
+    return client.post(
+        "/gui/kopfzeile/ki-pausieren",
+        headers={"HX-Request": "true", "X-CSRF-Token": token},
+    ).status_code
+
+
+def test_a_csrf_cookie_of_a_sibling_host_does_not_lock_the_taps_out(client, tenant_id):
+    """#888 S2: a `csrf_token` cookie another host set for the whole domain no
+    longer stands in for the view's own; the page's token still works."""
+    client.cookies.clear()
+    client.get("/gui/")
+    token = client.cookies.get("maex_csrf")
+    client.cookies.set("csrf_token", "planted-by-a-sibling-host")
+
+    assert _pause(client, token) == 200
+    assert _pause(client, "other") == 403
+    # The planted pair itself still passes while the old name is accepted for
+    # open tabs (session.csrf_ok); a foreign page cannot send this header.
+
+
+def test_a_tab_opened_before_the_rename_keeps_working(client, tenant_id):
+    """#888 S2 migration: an open page still sends the old cookie's value, and
+    no tap may fail after the deploy, also once another tab got the new one."""
+    client.cookies.clear()
+    client.cookies.set("csrf_token", "old-token-of-the-tab")
+    assert _pause(client, "old-token-of-the-tab") == 200
+
+    page = client.get("/gui/")
+    new = client.cookies.get("maex_csrf")
+    assert new and new != "old-token-of-the-tab"
+    # The old cookie is left alone: deleting it would lock the old tab out.
+    assert "csrf_token" not in page.headers["set-cookie"]
+    assert _pause(client, "old-token-of-the-tab") == 200
+    assert _pause(client, new) == 200
+    assert _pause(client, "other") == 403
+    assert _pause(client, "") == 403
 
 
 def _bridge_set_up(engine, tenant_id, monkeypatch):
