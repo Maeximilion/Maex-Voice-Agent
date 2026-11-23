@@ -70,7 +70,8 @@ The brief is the session's only context. It has, in this order:
 6. Base: `origin/main`, or a stack on an open item's branch when both touch
    the same files and the base is not merged yet (`/done` step 7c).
 7. "Wait inside the turn for tests, CI and Codex; do not end the turn with a
-   status line." Every ended turn of a child wakes the coordinator.
+   status line." A child's ended turn does not always wake the coordinator
+   (item 12).
 8. "Report once, at the end": PR number, merge commit, choices, usage.
 9. The usage block of section 5 with the model's numbers.
 10. Exceptions to `CLAUDE.md` quoted in Maxi's words with the date; a session
@@ -79,6 +80,18 @@ The brief is the session's only context. It has, in this order:
    without a PR (blocked by a Maxi decision, nothing to do), post why on its
    issue and take the reserve item yourself in this same session; if its route
    differs from yours, ask the coordinator to switch model and effort."
+12. The coordinator's session id and this line: "Send the coordinator
+   (`SendMessage` to `<its local_ id>`) one short message at each milestone:
+   PR ready, merged, stopped or blocked, reserve taken, a choice that needs
+   Maxi. Nothing in between." (Maxi, 2026-11-23: "Build the fix in chain.md
+   with the milestones".) Why: the app wakes the coordinator after a child's
+   ended turn only when no other side session it started still works, so with
+   one long build running every other note waits for Maxi's next message (#955
+   merged 21:37 UTC, its note arrived about 14 minutes later). A child's own
+   message arrives at once, also while others work (tested 23.11.2026 with
+   #959). Every step would be too many: each message is one request on the
+   coordinator's whole context and makes every later one larger, and its
+   turns cannot start a session anyway.
 
 ## 3. Parallel or in a row
 
@@ -122,8 +135,11 @@ before naming a base.
   cannot start a session, so drop it when the next start should come from a
   child's note. Over Remote Control every start waits for Maxi's message
   anyway, so there the heartbeat costs nothing. No `CronCreate`.
-- On every child note: read `get_usage`, check the merge with `gh pr view`,
-  answer in one or two lines. A note is the child's report, not proof.
+- On every child note or milestone message (section 2, item 12): read
+  `get_usage`, check the merge with `gh pr view`, update the dashboard in that
+  same turn, answer in one or two lines. A note is the child's report, not
+  proof. The dashboard stays the coordinator's: its state is per session and
+  each update replaces the whole list, so children cannot write to it.
 - Archives a session only on Maxi's word.
 - At 400k context of its own: write the state file (memory, `project` type:
   merged, open, next starts, waiting decisions), tell Maxi to go on in a fresh
