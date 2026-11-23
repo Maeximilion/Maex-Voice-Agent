@@ -9,7 +9,9 @@ operator's phone (#888 A1, Maxi 23.11.2026; the pushes are `app.py`'s).
 
 Dangerous actions need a second factor of the last five minutes on the
 session (`Operator.fresh`): the one of the sign-in, or a step-up with a passkey
-or a TOTP code. Changing the factors is such an action, and once the account
+or a TOTP code. Once the account has a passkey only the passkey counts: a sign-in
+with a code opens nothing dangerous and the step-up takes no code (Maxi,
+23.11.2026). Changing the factors is such an action, and once the account
 has a passkey it needs a passkey step-up of the last five minutes
 (`Operator.fresh_for_factors`, D37). An account always
 keeps TOTP or two passkeys, so one lost device never locks the operator out.
@@ -238,8 +240,13 @@ def sign_in(
             token_hash=token_hash(token),
             created_at=now,
             last_seen_at=now,
-            # The sign-in is itself a fresh second factor.
-            stepped_up_at=now,
+            # The sign-in is itself a fresh second factor, but a code on an
+            # account with a passkey is only the way back in (Maxi, 23.11.2026).
+            stepped_up_at=(
+                now
+                if factor == "passkey" or not passkeys.count(db, account.id)
+                else None
+            ),
         )
     )
     if factor == "recovery":
@@ -304,6 +311,10 @@ def step_up(
     # No factor at all says nothing: not counted, not audited (#816).
     if not passkey and not code.strip():
         raise SignInRefused()
+    # Once the account has a passkey, only the passkey makes a session fresh
+    # (Maxi, 23.11.2026): a code is not looked at, so not counted either.
+    if not passkey and passkeys.count(db, operator.account_id):
+        raise PasskeyNeeded()
     # With the device cookie the account counts too, or a holder of both
     # would get two wait ladders, one with the cookie and one without (#888 A3).
     counted = counted_address(address)
