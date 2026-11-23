@@ -167,7 +167,7 @@ services:
     image: binwiederhier/ntfy:v2.37.2
     logging:
       driver: journald
-    entrypoint: ["chown", "-R", "10003:10003", "/var/lib/ntfy"]
+    entrypoint: ["chown", "-Rh", "10003:10003", "/var/lib/ntfy"]
     volumes:
       - operator_pushdata:/var/lib/ntfy
     restart: "no"
@@ -175,7 +175,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     # CHOWN for the owner, DAC_READ_SEARCH to pass through directories that
-    # are 0700 and already its user's on every later run.
+    # are 0700 and already its user's on every later run. -h changes a link,
+    # never what it points to.
     cap_add: [CHOWN, DAC_READ_SEARCH]
     read_only: true
 

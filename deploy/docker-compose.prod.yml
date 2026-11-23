@@ -152,7 +152,7 @@ services:
   caddy-chown:
     logging: *journald
     image: caddy:2.11.9-alpine
-    entrypoint: ["chown", "-R", "10002:10002", "/data", "/config"]
+    entrypoint: ["chown", "-Rh", "10002:10002", "/data", "/config"]
     volumes:
       - caddy_data:/data
       - caddy_config:/config
@@ -161,7 +161,8 @@ services:
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     # CHOWN for the owner, DAC_READ_SEARCH to pass through directories that
-    # are 0700 and already its user's on every later run.
+    # are 0700 and already its user's on every later run. -h changes a link,
+    # never what it points to.
     cap_add: [CHOWN, DAC_READ_SEARCH]
     read_only: true
 

@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.15
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.16
 
 ---
 
@@ -185,6 +185,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.16 · 23.11.2026:** #888 S10: Caddy and the push server run as their own user, volumes handed over by a one-shot chown
 - **v2.69.15 · 23.11.2026:** #888 S13: `VOICE_EAR_MEASURE` refused outside dev and test, no caller transcripts in the production journal
 - **v2.69.14 · 23.11.2026:** #888 A1 and S11: TOTP sign-ins and step-ups pushed, IPv6 counted by its /64, failure pruning indexed
 - **v2.69.13 · 23.11.2026:** #888 B3: the callback history asks the PIN on a locked tablet (T8)

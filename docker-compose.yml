@@ -459,14 +459,15 @@ services:
   # left its cache and user database owned by root. A no-op once that is right.
   push-chown:
     image: binwiederhier/ntfy:v2.37.2
-    entrypoint: ["chown", "-R", "10003:10003", "/var/lib/ntfy"]
+    entrypoint: ["chown", "-Rh", "10003:10003", "/var/lib/ntfy"]
     volumes:
       - pushdata:/var/lib/ntfy
     restart: "no"
     network_mode: none
     <<: *hardened
     # CHOWN for the owner, DAC_READ_SEARCH to pass through directories that
-    # are 0700 and already its user's on every later run.
+    # are 0700 and already its user's on every later run. -h changes a link,
+    # never what it points to.
     cap_add: [CHOWN, DAC_READ_SEARCH]
     read_only: true
 

@@ -33,10 +33,6 @@ CADDY_UID = "10002"
 PUSH_UID = "10003"
 
 
-def _production(name: str) -> dict:
-    return _merged(name)
-
-
 def _file(path):
     services = _services(_load(path))
     return lambda name: services.get(name) or {}
@@ -44,8 +40,8 @@ def _file(path):
 
 # (where, service, uid): every place Caddy or the push server is started.
 PLACES = [
-    ("production", _production, "caddy", CADDY_UID),
-    ("production", _production, "push", PUSH_UID),
+    ("production", _merged, "caddy", CADDY_UID),
+    ("production", _merged, "push", PUSH_UID),
     ("workbench", _file(BASE), "push", PUSH_UID),
     ("shared caddy", _file(SHARED_CADDY), "caddy", CADDY_UID),
     ("operator", _file(OPERATOR), "push", PUSH_UID),
@@ -76,7 +72,7 @@ def test_its_volumes_go_to_that_user_before_it_starts(where, services, name, uid
     assert volumes, f"{where}: {name} has no volume"
     # The same volumes at the same places, and every one of them handed over.
     assert _named_volumes(chown) == volumes
-    assert chown["entrypoint"] == ["chown", "-R", f"{uid}:{uid}", *volumes.values()]
+    assert chown["entrypoint"] == ["chown", "-Rh", f"{uid}:{uid}", *volumes.values()]
     # The same image, so no other one is pulled for it.
     assert chown["image"] == service["image"]
     assert service["depends_on"][f"{name}-chown"] == {
@@ -97,7 +93,7 @@ def test_the_chown_runs_once_with_two_capabilities(where, services, name, uid):
 
 
 @pytest.mark.parametrize(
-    "services", [_production, _file(SHARED_CADDY)], ids=["production", "shared"]
+    "services", [_merged, _file(SHARED_CADDY)], ids=["production", "shared"]
 )
 def test_caddy_keeps_only_the_port_capability(services):
     caddy = services("caddy")
