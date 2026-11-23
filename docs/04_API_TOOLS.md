@@ -478,7 +478,7 @@ Rechnet und prüft. Die einzige Stelle, an der eine Summe entsteht.
     "items_total_cents": 1480, "delivery_fee_cents": 250, "total_cents": 1730,
     "ready_at": "2026-09-15T18:50:00Z",
     "warnings": [],
-    "readback": "Zweimal Nummer 23 Frühlingsrollen mit Erdnusssauce, ohne Zwiebeln. Macht 17 Euro 30 inklusive 2 Euro 50 Liefergebühr, Lieferung in etwa 50 Minuten an die Adresse Rheinstraße 54, 76530 Musterstadt, 2. OG, auf den Namen Müller. Passt das so?"
+    "readback": "Zweimal Nummer 23 Frühlingsrollen mit Erdnusssauce, ohne Zwiebeln. Macht 17 Euro 30 inklusive 2 Euro 50 Liefergebühr, Lieferung an die Adresse Rheinstraße 54, 76530 Musterstadt, 2. OG, auf den Namen Müller. Das Ganze dauert so ungefähr 50 Minuten."
   },
   "say": null
 }
