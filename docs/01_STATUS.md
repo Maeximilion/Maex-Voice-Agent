@@ -180,6 +180,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 - **v2.69.1 · 23.11.2026:** T-5.3 race run: Haiku 5.5 with effort low wins (72/107 cases, no hard violation); Haiku 4.5 40/107
 - **v2.69.0 · 23.11.2026:** T-5.3: Claude client behind LLMClient and model turn time in the eval report; Haiku 4.5 vs 5.5 race waits for an API key
+- **v2.68.9 · 23.11.2026:** chain.md: the coordinator sends Haiku scout maps (Graphify) to the chain sessions
 - **v2.68.8 · 23.11.2026:** #576 built: export and removal of a leaving customer's stack (scripts/remove_stack.py), five faults of the cloud commit fixed
 - **v2.68.7 · 23.11.2026:** #892: neon wave swings inside the SVG (no dashes), example calls play once, demo screenshot under the neon button
 - **v2.68.6 · 23.11.2026:** Review #207: a spoken correction between two numbers asks, the caller's own allergy in front of another person's is asked about (#911)
