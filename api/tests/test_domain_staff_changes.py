@@ -434,7 +434,14 @@ def test_each_team_number_change_pushes_once(session, tenant_id):
             ),
             (
                 TEAM_PHONE_CHANGED,
-                {"day": day, "from": "+4972215550000", "to": standard, "by": "team"},
+                # Back to what held before: the card closes, nothing to check (#877).
+                {
+                    "day": day,
+                    "from": "+4972215550000",
+                    "to": standard,
+                    "by": "team",
+                    "undone": True,
+                },
             ),
         ]
     )
@@ -485,6 +492,23 @@ def test_a_withdrawn_request_pushes_from_the_request_not_from_what_held(
             "from": "10:00 bis 23:00 Uhr",
             "to": "geschlossen",
             "held": True,
+        },
+    ) in _events(session, tenant_id)
+
+
+def test_a_date_back_to_what_held_pushes_as_undone(session, tenant_id):
+    """#877: the staff take back their closure, the card closes as undone, so
+    the push carries `undone` and asks for no check on the tablet."""
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(closed=True), NOW)
+    staff.change_day_hours(session, tenant_id, SATURDAY, DayHours(), NOW)
+    assert (
+        DAY_HOURS_CHANGED,
+        {
+            "day": SATURDAY.isoformat(),
+            "from": "geschlossen",
+            "to": "normale Zeiten der Woche",
+            "held": True,
+            "undone": True,
         },
     ) in _events(session, tenant_id)
 
@@ -1336,7 +1360,9 @@ def test_the_check_token_follows_the_hours_behind_a_card(session, tenant_id):
     sunday = SATURDAY.weekday() + 1
     shown = weekly.token(weekly.week(session, tenant_id)[sunday])
     lunch = weekly.Span(time(11, 30), time(14))
-    assert weekly.set_weekday(session, tenant_id, sunday, {"pickup": [lunch]}, shown)
+    assert weekly.set_weekday(
+        session, tenant_id, sunday, {"pickup": [lunch]}, shown, now=NOW
+    )
     changed = staff.cards_change_token(session, tenant_id, TUESDAY)
     assert changed != token
     later = SATURDAY + timedelta(days=7)
