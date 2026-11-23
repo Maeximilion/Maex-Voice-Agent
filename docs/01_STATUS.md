@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.1
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.2
 
 ---
 
@@ -157,6 +157,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 | 23.11.2026 | **#576 built: a leaving customer's stack is exported, then removed (branch `cloud/feat/576-offboarding` of the cloud session of 15.11.2026, #911).** `api/jobs/offboarding.py` writes menu (docs/14 import format), orders, positions and reservations with a manifest of checksums in one read-only transaction; `scripts/remove_stack.py` lists by default, removes only with `--confirm <key>` and a whole export of seven files, and leaves one line without personal data in `<root>/offboarding/removed.jsonl`. The review before the first PR fixed five faults of the cloud commit: the shared Caddy lost the operator stack's `edge` (ops.<domain> down), the operator dashboard stayed on the stack's `ops` network and in its registry (Docker refuses to remove that network), a rerun after `down` started an empty database, a failed folder step could remove the `.env` first and strand the rerun, and an exported `COMPOSE_PROJECT_NAME` could aim `down --volumes` at another project. `offboarding` is now a reserved key. Maxi's decision 9 of 15.11.2026 is in docs/13 §8: off-site copies run out with their 30 days, a stack with a second tenant is removed by hand. Tested with a fake Docker and the export against a real database; not yet run on a host. |
 | 23.11.2026 | **#880, the P3s of the blind reviews of model trial items 5 and 6 (#876, #879): an operator push is queued before old ones are pruned, and the dispatcher does not start in production with an empty `MONITOR_PUSH_URL`.** `push.queue` commits the push row first and prunes sent rows in a try block of its own, so a failing `DELETE` (a lock wait, a statement timeout) only leaves old rows for the next push and never loses a takeover warning. `monitor.require_push_token` refuses an empty or blank URL as the dashboard's own check does. Three findings stay as they are, with evidence in the PR: the data request form clears the typed note after a conflict on purpose (a conflict most often means this request is in the log already, and a refilled form invites a second line with its own deadline); the workbench holds no `+33` number in any phone column (count of 23.11.2026), so no stored row needs a fix; `_caller_id` keeps a refused caller ID raw by design (rule 5). |
 | 23.11.2026 | **T-5.3 (#56), a Claude model behind the same contract (Maxi's race of 23.11.2026: Haiku 4.5 against Haiku 5.5, better results win, equal results the faster turn).** `agent/messages_llm.py` speaks the Messages API with the JSON envelope of `ChatCompletionsLLM`; `client_from_settings` sends a `claude-*` name there (text phone, evals, `voice`), `ANTHROPIC_API_KEY` is its key, `voice` refuses a Claude model outside dev and test (no EU path, no DPA). The eval report shows the model turn time p50 / p95. Race run the same day: Haiku 5.5 with effort `low` wins (72/107 cases, no hard violation in the cases, model turn p50 2.1 s / p95 4.2 s, about 0.6 cents per case); Haiku 4.5 40/107 with 2 missed escalations; Haiku 5.5 without thinking writes its reasoning as text and hands over half its calls. Results in docs/18 §8 step 7. The workbench key runs until 01.03.2027. |
+| 23.11.2026 | **T-5.3, prompt fix for Haiku 5.5 (stacked on #916): the read-back word for word, `confirm` only after the yes, the allergy note in the fixed form for every person (Maxi's choice).** Re-run with effort `low`: cases 85/107 (72 before), no hard violation, false escalations 2.2 %, turn p50 2.18 s; targets unchanged at 2/27. The prompt stays inside its 800-token budget (798). |
 
 Older rows: `docs/HISTORY.md` section "Done (archive)".
 
@@ -178,6 +179,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.2 · 23.11.2026:** T-5.3: prompt fix for Haiku 5.5 (read-back word for word, fixed allergy note), cases 72 -> 85/107
 - **v2.69.1 · 23.11.2026:** T-5.3 race run: Haiku 5.5 with effort low wins (72/107 cases, no hard violation); Haiku 4.5 40/107
 - **v2.69.0 · 23.11.2026:** T-5.3: Claude client behind LLMClient and model turn time in the eval report; Haiku 4.5 vs 5.5 race waits for an API key
 - **v2.68.12 · 23.11.2026:** #888 C1, S7, D3: ops token runbook reach, webhosting account in the threat table, D3 already pinned
