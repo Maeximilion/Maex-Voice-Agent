@@ -53,6 +53,7 @@ from api.agent.state import (
     last_words,
     note_guest_details,
     note_intent,
+    order_dropped,
 )
 from api.config import settings
 from api.core.envelope import SAY_ON_FAILURE
@@ -192,6 +193,11 @@ SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
 SUMMARY_REMEDY_BOOKED = "Beschwerde, Gast hat zugestimmt, bitte ausführen: {remedy}."
 SUMMARY_REMEDY_OPEN = "Kunde hat sich beschwert, Angebot nicht angenommen: {remedy}."
 SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
+# A cancel of the order read back, before its yes (#678): nothing to undo.
+SAY_ORDER_DROPPED = (
+    "In Ordnung, dann ist die Bestellung storniert. "
+    "Kann ich sonst noch etwas für Sie tun?"
+)
 # The same for a table read back and not yet confirmed (own review of PR #369).
 SAY_TABLE_NOT_BOOKED = "Ihre Reservierung ist damit noch nicht bestätigt."
 SUMMARY_OPEN_TABLE = "Offene Reservierung, nicht bestätigt:"
@@ -395,6 +401,18 @@ class ConversationLoop:
         escalated: TurnResult | None = None
         if reason == "complaint" and wish is None:
             escalated = self._offer_remedy(state, user_text)
+        if (
+            reason == "cancellation"
+            and state.stage == "readback_pending"
+            and state.order_id is not None
+            # "Meine Reservierung stornieren" is about something else.
+            and "reserv" not in user_text.lower()
+        ):
+            # "So lange? Dann stornieren Sie das." Nothing is booked before
+            # the yes, so the team has nothing to undo (Maxi, #678).
+            order_dropped(state)
+            guards.note_said(state, SAY_ORDER_DROPPED)
+            return TurnResult(state=state, say=[SAY_ORDER_DROPPED])
         if reason is not None and escalated is None:
             # The table read back, which this sentence may have taken out of
             # the state (#690).

@@ -50,7 +50,7 @@
 **Liefert:** `order_id`, Summe, Liefergebühr, `ready_at`, `readback` — der Satz, der vorgelesen wird. `below_minimum`: `say` nennt den Fehlbetrag. `closed`: `say` sprechen.
 
 ## confirm
-**Wann:** nachdem der Gast das `readback` von `create_reservation` oder `draft_order` mit Ja bestätigt hat.
+**Wann:** nachdem der Gast das `readback` von `create_reservation` oder `draft_order` mit Ja bestätigt hat; auf die Wartezeit am Ende einer Bestellung auch mit „okay“, „alles klar“ oder „gut“.
 **Eingabe:** `entity` (`"reservation"` oder `"order"`), `entity_id`.
 **Liefert:** `status: "confirmed"`; bei Bestellungen `pickup_code` und `handover` (`queued` oder `awaiting_approval`).
 

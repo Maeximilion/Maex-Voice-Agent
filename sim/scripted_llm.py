@@ -22,6 +22,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from api.agent.consent import answers_the_read_back
 from api.agent.escalation import speaks_of_allergies
 from api.agent.guards import (
     HINT_ALLERGY_CALL,
@@ -253,7 +254,11 @@ class ScriptedLLM:
         slots = {**state.get("slots", {}), **patch}
 
         if self._pickup is not None and self._pickup.readback_for:
-            yes = _mentions_word(text, YES) and not _mentions_word(text, NO)
+            yes = (
+                _mentions_word(text, YES) and not _mentions_word(text, NO)
+            ) or answers_the_read_back(text, self._pickup.readback)
+            if not yes and self._pickup.delivery and _mentions_stem(text, PICKUP):
+                return self._pickup.to_pickup(slots)
             if (
                 not yes
                 and speaks_of_health(text)

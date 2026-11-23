@@ -132,6 +132,9 @@ class PickupScript:
         # comes, and a later yes would otherwise confirm the discarded order
         # (CLAUDE.md §2 rule 3).
         self.readback_for: str | None = None
+        # Its sentence: an order's closes with the time, and "Alles klar" to
+        # that is the yes (#678).
+        self.readback: str | None = None
         # Further unclear parts of a sentence: one follow-up question after the
         # other, none drops out silently. After the first answer the next one
         # is searched.
@@ -295,7 +298,15 @@ class PickupScript:
 
     def on_draft(self, data: dict[str, Any]) -> LLMTurn:
         self.readback_for = data["order_id"]
+        self.readback = data["readback"]
         return LLMTurn(say=data["readback"])
+
+    def to_pickup(self, slots: dict[str, Any]) -> LLMTurn:
+        """ "So lange? Dann hole ich es doch ab" (#678): the same order drafted
+        again for pickup, without the address, read back with its own time."""
+        self.readback_for = None
+        self.delivery = self._use_stored = False
+        return LLMTurn(tool_call=ToolCall("draft_order", self._draft_args(slots)))
 
     def on_readback(self, yes: bool, text: str = "") -> LLMTurn:
         order_id = self.readback_for

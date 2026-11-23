@@ -199,7 +199,9 @@ def test_the_read_back_names_total_fee_address_and_time(session, tenant_id, call
     # The default wait of 60 is longer than the zone's time.
     assert draft.readback.endswith("Das Ganze dauert so ungefähr 60 Minuten.")
     assert "Lindenstraße 12, 12345 Musterdorf, 2. OG, Klingel Braun" in draft.readback
-    assert draft.readback.endswith("auf den Namen Braun. Das Ganze dauert so ungefähr 60 Minuten.")
+    assert draft.readback.endswith(
+        "auf den Namen Braun. Das Ganze dauert so ungefähr 60 Minuten."
+    )
 
 
 def test_a_fee_of_zero_is_not_read(session, tenant_id, call_id):
@@ -265,7 +267,9 @@ def test_a_switch_to_pickup_drops_fee_address_and_the_delivery_wait(
     later = NOW + timedelta(minutes=1)
     draft = draft_order(
         session,
-        request(session, tenant_id, call_id, customer={"name": "Braun", "phone": PHONE}),
+        request(
+            session, tenant_id, call_id, customer={"name": "Braun", "phone": PHONE}
+        ),
         now=later,
     )
 
@@ -562,7 +566,8 @@ def test_a_stored_address_is_never_said(session, tenant_id, call_id):
     assert "Müller" not in draft.readback
     assert "an dieselbe Adresse wie beim letzten Mal" in draft.readback
     assert draft.readback.endswith(
-        "Lieferung an dieselbe Adresse wie beim letzten Mal. Das Ganze dauert"
+        "Lieferung an dieselbe Adresse wie beim letzten Mal. "
+        "Das Ganze dauert so ungefähr 60 Minuten."
     )
     order = session.get(Order, draft.order_id)
     assert (order.customer_id, order.address_id) == (known.id, home.id)
@@ -577,7 +582,9 @@ def test_a_name_the_guest_said_is_read_with_a_stored_address(
 
     draft = draft_order(session, _stored(session, tenant_id, call_id, home.id), now=NOW)
 
-    assert draft.readback.endswith("auf den Namen Müller. Das Ganze dauert so ungefähr 60 Minuten.")
+    assert draft.readback.endswith(
+        "auf den Namen Müller. Das Ganze dauert so ungefähr 60 Minuten."
+    )
     assert "Rheinstraße" not in draft.readback
 
 

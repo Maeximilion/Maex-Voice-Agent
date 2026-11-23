@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import SAY_ON_FAILURE, SAY_TO_THE_TEAM, Conflict, NotFound
 from api.core.time import business_day, business_day_bounds_utc, tz, utcnow
 from api.domain.customers.contact import note_order
-from api.domain.ordering.draft import draft_labels
+from api.domain.ordering.draft import draft_labels, replaced
 from api.domain.ordering.validation import delivery_closed_say, pickup_closed_say
 from api.domain.status.mode import mode_at
 from api.domain.status.service import DELIVERY, PICKUP
@@ -68,6 +68,14 @@ def confirm_order(
 
     if order.status == "cancelled":
         raise Conflict("Bestellung ist storniert", say=SAY_CANCELLED)
+
+    if order.status == "draft" and replaced(session, order):
+        # The call drafted again after it: the guest changed their mind, a
+        # delivery became a pickup (#678). Booked, the left draft would send
+        # the kitchen what was given up, its fee and address included.
+        raise Conflict(
+            "draft replaced by a later draft of its call", say=SAY_ON_FAILURE
+        )
 
     if order.status in ALREADY_CONFIRMED:
         # Nichts zu schreiben; commit gibt nur die Sperre frei.

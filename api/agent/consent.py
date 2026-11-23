@@ -244,6 +244,35 @@ def is_yes(text: str) -> bool:
     )
 
 
+# What callers say to the time an order's read-back closes with (Maxi, #678,
+# 23.11.2026): "Alles klar", "Gut", "In Ordnung". Filler words of `is_yes`,
+# never an assent on their own: they acknowledge a statement and answer no
+# question, so they count only there (`answers_the_read_back`).
+_ACKNOWLEDGING = frozenset(
+    {"gut", "klar", "ordnung", "super", "prima", "perfekt", "wunderbar"}
+)
+
+
+def answers_the_read_back(text: str, readback: str | None) -> bool:
+    """Is `text` the guest's yes to `readback`? A yes (`is_yes`) always; an
+    acknowledgement ("Alles klar", "Gut") only when the read-back closes with
+    a statement, the time of an order, and not with a question. Whether the
+    read-back was what the guest heard last is the guard's to check."""
+    if is_yes(text):
+        return True
+    if readback is None or readback.rstrip().endswith("?"):
+        return False
+    lowered = _lowered(text)
+    if any(char.isdigit() for char in lowered) or "?" in lowered or asks(lowered):
+        return False
+    for phrase in _HARMLESS:
+        lowered = lowered.replace(phrase, " ")
+    words = _WORD.findall(lowered)
+    return any(word in _ACKNOWLEDGING for word in words) and all(
+        word in _FILLER for word in words
+    )
+
+
 def _without_closing_question(readback: str) -> str:
     """The read-back without the question that closes it ("Passt das so?").
     Cut with string functions and not a pattern: the sentence holds the guest's
@@ -309,7 +338,10 @@ def read_out(say: str, readback: str) -> bool:
         if said[at : at + size] != draft:
             continue
         after = said[at + size :]
-        if not (_asks_to_confirm(after, own_question) or (asks_itself and not after)):
+        # A read-back that closes without a question, the time of an order
+        # (#678), or that is one question as a whole, needs nothing behind it.
+        closes_itself = asks_itself or not readback.rstrip().endswith("?")
+        if not (_asks_to_confirm(after, own_question) or (closes_itself and not after)):
             continue
         if _neutral_start(said[:at]):
             return True
