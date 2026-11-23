@@ -124,17 +124,21 @@ is the backup. Ten single-use recovery codes, stored hashed, are the last way in
   the code ("signed in from a new browser (totp)"). An account without a passkey pushes on each of
   its sign-ins and step-ups so (Claude's choice of the review of #946, awaiting Maxi: seen rather
   than quiet, at the cost of routine pushes until a passkey is registered). A passkey sign-in from a known
-  browser and a passkey step-up stay quiet. A TOTP code still signs in alone, also on an account
-  with a passkey, so a lost passkey never locks the operator out (Claude's choice of 23.11.2026,
-  awaiting Maxi: the stricter way, a code sign-in that counts as no fresh factor until a passkey
-  step-up, would leave an operator without the passkey only the break glass).
+  browser and a passkey step-up stay quiet. **Once the account has a passkey, a code is no fresh
+  factor** (Maxi, 23.11.2026, the stricter way): a TOTP code or a recovery code still signs in,
+  but that session opens no dangerous action (a customer's PINs or call list, a manage step, a
+  factor change) before a passkey step-up, and `/step-up` takes the passkey alone, refusing a
+  code without counting or auditing it. An operator who lost every passkey reads nothing
+  dangerous until the break glass below. An account without a passkey keeps TOTP as its full way
+  in.
 - **Once the account has a passkey, every change of a factor needs a passkey step-up** (D37, Maxi,
   19.11.2026, built in #884): registering or removing a passkey, setting or removing a TOTP secret,
   and the sight of a new TOTP secret take a passkey shown on `/step-up` in the last five minutes.
   The sign-in does not count for them, whatever its factor (a passkey or a recovery code too), and
   neither does a TOTP step-up: a stolen password with a phished TOTP code cannot swap the ways in.
   An account without a passkey keeps the rule above (any fresh second factor, the sign-in's too),
-  so the first passkey can be registered. An operator who lost the only passkey, or every
+  so the first passkey can be registered. For every other dangerous action a passkey sign-in
+  counts, a code sign-in does not (the bullet above). An operator who lost the only passkey, or every
   passkey, registers a new one through the break glass below, never with TOTP.
 - A removed passkey, removed TOTP or a new TOTP secret ends every other session of the account;
   only the session making the change stays, and the push says how many ended (D39, Maxi,
@@ -153,7 +157,8 @@ is the backup. Ten single-use recovery codes, stored hashed, are the last way in
 
 **Sessions:** server-side rows, cookie `__Host-ops_session` (`Secure`, `HttpOnly`,
 `SameSite=Strict`, path `/`), random 32 bytes, only its hash stored. Idle limit 30 minutes, absolute
-limit 12 hours, rotated at login. Step-up (a fresh passkey or TOTP within the last 5 minutes) before:
+limit 12 hours, rotated at login. Step-up (a fresh passkey within the last 5 minutes, a TOTP code
+only on an account without a passkey) before:
 viewing personal data of a customer, rotating or showing a token, changing a call mode or team
 number, creating or deleting a customer, changing operator factors (a passkey only, once the
 account has one, D37).
@@ -410,8 +415,10 @@ factor of the sign-in and of the step-up (`api/dashboard/passkeys.py`, `py_webau
   replaces nothing) and removes TOTP. The account always keeps TOTP or two passkeys; at most ten
   passkeys.
 - **Step-up is one dependency**, `require_step_up` in `dashboard/app.py`: the session showed a
-  second factor in the last five minutes, the sign-in's (a recovery code too) or one given on
-  `/step-up`, which takes a passkey or a TOTP code and never a recovery code. Wrong answers there
+  second factor in the last five minutes, the sign-in's or one given on `/step-up`, which takes a
+  passkey or a TOTP code and never a recovery code; once the account has a passkey, only a
+  passkey sign-in or step-up counts (`access.sign_in` leaves `stepped_up_at` empty after a code,
+  `access.step_up` raises `PasskeyNeeded` for one; Maxi, 23.11.2026). Wrong answers there
   count and wait as at the sign-in, except that the account counts even when the browser brings
   its device cookie, so the cookie gives no second wait (#888 A3); every third wrong one in a row
   is pushed to `ops` (#888 A2). A stale request is sent to `/step-up` and back to a path of
