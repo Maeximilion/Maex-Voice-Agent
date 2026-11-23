@@ -68,7 +68,8 @@ class Measure(NamedTuple):
 
 def log_measure(measure: Measure) -> None:
     """One line per utterance for `VOICE_EAR_MEASURE`. Counts, plus the text
-    the engine made of it: test calls with the team's own voices only."""
+    the engine made of it: test calls with the team's own voices only, and
+    refused outside ENV=dev and test (`voice_from_settings`)."""
     logger.info(
         "ear measure: windows=%d floor=%d below=%s heard=%r",
         *measure[:2],

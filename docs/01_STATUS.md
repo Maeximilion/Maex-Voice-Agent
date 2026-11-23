@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.14
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.15
 
 ---
 
@@ -148,6 +148,7 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 | Date | What |
 |---|---|
+| 23.11.2026 | **#888 S13: `voice` no longer starts with `VOICE_EAR_MEASURE` outside `ENV=dev` and `ENV=test`.** Confirmed: the flag of #678 logged one INFO line with the transcript per utterance, kept 14 days in journald, and nothing stopped it under `ENV=prod`, while the drill engines were refused there. Chosen of the two ways: a refusal in `voice_from_settings()` like the drill engines (loud, any non-local `ENV`), not a silent override in the prod overlay; the workbench runs `ENV=dev`, so Maxi's measurement calls of #678 keep working. |
 | 23.11.2026 | **#888 A1 and S11: the operator sign-in is passkey-first, and a spray from one IPv6 /64 meets the address wait.** A1 checked at HEAD: the new-browser and PIN-shown pushes (to owner and ops) were built already (cb34f9a4); left was a TOTP code as a silent way in. Now every sign-in with a TOTP code, from a known browser too, and every TOTP step-up is pushed to `ops`; a passkey sign-in from a known browser and a passkey step-up stay quiet. S11 confirmed: both `client_address` functions now count an IPv6 client by its /64 (`counted_address`, which restores the passkey challenge cap per /64 too), and migration op007 indexes `operator_login_failures.last_failed_at` for the pruning every attempt runs. An unknown name still costs the dummy hash. docs/23 §5 and §6 updated. |
 | 23.11.2026 | **#888 B3: a locked tablet no longer opens the callback history.** Confirmed: `GET /gui/rueckrufe/verlauf` only needed a signed-in device, so a locked one read seven days of done callbacks with full numbers, more than T8's residual of today's board. Chosen of the two ways: the history sits behind an unlocked session (`require_unlocked` in `api/gui/session.py`), not masked numbers; a locked tablet gets the PIN page like a change does, and the read keeps nothing unlocked. The call list already shows only part of a number. docs/23 T8 row updated. |
 | 23.11.2026 | **#888 S3 and S4: a data subject request offers only calls of the person's own number, and a booking without a yes verifies nobody.** S3 confirmed: `_calls_and_callbacks` matched `calls.caller_id` on its digits, so a switchboard's extension or a longer number holding the guest's digits (also the same digits behind another country code) was offered under `ask_the_guest`, and once claimed its times and recording went into the copy and an erasure withdrew it. The digits now only narrow the search; a call joins when `number_or_none(caller_id)` is one of the person's numbers, as `line_of` reads it (callbacks matched exactly already). S4 confirmed: `_own_line` counted a hang-up draft booked under a presented number, which a spoofing trunk can fake. It now counts an order past its draft (the board cancels only confirmed orders) and a confirmed reservation (the tablet cancels drafts, #862); the security review before the PR found the same hole in `_by_day`, which opened a customer by `last_contact_at`, moved by a callback or complaint on the presented number alone, and now reads `last_order_at` only. docs/09 section 2 and the tablet's "Daten" page send the copy only over a call back to the verified number and confirm an erasure or objection on one first (Made Assumptions). Tests in `test_domain_customers_requests.py` and `test_gui_admin_daten.py`. |
@@ -184,6 +185,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.15 · 23.11.2026:** #888 S13: `VOICE_EAR_MEASURE` refused outside dev and test, no caller transcripts in the production journal
 - **v2.69.14 · 23.11.2026:** #888 A1 and S11: TOTP sign-ins and step-ups pushed, IPv6 counted by its /64, failure pruning indexed
 - **v2.69.13 · 23.11.2026:** #888 B3: the callback history asks the PIN on a locked tablet (T8)
 - **v2.69.12 · 23.11.2026:** Ledger #764 batch review, outage fix: every callback card names the call's standing bookings from the database
