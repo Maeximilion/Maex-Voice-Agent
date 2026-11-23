@@ -1551,10 +1551,19 @@ class ConversationLoop:
                 else SUMMARY_OPEN_TABLE
             )
             head += f" {label} {table}."
+        # An allergy the guest named that no note carries yet: the team must
+        # still ask about it (ledger #764 review), without naming it (L13).
+        marker = (
+            f" {SUMMARY_NOTE_TO_CLEAR}."
+            if any(map(guards.names_an_allergy, state.allergy_said))
+            else ""
+        )
         # Room for what follows the order, and for the line's first sentence
         # on a team leg nobody answered: all of it stands on that card (#207).
-        reserve = len(said + booked + SUMMARY_MISSED) + 1
+        reserve = len(said + booked + marker + SUMMARY_MISSED) + 1
         head = _with_open_order(state, head, reserve=reserve)
+        if SUMMARY_NOTE_TO_CLEAR not in head:
+            head += marker
         not_booked = SAY_ORDER_NOT_PLACED if state.cart else None
         not_booked = SAY_TABLE_NOT_BOOKED if table else not_booked
         return head + said, booked, [not_booked] if not_booked else []

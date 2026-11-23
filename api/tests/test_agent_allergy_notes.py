@@ -20,7 +20,11 @@ from api.agent import guards
 from api.agent.escalation import arms_the_net
 from api.agent.guards import SAY_ALLERGY_NOTED, SAY_ASK_ALLERGY
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
-from api.agent.loop import SAY_ALLERGENS_BEYOND, ConversationLoop
+from api.agent.loop import (
+    SAY_ALLERGENS_BEYOND,
+    SUMMARY_NOTE_TO_CLEAR,
+    ConversationLoop,
+)
 from api.agent.state import ConversationState, note_guest_details
 from api.domain.menu import search_menu
 from api.domain.menu.importer import apply, parse
@@ -502,6 +506,23 @@ def test_the_core_writes_the_guests_words_on_a_table_cut_to_its_field(
     assert state.table_note == note
 
 
+@pytest.mark.parametrize(
+    "later", ["Und mein Sohn hat eine Erdnussallergie.", "Gegen Erdnüsse."]
+)
+def test_a_cut_that_drops_a_later_sentence_leaves_the_draft_to_the_team(later):
+    """A long first sentence must not push a later one off the 200 characters
+    of an order note: the team takes the call instead (ledger #764 review)."""
+    state = _named()
+    state.allergy_said = [
+        "Ja hallo, ich möchte gern was zum Abholen bestellen, und ich muss "
+        "vorher sagen, ich habe eine ziemlich starke Laktoseintoleranz, das "
+        "ist wirklich wichtig für mich.",
+        later,
+    ]
+
+    assert guards.with_the_guests_words(state, ToolCall("draft_order", {})) is None
+
+
 def test_the_guests_words_go_behind_the_models_order_note():
     state = _named()
     call = ToolCall("draft_order", {"items": [], "note": "bitte klingeln"})
@@ -554,6 +575,29 @@ def test_a_refused_draft_stays_on_the_card_when_the_model_fails(session, known_t
     assert result.ended
     card = session.scalars(select(Callback.summary)).one()
     assert "1x 13 Pho Bo" in card
+    assert "Nuss" not in card
+    # The allergy is on no note yet: the team is told to ask (ledger #764).
+    assert card.count(SUMMARY_NOTE_TO_CLEAR) == 1
+
+
+def test_an_allergy_on_no_note_marks_the_card_without_naming_it(
+    session, known_tenant
+):
+    """An allergy said before any dish, then the model fails: the card tells
+    the team to ask about a kitchen note, never which allergy (L13)."""
+    state = state_for(session, known_tenant, phone=CALLER)
+    run(session, state, "Ich habe eine Nussallergie.", LLMTurn(say=SAY_ALLERGY_NOTED))
+
+    class Down(FakeLLM):
+        def next_turn(self, *args, **kwargs):
+            raise LLMError("down")
+
+    ConversationLoop(session, Down([]), "system", now=CLOSED).run_turn(
+        state, "Was haben Sie denn heute?"
+    )
+
+    card = session.scalars(select(Callback.summary)).one()
+    assert SUMMARY_NOTE_TO_CLEAR in card
     assert "Nuss" not in card
 
 

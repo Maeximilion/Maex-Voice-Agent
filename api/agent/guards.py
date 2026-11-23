@@ -943,11 +943,15 @@ def sticky(state: ConversationState) -> bool:
     # A denial the safety net keeps ("Haben Sie Pizza? Ich habe keine
     # Allergie.") speaks of none, as in `begin_allergen_turn` (Codex review
     # of #860, P1).
-    kept = (_guest_words(said) for said in state.allergy_said)
-    return any(
-        mentions_allergy(said) or names_coeliac(said) or allergens_named(said)
-        for said in kept
-    ) or (state.last_said or "").startswith(SAY_ALLERGENS_LEAD)
+    return any(map(names_an_allergy, state.allergy_said)) or (
+        state.last_said or ""
+    ).startswith(SAY_ALLERGENS_LEAD)
+
+
+def names_an_allergy(said: str) -> bool:
+    """Does a sentence the safety net kept name an allergy: an allergy word,
+    coeliac disease or an allergen, without what only denies one?"""
+    return mentions_allergy(_guest_words(said)) or names_what(said)
 
 
 def is_open(turn: AllergenTurn, state: ConversationState) -> bool:
@@ -1232,9 +1236,24 @@ def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall 
     if len(note) > limit:
         note = added[:limit].rstrip()
         kept = note.removeprefix(NOTED_FOR_THE_GUEST.format(said=""))
-        if not speaks_of_health(kept):
+        if not speaks_of_health(kept) or not _each_survives(state, len(kept)):
             return None
     return ToolCall(call.name, {**call.args, "note": note})
+
+
+def _each_survives(state: ConversationState, room: int) -> bool:
+    """Does every kept sentence keep what it says within the first `room`
+    characters of `_said`? One about health keeps its health words, any other
+    ("Gegen Erdnüsse.") stays whole: a later allergy behind a long first
+    sentence must not be cut off the note (ledger #764 review, P2 on a
+    trigger)."""
+    start = 0
+    for sentence in (s.strip() for s in state.allergy_said):
+        left = sentence[: max(room - start, 0)]
+        if not (speaks_of_health(left) if speaks_of_health(sentence) else left == sentence):
+            return False
+        start += len(sentence) + 1
+    return True
 
 
 def _said(state: ConversationState) -> str:
