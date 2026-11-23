@@ -26,6 +26,7 @@ from api.domain.access.admin import mark_admin_active
 from api.domain.access.sessions import (
     Access,
     Signed,
+    counted_address,
     mark_active,
     resolve,
     stack_tenant_id,
@@ -138,11 +139,12 @@ def csrf_ok(request: Request, sent: str | None) -> bool:
 def client_address(request: Request) -> str:
     """The address the sign-in counts failures for. Outside dev and test only
     Caddy reaches the view (`require_gui_proxy`), and Caddy sets
-    X-Forwarded-For itself, so its last entry is the client it saw."""
+    X-Forwarded-For itself, so its last entry is the client it saw. An IPv6
+    client counts by its /64 (`counted_address`, #888 S11)."""
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded and secure():
-        return forwarded.rsplit(",", 1)[-1].strip()
-    return request.client.host if request.client else ""
+        return counted_address(forwarded.rsplit(",", 1)[-1].strip())
+    return counted_address(request.client.host if request.client else "")
 
 
 def require_gui_session(request: Request, db: Session = Depends(get_db)) -> Access:

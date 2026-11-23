@@ -15,6 +15,7 @@ who keeps the account's wait running cannot keep the restaurant's own tablets
 out (OWASP device cookies; review of #585).
 """
 
+import ipaddress
 import secrets
 import uuid
 from dataclasses import dataclass
@@ -378,6 +379,22 @@ def _end(session: Session, row: GuiSession, actor: str, reason: str) -> None:
         entity="gui_session",
     )
     session.delete(row)
+
+
+def counted_address(host: str) -> str:
+    """The client address failures count for: an IPv6 client by its /64, the
+    block one line or one host is given, or a spray from one /64 would meet a
+    fresh count on every address (#888 S11). An IPv4 address, also one mapped
+    into IPv6, stays as it is; anything that is no address is kept as sent."""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.IPv6Network((int(ip) >> 64 << 64, 64)))
+    return str(ip)
 
 
 def count_failure(

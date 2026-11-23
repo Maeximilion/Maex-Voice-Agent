@@ -1051,7 +1051,9 @@ Each spike adds its rows here: date, what was run, the result, go or no-go.
   floor stays at 8 windows until the numbers of test calls with own voices are in (no customer
   audio). `VOICE_EAR_MEASURE=true` makes the service log one line per utterance, `ear measure:
   windows=N floor=8 below=True heard='...'`, and asks Whisper also below the floor, only to log
-  what it would have heard; the caller still gets no speech. `scripts/ear_floor.py` runs the same
+  what it would have heard; the caller still gets no speech. Outside `ENV=dev` and `ENV=test`
+  `voice` refuses to start with the flag on (#888 S13): the transcripts would stay 14 days in
+  journald; the workbench runs `ENV=dev`. `scripts/ear_floor.py` runs the same
   count on Piper voices and synthetic noises in the image of `voice` (`--run-dir`, `--whisper`),
   and turns the log lines of two test calls (`--from-log`, `--noise-log`) into a table and the verdict. Decision rule: the floor
   becomes the smallest window count that no click or breath of the test calls reaches and every
