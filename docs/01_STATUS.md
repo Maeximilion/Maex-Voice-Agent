@@ -180,6 +180,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 - **v2.69.1 · 23.11.2026:** T-5.3 race run: Haiku 5.5 with effort low wins (72/107 cases, no hard violation); Haiku 4.5 40/107
 - **v2.69.0 · 23.11.2026:** T-5.3: Claude client behind LLMClient and model turn time in the eval report; Haiku 4.5 vs 5.5 race waits for an API key
+- **v2.68.12 · 23.11.2026:** #888 C1, S7, D3: ops token runbook reach, webhosting account in the threat table, D3 already pinned
 - **v2.68.11 · 23.11.2026:** #517: below 1180 px the wait steppers and Gericht aus fold into a Mehr row of the header
 - **v2.68.10 · 23.11.2026:** #880: an operator push is queued before old ones are pruned, the dispatcher needs MONITOR_PUSH_URL in production; three P3s stay by design
 - **v2.68.9 · 23.11.2026:** chain.md: the coordinator sends Haiku scout maps (Graphify) to the chain sessions
