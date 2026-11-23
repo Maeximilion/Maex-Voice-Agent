@@ -18,7 +18,7 @@ from api.domain.status import holidays
 from api.domain.status.staff_changes import DayHours, change_team_phone, set_day_hours
 from api.main import app
 from api.models import Reservation, ServiceConfig, SpecialDay, StaffChange
-from scripts.seed import seed
+from scripts.seed import CLOSED_WEEKDAYS, seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
 HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
@@ -264,7 +264,11 @@ def test_times_with_seconds_or_an_offset_are_refused(client, engine, typed):
 
 
 def test_a_held_closure_lists_the_guests_to_call(client, engine):
+    # Off the seed's rest day: a booking there is already listed as outside the
+    # opening hours, so "selbst anrufen" showed before the closure (every Monday).
     later = _today() + timedelta(days=7)
+    if later.weekday() in CLOSED_WEEKDAYS:
+        later += timedelta(days=1)
     with Session(engine) as session:
         session.add(
             Reservation(
