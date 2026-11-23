@@ -1,0 +1,60 @@
+{
+  "id": "lieferung_0092",
+  "name": "So lange? The delivery becomes a pickup, read back with the pickup time, and an okay books it (#678)",
+  "tags": [
+    "lieferung",
+    "abholung",
+    "readback",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, liefern Sie heute noch?"
+    },
+    {
+      "role": "customer",
+      "text": "Dann bitte eine Pho Bo und zweimal Gyoza."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, danke."
+    },
+    {
+      "role": "customer",
+      "text": "Am Markt 3, 12345 Musterdorf."
+    },
+    {
+      "role": "customer",
+      "text": "Auf Kaya."
+    },
+    {
+      "role": "customer",
+      "text": "Oh, so lange? Könnte ich es dann doch abholen?"
+    },
+    {
+      "role": "customer",
+      "text": "Okay."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "order_type": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "customer_name": "Kaya",
+    "items": [
+      {
+        "number": "13",
+        "quantity": 1
+      },
+      {
+        "number": "22",
+        "quantity": 2
+      }
+    ],
+    "readback": "zur Abholung, auf den Namen Kaya. Es dauert so ungefähr"
+  }
+}

@@ -544,6 +544,16 @@ def draft_replaced(state: ConversationState, name: str) -> None:
         _drop_readback(state, name)
 
 
+def order_dropped(state: ConversationState) -> None:
+    """The guest cancelled the order read back before their yes (#678):
+    nothing was booked, so the draft and its lines go, and no later yes can
+    confirm it. The row stays a draft, as every draft a guest walked away
+    from."""
+    _drop_readback(state, "draft_order")
+    state.cart = []
+    state.order_note = None
+
+
 def order_corrected(state: ConversationState) -> None:
     """Drops the draft that waits for its yes, an order or a reservation. A
     reservation too: the guest who goes on with the order after a table was

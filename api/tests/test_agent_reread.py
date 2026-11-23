@@ -20,12 +20,13 @@ from api.agent.dispatch import ToolResult
 from api.agent.guards import HINT_CONFIRM, begin_turn, note_said, reread_on_yes
 from api.agent.ladder import UnderstandingLadder
 from api.agent.llm import LLMTurn, ToolCall
-from api.agent.loop import ConversationLoop
+from api.agent.loop import SAY_ORDER_DROPPED, SAY_TIMEOUT, ConversationLoop
 from api.agent.state import ConversationState, apply_tool_result
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
     AuditLog,
     Call,
+    Callback,
     MenuItem,
     Order,
     OutboxEvent,
@@ -95,6 +96,10 @@ def flow(request, session, tenant_id) -> Flow:
             },
         )
         return Flow("reservation", Reservation, RESERVATION_CONFIRMED, (table,))
+    return _order_flow(session, tenant_id)
+
+
+def _order_flow(session, tenant_id) -> Flow:
     item_id = str(
         session.scalar(
             select(MenuItem.id).where(
@@ -407,3 +412,156 @@ def test_a_yes_without_any_draft_reads_nothing_out():
     confirm = ToolCall("confirm", {"entity": "order", "entity_id": str(uuid.uuid4())})
 
     assert reread_on_yes(state, begin_turn(state), "Ja", confirm) is None
+
+
+# --- #678: the expected time closes the read-back of an order ------------------
+
+
+@pytest.fixture
+def order(session, tenant_id) -> Flow:
+    return _order_flow(session, tenant_id)
+
+
+@pytest.mark.parametrize(
+    "answer", ["Okay", "Alles klar", "Gut", "Okay, danke", "In Ordnung", "Ja"]
+)
+def test_an_answer_to_the_stated_time_books_the_order(session, state, order, answer):
+    """Maxi, 23.11.2026: callers answer the time with "okay", "alles klar" or
+    "gut", and that is their yes to what was read out."""
+    said = read_to_the_guest(session, state, order)
+    assert said.endswith("Es dauert so ungefähr 30 Minuten.")
+    draft_id = order.draft_id(state)
+
+    turn(session, state, answer, Model(order.confirm(draft_id), say="Danke."))
+
+    assert status(session, order, draft_id) == "confirmed"
+
+
+@pytest.mark.parametrize(
+    "answer", ["Gut?", "Alles klar, und wie lange genau?", "Gut, und noch eine 23"]
+)
+def test_an_acknowledgement_that_asks_or_adds_books_nothing(
+    session, state, order, answer
+):
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+
+    turn(session, state, answer, Model(order.confirm(draft_id), say="Gerne."))
+
+    assert status(session, order, draft_id) == "draft"
+
+
+def test_an_acknowledgement_after_other_talk_books_nothing(session, state, order):
+    """ "Alles klar" after the answer about the dog acknowledges that answer."""
+    _, draft_id = refused_yes(session, state, order)
+
+    turn(session, state, "Alles klar", Model(order.confirm(draft_id)))
+
+    assert status(session, order, draft_id) == "draft"
+
+
+def test_alles_klar_is_no_yes_to_a_table(session, state, tenant_id, flow):
+    """A table's read-back asks "Passt das so?"; only an order states a time."""
+    if flow.entity != "reservation":
+        pytest.skip("the order is the case above")
+    read_to_the_guest(session, state, flow)
+    draft_id = flow.draft_id(state)
+
+    turn(session, state, "Alles klar", Model(flow.confirm(draft_id), say="Gerne."))
+
+    assert status(session, flow, draft_id) == "draft"
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["Oh, so lange? Dann stornieren Sie das bitte.", "Nein, dann storniere ich."],
+)
+def test_a_cancel_after_the_stated_time_drops_the_draft_without_the_team(
+    session, state, order, answer
+):
+    """Nothing is booked yet: the draft is dropped, no callback card, no
+    transfer, and the next yes cannot confirm it."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+
+    said = turn(session, state, answer, Model(say="Nicht gesprochen."))
+
+    assert said == [SAY_ORDER_DROPPED]
+    assert (state.order_id, state.readback, state.stage) == (None, None, "collecting")
+    assert (state.cart, state.order_note) == ([], None)
+    assert status(session, order, draft_id) == "draft"
+    assert session.scalar(select(func.count()).select_from(Callback)) == 0
+    turn(session, state, "Ja", Model(order.confirm(draft_id), say="Gerne."))
+    assert status(session, order, draft_id) == "draft"
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Bitte nicht stornieren, das passt so.",
+        "Kann ich das später noch stornieren?",
+        "Die Cola bitte abbestellen",
+        "Den Tisch für morgen bitte absagen",
+        "Die Bestellung von vorhin stornieren Sie bitte",
+        # A question about the state is no cancel (Codex, PR #954).
+        "Ist die Bestellung storniert?",
+        "Ist die Bestellung storniert",
+        "Die Bestellung ist storniert?",
+        "Stornieren?",
+    ],
+)
+def test_a_cancel_of_something_else_keeps_the_order_and_goes_to_the_team(
+    session, state, order, answer
+):
+    """Review of #678: only a plain cancel drops the order that waits. A
+    "nicht", a question, one line, a table or an earlier order is the team's,
+    with the sentence and the open order on its card, as before."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+
+    said = turn(session, state, answer, Model(say="x"))
+
+    assert said != [SAY_ORDER_DROPPED]
+    assert state.cart, "the open order stays for the team's card"
+    assert status(session, order, draft_id) == "draft"
+
+
+def test_a_cancel_past_the_call_limit_ends_with_the_team(session, state, order):
+    """The dropped order's sentence asks for more; past its limit the call
+    goes to the team instead, as on any other turn."""
+    read_to_the_guest(session, state, order)
+    times = iter([0.0, 10_000.0])
+    loop = ConversationLoop(
+        session,
+        Model(say="x"),
+        "system",
+        now=NOW,
+        clock=lambda: next(times, 10_000.0),
+        max_call_seconds=60,
+    )
+
+    said = loop.run_turn(state, "Dann stornieren Sie das bitte.").say
+
+    assert SAY_TIMEOUT in said and SAY_ORDER_DROPPED not in said
+    assert state.order_id is not None
+
+
+def test_a_cancel_without_a_draft_still_goes_to_the_team(session, state):
+    said = turn(session, state, "Ich möchte meine Bestellung stornieren", Model())
+
+    assert said != [SAY_ORDER_DROPPED]
+    assert state.stage != "collecting"
+
+
+def test_a_cancel_of_a_table_keeps_the_order_that_waits(session, state, order):
+    """ "Meine Reservierung stornieren" goes to the team as before; the order
+    read back is not what the guest cancels."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+
+    said = turn(
+        session, state, "Ich möchte meine Reservierung stornieren", Model(say="x")
+    )
+
+    assert said != [SAY_ORDER_DROPPED]
+    assert state.order_id == draft_id
