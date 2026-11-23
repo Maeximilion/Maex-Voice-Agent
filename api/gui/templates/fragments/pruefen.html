@@ -2,8 +2,9 @@
    number or a date's hours the staff changed without the owner's PIN. Each
    card stays until the owner keeps or undoes it; both buttons ask the admin PIN
    first (`require_admin`) and send the card version shown (`gesehen`): a card
-   changed since is not decided (#596). Replaced as a whole; empty when nothing
-   is open. #}
+   changed since is not decided (#596). Below them the confirmed tables the
+   hours leave out that no card lists, also after a card is answered (#764).
+   Replaced as a whole; empty when nothing is open or left out. #}
 {% if checks_note %}<p class="badge warn" role="status">{{ checks_note }}</p>{% endif %}
 {% if checks_problem %}
 <p class="empty">{{ checks_problem }}</p>
@@ -13,7 +14,7 @@
   <li class="card check" data-id="{{ c.id }}">
     <div class="res-head">
       <b>{{ c.title }}</b>
-      {% if c.waiting %}<span class="badge warn">Wartet auf den Inhaber</span>{% else %}<span class="badge">Vom Team geändert</span>{% endif %}
+      {% if c.waiting %}<span class="badge warn">Wartet auf den Inhaber</span>{% elif c.by_operator %}<span class="badge">Vom Betreiber geändert</span>{% else %}<span class="badge">Vom Team geändert</span>{% endif %}
     </div>
     <p>Vorher: {{ c.before }}</p>
     <p>{% if c.waiting %}Beantragt{% else %}Jetzt{% endif %}: <b>{{ c.after }}</b></p>
@@ -36,3 +37,4 @@
   {% endfor %}
 </ul>
 {% endif %}
+{% if not checks_problem %}{% include "fragments/zeiten_gaeste.html" %}{% endif %}

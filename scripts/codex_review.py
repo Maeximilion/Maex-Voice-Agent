@@ -41,6 +41,7 @@ import sys
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 BOT = "chatgpt-codex-connector[bot]"
 REPO = "repos/{owner}/{repo}"  # gh fills in the repository of the checkout
@@ -83,15 +84,15 @@ query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
 }
 """
 
-Gh = Callable[[str], list]
-Gq = Callable[[int], list]
+Gh = Callable[[str], list[dict[str, Any]]]
+Gq = Callable[[int], list[dict[str, Any]]]
 
 
 class GhError(Exception):
     pass
 
 
-def gh_api(path: str) -> list:
+def gh_api(path: str) -> list[dict[str, Any]]:
     """Every item of a REST list (all pages), or a single object as one item."""
     res = subprocess.run(
         [
@@ -112,7 +113,7 @@ def gh_api(path: str) -> list:
     return [json.loads(line) for line in res.stdout.splitlines() if line.strip()]
 
 
-def gh_threads(pr: int) -> list[dict]:
+def gh_threads(pr: int) -> list[dict[str, Any]]:
     """The first comment of every unresolved review thread by Codex, over all
     pages: past the first 100 threads a new finding must not go unseen (Codex
     PR #373)."""
@@ -149,7 +150,7 @@ def gh_threads(pr: int) -> list[dict]:
     ]
 
 
-def _code(summary: str | None) -> dict:
+def _code(summary: str | None) -> dict[str, Any]:
     match = _STATE.search(summary or "")
     return json.loads(match.group(1))["code_review"] if match else {}
 
@@ -157,7 +158,7 @@ def _code(summary: str | None) -> dict:
 def state(
     head: str,
     summary: str | None,
-    reviews: list[dict],
+    reviews: list[dict[str, Any]],
     now: datetime,
     asked: datetime | None = None,
 ) -> str:
@@ -186,7 +187,7 @@ def state(
 
 def look(
     pr: int, gh: Gh = gh_api, gq: Gq = gh_threads, now: datetime | None = None
-) -> tuple[str, str, list]:
+) -> tuple[str, str, list[dict[str, Any]]]:
     """Head sha, state and Codex's unresolved threads, each marked `new` when it
     came with the review of this head.
 

@@ -6,6 +6,7 @@ import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from api.config import settings
 from api.models import Capacity, OpeningHours, ServiceConfig, Tenant
 from scripts import seed as seed_module
 from scripts.seed import seed
@@ -131,7 +132,7 @@ def test_seed_writes_the_privacy_notice_address_into_a_new_tenant(
 ):
     """From `PRIVACY_NOTICE_ADDRESS`; a blank setting is no address, the column
     refuses a blank text (migration 009)."""
-    monkeypatch.setattr(seed_module.settings, "privacy_notice_address", setting)
+    monkeypatch.setattr(settings, "privacy_notice_address", setting)
 
     result = seed(session, tenant_name="Testbetrieb", timezone="Europe/Berlin")
 
@@ -144,7 +145,7 @@ def test_seed_keeps_an_address_the_restaurant_set(session, monkeypatch):
     result = seed(session, tenant_name="Testbetrieb", timezone="Europe/Berlin")
     session.get(ServiceConfig, result.tenant_id).privacy_notice_address = "eigene.de"
     session.commit()
-    monkeypatch.setattr(seed_module.settings, "privacy_notice_address", "andere.de")
+    monkeypatch.setattr(settings, "privacy_notice_address", "andere.de")
 
     seed(session, tenant_name="Testbetrieb", timezone="Europe/Berlin")
     session.expire_all()

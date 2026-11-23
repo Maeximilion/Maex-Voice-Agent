@@ -101,12 +101,26 @@ _HARMLESS = ("kein problem", "nicht schlecht")
 _ADDRESS = re.compile(
     r"\b(?:junge frau|junger mann|fr(?:ä|ae)ulein|gute frau|guter mann)\b"
 )
+# "das" right before "Fräulein" is its article: the form names a third person,
+# and cut it left "Ja, das", a yes, "das" being filler (#862). Before the other
+# forms "das" can only be the pronoun of the yes ("Ja genau das, guter Mann"
+# with its comma lost), and any other article is no filler: such a sentence is
+# no yes whether the form is cut or not.
+_DAS_BEFORE = re.compile(r"\bdas\s+$")
 
 
 def _lowered(text: str) -> str:
     """Lowercase, with the forms of address cut out (a decomposed "ä" or a
     no-break space in "junge Frau" is folded first, as in `escalation`)."""
-    return _ADDRESS.sub(" ", unicodedata.normalize("NFKC", text).lower())
+    lowered = unicodedata.normalize("NFKC", text).lower()
+    return _ADDRESS.sub(
+        lambda m: (
+            m[0]
+            if m[0].startswith("fr") and _DAS_BEFORE.search(lowered, 0, m.start())
+            else " "
+        ),
+        lowered,
+    )
 
 
 _WORD = re.compile(r"[a-zäöüß]+")

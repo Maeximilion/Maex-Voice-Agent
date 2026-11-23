@@ -16,7 +16,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select
+from sqlalchemy import exists, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -27,6 +27,7 @@ from api.core.errors import (
     NotFound,
     ServiceUnavailable,
 )
+from api.core.ids import idempotency_key
 from api.core.time import utcnow
 from api.domain.customers.phone import normalize_phone, number_or_none
 from api.domain.delivery.address import SAY_WHICH_NAME, keep, place
@@ -41,7 +42,16 @@ from api.domain.ordering.validation import (
 )
 from api.domain.status.service import DELIVERY, PICKUP, service_open_at
 from api.domain.status.waits import current_wait
-from api.models import Address, AuditLog, Call, Order, OrderItem, ServiceConfig, Tenant
+from api.models import (
+    Address,
+    AuditLog,
+    Call,
+    Order,
+    OrderItem,
+    Reservation,
+    ServiceConfig,
+    Tenant,
+)
 from api.schemas.orders import DraftOrderRequest, OrderDraft, OrderStatus
 
 ACTOR_AGENT = "agent"
@@ -60,8 +70,10 @@ def draft_order(
         raise NotFound("Mandant unbekannt")
     zone = ZoneInfo(tenant.timezone)
 
-    # Gleicher Schlüssel → gleiche Antwort, kein zweiter Vorgang (docs/04 §1).
-    existing = _by_key(session, req.idempotency_key)
+    # Same key, same answer, no second order (docs/04 §1), while its draft is
+    # the call's latest (#862).
+    key, existing = _stored_under(session, req)
+    req = req.model_copy(update={"idempotency_key": key})
     if existing is not None:
         return _replay(session, existing, req.tenant_id, req.call_id)
 
@@ -199,7 +211,47 @@ def _ready_at(now: datetime, wait_minutes: int) -> datetime:
 
 
 def _by_key(session: Session, key: str) -> Order | None:
-    return session.scalar(select(Order).where(Order.idempotency_key == key))
+    # Read fresh: the call's session keeps its rows past a commit, and an
+    # order cancelled meanwhile must not be taken for a draft (#862).
+    return session.scalar(
+        select(Order).where(Order.idempotency_key == key),
+        execution_options={"populate_existing": True},
+    )
+
+
+def _stored_under(session: Session, req: DraftOrderRequest) -> tuple[str, Order | None]:
+    """The key this request is stored under, and its order if there is one.
+    A retry, the same request while its draft is the call's latest, replays
+    that draft as it was (Codex PR #124). A draft that a later draft of its
+    call replaced, a table or an order, is a change of mind the guest went
+    back on: replayed, it skipped every check (hours, a dish sold out since)
+    and kept its old pickup time. Such a request gets a successor key, made
+    from the row it follows, and is drafted anew; its own retry walks the same
+    way to the same draft. A decided order (its yes was given) and another
+    call's row end the walk as before."""
+    key = req.idempotency_key
+    while (row := _by_key(session, key)) is not None and (
+        row.status == "draft"
+        and row.tenant_id == req.tenant_id
+        and row.call_id == req.call_id
+        and _replaced(session, row)
+    ):
+        key = idempotency_key(req.call_id, "draft_order", key, row.id)
+    return key, row
+
+
+def _replaced(session: Session, order: Order) -> bool:
+    """Did its call draft anything after it? Equal times count as no: under a
+    clock that stands still (simulator, tests) a draft is replayed as before."""
+    newer = (
+        exists().where(
+            model.tenant_id == order.tenant_id,
+            model.call_id == order.call_id,
+            model.created_at > order.created_at,
+        )
+        for model in (Order, Reservation)
+    )
+    return bool(session.scalar(select(or_(*newer))))
 
 
 def _replay(

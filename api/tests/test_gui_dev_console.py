@@ -16,7 +16,7 @@ from api.gui import dev, mount_gui
 from api.gui.session import require_gui_session
 from api.models import Call, Tenant
 from api.tests.test_domain_draft_order import _tenant
-from sim.session import Turn
+from sim.session import SimCall, Turn, resolve_tenant
 
 HX = {"HX-Request": "true", "X-CSRF-Token": "testtoken"}
 BASE = "/gui/dev/console"
@@ -145,7 +145,7 @@ def test_missing_tenant_is_said_in_words(client):
 def test_closing_turn_finishes_the_call(client, db, tenant_id, monkeypatch):
     call_id = _call_id(client.post(f"{BASE}/call", headers=HX).text)
     monkeypatch.setattr(
-        dev.SimCall, "say", lambda self, text: Turn(customer=text, ended=True)
+        SimCall, "say", lambda self, text: Turn(customer=text, ended=True)
     )
 
     said = client.post(
@@ -179,7 +179,7 @@ def test_hang_up_waits_for_a_running_turn(client, db, tenant_id, monkeypatch):
         assert release.wait(5)
         return Turn(customer=text, say=["Antwort"])
 
-    monkeypatch.setattr(dev.SimCall, "say", slow_say)
+    monkeypatch.setattr(SimCall, "say", slow_say)
     results = {}
 
     def say():
@@ -210,7 +210,7 @@ def test_hang_up_waits_for_a_running_turn(client, db, tenant_id, monkeypatch):
 
 def test_failed_hang_up_keeps_the_call_for_a_retry(client, db, tenant_id, monkeypatch):
     call_id = _call_id(client.post(f"{BASE}/call", headers=HX).text)
-    real_finish = dev.SimCall.finish
+    real_finish = SimCall.finish
     calls = []
 
     def flaky_finish(self):
@@ -219,7 +219,7 @@ def test_failed_hang_up_keeps_the_call_for_a_retry(client, db, tenant_id, monkey
             raise RuntimeError("database gone")
         return real_finish(self)
 
-    monkeypatch.setattr(dev.SimCall, "finish", flaky_finish)
+    monkeypatch.setattr(SimCall, "finish", flaky_finish)
 
     with pytest.raises(RuntimeError):
         client.post(f"{BASE}/call/{call_id}/end", headers=HX)
@@ -233,7 +233,7 @@ def test_failed_hang_up_keeps_the_call_for_a_retry(client, db, tenant_id, monkey
 
 def test_two_starts_at_once_leave_one_call(client, db, tenant_id, monkeypatch):
     inside, release = threading.Event(), threading.Event()
-    real = dev.resolve_tenant
+    real = resolve_tenant
 
     def slow_resolve(session, name):
         inside.set()
@@ -261,7 +261,7 @@ def test_failed_turn_ends_the_call_and_says_so(client, db, tenant_id, monkeypatc
     def broken(self, text):
         raise RuntimeError("database gone")
 
-    monkeypatch.setattr(dev.SimCall, "say", broken)
+    monkeypatch.setattr(SimCall, "say", broken)
 
     said = client.post(f"{BASE}/call/{call_id}/say", headers=HX, data={"text": "Hallo"})
 
@@ -292,7 +292,7 @@ def test_start_drops_a_stale_call_that_cannot_be_finished(
     def broken(self):
         raise RuntimeError("database gone")
 
-    monkeypatch.setattr(dev.SimCall, "finish", broken)
+    monkeypatch.setattr(SimCall, "finish", broken)
 
     started = client.post(f"{BASE}/call", headers=HX)
 
@@ -306,7 +306,7 @@ def test_failed_hang_up_after_a_closing_turn_retries_only_the_hang_up(
 ):
     call_id = _call_id(client.post(f"{BASE}/call", headers=HX).text)
     turns, finishes = [], []
-    real_finish = dev.SimCall.finish
+    real_finish = SimCall.finish
 
     def closing_say(self, text):
         turns.append(text)
@@ -318,8 +318,8 @@ def test_failed_hang_up_after_a_closing_turn_retries_only_the_hang_up(
             raise RuntimeError("database gone")
         return real_finish(self)
 
-    monkeypatch.setattr(dev.SimCall, "say", closing_say)
-    monkeypatch.setattr(dev.SimCall, "finish", flaky_finish)
+    monkeypatch.setattr(SimCall, "say", closing_say)
+    monkeypatch.setattr(SimCall, "finish", flaky_finish)
 
     with pytest.raises(RuntimeError):
         client.post(f"{BASE}/call/{call_id}/say", headers=HX, data={"text": "Ja"})

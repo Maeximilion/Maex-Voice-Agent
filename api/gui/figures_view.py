@@ -4,6 +4,7 @@ The numbers come from `domain/calls/figures.py`; this file only formats them.
 """
 
 from datetime import timedelta
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -43,9 +44,19 @@ def values(figures: Figures) -> list[str]:
     ]
 
 
-def page(session: Session, tenant: Tenant) -> dict:
+def bar(session: Session, tenant: Tenant) -> dict[str, Any]:
+    """The four values of the last 7 days: the bar every admin page shows
+    (docs/06 §4, "immer sichtbar, in jedem Bereich")."""
     today = business_day(tz_name=tenant.timezone)
     week = span_figures(session, tenant, today - timedelta(days=WEEK_DAYS - 1), today)
+    return {
+        "week": list(zip(LABELS, values(week), strict=True)),
+        "week_unknown_cost": week.unknown_cost_calls,
+    }
+
+
+def page(session: Session, tenant: Tenant) -> dict[str, Any]:
+    today = business_day(tz_name=tenant.timezone)
     history = []
     for back in range(HISTORY_DAYS):
         day = today - timedelta(days=back)
@@ -59,9 +70,4 @@ def page(session: Session, tenant: Tenant) -> dict:
                 "unknown_cost": figures.unknown_cost_calls,
             }
         )
-    return {
-        "week": list(zip(LABELS, values(week), strict=True)),
-        "week_unknown_cost": week.unknown_cost_calls,
-        "labels": LABELS,
-        "history": history,
-    }
+    return {**bar(session, tenant), "labels": LABELS, "history": history}

@@ -11,7 +11,10 @@ neu aus der Datenbank, und beim Speichern prueft die Domain alles noch einmal.
 
 import json
 import uuid
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Any
 
 from api.core.errors import InvalidInput
 from api.core.time import business_day, to_local
@@ -28,6 +31,7 @@ from api.domain.ordering.correction import (
     RowEdit,
 )
 from api.domain.ordering.ticket import CANCELLED
+from api.models import Address
 from api.schemas.orders import MAX_QUANTITY
 
 TYPE_LABELS = {"pickup": "Abholung", "delivery": "Lieferung"}
@@ -53,11 +57,11 @@ def euro(cents: int) -> str:
     return f"{sign}{cents // 100},{cents % 100:02d} €"
 
 
-def clock(value, tz_name: str) -> str:
+def clock(value: datetime, tz_name: str) -> str:
     return to_local(value, tz_name).strftime("%H:%M")
 
 
-def card(order: BoardOrder, tz_name: str) -> dict:
+def card(order: BoardOrder, tz_name: str) -> dict[str, Any]:
     """Eine Karte der Spalte. Zustand immer mit Text, nie nur Farbe (docs/06 §1 Regel 4).
 
     Die Bruecke druckt einen Eingabezettel an der Kasse, die Kasse erst den
@@ -119,7 +123,7 @@ def card(order: BoardOrder, tz_name: str) -> dict:
     }
 
 
-def _address(address) -> str | None:
+def _address(address: Address | None) -> str | None:
     if address is None:
         return None
     return (
@@ -127,7 +131,7 @@ def _address(address) -> str | None:
     )
 
 
-def _register(order: BoardOrder, tz_name: str) -> dict:
+def _register(order: BoardOrder, tz_name: str) -> dict[str, Any]:
     """Whether the team has typed it into the register (T-11.6, docs/09 §1 L18).
 
     The mark comes after "Passt": the team types the order in from the slip it
@@ -157,8 +161,8 @@ class EditState:
     version: str
     edit_id: str
     # Je bestehender Position: q Menge, s getauscht gegen, o Auswahl, d Hinweis streichen.
-    rows: list[dict]
-    added: list[dict]
+    rows: list[dict[str, Any]]
+    added: list[dict[str, Any]]
     # Position, die gerade auf eine Nummer zum Tauschen wartet.
     swapping: int | None = None
     # A delivery's address as typed, by form name; None while it stays.
@@ -203,7 +207,7 @@ class EditState:
         )
 
 
-def _choices(raw) -> tuple[Choice, ...]:
+def _choices(raw: Iterable[Sequence[object]] | None) -> tuple[Choice, ...]:
     return tuple(Choice(str(g), str(n)) for g, n in (raw or []))
 
 
@@ -265,7 +269,7 @@ def apply_op(
     op: str,
     plan: CorrectionPlan,
     number: str,
-    find_item,
+    find_item: Callable[[str], uuid.UUID | None],
 ) -> str | None:
     """Einen Tap anwenden. Gibt eine Meldung fuer das Team zurueck oder None.
 
@@ -354,7 +358,7 @@ def apply_op(
     raise InvalidInput(f"Unbekannter Tap {op!r}", say=BAD_STATE)
 
 
-def _target(state: EditState, where: str, index: int) -> dict:
+def _target(state: EditState, where: str, index: int) -> dict[str, Any]:
     return state.rows[index] if where == "r" else state.added[index]
 
 
@@ -362,7 +366,7 @@ def _line(plan: CorrectionPlan, where: str, index: int) -> PlannedLine:
     return plan.rows[index] if where == "r" else plan.added[index]
 
 
-def edit_lines(plan: CorrectionPlan, state: EditState) -> dict:
+def edit_lines(plan: CorrectionPlan, state: EditState) -> dict[str, Any]:
     """Werte fuer das Template der Korrektur.
 
     Der Stand muss Zeile fuer Zeile zu den Positionen passen, sonst zeigte das
@@ -377,7 +381,12 @@ def edit_lines(plan: CorrectionPlan, state: EditState) -> dict:
             "Korrekturstand passt nicht zu den Positionen", say=BAD_STATE
         )
 
-    def view(line: PlannedLine, where: str, index: int, chosen) -> dict:
+    def view(
+        line: PlannedLine,
+        where: str,
+        index: int,
+        chosen: Iterable[Sequence[object]] | None,
+    ) -> dict[str, Any]:
         picked = {(g, n) for g, n in (chosen or [])}
         return {
             "where": where,
@@ -436,7 +445,7 @@ def edit_lines(plan: CorrectionPlan, state: EditState) -> dict:
     }
 
 
-def _address_view(plan: CorrectionPlan, state: EditState) -> dict:
+def _address_view(plan: CorrectionPlan, state: EditState) -> dict[str, Any]:
     """The address of a delivery in the correction (#525)."""
     where = plan.where
     return {

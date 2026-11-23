@@ -68,6 +68,7 @@ def watch_forever(
 
 if __name__ == "__main__":
     configure_logging(settings.log_level)
+    monitor.require_push_token()
     threading.Thread(
         target=watch_forever,
         args=(threading.Event(), settings.dispatcher_interval_seconds),

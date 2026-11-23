@@ -445,6 +445,66 @@ def test_a_transfer_replaces_a_hangup_that_waits(call):
     assert call.line.actions[-1] == ("transfer", "+497215550000")
 
 
+def test_speak_now_plays_what_the_turn_said_so_far_before_the_turn_goes_on(
+    call, monkeypatch
+):
+    """The outage path (#754): its sentence is on the line while the core still
+    works on the turn, the rest keeps its order, nothing is played twice, and
+    the transfer still waits for the end of the last sentence."""
+    seen: list[list[str]] = []
+    transfer = call.lines.transfer
+
+    def looking(session_id: str, target: str) -> None:
+        seen.append(call.line.played())
+        transfer(session_id, target)
+
+    monkeypatch.setattr(call.lines, "transfer", looking)
+    call.core.replies["Hilfe"] = [
+        ("say", "Eins."),
+        ("speak_now",),
+        ("say", "Zwei."),
+        ("transfer", "+497215550000"),
+    ]
+    call.start(GREETING)
+    call.played()
+    call.said("Hilfe", after=1.0)
+
+    assert seen == [["Guten Tag.", "Eins."]]
+    assert call.line.played() == ["Guten Tag.", "Eins.", "Zwei."]
+    assert call.s.outcome == "open"
+    call.played(after=1.0)
+    assert call.line.actions[-1] == ("transfer", "+497215550000")
+
+
+def test_speak_now_outside_a_turn_or_for_a_call_that_is_gone_does_nothing(call):
+    call.start(GREETING)
+    before = list(call.line.actions)
+
+    call.lines.speak_now("s1")
+    call.lines.speak_now("gone")
+    call.s.drain()
+
+    assert call.line.actions == before and call.s.outcome == "open"
+
+
+def test_speak_now_behind_a_transfer_says_nothing_more(call):
+    """What a turn asked for keeps its rules when it goes out early: nothing is
+    spoken behind a transfer that waits."""
+    call.core.replies["Hilfe"] = [
+        ("say", "Eins."),
+        ("transfer", "+497215550000"),
+        ("say", "Zu spaet."),
+        ("speak_now",),
+    ]
+    call.start(GREETING)
+    call.played()
+    call.said("Hilfe", after=1.0)
+    call.played(after=1.0)
+
+    assert call.line.played() == ["Guten Tag.", "Eins."]
+    assert call.line.actions[-1] == ("transfer", "+497215550000")
+
+
 # --- Read-back (hard rule 3) -----------------------------------------------------------
 
 

@@ -47,7 +47,9 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 | `ids.py` | Idempotenz-Schlüssel, Abholcode („A17") |
 | `time.py` | UTC ↔ `Europe/Berlin`, „heute" im Sinne des Betriebstags |
 | `tokens.py` | the rule every token meets outside dev and test (`valid_production_token`, `LOCAL_ENVS`); reads no settings, so the operator dashboard uses it too |
+| `database_role.py` | `refuse_a_superuser_role`: outside dev and test a start as a Postgres superuser is refused (#252); takes the engine, reads no settings, so the API, the voice service and the operator dashboard all call it (#827 F5) |
 | `origin.py` | `same_origin`: a browser write comes from a page of this site (docs/23 §6, T9); shared by `gui/` and `dashboard/` |
+| `ops_reason.py` | the reason an operator gives before a stack hands out guest data (docs/23 §8): the fixed list of categories, the form of the ticket number and of the account, `reason` and `parse` for the two headers, the header that names the customer a step is meant for (`X-Ops-Customer`) and `OpsReader` (who asks and why); reads no settings, shared by `core/auth.py` (`require_ops_reason`), `domain/operator.py` and `dashboard/` |
 
 **Regel:** Fachcode wirft `core.errors`, nie `HTTPException`. Die Übersetzung passiert einmal, in `tools/`.
 
@@ -60,7 +62,8 @@ Warum diese Härte: Wenn in `domain/ordering/` nie ein Anbietername vorkommt, ka
 - `bridge.py` — the print bridge's sign of life: `note_poll` from the claim, `silence` for the alarm and the header (T-8.3)
 - `holidays.py` — the statewide statutory holidays of the 16 states (Easter by the Gregorian formula), suggested in `special_days` and answered by the team: like Sunday, closed, or the weekday's hours (T-9.5). A suggestion counts for nothing until then
 - `staff_changes.py` — the staff's changes without the owner's PIN (#570 b): today's team number among the dialable ones (`team_phone_at` is its one reader), a date's hours that hold at once or wait for the owner, and the check cards the owner keeps or undoes
-- `overview.py` — the stack's state at a glance for the operator dashboard (#571): mode, last call, today's figures, print bridge, backup, the alarms of the last day, menu status; counts and times only, never guest data
+- `weekly.py` — the standard weekly hours, the owner's behind the admin PIN (#571): `week` reads every weekday and service from `opening_hours`, `set_weekday` replaces one weekday's spans under the lock of the staff changes, refuses hours changed since the form was shown (`token`), an end before the start without the owner's word, spans that overlap or touch and more than `MAX_SPANS`, checks and writes only the services whose spans changed to the minute, and writes the audit row `opening_hours.changed`; `tables_outside_hours` lists the confirmed tables from now on that no dine-in window holds. The owner's direct change of one date is `staff_changes.set_day_hours` (no card, no push, audit row `special_day.set`), its list `coming_days`
+- `overview.py` — the stack's state at a glance for the operator dashboard (#571): mode, last call, today's figures, print bridge, backup, the alarms of the last day, menu status, and `week`, the four figures of the last seven business days with their course; counts and times only, never guest data
 - Tests: Mitternacht, Sondertag schlägt Wochentag, Sommerzeit-Umstellung
 
 ### `domain/menu/`
@@ -71,11 +74,12 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 | `normalize.py` | Kleinschreibung, Umlaute, Füllwörter raus („einmal die … bitte") |
 | `search.py` | die Auflösungsreihenfolge aus 04: Nummer → Alias → Trigram, mit Schwellen aus der Konfiguration |
 | `aliases.py` | Alias anlegen, Treffer zählen, Vorschläge aus Anrufen |
-| `details.py` | Optionen, Allergene mit der Regel „unbekannt ≠ keine" |
+| `details.py` | Optionen, Allergene mit der Regel „unbekannt ≠ keine"; `without_allergens`: the same rule over the whole menu (the active dishes without an allergen row), read by `listing.py` and `domain/status/overview.py` |
 | `sold_out.py` | Schalter „Gericht aus": bis Ende des Betriebstags, `audit_log`, Alternativen derselben Kategorie (T-4.8) |
 | `importer.py` | CSV nach 14 lesen, prüfen, einspielen, Bericht; mit `deactivate_missing` werden fehlende Gerichte inaktiv |
 | `pos_dbf.py` | dBase-Tabellen der Kasse lesen, nur lesend, Bytes rein, Zeilen raus (T-4.11) |
 | `pos_convert.py` | Kassenartikel in die CSV nach 14: Größen, Extras, Allergen-Umsetztabelle, Bericht (T-4.11) |
+| `listing.py` | the menu as the tab "Menü" reads it (#571): active dishes in card order, the search of the tablet (`sold_out.matches`), pages of 50, and the two notes of a row: no allergen row (`details.without_allergens`, the rule of `get_item_details` over the whole menu, also the operator's count in `domain/status/overview.py`) and the register's open price (`price_check.open_differences`); it only reads |
 | `price_check.py` | what the price check found on the dish, the team's answer on the tablet, `audit_log`, the report; the comparison itself is `importer.apply` in a dry run (T-4.9) |
 
 ### `domain/ordering/`
@@ -88,6 +92,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 | `confirm.py` | `draft → confirmed`, Idempotenz, `audit_log`, Outbox-Eintrag. Für Bestellung **und** Reservierung. |
 | `board.py` | the tablet's column "Neue Bestellungen": which order stands there, „Passt“, „Nochmal senden“, and the mark „In Kasse eingegeben“ with the orders nobody marked (T-11.6, L18) |
 | `ready_time.py` | zugesagte Zeit aus Wartezeit und Auslastung |
+| `selftest_slip.py` | the self-test's slip for the print bridge (#574): a kitchen event marked `self_test` with no order and no call behind it, queued only on `--print-slip`, its row removed once the bridge answered or never claimed it |
 
 ### `domain/reservations/`
 - `capacity.py` — freie Plätze je Fenster
@@ -99,6 +104,7 @@ Der fehleranfälligste Bereich, deshalb am stärksten zerlegt.
 
 ### `domain/delivery/`
 - `zones.py` — PLZ-Match, später Polygon (`shapely`), ein Interface für beides
+- `owner_zones.py` — the owner's zones behind the admin PIN (#571): `zones` lists the postal code zones, `save_zone` writes one (new or changed) under the lock of the settings row and checks it against what `check_delivery` and `scripts/seed_zones.py` do with the rows: five-digit codes, a code in one active zone only, a name once per restaurant, amounts in cents from euros with a comma, the delivery time up to `config.MAX_WAIT_MINUTES`; a value sent back as it is stored skips its bound; a token of the zone shown refuses a save against a zone changed since; an audit row per save; nothing is deleted
 - `address.py` — wer, wohin, welche Zone (T-6.5): `place` liest nur und wirft, `keep` schreibt Kunde und Adresse; Zone auflösen und an der Adresse speichern. Mindestbestellwert und „Lieferung offen" stehen in `domain/ordering/validation.py`, neben den übrigen Prüfungen vor der Summe
 
 ### `domain/customers/`
@@ -124,7 +130,7 @@ Anruf, ganz gleich wie er ausgeht.
 - `routing.py` — whether the agent answers a call (only in `overflow` and `primary`), the team extension and the tenant name for the greeting; the mode is read fresh, so the emergency stop holds for the next call (T-1.13); `tenant_named`, the one tenant of a name, which the service `voice` serves (T-1.11); `call_limit`, the limit of concurrent AI calls at the restaurant's local time (the lowest window of `call_limit_windows`, else `max_concurrent_calls`), and `takes_call`, whether the agent takes a call with that many of its own open (T-10.9)
 - `consent.py` — `record_consent`: one `consent_log` row per answer to a consent question of the agent (call, time, question, answer), committed before anything is stored on the strength of it (T-11.1, L13)
 - `recordings.py` — the `recordings` row of a call and where its file lies: written before a byte is recorded, marked on a withdrawal, deleted by `jobs/retention.py` (T-11.3, L2)
-- `log.py` — `list_calls`: the calls of one business day as rows for the call list (T-8.7), read only, with the note about the line (`calls.line_note`, #651)
+- `log.py` — `list_calls`: the calls of one business day as rows for the call list (T-8.7), read only, with the note about the line (`calls.line_note`, #651); `calls_for_support`: the same day for the operator (#571), the read in `audit_log` before a row is read, a count per caller instead of the number, only the days the team's list reaches (`DAYS_LISTED`)
 
 Die Zeile pro einzelnem Tool-Aufruf (`calls.tool_calls`, docs/04 §Gemeinsame
 Regeln) kommt nicht von hier: `core/tool_log.py` schreibt sie generisch für jeden
@@ -135,7 +141,7 @@ braucht.
 The restaurant's login to the operations view (#570, D34, docs/23 §6). Answers: *may this device see and change the view?*
 - `hashing.py` — the scrypt hash of the password (the PINs are stored readable, migration 031), SHA-256 of tokens, the rules for a new password and PIN
 - `sessions.py` — sign-in with the growing wait per account and per address, or per device cookie for a browser that signed in before, the device session (30 days sliding, locked 15 minutes after the last change), the team PIN, signing devices out; the stack's tenant is the oldest (D32)
-- `setup.py` — the operator's one-time setup link: password, team PIN and admin PIN set, every other device signed out
+- `setup.py` — the operator's one-time setup link: password, team PIN and admin PIN set, every other device signed out; `setup_url`, the link's address under the stack's `AGENT_DOMAIN` (the command line's and the ops API's)
 - `admin.py` — the owner's admin PIN (#570 b): owner rights on one device for 60 minutes, closed by the idle lock and by the team PIN, waits after wrong PINs, never equal to the team PIN, read and set by the operator
 - Tests: the wait from the third failure, a session of another tenant, the idle lock, five wrong PINs, a spent or replaced link, the owner's hour and its early end
 
@@ -144,6 +150,12 @@ A new customer's tenant inside its own stack (#573, D32, docs/13 §8). Answers: 
 - `create_tenant` — from the customer file (`schemas/provision.py`, `deploy/customer.example.json`): tenant with its key, `service_config` in `shadow` with a dialable team number, weekly hours, seats and the first setup link, in one transaction; the same key again changes nothing, any other tenant in the database refuses (one customer per stack); a dry run counts and rolls back
 - `missing` — what the tenant lacks before it takes calls: hours, seats, zones, menu, print bridge, login, privacy notice
 - Tests: the whole tenant, rerun, a second customer refused, a failed last step leaves nothing, two runs at once, the file's checks (overlaps, past midnight, duplicates, offsets)
+
+### `domain/operator.py`
+The operator's steps on a restaurant over the ops API (#571, docs/23 §8). Answers: *who asked for this step, and why?*
+- `access` — the state every answer carries: login, whether each PIN is set, the 200 last used devices, the mode that holds and what can be chosen from it, the team number and the numbers the sheet offers; no secret
+- `read_access`, `show_pin`, `set_pin`, `sign_out`, `setup_link`, `set_call_mode`, `set_team_phone` — each commits a row `ops.<step>` with the operator, the reason's category and the ticket number (`_asked`) and then calls the function the command line or the tablet uses (`domain/access/`, `domain/status/config.py`, `staff_changes.py`) with the operator as actor; every step but the read then writes `ops.<step>.outcome` with the ask's id and `done`, `refused` or `failed` (`_step`, #811); no rule of its own besides the list of modes it takes (`shadow`, `overflow`, `primary`, `paused`, `resume`)
+- Tests (`test_ops_write.py`): every step refused without token, reason, account or the right customer key and nothing changed, the reason's row committed before the step, no PIN or link in a row or a log line, a sign-out that names nobody, the pushes of mode and team number
 
 ### `agent/` – der Gesprächs-Kern
 Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
@@ -168,7 +180,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 ### `telephony/` – der einzige Ort, der den Anbieter kennt
 | Datei | Verantwortung |
 |---|---|
-| `port.py` | the interface in two protocols: `CallEvents` (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`) and `TelephonyPort` (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`); since T-10.4 with `on_silence` and `on_voice_failure`, and `say` takes whether the sentence may be interrupted (docs/20 §4); since T-10.5 `TelephonyPort.expect`, the key terms for the speech engine (docs/20 §6) |
+| `port.py` | the interface in two protocols: `CallEvents` (`on_call_started`, `on_user_turn`, `on_dtmf`, `on_call_ended`) and `TelephonyPort` (`caller_id`, `say`, `transfer`, `hangup`, `start_recording`); since T-10.4 with `on_silence` and `on_voice_failure`, and `say` takes whether the sentence may be interrupted (docs/20 §4); since T-10.5 `TelephonyPort.expect`, the key terms for the speech engine (docs/20 §6); `TelephonyPort.speak_now` sends what was said so far at once, so the outage sentence plays before the team number is read behind it (#754 follow-up, docs/20 §5) |
 | `handler.py` | provider-neutral call handler (T-1.13): opens the call log, says the AI disclosure, sends the call straight to the team in `paused` and `shadow`, runs each turn through `agent/loop.py`, transfers when the state says so, or says goodbye (unless the agent just did) and hangs up, closes the call log; every failure ends with the outage sentence and a transfer |
 | `adapters/fake.py` | Testadapter, spielt Anrufe aus Dateien ab |
 | `app.py` | the process of the service `voice` (T-1.11, docs/20 §2): one call handler for the tenant of `TENANT_NAME`, a call session per connection with its own ear and mouth (`EARS`, `MOUTHS` by the name in `.env`: `whisper`, `piper`, the drill pair `fake`), and the endings the dialplan asks for. Refuses to start without token, own number, engines or model, with the drill engines outside dev and test, with an engine it cannot load, or with the team on its own number. Since T-1.11 part 2 each engine runs once at start, a `Watchdog` ends the process when an engine call hangs (only the time it works counts, 30 s; a load 120 s; started before the engines load), and the call handler's database sessions end a statement after `DB_TIMEOUT_MS` (`db.bounded_sessions`). Started by uvicorn with `--factory` |
@@ -197,24 +209,39 @@ Ein Modul je Endpunkt, jeweils fünf bis fünfzehn Zeilen: Request parsen, `doma
 ### `events/` – der kalte Pfad
 - `outbox.py` — Ereignis schreiben (in derselben Transaktion wie der Fachvorgang)
 - `dispatcher.py` — alle paar Sekunden: `pending` lesen, an n8n senden, `sent` oder Wiederholung mit Backoff, nach N Versuchen `failed` plus Alarm
-- `types.py` — `order.confirmed`, `reservation.confirmed`, `callback.created`, `order.handover_failed`, `daily.report`, and the pushes to owner and `ops` `team_phone.changed`, `day_hours.changed`, `call_mode.changed` (#588); `KITCHEN` nennt die Ereignisse, die die Druckbrücke abholt statt n8n (T-4.6)
+- `types.py` — `order.confirmed`, `reservation.confirmed`, `callback.created`, `order.handover_failed`, `daily.report`, and the pushes to owner and `ops` `team_phone.changed`, `day_hours.changed`, `call_mode.changed` (#588), `admin_pin.wrong` (#827 F4), `operator_access.changed` (a setup link, a PIN set or devices signed out by the operator, #811); `KITCHEN` nennt die Ereignisse, die die Druckbrücke abholt statt n8n (T-4.6)
 
 ### `kitchen/` – Eingang der Druckbrücke (T-4.6)
 - `router.py` — `POST /v1/kitchen/claim` und `/ack`, eigenes Token `KITCHEN_BRIDGE_TOKEN`, dünne Hülle um `domain/ordering/handover.py` (Abholen, Rückmeldung, Wächter)
 
 ### `ops/` – Eingang des Operator-Dashboards (#571)
-- `router.py` — `GET /v1/ops/status`, own token `OPS_TOKEN`, reached only over the stack's internal `ops` network; thin shell around `domain/status/overview.py`
+- `router.py` — `GET /v1/ops/status` and `GET /v1/ops/figures` (the week's four figures and their course), own token `OPS_TOKEN`, reached only over the stack's internal `ops` network; thin shells around `domain/status/overview.py`. `GET /v1/ops/calls` (one business day's calls) is guest data: it also needs a reason and the operator's account (`core/auth.py` `require_ops_reason`) and goes through `domain/calls/log.py` `calls_for_support`. `GET /v1/ops/access` and the post routes `/access/pin/show`, `/access/pin`, `/access/sign-out`, `/access/setup-link`, `/call-mode` and `/team-phone` show a secret or change the restaurant: reason and account as above, and `_customer`, which refuses a stack whose restaurant is not the customer the dashboard names; shells around `domain/operator.py`, bodies in `schemas/ops.py`
+
+### `site/` – the public site, an app of its own (#892, docs/06 §10, docs/13 §9)
+Run from the API's image as `uvicorn api.site.app:app --port 8003`. No database, no session, no secret; it imports neither `api.config` nor `api.db` nor anything of the domain. Its stylesheet, scripts and fonts sit in `gui/static/` beside those of the operations view (`site.css`, compiled `site.js`, `anfrage.js`, `site-logic.js`, `fonts/`).
+- `config.py` — `SITE_LOGIN_URL`, `SITE_CONTACT_EMAIL`, `SITE_INQUIRY_ACTION`: each optional and checked at start; a part of the page that lacks its value is switched off, not shown dead. `SITE_PREVIEW` (on by default) greys the sign-in, closes the form and marks every page `noindex, nofollow`; `SITE_LEGAL_DIR` names the folder outside the repository the legal texts are read from
+- `app.py` — `create_app`: `/`, `/anfrage`, `/impressum`, `/datenschutz`, `/robots.txt`, `/health`, `/static`, and `/tablet-demo` when its folder is built; a page of the site for every unknown address (404); the CSP and the other headers on every answer, the CSP also as a meta tag in every page. `scripts/site_export.py` writes the same answers as plain files for a static host
+- `tablet-demo/` — the tablet demo, generated by `scripts/demo/tablet_demo_build.py` and not committed (docs/06 §11); the seed, the build and the route manifest live in `scripts/demo/` (`tablet_demo_data.py`, `tablet_demo_build.py`, `tablet_demo_routes.py` with `tablet_demo_routes.json`), its stylesheet is `gui/static/tablet-demo.css`
+- `gui/ts/demo-board.ts`, `demo-sheets.ts`, `demo-backend.ts` — the fake backend of the tablet demo, browser code compiled to `gui/static/demo-board.js`, `demo-sheets.js` and `demo-backend.js` (docs/06 §11): the visitor's restaurant with the markup of the board, the sheets and the filters of the pages (B3), and the replacement of `XMLHttpRequest`, `fetch` and `EventSource`; tests `tests/demo_board.mjs`, `tests/demo_sheets.mjs`, `tests/demo_backend.mjs` (run by `test_tablet_demo_build.py`)
+- `content.py` — the three example calls, the kinds of business, `DEMO_PATH` (the tablet demo, `/tablet-demo`; `None` switches the hero action and the demo section off)
+- `waves.py` — path data of the three sound waves, drawn on the server
+- `templates/` — `base.html`, `landing.html`, `anfrage.html`, `legal.html`, `notfound.html`; no script or style of its own
+- Browser code: `gui/ts/site.ts` (call card, pause of what is off screen), `anfrage.ts` (form checks), `site-logic.ts` (the logic, run by node in `api/tests/site_logic.mjs`)
 
 ### `dashboard/` – the operator dashboard, an app of its own (#571, docs/23 §5)
 Run from the API's image as `uvicorn api.dashboard.app:app`, with its own database (`OPERATOR_DATABASE_URL`) and migrations (`db/dashboard/`). It never imports `api.config` or `api.db`, which build a customer stack's settings and connection (`api/tests/test_dashboard_login.py` checks it); from the customer side it uses only `core/` helpers that read no settings and `domain/access/hashing.py` and the wait rule of `domain/access/sessions.py`.
-- `config.py` — its settings: `ENV`, `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET` (refused at start outside dev and test when weak)
-- `db.py` — engine and request session of the operator database
-- `models.py` — accounts, recovery codes, sessions, devices, failures per address, the operator's own audit
+- `config.py` — its settings: `ENV`, `OPERATOR_DATABASE_URL`, `OPERATOR_PROXY_SECRET` (refused at start outside dev and test when weak), `OPERATOR_ORIGIN` (the dashboard's own address, which passkeys are bound to; refused at start outside dev and test when missing), `OPERATOR_PUSH_URL` and `OPERATOR_PUSH_TOKEN`, `OPERATOR_METRICS_DIR` (the folder of the recorded eval and measurement results)
+- `db.py` — engine and request session of the operator database; `app.py` refuses a superuser role at start outside dev and test (#827 F5)
+- `models.py` — accounts, recovery codes, sessions (with the last second factor's time), passkeys, their challenges, devices, failures per address, the operator's own audit
 - `totp.py` — RFC 6238 codes, standard library, a code never taken twice
-- `access.py` — sign-in (password plus TOTP or recovery code), waits, sessions (30 minutes idle, 12 hours), account creation and the break-glass reset; no FastAPI
-- `app.py` — the pages: `/login`, `/logout`, `/`, `/health`; CSRF, cookies, the proxy check
-- `cli.py` — `python -m api.dashboard.cli add|reset <name>` on the operator host
-- `templates/` — the pages, no script
+- `passkeys.py` — WebAuthn with `py_webauthn`: challenges (one holder, one purpose, single use, five minutes), registration and assertion against `OPERATOR_ORIGIN`, the signature counter; no FastAPI, the only module that imports `webauthn`
+- `results.py` — the dev tools' eval and measurement tables: two files of `docs/metrics/` read from `OPERATOR_METRICS_DIR`, bounded, never written; no FastAPI
+- `push.py` — the one place the dashboard sends a push from: a changed factor to the `ops` topic, queued in `operator_pushes` by the request (`queue`) and posted by a sender thread of the dashboard's process (`deliver_once`, the outbox pattern of `events/`, retried with the outbox's waits and never dropped); without `OPERATOR_PUSH_URL` and `OPERATOR_PUSH_TOKEN` the rows wait (#827 F3)
+- `access.py` — sign-in (password plus passkey, TOTP or recovery code), waits, sessions (30 minutes idle, 12 hours), step-up (a second factor of the last five minutes), the changes of a factor with the rule "TOTP or two passkeys", account creation and the break-glass reset; no FastAPI
+- `customers.py` — the registry of customers (key, address of the stack's ops API, its `OPS_TOKEN`) and `overview`: every stack's `GET /v1/ops/status` at once, each answer checked as input from outside and turned into one row; `detail` (one stack's status and week) and `calls` (one business day, with the reason and the account) ask through the same `_fetch` and `_at_once`; `step` reads a form of the manage page into one request (or none) and `manage` sends it with the reason, the account and the customer's key, the answer (`StackAccess`: the state after the step, a shown PIN, a new link) checked like every other; no FastAPI
+- `app.py` — the pages: `/login`, `/logout`, `/` (the customer list), `/customers/rows` (its rows for the refresh, which does not keep the session alive), `/customers/<key>` (one customer: state, figures, menu status) and the posts `/customers/<key>/calls` (guest data: step-up, reason, both audits) and `/customers/<key>/manage/<step>` (both PINs, devices, setup link, call mode, team number: step-up, reason, both audits, a secret shown once, a changing form taken once by its page's token), `/factors` (passkeys and TOTP), `/step-up`, the `.../options` routes that hand a ceremony its challenge, `/health`; CSRF, cookies, the proxy check, and `require_step_up`, the one dependency before a dangerous action, and `require_factor_step_up` before a change of the operator's own factors (a passkey step-up once the account has a passkey, D37)
+- `cli.py` — `python -m api.dashboard.cli add|reset <name>` and `customer-add <key> <url>|customer-remove <key>|customers` on the operator host
+- `templates/` — the pages; scripts only as files, compiled from `api/gui/ts/` (`passkey.js` runs the passkey ceremonies on the sign-in, step-up and factors pages), beside the two of the operations view (`htmx` for the list's refresh, `base.js` for "Show" beside the password), no inline script
 
 ### `printbridge/` – die Druckbrücke im Lokal (T-4.6)
 Eigenständig, nur Standardbibliothek, kennt keinen Code aus `api/` und spricht mit dem Server nur über HTTPS. Läuft auf einem Rechner im Lokal (`printbridge/README.md`).
@@ -234,7 +261,7 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `data_requests.py` — requests of data subjects by hand on the server (T-11.8, docs/09 §2): `python -m api.jobs.data_requests log|open|extend|find|erase|object|answer`; stdout is the copy or the lines of the erasure ledger, written before the commit
 - `provision.py` — a new customer's tenant in its stack (#573): `python -m api.jobs.provision create <customer.json> [--dry-run]` prints one JSON report with the setup link, `check` lists what is still missing
 - `offboarding.py` — a leaving customer's export (#576): `python -m api.jobs.offboarding export <folder> --key <key>` writes the menu in the import format of docs/14, orders, positions and reservations as CSV (cents, local time) and a manifest with checksums, in one read-only transaction; `scripts/remove_stack.py` runs it in the stack and removes nothing without it
-- `gui_access.py` — the operator's side of the restaurant's login until the dashboard has it (#570, #571): `python -m api.jobs.gui_access link|devices|sign-out|pin [--admin]`
+- `gui_access.py` — the operator's side of the restaurant's login on the stack itself (#570; the dashboard takes the same steps over the ops API since #571, and this still works while it is down): `python -m api.jobs.gui_access link|devices|sign-out|pin [--admin]`
 - `price_check.py` — Abgleich Kasse gegen Agent-DB (T-4.9)
 - `daily_report.py` — daily report as an outbox event `daily.report`. Built with T-11.6: from `REGISTER_REPORT_HOUR` local time, once per business day, how many orders of earlier days nobody marked „In Kasse eingegeben“ (L18), none when all are marked, and again an hour after one the dispatcher gave up on; `cold_path.py` runs it in a thread of its own every five minutes. The day's key figures follow with T-8.3
 - `monitor.py` — alarms and the day report for the operator (T-8.3, docs/13 §5): every 5 minutes in `cold_path.py`, per tenant, the model cost of the business day above `ALARM_COST_PER_DAY_CENTS`, at least `ALARM_ERROR_CALLS_PER_HOUR` error calls in the last hour, the last `ALARM_NO_AUDIO_CALLS` calls all without caller audio (#651), events to n8n that failed in the last hour (kitchen slips go to the print bridge and are left out), `voice` not answering and Asterisk not registered (with `VOICE_URL`), the print bridge silent, no `backup.done` for `ALARM_BACKUP_HOURS`, and from `MONITOR_REPORT_HOUR` the previous business day in one line. Posted straight to the push server, topic `ops`, not through n8n (n8n down is one of the outages it reports); the audit log (`monitor.alarm`) remembers what was sent, a failed post goes out on the next pass
@@ -247,6 +274,10 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `access.py` — the sign-in, setup link, PIN and admin PIN pages (`/gui/anmelden`, `/gui/einrichten`, `/gui/entsperren`, `/gui/inhaber`), plain forms with the CSRF token as a field
 - `dev.py` — router of the simulator console (`/gui/dev/console`), mounted by `mount_gui` only when `ENV=dev`; keeps the open calls in the process, the logic stays in `sim/session.py` (the one place where `gui` imports `sim`, because the console is the simulator page)
 - `calls_view.py` — the words and numbers of the call list `/gui/anrufe` (T-8.7): outcome, intent and line note in German, the number cut, the three filters; rows from `domain/calls/log.py`
+- `delivery_view.py` — the words and form fields of the tab `/gui/lieferung` (#571): the zones as rows with amounts in euros, a zone's form with what holds or what was typed and refused, the fields handed to `domain/delivery/owner_zones.py` as text; it reads no amount and checks nothing
+- `menu_view.py` — the words of the tab `/gui/menue` (#571): the rows with amounts in euros, the three fields of the address (`q`, `hinweis`, `seite`) read leniently, the links of the pages; the dishes and both notes come from `domain/menu/listing.py`
+- `hours_view.py` — the words and form reading of the tab `/gui/zeiten` (#571): the week as rows, a weekday's form with what holds or what was typed and refused, the fields turned into `weekly.Span`s (`typed_spans`, `hhmm`), the coming special days and the guests to call; every hour from `domain/status/weekly.py` and `staff_changes.py`
+- `form_view.py` — the faults of a refused form of the owner's tabs by field (#821): the list above the form with each field's name and link; the marks beside the fields are the macros of `templates/fragments/_fehler.html`
 - `templates/` — `base.html`, `betrieb/`, `admin/`, `fragments/`
 - `static/` — Pico.css, HTMX lokal, eigene Töne; served with `Cache-Control: no-cache` (`__init__.py`), so the browser asks again on every use
 - `static/raumplan.js`, `raumplan-geometry.js`, `raumplan.css` — the floor plan editor (T-3.11): drag in the browser, each finished step saved through `/gui/raumplan/bereiche`; the geometry (seat rule, upright labels, copies, the conversion to the server document) has no page and is tested in node (`test_gui_floor_plan_geometry.py`)
@@ -260,6 +291,8 @@ Outbox statt direktem Aufruf: Fällt n8n aus, ist die Bestellung trotzdem gebuch
 - `scripted_llm.py` — regelbasierter Modell-Ersatz bis T-2.4: erkennt Reservierung, Abholung und Lieferung aus `prompts/system_v3.md`, rät nie, meldet Unverstandenes an die Leiter
 - `scripted_order.py` — der Abholfluss des Modell-Ersatzes: Gerichte, Pflichtoptionen, Name, `draft_order`, vorlesen, `confirm`; what a card number is on the open allergy question it takes from the active menu (`MenuNumbers`, handed in by `session.py`), not from the import grammar
 - `noise.py` — verrauscht Eingaben absichtlich (Buchstabendreher, abgeschnittene Wörter), um die Leiter zu testen
+- `selftest.py` — the self-test of a stack (#574, docs/13 §8): `python -m sim.selftest [--print-slip]` checks health, database at head, configuration, menu, a simulated reservation and, when asked, the print path; "connected" or the first failing check, with its exit code. In `sim/`, not `jobs/`: it drives a call through the agent, and `jobs/` sits below `agent/`
+- `selftest_call.py` — the self-test's reservation call: a test call (`calls.is_test`, migration 039) in which the scripted model books a table for two through `confirm`; the tablet's day list and its event stream must see it, the outbox must not. A failed call is rolled back; a passed one is committed, shown as a TEST card on today's tablet for `--card-seconds`, then deleted with its rows
 
 Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik → DB → Tablet zeigt die Bestellung. Everything is testable without a telephone.
 
@@ -305,7 +338,7 @@ Damit gibt es den **Durchstich ohne Telefon**: Terminal → Agent → Fachlogik 
 | `agent/` | mit Fake-LLM (vorgegebene Antworten), prüft Loop und Dispatch | fertig |
 | `events/` | Outbox schreiben, Dispatcher gegen Fake-n8n, Retry-Verhalten | offen |
 | `telephony/adapters` | against the fake adapter; later against recorded media events and fake speech engines (docs/20) | fertig |
-| `dashboard/` | `totp.py` against the RFC 6238 test values without a database; the login, CLI and migration against a scratch operator database (`api/tests/test_dashboard_*.py`) | fertig |
+| `dashboard/` | `totp.py` against the RFC 6238 test values without a database; the login, CLI and migrations against a scratch operator database, the customer registry, the list, a customer's page, its call list and the dev tools' call log against stacks played by a mock transport, the result tables against files in a scratch folder, the read-only rule of `/dev` against the route table; passkeys, step-up and the factor changes with a software authenticator whose answers the tests bend (`api/tests/passkey_device.py`), the ceremonies themselves once in a real browser with a virtual authenticator (`api/tests/test_dashboard_*.py`) | fertig |
 | Ende-zu-Ende | `sim/replay` gegen echte API mit Test-DB | offen |
 
 **Ziel:** Die schnellen Tests laufen bei jedem Speichern, die DB-Tests vor jedem Commit, die Evals vor jedem Merge.

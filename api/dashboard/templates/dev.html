@@ -1,0 +1,79 @@
+{# The dev tools of the operator dashboard (#571, docs/23 §5): the recorded
+   eval runs and measurements (docs/metrics/, nothing of a guest) and the form
+   for the log of one call, which is guest data and stands behind the step-up,
+   a reason and both audits. Read-only: nothing here changes a stack. Every
+   cell is shown as text. #}
+{% extends "base.html" %}
+{% block title %}Dev tools{% endblock %}
+
+{% macro results(table, empty) %}
+    {% if table.problem %}
+    <p><span class="badge warn">check</span> <code>{{ table.name }}</code>: {{ table.problem }}.</p>
+    {% elif not table.rows %}
+    <p>{{ empty }}</p>
+    {% else %}
+    <div class="ops-scroll">
+    <table class="tbl ops-liste ops-dicht">
+      <thead>
+        <tr>{% for column in table.columns %}<th scope="col">{{ column }}</th>{% endfor %}</tr>
+      </thead>
+      <tbody>
+        {% for row in table.rows %}
+        <tr>{% for cell in row %}<td data-label="{{ table.columns[loop.index0] }}">{{ cell }}</td>{% endfor %}</tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="muted">The newest {{ table.rows | length }} of {{ table.total }} rows of <code>{{ table.name }}</code>, the newest first.</p>
+    {% endif %}
+{% endmacro %}
+
+{% block main %}
+<section class="ops-seite" aria-labelledby="dev-title">
+  <h1 id="dev-title">Dev tools</h1>
+  <p class="muted">Read-only: nothing on this page changes a customer's stack.</p>
+  {% if note %}<p class="banner {{ note[0] }}" role="status">{{ note[1] }}</p>{% endif %}
+
+  <div class="card ops-teil">
+    <h2>Eval runs</h2>
+    <p class="muted">Recorded runs of the eval suite (docs/08). Guessed, unconfirmed and missed escalations are the hard metrics and must be 0.</p>
+    {{ results(evals, "No eval run is recorded yet.") }}
+  </div>
+
+  <div class="card ops-teil">
+    <h2>Measurements</h2>
+    <p class="muted">Measurements of the voice layer, each with its limit and verdict.</p>
+    {{ results(measurements, "No measurement is recorded yet.") }}
+  </div>
+
+  <div class="card ops-teil">
+    <h2>Log of one call</h2>
+    <p class="muted">Guest data. Each request is recorded with your account and the reason, here and in the customer's own audit log. The log holds the call's course and its tool calls (which tool, how long, whether it answered); no phone number and nothing that was said.</p>
+    {% if not keys %}
+    <p>No customer is registered yet.</p>
+    {% elif not fresh %}
+    <p class="banner warn">This needs a fresh second factor. <a href="/step-up?next=/dev">Confirm it is you</a></p>
+    {% else %}
+    <form class="ops-zeile" method="post" action="/dev/call">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="back" value="/dev">
+      <label for="customer">Customer</label>
+      <select id="customer" name="customer" required>
+        <option value="">Choose a customer</option>
+        {% for key in keys %}<option value="{{ key }}">{{ key }}</option>{% endfor %}
+      </select>
+      <label for="call_id">Call id</label>
+      <input id="call_id" name="call_id" autocomplete="off" spellcheck="false" size="36" maxlength="36" pattern="[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}" required>
+      <label for="reason">Reason</label>
+      <select id="reason" name="reason" required>
+        <option value="">Choose a reason</option>
+        {% for code, words in reasons.items() %}<option value="{{ code }}">{{ words }}</option>{% endfor %}
+      </select>
+      <label for="reference">Ticket or issue number</label>
+      <input title="A ticket or issue number: digits, with or without a leading #, for example 829 or #829" id="reference" name="reference" inputmode="numeric" pattern="#?[1-9][0-9]{0,8}" maxlength="10" required>
+      <button type="submit" class="primary">Show the log</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

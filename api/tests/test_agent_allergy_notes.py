@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from api.agent import guards
 from api.agent.escalation import arms_the_net
+from api.agent.guards import SAY_ALLERGY_NOTED, SAY_ASK_ALLERGY
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
 from api.agent.loop import SAY_ALLERGENS_BEYOND, ConversationLoop
 from api.agent.state import ConversationState, note_guest_details
@@ -121,7 +122,8 @@ def test_the_models_allergy_note_goes_through_unchanged(
     session, known_tenant, line_note, order_note
 ):
     """No consent question, no rewrite: naming the allergy is the consent
-    (Maxi as data protection officer, L13)."""
+    (Maxi as data protection officer, L13). The turn names an allergy, so the
+    guest hears a core sentence only (#798)."""
     state = state_for(session, known_tenant, phone=CALLER)
 
     result, _ = run(
@@ -130,10 +132,10 @@ def test_the_models_allergy_note_goes_through_unchanged(
         "Einmal die Pho Bo auf Müller, ich habe eine Nussallergie.",
         search(),
         draft(session, known_tenant, line_note=line_note, order_note=order_note),
-        LLMTurn(say="Passt das so?"),
+        LLMTurn(say=SAY_ALLERGY_NOTED),
     )
 
-    assert result.say == ["Passt das so?"]
+    assert result.say == [SAY_ALLERGY_NOTED]
     assert stored(session) == (order_note, [line_note])
     assert drafts_logged(session, state) == [None]
 
@@ -148,7 +150,7 @@ def test_a_draft_without_the_named_allergy_goes_back_once(session, known_tenant)
         search(),
         draft(session, known_tenant, line_note="ohne Zwiebeln"),
         draft(session, known_tenant, line_note=f"{ALLERGY_NOTE}. Ohne Zwiebeln"),
-        LLMTurn(say="Passt das so?"),
+        LLMTurn(say=SAY_ALLERGY_NOTED),
     )
 
     assert drafts_logged(session, state) == ["invalid_input", None]
@@ -167,10 +169,10 @@ def test_a_second_draft_without_it_goes_through_never_into_a_loop(
         search(),
         draft(session, known_tenant),
         draft(session, known_tenant),
-        LLMTurn(say="Passt das so?"),
+        LLMTurn(say=SAY_ALLERGY_NOTED),
     )
 
-    assert result.say == ["Passt das so?"]
+    assert result.say == [SAY_ALLERGY_NOTED]
     assert drafts_logged(session, state) == ["invalid_input", None]
     # The core wrote the guest's own words on the order (Maxi, 15.11.2026).
     assert stored(session) == (
@@ -183,7 +185,7 @@ def test_a_second_draft_without_it_goes_through_never_into_a_loop(
 
 def test_an_allergy_said_in_an_earlier_turn_still_arms_it(session, known_tenant):
     state = state_for(session, known_tenant, phone=CALLER)
-    run(session, state, "Ich habe eine Nussallergie.", LLMTurn(say="Notiert."))
+    run(session, state, "Ich habe eine Nussallergie.", LLMTurn(say=SAY_ALLERGY_NOTED))
 
     run(
         session,
@@ -192,7 +194,7 @@ def test_an_allergy_said_in_an_earlier_turn_still_arms_it(session, known_tenant)
         search(),
         draft(session, known_tenant),
         draft(session, known_tenant, line_note=ALLERGY_NOTE),
-        LLMTurn(say="Passt das so?"),
+        LLMTurn(say=SAY_ALLERGY_NOTED),
     )
 
     assert drafts_logged(session, state) == ["invalid_input", None]
@@ -242,7 +244,7 @@ def test_a_table_without_the_named_allergy_goes_back_once(session, known_tenant)
         LLMTurn(
             tool_call=ToolCall("create_reservation", {**table, "note": ALLERGY_NOTE})
         ),
-        LLMTurn(say="Passt das so?"),
+        LLMTurn(say=SAY_ALLERGY_NOTED),
     )
 
     assert session.scalars(select(Reservation.note)).all() == [ALLERGY_NOTE]
@@ -364,10 +366,10 @@ def test_the_answer_to_the_models_allergy_question_is_kept(session, known_tenant
         session,
         state,
         "Ich habe eine Allergie.",
-        LLMTurn(say="Wogegen sind Sie allergisch?"),
+        LLMTurn(say=SAY_ASK_ALLERGY),
     )
 
-    _, llm = run(session, state, "Gegen Erdnüsse.", LLMTurn(say="Notiert."))
+    _, llm = run(session, state, "Gegen Erdnüsse.", LLMTurn(say=SAY_ALLERGY_NOTED))
 
     assert state.allergy_said == ["Ich habe eine Allergie.", "Gegen Erdnüsse."]
     assert llm.calls[0][1]["allergy_said"] == state.allergy_said
@@ -383,15 +385,15 @@ def test_a_bare_denial_to_the_question_takes_the_own_back(
         session,
         state,
         "Ich habe eine Allergie.",
-        LLMTurn(say="Wogegen sind Sie allergisch?"),
+        LLMTurn(say=SAY_ASK_ALLERGY),
     )
 
-    run(session, state, answer, LLMTurn(say="Gut."))
+    run(session, state, answer, LLMTurn(say=SAY_ALLERGY_NOTED))
 
     assert state.allergy_said == []
 
 
-@pytest.mark.parametrize("asked", [None, "Haben Sie selbst eine Allergie?"])
+@pytest.mark.parametrize("asked", [None, SAY_ASK_ALLERGY])
 def test_a_denial_takes_no_one_elses_back(session, known_tenant, asked):
     """ "Nein." or "Ich habe keine Allergie" after another person's names only
     the caller: the sentence stays, also as the answer to the model's own
@@ -401,14 +403,14 @@ def test_a_denial_takes_no_one_elses_back(session, known_tenant, asked):
         session,
         state,
         "Meine Frau hat eine Sesamallergie.",
-        LLMTurn(say=asked or "Gut."),
+        LLMTurn(say=asked or SAY_ALLERGY_NOTED),
     )
 
     run(
         session,
         state,
         "Nein." if asked else "Ich habe keine Allergie.",
-        LLMTurn(say="Gut."),
+        LLMTurn(say=SAY_ALLERGY_NOTED),
     )
 
     assert state.allergy_said == ["Meine Frau hat eine Sesamallergie."]
@@ -441,11 +443,11 @@ def test_a_newly_armed_sentence_and_an_answer_about_it_drop_the_read_back(
         "Einmal die Pho Bo auf Müller.",
         search(),
         draft(session, known_tenant),
-        LLMTurn(say="Haben Sie eine Allergie?"),
+        LLMTurn(say=SAY_ASK_ALLERGY),
     )
     assert state.stage == "readback_pending"
 
-    run(session, state, "Gegen Erdnüsse.", LLMTurn(say="Notiert."))
+    run(session, state, "Gegen Erdnüsse.", LLMTurn(say=SAY_ALLERGY_NOTED))
     assert state.stage != "readback_pending"
 
 
@@ -468,7 +470,7 @@ def test_the_core_writes_the_guests_words_on_a_table_cut_to_its_field(
         said,
         LLMTurn(tool_call=ToolCall("create_reservation", table)),
         LLMTurn(tool_call=ToolCall("create_reservation", table)),
-        LLMTurn(say="Passt das so?"),
+        LLMTurn(say=SAY_ALLERGY_NOTED),
     )
 
     [note] = session.scalars(select(Reservation.note)).all()
@@ -559,7 +561,7 @@ def test_a_newly_armed_sentence_drops_the_read_back(session, known_tenant):
     )
     assert state.stage == "readback_pending"
 
-    run(session, state, "Und meine Frau hat Zöliakie.", LLMTurn(say="Notiert."))
+    run(session, state, "Und meine Frau hat Zöliakie.", LLMTurn(say=SAY_ALLERGY_NOTED))
     assert state.stage != "readback_pending"
 
 

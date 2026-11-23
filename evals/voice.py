@@ -43,7 +43,7 @@ import os
 import statistics
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from typing import Any
 
@@ -52,6 +52,7 @@ from api.telephony.session import CallSession, Lines
 from api.telephony.speech import Ear, Heard, Mouth, SpeechUsage
 from evals.heard import EVAL, dish_verdict, number_verdict
 from evals.number_eval import resolve
+from evals.report import RunReport
 from evals.runner import CASES, load_cases, run
 from sim.replay import customer_lines
 
@@ -140,7 +141,7 @@ def recognition(said: str, heard: str | None) -> dict[str, Any]:
 def _dish_names() -> list[str]:
     import csv
 
-    from evals.heard import MENU_ITEMS
+    from evals.number_eval import MENU_ITEMS
 
     with MENU_ITEMS.open(encoding="utf-8", newline="") as f:
         return [
@@ -189,7 +190,8 @@ def telephone_line(audio: bytes, before: float = 0.0, after: float = 0.0) -> byt
     from api.telephony.speech_bench import on_the_line
 
     line = on_the_line(audio, SAMPLE_RATE, before, after)
-    return (np.clip(line, -1, 1) * 32767).astype(np.int16).tobytes()
+    pcm: bytes = (np.clip(line, -1, 1) * 32767).astype(np.int16).tobytes()
+    return pcm
 
 
 def line_noise(seconds: float = NOISE_SECONDS, seed: int = 7) -> bytes:
@@ -201,21 +203,26 @@ def line_noise(seconds: float = NOISE_SECONDS, seed: int = 7) -> bytes:
     noise = rng.normal(0, 0.02, n)
     for at in (n // 3, 2 * n // 3):
         noise[at : at + 80] += 0.6
-    return (np.clip(noise, -1, 1) * 32767).astype(np.int16).tobytes()
+    pcm: bytes = (np.clip(noise, -1, 1) * 32767).astype(np.int16).tobytes()
+    return pcm
 
 
 class Steady:
     """A Piper voice without the noise it adds to every sentence, so a run
     speaks the same audio as the last (as in test_telephony_speech_engines)."""
 
-    def __init__(self, voice) -> None:
+    # A loaded `piper.PiperVoice` and the audio chunks it yields: piper is not
+    # installed in CI, so mypy only knows it as Any (pyproject.toml override),
+    # as in `api.telephony.adapters.tts_piper.PiperMouth`.
+    def __init__(self, voice: Any) -> None:
         self.voice = voice
 
-    def synthesize(self, text: str):
+    def synthesize(self, text: str) -> Iterable[Any]:
         from piper.config import SynthesisConfig
 
         steady = SynthesisConfig(noise_scale=0.0, noise_w_scale=0.0)
-        return self.voice.synthesize(text, syn_config=steady)
+        chunks: Iterable[Any] = self.voice.synthesize(text, syn_config=steady)
+        return chunks
 
 
 # --- 3. Hard: noise and the read-back ----------------------------------------------
@@ -226,7 +233,7 @@ class Steady:
 NOISE = "\x00line noise"
 
 
-def noise_cases(cases: list[dict]) -> list[dict]:
+def noise_cases(cases: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """The cases that end confirmed, with the caller's last yes, the one that
     confirms, replaced by line noise. Earlier yeses (a consent, "genau") stay:
     without them the call never gets to its read-back. None may end confirmed:
@@ -440,9 +447,9 @@ def readback_checks(
 
 def summarize(
     heard: dict[str, dict[str, Any]],
-    text_report,
-    voice_report,
-    noise_report,
+    text_report: RunReport,
+    voice_report: RunReport,
+    noise_report: RunReport | None,
     noise: str | None,
     readbacks: list[dict[str, Any]],
     core_seconds: float | None,
@@ -512,12 +519,12 @@ def summarize(
     }
 
 
-def _median(heard: dict, key: str) -> float | None:
+def _median(heard: dict[str, dict[str, Any]], key: str) -> float | None:
     values = [r[key] for r in heard.values()]
     return round(statistics.median(values), 3) if values else None
 
 
-def _max(heard: dict, key: str) -> float | None:
+def _max(heard: dict[str, dict[str, Any]], key: str) -> float | None:
     values = [r[key] for r in heard.values()]
     return round(max(values), 3) if values else None
 

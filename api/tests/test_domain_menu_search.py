@@ -1520,6 +1520,80 @@ def test_nee_is_a_correction():
     assert split_positions("die 23, nee, die 24") == ["die 23, nee, die 24"]
 
 
+def _clear_parts(session, tid, said: str) -> list[str]:
+    clear = []
+    for part in position_parts(session, tid, said, now=NOW):
+        try:
+            found = suche(session, tid, part)
+        except (Ambiguous, NotFound):
+            continue
+        if found.match_type in CLEAR_MATCHES:
+            clear.append(part)
+    return clear
+
+
+@pytest.mark.parametrize(
+    ("said", "taken_back"),
+    [
+        ("die 23, ne, die 24", "23"),
+        ("die 23, quatsch, die 24", "23"),
+        ("die 23, sorry, die 24", "23"),
+        ("die 23, doch die 24", "23"),
+        ("die 23, Moment, die 24", "23"),
+        ("die 23, ich meine, die 24", "23"),
+        ("die 23 ohne Zwiebeln, quatsch, die 24", "23"),
+        ("zwei Pho Bo, quatsch, die 24", "Pho Bo"),
+        ("die 24, ich habe ja Zöliakie, also die 13", "24"),
+    ],
+)
+def test_a_spoken_correction_never_books_both(session, sushi, said, taken_back):
+    """Review #207, regression of #721: the cut took the corrected 23 as a
+    clear position beside the 24. A piece between two numbers that hits no
+    dish may take the first back, so the sentence stays whole and asks."""
+    clear = _clear_parts(session, sushi, said)
+    assert len(clear) < 2, clear
+    assert not any(taken_back in part for part in clear), clear
+
+
+@pytest.mark.parametrize(
+    ("said", "first"),
+    [
+        ("Die 13 bitte, ich habe Zöliakie.", "Die 13 bitte"),
+        ("die 13, ich reagiere auf Nüsse", "die 13"),
+        ("Die 13, danke.", "Die 13"),
+        ("die 13, Cola", "die 13"),
+        ("die 23, quatsch", "die 23"),
+        ("die 23 und Ente, zweimal", "die 23"),
+        ("die 13, zwei Cola", "die 13"),
+        ("die 13, um 19 Uhr abholen", "die 13"),
+    ],
+)
+def test_a_piece_with_no_number_after_it_takes_nothing_back(
+    session, sushi, said, first
+):
+    """Eval allergie_0026: "ich habe Zöliakie" hits no dish either, but with no
+    number after it nothing is corrected; the number stays a clear position of
+    its own, as before, and the rest is answered on its own ("danke", an item
+    not on the menu)."""
+    parts = position_parts(session, sushi, said, now=NOW)
+    assert parts[0] == first
+    assert _clear_parts(session, sushi, said) == [first]
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "die 13, zwei Cola, die 24",
+        "die 13, Pho Bo für 8,50, die 24",
+        "die 13, Schärfe 2, die 24",
+    ],
+)
+def test_a_piece_with_its_own_quantity_is_no_correction(session, sushi, said):
+    """Review of #911: a correction carries no quantity, price or time, so
+    such a piece between two numbers leaves both numbers clear."""
+    assert _clear_parts(session, sushi, said) == ["die 13", "die 24"]
+
+
 @pytest.mark.parametrize(
     "said", ["Eine Cola 0,5", "ein Wasser 0,75", "die 23 für 8,50"]
 )

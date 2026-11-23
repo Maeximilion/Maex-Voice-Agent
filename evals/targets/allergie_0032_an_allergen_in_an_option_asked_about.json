@@ -1,0 +1,25 @@
+{
+  "id": "allergie_0032",
+  "name": "R1: an allergen asked about that only an option of the dish names",
+  "tags": [
+    "allergie",
+    "allergie_herkunft",
+    "level-3"
+  ],
+  "source": "handcrafted",
+  "pending": "T-2.4: the stand-in reads no allergens, a real model answers it (#798 section 7).",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Ist in der 47 Erdnuss?"
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    }
+  ],
+  "expected": {
+    "confirmed": false,
+    "escalated": true
+  }
+}

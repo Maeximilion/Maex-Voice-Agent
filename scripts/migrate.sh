@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # Run Alembic as the owner of the schema (#252, docs/13 §3).
 #
-#   bash scripts/migrate.sh [alembic arguments, default: upgrade head]
+#   bash scripts/migrate.sh [--operator] [alembic arguments, default: upgrade head]
+#
+#   --operator   the operator stack's database (db/dashboard, service dashboard,
+#                #827 F5), run in its checkout <root>/ops, whose .env names the
+#                dashboard's role in DATABASE_URL and the owner in OWNER_DATABASE_URL
 #
 # Where the application has a role of its own, that role cannot change the schema.
 # Alembic then gets the owner's URL (OWNER_DATABASE_URL, from the environment or
@@ -20,6 +24,16 @@ set -euo pipefail
 # shellcheck source=scripts/lib_pg.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib_pg.sh"
 
+service=api
+config=db/alembic.ini
+variable=DATABASE_URL
+if [ "${1:-}" = --operator ]; then
+    shift
+    service=dashboard
+    config=db/dashboard/alembic.ini
+    # The dashboard reads its URL under a name of its own (api/dashboard/config.py).
+    variable=OPERATOR_DATABASE_URL
+fi
 [ $# -gt 0 ] || set -- upgrade head
 env_default OWNER_DATABASE_URL
 env_default DATABASE_URL
@@ -29,10 +43,10 @@ options=(--rm)
 # Without a terminal (cron, a pipe) Compose must not ask for one.
 [ -t 0 ] || options+=(-T)
 if [ -n "${OWNER_DATABASE_URL:-}" ]; then
-    export DATABASE_URL="$OWNER_DATABASE_URL"
+    export "$variable=$OWNER_DATABASE_URL"
     # Named without a value: taken from this environment, so the password never
     # shows up in a process list of the host.
-    options+=(-e DATABASE_URL)
+    options+=(-e "$variable")
 fi
 cd "$REPO_ROOT"
-exec docker compose run "${options[@]}" api alembic -c db/alembic.ini "$@"
+exec docker compose run "${options[@]}" "$service" alembic -c "$config" "$@"

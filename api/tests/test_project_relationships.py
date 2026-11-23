@@ -3,6 +3,7 @@
 import pytest
 
 from scripts import project_relationships as relationships
+from scripts.project_report import ProjectError
 
 TABLE = """## Example · group issue #100
 | ID | Issue | Task | Spec | Depends on | Status |
@@ -86,5 +87,5 @@ def test_closed_issue_is_not_newly_blocked_by_open_work():
     ],
 )
 def test_ambiguous_source_fails_before_any_write(text):
-    with pytest.raises(relationships.ProjectError):
+    with pytest.raises(ProjectError):
         relationships.parse_tasks(text)

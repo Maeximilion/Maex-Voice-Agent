@@ -16,6 +16,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from api.config import settings
 from api.core.errors import InvalidInput
 from api.domain.access.admin import (
     SAME_AS_TEAM,
@@ -44,6 +45,18 @@ from api.models import GuiAccount, GuiSession, GuiSetupLink
 LINK_HOURS = 24
 LINK_GONE = "Dieser Link gilt nicht mehr. Bitte beim Betreiber einen neuen anfordern."
 ADMIN_PIN_DIGITS = "Die Inhaber-PIN hat 4 bis 6 Ziffern."
+SETUP_PATH = "/gui/einrichten#"
+
+
+def setup_url(token: str, base_url: str = "") -> str:
+    """The setup link for `token`: under `base_url`, else `https://$AGENT_DOMAIN`
+    (the stack's setting), else the path alone. The token is the fragment,
+    which no browser sends."""
+    # A name typed with its scheme, a slash or the root's dot is still that
+    # name: Caddy serves it either way, and "https://https://..." is no link.
+    host = settings.agent_domain.strip().removeprefix("https://").strip("/.")
+    base = base_url or (f"https://{host}" if host else "")
+    return f"{base.rstrip('/')}{SETUP_PATH}{token}"
 
 
 def issue_link(

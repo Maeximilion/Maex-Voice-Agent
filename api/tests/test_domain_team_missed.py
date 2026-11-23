@@ -14,9 +14,13 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
 from api.domain.callbacks import create_callback, team_missed
-from api.domain.callbacks.transfer import SUMMARY_HUNG_UP
+from api.domain.callbacks.transfer import (
+    SUMMARY_BOOKED,
+    SUMMARY_HUNG_UP,
+    SUMMARY_MISSED,
+)
 from api.domain.calls import end_call
-from api.models import AuditLog, Call, Callback, OutboxEvent
+from api.models import AuditLog, Call, Callback, Order, OutboxEvent, Reservation
 from api.schemas.callbacks import CreateCallbackRequest
 from api.schemas.calls import EndCallRequest
 from scripts.seed import seed
@@ -198,6 +202,157 @@ def test_a_call_the_team_never_rang_says_so_on_its_card(session, tenant_id):
     assert task.reason == "out_of_scope"
     session.refresh(call)
     assert call.outcome == "callback"
+
+
+# -- a booking of the call stands (#743 follow-up) -----------------------------------
+
+
+def _reservation(session, call: Call, *, status: str = "confirmed") -> Reservation:
+    reservation = Reservation(
+        tenant_id=call.tenant_id,
+        call_id=call.id,
+        status=status,
+        guest_name="Mueller",
+        phone=CALLER,
+        party_size=4,
+        # 19:30 in Berlin: the card shows the restaurant's clock (CLAUDE.md §8).
+        reserved_for=datetime(2026, 9, 20, 17, 30, tzinfo=UTC),
+        # Can name the guest's health: never on a card (L13).
+        note="Erdnussallergie",
+        idempotency_key=uuid.uuid4().hex,
+    )
+    session.add(reservation)
+    session.commit()
+    return reservation
+
+
+def _order(session, call: Call, *, status: str = "confirmed") -> Order:
+    order = Order(
+        tenant_id=call.tenant_id,
+        call_id=call.id,
+        type="pickup",
+        status=status,
+        customer_name="Schmidt",
+        phone=CALLER,
+        items_total_cents=1380,
+        total_cents=1380,
+        pickup_code="A17",
+        note="Ohne Nuesse wegen Allergie",
+        idempotency_key=uuid.uuid4().hex,
+    )
+    session.add(order)
+    session.commit()
+    return order
+
+
+TABLE_BOOKED = "Reservierung, 4 Personen, 20.09.2026 19:30 Uhr, Name Mueller"
+
+
+def test_a_card_without_the_cores_summary_names_the_booking_that_stands(
+    session, tenant_id
+):
+    """The outage path writes no summary of its own: a guest who hung up on its
+    sentence after a booking was confirmed. The card names the booking from
+    the database instead of an unknown concern, or the team books it again."""
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    _reservation(session, call)
+
+    task = team_missed(session, tenant_id, "1760000000.1", rang=False, now=REPORTED)
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_HUNG_UP} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+    assert "Allergie" not in task.summary and "nicht bekannt" not in task.summary
+
+
+def test_a_missed_leg_names_every_booking_of_the_call_behind_its_reason(
+    session, tenant_id
+):
+    """A cancellation's sentence stays; a table and a pickup both stand, and
+    the card names both, in the order they were made, without their notes."""
+    call = make_call(session, tenant_id, transfer_reason="cancellation")
+    _reservation(session, call)
+    _order(session, call, status="approved")
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert task.summary == (
+        f"{SUMMARY_MISSED} Kunde wollte etwas stornieren. {SUMMARY_BOOKED} "
+        f"{TABLE_BOOKED}; Bestellung zur Abholung, Name Schmidt, Code A17."
+    )
+    assert "Allergie" not in task.summary and "Nuesse" not in task.summary
+
+
+@pytest.mark.parametrize("status", ["draft", "cancelled"])
+def test_a_booking_that_does_not_stand_is_not_named(session, tenant_id, status):
+    """Only what the guest's yes confirmed and nobody cancelled stands: a draft
+    or a cancelled table is no booking, and another call's one is not this
+    call's."""
+    call = make_call(session, tenant_id, transfer_reason=None)
+    _reservation(session, call, status=status)
+    _order(session, call, status="draft" if status == "draft" else "cancelled")
+    other = make_call(session, tenant_id, sid="1760000000.2", transfer_reason=None)
+    _reservation(session, other)
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} Anliegen nicht bekannt."
+
+
+def test_a_draft_next_to_a_standing_booking_is_left_out(session, tenant_id):
+    """A guest who booked a table and then began a second one (a draft read
+    back, no yes yet, #908): the card names what stands, not the draft."""
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    _reservation(session, call)
+    _reservation(session, call, status="draft")
+    _order(session, call, status="draft")
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+
+
+def test_a_card_with_more_bookings_than_it_holds_is_cut_not_refused(session, tenant_id):
+    """`CreateCallbackRequest.summary` takes 1000 characters: a call with many
+    tables still gets its card, cut at the limit (rule 5)."""
+    call = make_call(session, tenant_id, transfer_reason=None)
+    for _ in range(20):
+        _reservation(session, call)
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert len(task.summary) == 1000
+    assert task.summary.startswith(f"{SUMMARY_MISSED} {SUMMARY_BOOKED} {TABLE_BOOKED};")
+
+
+def test_a_deleted_booking_is_not_named(session, tenant_id):
+    call = make_call(session, tenant_id, transfer_reason=None)
+    reservation = _reservation(session, call)
+    reservation.deleted_at = REPORTED
+    session.commit()
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert "nicht bekannt" in task.summary and SUMMARY_BOOKED not in task.summary
+
+
+def test_the_cores_summary_is_kept_as_it_wrote_it(session, tenant_id):
+    """The core's card names the booking itself (`agent/loop.py`): it is not
+    named a second time."""
+    call = make_call(session, tenant_id, transfer_reason="complaint")
+    _reservation(session, call)
+    summary = "Beschwerde. Bereits gebucht: Ihre Reservierung ist bestätigt."
+
+    task = team_missed(
+        session, tenant_id, "1760000000.1", summary=summary, now=REPORTED
+    )
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {summary}"
 
 
 def test_an_unknown_call_has_no_card(session, tenant_id):

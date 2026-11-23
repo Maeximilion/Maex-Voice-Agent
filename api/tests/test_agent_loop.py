@@ -12,7 +12,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pytest
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.agent.guards import (
@@ -41,6 +41,7 @@ from api.agent.loop import (
     SUMMARY_OPEN_ORDER,
     SUMMARY_OPEN_TABLE,
     SUMMARY_OUTAGE,
+    SUMMARY_REFUSED_TABLE,
     ConversationLoop,
     TurnResult,
     _booked_say,
@@ -53,7 +54,7 @@ from api.agent.loop import (
 from api.agent.outcome import call_outcome
 from api.agent.state import ConversationState, initial_state
 from api.domain.confirm import SAY_CANCELLED
-from api.models import Call, Callback, Reservation
+from api.models import Call, Callback, Reservation, ServiceConfig
 from scripts.seed import seed
 
 BERLIN = ZoneInfo("Europe/Berlin")
@@ -2598,6 +2599,129 @@ def test_a_new_allergy_and_a_callback_without_a_number_name_the_table(session, s
     )
 
 
+def _then_to_the_team(first: ToolCall) -> FakeLLM:
+    """One tool call, then the model hands the call over itself."""
+    return FakeLLM(
+        [
+            LLMTurn(tool_call=first),
+            LLMTurn(
+                tool_call=ToolCall(
+                    name="transfer_to_team", args={"reason": "human_requested"}
+                )
+            ),
+            LLMTurn(say="Ich verbinde Sie mit dem Team."),
+        ]
+    )
+
+
+TABLE_AT_SEVEN = "4 Personen, 16.09.2026 19:00 Uhr, Name Müller."
+
+
+@HANDED_OVER
+def test_a_table_the_domain_refused_this_turn_is_named_as_refused(
+    session, state, now, stage
+):
+    """#862: reservations were switched off before the yes. The card offered
+    the team "Offene Reservierung" for a table that could never be booked; it
+    names it as refused now, and the guest still hears it is not booked."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    session.execute(update(ServiceConfig).values(reservations_enabled=False))
+    session.commit()
+    yes = ToolCall(
+        "confirm", {"entity": "reservation", "entity_id": str(state.reservation_id)}
+    )
+    loop = ConversationLoop(
+        session, _then_to_the_team(yes), "system", now=now, clock=clock_from([0])
+    )
+
+    result = loop.run_turn(state, "Ja")
+
+    assert result.ended is True and state.stage == stage
+    assert result.say[0] == SAY_TABLE_NOT_BOOKED
+    card = _card(session, state)
+    assert f"{SUMMARY_REFUSED_TABLE} {TABLE_AT_SEVEN}" in card
+    assert SUMMARY_OPEN_TABLE not in card
+
+
+@HANDED_OVER
+@pytest.mark.parametrize(
+    "other_time",
+    [
+        ToolCall(
+            "check_slot",
+            {"party_size": 4, "reserved_for": "2026-09-16T20:00:00+02:00"},
+        ),
+        # A correction the domain refuses (closed at 23:30): a conflict, but
+        # about the new time, not the table read back.
+        ToolCall(
+            "create_reservation",
+            {
+                "guest_name": "Müller",
+                "phone": CALLER,
+                "party_size": 4,
+                "reserved_for": "2026-09-16T23:30:00+02:00",
+            },
+        ),
+    ],
+    ids=["check_slot", "refused_correction"],
+)
+def test_a_question_for_another_time_keeps_the_table_open(
+    session, state, now, stage, other_time
+):
+    """Asking for or drafting another time takes the read-back out of the
+    state, but the table can still be booked: the card keeps it open."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    loop = ConversationLoop(
+        session, _then_to_the_team(other_time), "system", now=now, clock=clock_from([0])
+    )
+
+    result = loop.run_turn(state, "Ginge auch später?")
+
+    assert result.ended is True and result.say[0] == SAY_TABLE_NOT_BOOKED
+    assert f"{SUMMARY_OPEN_TABLE} {TABLE_AT_SEVEN}" in _card(session, state)
+
+
+def test_a_draft_on_the_card_that_the_domain_refuses_is_named_as_refused(
+    session, state
+):
+    """#862, the allergy path: the draft sent without the guest's allergy is
+    put on the card (`_open_draft`); sent again, the domain refuses its time.
+    The card names that table as refused, not as open."""
+    read_back_reservation(session, state)
+    state.slots["phone"] = CALLER
+    late = ToolCall(
+        "create_reservation",
+        {
+            "guest_name": "Müller",
+            "phone": CALLER,
+            "party_size": 4,
+            "reserved_for": "2026-09-16T23:30:00+02:00",
+        },
+    )
+    llm = FakeLLM(
+        [
+            LLMTurn(tool_call=late),
+            LLMTurn(tool_call=late),
+            LLMTurn(
+                tool_call=ToolCall(
+                    name="transfer_to_team", args={"reason": "human_requested"}
+                )
+            ),
+            LLMTurn(say="Ich verbinde Sie mit dem Team."),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+
+    result = loop.run_turn(state, "Ich habe eine Erdnussallergie, lieber um halb zwölf")
+
+    assert result.ended is True and result.say[0] == SAY_TABLE_NOT_BOOKED
+    card = _card(session, state)
+    assert f"{SUMMARY_REFUSED_TABLE} 4 Personen, 16.09.2026 23:30 Uhr" in card
+    assert SUMMARY_OPEN_TABLE not in card
+
+
 @pytest.mark.parametrize(
     "said", ["Ich will mit einem Menschen sprechen.", "Ich will mich beschweren."]
 )
@@ -2754,3 +2878,50 @@ def test_a_short_allergen_name_on_a_model_card_is_rewritten(state, said, summary
     )
 
     assert _card_without_allergy(state, call).args["summary"] != summary
+
+
+@pytest.mark.parametrize(
+    ("said", "summary"),
+    [
+        ("Ich bin allergisch gegen Kiwi.", "Rückruf wegen Kiwi im Obstsalat"),
+        ("Ich vertrage keinen Mais.", "Frage zu Mais in der Suppe"),
+        ("Ich bin allergisch gegen Zimt.", "Rückruf: Zimt im Dessert?"),
+        ("Ich habe eine Allergie gegen Mohn.", "Rückruf: Mohnbrötchen"),
+        ("Meine Frau verträgt kein Lamm.", "Rückruf: Lamm im Curry"),
+        ("Ich habe eine Kiwiallergie.", "Rückruf: Kiwis im Obstsalat"),
+        ("Ich reagiere auf Reis.", "Rückruf: Reis zur 13"),
+        # The plural in the guest's sentence, the singular on the card (#798):
+        # "Kiwis" is five letters, "Kiwi" four, and neither reader matched.
+        ("Ich bin allergisch gegen Kiwis.", "Rückruf: Obstsalat ohne Kiwi"),
+        ("Ich vertrage keine Mohnbrötchen.", "Rückruf: Mohn im Dessert?"),
+    ],
+)
+def test_a_short_ingredient_of_the_guest_on_a_model_card_is_rewritten(
+    state, said, summary
+):
+    """#764 (L13): what the guest said they react to is matched at any
+    length, the way the allergen names are since #788 for "Soja"."""
+    state.allergy_said = [said]
+    call = ToolCall(
+        "create_callback", {"reason": "human_requested", "summary": summary}
+    )
+
+    assert _card_without_allergy(state, call).args["summary"] != summary
+
+
+@pytest.mark.parametrize(
+    ("said", "summary"),
+    [
+        # Short words of the sentence that are no ingredient stay off.
+        ("Ich bin allergisch gegen Kiwi.", "Kunde möchte einen Tisch am Freitag."),
+        ("Ich habe eine Allergie gegen die Kiwi.", "Rückruf: die Bestellung um acht"),
+        ("Meine Frau verträgt kein Lamm.", "Rückruf: Frau Meier wegen der 13"),
+    ],
+)
+def test_a_card_without_the_short_ingredient_stays(state, said, summary):
+    state.allergy_said = [said]
+    call = ToolCall(
+        "create_callback", {"reason": "human_requested", "summary": summary}
+    )
+
+    assert _card_without_allergy(state, call) == call

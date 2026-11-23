@@ -53,6 +53,7 @@ from contextlib import AbstractContextManager, ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 from xml.sax.saxutils import escape
 from zoneinfo import ZoneInfo
 
@@ -108,7 +109,7 @@ REPO_TITLE = "MÆX"
 # services of docker-compose.yml and adapters under `api/telephony/adapters/`
 # (patterns allowed). A test fails when one of them is neither covered nor in
 # NOT_DRAWN, so a new component cannot be forgotten here.
-FLOW_NODES: dict[str, dict] = {
+FLOW_NODES: dict[str, dict[str, Any]] = {
     "caller": {"label": ["Caller"], "tasks": [], "kind": "person"},
     "access": {"label": ["Access", "router, SIP"], "tasks": ["T-10.1", "T-10.2"]},
     "asterisk": {
@@ -366,7 +367,9 @@ class VoiceRow:
     run_at: str = ""
 
 
-def unique(rows: list[dict[str, str]], key: Callable[[dict[str, str]], object]):
+def unique(
+    rows: list[dict[str, str]], key: Callable[[dict[str, str]], object]
+) -> list[dict[str, str]]:
     """Rows in file order without repeats: `merge=union` in .gitattributes keeps a
     row that both sides of a merge appended twice."""
     seen: set[object] = set()
@@ -471,7 +474,7 @@ def read_voice_history(path: Path = VOICE_HISTORY) -> list[VoiceRow]:
     return sorted(out, key=lambda row: (row.date, row.run_at))
 
 
-def run_from_report(report: dict, suite: str) -> dict[str, str]:
+def run_from_report(report: dict[str, Any], suite: str) -> dict[str, str]:
     """One history row from a report JSON of `evals/report.py`."""
     run_at = datetime.fromisoformat(report["run_at"])
     if run_at.tzinfo is not None:
@@ -531,7 +534,7 @@ def append_row(path: Path, fields: list[str], row: dict[str, str]) -> None:
 
 
 def checked_row(
-    report: dict,
+    report: dict[str, Any],
     suite: str | None,
     reference: bool = False,
     note: str = "",
@@ -602,7 +605,7 @@ def is_recorded(row: dict[str, str], path: Path = EVAL_HISTORY) -> bool:
 
 
 def record_report(
-    report: dict,
+    report: dict[str, Any],
     suite: str | None,
     reference: bool = False,
     note: str = "",

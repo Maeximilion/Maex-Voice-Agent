@@ -165,7 +165,7 @@ PROJECT_TOKEN=$(gh auth token) PROJECT_OWNER=Maeximilion PROJECT_NUMBER=2 PROJEC
 
 | | Allowed |
 |---|---|
-| During `/task`, `/done`, `/bug` | Nothing. No `gh project`, neither reading nor writing |
+| During `/task`, `/done`, `/fix-bug` | Nothing. No `gh project`, neither reading nor writing |
 | When creating an issue | Set labels: kind, stage, priority |
 | When opening a pull request | `Closes #N` in the description, branch name with the issue number |
 | On `/project` or in `/gate` | Read and maintain the board. Mechanical corrections (status after merge, missing entries, duplicates - the surplus one is archived, never deleted) directly, matters of judgment (iteration, archive, new views) as a proposal |

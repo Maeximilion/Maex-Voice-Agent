@@ -10,9 +10,12 @@ device, as the stronger of the two.
 
 Wrong admin PINs count on the account like wrong passwords: every third in a row
 brings a wait one minute longer than the last, up to five, during which no PIN
-is checked. They never end the session, the team PIN's rule: the board stays
-usable for the team, the admin PIN guards the owner's settings only, and a
-lost tablet is signed out by the operator (Maxi, 09.11.2026, review of #587).
+is checked, and a push to the owner and to the operator. On a device in use
+they never end the session: the board stays usable for the team, the admin
+PIN guards the owner's settings only, and a lost tablet is signed out by the
+operator (Maxi, 09.11.2026, review of #587). On a locked device they count on
+the lock page's five tries as well, since this page unlocks it too: the fifth
+wrong PIN of either kind ends the session, with a push (#827 F4).
 Stored readable like the team PIN (Maxi 09.11.2026): the operator sees and
 sets it. It never equals the team PIN.
 """
@@ -27,12 +30,17 @@ from sqlalchemy.orm import Session
 from api.core.errors import InvalidInput, Unauthorized
 from api.domain.access.hashing import pin_problem, same_secret
 from api.domain.access.sessions import (
+    IDLE,
+    PIN_TRIES,
     TOUCH_EVERY,
     audit,
     count_failure,
+    end_sessions,
     locked_account,
     minutes_left,
 )
+from api.events import enqueue
+from api.events.types import ADMIN_PIN_WRONG
 from api.models import GuiAccount, GuiSession
 
 ADMIN_FOR = timedelta(minutes=60)
@@ -110,9 +118,28 @@ def unlock_admin(
         {"device": row.device, "failures": account.admin_failures},
         entity="gui_session",
     )
+    ended = False
+    if now - row.last_active_at >= IDLE:
+        row.pin_failures += 1
+        if row.pin_failures >= PIN_TRIES:
+            end_sessions(
+                session, row.tenant_id, "gui:tablet", "admin_pin_failures", row.id
+            )
+            ended = True
     blocked = account.admin_blocked_until
+    if blocked or ended:
+        enqueue(
+            session,
+            tenant_id=row.tenant_id,
+            event_type=ADMIN_PIN_WRONG,
+            payload={
+                "failures": account.admin_failures,
+                "device": row.device,
+                "ended": ended,
+            },
+        )
     session.commit()
-    raise AdminRefused(minutes_left(blocked - now) if blocked else None)
+    raise AdminRefused(minutes_left(blocked - now) if blocked else None, ended=ended)
 
 
 def mark_admin_active(session: Session, session_id: uuid.UUID, now: datetime) -> None:

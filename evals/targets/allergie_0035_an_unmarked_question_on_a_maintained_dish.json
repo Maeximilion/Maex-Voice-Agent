@@ -1,0 +1,52 @@
+{
+  "id": "allergie_0035",
+  "name": "An allergen question without a mark on a maintained dish hears the table",
+  "tags": [
+    "allergie",
+    "allergie_herkunft",
+    "allergie_gepflegt",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "pending": "T-2.4: the stand-in reads no allergens, a real model answers it (#798).",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, sind in den Fruehlingsrollen Nuesse"
+    },
+    {
+      "role": "customer",
+      "text": "Gut, dann bitte einmal die 23 zum Abholen."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "items": [
+      {
+        "number": "23",
+        "quantity": 1
+      }
+    ],
+    "said": [
+      "Laut unseren Angaben enthält Nummer 23"
+    ]
+  }
+}

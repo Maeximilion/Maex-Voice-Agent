@@ -1,0 +1,39 @@
+{# The calls of one business day of one customer (#571, docs/23 §8): guest
+   data, shown once and not stored by the browser. No phone number: the stack
+   sends a count per caller of the day. Everything a stack says is shown as
+   text. #}
+{% extends "base.html" %}
+{% block title %}Calls of {{ key }}{% endblock %}
+
+{% block main %}
+<section class="ops-seite" aria-labelledby="calls-title">
+  <p><a href="/customers/{{ key }}">Back to {{ key }}</a></p>
+  <h1 id="calls-title">{% if calls %}{{ calls.tenant.name }}{% else %}{{ key }}{% endif %}<span class="muted ops-key">{{ key }}</span></h1>
+  <p>Calls of {{ day | weekday }}. Reason: {{ reason }}, {{ reference }}. Recorded with your account {{ operator.name }}.</p>
+  {% if not calls %}
+  <p class="banner danger" role="alert"><span class="badge danger">down</span> {{ problem }}</p>
+  {% elif not calls.calls %}
+  <p class="card">No calls on this business day.</p>
+  {% else %}
+  <table class="tbl ops-liste">
+    <thead>
+      <tr><th scope="col">Time</th><th scope="col">Caller</th><th scope="col">Intent</th><th scope="col">Outcome</th><th scope="col">Duration</th><th scope="col">Cost</th><th scope="col">Tool calls</th></tr>
+    </thead>
+    <tbody>
+      {% for call in calls.calls %}
+      <tr>
+        <th scope="row" data-label="Time">{{ call.started_at | clock }}</th>
+        <td data-label="Caller">{% if call.caller %}caller {{ call.caller }}{% else %}withheld{% endif %}</td>
+        <td data-label="Intent">{{ call.intent | intent }}</td>
+        <td data-label="Outcome">{{ call.outcome | outcome }}{% if call.line_note %} <span class="badge warn">{{ call.line_note | line_note }}</span>{% endif %}</td>
+        <td data-label="Duration">{{ call.duration_seconds | duration }}</td>
+        <td data-label="Cost">{{ call.cost_cents | euro }}</td>
+        <td data-label="Tool calls">{{ call.tool_calls }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">{{ calls.calls | length }} calls, the newest first, in the restaurant's time.</p>
+  {% endif %}
+</section>
+{% endblock %}

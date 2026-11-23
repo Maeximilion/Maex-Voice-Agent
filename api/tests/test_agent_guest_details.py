@@ -367,6 +367,111 @@ def test_trunk_zero_in_brackets_keeps_the_country_code():
     assert number_known("+496641234567", None, numbers("+43 (0)664 1234567")) is False
 
 
+def test_a_foreign_number_in_words_loses_its_trunk_zero():
+    """Review #207: "null null drei drei null sechs ..." was stored as
+    +330612345678, a callback number that does not exist."""
+    sentence = (
+        "Meine Nummer ist null null drei drei null sechs "
+        "eins zwei drei vier fünf sechs sieben acht"
+    )
+    assert numbers(sentence) == {"+33612345678"}
+    assert numbers("Meine Nummer ist +44 07700 900123") == {"+447700900123"}
+
+
+def test_a_foreign_number_said_in_pairs_is_complete():
+    """#804: 0033 and the trunk zero counted as digits of the number, so the
+    French number said in pairs was cut before its last pair and refused."""
+    sentence = (
+        "Meine Nummer ist null null drei drei, null sechs, zwölf, vierunddreißig, "
+        "sechsundfünfzig, achtundsiebzig"
+    )
+    assert numbers(sentence) == {"+33612345678"}
+
+
+def test_a_foreign_number_that_is_really_short_is_still_refused():
+    assert numbers("Meine Nummer ist null null drei drei, null sechs, zwölf") == set()
+
+
+def test_a_french_number_in_five_pairs_is_the_number_said():
+    """#849: "0033, 06 12 34 56 19" has the nine digits of a French number. A
+    number one pair short with a stray pair after it says the same digits, so
+    nothing tells them apart: it is read as said, the way the full number is."""
+    sentence = (
+        "Meine Nummer ist null null drei drei, null sechs, zwölf, vierunddreißig, "
+        "sechsundfünfzig, neunzehn"
+    )
+    assert numbers(sentence) == {"+33612345619"}
+
+
+def test_a_french_number_one_pair_short_is_refused_not_stored():
+    """#849: with its last pair missing the number has seven digits, none that
+    exists; it was stored as +336123456 and is asked for again now."""
+    sentence = (
+        "Meine Nummer ist null null drei drei, null sechs, zwölf, vierunddreißig, "
+        "sechsundfünfzig"
+    )
+    assert numbers(sentence) == set()
+    assert numbers("Erreichbar unter +33 6 12 34 56") == set()
+
+
+def test_a_french_number_takes_no_hour_behind_it():
+    """#849: a pair that is an hour ("neunzehn Uhr") is no digit of the number, with
+    its last pair there or missing."""
+    short = "Null null drei drei, null sechs, zwölf, vierunddreißig, sechsundfünfzig"
+    assert numbers(f"{short}, neunzehn Uhr") == set()
+    assert numbers(f"{short}, achtundsiebzig, neunzehn Uhr") == set()
+    assert numbers(f"{short}, achtundsiebzig, neunzehn") == set()
+
+
+def test_an_hour_behind_a_short_french_number_does_not_complete_it():
+    """Codex PR #850, P2: refusing the short prefix by its length switched off
+    the check for a trailing hour, so "-19 Uhr" completed the number."""
+    for mark in ("-", "/"):
+        assert numbers(f"Meine Nummer ist +33 6 12 34 56{mark}19 Uhr") == set()
+    assert numbers("Meine Nummer ist +33 6 12 34 56 78-19 Uhr") == set()
+
+
+def test_a_short_number_with_00_takes_no_pair_behind_it():
+    """Codex PR #848, P2: a digit count lower than the French one joined "neunzehn"
+    to a seven-digit number and stored +49721555119, a number nobody said."""
+    sentence = (
+        "Meine Nummer ist null null vier neun, sieben zwei eins, "
+        "fünf fünf fünf eins, neunzehn"
+    )
+    assert numbers(sentence) == set()
+    assert numbers(
+        "Meine Nummer ist null null vier neun, sieben zwei eins, fünf fünf fünf eins"
+    ) == {"+497215551"}
+
+
+def test_a_short_foreign_number_takes_no_pair_behind_it():
+    """A Danish number has eight digits behind the code: "neunzehn" after it is
+    something else, not two more digits of the number."""
+    sentence = (
+        "Null null vier fünf, zwölf, vierunddreißig, sechsundfünfzig, "
+        "achtundsiebzig, neunzehn"
+    )
+    assert numbers(sentence) == set()
+    assert numbers("Erreichbar unter +49 (0)0171 2345678") == {"+491712345678"}
+
+
+def test_a_bracketed_zero_behind_another_code_is_dropped_in_the_sentence():
+    assert numbers("Unter +61 (0)412 345 678") == {"+61412345678"}
+
+
+def test_a_complete_number_with_00_takes_no_pair_behind_it():
+    """The count without 0049 must not make a complete number wait for more:
+    "neunzehn" behind it is an hour, not the end of the number."""
+    sentence = "Null null vier neun, eins sieben eins, zwei drei vier fünf sechs sieben acht, neunzehn"
+    assert numbers(sentence) == set()
+    assert numbers("0049 171 2345678, 19") == set()
+
+
+def test_a_bracketed_zero_after_an_italian_code_stays_one_number():
+    assert numbers("Erreichbar unter +39 (0)2 1234 5678") == {"+390212345678"}
+    assert numbers("Erreichbar unter +39 (0) 335 123 4567") == {"+393351234567"}
+
+
 def test_three_groups_that_are_no_date_stay_a_number():
     """There is no month 21: a number someone writes in groups of two."""
     assert numbers("Unter 07 21 5551 erreichbar") == {"+497215551"}

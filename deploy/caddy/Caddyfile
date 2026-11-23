@@ -1,4 +1,23 @@
+# The admin endpoint stays where Caddy puts it, localhost:2019 inside this
+# container: `caddy reload` needs it, and no other container or host reaches a
+# container's loopback. A client gets ten seconds for its request line and
+# headers and keeps an idle connection two minutes; no limit on a whole
+# request, which would also cut the operations view's event stream.
+{
+    servers {
+        timeouts {
+            read_header 10s
+            idle 2m
+        }
+    }
+}
+
 # Every customer's site, one file each, rendered from deploy/Caddyfile by
 # scripts/new_stack.py with that stack's names, containers and proxy secret.
 # Nothing else is served: a name without a site file gets no certificate.
 import sites/*.caddy
+
+# The operator dashboard's site ops.<domain>, rendered from deploy/caddy/ops.caddy
+# by `scripts/new_stack.py --ops-site` only after the security audit of
+# docs/23 §11. Until then the folder is empty and the name has no site.
+import operator/*.caddy

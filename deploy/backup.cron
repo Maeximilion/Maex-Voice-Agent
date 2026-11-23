@@ -5,3 +5,7 @@
 # non-zero when no readable dump was written. The log
 # folder is made first: the shell opens the log before the script could create it.
 0 3 * * * cd /opt/maex-voice-agent && mkdir -p backups && bash scripts/backup.sh >> backups/backup.log 2>&1
+# The operator stack's own database (#827 F9), from its checkout <root>/ops: its
+# .env names DATABASE_URL, OWNER_DATABASE_URL, BACKUP_PASSPHRASE_FILE and
+# BACKUP_DOCKER_NETWORK=maex-ops_backend (docs/13 §8).
+15 3 * * * cd /srv/maex/ops && mkdir -p backups && bash scripts/backup.sh >> backups/backup.log 2>&1

@@ -84,6 +84,9 @@ def test_a_missing_graph_is_built_and_announced(run, tmp_path):
     assert not (wt / "graphify-out" / ".building").exists()
     note = out["hookSpecificOutput"]["additionalContext"]
     assert "building it in the background" in note
+    # The background build can die unseen in the desktop app: the note names the fallbacks.
+    assert "MCP connector" in note
+    assert "`graphify update .`" in note
     assert out["systemMessage"] == note
     assert out["hookSpecificOutput"]["hookEventName"] == "SessionStart"
 

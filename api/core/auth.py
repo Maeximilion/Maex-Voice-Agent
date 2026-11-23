@@ -5,7 +5,9 @@ import hmac
 from fastapi import Header, HTTPException
 
 from api.config import LOCAL_ENVS, settings, valid_production_token
-from api.core.errors import Unauthorized
+from api.core import ops_reason
+from api.core.errors import InvalidInput, Unauthorized
+from api.core.ops_reason import OpsReader
 
 
 def token_matches(authorization: str) -> bool:
@@ -57,6 +59,23 @@ def require_ops_token(authorization: str = Header(default="")) -> None:
         or not hmac.compare_digest(authorization.encode(), f"Bearer {token}".encode())
     ):
         raise Unauthorized("unauthorized")
+
+
+def require_ops_reason(
+    x_ops_reason: str = Header(default=""), x_ops_actor: str = Header(default="")
+) -> OpsReader:
+    """In front of every ops route that answers with guest data, shows a
+    secret or changes the stack: a category of the fixed list with a ticket
+    number, and the operator's account. The actor is believed because only the
+    dashboard holds `OPS_TOKEN`, which the router has checked by now."""
+    found = ops_reason.parse(x_ops_reason)
+    if found is None or not ops_reason.ACTOR.fullmatch(x_ops_actor):
+        raise InvalidInput(
+            "this needs X-Ops-Reason (a listed category and a ticket number) "
+            "and X-Ops-Actor",
+            status=400,
+        )
+    return OpsReader(f"operator:{x_ops_actor}", *found)
 
 
 def require_gui_proxy(x_maex_proxy_secret: str = Header(default="")) -> None:

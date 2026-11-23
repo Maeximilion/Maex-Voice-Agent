@@ -16,15 +16,17 @@ from starlette.exceptions import HTTPException
 
 from api.config import LOCAL_ENVS, settings
 from api.core import envelope
-from api.core.auth import require_token
+from api.core.auth import require_kitchen_token, require_ops_token, require_token
+from api.core.database_role import refuse_a_superuser_role
 from api.core.errors import AppError
 from api.core.logging import configure_logging, get_logger, request_context_middleware
 from api.core.tool_log import tool_call_log_middleware
-from api.db import engine, get_db, refuse_a_superuser_role
+from api.db import engine, get_db
 from api.domain.calls import end_call, start_call
 from api.gui import mount_gui
-from api.gui.session import slide_cookies
+from api.gui.session import no_store, slide_cookies
 from api.kitchen.router import router as kitchen_router
+from api.ops.network import ops_network_only
 from api.ops.router import router as ops_router
 from api.schemas.calls import EndCallRequest, StartCallRequest
 from api.tools.router import router as tools_router
@@ -52,9 +54,12 @@ app = FastAPI(
     redoc_url="/redoc" if _DESCRIBED else None,
     openapi_url="/openapi.json" if _DESCRIBED else None,
 )
+# Innermost: before routing and body parsing, and still logged (#888 C4).
+app.middleware("http")(ops_network_only)
 app.middleware("http")(tool_call_log_middleware)
 app.middleware("http")(request_context_middleware)
 app.middleware("http")(slide_cookies)
+app.middleware("http")(no_store)
 app.include_router(tools_router)
 app.include_router(kitchen_router)
 app.include_router(ops_router)
@@ -129,10 +134,27 @@ def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
     return response
 
 
+# The token check of each prefix. FastAPI parses a body before the router's
+# dependencies run, so a body it cannot parse reached the handler below
+# without any token check (#811): a stranger's `{` got `invalid_input`.
+_TOKEN_CHECKS = (
+    ("/v1/tools/", require_token),
+    ("/v1/calls/", require_token),
+    ("/v1/kitchen/", require_kitchen_token),
+    ("/v1/ops/", require_ops_token),
+)
+
+
 @app.exception_handler(RequestValidationError)
 def validation_error_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
+    for prefix, check in _TOKEN_CHECKS:
+        if request.url.path.startswith(prefix):
+            try:
+                check(request.headers.get("authorization", ""))
+            except AppError as refused:
+                return app_error_handler(request, refused)
     first = exc.errors()[0] if exc.errors() else {}
     field = ".".join(str(p) for p in first.get("loc", ()) if p != "body")
     return envelope.fail(
