@@ -2074,6 +2074,9 @@ def test_search_asks_about_a_counted_addition(session, tenant_id, said):
         ("Ich habe keine Allergie, aber meine Frau hat eine Sesamallergie", "Sesam"),
         ("Ich habe keine Allergie, mein Mann aber gegen Erdnuss", "Erdnuss"),
         ("Ich habe keine Allergie, nur meine Tochter gegen Nüsse", "Nüsse"),
+        # An answer word in front says nothing of its own (review of #911).
+        ("Nein, ich habe keine Allergie, nur meine Frau gegen Sesam", "Sesam"),
+        ("Ja, ich habe keine Allergie, nur meine Frau gegen Sesam", "Sesam"),
     ],
 )
 def test_an_allergy_behind_the_callers_denial_is_read(said, ingredient):
@@ -2102,6 +2105,14 @@ def test_an_allergy_behind_the_callers_denial_is_read(said, ingredient):
         "Ich habe keine Allergie, nur meine Frau gegen Sesam, ohne Milch wegen Laktoseintoleranz",
         # Codex PR #735: an elided "gegen" inside a later removal clause.
         "Ich habe keine Allergie, nur meine Frau gegen Sesam, ohne Milch und gegen Nüsse",
+        # Review #207, regression of #735: the caller's own allergy, or words
+        # no health reader knows, in front of the denial; and an option there
+        # that the reading of the other one's allergy would drop.
+        "Ich habe eine Nussallergie! Ich habe keine andere Allergie, nur meine Frau gegen Sesam",
+        "Ich meide Gluten. Ich habe keine Allergie, nur meine Frau gegen Sesam",
+        "Ohne Zwiebeln, ich meide Gluten. Ich habe keine Allergie, nur meine Frau gegen Sesam",
+        "Ohne Zwiebeln mit Nudeln. Ich habe keine Allergie, nur meine Frau gegen Sesam",
+        "Mit Nudeln, ich habe keine Allergie, nur meine Frau gegen Sesam",
     ],
 )
 def test_a_doubtful_clause_behind_a_denial_gives_no_ingredient(said):
