@@ -189,6 +189,11 @@ before naming a base.
   same turn, answer in one or two lines. A note is the child's report, not
   proof. The dashboard stays the coordinator's: its state is per session and
   each update replaces the whole list, so children cannot write to it.
+- Its own cost counts (24.11.2026: at about 470k context each coordinator turn
+  rereads all of it, and four helper agents for the dashboard used about 110k
+  tokens each while the window ran +32 ahead). In slow and super slow it starts
+  no helper agents and answers notes in one line; past 400k it asks Maxi to run
+  `/compact` with a short focus on the chain state.
 - Archives a session only on Maxi's word.
 - At 400k context of its own: write the state file (memory, `project` type:
   merged, open, next starts, waiting decisions), tell Maxi to go on in a fresh
@@ -239,7 +244,7 @@ step holds two).
 | Mode | On at | Back at | Lanes | Heavy steps |
 |---|---|---|---|---|
 | Super slow | over +15 | +5 or below, to slow | 1; every other build session pauses with background sleeps of 50 minutes, renewed on each wake | wait for slow or normal |
-| Slow | over +5 in the first hour, +10 in the middle, +5 in the last 2 hours | to normal at -20 or below in the first hour, -15 in the middle, -5 in the last 2 hours | 2, a 30-minute sleep between parts | one at a time, it holds both lanes |
+| Slow | over +5 in the first hour, +10 in the middle, +5 in the last 2 hours | to normal at -20 or below in the first hour, -15 in the middle, -5 in the last 2 hours | 2, a 45-minute sleep between parts | one at a time, it holds both lanes |
 | Normal | | | 3 | as section 3 |
 | Turbo | under -25 | -10 or above, to normal | up to 5, never above today's row of "Agents per weekday" | as section 3 |
 
@@ -264,8 +269,8 @@ thinking"):
 - The next start is the first open item routed to Sonnet or Haiku, or to a
   lower effort; Opus items wait for normal mode unless none of the cheap kind
   is left.
-- A session takes one background `sleep 1800` (30 minutes; Maxi, 2026-11-24,
-  was 15) after each finished part of its work, before it starts the next
+- A session takes one background `sleep 2700` (45 minutes; Maxi, 2026-11-24,
+  was 15, then 30) after each finished part of its work, before it starts the next
   part; a paused session in super slow sleeps 50 minutes. Measured on 23.11.2026
   (6,000 requests of three days): a wake after any wait under 60 minutes costs
   the same as one working request, because the cache is kept for an hour; the
