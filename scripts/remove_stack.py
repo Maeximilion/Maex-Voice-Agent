@@ -125,7 +125,7 @@ def check_key(key: str) -> None:
     if not CUSTOMER_KEY.fullmatch(key) or len(key) > 32:
         raise BadInput("key must look like `pilot` or `pizza-nord`")
     if key in RESERVED_KEYS:
-        raise BadInput(f"key {key!r} is the shared Caddy's, not a customer's")
+        raise BadInput(f"key {key!r} is reserved, not a customer's")
 
 
 def export_folder(root: Path, key: str) -> Path:

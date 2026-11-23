@@ -202,7 +202,8 @@ def test_the_key_must_be_typed_again_and_valid(root, docker, capsys):
     write_export(root / "offboarding" / "alpha", "alpha")
     assert _main(root, "--confirm", "beta") == 2
     assert _main(root, "--confirm", "Alpha") == 2
-    assert remove_stack.main(["caddy", "--root", str(root)]) == 2
+    for reserved in ("caddy", "ops", "offboarding"):
+        assert remove_stack.main([reserved, "--root", str(root)]) == 2
     with pytest.raises(SystemExit):
         _main(root, "--dry-run", "--confirm", "alpha")
     assert docker.mutating() == []

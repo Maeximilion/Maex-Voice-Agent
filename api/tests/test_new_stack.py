@@ -603,9 +603,11 @@ def test_an_odd_origin_or_secret_writes_no_site(env):
         new_stack.ops_site_text(OPS_TEMPLATE, values)
 
 
-def test_the_key_of_the_operator_stack_is_refused(tmp_path):
-    with pytest.raises(new_stack.BadInput, match="operator"):
-        new_stack.read_customer(_customer(tmp_path, key="ops"))
+@pytest.mark.parametrize("key", ["ops", "offboarding"])
+def test_the_keys_of_the_operator_stack_and_the_exports_are_refused(tmp_path, key):
+    # <root>/offboarding holds every export and the removal ledger (#576).
+    with pytest.raises(new_stack.BadInput, match="reserved"):
+        new_stack.read_customer(_customer(tmp_path, key=key))
 
 
 def test_the_dashboard_joins_each_stacks_ops_network_and_no_other():
