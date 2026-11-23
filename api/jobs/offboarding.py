@@ -11,7 +11,8 @@ folder, mode 700, every file mode 600:
   in the import format of docs/14, so `scripts/import_menu.py` reads them back
   into another stack as they were (prices as `6,90`, the format's own rule);
 - `orders.csv`, `order_items.csv`, `reservations.csv`: every row of the tenant,
-  amounts in integer cents, times in the tenant's zone (Europe/Berlin) with the
+  amounts in integer cents (a position's unit price with its options, as
+  paid), times in the tenant's zone (Europe/Berlin) with the
   zone's abbreviation, so the hour of the clock change is not ambiguous;
 - `manifest.json`, written last: the key, the time, the zone, the schema
   revision, the rows and the SHA-256 of every file, and how many other tenants
@@ -56,6 +57,7 @@ from api.domain.menu.importer import (
     OPTIONS_FILE,
     format_eur,
 )
+from api.domain.ordering.pricing import row_cents
 from api.models import (
     Address,
     DiningTable,
@@ -279,14 +281,16 @@ def order_files(
         .where(OrderItem.tenant_id == tenant_id)
         .order_by(Order.created_at, Order.id, OrderItem.created_at, OrderItem.id)
     ).all()
+    # The stored unit price is the base price; the chosen options carry their
+    # own deltas (domain/ordering/pricing.py), so the price paid is both.
     lines: Rows = [
         [
             str(line.order_id),
             number,
             name,
             str(line.quantity),
-            str(line.unit_price_cents),
-            str(line.quantity * line.unit_price_cents),
+            str(row_cents(line.unit_price_cents, line.options)),
+            str(line.quantity * row_cents(line.unit_price_cents, line.options)),
             _text(
                 ", ".join(
                     f"{choice.get('group', '')}: {choice.get('option', '')}"
@@ -463,9 +467,20 @@ def export(
         name: {"rows": rows, "sha256": _digest(content)}
         for name, (content, rows) in files.items()
     }
+    facts = {
+        "format": FORMAT,
+        "customer_key": key,
+        "tenant_id": tenant_id,
+        "timezone": zone,
+        "schema_revision": revision,
+        # remove_stack.py refuses on this count: a tenant added since the last
+        # run must reach the manifest even when the files stay the same.
+        "other_tenants": others or 0,
+        "files": listed,
+    }
     unchanged = (
         previous is not None
-        and previous.get("files") == listed
+        and {k: previous.get(k) for k in facts} == facts
         and all((folder / name).is_file() for name in FILES)
         and all(
             _digest((folder / n).read_text("utf-8")) == listed[n]["sha256"]
@@ -481,16 +496,7 @@ def export(
         folder.mkdir(mode=0o700, parents=True)
     for name, (content, _) in files.items():
         _write(folder / name, content)
-    manifest = {
-        "format": FORMAT,
-        "customer_key": key,
-        "tenant_id": tenant_id,
-        "exported_at": now.isoformat(timespec="seconds"),
-        "timezone": zone,
-        "schema_revision": revision,
-        "other_tenants": others or 0,
-        "files": listed,
-    }
+    manifest = {**facts, "exported_at": now.isoformat(timespec="seconds")}
     # Last: a folder with a manifest holds a whole export.
     _write(folder / MANIFEST, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return manifest, True

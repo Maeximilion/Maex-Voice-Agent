@@ -127,8 +127,10 @@ def _order(session, tenant_id, name: str) -> Order:
         status="handed_over",
         customer_name=name,
         phone="+4972215551234",
-        items_total_cents=2 * 1700,
-        total_cents=2 * 1700,
+        # As the draft path stores it: base price per position, the
+        # options with their own delta (domain/ordering/pricing.py).
+        items_total_cents=2 * (1700 + 250),
+        total_cents=2 * (1700 + 250),
         ready_at=SUMMER,
         note="Bitte klingeln",
         idempotency_key=uuid.uuid4().hex,
@@ -254,16 +256,18 @@ def test_orders_and_reservations_are_the_tenants_own_in_cents_and_berlin_time(
     (order,) = _rows(out, "orders.csv")
     assert order["order_id"] == str(own.id)
     assert order["ready_at"] == "2026-07-01 18:30 CEST"
-    assert (order["items_total_cents"], order["total_cents"]) == ("3400", "3400")
+    assert (order["items_total_cents"], order["total_cents"]) == ("3900", "3900")
     # A spreadsheet must not run a guest's name as a formula.
     assert order["customer_name"] == "'=HYPERLINK(1)"
     assert order["phone"] == "+4972215551234"
     (line,) = _rows(out, "order_items.csv")
-    assert (line["number"], line["quantity"], line["line_total_cents"]) == (
+    # The price paid: base price plus the option's 250 cents, as in the total.
+    assert (line["number"], line["quantity"], line["unit_price_cents"]) == (
         "47",
         "2",
-        "3400",
+        "1950",
     )
+    assert line["line_total_cents"] == order["items_total_cents"]
     assert line["options"] == "Fleisch: Ente, Extra: Nudeln"
 
     tablet, phone = _rows(out, "reservations.csv")
@@ -359,3 +363,14 @@ def test_an_unknown_key_and_a_folder_of_another_customer_are_refused(
     assert offboarding.main(["export", str(out), "--key", "beta"]) == 1
     assert "holds the export of 'alpha'" in capsys.readouterr().err
     assert (out / "manifest.json").read_bytes() == manifest
+
+
+def test_a_tenant_added_after_the_export_reaches_the_manifest(session, alpha, tmp_path):
+    """remove_stack.py refuses on other_tenants: an unchanged export of alpha
+    must not keep the 0 of a database that now holds another tenant."""
+    out = tmp_path / "export"
+    assert offboarding.main(["export", str(out), "--key", "alpha"]) == 0
+    assert json.loads((out / "manifest.json").read_text())["other_tenants"] == 0
+    _tenant(session, "Beta", "beta")
+    assert offboarding.main(["export", str(out), "--key", "alpha"]) == 0
+    assert json.loads((out / "manifest.json").read_text())["other_tenants"] == 1
