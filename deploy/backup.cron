@@ -1,5 +1,6 @@
 # Daily database backup at 03:00 server time (T-9.3, docs/13 §4).
-# Install on the server: adjust the root if it is not /srv/maex, then
+# Install on the server: if the root is not /srv/maex, change it everywhere below
+# (the loop, its ops/ exclusion and the second line), then
 # `crontab deploy/backup.cron` as the deploy user. The first line dumps every
 # customer's stack, one after the other: each folder of the root with an .env and
 # scripts/backup.sh (scripts/new_stack.py makes them), so a new stack needs no
