@@ -159,6 +159,19 @@ the pacing above decides, and the last 3 points are reached about 30 minutes
 before the reset, so the sleep to the reset stays short and the cache warm. A
 brief never sets a lower stop.
 
+Chain modes (Maxi, 2026-11-23: "change into slow mode when we reach +10 ahead
+so we can catch up and if we run into -20 we can run into Turbo Mode"), read
+by the coordinator at every reading of `ahead`:
+
+| Mode | When | Lanes | Agent waves, deep reviews |
+|---|---|---|---|
+| Slow | `ahead` over +10 | no new start while two sessions work | wait until normal |
+| Normal | -20 to +10 | 3 | as the brief says |
+| Turbo | `ahead` under -20 | up to 5, never above today's row of "Agents per weekday" | welcome |
+
+Slow mode lets running sessions go on; only new starts and new agent waves
+wait. The pauses of the table above still hold in every mode.
+
 ## 5a. Option: no handover limit (overnight)
 
 Maxi names it when he starts a chain ("no handover limit", "overnight"); without
