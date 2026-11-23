@@ -369,6 +369,26 @@ def test_a_locked_device_still_shows_the_board_and_asks_the_pin_to_change(
     assert client.get("/gui/entsperren").headers["location"] == "/gui/"
 
 
+def test_a_locked_device_opens_no_callback_history(client, engine):
+    """#888 B3: T8 leaves a finder today's board until the device is revoked,
+    not seven days of done callbacks with full numbers. The history asks the
+    PIN like a change does; unlocked, it opens again."""
+    _set_up_and_sign_in(client, engine)
+    assert client.get("/gui/rueckrufe/verlauf", headers=HX).status_code == 200
+    _lock(engine)
+    assert client.get("/gui/fragments/rueckrufe", headers=HX).status_code == 200
+    sheet = client.get("/gui/rueckrufe/verlauf", headers=HX)
+    assert sheet.status_code == 401 and "Erledigte" not in sheet.text
+    assert sheet.headers["HX-Redirect"] == "/gui/entsperren"
+    page = client.get("/gui/rueckrufe/verlauf", headers=HTML)
+    assert page.status_code == 303 and page.headers["location"] == "/gui/entsperren"
+    # Reading the history keeps no device unlocked: still locked afterwards.
+    assert client.get("/gui/rueckrufe/verlauf", headers=HX).status_code == 401
+    right = client.post("/gui/entsperren", data={"csrf_token": "testtoken", "pin": PIN})
+    assert right.status_code == 303
+    assert client.get("/gui/rueckrufe/verlauf", headers=HX).status_code == 200
+
+
 def test_five_wrong_pins_sign_the_device_out(client, engine):
     _set_up_and_sign_in(client, engine)
     _lock(engine)
