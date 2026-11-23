@@ -65,6 +65,7 @@
 <h3>Bestätigt: die Zeilen dieser Person</h3>
 {% if found.sections %}
 <p class="muted">Das gehört in die Auskunft an den Gast, und das trifft eine Löschung. Nichts davon gehört einem anderen Gast.</p>
+<p class="muted">Die Auskunft nur auf einem Weg geben, den diese Zeilen belegen: Rückruf an die geprüfte Nummer oder Post an die gespeicherte Lieferadresse. Nie an eine Nummer oder Adresse, die der Gast nur nennt: eine angezeigte Nummer lässt sich fälschen.</p>
 {% for section in found.sections %}
 <h3>{{ section.title }} ({{ section.rows|length }})</h3>
 <table class="tbl week">

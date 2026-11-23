@@ -51,7 +51,11 @@ from api.domain.customers.personal import (
     ORDER_GONE,
     thin_payload,
 )
-from api.domain.customers.phone import DEFAULT_COUNTRY_CODE, normalize_phone
+from api.domain.customers.phone import (
+    DEFAULT_COUNTRY_CODE,
+    normalize_phone,
+    number_or_none,
+)
 from api.domain.menu.numberwords import fold
 from api.domain.ordering.handover import SENT
 from api.domain.ordering.labels import current_labels_many, labels_for_rows
@@ -500,8 +504,9 @@ def _on_day(
     session: Session, tenant_id: uuid.UUID, day: date, zone: str, name: str
 ) -> list[Order | Reservation | Customer]:
     """What one day opens under the name: orders and reservations booked under
-    the line their call came from (security audit 02.11.2026: a caller can
-    book a draft under any name and number, no yes needed), and customers."""
+    the line their call came from and confirmed (security audit 02.11.2026: a
+    caller can book a draft under any name and number, no yes needed), and
+    customers."""
     orders = _own_line(
         session, Order, _local_day(ORDER_DAY, zone) == day, Order.tenant_id == tenant_id
     )
@@ -522,8 +527,14 @@ def _own_line(session: Session, model: Any, *where: Any) -> list[Any]:
     """Rows of `model` whose number is the one their call came from, as the
     draft read it: the caller ID goes with its period, an objection or an
     erasure, the booking keeps its name longer (#523). A withheld one proved
-    nothing then and proves nothing now."""
-    return list(session.scalars(select(model).where(model.booked_on_own_line, *where)))
+    nothing then and proves nothing now. Only a booking the guest said yes to:
+    a presented number can be spoofed, and a draft needs nothing but a hang-up
+    (#888 S4). The board cancels only a confirmed order (an erasure cancels a
+    draft too, but takes its name); the tablet cancels a table draft (#862)."""
+    yes = model.status != "draft" if model is Order else model.status == "confirmed"
+    return list(
+        session.scalars(select(model).where(model.booked_on_own_line, yes, *where))
+    )
 
 
 def _by_day(
@@ -596,7 +607,8 @@ def _names_on_calls(
 
 
 def _national_digits(phone: str) -> str:
-    """`calls.caller_id` holds the number as the line gave it, not always E.164."""
+    """`calls.caller_id` holds the number as the line gave it, not always E.164:
+    its digits only narrow the search, `_calls_and_callbacks` compares."""
     return phone.removeprefix("+").removeprefix(DEFAULT_COUNTRY_CODE)
 
 
@@ -649,7 +661,10 @@ def _calls_and_callbacks(
         )
         .order_by(Call.started_at, Call.id)
     ):
-        sort_out(call, call.id, calls, unclaimed_calls)
+        # The digits of a longer number hold the person's too: a switchboard's
+        # extension, Berlin's 1234567 in 12345678 (#888 S3). Exact, as `line_of`.
+        if call.id in own_calls or number_or_none(call.caller_id) in phones:
+            sort_out(call, call.id, calls, unclaimed_calls)
 
     callbacks: list[Callback] = []
     unclaimed_callbacks: list[Callback] = []
