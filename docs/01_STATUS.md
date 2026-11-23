@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.25
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.26
 
 ---
 
@@ -180,6 +180,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.26 · 23.11.2026:** scripts/window_burn.py measures how fast side sessions burn the 5-hour window per model (window of 23.11.2026)
 - **v2.69.25 · 23.11.2026:** Ledger #947, review of #946: the operator audit and double tap keep the client address as sent, only the counters group an IPv6 client by its /64
 - **v2.69.24 · 23.11.2026:** Chain briefs ask each side session to message the coordinator at milestones (PR ready, merged, stopped or blocked), because turn-end notes wait while another side session works.
 - **v2.69.23 · 23.11.2026:** #892: tests hold the site's text contrast (WCAG AA) and keyboard entry (skip link, one h1, focus ring)
