@@ -424,6 +424,12 @@ def voice_from_settings() -> Voice:
         _refuse(
             "a Claude model is for evals until an EU path and a DPA exist (docs/18 §3)"
         )
+    if not local and settings.voice_ear_measure:
+        # One log line per utterance with its text, kept 14 days in journald.
+        _refuse(
+            "VOICE_EAR_MEASURE logs what every caller says and is for the team's "
+            "test calls under ENV=dev only (#678)"
+        )
     # Raises without a model: every call would go to the team at its first turn.
     client_from_settings().close()
     refuse_a_superuser_role(settings.env, engine)
