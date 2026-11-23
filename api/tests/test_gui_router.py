@@ -883,7 +883,10 @@ def test_spalte_rueckrufe_zeigt_karte(client, engine, tenant_id):
     assert 'data-reason="complaint"' in body and ">complaint<" not in body
 
 
-@pytest.mark.parametrize("number", ["+499001234567", "+491371234567", "+8821234567"])
+@pytest.mark.parametrize(
+    "number",
+    ["+499001234567", "+491371234567", "+8821234567", "+979123456789", "+80812345678"],
+)
 def test_a_costly_callback_number_gets_a_warning_and_no_one_tap_link(
     client, engine, tenant_id, number
 ):

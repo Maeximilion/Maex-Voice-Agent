@@ -236,6 +236,9 @@ def test_digits_of_another_script_are_refused(said: str):
         ("+491181234", True),
         ("+4912345678", True),
         ("+8821234567", True),
+        ("+979123456789", True),
+        ("+80812345678", True),
+        ("+4997912345", False),
         ("+491712345678", False),
         ("+4972215551234", False),
         ("+12685551234", False),
@@ -247,6 +250,17 @@ def test_costly_numbers_are_the_premium_service_and_satellite_ranges(number, exp
     from api.domain.customers.phone import costly
 
     assert costly(number) is expected
+
+
+@pytest.mark.parametrize(
+    "said", ["00979 123 456 789", "+808 1234 5678", "00808-12345678"]
+)
+def test_a_said_global_premium_or_shared_cost_number_stays_costly(said):
+    """#888 S9: +979 and +808 have no country, so no trunk rule may touch them;
+    as said they normalize to the E.164 form `costly` reads."""
+    from api.domain.customers.phone import costly
+
+    assert costly(normalize_phone(said))
 
 
 @pytest.mark.parametrize(
