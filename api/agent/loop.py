@@ -1088,9 +1088,9 @@ class ConversationLoop:
         a call; a call without an open offer writes nothing.
 
         The same for an order drafted and not answered with a yes (#953),
-        whatever the guest heard last: the time is a statement that invites a goodbye, a
-        "Danke" alone is no yes (Maxi, 23.11.2026), and the guest may expect
-        food nobody ordered. A table's read-back asks "Passt das so?", and a
+        whatever the guest heard last: the time is a statement that invites a
+        goodbye, a "Danke" alone is no yes (Maxi, 23.11.2026), and the guest
+        may expect food nobody ordered. A table's read-back asks "Passt das so?", and a
         guest who leaves it unanswered knows nothing is booked. Not when the
         call goes `with_the_team` (an outage, a failed line): the team has it,
         and its own card waits if nobody answers."""
