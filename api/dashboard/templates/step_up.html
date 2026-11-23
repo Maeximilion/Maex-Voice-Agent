@@ -13,7 +13,7 @@
   <form class="card zugang-form" method="post" action="/step-up">
     <h1>Confirm it is you</h1>
     {% if passkey_only %}
-    <p>Changing the ways in needs a passkey from the last five minutes. No passkey button below? This browser cannot use a passkey: open the page in a current one. Lost every passkey? Ask for the reset on the host.</p>
+    <p>This account confirms with its passkey: this needs one from the last five minutes. No passkey button below? This browser cannot use a passkey: open the page in a current one. Lost every passkey? Ask for the reset on the host.</p>
     <input type="hidden" name="for_factors" value="1">
     {% else %}
     <p>This needs a second factor from the last five minutes.</p>
