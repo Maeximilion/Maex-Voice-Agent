@@ -100,6 +100,20 @@ class BadInput(Refused):
     """Wrong customer file or domain: exit code 2."""
 
 
+# api/telephony/load.py RUN_MARKER: a load test's stacks are on this root.
+LOAD_RUN = ".voice-load-run"
+
+
+def refuse_during_load_test(root: Path, domain: str = "") -> None:
+    """No customer next to a load test's stacks: its next run removes what it
+    made, and its own stacks alone serve the reserved names `*.test`."""
+    if (root / LOAD_RUN).exists() and not domain.endswith(".test"):
+        raise Refused(
+            f"{root / LOAD_RUN}: a load test's stacks are on this server; remove "
+            "them first: python3 -m scripts.voice_load --inside --down"
+        )
+
+
 def project(key: str) -> str:
     return f"maex-{key}"
 
@@ -526,6 +540,7 @@ def ops_site(root: Path) -> None:
     # The same lock as a customer's run: both write the networks files.
     with open(root / ".new_stack.lock", "w") as lock:
         fcntl.flock(lock, fcntl.LOCK_EX)
+        refuse_during_load_test(root)
         for key, text in site_files(root / "caddy" / "sites").items():
             if secret in _site_facts(text)[1]:
                 raise BadInput(f"OPERATOR_PROXY_SECRET is also {key}'s proxy secret")
@@ -571,6 +586,7 @@ def _create(spec_path: Path, domain: str, root: Path, dry_run: bool) -> None:
     spec = read_customer(spec_path)
     if not DOMAIN.fullmatch(domain):
         raise BadInput(f"domain {domain!r}: lower-case host name like example.org")
+    refuse_during_load_test(root, domain)
     key = spec["key"]
     stack = root / key
     sites_dir = root / "caddy" / "sites"
