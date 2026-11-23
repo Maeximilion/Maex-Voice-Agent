@@ -96,15 +96,18 @@ def require_push_token() -> None:
     on the dashboard too. Only the dispatcher has the token (docker-compose.yml),
     so the check runs in its start (`api/jobs/cold_path.py`), as the dashboard's
     own push check does (`dashboard/config.py`, #836). The value stays out of
-    the message: it ends up in a log."""
-    if settings.env in LOCAL_ENVS or valid_production_token(
-        settings.monitor_push_token
+    the message: it ends up in a log. An empty `MONITOR_PUSH_URL` is refused
+    as well: every alarm would fail and none reach the operator (#880)."""
+    if settings.env in LOCAL_ENVS or (
+        settings.monitor_push_url.strip()
+        and valid_production_token(settings.monitor_push_token)
     ):
         return
     raise RuntimeError(
-        "MONITOR_PUSH_TOKEN is empty, the placeholder, contains whitespace or is "
-        f"shorter than {TOKEN_MIN_LENGTH} characters: the token of the push "
-        "server's user `monitor` (docs/13 §8)"
+        "MONITOR_PUSH_URL is empty, or MONITOR_PUSH_TOKEN is empty, the "
+        "placeholder, contains whitespace or is shorter than "
+        f"{TOKEN_MIN_LENGTH} characters: the token of the push server's user "
+        "`monitor` (docs/13 §8)"
     )
 
 
