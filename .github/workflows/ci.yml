@@ -185,12 +185,30 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: README links, anchors, images and blocked terms
+      - name: README links, anchors and images
+        # The pull request's own checker, without the secret: its scan says the list
+        # is missing and skips only the blocked terms.
+        run: python scripts/readme_check.py
+      # The secret reaches only main's checker (#888 S5): a pushed change to
+      # readme_check.py would otherwise run with the list and could print or send it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: .trusted
+          sparse-checkout: scripts/readme_check.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: README blocked terms, checked by main's code
         # The secret holds one term per line; without it (a fork, Dependabot) the scan
-        # says so and passes.
+        # finds nothing to compare and passes. -I keeps the pull request's files off
+        # the import path; the checker only reads them.
         env:
           README_BLOCKLIST: ${{ secrets.README_BLOCKLIST }}
-        run: python scripts/readme_check.py
+        run: >-
+          python -I -c "import sys; sys.path.insert(0, '.trusted/scripts');
+          import readme_check as r; from pathlib import Path; root = Path.cwd();
+          found = r.check_blocklist(root, r.blocked_terms(root)); print(*found, sep='\n');
+          sys.exit(1 if found else 0)"
 
   # The browser code written in TypeScript (docs/22, #553): it passes the type check,
   # and the JavaScript committed in api/gui/static/ is exactly what the sources compile
