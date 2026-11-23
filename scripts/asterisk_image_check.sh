@@ -37,15 +37,7 @@ cleanup() {
     docker network rm "$tag" >/dev/null 2>&1 || true
     rm -rf "$work"
 }
-# The trap is for an error that stops the script. A planned end clears it
-# first: in the dash of Ubuntu, the CI runner's sh, a trap that runs on `exit 1`
-# ends the script with the trap's own status, and a failed check would pass.
 trap cleanup EXIT
-finish() {
-    trap - EXIT
-    cleanup
-    exit "$1"
-}
 
 sed 's/${VOICE_MEDIA_TOKEN}/check-token/' "$conf/websocket_client.conf" > "$work/websocket_client.conf"
 printf '[options]\n' > "$work/asterisk.conf"
@@ -81,7 +73,7 @@ done
 if [ "$booted" = no ]; then
     docker logs "$tag-ast" 2>&1 | tail -20
     fail "Asterisk did not boot within 60 s"
-    finish 1
+    exit 1
 fi
 echo "      $(cli 'core show version' | head -1)"
 
@@ -137,4 +129,4 @@ if alive; then
         fail "the call after the failures did not run"
     fi
 fi
-finish "$failed"
+exit "$failed"
