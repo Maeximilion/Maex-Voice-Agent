@@ -2102,6 +2102,11 @@ def test_a_timed_read_back_needs_no_question_behind_it(said, heard):
         ("Ist alles klar", False),
         ("Nein, tschüss", False),
         ("Okay, dann nicht", False),
+        # A sound or a goodbye in front hides no question (Codex, PR #954).
+        ("Oh, ist das richtig", False),
+        ("Na, stimmt das", False),
+        ("Ah, passt das so", False),
+        ("Oh, alles richtig", False),
         ("Bitte", False),
         ("So", False),
         ("Gut?", False),

@@ -288,17 +288,27 @@ def answers_the_read_back(text: str, readback: str | None) -> bool:
 def acknowledges(text: str) -> bool:
     """An acknowledgement of a statement: an assent or acknowledging word, the
     rest filler and closing words. Nothing was asked, so "Ist gut" is an answer
-    here; a question mark or a verb before its subject ("Ist das gut") asks."""
-    words = _plain_words(text, asking=_verb_first_somewhere)
+    here; a question mark, a verb before its subject ("Ist das gut", "Oh, ist
+    das richtig") or a bare "Alles richtig" asks."""
+    words = _plain_words(text, asking=_asks_after_sounds)
     return any(word in _ACKNOWLEDGING or word in _YES for word in words) and all(
         word in _YES or word in _FILLER or word in _CLOSING for word in words
     )
 
 
-def _verb_first_somewhere(lowered: str) -> bool:
-    return any(
-        _verb_first(_WORD.findall(sentence))
+def _asks_after_sounds(lowered: str) -> bool:
+    """`asks` without the "Ist ..." form, read past the sounds and goodbyes in
+    front: "Oh, ist das richtig" and "Na, stimmt das" ask as plainly as
+    without them (Codex, PR #954)."""
+    sentences = [
+        [word for word in _WORD.findall(sentence) if word not in _CLOSING]
         for sentence in _SENTENCE_END.split(lowered)
+    ]
+    if any(_verb_first(words) for words in sentences):
+        return True
+    words = {word for sentence in sentences for word in sentence}
+    return not words & _PLAIN_YES and any(
+        _ELLIPTIC.search(" ".join(sentence)) for sentence in sentences
     )
 
 

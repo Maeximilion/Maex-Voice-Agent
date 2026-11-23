@@ -503,6 +503,11 @@ def test_a_cancel_after_the_stated_time_drops_the_draft_without_the_team(
         "Die Cola bitte abbestellen",
         "Den Tisch für morgen bitte absagen",
         "Die Bestellung von vorhin stornieren Sie bitte",
+        # A question about the state is no cancel (Codex, PR #954).
+        "Ist die Bestellung storniert?",
+        "Ist die Bestellung storniert",
+        "Die Bestellung ist storniert?",
+        "Stornieren?",
     ],
 )
 def test_a_cancel_of_something_else_keeps_the_order_and_goes_to_the_team(

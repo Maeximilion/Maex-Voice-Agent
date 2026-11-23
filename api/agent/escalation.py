@@ -368,7 +368,7 @@ _PLAIN_CANCEL = frozenset(
     {"absagen", "abbestellen", "rückgängig", "machen"}
     | {"dann", "das", "es", "sie", "ich", "mir", "die", "meine", "ganze"}
     | {"bestellung", "lieferung", "abholung", "bitte", "lieber", "doch", "also"}
-    | {"oh", "ach", "na", "so", "zu", "lang", "lange", "ist", "dauert", "mal"}
+    | {"oh", "ach", "na", "so", "zu", "lang", "lange", "dauert", "mal"}
     | {"nein", "nee", "ne", "okay", "ok", "gut", "alles", "klar", "ja", "danke"}
     | {"leider", "schade", "aber", "einfach", "wieder", "gerne", "gern"}
 )
@@ -376,10 +376,19 @@ _PLAIN_CANCEL = frozenset(
 
 def only_cancels(text: str) -> bool:
     """Does the sentence cancel and say nothing else? A "storn" word and the
-    words of `_PLAIN_CANCEL`, nothing more."""
-    words = _WORDS.findall(_folded(text))
-    return any(word.startswith("storn") for word in words) and all(
-        word.startswith("storn") or word in _PLAIN_CANCEL for word in words
+    words of `_PLAIN_CANCEL`, nothing more, and the sentence that holds it no
+    question: "Ist die Bestellung storniert?" asks about the state (Codex, PR
+    #954). "ist" is left out of the list for the same reason: with its mark
+    lost, "Ist die Bestellung storniert" still asks."""
+    folded = _folded(text)
+    words = _WORDS.findall(folded)
+    return (
+        any(word.startswith("storn") for word in words)
+        and all(word.startswith("storn") or word in _PLAIN_CANCEL for word in words)
+        and not any(
+            sentence.rstrip().endswith("?") and "storn" in sentence
+            for sentence in SENTENCE.split(folded)
+        )
     )
 
 
