@@ -546,7 +546,7 @@
             {
               "id": "3cecc03a-da5e-5841-a074-11e415f9f15c",
               "name": "text",
-              "value": "={{ $json.payload.standard ? 'Die Standardnummer des Teams ist jetzt ' + $json.payload.to + ($json.payload.from ? ', vorher ' + $json.payload.from : '') + '.' + ($json.payload.today ? ' Heute gehen Anrufe noch an ' + $json.payload.today + '.' : '') : 'Anrufe an das Team gehen heute an ' + $json.payload.to + ', vorher an ' + $json.payload.from + '.' }}{{ ({ operator: ' Geändert vom Betreiber ' + String($json.payload.actor).replace(/^operator:/, '') + '.', team: ' Geändert vom Team.' })[$json.payload.by] ?? '' }}{{ $json.payload.standard && !$json.payload.today ? '' : ' Bitte am Tablet prüfen.' }}",
+              "value": "={{ $json.payload.standard ? 'Die Standardnummer des Teams ist jetzt ' + $json.payload.to + ($json.payload.from ? ', vorher ' + $json.payload.from : '') + '.' + ($json.payload.today ? ' Heute gehen Anrufe noch an ' + $json.payload.today + '.' : '') : 'Anrufe an das Team gehen heute an ' + $json.payload.to + ', vorher an ' + $json.payload.from + '.' }}{{ ({ operator: ' Geändert vom Betreiber ' + String($json.payload.actor).replace(/^operator:/, '') + '.', team: ' Geändert vom Team.' })[$json.payload.by] ?? '' }}{{ $json.payload.undone ? '' : $json.payload.standard && !$json.payload.today ? '' : ' Bitte am Tablet prüfen.' }}",
               "type": "string"
             },
             {
@@ -582,7 +582,7 @@
             {
               "id": "79b8c69a-038b-5efb-b617-b1f4955c5502",
               "name": "text",
-              "value": "=Am {{ DateTime.fromISO($json.payload.day).toFormat('dd.MM.') }}: {{ $json.payload.to }}, vorher {{ $json.payload.from }}. {{ $json.payload.held ? 'Bitte am Tablet prüfen.' : 'Gilt erst, wenn es am Tablet mit der Admin-PIN übernommen wird.' }}",
+              "value": "=Am {{ DateTime.fromISO($json.payload.day).toFormat('dd.MM.') }}: {{ $json.payload.to }}, vorher {{ $json.payload.from }}. {{ $json.payload.undone ? '' : $json.payload.held ? 'Bitte am Tablet prüfen.' : 'Gilt erst, wenn es am Tablet mit der Admin-PIN übernommen wird.' }}",
               "type": "string"
             },
             {

@@ -185,12 +185,41 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: README links, anchors, images and blocked terms
+      - name: README links, anchors and images
+        # The pull request's own checker, without the secret: its scan says the list
+        # is missing and skips only the blocked terms, which `readme-terms` checks.
+        run: python scripts/readme_check.py
+
+  # The blocked terms, in a job of their own (#888 S5): the secret reaches only main's
+  # checker, and no code of the pull request runs in this job. A step of the same job
+  # could hand later steps a poisoned environment ($GITHUB_ENV) or, with the runner's
+  # sudo, read every secret of its job from the runner's memory. The pull request's
+  # files are only read. Part of the required check `test`.
+  readme-terms:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: .trusted
+          sparse-checkout: scripts/readme_check.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+      - name: README blocked terms, checked by main's code
         # The secret holds one term per line; without it (a fork, Dependabot) the scan
-        # says so and passes.
+        # finds nothing to compare and passes. -I keeps the pull request's files off
+        # the import path; the runner's own Python, since nothing here needs another.
         env:
           README_BLOCKLIST: ${{ secrets.README_BLOCKLIST }}
-        run: python scripts/readme_check.py
+        run: >-
+          python3 -I -c "import sys; sys.path.insert(0, '.trusted/scripts');
+          import readme_check as r; from pathlib import Path; root = Path.cwd();
+          found = r.check_blocklist(root, r.blocked_terms(root)); print(*found, sep='\n');
+          sys.exit(1 if found else 0)"
 
   # The browser code written in TypeScript (docs/22, #553): it passes the type check,
   # and the JavaScript committed in api/gui/static/ is exactly what the sources compile
@@ -217,7 +246,7 @@ jobs:
   # `always()`: a job skipped after a failed or cancelled need would count as passed.
   test:
     if: ${{ always() }}
-    needs: [changes, checks, pytest, readme, browser]
+    needs: [changes, checks, pytest, readme, readme-terms, browser]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

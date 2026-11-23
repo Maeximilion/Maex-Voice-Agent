@@ -11,6 +11,7 @@ from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session
 
 from api.core.errors import Conflict, FieldErrors, InvalidInput
+from api.domain.reservations.spoken import WEEKDAYS
 from api.domain.status import holidays, weekly
 from api.domain.status import staff_changes as staff
 from api.domain.status.hours import load_hours, windows_for_day
@@ -57,7 +58,8 @@ def _seen(session, tenant_id, weekday) -> str:
 
 def _set(session, tenant_id, weekday, spans, seen=None) -> bool:
     seen = _seen(session, tenant_id, weekday) if seen is None else seen
-    return weekly.set_weekday(session, tenant_id, weekday, spans, seen)
+    # A fixed clock: which dates the night rule reads depends on it (#877).
+    return weekly.set_weekday(session, tenant_id, weekday, spans, seen, now=NOW)
 
 
 def _windows(session, tenant_id, day, service="pickup") -> list[tuple[str, str]]:
@@ -816,3 +818,192 @@ def test_a_night_into_the_next_weekday_is_named_by_its_service(session, tenant_i
         _set(session, tenant_id, TUESDAY, {"pickup": [night]})
     assert list(refused.value.faults) == ["pickup"]
     assert "Dienstag" in refused.value.faults["pickup"]
+
+
+# --- the night rule across the dates with hours of their own (#877) -------------
+
+SATURDAY_14 = date(2026, 11, 14)
+
+
+def _dated(day: date) -> str:
+    return f"{WEEKDAYS[day.weekday()]}, {day:%d.%m.}"
+
+
+def _set_at_now(session, tenant_id, weekday, spans) -> bool:
+    seen = _seen(session, tenant_id, weekday)
+    return weekly.set_weekday(session, tenant_id, weekday, spans, seen, now=NOW)
+
+
+def _refused_dated(session, tenant_id, weekday, spans, night: date) -> None:
+    before = weekly.week(session, tenant_id)[weekday]
+    with pytest.raises(FieldErrors) as refused:
+        _set_at_now(session, tenant_id, weekday, spans)
+    assert refused.value.say == weekly.NIGHT_OVERLAP.format(
+        night=_dated(night), next=_dated(night + timedelta(days=1))
+    )
+    assert weekly.week(session, tenant_id)[weekday] == before
+
+
+def _date_rows(session, tenant_id, rows) -> None:
+    """Dates as an older writer may have left them, past the night rule."""
+    session.add_all(
+        SpecialDay(tenant_id=tenant_id, date=day, opens_at=opens, closes_at=closes)
+        for day, opens, closes in rows
+    )
+    session.commit()
+
+
+def test_a_weekday_that_starts_inside_a_dates_night_is_refused(session, tenant_id):
+    """Saturday 14.11 runs to 03:00 on hours of its own. Weekly Sunday from
+    02:00 would be read inside that night on Sunday 15.11, closing at 03:00:
+    the weekly writer reads the dates beside the weekday too."""
+    night = DayHours(opens=time(18), closes=time(3))
+    assert staff.set_day_hours(
+        session, tenant_id, SATURDAY_14, night, NOW, overnight=True
+    )
+    early = {"pickup": [Span(time(2), time(10))]}
+    _refused_dated(session, tenant_id, SUNDAY, early, SATURDAY_14)
+    later = [Span(time(3, 1), time(10))]
+    assert _set_at_now(session, tenant_id, SUNDAY, {"pickup": later})
+    # The rows the check built to read the new hours were never written.
+    assert weekly.week(session, tenant_id)[SUNDAY]["pickup"] == later
+
+
+def test_a_weekly_night_into_a_dates_own_hours_is_refused(session, tenant_id):
+    """The other way: Sunday 15.11 opens at 10:00 on hours of its own, so a
+    weekly Saturday night to 11:00 reaches into it, though not into the
+    weekly Sunday's 11:30."""
+    sunday = SATURDAY_14 + timedelta(days=1)
+    morning = DayHours(opens=time(10), closes=time(14))
+    assert staff.set_day_hours(session, tenant_id, sunday, morning, NOW)
+    _refused_dated(
+        session,
+        tenant_id,
+        SATURDAY,
+        {"pickup": [Span(time(18), time(11), overnight=True)]},
+        SATURDAY_14,
+    )
+
+
+def test_a_date_like_a_weekday_is_checked_with_that_weekdays_new_hours(
+    session, tenant_id
+):
+    """Wednesday 18.11 is "wie Sonntag" and Tuesday 17.11 runs to 03:00: a
+    weekly Sunday from 02:00 would start inside that night on the 18th."""
+    tuesday = date(2026, 11, 17)
+    night = DayHours(opens=time(18), closes=time(3))
+    assert staff.set_day_hours(session, tenant_id, tuesday, night, NOW, overnight=True)
+    # A holiday answered "wie Sonntag" (`holidays.answer`) writes such a row.
+    session.add(
+        SpecialDay(
+            tenant_id=tenant_id, date=tuesday + timedelta(days=1), like_weekday=SUNDAY
+        )
+    )
+    session.commit()
+    _refused_dated(
+        session, tenant_id, SUNDAY, {"pickup": [Span(time(2), time(10))]}, tuesday
+    )
+
+
+def test_an_old_overlap_of_two_dates_blocks_no_other_weekday(session, tenant_id):
+    """Rows from before the rule: Saturday 14.11 to 03:00, Sunday 15.11 from
+    02:00. Tuesday's weekly hours are no part of it and save; a past night
+    (Sunday 8.11 into Monday 9.11, before today) blocks no Monday save either."""
+    sunday = SATURDAY_14 + timedelta(days=1)
+    _date_rows(
+        session,
+        tenant_id,
+        [
+            (SATURDAY_14, time(18), time(3)),
+            (sunday, time(2), time(10)),
+            (date(2026, 11, 8), time(18), time(3)),
+        ],
+    )
+    assert _set_at_now(
+        session, tenant_id, TUESDAY, {"pickup": [Span(time(12), time(15))]}
+    )
+    assert _set_at_now(session, tenant_id, MONDAY, {"pickup": [Span(time(1), time(9))]})
+
+
+def test_a_date_change_may_ease_an_old_overlap_but_never_deepen_it(session, tenant_id):
+    """#877: an overlap the date had before no longer blocks a change that
+    leaves less of it (a shorter night, a later start); one that reaches
+    further in is refused. Before, only "closed" passed."""
+    sunday = SATURDAY_14 + timedelta(days=1)
+    _date_rows(
+        session,
+        tenant_id,
+        [(SATURDAY_14, time(18), time(3)), (sunday, time(2), time(10))],
+    )
+    later = DayHours(opens=time(2, 30), closes=time(10))
+    assert staff.set_day_hours(session, tenant_id, sunday, later, NOW)
+    shorter = DayHours(opens=time(18), closes=time(2, 45))
+    assert staff.set_day_hours(
+        session, tenant_id, SATURDAY_14, shorter, NOW, overnight=True
+    )
+    longer = DayHours(opens=time(18), closes=time(4))
+    with pytest.raises(InvalidInput) as refused:
+        staff.set_day_hours(
+            session, tenant_id, SATURDAY_14, longer, NOW, overnight=True
+        )
+    assert refused.value.say == weekly.NIGHT_OVERLAP.format(
+        night="Samstag", next="Sonntag"
+    )
+    assert staff.day_hours(session, tenant_id, SATURDAY_14) == shorter
+
+
+def test_a_change_may_not_let_a_night_cut_a_span_it_held(session, tenant_id):
+    """Deep review of #877: the depth of an overlap alone is no measure. A span
+    wholly inside the night is read inside it and closes no earlier; shortening
+    the night so that it ends inside that span, or stretching the span past the
+    night's end, would close it at the night's end for the agent."""
+    sunday = SATURDAY_14 + timedelta(days=1)
+    _date_rows(
+        session,
+        tenant_id,
+        [(SATURDAY_14, time(18), time(3)), (sunday, time(1), time(2, 30))],
+    )
+    shorter = DayHours(opens=time(18), closes=time(2))
+    with pytest.raises(InvalidInput):
+        staff.set_day_hours(
+            session, tenant_id, SATURDAY_14, shorter, NOW, overnight=True
+        )
+    longer = DayHours(opens=time(1), closes=time(10))
+    with pytest.raises(InvalidInput):
+        staff.set_day_hours(session, tenant_id, sunday, longer, NOW)
+    # Still wholly inside the night: nothing is read wrong, the change holds.
+    inside = DayHours(opens=time(0, 30), closes=time(2, 45))
+    assert staff.set_day_hours(session, tenant_id, sunday, inside, NOW)
+
+
+def test_a_night_that_is_over_blocks_no_weekly_save(session, tenant_id):
+    """Review of #877: Saturday 14.11 runs to 03:00. At Sunday 02:30 a weekly
+    Sunday from 02:00 is refused, the night still runs; at 15:00 that night is
+    over, nobody reads it, and the date is past changing: the save holds."""
+    night = DayHours(opens=time(18), closes=time(3))
+    assert staff.set_day_hours(
+        session, tenant_id, SATURDAY_14, night, NOW, overnight=True
+    )
+    sunday = SATURDAY_14 + timedelta(days=1)
+    early = {"pickup": [Span(time(2), time(10))]}
+    for hour, refused in ((time(2, 30), True), (time(15), False)):
+        at = datetime.combine(sunday, hour, tzinfo=BERLIN)
+        seen = _seen(session, tenant_id, SUNDAY)
+        if refused:
+            with pytest.raises(FieldErrors):
+                weekly.set_weekday(session, tenant_id, SUNDAY, early, seen, now=at)
+        else:
+            assert weekly.set_weekday(session, tenant_id, SUNDAY, early, seen, now=at)
+
+
+def test_a_span_fault_is_not_read_again_as_a_dates_night(session, tenant_id):
+    """Review of #877: a span that cannot hold (no length) is named alone; the
+    night rule against the dates beside it reads only spans that hold."""
+    night = DayHours(opens=time(18), closes=time(3))
+    assert staff.set_day_hours(
+        session, tenant_id, SATURDAY_14, night, NOW, overnight=True
+    )
+    empty = {"pickup": [Span(time(2), time(2))]}
+    with pytest.raises(FieldErrors) as refused:
+        _set_at_now(session, tenant_id, SUNDAY, empty)
+    assert refused.value.faults == {"pickup 02:00-02:00": staff.NO_SPAN}

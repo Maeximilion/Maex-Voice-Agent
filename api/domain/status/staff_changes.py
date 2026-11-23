@@ -240,6 +240,8 @@ def change_team_phone(
         session, tenant_id, TEAM_PHONE, today, {"number": holding}
     )
     _audit(session, tenant_id, actor, ACTION_TEAM_PHONE, card, holding, number)
+    card.after, card.held = {"number": number}, True
+    undone = card.after == card.before
     enqueue(
         session,
         tenant_id=tenant_id,
@@ -249,10 +251,11 @@ def change_team_phone(
             "from": holding,
             "to": number,
             **_who(actor),
+            # Back to what held: the card closes, nothing to check (#877).
+            **({"undone": True} if undone else {}),
         },
     )
-    card.after, card.held = {"number": number}, True
-    if card.after == card.before:
+    if undone:
         _close(card, UNDONE, now)
     session.commit()
     return card
@@ -442,6 +445,7 @@ def change_day_hours(
         held=held,
     )
     card.after, card.held = hours.as_dict(), held
+    undone = held and hours == origin
     enqueue(
         session,
         tenant_id=tenant_id,
@@ -451,9 +455,11 @@ def change_day_hours(
             "from": shown.text(),
             "to": hours.text(),
             "held": held,
+            # Back to what held: the card closes, nothing to check (#877).
+            **({"undone": True} if undone else {}),
         },
     )
-    if held and hours == origin:
+    if undone:
         _close(card, UNDONE, now)
     session.commit()
     return card
@@ -794,31 +800,23 @@ def _night_checked(
     reader takes the night first, so a night that reached into the next span
     would be the window found there and its end the closing time (#862). The
     weekly writer's rule (`weekly._night_faults`), with the dates around `day`
-    as they hold. The caller holds the restaurant's lock. Raises InvalidInput."""
+    as they hold: an overlap the date had before may stay or shrink, never
+    deepen (#877). The caller holds the restaurant's lock. Raises InvalidInput."""
     # Imported here: weekly imports this module.
-    from api.domain.status.weekly import Span, _night_faults
+    from api.domain.status.weekly import NIGHT_OVERLAP, night_deepened
 
     tz = ZoneInfo(zone)
-    held = _hours_with(session, tenant_id, day, hours)
-
-    def spans(on: date) -> dict[str, list[Span]]:
-        return {
-            service: [
-                Span(opens.time(), closes.time())
-                for opens, closes in windows_for_day(held, on, service, tz)
-            ]
-            for service in SERVICES
-        }
-
-    around = {
-        (day - timedelta(days=1)).weekday(): spans(day - timedelta(days=1)),
-        (day + timedelta(days=1)).weekday(): spans(day + timedelta(days=1)),
-    }
-    own = spans(day)
+    was = load_hours(session, tenant_id, day, days=1)
+    will = _hours_with(session, tenant_id, day, hours)
     for service in SERVICES:
-        for say in _night_faults(around, day.weekday(), service, own[service]).values():
-            session.rollback()
-            raise InvalidInput("a night reaches into the next span", say=say)
+        for night in (day - timedelta(days=1), day):
+            if night_deepened(was, will, night, service, tz):
+                session.rollback()
+                say = NIGHT_OVERLAP.format(
+                    night=WEEKDAYS[night.weekday()],
+                    next=WEEKDAYS[(night.weekday() + 1) % 7],
+                )
+                raise InvalidInput("a night reaches into the next span", say=say)
 
 
 def _dialable(raw: str) -> str:
