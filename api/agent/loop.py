@@ -1540,7 +1540,7 @@ class ConversationLoop:
         head = summary or _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY)
         said = _card_tail(detail)
         if open_named:
-            return head + said, []
+            return (head + said)[:_SUMMARY_MAX], []
         table = self._open_table(state) or table
         if table:
             label = (
@@ -1563,7 +1563,11 @@ class ConversationLoop:
             head += marker
         not_booked = SAY_ORDER_NOT_PLACED if state.cart else None
         not_booked = SAY_TABLE_NOT_BOOKED if table else not_booked
-        return head + said, [not_booked] if not_booked else []
+        # A callback takes 1000 characters (`CreateCallbackRequest`): above,
+        # the request is refused before `create_callback` could cut it, and
+        # the guest's callback is lost (rule 5, Codex review of #944). The
+        # end goes first: the guest's words, then what follows the order.
+        return (head + said)[:_SUMMARY_MAX], [not_booked] if not_booked else []
 
     def _bookings_on_card(self, state: ConversationState) -> str:
         """The bookings `create_callback` adds to a card, which an open order

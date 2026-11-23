@@ -1899,6 +1899,28 @@ def test_a_long_open_order_leaves_room_for_a_booking_of_the_call(session, state)
     )
 
 
+def test_a_core_card_never_passes_what_a_callback_takes(session, state):
+    """Codex review of #944, P1: `CreateCallbackRequest` refuses a summary over
+    1000 characters before `create_callback` could cut it, and the callback
+    would be lost (rule 5). A long table, a long note for the whole order and
+    a long sentence of the guest still give a card within the limit."""
+    state.order_note = "bitte an der Hintertür klingeln " * 7
+    for n in range(3):
+        dish = str(uuid.uuid4())
+        state.seen_items[dish] = {"number": f"{100 + n}", "name": "Pizza"}
+        state.cart.append({"menu_item_id": dish, "quantity": 1})
+    loop = ConversationLoop(session, FakeLLM([]), "system")
+
+    card, _ = loop._card(
+        state,
+        "human_requested",
+        "Kann ich bitte mit jemandem sprechen, es ist dringend. " * 8,
+        table="Tisch für 4 Personen, Name " + "Müller-Lüdenscheidt " * 40,
+    )
+
+    assert len(card) <= 1000
+
+
 def test_what_does_not_fit_on_the_card_is_counted(state):
     for n in range(10):
         dish = str(uuid.uuid4())
