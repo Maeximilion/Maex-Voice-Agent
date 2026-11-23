@@ -121,9 +121,12 @@ services:
       AGENT_DOMAIN: ${AGENT_DOMAIN:-agent.example.com}
       N8N_DOMAIN: ${N8N_DOMAIN:-n8n.example.com}
       PUSH_DOMAIN: ${PUSH_DOMAIN:-push.example.com}
-    # Hardened like the rest (#252 finding 8). It binds 80 and 443, and its
-    # binary carries that capability as a file capability, which `exec` refuses
-    # when the capability is not in the container's set.
+    # Root in the image; a user of its own here (#888 S10), which owns the
+    # certificates through caddy-chown below.
+    user: "10002:10002"
+    # Hardened like the rest (#252 finding 8). It binds 80 and 443: as its own
+    # user it needs NET_BIND_SERVICE for that wherever Docker leaves the
+    # unprivileged ports above 1024 (measured, api/tests/test_compose_users.py).
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
@@ -136,7 +139,35 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on: [api, n8n, push]
+    depends_on:
+      api: {condition: service_started}
+      n8n: {condition: service_started}
+      push: {condition: service_started}
+      caddy-chown: {condition: service_completed_successfully}
+
+  # Gives Caddy's volumes to its user before it starts: certificates and keys
+  # that a Caddy before #888 S10 wrote as root (0600) are unreadable to it
+  # otherwise, and it would ask for new ones on every start. A no-op once the
+  # owner is right.
+  caddy-chown:
+    logging: *journald
+    image: caddy:2.11.9-alpine
+    entrypoint: ["chown", "-Rh", "10002:10002", "/data", "/config"]
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: "no"
+    network_mode: none
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    # CHOWN for the owner, DAC_READ_SEARCH to pass through directories that
+    # are 0700 and already its user's on every later run. -h changes a link,
+    # never what it points to.
+    cap_add: [CHOWN, DAC_READ_SEARCH]
+    read_only: true
+
+  push-chown:
+    logging: *journald
 
 # Compose adds these to the base file's definitions. `internal` takes the
 # gateway away: a service on such networks alone has no way out of the server,

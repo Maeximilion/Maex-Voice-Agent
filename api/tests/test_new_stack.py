@@ -622,7 +622,7 @@ def test_the_operator_stack_publishes_nothing_and_has_no_way_out():
     layout = _load(REPO_ROOT / "deploy" / "docker-compose.operator.yml")
     services = _services(layout)
     assert layout["name"] == new_stack.OPERATOR_PROJECT
-    assert set(services) == {"db", "dashboard", "push"}
+    assert set(services) == {"db", "dashboard", "push", "push-chown"}
     assert all("ports" not in s and "expose" not in s for s in services.values())
     assert layout["networks"] == {
         "backend": {"internal": True},
