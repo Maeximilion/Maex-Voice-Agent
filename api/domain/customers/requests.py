@@ -544,17 +544,16 @@ def _by_day(
     for 24 months: without this the row of a pickup guest could not be reached.
     Only a customer with a confirmed delivery from their own line: a delivery
     draft under a named number writes a row dated by its own insert, and only
-    the own line moves the two days (`customers.contact`)."""
+    the own line moves the day (`customers.contact`). Never `last_contact_at`:
+    a callback or a complaint moves it on the presented number alone, no yes
+    (#888 S4)."""
     return [
         customer
         for customer in session.scalars(
             select(Customer).where(
                 Customer.tenant_id == tenant_id,
                 Customer.order_count > 0,
-                or_(
-                    _local_day(Customer.last_order_at, zone) == day,
-                    _local_day(Customer.last_contact_at, zone) == day,
-                ),
+                _local_day(Customer.last_order_at, zone) == day,
             )
         )
         if _folded(customer.name) == name

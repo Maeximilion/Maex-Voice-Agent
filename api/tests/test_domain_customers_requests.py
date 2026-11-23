@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import Ambiguous, Conflict, FieldErrors, InvalidInput, NotFound
 from api.domain.confirm import confirm
 from api.domain.customers import find_customer
+from api.domain.customers.contact import note_contact
 from api.domain.customers.phone import number_or_none
 from api.domain.customers.requests import (
     NOTE_MAX,
@@ -779,8 +780,8 @@ def test_the_own_line_in_another_spelling_opens_its_rows(session, tenant_id):
 
 
 def test_a_contact_booked_under_a_named_number_moves_no_day(session, tenant_id):
-    """`_by_day` reads `last_contact_at`: a table confirmed under Müller's
-    number from another line must not make its day a detail of Müller."""
+    """A table confirmed under Müller's number from another line must not make
+    its day a detail of Müller."""
     customer = _customer(session, tenant_id)
     customer.last_order_at = customer.last_contact_at = PAST - timedelta(days=30)
     table = _reservation(
@@ -794,6 +795,20 @@ def test_a_contact_booked_under_a_named_number_moves_no_day(session, tenant_id):
     day = Details(name="Müller", days=(NOW.date(), FUTURE.date()))
     with pytest.raises(NotFound):
         verify(session, tenant_id, day, ZONE, NOW)
+
+
+def test_a_callback_on_the_own_line_moves_no_day(session, tenant_id):
+    """#888 S4: a callback or a complaint moves `last_contact_at` of every
+    customer on the presented number, no yes asked. A spoofed number would
+    make today a detail of Müller."""
+    customer = _customer(session, tenant_id)
+    customer.last_order_at = PAST
+    call = _call(session, tenant_id, started_at=NOW)
+    note_contact(session, tenant_id, call.id, PHONE, NOW)
+    assert customer.last_contact_at == NOW
+    with pytest.raises(NotFound):
+        verify(session, tenant_id, replace(MUELLER, days=(NOW.date(),)), ZONE, NOW)
+    assert verify(session, tenant_id, MUELLER, ZONE, NOW).customers == [customer]
 
 
 @pytest.mark.parametrize("details", [MUELLER, ADDRESS], ids=["day", "address"])
@@ -846,6 +861,8 @@ def test_a_booking_stays_verifiable_after_the_objection(session, tenant_id, kind
 
     person = verify(session, tenant_id, MUELLER, ZONE, NOW)
     assert [*person.orders, *person.reservations] == [_fresh(session, row)]
+    # The call is the booking's, not the number's: it stays the person's.
+    assert [call.id for call in person.calls] == [row.call_id]
 
 
 def test_a_table_booked_long_ahead_verifies_after_the_caller_id_went(
