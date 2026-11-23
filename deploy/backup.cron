@@ -1,10 +1,15 @@
 # Daily database backup at 03:00 server time (T-9.3, docs/13 §4).
-# Install on the server: adjust the path, then `crontab deploy/backup.cron` as the
-# user that runs the Compose stack. The script reads DATABASE_URL, OWNER_DATABASE_URL
-# (the owner dumps, docs/13 §3) and BACKUP_* from the .env next to it and exits
-# non-zero when no readable dump was written. The log
-# folder is made first: the shell opens the log before the script could create it.
-0 3 * * * cd /opt/maex-voice-agent && mkdir -p backups && bash scripts/backup.sh >> backups/backup.log 2>&1
+# Install on the server: adjust the root if it is not /srv/maex, then
+# `crontab deploy/backup.cron` as the deploy user. The first line dumps every
+# customer's stack, one after the other: each folder of the root with an .env and
+# scripts/backup.sh (scripts/new_stack.py makes them), so a new stack needs no
+# line of its own and a removed one has no line left (#888 D2). caddy/ and
+# offboarding/ hold neither; ops/ has the second line. The script reads
+# DATABASE_URL, OWNER_DATABASE_URL (the owner dumps, docs/13 §3) and BACKUP_* from
+# the stack's .env and exits non-zero when no readable dump was written; one stack's
+# failure does not stop the next. The log folder is made first: the shell opens
+# the log before the script could create it.
+0 3 * * * for d in /srv/maex/*/; do [ "$d" != /srv/maex/ops/ ] && [ -f "$d.env" ] && [ -f "${d}scripts/backup.sh" ] && (cd "$d" && mkdir -p backups && bash scripts/backup.sh >> backups/backup.log 2>&1); done
 # The operator stack's own database (#827 F9), from its checkout <root>/ops: its
 # .env names DATABASE_URL, OWNER_DATABASE_URL, BACKUP_PASSPHRASE_FILE and
 # BACKUP_DOCKER_NETWORK=maex-ops_backend (docs/13 §8).

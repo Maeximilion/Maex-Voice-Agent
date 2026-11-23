@@ -9,6 +9,7 @@ containers that run the application. The role itself is set up by
 import logging
 import uuid
 
+import psycopg
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -102,6 +103,45 @@ def test_a_database_that_does_not_answer_does_not_stop_the_start(caplog):
         refuse_a_superuser_role("prod", engine)
 
     assert "could not be checked" in caplog.text
+
+
+def _late(url):
+    """An engine whose database does not answer at its first connection, then
+    does: the start of a process whose database comes up after it."""
+    tries = []
+
+    def connect():
+        tries.append(1)
+        if len(tries) == 1:
+            raise psycopg.OperationalError("the database is not up yet")
+        return psycopg.connect(url.set(drivername="postgresql").render_as_string(False))
+
+    return create_engine("postgresql+psycopg://", poolclass=NullPool, creator=connect)
+
+
+def test_a_superuser_is_refused_once_the_database_answers(superuser, caplog):
+    """#888 C3: before, the warning at start was the end of the check, and the
+    process then ran as a superuser."""
+    engine = _late(superuser.url)
+    with caplog.at_level(logging.WARNING, logger="api.core.database_role"):
+        refuse_a_superuser_role("prod", engine)
+    assert "could not be checked" in caplog.text
+
+    # Every connection is refused, not only the first one.
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="superuser"), engine.connect():
+            pass
+    engine.dispose()
+
+
+def test_a_role_of_its_own_runs_once_the_database_answers(plain_role):
+    engine = _late(plain_role.url)
+    refuse_a_superuser_role("prod", engine)
+
+    for _ in range(2):
+        with engine.connect() as conn:
+            assert conn.scalar(text("select 1")) == 1
+    engine.dispose()
 
 
 def test_the_api_runs_the_check_when_it_starts(monkeypatch, superuser):
