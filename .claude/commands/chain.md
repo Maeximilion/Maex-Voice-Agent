@@ -50,7 +50,17 @@ The brief is the session's only context. It has, in this order:
    found by the coordinator with the Graphify connector (`graphify_find`,
    `graphify_impact`, `graphify_tests_for`; `CLAUDE.md` "graphify"), with the
    approach, the edge cases to test and what not to touch. Pointers, not file
-   contents.
+   contents. The coordinator does not search for all of it itself: before or
+   right after starting the sessions it runs one scout agent per item, all in
+   parallel (Explore type, `model` haiku; Maxi's idea, 2026-11-23, so the
+   sessions start faster). Each scout is told to use the Graphify connector
+   first and to return a map of at most 300 words: the file and line of each
+   function the item names, its direct callers, the linked tests with their
+   names, and the `commitSha` of the graph with whether it equals `HEAD`. The
+   coordinator sends each map to its session with `SendMessage`. A session may
+   start before its map arrives: its brief then says a map follows and what to
+   read meanwhile. The session uses the map instead of searching again and
+   re-reads only the files changed since that commit.
 5. GUI work also loads the skill `ui-ux-pro-max`; `docs/06_GUI.md` and the
    GUI path rule win where they differ.
 6. Base: `origin/main`, or a stack on an open item's branch when both touch
@@ -80,7 +90,9 @@ before naming a base.
   start one, and an `AskUserQuestion` answer inside such a turn does not
   change that; over Remote Control not even a proposal card shows. So: start
   every item that is ready in the turn of his message, and when the next item
-  waits, say in one line that it starts with his next message.
+  waits, say in one line that it starts with his next message. A scout
+  agent's report turn is such a turn too, so sessions start in Maxi's turn and
+  the scouts' maps follow by message (section 2, item 4).
 - Never routes a new task into an existing idle session to get around a
   refused start.
 - Cache: a coordinator woken after more than an hour of silence rereads its
