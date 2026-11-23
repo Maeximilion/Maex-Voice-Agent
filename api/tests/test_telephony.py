@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from sqlalchemy import create_engine, select, text, update
-from sqlalchemy.exc import DBAPIError, OperationalError
+from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, Usage
@@ -2201,11 +2201,13 @@ def test_an_outage_with_the_number_unreadable_rings_the_one_read_at_the_start(
     assert port.transfers("s-1") == [TEAM_PHONE]
 
 
-def _outage_on_the_wire(session, tenant, monkeypatch, *, unreadable=False):
+def _outage_on_the_wire(
+    session, tenant, monkeypatch, *, unreadable=False, llm_factory=None
+):
     """A call on the own voice layer whose turn fails after the staff changed
     the team number. Each read of the number is marked on the line, so the
     test sees it between what the caller hears."""
-    wire = _Wire(session, tenant, llm_factory=lambda s: BrokenLLM())
+    wire = _Wire(session, tenant, llm_factory=llm_factory or (lambda s: BrokenLLM()))
     wire.played()
     session.execute(
         update(ServiceConfig)
@@ -2278,6 +2280,66 @@ def test_on_the_wire_a_mouth_that_fails_on_the_outage_sentence_rings_the_team_on
     assert the_call(session, "voice-1").outcome == "error"
 
 
+class DatabaseLostLLM:
+    """A turn that fails on the database, the way a lost connection does."""
+
+    def next_turn(
+        self, system_prompt, state_json, input_text, *, timeout=None
+    ) -> LLMTurn:
+        raise OperationalError("SELECT", {}, Exception("connection lost"))
+
+
+def test_on_the_wire_a_mouth_failing_after_a_database_failure_reads_no_number(
+    session, tenant, monkeypatch
+):
+    """#926: the turn failed on the database, so its outage path reads no
+    number; then the mouth fails on the outage sentence. That failure hands the
+    call over once more, and must not read the number from the dead database
+    either: the call's own number, rung once."""
+    wire = _outage_on_the_wire(
+        session,
+        tenant,
+        monkeypatch,
+        unreadable=True,
+        llm_factory=lambda s: DatabaseLostLLM(),
+    )
+    wire.call._mouth.broken = True
+
+    wire.says("Einen Tisch fuer vier bitte")
+
+    actions = wire.line.actions
+    assert ("team_number_read",) not in actions
+    assert [a for a in actions if a[0] == "transfer"] == [("transfer", TEAM_PHONE)]
+    assert wire.call.outcome == "transfer"
+    assert the_call(session, "voice-1").outcome == "error"
+
+
+def test_a_failing_voice_after_an_unreadable_team_number_reads_it_no_more(
+    session, tenant, monkeypatch
+):
+    """#926: a handover read the number and the database refused it; then the
+    voice fails. The outage path dials the call's own number without a second
+    read that would only wait out another connect timeout."""
+    reads = []
+
+    def unreadable(session, tenant_id, now=None):
+        reads.append(tenant_id)
+        raise OperationalError("SELECT", {}, Exception("connection refused"))
+
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    monkeypatch.setattr(handler_module, "current_team_phone", unreadable)
+
+    assert handler._team_phone(handler._live["s-1"]) == TEAM_PHONE
+    handler.on_voice_failure("s-1")
+
+    assert len(reads) == 1
+    assert port.says("s-1")[-1] == SAY_OUTAGE
+    assert port.transfers("s-1") == [TEAM_PHONE]
+
+
 def test_a_database_failure_does_not_wait_on_a_second_read_of_the_number(
     session, tenant, monkeypatch
 ):
@@ -2306,6 +2368,59 @@ def test_a_database_failure_does_not_wait_on_a_second_read_of_the_number(
     assert reads == []
     assert port.says("s-1")[-1] == SAY_OUTAGE
     assert port.transfers("s-1") == [TEAM_PHONE]
+
+
+def test_a_database_lost_behind_the_key_terms_is_not_read_again_for_the_team(
+    session, tenant, monkeypatch
+):
+    """#926 review: the read of the menu size for the ear's key terms meets a
+    database that does not answer and goes on without names; the outage that
+    follows dials the call's own number without waiting on the database again."""
+    reads = []
+
+    def counted(session, tenant_id, now=None):
+        reads.append(tenant_id)
+        return CHANGED_PHONE
+
+    def unreachable(session, tenant_id):
+        raise OperationalError("SELECT", {}, Exception("connection refused"))
+
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    monkeypatch.setattr(handler_module, "current_team_phone", counted)
+    monkeypatch.setattr(handler_module, "active_count", unreachable)
+
+    assert handler._menu_size(handler._live["s-1"]) == 0
+    handler.on_voice_failure("s-1")
+
+    assert reads == []
+    assert port.transfers("s-1") == [TEAM_PHONE]
+
+
+def test_a_constraint_error_reads_the_number_that_holds_now(
+    session, tenant, monkeypatch
+):
+    """#926: a constraint or data error comes from a database that answers, so
+    the outage path still reads the number of now (#710) instead of the one of
+    the call's start."""
+    port = FakeTelephony()
+    handler = handler_for(session, tenant, port)
+    port.open("s-1", caller_id="+497215551234")
+    handler.on_call_started("s-1")
+    monkeypatch.setattr(
+        handler_module, "current_team_phone", lambda *a, **k: CHANGED_PHONE
+    )
+
+    def refused(live, text):
+        raise IntegrityError("INSERT", {}, Exception("duplicate key"))
+
+    monkeypatch.setattr(handler, "_turn", refused)
+    handler.on_user_turn("s-1", "Einen Tisch fuer vier bitte")
+
+    assert port.says("s-1")[-1] == SAY_OUTAGE
+    assert port.transfers("s-1") == [CHANGED_PHONE]
 
 
 def test_a_handover_without_a_named_target_dials_the_number_that_holds_now(

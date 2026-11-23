@@ -28,7 +28,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from api.core.logging import get_logger
-from api.core.time import business_day
+from api.core.time import business_day, to_local, utcnow
 from api.db import SessionLocal
 from api.domain.callbacks import open_change_token
 from api.domain.menu import price_check
@@ -58,8 +58,11 @@ def _header_token(session: Session, tenant_id: uuid.UUID) -> str:
     return config_change_token(session, tenant_id)
 
 
-def _callbacks_token(session: Session, tenant_id: uuid.UUID) -> str:
-    return open_change_token(session, tenant_id)
+def _callbacks_token(session: Session, tenant_id: uuid.UUID, tz_name: str) -> str:
+    # With the local date: at midnight a card's time gains its date
+    # (`router._when`), so the column is drawn again then (#926).
+    today = to_local(utcnow(), tz_name).date()
+    return f"{open_change_token(session, tenant_id)}:{today}"
 
 
 def _orders_token(session: Session, tenant_id: uuid.UUID, tz_name: str) -> str:
@@ -107,7 +110,7 @@ def _tokens(
         return {
             "header": _header_token(session, tenant_id),
             "today": _token(session, tenant_id, tz_name),
-            "callbacks": _callbacks_token(session, tenant_id),
+            "callbacks": _callbacks_token(session, tenant_id, tz_name),
             "orders": _orders_token(session, tenant_id, tz_name),
             "dishes": _dishes_token(session, tenant_id),
             "holidays": _holidays_token(session, tenant_id, tz_name),

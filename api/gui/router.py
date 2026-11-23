@@ -186,7 +186,7 @@ def _callback_row(cb: OpenCallback, tz_name: str) -> dict[str, Any]:
     origin = cb.number_origin
     return {
         "id": str(cb.callback_id),
-        "time": orders_view.clock(cb.created_at, tz_name),
+        "time": _when(cb.created_at, tz_name),
         "phone": cb.phone,
         # A premium or service number: a warning and no one-tap link (#691).
         "costly": costly(cb.phone),
@@ -203,14 +203,20 @@ def _callback_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
     return [_callback_row(cb, tenant.timezone) for cb in list_open(session, tenant.id)]
 
 
+def _when(value: datetime, tz_name: str) -> str:
+    """ "18:42", with the date when it was not today (local time): a card from
+    last night must not read as one of this morning (#926)."""
+    local = to_local(value, tz_name)
+    if local.date() == to_local(clock.utcnow(), tz_name).date():
+        return f"{local:%H:%M}"
+    return f"{local:%d.%m.} {local:%H:%M}"
+
+
 def _done_when(done_at: datetime | None, tz_name: str) -> str:
     """ "Erledigt 18:42", with the date when it was not today (local time)."""
     # list_history filters on done_at, so a history row always carries one.
     assert done_at is not None
-    local = to_local(done_at, tz_name)
-    if local.date() == to_local(clock.utcnow(), tz_name).date():
-        return f"Erledigt {local:%H:%M}"
-    return f"Erledigt {local:%d.%m.} {local:%H:%M}"
+    return f"Erledigt {_when(done_at, tz_name)}"
 
 
 def _holiday_rows(session: Session, tenant: Tenant) -> list[dict[str, Any]]:
@@ -314,9 +320,7 @@ def _bridge_problem(session: Session, tenant: Tenant) -> str | None:
         return None
     if quiet.since is None:
         return f"Druckbrücke hat sich noch nie gemeldet. {BRIDGE_CHECK}"
-    since = to_local(quiet.since, tenant.timezone)
-    today = to_local(clock.utcnow(), tenant.timezone).date()
-    shown = since.strftime("%H:%M" if since.date() == today else "%d.%m. %H:%M")
+    shown = _when(quiet.since, tenant.timezone)
     return f"Druckbrücke meldet sich nicht seit {shown}. {BRIDGE_CHECK}"
 
 
