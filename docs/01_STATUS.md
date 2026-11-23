@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.2
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.3
 
 ---
 
@@ -178,7 +178,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.2 · 23.11.2026:** T-5.3: prompt fix for Haiku 5.5 (read-back word for word, fixed allergy note), cases 72 -> 85/107
+- **v2.69.3 · 23.11.2026:** T-5.3: prompt fix for Haiku 5.5 (read-back word for word, fixed allergy note), cases 72 -> 85/107
 - **v2.69.2 · 23.11.2026:** #888 S5: workflows run only main's code with PROJECT_TOKEN and README_BLOCKLIST
 - **v2.69.1 · 23.11.2026:** T-5.3 race run: Haiku 5.5 with effort low wins (72/107 cases, no hard violation); Haiku 4.5 40/107
 - **v2.69.0 · 23.11.2026:** T-5.3: Claude client behind LLMClient and model turn time in the eval report; Haiku 4.5 vs 5.5 race waits for an API key
