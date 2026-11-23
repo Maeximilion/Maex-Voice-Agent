@@ -201,7 +201,10 @@ carries a note with a health word (`wishes.speaks_of_health`: an allergy
 word, "Zöliakie", "reagiert auf", "darf kein"): its line reads "Hinweis für
 die Küche mit dem Gast klären" instead, and a card of a call whose guest
 spoke of their health carries that line too (`allergy_said`, ledger #764
-review). "Zöliakie" (or "Cöliakie") also
+review): the core's cards, the one that waited for a callback number (judged
+again after the guest's answer), the table the team decides on, and the
+model's own `create_callback`, each with the line in front, where no cut to
+the card's length or the call's bookings reaches it (#940). "Zöliakie" (or "Cöliakie") also
 arms the claim check above, since it names no allergen (#763, Maxi
 14.11.2026)
 
@@ -328,7 +331,11 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      as "Gegen Erdnüsse."; `guards.reacts_to`): after "Ich habe eine
      Erdnussallergie" a "Nein." to "Haben Sie sonst noch Allergien?" denies
      a further one, and a denial that names it ("Nein, keine Nussallergie")
-     takes back what names only that (`loop._taken_back`, ledger #764). A
+     takes back what names only that (`loop._taken_back`, ledger #764). The
+     answers to the core's question for a callback number and to a rule's
+     offer are kept too. Of five kept sentences, the oldest that names
+     nothing goes first; one that names what the guest reacts to always
+     stays (#940). A
      draft_order or create_reservation whose notes name none
      (`wishes.HEALTH_NOTE`: "allergi", "unverträglich", "intoleran",
      "WICHTIG !!!", the pattern the retention job deletes by) goes back to
@@ -563,7 +570,7 @@ A refused call goes back to the model as a failed tool result with `error_code` 
 `hint` that says why (a refused order under the name `cart`, a refused sentence under `say`, neither a tool; a `confirm` with no draft at all names the tool that makes one, a booking without a phone number asks for it; a callback with nobody's number known goes to the team where it is reachable, and otherwise counts on the ladder for `phone` once the model has asked for the number); it stands in `calls.tool_calls` like any failed call and costs one
 tool hop, so a model that insists ends in the handoff to the team. Which of several
 offered dishes the guest's answer means is left to the model and measured by the evals;
-the readback and its yes come after it. A `transfer_to_team` the model calls is carried out by the core as its own handoff (#655): the card for a team leg nobody answers, the callback when the team is not reachable, the question for a number when there is none, and the model is not asked again. The same holds for a failed tool result whose `say` ends with "Ich verbinde Sie mit dem Restaurant." (`core/errors.SAY_TO_THE_TEAM`: a draft cancelled on the tablet, a failure the guest cannot fix): the core hands over instead of passing the sentence to the model, which spoke it and did nothing. Every handover of the core names an order or a read-back table that stands open on its card, and the guest hears first that it is not booked. Points in time of a tool result reach the model in the restaurant's local time, as `now` does. The other way round, a `reserved_for` the model writes without an offset is read as the restaurant's local time (`dispatch.in_local_time`, like `core/time.to_utc` for the GUI); the HTTP tools still require an offset. The call time limit is read again when the
+the readback and its yes come after it. A `transfer_to_team` the model calls is carried out by the core as its own handoff (#655): the card for a team leg nobody answers, the callback when the team is not reachable, the question for a number when there is none, and the model is not asked again. The same holds for a failed tool result whose `say` ends with "Ich verbinde Sie mit dem Restaurant." (`core/errors.SAY_TO_THE_TEAM`: a draft cancelled on the tablet, a failure the guest cannot fix): the core hands over instead of passing the sentence to the model, which spoke it and did nothing. Every handover of the core names an order or a read-back table that stands open on its card, and the guest hears first that it is not booked, both sentences when both stand open (#940). A table draft held back for its note whose values no tool can read stays on the card as "Offene Reservierung, nicht bestätigt: Angaben mit dem Gast klären." without the model's values (#940). Points in time of a tool result reach the model in the restaurant's local time, as `now` does. The other way round, a `reserved_for` the model writes without an offset is read as the restaurant's local time (`dispatch.in_local_time`, like `core/time.to_utc` for the GUI); the HTTP tools still require an offset. The call time limit is read again when the
 model has answered: an answer that arrives too late is neither spoken nor dispatched,
 but what it heard (a phone number) is taken first, for the callback of the handoff.
 
