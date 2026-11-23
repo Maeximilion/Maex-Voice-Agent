@@ -144,6 +144,16 @@ two minutes after the reset, then back to work. At 90 percent of the week:
 finish the step, commit, push, report. Cheap work first (read, test, build),
 agent waves and deep reviews when they fit into what is left of the window.
 
+The goal is the whole window used by the reset, so the chain takes the reset
+and keeps going (Maxi, 2026-11-23: "the target is to use all Usage limit until
+the reset so we can take the reset and just keep going. Thats why we can go
+until 3% is left for the Reset. Important is that the 3% are reached in a zone
+where the Cache don't run cold, so like 30 minutes before the reset."). Inside
+a chain the 70 percent start limit of `CLAUDE.md` "Usage check" does not apply:
+the pacing above decides, and the last 3 points are reached about 30 minutes
+before the reset, so the sleep to the reset stays short and the cache warm. A
+brief never sets a lower stop.
+
 ## 5a. Option: no handover limit (overnight)
 
 Maxi names it when he starts a chain ("no handover limit", "overnight"); without
