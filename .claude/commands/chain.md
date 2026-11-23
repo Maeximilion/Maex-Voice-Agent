@@ -102,6 +102,11 @@ before naming a base.
   agent's report turn is such a turn too, so sessions start in Maxi's turn,
   after the foreground scouts returned; only a late map follows by message
   (section 2, item 4).
+- Never asks Maxi whether to start the next item (Maxi, 2026-11-23: "Don't ask
+  me ever again starting the Items / Side Sessions just do it because you are
+  using /chain"). When a lane frees, the coordinator starts the next item in
+  that same turn; only when the app refuses the start does it wait for his next
+  message, and it says so in one line, never as a question.
 - Never routes a new task into an existing idle session to get around a
   refused start.
 - Reserve items (Maxi, 2026-11-23: "if something stops, work on the next one so
@@ -143,6 +148,56 @@ would not finish. At 3 points left: commit, push, one background `sleep` to
 two minutes after the reset, then back to work. At 90 percent of the week:
 finish the step, commit, push, report. Cheap work first (read, test, build),
 agent waves and deep reviews when they fit into what is left of the window.
+
+The goal is the whole window used by the reset, so the chain takes the reset
+and keeps going (Maxi, 2026-11-23: "the target is to use all Usage limit until
+the reset so we can take the reset and just keep going. Thats why we can go
+until 3% is left for the Reset. Important is that the 3% are reached in a zone
+where the Cache don't run cold, so like 30 minutes before the reset."). Inside
+a chain the 70 percent start limit of `CLAUDE.md` "Usage check" does not apply:
+the pacing above decides, and the last 3 points are reached about 30 minutes
+before the reset, so the sleep to the reset stays short and the cache warm. A
+brief never sets a lower stop.
+
+Chain modes (Maxi, 2026-11-23: "change into slow mode when we reach +10 ahead
+so we can catch up and if we run into -20 we can run into Turbo Mode"), read
+by the coordinator at every reading of `ahead`:
+
+| Mode | When | Lanes | Agent waves, deep reviews |
+|---|---|---|---|
+| Slow | `ahead` over +10 | no new start while two sessions work | wait until normal |
+| Normal | -20 to +10 | 3 | as the brief says |
+| Turbo | `ahead` under -20 | up to 5, never above today's row of "Agents per weekday" | welcome |
+
+Slow mode lets running sessions go on; only new starts and new agent waves
+wait. The pauses of the table above still hold in every mode.
+
+In slow mode (Maxi, 2026-11-23: "in the Slow mode i would prefer to let Items
+work which needs smaller models or less effort or less thinking"):
+
+- The next start is the first open item routed to Sonnet or Haiku, or to a
+  lower effort; Opus items wait for normal mode unless none of the cheap kind
+  is left.
+- A session takes one background `sleep 900` (15 minutes) after each finished
+  part of its work, before it starts the next part. Measured on 23.11.2026
+  (6,000 requests of three days): a wake after any wait under 60 minutes costs
+  the same as one working request, because the cache is kept for an hour; the
+  wait itself costs nothing. So one long wait is cheap, many short polls are
+  not, and a wait of 60 minutes or more pays the cache write again (about
+  twenty times the read).
+
+A mode Maxi pins on the chain dashboard stays until he sets it back to auto.
+When a mode is pinned and `ahead` reaches +30 or -30, the coordinator reminds
+him once, as a heading in large text at the top of its reply and as a push
+notification, to set the mode back to auto (Maxi, 2026-11-23: "give me once a
+reminder if we got to an extreme ahead value of 50", lowered to 30 on his
+question for a better value). It reminds him again only after `ahead` has been
+back inside -30 to +30. Why 30: three Opus lanes used about 26 points an hour
+on 23.11, an even pace is 20; a forgotten turbo pin climbs about 20 points an
+hour, a forgotten slow pin falls about 10, and turbo closes about 20 an hour.
+At +30 more than an hour stays before the window runs out; at -30 about an
+hour and a half of turbo still catches up. At 50 neither is true late in the
+window.
 
 ## 5a. Option: no handover limit (overnight)
 
