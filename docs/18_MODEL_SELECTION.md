@@ -43,6 +43,7 @@ so **about 15,000 input and 1,000 output tokens per call**. Month: 30 calls a da
 | Gemini Flash-Lite / Flash | about $0.10 / $0.40 up to $0.30 / $2.50, newer Flash generations higher | 0.2 to 1 ct | $2 to $9 |
 | GPT-5 mini (not shortlisted) | about $0.25 / $2.00 | about 0.6 ct | about $5 |
 | Claude Haiku 4.5 | $1.00 / $5.00 | about 2 ct | about $18 |
+| Claude Haiku 5.5 (added 23.11.2026) | $0.10 / $0.50 | about 0.2 ct | about $2 |
 | Claude Sonnet 5.5 (not shortlisted) | $2.00 / $10.00 | about 4 ct | about $36 |
 
 Prices are list prices from public sources as of 06.10.2026 and vary between sources and
@@ -235,6 +236,7 @@ under "GPU numbers" and docs/01_STATUS.md, on a new branch, and open a PR.
 | Shortlist for the operation comparison (T-5.3) | Mistral Small, Claude Haiku 4.5, Gemini Flash via Vertex EU |
 | Not shortlisted | GPT-5 mini (Azure EU), Claude Sonnet 5.5 (only if every small model fails a hard metric) |
 | 1 to 3 agents at the restaurant | schedule plus overflow, see §7 |
+| Claude race (Maxi, 23.11.2026) | Claude Haiku 4.5 against Claude Haiku 5.5 on the same eval suite: the better results win; with equal results the faster model turn (p50, then p95) wins. Built as `agent/messages_llm.py` behind `LLMClient`; run per §8 step 7 |
 
 Open: the final operation model (T-5.3 measures it), the vendor contracts and DPAs (Maxi,
 in chat). D7 is decided (07.10.2026), see §1. T-10.10 (attached to T-5.3) compares the chain
@@ -262,6 +264,15 @@ the team (rule 5, no call is lost). The limit and its weekly windows are a datab
 3. T-2.4 part 4: first eval run on `qwen3:14b` locally, then the same suite once on `mistral-small` (same family as the operation favourite); prompt work on what they show.
 4. T-5.3: hosted comparison of the shortlist with API test accounts and invented data only; report per §3; recommendation to Maxi.
 5. T-10.10: the chain against an audio-in model and a speech-to-speech model on the same cases, attached to T-5.3 (`docs/20_VOICE_LAYER.md` §6).
+7. **Claude race (T-5.3, Maxi 23.11.2026): built, not run.** It waits for an API key in `ANTHROPIC_API_KEY` (Maxi's account; invented data only). One run per setting, everything else the same, each with its own prices so the report shows the cost per case:
+
+   | Run | `LLM_MODEL` | `LLM_REASONING_EFFORT` | `LLM_MAX_OUTPUT_TOKENS` | Prices in / out (cents per Mtok) |
+   |---|---|---|---|---|
+   | A | `claude-haiku-4-5` | empty (4.5 takes no effort level) | 600 | 100 / 500 |
+   | B | `claude-haiku-5-5` | `none` (thinking off, the phone's latency) | 600 | 10 / 50 |
+   | C | `claude-haiku-5-5` | `low` (adaptive thinking) | 4000 | 10 / 50 |
+
+   `make eval MODEL=<model>` and `make eval-targets MODEL=<model>` for each run, the settings in `.env`. Read: hard metrics first (all 0 or out), then accuracy and false escalations, then `Model turn p50 / p95`. Estimated cost without prompt caching, from the about 22,500 tokens per case measured on the local model (`docs/01_STATUS.md` assumptions): 135 cases (108 plus 27 targets) are about 3 million tokens a run, so about 4 USD for A and under 1 USD each for B and C.
 6. ~~T-10.9~~ **built 28.10.2026 (migration 011):** `max_concurrent_calls` with weekly windows as database values (§7); D16's three need the SIP trunk entry (T-10.12), the test phase runs with one AI call.
 
 Sources (prices, 06.10.2026): Anthropic model table (cached 25.09.2026);

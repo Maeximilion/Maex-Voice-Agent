@@ -173,6 +173,7 @@ Läuft unabhängig vom Telefon. Text rein, Text raus, Tools dazwischen.
 | `recording.py` | consent to the recording of a call (T-11.3, L2): the question of U1, what the code says around it, and `settle` and `withdraw`, which log the answer, write the row and set `state.recording`; nothing here may cost a call. The words are in `consent.py` (`recording_answer`, `stops_recording`) |
 | `intent.py` | what the guest called for, pickup or table, heard in their own sentence **before** the model (`heard`); `state.py` keeps the first wish of a call as `intent` until a draft exists |
 | `llm.py` | Modellanbindung, austauschbar, mit Token-Zählung |
+| `messages_llm.py` | the same contract over the Messages API of Claude models (T-5.3); `client_from_settings` sends a `claude-*` name here, every other name to `llm.py` |
 | `outcome.py` | outcome and intent of a call from the state, shared by `sim/session.py` and `telephony/handler.py` |
 
 **Why our own core?** Evals need it, the simulator needs it, the shadow measurement needs it, and since D7 (decided 07.10.2026) it also runs in operation, called by the voice layer (docs/20 §2). Test and operation are identical.

@@ -18,6 +18,7 @@ Die Reports liegen in `evals/reports/` und sind nicht im Repo (.gitignore).
 """
 
 import json
+import math
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -59,6 +60,8 @@ class CaseResult:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     unmetered: int = 0
+    # Seconds of each answered model turn (`evals/recorder.py`).
+    turn_seconds: list[float] = field(default_factory=list)
     error: str | None = None
     # Bekannte Luecke mit Grund und Aufgabe (docs/08 §3): der Fall beschreibt das
     # Ziel, das der heutige Stand noch nicht kann. Er zaehlt in der Genauigkeit
@@ -122,6 +125,19 @@ class RunReport:
         if total is None or not self.total:
             return None
         return -(-total // self.total)
+
+    def turn_seconds(self, share: float) -> float | None:
+        """The model turn time that `share` of all answered turns stay within
+        (0.5: median, 0.95: p95), nearest rank. None on the scripted stand-in,
+        whose turns cost no wait worth comparing."""
+        times = sorted(t for c in self.cases for t in c.turn_seconds)
+        if self.usage.model is None or not times:
+            return None
+        return times[max(0, math.ceil(share * len(times)) - 1)]
+
+    @staticmethod
+    def _seconds(value: float | None) -> str:
+        return "-" if value is None else f"{value:.2f}"
 
     @staticmethod
     def _shown(value: int | None) -> str:
@@ -191,6 +207,8 @@ class RunReport:
             "refused_attempts": self.refused_attempts,
             "tokens_per_case": self.tokens_per_case,
             "cost_per_case": self.cost_per_case,
+            "turn_seconds_p50": self.turn_seconds(0.5),
+            "turn_seconds_p95": self.turn_seconds(0.95),
             "verdict": self.verdict,
             "reasons": self.reasons,
             "previous": self.previous,
@@ -220,6 +238,8 @@ class RunReport:
             f"| Refused attempts | {self.refused_attempts} | falling from version to version |",
             f"| Tokens je Fall | {self._shown(self.tokens_per_case)} | falling from version to version |",
             f"| Model cost per case (cents) | {self._shown(self.cost_per_case)} | within the budget |",
+            f"| Model turn p50 / p95 (s) | {self._seconds(self.turn_seconds(0.5))} / "
+            f"{self._seconds(self.turn_seconds(0.95))} | inside the turn deadline |",
             "",
             f"Modell: `{self.model}` · Tags: {', '.join(self.tags) or 'alle'}",
         ]

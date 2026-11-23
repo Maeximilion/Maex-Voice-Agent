@@ -255,6 +255,7 @@ def _count_usage(result: CaseResult, llm: RecordingLLM | None) -> None:
     result.prompt_tokens = counted.prompt_tokens
     result.completion_tokens = counted.completion_tokens
     result.unmetered = counted.unmetered
+    result.turn_seconds = list(llm.recording.turn_seconds) if llm else []
 
 
 def run_case(
