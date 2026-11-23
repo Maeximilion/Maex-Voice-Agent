@@ -125,6 +125,8 @@ document. Not a replacement for D28.
 ```
 Beschwerden stehen immer oben und haben einen eigenen Ton.
 
+The time after "Annahme" carries the date in front when the call came in on an earlier local day ("Annahme 22.11. 22:40"), on the open card and in the history alike, the rule of the done mark (#926): a card from last night must not read as one of this morning.
+
 A number the call did not come from is marked under the number (#252, 12.10.2026): "Andere Nummer als der Anruf" with the line "Anruf kam von …" when the guest named a number other than the caller ID, "Anruf ohne Rufnummer" when the caller's number was withheld. The guest's own number carries no mark. "Anrufen" always dials the number the guest named; the mark only tells the team that the line does not back it. Where the number comes from is decided in `domain/callbacks/board.py` (`number_origin`), the words in `gui/router.py`.
 
 A premium-rate, service or satellite number (German 0900, 0137, 0180, 0118, 012; the global +979 premium-rate and +808 shared-cost codes; satellite +870, +881, +882, +883) stays on the card with the danger badge "Teure Sondernummer – vor dem Anruf prüfen" and has no "Anrufen" link: the team dials it by hand after a look (#691, Maxi decided B; `customers.phone.costly`).

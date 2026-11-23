@@ -3,11 +3,17 @@
 import asyncio
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
 from api.gui import sse
+
+# The real one: a fixture of this module stands in for it in every test.
+CALLBACKS_TOKEN = sse._callbacks_token
 
 TENANT = uuid.uuid4()
 TZ = "Europe/Berlin"
@@ -245,6 +251,27 @@ def test_neuer_rueckruf_sendet_nur_callbacks(monkeypatch):
         "event: callbacks\ndata: 1:y\n\n"
     )
     assert len([c for c in chunks if c.startswith("event:")]) == 9
+
+
+def test_the_callbacks_token_changes_at_local_midnight(monkeypatch):
+    """#926: at midnight a card's time gains its date, so the column is drawn
+    again then, also when no callback came or went in the night."""
+    monkeypatch.setattr(sse, "open_change_token", lambda *_: "1:x")
+    instants = iter(
+        [
+            datetime(2026, 11, 23, 22, 58, tzinfo=UTC),  # 23:58 in Berlin
+            datetime(2026, 11, 23, 22, 59, tzinfo=UTC),  # 23:59, the same day
+            datetime(2026, 11, 23, 23, 1, tzinfo=UTC),  # 00:01, the next day
+        ]
+    )
+    monkeypatch.setattr(sse, "utcnow", lambda: next(instants))
+    tenant_id = uuid.uuid4()
+
+    no_session = cast(Session, None)  # the change token is stubbed above
+    tokens = [CALLBACKS_TOKEN(no_session, tenant_id, "Europe/Berlin") for _ in range(3)]
+
+    assert tokens[0] == tokens[1]
+    assert tokens[2] != tokens[1]
 
 
 def test_kopfzeile_ohne_datenbank_meldet_problem(monkeypatch):

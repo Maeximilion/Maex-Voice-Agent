@@ -76,10 +76,16 @@ function detail(event) {
         if (mehr instanceof HTMLDetailsElement)
             mehr.open = breit.matches || mehrOffen;
     }
-    document.addEventListener("toggle", (e) => {
+    // Recorded on the team's own tap or key press on the summary, not on `toggle`:
+    // that event also fires, late, for the open that mehrAbgleichen sets from 1180 px
+    // and would pass for a choice of the team (#938). The click runs before the
+    // browser flips `open`, so the new state is the opposite of the current one.
+    document.addEventListener("click", (e) => {
         const t = e.target;
-        if (t instanceof HTMLDetailsElement && t.id === "mehr" && !breit.matches)
-            mehrOffen = t.open;
+        const summary = t instanceof Element ? t.closest("summary") : null;
+        const mehr = summary?.parentElement;
+        if (mehr instanceof HTMLDetailsElement && mehr.id === "mehr")
+            mehrOffen = !mehr.open;
     }, true);
     document.body.addEventListener("htmx:afterSwap", mehrAbgleichen);
     breit.addEventListener("change", mehrAbgleichen);

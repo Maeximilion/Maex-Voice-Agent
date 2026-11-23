@@ -44,7 +44,8 @@ from fractions import Fraction
 from math import ceil
 
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError
+from sqlalchemy.exc import InterfaceError, OperationalError
+from sqlalchemy.exc import TimeoutError as PoolTimeout
 from sqlalchemy.orm import Session
 
 from api.agent import recording
@@ -159,6 +160,14 @@ SessionFactory = Callable[[], Session]
 LLMFactory = Callable[[Session], LLMClient]
 
 
+# A database that does not answer: lost, refused, or too slow for the line's
+# bounds (statement and lock timeouts, a pool with no free connection). A
+# second read of the team number would only wait out another timeout before
+# the team rings (ledger #764, #926). A constraint or data error comes from a
+# database that answers, and the number of now is read again (#710).
+_DATABASE_DOWN = (OperationalError, InterfaceError, PoolTimeout)
+
+
 @dataclass
 class _LiveCall:
     session_id: str
@@ -172,6 +181,10 @@ class _LiveCall:
     llm: LLMClient | None = None
     # Silences in a row that the code has answered with a question.
     silences: int = 0
+    # The database stopped answering in this call (`_DATABASE_DOWN`): the
+    # outage path dials `team_phone` unread, also when a failing voice takes
+    # the call there a second time (#926).
+    database_lost: bool = False
     # Its log is written, or being written: taken under the lock by the one
     # caller of `_finish` (`_claim`).
     finished: bool = False
@@ -613,8 +626,11 @@ class CallHandler:
         try:
             with live.session.begin_nested():
                 return active_count(live.session, live.tenant_id)
-        except Exception:
+        except Exception as exc:
             logger.exception("the menu size for the key terms could not be read")
+            if isinstance(exc, _DATABASE_DOWN):
+                # The turn goes on without names; its outage path reads no number.
+                live.database_lost = True
             return 0
 
     def _team_phone(self, live: _LiveCall) -> str:
@@ -626,11 +642,13 @@ class CallHandler:
         try:
             with live.session.begin_nested():
                 number = current_team_phone(live.session, live.tenant_id, self._now)
-        except Exception:
+        except Exception as exc:
             logger.exception(
                 "the team number could not be read again, using the call's own",
                 extra={"extra": {"session_id": live.session_id}},
             )
+            if isinstance(exc, _DATABASE_DOWN):
+                live.database_lost = True
             return live.team_phone
         live.team_phone = number
         return number
@@ -657,17 +675,15 @@ class CallHandler:
             )
             # The database is the failure: a second read would only add a
             # connect timeout of silence before the outage sentence.
-            self._fail(
-                live.session_id, live, read_again=not isinstance(exc, DBAPIError)
-            )
+            if isinstance(exc, _DATABASE_DOWN):
+                live.database_lost = True
+            self._fail(live.session_id, live)
 
     def _fail(
         self,
         session_id: str,
         live: _LiveCall | None,
         team_phone: str | None = None,
-        *,
-        read_again: bool = True,
     ) -> None:
         """Outage sentence, then the team: the call's number, else `team_phone`
         as routed, else the environment's. The sentence is best effort, the
@@ -704,12 +720,13 @@ class CallHandler:
                 self._port.say(session_id, SAY_OUTAGE if greeted else SAY_OUTAGE_FIRST)
             except Exception:
                 logger.exception("outage sentence could not be spoken")
-            if live is not None and read_again:
+            if live is not None and not live.database_lost:
                 # The sentence goes out before the read: inside a turn of the
                 # own voice layer it would wait for the end of the turn, behind
                 # the read (#754). The read runs while the caller hears it, and
                 # the transfer waits for its end anyway. After a database error
-                # there is no read at all (ledger #764).
+                # there is no read at all (ledger #764), also not when the
+                # voice fails behind it and brings the call here again (#926).
                 self._port.speak_now(session_id)
                 if still_open and live.finished:
                     # The mouth failed on the sentence, and that failure took
