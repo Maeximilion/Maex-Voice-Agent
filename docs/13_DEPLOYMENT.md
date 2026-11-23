@@ -264,7 +264,7 @@ The passphrase file exists since 29.10.2026 (mode 600). Without `BACKUP_PASSPHRA
 - Day report on the previous business day from `MONITOR_REPORT_HOUR` (8): calls by outcome, cost, orders, reservations; also on a day without a call (built, T-8.3)
 - Log-Rotation, 14 Tage lokal
 
-The built alarms come from `api/jobs/monitor.py` in the dispatcher and go straight to the push server, topic `ops`, which only the operator reads; the user `monitor` writes it with `MONITOR_PUSH_TOKEN` (setup: `n8n/README.md`, "Setting up the push server"); outside dev and test the dispatcher does not start without it (`monitor.require_push_token`, #861). They do not go through n8n, so n8n down is reported (Maxi, 29.10.2026). The dispatcher runs on the same machine, so the API or the server down still needs the check from outside (T-9.4).
+The built alarms come from `api/jobs/monitor.py` in the dispatcher and go straight to the push server, topic `ops`, which only the operator reads; the user `monitor` writes it with `MONITOR_PUSH_TOKEN` (setup: `n8n/README.md`, "Setting up the push server"); outside dev and test the dispatcher does not start without it or with an empty `MONITOR_PUSH_URL` (`monitor.require_push_token`, #861, #880). They do not go through n8n, so n8n down is reported (Maxi, 29.10.2026). The dispatcher runs on the same machine, so the API or the server down still needs the check from outside (T-9.4).
 
 ---
 

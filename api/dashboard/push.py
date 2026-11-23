@@ -56,14 +56,27 @@ def queue(db: Session, text: str, at: datetime) -> None:
     """Hold one push for the sender, due at once. Commits: the change it
     reports is committed already, and its audit row with it. The next push
     prunes the sent ones older than `SENT_KEEP`, as the next challenge prunes
-    the expired ones (`passkeys.issue`); no job of its own (#861)."""
-    db.execute(
-        delete(OperatorPush).where(
-            OperatorPush.sent_at.is_not(None), OperatorPush.sent_at <= at - SENT_KEEP
-        )
-    )
+    the expired ones (`passkeys.issue`); no job of its own (#861). The push is
+    committed before the prune: a prune that fails (a lock wait between two
+    pushes, a statement timeout) only leaves old rows for the next one (#880)."""
     db.add(OperatorPush(message=text, next_attempt_at=at))
     db.commit()
+    try:
+        db.execute(
+            delete(OperatorPush).where(
+                OperatorPush.sent_at.is_not(None),
+                OperatorPush.sent_at <= at - SENT_KEEP,
+            )
+        )
+        db.commit()
+    except Exception as problem:  # noqa: BLE001  the push is queued, pruning can wait
+        db.rollback()
+        log(
+            logger,
+            logging.WARNING,
+            "Operator push prune failed",
+            error=error_text(problem),
+        )
 
 
 def configured() -> bool:
