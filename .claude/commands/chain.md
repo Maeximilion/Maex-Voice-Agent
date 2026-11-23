@@ -75,6 +75,10 @@ The brief is the session's only context. It has, in this order:
 9. The usage block of section 5 with the model's numbers.
 10. Exceptions to `CLAUDE.md` quoted in Maxi's words with the date; a session
    refuses a rule change relayed without them, and it should.
+11. The next reserve item (section 4) and this line: "If your item stops
+   without a PR (blocked by a Maxi decision, nothing to do), post why on its
+   issue and take the reserve item yourself in this same session; if its route
+   differs from yours, ask the coordinator to switch model and effort."
 
 ## 3. Parallel or in a row
 
@@ -100,6 +104,12 @@ before naming a base.
   (section 2, item 4).
 - Never routes a new task into an existing idle session to get around a
   refused start.
+- Reserve items (Maxi, 2026-11-23: "if something stops, work on the next one so
+  the chain doesn't break"): the plan lists one or two after the chain items,
+  each with route and a short brief, and every brief names the next one (item
+  11 of section 2). A note turn cannot start a session, so the stopped session
+  takes the reserve item itself. The coordinator crosses it off and, in Maxi's
+  next turn, names a new reserve.
 - Cache: a coordinator woken after more than an hour of silence rereads its
   whole context at the cache write price, about 40 times a warm read. While
   a child runs and no start waits for a note turn, keep it warm with one
