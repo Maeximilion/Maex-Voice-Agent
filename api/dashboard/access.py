@@ -3,7 +3,9 @@ docs/23 §5).
 
 A sign-in needs the name, the password and one second factor: a passkey
 (`passkeys.py`), a TOTP code, or one of ten single-use recovery codes. Never
-the password alone.
+the password alone. The passkey is the way in; a code is the way back in when
+no passkey is at hand, and each sign-in or step-up with one is pushed to the
+operator's phone (#888 A1, Maxi 23.11.2026; the pushes are `app.py`'s).
 
 Dangerous actions need a second factor of the last five minutes on the
 session (`Operator.fresh`): the one of the sign-in, or a step-up with a passkey
@@ -287,11 +289,11 @@ def step_up(
     now: datetime,
     device_token: str = "",
     passkey: str = "",
-) -> None:
+) -> str:
     """A fresh second factor on a signed-in session (docs/23 §5): a passkey or
     a TOTP code. A recovery code is a way in, not a step-up. Wrong answers
     count and wait as at the sign-in, or a stolen session could guess codes.
-    Commits."""
+    Returns the factor that held. Commits."""
     # No factor at all says nothing: not counted, not audited (#816).
     if not passkey and not code.strip():
         raise SignInRefused()
@@ -348,6 +350,7 @@ def step_up(
         session.passkey_stepped_up_at = now
     audit(db, operator.name, "operator.stepped_up", {"factor": factor})
     db.commit()
+    return factor
 
 
 def add_passkey(
