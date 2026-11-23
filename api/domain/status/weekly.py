@@ -12,7 +12,10 @@ and 14:00 to 22:00 would close the kitchen at 14:00 for the agent and refuse
 the last tables before it. For the same reason a span past midnight ends
 before the next weekday's first span of the service starts, Sunday's before
 Monday's: every reader looks at the day before first, so a night that reached
-into the next day's span would close it at the night's end.
+into the next day's span would close it at the night's end. The same holds
+between the weekday and the dates with hours of their own beside it, or "like"
+it, from today on. A save never brings such an overlap nor deepens one it
+finds; an old one it leaves as it was blocks nothing (#877).
 
 Hours are compared as the form shows them, to the minute, and service by
 service: a service the owner did not change is neither checked nor written, so
@@ -31,7 +34,7 @@ nothing: the push of D34 point 4 tells the owner what the staff changed.
 import hashlib
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta
 from itertools import pairwise
 from zoneinfo import ZoneInfo
 
@@ -41,7 +44,13 @@ from sqlalchemy.orm import Session
 from api.core import time as clock
 from api.core.errors import Conflict, FieldErrors, InvalidInput
 from api.domain.reservations.spoken import WEEKDAYS
-from api.domain.status.hours import load_hours, open_window_at
+from api.domain.status.hours import (
+    HoursData,
+    load_hours,
+    open_window_at,
+    regular_hours,
+    windows_for_day,
+)
 from api.domain.status.staff_changes import (
     ACTOR_OWNER,
     NO_SPAN,
@@ -49,7 +58,7 @@ from api.domain.status.staff_changes import (
     _locked,
     past_midnight,
 )
-from api.models import AuditLog, OpeningHours, Reservation, Tenant
+from api.models import AuditLog, OpeningHours, Reservation, SpecialDay, Tenant
 from api.models.tenants import SERVICES
 
 DAY_MINUTES = 24 * 60
@@ -121,18 +130,20 @@ def set_weekday(
     spans: Day,
     seen: str,
     actor: str = ACTOR_OWNER,
+    now: datetime | None = None,
 ) -> bool:
     """Replace the spans of one weekday for the services named; a service left
     out keeps its hours, and so does one whose spans read as they are stored.
     `seen` is the `token` of the hours the form showed: hours changed since (a
     second device) raise Conflict, so a save never writes over hours the owner
     did not see. False when nothing changes, whatever the token: then no row
-    is written, and a save tapped twice is no conflict. Raises InvalidInput.
-    Commits."""
+    is written, and a save tapped twice is no conflict. The night rule reads
+    the dates with hours of their own from `now`'s business day on. Raises
+    InvalidInput. Commits."""
     if weekday not in range(7) or not set(spans) <= set(SERVICES):
         raise InvalidInput(f"no such weekday or service: {weekday}, {sorted(spans)}")
     # The lock of the staff changes: their "shorter than now" reads these rows.
-    _locked(session, tenant_id)
+    _config, zone = _locked(session, tenant_id)
     stored = week(session, tenant_id)
     before = stored[weekday]
     after = {**before, **{service: sorted(typed) for service, typed in spans.items()}}
@@ -148,8 +159,16 @@ def set_weekday(
     for service in changed:
         found = _faults(service, after[service])
         if not found:
-            found = _night_faults(stored, weekday, service, after[service])
+            found = _night_faults(
+                stored, weekday, service, after[service], before[service]
+            )
         faults.update(found)
+    clean = [service for service in changed if service not in faults]
+    if clean:
+        today = clock.business_day(now or clock.utcnow(), zone)
+        faults.update(
+            _dated_night_faults(session, tenant_id, zone, today, weekday, clean, after)
+        )
     if faults:
         session.rollback()
         raise FieldErrors(f"weekday {weekday}: {sorted(faults)}", faults)
@@ -264,26 +283,131 @@ def _key(service: str, span: Span) -> str:
 
 
 def _night_faults(
-    stored: dict[int, Day], weekday: int, service: str, spans: list[Span]
+    stored: dict[int, Day],
+    weekday: int,
+    service: str,
+    spans: list[Span],
+    was: list[Span],
 ) -> dict[str, str]:
     """A span past midnight ends before the next weekday's first span of the
     service starts, and the night of the weekday before ends before these
     start. `hours.open_window_at` reads the day before first: a night that
     reached into the next day's span would be the window found there, and its
-    end the closing time (review of #820). The neighbours as they are stored."""
+    end the closing time (review of #820). The neighbours as they are stored;
+    `was` the weekday's spans before the save (`_deepens`)."""
     before, after = (weekday - 1) % 7, (weekday + 1) % 7
-    for night, late, early in (
-        (before, stored[before][service], spans),
-        (weekday, spans, stored[after][service]),
+    for night, late, early, late_was, early_was in (
+        (before, stored[before][service], spans, stored[before][service], was),
+        (weekday, spans, stored[after][service], was, stored[after][service]),
     ):
-        # Minutes into the next day; below zero without a span past midnight.
-        reach = max((_minutes(span)[1] for span in late), default=0) - DAY_MINUTES
-        if any(_minutes(span)[0] <= reach for span in early):
+        if _deepens(late, early, late_was, early_was):
             say = NIGHT_OVERLAP.format(
                 night=WEEKDAYS[night], next=WEEKDAYS[(night + 1) % 7]
             )
             return {service: say}
     return {}
+
+
+def _overlap(late: list[Span], early: list[Span]) -> int:
+    """How far, in minutes, the night of `late` reaches past the first start
+    of `early`, the next day's spans: zero when it ends as that one starts (a
+    touch, refused like two spans of one day), below zero when it ends before,
+    or when there is no night or no span to reach."""
+    reach = max((_minutes(span)[1] for span in late), default=0) - DAY_MINUTES
+    first = min((_minutes(span)[0] for span in early), default=DAY_MINUTES)
+    return reach - first
+
+
+def _deepens(
+    late: list[Span], early: list[Span], late_was: list[Span], early_was: list[Span]
+) -> bool:
+    """A night that reaches the next day's spans after a save, and further
+    than before it (#877). An overlap from before the rule, or from a writer
+    that did not check it, may stay or shrink, so the hours beside it can
+    still be shortened or moved out of it; a save never brings one or makes
+    one worse."""
+    overlap = _overlap(late, early)
+    return overlap >= 0 and overlap > _overlap(late_was, early_was)
+
+
+def night_deepened(
+    was: HoursData, will: HoursData, night: date, service: str, zone: ZoneInfo
+) -> bool:
+    """`_deepens` between the date `night` and the next date, read as every
+    reader reads them: a date's own hours, the weekday it is like, or the
+    weekly hours. `was` and `will` are the hours before and after a save."""
+
+    def spans(data: HoursData, on: date) -> list[Span]:
+        return [
+            Span(opens.time(), closes.time())
+            for opens, closes in windows_for_day(data, on, service, zone)
+        ]
+
+    early = night + timedelta(days=1)
+    return _deepens(
+        spans(will, night), spans(will, early), spans(was, night), spans(was, early)
+    )
+
+
+def _dated_night_faults(
+    session: Session,
+    tenant_id: uuid.UUID,
+    zone: str,
+    today: date,
+    weekday: int,
+    services: list[str],
+    after: Day,
+) -> dict[str, str]:
+    """The night rule between the dates with hours of their own and the dates
+    beside them, with the weekday's new spans (#877): a date beside the
+    weekday, or one "like" it, would otherwise be read inside a night the
+    weekly check never saw. Only nights that reach today or later; the pairs
+    of two weekly days are `_night_faults`'. A fault names both dates."""
+    rows = session.scalars(
+        select(SpecialDay).where(
+            SpecialDay.tenant_id == tenant_id,
+            SpecialDay.status == "set",
+            SpecialDay.date >= today - timedelta(days=1),
+        )
+    )
+    special = {row.date: row for row in rows}
+    one = timedelta(days=1)
+    nights = sorted(
+        {night for day in special for night in (day - one, day) if night + one >= today}
+    )
+    if not nights:
+        return {}
+    regular = regular_hours(session, tenant_id)
+    kept = tuple(
+        row for row in regular if row.weekday != weekday or row.service not in services
+    )
+    # Transient rows, never added to the session: the spans the save writes.
+    new = tuple(
+        OpeningHours(
+            tenant_id=tenant_id,
+            weekday=weekday,
+            service=service,
+            opens_at=span.opens,
+            closes_at=span.closes,
+        )
+        for service in services
+        for span in after[service]
+    )
+    was, will = HoursData(regular, special), HoursData(kept + new, special)
+    tz = ZoneInfo(zone)
+    faults: dict[str, str] = {}
+    for service in services:
+        for night in nights:
+            if night_deepened(was, will, night, service, tz):
+                faults[service] = NIGHT_OVERLAP.format(
+                    night=_dated(night), next=_dated(night + one)
+                )
+                break
+    return faults
+
+
+def _dated(day: date) -> str:
+    return f"{WEEKDAYS[day.weekday()]}, {day:%d.%m.}"
 
 
 def _texts(day: Day) -> dict[str, list[str]]:

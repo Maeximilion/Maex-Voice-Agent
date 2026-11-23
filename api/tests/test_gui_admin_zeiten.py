@@ -763,6 +763,46 @@ def test_a_refused_date_marks_its_field(client, data, fields):
     assert "data-fokus" in html
 
 
+def _marked(html: str) -> set[str]:
+    form = html.split('class="day-form"', 1)[1]
+    return {
+        n for n in ("datum", "von", "bis") if 'aria-invalid="true"' in _tag(form, n)
+    }
+
+
+def test_a_refused_night_marks_the_time_it_is_about(client):
+    """#877: the night refusal is formatted with the weekdays, so it was no key
+    of the field map and marked nothing. A night into the next date's hours
+    marks its end; a date that starts inside the night before marks its start."""
+    day = _today() + timedelta(days=9)
+    while (day + timedelta(days=1)).weekday() == 0:
+        # Monday is closed in the seed: the next date needs its lunch.
+        day += timedelta(days=1)
+    into_lunch = _day(
+        client,
+        datum=day.isoformat(),
+        art="zeiten",
+        von="18:00",
+        bis="12:00",
+        nachts="1",
+    )
+    assert "Mitternacht" in into_lunch.text
+    assert _marked(into_lunch.text) == {"bis"}
+    night = _day(
+        client,
+        datum=day.isoformat(),
+        art="zeiten",
+        von="18:00",
+        bis="03:00",
+        nachts="1",
+    )
+    assert "Gespeichert" in night.text
+    following = (day + timedelta(days=1)).isoformat()
+    inside = _day(client, datum=following, art="zeiten", von="02:00", bis="10:00")
+    assert "Mitternacht" in inside.text
+    assert _marked(inside.text) == {"von"}
+
+
 def test_closing_a_day_asks_first_like_the_way_back(client):
     """#829-4: "Geschlossen" stops every service for a day; it is its own request
     because htmx reads hx-confirm from the element that sends."""

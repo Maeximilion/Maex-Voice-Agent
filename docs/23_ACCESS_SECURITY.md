@@ -575,12 +575,14 @@ the second builds against.
   and later times are checked against its weekday. A request for the exact hours of the "before"
   is the "before", its holiday name included, and holds at once. Hours whose night reaches into the next date's first
   span, or that start inside the night before, are refused for the staff, the owner and the holiday answer, as the weekly
-  writer refuses them (#862).
+  writer refuses them (#862); an overlap from before the rule may stay or shrink, never deepen (#877).
   The call mode gets the push but no card (Maxi 09.11.2026). The push (#588): an outbox event in
   the same transaction as the change (`team_phone.changed`, `day_hours.changed`,
   `call_mode.changed`, migration 034; `admin_pin.wrong` of the admin PIN above, migration 040), which n8n publishes to the topics `owner` and `ops`
   (`n8n/team_events.json`). It carries the day and the change only, the team number the one number;
-  a tap that changes nothing and the owner's own answer on a card push nothing.
+  a tap that changes nothing and the owner's own answer on a card push nothing. A change back to
+  what held before closes its card as undone and pushes with `"undone": true`, without the request
+  to check the tablet: there is no card left to check (#877).
 - **Password reset (D34 point 5):** a one-time setup link made by the operator, valid 24 hours,
   shown once, stored hashed; a newer link replaces an older one, and setting the password signs out
   every other device. The operator makes it in the dashboard (#571, §5) or on the stack:
