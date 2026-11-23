@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from api.core.errors import Ambiguous, Conflict, FieldErrors, InvalidInput, NotFound
 from api.domain.confirm import confirm
 from api.domain.customers import find_customer
+from api.domain.customers.contact import note_contact
 from api.domain.customers.phone import number_or_none
 from api.domain.customers.requests import (
     NOTE_MAX,
@@ -650,6 +651,43 @@ def test_a_call_with_another_guests_name_is_not_offered(session, tenant_id):
     assert callback not in person.callbacks
 
 
+# #888 S3: the caller ID is compared as a number, its digits only narrow the search.
+
+LONGER_NUMBERS = [PHONE + "0", "+43" + PHONE.removeprefix("+49")]
+
+
+@pytest.mark.parametrize("caller_id", LONGER_NUMBERS, ids=["extension", "abroad"])
+def test_a_number_that_only_holds_the_persons_digits_is_not_offered(
+    session, tenant_id, caller_id
+):
+    """A switchboard's extension, or the same digits behind another country
+    code: a stranger's call, its times and its recording."""
+    _order(session, tenant_id)
+    stranger = _call(session, tenant_id, caller_id=caller_id)
+    _recording(session, tenant_id, stranger)
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+    assert stranger not in [*person.calls, *person.unclaimed_calls]
+    with pytest.raises(InvalidInput):
+        verify(session, tenant_id, MUELLER, ZONE, NOW, claimed=[stranger.id])
+
+    _erase(session, tenant_id)
+    assert _fresh(session, stranger).caller_id == caller_id
+    recording = session.scalar(
+        select(Recording).where(Recording.call_id == stranger.id)
+    )
+    assert recording.withdrawn_at is None
+
+
+def test_the_persons_number_in_another_spelling_is_still_offered(session, tenant_id):
+    _order(session, tenant_id)
+    calls = [
+        _call(session, tenant_id, caller_id=spelling)
+        for spelling in (PHONE, "07221 555123", "0049 7221 555123")
+    ]
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+    assert set(person.unclaimed_calls) == set(calls)
+
+
 # Security audit 02.11.2026 (docs/09 §5): a detail opens only what was booked on
 # the line its call came from, and one person at a time.
 
@@ -702,6 +740,39 @@ def test_a_row_from_a_withheld_line_opens_nothing(session, tenant_id, caller_id)
         verify(session, tenant_id, MUELLER, ZONE, NOW)
 
 
+@pytest.mark.parametrize(
+    ("kind", "status"),
+    [("order", "draft"), ("reservation", "draft"), ("reservation", "cancelled")],
+)
+def test_a_booking_without_a_yes_on_the_own_line_opens_nothing(
+    session, tenant_id, kind, status
+):
+    """#888 S4: a caller who presents Müller's number books under Müller's name
+    and hangs up. The row looks booked on the own line, but nobody said yes."""
+    (_order if kind == "order" else _reservation)(session, tenant_id, status=status)
+    with pytest.raises(NotFound):
+        verify(session, tenant_id, MUELLER, ZONE, NOW)
+
+
+@pytest.mark.parametrize(
+    ("kind", "status"),
+    [
+        ("order", "confirmed"),
+        ("order", "approved"),
+        ("order", "cancelled"),
+        ("reservation", "confirmed"),
+    ],
+)
+def test_a_booking_with_a_yes_on_the_own_line_opens_its_rows(
+    session, tenant_id, kind, status
+):
+    row = (_order if kind == "order" else _reservation)(
+        session, tenant_id, status=status
+    )
+    person = verify(session, tenant_id, MUELLER, ZONE, NOW)
+    assert [*person.orders, *person.reservations] == [row]
+
+
 def test_the_own_line_in_another_spelling_opens_its_rows(session, tenant_id):
     call = _call(session, tenant_id, caller_id="0049 7221 555123")
     order = _order(session, tenant_id, call=call)
@@ -709,8 +780,8 @@ def test_the_own_line_in_another_spelling_opens_its_rows(session, tenant_id):
 
 
 def test_a_contact_booked_under_a_named_number_moves_no_day(session, tenant_id):
-    """`_by_day` reads `last_contact_at`: a table confirmed under Müller's
-    number from another line must not make its day a detail of Müller."""
+    """A table confirmed under Müller's number from another line must not make
+    its day a detail of Müller."""
     customer = _customer(session, tenant_id)
     customer.last_order_at = customer.last_contact_at = PAST - timedelta(days=30)
     table = _reservation(
@@ -724,6 +795,20 @@ def test_a_contact_booked_under_a_named_number_moves_no_day(session, tenant_id):
     day = Details(name="Müller", days=(NOW.date(), FUTURE.date()))
     with pytest.raises(NotFound):
         verify(session, tenant_id, day, ZONE, NOW)
+
+
+def test_a_callback_on_the_own_line_moves_no_day(session, tenant_id):
+    """#888 S4: a callback or a complaint moves `last_contact_at` of every
+    customer on the presented number, no yes asked. A spoofed number would
+    make today a detail of Müller."""
+    customer = _customer(session, tenant_id)
+    customer.last_order_at = PAST
+    call = _call(session, tenant_id, started_at=NOW)
+    note_contact(session, tenant_id, call.id, PHONE, NOW)
+    assert customer.last_contact_at == NOW
+    with pytest.raises(NotFound):
+        verify(session, tenant_id, replace(MUELLER, days=(NOW.date(),)), ZONE, NOW)
+    assert verify(session, tenant_id, MUELLER, ZONE, NOW).customers == [customer]
 
 
 @pytest.mark.parametrize("details", [MUELLER, ADDRESS], ids=["day", "address"])
@@ -776,6 +861,8 @@ def test_a_booking_stays_verifiable_after_the_objection(session, tenant_id, kind
 
     person = verify(session, tenant_id, MUELLER, ZONE, NOW)
     assert [*person.orders, *person.reservations] == [_fresh(session, row)]
+    # The call is the booking's, not the number's: it stays the person's.
+    assert [call.id for call in person.calls] == [row.call_id]
 
 
 def test_a_table_booked_long_ahead_verifies_after_the_caller_id_went(
