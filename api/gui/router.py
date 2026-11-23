@@ -2078,6 +2078,21 @@ DAY_FAULTS = {
 }
 
 
+def _day_fields(say: str, day: date, choice: str) -> tuple[str, ...]:
+    """The inputs of the date form a refusal is about. The night refusal names
+    the weekdays, so it is no key of DAY_FAULTS (#877): the date's own night
+    is about its end, the night before it about its start; only for typed
+    times, the other buttons send none."""
+    pairs = ((day.weekday(), "bis"), ((day.weekday() - 1) % 7, "von"))
+    for night, field in pairs if choice == "zeiten" else ():
+        nights = weekly.NIGHT_OVERLAP.format(
+            night=WEEKDAYS[night], next=WEEKDAYS[(night + 1) % 7]
+        )
+        if say == nights:
+            return (field,)
+    return DAY_FAULTS.get(say, ())
+
+
 def _weekday(weekday: int) -> int:
     if weekday not in range(7):
         raise HTTPException(status_code=404)
@@ -2243,7 +2258,7 @@ def hours_day_change(
     except AppError as exc:
         session.rollback()
         say = exc.say or SWITCH_FAILED
-        fields = DAY_FAULTS.get(say, ())
+        fields = _day_fields(say, day, choice)
         return _hours_part(
             request, session, tenant, "tage", say, typed=form, fields=fields
         )
