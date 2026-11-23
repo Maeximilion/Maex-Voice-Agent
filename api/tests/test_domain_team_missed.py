@@ -14,11 +14,8 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
 from api.domain.callbacks import create_callback, team_missed
-from api.domain.callbacks.transfer import (
-    SUMMARY_BOOKED,
-    SUMMARY_HUNG_UP,
-    SUMMARY_MISSED,
-)
+from api.domain.callbacks.create import SUMMARY_BOOKED
+from api.domain.callbacks.transfer import SUMMARY_HUNG_UP, SUMMARY_MISSED
 from api.domain.calls import end_call
 from api.models import AuditLog, Call, Callback, Order, OutboxEvent, Reservation
 from api.schemas.callbacks import CreateCallbackRequest
@@ -314,9 +311,11 @@ def test_a_draft_next_to_a_standing_booking_is_left_out(session, tenant_id):
     assert task.summary == f"{SUMMARY_MISSED} {SUMMARY_BOOKED} {TABLE_BOOKED}."
 
 
-def test_a_card_with_more_bookings_than_it_holds_is_cut_not_refused(session, tenant_id):
-    """`CreateCallbackRequest.summary` takes 1000 characters: a call with many
-    tables still gets its card, cut at the limit (rule 5)."""
+def test_a_card_with_more_bookings_than_it_holds_names_them_all(session, tenant_id):
+    """`CreateCallbackRequest.summary` takes 1000 characters: a call with more
+    tables than that still gets its card, not refused (rule 5), and no table
+    is cut from it (#764); the card's own text gives way, its reason stays
+    the card's label."""
     call = make_call(session, tenant_id, transfer_reason=None)
     for _ in range(20):
         _reservation(session, call)
@@ -324,8 +323,8 @@ def test_a_card_with_more_bookings_than_it_holds_is_cut_not_refused(session, ten
     task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
 
     assert task is not None
-    assert len(task.summary) == 1000
-    assert task.summary.startswith(f"{SUMMARY_MISSED} {SUMMARY_BOOKED} {TABLE_BOOKED};")
+    assert task.summary.startswith(f"{SUMMARY_BOOKED} {TABLE_BOOKED};")
+    assert task.summary.count("Name Mueller") == 20
 
 
 def test_a_deleted_booking_is_not_named(session, tenant_id):
@@ -340,19 +339,79 @@ def test_a_deleted_booking_is_not_named(session, tenant_id):
     assert "nicht bekannt" in task.summary and SUMMARY_BOOKED not in task.summary
 
 
-def test_the_cores_summary_is_kept_as_it_wrote_it(session, tenant_id):
-    """The core's card names the booking itself (`agent/loop.py`): it is not
-    named a second time."""
-    call = make_call(session, tenant_id, transfer_reason="complaint")
+def test_the_cores_summary_is_followed_by_every_booking_of_the_call(session, tenant_id):
+    """#764: the core's card named only the last booking sentence it still
+    held, and none once a new draft began (a table confirmed, then an order
+    started). The bookings come from the database behind the core's text."""
+    call = make_call(session, tenant_id, transfer_reason="human_requested")
     _reservation(session, call)
-    summary = "Beschwerde. Bereits gebucht: Ihre Reservierung ist bestätigt."
+    _order(session, call)
+    summary = "Kunde möchte mit einem Mitarbeiter sprechen."
 
     task = team_missed(
         session, tenant_id, "1760000000.1", summary=summary, now=REPORTED
     )
 
     assert task is not None
-    assert task.summary == f"{SUMMARY_MISSED} {summary}"
+    assert task.summary == (
+        f"{SUMMARY_MISSED} {summary} {SUMMARY_BOOKED} {TABLE_BOOKED}; "
+        "Bestellung zur Abholung, Name Schmidt, Code A17."
+    )
+
+
+def test_a_long_card_is_cut_in_its_own_text_never_in_the_bookings(session, tenant_id):
+    """#764: every card names the bookings of its call, also one the core or
+    the model wrote (`create_callback`). A card at the limit of 1000
+    characters gives way to them, and the bookings stand whole at its end."""
+    call = make_call(session, tenant_id)
+    _reservation(session, call)
+    booked = f"{SUMMARY_BOOKED} {TABLE_BOOKED}."
+
+    task = create_callback(
+        session,
+        CreateCallbackRequest(
+            call_id=call.id,
+            tenant_id=tenant_id,
+            phone=CALLER,
+            reason="complaint",
+            summary="Kunde sagte: " + "x" * 987,
+        ),
+        now=REPORTED,
+    )
+
+    assert task.summary.endswith(f" {booked}")
+    assert task.summary.startswith("Kunde sagte: xxx")
+    assert len(task.summary) == 1000
+    assert cards(session, call.id)[0].summary == task.summary
+
+
+def test_a_booking_the_team_moved_during_the_call_is_named_as_it_stands(
+    session, tenant_id
+):
+    """#764 review: the call's session still holds the table it confirmed;
+    the team moves it on the tablet meanwhile. The card names the new time,
+    not the one in the session's memory."""
+    call = make_call(session, tenant_id)
+    reservation = _reservation(session, call)
+    assert reservation.party_size == 4  # loaded into this session
+    with Session(session.get_bind()) as tablet:
+        moved = tablet.get_one(Reservation, reservation.id)
+        moved.reserved_for = datetime(2026, 9, 20, 18, 0, tzinfo=UTC)
+        tablet.commit()
+
+    task = create_callback(
+        session,
+        CreateCallbackRequest(
+            call_id=call.id,
+            tenant_id=tenant_id,
+            phone=CALLER,
+            reason="human_requested",
+            summary="Kunde wollte mit einem Menschen sprechen.",
+        ),
+        now=REPORTED,
+    )
+
+    assert task.summary.endswith("20.09.2026 20:00 Uhr, Name Mueller.")
 
 
 def test_an_unknown_call_has_no_card(session, tenant_id):

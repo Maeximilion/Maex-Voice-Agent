@@ -35,9 +35,8 @@ from api.agent.loop import (
 )
 from api.agent.state import ConversationState
 from api.config import settings
-from api.domain.callbacks.create import SAY_NOTED
+from api.domain.callbacks.create import SAY_NOTED, SUMMARY_BOOKED
 from api.domain.callbacks.transfer import (
-    SUMMARY_BOOKED,
     SUMMARY_HUNG_UP,
     SUMMARY_MISSED,
 )

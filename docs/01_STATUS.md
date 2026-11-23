@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.11
+> Status: 23.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.12
 
 ---
 
@@ -181,6 +181,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
+- **v2.69.12 · 23.11.2026:** Ledger #764 batch review, outage fix: every callback card names the call's standing bookings from the database
 - **v2.69.11 · 23.11.2026:** T-5.3: prompt fix for Haiku 5.5 (read-back word for word, fixed allergy note), cases 72 -> 85/107
 - **v2.69.10 · 23.11.2026:** #888 S3 and S4: a data subject request offers only calls of the person's own number, a booking without a yes verifies nobody, the copy goes only through a channel the verified rows prove
 - **v2.69.9 · 23.11.2026:** Ledger #764 batch review, allergen fix: a bare no keeps an allergy the guest named, a cut note keeps every allergy sentence, the card marks an allergy said in the call

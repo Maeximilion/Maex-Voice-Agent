@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from api.config import settings
 from api.db import get_db
 from api.main import app
-from api.models import Call
+from api.models import Call, Order, Reservation
 from api.tests.conftest import p95_ms
 from scripts.seed import seed
 
@@ -151,3 +151,66 @@ def test_latenz_p95_unter_300_ms(client):
     p95 = p95_ms(call)
 
     assert p95 < 300, f"p95 {p95:.1f} ms über dem Budget"
+
+
+@pytest.mark.latency
+def test_a_new_card_with_the_calls_bookings_stays_in_the_budget(
+    client, migrated_db_url
+):
+    """#764: every new card reads the call's bookings. Each measured call is
+    a new card, of a call with a confirmed table and a confirmed order."""
+    http, tenant_id, _ = client
+    engine = create_engine(migrated_db_url)
+    calls = []
+    with Session(engine) as s:
+        now = datetime.now(UTC)
+        for n in range(60):
+            row = Call(
+                tenant_id=uuid.UUID(tenant_id),
+                external_session_id=f"ext-{n}",
+                started_at=now,
+                delete_after=now.date(),
+            )
+            s.add(row)
+            s.flush()
+            s.add_all(
+                [
+                    Reservation(
+                        tenant_id=row.tenant_id,
+                        call_id=row.id,
+                        status="confirmed",
+                        guest_name="Müller",
+                        phone="+497215551234",
+                        party_size=4,
+                        reserved_for=now,
+                        idempotency_key=uuid.uuid4().hex,
+                    ),
+                    Order(
+                        tenant_id=row.tenant_id,
+                        call_id=row.id,
+                        type="pickup",
+                        status="confirmed",
+                        customer_name="Müller",
+                        phone="+497215551234",
+                        items_total_cents=1380,
+                        total_cents=1380,
+                        idempotency_key=uuid.uuid4().hex,
+                    ),
+                ]
+            )
+            calls.append(str(row.id))
+        s.commit()
+    engine.dispose()
+    waiting = iter(calls)
+
+    def call():
+        r = http.post(
+            "/v1/tools/create_callback",
+            json=body(tenant_id, next(waiting)),
+            headers=AUTH,
+        )
+        assert "Bereits gebucht:" in r.json()["data"]["summary"]
+
+    p95 = p95_ms(call)
+
+    assert p95 < 300, f"p95 {p95:.1f} ms over the budget"
