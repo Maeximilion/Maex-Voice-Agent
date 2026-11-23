@@ -165,19 +165,19 @@ def test_a_new_card_with_the_calls_bookings_stays_in_the_budget(
     with Session(engine) as s:
         now = datetime.now(UTC)
         for n in range(60):
-            call = Call(
+            row = Call(
                 tenant_id=uuid.UUID(tenant_id),
                 external_session_id=f"ext-{n}",
                 started_at=now,
                 delete_after=now.date(),
             )
-            s.add(call)
+            s.add(row)
             s.flush()
             s.add_all(
                 [
                     Reservation(
-                        tenant_id=call.tenant_id,
-                        call_id=call.id,
+                        tenant_id=row.tenant_id,
+                        call_id=row.id,
                         status="confirmed",
                         guest_name="Müller",
                         phone="+497215551234",
@@ -186,8 +186,8 @@ def test_a_new_card_with_the_calls_bookings_stays_in_the_budget(
                         idempotency_key=uuid.uuid4().hex,
                     ),
                     Order(
-                        tenant_id=call.tenant_id,
-                        call_id=call.id,
+                        tenant_id=row.tenant_id,
+                        call_id=row.id,
                         type="pickup",
                         status="confirmed",
                         customer_name="Müller",
@@ -198,7 +198,7 @@ def test_a_new_card_with_the_calls_bookings_stays_in_the_budget(
                     ),
                 ]
             )
-            calls.append(str(call.id))
+            calls.append(str(row.id))
         s.commit()
     engine.dispose()
     waiting = iter(calls)
