@@ -312,6 +312,27 @@ def test_kopfzeile_zeigt_die_knoepfe(client, tenant_id):
         assert knopf in body
 
 
+def test_the_header_folds_waits_and_sold_out_into_mehr(client, tenant_id):
+    """#517: below 1180 px the two waits and "Gericht aus" sit in a <details>
+    "Mehr" (it opens without script); "Anrufe", "Kennzahlen", "Raumplan" and
+    "Einstellungen" stay outside, in sight."""
+    body = client.get("/gui/").text
+    mehr = body.split('<details class="mehr" id="mehr">', 1)[1].split("</details>", 1)
+
+    assert "<summary>Mehr" in mehr[0]
+    assert "Wartezeit Abholung" in mehr[0]
+    assert "Wartezeit Lieferung" in mehr[0]
+    assert 'hx-target="#gericht-aus"' in mehr[0]
+    for outside in (
+        "/gui/anrufe",
+        "/gui/kennzahlen",
+        "/gui/raumplan",
+        "/gui/einstellungen",
+    ):
+        assert outside not in mehr[0]
+        assert outside in mehr[1]
+
+
 def test_not_aus_ein_tap_ohne_rueckfrage(client, engine, tenant_id):
     response = client.post("/gui/kopfzeile/ki-pausieren", headers=HX)
 

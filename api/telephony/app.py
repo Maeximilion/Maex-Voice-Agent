@@ -34,7 +34,7 @@ from typing import NoReturn, TypeVar
 
 from fastapi import FastAPI
 
-from api.agent.llm import ChatCompletionsLLM
+from api.agent.messages_llm import CLAUDE_PREFIX, client_from_settings
 from api.config import LOCAL_ENVS, TOKEN_MIN_LENGTH, settings
 from api.core.database_role import refuse_a_superuser_role
 from api.core.logging import configure_logging, get_logger
@@ -419,8 +419,13 @@ def voice_from_settings() -> Voice:
         )
     if not local and {settings.voice_ear, settings.voice_mouth} & DRILL_ENGINES:
         _refuse("the drill engines hear nothing and are for dev and test only")
+    if not local and settings.llm_model.startswith(CLAUDE_PREFIX):
+        # Real callers' words would leave the EU without a contract for it.
+        _refuse(
+            "a Claude model is for evals until an EU path and a DPA exist (docs/18 §3)"
+        )
     # Raises without a model: every call would go to the team at its first turn.
-    ChatCompletionsLLM.from_settings().close()
+    client_from_settings().close()
     refuse_a_superuser_role(settings.env, engine)
     with SessionLocal() as db:
         tenant_id = tenant_named(db, settings.tenant_name)
@@ -446,7 +451,7 @@ def voice_from_settings() -> Voice:
         lines,
         tenant_id=tenant_id,
         session_factory=bounded_sessions(DB_TIMEOUT_MS),
-        llm_factory=lambda _db: ChatCompletionsLLM.from_settings(),
+        llm_factory=lambda _db: client_from_settings(),
     )
     return Voice(
         events=handler,

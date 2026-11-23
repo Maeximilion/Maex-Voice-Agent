@@ -55,6 +55,7 @@
   </div>
   {% if config %}
   <div class="top actions">
+<<<<<<< HEAD
     {# "Mehr" (#517): the two waits and "Gericht aus" fold into one row below 1180 px
        (app.css); from 1180 px on they stand in the row as before. A plain details,
        so it opens without script too; app.ts keeps it open across the swaps. #}
@@ -81,6 +82,35 @@
       {% endfor %}
       {# Kachel "Gericht aus" (docs/06 §3): die Zahl nennt, wie viele heute aus sind. #}
       <button class="push" hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
+=======
+    {# Wartezeit je Service, senkbar und erhöhbar (T-3.6, docs/06 §3). Immer mit
+       "Wartezeit" und dem Service daneben; an der Grenze ist der Knopf aus, statt
+       einen Tap ohne Wirkung zu schlucken. A tap on the value opens its sheet
+       (fragments/wartezeit.html). The word "Standard" stands next to a wait that
+       differs from it (T-3.14). #}
+    {# #517: below 1180 px the two waits and "Gericht aus" fold into the "Mehr" row,
+       "Anrufe", "Kennzahlen", "Raumplan" and "Einstellungen" stay in sight. A
+       <details>, so it opens without script; from 1180 px the summary is hidden
+       and the content shows in the row as before (app.css, app.ts). #}
+    <details class="mehr" id="mehr">
+      <summary>Mehr{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</summary>
+      <div class="mehr-body">
+    {% for key, label, minutes, standard in waits %}
+    <div class="step">
+      <button class="step-value" hx-get="/gui/wartezeit/{{ key }}" hx-target="#wartezeit"><b>Wartezeit {{ label }} {{ minutes }} Min</b>{% if minutes != standard %}<span class="step-std">Standard {{ standard }} Min</span>{% endif %}</button>
+      <button hx-post="/gui/kopfzeile/wartezeit/{{ key }}/-{{ wait_step }}"
+              hx-target="#kopfzeile" hx-swap="outerHTML"
+              aria-label="Wartezeit {{ label }} {{ wait_step }} Minuten weniger"
+              {% if minutes <= wait_min %}disabled{% endif %}>-{{ wait_step }}</button>
+      <button hx-post="/gui/kopfzeile/wartezeit/{{ key }}/{{ wait_step }}"
+              hx-target="#kopfzeile" hx-swap="outerHTML"
+              aria-label="Wartezeit {{ label }} {{ wait_step }} Minuten mehr"
+              {% if minutes >= wait_max %}disabled{% endif %}>+{{ wait_step }}</button>
+    </div>
+    {% endfor %}
+    {# Kachel "Gericht aus" (docs/06 §3): die Zahl nennt, wie viele heute aus sind. #}
+    <button class="push" hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
+>>>>>>> origin/main
       </div>
     </details>
     <a class="button" href="/gui/anrufe">Anrufe</a>

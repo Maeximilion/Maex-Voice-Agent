@@ -406,6 +406,24 @@ header.admin{border-bottom:0}
   .betrieb .mode{padding:6px 10px}
   .order .code{font-size:30px;padding:6px 10px}
 }
+/* The "Mehr" row of the header (#517): below 1180 px the two wait steppers and
+   "Gericht aus" fold into it, a 60 px summary after "Einstellungen"; "Kennzahlen"
+   and "Raumplan" stay in sight. From 1180 px the summary is gone and its content
+   sits in the row as before. A <details>, so it works without script; app.ts
+   keeps it open across the header's swaps. */
+.mehr,.mehr-body{display:contents}
+.mehr > summary{list-style:none;cursor:pointer;align-items:center;gap:var(--s2);min-height:var(--tap);min-width:var(--tap);padding:0 var(--s4);border:2px solid var(--line-strong);border-radius:var(--r);background:var(--surface-2);font-size:var(--fs-body);font-weight:600;order:8}
+.mehr > summary::-webkit-details-marker{display:none}
+.mehr > summary::after{content:"\25BE";font-size:1.1em}
+.mehr[open] > summary::after{content:"\25B4"}
+@media (min-width:1180px){
+  .mehr > summary{display:none}
+  .mehr::details-content{content-visibility:visible;display:contents}
+}
+@media (max-width:1179.98px){
+  .mehr > summary{display:inline-flex}
+  .mehr::details-content{order:9;flex:1 1 100%;display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2)}
+}
 @media (max-width:900px){
   .board{grid-template-columns:1fr}
   .tafel{height:auto;overflow:visible}

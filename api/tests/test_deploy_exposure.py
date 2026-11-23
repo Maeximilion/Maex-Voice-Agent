@@ -257,6 +257,7 @@ def test_each_secret_reaches_only_the_services_that_read_it():
         "MONITOR_PUSH_TOKEN": {"dispatcher"},
         "VOICE_MEDIA_TOKEN": {"voice"},
         "LLM_API_KEY": {"voice"},
+        "ANTHROPIC_API_KEY": {"voice"},
     }
     for secret, services in readers.items():
         holders = {
@@ -267,6 +268,7 @@ def test_each_secret_reaches_only_the_services_that_read_it():
         assert holders == services, f"{secret} in production: {sorted(holders)}"
     # In development the API's container runs the evals, which may need a key.
     assert "LLM_API_KEY" in _services(_load(BASE))["api"]["environment"]
+    assert "ANTHROPIC_API_KEY" in _services(_load(BASE))["api"]["environment"]
     assert _services(_load(BASE))["asterisk"]["environment"]["ACCESS_PASSWORD"]
     assert "env_file" not in _services(_load(BASE))["asterisk"]
     assert _merged("caddy")["environment"]["GUI_PROXY_SECRET"] == (

@@ -95,7 +95,14 @@ export function renderHeader(h) {
     out += `</div>`;
     if (cfg) {
         out += `<div class="top actions">`;
+<<<<<<< HEAD
         out += `<details class="mehr" id="kopf-mehr"><summary>Mehr</summary><div class="mehr-inhalt">`;
+=======
+        out += `<details class="mehr" id="mehr"><summary>Mehr`;
+        if (h.sold_out_count)
+            out += ` <span class="badge warn">${h.sold_out_count} heute aus</span>`;
+        out += `</summary><div class="mehr-body">`;
+>>>>>>> origin/main
         for (const [key, label, minutes, standard] of h.waits) {
             out += `<div class="step"><button class="step-value" hx-get="/gui/wartezeit/${esc(key)}" hx-target="#wartezeit">`;
             out += `<b>Wartezeit ${esc(label)} ${minutes} Min</b>`;
