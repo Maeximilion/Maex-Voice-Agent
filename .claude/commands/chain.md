@@ -123,15 +123,32 @@ The brief is the session's only context. It has, in this order:
    #959). Every step would be too many: each message is one request on the
    coordinator's whole context and makes every later one larger, and its
    turns cannot start a session anyway.
+13. The heavy-step line (section 3): "A heavy step (a review from several
+   angles with many agents, `/code-review max`, a workflow, a wave of three or
+   more agents) holds 2 lanes: message the coordinator 'need 2 lanes for
+   <step>' and wait for 'go heavy' before you start it."
 
 ## 3. Parallel or in a row
 
-Items whose files do not overlap run at the same time: by default at most 2
-build side sessions plus the ship lane (Maxi, 2026-11-24: "change the normal
-mode to run just 2 lanes + 1 Ship lane", because 3 lanes ran +10 ahead and a
-pull request the coordinator opens on his idea is a lane of its own). More only
-in turbo (section 5), never above today's row of "Agents per weekday". The
-limit counts their review agents too (tell each session its share). Items that touch the same files, or
+Items whose files do not overlap run at the same time, counted in lanes; the
+ship lane (section 2) comes on top of them. A build side session holds one
+lane, a pull request the coordinator opens holds one, and a **heavy step**
+holds two (Maxi, 2026-11-24: reviews "aus verschiedenen Angles ... die viele
+Agents oder Subagents benötigen, müssen definitiv mehrere Lanes blockieren
+... am besten 2 Lanes"; the same for `/code-review max` and workflows). A heavy
+step is a review from several angles with finder or verifier agents (the
+deep review of `/done`, `/code-review max`, a ledger batch review), a workflow,
+or any wave of three or more agents at once. Before it starts one, a session
+messages the coordinator "need 2 lanes for <step>" and waits (one background
+sleep under 60 minutes, renewed) for "go heavy"; the coordinator answers when
+a second lane is free under the mode's count, otherwise the session waits until
+one frees. Normal mode has 3 lanes (Maxi: "Vielleicht könnten 3 Lanes im Normal
+mode passend sein wenn ... teure Items ... zum Blockieren von 2 lanes führen"),
+the other modes as in section 5, never above today's row of "Agents per
+weekday". The measurement of #965 likely included such steps counted as one
+lane, which made three lanes look more expensive than they are; check the next
+full window with `scripts/window_burn.py`. The limit counts their review agents
+too (tell each session its share). Items that touch the same files, or
 where one needs the other's result, run in a row. Whoever merges second
 merges `origin/main` in first; say so in both briefs. Check `gh pr view`
 before naming a base.
@@ -216,21 +233,23 @@ while they worked, slow mode at +10 never came on, three Opus lanes for five
 hours would reach about 125 percent). "First hour" is over 240 minutes to the
 reset, "last 2 hours" under 120 (Maxi, 2026-11-24: slow "at the beginning of
 the first hour ... at ahead +5 until it reaches -20"). Every mode keeps the
-ship lane on top of its build lanes, and a pull request the coordinator opens
-counts as a build lane.
+ship lane on top of its lanes; lanes are counted as section 3 says (a heavy
+step holds two).
 
-| Mode | On at | Back at | Build lanes | Agent waves, deep reviews |
+| Mode | On at | Back at | Lanes | Heavy steps |
 |---|---|---|---|---|
-| Super slow | over +15 | +5 or below, to slow | one at a time, 15-minute sleep between parts | wait |
-| Slow | over +5 in the first hour, +10 in the middle, +5 in the last 2 hours | to normal at -20 or below in the first hour, -15 in the middle, -5 in the last 2 hours | 2, 15-minute sleep between parts | wait |
-| Normal | | | 2 | as the brief says |
-| Turbo | under -25 | -10 or above, to normal | up to 5, never above today's row of "Agents per weekday" | welcome |
+| Super slow | over +15 | +5 or below, to slow | 1; every other build session pauses with background sleeps of 50 minutes, renewed on each wake | wait for slow or normal |
+| Slow | over +5 in the first hour, +10 in the middle, +5 in the last 2 hours | to normal at -20 or below in the first hour, -15 in the middle, -5 in the last 2 hours | 2, a 30-minute sleep between parts | one at a time, it holds both lanes |
+| Normal | | | 3 | as section 3 |
+| Turbo | under -25 | -10 or above, to normal | up to 5, never above today's row of "Agents per weekday" | as section 3 |
 
 From normal, over +15 goes straight to super slow. When turbo ends, running
-sessions finish their job; only no new start beyond 2 lanes (Maxi: "let the
-lanes get the Job done (no force break)"). Super slow lets running sessions go
-on too; only new starts and new agent waves wait. The pauses of the table
-above still hold in every mode.
+sessions finish their job; only no new start beyond the new count (Maxi: "let
+the lanes get the Job done (no force break)"). In super slow (Maxi,
+2026-11-24) all build sessions but one pause with 50-minute sleeps, renewed on
+each wake, so none falls into a cold cache; when the running one is done, a
+paused item takes its lane over ("go on #N"). The pauses of the first table
+still hold in every mode.
 
 A side quest Maxi starts during a chain (a measurement, a question for a
 session) counts as a lane. When it takes the chain above the lanes of its mode,
@@ -245,8 +264,9 @@ thinking"):
 - The next start is the first open item routed to Sonnet or Haiku, or to a
   lower effort; Opus items wait for normal mode unless none of the cheap kind
   is left.
-- A session takes one background `sleep 900` (15 minutes) after each finished
-  part of its work, before it starts the next part. Measured on 23.11.2026
+- A session takes one background `sleep 1800` (30 minutes; Maxi, 2026-11-24,
+  was 15) after each finished part of its work, before it starts the next
+  part; a paused session in super slow sleeps 50 minutes. Measured on 23.11.2026
   (6,000 requests of three days): a wake after any wait under 60 minutes costs
   the same as one working request, because the cache is kept for an hour; the
   wait itself costs nothing. So one long wait is cheap, many short polls are
