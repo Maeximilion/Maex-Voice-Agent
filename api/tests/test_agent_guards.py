@@ -8,7 +8,7 @@ import uuid
 
 import pytest
 
-from api.agent.consent import is_yes
+from api.agent.consent import answers_the_read_back, is_yes
 from api.agent.dispatch import ToolResult
 from api.agent.guards import (
     ADDITIVE_CLAIM,
@@ -2038,3 +2038,102 @@ def test_the_noted_sentence_before_a_read_back_asks_nothing():
 
     assert not _note_allergy_said(state, "Ja.")
     assert state.allergy_said == []
+
+
+# --- #678: an order's read-back closes with the expected time -----------------
+
+TIMED = (
+    "Zweimal Nummer 23 Frühlingsrollen. Macht 13 Euro 80, auf den Namen Müller. "
+    "Es dauert so ungefähr 30 Minuten."
+)
+
+
+@pytest.mark.parametrize(
+    ("said", "heard"),
+    [
+        (TIMED, True),
+        (f"Ich wiederhole: {TIMED}", True),
+        # The model may still ask for the yes in one of the fixed forms.
+        (f"{TIMED} Passt das so?", True),
+        # Another question after the time: the answer would be to that one.
+        (f"{TIMED} Möchten Sie noch etwas trinken?", False),
+        # Without the time the guest has not heard what "okay" answers.
+        (TIMED.removesuffix(" Es dauert so ungefähr 30 Minuten."), False),
+        (TIMED.replace("30", "20"), False),
+    ],
+)
+def test_a_timed_read_back_needs_no_question_behind_it(said, heard):
+    state, _ = drafted()
+    state.readback = TIMED
+
+    note_said(state, said)
+
+    assert state.readback_heard is heard
+
+
+@pytest.mark.parametrize(
+    ("text", "taken"),
+    [
+        ("Okay", True),
+        ("Alles klar", True),
+        ("Gut", True),
+        ("Gut, danke", True),
+        ("In Ordnung", True),
+        ("Super, danke schön", True),
+        ("Ja, passt", True),
+        # Closing replies: nothing was asked, the guest says goodbye (review
+        # of #678). Refused, the guest hangs up on a draft nobody sees.
+        ("Alles klar, danke, tschüss", True),
+        ("Okay, bis gleich", True),
+        ("Gut, bis dann", True),
+        ("Ist gut", True),
+        ("Ist in Ordnung", True),
+        ("Oh, okay", True),
+        ("Na gut", True),
+        ("Ja, tschüss", True),
+        ("Alles klar, auf Wiederhören", True),
+        # A thanks or a goodbye alone acknowledges nothing (Claude's choice,
+        # awaiting Maxi): the guest gets the question once more.
+        ("Danke", False),
+        ("Vielen Dank", False),
+        ("Bis gleich", False),
+        ("Tschüss", False),
+        ("Ist das gut", False),
+        ("Ist alles klar", False),
+        ("Nein, tschüss", False),
+        ("Okay, dann nicht", False),
+        # A sound or a goodbye in front hides no question (Codex, PR #954).
+        ("Oh, ist das richtig", False),
+        ("Na, stimmt das", False),
+        ("Ah, passt das so", False),
+        ("Oh, alles richtig", False),
+        ("Bitte", False),
+        ("So", False),
+        ("Gut?", False),
+        ("Alles klar, und wie lange genau?", False),
+        ("Gut, 2 Cola noch", False),
+        ("Nicht gut", False),
+        ("Nein", False),
+        ("Oh, so lange?", False),
+        ("Gut, dann hole ich es ab", False),
+    ],
+)
+def test_what_answers_the_stated_time(text, taken):
+    assert answers_the_read_back(text, TIMED) is taken
+
+
+def test_an_acknowledgement_answers_no_question():
+    """ "Alles klar" acknowledges; it is no yes to "Passt das so?"."""
+    assert not answers_the_read_back("Alles klar", READBACK)
+    assert not answers_the_read_back("Gut", READBACK)
+    assert answers_the_read_back("Okay", READBACK)
+
+
+def test_alles_klar_confirms_only_a_timed_read_back_heard_before_the_turn():
+    state, draft_id = drafted()
+    state.readback = TIMED
+    note_said(state, TIMED)
+    assert refusal(state, begin_turn(state), "Alles klar", confirm(draft_id)) is None
+
+    note_said(state, "Wir haben bis 22 Uhr geöffnet.")
+    assert refusal(state, begin_turn(state), "Alles klar", confirm(draft_id))

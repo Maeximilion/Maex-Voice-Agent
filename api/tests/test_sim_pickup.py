@@ -2111,7 +2111,7 @@ def test_a_number_named_at_the_readback_replaces_the_dish_with_the_same_digits(
     )
     again = " ".join(turns[-2].say)
     assert "Zweimal Nummer 25g" in again and "Einmal Nummer 13" in again
-    assert again.endswith("Passt das so?")
+    assert again.endswith("Es dauert so ungefähr 30 Minuten.")
     assert _booked(session) == [[("25g", 2, []), ("13", 1, [])]]
     # The order that was read back first is never confirmed (rule 3).
     assert sorted(o.status for o in orders(session)) == ["confirmed", "draft"]
@@ -2202,7 +2202,9 @@ def test_a_corrected_dish_with_a_mandatory_choice_asks_for_it(session, tenant):
     )
     assert "Huhn" in " ".join(turns[-3].say)
     again = " ".join(turns[-2].say)
-    assert "Einmal Nummer 47" in again and again.endswith("Passt das so?")
+    assert "Einmal Nummer 47" in again and again.endswith(
+        "Es dauert so ungefähr 30 Minuten."
+    )
     assert _booked(session) == [[("47", 1, ["Huhn"])]]
 
 

@@ -1,0 +1,47 @@
+{
+  "id": "abholung_0093",
+  "name": "A gut to the time that closes the read-back is the yes (#678)",
+  "tags": [
+    "abholung",
+    "readback",
+    "yes",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 23."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Schmidt."
+    },
+    {
+      "role": "customer",
+      "text": "Gut, danke."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "items": [
+      {
+        "number": "23",
+        "quantity": 2
+      }
+    ],
+    "customer_name": "Schmidt",
+    "readback": "Es dauert so ungefähr"
+  }
+}

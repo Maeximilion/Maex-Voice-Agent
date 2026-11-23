@@ -38,7 +38,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from api.agent.consent import is_yes, read_out
+from api.agent.consent import answers_the_read_back, is_yes, read_out
 from api.agent.dispatch import ToolResult, validation_hint
 from api.agent.escalation import (
     SENTENCE,
@@ -1415,7 +1415,11 @@ def reread_on_yes(
 
     Only on a yes: after "Nein, ich möchte etwas ändern" the model has to ask
     what, not put the old question again."""
-    if call is None or call.name != "confirm" or not is_yes(user_text):
+    if (
+        call is None
+        or call.name != "confirm"
+        or not answers_the_read_back(user_text, state.readback)
+    ):
         return None
     if _may_confirm(state, start, user_text, call):
         return None
@@ -1439,7 +1443,7 @@ def _may_confirm(
         start.readback_id is not None
         and _readback_id(state) == start.readback_id
         and str(call.args.get("entity_id")) == start.readback_id
-        and is_yes(user_text)
+        and answers_the_read_back(user_text, state.readback)
     )
 
 

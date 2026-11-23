@@ -31,7 +31,7 @@ from pydantic import ValidationError
 
 # The yes detector lives in the core since the core refuses a `confirm` without
 # a yes itself (agent/guards.py); the recorder measures with the same rule.
-from api.agent.consent import is_yes, read_out
+from api.agent.consent import answers_the_read_back, read_out
 from api.agent.llm import LLMClient, LLMTurn, Usage
 from api.agent.state import cart_lines, same_order
 
@@ -278,7 +278,11 @@ class RecordingLLM:
         )
         # Also for a draft made in this very turn: the core reads that one out
         # on a bare yes just the same (Codex PR #273).
-        if drafted_at is None or was_read_out or not is_yes(said):
+        if (
+            drafted_at is None
+            or was_read_out
+            or not answers_the_read_back(said, rec.readback)
+        ):
             return False
         self._cart_left_aside = self._before_cart is not None
         self._cart, rec.drafted_at, rec.read_out = order, drafted_at, was_read_out
@@ -319,7 +323,11 @@ class RecordingLLM:
             after_draft = (
                 rec.drafted_at is not None and len(rec.customer_lines) > rec.drafted_at
             )
-            if not (after_draft and rec.read_out and is_yes(last)):
+            if not (
+                after_draft
+                and rec.read_out
+                and answers_the_read_back(last, rec.readback)
+            ):
                 rec.unconfirmed.append(last)
 
 

@@ -31,7 +31,7 @@ def readback(
     address: Address | None = None,
     name_heard: bool = True,
 ) -> str:
-    """Bezug für "in etwa N Minuten" ist der Anlagezeitpunkt, nicht die Uhr:
+    """Bezug für "so ungefähr N Minuten" ist der Anlagezeitpunkt, nicht die Uhr:
     derselbe Schlüssel liefert denselben Satz.
 
     A delivery names the total with its fee before the yes (N2, distance
@@ -47,18 +47,24 @@ def readback(
     satz += f" Macht {spoken_euro(order.total_cents)}"
     if order.delivery_fee_cents:
         satz += f" inklusive {spoken_euro(order.delivery_fee_cents)} Liefergebühr"
-    if order.ready_at is not None:
-        # Abrunden: ready_at ist aufgerundet, die Differenz liegt in
-        # [Wartezeit, Wartezeit + 1 Minute) und ergibt so genau die Wartezeit.
-        minutes = int((order.ready_at - order.created_at).total_seconds() // 60)
-        if order.type == "delivery":
-            where = _spoken_address(address) if address else SAME_ADDRESS
-            satz += f", Lieferung in etwa {minutes} Minuten {where}"
-        else:
-            satz += f", abholbereit in etwa {minutes} Minuten"
+    if order.type == "delivery":
+        where = _spoken_address(address) if address else SAME_ADDRESS
+        satz += f", Lieferung {where}"
+    else:
+        # The time no longer says "abholbereit": the way is named (#678 review).
+        satz += ", zur Abholung"
     if name_heard:
         satz += f", auf den Namen {order.customer_name}"
-    return satz + ". Passt das so?"
+    if order.ready_at is None:
+        return satz + ". Passt das so?"
+    # Abrunden: ready_at ist aufgerundet, die Differenz liegt in
+    # [Wartezeit, Wartezeit + 1 Minute) und ergibt so genau die Wartezeit.
+    minutes = int((order.ready_at - order.created_at).total_seconds() // 60)
+    # The time closes the read-back instead of a question (Maxi, #678,
+    # 23.11.2026): the guest's "okay" to it is the yes (`consent.answers_the_read_back`),
+    # an objection ("So lange?") comes before anything is booked.
+    whole = "Das Ganze dauert" if order.type == "delivery" else "Es dauert"
+    return satz + f". {whole} so ungefähr {minutes} Minuten."
 
 
 def _spoken_address(address: Address) -> str:

@@ -22,7 +22,10 @@ passt").
 
 Read out (`read_out`) means: the sentence that ended a turn held the words of
 the draft, then the question that asks for the yes ("Passt das so?", "Ist das
-so richtig?"), and nothing that could change either. Another question behind
+so richtig?"), and nothing that could change either. An order's read-back
+closes with its time instead ("Es dauert so ungefähr 30 Minuten.", #678) and
+needs no question: "Okay" or "Alles klar" to it is the yes
+(`answers_the_read_back`). Another question behind
 the read-back would be what the guest's yes answers.
 
 Strict on purpose: a yes that is missed costs the guest one more question, a
@@ -34,6 +37,7 @@ free text through.
 
 import re
 import unicodedata
+from collections.abc import Callable
 from itertools import pairwise
 
 from api.domain.calls.consent import Answer
@@ -231,16 +235,80 @@ def _polite(words: list[str]) -> bool:
 def is_yes(text: str) -> bool:
     """An assent word, and nothing else but filler. A digit is never part of a
     yes: "Ja, 2" changes a quantity. A question is none: it asks."""
-    lowered = _lowered(text)
-    if any(char.isdigit() for char in lowered):
-        return False
-    if "?" in lowered or asks(lowered):
-        return False
-    for phrase in _HARMLESS:
-        lowered = lowered.replace(phrase, " ")
-    words = _WORD.findall(lowered)
+    words = _plain_words(text)
     return any(word in _YES for word in words) and all(
         word in _YES or word in _FILLER for word in words
+    )
+
+
+def _plain_words(text: str, asking: Callable[[str], bool] = asks) -> list[str]:
+    """The words of an answer that neither asks (`asking`) nor names a number,
+    harmless phrases cut; none for any other."""
+    lowered = _lowered(text)
+    if any(char.isdigit() for char in lowered):
+        return []
+    if "?" in lowered or asking(lowered):
+        return []
+    for phrase in _HARMLESS:
+        lowered = lowered.replace(phrase, " ")
+    return _WORD.findall(lowered)
+
+
+# What callers say to the time an order's read-back closes with (Maxi, #678,
+# 23.11.2026): "Alles klar", "Gut", "In Ordnung". Filler words of `is_yes`,
+# never an assent on their own: they acknowledge a statement and answer no
+# question, so they count only there (`answers_the_read_back`).
+_ACKNOWLEDGING = frozenset(
+    {"gut", "klar", "ordnung", "super", "prima", "perfekt", "wunderbar"}
+)
+# A statement invites a reply that ends the call or opens with a sound:
+# "Alles klar, tschüss", "Okay, bis gleich", "Oh, okay", "Na gut". Refused, the
+# guest hangs up on a draft nobody sees (review of #678). Never an answer
+# alone: "Tschüss" or "Bis gleich" acknowledges nothing.
+_CLOSING = frozenset(
+    {"tschüss", "tschüs", "tschuess", "tschues", "tschau", "ciao", "bye"}
+    | {"servus", "ade", "bis", "gleich", "später", "spaeter", "dann", "nachher"}
+    | {"auf", "wiederhören", "wiederhoeren", "wiedersehen"}
+    | {"oh", "ah", "aha", "ach", "na"}
+)
+
+
+def answers_the_read_back(text: str, readback: str | None) -> bool:
+    """Is `text` the guest's yes to `readback`? A yes (`is_yes`) always; an
+    acknowledgement ("Alles klar", "Gut") only when the read-back closes with
+    a statement, the time of an order, and not with a question. Whether the
+    read-back was what the guest heard last is the guard's to check."""
+    if is_yes(text):
+        return True
+    if readback is None or readback.rstrip().endswith("?"):
+        return False
+    return acknowledges(text)
+
+
+def acknowledges(text: str) -> bool:
+    """An acknowledgement of a statement: an assent or acknowledging word, the
+    rest filler and closing words. Nothing was asked, so "Ist gut" is an answer
+    here; a question mark, a verb before its subject ("Ist das gut", "Oh, ist
+    das richtig") or a bare "Alles richtig" asks."""
+    words = _plain_words(text, asking=_asks_after_sounds)
+    return any(word in _ACKNOWLEDGING or word in _YES for word in words) and all(
+        word in _YES or word in _FILLER or word in _CLOSING for word in words
+    )
+
+
+def _asks_after_sounds(lowered: str) -> bool:
+    """`asks` without the "Ist ..." form, read past the sounds and goodbyes in
+    front: "Oh, ist das richtig" and "Na, stimmt das" ask as plainly as
+    without them (Codex, PR #954)."""
+    sentences = [
+        [word for word in _WORD.findall(sentence) if word not in _CLOSING]
+        for sentence in _SENTENCE_END.split(lowered)
+    ]
+    if any(_verb_first(words) for words in sentences):
+        return True
+    words = {word for sentence in sentences for word in sentence}
+    return not words & _PLAIN_YES and any(
+        _ELLIPTIC.search(" ".join(sentence)) for sentence in sentences
     )
 
 
@@ -286,7 +354,9 @@ def read_out(say: str, readback: str) -> bool:
     - The words of the draft, in order and without a gap: a read-back that
       leaves the name out or says another number is not this draft.
     - Behind them the question that asks for the yes, the draft's own or one
-      of a few fixed forms (`_asks_to_confirm`), and nothing else. Without it the
+      of a few fixed forms (`_asks_to_confirm`), and nothing else. A
+      read-back that closes with a statement, an order's time (#678), may
+      also end the sentence. Without it the
       guest's "Ja" answers whatever was said last: "Das ist falsch: <draft>."
       asks nothing, and "<draft>. Möchten Sie noch einen Hochstuhl?" asks
       about the high chair. A read-back that is a question as a whole needs
@@ -309,7 +379,10 @@ def read_out(say: str, readback: str) -> bool:
         if said[at : at + size] != draft:
             continue
         after = said[at + size :]
-        if not (_asks_to_confirm(after, own_question) or (asks_itself and not after)):
+        # A read-back that closes without a question, the time of an order
+        # (#678), or that is one question as a whole, needs nothing behind it.
+        closes_itself = asks_itself or not readback.rstrip().endswith("?")
+        if not (_asks_to_confirm(after, own_question) or (closes_itself and not after)):
             continue
         if _neutral_start(said[:at]):
             return True
