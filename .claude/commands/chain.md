@@ -172,6 +172,13 @@ by the coordinator at every reading of `ahead`:
 Slow mode lets running sessions go on; only new starts and new agent waves
 wait. The pauses of the table above still hold in every mode.
 
+A mode Maxi pins on the chain dashboard stays until he sets it back to auto.
+When a mode is pinned and `ahead` reaches +50 or -50, the coordinator reminds
+him once, as a heading in large text at the top of its reply and as a push
+notification, to set the mode back to auto (Maxi, 2026-11-23: "give me once a
+reminder if we got to an extreme ahead value of 50"). It reminds him again only
+after `ahead` has been back inside -50 to +50.
+
 ## 5a. Option: no handover limit (overnight)
 
 Maxi names it when he starts a chain ("no handover limit", "overnight"); without
