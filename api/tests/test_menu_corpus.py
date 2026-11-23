@@ -27,6 +27,7 @@ purpose (`.claude/rules/tests-language.md`).
 
 import itertools
 import re
+import unicodedata
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
@@ -386,15 +387,6 @@ RED.append(
     )
 )
 for _said in (
-    "die 23, ne, die 24",
-    "die 23, quatsch, die 24",
-    "die 23, sorry, die 24",
-    "die 23, Moment, die 24",
-):
-    RED.append(
-        row("N", "e721-correction-books-both", _said, numbers=("23", "24"), either=True)
-    )
-for _said in (
     "die 23 statt Pho Bo",
     "die 23 oder Pho Bo",
     "die 23 oder Ente",
@@ -500,7 +492,13 @@ for _said, _nums in (
     ("Pho Bo,23", ("23",)),
     ("die 23, nee, die 24", ("23", "24")),
     ("die 23, nein, die 24", ("23", "24")),
+    # A spoken correction between two numbers asks (review #207, regression
+    # of #721, red rows until #911).
     ("die 23, doch die 24", ("23", "24")),
+    ("die 23, ne, die 24", ("23", "24")),
+    ("die 23, quatsch, die 24", ("23", "24")),
+    ("die 23, sorry, die 24", ("23", "24")),
+    ("die 23, Moment, die 24", ("23", "24")),
 ):
     CLEAN.append(
         row(
@@ -509,9 +507,7 @@ for _said, _nums in (
             _said,
             numbers=_nums,
             either=_said.startswith(("die 23,24", "die 25,G"))
-            or "nee, die" in _said
-            or "nein, die" in _said
-            or "doch die" in _said,
+            or _said.endswith("die 24"),
         )
     )
 # PR #722
@@ -605,6 +601,24 @@ for _said, _lost in (
     (
         "die 13, ich bin laktoseintolerant. Ich habe keine Allergie, nur meine Frau gegen Sesam",
         "laktose",
+    ),
+    # Words no health reader knows: what stands in front of the denial is
+    # whitelisted, not read (review of #911).
+    (
+        "Pho Bo, ich meide Gluten. Ich habe keine andere Allergie, nur meine Frau gegen Sesam",
+        "gluten",
+    ),
+    (
+        "die 13, ich muss glutenfrei essen. Ich habe keine Allergie, nur meine Frau gegen Sesam",
+        "gluten",
+    ),
+    # As the ear may write it, with the umlaut decomposed.
+    (
+        unicodedata.normalize(
+            "NFD",
+            "die 13, ich habe Zöliakie. Ich habe keine Allergie, nur meine Frau gegen Sesam",
+        ),
+        unicodedata.normalize("NFD", "zöliakie"),
     ),
 ):
     CLEAN.append(

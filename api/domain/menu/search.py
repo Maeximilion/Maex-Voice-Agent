@@ -63,7 +63,6 @@ from api.domain.menu.wishes import (
     open_wish,
     opens_with_allergy,
     removal_with,
-    speaks_of_health,
     wish_candidates,
 )
 from api.models import ItemAlias, MenuItem
@@ -333,9 +332,16 @@ def _position_parts(
     numbers; with a name there ("zweimal die 24 und Pho Bo") the part answered
     that it takes the dishes in turn, and took neither (eval abholung_0081).
     """
+    pieces = raw_pieces(query)
+    if len(pieces) > 1:
+        # Read the menu once for all parts, pieces and spans (review PR #155).
+        card = card if card is not None else card_format(session, tenant_id)
+        if _takes_a_number_back(
+            _piece_search(session, tenant_id, now, high, low, card), pieces, card
+        ):
+            return [query]
     parts = split_positions(query)
     if len(parts) > 1:
-        # Read the menu once for all parts.
         card = card if card is not None else card_format(session, tenant_id)
         cut: list[str] = []
         for part in parts:
@@ -350,21 +356,9 @@ def _position_parts(
                     raise
                 cut.append(part)
         return cut
-    pieces = raw_pieces(query)
-    if len(pieces) <= 1:
+    if len(pieces) <= 1 or card is None:
         return [query]
-    # Read the menu once, not per piece and span (review PR #155).
-    piece_card = card if card is not None else card_format(session, tenant_id)
-    search = partial(
-        search_menu,
-        session,
-        tenant_id,
-        now=now,
-        high=high,
-        low=low,
-        split_check=False,
-        card=piece_card,
-    )
+    search = _piece_search(session, tenant_id, now, high, low, card)
     spans = _spans(query, pieces)
     # No span can be a dish if it is longer than the longest name or alias on
     # the menu. Without a limit, a list of 20 dishes checked about 190 spans
@@ -379,45 +373,17 @@ def _position_parts(
     # Pommes" names the same dish with other words (Codex PR #127, P1).
     said: dict[uuid.UUID, set[str]] = {}
 
-    def takes_back(piece: str) -> bool:
-        """A piece that hits nothing and is no health mention: maybe a spoken
-        correction. "ich habe Zöliakie" hits no dish either, but it is the
-        caller's own health note for the dish in front (eval allergie_0026)."""
-        if speaks_of_health(piece):
-            return False
-        try:
-            search(piece)
-        except NotFound:
-            return True
-        except Ambiguous:
-            return False
-        return False
-
-    def whole(rest: list[str], lost: str | None = None) -> list[str]:
+    def whole(rest: list[str]) -> list[str]:
         """The sentence kept whole. The name search strips every number, so a
         piece with an unclear number further on ("einmal Suppe, und 30", where
         "Suppe" hits two dishes) makes the sentence ask for it instead (#328).
         For the same reason a piece that is one card number stays a position
         of its own, and only the pieces between them are kept together: "die
         23 und Ente" is the 23 and the Ente to ask about (#676), unless the
-        sentence carries a wish. `lost`: the piece in front of `rest`, which
-        hit no dish at all."""
-        if any(sole_item_number(piece, piece_card)[1] for piece in rest):
+        sentence carries a wish."""
+        if any(sole_item_number(piece, card)[1] for piece in rest):
             raise Ambiguous("Nummer nicht eindeutig", say=SAY_WHICH_NUMBER)
-        numbers = [sole_item_number(p, piece_card)[0] is not None for p in pieces]
-        # A piece that is no dish and no number may take a number back ("die
-        # 23, ne, die 24", "die 23, quatsch", "doch die 24"): no closed list
-        # holds every spoken correction, so such a sentence stays whole and
-        # asks, as before the cut; cut, the corrected number was booked beside
-        # the other one (review #207, regression of #721).
-        if (lost is not None and not speaks_of_health(lost)) or any(
-            takes_back(piece)
-            for piece, number in zip(
-                rest, numbers[len(pieces) - len(rest) :], strict=True
-            )
-            if not number
-        ):
-            return [query]
+        numbers = [sole_item_number(p, card)[0] is not None for p in pieces]
         # A wish or an allergy behind the number belongs to its dish ("Die 13,
         # meine Frau hat eine Erdnussallergie"): kept whole, the search reads
         # it as dish and wish, and asks if a number is lost there.
@@ -471,8 +437,8 @@ def _position_parts(
                 # says that it does not exist. Kept whole, the name search
                 # found Pho Bo alone and took it twice (eval abholung_0082).
                 # Any other piece that hits nothing is part of a name.
-                if sole_item_number(piece, piece_card)[0] is None:
-                    return whole(pieces[i + 1 :], lost=piece)
+                if sole_item_number(piece, card)[0] is None:
+                    return whole(pieces[i + 1 :])
                 positions.append(piece)
                 i += 1
                 continue
@@ -481,7 +447,7 @@ def _position_parts(
                 # letter needs a question and is a position of its own, as the
                 # S12 said clearly would be. Kept whole, the sentence would find
                 # Pho Bo alone and drop the first dish (Codex PR #257).
-                ref, _ = sole_item_number(piece, piece_card)
+                ref, _ = sole_item_number(piece, card)
                 if not (found.results and ref is not None and ref.heard):
                     return whole(pieces[i + 1 :])
             else:
@@ -493,6 +459,79 @@ def _position_parts(
     if len(positions) == 1 or any(len(words) > 1 for words in said.values()):
         return [query]
     return positions
+
+
+def _piece_search(
+    session: Session,
+    tenant_id: uuid.UUID,
+    now: datetime | None,
+    high: float | None,
+    low: float | None,
+    card: CardFormat,
+) -> Callable[[str], SearchResult]:
+    """The search for one piece of a sentence, without the split check."""
+    return partial(
+        search_menu,
+        session,
+        tenant_id,
+        now=now,
+        high=high,
+        low=low,
+        split_check=False,
+        card=card,
+    )
+
+
+def _takes_a_number_back(
+    search: Callable[[str], SearchResult], pieces: list[str], card: CardFormat
+) -> bool:
+    """A piece that hits no dish, behind a number and before a card number or
+    ending in one, may take the first number back ("die 23, ne, die 24", "die
+    23 ohne Zwiebeln, quatsch, die 24", "die 23, doch die 24"). No closed list
+    holds every spoken correction, so such a sentence stays whole and asks;
+    cut, the corrected 23 was booked beside the 24 (review #207, regression of
+    #721). With no card number after it ("Die 13, danke.", "Die 13 bitte, ich
+    habe Zöliakie.", "die 13, zwei Cola") the piece takes nothing back, and the
+    cut stays as before. Neither does a piece that hits a dish unclearly
+    ("Ente" between two numbers is a dish to ask about), filler or a quantity
+    alone ("zweimal", "also"), nor a piece with a quantity, a price or a time of
+    its own ("zwei Cola", "für 8,50", "um 19 Uhr"): a correction carries none."""
+    said = [sole_item_number(piece, card) for piece in pieces]
+    card_numbers = [ref is not None or more for ref, more in said]
+    for k, piece in enumerate(pieces):
+        if card_numbers[k] or not any(
+            card_numbers[i] or has_number(pieces[i]) for i in range(k)
+        ):
+            continue
+        own = _ends_in_card_number(piece, card)
+        if not (own or any(card_numbers[k + 1 :])):
+            continue
+        if not normalize_query(piece) or (has_number(piece) and not own):
+            continue
+        try:
+            search(piece)
+        except NotFound:
+            return True
+        except Ambiguous:
+            continue
+    return False
+
+
+# What stands in front of a card number said with its own word: "die 24",
+# "Nummer 24".
+_CARD_NUMBER_LEADS = frozenset({"die", "nummer", "nr"})
+
+
+def _ends_in_card_number(piece: str, card: CardFormat) -> bool:
+    """ "doch die 24": the piece ends in a card number with its article or
+    marker, behind words of its own."""
+    words = piece.split()
+    return any(
+        fold(word).strip(".") in _CARD_NUMBER_LEADS
+        and sole_item_number(" ".join(words[i:]), card)[0] is not None
+        for i, word in enumerate(words)
+        if i
+    )
 
 
 # A card letter said on its own, as the ear writes it ("A", "ah").

@@ -1533,22 +1533,26 @@ def _clear_parts(session, tid, said: str) -> list[str]:
 
 
 @pytest.mark.parametrize(
-    "said",
+    ("said", "taken_back"),
     [
-        "die 23, ne, die 24",
-        "die 23, quatsch, die 24",
-        "die 23, sorry, die 24",
-        "die 23, doch die 24",
-        "die 23, Moment, die 24",
+        ("die 23, ne, die 24", "23"),
+        ("die 23, quatsch, die 24", "23"),
+        ("die 23, sorry, die 24", "23"),
+        ("die 23, doch die 24", "23"),
+        ("die 23, Moment, die 24", "23"),
+        ("die 23, ich meine, die 24", "23"),
+        ("die 23 ohne Zwiebeln, quatsch, die 24", "23"),
+        ("zwei Pho Bo, quatsch, die 24", "Pho Bo"),
+        ("die 24, ich habe ja Zöliakie, also die 13", "24"),
     ],
 )
-def test_a_spoken_correction_never_books_both_numbers(session, sushi, said):
-    """Review #207, regression of #721: the cut in whole() took the corrected
-    23 as a clear position beside the 24. A piece that is no dish, no number
-    and no health mention may take a number back, so the 23 is never clear."""
+def test_a_spoken_correction_never_books_both(session, sushi, said, taken_back):
+    """Review #207, regression of #721: the cut took the corrected 23 as a
+    clear position beside the 24. A piece between two numbers that hits no
+    dish may take the first back, so the sentence stays whole and asks."""
     clear = _clear_parts(session, sushi, said)
     assert len(clear) < 2, clear
-    assert not any("23" in part for part in clear), clear
+    assert not any(taken_back in part for part in clear), clear
 
 
 @pytest.mark.parametrize(
@@ -1556,21 +1560,38 @@ def test_a_spoken_correction_never_books_both_numbers(session, sushi, said):
     [
         ("Die 13 bitte, ich habe Zöliakie.", "Die 13 bitte"),
         ("die 13, ich reagiere auf Nüsse", "die 13"),
+        ("Die 13, danke.", "Die 13"),
+        ("die 13, Cola", "die 13"),
+        ("die 23, quatsch", "die 23"),
+        ("die 23 und Ente, zweimal", "die 23"),
+        ("die 13, zwei Cola", "die 13"),
+        ("die 13, um 19 Uhr abholen", "die 13"),
     ],
 )
-def test_a_health_mention_behind_a_card_number_is_no_correction(
+def test_a_piece_with_no_number_after_it_takes_nothing_back(
     session, sushi, said, first
 ):
-    """Eval allergie_0026: "ich habe Zöliakie" hits no dish either, but it is
-    the caller's health note, not a correction; the 13 stays clear."""
+    """Eval allergie_0026: "ich habe Zöliakie" hits no dish either, but with no
+    number after it nothing is corrected; the number stays a clear position of
+    its own, as before, and the rest is answered on its own ("danke", an item
+    not on the menu)."""
     parts = position_parts(session, sushi, said, now=NOW)
     assert parts[0] == first
-    assert nummern(suche(session, sushi, first)) == ["13"]
+    assert _clear_parts(session, sushi, said) == [first]
 
 
-def test_a_correction_at_the_end_keeps_its_number_unclear(session, sushi):
-    """A lost piece behind the only number ("quatsch") keeps the part whole."""
-    assert _clear_parts(session, sushi, "die 23, quatsch") == []
+@pytest.mark.parametrize(
+    "said",
+    [
+        "die 13, zwei Cola, die 24",
+        "die 13, Pho Bo für 8,50, die 24",
+        "die 13, Schärfe 2, die 24",
+    ],
+)
+def test_a_piece_with_its_own_quantity_is_no_correction(session, sushi, said):
+    """Review of #911: a correction carries no quantity, price or time, so
+    such a piece between two numbers leaves both numbers clear."""
+    assert _clear_parts(session, sushi, said) == ["die 13", "die 24"]
 
 
 @pytest.mark.parametrize(

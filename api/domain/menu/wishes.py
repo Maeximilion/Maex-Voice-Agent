@@ -1886,15 +1886,18 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
     sentence = _SENTENCE_END.split(before)[-1]
     if not _denial_phrase(sentence):
         return None
-    # An allergy or another health word in front of the denial's own clause
-    # ("Ich habe eine Nussallergie! Ich habe keine andere Allergie, nur meine
-    # Frau gegen Sesam", "Ich habe Zöliakie und ich habe keine Allergie, ...")
-    # is the caller's own and would be lost behind the other one's allergen:
-    # asked about, as before this reading (review #207, regression of #735).
+    # A whitelist for what is said in front of the denial's own clause and
+    # sentence, too: filler and plain removals only ("Nein, ...", "Ohne
+    # Zwiebeln und ich habe keine Allergie", Codex PR #735). Anything else may
+    # be the caller's own allergy, also in words no reader knows ("Ich habe
+    # eine Nussallergie! Ich habe keine andere Allergie, ...", "ich meide
+    # Gluten."), and would be lost behind the other one's allergen, or an
+    # option that would be dropped ("mit Nudeln"): asked about, as before this
+    # reading (review #207, regression of #735).
     start = _clause_start(words, named[0], nearest=True)
-    if speaks_of_health(before[: len(before) - len(sentence)]) or speaks_of_health(
-        text[: tokens[start].start()]
-    ):
+    end = max(tokens[start].start(), len(before) - len(sentence))
+    head = _clean(_drop_trailing_glue(text[:end]))
+    if not _plain_removals(head, groups):
         return None
     # A whitelist, not guards: the clause is one person and one single-word
     # allergen in one of the shapes below, nothing else. Every other form is
@@ -1918,9 +1921,6 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
         for clause in clauses[n + 1 :]
     ):
         return None
-    # What is said in front of the denial's own clause, commas and all
-    # ("Ohne Zwiebeln und ich habe keine Allergie", Codex PR #735).
-    head = _clean(_drop_trailing_glue(text[: tokens[start].start()]))
     removals = [
         removal
         for wish in [*([_classify(head, groups)] if head else []), *later]
@@ -1933,6 +1933,18 @@ def _theirs_behind_a_denial(text: str, groups: list[OptionGroup]) -> Wish | None
         kind="allergy",
         ingredient=ingredient,
     )
+
+
+def _plain_removals(head: str, groups: list[OptionGroup]) -> bool:
+    """Is every clause of `head` filler or a plain removal ("ohne Zwiebeln"),
+    with no health word in it?"""
+    for clause in _SENTENCE_END.split(head.replace(",", ".")):
+        words = [w for w in _words(clause) if w not in _FILLERS]
+        if not words:
+            continue
+        if words[0] not in _REMOVE or _classify(_clean(clause), groups).kind != "note":
+            return False
+    return not speaks_of_health(head)
 
 
 def _classify(text: str, groups: list[OptionGroup]) -> Wish:
