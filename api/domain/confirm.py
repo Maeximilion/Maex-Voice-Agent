@@ -35,6 +35,7 @@ from api.domain.reservations.manual import (
     seating,
     taken_tables,
 )
+from api.domain.reservations.slip import queue_reservation_slip
 from api.domain.reservations.slots import ASK_OTHER_TIME, SAY_RESERVATIONS_OFF
 from api.domain.status.config import ACTOR_TABLET
 from api.events import enqueue
@@ -149,6 +150,11 @@ def _confirm_reservation(
         ACTOR_AGENT,
         {"call_id": str(req.call_id), "idempotency_key": req.idempotency_key},
     )
+    # The team sees the new table on paper while the tablet runs in the
+    # background (#863). Not for a self-test's table, and not for one the team
+    # entered itself (`confirm_tablet`).
+    if not reservation.is_test:
+        queue_reservation_slip(session, reservation, zone)
     session.commit()
     return CONFIRMED
 

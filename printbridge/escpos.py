@@ -161,6 +161,26 @@ def _address(ticket: dict[str, Any], width: int) -> list[bytes]:
     return out
 
 
+RESERVATION = "reservation"
+
+
+def _reservation(ticket: dict[str, Any], width: int, stamp: str) -> bytes:
+    """A table the agent booked (#863): short, and plainly no order. Nothing
+    for the register or the kitchen; the team sees the new table on paper."""
+    out = [INIT, CODEPAGE, *_notice("RESERVIERUNG", width)]
+    out.append(_line("Kein Auftrag - nicht in die Kasse."))
+    when = f"{ticket.get('reserved_day') or ''} {ticket.get('reserved_time') or ''}"
+    out += [BIG_ON, _tall(_wrapped(" ".join(when.split()), width // 2)), BIG_OFF]
+    out += [BOLD_ON, _line(f"{ticket.get('party_size') or '?'} Personen"), BOLD_OFF]
+    if ticket.get("customer_name"):
+        out.append(_wrapped(f"Name: {ticket['customer_name']}", width))
+    if ticket.get("note"):
+        out += [BOLD_ON, _wrapped(f"! {ticket['note']}", width), BOLD_OFF]
+    out.append(_line(f"Gedruckt {stamp}"))
+    out += [FEED, CUT]
+    return b"".join(out)
+
+
 def render(
     ticket: dict[str, Any],
     width: int = DEFAULT_WIDTH,
@@ -174,7 +194,11 @@ def render(
     Bestellung in die Kasse getippt hat, deshalb steht das ganz oben.
 
     A cancelled order's note is the opposite: it stops the slip before it.
+    A reservation's slip has a layout of its own (`_reservation`).
     """
+    stamp = ticket.get("print_time") or (printed_at or local_now()).strftime("%H:%M")
+    if ticket.get("type") == RESERVATION:
+        return _reservation(ticket, width, stamp)
     out = [INIT, CODEPAGE]
     reason = ticket.get("correction_reason")
     cancelled = reason == CANCELLED
@@ -243,7 +267,6 @@ def render(
         )
         out.append(_line(f"Liefergebühr {_euro(fee)}".rjust(width)))
     out.append(_line(f"Summe {_euro(ticket.get('total_cents'))}".rjust(width)))
-    stamp = ticket.get("print_time") or (printed_at or local_now()).strftime("%H:%M")
     revision = int(ticket.get("revision") or 0)
     footer = f"Gedruckt {stamp}" + (f" - Stand {revision}" if revision else "")
     out.append(_line(footer))
