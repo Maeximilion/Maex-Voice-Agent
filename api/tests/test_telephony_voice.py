@@ -1022,6 +1022,29 @@ def test_outside_dev_and_test_the_drill_engines_and_a_short_token_are_refused(
         voice_from_settings()
 
 
+@pytest.mark.parametrize("env", ["prod", "staging"])
+def test_outside_dev_and_test_the_ear_measure_is_refused(startable, env):
+    """`VOICE_EAR_MEASURE` logs what every caller said, one line per utterance
+    for the journal's 14 days: the team's own test calls only (#678, #888 S13)."""
+    startable.setattr(settings, "env", env)
+    startable.setattr(settings, "voice_media_token", "x" * 32)
+    startable.setattr(settings, "voice_ear", "whisper")
+    startable.setattr(settings, "voice_mouth", "piper")
+    startable.setattr(settings, "voice_ear_measure", True)
+    with pytest.raises(RuntimeError, match="VOICE_EAR_MEASURE"):
+        voice_from_settings()
+
+
+def test_in_dev_the_ear_measure_passes_the_start_check(startable):
+    """The workbench runs `ENV=dev`: Maxi's measurement calls of #678 start."""
+    startable.setattr(settings, "env", "dev")
+    startable.setattr(settings, "voice_ear_measure", True)
+    startable.setattr(settings, "llm_base_url", "")
+    # Past the check of the flag: the next refusal is the missing model.
+    with pytest.raises(LLMError):
+        voice_from_settings()
+
+
 def test_outside_dev_and_test_a_claude_model_is_refused(startable):
     """No EU path and no DPA yet: a Claude model answers evals, never a real
     caller (docs/18 §3, T-5.3)."""
