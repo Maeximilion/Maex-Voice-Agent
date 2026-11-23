@@ -22,6 +22,7 @@ from api.agent.guards import (
     HINT_GUEST_PHONE,
     HINT_ITEM,
     HINT_NOT_BOOKED,
+    SAY_ALLERGY_NOTED,
     note_said,
 )
 from api.agent.llm import FakeLLM, LLMError, LLMTurn, ToolCall
@@ -42,17 +43,20 @@ from api.agent.loop import (
     SUMMARY_OPEN_TABLE,
     SUMMARY_OUTAGE,
     SUMMARY_REFUSED_TABLE,
+    SUMMARY_TABLE_UNREAD,
     ConversationLoop,
     TurnResult,
     _booked_say,
     _card_without_allergy,
     _handoff_summary,
+    _judged_again,
     _local_times,
+    _note_allergy_said,
     _order_lines,
     _still_open,
 )
 from api.agent.outcome import call_outcome
-from api.agent.state import ConversationState, initial_state
+from api.agent.state import ALLERGY_SAID_MAX, ConversationState, initial_state
 from api.domain.confirm import SAY_CANCELLED
 from api.models import Call, Callback, Reservation, ServiceConfig
 from scripts.seed import seed
@@ -3018,3 +3022,404 @@ def test_a_card_without_the_short_ingredient_stays(state, said, summary):
     )
 
     assert _card_without_allergy(state, call) == call
+
+
+# -- older gaps of the allergy safety net (#940) -----------------------------------
+
+
+ALLERGY_WITH_NUMBER = "0721 5551234, ich habe übrigens eine Erdnussallergie."
+
+
+def test_an_allergy_in_the_answer_to_the_number_question_marks_the_card(session, state):
+    """No number known, nobody reachable: the core asks for one. An allergy
+    the guest names with the number is kept for the net, and the card that
+    waited tells the team to ask about a kitchen note, never which allergy
+    (L13), and before the guest's words, never inside them."""
+    llm = _model_asks_for_the_team()
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+    loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+
+    result = loop.run_turn(state, ALLERGY_WITH_NUMBER)
+
+    assert result.ended is True
+    assert state.allergy_said == [ALLERGY_WITH_NUMBER]
+    card = session.scalars(select(Callback)).one().summary
+    assert card.count(SUMMARY_NOTE_TO_CLEAR) == 1
+    assert "Erdnuss" not in card
+    assert card.index(SUMMARY_NOTE_TO_CLEAR) < card.index("Kunde sagte:")
+
+
+def test_an_allergy_while_the_number_is_still_missing_marks_the_card(session, state):
+    llm = _model_asks_for_the_team()
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+    loop.run_turn(state, "Ich hätte gern jemanden vom Team")
+
+    asked = loop.run_turn(state, "Moment, ich habe eine Erdnussallergie.")
+    assert asked.ended is False and asked.say == [SAY_CALLBACK_NUMBER]
+    loop.run_turn(state, "0721 5551234")
+
+    card = session.scalars(select(Callback)).one().summary
+    assert card.count(SUMMARY_NOTE_TO_CLEAR) == 1
+    assert "Erdnuss" not in card
+
+
+def test_an_allergy_before_the_number_question_marks_the_card_once(session, state):
+    llm = _model_asks_for_the_team()
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+    loop.run_turn(state, "Ich hätte gern jemanden vom Team, ich habe eine Nussallergie")
+
+    loop.run_turn(state, "0721 5551234, und ich vertrage auch keinen Sesam.")
+
+    card = session.scalars(select(Callback)).one().summary
+    assert card.count(SUMMARY_NOTE_TO_CLEAR) == 1
+
+
+UNNAMED = [
+    "Wegen meiner Allergie bitte vorsichtig sein.",
+    "Das mit der Allergie ist mir wichtig.",
+    "Ich bin Allergiker.",
+    "Bitte denken Sie an meine Allergie.",
+    "Meine Allergie ist wirklich schlimm.",
+]
+
+
+@pytest.mark.parametrize(
+    "first",
+    [
+        "Ich habe eine Erdnussallergie.",
+        # What the wish parser does not read, the cards do (`_ingredients`).
+        "Und ich reagiere auf Erdbeeren.",
+        "Ich darf keine Erdbeeren essen.",
+        "Kein Koriander bitte, da bin ich allergisch.",
+        # An allergen by name in any phrasing (`allergens_named`).
+        "Bei Erdnüssen bekomme ich Atemnot, ich bin allergisch.",
+    ],
+)
+def test_the_first_allergy_outlasts_later_sentences_about_health(state, first):
+    """Five later kept sentences pushed the first out of `allergy_said`, and
+    the net no longer knew the peanut (#940): a sentence that names what the
+    guest reacts to stays, the oldest that names nothing goes."""
+    _note_allergy_said(state, first)
+    for said in [*UNNAMED, "Also bitte aufpassen wegen der Allergie."]:
+        assert _note_allergy_said(state, said)
+
+    assert len(state.allergy_said) == ALLERGY_SAID_MAX
+    assert state.allergy_said[0] == first
+    assert UNNAMED[0] not in state.allergy_said
+    assert state.allergy_said[-1] == "Also bitte aufpassen wegen der Allergie."
+
+
+def test_sentences_that_name_an_allergen_all_stay(state):
+    named = [
+        "Ich habe eine Erdnussallergie.",
+        "Ich bin allergisch gegen Sesam.",
+        "Ich vertrage kein Soja.",
+        "Ich habe eine Sellerieallergie.",
+        "Ich bin allergisch gegen Senf.",
+        "Ich bin auch gegen Kiwi allergisch.",
+    ]
+    for said in named:
+        _note_allergy_said(state, said)
+
+    assert state.allergy_said == named
+
+
+def test_the_newest_sentence_stays_behind_five_that_name_an_allergen(state):
+    named = [
+        "Ich habe eine Erdnussallergie.",
+        "Ich bin allergisch gegen Sesam.",
+        "Ich vertrage kein Soja.",
+        "Ich habe eine Sellerieallergie.",
+        "Ich bin allergisch gegen Senf.",
+    ]
+    for said in [*named, "Ich bin Allergiker."]:
+        _note_allergy_said(state, said)
+
+    assert state.allergy_said == [*named, "Ich bin Allergiker."]
+
+
+def test_a_sentence_said_again_is_kept_once(state):
+    _note_allergy_said(state, "Ich habe eine Erdnussallergie.")
+    _note_allergy_said(state, "Ich bin Allergiker.")
+    _note_allergy_said(state, " ich habe eine Erdnussallergie! ")
+
+    assert state.allergy_said == [
+        "Ich bin Allergiker.",
+        "ich habe eine Erdnussallergie!",
+    ]
+
+
+def _callback_after_an_allergy(summary: str) -> FakeLLM:
+    call = ToolCall(
+        "create_callback",
+        {"phone": CALLER, "reason": "human_requested", "summary": summary},
+    )
+    return FakeLLM(
+        [
+            LLMTurn(say=SAY_ALLERGY_NOTED),
+            LLMTurn(tool_call=call),
+            LLMTurn(say="Wir rufen Sie zurück."),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "summary",
+    [
+        "Kunde bittet um Rückruf wegen einer Bestellung.",
+        # The model named the allergy: the card gets its reason's sentence.
+        "Kunde hat eine Erdnussallergie, bitte zurückrufen.",
+        # As long as a callback takes: the marker still fits (rule 5).
+        "Rückruf. " + "x" * 991,
+    ],
+)
+def test_a_card_the_model_writes_after_an_allergy_carries_the_marker(
+    session, state, summary
+):
+    """The core's cards tell the team to ask about the kitchen note since the
+    ledger #764 review; the model's own `create_callback` did not (#940)."""
+    state.slots["phone"] = CALLER
+    loop = ConversationLoop(
+        session, _callback_after_an_allergy(summary), "system", now=NOW
+    )
+
+    loop.run_turn(state, "Ich habe eine Erdnussallergie.")
+    loop.run_turn(state, "Rufen Sie mich bitte zurück.")
+
+    card = session.scalars(select(Callback)).one().summary
+    assert card.count(SUMMARY_NOTE_TO_CLEAR) == 1
+    assert "Erdnuss" not in card
+    assert len(card) <= 1000
+
+
+def test_a_card_the_model_writes_without_an_allergy_stays(session, state):
+    state.slots["phone"] = CALLER
+    summary = "Kunde bittet um Rückruf wegen einer Bestellung."
+    loop = ConversationLoop(
+        session, _callback_after_an_allergy(summary), "system", now=NOW
+    )
+
+    loop.run_turn(state, "Ich möchte etwas bestellen.")
+    loop.run_turn(state, "Rufen Sie mich bitte zurück.")
+
+    assert session.scalars(select(Callback)).one().summary == summary
+
+
+def test_a_table_draft_the_tool_cannot_read_stays_on_the_card_as_open(session, state):
+    """A draft with an additive in its note goes to the team (#649). One
+    whose time no tool can read left the table off the card, and the guest
+    never heard that nothing is booked (#940): the card names an open table
+    without the model's unchecked values, the team clears it with the guest."""
+    state.slots["phone"] = CALLER
+    call = ToolCall(
+        "create_reservation",
+        {
+            "party_size": 4,
+            "reserved_for": "morgen um sieben",
+            "guest_name": "Müller",
+            "phone": CALLER,
+            "note": "ohne Glutamat",
+        },
+    )
+    llm = FakeLLM([LLMTurn(tool_call=call)])
+    loop = ConversationLoop(session, llm, "system", now=NOW)
+
+    result = loop.run_turn(state, "Einen Tisch für vier morgen um sieben auf Müller.")
+
+    assert result.ended is True
+    assert SAY_TABLE_NOT_BOOKED in result.say
+    card = session.scalars(select(Callback)).one().summary
+    assert SUMMARY_OPEN_TABLE in card
+    assert "morgen um sieben" not in card
+
+
+def test_a_table_for_the_team_after_an_allergy_carries_the_marker(session, state):
+    """The table the team decides on is a card of the core's own, written
+    straight to `create_callback`: it tells the team to ask about the kitchen
+    note like every other card, never which allergy (#940, L13)."""
+    state.slots.update(phone=CALLER, guest_name="Müller")
+    state.allergy_said = ["Ich habe eine Erdnussallergie."]
+
+    _ask_for_nine(session, state)
+
+    card = session.scalars(select(Callback)).one().summary
+    assert card == f"{SUMMARY_NOTE_TO_CLEAR}. {WISH}, Name Müller."
+
+
+def test_the_card_that_waited_drops_words_the_answer_made_health(session, state):
+    """The waiting card was judged before the guest's answer named the
+    allergy: its words about the peanut stay off the card now, as on a card
+    written in the same turn (L13, #940)."""
+    llm = _model_asks_for_the_team()
+    loop = ConversationLoop(session, llm, "system", now=NOW, clock=clock_from([0]))
+    asked = loop.run_turn(
+        state, "Ich möchte mit einem Menschen sprechen, es geht um Erdnüsse in der 13."
+    )
+    assert asked.ended is False and asked.say[-1] == SAY_CALLBACK_NUMBER
+
+    loop.run_turn(state, "0721 5551234, ich habe nämlich eine Erdnussallergie.")
+
+    card = session.scalars(select(Callback)).one().summary
+    assert card.startswith(f"{SUMMARY_NOTE_TO_CLEAR}.")
+    assert "Erdnüss" not in card and "Kunde sagte" not in card
+
+
+def test_a_note_of_the_waiting_card_the_answer_made_health_is_cleared(state):
+    pho = str(uuid.uuid4())
+    state.seen_items[pho] = {"number": "13", "name": "Pho Bo"}
+    state.cart = [{"menu_item_id": pho, "quantity": 1, "note": "ohne Erdnüsse"}]
+    card = f"{SUMMARY_OPEN_ORDER} 1x 13 Pho Bo (ohne Erdnüsse)."
+    state.allergy_said = ["Ich habe nämlich eine Erdnussallergie."]
+
+    assert _judged_again(state, card) == (
+        f"{SUMMARY_OPEN_ORDER} 1x 13 Pho Bo ({SUMMARY_NOTE_TO_CLEAR})."
+    )
+
+
+def test_the_words_inside_a_complaint_card_go_and_the_open_order_stays(state):
+    """A complaint's card has the table and the order behind the guest's
+    words (`_beyond_the_database`): only the words go (#940 review)."""
+    card = (
+        "Kunde hat sich beschwert. Kunde sagte: Ist in der 13 Glutamat? Davon "
+        f"wird mir übel. {SUMMARY_OPEN_TABLE} 4 Personen, 25.11.2026 19:00 Uhr. "
+        f"{SUMMARY_OPEN_ORDER} 2x 13 Pho Bo."
+    )
+    state.allergy_said = ["0721 5551234, ich habe eine Glutamatunverträglichkeit."]
+
+    assert _judged_again(state, card) == (
+        f"Kunde hat sich beschwert. {SUMMARY_OPEN_TABLE} 4 Personen, "
+        f"25.11.2026 19:00 Uhr. {SUMMARY_OPEN_ORDER} 2x 13 Pho Bo."
+    )
+
+
+def test_words_a_note_was_taken_from_go_with_it(state):
+    """The note came from the guest's words: replacing it first hid what the
+    words name, and the marker stood inside them (#940 review)."""
+    pho = str(uuid.uuid4())
+    state.cart = [{"menu_item_id": pho, "quantity": 1, "note": "ohne Erdnüsse"}]
+    card = (
+        f"Kunde wollte mit einem Menschen sprechen. {SUMMARY_OPEN_ORDER} 1x 13 Pho "
+        "Bo (ohne Erdnüsse). Kunde sagte: Ich möchte mit einem Menschen sprechen, "
+        "die 13 bitte ohne Erdnüsse."
+    )
+    state.allergy_said = ["0721 5551234, ich habe eine Erdnussallergie."]
+
+    assert _judged_again(state, card) == (
+        f"Kunde wollte mit einem Menschen sprechen. {SUMMARY_OPEN_ORDER} 1x 13 Pho "
+        f"Bo ({SUMMARY_NOTE_TO_CLEAR})."
+    )
+
+
+def test_notes_cleared_on_a_long_waiting_card_keep_it_inside_a_callback(state):
+    """Each short note becomes the longer marker: the card stays inside the
+    1000 characters a callback takes, or the guest's callback is refused
+    (rule 5, #940 review)."""
+    lines = []
+    for n in range(20):
+        pho = str(uuid.uuid4())
+        state.cart.append({"menu_item_id": pho, "quantity": 1, "note": "ohne Nüsse"})
+        lines.append(f"1x {n} Pho Bo Spezial mit Rind (ohne Nüsse)")
+    card = f"{SUMMARY_OPEN_ORDER} " + ", ".join(lines) + "."
+    assert 850 < len(card) <= 1000
+    state.allergy_said = ["0721 5551234, ich habe eine Nussallergie."]
+
+    judged = _judged_again(state, card)
+
+    assert len(judged) == 1000
+    assert "Nüsse" not in judged
+
+
+def test_a_note_the_answer_did_not_touch_stays_on_the_waiting_card(state):
+    pho = str(uuid.uuid4())
+    state.cart = [{"menu_item_id": pho, "quantity": 1, "note": "ohne Zwiebeln"}]
+    card = (
+        f"Kunde wollte mit einem Menschen sprechen. {SUMMARY_OPEN_ORDER} 1x 13 Pho "
+        "Bo (ohne Zwiebeln). Kunde sagte: Bitte schnell."
+    )
+    state.allergy_said = ["Ich habe nämlich eine Erdnussallergie."]
+
+    assert _judged_again(state, card) == card
+
+
+def test_the_guest_hears_that_neither_the_order_nor_the_table_is_booked(session, state):
+    """Both stand open: the table sentence no longer hides the order's
+    (#940)."""
+    pho = str(uuid.uuid4())
+    state.seen_items[pho] = {"number": "13", "name": "Pho Bo"}
+    state.cart = [{"menu_item_id": pho, "quantity": 1}]
+    loop = ConversationLoop(session, FakeLLM([]), "system", now=NOW)
+
+    card, lead = loop._card(state, "out_of_scope", None, table="4 Personen")
+
+    assert lead == [SAY_ORDER_NOT_PLACED, SAY_TABLE_NOT_BOOKED]
+    assert f"{SUMMARY_OPEN_TABLE} 4 Personen." in card and "1x 13 Pho Bo" in card
+
+
+def test_a_draft_held_back_unread_and_then_refused_is_named_refused(session, state):
+    """The first draft no tool could read waits on the card as open; the
+    second, readable one the domain refuses: the card names that table as
+    refused, never as open (#862, #940)."""
+    state.slots["phone"] = CALLER
+    unread = {
+        "party_size": 4,
+        "reserved_for": "heute um halb zwölf",
+        "guest_name": "Müller",
+        "phone": CALLER,
+    }
+    late = {
+        **unread,
+        "reserved_for": "2026-09-15T23:30:00+02:00",
+        "note": "WICHTIG !!! Kunde ist allergisch auf Erdnüsse",
+    }
+    llm = FakeLLM(
+        [
+            LLMTurn(tool_call=ToolCall("create_reservation", unread)),
+            LLMTurn(tool_call=ToolCall("create_reservation", late)),
+            LLMTurn(tool_call=ToolCall("transfer_to_team", {"reason": "out_of_scope"})),
+        ]
+    )
+    loop = ConversationLoop(session, llm, "system", now=NOW)
+
+    loop.run_turn(
+        state,
+        "Ich habe eine Erdnussallergie, einen Tisch für vier um halb zwölf auf Müller.",
+    )
+
+    card = session.scalars(select(Callback)).one().summary
+    assert SUMMARY_REFUSED_TABLE in card
+    assert SUMMARY_TABLE_UNREAD not in card
+
+
+def test_a_long_open_order_leaves_room_for_booking_and_marker(session, state):
+    """The twin of the test above for an allergic guest: the marker leads the
+    card and the count of the lines that did not fit still stands before the
+    bookings (#764, #940)."""
+    state.slots["phone"] = CALLER
+    state.allergy_said = ["Ich habe eine Erdnussallergie."]
+    session.add(
+        Reservation(
+            tenant_id=state.tenant_id,
+            call_id=state.call_id,
+            status="confirmed",
+            guest_name="Müller",
+            phone=CALLER,
+            party_size=2,
+            reserved_for=datetime(2026, 9, 16, 19, 0, tzinfo=BERLIN),
+            idempotency_key=uuid.uuid4().hex,
+        )
+    )
+    session.commit()
+    for n in range(120):
+        dish = str(uuid.uuid4())
+        state.seen_items[dish] = {"number": f"{100 + n}", "name": "Pizza"}
+        state.cart.append({"menu_item_id": dish, "quantity": 2})
+
+    _ask_for_nine(session, state)
+
+    summary = session.scalars(select(Callback)).one().summary
+    assert len(summary) <= 1000
+    assert summary.startswith(f"{SUMMARY_NOTE_TO_CLEAR}.")
+    assert summary.endswith(
+        "weitere Positionen. Bereits gebucht: Reservierung, 2 Personen, "
+        "16.09.2026 19:00 Uhr, Name Müller."
+    )

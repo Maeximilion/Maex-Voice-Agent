@@ -20,6 +20,7 @@ from api.agent.llm import FakeLLM, LLMTurn, ToolCall
 from api.agent.loop import (
     SAY_ESCALATION,
     SAY_NOT_A_PERSON,
+    SUMMARY_NOTE_TO_CLEAR,
     UNHEARD_TURNS,
     ConversationLoop,
 )
@@ -363,6 +364,27 @@ def test_an_allergy_named_in_the_answer_stays_off_the_card(session, tenant_id, s
     summary = cards(session, state)[0].summary
     assert "allergie" not in summary.lower()
     assert "Testregel" in summary
+    # Kept for the net like any sentence of the guest: the team asks about the
+    # kitchen note when it calls back (#940).
+    assert SUMMARY_NOTE_TO_CLEAR in summary
+    assert state.allergy_said == ["Nein, ich habe eine Erdnussallergie."]
+
+
+def test_a_yes_with_an_allergy_marks_the_card(session, tenant_id, state):
+    """A yes with more behind it is no yes (`is_yes`): the complaint goes to
+    the team, and its card tells the team to ask about the kitchen note,
+    never which allergy (L13, #940). A plain yes carries no allergy, and an
+    offer is made only in a call without one (`_offer_remedy`), so the card
+    of a booked rule needs no marker."""
+    rule(session, tenant_id)
+    agent = loop(session, now=CLOSED)
+    agent.run_turn(state, COMPLAINT)
+
+    agent.run_turn(state, "Ja, gerne. Ich habe übrigens eine Erdnussallergie.")
+
+    summary = cards(session, state)[0].summary
+    assert summary.count(SUMMARY_NOTE_TO_CLEAR) == 1
+    assert "allergie" not in summary.lower()
 
 
 def test_a_yes_to_another_sentence_books_nothing(session, tenant_id, state):

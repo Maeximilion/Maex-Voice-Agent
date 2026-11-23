@@ -68,7 +68,6 @@ from api.core.tokens import LOCAL_ENVS
 from api.dashboard import access, customers, passkeys, push, results, totp
 from api.dashboard.config import settings
 from api.dashboard.db import engine, get_db
-from api.domain.access.sessions import counted_address
 
 configure_logging(settings.log_level)
 logger = get_logger("api.dashboard.app")
@@ -365,12 +364,13 @@ app.middleware("http")(request_context_middleware)
 
 def client_address(request: Request) -> str:
     """Caddy sets X-Forwarded-For itself; its last entry is the client it saw.
-    Trusted only outside dev and test, where only Caddy gets in. An IPv6
-    client counts by its /64, its passkey challenges too (#888 S11)."""
+    Trusted only outside dev and test, where only Caddy gets in. Kept as sent
+    for the audit and the double tap; the counters and the passkey cap take an
+    IPv6 client by its /64 themselves (`counted_address`, #888 S11)."""
     forwarded = request.headers.get("x-forwarded-for", "")
     if forwarded and secure():
-        return counted_address(forwarded.rsplit(",", 1)[-1].strip())
-    return counted_address(request.client.host if request.client else "")
+        return forwarded.rsplit(",", 1)[-1].strip()
+    return request.client.host if request.client else ""
 
 
 async def _form(request: Request) -> dict[str, str]:
