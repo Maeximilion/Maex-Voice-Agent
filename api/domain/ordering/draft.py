@@ -234,13 +234,13 @@ def _stored_under(session: Session, req: DraftOrderRequest) -> tuple[str, Order 
         row.status == "draft"
         and row.tenant_id == req.tenant_id
         and row.call_id == req.call_id
-        and replaced(session, row)
+        and _replaced(session, row)
     ):
         key = idempotency_key(req.call_id, "draft_order", key, row.id)
     return key, row
 
 
-def replaced(session: Session, order: Order) -> bool:
+def _replaced(session: Session, order: Order) -> bool:
     """Did its call draft anything after it? Equal times count as no: under a
     clock that stands still (simulator, tests) a draft is replayed as before."""
     newer = (

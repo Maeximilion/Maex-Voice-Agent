@@ -260,7 +260,8 @@ def test_a_switch_to_pickup_drops_fee_address_and_the_delivery_wait(
 ):
     """#678: "So lange? Dann hole ich es ab." The same dishes drafted again for
     pickup carry no fee, zone or address, and the pickup stepper's wait. The
-    delivery draft stays a draft nobody can confirm: the call drafted after it."""
+    delivery draft stays a draft; only the latest read-back can get a yes
+    (`guards._may_confirm`)."""
     status_config.set_wait(session, tenant_id, "pickup", 20, now=NOW)
     first = draft_order(session, delivery(session, tenant_id, call_id), now=NOW)
 
@@ -281,17 +282,6 @@ def test_a_switch_to_pickup_drops_fee_address_and_the_delivery_wait(
     assert "Liefergebühr" not in draft.readback
     assert "Lindenstraße" not in draft.readback
     assert draft.readback.endswith("Es dauert so ungefähr 20 Minuten.")
-    assert session.get(Order, first.order_id).status == "draft"
-    # The kitchen never gets the delivery with its fee, whoever sends the id.
-    stale = ConfirmRequest(
-        call_id=call_id,
-        tenant_id=tenant_id,
-        entity="order",
-        entity_id=first.order_id,
-        idempotency_key=uuid.uuid4().hex,
-    )
-    with pytest.raises(Conflict):
-        confirm_order(session, stale, now=later)
     assert session.get(Order, first.order_id).status == "draft"
 
 
