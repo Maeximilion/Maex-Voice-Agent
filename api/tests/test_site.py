@@ -531,3 +531,45 @@ def test_the_waves_swing_in_place_and_never_run_sideways():
     assert re.search(r"\.wave\{[^}]*transform", css) is None
     assert re.search(r"\.wave\{[^}]*will-change", css) is None
     assert "vector-effect:non-scaling-stroke" in css
+
+
+def _luminance(hex_color: str) -> float:
+    rgb = [int(hex_color[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+    lin = [c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in rgb]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def _contrast(a: str, b: str) -> float:
+    hi, lo = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def test_the_text_colours_are_readable_on_their_grounds():
+    """WCAG AA (#892): 4.5 for text, 3 for the lines of a control and the focus ring."""
+    t = _tokens((STATIC / "site.css").read_text(encoding="utf-8"))
+    text_on = [
+        ("text", "bg"),
+        ("text", "surface"),
+        ("muted", "bg"),
+        ("muted", "surface"),
+        ("muted", "surface-2"),
+        ("accent", "bg"),
+        ("accent", "surface-2"),
+        ("warn", "warn-bg"),
+        ("danger", "danger-bg"),
+    ]
+    for fg, bg in text_on:
+        assert _contrast(t[fg].strip(), t[bg].strip()) >= 4.5, (fg, bg)
+    assert _contrast(t["accent"].strip(), t["bg"].strip()) >= 3  # focus ring
+    assert _contrast(t["line-strong"].strip(), t["bg"].strip()) >= 3
+
+
+def test_every_page_can_be_used_by_keyboard_from_its_first_tab_stop():
+    for path in PAGES:
+        html = text_of(client(), path)
+        assert 'class="skip" href="#inhalt"' in html, path
+        assert 'id="inhalt"' in html, path
+        assert html.count("<h1") == 1, path
+    assert ":focus-visible{outline:3px solid var(--accent)" in (
+        STATIC / "site.css"
+    ).read_text(encoding="utf-8")
