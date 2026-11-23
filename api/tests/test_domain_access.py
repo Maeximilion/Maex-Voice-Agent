@@ -725,3 +725,23 @@ def test_count_failure_gives_count_wait_and_last_failure_in_one_step():
     # A day without a failure starts the count again; a count of 0 never waits.
     assert count_failure(2, now - timedelta(days=1), now) == (1, None, now)
     assert count_failure(0, now - timedelta(minutes=1), now) == (1, None, now)
+
+
+@pytest.mark.parametrize(
+    ("host", "counted"),
+    [
+        ("203.0.113.9", "203.0.113.9"),
+        ("2001:db8:1:2:aaaa::1", "2001:db8:1:2::/64"),
+        ("2001:db8:1:2:ffff:ffff:ffff:ffff", "2001:db8:1:2::/64"),
+        ("::ffff:203.0.113.9", "203.0.113.9"),
+        ("fe80::1%eth0", "fe80::/64"),
+        ("testclient", "testclient"),
+        ("", ""),
+    ],
+)
+def test_an_ipv6_client_counts_by_its_64(host, counted):
+    """#888 S11: one IPv6 client holds a whole /64; counted per /128, it never
+    met the per-address wait."""
+    from api.domain.access.sessions import counted_address
+
+    assert counted_address(host) == counted
