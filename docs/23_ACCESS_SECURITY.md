@@ -652,7 +652,10 @@ Rules:
   leaked". The dashboard offers "Token erneuern" per stack (step-up, audit), which writes the new
   value and restarts only the services that read it.
 - **Offboarding (#576):** every token of the stack dies with the stack; the dashboard removes its
-  `OPS_TOKEN` and the Caddy site file.
+  `OPS_TOKEN` and the Caddy site file. Built on the host: `scripts/remove_stack.py` removes the
+  `.env` with the stack folder, takes the site file out of the shared Caddy, and takes the
+  dashboard off the stack's `ops` network and the customer out of its registry with
+  `customer-remove` (docs/13 §8 "Offboarding a customer").
 
 ## 8. Read path from the dashboard to the stacks
 

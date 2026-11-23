@@ -71,8 +71,9 @@ CADDY_PROJECT = "maex-caddy"
 # The network the shared Caddy publishes 80 and 443 on (deploy/caddy).
 CADDY_PUBLIC = f"{CADDY_PROJECT}_public"
 # Keys that would take the shared Caddy's or the operator stack's folder or
-# Compose project (#687, #571).
-RESERVED_KEYS = frozenset({"caddy", "ops"})
+# Compose project (#687, #571), or the folder of every export and the removal
+# ledger of scripts/remove_stack.py (#576).
+RESERVED_KEYS = frozenset({"caddy", "ops", "offboarding"})
 # deploy/docker-compose.operator.yml, run from <root>/ops.
 OPERATOR_PROJECT = "maex-ops"
 OPERATOR_SECRET = "{env.OPERATOR_PROXY_SECRET}"
@@ -365,8 +366,8 @@ def read_customer(path: Path) -> dict[str, Any]:
         raise BadInput("customer file: key must look like `pilot` or `pizza-nord`")
     if key in RESERVED_KEYS:
         raise BadInput(
-            f"customer file: key {key!r} is the shared Caddy's or the operator "
-            "stack's, choose another"
+            f"customer file: key {key!r} is reserved (the shared Caddy, the "
+            "operator stack or the offboarding exports), choose another"
         )
     name = spec.get("name")
     if not isinstance(name, str) or not name.strip() or not name.isprintable():
