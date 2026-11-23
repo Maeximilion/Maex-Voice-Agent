@@ -580,9 +580,7 @@ def test_a_refused_draft_stays_on_the_card_when_the_model_fails(session, known_t
     assert card.count(SUMMARY_NOTE_TO_CLEAR) == 1
 
 
-def test_an_allergy_on_no_note_marks_the_card_without_naming_it(
-    session, known_tenant
-):
+def test_an_allergy_on_no_note_marks_the_card_without_naming_it(session, known_tenant):
     """An allergy said before any dish, then the model fails: the card tells
     the team to ask about a kitchen note, never which allergy (L13)."""
     state = state_for(session, known_tenant, phone=CALLER)

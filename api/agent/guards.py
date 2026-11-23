@@ -1250,7 +1250,9 @@ def _each_survives(state: ConversationState, room: int) -> bool:
     start = 0
     for sentence in (s.strip() for s in state.allergy_said):
         left = sentence[: max(room - start, 0)]
-        if not (speaks_of_health(left) if speaks_of_health(sentence) else left == sentence):
+        if not (
+            speaks_of_health(left) if speaks_of_health(sentence) else left == sentence
+        ):
             return False
         start += len(sentence) + 1
     return True
