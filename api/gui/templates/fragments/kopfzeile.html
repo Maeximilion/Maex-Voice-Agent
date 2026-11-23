@@ -60,6 +60,13 @@
        einen Tap ohne Wirkung zu schlucken. A tap on the value opens its sheet
        (fragments/wartezeit.html). The word "Standard" stands next to a wait that
        differs from it (T-3.14). #}
+    {# #517: below 1180 px the two waits and "Gericht aus" fold into the "Mehr" row,
+       "Anrufe", "Kennzahlen", "Raumplan" and "Einstellungen" stay in sight. A
+       <details>, so it opens without script; from 1180 px the summary is hidden
+       and the content shows in the row as before (app.css, app.ts). #}
+    <details class="mehr" id="mehr">
+      <summary>Mehr{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</summary>
+      <div class="mehr-body">
     {% for key, label, minutes, standard in waits %}
     <div class="step">
       <button class="step-value" hx-get="/gui/wartezeit/{{ key }}" hx-target="#wartezeit"><b>Wartezeit {{ label }} {{ minutes }} Min</b>{% if minutes != standard %}<span class="step-std">Standard {{ standard }} Min</span>{% endif %}</button>
@@ -75,6 +82,8 @@
     {% endfor %}
     {# Kachel "Gericht aus" (docs/06 §3): die Zahl nennt, wie viele heute aus sind. #}
     <button class="push" hx-get="/gui/gericht-aus" hx-target="#gericht-aus">Gericht aus{% if sold_out_count %} <span class="badge warn">{{ sold_out_count }} heute aus</span>{% endif %}</button>
+      </div>
+    </details>
     <a class="button" href="/gui/anrufe">Anrufe</a>
     <a class="button" href="/gui/kennzahlen">Kennzahlen</a>
     <a class="button" href="/gui/raumplan">Raumplan</a>
