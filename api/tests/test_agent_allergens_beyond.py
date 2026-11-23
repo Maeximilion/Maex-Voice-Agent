@@ -345,7 +345,10 @@ def test_the_card_of_that_question_leaves_out_what_was_searched(session, known_t
     )
 
     assert state.handoff_summary is not None
-    assert state.handoff_summary.startswith(SUMMARY_ALLERGENS)
+    # The kitchen marker leads every card of an allergic guest (#940).
+    assert state.handoff_summary.startswith(
+        f"{SUMMARY_NOTE_TO_CLEAR}. {SUMMARY_ALLERGENS}"
+    )
     assert "Erdnuss" not in state.handoff_summary
 
 
@@ -442,7 +445,7 @@ def test_without_a_team_the_card_names_the_question_and_the_dish(session, known_
     assert result.ended and state.stage == "callback"
     callback = session.scalars(select(Callback)).one()
     assert callback.reason == "out_of_scope"
-    assert callback.summary.startswith(SUMMARY_ALLERGENS)
+    assert callback.summary.startswith(f"{SUMMARY_NOTE_TO_CLEAR}. {SUMMARY_ALLERGENS}")
     assert "13 Pho Bo" in callback.summary
     # The question, never the guest's allergy (L13).
     assert "Sellerie" not in callback.summary

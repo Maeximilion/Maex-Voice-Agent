@@ -188,6 +188,8 @@ SUMMARY_ADDITIVES = "Frage zu Zusatzstoffen, vor einer Bestellung zu klären."
 # for the period of a callback, the allergy only until the night after its
 # order (L13). Draft wording.
 SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
+# The same as a card's first sentence (`_marked`).
+_MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
 # The cards of a rule of the catalogue (D19): name and amount from its row, the
 # guest's sentence behind them. Draft wording.
 SUMMARY_REMEDY_BOOKED = "Beschwerde, Gast hat zugestimmt, bitte ausführen: {remedy}."
@@ -201,6 +203,8 @@ SAY_ORDER_DROPPED = (
 # The same for a table read back and not yet confirmed (own review of PR #369).
 SAY_TABLE_NOT_BOOKED = "Ihre Reservierung ist damit noch nicht bestätigt."
 SUMMARY_OPEN_TABLE = "Offene Reservierung, nicht bestätigt:"
+# What an open table's card says for a draft no tool could read (#940).
+SUMMARY_TABLE_UNREAD = "Angaben mit dem Gast klären"
 # A table the domain refused in the same turn: no team can book it as it
 # stands, the card names it as what the guest asked for (#862).
 SUMMARY_REFUSED_TABLE = "Reservierung nicht möglich, nicht gebucht:"
@@ -235,6 +239,8 @@ SAY_BOOKED_GOODBYE = "Vielen Dank für Ihren Anruf und bis dann."
 _SUMMARY_DETAIL_MAX = 400
 # What a callback takes (CreateCallbackRequest.summary).
 _SUMMARY_MAX = 1000
+# Where the guest's words begin on a card (`_card_tail`).
+_SAID_TAIL = " Kunde sagte: "
 
 
 @dataclass
@@ -818,6 +824,7 @@ class ConversationLoop:
                     turn.tool_call,
                     lead=SAY_ALLERGENS_BEYOND,
                     card=SUMMARY_ADDITIVES,
+                    open_table=open_table,
                 )
             call = turn.tool_call
             if refused is None:
@@ -832,14 +839,18 @@ class ConversationLoop:
                     noted = guards.with_the_guests_words(state, call)
                     if noted is None:
                         return self._note_to_team(
-                            state, call, lead=None, card=f"{SUMMARY_NOTE_TO_CLEAR}."
+                            state,
+                            call,
+                            lead=None,
+                            card=f"{SUMMARY_NOTE_TO_CLEAR}.",
+                            open_table=open_table,
                         )
                     call = noted
                 else:
                     # Back to the model once, with the guest's words. The
                     # draft stays on the card of a handover meanwhile.
                     refused, allergy_hint_given = missing, True
-                    open_table = self._open_draft(state, call) or open_table
+                    open_table = self._draft_on_card(state, call, open_table)
             if refused is not None:
                 log_refused(
                     self._session,
@@ -850,7 +861,7 @@ class ConversationLoop:
                 )
                 result = refused
             else:
-                call = _card_without_allergy(state, call)
+                call = _marked_callback(state, _card_without_allergy(state, call))
                 result = self._dispatch(state, call.name, call.args)
             if (
                 turn.tool_call.name == "search_menu"
@@ -866,6 +877,11 @@ class ConversationLoop:
                 return self._allergens_to_team(
                     state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                 )
+            if open_table == SUMMARY_TABLE_UNREAD and call.name == "create_reservation":
+                # The draft held back unread came back readable: the card
+                # names this one, as refused where the domain refuses it
+                # below (#862, #940).
+                open_table = self._open_draft(state, call) or open_table
             read_back = state.reservation_id
             apply_tool_result(state, call.name, result, call.args)
             guards.note_tool(aturn, call.name, result, call.args)
@@ -1039,6 +1055,8 @@ class ConversationLoop:
         offer, state.remedy_offer = state.remedy_offer, None
         assert offer is not None  # `run_turn`
         note_guest_details(state, user_text)
+        # As in `_callback_answered`: an allergy in the answer marks the card.
+        _note_allergy_said(state, user_text)
         if state.last_say == last_words(offer.offer_say) and is_yes(user_text):
             note_remedy(
                 self._session,
@@ -1268,8 +1286,13 @@ class ConversationLoop:
                 {
                     "phone": phone,
                     "reason": "out_of_scope",
-                    "summary": _with_open_order(
-                        state, wish, reserve=len(self._bookings_on_card(state)) + 1
+                    "summary": _marked(
+                        state,
+                        _with_open_order(
+                            state,
+                            wish,
+                            reserve=len(self._bookings_on_card(state) + _MARKER) + 2,
+                        ),
                     ),
                 },
             )
@@ -1351,16 +1374,33 @@ class ConversationLoop:
         return handed
 
     def _note_to_team(
-        self, state: ConversationState, call: ToolCall, lead: str | None, card: str
+        self,
+        state: ConversationState,
+        call: ToolCall,
+        lead: str | None,
+        card: str,
+        open_table: str | None = None,
     ) -> TurnResult:
         """A `card` the team has to clear first stops the draft `call`: the
         team takes the call, with the order or the table the draft asked for
-        on the card, and the guest hears that it is not booked, after `lead`.
-        Nothing is stored."""
-        table = self._open_draft(state, call)
+        on the card (`_draft_on_card`), and the guest hears that it is not
+        booked, after `lead`. Nothing is stored."""
+        table = self._draft_on_card(state, call, open_table)
         return self._allergens_to_team(
             state, lead=lead, table=table, card=card, reason="out_of_scope"
         )
+
+    def _draft_on_card(
+        self, state: ConversationState, call: ToolCall, open_table: str | None
+    ) -> str | None:
+        """The table a handover's card names while the draft `call` is held
+        back: the draft's, else the table read back before (`open_table`). A
+        table draft no tool can read is named open without its values: they
+        are the model's, checked by nobody (rule 2), and the team clears them
+        with the guest, who hears that nothing is booked (#940)."""
+        if table := self._open_draft(state, call) or open_table:
+            return table
+        return SUMMARY_TABLE_UNREAD if call.name == "create_reservation" else None
 
     def _open_draft(self, state: ConversationState, call: ToolCall) -> str | None:
         """A draft that never reached its tool, for the card of a handover:
@@ -1403,6 +1443,9 @@ class ConversationLoop:
         # The digits are a number to call, whatever came between.
         state.asked_for_phone = True
         note_guest_details(state, user_text)
+        # An allergy named with the number is kept for the net and marks the
+        # card that waited (#940); the call ends here, no draft to take back.
+        _note_allergy_said(state, user_text)
         rest = escalation.without_human_question(user_text)
         # "Spreche ich mit einem Menschen?" asks, it wishes nothing (Codex PR
         # #667): read past it, as `_guest_turn` does.
@@ -1565,7 +1608,7 @@ class ConversationLoop:
         head = summary or _HANDOFF_SUMMARIES.get(reason, _DEFAULT_HANDOFF_SUMMARY)
         said = _card_tail(detail)
         if open_named:
-            return (head + said)[:_SUMMARY_MAX], []
+            return _marked(state, _judged_again(state, head + said)), []
         table = self._open_table(state) or table
         if table:
             label = (
@@ -1577,22 +1620,27 @@ class ConversationLoop:
         # The guest spoke of an allergy in the call: the team asks about the
         # kitchen note when it calls back, also where a note may carry it
         # already (ledger #764 review), and the card never names it (L13).
-        marker = f" {SUMMARY_NOTE_TO_CLEAR}." if state.allergy_said else ""
+        marker = f" {_MARKER}" if state.allergy_said else ""
         # Room for what follows the order, for the line's first sentence on a
         # team leg nobody answered and for the bookings `create_callback`
         # adds: all of it stands on that card (#207, #764).
         bookings = self._bookings_on_card(state)
         reserve = len(said + marker + SUMMARY_MISSED + bookings) + 2
-        head = _with_open_order(state, head, reserve=reserve)
-        if SUMMARY_NOTE_TO_CLEAR not in head:
-            head += marker
-        not_booked = SAY_ORDER_NOT_PLACED if state.cart else None
-        not_booked = SAY_TABLE_NOT_BOOKED if table else not_booked
+        head = _marked(state, _with_open_order(state, head, reserve=reserve))
+        # What stands open, each: a table and an order both (#940).
+        not_booked = [
+            say
+            for say, stands in (
+                (SAY_ORDER_NOT_PLACED, state.cart),
+                (SAY_TABLE_NOT_BOOKED, table),
+            )
+            if stands
+        ]
         # A callback takes 1000 characters (`CreateCallbackRequest`): above,
         # the request is refused before `create_callback` could cut it, and
         # the guest's callback is lost (rule 5, Codex review of #944). The
         # end goes first: the guest's words, then what follows the order.
-        return (head + said)[:_SUMMARY_MAX], [not_booked] if not_booked else []
+        return (head + said)[:_SUMMARY_MAX], not_booked
 
     def _bookings_on_card(self, state: ConversationState) -> str:
         """The bookings `create_callback` adds to a card, which an open order
@@ -1692,7 +1740,19 @@ def _note_allergy_said(state: ConversationState, text: str) -> bool:
         return False
     armed = escalation.arms_the_net(text)
     if armed or asked:
-        state.allergy_said = [*state.allergy_said, text.strip()][-ALLERGY_SAID_MAX:]
+        # A sentence said again is kept once, as the newest.
+        said = text.strip()
+        kept = [*(old for old in state.allergy_said if old != said), said]
+        # Over the bound, the oldest that names nothing goes: five later
+        # sentences ("Ich bin Allergiker.") pushed the first out, and the net
+        # no longer knew the peanut (#940). One that names what the guest
+        # reacts to ("reagiere auf Erdbeeren" too, as `_names_health` reads
+        # it) always stays; there are few in a call.
+        while len(kept) > ALLERGY_SAID_MAX and (
+            plain := next((said for said in kept if not _names_any(said)), None)
+        ):
+            kept.remove(plain)
+        state.allergy_said = kept
     # An answer to the model's question ("Gegen Erdnüsse.") is new health
     # information too: a read-back before it lacks it (Codex PR #788, P1).
     return armed or asked
@@ -1735,6 +1795,12 @@ def _names_something(said: str) -> bool:
     """Does a kept sentence name what the caller reacts to? An answer to the
     model's question does ("Kiwi."), unless it only says yes."""
     return bool(_named(said)) or not (speaks_of_health(said) or is_yes(said))
+
+
+def _names_any(said: str) -> bool:
+    """Does a kept sentence name what someone reacts to, as the net or a card
+    reads it (`_names_something`, `_ingredients`)?"""
+    return _names_something(said) or bool(_ingredients(said))
 
 
 def _asked_about_an_allergy(state: ConversationState) -> bool:
@@ -1875,6 +1941,43 @@ def _card_without_allergy(state: ConversationState, call: ToolCall) -> ToolCall:
     return ToolCall(call.name, {**call.args, "summary": card})
 
 
+def _marked_callback(state: ConversationState, call: ToolCall) -> ToolCall:
+    """A callback the model writes carries the kitchen marker the core's own
+    cards carry when the guest spoke of an allergy in the call (#940)."""
+    summary = call.args.get("summary")
+    if call.name != "create_callback" or not isinstance(summary, str):
+        return call
+    return ToolCall(call.name, {**call.args, "summary": _marked(state, summary)})
+
+
+def _marked(state: ConversationState, card: str) -> str:
+    """`card` with the marker that the team asks about the kitchen note, when
+    the guest spoke of an allergy in the call and the card does not say so
+    yet (L13: never which allergy). In front, never inside the guest's words:
+    what follows a card cuts its end (the call's bookings in
+    `create_callback`), and inside what a callback takes, or it is refused and
+    the guest lost (rule 5, #940)."""
+    if not state.allergy_said or SUMMARY_NOTE_TO_CLEAR in card:
+        return card
+    return f"{_MARKER} {card}".strip()[:_SUMMARY_MAX]
+
+
+def _judged_again(state: ConversationState, card: str) -> str:
+    """A card that waited for a callback number, judged again: it was judged
+    against the sentences kept before the guest's answer, which may name the
+    allergy (#940). The guest's words and a note of the order that name it now
+    stay off, as `_card` and `_order_lines` leave them off (L13).
+    shortcut: a note is found by its text; one the cut to the card's length
+    split is missed, the team calls about the note anyway."""
+    for note in (state.order_note, *(line.get("note") for line in state.cart)):
+        if note and _names_health(state, note):
+            card = card.replace(note, SUMMARY_NOTE_TO_CLEAR)
+    tail_at = card.find(_SAID_TAIL)
+    if tail_at >= 0 and _names_health(state, card[tail_at + len(_SAID_TAIL) :]):
+        card = card[:tail_at]
+    return card[:_SUMMARY_MAX]
+
+
 def _dish(data: dict[str, Any]) -> str | None:
     """A looked-up dish as a card names it: "13 Pho Bo"."""
     return f"{data.get('number') or ''} {data.get('name') or ''}".strip() or None
@@ -1899,7 +2002,7 @@ def _handoff_summary(
 
 def _card_tail(detail: str | None) -> str:
     """What follows the first sentence of a card: the guest's words, cut."""
-    return f" Kunde sagte: {detail[:_SUMMARY_DETAIL_MAX]}" if detail else ""
+    return f"{_SAID_TAIL}{detail[:_SUMMARY_DETAIL_MAX]}" if detail else ""
 
 
 def _transfer_reason(args: dict[str, Any]) -> str:

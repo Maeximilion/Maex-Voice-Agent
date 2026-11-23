@@ -175,7 +175,8 @@ class ConversationState(BaseModel):
     # (`loop._note_allergy_said`, Maxi 15.11.2026). A draft must then carry a
     # health note (`guards.unnoted_allergy`). Sent: the model keeps nothing
     # between turns, and a note it writes later needs the words. A bare
-    # denial clears it. At most `ALLERGY_SAID_MAX` sentences.
+    # denial clears it. At most `ALLERGY_SAID_MAX` sentences that name
+    # nothing; one that names what someone reacts to always stays (#940).
     allergy_said: list[str] = Field(default_factory=list)
     # The guest's allergy or allergen of the last turn was not taken up and
     # that turn ended in the offer to look a dish up (`guards.leaves_a_question`,
