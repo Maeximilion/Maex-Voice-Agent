@@ -76,6 +76,7 @@ from api.gui.session import (
     csrf_ok,
     require_admin,
     require_gui_session,
+    require_unlocked,
 )
 from api.gui.sse import today_event_stream
 from api.models import DataSubjectRequest, Reservation, ServiceConfig, Tenant
@@ -635,11 +636,17 @@ def _history_sheet(request: Request, session: Session, tenant: Tenant) -> HTMLRe
     )
 
 
-@router.get("/rueckrufe/verlauf", response_class=HTMLResponse, include_in_schema=False)
+@router.get(
+    "/rueckrufe/verlauf",
+    response_class=HTMLResponse,
+    include_in_schema=False,
+    dependencies=[Depends(require_unlocked)],
+)
 def rueckrufe_verlauf(
     request: Request, session: Session = Depends(get_db)
 ) -> HTMLResponse:
-    """The sheet with the callbacks done in the last days, to undo a wrong tap."""
+    """The sheet with the callbacks done in the last days, to undo a wrong tap.
+    Days of numbers are more than a locked device shows (T8, #888 B3)."""
     tenant = _tenant(session)
     if tenant is None:
         raise HTTPException(status_code=503)
