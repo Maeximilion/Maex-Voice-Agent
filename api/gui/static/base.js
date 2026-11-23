@@ -3,8 +3,7 @@
 //
 // Source: api/gui/ts/base.ts. The file of the same name in api/gui/static/ is its
 // compiled output (`npm run build`, docs/22); edit the source, never the output.
-// Marks the file as a module, so its helper stays out of the page's global scope.
-export {};
+import { csrfToken } from "./csrf.js";
 // htmx hands the request headers over in the event's detail. Nothing types that
 // object for us, so it is checked before a header is written to it.
 function requestHeaders(event) {
@@ -20,10 +19,10 @@ function requestHeaders(event) {
 }
 // Every write sends the CSRF cookie as a header (docs/06 section 9).
 document.addEventListener("htmx:configRequest", (event) => {
-    const token = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
+    const token = csrfToken(document.cookie);
     const headers = requestHeaders(event);
-    if (token && token[1] !== undefined && headers)
-        headers["X-CSRF-Token"] = token[1];
+    if (token && headers)
+        headers["X-CSRF-Token"] = token;
 });
 // A tap the server refused without a page to show (a 403, a 500), or one that
 // never arrived: the red bar says so (docs/06 section 5), on every page.

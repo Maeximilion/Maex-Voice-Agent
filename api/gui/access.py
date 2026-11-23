@@ -33,7 +33,7 @@ from api.gui.router import NO_TENANT, _form, _page_response, _tenant
 from api.gui.session import (
     LOGIN,
     client_address,
-    csrf_matches,
+    csrf_ok,
     device_token,
     session_token,
     set_access_cookies,
@@ -62,9 +62,7 @@ BACK = re.compile(r"/gui/((?!inhaber)(?!.*\.\.)[A-Za-z0-9/._-]*)")
 
 
 def _checked(request: Request, form: dict[str, str]) -> None:
-    if not same_origin(request) or not csrf_matches(
-        request.cookies.get("csrf_token"), form.get("csrf_token")
-    ):
+    if not same_origin(request) or not csrf_ok(request, form.get("csrf_token")):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
 

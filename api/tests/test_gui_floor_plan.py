@@ -41,7 +41,7 @@ def client(engine):
     app.dependency_overrides[get_db] = override_get_db
     try:
         client = TestClient(app)
-        client.cookies.set("csrf_token", "testtoken")
+        client.cookies.set("maex_csrf", "testtoken")
         yield client
     finally:
         app.dependency_overrides.pop(get_db, None)
@@ -115,7 +115,7 @@ def test_the_page_loads_its_scripts_and_issues_the_csrf_cookie(client, tenant_id
     # The proxy's CSP refuses inline style attributes and inline scripts.
     assert "style=" not in res.text
     assert "<script>" not in res.text
-    assert res.cookies.get("csrf_token")
+    assert res.cookies.get("maex_csrf")
 
 
 def test_the_editor_modules_reach_the_browser_as_javascript(client, tenant_id):

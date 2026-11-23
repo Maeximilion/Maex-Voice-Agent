@@ -70,7 +70,13 @@ from api.gui import (
     menu_view,
     orders_view,
 )
-from api.gui.session import LOGIN, csrf_matches, require_admin, require_gui_session
+from api.gui.session import (
+    LOGIN,
+    cookie_name,
+    csrf_ok,
+    require_admin,
+    require_gui_session,
+)
 from api.gui.sse import today_event_stream
 from api.models import DataSubjectRequest, Reservation, ServiceConfig, Tenant
 from api.schemas.floor_plan import NewArea, SaveArea
@@ -317,7 +323,7 @@ def _page_response(
     request: Request, template: str, context: dict[str, Any], status_code: int = 200
 ) -> HTMLResponse:
     """Render a full page and issue the CSRF cookie base.html sends back as a header."""
-    token = request.cookies.get("csrf_token")
+    token = request.cookies.get(cookie_name("csrf"))
     if not token or not token.isascii():
         # A token _require_htmx can never accept would lock every tap out.
         token = secrets.token_urlsafe(32)
@@ -329,7 +335,9 @@ def _page_response(
         status_code=status_code,
     )
     response.set_cookie(
-        "csrf_token",
+        # `__Host-csrf` outside dev and test: Secure, this host only, path /,
+        # so no sibling host can shadow it with a Domain cookie (#888 S2).
+        cookie_name("csrf"),
         token,
         # Readable on purpose: base.html copies it into X-CSRF-Token at send
         # time, so every tab uses the cookie the browser holds right now.
@@ -361,7 +369,7 @@ def _require_htmx(
     """Require the page's CSRF token for state-changing HTMX requests."""
     if hx_request != "true":
         raise HTTPException(status_code=403, detail="Only from the operations view")
-    if not csrf_matches(request.cookies.get("csrf_token"), x_csrf_token):
+    if not csrf_ok(request, x_csrf_token):
         raise HTTPException(status_code=403, detail="Invalid CSRF token")
 
 
