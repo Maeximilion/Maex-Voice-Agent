@@ -74,7 +74,7 @@ medium is accepted with the named limit, low is noise.
 
 | # | Threat | Path | Design answer (section) | Residual |
 |---|---|---|---|---|
-| T1 | Stolen operator login | phished or reused password, stolen laptop session | individual account, passkey plus TOTP second factor (D33), short sessions, step-up for dangerous actions, rate limit, new-device alert (§5) | medium: a stolen unlocked laptop with a live session works until the idle limit |
+| T1 | Stolen operator login | phished or reused password, stolen laptop session | individual account, passkey plus TOTP second factor (D33), short sessions, step-up for dangerous actions, rate limit, new-device alert, a push to `ops` once an hour per account when a right password meets a wrong second factor (§5, #888 A2) | medium: a stolen unlocked laptop with a live session works until the idle limit |
 | T2 | One customer reads another's data | a session or token of A used against B; a misrouted Caddy site; a missing tenant filter | stack per customer (D32); every token is per stack and never shared; session bound to the stack's tenant and checked on every route; provisioning tests that each site reaches its own stack (§6, §8) | low |
 | T3 | Upload abuse | a crafted image or PDF exploits the parser, a decompression bomb, a script served back to a browser | type by content, size and page limits, parsing only in a throwaway container without network, re-encoded copies only, never served, deleted after import (§9, D33) | low |
 | T4 | Token leak | `.env` copied off the host, a token in a log, a screenshot, a lost register PC | per-stack tokens from provisioning, files mode 600, never printed or logged, rotation runbook per token (§7) | medium: a leaked token works until rotated; there is no automatic detection |
@@ -177,7 +177,12 @@ writes real rows; a demo customer is a stack of its own with invented data.
 10.11.2026: the API's image, an app of its own, its own database `OPERATOR_DATABASE_URL` and
 migrations `db/dashboard/`; docs/11). Sign-in with name, password and a TOTP code or a recovery
 code in one form, one answer for every refusal; the waits per account, per address and per known
-browser (a device cookie, as in §6, so a guesser cannot keep the operator out); sessions
+browser (a device cookie, as in §6, so a guesser cannot keep the operator out of a known
+browser; who knows only the account name can keep the account-wide wait running with three
+wrong passwords every five minutes, so every browser without the device cookie waits too,
+passkey included, and right after a break-glass reset, which forgets every device cookie, every
+browser is such a new one: the trade-off §6 accepts for the customer login, #927; a passkey or
+recovery code that skips the account wait is a decision for the §11 audit); sessions
 `__Host-ops_session` (`SameSite=Strict`) with the 30 minutes and 12 hours, where only the
 operator's own requests (`Sec-Fetch-Site` absent, `none` or `same-origin`) move the idle clock, so
 a customer stack on the same site cannot keep a session alive with image loads (#888 A4); the
@@ -188,7 +193,9 @@ known account is audited with whether the password or the factor was wrong (a ri
 with a wrong factor means the password is known; the code that had just signed in, sent again
 from the same address within two minutes, is a double tap, `repeat`; from any other address, with
 no address known, or a code last used by a step-up or a new secret, it stays `factor`, review
-#207). A `factor` failure is pushed to `ops` as well, at most once an hour counted from the last such push, so a
+#207; `repeat` means "the same public address within two minutes", not "certainly the operator":
+someone behind that address, the same office Wi-Fi or a carrier's CGNAT, who watched the code is
+refused and counted the same, only the label reads harmless, #927). A `factor` failure is pushed to `ops` as well, at most once an hour counted from the last such push, so a
 known password does not stay in the audit unseen (#888 A2); one on an unknown name is not
 audited, so a spray of
 names cannot fill the table, and an address is forgotten a day after its last failure. Every
