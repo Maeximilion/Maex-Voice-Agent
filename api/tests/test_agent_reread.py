@@ -30,7 +30,7 @@ from api.agent.loop import (
     ConversationLoop,
 )
 from api.agent.state import ConversationState, apply_tool_result
-from api.domain.callbacks import create_callback
+from api.domain.callbacks import create_callback, transfer
 from api.events.types import ORDER_CONFIRMED, RESERVATION_CONFIRMED
 from api.models import (
     AuditLog,
@@ -670,6 +670,76 @@ def test_an_unanswered_order_joins_the_open_card_of_the_call(session, state, ord
     assert card.summary.count(SUMMARY_READBACK_UNANSWERED) == 1
     assert card.summary.count(SUMMARY_OPEN_ORDER) == 1
     assert state.stage == other.stage == "callback"
+
+
+def test_a_model_card_after_the_read_back_carries_the_open_order(session, state, order):
+    """#998 no. 2: the order is read back, the guest asks for a callback
+    instead, and the model writes `human_requested`. The stage is
+    `callback` then, and the hang-up still brings the open order onto that
+    card, once; nothing is booked."""
+    read_to_the_guest(session, state, order)
+    draft_id = order.draft_id(state)
+    callback = ToolCall(
+        "create_callback",
+        {
+            "phone": CALLER,
+            "reason": "human_requested",
+            "summary": "Gast möchte lieber zurückgerufen werden.",
+        },
+    )
+    turn(session, state, "Rufen Sie mich lieber zurück.", Model(callback, say="Gut."))
+    assert state.stage == "callback"
+    loop = ConversationLoop(session, Model(), "system", now=NOW, clock=lambda: 0)
+
+    loop.offer_unanswered(state)
+    loop.offer_unanswered(state)
+
+    (card,) = cards(session, state)
+    assert card.reason == "human_requested"
+    assert card.summary.startswith("Gast möchte lieber zurückgerufen werden.")
+    assert card.summary.count(SUMMARY_OPEN_ORDER) == 1
+    assert status(session, order, draft_id) == "draft"
+
+
+def test_a_handoff_past_an_open_card_brings_the_order_onto_it(
+    session, state, order, monkeypatch
+):
+    """#998 no. 1: the model wrote a card earlier in the call; the time limit
+    ends the call on an order read back. The open card gets the order, and
+    the hang-up after the handoff adds it no second time. Outside the hours
+    nobody is rung, and the core writes the card itself."""
+    monkeypatch.setattr(transfer, "_team_reachable", lambda *a: False)
+    old = create_callback(
+        session,
+        CreateCallbackRequest(
+            call_id=state.call_id,
+            tenant_id=state.tenant_id,
+            phone=CALLER,
+            reason="human_requested",
+            summary="Gast möchte mit einem Mitarbeiter sprechen.",
+        ),
+        now=NOW,
+    )
+    read_to_the_guest(session, state, order)
+    state.slots["phone"] = CALLER
+    times = iter([0.0, 10_000.0])
+    loop = ConversationLoop(
+        session,
+        Model(say="x"),
+        "system",
+        now=NOW,
+        clock=lambda: next(times, 10_000.0),
+        max_call_seconds=60,
+    )
+
+    loop.run_turn(state, "Moment, ich überlege noch.")
+    loop.offer_unanswered(state)
+
+    assert state.stage == "callback"
+    (card,) = cards(session, state)
+    assert card.id == old.callback_id
+    assert card.summary.startswith("Gast möchte mit einem Mitarbeiter sprechen.")
+    assert card.summary.count(SUMMARY_OPEN_ORDER) == 1
 
 
 def _reasons_allowed(session, reasons) -> None:

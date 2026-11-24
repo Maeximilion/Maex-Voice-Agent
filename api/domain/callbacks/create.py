@@ -51,6 +51,16 @@ SUMMARY_MAX = 1000
 # card already, the order joins it (#993, Maxi 24.11.2026, option A).
 ORDER_OPEN = "order_open"
 ACTION_ORDER_ADDED = "callback.order_added"
+# How the core's cards name an order that stands unplaced (`agent/loop.py`,
+# #207). A card of the core that names one joins the open card too: a
+# handoff's or a team leg's card would otherwise meet the older card and the
+# order stand on none (#998).
+SUMMARY_OPEN_ORDER = "Offene Bestellung, nicht aufgegeben:"
+# A card's note when the guest spoke of an allergy in the call: the team asks
+# about the kitchen note when it calls back, the card never names the allergy
+# (L13). Draft wording; the core's cards lead with it (`agent/loop.py`).
+SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
+_MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
 # How each line `booked` writes begins: only a tail of such lines is the
 # database's own, read again when an order joins a card (#993 review).
 _BOOKED_LINES = tuple(
@@ -84,7 +94,9 @@ def create_callback(
     _lock_call(session, req.tenant_id, req.call_id)
     open_task = _open_for_call(session, req)
     if open_task is not None:
-        if req.reason == ORDER_OPEN:
+        # Only a card that names an open order changes the open one; any
+        # other comes back as the card it was, a model's retry too (docs/04).
+        if req.reason == ORDER_OPEN or SUMMARY_OPEN_ORDER in summary:
             _add_open_order(session, open_task, summary, actor)
         session.commit()
         return _task(open_task)
@@ -199,9 +211,13 @@ def _add_open_order(session: Session, card: Callback, order: str, actor: str) ->
     bookings at its end are read again from the database: a table booked
     since stands on it (CLAUDE.md §2 rule 1). The push names the order, the
     push of the card named only its old reason (#993 review). Once: a second
-    hang-up of the call finds the order on it and changes nothing."""
+    hang-up of the call finds the order on it and changes nothing, and a
+    card that names an open order already gets none more, its lines fitted
+    to another room as they may be (#998). The kitchen marker stands once."""
     own = _own_text(card.summary)
-    if order in own:
+    if _MARKER in own:
+        order = " ".join(order.replace(_MARKER, "", 1).split())
+    if order in own or SUMMARY_OPEN_ORDER in own:
         return
     bookings = booked(session, card.tenant_id, card.call_id)
     room = SUMMARY_MAX - len(order) - 1 - (len(bookings) + 1 if bookings else 0)

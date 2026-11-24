@@ -195,6 +195,7 @@ def _callback_row(cb: OpenCallback, tz_name: str) -> dict[str, Any]:
         "caller_id": cb.caller_id if origin == NUMBER_OTHER else None,
         "reason": cb.reason,
         "summary": cb.summary,
+        "version": cb.version,
         "tone": tone,
         "label": label,
     }
@@ -591,6 +592,35 @@ def rueckrufe_fragment(
     )
 
 
+# The most a form of the view sends: far above its longest field (a zone's
+# postal codes, the 2,000 characters of a request's note in percent-encoding),
+# far below the proxy's 256 KB (#819). Held here, so it holds in every setup.
+FORM_MAX = 64 * 1024
+
+
+async def _form(request: Request) -> dict[str, str]:
+    """Formularfelder eines HTMX-Taps (application/x-www-form-urlencoded).
+
+    Mit der Standardbibliothek statt ueber Form(): das braeuchte python-multipart
+    als zusaetzliche Abhaengigkeit, nur um drei Textfelder zu lesen. Async, damit
+    der Koerper im Event-Loop gelesen wird und der Endpunkt selbst synchron bleibt.
+    A body beyond FORM_MAX is a 413, refused by its announced length or while
+    it streams in, before more of it is held in memory.
+    """
+    length = request.headers.get("content-length", "")
+    # More than nine digits is beyond the limit anyway, and `int` refuses a
+    # number of thousands of digits.
+    if length.isdigit() and (len(length) > 9 or int(length) > FORM_MAX):
+        raise HTTPException(status_code=413)
+    body = bytearray()
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > FORM_MAX:
+            raise HTTPException(status_code=413)
+    text = body.decode("utf-8", errors="replace")
+    return {k: v[-1] for k, v in parse_qs(text, keep_blank_values=True).items()}
+
+
 @router.post(
     "/rueckrufe/{callback_id}/erledigt",
     response_class=HTMLResponse,
@@ -598,29 +628,42 @@ def rueckrufe_fragment(
     dependencies=[Depends(_require_htmx)],
 )
 def rueckruf_erledigt(
-    request: Request, callback_id: uuid.UUID, session: Session = Depends(get_db)
+    request: Request,
+    callback_id: uuid.UUID,
+    form: dict[str, str] = Depends(_form),
+    session: Session = Depends(get_db),
 ) -> HTMLResponse:
     """Erledigt: die Karte verschwindet, die Spalte kommt neu zurueck.
 
     Ein Rueckruf, den es nicht (mehr) gibt, ist kein Fehler fuer das Team - ein
     anderes Tablet war schneller oder die Seite ist alt. Die frische Liste ist
     dann genau die richtige Antwort.
-    """
+
+    The button sends the card version the team saw (`gesehen`): a card whose
+    text changed since, or a button without it, closes nothing; the fresh
+    card comes back with a line that says so (#998)."""
     tenant = _tenant(session)
     if tenant is None:
         return templates.TemplateResponse(
             request, "fragments/rueckrufe.html", {"problem": NO_TENANT}, 503
         )
+    notice = None
     try:
-        mark_done(session, tenant.id, callback_id)
+        mark_done(session, tenant.id, callback_id, seen=form.get("gesehen", ""))
     except AppError as exc:
         session.rollback()
         logger.info("Rueckruf nicht erledigt: %s", exc.message)
-    return templates.TemplateResponse(
+        if exc.code == "conflict":
+            notice = exc.say
+    response = templates.TemplateResponse(
         request,
         "fragments/rueckrufe.html",
         {"callbacks": _callback_rows(session, tenant)},
     )
+    if notice:
+        # An event, not a line in the column: the next redraw would remove it.
+        response.headers["HX-Trigger"] = json.dumps({"callback-notice": notice})
+    return response
 
 
 # --- History of done callbacks (T-3.15, #516) ------------------------------------
@@ -945,35 +988,6 @@ def cancel_order_tap(
             f"Bestellung {order.pickup_code or order.customer_name}: Storniert"
         ),
     )
-
-
-# The most a form of the view sends: far above its longest field (a zone's
-# postal codes, the 2,000 characters of a request's note in percent-encoding),
-# far below the proxy's 256 KB (#819). Held here, so it holds in every setup.
-FORM_MAX = 64 * 1024
-
-
-async def _form(request: Request) -> dict[str, str]:
-    """Formularfelder eines HTMX-Taps (application/x-www-form-urlencoded).
-
-    Mit der Standardbibliothek statt ueber Form(): das braeuchte python-multipart
-    als zusaetzliche Abhaengigkeit, nur um drei Textfelder zu lesen. Async, damit
-    der Koerper im Event-Loop gelesen wird und der Endpunkt selbst synchron bleibt.
-    A body beyond FORM_MAX is a 413, refused by its announced length or while
-    it streams in, before more of it is held in memory.
-    """
-    length = request.headers.get("content-length", "")
-    # More than nine digits is beyond the limit anyway, and `int` refuses a
-    # number of thousands of digits.
-    if length.isdigit() and (len(length) > 9 or int(length) > FORM_MAX):
-        raise HTTPException(status_code=413)
-    body = bytearray()
-    async for chunk in request.stream():
-        body += chunk
-        if len(body) > FORM_MAX:
-            raise HTTPException(status_code=413)
-    text = body.decode("utf-8", errors="replace")
-    return {k: v[-1] for k, v in parse_qs(text, keep_blank_values=True).items()}
 
 
 @router.get(

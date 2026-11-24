@@ -62,6 +62,9 @@ from api.core.errors import SAY_TO_THE_TEAM, Conflict
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
+
+# Re-exported: the agent's tests name it from here (#998 moved it).
+from api.domain.callbacks.create import SUMMARY_OPEN_ORDER as SUMMARY_OPEN_ORDER
 from api.domain.callbacks.create import booked
 from api.domain.callbacks.transfer import SUMMARY_MISSED
 
@@ -190,10 +193,6 @@ _DEFAULT_HANDOFF_SUMMARY = "Anruf konnte nicht automatisch abgeschlossen werden.
 SUMMARY_OUTAGE = "Technische Störung, Anruf nicht automatisch abgeschlossen."
 # How the card of a table the team decides on begins (`team_callback`, #252).
 SUMMARY_TEAM_TABLE = "Reservierungswunsch, vom Team zu bestätigen:"
-# A table for the team ends the call while an order is still open: the order
-# is not booked, and both the card and the guest say so (#207). Draft wording,
-# checked with the announcement texts (docs/05 §6).
-SUMMARY_OPEN_ORDER = "Offene Bestellung, nicht aufgegeben:"
 # The card when the guest asked about allergens beyond the maintained values
 # (L17). It names the question, never the guest's allergy (L13). Draft wording.
 SUMMARY_ALLERGENS = (
@@ -1181,7 +1180,8 @@ class ConversationLoop:
         whatever the guest heard last: the time is a statement that invites a
         goodbye, a "Danke" alone is no yes (Maxi, 23.11.2026), and the guest
         may expect food nobody ordered. A table's read-back asks "Passt das so?", and a
-        guest who leaves it unanswered knows nothing is booked. Not when the
+        guest who leaves it unanswered knows nothing is booked. The order
+        joins a card the call has open (#993, #998). Not when the
         call goes `with_the_team` (an outage, a failed line): the team has it,
         and its own card waits if nobody answers."""
         offer, state.remedy_offer = state.remedy_offer, None
@@ -1189,7 +1189,13 @@ class ConversationLoop:
             self._complaint_card(state, offer, SUMMARY_REMEDY_OPEN)
         elif (
             not with_the_team
-            and state.stage == "readback_pending"
+            # Also when a card ended the call on the read-back: one the model
+            # wrote names no order (#998). The yes moves the cart away, and a
+            # card that names the order already gets it no second time.
+            and (
+                state.stage == "readback_pending"
+                or (state.stage == "callback" and state.cart)
+            )
             and state.order_id is not None
             and (phone := state.slots.get("phone") or state.caller_phone)
         ):
