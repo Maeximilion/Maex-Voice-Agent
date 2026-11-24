@@ -747,9 +747,7 @@ class ConversationLoop:
                         and in_allergy_call
                         and (
                             not dish_only
-                            or guards.speaks_of_the_allergy(
-                                aturn, state, say, changed=changed
-                            )
+                            or guards.speaks_of_the_allergy(aturn, state, say)
                         )
                     )
                 )
@@ -813,14 +811,6 @@ class ConversationLoop:
                         # sentences of this turn: a sold-out dish, the
                         # candidates of an unclear search (deep review of #928).
                         say = " ".join(dict.fromkeys(aturn.answers))
-                    elif dish_back and changed:
-                        # The guest took a dish: the offer would read their
-                        # next word about it as an allergen question and send
-                        # the call to the team. The noted sentence the hint
-                        # names, in a call where the guest named an allergy
-                        # (`about_a_dish`); the dish stays in the order (deep
-                        # review of #997).
-                        say = guards.SAY_ALLERGY_NOTED
                     else:
                         say = guards.SAY_ALLERGENS_OFFER
                         # The offer asks for a dish: the next one named is its

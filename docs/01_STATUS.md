@@ -188,7 +188,7 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.69 · 25.11.2026:** deep review of #997: after a refusal for a dish, a retry that names an allergen ("Ja, die ist ohne Erdnüsse") or speaks of the guest's health or tolerance is held again, a refused sentence with an allergen the dish's own text licenses keeps the strict retry, and a held retry next to an order step ends in the noted sentence instead of opening the allergen question; the negated licensed allergen left by #798 is #1022
+- **v2.69.69 · 25.11.2026:** deep review of #997: after a refusal for a dish, a retry that names an allergen ("Ja, die ist ohne Erdnüsse") or speaks of the guest's health or tolerance is held again unless the turn's order text names the allergen, a refused sentence with an allergen the dish's own text licenses keeps the strict retry, words of tolerance hold a first answer next to an order step too, and "allergiefrei" goes to the team like "allergenfrei"; the negated licensed allergen left by #798 is #1022
 - **v2.69.68 · 24.11.2026:** #888 round 3: an expected rejection in an eval case names its call with args (postal code, draft type or address), the recorder keeps the arguments of rejected calls
 - **v2.69.67 · 24.11.2026:** #981: migration 047, one open callback per call as a partial unique index; a conflict is a replay, reopening next to an open card of the call is refused
 - **v2.69.66 · 24.11.2026:** #888 S8: a complaint rule is offered only for the newest order booked under the calling line in the last 24 hours, one offer per order and none after a complaint card; the card names the order

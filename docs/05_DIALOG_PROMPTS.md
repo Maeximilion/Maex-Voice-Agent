@@ -256,27 +256,27 @@ up (`guards.is_open`)
        search's sentence the model repeats before a pronoun; prices and
        times name none (`guards.about_a_dish`). With an order step in the
        turn (a `cart` written, a draft) the sentence stays the model's
-       unless its own words speak of the allergy. It goes back once
+       unless its own words speak of the allergy (an allergy word, coeliac
+       disease, or a word of tolerance: "gut verträglich", "worauf Sie
+       reagieren", "meiden"; deep review of #997). It goes back once
        (`HINT_ALLERGY_DISH`: the `cart` for a dish the guest takes, the
        price from `search_menu` for a price question, a tool's own sentence
        word for word, `get_item_details` for what is in a dish, else the
        noted sentence). The retry is judged like a first answer (Maxi
        24.11.2026, R1): held again when it names a dish or its own words
-       speak of the allergy (a word for the guest's health or allergy,
-       "meiden", "gut verträglich", "worauf Sie reagieren" too; without an
-       order step also an allergen outside a whole dish name: "Ja, die ist
-       ohne Erdnüsse" is held even where the turn's menu text names
-       peanuts; deep review of #997), else `unlicensed` checks it, so a
-       recap that drops the dish ("Auf welchen Namen darf ich bestellen?")
-       goes through, and so does "Ja, die ist für Sie kein Problem", the
-       accepted residual (`docs/24`). Next to an order step an allergen in
-       the retry is the dish read back ("Gern, die 47 mit Erdnuss ist
-       notiert."), checked by `unlicensed`. A retry after a sentence refused
-       with an allergen word of the model's own stays strict (#860), also
-       where the dish's own text licenses the word ("Die 47 hat keine
-       Erdnüsse.", the 47's option "Erdnuss"). A held retry next to an
-       order step ends in the noted sentence, not the offer: the dish stays
-       in the order and no allergen question opens (deep review of #997). A
+       speak of the allergy (the same words, or an allergen outside a
+       whole dish name that the order text of the turn does not name: "Ja,
+       die ist ohne Erdnüsse" is held even where the turn's menu text names
+       peanuts, also next to a `cart` of the 47 with duck; deep review of
+       #997), else `unlicensed` checks it, so a recap that drops the dish
+       ("Auf welchen Namen darf ich bestellen?") goes through, and so does
+       "Ja, die ist für Sie kein Problem", the accepted residual
+       (`docs/24`). An allergen the order step names is the dish read back
+       ("Gern, die 47 mit Erdnuss ist notiert." next to that line), checked
+       by `unlicensed`. A retry after a sentence refused with an allergen
+       word of the model's own stays strict (#860), also where the dish's
+       own text licenses the word ("Die 47 hat keine Erdnüsse.", the 47's
+       option "Erdnuss"). A
        refused sentence that states a price (an amount in euro or cent) of
        a dish this turn's search found, and no search of the turn with a
        wish, gets the core's sentence at once, with no retry: its price
