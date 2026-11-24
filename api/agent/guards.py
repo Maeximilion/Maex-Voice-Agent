@@ -155,6 +155,21 @@ _HINT_UNNOTED_SAID = (
     "Gericht, an der Bestellung oder am Tisch und ruf denselben Schritt noch "
     "einmal auf."
 )
+# A health note stands, but an allergen the guest named later is on none
+# (#929, Maxi 24.11.2026: ask for the dish, or the dish named right before).
+# The guest's own words, never a reading of them: a wish or a question in
+# the quoted sentence ("..., bitte extra Sesam") must not become an allergy.
+HINT_UNNOTED_LATER = "Abgelehnt: kein `note` nennt die Allergie aus „{said}“."
+_HINT_LATER_ORDER = (
+    " Schreib „WICHTIG !!! “ und dahinter die Worte des Gastes an das "
+    "Gericht, das er direkt davor genannt hat, wenn sie dafür gelten, sonst an "
+    "die Bestellung, und ruf denselben Schritt noch einmal auf. Ist unklar, für "
+    "welches Gericht, sag nur „{ask}“"
+)
+_HINT_LATER_TABLE = (
+    " Schreib „WICHTIG !!! “ und dahinter die Worte des Gastes an den Tisch "
+    "und ruf denselben Schritt noch einmal auf."
+)
 HINT_NOTE_CLAIM = (
     "Abgelehnt: ein `note` sagt etwas über ein Gericht (frei von etwas, sicher, "
     "oder es nennt ein Gericht). Notiere nur den Wunsch oder die Allergie, wie "
@@ -633,16 +648,24 @@ _DRAFT_DIFFERS = ToolResult(ok=False, error_code="conflict", hint=HINT_DRAFT_DIF
 _GUEST_NAME = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_NAME)
 _GUEST_PHONE = ToolResult(ok=False, error_code="invalid_input", hint=HINT_GUEST_PHONE)
 _NOT_BOOKED = ToolResult(ok=False, error_code="conflict", hint=HINT_NOT_BOOKED)
-# The three fixed sentences of an allergy turn (#798). The prompt gives the
-# first two to the model; the core says the third itself (`loop.py`). Drafts
-# for the legal check of the announcements (docs/09), like `SAY_ALLERGY_NOTE`.
+# The fixed sentences of an allergy turn (#798). The prompt gives the model
+# all but the offer, which the core says itself (`loop.py`). Drafts for the
+# legal check of the announcements (docs/09), like `SAY_ALLERGY_NOTE`.
 SAY_ALLERGY_NOTED = "Ihren Hinweis gebe ich an die Küche weiter."
 SAY_ASK_ALLERGY = "Worauf genau soll die Küche achten?"
+# A later allergy whose dish is unclear ("Meine Frau verträgt keinen Sesam",
+# #929, Maxi 24.11.2026).
+SAY_ASK_ALLERGY_DISH = "Für welches Gericht soll die Küche darauf achten?"
 SAY_ALLERGENS_OFFER = (
     "Wenn ich für ein Gericht die Allergene nachsehen soll, nennen Sie mir bitte "
     "seine Nummer."
 )
-FIXED_ALLERGY_SAYS = (SAY_ALLERGY_NOTED, SAY_ASK_ALLERGY, SAY_ALLERGENS_OFFER)
+FIXED_ALLERGY_SAYS = (
+    SAY_ALLERGY_NOTED,
+    SAY_ASK_ALLERGY,
+    SAY_ASK_ALLERGY_DISH,
+    SAY_ALLERGENS_OFFER,
+)
 HINT_ALLERGY_TURN = (
     "Abgelehnt: der Gast spricht in diesem Zug von einer Allergie oder einem "
     "Allergen, deinen eigenen Satz hört er hier nicht. Fragt er, was in einem "
@@ -1386,6 +1409,10 @@ NOTE_CLAIM = ToolResult(ok=False, error_code="invalid_input", hint=HINT_NOTE_CLA
 # What the core writes onto a draft the model sent twice without the guest's
 # words (`with_the_guests_words`).
 NOTED_FOR_THE_GUEST = "WICHTIG !!! Gast sagte: {said}"
+# The core's block as a model may copy it, in any case and spacing.
+_EARLIER_BLOCK = re.compile(
+    r"wichtig\s*!!!\s*(?:der\s+)?gast\s+sagte\s*:", re.IGNORECASE
+)
 # A note that only repeats the example of a hint names nothing.
 _TEMPLATE = ("…", "<", "WICHTIG-Hinweis")
 
@@ -1397,16 +1424,78 @@ def unnoted_allergy(state: ConversationState, call: ToolCall) -> ToolResult | No
     retention job deletes such a note by, so what passes here is deleted in
     time (L13). The hint quotes the guest. The loop gives it back once per
     turn, and writes the guest's words on the next one itself
-    (`with_the_guests_words`), never a loop."""
+    (`with_the_guests_words`), never a loop.
+
+    Every allergen the guest named as what someone reacts to must be on such
+    a note, compared by letter whatever the wording, coeliac disease as
+    gluten, an ingredient without a letter ("Kiwi") by its word: a second
+    allergy said after the read-back ("Ach, und meine Frau verträgt keinen
+    Sesam.") must not pass on the first one's note (#929). What a kept
+    sentence names stays asked for: a bare retraction is not kept, and
+    `loop._taken_back` clears what a denial answering a question takes back.
+    The hint quotes only the sentences no note covers and asks for the
+    guest's words, for an order on the dish named right before or after the
+    fixed question about the dish."""
     if not state.allergy_said or call.name not in NOTED:
         return None
-    if any(
-        HEALTH_NOTE_RE.search(note) and not any(t in note for t in _TEMPLATE)
+    health = [
+        note
         for note in _notes(call)
-    ):
+        if HEALTH_NOTE_RE.search(note) and not any(t in note for t in _TEMPLATE)
+    ]
+    if not health:
+        hint = HINT_UNNOTED_ALLERGY + _HINT_UNNOTED_SAID.format(said=_said(state))
+        return ToolResult(ok=False, error_code="invalid_input", hint=hint)
+    # An allergy a note denies ("keine Sesamallergie") notes nothing; "kein
+    # Sesam" is what the kitchen must do and counts.
+    noted_text = " ".join(_guest_words(note) for note in health)
+    noted = _letters(noted_text)
+    unnoted = [
+        sentence
+        for sentence in state.allergy_said
+        if any(
+            mark not in noted and not _word_in(mark, noted_text)
+            for mark in _named_as_theirs(state, sentence)
+        )
+    ]
+    if not unnoted:
         return None
-    hint = HINT_UNNOTED_ALLERGY + _HINT_UNNOTED_SAID.format(said=_said(state))
+    quoted = " ".join(s.strip() for s in unnoted).rstrip(" .")
+    where = (
+        _HINT_LATER_ORDER.format(ask=SAY_ASK_ALLERGY_DISH)
+        if call.name == "draft_order"
+        else _HINT_LATER_TABLE
+    )
+    hint = HINT_UNNOTED_LATER.format(said=quoted) + where
     return ToolResult(ok=False, error_code="invalid_input", hint=hint)
+
+
+def _word_in(word: str, text: str) -> bool:
+    """Does `text` hold `word` at the start of one of its words ("Kiwi" in
+    "Kiwiallergie"), never inside one ("Erbsen" in "Kichererbsen")?"""
+    return re.search(rf"(?<!\w){re.escape(word)}", text.casefold()) is not None
+
+
+def _letters(text: str) -> set[str]:
+    """The allergen letters `text` names, coeliac disease as gluten."""
+    return allergens_named(text) | (_GLUTEN if names_coeliac(text) else set())
+
+
+def _named_as_theirs(state: ConversationState, said: str) -> set[str]:
+    """What a kept sentence names: its allergen letters (`_letters`) without
+    what it only denies (`_guest_words`) and without the plain names of
+    dishes the call found, and the casefolded word of an ingredient without
+    a letter ("kiwi", `reacts_to`). No reading of which word is a wish and
+    which an allergy (AGENTS.md, #798; Codex review of #1002, P1): "Ich habe
+    eine Erdnussallergie, bitte extra Sesam" asks for the sesame too, and the
+    hint asks for the guest's words, which name it, so the note says what
+    the guest said and never an allergy the model read into it."""
+    text = _without_dish_names(state, said, plain_only=True)
+    return _letters(_guest_words(text)) | {
+        word
+        for word in reacts_to(text) - allergens_named(text) - {"zöliakie"}
+        if not allergens_named(word)
+    }
 
 
 def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall | None:
@@ -1422,6 +1511,8 @@ def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall 
     added = NOTED_FOR_THE_GUEST.format(said=_said(state))
     limit = NOTE_MAX_FOR[call.name]
     before = call.args.get("note")
+    if isinstance(before, str):
+        before = _without_earlier_block(state, before)
     note = (
         f"{before.strip()}. {added}"
         if isinstance(before, str) and before.strip()
@@ -1437,6 +1528,25 @@ def with_the_guests_words(state: ConversationState, call: ToolCall) -> ToolCall 
 
 # What a cut may take from the end of a sentence without taking anything said.
 _END_MARKS = " .!?…"
+
+
+def _without_earlier_block(state: ConversationState, note: str) -> str:
+    """`note` without the core's earlier block a redraft carries: the new
+    block holds all it said, so no sentence is noted twice (#929). What the
+    model wrote behind it stays ("... Bitte getrennt verpacken.", Codex
+    review of #1002, P2): the block's sentences are the kept ones, taken off
+    one by one from its start.
+    shortcut: a sentence the old block held that is no longer kept (taken
+    back) stays as the model's text."""
+    head, *rest = _EARLIER_BLOCK.split(note, maxsplit=1)
+    tail = rest[0].strip() if rest else ""
+    # An empty one would match forever.
+    kept = [k for k in (s.strip().rstrip(" .") for s in state.allergy_said) if k]
+    while hit := next((s for s in kept if tail.lower().startswith(s.lower())), None):
+        tail = tail[len(hit) :].lstrip(" .")
+    return ". ".join(
+        part.strip().rstrip(" .") for part in (head, tail) if part.strip(" .")
+    )
 
 
 def _each_survives(state: ConversationState, room: int) -> bool:

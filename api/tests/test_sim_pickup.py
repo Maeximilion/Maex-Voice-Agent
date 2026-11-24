@@ -1237,7 +1237,8 @@ def test_answer_after_a_withdrawal_and_a_long_removal(
 def test_another_persons_allergy_after_a_withdrawal_asks_again(session, tenant):
     """Codex PR #361, round 4: "Keine, aber meine Frau ist gegen Sesam
     allergisch" put the wife's sesame on this dish. Whose allergy it is and
-    for which dish is not clear: the question is asked again."""
+    for which dish is not clear: the question is asked again. The sesame
+    still reaches the order, in the guest's words (#929)."""
     _, turns = _bestellung(
         session,
         tenant,
@@ -1248,6 +1249,7 @@ def test_another_persons_allergy_after_a_withdrawal_asks_again(session, tenant):
     assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
+    assert order.note is not None and "gegen Sesam allergisch" in order.note
 
 
 def test_denial_with_another_dish_keeps_the_question(session, tenant):
@@ -1667,13 +1669,15 @@ def test_the_menu_decides_what_a_card_number_is(session, tenant):
 @pytest.mark.parametrize("answer", ["Die 12 mit Reis.", "Sesam, und die 12."])
 def test_number_on_the_menu_in_a_sentence_is_an_order(session, tenant, answer):
     """A number the menu has, next to other words, is still an order: the
-    question stays open instead of "Keine die 12 mit Reis" for the kitchen."""
+    question stays open instead of "Keine die 12 mit Reis" for the kitchen.
+    A sesame said with it reaches the order note (#929)."""
     _, turns = _bestellung(
         session, tenant, "Pho Bo, ich habe eine Allergie.", answer, "Erdnüsse."
     )
     assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
+    assert ("Sesam" in (order.note or "")) is ("Sesam" in answer)
 
 
 SUSHI_MENU = MenuNumbers.from_items(

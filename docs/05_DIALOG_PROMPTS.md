@@ -226,9 +226,10 @@ up (`guards.is_open`)
        team, with the dish on the card
    open, otherwise
      → only core sentences reach the guest: a read-back, the booking, a
-       tool's sentence of this turn, or one of three fixed sentences
+       tool's sentence of this turn, or one of four fixed sentences
        ("Ihren Hinweis gebe ich an die Küche weiter.", "Worauf genau soll
-       die Küche achten?", "Wenn ich für ein Gericht die Allergene
+       die Küche achten?", "Für welches Gericht soll die Küche darauf
+       achten?" (#929), "Wenn ich für ein Gericht die Allergene
        nachsehen soll, nennen Sie mir bitte seine Nummer."). Any other
        sentence of the model goes back once with a hint, a second one
        becomes the offer sentence, or the team when a question was left
@@ -285,7 +286,9 @@ up (`guards.is_open`)
    answer (`allergen_question_open`), also after the offer that ends a
    refused sentence of a turn that was not open (#928); the letters nothing explained are
    kept (`allergen_question_codes`), except after "Worauf genau soll die
-   Küche achten?", whose answer comes next. A second turn in a row goes to
+   Küche achten?", whose answer comes next. "Für welches Gericht soll die
+   Küche darauf achten?" clears none: its answer names a dish, not an
+   allergen, and is not kept for the safety net. A second turn in a row goes to
    the team when it ends in the offer again or leaves one of those letters
    unexplained again, whatever core sentence it ends in (`guards.left_twice`);
    decided by where the words come from, never by telling a question from a
@@ -381,7 +384,36 @@ eine Sesamallergie") (Maxi, 15.11.2026, #736, #763)
      without, the core writes "WICHTIG !!! Gast sagte: <Worte>" on the note
      of the order or the table and lets it go (`guards.unnoted_allergy`,
      `guards.with_the_guests_words`); when the cut to the field would drop
-     what a kept sentence names, the team takes the call instead. A note that promises a dish free of
+     what a kept sentence names, the team takes the call instead. Every
+     allergen a kept sentence names as what someone reacts to must be on
+     such a note (#929, Maxi 24.11.2026), compared by letter
+     (`allergens_named`, coeliac disease as gluten), an ingredient without a
+     letter ("Kiwi") by its word. A kept sentence counts with all it names
+     ("Meine Frau hat eine Allergie. Sesam.", "Gegen Sesam."), what a part
+     only denies and plain names of dishes the call found aside; the core
+     does not tell a wish from an allergy (AGENTS.md, #798), so "Ich habe
+     eine Erdnussallergie, bitte extra Sesam" asks for the sesame too, and
+     the guest's own words, which the hint asks for, cover it; an ingredient
+     word counts at the start of a note's word only ("Erbsen" is not in
+     "Kichererbsen"). A note counts what it asks for ("kein Sesam"), not
+     an allergy it denies. So a second
+     allergy said after the read-back ("Ach, und meine Frau verträgt keinen
+     Sesam.") does not pass on the first one's note. The draft goes back
+     once with only the sentences no note covers; the hint asks for the
+     guest's words, never a reading of them, as "WICHTIG !!! <words>" on
+     the dish named right before or on the order, or, unclear for which
+     dish, for "Für welches Gericht soll die Küche darauf achten?"; a table
+     gets them on its note. After that question the hint counts as given:
+     a draft without the allergy in the answer turn gets the guest's words
+     from the core at once. Sent again without, the core's "Gast sagte"
+     block holds every kept sentence; a block a redraft carries from before
+     (in any case or spacing) is replaced, never written twice, and what the
+     model wrote behind it stays ("Bitte getrennt verpacken."). Residual: a
+     wish beside an allergy and a coeliac denial ("Ich habe keine
+     Zöliakie.") cost one more round before the guest's words carry them. A wish on a health note
+     counts as noted ("Erdnussallergie, extra Sesam" covers a later sesame
+     allergy), and an allergy the guest takes back without a question stays
+     asked for. A note that promises a dish free of
      something ("nussfrei", "keine Spuren") goes back too
      (`guards.claims_in_a_note`)
    → the menu search still splits an allergy said behind a dish off as its

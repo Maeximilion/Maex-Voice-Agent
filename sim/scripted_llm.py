@@ -31,6 +31,7 @@ from api.agent.guards import (
     HINT_GUEST_PHONE,
     HINT_UNLICENSED_ALLERGEN,
     HINT_UNNOTED_ALLERGY,
+    HINT_UNNOTED_LATER,
     SAY_ALLERGENS_OFFER,
     SAY_ALLERGY_NOTED,
     SAY_ASK_ALLERGY,
@@ -493,11 +494,12 @@ class ScriptedLLM:
         if name == "search_menu" and self._opening_prefix is not None:
             return self._after_opening_search(result, slots)
         if not result.get("ok") and str(result.get("hint")).startswith(
-            HINT_UNNOTED_ALLERGY
+            (HINT_UNNOTED_ALLERGY, HINT_UNNOTED_LATER.partition("„")[0])
         ):
-            # The core wants the guest's health on a note: the stand-in writes
-            # what the guest said about it, from the state, onto the whole
-            # order or the table (a real model words it, the prompt).
+            # The core wants the guest's health on a note, or an allergen said
+            # later on one (#929): the stand-in writes what the guest said
+            # about it, from the state, onto the whole order or the table (a
+            # real model words it, the prompt).
             note = _health_note(state)
             if self._pickup is not None:
                 return self._pickup.draft_again(slots, note)

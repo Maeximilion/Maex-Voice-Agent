@@ -557,8 +557,11 @@ class ConversationLoop:
         # refused `cart` included.
         called: list[str] = []
         # The draft without the guest's allergy went back once in this turn
-        # (`guards.unnoted_allergy`): the next one goes through.
-        allergy_hint_given = False
+        # (`guards.unnoted_allergy`): the next one goes through. After the
+        # fixed question about the dish of a later allergy the hint was given
+        # the turn before: a draft without it gets the guest's words at once,
+        # never the question again each turn (#929).
+        allergy_hint_given = guards.SAY_ASK_ALLERGY_DISH in (state.last_say or "")
         # The core's allergen sentences of this turn, one per dish looked up:
         # the only allergen words the guest hears (#669, #717, rule 1).
         allergen_says: list[str] = []
