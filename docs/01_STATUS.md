@@ -1,7 +1,7 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.49
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.50
 
 ---
 
@@ -181,7 +181,8 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.49 · 24.11.2026:** #1003: an allergy said into a protected sentence reaches the core; into a read-back the draft is read out again with the note before the yes
+- **v2.69.50 · 24.11.2026:** #1003: an allergy said into a protected sentence reaches the core; into a read-back the draft is read out again with the note before the yes
+- **v2.69.49 · 24.11.2026:** #983 call_log.py in English (English option names, German kept as aliases), review points 3 and 4 fixed; #985 a partial decision-issue run drops the keys of the sections it rewrites
 - **v2.69.48 · 24.11.2026:** #930: option A recorded as a named residual (the core's note from the guest's words is read back as said), docs/05 and docs/24; docs only
 - **v2.69.47 · 24.11.2026:** chain: context size never stops a finishing session; it takes the next item and lets auto compaction carry it (Maxi: "Don't stop the chain any more")
 - **v2.69.46 · 24.11.2026:** #969 #970: the missed-leg card keeps the kitchen marker after a voice restart (from the call's health notes), in mode shadow and for an allergy said into a protected sentence

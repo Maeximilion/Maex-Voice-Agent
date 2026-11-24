@@ -42,7 +42,10 @@ INTRO = "Die taegliche Projektpflege hat Punkte, die sie nicht selbst entscheide
 # der naechste Lauf, was neu ist, ohne eigenen Speicher.
 # Anchored to the end of the body: render_body writes the marker last, after the
 # titles, and a title (anyone can open an issue) may carry a marker of its own.
-KEYS_MARKER = re.compile(r"<!-- projektpflege-keys: ([0-9a-f,]*) -->\s*\Z")
+# Each key is written as "<group>:<key>", the group a hash of its heading, so a
+# partial run can drop the keys of the sections it rewrites (#985). A bare key
+# comes from a marker written before that.
+KEYS_MARKER = re.compile(r"<!-- projektpflege-keys: ([0-9a-f,:]*) -->\s*\Z")
 
 
 # One section of the body as render_body writes it: heading, blank line, items, blank line.
@@ -88,20 +91,39 @@ def finding_keys(findings: dict[str, list[dict[str, Any]]]) -> dict[str, str]:
     und eine dritte Kopie muss als neu gelten. Ohne ID (ein Issue, das auf dem Board
     fehlt) die URL, bei Entwuerfen ohne URL das Label.
     """
-    keys = {}
-    for heading, entries in findings.items():
-        for entry in entries:
-            identity = (
-                f"{heading}|{entry.get('id') or entry.get('url') or entry['label']}"
-            )
-            key = hashlib.sha1(identity.encode()).hexdigest()[:12]
-            keys[key] = f"{heading}: {inert(entry['label'])}"
-    return keys
+    return {
+        _key(heading, entry): f"{heading}: {inert(entry['label'])}"
+        for heading, entries in findings.items()
+        for entry in entries
+    }
+
+
+def _key(heading: str, entry: dict[str, Any]) -> str:
+    identity = f"{heading}|{entry.get('id') or entry.get('url') or entry['label']}"
+    return hashlib.sha1(identity.encode()).hexdigest()[:12]
+
+
+def group(heading: str) -> str:
+    """The heading's part of a key in the marker."""
+    return hashlib.sha1(heading.encode()).hexdigest()[:6]
+
+
+def tokens(findings: dict[str, list[dict[str, Any]]]) -> set[str]:
+    """The marker's entries for these findings, each key with its group."""
+    return {
+        f"{group(heading)}:{_key(heading, entry)}"
+        for heading, entries in findings.items()
+        for entry in entries
+    }
+
+
+def parse_tokens(body: str | None) -> set[str]:
+    match = KEYS_MARKER.search(body or "")
+    return set(filter(None, match.group(1).split(","))) if match else set()
 
 
 def parse_keys(body: str | None) -> set[str]:
-    match = KEYS_MARKER.search(body or "")
-    return set(filter(None, match.group(1).split(","))) if match else set()
+    return {token.rpartition(":")[2] for token in parse_tokens(body)}
 
 
 def sections(body: str) -> list[tuple[str, str]]:
@@ -130,7 +152,7 @@ def render_body(
         "Erledigen ueber `/project` oder direkt am Board. Das Issue aktualisiert sich "
         "taeglich und schliesst sich, sobald nichts mehr offen ist."
     )
-    keys = ",".join(sorted(set(finding_keys(findings)) | (kept_keys or set())))
+    keys = ",".join(sorted(tokens(findings) | (kept_keys or set())))
     lines.append(f"<!-- projektpflege-keys: {keys} -->")
     return "\n".join(lines)
 
@@ -195,9 +217,11 @@ def plan_partial(
     `unknown` names the headings of the sources that failed; None when the board
     failed, whose headings are not known in advance: then every section the
     sources that did run do not report on counts as unknown. Those sections stay
-    as they were, every other one is rewritten from `findings`. All old keys stay,
-    so nothing is reported again on the day after, and the issue never closes on
-    what is unknown.
+    as they were, every other one is rewritten from `findings`. The old keys of
+    the kept sections stay, so nothing is reported again on the day after, and
+    the issue never closes on what is unknown. The keys of a rewritten section
+    go with it: a finding cleared there and reported again later is new (#985).
+    A bare key of an older marker names no section and stays.
     """
     open_findings = {h: e for h, e in findings.items() if e}
     if existing_body is None or closed:
@@ -207,12 +231,19 @@ def plan_partial(
             else Plan("none")
         )
     old = parse_keys(existing_body)
-    kept = [
-        text
+    kept_sections = [
+        (heading, text)
         for heading, text in sections(existing_body)
         if (heading in unknown if unknown is not None else heading not in findings)
     ]
-    body = render_body(open_findings, INTRO, kept, old)
+    kept = [text for _, text in kept_sections]
+    kept_groups = {group(heading) for heading, _ in kept_sections}
+    kept_keys = {
+        token
+        for token in parse_tokens(existing_body)
+        if ":" not in token or token.partition(":")[0] in kept_groups
+    }
+    body = render_body(open_findings, INTRO, kept, kept_keys)
     current = finding_keys(open_findings)
     new = sorted(key for key in current if key not in old)
     if new:
