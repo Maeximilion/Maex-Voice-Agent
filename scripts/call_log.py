@@ -1,22 +1,24 @@
-"""Anrufprotokoll auswerten: Baseline fuer C1 und Entwuerfe fuer Eval-Faelle (docs/17).
+"""Evaluate the call log: the baseline for C1 and drafts of eval cases (docs/17).
 
-Aufruf:
+Usage:
     python -m scripts.call_log imports/anrufprotokoll.csv
     python -m scripts.call_log imports/anrufprotokoll.csv --cases imports/eval_entwuerfe/
-    python -m scripts.call_log imports/anrufprotokoll.csv --frist-tage 90 [--loeschen]
+    python -m scripts.call_log imports/anrufprotokoll.csv --retention-days 90 [--delete]
 
-Das Protokoll fuehrt das Team von Hand, ohne Tonaufnahme: Anliegen, Ergebnis und
-die woertlichen Kundensaetze, nie Namen oder Telefonnummern. Solange der
-Rechts-Check (docs/09) offen ist, ist das die einzige Quelle echter Anrufe.
-Die Datei liegt in imports/ (im .gitignore), die Entwuerfe ebenso. Ein Entwurf
-enthaelt keinen echten Kundensatz (DSFA M15): das Team stellt die Saetze mit
-eigenen Worten nach, erst dann wandert der Fall nach evals/cases/.
+The team keeps the log by hand, without a recording: intent, outcome and the
+caller's sentences word for word, never names or phone numbers. While the legal
+check (docs/09) is open it is the only source of real calls. The file lives in
+imports/ (in .gitignore), and so do the drafts. A draft holds no real caller
+sentence (DPIA M15): the team restates the sentences in its own words, and only
+then does the case move to evals/cases/.
 
-Exit-Code: 0 ausgewertet, 1 Pruef-Fehler in der Datei (auch: nicht UTF-8),
-2 Datei nicht gefunden oder nicht lesbar, Zielordner in evals/cases/ oder
-ID-Verzeichnis (.call_log_ids.json) oder Salz (.call_log_salt) unlesbar.
-Eine Uhrzeit mit Minute kuerzt der Lauf in der CSV auf die Stunde (docs/09 L15).
-Ohne Datenbank und ohne Netz.
+Exit code: 0 evaluated, 1 a check failed in the file (also: not UTF-8),
+2 file not found or not readable, target folder inside evals/cases/, or the ID
+directory (.call_log_ids.json) or the salt (.call_log_salt) unreadable.
+A time with minutes is cut to the hour in the CSV by every run (docs/09 L15).
+No database and no network.
+The column values the team types (intents, outcomes, the short forms of the
+paper sheet) and the caller sentences stay German: they are product content.
 """
 
 import argparse
@@ -53,8 +55,8 @@ COLUMNS = (
 REQUIRED = ("date", "time", "intent", "outcome")
 FREE_TEXT = ("phrases", "items", "problems")
 
-# Anliegen, wie das Team sie schreibt, und der Wert in `expected.intent` (docs/08).
-# Frage und Sonstiges haben kein pruefbares Ergebnis und werden kein Eval-Fall.
+# Intents as the team writes them, and the value in `expected.intent` (docs/08).
+# A question and "other" have no outcome to check and make no eval case.
 INTENTS = {
     "reservierung": "reservation",
     "abholung": "pickup",
@@ -64,8 +66,8 @@ INTENTS = {
     "sonstiges": None,
 }
 OUTCOMES = ("erledigt", "rueckruf", "abgelehnt", "abgebrochen")
-# Kuerzel vom Druckbogen (docs/vorlagen/anrufprotokoll_druck.html), damit beim
-# Abtippen niemand ausschreiben muss.
+# Short forms of the paper sheet (docs/vorlagen/anrufprotokoll_druck.html), so
+# nobody has to write the words out when typing it up.
 INTENT_SHORT = {
     "r": "reservierung",
     "a": "abholung",
@@ -80,51 +82,51 @@ OUTCOME_SHORT = {
     "al": "abgelehnt",
     "ab": "abgebrochen",
 }
-WEEKDAYS = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
-# Laenger telefoniert niemand eine Bestellung; alles darueber ist ein Tippfehler.
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+# Nobody takes an order on the phone for longer; anything above is a typo.
 MAX_MINUTES = 240
-# Hierhin wandern durchgesehene Faelle; der Entwurfslauf raeumt seinen Ordner
-# leer und darf deshalb nie dorthin schreiben.
+# Reviewed cases move here; the draft run empties its own folder and so must
+# never write here.
 EVAL_CASES = Path(__file__).resolve().parents[1] / "evals" / "cases"
-# Name und Rufnummer stehen nie im Protokoll, der Agent braucht beide vor
-# `confirm`. Ein bestaetigter Fall bekommt deshalb erfundene Werte: den
-# Platzhalter-Namen der Evals und die Beispielnummer aus docs/08 §1.
+# Name and phone number are never in the log, and the agent needs both before
+# `confirm`. A confirmed case therefore gets made-up values: the placeholder
+# name of the evals and the example number of docs/08 section 1.
 SYNTHETIC_CALLER_ID = "+497215551234"
 SYNTHETIC_NAME_TURN = "Auf den Namen Mueller."
-# Ein bestaetigter Fall endet fest mit einem klaren Ja; ob der letzte Satz im
-# Protokoll eines war ("Danke" ist keines), bleibt offen.
+# A confirmed case always ends with a clear yes; whether the last sentence in
+# the log was one ("Danke" is none) is left open.
 SYNTHETIC_YES_TURN = "Ja, das passt."
 SYNTHETIC_ADDRESS_TURN = "Die Adresse ist Musterstrasse 1 in 12345 Musterstadt."
 
-# Sechs Ziffern in Folge, auch mit Leerzeichen, Schraegstrich, Bindestrich oder
-# Klammer dazwischen, sind fast immer eine Telefonnummer. Ein Punkt zaehlt nur
-# direkt zwischen zwei Ziffern (0176.123.45.67): "am 25.09. 19 Uhr" ist ein
-# Datum ohne Jahr, wie docs/17 es empfiehlt. Mengen und Kartennummern ("2x 23",
-# "die 147") bleiben darunter. Ein Datum mit Jahr (24.09.2026) schlaegt an:
-# lieber einmal zu oft als eine Nummer zu wenig.
+# Six digits in a row, also with blanks, a slash, a hyphen or a bracket between
+# them, are nearly always a phone number. A period counts only right between two
+# digits (0176.123.45.67): "am 25.09. 19 Uhr" is a date without a year, as
+# docs/17 recommends. Quantities and card numbers ("2x 23", "die 147") stay
+# below it. A date with a year (24.09.2026) hits: better once too often than
+# one number too few.
 _PHONE = re.compile(r"\d(?:(?:[\s/()-]|\.(?=\d))*\d){5,}")
 _DATE = re.compile(r"(\d{1,2})\.(\d{1,2})\.(\d{4})")
-# Auch diktiert: "mueller at gmx punkt de", "mueller @ gmx.de", "(at)".
-# Jede Domain mit beliebig vielen Stufen und jeder Endung ab zwei Buchstaben
-# (mail.example.de, example.io). Ein "@" zwischen zwei Wortzeichen reicht allein.
+# Dictated too: "mueller at gmx punkt de", "mueller @ gmx.de", "(at)".
+# Any domain with any number of levels and any ending of two letters or more
+# (mail.example.de, example.io). An "@" between two word characters is enough.
 _DOT = r"\s*(?:\.|\bpunkt\b|\bdot\b)\s*"
 _EMAIL = re.compile(
     r"\w@\w|[\w.+-]+\s*(?:@|\(at\)|\bat\b)\s*[\w-]+"
     rf"(?:{_DOT}[\w-]+)*{_DOT}[a-z]{{2,}}\b"
 )
-# DSFA M8: eine Allergie als Merkmal einer Person ist ein Gesundheitsdatum. Eine
-# Liste von Personenwoertern wird nie vollstaendig ("er", "der Kunde", ...),
-# deshalb ist jedes "Allergi..." rot; die Frage zum Gericht heisst "Allergene"
-# ("welche Allergene hat die 23?"), das trifft das Muster nicht.
+# DPIA M8: an allergy as a trait of a person is health data. A list of words
+# for people is never complete ("er", "der Kunde", ...), so every "Allergi..."
+# is red; the question about a dish says "Allergene" ("welche Allergene hat
+# die 23?"), which the pattern does not hit.
 _HEALTH = re.compile(r"allergi|unvertraeglich|intoleran")
-# Strasse mit Hausnummer. Ein Stadtteil ("in die Weststadt") bleibt erlaubt.
-# Auch mit Bindestrich oder getrennt ("Kaiser-Str. 12", "Kaiser Strasse 12a"),
-# ohne Endung nach einer Ortspraeposition ("Am Stadtgarten 5", "an der Alten
-# Post 12"), das Wort Hausnummer und eine Postleitzahl vor einem Ort. Eine Zahl
-# vor Uhr, Personen, mal und aehnlichem ist keine Hausnummer.
-# Das Wort direkt vor einer Zahl ist kein Strassenname, wenn es ein Artikel,
-# eine Zeit- oder Mengenangabe ist: "am Freitag die 23", "am Samstag gegen
-# 19.30", "um halb acht". Sonst waere jede zweite Bestellung eine Adresse.
+# A street with a house number. A district ("in die Weststadt") stays allowed.
+# Also with a hyphen or apart ("Kaiser-Str. 12", "Kaiser Strasse 12a"), without
+# an ending after a preposition of place ("Am Stadtgarten 5", "an der Alten
+# Post 12"), the word Hausnummer and a postal code before a town. A number
+# before Uhr, Personen, mal and the like is no house number.
+# The word right before a number is no street name when it is an article, a
+# time or a quantity: "am Freitag die 23", "am Samstag gegen 19.30", "um halb
+# acht". Otherwise every second order would be an address.
 _NOT_STREET = (
     r"(?:der|die|das|den|dem|des|ein|eine|einen|um|gegen|ab|bis|ca|circa|etwa"
     r"|halb|viertel|fuer|mit|und|oder|je|nur|noch|so|heute|morgen|abend|mittag"
@@ -133,13 +135,13 @@ _NOT_STREET = (
     r"|september|oktober|november|dezember|nr|nummer|menue|karte|speisekarte"
     r"|gericht|bestellung|bestellen)"
 )
-# "Nr." oder "Nummer" hinter einem moeglichen Strassennamen faellt vor der
-# Adresspruefung weg: "Hauptstrasse Nr. 12" wird "hauptstrasse 12". Hinter
-# einem Wort aus _NOT_STREET bleibt es stehen: "zum Abholen Nummer 12" und
-# "im Menue Nummer 12" sind Nummern der Karte.
+# "Nr." or "Nummer" behind a possible street name is dropped before the address
+# check: "Hauptstrasse Nr. 12" becomes "hauptstrasse 12". Behind a word of
+# _NOT_STREET it stays: "zum Abholen Nummer 12" and "im Menue Nummer 12" are
+# numbers of the menu card.
 _NR = re.compile(rf"\b(?!{_NOT_STREET}\s)([a-z-]+\.?)\s+(?:nr\.?|nummer)\s*(?=\d)")
 
-# Nach der Zahl: keine Uhrzeit, kein Datum ("19.30", "25.09."), keine Menge.
+# After the number: no time, no date ("19.30", "25.09."), no quantity.
 _NOT_HOUSE_NO = (
     r"(?![.:]\d)"
     r"(?!\s*(?:uhr|personen|leute|leuten|min|minuten|mal|x\b|euro|stueck|:))"
@@ -147,9 +149,9 @@ _NOT_HOUSE_NO = (
 _ADDRESS = re.compile(
     r"\b[\w-]*(?:strasse|str\.|weg|platz|allee|gasse|ring|damm|ufer|markt|hof"
     r"|chaussee|steig|stieg|pfad|wall|graben|anger|zeile|promenade|kai)\s*\d+"
-    # Nach einem Hinweiswort bis zum naechsten Satzzeichen ist eine Zahl hinter
-    # einem Namen eine Hausnummer ("meine Adresse ist Lindenblick 4"). Das Komma
-    # trennt: "Lieferung nach Weststadt, zwei Pizza".
+    # After a cue word, up to the next punctuation mark, a number behind a name
+    # is a house number ("meine Adresse ist Lindenblick 4"). The comma
+    # separates: "Lieferung nach Weststadt, zwei Pizza".
     r"|\b(?:adresse|wohne|wohnen|wohnt|liefern an|lieferung an|bringen an"
     rf"|liefern nach|lieferung nach)\b[^|.!?,;]{{0,40}}?\b(?!{_NOT_STREET}\s)"
     rf"[a-z-]+\s+\d{{1,4}}[a-z]?\b{_NOT_HOUSE_NO}"
@@ -181,13 +183,13 @@ class Entry:
 
 
 def _norm(value: str) -> str:
-    """Kleinschreibung, Umlaute wie auf der Tastatur ohne Umlaut."""
+    """Lower case, umlauts as typed on a keyboard without them."""
     return fold(value.strip())
 
 
 def _cardinal(token: str) -> int | None:
-    """Zahlwort als Zahl, auch ab tausend: der Zahlenleser der Karte endet bei
-    999, eine Hausnummer nicht ("tausend", "zweitausenddrei")."""
+    """A number word as a number, from a thousand up too: the menu's number
+    reader ends at 999, a house number does not ("tausend", "zweitausenddrei")."""
     head, sep, tail = token.partition("tausend")
     if not sep:
         return parse_cardinal(token)
@@ -200,18 +202,18 @@ def _cardinal(token: str) -> int | None:
 
 
 def _numbers_as_digits(text: str) -> str:
-    """Zahlwoerter als Ziffern, fuer die Adresspruefung: "Hauptstrasse zwoelf"
-    wird "hauptstrasse 12". Artikel ("eine Pizza") bleiben Woerter, sonst
-    saehe "am Freitag eine Pizza" wie eine Hausnummer aus. Getrennt geschriebene
-    Zahlen der Spracherkennung ("ein und zwanzig", "hundert drei") werden erst
-    zusammengezogen; dann zaehlt auch ein Artikel als Teil der Zahl."""
+    """Number words as digits, for the address check: "Hauptstrasse zwoelf"
+    becomes "hauptstrasse 12". Articles ("eine Pizza") stay words, or "am
+    Freitag eine Pizza" would look like a house number. Numbers the speech
+    recognition writes apart ("ein und zwanzig", "hundert drei") are joined
+    first; then an article counts as part of the number too."""
 
     def digits(match: re.Match[str]) -> str:
         tokens = match.group(0).split()
         out = []
         i = 0
         while i < len(tokens):
-            # Laengste Folge ab i, die zusammen eine Zahl ist, hoechstens fuenf Woerter.
+            # The longest run from i that is one number, five words at most.
             for j in range(min(len(tokens), i + 5), i + 1, -1):
                 value = _cardinal("".join(tokens[i:j]))
                 if value is not None:
@@ -229,15 +231,15 @@ def _numbers_as_digits(text: str) -> str:
 
 
 def _spoken_phone(text: str) -> bool:
-    """Eine diktierte Nummer: "null sieben zwei eins ..." oder in Zweiergruppen
-    "null sieben einundzwanzig ...". Zaehlt die Ziffern einer Folge von
-    Zahlwoertern; Artikel ("eine Pizza") unterbrechen die Folge. Ziffern zaehlen
-    erst mit, wenn schon ein Zahlwort in der Folge steht, sonst waere jedes
-    Datum ohne Jahr eine Nummer (dafuer ist _PHONE da)."""
+    """A dictated number: "null sieben zwei eins ..." or in pairs "null sieben
+    einundzwanzig ...". Counts the digits of a run of number words; articles
+    ("eine Pizza") break the run. Digits count only once a number word is in
+    the run, or every date without a year would be a number (_PHONE is for
+    those)."""
     digits = 0
     spoken = False
-    # Ein Komma, Semikolon oder | trennt zwei Zahlen ("hundertzwanzig,
-    # hundertdreissig" sind zwei Nummern der Karte, docs/17).
+    # A comma, semicolon or | separates two numbers ("hundertzwanzig,
+    # hundertdreissig" are two numbers of the menu card, docs/17).
     for token in re.findall(r"[a-z0-9]+|[,;|]", fold(text)):
         if token.isdigit():
             count = len(token) if spoken else 0
@@ -257,7 +259,7 @@ def _spoken_phone(text: str) -> bool:
 
 
 def _parse_date(value: str) -> date:
-    # Vierstelliges Jahr Pflicht: "24.09.26" waere sonst still das Jahr 26.
+    # A four-digit year is required: "24.09.26" would silently be the year 26.
     match = _DATE.fullmatch(value.strip())
     if not match:
         raise ValueError(value)
@@ -282,68 +284,68 @@ def _parse_time(value: str) -> tuple[int, int | None]:
 
 
 def parse(text: str) -> tuple[list[Entry], list[str]]:
-    """Liest das Protokoll (UTF-8, Semikolon) und prueft jede Zeile.
+    """Reads the log (UTF-8, semicolon) and checks every row.
 
-    Gibt die gueltigen Eintraege und die Fehler zurueck. Eine Zeile mit Fehler
-    faellt ganz heraus; ein Datenschutz-Treffer macht die Datei rot, damit
-    niemand eine Nummer uebersieht.
+    Returns the valid entries and the errors. A row with an error drops out
+    whole; a data protection hit turns the file red, so nobody overlooks a
+    number.
     """
-    # Excel speichert UTF-8 mit BOM; ohne Abschneiden hiesse die erste Spalte anders.
+    # Excel saves UTF-8 with a BOM; left on, the first column would be named apart.
     reader = csv.DictReader(io.StringIO(text.lstrip("\ufeff")), delimiter=";")
     header = [_norm(h) for h in (reader.fieldnames or [])]
     missing = [c for c in COLUMNS if c not in header]
     if missing:
-        return [], [f"Spalten fehlen: {', '.join(missing)}"]
-    # Genau die bekannten Spalten, jede einmal: eine Zusatzspalte ("phone")
-    # wuerde sonst nie auf Nummern, Adressen und Allergien geprueft.
-    unknown = [h or "(leer)" for h in header if h not in COLUMNS]
+        return [], [f"Columns missing: {', '.join(missing)}"]
+    # Exactly the known columns, each once: an extra column ("phone") would
+    # otherwise never be checked for numbers, addresses and allergies.
+    unknown = [h or "(empty)" for h in header if h not in COLUMNS]
     if unknown:
-        return [], [f"Unbekannte Spalten: {', '.join(unknown)}, bitte entfernen"]
+        return [], [f"Unknown columns: {', '.join(unknown)}, please remove them"]
     doubled = [c for c in COLUMNS if header.count(c) > 1]
     if doubled:
-        return [], [f"Doppelte Spalten: {', '.join(doubled)}"]
+        return [], [f"Duplicate columns: {', '.join(doubled)}"]
     reader.fieldnames = header
 
     entries: list[Entry] = []
     errors: list[str] = []
     for raw in reader:
-        # line_num statt Zaehler: DictReader ueberspringt Leerzeilen, und eine
-        # Excel-Zelle mit Zeilenumbruch belegt mehrere Zeilen. Gemeldet wird die
-        # letzte Zeile des Eintrags, bei einzeiligen Eintraegen genau die richtige.
+        # line_num, not a counter: DictReader skips blank lines, and an Excel
+        # cell with a line break takes several lines. The last line of the
+        # entry is reported, exactly the right one for a one-line entry.
         line = reader.line_num
         row = {k: (v or "").strip() for k, v in raw.items() if k in COLUMNS}
-        # Vor der Leerzeilen-Pruefung: ";;;;;;;;07215551234" hat acht leere
-        # Spalten, der Wert im neunten Feld darf trotzdem nicht ungeprueft bleiben.
+        # Before the blank-row check: ";;;;;;;;07215551234" has eight empty
+        # columns, and the value in the ninth field must not go unchecked.
         if raw.get(None):
-            # Ein Semikolon im Freitext verschiebt jede Spalte dahinter still.
+            # A semicolon in free text silently shifts every column behind it.
             errors.append(
-                f"Zeile {line}: mehr Felder als Spalten, Semikolon im Text? "
-                "In items und problems Komma verwenden"
+                f"Line {line}: more fields than columns, a semicolon in the text? "
+                "Use a comma in items and problems"
             )
             continue
         if not any(row.values()):
             continue
-        problems = [f"Zeile {line}: {c} fehlt" for c in REQUIRED if not row[c]]
+        problems = [f"Line {line}: {c} is missing" for c in REQUIRED if not row[c]]
         for column in FREE_TEXT:
             if _PHONE.search(row[column]) or _spoken_phone(row[column]):
                 problems.append(
-                    f"Zeile {line}: {column} sieht nach Telefonnummer aus, bitte "
-                    "entfernen (Datum ohne Jahr, mehrere Nummern mit Komma trennen)"
+                    f"Line {line}: {column} looks like a phone number, please remove "
+                    "it (a date without the year, several numbers apart by commas)"
                 )
             if _EMAIL.search(fold(row[column])):
                 problems.append(
-                    f"Zeile {line}: {column} enthaelt eine E-Mail-Adresse, bitte entfernen"
+                    f"Line {line}: {column} holds an email address, please remove it"
                 )
             if _HEALTH.search(fold(row[column])):
                 problems.append(
-                    f"Zeile {line}: {column} nennt eine Allergie oder Unvertraeglichkeit, "
-                    "bitte nur zum Gericht: 'welche Allergene hat die 23?'"
+                    f"Line {line}: {column} names an allergy or intolerance, please "
+                    "only ask about the dish: 'welche Allergene hat die 23?'"
                 )
             scanned = _NR.sub(r"\1 ", _numbers_as_digits(row[column]))
             if _ADDRESS.search(scanned):
                 problems.append(
-                    f"Zeile {line}: {column} enthaelt eine Adresse, bitte nur "
-                    "den Stadtteil"
+                    f"Line {line}: {column} holds an address, please write only "
+                    "the district"
                 )
         if problems:
             errors.extend(problems)
@@ -351,35 +353,35 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
         try:
             day = _parse_date(row["date"])
         except ValueError:
-            errors.append(f"Zeile {line}: Datum '{row['date']}' nicht TT.MM.JJJJ")
+            errors.append(f"Line {line}: date '{row['date']}' is not DD.MM.YYYY")
             continue
         try:
             hour, minute = _parse_time(row["time"])
         except ValueError:
             errors.append(
-                f"Zeile {line}: Uhrzeit '{row['time']}' ist keine Stunde (18 oder 18 Uhr)"
+                f"Line {line}: time '{row['time']}' is no hour (18 or 18 Uhr)"
             )
             continue
         duration: float | None = None
         if row["duration_min"]:
             try:
                 duration = float(row["duration_min"].replace(",", "."))
-                # float() nimmt auch nan, inf und Negatives; ein Wert davon
-                # verdirbt den Mittelwert der ganzen Baseline.
-                # Oben begrenzt: 1e308 ist endlich, eine eingefuegte Telefonnummer
-                # auch, und beide verderben die Baseline.
+                # float() takes nan, inf and negatives too; one of them spoils
+                # the mean of the whole baseline.
+                # Capped above: 1e308 is finite, and so is a pasted phone
+                # number, and both spoil the baseline.
                 if not math.isfinite(duration) or not 0 <= duration <= MAX_MINUTES:
                     raise ValueError(row["duration_min"])
             except ValueError:
                 errors.append(
-                    f"Zeile {line}: Dauer '{row['duration_min']}' ist keine Zahl"
+                    f"Line {line}: duration '{row['duration_min']}' is not a number"
                 )
                 continue
         intent = _norm(row["intent"])
         intent = INTENT_SHORT.get(intent, intent)
         if intent not in INTENTS:
             errors.append(
-                f"Zeile {line}: Anliegen '{row['intent']}' unbekannt, erlaubt: "
+                f"Line {line}: intent '{row['intent']}' unknown, allowed: "
                 + ", ".join(INTENTS)
             )
             continue
@@ -387,11 +389,11 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
         outcome = OUTCOME_SHORT.get(outcome, outcome)
         if outcome not in OUTCOMES:
             errors.append(
-                f"Zeile {line}: Ergebnis '{row['outcome']}' unbekannt, erlaubt: "
+                f"Line {line}: outcome '{row['outcome']}' unknown, allowed: "
                 + ", ".join(OUTCOMES)
             )
             continue
-        # Satzgrenze: | oder ein Zeilenumbruch in der Zelle (Alt+Enter in Excel).
+        # Sentence boundary: | or a line break in the cell (Alt+Enter in Excel).
         phrases = [p.strip() for p in re.split(r"[|\n]", row["phrases"]) if p.strip()]
         entries.append(
             Entry(
@@ -459,49 +461,46 @@ def _share(counter: Counter[str], total: int) -> str:
 
 
 def report(entries: list[Entry]) -> str:
-    """Baseline fuer C1: Menge, Anliegen, Ergebnis, Dauer, Stoßzeiten."""
+    """The baseline for C1: volume, intents, outcomes, duration, peak hours."""
     if not entries:
-        return "Keine Eintraege."
+        return "No entries."
     total = len(entries)
     days = sorted({e.day for e in entries})
     lines = [
-        f"Anrufe: {total} an {len(days)} Tagen "
-        f"({days[0]:%d.%m.%Y} bis {days[-1]:%d.%m.%Y})",
-        "Anliegen: " + _share(Counter(e.intent for e in entries), total),
-        "Ergebnis: " + _share(Counter(e.outcome for e in entries), total),
+        f"Calls: {total} on {len(days)} days "
+        f"({days[0]:%d.%m.%Y} to {days[-1]:%d.%m.%Y})",
+        "Intent: " + _share(Counter(e.intent for e in entries), total),
+        "Outcome: " + _share(Counter(e.outcome for e in entries), total),
     ]
     durations = [e.duration_min for e in entries if e.duration_min is not None]
     if durations:
         mean = sum(durations) / len(durations)
         lines.append(
-            f"Dauer: Mittel {mean:.1f} min, max {max(durations):g} min "
-            f"(n={len(durations)})".replace(".", ",")
+            f"Duration: mean {mean:.1f} min, max {max(durations):g} min "
+            f"(n={len(durations)})"
         )
     hours = Counter(e.hour for e in entries)
-    lines.append(
-        "Je Stunde: " + " · ".join(f"{h} Uhr {hours[h]}" for h in sorted(hours))
-    )
-    # Mittel je Tag, nicht Summe: in 15 Tagen kommt ein Wochentag dreimal vor,
-    # die anderen zweimal, und die Summe zeigte eine Stosszeit, die keine ist.
+    lines.append("Per hour: " + " · ".join(f"{h}h {hours[h]}" for h in sorted(hours)))
+    # Mean per day, not the sum: in 15 days one weekday comes three times, the
+    # others twice, and the sum would show a peak that is none.
     weekdays = Counter(e.day.weekday() for e in entries)
     span = (days[-1] - days[0]).days + 1
     occurs = Counter((days[0] + timedelta(n)).weekday() for n in range(span))
     lines.append(
-        "Je Wochentag, Mittel je Tag: "
+        "Per weekday, mean per day: "
         + " · ".join(
-            f"{WEEKDAYS[d]} "
-            + (f"{weekdays[d] / occurs[d]:.1f}".replace(".", ",") if occurs[d] else "-")
+            f"{WEEKDAYS[d]} " + (f"{weekdays[d] / occurs[d]:.1f}" if occurs[d] else "-")
             for d in range(7)
         )
     )
     lines.extend(
-        "Gleiche Zeile in derselben Stunde, doppelt abgetippt? Dann eine loeschen: "
-        "Zeilen " + ", ".join(map(str, twin))
+        "Same row in the same hour, typed twice? Then delete one: "
+        "lines " + ", ".join(map(str, twin))
         for twin in _twins(entries)
     )
     noted = [e for e in entries if e.problems]
-    lines.append(f"Probleme notiert: {len(noted)}")
-    lines.extend(f"  Zeile {e.line}: {e.problems}" for e in noted)
+    lines.append(f"Problems noted: {len(noted)}")
+    lines.extend(f"  Line {e.line}: {e.problems}" for e in noted)
     return "\n".join(lines)
 
 
@@ -533,7 +532,7 @@ def _remap(entries: list[Entry], salt: str, known: dict[str, dict[str, str]]) ->
     ID ("was"), with the fingerprint it had; write_cases looks the case up
     through it. Without that the case loses its row and its draft comes back.
     True when the directory changed."""
-    done = {p.name.split("_")[1] for p in EVAL_CASES.glob("protokoll_*.json")}
+    done = _reviewed_cases()
     changed = False
     mapped: set[str] = set()
     for e in entries:
@@ -561,11 +560,12 @@ def _remap(entries: list[Entry], salt: str, known: dict[str, dict[str, str]]) ->
 
 
 def to_case(entry: Entry, salt: str = "") -> dict[str, Any] | None:
-    """Entwurf eines Eval-Falls (docs/08 §1) oder None, wenn nichts pruefbar ist.
+    """Draft of an eval case (docs/08 section 1), or None when nothing can be
+    checked.
 
-    Erwartet wird nur, was das Protokoll sicher hergibt: Anliegen, bestaetigt
-    oder nicht, eskaliert oder nicht. Positionen mit Kartennummer traegt der
-    Mensch bei der Durchsicht nach, `review` sagt was.
+    Expected is only what the log surely gives: the intent, confirmed or not,
+    escalated or not. A person adds the items with card numbers on review;
+    `review` says what.
     """
     if not entry.phrases:
         return None
@@ -579,21 +579,21 @@ def to_case(entry: Entry, salt: str = "") -> dict[str, Any] | None:
     if not escalated:
         expected["confirmed"] = entry.outcome == "erledigt"
     expected["escalated"] = escalated
-    # DSFA M15 und CLAUDE.md §8: echte Kundensaetze kommen nie ins Git. Der
-    # Entwurf traegt nur den Aufbau des Falls; die Saetze stellt das Team mit
-    # eigenen Worten nach (source handcrafted). Der Wortlaut bleibt in der CSV.
+    # DPIA M15 and CLAUDE.md section 8: real caller sentences never go into git.
+    # The draft carries only the shape of the case; the team restates the
+    # sentences in its own words (source handcrafted). The wording stays in the CSV.
     review = [
-        f"transcript nachstellen: {len(entry.phrases)} Kundensaetze mit eigenen "
-        "Worten, gleiches Anliegen, nie den Wortlaut aus dem Protokoll",
-        "Feld review entfernen, dann nach evals/cases/ verschieben",
+        f"restate transcript: {len(entry.phrases)} caller sentences in your own "
+        "words, same intent, never the wording of the log",
+        "remove the field review, then move the case to evals/cases/",
     ]
     if entry.problems:
-        review.insert(1, f"Problem laut Protokoll nachstellen: {entry.problems}")
+        review.insert(1, f"restate the problem the log notes: {entry.problems}")
     if entry.items:
-        review.insert(0, f"expected.items aus '{entry.items}' mit Kartennummern")
+        review.insert(0, f"expected.items from '{entry.items}' with card numbers")
     case: dict[str, object] = {
         "id": case_id(entry, salt),
-        "name": f"Anrufprotokoll Zeile {entry.line}",
+        "name": f"Call log line {entry.line}",
         "tags": [entry.intent, "protokoll"],
         "source": "handcrafted",
     }
@@ -602,18 +602,18 @@ def to_case(entry: Entry, salt: str = "") -> dict[str, Any] | None:
         case["caller_id"] = SYNTHETIC_CALLER_ID
         turns = [SYNTHETIC_NAME_TURN, SYNTHETIC_YES_TURN]
         if entry.intent == "lieferung":
-            # Adressen stehen nie im Protokoll, confirm braucht aber eine.
+            # Addresses are never in the log, but confirm needs one.
             turns.insert(0, SYNTHETIC_ADDRESS_TURN)
             review.insert(
                 0,
-                "Adresse erfunden: muss in einer Lieferzone der Testdaten liegen "
-                "(scripts/seed_zones.py), sonst PLZ anpassen",
+                "address made up: it must lie in a delivery zone of the test data "
+                "(scripts/seed_zones.py), else change the postal code",
             )
         transcript = [{"role": "customer", "text": t} for t in turns]
         review.insert(
             0,
-            "Name, Ja und caller_id sind erfunden: die nachgestellten Kundensaetze "
-            f"vor diese {len(turns)} Zeilen setzen",
+            "name, yes and caller_id are made up: put the restated caller "
+            f"sentences before these {len(turns)} lines",
         )
     case["transcript"] = transcript
     case["expected"] = expected
@@ -627,25 +627,25 @@ def write_cases(
     salt: str = "",
     known: dict[str, dict[str, str]] | None = None,
 ) -> int:
-    """Schreibt die Entwuerfe neu. Gleiche Datei, gleiches Ergebnis: alte
-    Entwuerfe dieses Scripts fliegen vorher raus, sonst bliebe nach einer
-    korrigierten Zeile der ueberholte Fall neben dem neuen liegen.
+    """Writes the drafts anew. Same file, same result: this script's old
+    drafts go first, or after a corrected row the outdated case would lie next
+    to the new one.
 
-    Geloescht wird nur, was noch ein Feld `review` traegt, also ein
-    unbearbeiteter Entwurf; ein durchgesehener Fall und fremde Dateien bleiben.
-    Ein Fall, dessen ID schon in evals/cases/ liegt, wird nicht neu entworfen:
-    sonst ueberschriebe das naechste Verschieben den durchgesehenen Fall."""
+    Only what still carries a field `review` is deleted, that is a draft no one
+    worked on; a reviewed case and other files stay. A case whose ID is in
+    evals/cases/ already is not drafted again: the next move would overwrite
+    the reviewed case."""
     folder.mkdir(parents=True, exist_ok=True)
     for stale in folder.glob("protokoll_*.json"):
         try:
             draft = json.loads(stale.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            # Liegen lassen, nicht still: vielleicht ist es ein halb bearbeiteter Fall.
-            print(f"Entwurf nicht lesbar, bitte pruefen: {stale.name}", file=sys.stderr)
+            # Left where it is, not silently: it may be a half-edited case.
+            print(f"Draft not readable, please check: {stale.name}", file=sys.stderr)
             continue
         if isinstance(draft, dict) and "review" in draft:
             stale.unlink()
-    done = {p.name.split("_")[1]: p for p in EVAL_CASES.glob("protokoll_*.json")}
+    done = _reviewed_cases()
     # A case reviewed under its minute ID, found through its new ID (_remap).
     for cid, record in (known or {}).items():
         was = record.get("was")
@@ -654,8 +654,8 @@ def write_cases(
     written: set[Path] = set()
     for entry in entries:
         case = to_case(entry, salt)
-        # Vor dem None-Zweig: eine Zeile, die nach einer Korrektur keinen Fall
-        # mehr ergibt (zum Beispiel jetzt "frage"), muss ihren Fall melden.
+        # Before the None branch: a row that makes no case any more after a
+        # correction (now "frage", for example) must report its case.
         cid = case_id(entry, salt).removeprefix("protokoll_")
         reviewed = done.get(cid)
         if known is not None:
@@ -663,17 +663,17 @@ def write_cases(
             before = known.get(cid, {}).get("fp")
             if reviewed is not None and before is not None and before != fp:
                 print(
-                    f"Zeile zu {reviewed} hat sich seit dem letzten Lauf geaendert: "
-                    "korrigiert, oder ein Anruf derselben Stunde wurde eingefuegt "
-                    "oder umsortiert. Zuordnung und Fall pruefen",
+                    f"The row of {reviewed} changed since the last run: corrected, "
+                    "or a call of the same hour was added or moved. Check the "
+                    "mapping and the case",
                     file=sys.stderr,
                 )
             known[cid] = {**known.get(cid, {}), "day": entry.day.isoformat(), "fp": fp}
         if reviewed is not None:
             if case is None:
                 print(
-                    f"Protokoll ergibt keinen Fall mehr fuer {reviewed}: "
-                    "Fall von Hand pruefen oder entfernen",
+                    f"The log makes no case any more for {reviewed}: "
+                    "check or remove the case by hand",
                     file=sys.stderr,
                 )
             else:
@@ -689,10 +689,29 @@ def write_cases(
             json.dumps(case, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
         )
         written.add(path)
-    _report_orphans(entries, salt, done)
+    reported = _report_orphans(entries, salt, done)
     if known is not None:
-        _reconcile(entries, salt, done, known)
+        _reconcile(entries, salt, done, known, reported)
     return len(written)
+
+
+def _reviewed_cases() -> dict[str, Path]:
+    """Reviewed cases in evals/cases/ by the ID they carry, without the prefix:
+    the field `id` counts, so a renamed case or one in a subfolder is still
+    found; a file without one counts by its name, as before."""
+    cases: dict[str, Path] = {}
+    for path in sorted(EVAL_CASES.rglob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            data = None
+        cid = data.get("id") if isinstance(data, dict) else None
+        if not (isinstance(cid, str) and cid.startswith("protokoll_")):
+            if not path.name.startswith("protokoll_"):
+                continue
+            cid = path.name
+        cases[cid.removeprefix("protokoll_").split("_")[0]] = path
+    return cases
 
 
 def _fingerprint(entry: Entry, salt: str) -> str:
@@ -708,63 +727,68 @@ def _reconcile(
     salt: str,
     done: dict[str, Path],
     known: dict[str, dict[str, str]],
+    reported: set[str],
 ) -> None:
-    """Jeder durchgesehene Fall, dessen ID im lokalen Verzeichnis steht, braucht
-    eine Zeile in der CSV. Keine Datumsgrenze: faellt der einzige Anruf am Rand
-    des Zeitraums weg, laege sein Datum sonst ausserhalb. Abgelaufene IDs hat
-    --loeschen schon aus dem Verzeichnis entfernt (_forget_before), sie sind
-    kein Alarm."""
+    """Every reviewed case whose ID is in the local directory needs a row in
+    the CSV. No date bound: when the only call at the edge of the period drops
+    out, its date would lie outside. --delete has removed expired IDs from the
+    directory already (_forget_before), they are no alarm. A case
+    _report_orphans named (`reported`) is not named twice."""
     current = {case_id(e, salt).removeprefix("protokoll_") for e in entries}
     for cid, path in sorted(done.items()):
-        if cid in known and cid not in current:
+        if cid in known and cid not in current and cid not in reported:
             print(
-                f"Durchgesehener Fall hat keine Protokollzeile mehr: {path}. "
-                "Fall anpassen oder entfernen",
+                f"Reviewed case has no log row any more: {path}. "
+                "Adjust or remove the case",
                 file=sys.stderr,
             )
 
 
-def _report_orphans(entries: list[Entry], salt: str, done: dict[str, Path]) -> None:
+def _report_orphans(entries: list[Entry], salt: str, done: dict[str, Path]) -> set[str]:
     """The ID hangs on the order within the hour. When a call of an hour
     drops out, the next one moves up, and the reviewed case of the last place
     has no row any more: check and report the places behind the last one taken
-    for every hour in the log."""
+    for every hour in the log. Returns the IDs reported."""
     last: dict[tuple[date, int], Entry] = {}
     for e in entries:
         key = (e.day, e.hour)
         if key not in last or e.ordinal > last[key].ordinal:
             last[key] = e
+    reported = set()
     for e in last.values():
         for ordinal in range(e.ordinal + 1, e.ordinal + 4):
             gone = case_id(dataclasses.replace(e, ordinal=ordinal), salt)
-            orphan = done.get(gone.removeprefix("protokoll_"))
+            cid = gone.removeprefix("protokoll_")
+            orphan = done.get(cid)
             if orphan is not None:
+                reported.add(cid)
                 print(
-                    f"Durchgesehener Fall hat keine Protokollzeile mehr: {orphan}. "
-                    "Anrufe derselben Stunde pruefen, Fall anpassen oder entfernen",
+                    f"Reviewed case has no log row any more: {orphan}. Check "
+                    "the calls of the same hour, adjust or remove the case",
                     file=sys.stderr,
                 )
+    return reported
 
 
 def _report_correction(case: dict[str, Any], reviewed: Path) -> None:
-    """Ein durchgesehener Fall wird nie ueberschrieben, eine spaetere Korrektur
-    der Zeile darf aber nicht still bleiben: Abweichungen im Ergebnis melden.
-    items fehlen im Entwurf und traegt der Mensch nach, sie zaehlen nicht."""
+    """A reviewed case is never overwritten, but a later correction of its row
+    must not stay silent: report a difference in the outcome. items are missing
+    in the draft and added by a person, they do not count."""
     try:
         existing = json.loads(reviewed.read_text(encoding="utf-8")).get("expected", {})
     except (OSError, ValueError, AttributeError):
         existing = None
     if not isinstance(existing, dict):
-        print(f"Fall nicht lesbar, bitte pruefen: {reviewed}", file=sys.stderr)
+        print(f"Case not readable, please check: {reviewed}", file=sys.stderr)
         return
-    # Beide Seiten: auch ein Feld, das die Korrektur entfernt (intent bei einer
-    # Beschwerde), zaehlt. Nur die Kernfelder; items traegt der Mensch nach.
+    # Both sides: a field the correction removes (intent on a complaint) counts
+    # too. Only the core fields; a person adds the items.
     core = ("intent", "confirmed", "escalated")
     changed = [k for k in core if existing.get(k) != case["expected"].get(k)]
     if changed:
         print(
-            f"Protokoll weicht von {reviewed} ab ({', '.join(changed)}): "
-            "Fall von Hand anpassen",
+            f"The log differs from {reviewed} ({', '.join(changed)}): "
+            "adjust the case by hand",
             file=sys.stderr,
         )
 
@@ -773,10 +797,10 @@ _SALT = re.compile(r"[0-9a-f]{32}")
 
 
 def _salt(csv_file: Path) -> str:
-    """Lokales Salz fuer die Fall-IDs, neben der CSV (imports/, im .gitignore).
-    Einmal angelegt, danach wiederverwendet, damit IDs stabil bleiben. Ein
-    leeres oder kaputtes Salz bricht ab (ValueError): leer waeren die IDs
-    wieder berechenbar, ein neues aenderte alle IDs."""
+    """The local salt of the case IDs, next to the CSV (imports/, in
+    .gitignore). Made once and reused after, so IDs stay stable. An empty or
+    broken salt stops the run (ValueError): empty, the IDs could be worked out
+    again; a new one would change every ID."""
     path = csv_file.with_name(".call_log_salt")
     try:
         if not path.exists():
@@ -785,15 +809,15 @@ def _salt(csv_file: Path) -> str:
     except (OSError, UnicodeDecodeError) as exc:
         raise ValueError(getattr(exc, "strerror", None) or str(exc)) from exc
     if not _SALT.fullmatch(salt):
-        raise ValueError("keine 32 Hex-Zeichen")
+        raise ValueError("not 32 hex characters")
     return salt
 
 
 def _load_known(path: Path) -> dict[str, dict[str, str]]:
-    """Lokales Verzeichnis ID -> Anrufdatum und Fingerabdruck der Zeile, neben
-    der CSV (imports/, ignoriert). Fehlt es, ist es leer. Ist es unlesbar, bricht
-    der Lauf ab (ValueError): ein leeres Verzeichnis an seiner Stelle wuerde die
-    IDs geloeschter Anrufe fuer immer vergessen."""
+    """The local directory ID -> call date and fingerprint of the row, next to
+    the CSV (imports/, ignored). Missing, it is empty. Unreadable, it stops the
+    run (ValueError): an empty directory in its place would forget the IDs of
+    deleted calls for good."""
     if not path.exists():
         return {}
     try:
@@ -801,31 +825,31 @@ def _load_known(path: Path) -> dict[str, dict[str, str]]:
     except (OSError, ValueError) as exc:
         raise ValueError(str(exc)) from exc
     if not isinstance(data, dict):
-        raise ValueError("kein JSON-Objekt")
+        raise ValueError("not a JSON object")
     known: dict[str, dict[str, str]] = {}
     for cid, value in data.items():
-        # Aeltere Form: nur das Datum.
+        # The older form: the date only.
         entry = {"day": value} if isinstance(value, str) else value
         if not isinstance(entry, dict) or not isinstance(entry.get("day"), str):
-            raise ValueError(f"Eintrag {cid} ohne Datum")
-        # _forget_before vergleicht Texte: nur ein echtes Datum in einer Form.
+            raise ValueError(f"entry {cid} without a date")
+        # _forget_before compares text: only a real date, in one form.
         try:
             entry["day"] = date.fromisoformat(entry["day"]).isoformat()
         except ValueError:
-            raise ValueError(f"Eintrag {cid} mit ungueltigem Datum") from None
+            raise ValueError(f"entry {cid} with an invalid date") from None
         if not isinstance(entry.get("was", ""), str):
-            raise ValueError(f"Eintrag {cid} mit ungueltiger alter ID")
+            raise ValueError(f"entry {cid} with an invalid old ID")
         known[cid] = entry
     return known
 
 
 def _replace(path: Path, text: str, encoding: str = "utf-8") -> None:
-    """Erst eine Kopie daneben schreiben, dann tauschen: ein abgebrochener Lauf
-    (Platte voll, Strom weg) hinterlaesst keine leere oder halbe Datei."""
+    """Write a copy next to it first, then swap: a run that breaks off (disk
+    full, power gone) leaves no empty or half file behind."""
     tmp = path.with_name(path.name + ".tmp")
-    # Rechte der alten Datei behalten (eine CSV mit 0600 bliebe sonst nicht
-    # privat); neue Dateien (Salz, Verzeichnis) nur fuer den Eigentuemer. Die
-    # Kopie ist ab dem Anlegen privat, erst dann kommt der Inhalt hinein.
+    # Keep the old file's mode (a CSV with 0600 would not stay private
+    # otherwise); new files (salt, directory) for the owner only. The copy is
+    # private from its creation, the content goes in after.
     mode = path.stat().st_mode & 0o777 if path.exists() else 0o600
     try:
         tmp.unlink(missing_ok=True)
@@ -845,13 +869,13 @@ def _save_known(path: Path, known: dict[str, dict[str, str]]) -> None:
 def _forget_before(
     known: dict[str, dict[str, str]], cutoff: date
 ) -> dict[str, dict[str, str]]:
-    """Mit der Loeschfrist fallen auch die IDs geloeschter Anrufe aus dem
-    Verzeichnis."""
+    """With the retention period the IDs of deleted calls leave the directory
+    too."""
     return {k: v for k, v in known.items() if v["day"] >= cutoff.isoformat()}
 
 
 def _today() -> date:
-    """Heute in Ortszeit; die Tests setzen das Datum fest."""
+    """Today in local time; the tests fix the date."""
     return datetime.now(ZoneInfo("Europe/Berlin")).date()
 
 
@@ -869,13 +893,13 @@ def _csv(header: list[str], body: list[list[str]]) -> str:
 
 
 def purge(text: str, cutoff: date) -> str:
-    """Das Protokoll ohne Eintraege vor `cutoff` (Loeschfrist, DSFA D12).
+    """The log without the entries before `cutoff` (retention period, DPIA D12).
 
-    Arbeitet auf den Zeilen der CSV, damit alles andere unveraendert bleibt.
-    Nur fuer eine Datei, die `parse` ohne Fehler gelesen hat."""
+    Works on the rows of the CSV, so everything else stays as it is. Only for
+    a file that `parse` read without errors."""
     header, body = _rows(text)
     at = [_norm(h) for h in header].index("date")
-    # Leerzeilen, auch nur aus Leerzeichen, ueberspringt parse; hier ebenso.
+    # parse skips blank rows, also ones of blanks only; so does this.
     keep = [
         r for r in body if any(c.strip() for c in r) and _parse_date(r[at]) >= cutoff
     ]
@@ -895,17 +919,18 @@ def coarsen(text: str) -> str:
 
 
 def _retention_days(value: int | None) -> int | None:
-    """Frist aus --frist-tage, sonst CALL_LOG_RETENTION_DAYS aus Umgebung oder
-    .env (ueber die Settings der API, wie jede andere Einstellung), sonst keine.
-    Settings frisch bauen: die Umgebung kann sich seit dem Import geaendert haben."""
+    """The period from --retention-days, else CALL_LOG_RETENTION_DAYS from the
+    environment or .env (through the API's settings, like any other setting),
+    else none. Settings are built fresh: the environment may have changed since
+    the import."""
     if value is not None:
         return value
     return Settings().call_log_retention_days
 
 
 def _inside_eval_cases(folder: Path) -> bool:
-    """evals/cases/ selbst oder ein Ordner darin, ohne Ruecksicht auf Gross- und
-    Kleinschreibung: auf macOS ist evals/Cases derselbe Ordner."""
+    """evals/cases/ itself or a folder inside it, whatever the case of the
+    letters: on macOS evals/Cases is the same folder."""
     target = [part.casefold() for part in folder.resolve().parts]
     suite = [part.casefold() for part in EVAL_CASES.resolve().parts]
     return target[: len(suite)] == suite
@@ -913,74 +938,78 @@ def _inside_eval_cases(folder: Path) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("file", type=Path, help="Protokoll als CSV (docs/17)")
+    parser.add_argument("file", type=Path, help="the log as a CSV (docs/17)")
     parser.add_argument(
         "--cases",
         type=Path,
-        help="Ordner fuer Eval-Entwuerfe, z. B. imports/eval_entwuerfe/",
+        help="folder for eval drafts, for example imports/eval_entwuerfe/",
     )
+    # The German names stay as aliases: the team's notes and older docs use them.
     parser.add_argument(
+        "--retention-days",
         "--frist-tage",
         type=int,
-        help="Loeschfrist in Tagen; Standard aus CALL_LOG_RETENTION_DAYS",
+        help="retention period in days; default CALL_LOG_RETENTION_DAYS",
     )
     parser.add_argument(
+        "--delete",
         "--loeschen",
         action="store_true",
-        help="Eintraege ausserhalb der Frist wirklich aus der CSV entfernen",
+        help="really remove the entries outside the period from the CSV",
     )
     args = parser.parse_args(argv)
     try:
-        days = _retention_days(args.frist_tage)
+        days = _retention_days(args.retention_days)
     except ValueError:
-        print("CALL_LOG_RETENTION_DAYS ist keine ganze Zahl.", file=sys.stderr)
+        print("CALL_LOG_RETENTION_DAYS is not a whole number.", file=sys.stderr)
         return 2
     if days is not None and days < 1:
-        print("Die Frist muss mindestens 1 Tag sein.", file=sys.stderr)
+        print("The period must be at least 1 day.", file=sys.stderr)
         return 2
-    if args.loeschen and days is None:
+    if args.delete and days is None:
         print(
-            "--loeschen braucht eine Frist: --frist-tage N oder CALL_LOG_RETENTION_DAYS.",
+            "--delete needs a period: --retention-days N or CALL_LOG_RETENTION_DAYS.",
             file=sys.stderr,
         )
         return 2
 
     if not args.file.is_file():
-        print(f"Datei nicht gefunden: {args.file}", file=sys.stderr)
+        print(f"File not found: {args.file}", file=sys.stderr)
         return 2
     try:
         text = args.file.read_text(encoding="utf-8-sig")
     except UnicodeDecodeError:
         print(
-            f"{args.file} ist nicht UTF-8. In Excel als 'CSV UTF-8 (durch "
-            "Trennzeichen getrennt)' speichern.",
+            f"{args.file} is not UTF-8. Save it in Excel as 'CSV UTF-8 (durch "
+            "Trennzeichen getrennt)'.",
             file=sys.stderr,
         )
         return 1
     except OSError as exc:
-        print(f"Datei nicht lesbar: {args.file} ({exc.strerror})", file=sys.stderr)
+        print(f"File not readable: {args.file} ({exc.strerror})", file=sys.stderr)
         return 2
     entries, errors = parse(text)
     for error in errors:
         print(error, file=sys.stderr)
     if errors:
-        print(f"{len(errors)} Fehler, nichts ausgewertet.", file=sys.stderr)
+        print(f"{len(errors)} errors, nothing evaluated.", file=sys.stderr)
         return 1
     if args.cases and _inside_eval_cases(args.cases):
         print(
-            "Entwuerfe nie direkt nach evals/cases: der Lauf loescht dort "
-            "protokoll_*.json. Anderen Ordner nehmen, z. B. imports/eval_entwuerfe/",
+            "Drafts never go straight to evals/cases: the run deletes "
+            "protokoll_*.json there. Take another folder, for example "
+            "imports/eval_entwuerfe/",
             file=sys.stderr,
         )
         return 2
-    # Vor jedem Schreiben: ein unlesbares Verzeichnis bleibt, wie es ist.
+    # Before any write: an unreadable directory stays as it is.
     known_path = args.file.with_name(".call_log_ids.json")
     try:
         known = _load_known(known_path)
     except ValueError as exc:
         print(
-            f"ID-Verzeichnis nicht lesbar: {known_path} ({exc}). Nichts geaendert; "
-            "Datei reparieren oder aus der Sicherung holen",
+            f"ID directory not readable: {known_path} ({exc}). Nothing changed; "
+            "repair the file or restore it from the backup",
             file=sys.stderr,
         )
         return 2
@@ -994,9 +1023,9 @@ def main(argv: list[str] | None = None) -> int:
             salt = _salt(args.file)
         except ValueError as exc:
             print(
-                f"Salz nicht lesbar: {args.file.with_name('.call_log_salt')} "
-                f"({exc}). Nichts geaendert; aus der Sicherung holen, ein neues "
-                "Salz aendert alle Fall-IDs",
+                f"Salt not readable: {args.file.with_name('.call_log_salt')} "
+                f"({exc}). Nothing changed; restore it from the backup, a new "
+                "salt changes every case ID",
                 file=sys.stderr,
             )
             return 2
@@ -1007,21 +1036,21 @@ def main(argv: list[str] | None = None) -> int:
             _save_known(known_path, known)
         text = coarsen(text)
         _replace(args.file, text, encoding="utf-8-sig")
-        print(f"Uhrzeit auf die Stunde gekuerzt: {len(legacy)} Zeilen in {args.file}")
+        print(f"Time cut to the hour: {len(legacy)} rows in {args.file}")
     if days is not None:
         cutoff = _today() - timedelta(days=days)
         old = [e for e in entries if e.day < cutoff]
         print(
-            f"Loeschfrist: {len(old)} Eintraege aelter als {days} Tage "
-            f"(vor {cutoff:%d.%m.%Y})"
+            f"Retention: {len(old)} entries older than {days} days "
+            f"(before {cutoff:%d.%m.%Y})"
         )
-        if args.loeschen:
+        if args.delete:
             if old:
                 _replace(args.file, purge(text, cutoff), encoding="utf-8-sig")
                 entries = [e for e in entries if e.day >= cutoff]
-                print(f"Geloescht: {len(old)} Eintraege aus {args.file}")
-            # Auch ohne alte Zeilen: eine von Hand entfernte Zeile laeuft im
-            # Verzeichnis sonst nie ab.
+                print(f"Deleted: {len(old)} entries from {args.file}")
+            # Without old rows too: a row removed by hand would otherwise never
+            # expire in the directory.
             kept = _forget_before(known, cutoff)
             if kept != known:
                 known = kept
@@ -1030,7 +1059,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.cases:
         written = write_cases(entries, args.cases, salt, known)
         _save_known(known_path, known)
-        print(f"Eval-Entwuerfe: {written} nach {args.cases}")
+        print(f"Eval drafts: {written} to {args.cases}")
     return 0
 
 

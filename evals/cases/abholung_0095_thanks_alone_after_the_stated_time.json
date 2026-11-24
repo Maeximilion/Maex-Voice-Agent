@@ -1,0 +1,39 @@
+{
+  "id": "abholung_0095",
+  "name": "A thanks alone after the stated time is no yes; the call ends and the team gets a card, nothing booked (#953)",
+  "tags": [
+    "abholung",
+    "readback",
+    "level-1"
+  ],
+  "source": "handcrafted",
+  "caller_id": "+497215551234",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Hallo, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Zweimal die 23."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Schmidt."
+    },
+    {
+      "role": "customer",
+      "text": "Danke."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": false,
+    "escalated": true,
+    "readback": "Es dauert so ungefähr"
+  }
+}

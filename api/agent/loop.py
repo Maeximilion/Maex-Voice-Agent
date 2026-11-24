@@ -22,6 +22,7 @@ from typing import Any, get_args
 
 from pydantic import ValidationError
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from api.agent import escalation, guards, recording
@@ -61,8 +62,16 @@ from api.core.errors import SAY_TO_THE_TEAM, Conflict
 from api.core.logging import get_logger, log
 from api.core.time import to_local, utcnow
 from api.domain.callbacks import matching_rule, note_remedy
+
+# Re-exported: the agent's tests name it from here (#998 moved it).
+from api.domain.callbacks.create import SUMMARY_OPEN_ORDER as SUMMARY_OPEN_ORDER
 from api.domain.callbacks.create import booked
 from api.domain.callbacks.transfer import SUMMARY_MISSED
+
+# Re-exported: the agent's tests and cards name it from here (#956 moved it).
+from api.domain.callbacks.transfer import (
+    SUMMARY_NOTE_TO_CLEAR as SUMMARY_NOTE_TO_CLEAR,
+)
 from api.domain.menu.details import SAY_ALLERGENS_LEAD, SAY_ALLERGENS_UNKNOWN
 from api.domain.menu.pos_convert import allergens_named, names_an_allergen
 from api.domain.menu.wishes import (
@@ -158,6 +167,19 @@ _TRANSFER_REASONS = frozenset(get_args(TransferReason)) - {"outage"}
 _CALLBACK_REASON_FALLBACK: CallbackReason = "human_requested"
 # An outage's card keeps the reason it had before #769; its text names the fault.
 _CALLBACK_REASON_FOR: dict[str, CallbackReason] = {"outage": "not_understood"}
+# The card of an order read back and never answered (#977): the core's own
+# reason, as an outage is for a transfer.
+ORDER_OPEN: CallbackReason = "order_open"
+# What a model may write a card with (prompts/tools_v3.md). Any other reason is
+# refused with these named: pydantic's own hint would offer `order_open` too.
+_MODEL_CALLBACK_REASONS = tuple(r for r in get_args(CallbackReason) if r != ORDER_OPEN)
+_CALLBACK_REASON_REFUSED = ToolResult(
+    ok=False,
+    error_code="invalid_input",
+    hint="Abgelehnt: `reason` ist einer von "
+    + ", ".join(f"`{reason}`" for reason in _MODEL_CALLBACK_REASONS)
+    + ".",
+)
 
 _HANDOFF_SUMMARIES = {
     "complaint": "Kunde hat sich beschwert.",
@@ -171,10 +193,6 @@ _DEFAULT_HANDOFF_SUMMARY = "Anruf konnte nicht automatisch abgeschlossen werden.
 SUMMARY_OUTAGE = "Technische Störung, Anruf nicht automatisch abgeschlossen."
 # How the card of a table the team decides on begins (`team_callback`, #252).
 SUMMARY_TEAM_TABLE = "Reservierungswunsch, vom Team zu bestätigen:"
-# A table for the team ends the call while an order is still open: the order
-# is not booked, and both the card and the guest say so (#207). Draft wording,
-# checked with the announcement texts (docs/05 §6).
-SUMMARY_OPEN_ORDER = "Offene Bestellung, nicht aufgegeben:"
 # The card when the guest asked about allergens beyond the maintained values
 # (L17). It names the question, never the guest's allergy (L13). Draft wording.
 SUMMARY_ALLERGENS = (
@@ -184,16 +202,18 @@ SUMMARY_ALLERGENS = (
 # The card when the guest asked about an additive, which no table holds
 # (#638). Draft wording.
 SUMMARY_ADDITIVES = "Frage zu Zusatzstoffen, vor einer Bestellung zu klären."
-# A line's note on a card when it names the guest's health: the card is kept
-# for the period of a callback, the allergy only until the night after its
-# order (L13). Draft wording.
-SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
+# A line's note on a card when it names the guest's health
+# (`SUMMARY_NOTE_TO_CLEAR`): the card is kept for the period of a callback, the
+# allergy only until the night after its order (L13).
 # The same as a card's first sentence (`_marked`).
 _MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
 # The cards of a rule of the catalogue (D19): name and amount from its row, the
 # guest's sentence behind them. Draft wording.
 SUMMARY_REMEDY_BOOKED = "Beschwerde, Gast hat zugestimmt, bitte ausführen: {remedy}."
 SUMMARY_REMEDY_OPEN = "Kunde hat sich beschwert, Angebot nicht angenommen: {remedy}."
+# The call ended after an order's read-back and before its yes (#953). Draft
+# wording.
+SUMMARY_READBACK_UNANSWERED = "Anruf endete vor dem Ja zur vorgelesenen Bestellung."
 SAY_ORDER_NOT_PLACED = "Ihre Bestellung ist damit noch nicht aufgegeben."
 # A cancel of the order read back, before its yes (#678): nothing to undo.
 SAY_ORDER_DROPPED = (
@@ -408,15 +428,25 @@ class ConversationLoop:
         if reason == "complaint" and wish is None:
             escalated = self._offer_remedy(state, user_text)
         if (
-            reason == "cancellation"
-            and state.stage == "readback_pending"
+            state.stage == "readback_pending"
             and state.order_id is not None
-            # Only a plain cancel: anything more may be another booking, one
-            # line or a question, and goes to the team as before.
-            and escalation.only_cancels(user_text)
+            and (
+                # Only a plain cancel: anything more may be another booking,
+                # one line or a question, and goes to the team as before.
+                (reason == "cancellation" and escalation.only_cancels(user_text))
+                # A plain decline without a cancel word (Maxi, #977), only to
+                # the read-back the guest heard last: to "Noch etwas?" or an
+                # allergy question "Nein danke, dann lasse ich es" answers that.
+                or (
+                    reason is None
+                    and state.readback_heard
+                    and escalation.only_declines(user_text)
+                )
+            )
         ):
             # "So lange? Dann stornieren Sie das." Nothing is booked before
-            # the yes, so the team has nothing to undo (Maxi, #678).
+            # the yes, so the team has nothing to undo (Maxi, #678), and the
+            # hang-up after it writes no card (`offer_unanswered`).
             if self._clock() - self._started > self._max_call_seconds:
                 # Its sentence asks for more: no call stays open past its
                 # limit on it, as on `only_asks`.
@@ -526,13 +556,19 @@ class ConversationLoop:
         # refused `cart` included.
         called: list[str] = []
         # The draft without the guest's allergy went back once in this turn
-        # (`guards.unnoted_allergy`): the next one goes through.
-        allergy_hint_given = False
+        # (`guards.unnoted_allergy`): the next one goes through. After the
+        # fixed question about the dish of a later allergy the hint was given
+        # the turn before: a draft without it gets the guest's words at once,
+        # never the question again each turn (#929).
+        allergy_hint_given = guards.SAY_ASK_ALLERGY_DISH in (state.last_say or "")
         # The core's allergen sentences of this turn, one per dish looked up:
         # the only allergen words the guest hears (#669, #717, rule 1).
         allergen_says: list[str] = []
         # The model's sentence went back once for its allergen words.
         allergen_back = False
+        # ... for a sentence about a dish of the call (#928), and with no
+        # allergen word in it.
+        dish_back = dish_only = False
         zone = self._local_now(state).tzinfo
         assert zone is not None  # `to_local` gives an aware time
         for _ in range(MAX_TOOL_HOPS):
@@ -678,7 +714,34 @@ class ConversationLoop:
                 # Sie kein Problem" is the same claim without its noun (deep
                 # review of #860, P1).
                 in_allergy_call = guards.sticky(state)
-                strict = open_turn or (allergen_back and in_allergy_call)
+                # Where the guest named an allergy, a sentence about a dish of
+                # the call is held to core sentences too (`about_a_dish`):
+                # "Bei Ihrer Allergie ist die 13 kein Problem" names no
+                # allergen (#928, Maxi: option B). Not after a table sentence
+                # alone, where the hint and its noted sentence would claim an
+                # allergy (sweep of the deep review of #928). An open turn is
+                # strict already and keeps its own ending: a price is no
+                # answer to an allergen question.
+                about_a_dish = (
+                    guards.allergy_named(state)
+                    and not open_turn
+                    and guards.about_a_dish(aturn, state, say, changed=changed)
+                )
+                # A retry after a refusal only for naming a dish is judged like
+                # a first answer: held again when it names a dish or speaks of
+                # the allergy, else `unlicensed` checks it (#928, Maxi: R1).
+                strict = (
+                    open_turn
+                    or about_a_dish
+                    or (
+                        allergen_back
+                        and in_allergy_call
+                        and (
+                            not dish_only
+                            or guards.speaks_of_the_allergy(aturn, state, say)
+                        )
+                    )
+                )
                 if (
                     not table
                     and not allergen_says
@@ -691,6 +754,8 @@ class ConversationLoop:
                     refused = (
                         guards.ALLERGY_TURN
                         if open_turn
+                        else guards.ALLERGY_DISH
+                        if about_a_dish
                         else guards.ALLERGY_CALL
                         if in_allergy_call
                         else guards.UNLICENSED_ALLERGEN
@@ -698,23 +763,48 @@ class ConversationLoop:
                     log_refused(
                         self._session, state.call_id, state.tenant_id, SAY, refused
                     )
-                    if not allergen_back:
+                    prices = (
+                        guards.price_says(aturn, state, say)
+                        if about_a_dish and guards.states_a_price(aturn, state, say)
+                        else []
+                    )
+                    if prices:
+                        # A price the model stated for a dish this turn's
+                        # search found: the core says it, from the database
+                        # (#928, Maxi: B2). A retry could say only a core
+                        # sentence, none better than this one.
+                        say = " ".join(prices)
+                    elif not allergen_back:
                         # Rows 3 and 6: back to the model once.
                         allergen_back = True
+                        dish_back = refused is guards.ALLERGY_DISH
+                        # Refused only for the dish it names, no allergen word.
+                        dish_only = dish_back and not guards.unlicensed(
+                            aturn, state, say
+                        )
                         called.append(SAY)
                         pending_input = _tool_result_as_input(SAY, refused, zone)
                         continue
                     # Rows 4 and 6, a second time: the table where a dish was
                     # looked up, the team for a question left open before
                     # (rule 5), else the offer.
-                    if aturn.looked_up and not changed:
+                    elif aturn.looked_up and not changed:
                         table = True
                     elif aturn.pending:
                         return self._allergens_to_team(
                             state, lead=SAY_ALLERGENS_BEYOND, table=open_table
                         )
+                    elif dish_back and aturn.answers:
+                        # After a sentence about a dish, the tools' own
+                        # sentences of this turn: a sold-out dish, the
+                        # candidates of an unclear search (deep review of #928).
+                        say = " ".join(dict.fromkeys(aturn.answers))
                     else:
                         say = guards.SAY_ALLERGENS_OFFER
+                        # The offer asks for a dish: the next one named is its
+                        # answer, as after an open turn (rule 5 counts it;
+                        # sweep of the deep review of #928).
+                        state.allergen_question_open = True
                 if table:
                     sentences = guards.table_says(aturn)
                     if sentences is None:
@@ -831,6 +921,8 @@ class ConversationLoop:
                 # A note read back must not promise a dish free of anything
                 # (L17).
                 refused = guards.claims_in_a_note(state, call)
+            if refused is None:
+                refused = _callback_reason_refused(call)
             if refused is None and (missing := guards.unnoted_allergy(state, call)):
                 if allergy_hint_given:
                     # Sent again without it: the core writes the guest's own
@@ -1076,14 +1168,61 @@ class ConversationLoop:
         )
         return result
 
-    def offer_unanswered(self, state: ConversationState) -> None:
+    def offer_unanswered(
+        self, state: ConversationState, *, with_the_team: bool = False
+    ) -> None:
         """The call ended while a rule waited for its answer: nothing is
         booked, and the complaint stays with the team on a card, or a guest
         who hangs up on the offer is lost (rule 5). Called by whoever closes
-        a call; a call without an open offer writes nothing."""
+        a call; a call without an open offer writes nothing.
+
+        The same for an order drafted and not answered with a yes (#953),
+        whatever the guest heard last: the time is a statement that invites a
+        goodbye, a "Danke" alone is no yes (Maxi, 23.11.2026), and the guest
+        may expect food nobody ordered. A table's read-back asks "Passt das so?", and a
+        guest who leaves it unanswered knows nothing is booked. The order
+        joins a card the call has open (#993, #998). Not when the
+        call goes `with_the_team` (an outage, a failed line): the team has it,
+        and its own card waits if nobody answers. A card the call has already
+        still gets the order then: the team leg's card names none, and joins
+        that card unchanged (#998 review)."""
         offer, state.remedy_offer = state.remedy_offer, None
         if offer is not None:
             self._complaint_card(state, offer, SUMMARY_REMEDY_OPEN)
+        elif (
+            # Also when a card ended the call on the read-back: one the model
+            # wrote names no order (#998). The yes moves the cart away and the
+            # read-back with it: a cart begun after a booking keeps the booked
+            # order's id but was never read back (#998 review). A card that
+            # names the order already gets it no second time.
+            (
+                (state.stage == "readback_pending" and not with_the_team)
+                or (
+                    state.stage == "callback"
+                    and state.cart
+                    and state.readback is not None
+                )
+            )
+            and state.order_id is not None
+            and (phone := state.slots.get("phone") or state.caller_phone)
+        ):
+            # Its own reason (#977): the tablet reads "Bestellung offen", not
+            # "Nicht verstanden".
+            card, _ = self._card(
+                state, ORDER_OPEN, None, summary=SUMMARY_READBACK_UNANSWERED
+            )
+            args = {"phone": phone, "reason": ORDER_OPEN, "summary": card}
+            try:
+                result = self._dispatch(state, "create_callback", args)
+            except IntegrityError:
+                # shortcut: code ahead of its database (a pull before
+                # `make migrate`) refuses the reason; the card goes out as
+                # before #977 rather than not at all (rule 5). Drop once every
+                # stack runs migration 045.
+                self._session.rollback()
+                args["reason"] = "not_understood"
+                result = self._dispatch(state, "create_callback", args)
+            apply_tool_result(state, "create_callback", result)
 
     def _complaint_card(
         self, state: ConversationState, offer: RemedyOffer, sentence: str
@@ -1264,7 +1403,14 @@ class ConversationLoop:
         self, state: ConversationState, name: str, args: dict[str, Any]
     ) -> ToolResult:
         return dispatch(
-            self._session, state.call_id, state.tenant_id, name, args, now=self._now
+            self._session,
+            state.call_id,
+            state.tenant_id,
+            name,
+            args,
+            now=self._now,
+            # A draft the guest dropped is never replayed (#952).
+            pending_order=state.order_id,
         )
 
     def _table_to_team(
@@ -1962,6 +2108,17 @@ def _marked_callback(state: ConversationState, call: ToolCall) -> ToolCall:
     if call.name != "create_callback" or not isinstance(summary, str):
         return call
     return ToolCall(call.name, {**call.args, "summary": _marked(state, summary)})
+
+
+def _callback_reason_refused(call: ToolCall) -> ToolResult | None:
+    """A model's card with a reason it may not name: `order_open` is the
+    core's (#977), and the tablet would read "Bestellung offen" where nothing
+    waits. A tuple, so a list or a dict as the reason compares instead of
+    raising (Codex PR #347)."""
+    if call.name != "create_callback":
+        return None
+    reason = call.args.get("reason")
+    return None if reason in _MODEL_CALLBACK_REASONS else _CALLBACK_REASON_REFUSED
 
 
 def _marked(state: ConversationState, card: str) -> str:

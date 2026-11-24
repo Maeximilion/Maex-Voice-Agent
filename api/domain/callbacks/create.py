@@ -46,6 +46,27 @@ _ORDER_STANDS = ("confirmed", "approved", "handed_over")
 # `CreateCallbackRequest.summary`: the card's own text gives way to the
 # bookings, which are never cut.
 SUMMARY_MAX = 1000
+# The card of an order read back and never answered, which only the core
+# writes (`ConversationLoop.offer_unanswered`). Where the call has an open
+# card already, the order joins it (#993, Maxi 24.11.2026, option A).
+ORDER_OPEN = "order_open"
+ACTION_ORDER_ADDED = "callback.order_added"
+# How the core's cards name an order that stands unplaced (`agent/loop.py`,
+# #207). A card of the core that names one joins the open card too: a
+# handoff's or a team leg's card would otherwise meet the older card and the
+# order stand on none (#998).
+SUMMARY_OPEN_ORDER = "Offene Bestellung, nicht aufgegeben:"
+# A card's note when the guest spoke of an allergy in the call: the team asks
+# about the kitchen note when it calls back, the card never names the allergy
+# (L13). Draft wording; the core's cards lead with it (`agent/loop.py`).
+SUMMARY_NOTE_TO_CLEAR = "Hinweis für die Küche mit dem Gast klären"
+_MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
+COMPLAINT = "complaint"
+# How each line `booked` writes begins: only a tail of such lines is the
+# database's own, read again when an order joins a card (#993 review).
+_BOOKED_LINES = tuple(
+    line.split("{")[0] for line in (_TABLE_BOOKED, *_ORDER_BOOKED.values())
+)
 
 
 def create_callback(
@@ -74,6 +95,10 @@ def create_callback(
     _lock_call(session, req.tenant_id, req.call_id)
     open_task = _open_for_call(session, req)
     if open_task is not None:
+        # Only a card that names an open order changes the open one; any
+        # other comes back as the card it was, a model's retry too (docs/04).
+        if req.reason == ORDER_OPEN or SUMMARY_OPEN_ORDER in summary:
+            _add_open_order(session, open_task, summary, actor, req.reason)
         session.commit()
         return _task(open_task)
     summary = _with_bookings(summary, booked(session, req.tenant_id, req.call_id))
@@ -180,6 +205,88 @@ def _with_bookings(summary: str, bookings: str | None) -> str:
     return f"{summary[:room].rstrip()} {bookings}".lstrip()
 
 
+def _add_open_order(
+    session: Session, card: Callback, order: str, actor: str, reason: str
+) -> None:
+    """The open order onto the open card of its call (#993): one card per
+    call, and the team reads the order where it looks already. The card keeps
+    its reason and number. Its own text gives way to the order, and the
+    bookings at its end are read again from the database: a table booked
+    since stands on it (CLAUDE.md §2 rule 1). The push names the order, the
+    push of the card named only its old reason (#993 review). Once: a second
+    hang-up of the call finds the order on it and changes nothing, and a
+    card that names an open order already gets none more, its lines fitted
+    to another room as they may be (#998). The kitchen marker stands once,
+    in front, where no cut reaches it (#998 review). A complaint that joins
+    makes the card a complaint: it goes to the top and alarms the tablet, and
+    the push says so (#998 review); `reason` is the joining card's."""
+    own = _own_text(card.summary)
+    if SUMMARY_OPEN_ORDER in own:
+        return
+    marked = _MARKER in own or _MARKER in order
+    own, order = _unmarked(own), _unmarked(order)
+    if order in own:
+        return
+    bookings = booked(session, card.tenant_id, card.call_id)
+    lead = len(_MARKER) + 1 if marked else 0
+    room = SUMMARY_MAX - lead - len(order) - 1 - (len(bookings) + 1 if bookings else 0)
+    # shortcut: a big order or the guest's words of a joining handoff leave
+    # little of the card's own text, which is cut at its end; fit both in the
+    # loop if the team misses a guest's words.
+    text = " ".join(
+        part
+        for part in (_MARKER if marked else "", own[: max(room, 0)].rstrip(), order)
+        if part
+    )
+    joined = _with_bookings(text, bookings)
+    pushed = COMPLAINT if reason == COMPLAINT else ORDER_OPEN
+    if joined == card.summary:
+        return
+    card.summary = joined
+    if pushed == COMPLAINT:
+        card.reason = COMPLAINT
+    enqueue(
+        session,
+        tenant_id=card.tenant_id,
+        event_type=CALLBACK_CREATED,
+        payload={
+            "callback_id": str(card.id),
+            "call_id": str(card.call_id),
+            "phone": card.phone,
+            "reason": pushed,
+            "summary": joined,
+        },
+    )
+    session.add(
+        AuditLog(
+            tenant_id=card.tenant_id,
+            actor=actor,
+            action=ACTION_ORDER_ADDED,
+            entity="callback",
+            entity_id=card.id,
+            payload={"call_id": str(card.call_id), "reason": pushed},
+        )
+    )
+
+
+def _unmarked(text: str) -> str:
+    """`text` without its kitchen marker, which a joined card carries once."""
+    at = text.find(_MARKER)
+    if at < 0:
+        return text
+    return f"{text[:at].rstrip()} {text[at + len(_MARKER) :].lstrip()}".strip()
+
+
+def _own_text(summary: str) -> str:
+    """A card's text without the bookings `booked` put at its end. Text that
+    only reads like them stays: the model's words are not cut away."""
+    head, cut, tail = summary.rpartition(SUMMARY_BOOKED)
+    lines = tail.strip().removesuffix(".").split("; ")
+    if cut and all(line.startswith(_BOOKED_LINES) for line in lines):
+        return head.rstrip()
+    return summary
+
+
 def _lock_call(session: Session, tenant_id: uuid.UUID, call_id: uuid.UUID) -> None:
     """Prüfen und Anlegen laufen je Anruf nacheinander.
 
@@ -215,7 +322,11 @@ def _open_for_call(session: Session, req: CreateCallbackRequest) -> Callback | N
             Callback.deleted_at.is_(None),
         )
         .order_by(Callback.created_at)
-        .limit(1),
+        .limit(1)
+        # "Erledigt" takes the row, not the call's lock (`mark_done`): an order
+        # that joins the card waits for it and then finds no open card (#993
+        # review), never writes onto a done one.
+        .with_for_update(),
         execution_options={"populate_existing": True},
     ).scalar_one_or_none()
 

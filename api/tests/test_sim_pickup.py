@@ -14,6 +14,7 @@ from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import Session
 
 from api.agent.guards import SAY_ALLERGENS_OFFER, SAY_ALLERGY_NOTED, SAY_ASK_ALLERGY
+from api.agent.loop import SAY_ESCALATION
 from api.domain.menu.importer import MENU_FILE, OPTIONS_FILE, apply, parse
 from api.models import Call, Callback, MenuItem, Order, OrderItem
 from api.tests.test_domain_menu_search import KARTE
@@ -1236,7 +1237,8 @@ def test_answer_after_a_withdrawal_and_a_long_removal(
 def test_another_persons_allergy_after_a_withdrawal_asks_again(session, tenant):
     """Codex PR #361, round 4: "Keine, aber meine Frau ist gegen Sesam
     allergisch" put the wife's sesame on this dish. Whose allergy it is and
-    for which dish is not clear: the question is asked again."""
+    for which dish is not clear: the question is asked again. The sesame
+    still reaches the order, in the guest's words (#929)."""
     _, turns = _bestellung(
         session,
         tenant,
@@ -1247,6 +1249,7 @@ def test_another_persons_allergy_after_a_withdrawal_asks_again(session, tenant):
     assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
+    assert order.note is not None and "gegen Sesam allergisch" in order.note
 
 
 def test_denial_with_another_dish_keeps_the_question(session, tenant):
@@ -1440,21 +1443,28 @@ def test_mehrdeutig_mit_allergie_erst_die_wahl(session, tenant):
     erste = " ".join(turns[1].say)
     assert erste == SAY_ALLERGY_NOTED
     assert "Worauf genau" in " ".join(turns[2].say)
-    [order] = orders(session)
-    # On the dish chosen for it, by the model (Maxi, 15.11.2026).
-    assert "WICHTIG !!! Allergie: Erdnüsse" in _notes(session, order)
-    assert order.note is None
+    _goes_to_the_team(session, turns)
 
 
 def test_mehrdeutig_mit_allergie_und_zutat_fragt_einmal(session, tenant):
     _, turns = _bestellung(
         session, tenant, "Eine Suppe mit Erdnussallergie und die 23.", "Nummer 12."
     )
-    # The allergy turn hears the core's sentence only (#798), and the
-    # allergy still reaches the soup chosen next.
+    # The allergy turn hears the core's sentence only (#798).
     assert " ".join(turns[1].say) == SAY_ALLERGY_NOTED
-    [order] = orders(session)
-    assert "WICHTIG !!! Allergie: Erdnuss" in _notes(session, order)
+    _goes_to_the_team(session, turns)
+
+
+def _goes_to_the_team(session, turns) -> None:
+    """The stand-in keeps its own order and writes `cart` only with the
+    draft. Its sentence that confirms the soup chosen from the offer has no
+    order step in its turn, so in this call about an allergy it is held to
+    core sentences (#928) and the guest never hears the soup named: the
+    draft is refused and the call goes to the team. A real model writes `cart` in that turn (`llm.py`), and its
+    sentence stays its own (`test_an_order_step_keeps_the_models_sentence_
+    about_its_dish` in test_agent_allergens_beyond.py)."""
+    assert orders(session) == []
+    assert SAY_ESCALATION in " ".join(turns[-1].say)
 
 
 @pytest.mark.parametrize("antwort", ["Eine Cola bitte.", "Nummer 12."])
@@ -1659,13 +1669,15 @@ def test_the_menu_decides_what_a_card_number_is(session, tenant):
 @pytest.mark.parametrize("answer", ["Die 12 mit Reis.", "Sesam, und die 12."])
 def test_number_on_the_menu_in_a_sentence_is_an_order(session, tenant, answer):
     """A number the menu has, next to other words, is still an order: the
-    question stays open instead of "Keine die 12 mit Reis" for the kitchen."""
+    question stays open instead of "Keine die 12 mit Reis" for the kitchen.
+    A sesame said with it reaches the order note (#929)."""
     _, turns = _bestellung(
         session, tenant, "Pho Bo, ich habe eine Allergie.", answer, "Erdnüsse."
     )
     assert "Worauf genau" in " ".join(turns[2].say)
     [order] = orders(session)
     assert _notes(session, order) == ["WICHTIG !!! Allergie: Erdnüsse"]
+    assert ("Sesam" in (order.note or "")) is ("Sesam" in answer)
 
 
 SUSHI_MENU = MenuNumbers.from_items(

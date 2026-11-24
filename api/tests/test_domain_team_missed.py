@@ -13,11 +13,24 @@ import pytest
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
-from api.domain.callbacks import create_callback, team_missed
+from api.domain.callbacks import create_callback, team_missed, transfer
 from api.domain.callbacks.create import SUMMARY_BOOKED
-from api.domain.callbacks.transfer import SUMMARY_HUNG_UP, SUMMARY_MISSED
+from api.domain.callbacks.transfer import (
+    SUMMARY_HUNG_UP,
+    SUMMARY_MISSED,
+    SUMMARY_NOTE_TO_CLEAR,
+)
 from api.domain.calls import end_call
-from api.models import AuditLog, Call, Callback, Order, OutboxEvent, Reservation
+from api.models import (
+    AuditLog,
+    Call,
+    Callback,
+    MenuItem,
+    Order,
+    OrderItem,
+    OutboxEvent,
+    Reservation,
+)
 from api.schemas.callbacks import CreateCallbackRequest
 from api.schemas.calls import EndCallRequest
 from scripts.seed import seed
@@ -214,7 +227,8 @@ def _reservation(session, call: Call, *, status: str = "confirmed") -> Reservati
         party_size=4,
         # 19:30 in Berlin: the card shows the restaurant's clock (CLAUDE.md §8).
         reserved_for=datetime(2026, 9, 20, 17, 30, tzinfo=UTC),
-        # Can name the guest's health: never on a card (L13).
+        # Can name the guest's health: never on a card (L13), which leads
+        # with the kitchen marker for it (#969).
         note="Erdnussallergie",
         idempotency_key=uuid.uuid4().hex,
     )
@@ -257,7 +271,9 @@ def test_a_card_without_the_cores_summary_names_the_booking_that_stands(
     task = team_missed(session, tenant_id, "1760000000.1", rang=False, now=REPORTED)
 
     assert task is not None
-    assert task.summary == f"{SUMMARY_HUNG_UP} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+    assert task.summary == (
+        f"{SUMMARY_HUNG_UP} {MARKER} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+    )
     assert "Allergie" not in task.summary and "nicht bekannt" not in task.summary
 
 
@@ -274,7 +290,7 @@ def test_a_missed_leg_names_every_booking_of_the_call_behind_its_reason(
 
     assert task is not None
     assert task.summary == (
-        f"{SUMMARY_MISSED} Kunde wollte etwas stornieren. {SUMMARY_BOOKED} "
+        f"{SUMMARY_MISSED} {MARKER} Kunde wollte etwas stornieren. {SUMMARY_BOOKED} "
         f"{TABLE_BOOKED}; Bestellung zur Abholung, Name Schmidt, Code A17."
     )
     assert "Allergie" not in task.summary and "Nuesse" not in task.summary
@@ -294,7 +310,7 @@ def test_a_booking_that_does_not_stand_is_not_named(session, tenant_id, status):
     task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
 
     assert task is not None
-    assert task.summary == f"{SUMMARY_MISSED} Anliegen nicht bekannt."
+    assert task.summary == f"{SUMMARY_MISSED} {MARKER} Anliegen nicht bekannt."
 
 
 def test_a_draft_next_to_a_standing_booking_is_left_out(session, tenant_id):
@@ -308,7 +324,9 @@ def test_a_draft_next_to_a_standing_booking_is_left_out(session, tenant_id):
     task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
 
     assert task is not None
-    assert task.summary == f"{SUMMARY_MISSED} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+    assert task.summary == (
+        f"{SUMMARY_MISSED} {MARKER} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+    )
 
 
 def test_a_card_with_more_bookings_than_it_holds_names_them_all(session, tenant_id):
@@ -337,6 +355,8 @@ def test_a_deleted_booking_is_not_named(session, tenant_id):
 
     assert task is not None
     assert "nicht bekannt" in task.summary and SUMMARY_BOOKED not in task.summary
+    # Its note still marks the card: the guest spoke of it in the call (#969).
+    assert task.summary.startswith(f"{SUMMARY_MISSED} {MARKER}")
 
 
 def test_the_cores_summary_is_followed_by_every_booking_of_the_call(session, tenant_id):
@@ -354,7 +374,7 @@ def test_the_cores_summary_is_followed_by_every_booking_of_the_call(session, ten
 
     assert task is not None
     assert task.summary == (
-        f"{SUMMARY_MISSED} {summary} {SUMMARY_BOOKED} {TABLE_BOOKED}; "
+        f"{SUMMARY_MISSED} {MARKER} {summary} {SUMMARY_BOOKED} {TABLE_BOOKED}; "
         "Bestellung zur Abholung, Name Schmidt, Code A17."
     )
 
@@ -626,3 +646,252 @@ def test_a_report_waits_for_the_call_log_and_reads_what_it_wrote(
             assert call.outcome == after
     finally:
         engine.dispose()
+
+
+# -- the kitchen marker of a guest who spoke of an allergy (#956) ---------------
+
+MARKER = f"{SUMMARY_NOTE_TO_CLEAR}."
+
+
+def test_a_failed_call_with_an_allergy_said_leads_its_card_with_the_marker(
+    session, tenant_id
+):
+    """#956: the voice failed mid-call, so the core wrote no card; the line's
+    card still tells the team to ask about the kitchen note, in front of the
+    reason, and names no allergy (L13)."""
+    make_call(session, tenant_id, transfer_reason=None, outcome="error")
+
+    task = team_missed(
+        session, tenant_id, "1760000000.1", kitchen_note=True, now=REPORTED
+    )
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {MARKER} Anliegen nicht bekannt."
+
+
+def test_without_an_allergy_said_the_card_has_no_marker(session, tenant_id):
+    make_call(session, tenant_id, transfer_reason=None, outcome="error")
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert SUMMARY_NOTE_TO_CLEAR not in task.summary
+
+
+def test_the_marker_stands_before_the_bookings_of_a_failed_call(session, tenant_id):
+    """A booking takes the place of "Anliegen nicht bekannt"; the marker still
+    leads, and the bookings follow from the database."""
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    _reservation(session, call)
+
+    task = team_missed(
+        session, tenant_id, "1760000000.1", kitchen_note=True, now=REPORTED
+    )
+
+    assert task is not None
+    assert task.summary == (
+        f"{SUMMARY_MISSED} {MARKER} {SUMMARY_BOOKED} {TABLE_BOOKED}."
+    )
+
+
+def test_a_core_card_with_the_marker_carries_it_once(session, tenant_id):
+    """The core's cards lead with the marker already (#940)."""
+    make_call(session, tenant_id, transfer_reason="human_requested")
+    summary = f"{MARKER} Kunde möchte mit einem Mitarbeiter sprechen."
+
+    task = team_missed(
+        session,
+        tenant_id,
+        "1760000000.1",
+        summary=summary,
+        kitchen_note=True,
+        now=REPORTED,
+    )
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {summary}"
+    assert task.summary.count(SUMMARY_NOTE_TO_CLEAR) == 1
+
+
+def test_a_core_card_without_the_marker_gets_it_in_front(session, tenant_id):
+    make_call(session, tenant_id, transfer_reason="human_requested")
+    summary = "Kunde möchte mit einem Mitarbeiter sprechen."
+
+    task = team_missed(
+        session,
+        tenant_id,
+        "1760000000.1",
+        summary=summary,
+        kitchen_note=True,
+        now=REPORTED,
+    )
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {MARKER} {summary}"
+
+
+def test_a_call_the_team_never_rang_carries_the_marker_too(session, tenant_id):
+    make_call(session, tenant_id, transfer_reason=None, outcome="abandoned")
+
+    task = team_missed(
+        session,
+        tenant_id,
+        "1760000000.1",
+        rang=False,
+        kitchen_note=True,
+        now=REPORTED,
+    )
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_HUNG_UP} {MARKER} Anliegen nicht bekannt."
+
+
+def test_a_core_card_with_the_marker_only_inside_gets_it_in_front(session, tenant_id):
+    """A health note replaced inside an order line (`_order_lines`) stands at
+    the end of the core's card, where the cut for the bookings reaches first;
+    the line's card leads with the marker as well."""
+    make_call(session, tenant_id, transfer_reason="human_requested")
+    summary = (
+        f"Offene Bestellung, nicht gebucht: 1x 13 Pho Bo ({SUMMARY_NOTE_TO_CLEAR})."
+    )
+
+    task = team_missed(
+        session,
+        tenant_id,
+        "1760000000.1",
+        summary=summary,
+        kitchen_note=True,
+        now=REPORTED,
+    )
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {MARKER} {summary}"
+
+
+# -- the marker from the database, when the line's memory has none (#969) -------
+
+
+@pytest.mark.parametrize("row", ["order", "reservation", "item"])
+def test_a_health_note_of_the_call_marks_the_card_without_the_lines_memory(
+    session, tenant_id, row
+):
+    """#969: `voice` restarted mid-call, or the report reached a process that
+    never saw the call, so the line knows of no allergy. The core wrote it on a
+    row of the call, a draft too: the card leads with the marker from there,
+    and never names the note (L13)."""
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    if row == "reservation":
+        _reservation(session, call, status="draft")
+    else:
+        order = _order(session, call, status="draft")
+        if row == "item":
+            order.note = None
+            dish = MenuItem(
+                tenant_id=tenant_id,
+                number="13",
+                name="Pho Bo",
+                category="Suppen",
+                price_cents=690,
+            )
+            session.add(dish)
+            session.flush()
+            session.add(
+                OrderItem(
+                    tenant_id=tenant_id,
+                    order_id=order.id,
+                    menu_item_id=dish.id,
+                    quantity=2,
+                    unit_price_cents=690,
+                    note="WICHTIG !!! Allergie: Erdnuesse",
+                )
+            )
+            session.commit()
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} {MARKER} Anliegen nicht bekannt."
+
+
+@pytest.mark.parametrize(
+    "note", ["Bitte klingeln", "Koriander vermeiden", "WICHTIG !!! Hintereingang"]
+)
+def test_a_note_that_speaks_of_no_health_marks_nothing(session, tenant_id, note):
+    """Read as the core reads a note (`speaks_of_health`), not by the wider
+    pattern the retention job deletes notes by: "vermeiden" names no health."""
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    _order(session, call, status="draft").note = note
+    session.commit()
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert SUMMARY_NOTE_TO_CLEAR not in task.summary
+
+
+def test_a_health_note_of_another_call_marks_nothing(session, tenant_id):
+    make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    other = make_call(session, tenant_id, sid="1760000000.2", transfer_reason=None)
+    _order(session, other, status="draft")
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert SUMMARY_NOTE_TO_CLEAR not in task.summary
+
+
+def test_a_failing_read_of_the_notes_costs_the_marker_never_the_card(
+    session, tenant_id, monkeypatch
+):
+    """Rule 5: the card is the team's only notice of the call; a read of the
+    notes that fails (a statement timeout) leaves it without the marker."""
+    call = make_call(session, tenant_id, transfer_reason=None, outcome="error")
+    _order(session, call, status="draft")
+
+    def broken(db, _call):
+        db.execute(text("SELECT 1 / 0"))
+
+    monkeypatch.setattr(transfer, "_call_notes", broken)
+
+    task = team_missed(session, tenant_id, "1760000000.1", now=REPORTED)
+
+    assert task is not None
+    assert task.summary == f"{SUMMARY_MISSED} Anliegen nicht bekannt."
+    assert len(cards(session, call.id)) == 1
+
+
+def test_a_missed_leg_brings_the_open_order_onto_the_card_of_the_call(
+    session, tenant_id
+):
+    """#998 no. 1: the core wrote a card earlier in the call, and the card of
+    the handover names an order unplaced. Nobody answers the team leg: the
+    open card gets the order, never a second card, and keeps its reason."""
+    call = make_call(session, tenant_id, transfer_reason="human_requested")
+    order = "Offene Bestellung, nicht aufgegeben: 2x 23 Pizza Margherita."
+    earlier = create_callback(
+        session,
+        CreateCallbackRequest(
+            call_id=call.id,
+            tenant_id=tenant_id,
+            phone=CALLER,
+            reason="complaint",
+            summary="Kunde hat sich beschwert.",
+        ),
+        now=STARTED,
+    )
+
+    task = team_missed(
+        session,
+        tenant_id,
+        "1760000000.1",
+        summary=f"Kunde wollte mit einem Menschen sprechen. {order}",
+        now=REPORTED,
+    )
+
+    assert task is not None and task.callback_id == earlier.callback_id
+    assert task.reason == "complaint"
+    assert task.summary == (
+        f"Kunde hat sich beschwert. {SUMMARY_MISSED} "
+        f"Kunde wollte mit einem Menschen sprechen. {order}"
+    )
+    assert len(cards(session, call.id)) == 1

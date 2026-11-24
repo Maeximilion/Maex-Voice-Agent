@@ -2283,3 +2283,31 @@ def test_a_code_step_up_of_an_account_with_a_passkey_is_refused_uncounted(
     assert not _operator(client, sessions, clock).fresh(clock.at)
     assert _audited(sessions, "operator.step_up_failed") == []
     assert _audited(sessions, "operator.stepped_up") == []
+
+
+def test_a_first_passkey_registered_while_a_code_step_up_waited_refuses_it(
+    client, factors, clock, sessions, pushes, monkeypatch
+):
+    """The code step-up saw no passkey before it held the account's row; the
+    owner's first passkey committed in between. The count under the row
+    holds: the code makes nothing fresh and the step-up is not audited."""
+    _signed_in(client, factors, clock)
+    clock.at += access.STEP_UP_FRESH  # the code sign-in is stale by now
+    owner = _other_browser(factors, clock)
+    locked = access._locked
+    fired: list[None] = []
+
+    def the_owner_registers_first(db, operator, now=None):
+        if not fired:
+            fired.append(None)
+            answer = _register(owner, Device(), "Owner key")
+            assert answer.headers["location"] == "/factors?note=passkey-added"
+        return locked(db, operator, now)
+
+    monkeypatch.setattr(access, "_locked", the_owner_registers_first)
+    answer = _step_up_with_code(client, factors, clock)
+    assert answer.status_code == 401 and fired
+    assert web.PASSKEY_ONLY in answer.text
+    assert not _operator(client, sessions, clock).fresh(clock.at)
+    assert _audited(sessions, "operator.stepped_up") == []
+    assert pushes == ["maxi: new passkey 'Owner key'"]

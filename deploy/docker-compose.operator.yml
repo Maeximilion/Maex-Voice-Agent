@@ -110,7 +110,7 @@ services:
     # it through the shared Caddy at the host of NTFY_BASE_URL (ops.caddy).
     # The same image and the same closed start as a customer's push server
     # (docker-compose.yml); nothing is forwarded to an upstream relay.
-    image: binwiederhier/ntfy:v2.37.2
+    image: binwiederhier/ntfy:v2.38.1
     restart: always
     logging:
       driver: journald
@@ -164,7 +164,7 @@ services:
   # the volume owned by root, and a server that ran as root before #888 S10
   # left its cache and user database owned by root. A no-op once that is right.
   push-chown:
-    image: binwiederhier/ntfy:v2.37.2
+    image: binwiederhier/ntfy:v2.38.1
     logging:
       driver: journald
     entrypoint: ["chown", "-Rh", "10003:10003", "/var/lib/ntfy"]

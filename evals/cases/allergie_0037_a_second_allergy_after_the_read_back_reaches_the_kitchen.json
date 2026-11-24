@@ -1,0 +1,54 @@
+{
+  "id": "allergie_0037",
+  "name": "A second allergy said after the read-back reaches the kitchen",
+  "tags": [
+    "allergie",
+    "allergie_hinweis",
+    "level-2"
+  ],
+  "source": "handcrafted",
+  "transcript": [
+    {
+      "role": "customer",
+      "text": "Guten Tag, ich moechte etwas zum Abholen bestellen."
+    },
+    {
+      "role": "customer",
+      "text": "Die 13, ich habe eine Erdnussallergie."
+    },
+    {
+      "role": "customer",
+      "text": "Nein, das wars."
+    },
+    {
+      "role": "customer",
+      "text": "Auf den Namen Mueller."
+    },
+    {
+      "role": "customer",
+      "text": "Meine Nummer ist 0721 5551234."
+    },
+    {
+      "role": "customer",
+      "text": "Ach, und meine Frau verträgt keinen Sesam."
+    },
+    {
+      "role": "customer",
+      "text": "Ja, passt so."
+    }
+  ],
+  "expected": {
+    "intent": "pickup",
+    "confirmed": true,
+    "escalated": false,
+    "items": [
+      {
+        "number": "13",
+        "quantity": 1,
+        "note": "WICHTIG !!! Allergie: Erdnuss"
+      }
+    ],
+    "customer_name": "Mueller",
+    "note": "WICHTIG !!! Die 13, ich habe eine Erdnussallergie. Ach, und meine Frau verträgt keinen Sesam"
+  }
+}
