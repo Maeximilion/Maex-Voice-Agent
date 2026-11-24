@@ -213,6 +213,7 @@ def test_reopening_next_to_an_open_card_of_its_call_says_why(client, engine, ten
     cb_id = done_callback(engine, tenant_id)
     with Session(engine) as s:
         done = s.get(Callback, cb_id)
+        assert done is not None
         s.add(
             Callback(
                 tenant_id=tenant_id,
@@ -231,4 +232,5 @@ def test_reopening_next_to_an_open_card_of_its_call_says_why(client, engine, ten
     assert notice == CALL_HAS_AN_OPEN_CARD
     assert "schon eine Karte offen" in notice
     with Session(engine) as s:
-        assert s.get(Callback, cb_id).status == "done"
+        kept = s.get(Callback, cb_id)
+        assert kept is not None and kept.status == "done"
