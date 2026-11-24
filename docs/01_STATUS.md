@@ -1,7 +1,8 @@
 # 01 – Project Status
 
 > **This document is updated every session.** It's the only place that shows where the project really stands.
-> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.52
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.55
+> Status: 24.11.2026 · Stage 0 (Foundation) · Next gate: **G0 Go/No-Go** · Status version: 2.69.54
 
 ---
 
@@ -147,6 +148,8 @@ Settled assumptions: `docs/HISTORY.md` sections "Made Assumptions (archive)" and
 
 | Date | What |
 |---|---|
+| 24.11.2026 | **#984: restore keeps owners and grants, and the client container reaches a loopback-only port.** `scripts/restore.sh` restores a dump with its owners and grants and carries the settings of the replaced database over; on a server without the roles of the dump it stops with nothing changed and names `db_role.sh` and the new `--without-owners`. `pg_resolve_client` (`scripts/lib_pg.sh`) puts the client container on the host network on Linux with a native Docker engine, so the dev stack's 127.0.0.1-only Postgres is reachable without `BACKUP_DOCKER_NETWORK`; Docker Desktop keeps `host.docker.internal`. Both docs/24 rows closed. | Done |
+| 24.11.2026 | **#982: one helper for the forms of a number.** `deploy/asterisk/render.sh` turns a number into its bare international digits in `digits` (`+` and `00` dropped, a leading `0` becomes `49`), and `same` compares those; `e164` is gone. No behaviour change, the render tests unchanged and green. | Done |
 | 24.11.2026 | **#979: English identifiers in the older GUI code.** The route functions of `api/gui/router.py` and the names in `api/gui/ts/app.ts` are English now; URLs, query keys (`tag`, `ergebnis`, `anliegen` through `Query` aliases), element ids, template names and tablet text are unchanged. | Done |
 | 24.11.2026 | **#998: every open order reaches a card, and the tablet notices a changed card** (follow-ups of the #993 deep review). A handoff's or a missed team leg's card that names an open order joins the call's open card instead of meeting it unchanged; a model card written after the read-back gets the order at the hang-up; the kitchen marker stands once. The tablet rings and blinks for a card whose text changed, and "Erledigt" sends the version it was drawn with, so a stale tap closes nothing. Points 5, 7, 8 of the issue stay open in `docs/24`. |
 | 24.11.2026 | **#929: a second allergy said after the read-back reaches a note** (Maxi, 24.11.2026: ask for which dish, or the dish named right before). The safety net compared only that some health note stood; now every allergen letter a kept sentence names as the guest's must be on one (`guards.unnoted_allergy`, `allergens_named`). The redraft with only the first allergy's note goes back once with the uncovered sentence and the new fixed question "Für welches Gericht soll die Küche darauf achten?" (`SAY_ASK_ALLERGY_DISH`, a core sentence of the allergy turn, its answer kept); sent again without, the core's "Gast sagte" block replaces an earlier one instead of noting it twice. Eval `allergie_0037`. |
@@ -183,7 +186,9 @@ Own, semantic version `MAJOR.MINOR.PATCH`, independent of the `CLAUDE.md` bundle
 
 ## Changelog
 
-- **v2.69.52 · 24.11.2026:** #987: card numbers are said with the prefix in capitals (S12, SM1), the trailing letter as stored
+- **v2.69.55 · 24.11.2026:** #987: card numbers are said with the prefix in capitals (S12, SM1), the trailing letter as stored
+- **v2.69.54 · 24.11.2026:** #984: restore.sh keeps owners, grants and database settings (`--without-owners` for a server without the roles), backup and restore reach a 127.0.0.1-only Postgres from a client container on Linux
+- **v2.69.53 · 24.11.2026:** #982: one helper for the forms of a number in deploy/asterisk/render.sh, no behaviour change
 - **v2.69.51 · 24.11.2026:** #979: English identifiers in the older GUI code (route functions of `api/gui/router.py`, names in `app.ts`), no behaviour change
 - **v2.69.50 · 24.11.2026:** #998: every open order reaches the call's card, a changed card rings on the tablet, a stale "Erledigt" closes nothing
 - **v2.69.49 · 24.11.2026:** #983 call_log.py in English (English option names, German kept as aliases), review points 3 and 4 fixed; #985 a partial decision-issue run drops the keys of the sections it rewrites
