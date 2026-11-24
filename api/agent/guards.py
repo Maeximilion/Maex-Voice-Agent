@@ -1100,7 +1100,9 @@ def _without_core(turn: AllergenTurn, state: ConversationState, say: str) -> str
         *FIXED_ALLERGY_SAYS,
     ):
         if own:
-            rest = rest.replace(own, " ")
+            # Any case: the core says "Nummer S12", the model's hits carry
+            # "s12", and a copy with the stored form is still the core's (#987).
+            rest = re.sub(re.escape(own), " ", rest, flags=re.IGNORECASE)
     return rest
 
 

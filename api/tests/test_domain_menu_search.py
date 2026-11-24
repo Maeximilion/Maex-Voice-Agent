@@ -1641,4 +1641,4 @@ def test_not_found_keeps_letters_that_are_no_prefix_of_the_menu(session, sushi, 
     with pytest.raises(NotFound) as err:
         suche(session, sushi, said)
     assert err.value.say is not None
-    assert "Nummer DA12" not in err.value.say and "Nummer AB12" not in err.value.say
+    assert f"Nummer {said.split()[1]}12 " in err.value.say

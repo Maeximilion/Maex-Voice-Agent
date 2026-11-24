@@ -1563,6 +1563,16 @@ def test_the_read_back_is_a_core_string():
     assert core_only(turn, state, READBACK)
 
 
+def test_a_core_string_counts_whatever_the_case_of_its_card_number():
+    """Deep review of #987: the core says "Nummer S12", the model's tool hits
+    carry "s12"; a copy of the read-back with the stored form is still core."""
+    readback = "Zweimal Nummer S12 Thunfisch Maki. Macht 9 Euro, zur Abholung."
+    state = new_state(readback=readback)
+    turn, state = allergen_turn("Ich habe eine Sesamallergie.", state=state)
+
+    assert core_only(turn, state, readback.replace("S12", "s12"))
+
+
 def test_an_allergy_noted_on_a_changed_line_leaves_no_question():
     """The guest's allergy went onto the note of a line of this turn."""
     turn, state = allergen_turn(
