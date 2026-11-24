@@ -13,6 +13,7 @@ customer's default, on the line the call came from only.
 
 import uuid
 from datetime import UTC, datetime, timedelta
+from types import EllipsisType
 from typing import Any, cast
 from zoneinfo import ZoneInfo
 
@@ -61,8 +62,15 @@ WARNING_READY_AFTER_CLOSE = "ready_after_close"
 
 
 def draft_order(
-    session: Session, req: DraftOrderRequest, now: datetime | None = None
+    session: Session,
+    req: DraftOrderRequest,
+    now: datetime | None = None,
+    *,
+    pending: uuid.UUID | EllipsisType | None = ...,
 ) -> OrderDraft:
+    """`pending`: the draft the caller's conversation still holds for a yes,
+    None when it holds none (the guest dropped it, #952). The default `...` is
+    a caller that keeps no conversation, the HTTP tool: its retries replay."""
     now = now or utcnow()
     tenant = session.get(Tenant, req.tenant_id)
     config = session.get(ServiceConfig, req.tenant_id)
@@ -72,7 +80,7 @@ def draft_order(
 
     # Same key, same answer, no second order (docs/04 §1), while its draft is
     # the call's latest (#862).
-    key, existing = _stored_under(session, req)
+    key, existing = _stored_under(session, req, pending)
     req = req.model_copy(update={"idempotency_key": key})
     if existing is not None:
         return _replay(session, existing, req.tenant_id, req.call_id)
@@ -219,22 +227,25 @@ def _by_key(session: Session, key: str) -> Order | None:
     )
 
 
-def _stored_under(session: Session, req: DraftOrderRequest) -> tuple[str, Order | None]:
+def _stored_under(
+    session: Session, req: DraftOrderRequest, pending: uuid.UUID | EllipsisType | None
+) -> tuple[str, Order | None]:
     """The key this request is stored under, and its order if there is one.
     A retry, the same request while its draft is the call's latest, replays
     that draft as it was (Codex PR #124). A draft that a later draft of its
     call replaced, a table or an order, is a change of mind the guest went
     back on: replayed, it skipped every check (hours, a dish sold out since)
-    and kept its old pickup time. Such a request gets a successor key, made
-    from the row it follows, and is drafted anew; its own retry walks the same
-    way to the same draft. A decided order (its yes was given) and another
-    call's row end the walk as before."""
+    and kept its old pickup time. So does a draft the conversation no longer
+    holds, one the guest dropped (#952). Such a request gets a successor key,
+    made from the row it follows, and is drafted anew; its own retry walks the
+    same way to the same draft. A decided order (its yes was given) and
+    another call's row end the walk as before."""
     key = req.idempotency_key
     while (row := _by_key(session, key)) is not None and (
         row.status == "draft"
         and row.tenant_id == req.tenant_id
         and row.call_id == req.call_id
-        and _replaced(session, row)
+        and ((pending is not ... and row.id != pending) or _replaced(session, row))
     ):
         key = idempotency_key(req.call_id, "draft_order", key, row.id)
     return key, row

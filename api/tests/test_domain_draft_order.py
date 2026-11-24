@@ -274,6 +274,56 @@ def test_going_back_is_a_new_draft_and_its_retry_replays_it(
     assert session.scalar(select(func.count()).select_from(Order)) == 3
 
 
+def test_a_draft_the_guest_dropped_is_drafted_anew(session, tenant_id, call_id):
+    """#952: the agent holds no draft any more (the guest cancelled it), so
+    the same dishes again are a new draft with a new time and the checks of
+    now, never the dropped one replayed."""
+    req = request(session, tenant_id, call_id)
+    dropped = draft_order(session, req, now=NOW)
+
+    again = draft_order(session, req, now=NOW + timedelta(minutes=10), pending=None)
+    retry = draft_order(
+        session, req, now=NOW + timedelta(minutes=11), pending=again.order_id
+    )
+
+    assert again.order_id != dropped.order_id
+    assert dropped.ready_at is not None
+    assert again.ready_at == dropped.ready_at + timedelta(minutes=10)
+    assert retry == again
+    assert session.scalar(select(func.count()).select_from(Order)) == 2
+
+
+def test_a_dropped_draft_is_checked_again(session, tenant_id, call_id):
+    req = request(session, tenant_id, call_id)
+    draft_order(session, req, now=NOW)
+    session.execute(
+        update(MenuItem)
+        .where(MenuItem.tenant_id == tenant_id, MenuItem.number == "23")
+        .values(sold_out_until=NOW + timedelta(hours=3))
+    )
+    session.commit()
+
+    with pytest.raises(Conflict):
+        draft_order(session, req, now=NOW + timedelta(minutes=10), pending=None)
+
+
+def test_the_pending_draft_and_a_caller_without_state_replay(
+    session, tenant_id, call_id
+):
+    """The draft the agent holds is replayed, as is every draft for a caller
+    that keeps no conversation (the HTTP tool), as before #952."""
+    req = request(session, tenant_id, call_id)
+    first = draft_order(session, req, now=NOW)
+
+    held = draft_order(
+        session, req, now=NOW + timedelta(minutes=5), pending=first.order_id
+    )
+    stateless = draft_order(session, req, now=NOW + timedelta(minutes=5))
+
+    assert held == first == stateless
+    assert session.scalar(select(func.count()).select_from(Order)) == 1
+
+
 def test_a_confirmed_draft_is_replayed_as_it_stands(session, tenant_id, call_id):
     """Its yes was given: the same request after it books nothing again."""
     req = request(session, tenant_id, call_id)

@@ -770,7 +770,15 @@ class CallHandler:
             # aborted, and nothing more would run in it.
             live.session.rollback()
             if live.loop is not None:
-                live.loop.offer_unanswered(live.state)
+                # A database error on that card costs the card, never the log
+                # below: without it the call counts as an outage (#953 review).
+                try:
+                    live.loop.offer_unanswered(
+                        live.state, with_the_team=outcome == "error" or caller_waits
+                    )
+                except Exception:
+                    logger.exception("the card of an open offer or order failed")
+                    live.session.rollback()
             derived, intent = call_outcome(live.state)
             # The line bounds its statements (`db.bounded_sessions`); this
             # write waits longer, in this transaction only, which the commit
